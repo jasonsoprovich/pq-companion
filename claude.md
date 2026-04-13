@@ -77,7 +77,8 @@ config backup manager, and custom trigger system into a single application.
 - Zone: "You have entered The North Karana."
 
 ### NPC Special Abilities
-The `special_abilities` field in `npc_types` is a pipe-delimited string.
+The `special_abilities` field in `npc_types` is a caret-delimited (`^`) string.
+Format: `code,value^code,value^...` (e.g., `"1,1^18,1^19,1"`).
 Key codes to parse:
 - 1 = Summon, 2 = Enrage, 3 = Rampage, 4 = Flurry
 - 5 = Triple Attack, 6 = Dual Wield

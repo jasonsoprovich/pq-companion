@@ -1,5 +1,6 @@
 # ── SQL dumps (large, not source code) ────────────────────────────────────────
 /sql/*.sql
+!sql/example_queries.sql
 
 # ── Task docs (distilled into FEATURES.md) ────────────────────────────────────
 /docs/
