@@ -29,7 +29,14 @@
   - `GET /ws` endpoint integrated into chi router
   - `hub.Broadcast(event)` — call from any goroutine to push to all connected clients
   - `hub.ClientCount()` — current connection count
-- YAML configuration system (EQ install path, active character, preferences)
+- YAML configuration system (`internal/config/`)
+  - Config file at `~/.pq-companion/config.yaml` — created with defaults on first run
+  - Fields: `eq_path` (EQ install dir), `character` (active char name), `server_addr` (listen addr)
+  - `preferences`: `overlay_opacity` (0.0–1.0), `minimize_to_tray`, `parse_combat_log`
+  - `config.Manager`: thread-safe `Get()` / `Update()` with automatic disk persistence
+  - CLI `--addr` flag overrides `server_addr` from config when provided
+  - `GET /api/config` — returns current configuration as JSON
+  - `PUT /api/config` — replaces configuration and persists to disk
 
 ## Phase 2 — Database Explorer (Frontend)
 - **Item Explorer**: search by name/slot/class/stat, detail panel with all item fields

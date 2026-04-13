@@ -9,7 +9,7 @@
 ## Phase 1 — Go Backend API
 - [x] Task 1.1 — REST API
 - [x] Task 1.2 — WebSocket Server
-- [ ] Task 1.3 — Configuration System
+- [x] Task 1.3 — Configuration System
 
 ## Phase 2 — Electron + React Frontend
 - [ ] Task 2.1 — Electron + React Project Setup

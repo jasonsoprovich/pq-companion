@@ -4,7 +4,7 @@ A desktop companion app for the [Project Quarm](https://www.projectquarm.com/) E
 
 Features: database explorer (items, spells, NPCs, zones), combat log parser, DPS meter, spell/buff/DoT timer overlays, NPC info overlay, spell checklist, config backup manager, and a custom trigger system.
 
-> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 in progress: REST API (Task 1.1) and WebSocket server (Task 1.2) complete, configuration system next. See [ROADMAP.md](ROADMAP.md) for what's coming.
+> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 complete: REST API, WebSocket server, and configuration system. Phase 2 (Electron + React frontend) next. See [ROADMAP.md](ROADMAP.md) for what's coming.
 
 ---
 
@@ -158,8 +158,40 @@ go run ./cmd/server --addr :9000 --db /path/to/quarm.db
 | `GET` | `/api/zones?q=&limit=&offset=` | Search zones by long name |
 | `GET` | `/api/zones/{id}` | Get zone by ID |
 | `GET` | `/api/zones/short/{name}` | Get zone by short name |
+| `GET` | `/api/config` | Get current configuration |
+| `PUT` | `/api/config` | Update and persist configuration |
 
 All search endpoints return `{"items": [...], "total": N}`. Max `limit` is 100.
+
+---
+
+## Configuration
+
+On first run the server creates `~/.pq-companion/config.yaml` with defaults:
+
+```yaml
+eq_path: ""
+character: ""
+server_addr: :8080
+preferences:
+    overlay_opacity: 0.9
+    minimize_to_tray: true
+    parse_combat_log: true
+```
+
+Edit the file directly, or use the API:
+
+```bash
+# Read current config
+curl http://localhost:8080/api/config
+
+# Update config (full replacement)
+curl -X PUT http://localhost:8080/api/config \
+  -H 'Content-Type: application/json' \
+  -d '{"eq_path":"/games/EverQuest","character":"Testerino","server_addr":":8080","preferences":{"overlay_opacity":0.9,"minimize_to_tray":true,"parse_combat_log":true}}'
+```
+
+The `--addr` CLI flag overrides `server_addr` from the config file when provided.
 
 ---
 

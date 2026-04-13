@@ -6,12 +6,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
-// NewRouter builds and returns the chi router wired to the given DB and Hub.
-func NewRouter(database *db.DB, hub *ws.Hub) http.Handler {
+// NewRouter builds and returns the chi router wired to the given DB, Hub, and Config.
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -20,6 +21,7 @@ func NewRouter(database *db.DB, hub *ws.Hub) http.Handler {
 	spells := &spellsHandler{db: database}
 	npcs := &npcsHandler{db: database}
 	zones := &zonesHandler{db: database}
+	cfg := &configHandler{mgr: cfgMgr}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
@@ -39,6 +41,10 @@ func NewRouter(database *db.DB, hub *ws.Hub) http.Handler {
 			r.Get("/", zones.search)
 			r.Get("/short/{name}", zones.getByShortName)
 			r.Get("/{id}", zones.get)
+		})
+		r.Route("/config", func(r chi.Router) {
+			r.Get("/", cfg.get)
+			r.Put("/", cfg.update)
 		})
 	})
 

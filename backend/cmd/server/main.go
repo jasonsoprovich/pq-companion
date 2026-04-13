@@ -9,14 +9,28 @@ import (
 	"path/filepath"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/api"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
 func main() {
-	addr := flag.String("addr", ":8080", "HTTP listen address")
+	addr := flag.String("addr", "", "HTTP listen address (overrides config server_addr)")
 	dbPath := flag.String("db", defaultDBPath(), "path to quarm.db")
 	flag.Parse()
+
+	cfgMgr, err := config.Load()
+	if err != nil {
+		slog.Error("load config", "err", err)
+		os.Exit(1)
+	}
+	slog.Info("config loaded", "path", cfgMgr.Path())
+
+	// CLI flag overrides config file address when explicitly provided.
+	listenAddr := cfgMgr.Get().ServerAddr
+	if *addr != "" {
+		listenAddr = *addr
+	}
 
 	database, err := db.Open(*dbPath)
 	if err != nil {
@@ -28,10 +42,10 @@ func main() {
 	hub := ws.NewHub()
 	go hub.Run()
 
-	router := api.NewRouter(database, hub)
+	router := api.NewRouter(database, hub, cfgMgr)
 
-	slog.Info("server starting", "addr", *addr, "db", *dbPath)
-	if err := http.ListenAndServe(*addr, router); err != nil {
+	slog.Info("server starting", "addr", listenAddr, "db", *dbPath)
+	if err := http.ListenAndServe(listenAddr, router); err != nil {
 		slog.Error("server error", "err", err)
 		os.Exit(1)
 	}

@@ -19,6 +19,9 @@ The Go HTTP API server is running. Items, spells, NPCs, and zones are all querya
 ### WebSocket Server (Phase 1, Task 1.2) ✅
 The real-time event pipeline is wired up. Connect to `ws://localhost:8080/ws` and you'll receive a stream of JSON events as the backend emits them. The hub accepts any number of concurrent clients, handles slow consumers gracefully, and keeps connections alive with ping/pong. The `ws.Event` envelope (`type` + `data`) is the contract all future features — log parser, spell timers, DPS meter — will broadcast over.
 
+### Configuration System (Phase 1, Task 1.3) ✅
+The backend now reads and writes a YAML config file at `~/.pq-companion/config.yaml`. On first run the file is created with sensible defaults (listen address, overlay opacity, combat log parsing). `GET /api/config` and `PUT /api/config` let the frontend read and update settings at runtime. The CLI `--addr` flag still overrides the config-file address for development convenience.
+
 ---
 
 ## What's Coming
