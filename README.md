@@ -4,7 +4,7 @@ A desktop companion app for the [Project Quarm](https://www.projectquarm.com/) E
 
 Features: database explorer (items, spells, NPCs, zones), combat log parser, DPS meter, spell/buff/DoT timer overlays, NPC info overlay, spell checklist, config backup manager, and a custom trigger system.
 
-> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 in progress: REST API complete (Task 1.1), WebSocket + config system next. See [ROADMAP.md](ROADMAP.md) for what's coming.
+> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 in progress: REST API (Task 1.1) and WebSocket server (Task 1.2) complete, configuration system next. See [ROADMAP.md](ROADMAP.md) for what's coming.
 
 ---
 
@@ -160,6 +160,21 @@ go run ./cmd/server --addr :9000 --db /path/to/quarm.db
 | `GET` | `/api/zones/short/{name}` | Get zone by short name |
 
 All search endpoints return `{"items": [...], "total": N}`. Max `limit` is 100.
+
+---
+
+## WebSocket Server
+
+Connect to `ws://localhost:8080/ws` to receive real-time events from the backend.
+
+Messages are JSON with a type/data envelope:
+
+```json
+{"type": "zone_change", "data": {"zone": "crushbone"}}
+{"type": "combat",      "data": {"actor": "You", "target": "an orc", "damage": 150}}
+```
+
+The connection is receive-only from the client side — the server broadcasts; clients do not send messages. Ping/pong keepalive runs every 54 seconds.
 
 ---
 

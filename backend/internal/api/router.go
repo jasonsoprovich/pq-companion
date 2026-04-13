@@ -7,14 +7,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
-// NewRouter builds and returns the chi router wired to the given DB.
-func NewRouter(database *db.DB) http.Handler {
+// NewRouter builds and returns the chi router wired to the given DB and Hub.
+func NewRouter(database *db.DB, hub *ws.Hub) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.SetHeader("Content-Type", "application/json"))
 
 	items := &itemsHandler{db: database}
 	spells := &spellsHandler{db: database}
@@ -22,6 +22,7 @@ func NewRouter(database *db.DB) http.Handler {
 	zones := &zonesHandler{db: database}
 
 	r.Route("/api", func(r chi.Router) {
+		r.Use(middleware.SetHeader("Content-Type", "application/json"))
 		r.Route("/items", func(r chi.Router) {
 			r.Get("/", items.search)
 			r.Get("/{id}", items.get)
@@ -40,6 +41,9 @@ func NewRouter(database *db.DB) http.Handler {
 			r.Get("/{id}", zones.get)
 		})
 	})
+
+	// WebSocket endpoint — no Content-Type middleware (upgrade handles headers).
+	r.Get("/ws", ws.Handler(hub))
 
 	return r
 }

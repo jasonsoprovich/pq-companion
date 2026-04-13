@@ -21,7 +21,14 @@
   - `GET /api/npcs?q=&limit=&offset=` / `GET /api/npcs/{id}`
   - `GET /api/zones?q=&limit=&offset=` / `GET /api/zones/{id}` / `GET /api/zones/short/{name}`
   - chi router, structured logging, 404/400 error responses, max 100 results per page
-- WebSocket server for real-time event broadcasting to all connected clients
+- WebSocket server for real-time event broadcasting to all connected clients (`internal/ws/`)
+  - Hub pattern: register/unregister clients, buffered broadcast channel
+  - `ws.Event{Type, Data}` JSON envelope — extensible for all future event types
+  - Per-client read/write pumps with ping/pong keepalive (54 s interval, 60 s timeout)
+  - Slow-client protection: lagging clients are dropped rather than blocking the broadcast
+  - `GET /ws` endpoint integrated into chi router
+  - `hub.Broadcast(event)` — call from any goroutine to push to all connected clients
+  - `hub.ClientCount()` — current connection count
 - YAML configuration system (EQ install path, active character, preferences)
 
 ## Phase 2 — Database Explorer (Frontend)

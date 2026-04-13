@@ -16,6 +16,9 @@ The Go database layer is also complete. The backend can query items, spells, NPC
 ### REST API (Phase 1, Task 1.1) ✅
 The Go HTTP API server is running. Items, spells, NPCs, and zones are all queryable via REST — search by name with pagination, or fetch any record directly by ID. Zones can also be looked up by their short name (e.g. `qeynos`, `crushbone`). The server is built on chi, uses structured logging, and returns clean JSON errors for 404s and bad input. Run it from `backend/` with `go run ./cmd/server`.
 
+### WebSocket Server (Phase 1, Task 1.2) ✅
+The real-time event pipeline is wired up. Connect to `ws://localhost:8080/ws` and you'll receive a stream of JSON events as the backend emits them. The hub accepts any number of concurrent clients, handles slow consumers gracefully, and keeps connections alive with ping/pong. The `ws.Event` envelope (`type` + `data`) is the contract all future features — log parser, spell timers, DPS meter — will broadcast over.
+
 ---
 
 ## What's Coming

@@ -10,6 +10,7 @@ import (
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/api"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
 func main() {
@@ -24,7 +25,10 @@ func main() {
 	}
 	defer database.Close()
 
-	router := api.NewRouter(database)
+	hub := ws.NewHub()
+	go hub.Run()
+
+	router := api.NewRouter(database, hub)
 
 	slog.Info("server starting", "addr", *addr, "db", *dbPath)
 	if err := http.ListenAndServe(*addr, router); err != nil {
