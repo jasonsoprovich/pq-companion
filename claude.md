@@ -61,7 +61,12 @@ config backup manager, and custom trigger system into a single application.
 - Format TypeScript with Prettier (80 char width)
 - Commit messages: conventional commits (feat:, fix:, docs:, etc.)
 - Test every feature before moving to the next phase
-- When adding a new feature, update FEATURES.md and PROGRESS.md
+- When completing a task, always update ALL of the following before committing:
+  - `PROGRESS.md` — check off the completed task
+  - `FEATURES.md` — expand the feature entry with implementation details
+  - `README.md` — update status line and add any new usage/setup instructions
+  - `ROADMAP.md` — update "What's Done" if a phase or major milestone is complete
+- Commit everything for the task in a single conventional commit (e.g. `feat: Task 1.1 — REST API`)
 
 ## EverQuest-Specific Knowledge
 
@@ -94,14 +99,13 @@ Full parsing logic should be in `internal/db/special_abilities.go`
 - Zeal log extensions add extra info to the standard EQ log format
 
 ## Current Phase
-Phase 0 — Database Setup & Exploration
+Phase 1 — Go Backend API
 
 ## File: PROGRESS.md
 Update this file after completing each task. Format:
 ```
-## Phase 0 — Database Setup & Exploration
-- [x] Task 0.1 — Docker MySQL Setup
-- [ ] Task 0.2 — Database Exploration & Documentation
-- [ ] Task 0.3 — Go MySQL→SQLite Converter
-- [ ] Task 0.4 — Go Database Layer
+## Phase 1 — Go Backend API
+- [x] Task 1.1 — REST API
+- [ ] Task 1.2 — WebSocket Server
+- [ ] Task 1.3 — Configuration System
 ```
