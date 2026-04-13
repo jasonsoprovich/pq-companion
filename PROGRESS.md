@@ -2,8 +2,8 @@
 
 ## Phase 0 — Database Setup & Exploration
 - [x] Task 0.1 — Docker MySQL Setup
-- [ ] Task 0.2 — Database Exploration & Documentation
-- [ ] Task 0.3 — Go Project Init + MySQL→SQLite Converter
+- [x] Task 0.2 — Database Exploration & Documentation
+- [x] Task 0.3 — Go Project Init + MySQL→SQLite Converter
 - [ ] Task 0.4 — Go Database Layer
 
 ## Phase 1 — Go Backend API

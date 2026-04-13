@@ -1,9 +1,13 @@
 # PQ Companion — Features
 
-## Phase 0 — Database Setup & Exploration
+## Phase 0 — Database Setup & Exploration ✅
 - MySQL 8 Docker environment for EQEmu dump exploration
-- Go CLI tool: MySQL dump → SQLite converter
-- Go database layer with typed models for items, spells, NPCs, zones
+- Go CLI tool (`dbconvert`): MySQL dump → SQLite converter
+  - `--from-dump` mode: parses `.sql` dump files directly, no MySQL required
+  - `--from-mysql` mode: reads from a live MySQL connection
+  - Handles all MySQL→SQLite type mapping, index conversion, and data migration
+  - Converts ~1.1 million rows in under 60 seconds
+- Documented schema for all key tables (items, spells, NPCs, zones, loot, spawns)
 
 ## Phase 1 — Go Backend API
 - REST API: items, spells, NPCs, zones with search and filtering
