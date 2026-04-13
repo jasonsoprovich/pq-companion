@@ -38,12 +38,43 @@
   - `GET /api/config` — returns current configuration as JSON
   - `PUT /api/config` — replaces configuration and persists to disk
 
-## Phase 2 — Database Explorer (Frontend)
-- **Item Explorer**: search by name/slot/class/stat, detail panel with all item fields
-- **Spell Explorer**: search by name/class/level, duration and resist type display
-- **NPC Explorer**: search by name/zone, special ability parsing (summon, mez-immune, etc.), loot table view
-- **Zone Explorer**: browse zones, list resident NPCs
-- **Global Search**: cross-database search via `Ctrl+K` / `Cmd+K` keyboard shortcut
+## Phase 2 — Electron + React Frontend
+
+### Task 2.1 — Electron + React Project Setup ✅
+- **electron-vite** build tool: unified dev/build pipeline for main, preload, and renderer processes
+- **Electron 33** shell in `electron/main/index.ts`
+  - `BrowserWindow` with `hiddenInset` title bar (macOS) and custom title bar (Windows)
+  - `show: false` + `ready-to-show` to prevent white flash on launch
+  - `nativeTheme.themeSource = 'dark'` — forces OS dark mode
+  - Dev mode loads Vite dev server at `http://localhost:5173`; prod loads built `out/renderer/index.html`
+  - External links opened with `shell.openExternal` (never in Electron itself)
+- **Preload script** in `electron/preload/index.ts`
+  - `contextBridge.exposeInMainWorld('electron', …)` — secure, typed API surface
+  - Exposes: `versions` (node/chrome/electron) and `window` controls (minimize/maximize/close/isMaximized)
+- **Go sidecar lifecycle** in main process
+  - Production: spawns `resources/bin/pq-companion-server[.exe]` as a child process, pipes stdout/stderr to console
+  - Dev: skips sidecar — backend is started separately with `go run ./cmd/server`
+  - Sidecar killed gracefully on `before-quit` and `window-all-closed`
+- **IPC handlers**: `window:minimize`, `window:maximize`, `window:close`, `window:is-maximized`
+- **React 18** renderer in `frontend/src/`
+  - Vite + TypeScript + `@vitejs/plugin-react`
+  - `ElectronAPI` type declared globally in `frontend/src/types/electron.d.ts`
+- **Tailwind CSS v4** via `@tailwindcss/vite` plugin
+  - EQ-themed dark color palette defined in `@theme` block: `background`, `surface`, `border`, `primary` (gold), `muted`, semantic colors
+  - Custom scrollbar, `user-select: none` base, `.drag-region` / `.no-drag` Electron drag utilities
+- **electron-builder** config in `electron-builder.yml`
+  - Mac: DMG (x64 + arm64); Windows: NSIS installer (x64)
+  - Go sidecar bundled via `extraResources` into `resources/bin/`
+  - GitHub Releases publish target (draft mode)
+- TypeScript project references: `tsconfig.main.json`, `tsconfig.preload.json`, `tsconfig.renderer.json`
+
+### Coming in Phase 2
+- **App Layout & Navigation** (Task 2.2): sidebar, React Router, dark chrome
+- **Item Explorer** (Task 2.3): search by name/slot/class/stat, full detail panel
+- **Spell Explorer** (Task 2.4): search by name/class/level, duration and resist type display
+- **NPC Explorer** (Task 2.5): search by name/zone, special ability parsing, loot table view
+- **Zone Explorer** (Task 2.6): browse zones, list resident NPCs
+- **Global Search** (Task 2.7): cross-database search via `Ctrl+K` / `Cmd+K`
 
 ## Phase 3 — Zeal Integration & Backup Manager
 - Parse Zeal inventory export files (on logout) to track carried items

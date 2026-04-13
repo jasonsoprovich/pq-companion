@@ -26,7 +26,12 @@ The backend now reads and writes a YAML config file at `~/.pq-companion/config.y
 
 ## What's Coming
 
-### Database Explorer (Next Up)
+### Electron + React Shell (Phase 2, Task 2.1) ✅
+The desktop app is scaffolded and running. The Electron main process manages the window lifecycle, forces dark mode at the OS level, and handles the Go backend sidecar — spawning it on launch in production and killing it cleanly on quit. A preload script exposes a typed, contextBridge-safe API to the renderer. The renderer is a React 18 + Vite + TypeScript app styled with Tailwind CSS v4, using an EQ-themed dark color palette (deep blacks, gold accents). electron-builder is configured for macOS DMG (x64 + arm64) and Windows NSIS installer, with the Go binary bundled as a sidecar in the app resources.
+
+In dev, run `go run ./cmd/server` in one terminal and `npm run dev` in another — Electron opens pointing at the Vite dev server with HMR.
+
+### Database Explorer (Up Next)
 Browse the entire EverQuest game database from your desktop, without opening a browser or maintaining a server connection.
 
 - **Item Explorer** — search every item by name, slot, class, or stat. Click any result for a full detail panel covering damage, delay, AC, resists, effects, and flags.

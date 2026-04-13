@@ -4,7 +4,7 @@ A desktop companion app for the [Project Quarm](https://www.projectquarm.com/) E
 
 Features: database explorer (items, spells, NPCs, zones), combat log parser, DPS meter, spell/buff/DoT timer overlays, NPC info overlay, spell checklist, config backup manager, and a custom trigger system.
 
-> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 complete: REST API, WebSocket server, and configuration system. Phase 2 (Electron + React frontend) next. See [ROADMAP.md](ROADMAP.md) for what's coming.
+> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 complete: REST API, WebSocket server, and configuration system. Phase 2 in progress: Electron + React shell is scaffolded and running; database explorer UIs next. See [ROADMAP.md](ROADMAP.md) for what's coming.
 
 ---
 
@@ -16,6 +16,31 @@ Features: database explorer (items, spells, NPCs, zones), combat log parser, DPS
 - [Go 1.22+](https://go.dev/) — backend
 - [Node.js 20+](https://nodejs.org/) — frontend + Electron
 - A MySQL client (optional) — [DBeaver](https://dbeaver.io/) or MySQL Workbench
+
+---
+
+## Running the App (Dev)
+
+Open two terminals:
+
+```bash
+# Terminal 1 — Go backend
+cd backend
+go run ./cmd/server
+
+# Terminal 2 — Electron + React frontend
+npm run dev   # from repo root
+```
+
+The Vite dev server starts on port 5173; Electron opens a window pointing to it. The Go backend is expected on port 8080.
+
+### Build
+
+```bash
+npm run build          # compile all three processes to out/
+npm run dist:mac       # package as macOS DMG
+npm run dist:win       # package as Windows NSIS installer (requires Wine on macOS)
+```
 
 ---
 

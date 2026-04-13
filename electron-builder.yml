@@ -1,0 +1,48 @@
+appId: com.jasonsoprovich.pq-companion
+productName: PQ Companion
+copyright: Copyright © 2026 jasonsoprovich
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - out/**/*
+  - "!out/**/*.map"
+
+# Go backend sidecar bundled into the app
+extraResources:
+  - from: backend/bin/pq-companion-server
+    to: bin/pq-companion-server
+    filter:
+      - "**/*"
+  - from: backend/bin/pq-companion-server.exe
+    to: bin/pq-companion-server.exe
+    filter:
+      - "**/*"
+
+mac:
+  category: public.app-category.utilities
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  icon: build/icon.icns
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+publish:
+  provider: github
+  owner: jasonsoprovich
+  repo: pq-companion
+  releaseType: draft
