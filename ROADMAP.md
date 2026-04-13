@@ -13,6 +13,9 @@ The database engine is complete. All 160+ EverQuest game data tables — items, 
 
 The Go database layer is also complete. The backend can query items, spells, NPCs, and zones by ID or name search, with pagination. NPC special ability strings (summon, mez-immune, uncharmable, etc.) are fully parsed into structured data, ready for the API and overlay features.
 
+### REST API (Phase 1, Task 1.1) ✅
+The Go HTTP API server is running. Items, spells, NPCs, and zones are all queryable via REST — search by name with pagination, or fetch any record directly by ID. Zones can also be looked up by their short name (e.g. `qeynos`, `crushbone`). The server is built on chi, uses structured logging, and returns clean JSON errors for 404s and bad input. Run it from `backend/` with `go run ./cmd/server`.
+
 ---
 
 ## What's Coming

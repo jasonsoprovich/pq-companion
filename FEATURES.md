@@ -15,7 +15,12 @@
   - All queries use parameterized statements; tested against real quarm.db
 
 ## Phase 1 — Go Backend API
-- REST API: items, spells, NPCs, zones with search and filtering
+- REST API: items, spells, NPCs, zones with search and filtering (`cmd/server`, `internal/api/`)
+  - `GET /api/items?q=&limit=&offset=` / `GET /api/items/{id}`
+  - `GET /api/spells?q=&limit=&offset=` / `GET /api/spells/{id}`
+  - `GET /api/npcs?q=&limit=&offset=` / `GET /api/npcs/{id}`
+  - `GET /api/zones?q=&limit=&offset=` / `GET /api/zones/{id}` / `GET /api/zones/short/{name}`
+  - chi router, structured logging, 404/400 error responses, max 100 results per page
 - WebSocket server for real-time event broadcasting to all connected clients
 - YAML configuration system (EQ install path, active character, preferences)
 

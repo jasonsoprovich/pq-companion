@@ -7,7 +7,7 @@
 - [x] Task 0.4 — Go Database Layer
 
 ## Phase 1 — Go Backend API
-- [ ] Task 1.1 — REST API
+- [x] Task 1.1 — REST API
 - [ ] Task 1.2 — WebSocket Server
 - [ ] Task 1.3 — Configuration System
 

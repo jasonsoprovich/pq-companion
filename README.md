@@ -4,7 +4,7 @@ A desktop companion app for the [Project Quarm](https://www.projectquarm.com/) E
 
 Features: database explorer (items, spells, NPCs, zones), combat log parser, DPS meter, spell/buff/DoT timer overlays, NPC info overlay, spell checklist, config backup manager, and a custom trigger system.
 
-> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 (REST API + WebSocket) is next. See [ROADMAP.md](ROADMAP.md) for what's coming.
+> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 in progress: REST API complete (Task 1.1), WebSocket + config system next. See [ROADMAP.md](ROADMAP.md) for what's coming.
 
 ---
 
@@ -131,6 +131,35 @@ fmt.Println(res.Total, res.Items[0].Name)
 abilities := db.ParseSpecialAbilities(npc.SpecialAbilities)
 // → [{Code:1 Value:1 Name:"Summon"}, {Code:18 Value:1 Name:"Unmezzable"}, ...]
 ```
+
+---
+
+## REST API Server
+
+Start the API server (defaults to `:8080`, reads `data/quarm.db`):
+
+```bash
+cd backend
+go run ./cmd/server
+# or with flags:
+go run ./cmd/server --addr :9000 --db /path/to/quarm.db
+```
+
+#### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/items?q=&limit=&offset=` | Search items by name |
+| `GET` | `/api/items/{id}` | Get item by ID |
+| `GET` | `/api/spells?q=&limit=&offset=` | Search spells by name |
+| `GET` | `/api/spells/{id}` | Get spell by ID |
+| `GET` | `/api/npcs?q=&limit=&offset=` | Search NPCs by name |
+| `GET` | `/api/npcs/{id}` | Get NPC by ID |
+| `GET` | `/api/zones?q=&limit=&offset=` | Search zones by long name |
+| `GET` | `/api/zones/{id}` | Get zone by ID |
+| `GET` | `/api/zones/short/{name}` | Get zone by short name |
+
+All search endpoints return `{"items": [...], "total": N}`. Max `limit` is 100.
 
 ---
 
