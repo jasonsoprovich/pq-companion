@@ -11,6 +11,8 @@ The database engine is complete. All 160+ EverQuest game data tables — items, 
 
 > ~1.1 million rows of game data, fully indexed and queryable in under 60 seconds of build time.
 
+The Go database layer is also complete. The backend can query items, spells, NPCs, and zones by ID or name search, with pagination. NPC special ability strings (summon, mez-immune, uncharmable, etc.) are fully parsed into structured data, ready for the API and overlay features.
+
 ---
 
 ## What's Coming

@@ -8,6 +8,11 @@
   - Handles all MySQL→SQLite type mapping, index conversion, and data migration
   - Converts ~1.1 million rows in under 60 seconds
 - Documented schema for all key tables (items, spells, NPCs, zones, loot, spawns)
+- Go database layer (`internal/db`): typed read-only access to quarm.db
+  - `Get` and `Search` functions for items, spells, NPCs, and zones
+  - Paginated search results with total count
+  - `ParseSpecialAbilities`: parses NPC caret-delimited special ability strings
+  - All queries use parameterized statements; tested against real quarm.db
 
 ## Phase 1 — Go Backend API
 - REST API: items, spells, NPCs, zones with search and filtering

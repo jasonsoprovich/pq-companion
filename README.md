@@ -4,7 +4,7 @@ A desktop companion app for the [Project Quarm](https://www.projectquarm.com/) E
 
 Features: database explorer (items, spells, NPCs, zones), combat log parser, DPS meter, spell/buff/DoT timer overlays, NPC info overlay, spell checklist, config backup manager, and a custom trigger system.
 
-> **Status:** Active development — Phase 0 (database foundation) complete. See [ROADMAP.md](ROADMAP.md) for what's coming.
+> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 (REST API + WebSocket) is next. See [ROADMAP.md](ROADMAP.md) for what's coming.
 
 ---
 
@@ -106,6 +106,30 @@ mysql -h127.0.0.1 -uroot -pquarmbuddy quarm
 ```bash
 docker compose down        # stop (data persists)
 docker compose down -v     # wipe and start fresh
+```
+
+---
+
+## Go Database Layer
+
+The `internal/db` package provides typed, read-only access to `quarm.db`:
+
+```go
+d, _ := db.Open("backend/data/quarm.db")
+
+// Look up by ID
+item, _ := d.GetItem(1001)
+spell, _ := d.GetSpell(1)
+npc, _   := d.GetNPC(42)
+zone, _  := d.GetZoneByShortName("qeynos")
+
+// Paginated name search
+res, _ := d.SearchItems("Sword", 20, 0)
+fmt.Println(res.Total, res.Items[0].Name)
+
+// Parse NPC special abilities
+abilities := db.ParseSpecialAbilities(npc.SpecialAbilities)
+// → [{Code:1 Value:1 Name:"Summon"}, {Code:18 Value:1 Name:"Unmezzable"}, ...]
 ```
 
 ---
