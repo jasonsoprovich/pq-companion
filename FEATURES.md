@@ -87,8 +87,23 @@
 - Root route (`/`) redirects to `/items`
 - `lucide-react` added as a dependency
 
+### Task 2.3 — Database Explorer: Items ✅
+- **`types/item.ts`** — TypeScript `Item` type mirroring Go backend struct; `SearchResult<T>` generic
+- **`services/api.ts`** — typed fetch client: `searchItems(q, limit, offset)`, `getItem(id)`
+- **`lib/itemHelpers.ts`** — EverQuest bitmask/label decoders:
+  - `slotsLabel` — decodes `slots` bitmask into slot names (Charm, Head, Primary, etc.)
+  - `classesLabel` — decodes `classes` bitmask into class names; "All" when all bits set
+  - `racesLabel` — decodes `races` bitmask into race names; "All" when all bits set
+  - `itemTypeLabel` — maps `item_type` int to weapon/armor/misc label
+  - `sizeLabel`, `weightLabel`, `priceLabel` (copper → pp/gp/sp/cp)
+- **`pages/ItemsPage.tsx`** — split-pane layout:
+  - **Left pane (288px)**: debounced search input, result count, scrollable list showing name + item type + req level; selected item highlighted with gold left-border accent
+  - **Detail panel (right)**: full item data in labeled sections — Combat (DMG/DLY/Range/AC), Stats (HP/Mana/STR/STA/AGI/DEX/WIS/INT/CHA), Resists (MR/CR/DR/FR/PR), Effects (Click/Proc/Worn/Focus), Restrictions (Req/Rec level, Slots, Classes, Races), Info (Weight, Size, Stack, Bag info, Price, Item ID)
+  - Flags rendered as pill badges: MAGIC, LORE, NO DROP, NO RENT
+  - Sections only rendered when they have non-zero values
+  - Initial load fetches all items (empty query); debounced at 300ms
+
 ### Coming in Phase 2
-- **Item Explorer** (Task 2.3): search by name/slot/class/stat, full detail panel
 - **Spell Explorer** (Task 2.4): search by name/class/level, duration and resist type display
 - **NPC Explorer** (Task 2.5): search by name/zone, special ability parsing, loot table view
 - **Zone Explorer** (Task 2.6): browse zones, list resident NPCs

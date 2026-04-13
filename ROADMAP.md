@@ -34,6 +34,9 @@ In dev, run `go run ./cmd/server` in one terminal and `npm run dev` in another �
 ### App Layout & Navigation (Phase 2, Task 2.2) ✅
 The app shell is fully wired. React Router runs inside a `HashRouter` (Electron-compatible). Every screen lives under a shared `Layout` component: a slim title bar at the top, a 192px sidebar on the left, and the main content area filling the rest. The title bar is a full-width drag region — on macOS it clears the native traffic-light buttons; on Windows and Linux it renders custom Minimize / Maximize / Close controls. The sidebar lists Items, Spells, NPCs, and Zones under a "Database" header, with Settings pinned at the bottom. Active routes are highlighted in EQ gold. All placeholder pages are in place, ready to be filled in by the Database Explorer tasks.
 
+### Item Explorer (Phase 2, Task 2.3) ✅
+Browse all ~70,000 EverQuest items from the database. Type in the search box and results update as you type — the left pane shows names filtered by name with item type and level requirement inline. Click any row for the full detail panel: combat stats (DMG/DLY, AC), all stat bonuses (HP/Mana/STR/STA/…), resist values, spell effects (click/proc/worn/focus), slot and class/race restrictions, weight, price in pp/gp/sp/cp, and item flags (MAGIC, LORE, NO DROP, NO RENT).
+
 ### Database Explorer (Up Next)
 Browse the entire EverQuest game database from your desktop, without opening a browser or maintaining a server connection.
 

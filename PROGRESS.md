@@ -14,7 +14,7 @@
 ## Phase 2 — Electron + React Frontend
 - [x] Task 2.1 — Electron + React Project Setup
 - [x] Task 2.2 — App Layout & Navigation
-- [ ] Task 2.3 — Database Explorer: Items
+- [x] Task 2.3 — Database Explorer: Items
 - [ ] Task 2.4 — Database Explorer: Spells
 - [ ] Task 2.5 — Database Explorer: NPCs
 - [ ] Task 2.6 — Database Explorer: Zones
