@@ -1,0 +1,61 @@
+# ── SQL dumps (large, not source code) ────────────────────────────────────────
+/sql/*.sql
+
+# ── Task docs (distilled into FEATURES.md) ────────────────────────────────────
+/docs/
+
+# ── Environment & secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+secrets.*
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.cer
+
+# ── SQLite databases (generated artifacts) ────────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ── Go ────────────────────────────────────────────────────────────────────────
+backend/bin/
+/bin/
+*.exe
+*.exe~
+
+# ── Node / frontend ───────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+
+# ── Electron build output ─────────────────────────────────────────────────────
+electron/dist/
+dist/
+release/
+out/
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.snap
+
+# ── OS files ──────────────────────────────────────────────────────────────────
+.DS_Store
+**/.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editor / IDE ──────────────────────────────────────────────────────────────
+.idea/
+*.iml
+.vscode/settings.json
+*.swp
+*.swo
+*~
