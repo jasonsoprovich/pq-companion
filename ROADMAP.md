@@ -31,6 +31,9 @@ The desktop app is scaffolded and running. The Electron main process manages the
 
 In dev, run `go run ./cmd/server` in one terminal and `npm run dev` in another — Electron opens pointing at the Vite dev server with HMR.
 
+### App Layout & Navigation (Phase 2, Task 2.2) ✅
+The app shell is fully wired. React Router runs inside a `HashRouter` (Electron-compatible). Every screen lives under a shared `Layout` component: a slim title bar at the top, a 192px sidebar on the left, and the main content area filling the rest. The title bar is a full-width drag region — on macOS it clears the native traffic-light buttons; on Windows and Linux it renders custom Minimize / Maximize / Close controls. The sidebar lists Items, Spells, NPCs, and Zones under a "Database" header, with Settings pinned at the bottom. Active routes are highlighted in EQ gold. All placeholder pages are in place, ready to be filled in by the Database Explorer tasks.
+
 ### Database Explorer (Up Next)
 Browse the entire EverQuest game database from your desktop, without opening a browser or maintaining a server connection.
 

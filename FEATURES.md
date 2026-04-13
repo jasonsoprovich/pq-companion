@@ -68,8 +68,26 @@
   - GitHub Releases publish target (draft mode)
 - TypeScript project references: `tsconfig.main.json`, `tsconfig.preload.json`, `tsconfig.renderer.json`
 
+### Task 2.2 — App Layout & Navigation ✅
+- **React Router v7** (`HashRouter`) wired up in `App.tsx` with nested routes under a shared `Layout`
+- **`Layout` component** (`components/Layout.tsx`): full-height flex column — TitleBar + Sidebar + `<Outlet />`
+- **`TitleBar` component** (`components/TitleBar.tsx`):
+  - Full-width drag region (`-webkit-app-region: drag`) with EQ gold app name centered
+  - macOS: 72px left inset to clear native traffic-light buttons; no custom controls
+  - Windows/Linux: custom Minimize / Maximize / Close buttons (lucide-react icons) with hover states; Close highlights red on hover
+  - Tracks maximized state via `window.electron.window.isMaximized()` IPC
+- **`Sidebar` component** (`components/Sidebar.tsx`):
+  - Fixed 192px width, surface background, border-right
+  - "Database" section label at top
+  - Nav links: Items (`Sword`), Spells (`Sparkles`), NPCs (`Skull`), Zones (`Map`) — all lucide-react icons
+  - Active link highlighted in gold; hover state for inactive links
+  - Settings link pinned at the bottom, separated by a border
+  - All interactive elements marked `.no-drag` so clicks are not eaten by the drag region
+- **Placeholder pages** (`pages/`): `ItemsPage`, `SpellsPage`, `NpcsPage`, `ZonesPage`, `SettingsPage` — each shows an icon + label + "coming in task X.X" note
+- Root route (`/`) redirects to `/items`
+- `lucide-react` added as a dependency
+
 ### Coming in Phase 2
-- **App Layout & Navigation** (Task 2.2): sidebar, React Router, dark chrome
 - **Item Explorer** (Task 2.3): search by name/slot/class/stat, full detail panel
 - **Spell Explorer** (Task 2.4): search by name/class/level, duration and resist type display
 - **NPC Explorer** (Task 2.5): search by name/zone, special ability parsing, loot table view

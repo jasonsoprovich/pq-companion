@@ -1,18 +1,25 @@
 import React from 'react'
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
+import Layout from './components/Layout'
+import ItemsPage from './pages/ItemsPage'
+import SpellsPage from './pages/SpellsPage'
+import NpcsPage from './pages/NpcsPage'
+import ZonesPage from './pages/ZonesPage'
+import SettingsPage from './pages/SettingsPage'
 
 export default function App(): React.ReactElement {
   return (
-    <div className="flex h-full items-center justify-center bg-(--color-background)">
-      <div className="text-center">
-        <h1 className="mb-1 text-3xl font-bold text-(--color-primary)">PQ Companion</h1>
-        <p className="text-sm text-(--color-muted-foreground)">
-          Project Quarm Desktop Companion
-        </p>
-        <p className="mt-6 text-xs text-(--color-muted)">
-          Electron {window.electron?.versions.electron} · Chrome{' '}
-          {window.electron?.versions.chrome}
-        </p>
-      </div>
-    </div>
+    <HashRouter>
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<Navigate to="/items" replace />} />
+          <Route path="items" element={<ItemsPage />} />
+          <Route path="spells" element={<SpellsPage />} />
+          <Route path="npcs" element={<NpcsPage />} />
+          <Route path="zones" element={<ZonesPage />} />
+          <Route path="settings" element={<SettingsPage />} />
+        </Route>
+      </Routes>
+    </HashRouter>
   )
 }

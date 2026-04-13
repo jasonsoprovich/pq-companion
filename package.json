@@ -16,7 +16,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json"
   },
   "dependencies": {
-    "electron-updater": "^6.3.0"
+    "electron-updater": "^6.3.0",
+    "lucide-react": "^1.8.0",
+    "react-router-dom": "^7.14.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",
