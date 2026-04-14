@@ -20,13 +20,13 @@
 - [x] Task 2.6 — Database Explorer: Zones
 - [x] Task 2.7 — Global Search
 
-## Phase 3 — Zeal Integration & Backup Manager
+## Phase 3 — Zeal Integration & Backup Manager ✅
 - [x] Task 3.1 — Zeal Export Reader
 - [x] Task 3.2 — Spell Checklist UI
-- [ ] Task 3.3 — Inventory Tracker (Multi-Character + Search)
-- [ ] Task 3.4 — Key Tracker
-- [ ] Task 3.5 — Config Backup Manager (Backend)
-- [ ] Task 3.6 — Config Backup Manager (UI)
+- [x] Task 3.3 — Inventory Tracker (Multi-Character + Search)
+- [x] Task 3.4 — Key Tracker
+- [x] Task 3.5 — Config Backup Manager (Backend)
+- [x] Task 3.6 — Config Backup Manager (UI)
 
 ## Phase 4 — Log Parsing & NPC Overlay
 - [ ] Task 4.1 — Log File Tailer
@@ -59,3 +59,7 @@
 - [ ] Task 9.2 — Auto-Updater
 - [ ] Task 9.3 — Hosted Web API (Optional)
 - [ ] Task 9.4 — Project Website
+
+## Phase 10 — Character Tools
+- [ ] Task 10.1 — Planes of Power Flag Tracker
+- [ ] Task 10.2 — Character Todo List

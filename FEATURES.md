@@ -291,3 +291,32 @@
 - Auto-updater: silent background updates via electron-updater + GitHub Releases
 - Optional hosted web API on Cloudflare Workers (same Go API, cloud DB)
 - Project website on Cloudflare Pages
+
+## Phase 10 — Character Tools
+
+### Task 10.1 — Planes of Power Flag Tracker
+_Planned_
+
+Manual per-character checklist for tracking Planes of Power progression flags. Players tick off flags as they earn them; data persists in user.db.
+
+Design notes:
+- Reference: https://takp.info/flag-check/index.html — use as the source of truth for flag names, groupings, and unlock order
+- Flag data is static (hardcoded in Go, similar to `internal/keys/keys.go`) since Zeal does not yet expose flag state
+- One checklist per character; characters identified by name (same source as Zeal exports)
+- Organized by plane/tier: Elemental Planes entry flags → God flags → Plane of Time prerequisites
+- Each flag entry: name, brief description of how it's obtained, checked/unchecked state
+- Backend: `GET /api/flags` (static definitions), `GET/PUT /api/flags/progress/{character}` (persisted checked state in user.db)
+- Frontend: character tabs, grouped flag sections, checkboxes, progress summary per tier
+- Future: wire to automatic detection if Zeal adds flag export support
+
+### Task 10.2 — Character Todo List
+_Planned_
+
+Simple per-character todo list for tracking arbitrary in-game goals. Keeps it minimal by design; complexity added only based on user feedback.
+
+Design notes:
+- Each todo item: ID, character name, text (free-form string), checked bool, created_at timestamp
+- Items stored in user.db (`todo_items` table)
+- Backend: `GET /api/todos/{character}`, `POST /api/todos/{character}`, `PATCH /api/todos/{character}/{id}` (toggle checked), `DELETE /api/todos/{character}/{id}`
+- Frontend: character selector (populated from known Zeal export characters), text input + Add button, list of items with checkboxes, delete button per item, optional "hide completed" toggle
+- No categories, priorities, or due dates for v1 — just text + checkbox

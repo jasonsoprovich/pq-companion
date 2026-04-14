@@ -4,7 +4,7 @@ A desktop companion app for the [Project Quarm](https://www.projectquarm.com/) E
 
 Features: database explorer (items, spells, NPCs, zones), combat log parser, DPS meter, spell/buff/DoT timer overlays, NPC info overlay, spell checklist, config backup manager, and a custom trigger system.
 
-> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 complete: REST API, WebSocket server, and configuration system. Phase 2 complete: Electron + React shell, app layout and navigation, Item/Spell/NPC/Zone explorers, and Global Search (`Cmd+K` / `Ctrl+K`) all live. Phase 3 in progress: Zeal Export Reader (Task 3.1) and Spell Checklist UI (Task 3.2) complete. See [ROADMAP.md](ROADMAP.md) for what's coming.
+> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 complete: REST API, WebSocket server, and configuration system. Phase 2 complete: Electron + React shell, app layout and navigation, Item/Spell/NPC/Zone explorers, and Global Search. Phase 3 complete: Zeal Export Reader, Spell Checklist, Inventory Tracker, Key Tracker, and Config Backup Manager. Now entering Phase 4 — log parsing and NPC info overlay. See [ROADMAP.md](ROADMAP.md) for what's coming.
 
 ---
 
@@ -178,17 +178,26 @@ go run ./cmd/server --addr :9000 --db /path/to/quarm.db
 | `GET` | `/api/items/{id}` | Get item by ID |
 | `GET` | `/api/spells?q=&limit=&offset=` | Search spells by name |
 | `GET` | `/api/spells/{id}` | Get spell by ID |
+| `GET` | `/api/spells/class/{classIndex}` | All spells for a class (0=WAR … 14=BST), ordered by required level |
 | `GET` | `/api/npcs?q=&limit=&offset=` | Search NPCs by name |
 | `GET` | `/api/npcs/{id}` | Get NPC by ID |
 | `GET` | `/api/zones?q=&limit=&offset=` | Search zones by long name |
 | `GET` | `/api/zones/{id}` | Get zone by ID |
 | `GET` | `/api/zones/short/{name}` | Get zone by short name |
+| `GET` | `/api/zones/short/{name}/npcs` | Paginated NPC residents for a zone |
 | `GET` | `/api/search?q=&limit=` | Global search across items, spells, NPCs, and zones |
 | `GET` | `/api/config` | Get current configuration |
 | `PUT` | `/api/config` | Update and persist configuration |
-| `GET` | `/api/zeal/inventory` | Current Zeal inventory export (null if not yet available) |
-| `GET` | `/api/zeal/spells` | Current Zeal spellbook export (null if not yet available) |
-| `GET` | `/api/spells/class/{classIndex}` | All spells for a class (0=WAR … 14=BST), ordered by required level |
+| `GET` | `/api/zeal/inventory` | Active character's Zeal inventory export (null if not yet available) |
+| `GET` | `/api/zeal/spells` | Active character's Zeal spellbook export (null if not yet available) |
+| `GET` | `/api/zeal/all-inventories` | All characters' inventories + shared bank (scanned on demand) |
+| `GET` | `/api/keys` | All key definitions (static) |
+| `GET` | `/api/keys/progress` | Key component progress cross-referenced against all character inventories |
+| `GET` | `/api/backups` | List all config backups, newest first |
+| `POST` | `/api/backups` | Create a new backup of all `*.ini` files in `eq_path` |
+| `GET` | `/api/backups/{id}` | Get a single backup record |
+| `DELETE` | `/api/backups/{id}` | Delete a backup (zip + record) |
+| `POST` | `/api/backups/{id}/restore` | Restore a backup to `eq_path` |
 
 All search endpoints return `{"items": [...], "total": N}`. Max `limit` is 100.
 

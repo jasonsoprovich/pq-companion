@@ -52,19 +52,19 @@ Hit `Cmd+K` (macOS) or `Ctrl+K` (Windows/Linux) from anywhere in the app to open
 ### Zeal Export Reader (Phase 3, Task 3.1) ✅
 The app now reads Zeal's inventory and spellbook exports automatically. When you log out of EverQuest with Zeal installed, it writes your inventory to `<CharName>_pq.proj-Inventory.txt` and your spellbook to `<CharName>_pq.proj-Spells.txt` in the EQ directory. The backend watches those files and re-parses them within 5 seconds of any change, broadcasting updates to all connected clients via WebSocket.
 
-The **Inventory** page (accessible from the Zeal section in the sidebar) shows all carried items organized by equipment slot and bag — with the bag name shown in the section header. Click the lookup icon on any item to jump directly to its entry in the Item Explorer. If your EQ path or character name aren't configured yet, the page shows setup instructions.
-
 ### Spell Checklist (Phase 3, Task 3.2) ✅
-The **Spell Checklist** page (Zeal section in the sidebar) shows every spell your class can learn, cross-referenced against your Zeal spellbook export. Pick your class from the dropdown — Warrior through Beastlord — and see spells listed in level order with a gold checkmark for spells already in your spellbook and an empty circle for spells you don't have yet. Filter to **Known** or **Missing** to focus on what matters. Click any spell to jump to its full detail in the Spell Explorer. Your class selection is remembered between sessions. If no spellbook export is found yet, the checklist still shows all spells for your class with a warning banner.
+The **Spell Checklist** page (Zeal section in the sidebar) shows every spell your class can learn, cross-referenced against your Zeal spellbook export. Pick your class from the dropdown — Warrior through Beastlord — and see spells listed in level order with a gold checkmark for spells already in your spellbook and an empty circle for spells you don't have yet. Filter to **Known** or **Missing** to focus on what matters. Click any spell to jump to its full detail in the Spell Explorer. Your class selection is remembered between sessions.
 
-### Zeal Integration & Config Backup Manager
-For players using [Zeal](https://github.com/iamclint/Zeal), the app will automatically read your inventory and spellbook exports on logout, letting you:
+### Inventory Tracker (Phase 3, Task 3.3) ✅
+The **Inventory Tracker** page shows every item across all of your characters at once. Zeal exports are scanned from the EQ directory automatically — one tab per character, plus an **All** view. Search by item name to find anything across all bags and bank slots. Items are grouped by Equipped, Bags, Bank, and Shared Bank (shared across all characters). In the All view, a character badge appears on each item row so you always know who has what. Click the lookup icon on any row to jump to the Item Explorer.
 
-- See your full inventory from outside the game.
-- Track which spells your class can learn vs. which ones you already have — the spell checklist.
-- Automatically back up your EQ config files (`.ini`, keymaps, UI layouts) every time they change, with a full version history you can restore from instantly.
+### Key Tracker (Phase 3, Task 3.4) ✅
+The **Key Tracker** page cross-references your characters' inventories against the item components required for the major Planes of Power keying quests. Six keys are currently tracked: Veeshan's Peak, Old Sebilis, Howling Stones (Charasis), Grieg's End, Grimling Forest Shackle Pens, and Katta Castellum. Expand any key card to see a component table — one column per character — with green checkmarks for items in inventory, a gold **SB** badge if the item is in the Shared Bank, and empty circles for missing pieces. Filter by All / In Progress / Complete.
 
-### Log Parser & NPC Info Overlay
+### Config Backup Manager (Phase 3, Tasks 3.5–3.6) ✅
+The **Config Backup Manager** (Zeal section in the sidebar) lets you snapshot and restore all of your EverQuest `.ini` configuration files — `eqclient.ini`, per-character UI settings, hotkey files, and anything else in your EQ directory with a `.ini` extension. Create a named backup in one click; every backup shows its file count, size, and creation timestamp. Restore any backup with a single click and an inline confirmation to prevent accidents. Backups are stored as zip archives in `~/.pq-companion/backups/` and their metadata is kept in `user.db`. Phase 3 is now complete.
+
+### Log Parser & NPC Info Overlay (Phase 4)
 The app will watch your EQ log file in real time and parse every combat, spell, zone, and chat event as it happens. The first overlay built on this will be an **NPC Info** window — a small transparent panel that appears over the game showing your current target's stats, immunities, and special abilities pulled from the database the moment you click on them.
 
 ### DPS Meter
@@ -79,7 +79,13 @@ Configurable sound and text-to-speech alerts tied to any timer or game event. He
 ### Custom Trigger System
 A full GINA-style trigger engine, built from scratch for Project Quarm. Write regex patterns against the log, fire any combination of sound, TTS, and on-screen text. Import and export trigger packs. Ships with a pre-built pack for enchanters and common group scenarios.
 
-### Windows Build & Auto-Updater
+### Planes of Power Flag Tracker (Phase 10, Task 10.1)
+A per-character checklist for tracking Planes of Power progression flags — the access requirements for end-game zones like Plane of Time. Each character gets its own flag sheet organized by plane, with checkboxes you can tick off manually as you earn them. Designed to be filled in by hand for now (Zeal does not yet expose flag state data), but built in a way that can be wired to automatic detection later if that support is added. Think of it as a living copy of your PoP flag sheet — one tab per character, easy to scan at a glance.
+
+### Character Todo List (Phase 10, Task 10.2)
+A simple, per-character task list so you can track anything you want to get done on each of your characters — quests to complete, items to farm, skills to max, people to meet. Add a task, check it off when done, delete it when you're finished. No categories, no due dates, no complexity — just a scratch pad that lives next to your character data and persists between sessions. Kept simple intentionally; additional structure can be added based on feedback once people start using it.
+
+### Windows Build & Auto-Updater (Phase 9)
 One-click installer for Windows, distributed via GitHub Releases. Silent background updates so you're always on the latest version without thinking about it.
 
 ---
