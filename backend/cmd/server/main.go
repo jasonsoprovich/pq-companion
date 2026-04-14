@@ -13,6 +13,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
@@ -55,7 +56,15 @@ func main() {
 	}
 	defer backupMgr.Close()
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr)
+	// Log tailer: reads new lines from the EQ log file and dispatches parsed
+	// events. Task 4.2 will wire the handler to hub.Broadcast; for now events
+	// are logged at debug level so the tailer is exercised without noise.
+	tailer := logparser.NewTailer(cfgMgr, func(ev logparser.LogEvent) {
+		slog.Debug("log event", "type", ev.Type, "msg", ev.Message)
+	})
+	go tailer.Start(context.Background())
+
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer)
 
 	slog.Info("server starting", "addr", listenAddr, "db", *dbPath)
 	if err := http.ListenAndServe(listenAddr, router); err != nil {

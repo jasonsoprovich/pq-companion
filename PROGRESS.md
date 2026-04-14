@@ -29,7 +29,7 @@
 - [x] Task 3.6 — Config Backup Manager (UI)
 
 ## Phase 4 — Log Parsing & NPC Overlay
-- [ ] Task 4.1 — Log File Tailer
+- [x] Task 4.1 — Log File Tailer
 - [ ] Task 4.2 — Event Broadcasting via WebSocket
 - [ ] Task 4.3 — NPC Info Overlay (Backend)
 - [ ] Task 4.4 — NPC Info Overlay (Frontend)

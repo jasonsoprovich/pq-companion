@@ -256,10 +256,46 @@
 - **`App.tsx`**: `/backup-manager` route wired up
 
 ## Phase 4 — Log Parsing & NPC Info Overlay
-- Real-time EQ log file tailer (reads new lines as they appear)
-- Combat, spell, zone, and chat event parsing from log format
-- Event broadcast to all WebSocket clients
-- NPC info overlay: transparent always-on-top window showing current target's stats and special abilities
+
+### Task 4.1 — Log File Tailer ✅
+- **`internal/logparser/` package** — real-time EQ log file tailer and event parser:
+  - `models.go` — typed `LogEvent` struct with `EventType` constants: `log:zone`, `log:combat_hit`, `log:combat_miss`, `log:spell_cast`, `log:spell_interrupt`, `log:spell_resist`, `log:spell_fade`, `log:death`; per-type data structs (`ZoneData`, `CombatHitData`, `CombatMissData`, `SpellCastData`, `SpellInterruptData`, `SpellResistData`, `SpellFadeData`, `DeathData`)
+  - `parser.go` — `ParseLine(line string) (LogEvent, bool)` regex-based classifier:
+    - Timestamp: `[Mon Jan _2 15:04:05 2006]` layout; handles space-padded single-digit days (ctime format)
+    - Zone change: `"You have entered <ZoneName>."`
+    - Spell begin casting: `"You begin casting <SpellName>."`
+    - Spell interrupted: generic `"Your spell is interrupted."` and named `"Your <SpellName> spell is interrupted."`
+    - Spell resist: `"Your target resisted the <SpellName> spell."`
+    - Spell fade: `"Your <SpellName> spell has worn off."`
+    - Combat hit (player→NPC): `"You <verb> <target> for <N> points of damage."` — extracts actor, verb, target, damage
+    - Combat hit (NPC→player): `"<Actor> <verb>s you for <N> points of damage."` — extracts actor, conjugated verb, damage
+    - Combat miss (player→NPC): `"You try to <verb> <target>, but miss!"`
+    - Combat miss (NPC→player): `"<Actor> tries to <verb> you, but misses!"`
+    - Player defense (dodge/parry/riposte/block): `"You <type> <actor>'s attack!"`
+    - Death: `"You have been slain by <SlainBy>."`
+    - Unrecognised lines return `(zero, false)` — not emitted
+  - `tailer.go` — `Tailer` struct; polls the log file every 250ms:
+    - File path: `<EQ_DIR>/Logs/eqlog_<CharName>_pq.proj.txt`
+    - Seeks to end of file on first open (no historical replay)
+    - Reads newly-appended bytes via `ReadAt` from tracked offset; handles partial lines across polls with a remainder buffer
+    - Reacts to config changes: when `eq_path` or `character` changes, closes old handle and re-aims at the new path
+    - Respects `preferences.parse_combat_log` config flag (stops polling when disabled)
+    - Max 1 MiB read per tick to prevent blocking on large catch-up
+    - Handles file truncation (re-seeks to 0) and missing file (skips silently until it appears)
+    - Events dispatched to a caller-supplied `handler func(LogEvent)` outside the mutex
+    - `Status()` returns `{enabled, file_path, file_exists, tailing, offset}` snapshot
+  - `parser_test.go` — 28 table-driven tests covering all event types, both timestamp padding styles, unrecognised messages, and edge cases
+- **`GET /api/log/status`** — returns the current tailer state: enabled, file path, file_exists, tailing, current offset
+- **`cmd/server/main.go`** — tailer created and started at boot; handler logs events at debug level (Task 4.2 will wire it to `hub.Broadcast`)
+
+### Task 4.2 — Event Broadcasting via WebSocket
+_Planned_
+
+### Task 4.3 — NPC Info Overlay (Backend)
+_Planned_
+
+### Task 4.4 — NPC Info Overlay (Frontend)
+_Planned_
 
 ## Phase 5 — Combat Tracking & DPS Meter
 - Per-entity damage tracking (you, pet, group members, NPCs)
