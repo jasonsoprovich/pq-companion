@@ -40,6 +40,9 @@ Browse all ~70,000 EverQuest items from the database. Type in the search box and
 ### Spell Explorer (Phase 2, Task 2.4) ✅
 Browse all EverQuest spells from the database. Search by name — results show the castable classes with their required levels and mana cost. Click any spell for the full detail panel: mana cost and cast/recast/recovery times, duration (tick-accurate, distinguishes fixed vs. level-scaling), target type, resist type, range and AoE range, every class that can cast it (with required level), active effect slots with base values, and flavor text (cast messages, fade messages). Discipline, suspendable, and no-dispell flags rendered as badge pills.
 
+### NPC Explorer (Phase 2, Task 2.5) ✅
+Browse every NPC in the Project Quarm database. Search by name — results show level and class. Click any NPC for the full detail panel: HP, mana, damage range, attack count and AC; STR/STA/DEX/AGI/INT/WIS/CHA attributes; Magic/Cold/Disease/Fire/Poison resists; special abilities parsed from the raw caret-delimited string and displayed as pill badges (Summon, Enrage, Rampage, Flurry, Unmezzable, Uncharmable, Unfearable, Immune to Slow, and more); behavior stats (aggro radius, run speed, size); and linked IDs (loot table, merchant, spells, faction). RAID TARGET and RARE SPAWN flags shown as badges.
+
 ### Database Explorer (Up Next)
 Browse the entire EverQuest game database from your desktop, without opening a browser or maintaining a server connection.
 

@@ -1,4 +1,5 @@
 import type { Item, SearchResult } from '../types/item'
+import type { NPC } from '../types/npc'
 import type { Spell } from '../types/spell'
 
 const BASE_URL = 'http://localhost:8080'
@@ -40,4 +41,19 @@ export function searchSpells(
 
 export function getSpell(id: number): Promise<Spell> {
   return get<Spell>(`/api/spells/${id}`)
+}
+
+// ── NPCs ───────────────────────────────────────────────────────────────────────
+
+export function searchNPCs(
+  q: string,
+  limit = 50,
+  offset = 0,
+): Promise<SearchResult<NPC>> {
+  const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) })
+  return get<SearchResult<NPC>>(`/api/npcs?${params}`)
+}
+
+export function getNPC(id: number): Promise<NPC> {
+  return get<NPC>(`/api/npcs/${id}`)
 }

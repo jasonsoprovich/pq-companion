@@ -16,7 +16,7 @@
 - [x] Task 2.2 — App Layout & Navigation
 - [x] Task 2.3 — Database Explorer: Items
 - [x] Task 2.4 — Database Explorer: Spells
-- [ ] Task 2.5 — Database Explorer: NPCs
+- [x] Task 2.5 — Database Explorer: NPCs
 - [ ] Task 2.6 — Database Explorer: Zones
 - [ ] Task 2.7 — Global Search
 
