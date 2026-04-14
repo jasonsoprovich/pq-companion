@@ -3,6 +3,13 @@ import type { NPC } from '../types/npc'
 import type { Spell } from '../types/spell'
 import type { Zone } from '../types/zone'
 
+export interface GlobalSearchResult {
+  items: Item[]
+  spells: Spell[]
+  npcs: NPC[]
+  zones: Zone[]
+}
+
 const BASE_URL = 'http://localhost:8080'
 
 async function get<T>(path: string): Promise<T> {
@@ -72,6 +79,13 @@ export function searchZones(
 
 export function getZone(id: number): Promise<Zone> {
   return get<Zone>(`/api/zones/${id}`)
+}
+
+// ── Global Search ──────────────────────────────────────────────────────────────
+
+export function globalSearch(q: string, limit = 5): Promise<GlobalSearchResult> {
+  const params = new URLSearchParams({ q, limit: String(limit) })
+  return get<GlobalSearchResult>(`/api/search?${params}`)
 }
 
 export function getNPCsByZone(

@@ -18,7 +18,7 @@
 - [x] Task 2.4 — Database Explorer: Spells
 - [x] Task 2.5 — Database Explorer: NPCs
 - [x] Task 2.6 — Database Explorer: Zones
-- [ ] Task 2.7 — Global Search
+- [x] Task 2.7 — Global Search
 
 ## Phase 3 — Zeal Integration & Backup Manager
 - [ ] Task 3.1 — Zeal Export Reader

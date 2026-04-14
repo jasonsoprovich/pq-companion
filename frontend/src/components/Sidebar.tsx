@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
-import { Sword, Sparkles, Skull, Map, Settings } from 'lucide-react'
+import { Sword, Sparkles, Skull, Map, Settings, Search } from 'lucide-react'
 
 interface NavItem {
   to: string
@@ -43,8 +43,30 @@ export default function Sidebar(): React.ReactElement {
         borderColor: 'var(--color-border)',
       }}
     >
+      {/* Global search hint */}
+      <div className="no-drag px-2 pb-1 pt-3">
+        <div
+          className="flex items-center justify-between rounded px-3 py-1.5"
+          style={{
+            backgroundColor: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <Search size={12} style={{ color: 'var(--color-muted)' }} />
+            <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>Search</span>
+          </div>
+          <kbd
+            className="text-[10px]"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            ⌘K
+          </kbd>
+        </div>
+      </div>
+
       {/* Section header */}
-      <div className="px-4 pb-1 pt-4">
+      <div className="px-4 pb-1 pt-3">
         <span
           className="text-[10px] font-semibold uppercase tracking-widest"
           style={{ color: 'var(--color-muted)' }}

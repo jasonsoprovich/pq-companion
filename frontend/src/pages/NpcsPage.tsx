@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search, X } from 'lucide-react'
-import { searchNPCs } from '../services/api'
+import { searchNPCs, getNPC } from '../services/api'
 import type { NPC } from '../types/npc'
 import {
   bodyTypeName,
@@ -327,6 +328,16 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
 
 export default function NpcsPage(): React.ReactElement {
   const [selected, setSelected] = useState<NPC | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  useEffect(() => {
+    const id = Number(searchParams.get('select'))
+    if (!id) return
+    getNPC(id)
+      .then(setSelected)
+      .catch(() => {/* ignore */})
+      .finally(() => setSearchParams({}, { replace: true }))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>

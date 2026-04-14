@@ -35,9 +35,11 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager) http.Handle
 	npcs := &npcsHandler{db: database}
 	zones := &zonesHandler{db: database}
 	cfg := &configHandler{mgr: cfgMgr}
+	search := &searchHandler{db: database}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
+		r.Get("/search", search.global)
 		r.Route("/items", func(r chi.Router) {
 			r.Get("/", items.search)
 			r.Get("/{id}", items.get)

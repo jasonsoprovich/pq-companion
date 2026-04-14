@@ -46,14 +46,8 @@ Browse every NPC in the Project Quarm database. Search by name — results show 
 ### Zone Explorer (Phase 2, Task 2.6) ✅
 Browse all ~300 EverQuest zones. Search by name — results show the zone's short name and minimum level. Click any zone for its detail panel: zone ID, min level, safe spawn coordinates, and the full resident NPC list. NPCs are loaded on demand by walking the spawn chain (`spawn2 → spawnentry → npc_types`, plus direct solo-spawn entries), deduplicated, and sorted by name. Each NPC row shows display name, class, level, and HP.
 
-### Database Explorer (Up Next)
-Browse the entire EverQuest game database from your desktop, without opening a browser or maintaining a server connection.
-
-- **Item Explorer** — search every item by name, slot, class, or stat. Click any result for a full detail panel covering damage, delay, AC, resists, effects, and flags.
-- **Spell Explorer** — look up any spell by name, class, or level. See duration, mana cost, resist type, and full effect descriptions.
-- **NPC Explorer** — find any NPC by name or zone. See HP, level range, special abilities (summons, mez-immune, uncharmable), and what they drop.
-- **Zone Explorer** — browse all zones, see their residents and spawn points on a clean layout.
-- **Global Search** — hit `Cmd+K` / `Ctrl+K` from anywhere in the app to search items, spells, and NPCs simultaneously.
+### Global Search (Phase 2, Task 2.7) ✅
+Hit `Cmd+K` (macOS) or `Ctrl+K` (Windows/Linux) from anywhere in the app to open the Global Search palette. Type any name and get results from all four databases simultaneously — items, spells, NPCs, and zones — in a single grouped list. Arrow-key navigation, Enter to jump to the result's explorer page with the detail panel pre-populated, Escape to dismiss. A `⌘K` shortcut hint is shown in the sidebar for discoverability. Phase 2 is now complete.
 
 ### Zeal Integration & Config Backup Manager
 For players using [Zeal](https://github.com/iamclint/Zeal), the app will automatically read your inventory and spellbook exports on logout, letting you:

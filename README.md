@@ -4,7 +4,7 @@ A desktop companion app for the [Project Quarm](https://www.projectquarm.com/) E
 
 Features: database explorer (items, spells, NPCs, zones), combat log parser, DPS meter, spell/buff/DoT timer overlays, NPC info overlay, spell checklist, config backup manager, and a custom trigger system.
 
-> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 complete: REST API, WebSocket server, and configuration system. Phase 2 in progress: Electron + React shell scaffolded, app layout and navigation complete, Item/Spell/NPC/Zone explorers live; Global Search next. See [ROADMAP.md](ROADMAP.md) for what's coming.
+> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 complete: REST API, WebSocket server, and configuration system. Phase 2 complete: Electron + React shell, app layout and navigation, Item/Spell/NPC/Zone explorers, and Global Search (`Cmd+K` / `Ctrl+K`) all live. Phase 3 next. See [ROADMAP.md](ROADMAP.md) for what's coming.
 
 ---
 
@@ -183,6 +183,7 @@ go run ./cmd/server --addr :9000 --db /path/to/quarm.db
 | `GET` | `/api/zones?q=&limit=&offset=` | Search zones by long name |
 | `GET` | `/api/zones/{id}` | Get zone by ID |
 | `GET` | `/api/zones/short/{name}` | Get zone by short name |
+| `GET` | `/api/search?q=&limit=` | Global search across items, spells, NPCs, and zones |
 | `GET` | `/api/config` | Get current configuration |
 | `PUT` | `/api/config` | Update and persist configuration |
 

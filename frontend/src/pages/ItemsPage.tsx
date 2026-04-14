@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search, X } from 'lucide-react'
-import { searchItems } from '../services/api'
+import { searchItems, getItem } from '../services/api'
 import type { Item } from '../types/item'
 import {
   classesLabel,
@@ -340,6 +341,16 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
 
 export default function ItemsPage(): React.ReactElement {
   const [selected, setSelected] = useState<Item | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  useEffect(() => {
+    const id = Number(searchParams.get('select'))
+    if (!id) return
+    getItem(id)
+      .then(setSelected)
+      .catch(() => {/* ignore */})
+      .finally(() => setSearchParams({}, { replace: true }))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>

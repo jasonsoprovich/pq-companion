@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search, X } from 'lucide-react'
-import { searchSpells } from '../services/api'
+import { searchSpells, getSpell } from '../services/api'
 import type { Spell } from '../types/spell'
 import {
   castableClasses,
@@ -337,6 +338,16 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
 
 export default function SpellsPage(): React.ReactElement {
   const [selected, setSelected] = useState<Spell | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  useEffect(() => {
+    const id = Number(searchParams.get('select'))
+    if (!id) return
+    getSpell(id)
+      .then(setSelected)
+      .catch(() => {/* ignore */})
+      .finally(() => setSearchParams({}, { replace: true }))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>

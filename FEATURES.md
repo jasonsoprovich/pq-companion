@@ -146,8 +146,16 @@
   - **Detail panel (right)**: two sections — Zone Info (Zone ID, min level, safe coordinates, note) and Residents (NPC list loaded on zone selection)
   - **NPC Resident list**: scrollable list showing NPC display name, class, level, and HP; fetched per-zone on demand; shows "Showing X of Y" when truncated; graceful empty-state for zones with no spawn data
 
-### Coming in Phase 2
-- **Global Search** (Task 2.7): cross-database search via `Ctrl+K` / `Cmd+K`
+### Task 2.7 — Global Search ✅
+- **`GET /api/search?q=&limit=`** — new backend endpoint; runs all four searches (items, spells, NPCs, zones) in parallel via goroutines and returns a single grouped response (`internal/api/search.go`)
+- **`GlobalSearch` component** (`components/GlobalSearch.tsx`): full-screen modal overlay triggered by `Cmd+K` / `Ctrl+K` from anywhere in the app
+  - Debounced search input (300ms); shows spinner while loading
+  - Results grouped by category (Items, Spells, NPCs, Zones) with section headers and type icons
+  - Each result shows name + contextual subtitle (item type/level, castable classes, NPC level/class, zone short name)
+  - Keyboard navigation: `↑`/`↓` to move, `↵` to open, `Esc` to close; click outside to dismiss
+  - Navigates to the correct explorer page (`/items`, `/spells`, `/npcs`, `/zones`) with `?select=ID` query param
+- **Sidebar search hint** (`components/Sidebar.tsx`): `⌘K` shortcut pill shown above the nav links for discoverability
+- **Pre-select via URL** (`?select=ID`): all four explorer pages now read the `select` query param on mount, fetch the record by ID, and pre-populate the detail panel; param is cleared from the URL after selection
 
 ## Phase 3 — Zeal Integration & Backup Manager
 - Parse Zeal inventory export files (on logout) to track carried items

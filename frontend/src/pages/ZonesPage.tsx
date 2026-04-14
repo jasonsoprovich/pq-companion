@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search, X } from 'lucide-react'
-import { getNPCsByZone, searchZones } from '../services/api'
+import { getNPCsByZone, getZone, searchZones } from '../services/api'
 import type { NPC } from '../types/npc'
 import type { Zone } from '../types/zone'
 import { className, npcDisplayName } from '../lib/npcHelpers'
@@ -328,6 +329,16 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
 
 export default function ZonesPage(): React.ReactElement {
   const [selected, setSelected] = useState<Zone | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  useEffect(() => {
+    const id = Number(searchParams.get('select'))
+    if (!id) return
+    getZone(id)
+      .then(setSelected)
+      .catch(() => {/* ignore */})
+      .finally(() => setSearchParams({}, { replace: true }))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>
