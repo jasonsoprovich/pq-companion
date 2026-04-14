@@ -239,8 +239,21 @@
 - **CORS** updated to allow `POST` and `DELETE` methods (previously `GET, PUT` only)
 - **Tests** (`internal/backup/backup_test.go`): 10 table-driven tests covering store open/migrate idempotency, CRUD, newest-first ordering, manager create/list, create with no eq_path, create with no ini files, delete, delete-not-found, restore, restore-not-found
 
-### Task 3.6 — Config Backup Manager (UI)
-_Planned_
+### Task 3.6 — Config Backup Manager (UI) ✅
+- **`types/backup.ts`** — `Backup{id, name, notes, created_at, size_bytes, file_count}` and `BackupsResponse`
+- **`services/api.ts`** — added `post<T>` and `del` fetch helpers; `listBackups`, `createBackup(name, notes)`, `deleteBackup(id)`, `restoreBackup(id)`
+- **`pages/BackupManagerPage.tsx`** — full backup manager UI at `/backup-manager`:
+  - **Header bar**: "Config Backup Manager" title (HardDrive icon), Refresh button, "New Backup" toggle button (gold when creating)
+  - **Info banner**: explains what gets backed up (`*.ini` files) and where backups are stored
+  - **Create form** (inline, toggled): name input (required, auto-focused), notes input (optional), Create Backup / Cancel buttons; loading state with spinner; error display
+  - **Backup cards**: archive icon, name, truncated notes, formatted date/time, file count badge, size (B/KB/MB), Restore + Delete action buttons
+  - **Inline delete confirmation**: "Delete this backup permanently?" with Delete/Cancel — avoids accidental deletion
+  - **Inline restore confirmation**: "Overwrite current EQ config files with this backup?" with Restore/Cancel
+  - **Restored feedback**: card border turns green + "Restored" checkmark for 3 seconds after successful restore
+  - **Empty state**: archive icon + "No backups yet" + "Create your first backup" button + Settings link
+  - **Error states**: per-card error display for failed delete/restore operations; full-page error with Retry for load failure
+- **Sidebar**: "Backup Manager" added to the Zeal nav section with `HardDrive` icon
+- **`App.tsx`**: `/backup-manager` route wired up
 
 ## Phase 4 — Log Parsing & NPC Info Overlay
 - Real-time EQ log file tailer (reads new lines as they appear)

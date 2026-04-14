@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
-import { Sword, Sparkles, Skull, Map, Settings, Search, Package, BookOpen, KeyRound } from 'lucide-react'
+import { Sword, Sparkles, Skull, Map, Settings, Search, Package, BookOpen, KeyRound, HardDrive } from 'lucide-react'
 
 interface NavItem {
   to: string
@@ -19,6 +19,7 @@ const ZEAL_NAV: NavItem[] = [
   { to: '/inventory-tracker', label: 'Inventory Tracker', icon: <Package size={16} /> },
   { to: '/spell-checklist', label: 'Spell Checklist', icon: <BookOpen size={16} /> },
   { to: '/key-tracker', label: 'Key Tracker', icon: <KeyRound size={16} /> },
+  { to: '/backup-manager', label: 'Backup Manager', icon: <HardDrive size={16} /> },
 ]
 
 function SidebarLink({ to, label, icon }: NavItem): React.ReactElement {

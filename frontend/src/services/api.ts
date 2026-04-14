@@ -4,6 +4,7 @@ import type { Spell } from '../types/spell'
 import type { Zone } from '../types/zone'
 import type { ZealInventoryResponse, ZealSpellbookResponse, AllInventoriesResponse } from '../types/zeal'
 import type { KeysResponse, KeysProgressResponse } from '../types/keys'
+import type { Backup, BackupsResponse } from '../types/backup'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -21,6 +22,28 @@ async function get<T>(path: string): Promise<T> {
     throw new Error(err.error ?? res.statusText)
   }
   return res.json() as Promise<T>
+}
+
+async function post<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error ?? res.statusText)
+  }
+  if (res.status === 204) return undefined as T
+  return res.json() as Promise<T>
+}
+
+async function del(path: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}${path}`, { method: 'DELETE' })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error ?? res.statusText)
+  }
 }
 
 // ── Items ──────────────────────────────────────────────────────────────────────
@@ -132,4 +155,22 @@ export function getKeys(): Promise<KeysResponse> {
 
 export function getKeysProgress(): Promise<KeysProgressResponse> {
   return get<KeysProgressResponse>('/api/keys/progress')
+}
+
+// ── Backups ────────────────────────────────────────────────────────────────────
+
+export function listBackups(): Promise<BackupsResponse> {
+  return get<BackupsResponse>('/api/backups')
+}
+
+export function createBackup(name: string, notes: string): Promise<Backup> {
+  return post<Backup>('/api/backups', { name, notes })
+}
+
+export function deleteBackup(id: string): Promise<void> {
+  return del(`/api/backups/${encodeURIComponent(id)}`)
+}
+
+export function restoreBackup(id: string): Promise<void> {
+  return post<void>(`/api/backups/${encodeURIComponent(id)}/restore`)
 }
