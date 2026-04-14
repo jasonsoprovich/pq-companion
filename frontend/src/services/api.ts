@@ -6,6 +6,7 @@ import type { ZealInventoryResponse, ZealSpellbookResponse, AllInventoriesRespon
 import type { KeysResponse, KeysProgressResponse } from '../types/keys'
 import type { Backup, BackupsResponse } from '../types/backup'
 import type { LogTailerStatus } from '../types/logEvent'
+import type { TargetState } from '../types/overlay'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -180,4 +181,10 @@ export function restoreBackup(id: string): Promise<void> {
 
 export function getLogStatus(): Promise<LogTailerStatus> {
   return get<LogTailerStatus>('/api/log/status')
+}
+
+// ── Overlay ────────────────────────────────────────────────────────────────────
+
+export function getOverlayNPCTarget(): Promise<TargetState> {
+  return get<TargetState>('/api/overlay/npc/target')
 }

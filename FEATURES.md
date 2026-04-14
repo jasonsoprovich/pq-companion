@@ -330,8 +330,30 @@
 **Wiring**
 - `main.go` creates the `NPCTracker` before the log tailer; the tailer's event handler calls both `hub.Broadcast` and `npcTracker.Handle` so no events are dropped
 
-### Task 4.4 — NPC Info Overlay (Frontend)
-_Planned_
+### Task 4.4 — NPC Info Overlay (Frontend) ✅
+
+**Types & API**
+- **`types/overlay.ts`** — `TargetState` interface mirroring the Go backend payload: `has_target`, `target_name`, `npc_data` (full NPC), `special_abilities` (`SpecialAbility[]` with `code`, `value`, `name`), `current_zone`, `last_updated`
+- **`services/api.ts`** — added `getOverlayNPCTarget()` fetching `GET /api/overlay/npc/target` for initial-load polling
+
+**`pages/NPCOverlayPage.tsx`** — live NPC info panel at `/npc-overlay`:
+- **Header**: title with `Crosshair` icon, WebSocket connection pill
+- **Status bar**: same tailer status as Log Feed — disabled warning, file-not-found, or green "Tailing"
+- **No-target state**: centered crosshair icon with current zone name and instructions; shown when `has_target: false`
+- **Loading state**: simple "Loading…" text while the initial REST fetch is in flight
+- **NPC card** (when `has_target: true`):
+  - Target name (large, bold) + current zone name + last-updated timestamp
+  - RAID TARGET and RARE SPAWN flag badges (purple / amber)
+  - **Identity row**: Level (gold), Class, Race, Body Type — each in a `Stat` tile
+  - **Combat row**: HP (green), AC, Min DMG (red), Max DMG (red), Attack Count
+  - **Resists row**: Magic, Cold, Disease, Fire, Poison
+  - **Attributes row**: STR, STA, DEX, AGI, INT, WIS, CHA
+  - **Special Abilities**: pill badges color-coded by severity — red for offensive (Summon, Enrage, Rampage, Flurry, Triple Attack, Immune to Melee/Magic), orange for immunities (Uncharmable, Unmezzable, Unfearable, Immune to Slow), gray for others
+  - When target name is known but no DB record found: informational "no database record" notice
+- **Real-time updates**: subscribes to `overlay:npc_target` WebSocket events; state updates instantly on every target change or loss without any polling
+- **Initial load**: fetches current `TargetState` via REST on mount so the panel is populated even if no log event has fired since page load
+- **Sidebar** — "NPC Overlay" (`Crosshair` icon) added to the Parsing nav section
+- **`App.tsx`** — `/npc-overlay` route wired up
 
 ## Phase 5 — Combat Tracking & DPS Meter
 - Per-entity damage tracking (you, pet, group members, NPCs)

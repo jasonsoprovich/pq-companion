@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
-import { Sword, Sparkles, Skull, Map, Settings, Search, Package, BookOpen, KeyRound, HardDrive, Activity } from 'lucide-react'
+import { Sword, Sparkles, Skull, Map, Settings, Search, Package, BookOpen, KeyRound, HardDrive, Activity, Crosshair } from 'lucide-react'
 
 interface NavItem {
   to: string
@@ -24,6 +24,7 @@ const ZEAL_NAV: NavItem[] = [
 
 const PARSING_NAV: NavItem[] = [
   { to: '/log-feed', label: 'Log Feed', icon: <Activity size={16} /> },
+  { to: '/npc-overlay', label: 'NPC Overlay', icon: <Crosshair size={16} /> },
 ]
 
 function SidebarLink({ to, label, icon }: NavItem): React.ReactElement {

@@ -32,7 +32,7 @@
 - [x] Task 4.1 — Log File Tailer
 - [x] Task 4.2 — Event Broadcasting via WebSocket
 - [x] Task 4.3 — NPC Info Overlay (Backend)
-- [ ] Task 4.4 — NPC Info Overlay (Frontend)
+- [x] Task 4.4 — NPC Info Overlay (Frontend)
 
 ## Phase 5 — Combat Tracking & DPS Meter
 - [ ] Task 5.1 — Combat Parser

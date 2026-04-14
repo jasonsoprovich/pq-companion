@@ -12,6 +12,7 @@ import InventoryTrackerPage from './pages/InventoryTrackerPage'
 import KeyTrackerPage from './pages/KeyTrackerPage'
 import BackupManagerPage from './pages/BackupManagerPage'
 import LogFeedPage from './pages/LogFeedPage'
+import NPCOverlayPage from './pages/NPCOverlayPage'
 
 export default function App(): React.ReactElement {
   return (
@@ -29,6 +30,7 @@ export default function App(): React.ReactElement {
           <Route path="key-tracker" element={<KeyTrackerPage />} />
           <Route path="backup-manager" element={<BackupManagerPage />} />
           <Route path="log-feed" element={<LogFeedPage />} />
+          <Route path="npc-overlay" element={<NPCOverlayPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>
