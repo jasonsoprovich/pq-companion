@@ -56,11 +56,10 @@ func main() {
 	}
 	defer backupMgr.Close()
 
-	// Log tailer: reads new lines from the EQ log file and dispatches parsed
-	// events. Task 4.2 will wire the handler to hub.Broadcast; for now events
-	// are logged at debug level so the tailer is exercised without noise.
+	// Log tailer: reads new lines from the EQ log file and broadcasts parsed
+	// events to all connected WebSocket clients.
 	tailer := logparser.NewTailer(cfgMgr, func(ev logparser.LogEvent) {
-		slog.Debug("log event", "type", ev.Type, "msg", ev.Message)
+		hub.Broadcast(ws.Event{Type: string(ev.Type), Data: ev})
 	})
 	go tailer.Start(context.Background())
 

@@ -5,6 +5,7 @@ import type { Zone } from '../types/zone'
 import type { ZealInventoryResponse, ZealSpellbookResponse, AllInventoriesResponse } from '../types/zeal'
 import type { KeysResponse, KeysProgressResponse } from '../types/keys'
 import type { Backup, BackupsResponse } from '../types/backup'
+import type { LogTailerStatus } from '../types/logEvent'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -173,4 +174,10 @@ export function deleteBackup(id: string): Promise<void> {
 
 export function restoreBackup(id: string): Promise<void> {
   return post<void>(`/api/backups/${encodeURIComponent(id)}/restore`)
+}
+
+// ── Log Parser ─────────────────────────────────────────────────────────────────
+
+export function getLogStatus(): Promise<LogTailerStatus> {
+  return get<LogTailerStatus>('/api/log/status')
 }

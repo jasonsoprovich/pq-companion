@@ -30,7 +30,7 @@
 
 ## Phase 4 — Log Parsing & NPC Overlay
 - [x] Task 4.1 — Log File Tailer
-- [ ] Task 4.2 — Event Broadcasting via WebSocket
+- [x] Task 4.2 — Event Broadcasting via WebSocket
 - [ ] Task 4.3 — NPC Info Overlay (Backend)
 - [ ] Task 4.4 — NPC Info Overlay (Frontend)
 

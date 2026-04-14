@@ -288,8 +288,21 @@
 - **`GET /api/log/status`** — returns the current tailer state: enabled, file path, file_exists, tailing, current offset
 - **`cmd/server/main.go`** — tailer created and started at boot; handler logs events at debug level (Task 4.2 will wire it to `hub.Broadcast`)
 
-### Task 4.2 — Event Broadcasting via WebSocket
-_Planned_
+### Task 4.2 — Event Broadcasting via WebSocket ✅
+- **Backend wiring** (`cmd/server/main.go`) — tailer handler now calls `hub.Broadcast(ws.Event{Type: string(ev.Type), Data: ev})` for every parsed log event; all connected WebSocket clients receive log events in real time
+- **`hooks/useWebSocket.ts`** — singleton WebSocket hook shared across all consumers:
+  - One connection per app lifetime; auto-reconnects every 2 s on drop
+  - `useWebSocket(onMessage?)` — returns `WsReadyState` ('connecting' | 'open' | 'closed'); callback is stable via ref (no need to memoize at call site)
+  - Module-level `messageHandlers` / `stateHandlers` sets; connect/reconnect only while consumers are mounted
+- **`types/logEvent.ts`** — TypeScript types mirroring Go structs: `LogEvent`, `LogEventType`, all per-event `Data` types (`ZoneData`, `CombatHitData`, `CombatMissData`, `SpellCastData`, `SpellInterruptData`, `SpellResistData`, `SpellFadeData`, `DeathData`), `LogTailerStatus`
+- **`services/api.ts`** — added `getLogStatus()` fetching `GET /api/log/status`
+- **`pages/LogFeedPage.tsx`** — live log event feed at `/log-feed`:
+  - **Header**: title, event counter (`X / 200`), WebSocket connection pill (green/orange/gray), Clear button
+  - **Status bar**: tailer state inline — disabled warning with Settings link, file-not-found warning with path, or green "Tailing" with file path
+  - **Event feed**: newest events at top; each row shows hh:mm:ss timestamp, color-coded type badge (blue=Zone, red=Hit, gray=Miss, purple=Cast, orange=Interrupt/Resist, teal=Fade, dark-red=Death), raw EQ log message in monospace; capped at 200 events
+  - **Empty state**: activity icon + "Waiting for log events…" with setup instructions
+- **Sidebar** — new "Parsing" section with "Log Feed" (`Activity` icon) at `/log-feed`
+- **`App.tsx`** — `/log-feed` route wired up
 
 ### Task 4.3 — NPC Info Overlay (Backend)
 _Planned_

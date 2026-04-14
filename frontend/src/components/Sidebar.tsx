@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
-import { Sword, Sparkles, Skull, Map, Settings, Search, Package, BookOpen, KeyRound, HardDrive } from 'lucide-react'
+import { Sword, Sparkles, Skull, Map, Settings, Search, Package, BookOpen, KeyRound, HardDrive, Activity } from 'lucide-react'
 
 interface NavItem {
   to: string
@@ -20,6 +20,10 @@ const ZEAL_NAV: NavItem[] = [
   { to: '/spell-checklist', label: 'Spell Checklist', icon: <BookOpen size={16} /> },
   { to: '/key-tracker', label: 'Key Tracker', icon: <KeyRound size={16} /> },
   { to: '/backup-manager', label: 'Backup Manager', icon: <HardDrive size={16} /> },
+]
+
+const PARSING_NAV: NavItem[] = [
+  { to: '/log-feed', label: 'Log Feed', icon: <Activity size={16} /> },
 ]
 
 function SidebarLink({ to, label, icon }: NavItem): React.ReactElement {
@@ -98,8 +102,23 @@ export default function Sidebar(): React.ReactElement {
           Zeal
         </span>
       </div>
-      <nav className="flex-1 space-y-0.5 px-2 py-1">
+      <nav className="space-y-0.5 px-2 py-1">
         {ZEAL_NAV.map((item) => (
+          <SidebarLink key={item.to} {...item} />
+        ))}
+      </nav>
+
+      {/* Parsing section */}
+      <div className="px-4 pb-1 pt-3">
+        <span
+          className="text-[10px] font-semibold uppercase tracking-widest"
+          style={{ color: 'var(--color-muted)' }}
+        >
+          Parsing
+        </span>
+      </div>
+      <nav className="flex-1 space-y-0.5 px-2 py-1">
+        {PARSING_NAV.map((item) => (
           <SidebarLink key={item.to} {...item} />
         ))}
       </nav>

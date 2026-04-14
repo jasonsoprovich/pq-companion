@@ -11,6 +11,7 @@ import SpellChecklistPage from './pages/SpellChecklistPage'
 import InventoryTrackerPage from './pages/InventoryTrackerPage'
 import KeyTrackerPage from './pages/KeyTrackerPage'
 import BackupManagerPage from './pages/BackupManagerPage'
+import LogFeedPage from './pages/LogFeedPage'
 
 export default function App(): React.ReactElement {
   return (
@@ -27,6 +28,7 @@ export default function App(): React.ReactElement {
           <Route path="spell-checklist" element={<SpellChecklistPage />} />
           <Route path="key-tracker" element={<KeyTrackerPage />} />
           <Route path="backup-manager" element={<BackupManagerPage />} />
+          <Route path="log-feed" element={<LogFeedPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>
