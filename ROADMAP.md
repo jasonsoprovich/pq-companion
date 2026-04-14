@@ -37,6 +37,9 @@ The app shell is fully wired. React Router runs inside a `HashRouter` (Electron-
 ### Item Explorer (Phase 2, Task 2.3) ✅
 Browse all ~70,000 EverQuest items from the database. Type in the search box and results update as you type — the left pane shows names filtered by name with item type and level requirement inline. Click any row for the full detail panel: combat stats (DMG/DLY, AC), all stat bonuses (HP/Mana/STR/STA/…), resist values, spell effects (click/proc/worn/focus), slot and class/race restrictions, weight, price in pp/gp/sp/cp, and item flags (MAGIC, LORE, NO DROP, NO RENT).
 
+### Spell Explorer (Phase 2, Task 2.4) ✅
+Browse all EverQuest spells from the database. Search by name — results show the castable classes with their required levels and mana cost. Click any spell for the full detail panel: mana cost and cast/recast/recovery times, duration (tick-accurate, distinguishes fixed vs. level-scaling), target type, resist type, range and AoE range, every class that can cast it (with required level), active effect slots with base values, and flavor text (cast messages, fade messages). Discipline, suspendable, and no-dispell flags rendered as badge pills.
+
 ### Database Explorer (Up Next)
 Browse the entire EverQuest game database from your desktop, without opening a browser or maintaining a server connection.
 

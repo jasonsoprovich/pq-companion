@@ -15,7 +15,7 @@
 - [x] Task 2.1 — Electron + React Project Setup
 - [x] Task 2.2 — App Layout & Navigation
 - [x] Task 2.3 — Database Explorer: Items
-- [ ] Task 2.4 — Database Explorer: Spells
+- [x] Task 2.4 — Database Explorer: Spells
 - [ ] Task 2.5 — Database Explorer: NPCs
 - [ ] Task 2.6 — Database Explorer: Zones
 - [ ] Task 2.7 — Global Search

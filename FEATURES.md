@@ -103,8 +103,25 @@
   - Sections only rendered when they have non-zero values
   - Initial load fetches all items (empty query); debounced at 300ms
 
+### Task 2.4 — Database Explorer: Spells ✅
+- **`types/spell.ts`** — TypeScript `Spell` type mirroring Go backend struct (timing, duration, effects, class levels)
+- **`services/api.ts`** — added `searchSpells(q, limit, offset)` and `getSpell(id)` typed fetch wrappers
+- **`lib/spellHelpers.ts`** — EverQuest spell data decoders:
+  - `castableClasses(classLevels)` — returns `{abbr, full, level}` for each class that can cast the spell (255 = cannot cast)
+  - `castableClassesShort` — compact list of first 4 castable classes for list row subtitles
+  - `resistLabel` — maps resist type int to name (Magic, Fire, Cold, Poison, Disease, Chromatic, etc.)
+  - `targetLabel` — maps target type int to description (Self, Single, Targeted AE, PB AE, Caster Group, etc.)
+  - `skillLabel` — maps skill ID to school name (Alteration, Abjuration, Conjuration, Divination, Evocation)
+  - `msLabel` — converts milliseconds to `"2.5s"` / `"Instant"` display strings
+  - `durationLabel` — converts buff_duration ticks + formula to human-readable string (1 tick = 6s); distinguishes fixed vs. level-scaling durations
+  - `effectLabel` — maps spell effect IDs to readable names (160+ effects mapped)
+- **`pages/SpellsPage.tsx`** — split-pane layout matching Item Explorer:
+  - **Left pane (288px)**: debounced search input, result count, scrollable list showing name + castable classes with levels + mana cost; selected spell highlighted with gold left-border accent; blank-name spell IDs filtered out
+  - **Detail panel (right)**: spell data in labeled sections — Casting (mana, cast/recast/recovery time, duration), Targeting (target type, resist type, range, AoE range), Classes (full class names with required level), Effects (effect name + base value for each active slot), Messages (cast_on_you, cast_on_other, spell_fades flavor text), Info (Spell ID)
+  - Flags rendered as pill badges: DISCIPLINE, SUSPENDABLE, NO DISPELL
+  - Sections only rendered when they have relevant data
+
 ### Coming in Phase 2
-- **Spell Explorer** (Task 2.4): search by name/class/level, duration and resist type display
 - **NPC Explorer** (Task 2.5): search by name/zone, special ability parsing, loot table view
 - **Zone Explorer** (Task 2.6): browse zones, list resident NPCs
 - **Global Search** (Task 2.7): cross-database search via `Ctrl+K` / `Cmd+K`

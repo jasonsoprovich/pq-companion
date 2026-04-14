@@ -1,4 +1,5 @@
 import type { Item, SearchResult } from '../types/item'
+import type { Spell } from '../types/spell'
 
 const BASE_URL = 'http://localhost:8080'
 
@@ -24,4 +25,19 @@ export function searchItems(
 
 export function getItem(id: number): Promise<Item> {
   return get<Item>(`/api/items/${id}`)
+}
+
+// ── Spells ─────────────────────────────────────────────────────────────────────
+
+export function searchSpells(
+  q: string,
+  limit = 50,
+  offset = 0,
+): Promise<SearchResult<Spell>> {
+  const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) })
+  return get<SearchResult<Spell>>(`/api/spells?${params}`)
+}
+
+export function getSpell(id: number): Promise<Spell> {
+  return get<Spell>(`/api/spells/${id}`)
 }
