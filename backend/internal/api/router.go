@@ -9,10 +9,11 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
 
-// NewRouter builds and returns the chi router wired to the given DB, Hub, and Config.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager) http.Handler {
+// NewRouter builds and returns the chi router wired to the given DB, Hub, Config, and Zeal watcher.
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -36,6 +37,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager) http.Handle
 	zones := &zonesHandler{db: database}
 	cfg := &configHandler{mgr: cfgMgr}
 	search := &searchHandler{db: database}
+	zealH := &zealHandler{watcher: zealWatcher}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
@@ -61,6 +63,10 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager) http.Handle
 		r.Route("/config", func(r chi.Router) {
 			r.Get("/", cfg.get)
 			r.Put("/", cfg.update)
+		})
+		r.Route("/zeal", func(r chi.Router) {
+			r.Get("/inventory", zealH.inventory)
+			r.Get("/spells", zealH.spellbook)
 		})
 	})
 

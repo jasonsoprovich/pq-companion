@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
 
 func main() {
@@ -42,7 +44,10 @@ func main() {
 	hub := ws.NewHub()
 	go hub.Run()
 
-	router := api.NewRouter(database, hub, cfgMgr)
+	zealWatcher := zeal.NewWatcher(cfgMgr, hub)
+	go zealWatcher.Start(context.Background())
+
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher)
 
 	slog.Info("server starting", "addr", listenAddr, "db", *dbPath)
 	if err := http.ListenAndServe(listenAddr, router); err != nil {

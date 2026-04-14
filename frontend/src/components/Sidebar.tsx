@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
-import { Sword, Sparkles, Skull, Map, Settings, Search } from 'lucide-react'
+import { Sword, Sparkles, Skull, Map, Settings, Search, Package } from 'lucide-react'
 
 interface NavItem {
   to: string
@@ -13,6 +13,10 @@ const PRIMARY_NAV: NavItem[] = [
   { to: '/spells', label: 'Spells', icon: <Sparkles size={16} /> },
   { to: '/npcs', label: 'NPCs', icon: <Skull size={16} /> },
   { to: '/zones', label: 'Zones', icon: <Map size={16} /> },
+]
+
+const ZEAL_NAV: NavItem[] = [
+  { to: '/inventory', label: 'Inventory', icon: <Package size={16} /> },
 ]
 
 function SidebarLink({ to, label, icon }: NavItem): React.ReactElement {
@@ -76,8 +80,23 @@ export default function Sidebar(): React.ReactElement {
       </div>
 
       {/* Primary nav */}
-      <nav className="flex-1 space-y-0.5 px-2 py-1">
+      <nav className="space-y-0.5 px-2 py-1">
         {PRIMARY_NAV.map((item) => (
+          <SidebarLink key={item.to} {...item} />
+        ))}
+      </nav>
+
+      {/* Zeal section */}
+      <div className="px-4 pb-1 pt-3">
+        <span
+          className="text-[10px] font-semibold uppercase tracking-widest"
+          style={{ color: 'var(--color-muted)' }}
+        >
+          Zeal
+        </span>
+      </div>
+      <nav className="flex-1 space-y-0.5 px-2 py-1">
+        {ZEAL_NAV.map((item) => (
           <SidebarLink key={item.to} {...item} />
         ))}
       </nav>

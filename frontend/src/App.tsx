@@ -6,6 +6,7 @@ import SpellsPage from './pages/SpellsPage'
 import NpcsPage from './pages/NpcsPage'
 import ZonesPage from './pages/ZonesPage'
 import SettingsPage from './pages/SettingsPage'
+import InventoryPage from './pages/InventoryPage'
 
 export default function App(): React.ReactElement {
   return (
@@ -17,6 +18,7 @@ export default function App(): React.ReactElement {
           <Route path="spells" element={<SpellsPage />} />
           <Route path="npcs" element={<NpcsPage />} />
           <Route path="zones" element={<ZonesPage />} />
+          <Route path="inventory" element={<InventoryPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>

@@ -2,6 +2,7 @@ import type { Item, SearchResult } from '../types/item'
 import type { NPC } from '../types/npc'
 import type { Spell } from '../types/spell'
 import type { Zone } from '../types/zone'
+import type { ZealInventoryResponse, ZealSpellbookResponse } from '../types/zeal'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -95,4 +96,14 @@ export function getNPCsByZone(
 ): Promise<SearchResult<NPC>> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   return get<SearchResult<NPC>>(`/api/zones/short/${encodeURIComponent(shortName)}/npcs?${params}`)
+}
+
+// ── Zeal ───────────────────────────────────────────────────────────────────────
+
+export function getZealInventory(): Promise<ZealInventoryResponse> {
+  return get<ZealInventoryResponse>('/api/zeal/inventory')
+}
+
+export function getZealSpellbook(): Promise<ZealSpellbookResponse> {
+  return get<ZealSpellbookResponse>('/api/zeal/spells')
 }

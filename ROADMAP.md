@@ -49,6 +49,11 @@ Browse all ~300 EverQuest zones. Search by name — results show the zone's shor
 ### Global Search (Phase 2, Task 2.7) ✅
 Hit `Cmd+K` (macOS) or `Ctrl+K` (Windows/Linux) from anywhere in the app to open the Global Search palette. Type any name and get results from all four databases simultaneously — items, spells, NPCs, and zones — in a single grouped list. Arrow-key navigation, Enter to jump to the result's explorer page with the detail panel pre-populated, Escape to dismiss. A `⌘K` shortcut hint is shown in the sidebar for discoverability. Phase 2 is now complete.
 
+### Zeal Export Reader (Phase 3, Task 3.1) ✅
+The app now reads Zeal's inventory and spellbook exports automatically. When you log out of EverQuest with Zeal installed, it writes your inventory to `<CharName>_pq.proj-Inventory.txt` and your spellbook to `<CharName>_pq.proj-Spells.txt` in the EQ directory. The backend watches those files and re-parses them within 5 seconds of any change, broadcasting updates to all connected clients via WebSocket.
+
+The **Inventory** page (accessible from the Zeal section in the sidebar) shows all carried items organized by equipment slot and bag — with the bag name shown in the section header. Click the lookup icon on any item to jump directly to its entry in the Item Explorer. If your EQ path or character name aren't configured yet, the page shows setup instructions.
+
 ### Zeal Integration & Config Backup Manager
 For players using [Zeal](https://github.com/iamclint/Zeal), the app will automatically read your inventory and spellbook exports on logout, letting you:
 

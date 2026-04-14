@@ -158,10 +158,25 @@
 - **Pre-select via URL** (`?select=ID`): all four explorer pages now read the `select` query param on mount, fetch the record by ID, and pre-populate the detail panel; param is cleared from the URL after selection
 
 ## Phase 3 — Zeal Integration & Backup Manager
-- Parse Zeal inventory export files (on logout) to track carried items
-- Spell checklist: compare spellbook export against all available class spells by level
-- INI/config file watcher: automatic versioned backups when EQ config files change
-- Backup timeline UI: browse and restore any previous config version
+
+### Task 3.1 — Zeal Export Reader ✅
+- **`internal/zeal/` package** — parses and watches Zeal export files:
+  - `ParseInventory(path, character)` — reads tab-delimited `<CharName>_pq.proj-Inventory.txt`; header row skipped; columns: Location, Name, ID, Count, Slots; returns `*Inventory` with `[]InventoryEntry`
+  - `ParseSpellbook(path, character)` — reads `<CharName>_pq.proj-Spells.txt`; handles three formats: bare ID, `slot\tID`, or `ID\tName`; deduplicates spell IDs; returns `*Spellbook` with `[]int` spell IDs
+  - `InventoryPath(eqPath, character)` / `SpellbookPath(eqPath, character)` — construct Zeal export file paths (`<CharName>_pq.proj-{Inventory,Spells}.txt`)
+  - `Watcher` — polls both files every 5 seconds; re-parses on modification time change; caches latest inventory and spellbook in memory; broadcasts `zeal:inventory` and `zeal:spellbook` WebSocket events on update; gracefully skips when `eq_path` or `character` are not yet configured
+- **API endpoints**:
+  - `GET /api/zeal/inventory` — returns `{"inventory": {...}}` or `{"inventory": null}` if not yet available
+  - `GET /api/zeal/spells` — returns `{"spellbook": {...}}` or `{"spellbook": null}`
+- **Frontend — Inventory page** (`pages/InventoryPage.tsx`):
+  - "Inventory" link added to sidebar under a "Zeal" section with `Package` icon
+  - Header bar showing character name, item count, export timestamp, and Refresh button
+  - Left pane (288px): equipped items sorted by canonical slot order (Charm → Feet), Bank items, Cursor
+  - Right pane: bags (General 1–8) with sub-items indented; shows bag name when available
+  - "Not configured" empty state with setup instructions and link to Settings
+  - Hover "look up" button on each item navigates to `/items?select=<id>` to pre-select in Item Explorer
+- **WebSocket events**: `zeal:inventory` and `zeal:spellbook` broadcast to all connected clients when export files are updated on disk
+- **Tests** (`internal/zeal/reader_test.go`): 11 table-driven tests covering inventory parsing, no-header files, empty files, missing files, three spellbook formats, deduplication, path helpers, and ModTime
 
 ## Phase 4 — Log Parsing & NPC Info Overlay
 - Real-time EQ log file tailer (reads new lines as they appear)
