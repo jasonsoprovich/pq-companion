@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
@@ -16,7 +17,7 @@ import (
 )
 
 // NewRouter builds and returns the chi router wired to all backend components.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker) http.Handler {
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -45,6 +46,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	backupH := &backupHandler{mgr: backupMgr}
 	logH := &logHandler{tailer: tailer}
 	overlayH := &overlayHandler{npcTracker: npcTracker}
+	combatH := &combatHandler{tracker: combatTracker}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
@@ -93,6 +95,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		})
 		r.Route("/overlay", func(r chi.Router) {
 			r.Get("/npc/target", overlayH.npcTarget)
+			r.Get("/combat", combatH.state)
 		})
 	})
 

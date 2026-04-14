@@ -356,10 +356,28 @@
 - **`App.tsx`** — `/npc-overlay` route wired up
 
 ## Phase 5 — Combat Tracking & DPS Meter
-- Per-entity damage tracking (you, pet, group members, NPCs)
-- DPS calculations: current fight, rolling average, session total
-- Live DPS overlay: transparent always-on-top meter with group breakdown
-- Combat log history: browse past fights with detailed damage breakdowns
+
+### Task 5.1 — Combat Parser ✅
+- **`internal/combat/` package** — stateful combat tracker that consumes `logparser.LogEvent` values and maintains per-entity damage statistics grouped into fights:
+  - `models.go` — typed structs:
+    - `EntityStats` — per-combatant stats: `Name`, `TotalDamage`, `HitCount`, `MaxHit`, `DPS`
+    - `FightState` — live snapshot of the active fight: `StartTime`, `Duration`, `Combatants` (sorted descending by damage), `TotalDamage` (player outgoing), `TotalDPS`
+    - `FightSummary` — immutable record of a completed fight: adds `EndTime`; same fields otherwise
+    - `CombatState` — full broadcast payload: `InCombat`, `CurrentFight`, `RecentFights` (last 20), `SessionDamage`, `SessionDPS`, `LastUpdated`
+    - `WSEventCombat = "overlay:combat"` — WebSocket event type constant
+  - `tracker.go` — `Tracker` struct:
+    - `NewTracker(hub *ws.Hub) *Tracker`
+    - `Handle(ev logparser.LogEvent)` — processes `EventCombatHit` (records hit, starts/continues fight, arms inactivity timer), `EventZone` and `EventDeath` (immediately ends active fight)
+    - `GetState() CombatState` — thread-safe point-in-time snapshot
+    - Fight boundary detection: inactivity timer fires after **6 seconds** (≈2 EQ server ticks) with no new hits; uses monotonic `fightID` counter to guard stale `time.AfterFunc` callbacks
+    - Per-entity tracking: actor `"You"` = player outgoing; NPC actor names = incoming damage to player; both tracked as separate `EntityStats` entries
+    - `TotalDamage` / `TotalDPS` on `FightState` and `FightSummary` reflect player outgoing only; full `Combatants` slice includes all entities
+    - Session aggregates: `SessionDamage` = player outgoing damage summed across all completed fights; `SessionDPS` = SessionDamage / total fight time
+    - Completed fights stored in a ring buffer capped at 20 entries, newest first
+  - `tracker_test.go` — 7 table-driven unit tests: no fight initially, fight starts on first hit, hits accumulate, incoming damage tracked separately, zone change ends fight, session aggregates across multiple fights, combatants sorted descending by damage
+- **`internal/api/combat.go`** — `combatHandler` wired to `GET /api/overlay/combat`; returns current `CombatState` as JSON
+- **`internal/api/router.go`** — `NewRouter` signature extended with `*combat.Tracker`; `/api/overlay/combat` route added under `/api/overlay`
+- **`cmd/server/main.go`** — `combat.NewTracker(hub)` instantiated; `combatTracker.Handle(ev)` called in the log-tailer event handler alongside the existing `npcTracker.Handle(ev)`
 
 ## Phase 6 — Spell Timer Engine
 - Countdown tracking for mez, stuns, DoTs, buffs
