@@ -194,6 +194,26 @@
 - **Sidebar** (`components/Sidebar.tsx`) — "Spell Checklist" added to the Zeal nav section with `BookOpen` icon
 - **`App.tsx`** — `/spell-checklist` route wired up
 
+### Task 3.3 — Inventory Tracker (Multi-Character + Search)
+_Planned_
+
+Multi-character inventory tracking with full-text search across all character exports. Key design constraints:
+- The backend scans the EQ directory for **all** `*_pq.proj-Inventory.txt` files (not just the configured character), building an in-memory index of every character's items.
+- Each character has their own inventory slots (Charm–Feet), general bags (General 1–8), and bank slots (Bank 1–24). **SharedBank slots appear in every character's export** — deduplicate by keeping only the copy from the most-recently-modified export file.
+- `GET /api/zeal/all-inventories` returns an array of per-character inventories (each with `character`, `exported_at`, `entries[]`) plus a single deduplicated `shared_bank[]` array.
+- The frontend **Inventory Tracker** page (`/inventory-tracker`):
+  - Character tabs or selector to switch between characters (plus a combined view)
+  - Search bar to filter items by name across the selected scope (one character or all)
+  - Sections: Equipped · Bags · Bank · Shared Bank (shown once, not per-character)
+  - Each item row: item name, location, count; hover to reveal "look up" button → `/items?select={id}`
+  - Empty / not-configured states with setup guidance
+
+### Task 3.4 — Config Backup Manager (Backend)
+_Planned_
+
+### Task 3.5 — Config Backup Manager (UI)
+_Planned_
+
 ## Phase 4 — Log Parsing & NPC Info Overlay
 - Real-time EQ log file tailer (reads new lines as they appear)
 - Combat, spell, zone, and chat event parsing from log format

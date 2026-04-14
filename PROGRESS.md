@@ -23,8 +23,9 @@
 ## Phase 3 — Zeal Integration & Backup Manager
 - [x] Task 3.1 — Zeal Export Reader
 - [x] Task 3.2 — Spell Checklist UI
-- [ ] Task 3.3 — Config Backup Manager (Backend)
-- [ ] Task 3.4 — Config Backup Manager (UI)
+- [ ] Task 3.3 — Inventory Tracker (Multi-Character + Search)
+- [ ] Task 3.4 — Config Backup Manager (Backend)
+- [ ] Task 3.5 — Config Backup Manager (UI)
 
 ## Phase 4 — Log Parsing & NPC Overlay
 - [ ] Task 4.1 — Log File Tailer
