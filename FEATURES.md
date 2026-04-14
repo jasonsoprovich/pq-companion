@@ -409,6 +409,19 @@
 - **`components/Sidebar.tsx`** — added `DPS Overlay` nav entry (Swords icon) in the Parsing section
 - **`App.tsx`** — added `/dps-overlay` route (in Layout) and `/dps-overlay-window` route (outside Layout for standalone window)
 
+### Task 5.3 — Combat Log History ✅
+- **`pages/CombatLogPage.tsx`** — full-page fight history view (route `/combat-log`):
+  - Lists all completed fights from `CombatState.recent_fights` (up to 20), newest first, numbered sequentially from session start
+  - Each row: chevron toggle, fight #, start time and duration, total outgoing damage, total DPS (all players), personal DPS ("me") — color-coded orange/indigo to match DPS overlay
+  - Collapsible combatant breakdown per fight: 5-column table (Name, %, Damage, DPS, Max Hit); player row highlighted in primary color; damage % relative to fight total
+  - Subscribes to `overlay:combat` WebSocket events for live updates — new fight rows appear automatically when fights complete
+  - Initial state fetched via `GET /api/overlay/combat` on mount
+  - Log-tailer status bar (same pattern as DPS overlay) — warns when log parsing is disabled or log file not found
+  - Empty state with icon + hint text when no fights completed yet
+  - Session footer: fight count, total personal damage, session-average personal DPS
+- **`components/Sidebar.tsx`** — added `Combat Log` nav entry (`ScrollText` icon) after DPS Overlay in the Parsing section
+- **`App.tsx`** — added `/combat-log` route
+
 ## Phase 6 — Spell Timer Engine
 - Countdown tracking for mez, stuns, DoTs, buffs
 - Server-tick-aware duration calculations

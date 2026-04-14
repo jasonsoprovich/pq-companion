@@ -34,10 +34,10 @@
 - [x] Task 4.3 — NPC Info Overlay (Backend)
 - [x] Task 4.4 — NPC Info Overlay (Frontend)
 
-## Phase 5 — Combat Tracking & DPS Meter
-- [ ] Task 5.1 — Combat Parser
-- [ ] Task 5.2 — DPS Overlay
-- [ ] Task 5.3 — Combat Log History
+## Phase 5 — Combat Tracking & DPS Meter ✅
+- [x] Task 5.1 — Combat Parser
+- [x] Task 5.2 — DPS Overlay
+- [x] Task 5.3 — Combat Log History
 
 ## Phase 6 — Spell Timer Engine
 - [ ] Task 6.1 — Spell Timer Engine (Backend)

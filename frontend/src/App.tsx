@@ -15,6 +15,7 @@ import LogFeedPage from './pages/LogFeedPage'
 import NPCOverlayPage from './pages/NPCOverlayPage'
 import DPSOverlayPage from './pages/DPSOverlayPage'
 import DPSOverlayWindowPage from './pages/DPSOverlayWindowPage'
+import CombatLogPage from './pages/CombatLogPage'
 
 export default function App(): React.ReactElement {
   return (
@@ -38,6 +39,7 @@ export default function App(): React.ReactElement {
           <Route path="log-feed" element={<LogFeedPage />} />
           <Route path="npc-overlay" element={<NPCOverlayPage />} />
           <Route path="dps-overlay" element={<DPSOverlayPage />} />
+          <Route path="combat-log" element={<CombatLogPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>
