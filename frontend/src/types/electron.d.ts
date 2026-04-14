@@ -12,6 +12,11 @@ export interface ElectronAPI {
     close: () => Promise<void>
     isMaximized: () => Promise<boolean>
   }
+  overlay: {
+    openDPS: () => Promise<void>
+    closeDPS: () => Promise<void>
+    toggleDPS: () => Promise<void>
+  }
 }
 
 declare global {

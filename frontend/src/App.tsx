@@ -13,11 +13,17 @@ import KeyTrackerPage from './pages/KeyTrackerPage'
 import BackupManagerPage from './pages/BackupManagerPage'
 import LogFeedPage from './pages/LogFeedPage'
 import NPCOverlayPage from './pages/NPCOverlayPage'
+import DPSOverlayPage from './pages/DPSOverlayPage'
+import DPSOverlayWindowPage from './pages/DPSOverlayWindowPage'
 
 export default function App(): React.ReactElement {
   return (
     <HashRouter>
       <Routes>
+        {/* Standalone overlay windows — no sidebar/titlebar Layout */}
+        <Route path="dps-overlay-window" element={<DPSOverlayWindowPage />} />
+
+        {/* Main app routes — wrapped in full Layout */}
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/items" replace />} />
           <Route path="items" element={<ItemsPage />} />
@@ -31,6 +37,7 @@ export default function App(): React.ReactElement {
           <Route path="backup-manager" element={<BackupManagerPage />} />
           <Route path="log-feed" element={<LogFeedPage />} />
           <Route path="npc-overlay" element={<NPCOverlayPage />} />
+          <Route path="dps-overlay" element={<DPSOverlayPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>

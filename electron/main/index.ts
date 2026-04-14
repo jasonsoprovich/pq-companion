@@ -6,6 +6,7 @@ import { existsSync } from 'fs'
 const isDev = !app.isPackaged
 
 let mainWindow: BrowserWindow | null = null
+let dpsOverlayWindow: BrowserWindow | null = null
 let sidecarProcess: ChildProcess | null = null
 
 // ── Sidecar (Go backend) lifecycle ────────────────────────────────────────────
@@ -97,6 +98,52 @@ function createMainWindow(): void {
   })
 }
 
+// ── DPS Overlay window ────────────────────────────────────────────────────────
+
+function createDPSOverlay(): void {
+  if (dpsOverlayWindow && !dpsOverlayWindow.isDestroyed()) {
+    dpsOverlayWindow.focus()
+    return
+  }
+
+  dpsOverlayWindow = new BrowserWindow({
+    width: 420,
+    height: 460,
+    minWidth: 260,
+    minHeight: 180,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    },
+  })
+
+  // Keep it above fullscreen apps on macOS/Windows.
+  dpsOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
+  dpsOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    dpsOverlayWindow.loadURL(`${rendererUrl}/#/dps-overlay-window`)
+  } else {
+    dpsOverlayWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/dps-overlay-window',
+    })
+  }
+
+  dpsOverlayWindow.on('closed', () => {
+    dpsOverlayWindow = null
+  })
+}
+
 // ── IPC handlers — window controls ───────────────────────────────────────────
 
 ipcMain.handle('window:minimize', () => mainWindow?.minimize())
@@ -109,6 +156,26 @@ ipcMain.handle('window:maximize', () => {
 })
 ipcMain.handle('window:close', () => mainWindow?.close())
 ipcMain.handle('window:is-maximized', () => mainWindow?.isMaximized() ?? false)
+
+// ── IPC handlers — overlay windows ───────────────────────────────────────────
+
+ipcMain.handle('overlay:dps:open', () => {
+  createDPSOverlay()
+})
+
+ipcMain.handle('overlay:dps:close', () => {
+  if (dpsOverlayWindow && !dpsOverlayWindow.isDestroyed()) {
+    dpsOverlayWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:dps:toggle', () => {
+  if (dpsOverlayWindow && !dpsOverlayWindow.isDestroyed()) {
+    dpsOverlayWindow.close()
+  } else {
+    createDPSOverlay()
+  }
+})
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 

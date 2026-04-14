@@ -7,6 +7,7 @@ import type { KeysResponse, KeysProgressResponse } from '../types/keys'
 import type { Backup, BackupsResponse } from '../types/backup'
 import type { LogTailerStatus } from '../types/logEvent'
 import type { TargetState } from '../types/overlay'
+import type { CombatState } from '../types/combat'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -187,4 +188,8 @@ export function getLogStatus(): Promise<LogTailerStatus> {
 
 export function getOverlayNPCTarget(): Promise<TargetState> {
   return get<TargetState>('/api/overlay/npc/target')
+}
+
+export function getCombatState(): Promise<CombatState> {
+  return get<CombatState>('/api/overlay/combat')
 }

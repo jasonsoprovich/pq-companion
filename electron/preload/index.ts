@@ -12,5 +12,10 @@ contextBridge.exposeInMainWorld('electron', {
     maximize: (): Promise<void> => ipcRenderer.invoke('window:maximize'),
     close: (): Promise<void> => ipcRenderer.invoke('window:close'),
     isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:is-maximized')
+  },
+  overlay: {
+    openDPS: (): Promise<void> => ipcRenderer.invoke('overlay:dps:open'),
+    closeDPS: (): Promise<void> => ipcRenderer.invoke('overlay:dps:close'),
+    toggleDPS: (): Promise<void> => ipcRenderer.invoke('overlay:dps:toggle'),
   }
 })

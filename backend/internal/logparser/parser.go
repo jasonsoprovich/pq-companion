@@ -25,7 +25,7 @@ var (
 
 	// Spell interrupted: "Your spell is interrupted." or
 	// "Your <SpellName> spell is interrupted."
-	reSpellInterruptNamed = regexp.MustCompile(`^Your (.+) spell is interrupted\.$`)
+	reSpellInterruptNamed   = regexp.MustCompile(`^Your (.+) spell is interrupted\.$`)
 	reSpellInterruptGeneric = regexp.MustCompile(`^Your spell is interrupted\.$`)
 
 	// Spell resist: "Your target resisted the Mesmerization spell."
@@ -42,6 +42,12 @@ var (
 	// "A gnoll slashes you for 50 points of damage."
 	// The verb is conjugated with an -s/-es suffix when an NPC hits you.
 	reNPCHitYou = regexp.MustCompile(`^(.+?) (?:\w+) [Yy]ou for (\d+) points? of damage\.$`)
+
+	// Combat — third-party hit: another player (or NPC) hits a target that is
+	// not the player. EQ player names are always single words (no spaces).
+	// "Playerone slashes a gnoll for 75 points of damage."
+	// Checked after reYouHit and reNPCHitYou so those take priority.
+	reThirdPartyHit = regexp.MustCompile(`^(\w+) (\w+) (.+?) for (\d+) points? of damage\.$`)
 
 	// Combat — player misses NPC: "You try to slash a gnoll, but miss!"
 	reYouMiss = regexp.MustCompile(`^You try to (\w+) (.+?), but miss!$`)
@@ -198,6 +204,25 @@ func classifyMessage(msg string) (LogEvent, bool) {
 				MissType: m[1],
 			},
 		}, true
+	}
+
+	// --- Third-party hit (other players hitting NPCs, etc.) ---
+	// Checked after all player/NPC-specific patterns to avoid false matches.
+	if m := reThirdPartyHit.FindStringSubmatch(msg); m != nil {
+		// Guard: skip if actor is "You" (reYouHit already handled it) or if
+		// the target contains "you" (reNPCHitYou already handled it).
+		if m[1] != "You" && !strings.EqualFold(m[3], "you") {
+			dmg, _ := strconv.Atoi(m[4])
+			return LogEvent{
+				Type: EventCombatHit,
+				Data: CombatHitData{
+					Actor:  m[1],
+					Skill:  m[2],
+					Target: m[3],
+					Damage: dmg,
+				},
+			}, true
+		}
 	}
 
 	// --- Death ---

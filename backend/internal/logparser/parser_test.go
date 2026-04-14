@@ -163,6 +163,22 @@ func TestParseLine(t *testing.T) {
 			wantData: CombatHitData{Actor: "A gnoll", Skill: "slashes", Target: "You", Damage: 50},
 		},
 
+		// --- Combat: third-party player hits NPC ---
+		{
+			name:     "combat: other player slashes NPC",
+			line:     "[Mon Apr 13 06:00:00 2026] Playerone slashes a gnoll for 75 points of damage.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "Playerone", Skill: "slashes", Target: "a gnoll", Damage: 75},
+		},
+		{
+			name:     "combat: other player pierces multi-word NPC",
+			line:     "[Mon Apr 13 06:00:00 2026] Guildmate pierces a young gnoll for 30 points of damage.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "Guildmate", Skill: "pierces", Target: "a young gnoll", Damage: 30},
+		},
+
 		// --- Combat: misses ---
 		{
 			name:     "combat: you miss NPC",

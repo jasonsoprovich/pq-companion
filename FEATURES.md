@@ -361,23 +361,53 @@
 - **`internal/combat/` package** — stateful combat tracker that consumes `logparser.LogEvent` values and maintains per-entity damage statistics grouped into fights:
   - `models.go` — typed structs:
     - `EntityStats` — per-combatant stats: `Name`, `TotalDamage`, `HitCount`, `MaxHit`, `DPS`
-    - `FightState` — live snapshot of the active fight: `StartTime`, `Duration`, `Combatants` (sorted descending by damage), `TotalDamage` (player outgoing), `TotalDPS`
+    - `FightState` — live snapshot of the active fight: `StartTime`, `Duration`, `Combatants` (outgoing damage dealers sorted by damage desc), `TotalDamage` (all outgoing), `TotalDPS`, `YouDamage`, `YouDPS`
     - `FightSummary` — immutable record of a completed fight: adds `EndTime`; same fields otherwise
-    - `CombatState` — full broadcast payload: `InCombat`, `CurrentFight`, `RecentFights` (last 20), `SessionDamage`, `SessionDPS`, `LastUpdated`
+    - `CombatState` — full broadcast payload: `InCombat`, `CurrentFight`, `RecentFights` (last 20), `SessionDamage` (player personal), `SessionDPS`, `LastUpdated`
     - `WSEventCombat = "overlay:combat"` — WebSocket event type constant
   - `tracker.go` — `Tracker` struct:
     - `NewTracker(hub *ws.Hub) *Tracker`
     - `Handle(ev logparser.LogEvent)` — processes `EventCombatHit` (records hit, starts/continues fight, arms inactivity timer), `EventZone` and `EventDeath` (immediately ends active fight)
     - `GetState() CombatState` — thread-safe point-in-time snapshot
     - Fight boundary detection: inactivity timer fires after **6 seconds** (≈2 EQ server ticks) with no new hits; uses monotonic `fightID` counter to guard stale `time.AfterFunc` callbacks
-    - Per-entity tracking: actor `"You"` = player outgoing; NPC actor names = incoming damage to player; both tracked as separate `EntityStats` entries
-    - `TotalDamage` / `TotalDPS` on `FightState` and `FightSummary` reflect player outgoing only; full `Combatants` slice includes all entities
-    - Session aggregates: `SessionDamage` = player outgoing damage summed across all completed fights; `SessionDPS` = SessionDamage / total fight time
+    - Per-entity tracking: `internalFight` maintains separate `outgoing` map (actors hitting non-"You" targets) and `incoming` map (actors hitting "You"); `Combatants` only reflects outgoing damage dealers
+    - `TotalDamage` / `TotalDPS` = sum of all outgoing damage (all players); `YouDamage` / `YouDPS` = player personal only
+    - Session aggregates: `SessionDamage` = player personal outgoing summed across completed fights; `SessionDPS` = SessionDamage / total fight time
     - Completed fights stored in a ring buffer capped at 20 entries, newest first
-  - `tracker_test.go` — 7 table-driven unit tests: no fight initially, fight starts on first hit, hits accumulate, incoming damage tracked separately, zone change ends fight, session aggregates across multiple fights, combatants sorted descending by damage
+  - `tracker_test.go` — 8 unit tests covering: no fight initially, fight starts on first hit, hits accumulate, incoming damage excluded from Combatants, zone change ends fight, session aggregates, sort order, third-party player damage tracking
 - **`internal/api/combat.go`** — `combatHandler` wired to `GET /api/overlay/combat`; returns current `CombatState` as JSON
 - **`internal/api/router.go`** — `NewRouter` signature extended with `*combat.Tracker`; `/api/overlay/combat` route added under `/api/overlay`
 - **`cmd/server/main.go`** — `combat.NewTracker(hub)` instantiated; `combatTracker.Handle(ev)` called in the log-tailer event handler alongside the existing `npcTracker.Handle(ev)`
+
+### Task 5.2 — DPS Overlay ✅
+- **Log parser extended** (`internal/logparser/parser.go`) — added `reThirdPartyHit` regex to capture other players dealing damage: `"Playername verb target for N points of damage."` — checked after player/NPC-specific patterns to prevent false matches; guards skip if actor is `"You"` or target contains `"you"` (already handled by prior patterns)
+- **`types/combat.ts`** — TypeScript types mirroring Go structs: `EntityStats`, `FightState`, `FightSummary`, `CombatState` with all new `YouDamage`/`YouDPS` fields
+- **`services/api.ts`** — added `getCombatState()` → `GET /api/overlay/combat`
+- **`components/OverlayWindow.tsx`** — reusable draggable/resizable floating panel component:
+  - Drag via title bar (grip icon; stops propagation on controls inside header)
+  - 8-direction resize via edge and corner handles (N, S, E, W, NE, NW, SE, SW)
+  - `useEffect` attaches `mousemove`/`mouseup` to `document` only during drag/resize to avoid global listener overhead
+  - `minWidth`/`minHeight` props clamping; default 260×180
+  - Semi-transparent themed background with `box-shadow`
+  - Used by DPS overlay; designed as the base for all future overlays
+- **`pages/DPSOverlayPage.tsx`** — in-app DPS overlay view (route `/dps-overlay`):
+  - Floating `OverlayWindow` panel with drag/resize; hint text on background
+  - **Filter toggle button** — `All` (shows every outgoing damage dealer) / `Me` (shows only `"You"`)
+  - **Pop Out button** (⤢ icon) — invokes `window.electron.overlay.toggleDPS()` to open/close the standalone overlay window; only shown when running in Electron
+  - Connection pill (live WS status), log-tailer status bar, combat status strip with fight duration and live DPS
+  - Combatants table: per-row damage bar (width = % of total), name (player highlighted), % share, total damage, DPS; column headers; empty state
+  - Session footer: fight count, total damage, session DPS
+  - Subscribes to `overlay:combat` WebSocket events; initial state fetched via REST on mount
+- **`pages/DPSOverlayWindowPage.tsx`** — compact overlay for the standalone Electron window (route `/dps-overlay-window`):
+  - Transparent dark background (`rgba(10,10,12,0.88)`), 8px border-radius, no Electron frame
+  - Drag via `-webkit-app-region: drag` CSS on title bar; controls use `no-drag` class
+  - Filter toggle (All/Me) and × close button (calls `overlay.closeDPS()`)
+  - Same combatant row layout as the in-app view; session footer
+- **Electron main process** (`electron/main/index.ts`) — `createDPSOverlay()` creates a transparent, frameless, always-on-top `BrowserWindow` (420×460, min 260×180, `resizable: true`); loads `/#/dps-overlay-window`; `setAlwaysOnTop('screen-saver')` + `setVisibleOnAllWorkspaces(visibleOnFullScreen: true)` to float over fullscreen apps; IPC handlers: `overlay:dps:open`, `overlay:dps:close`, `overlay:dps:toggle`
+- **Electron preload** (`electron/preload/index.ts`) — exposes `window.electron.overlay.{openDPS, closeDPS, toggleDPS}` to renderer via `contextBridge`
+- **`types/electron.d.ts`** — added `overlay` field to `ElectronAPI` interface
+- **`components/Sidebar.tsx`** — added `DPS Overlay` nav entry (Swords icon) in the Parsing section
+- **`App.tsx`** — added `/dps-overlay` route (in Layout) and `/dps-overlay-window` route (outside Layout for standalone window)
 
 ## Phase 6 — Spell Timer Engine
 - Countdown tracking for mez, stuns, DoTs, buffs

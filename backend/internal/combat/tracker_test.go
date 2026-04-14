@@ -109,13 +109,19 @@ func TestIncomingDamageTracked(t *testing.T) {
 	tr.Handle(hitEvent("a gnoll", "You", 30, now.Add(time.Second)))
 
 	st := tr.GetState()
-	// TotalDamage (outgoing only) should be 200.
+	// TotalDamage is outgoing-only; incoming (NPC hitting player) is excluded.
 	if st.CurrentFight.TotalDamage != 200 {
 		t.Fatalf("expected TotalDamage=200 (outgoing), got %d", st.CurrentFight.TotalDamage)
 	}
-	// But both combatants should be present.
-	if len(st.CurrentFight.Combatants) != 2 {
-		t.Fatalf("expected 2 combatants, got %d", len(st.CurrentFight.Combatants))
+	if st.CurrentFight.YouDamage != 200 {
+		t.Fatalf("expected YouDamage=200, got %d", st.CurrentFight.YouDamage)
+	}
+	// Combatants only includes outgoing damage dealers.
+	if len(st.CurrentFight.Combatants) != 1 {
+		t.Fatalf("expected 1 outgoing combatant (You), got %d", len(st.CurrentFight.Combatants))
+	}
+	if st.CurrentFight.Combatants[0].Name != "You" {
+		t.Fatalf("expected combatant 'You', got %q", st.CurrentFight.Combatants[0].Name)
 	}
 }
 
@@ -163,8 +169,9 @@ func TestCombatantsSortedByDamageDescending(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()
 
+	// Two outgoing damage dealers — the higher-damage one should rank first.
 	tr.Handle(hitEvent("You", "a gnoll", 50, now))
-	tr.Handle(hitEvent("a gnoll", "You", 200, now.Add(time.Second)))
+	tr.Handle(hitEvent("Guildmate", "a gnoll", 200, now.Add(time.Second)))
 
 	st := tr.GetState()
 	if len(st.CurrentFight.Combatants) < 2 {
@@ -172,5 +179,32 @@ func TestCombatantsSortedByDamageDescending(t *testing.T) {
 	}
 	if st.CurrentFight.Combatants[0].TotalDamage < st.CurrentFight.Combatants[1].TotalDamage {
 		t.Fatal("expected combatants sorted descending by total damage")
+	}
+	// TotalDamage is the sum of all outgoing combatants.
+	if st.CurrentFight.TotalDamage != 250 {
+		t.Fatalf("expected TotalDamage=250, got %d", st.CurrentFight.TotalDamage)
+	}
+}
+
+func TestThirdPartyDamageTracked(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("You", "a gnoll", 100, now))
+	tr.Handle(hitEvent("Guildmate", "a gnoll", 150, now.Add(time.Second)))
+	tr.Handle(hitEvent("a gnoll", "You", 40, now.Add(2*time.Second)))
+
+	st := tr.GetState()
+	// TotalDamage = all outgoing = 100 + 150
+	if st.CurrentFight.TotalDamage != 250 {
+		t.Fatalf("expected TotalDamage=250, got %d", st.CurrentFight.TotalDamage)
+	}
+	// YouDamage = only the player's outgoing
+	if st.CurrentFight.YouDamage != 100 {
+		t.Fatalf("expected YouDamage=100, got %d", st.CurrentFight.YouDamage)
+	}
+	// 2 outgoing combatants (You + Guildmate), NPC excluded
+	if len(st.CurrentFight.Combatants) != 2 {
+		t.Fatalf("expected 2 outgoing combatants, got %d", len(st.CurrentFight.Combatants))
 	}
 }

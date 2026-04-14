@@ -22,7 +22,11 @@ type internalFight struct {
 	id        int
 	startTime time.Time
 	lastHit   time.Time
-	entities  map[string]*internalEntity
+
+	// outgoing tracks actors dealing damage to non-"You" targets (players, etc.).
+	outgoing map[string]*internalEntity
+	// incoming tracks actors dealing damage to "You" (NPCs hitting the player).
+	incoming map[string]*internalEntity
 }
 
 // Tracker watches parsed log events, groups them into fights, and maintains
@@ -37,7 +41,7 @@ type Tracker struct {
 
 	recentFights []FightSummary
 
-	// session aggregates (player outgoing damage only)
+	// session aggregates (player personal outgoing damage only)
 	sessionDamage    int64
 	sessionFightTime float64 // total seconds spent in completed fights
 }
@@ -81,17 +85,25 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 			id:        t.fightCounter,
 			startTime: ts,
 			lastHit:   ts,
-			entities:  make(map[string]*internalEntity),
+			outgoing:  make(map[string]*internalEntity),
+			incoming:  make(map[string]*internalEntity),
 		}
 	} else {
 		t.active.lastHit = ts
 	}
 
-	// Accumulate damage under the actor's name.
-	ent := t.active.entities[data.Actor]
+	// Route to outgoing or incoming based on target.
+	var entityMap map[string]*internalEntity
+	if data.Target == "You" {
+		entityMap = t.active.incoming
+	} else {
+		entityMap = t.active.outgoing
+	}
+
+	ent := entityMap[data.Actor]
 	if ent == nil {
 		ent = &internalEntity{}
-		t.active.entities[data.Actor] = ent
+		entityMap[data.Actor] = ent
 	}
 	ent.totalDamage += int64(data.Damage)
 	ent.hitCount++
@@ -159,25 +171,20 @@ func (t *Tracker) archiveFight(endTime time.Time) {
 		duration = 0.001 // guard against zero-division
 	}
 
-	combatants := buildEntityStats(f.entities, duration)
-
-	// Player outgoing damage for session aggregates.
-	playerDmg := int64(0)
-	for _, e := range combatants {
-		if e.Name == "You" {
-			playerDmg = e.TotalDamage
-			break
-		}
-	}
-	t.sessionDamage += playerDmg
-	t.sessionFightTime += duration
+	combatants := buildEntityStats(f.outgoing, duration)
 
 	totalDmg := int64(0)
+	youDmg := int64(0)
 	for _, e := range combatants {
+		totalDmg += e.TotalDamage
 		if e.Name == "You" {
-			totalDmg = e.TotalDamage
+			youDmg = e.TotalDamage
 		}
 	}
+
+	// Session tracking uses player personal outgoing damage only.
+	t.sessionDamage += youDmg
+	t.sessionFightTime += duration
 
 	summary := FightSummary{
 		StartTime:   f.startTime,
@@ -186,6 +193,8 @@ func (t *Tracker) archiveFight(endTime time.Time) {
 		Combatants:  combatants,
 		TotalDamage: totalDmg,
 		TotalDPS:    safeDivide(float64(totalDmg), duration),
+		YouDamage:   youDmg,
+		YouDPS:      safeDivide(float64(youDmg), duration),
 	}
 
 	// Prepend and cap at maxRecentFights.
@@ -214,13 +223,14 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 		if duration < 0.001 {
 			duration = 0.001
 		}
-		combatants := buildEntityStats(t.active.entities, duration)
+		combatants := buildEntityStats(t.active.outgoing, duration)
 
-		playerDmg := int64(0)
+		totalDmg := int64(0)
+		youDmg := int64(0)
 		for _, e := range combatants {
+			totalDmg += e.TotalDamage
 			if e.Name == "You" {
-				playerDmg = e.TotalDamage
-				break
+				youDmg = e.TotalDamage
 			}
 		}
 
@@ -228,8 +238,10 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 			StartTime:   t.active.startTime,
 			Duration:    duration,
 			Combatants:  combatants,
-			TotalDamage: playerDmg,
-			TotalDPS:    safeDivide(float64(playerDmg), duration),
+			TotalDamage: totalDmg,
+			TotalDPS:    safeDivide(float64(totalDmg), duration),
+			YouDamage:   youDmg,
+			YouDPS:      safeDivide(float64(youDmg), duration),
 		}
 	}
 
