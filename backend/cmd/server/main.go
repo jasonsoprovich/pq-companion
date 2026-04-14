@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/api"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
@@ -47,7 +48,14 @@ func main() {
 	zealWatcher := zeal.NewWatcher(cfgMgr, hub)
 	go zealWatcher.Start(context.Background())
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher)
+	backupMgr, err := backup.NewManager(cfgMgr)
+	if err != nil {
+		slog.Error("open backup manager", "err", err)
+		os.Exit(1)
+	}
+	defer backupMgr.Close()
+
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr)
 
 	slog.Info("server starting", "addr", listenAddr, "db", *dbPath)
 	if err := http.ListenAndServe(listenAddr, router); err != nil {

@@ -6,14 +6,15 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
 
-// NewRouter builds and returns the chi router wired to the given DB, Hub, Config, and Zeal watcher.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher) http.Handler {
+// NewRouter builds and returns the chi router wired to the given DB, Hub, Config, Zeal watcher, and Backup manager.
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, backupMgr *backup.Manager) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -21,7 +22,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
@@ -39,6 +40,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	search := &searchHandler{db: database}
 	zealH := &zealHandler{watcher: zealWatcher}
 	keysH := &keysHandler{watcher: zealWatcher}
+	backupH := &backupHandler{mgr: backupMgr}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
@@ -74,6 +76,13 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		r.Route("/keys", func(r chi.Router) {
 			r.Get("/", keysH.list)
 			r.Get("/progress", keysH.progress)
+		})
+		r.Route("/backups", func(r chi.Router) {
+			r.Get("/", backupH.list)
+			r.Post("/", backupH.create)
+			r.Get("/{id}", backupH.get)
+			r.Delete("/{id}", backupH.delete)
+			r.Post("/{id}/restore", backupH.restore)
 		})
 	})
 

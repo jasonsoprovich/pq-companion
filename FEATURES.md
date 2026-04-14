@@ -223,8 +223,21 @@
   - Empty states for each filter tab; not-configured state with link to Settings; no-exports state per key.
 - **Sidebar**: "Key Tracker" added to the Zeal nav section with `KeyRound` icon.
 
-### Task 3.5 — Config Backup Manager (Backend)
-_Planned_
+### Task 3.5 — Config Backup Manager (Backend) ✅
+- **`internal/backup/` package** — backup creation, storage, and restoration:
+  - `models.go` — `Backup{ID, Name, Notes, CreatedAt, SizeBytes, FileCount}`; `ErrNotFound` sentinel
+  - `store.go` — `Store`: opens/creates `~/.pq-companion/user.db` (first feature to use user.db); `CREATE TABLE IF NOT EXISTS backups` migration; `Insert`, `List` (newest-first), `Get`, `Delete`
+  - `manager.go` — `Manager`: `NewManager` (uses `~/.pq-companion/`) and `NewManagerAt` (custom base dir for tests); `Create(name, notes)` — globs all `*.ini` files in `eq_path`, creates a deflate zip in `~/.pq-companion/backups/<id>.zip`, inserts DB record; `Delete(id)` — removes zip + record; `Restore(id)` — extracts zip back to `eq_path` with path-traversal guard; `List`/`Get` — thin wrappers over Store
+  - Backup IDs are 8-byte cryptographic random hex strings
+  - Errors: `eq_path` not configured, no `*.ini` files found, not-found sentinel wraps correctly through handler layer
+- **API endpoints** (`internal/api/backup.go`):
+  - `GET /api/backups` — list all backups newest-first
+  - `POST /api/backups` — create backup; body `{"name":"…","notes":"…"}`; returns 201 + Backup JSON
+  - `GET /api/backups/{id}` — get single backup
+  - `DELETE /api/backups/{id}` — delete backup (zip + record); returns 204
+  - `POST /api/backups/{id}/restore` — restore backup to EQ directory
+- **CORS** updated to allow `POST` and `DELETE` methods (previously `GET, PUT` only)
+- **Tests** (`internal/backup/backup_test.go`): 10 table-driven tests covering store open/migrate idempotency, CRUD, newest-first ordering, manager create/list, create with no eq_path, create with no ini files, delete, delete-not-found, restore, restore-not-found
 
 ### Task 3.6 — Config Backup Manager (UI)
 _Planned_
