@@ -53,6 +53,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager) http.Handle
 		r.Route("/zones", func(r chi.Router) {
 			r.Get("/", zones.search)
 			r.Get("/short/{name}", zones.getByShortName)
+			r.Get("/short/{name}/npcs", zones.getNPCsByShortName)
 			r.Get("/{id}", zones.get)
 		})
 		r.Route("/config", func(r chi.Router) {

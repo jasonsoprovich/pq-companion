@@ -326,6 +326,48 @@ func scanZone(row interface {
 	return &z, nil
 }
 
+// GetNPCsByZone returns all distinct NPCs that spawn in the given zone short_name.
+// It follows both the spawnentry chain (spawn2→spawnentry→npc_types) and direct
+// solo-spawn entries (spawn2.spawngroupID == npc_types.id).
+func (db *DB) GetNPCsByZone(shortName string, limit, offset int) (*SearchResult[NPC], error) {
+	// Subquery returns the set of npc_types.id values present in the zone.
+	idSubquery := `
+		SELECT DISTINCT se.npcID
+		FROM spawnentry se
+		JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
+		WHERE s2.zone = ?
+		UNION
+		SELECT DISTINCT s2.spawngroupID
+		FROM spawn2 s2
+		WHERE s2.zone = ?
+		  AND EXISTS (SELECT 1 FROM npc_types n2 WHERE n2.id = s2.spawngroupID)`
+
+	var total int
+	countQ := fmt.Sprintf(
+		"SELECT COUNT(*) FROM (SELECT DISTINCT id FROM npc_types WHERE id IN (%s))",
+		idSubquery,
+	)
+	if err := db.QueryRow(countQ, shortName, shortName).Scan(&total); err != nil {
+		return nil, fmt.Errorf("count zone npcs: %w", err)
+	}
+
+	q := fmt.Sprintf(
+		"SELECT %s FROM npc_types n WHERE n.id IN (%s) ORDER BY n.name LIMIT ? OFFSET ?",
+		npcColumns, idSubquery,
+	)
+	rows, err := db.Query(q, shortName, shortName, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("query zone npcs: %w", err)
+	}
+	defer rows.Close()
+
+	npcs, err := collectNPCs(rows)
+	if err != nil {
+		return nil, err
+	}
+	return &SearchResult[NPC]{Items: npcs, Total: total}, nil
+}
+
 // GetZone returns the zone with the given ID, or sql.ErrNoRows if not found.
 func (db *DB) GetZone(id int) (*Zone, error) {
 	q := fmt.Sprintf("SELECT %s FROM zone z WHERE z.id = ?", zoneColumns)

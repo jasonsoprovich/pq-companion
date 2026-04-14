@@ -1,6 +1,7 @@
 import type { Item, SearchResult } from '../types/item'
 import type { NPC } from '../types/npc'
 import type { Spell } from '../types/spell'
+import type { Zone } from '../types/zone'
 
 const BASE_URL = 'http://localhost:8080'
 
@@ -56,4 +57,28 @@ export function searchNPCs(
 
 export function getNPC(id: number): Promise<NPC> {
   return get<NPC>(`/api/npcs/${id}`)
+}
+
+// ── Zones ──────────────────────────────────────────────────────────────────────
+
+export function searchZones(
+  q: string,
+  limit = 50,
+  offset = 0,
+): Promise<SearchResult<Zone>> {
+  const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) })
+  return get<SearchResult<Zone>>(`/api/zones?${params}`)
+}
+
+export function getZone(id: number): Promise<Zone> {
+  return get<Zone>(`/api/zones/${id}`)
+}
+
+export function getNPCsByZone(
+  shortName: string,
+  limit = 200,
+  offset = 0,
+): Promise<SearchResult<NPC>> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  return get<SearchResult<NPC>>(`/api/zones/short/${encodeURIComponent(shortName)}/npcs?${params}`)
 }

@@ -136,8 +136,17 @@
   - Flags rendered as pill badges: RAID TARGET, RARE SPAWN
   - Sections only rendered when they have non-zero values
 
+### Task 2.6 — Database Explorer: Zones ✅
+- **`types/zone.ts`** — TypeScript `Zone` type mirroring Go backend struct
+- **`services/api.ts`** — added `searchZones(q, limit, offset)`, `getZone(id)`, `getNPCsByZone(shortName, limit, offset)`
+- **Backend: `GetNPCsByZone`** (`internal/db/queries.go`) — follows spawn chain via UNION subquery: `spawn2→spawnentry→npc_types` (group spawns) UNION direct `spawn2.spawngroupID = npc_types.id` (solo spawns); returns paginated, deduplicated NPC list ordered by name
+- **Backend: `GET /api/zones/short/{name}/npcs`** — new endpoint returning zone residents (up to 200 per page)
+- **`pages/ZonesPage.tsx`** — split-pane layout matching other explorers:
+  - **Left pane (288px)**: debounced search by long name, result count, list showing long name + short name + min level; selected zone highlighted with gold left-border accent
+  - **Detail panel (right)**: two sections — Zone Info (Zone ID, min level, safe coordinates, note) and Residents (NPC list loaded on zone selection)
+  - **NPC Resident list**: scrollable list showing NPC display name, class, level, and HP; fetched per-zone on demand; shows "Showing X of Y" when truncated; graceful empty-state for zones with no spawn data
+
 ### Coming in Phase 2
-- **Zone Explorer** (Task 2.6): browse zones, list resident NPCs
 - **Global Search** (Task 2.7): cross-database search via `Ctrl+K` / `Cmd+K`
 
 ## Phase 3 — Zeal Integration & Backup Manager

@@ -44,6 +44,21 @@ func (h *zonesHandler) getByShortName(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, zone)
 }
 
+func (h *zonesHandler) getNPCsByShortName(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	limit := queryInt(r, "limit", 100)
+	offset := queryInt(r, "offset", 0)
+	if limit > 200 {
+		limit = 200
+	}
+	result, err := h.db.GetNPCsByZone(name, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (h *zonesHandler) search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	limit := queryInt(r, "limit", 20)

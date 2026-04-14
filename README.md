@@ -4,7 +4,7 @@ A desktop companion app for the [Project Quarm](https://www.projectquarm.com/) E
 
 Features: database explorer (items, spells, NPCs, zones), combat log parser, DPS meter, spell/buff/DoT timer overlays, NPC info overlay, spell checklist, config backup manager, and a custom trigger system.
 
-> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 complete: REST API, WebSocket server, and configuration system. Phase 2 in progress: Electron + React shell scaffolded, app layout and navigation complete, Item/Spell/NPC explorers live; Zone explorer and Global Search next. See [ROADMAP.md](ROADMAP.md) for what's coming.
+> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 complete: REST API, WebSocket server, and configuration system. Phase 2 in progress: Electron + React shell scaffolded, app layout and navigation complete, Item/Spell/NPC/Zone explorers live; Global Search next. See [ROADMAP.md](ROADMAP.md) for what's coming.
 
 ---
 
