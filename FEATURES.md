@@ -208,10 +208,26 @@ Multi-character inventory tracking with full-text search across all character ex
   - Each item row: item name, location, count; hover to reveal "look up" button → `/items?select={id}`
   - Empty / not-configured states with setup guidance
 
-### Task 3.4 — Config Backup Manager (Backend)
+### Task 3.4 — Key Tracker
 _Planned_
 
-### Task 3.5 — Config Backup Manager (UI)
+Key/access-item progress tracker that cross-references character inventories against curated key component lists. Design notes:
+
+- **Key definitions** live in a static Go map in `internal/keys/keys.go` (no DB needed — these are well-known game data). Each entry has a name, description, and an ordered list of components with `{item_id, item_name, notes}`. Examples: Vex Thal key (Lucid Shards + Crystallized Shadow + others), Planes of Power flag progression, Ssraeshza Temple access items.
+- Because multiple items share the same display name in-game (e.g. "Lucid Shard" has several distinct item IDs for different NPC drops), the component list uses **item IDs** as the canonical identifier. Item names in the definitions are for display only.
+- **`GET /api/keys`** — returns all key definitions (name, description, components with item ID + display name + notes).
+- **`GET /api/keys/progress`** — requires `GET /api/zeal/all-inventories` (Task 3.3) to be implemented first. For each key, for each character, returns which component item IDs are present in that character's inventory (equipped + bags + bank + shared bank). SharedBank components count for all characters (deduplicated — only one copy of each SharedBank item is counted).
+- Frontend **Key Tracker** page (`/key-tracker`):
+  - List of keys as expandable cards (or accordion rows) with an overall progress bar (e.g. "3 / 7 components")
+  - Within each key: component table with rows for each piece — columns are component name and one column per character showing a checkmark (have it), empty circle (missing), or "SharedBank" badge (found in shared bank, available to all)
+  - Filter: show All keys / In Progress / Complete
+  - Characters with no inventory export are grayed out with a "no export" note
+  - Sidebar entry under Zeal section with `Key` icon
+
+### Task 3.5 — Config Backup Manager (Backend)
+_Planned_
+
+### Task 3.6 — Config Backup Manager (UI)
 _Planned_
 
 ## Phase 4 — Log Parsing & NPC Info Overlay
