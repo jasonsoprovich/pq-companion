@@ -145,6 +145,23 @@ func (db *DB) GetNPC(id int) (*NPC, error) {
 	return n, nil
 }
 
+// GetNPCByName returns the first NPC whose name exactly matches the given
+// string (case-insensitive). EQ log display names use spaces; the database
+// stores them with underscores — callers must convert before calling.
+// Returns sql.ErrNoRows (wrapped) when no match is found.
+func (db *DB) GetNPCByName(name string) (*NPC, error) {
+	q := fmt.Sprintf(
+		"SELECT %s FROM npc_types n WHERE n.name = ? COLLATE NOCASE LIMIT 1",
+		npcColumns,
+	)
+	row := db.QueryRow(q, name)
+	n, err := scanNPC(row)
+	if err != nil {
+		return nil, fmt.Errorf("get npc by name %q: %w", name, err)
+	}
+	return n, nil
+}
+
 // SearchNPCs searches NPCs by name (case-insensitive substring match).
 func (db *DB) SearchNPCs(query string, limit, offset int) (*SearchResult[NPC], error) {
 	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"

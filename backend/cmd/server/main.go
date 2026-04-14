@@ -14,6 +14,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
@@ -56,14 +57,19 @@ func main() {
 	}
 	defer backupMgr.Close()
 
+	// NPC overlay tracker: watches log events to infer the current combat target
+	// and broadcasts overlay:npc_target WebSocket events with full NPC data.
+	npcTracker := overlay.NewNPCTracker(hub, database)
+
 	// Log tailer: reads new lines from the EQ log file and broadcasts parsed
-	// events to all connected WebSocket clients.
+	// events to all connected WebSocket clients. Also feeds the NPC tracker.
 	tailer := logparser.NewTailer(cfgMgr, func(ev logparser.LogEvent) {
 		hub.Broadcast(ws.Event{Type: string(ev.Type), Data: ev})
+		npcTracker.Handle(ev)
 	})
 	go tailer.Start(context.Background())
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker)
 
 	slog.Info("server starting", "addr", listenAddr, "db", *dbPath)
 	if err := http.ListenAndServe(listenAddr, router); err != nil {

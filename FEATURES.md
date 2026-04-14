@@ -304,8 +304,31 @@
 - **Sidebar** — new "Parsing" section with "Log Feed" (`Activity` icon) at `/log-feed`
 - **`App.tsx`** — `/log-feed` route wired up
 
-### Task 4.3 — NPC Info Overlay (Backend)
-_Planned_
+### Task 4.3 — NPC Info Overlay (Backend) ✅
+
+**Target Inference**
+- New `overlay.NPCTracker` (`backend/internal/overlay/npc.go`) consumes parsed log events to infer the player's current combat target
+- Target is set when a `log:combat_hit` or `log:combat_miss` event where `Actor == "You"` is received — the `Target` field becomes the current target
+- Target is cleared on zone change (`log:zone`) or player death (`log:death`)
+- Duplicate target updates (same name) are skipped to avoid redundant DB lookups
+
+**NPC Database Lookup**
+- When the target name changes, the tracker converts the log display name (spaces) to the EQ database format (underscores) and calls the new `db.GetNPCByName` query
+- `GetNPCByName` performs a case-insensitive exact match against `npc_types.name` with `LIMIT 1`
+- Retrieved NPC data includes all resist stats (MR, CR, DR, FR, PR), level, HP, special abilities string
+- `db.ParseSpecialAbilities` is called to produce a structured `[]SpecialAbility` slice from the raw caret-delimited field
+
+**WebSocket Broadcasting**
+- On every target change (or loss), the tracker broadcasts a `overlay:npc_target` event via the shared WebSocket hub
+- Payload is `overlay.TargetState`: `has_target`, `target_name`, `npc_data` (full NPC record), `special_abilities` (parsed), `current_zone`, `last_updated`
+- When no target is active, `has_target: false` is broadcast with null NPC data
+
+**REST Endpoint**
+- `GET /api/overlay/npc/target` — returns the current `TargetState` snapshot for clients that poll instead of subscribing to WebSocket
+- Handler in `backend/internal/api/overlay.go`; route wired in `router.go` under `/api/overlay/npc/target`
+
+**Wiring**
+- `main.go` creates the `NPCTracker` before the log tailer; the tailer's event handler calls both `hub.Broadcast` and `npcTracker.Handle` so no events are dropped
 
 ### Task 4.4 — NPC Info Overlay (Frontend)
 _Planned_
