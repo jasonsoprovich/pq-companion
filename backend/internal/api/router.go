@@ -38,6 +38,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	cfg := &configHandler{mgr: cfgMgr}
 	search := &searchHandler{db: database}
 	zealH := &zealHandler{watcher: zealWatcher}
+	keysH := &keysHandler{watcher: zealWatcher}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
@@ -69,6 +70,10 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/inventory", zealH.inventory)
 			r.Get("/spells", zealH.spellbook)
 			r.Get("/all-inventories", zealH.allInventories)
+		})
+		r.Route("/keys", func(r chi.Router) {
+			r.Get("/", keysH.list)
+			r.Get("/progress", keysH.progress)
 		})
 	})
 

@@ -3,6 +3,7 @@ import type { NPC } from '../types/npc'
 import type { Spell } from '../types/spell'
 import type { Zone } from '../types/zone'
 import type { ZealInventoryResponse, ZealSpellbookResponse, AllInventoriesResponse } from '../types/zeal'
+import type { KeysResponse, KeysProgressResponse } from '../types/keys'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -121,4 +122,14 @@ export function getSpellsByClass(
 ): Promise<SearchResult<Spell>> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   return get<SearchResult<Spell>>(`/api/spells/class/${classIndex}?${params}`)
+}
+
+// ── Keys ───────────────────────────────────────────────────────────────────────
+
+export function getKeys(): Promise<KeysResponse> {
+  return get<KeysResponse>('/api/keys')
+}
+
+export function getKeysProgress(): Promise<KeysProgressResponse> {
+  return get<KeysProgressResponse>('/api/keys/progress')
 }

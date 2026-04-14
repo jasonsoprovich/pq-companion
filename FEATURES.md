@@ -209,21 +209,19 @@
   - Hover "look up" button on each item row navigates to `/items?select={id}`
 - **Sidebar**: "Inventory" entry renamed to "Inventory Tracker" pointing at `/inventory-tracker`; old `/inventory` route kept but removed from sidebar
 
-### Task 3.4 — Key Tracker
-_Planned_
-
-Key/access-item progress tracker that cross-references character inventories against curated key component lists. Design notes:
-
-- **Key definitions** live in a static Go map in `internal/keys/keys.go` (no DB needed — these are well-known game data). Each entry has a name, description, and an ordered list of components with `{item_id, item_name, notes}`. Examples: Vex Thal key (Lucid Shards + Crystallized Shadow + others), Planes of Power flag progression, Ssraeshza Temple access items.
-- Because multiple items share the same display name in-game (e.g. "Lucid Shard" has several distinct item IDs for different NPC drops), the component list uses **item IDs** as the canonical identifier. Item names in the definitions are for display only.
-- **`GET /api/keys`** — returns all key definitions (name, description, components with item ID + display name + notes).
-- **`GET /api/keys/progress`** — requires `GET /api/zeal/all-inventories` (Task 3.3) to be implemented first. For each key, for each character, returns which component item IDs are present in that character's inventory (equipped + bags + bank + shared bank). SharedBank components count for all characters (deduplicated — only one copy of each SharedBank item is counted).
-- Frontend **Key Tracker** page (`/key-tracker`):
-  - List of keys as expandable cards (or accordion rows) with an overall progress bar (e.g. "3 / 7 components")
-  - Within each key: component table with rows for each piece — columns are component name and one column per character showing a checkmark (have it), empty circle (missing), or "SharedBank" badge (found in shared bank, available to all)
-  - Filter: show All keys / In Progress / Complete
-  - Characters with no inventory export are grayed out with a "no export" note
-  - Sidebar entry under Zeal section with `Key` icon
+### Task 3.4 — Key Tracker ✅
+- **`internal/keys/keys.go`** — static key definitions (no DB needed). Each `KeyDef` has an ID, name, description, and ordered `[]Component{ItemID, ItemName, Notes}`. Item IDs are canonical; names are for display only. Ships with 6 keys: Veeshan's Peak, Old Sebilis, Howling Stones (Charasis), Grieg's End, Grimling Forest Shackle Pens, and Katta Castellum.
+- **`GET /api/keys`** — returns all key definitions as `{"keys": [...]}`.
+- **`GET /api/keys/progress`** — cross-references all character inventories (via `AllInventories`) against each key's component item IDs. Response: `{configured, keys[{key_id, characters[{character, has_export, components[{item_id, item_name, have, shared_bank}]}]}]}`. `have` is true if the item is in that character's equipped/bag/bank slots. `shared_bank` is true when the only copy is in the Shared Bank (available to all characters, deduplicated).
+- **`types/keys.ts`** — TypeScript types mirroring all Go response structs.
+- **`services/api.ts`** — added `getKeys()` and `getKeysProgress()` typed fetch wrappers.
+- **`pages/KeyTrackerPage.tsx`** — Key Tracker page at `/key-tracker`:
+  - **Header bar**: Key Tracker title and Refresh button.
+  - **Filter tabs**: All / In Progress / Complete — filters the key card list by aggregate progress across all characters.
+  - **Key cards**: expandable accordion cards; collapsed state shows key name and a progress bar (`X / Y components` aggregated across all characters). Complete keys render with a green border.
+  - **Component table** (expanded): rows = components, columns = one per character with a Zeal export. Each cell shows a green checkmark (character has the item), `SB` gold badge (only in shared bank), or an empty circle (missing). Component notes shown as muted subtitle text.
+  - Empty states for each filter tab; not-configured state with link to Settings; no-exports state per key.
+- **Sidebar**: "Key Tracker" added to the Zeal nav section with `KeyRound` icon.
 
 ### Task 3.5 — Config Backup Manager (Backend)
 _Planned_
