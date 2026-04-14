@@ -25,3 +25,9 @@ export interface ZealInventoryResponse {
 export interface ZealSpellbookResponse {
   spellbook: Spellbook | null
 }
+
+export interface AllInventoriesResponse {
+  configured: boolean
+  characters: Inventory[]
+  shared_bank: InventoryEntry[]
+}

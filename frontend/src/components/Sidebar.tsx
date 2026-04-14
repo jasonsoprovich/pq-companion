@@ -16,7 +16,7 @@ const PRIMARY_NAV: NavItem[] = [
 ]
 
 const ZEAL_NAV: NavItem[] = [
-  { to: '/inventory', label: 'Inventory', icon: <Package size={16} /> },
+  { to: '/inventory-tracker', label: 'Inventory Tracker', icon: <Package size={16} /> },
   { to: '/spell-checklist', label: 'Spell Checklist', icon: <BookOpen size={16} /> },
 ]
 

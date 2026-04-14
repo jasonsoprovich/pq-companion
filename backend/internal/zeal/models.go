@@ -39,3 +39,12 @@ type State struct {
 	Inventory *Inventory `json:"inventory"`
 	Spellbook *Spellbook `json:"spellbook"`
 }
+
+// AllInventoriesResponse is returned by GET /api/zeal/all-inventories.
+// Configured is false when the EQ path has not been set in config.
+// SharedBank contains deduplicated entries from the most-recently-modified export file.
+type AllInventoriesResponse struct {
+	Configured bool             `json:"configured"`
+	Characters []*Inventory     `json:"characters"`
+	SharedBank []InventoryEntry `json:"shared_bank"`
+}

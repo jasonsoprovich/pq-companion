@@ -194,19 +194,20 @@
 - **Sidebar** (`components/Sidebar.tsx`) — "Spell Checklist" added to the Zeal nav section with `BookOpen` icon
 - **`App.tsx`** — `/spell-checklist` route wired up
 
-### Task 3.3 — Inventory Tracker (Multi-Character + Search)
-_Planned_
-
-Multi-character inventory tracking with full-text search across all character exports. Key design constraints:
-- The backend scans the EQ directory for **all** `*_pq.proj-Inventory.txt` files (not just the configured character), building an in-memory index of every character's items.
-- Each character has their own inventory slots (Charm–Feet), general bags (General 1–8), and bank slots (Bank 1–24). **SharedBank slots appear in every character's export** — deduplicate by keeping only the copy from the most-recently-modified export file.
-- `GET /api/zeal/all-inventories` returns an array of per-character inventories (each with `character`, `exported_at`, `entries[]`) plus a single deduplicated `shared_bank[]` array.
-- The frontend **Inventory Tracker** page (`/inventory-tracker`):
-  - Character tabs or selector to switch between characters (plus a combined view)
-  - Search bar to filter items by name across the selected scope (one character or all)
-  - Sections: Equipped · Bags · Bank · Shared Bank (shown once, not per-character)
-  - Each item row: item name, location, count; hover to reveal "look up" button → `/items?select={id}`
-  - Empty / not-configured states with setup guidance
+### Task 3.3 — Inventory Tracker (Multi-Character + Search) ✅
+- **`internal/zeal/scanner.go`** — `ScanAllInventories(eqPath)`: globs `*_pq.proj-Inventory.txt`, parses each file, strips SharedBank entries from per-character inventories, and returns the SharedBank from the most-recently-modified export (deduplicated by taking the newest copy only)
+- **`internal/zeal/models.go`** — `AllInventoriesResponse{Configured, Characters, SharedBank}` — `Configured` distinguishes "EQ path not set" from "no exports found yet"
+- **`internal/zeal/watcher.go`** — `AllInventories()` method: uses `cfgMgr` to get EQ path, calls `ScanAllInventories`, and returns a ready-to-encode response
+- **`GET /api/zeal/all-inventories`** — new endpoint; on-demand scan of all exports; returns `{configured, characters[], shared_bank[]}`
+- **Frontend — Inventory Tracker page** (`pages/InventoryTrackerPage.tsx`) at `/inventory-tracker`:
+  - **Character tabs**: All · one tab per discovered character (shows item count); tab selection persists within the session; selecting a tab that no longer exists after refresh resets to All
+  - **Search bar**: debounce-free text filter in the header; filters by item name across the active scope (case-insensitive substring); X button to clear
+  - **Sections**: Equipped (sorted by canonical slot order), Bags (grouped by bag number per character; bag name shown in sub-header when available), Bank, Shared Bank (always shown once regardless of selected character)
+  - **Character badges**: shown on each item row in "All" mode when more than one character is present
+  - **Empty state after search**: "No items matching …" message when all sections are empty after filtering
+  - **Not-configured / no-exports states**: separate messages with setup guidance and a "Check Again" refresh button
+  - Hover "look up" button on each item row navigates to `/items?select={id}`
+- **Sidebar**: "Inventory" entry renamed to "Inventory Tracker" pointing at `/inventory-tracker`; old `/inventory` route kept but removed from sidebar
 
 ### Task 3.4 — Key Tracker
 _Planned_

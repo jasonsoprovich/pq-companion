@@ -67,6 +67,32 @@ func (w *Watcher) Spellbook() *Spellbook {
 	return w.spellbook
 }
 
+// AllInventories scans the EQ directory for all character inventory exports and
+// returns a combined response. Returns a non-configured response if EQPath is empty.
+func (w *Watcher) AllInventories() (*AllInventoriesResponse, error) {
+	cfg := w.cfgMgr.Get()
+	resp := &AllInventoriesResponse{
+		Configured: cfg.EQPath != "",
+		Characters: []*Inventory{},
+		SharedBank: []InventoryEntry{},
+	}
+	if cfg.EQPath == "" {
+		return resp, nil
+	}
+
+	chars, sharedBank, err := ScanAllInventories(cfg.EQPath)
+	if err != nil {
+		return nil, err
+	}
+	if chars != nil {
+		resp.Characters = chars
+	}
+	if sharedBank != nil {
+		resp.SharedBank = sharedBank
+	}
+	return resp, nil
+}
+
 // check reads current config and re-parses files if their mod times have changed.
 func (w *Watcher) check() {
 	cfg := w.cfgMgr.Get()

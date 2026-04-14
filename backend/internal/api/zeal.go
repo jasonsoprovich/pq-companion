@@ -31,3 +31,15 @@ func (h *zealHandler) spellbook(w http.ResponseWriter, r *http.Request) {
 		Spellbook *zeal.Spellbook `json:"spellbook"`
 	}{Spellbook: sb})
 }
+
+// GET /api/zeal/all-inventories
+// Scans the configured EQ directory for all Zeal inventory exports and returns
+// per-character inventories plus a deduplicated SharedBank.
+func (h *zealHandler) allInventories(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.watcher.AllInventories()
+	if err != nil {
+		http.Error(w, `{"error":"failed to scan inventories"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(resp)
+}

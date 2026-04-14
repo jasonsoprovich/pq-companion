@@ -2,7 +2,7 @@ import type { Item, SearchResult } from '../types/item'
 import type { NPC } from '../types/npc'
 import type { Spell } from '../types/spell'
 import type { Zone } from '../types/zone'
-import type { ZealInventoryResponse, ZealSpellbookResponse } from '../types/zeal'
+import type { ZealInventoryResponse, ZealSpellbookResponse, AllInventoriesResponse } from '../types/zeal'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -106,6 +106,10 @@ export function getZealInventory(): Promise<ZealInventoryResponse> {
 
 export function getZealSpellbook(): Promise<ZealSpellbookResponse> {
   return get<ZealSpellbookResponse>('/api/zeal/spells')
+}
+
+export function getAllInventories(): Promise<AllInventoriesResponse> {
+  return get<AllInventoriesResponse>('/api/zeal/all-inventories')
 }
 
 // ── Spell Checklist ────────────────────────────────────────────────────────────
