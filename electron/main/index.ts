@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, nativeTheme } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog } from 'electron'
 import { join } from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
@@ -175,6 +175,16 @@ ipcMain.handle('overlay:dps:toggle', () => {
   } else {
     createDPSOverlay()
   }
+})
+
+// ── IPC handlers — dialogs ────────────────────────────────────────────────────
+
+ipcMain.handle('dialog:select-folder', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory'],
+    title: 'Select EverQuest Installation Folder',
+  })
+  return result.canceled ? null : result.filePaths[0]
 })
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────

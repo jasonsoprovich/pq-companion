@@ -1,3 +1,4 @@
+import type { Config } from '../types/config'
 import type { Item, SearchResult } from '../types/item'
 import type { NPC } from '../types/npc'
 import type { Spell } from '../types/spell'
@@ -38,6 +39,19 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
     throw new Error(err.error ?? res.statusText)
   }
   if (res.status === 204) return undefined as T
+  return res.json() as Promise<T>
+}
+
+async function put<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error ?? res.statusText)
+  }
   return res.json() as Promise<T>
 }
 
@@ -192,4 +206,14 @@ export function getOverlayNPCTarget(): Promise<TargetState> {
 
 export function getCombatState(): Promise<CombatState> {
   return get<CombatState>('/api/overlay/combat')
+}
+
+// ── Config ─────────────────────────────────────────────────────────────────────
+
+export function getConfig(): Promise<Config> {
+  return get<Config>('/api/config')
+}
+
+export function updateConfig(cfg: Config): Promise<Config> {
+  return put<Config>('/api/config', cfg)
 }

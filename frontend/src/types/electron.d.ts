@@ -17,6 +17,9 @@ export interface ElectronAPI {
     closeDPS: () => Promise<void>
     toggleDPS: () => Promise<void>
   }
+  dialog: {
+    selectFolder: () => Promise<string | null>
+  }
 }
 
 declare global {

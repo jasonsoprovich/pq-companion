@@ -347,7 +347,7 @@ export default function DPSOverlayPage(): React.ReactElement {
     <div
       style={{
         position: 'relative',
-        flex: 1,
+        height: '100%',
         overflow: 'hidden',
         backgroundColor: 'var(--color-background)',
       }}
