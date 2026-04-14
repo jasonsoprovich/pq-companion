@@ -4,7 +4,7 @@ A desktop companion app for the [Project Quarm](https://www.projectquarm.com/) E
 
 Features: database explorer (items, spells, NPCs, zones), combat log parser, DPS meter, spell/buff/DoT timer overlays, NPC info overlay, spell checklist, config backup manager, and a custom trigger system.
 
-> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 complete: REST API, WebSocket server, and configuration system. Phase 2 complete: Electron + React shell, app layout and navigation, Item/Spell/NPC/Zone explorers, and Global Search (`Cmd+K` / `Ctrl+K`) all live. Phase 3 in progress: Zeal Export Reader (Task 3.1) complete. See [ROADMAP.md](ROADMAP.md) for what's coming.
+> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 complete: REST API, WebSocket server, and configuration system. Phase 2 complete: Electron + React shell, app layout and navigation, Item/Spell/NPC/Zone explorers, and Global Search (`Cmd+K` / `Ctrl+K`) all live. Phase 3 in progress: Zeal Export Reader (Task 3.1) and Spell Checklist UI (Task 3.2) complete. See [ROADMAP.md](ROADMAP.md) for what's coming.
 
 ---
 
@@ -188,6 +188,7 @@ go run ./cmd/server --addr :9000 --db /path/to/quarm.db
 | `PUT` | `/api/config` | Update and persist configuration |
 | `GET` | `/api/zeal/inventory` | Current Zeal inventory export (null if not yet available) |
 | `GET` | `/api/zeal/spells` | Current Zeal spellbook export (null if not yet available) |
+| `GET` | `/api/spells/class/{classIndex}` | All spells for a class (0=WAR … 14=BST), ordered by required level |
 
 All search endpoints return `{"items": [...], "total": N}`. Max `limit` is 100.
 

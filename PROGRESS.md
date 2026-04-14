@@ -22,7 +22,7 @@
 
 ## Phase 3 — Zeal Integration & Backup Manager
 - [x] Task 3.1 — Zeal Export Reader
-- [ ] Task 3.2 — Spell Checklist UI
+- [x] Task 3.2 — Spell Checklist UI
 - [ ] Task 3.3 — Config Backup Manager (Backend)
 - [ ] Task 3.4 — Config Backup Manager (UI)
 

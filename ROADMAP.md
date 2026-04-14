@@ -54,6 +54,9 @@ The app now reads Zeal's inventory and spellbook exports automatically. When you
 
 The **Inventory** page (accessible from the Zeal section in the sidebar) shows all carried items organized by equipment slot and bag — with the bag name shown in the section header. Click the lookup icon on any item to jump directly to its entry in the Item Explorer. If your EQ path or character name aren't configured yet, the page shows setup instructions.
 
+### Spell Checklist (Phase 3, Task 3.2) ✅
+The **Spell Checklist** page (Zeal section in the sidebar) shows every spell your class can learn, cross-referenced against your Zeal spellbook export. Pick your class from the dropdown — Warrior through Beastlord — and see spells listed in level order with a gold checkmark for spells already in your spellbook and an empty circle for spells you don't have yet. Filter to **Known** or **Missing** to focus on what matters. Click any spell to jump to its full detail in the Spell Explorer. Your class selection is remembered between sessions. If no spellbook export is found yet, the checklist still shows all spells for your class with a warning banner.
+
 ### Zeal Integration & Config Backup Manager
 For players using [Zeal](https://github.com/iamclint/Zeal), the app will automatically read your inventory and spellbook exports on logout, letting you:
 

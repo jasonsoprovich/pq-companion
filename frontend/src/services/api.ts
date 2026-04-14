@@ -107,3 +107,14 @@ export function getZealInventory(): Promise<ZealInventoryResponse> {
 export function getZealSpellbook(): Promise<ZealSpellbookResponse> {
   return get<ZealSpellbookResponse>('/api/zeal/spells')
 }
+
+// ── Spell Checklist ────────────────────────────────────────────────────────────
+
+export function getSpellsByClass(
+  classIndex: number,
+  limit = 500,
+  offset = 0,
+): Promise<SearchResult<Spell>> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  return get<SearchResult<Spell>>(`/api/spells/class/${classIndex}?${params}`)
+}

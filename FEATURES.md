@@ -178,6 +178,22 @@
 - **WebSocket events**: `zeal:inventory` and `zeal:spellbook` broadcast to all connected clients when export files are updated on disk
 - **Tests** (`internal/zeal/reader_test.go`): 11 table-driven tests covering inventory parsing, no-header files, empty files, missing files, three spellbook formats, deduplication, path helpers, and ModTime
 
+### Task 3.2 — Spell Checklist UI ✅
+- **Backend: `GetSpellsByClass(classIndex, limit, offset)`** (`internal/db/queries.go`) — returns all spells castable by a given class (0-based: 0=Warrior … 14=Beastlord), ordered by that class's required level then spell ID; filters out empty-name spells; parameterized query (column number validated in Go before use)
+- **Backend: `GET /api/spells/class/{classIndex}`** (`internal/api/spells.go`) — new endpoint; limit defaults to 500, capped at 1000; validates classIndex is 0–14
+- **`services/api.ts`** — added `getSpellsByClass(classIndex, limit, offset)` typed fetch wrapper
+- **`pages/SpellChecklistPage.tsx`** — full spell checklist UI:
+  - **Class selector**: dropdown for all 15 EQ classes (WAR–BST); selection persisted to `localStorage`; defaults to Enchanter
+  - **Filter tabs**: All / Known / Missing — instantly filters the list without re-fetching
+  - **Stats bar**: shows `X / Y known` when spellbook is loaded, or `Y spells` when no export is available
+  - **Spellbook status banner**: green checkmark + character name + export timestamp when Zeal spellbook is loaded; amber warning with link to Settings when no export is found
+  - **Spell list**: flat scrollable list ordered by class level (ascending); each row shows — known indicator (filled circle in gold vs. empty circle in gray), spell name (clickable), level badge, mana cost
+  - Clicking any row navigates to `/spells?select={id}` to open that spell in the Spell Explorer detail panel
+  - Loading and error states with retry button
+  - Empty states per filter ("All spells known!", "No known spells", "No spells for this class")
+- **Sidebar** (`components/Sidebar.tsx`) — "Spell Checklist" added to the Zeal nav section with `BookOpen` icon
+- **`App.tsx`** — `/spell-checklist` route wired up
+
 ## Phase 4 — Log Parsing & NPC Info Overlay
 - Real-time EQ log file tailer (reads new lines as they appear)
 - Combat, spell, zone, and chat event parsing from log format

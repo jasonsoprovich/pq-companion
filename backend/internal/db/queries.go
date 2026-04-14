@@ -304,6 +304,40 @@ func collectSpells(rows *sql.Rows) ([]Spell, error) {
 	return result, rows.Err()
 }
 
+// GetSpellsByClass returns all spells castable by the given class index (0-based:
+// 0=Warrior, 1=Cleric, ..., 14=Beastlord), ordered by that class's required level
+// then by spell ID. Empty-name spells are excluded.
+func (db *DB) GetSpellsByClass(classIndex, limit, offset int) (*SearchResult[Spell], error) {
+	if classIndex < 0 || classIndex > 14 {
+		return nil, fmt.Errorf("class index %d out of range [0,14]", classIndex)
+	}
+	col := fmt.Sprintf("s.classes%d", classIndex+1)
+	whereClause := fmt.Sprintf("%s < 255 AND s.name != ''", col)
+
+	var total int
+	if err := db.QueryRow(
+		fmt.Sprintf("SELECT COUNT(*) FROM spells_new s WHERE %s", whereClause),
+	).Scan(&total); err != nil {
+		return nil, fmt.Errorf("count spells by class: %w", err)
+	}
+
+	q := fmt.Sprintf(
+		"SELECT %s FROM spells_new s WHERE %s ORDER BY %s, s.id LIMIT ? OFFSET ?",
+		spellColumns, whereClause, col,
+	)
+	rows, err := db.Query(q, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("query spells by class: %w", err)
+	}
+	defer rows.Close()
+
+	spells, err := collectSpells(rows)
+	if err != nil {
+		return nil, err
+	}
+	return &SearchResult[Spell]{Items: spells, Total: total}, nil
+}
+
 // ─── Zones ────────────────────────────────────────────────────────────────────
 
 const zoneColumns = `
