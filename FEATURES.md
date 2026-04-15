@@ -664,6 +664,48 @@ Two separate overlay windows are provided from the start — one for beneficial 
 - `ErrNotFound` on get/update/delete of missing ID
 - `InstallPack` replaces rather than duplicates on re-install
 
+### Task 8.2 — Trigger Manager UI ✅
+
+**`frontend/src/types/trigger.ts`**
+- `Trigger`, `Action`, `TriggerFired`, `TriggerPack` TypeScript types mirroring Go structs
+
+**`frontend/src/services/api.ts`**
+- `listTriggers`, `createTrigger`, `updateTrigger`, `deleteTrigger` — CRUD
+- `getTriggerHistory` — recent firing events
+- `getBuiltinPacks`, `installBuiltinPack` — built-in pack management
+- `importTriggerPack`, `exportTriggerPack` — import/export
+
+**`frontend/src/pages/TriggersPage.tsx`** — three-tab interface:
+
+*Triggers tab:*
+- Lists all triggers with inline enable/disable toggle (PUT on change, no reload)
+- Expand button shows action details (text, color swatch, duration)
+- Edit (Pencil) opens inline `TriggerForm` replacing the row
+- Delete (Trash) shows inline confirmation before calling API
+- "New Trigger" button shows `TriggerForm` at top of list
+
+*TriggerForm:*
+- Name field, regex pattern field with live client-side validation (shows error for invalid regex)
+- Enabled toggle in header
+- Action list: each action has text input, numeric duration input, color picker; add/remove actions
+- Create calls POST; edit calls PUT; both call `engine.Reload()` on backend
+
+*History tab:*
+- Loads initial history from `GET /api/triggers/history` (newest first)
+- Subscribes to `trigger:fired` WebSocket events and prepends new entries live
+- Each entry shows trigger name, action overlay text badges (colored), matched log line, timestamp
+
+*Packs tab:*
+- Import/Export section: Export All (downloads JSON), Import Pack (file picker, JSON upload)
+- Built-in Packs section: shows all available packs with description, trigger count, and Install button
+- Install replaces existing pack triggers; shows "Installed" confirmation with checkmark for 3 s
+
+**`frontend/src/components/Sidebar.tsx`**
+- Added "Triggers" nav item (Zap icon) to the Parsing section
+
+**`frontend/src/App.tsx`**
+- Added `/triggers` route mapped to `TriggersPage`
+
 ## Phase 9 — Audio Alerts
 - System audio integration via Web Audio API
 - Configurable alerts when timers expire (sound file or TTS)

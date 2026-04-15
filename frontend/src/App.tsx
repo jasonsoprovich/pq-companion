@@ -20,6 +20,7 @@ import BuffTimerWindowPage from './pages/BuffTimerWindowPage'
 import DetrimTimerWindowPage from './pages/DetrimTimerWindowPage'
 import SpellTimerPage from './pages/SpellTimerPage'
 import CombatLogPage from './pages/CombatLogPage'
+import TriggersPage from './pages/TriggersPage'
 
 export default function App(): React.ReactElement {
   return (
@@ -48,6 +49,7 @@ export default function App(): React.ReactElement {
           <Route path="dps-overlay" element={<DPSOverlayPage />} />
           <Route path="spell-timers" element={<SpellTimerPage />} />
           <Route path="combat-log" element={<CombatLogPage />} />
+          <Route path="triggers" element={<TriggersPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>

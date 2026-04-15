@@ -10,6 +10,7 @@ import type { LogTailerStatus } from '../types/logEvent'
 import type { TargetState } from '../types/overlay'
 import type { CombatState } from '../types/combat'
 import type { TimerState } from '../types/timer'
+import type { Trigger, TriggerFired, TriggerPack, Action } from '../types/trigger'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -221,4 +222,49 @@ export function getConfig(): Promise<Config> {
 
 export function updateConfig(cfg: Config): Promise<Config> {
   return put<Config>('/api/config', cfg)
+}
+
+// ── Triggers ───────────────────────────────────────────────────────────────────
+
+export function listTriggers(): Promise<Trigger[]> {
+  return get<Trigger[]>('/api/triggers')
+}
+
+export interface CreateTriggerRequest {
+  name: string
+  enabled: boolean
+  pattern: string
+  actions: Action[]
+}
+
+export function createTrigger(req: CreateTriggerRequest): Promise<Trigger> {
+  return post<Trigger>('/api/triggers', req)
+}
+
+export function updateTrigger(id: string, req: CreateTriggerRequest): Promise<Trigger> {
+  return put<Trigger>(`/api/triggers/${encodeURIComponent(id)}`, req)
+}
+
+export function deleteTrigger(id: string): Promise<void> {
+  return del(`/api/triggers/${encodeURIComponent(id)}`)
+}
+
+export function getTriggerHistory(): Promise<TriggerFired[]> {
+  return get<TriggerFired[]>('/api/triggers/history')
+}
+
+export function getBuiltinPacks(): Promise<TriggerPack[]> {
+  return get<TriggerPack[]>('/api/triggers/packs')
+}
+
+export function installBuiltinPack(packName: string): Promise<{ status: string; pack_name: string }> {
+  return post<{ status: string; pack_name: string }>(`/api/triggers/packs/${encodeURIComponent(packName)}`)
+}
+
+export function importTriggerPack(pack: TriggerPack): Promise<{ status: string; pack_name: string }> {
+  return post<{ status: string; pack_name: string }>('/api/triggers/import', pack)
+}
+
+export function exportTriggerPack(): Promise<TriggerPack> {
+  return get<TriggerPack>('/api/triggers/export')
 }

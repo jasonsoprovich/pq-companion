@@ -1,0 +1,1058 @@
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Zap,
+  Plus,
+  Trash2,
+  Pencil,
+  RefreshCw,
+  AlertCircle,
+  X,
+  CheckCircle2,
+  Download,
+  Upload,
+  Package,
+  Clock,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react'
+import {
+  listTriggers,
+  createTrigger,
+  updateTrigger,
+  deleteTrigger,
+  getTriggerHistory,
+  getBuiltinPacks,
+  installBuiltinPack,
+  importTriggerPack,
+  exportTriggerPack,
+  type CreateTriggerRequest,
+} from '../services/api'
+import { useWebSocket } from '../hooks/useWebSocket'
+import type { Trigger, TriggerFired, TriggerPack, Action } from '../types/trigger'
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function formatTime(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+}
+
+function Toggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean
+  onChange: (v: boolean) => void
+}): React.ReactElement {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="relative inline-flex h-4 w-7 items-center rounded-full transition-colors shrink-0"
+      style={{
+        backgroundColor: checked ? 'var(--color-primary)' : 'var(--color-surface-3)',
+      }}
+    >
+      <span
+        className="inline-block h-3 w-3 rounded-full bg-white shadow transition-transform"
+        style={{ transform: checked ? 'translateX(14px)' : 'translateX(2px)' }}
+      />
+    </button>
+  )
+}
+
+// ── Action editor ─────────────────────────────────────────────────────────────
+
+interface ActionEditorProps {
+  action: Action
+  index: number
+  onChange: (index: number, action: Action) => void
+  onRemove: (index: number) => void
+}
+
+function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps): React.ReactElement {
+  const inputStyle = {
+    backgroundColor: 'var(--color-surface-2)',
+    border: '1px solid var(--color-border)',
+    color: 'var(--color-foreground)',
+  }
+
+  return (
+    <div
+      className="rounded p-3 space-y-2"
+      style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+          Action {index + 1}: Overlay Text
+        </span>
+        <button
+          type="button"
+          onClick={() => onRemove(index)}
+          className="text-xs px-1.5 py-0.5 rounded"
+          style={{ color: 'var(--color-danger)' }}
+        >
+          <X size={12} />
+        </button>
+      </div>
+
+      <input
+        type="text"
+        placeholder="Display text (e.g. MEZ BROKE!)"
+        value={action.text}
+        onChange={(e) => onChange(index, { ...action, text: e.target.value })}
+        className="w-full rounded px-2 py-1 text-xs outline-none font-mono"
+        style={inputStyle}
+      />
+
+      <div className="flex gap-2">
+        <div className="flex items-center gap-1.5 flex-1">
+          <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+            Duration (s)
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={30}
+            value={action.duration_secs || 5}
+            onChange={(e) =>
+              onChange(index, { ...action, duration_secs: Math.max(1, parseInt(e.target.value) || 5) })
+            }
+            className="w-14 rounded px-2 py-0.5 text-xs outline-none text-center"
+            style={inputStyle}
+          />
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+            Color
+          </label>
+          <input
+            type="color"
+            value={action.color || '#ffffff'}
+            onChange={(e) => onChange(index, { ...action, color: e.target.value })}
+            className="w-8 h-6 rounded cursor-pointer"
+            style={{ border: '1px solid var(--color-border)', padding: '1px' }}
+          />
+          <span className="text-[11px] font-mono" style={{ color: 'var(--color-muted)' }}>
+            {action.color || '#ffffff'}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Trigger form ──────────────────────────────────────────────────────────────
+
+interface TriggerFormProps {
+  initial?: Trigger
+  onSaved: (t: Trigger) => void
+  onCancel: () => void
+}
+
+function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.ReactElement {
+  const [name, setName] = useState(initial?.name ?? '')
+  const [pattern, setPattern] = useState(initial?.pattern ?? '')
+  const [enabled, setEnabled] = useState(initial?.enabled ?? true)
+  const [actions, setActions] = useState<Action[]>(
+    initial?.actions ?? [{ type: 'overlay_text', text: '', duration_secs: 5, color: '#ffffff' }],
+  )
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [patternError, setPatternError] = useState<string | null>(null)
+  const nameRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { nameRef.current?.focus() }, [])
+
+  const validatePattern = (p: string) => {
+    try {
+      new RegExp(p)
+      setPatternError(null)
+      return true
+    } catch (e) {
+      setPatternError((e as Error).message)
+      return false
+    }
+  }
+
+  const handlePatternChange = (v: string) => {
+    setPattern(v)
+    if (v) validatePattern(v)
+    else setPatternError(null)
+  }
+
+  const handleActionChange = (index: number, action: Action) => {
+    setActions((prev) => prev.map((a, i) => (i === index ? action : a)))
+  }
+
+  const handleActionRemove = (index: number) => {
+    setActions((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const handleAddAction = () => {
+    setActions((prev) => [...prev, { type: 'overlay_text', text: '', duration_secs: 5, color: '#ffffff' }])
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim() || !pattern.trim()) return
+    if (!validatePattern(pattern)) return
+
+    const req: CreateTriggerRequest = {
+      name: name.trim(),
+      enabled,
+      pattern: pattern.trim(),
+      actions,
+    }
+
+    setSubmitting(true)
+    setError(null)
+
+    const promise = initial
+      ? updateTrigger(initial.id, req)
+      : createTrigger(req)
+
+    promise
+      .then((t) => onSaved(t))
+      .catch((err: Error) => {
+        setError(err.message)
+        setSubmitting(false)
+      })
+  }
+
+  const inputStyle = {
+    backgroundColor: 'var(--color-surface-2)',
+    border: '1px solid var(--color-border)',
+    color: 'var(--color-foreground)',
+  }
+
+  const canSubmit = name.trim() && pattern.trim() && !patternError && !submitting
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="rounded-lg p-4 space-y-4"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-primary)' }}
+    >
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
+          {initial ? 'Edit Trigger' : 'New Trigger'}
+        </p>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>Enabled</span>
+          <Toggle checked={enabled} onChange={setEnabled} />
+        </div>
+      </div>
+
+      {/* Name */}
+      <div className="space-y-1">
+        <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+          Name
+        </label>
+        <input
+          ref={nameRef}
+          type="text"
+          placeholder="e.g. Mez Wore Off"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full rounded px-3 py-1.5 text-sm outline-none"
+          style={inputStyle}
+          disabled={submitting}
+        />
+      </div>
+
+      {/* Pattern */}
+      <div className="space-y-1">
+        <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+          Pattern (regex)
+        </label>
+        <input
+          type="text"
+          placeholder="e.g. Your .+ spell has worn off\."
+          value={pattern}
+          onChange={(e) => handlePatternChange(e.target.value)}
+          className="w-full rounded px-3 py-1.5 text-sm outline-none font-mono"
+          style={{
+            ...inputStyle,
+            border: `1px solid ${patternError ? 'var(--color-danger)' : 'var(--color-border)'}`,
+          }}
+          disabled={submitting}
+        />
+        {patternError && (
+          <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
+            {patternError}
+          </p>
+        )}
+        <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+          Matched against the log message text (after the timestamp).
+        </p>
+      </div>
+
+      {/* Actions */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+            Actions
+          </label>
+          <button
+            type="button"
+            onClick={handleAddAction}
+            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            <Plus size={10} /> Add
+          </button>
+        </div>
+        {actions.length === 0 && (
+          <p className="text-[11px] italic" style={{ color: 'var(--color-muted)' }}>
+            No actions — trigger will be logged to history only.
+          </p>
+        )}
+        {actions.map((action, i) => (
+          <ActionEditor
+            key={i}
+            action={action}
+            index={i}
+            onChange={handleActionChange}
+            onRemove={handleActionRemove}
+          />
+        ))}
+      </div>
+
+      {error && (
+        <p className="text-xs" style={{ color: 'var(--color-danger)' }}>
+          {error}
+        </p>
+      )}
+
+      <div className="flex items-center gap-2 justify-end pt-1">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={submitting}
+          className="text-xs px-3 py-1.5 rounded"
+          style={{
+            backgroundColor: 'var(--color-surface-2)',
+            color: 'var(--color-muted-foreground)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium"
+          style={{
+            backgroundColor: canSubmit ? 'var(--color-primary)' : 'var(--color-surface-2)',
+            color: canSubmit ? 'var(--color-background)' : 'var(--color-muted)',
+            border: '1px solid transparent',
+            cursor: canSubmit ? 'pointer' : 'not-allowed',
+          }}
+        >
+          {submitting ? <RefreshCw size={11} className="animate-spin" /> : <Zap size={11} />}
+          {submitting ? 'Saving…' : initial ? 'Save Changes' : 'Create Trigger'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+// ── Trigger row ───────────────────────────────────────────────────────────────
+
+interface TriggerRowProps {
+  trigger: Trigger
+  onEdit: (t: Trigger) => void
+  onDeleted: (id: string) => void
+  onToggled: (t: Trigger) => void
+}
+
+function TriggerRow({ trigger, onEdit, onDeleted, onToggled }: TriggerRowProps): React.ReactElement {
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [toggling, setToggling] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
+
+  const handleDelete = () => {
+    setDeleting(true)
+    deleteTrigger(trigger.id)
+      .then(() => onDeleted(trigger.id))
+      .catch((err: Error) => {
+        setError(err.message)
+        setDeleting(false)
+        setConfirmDelete(false)
+      })
+  }
+
+  const handleToggle = (v: boolean) => {
+    setToggling(true)
+    const req: CreateTriggerRequest = {
+      name: trigger.name,
+      enabled: v,
+      pattern: trigger.pattern,
+      actions: trigger.actions,
+    }
+    updateTrigger(trigger.id, req)
+      .then((updated) => {
+        onToggled(updated)
+        setToggling(false)
+      })
+      .catch((err: Error) => {
+        setError(err.message)
+        setToggling(false)
+      })
+  }
+
+  return (
+    <div
+      className="rounded-lg"
+      style={{
+        backgroundColor: 'var(--color-surface)',
+        border: `1px solid ${trigger.enabled ? 'var(--color-border)' : 'var(--color-surface-3)'}`,
+        opacity: trigger.enabled ? 1 : 0.65,
+      }}
+    >
+      <div className="flex items-center gap-3 px-3 py-2.5">
+        {/* Enable toggle */}
+        {toggling ? (
+          <RefreshCw size={14} className="animate-spin shrink-0" style={{ color: 'var(--color-muted)' }} />
+        ) : (
+          <Toggle checked={trigger.enabled} onChange={handleToggle} />
+        )}
+
+        {/* Name + pattern */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
+              {trigger.name}
+            </span>
+            {trigger.pack_name && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded shrink-0"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-muted-foreground)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                {trigger.pack_name}
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] mt-0.5 truncate font-mono" style={{ color: 'var(--color-muted)' }}>
+            {trigger.pattern}
+          </p>
+        </div>
+
+        {/* Actions count */}
+        <span className="text-[11px] shrink-0" style={{ color: 'var(--color-muted)' }}>
+          {trigger.actions.length} action{trigger.actions.length !== 1 ? 's' : ''}
+        </span>
+
+        {/* Expand / edit / delete */}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="p-1 rounded"
+            style={{ color: 'var(--color-muted-foreground)' }}
+            title={expanded ? 'Collapse' : 'Expand'}
+          >
+            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
+          <button
+            onClick={() => onEdit(trigger)}
+            className="p-1 rounded"
+            style={{ color: 'var(--color-muted-foreground)' }}
+            title="Edit"
+          >
+            <Pencil size={13} />
+          </button>
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="p-1 rounded"
+            style={{ color: 'var(--color-muted-foreground)' }}
+            title="Delete"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+
+      {/* Expanded detail */}
+      {expanded && trigger.actions.length > 0 && (
+        <div
+          className="border-t px-3 py-2 space-y-1.5"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          {trigger.actions.map((action, i) => (
+            <div key={i} className="flex items-center gap-3 text-[11px]">
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: action.color || '#ffffff' }}
+              />
+              <span className="font-mono" style={{ color: 'var(--color-foreground)' }}>
+                "{action.text}"
+              </span>
+              <span style={{ color: 'var(--color-muted)' }}>
+                {action.duration_secs || 5}s
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {confirmDelete && (
+        <div
+          className="border-t flex items-center gap-2 px-3 py-2"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          <AlertCircle size={13} style={{ color: 'var(--color-danger)' }} />
+          <span className="flex-1 text-xs" style={{ color: 'var(--color-foreground)' }}>
+            Delete "{trigger.name}"?
+          </span>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="text-xs px-2 py-0.5 rounded font-medium"
+            style={{ backgroundColor: 'var(--color-danger)', color: '#fff' }}
+          >
+            {deleting ? <RefreshCw size={11} className="animate-spin" /> : 'Delete'}
+          </button>
+          <button
+            onClick={() => setConfirmDelete(false)}
+            className="p-0.5"
+            style={{ color: 'var(--color-muted-foreground)' }}
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <p className="px-3 pb-2 text-xs" style={{ color: 'var(--color-danger)' }}>
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ── History tab ───────────────────────────────────────────────────────────────
+
+function HistoryTab(): React.ReactElement {
+  const [history, setHistory] = useState<TriggerFired[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    getTriggerHistory()
+      .then((h) => setHistory(h.slice().reverse())) // newest first
+      .finally(() => setLoading(false))
+  }, [])
+
+  useWebSocket((msg) => {
+    if (msg.type === 'trigger:fired') {
+      const event = msg.data as TriggerFired
+      setHistory((prev) => [event, ...prev].slice(0, 200))
+    }
+  })
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <RefreshCw size={16} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
+      </div>
+    )
+  }
+
+  if (history.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2">
+        <Clock size={28} style={{ color: 'var(--color-muted)' }} />
+        <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+          No triggers have fired yet.
+        </p>
+        <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+          History updates live as triggers match log lines.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-1.5">
+      {history.map((event, i) => (
+        <div
+          key={i}
+          className="flex items-start gap-3 rounded px-3 py-2"
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          <div className="shrink-0 mt-0.5">
+            <Zap size={13} style={{ color: 'var(--color-primary)' }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium" style={{ color: 'var(--color-foreground)' }}>
+                {event.trigger_name}
+              </span>
+              {event.actions.map((a, ai) => (
+                <span
+                  key={ai}
+                  className="text-[11px] px-1.5 py-0.5 rounded font-medium"
+                  style={{
+                    backgroundColor: 'var(--color-surface-2)',
+                    color: a.color || 'var(--color-foreground)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                >
+                  {a.text}
+                </span>
+              ))}
+            </div>
+            <p
+              className="text-[11px] mt-0.5 truncate font-mono"
+              style={{ color: 'var(--color-muted-foreground)' }}
+            >
+              {event.matched_line}
+            </p>
+          </div>
+          <span className="text-[11px] shrink-0" style={{ color: 'var(--color-muted)' }}>
+            {formatTime(event.fired_at)}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Packs tab ─────────────────────────────────────────────────────────────────
+
+interface PacksTabProps {
+  onInstalled: () => void
+}
+
+function PacksTab({ onInstalled }: PacksTabProps): React.ReactElement {
+  const [packs, setPacks] = useState<TriggerPack[]>([])
+  const [loading, setLoading] = useState(true)
+  const [installing, setInstalling] = useState<string | null>(null)
+  const [installed, setInstalled] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    getBuiltinPacks()
+      .then(setPacks)
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleInstall = (packName: string) => {
+    setInstalling(packName)
+    setError(null)
+    installBuiltinPack(packName)
+      .then(() => {
+        setInstalled(packName)
+        onInstalled()
+        setTimeout(() => setInstalled(null), 3000)
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setInstalling(null))
+  }
+
+  const handleExport = () => {
+    exportTriggerPack()
+      .then((pack) => {
+        const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'pq-triggers.json'
+        a.click()
+        URL.revokeObjectURL(url)
+      })
+      .catch((err: Error) => setError(err.message))
+  }
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const pack = JSON.parse(ev.target?.result as string) as TriggerPack
+        importTriggerPack(pack)
+          .then(() => {
+            onInstalled()
+            setInstalled(pack.pack_name)
+            setTimeout(() => setInstalled(null), 3000)
+          })
+          .catch((err: Error) => setError(err.message))
+      } catch {
+        setError('Invalid JSON file')
+      }
+    }
+    reader.readAsText(file)
+    // Reset so same file can be re-imported
+    e.target.value = ''
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <RefreshCw size={16} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Import / Export */}
+      <div
+        className="rounded-lg p-3 space-y-2"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <p className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
+          Import / Export
+        </p>
+        <p className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+          Share trigger packs with other players or back up your triggers as JSON.
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            <Download size={12} /> Export All
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            <Upload size={12} /> Import Pack
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            onChange={handleImport}
+            className="hidden"
+          />
+        </div>
+        {installed && (
+          <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-success)' }}>
+            <CheckCircle2 size={13} />
+            "{installed}" installed successfully.
+          </div>
+        )}
+        {error && (
+          <p className="text-xs" style={{ color: 'var(--color-danger)' }}>
+            {error}
+          </p>
+        )}
+      </div>
+
+      {/* Built-in packs */}
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--color-muted)' }}>
+          Built-in Packs
+        </p>
+        <div className="space-y-3">
+          {packs.map((pack) => (
+            <div
+              key={pack.pack_name}
+              className="rounded-lg p-3"
+              style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Package size={14} style={{ color: 'var(--color-primary)' }} />
+                    <span className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+                      {pack.pack_name}
+                    </span>
+                  </div>
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted-foreground)' }}>
+                    {pack.description}
+                  </p>
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted)' }}>
+                    {pack.triggers.length} trigger{pack.triggers.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleInstall(pack.pack_name)}
+                  disabled={installing === pack.pack_name}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium shrink-0"
+                  style={{
+                    backgroundColor: installed === pack.pack_name
+                      ? 'var(--color-surface-2)'
+                      : 'var(--color-primary)',
+                    color: installed === pack.pack_name
+                      ? 'var(--color-success)'
+                      : 'var(--color-background)',
+                    border: '1px solid transparent',
+                  }}
+                >
+                  {installing === pack.pack_name ? (
+                    <RefreshCw size={11} className="animate-spin" />
+                  ) : installed === pack.pack_name ? (
+                    <CheckCircle2 size={11} />
+                  ) : (
+                    <Download size={11} />
+                  )}
+                  {installed === pack.pack_name ? 'Installed' : 'Install'}
+                </button>
+              </div>
+
+              {/* Pack trigger list */}
+              <div className="mt-2 space-y-1">
+                {pack.triggers.map((t, i) => (
+                  <div key={i} className="flex items-center gap-2 text-[11px]">
+                    <Zap size={10} style={{ color: 'var(--color-muted)' }} />
+                    <span style={{ color: 'var(--color-muted-foreground)' }}>{t.name}</span>
+                    <span className="font-mono truncate" style={{ color: 'var(--color-muted)' }}>
+                      {t.pattern}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
+type Tab = 'triggers' | 'history' | 'packs'
+
+export default function TriggersPage(): React.ReactElement {
+  const [tab, setTab] = useState<Tab>('triggers')
+  const [triggers, setTriggers] = useState<Trigger[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
+  const [editing, setEditing] = useState<Trigger | null>(null)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    setError(null)
+    listTriggers()
+      .then(setTriggers)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleSaved = (t: Trigger) => {
+    if (editing) {
+      setTriggers((prev) => prev.map((x) => (x.id === t.id ? t : x)))
+      setEditing(null)
+    } else {
+      setTriggers((prev) => [...prev, t])
+      setShowCreate(false)
+    }
+  }
+
+  const handleDeleted = (id: string) => {
+    setTriggers((prev) => prev.filter((t) => t.id !== id))
+  }
+
+  const handleToggled = (updated: Trigger) => {
+    setTriggers((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
+  }
+
+  const handleEdit = (t: Trigger) => {
+    setEditing(t)
+    setShowCreate(false)
+  }
+
+  const handleCancelForm = () => {
+    setEditing(null)
+    setShowCreate(false)
+  }
+
+  const tabStyle = (t: Tab) => ({
+    color: tab === t ? 'var(--color-foreground)' : 'var(--color-muted-foreground)',
+    borderBottom: tab === t ? '2px solid var(--color-primary)' : '2px solid transparent',
+    backgroundColor: 'transparent',
+  })
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div
+        className="flex items-center gap-3 border-b px-4 py-3 shrink-0"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <Zap size={18} style={{ color: 'var(--color-primary)' }} />
+        <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+          Custom Triggers
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {tab === 'triggers' && (
+            <>
+              <button
+                onClick={load}
+                className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-muted-foreground)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                <RefreshCw size={11} />
+                Refresh
+              </button>
+              <button
+                onClick={() => { setShowCreate((v) => !v); setEditing(null) }}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium"
+                style={{
+                  backgroundColor: showCreate ? 'var(--color-surface-2)' : 'var(--color-primary)',
+                  color: showCreate ? 'var(--color-muted-foreground)' : 'var(--color-background)',
+                  border: `1px solid ${showCreate ? 'var(--color-border)' : 'transparent'}`,
+                }}
+              >
+                <Plus size={11} />
+                New Trigger
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div
+        className="flex gap-0 border-b shrink-0"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        {(['triggers', 'history', 'packs'] as Tab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className="px-4 py-2 text-xs font-medium capitalize transition-colors"
+            style={tabStyle(t)}
+          >
+            {t === 'triggers' && <span>Triggers ({triggers.length})</span>}
+            {t === 'history' && <span>History</span>}
+            {t === 'packs' && <span>Packs</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab: Triggers */}
+      {tab === 'triggers' && (
+        <>
+          {loading ? (
+            <div className="flex h-full items-center justify-center">
+              <RefreshCw size={20} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
+            </div>
+          ) : error ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-8">
+              <AlertCircle size={32} style={{ color: 'var(--color-danger)' }} />
+              <p className="text-sm text-center" style={{ color: 'var(--color-muted-foreground)' }}>
+                {error}
+              </p>
+              <button
+                onClick={load}
+                className="text-xs px-3 py-1.5 rounded"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-foreground)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {/* Create form */}
+              {showCreate && !editing && (
+                <TriggerForm onSaved={handleSaved} onCancel={handleCancelForm} />
+              )}
+
+              {/* Edit form */}
+              {editing && (
+                <TriggerForm initial={editing} onSaved={handleSaved} onCancel={handleCancelForm} />
+              )}
+
+              {/* Empty state */}
+              {triggers.length === 0 && !showCreate && (
+                <div className="flex h-full flex-col items-center justify-center gap-3 py-16">
+                  <Zap size={32} style={{ color: 'var(--color-muted)' }} />
+                  <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+                    No triggers yet.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowCreate(true)}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded"
+                      style={{
+                        backgroundColor: 'var(--color-primary)',
+                        color: 'var(--color-background)',
+                        border: '1px solid transparent',
+                      }}
+                    >
+                      <Plus size={11} /> Create a trigger
+                    </button>
+                    <button
+                      onClick={() => setTab('packs')}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded"
+                      style={{
+                        backgroundColor: 'var(--color-surface-2)',
+                        color: 'var(--color-foreground)',
+                        border: '1px solid var(--color-border)',
+                      }}
+                    >
+                      <Package size={11} /> Install a pack
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Trigger list */}
+              {triggers.map((t) => (
+                <TriggerRow
+                  key={t.id}
+                  trigger={t}
+                  onEdit={handleEdit}
+                  onDeleted={handleDeleted}
+                  onToggled={handleToggled}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Tab: History */}
+      {tab === 'history' && <HistoryTab />}
+
+      {/* Tab: Packs */}
+      {tab === 'packs' && <PacksTab onInstalled={load} />}
+    </div>
+  )
+}
