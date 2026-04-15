@@ -1,8 +1,8 @@
 # PQ Companion
 
-A free desktop companion app for [Project Quarm](https://www.projectquarm.com/) — the EverQuest classic emulated server. It sits alongside the game and gives you the tools you wish were built into the client.
+A desktop companion app for [Project Quarm](https://www.projectquarm.com/) — the EverQuest classic emulated server. It sits alongside the game and gives you the tools you wish were built into the client.
 
-> **Status:** Active development. Phases 0–7 complete. See [ROADMAP.md](ROADMAP.md) for what's built and what's coming.
+> **Status:** Active development. Phases 0–8 complete. See [ROADMAP.md](ROADMAP.md) for what's built and what's coming.
 
 ---
 
@@ -19,6 +19,7 @@ A free desktop companion app for [Project Quarm](https://www.projectquarm.com/) 
 - **Inventory Tracker** — All items across all your characters in one searchable view, including bank and shared bank.
 - **Key Tracker** — Tracks item components for major raid keys (Veeshan's Peak, Old Sebilis, Howling Stones, and more) across all your characters.
 - **Config Backup Manager** — Snapshot and restore all your EQ `.ini` config files with one click.
+- **Custom Triggers** — A GINA-style regex trigger engine. Write patterns that match any log line and fire configurable on-screen text alerts. Ships with pre-built packs for enchanters (mez breaks, charm breaks, resists) and group awareness (tells, deaths). Import and export trigger packs as JSON. Live history feed and a standalone transparent overlay window.
 - **Settings** — Point the app at your EQ folder and character name; everything else is automatic.
 
 ---
@@ -89,7 +90,5 @@ See [FEATURES.md](FEATURES.md) for detailed implementation notes on every comple
 ---
 
 ## License
-
-Open source. Fork it, extend it, contribute.
 
 *Built by players, for players.*

@@ -1,6 +1,6 @@
 # PQ Companion — Roadmap
 
-PQ Companion is a free, open-source desktop app built specifically for [Project Quarm](https://www.projectquarm.com/) — the EverQuest classic emulated server. It lives alongside the game and gives you the tools you wish you had built into the client.
+PQ Companion is a desktop companion app built specifically for [Project Quarm](https://www.projectquarm.com/) — the EverQuest classic emulated server. It lives alongside the game and gives you the tools you wish you had built into the client.
 
 ---
 
@@ -50,12 +50,12 @@ The app ships as a one-click Windows NSIS installer distributed via GitHub Relea
 ### Spell Timer Engine (Phase 7)
 Countdown bars for every buff, debuff, mez, stun, and DoT you cast — aware of EverQuest's server tick timing so durations are accurate. Two separate overlay windows: one for beneficial spells (buffs), one for detrimental spells (DoTs, mezzes, stuns, debuffs). Each can be popped out as a standalone always-on-top overlay.
 
+### Custom Trigger System (Phase 8)
+A GINA-style trigger engine built from scratch for Project Quarm. Write regex patterns against the log and fire configurable on-screen text alerts. Triggers are stored in user.db, fully CRUD-managed through the Trigger Manager UI. Import and export trigger packs as JSON. Ships with pre-built packs for enchanters (mez breaks, charm breaks, resists, interrupts) and group awareness (tells, deaths). Trigger firings appear in a live History feed and in a standalone transparent overlay window that auto-dismisses each alert after its configured duration.
+
 ---
 
 ## What's Coming
-
-### Custom Trigger System (Phase 8)
-A full GINA-style trigger engine, built from scratch for Project Quarm. Write regex patterns against the log, fire any combination of sound, TTS, and on-screen text. Import and export trigger packs. Ships with a pre-built pack for enchanters and common group scenarios.
 
 ### Audio Alerts (Phase 9)
 Configurable sound and text-to-speech alerts tied to any timer or game event. Hear when your mez is about to break. Get a voice alert when you receive a tell. Works with any audio file or your system's built-in TTS.
@@ -82,10 +82,8 @@ A cloud-hosted version of the backend API so external tools and the project webs
 
 ## Guiding Principles
 
-- **No subscription, no account, no server.** Everything runs locally on your machine.
 - **Lightweight.** The Go backend idles at a few MB of RAM. Overlays are transparent and click-through.
 - **Project Quarm specific.** Features are designed around the Quarm ruleset and Zeal, not generic EQEmu.
-- **Open source.** Fork it, extend it, contribute.
 
 ---
 

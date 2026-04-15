@@ -49,9 +49,9 @@
 - [x] Task 7.3 — Buff & Detrimental Windows
 
 ## Phase 8 — Custom Trigger System
-- [ ] Task 8.1 — Trigger System (Backend)
-- [ ] Task 8.2 — Trigger Manager UI
-- [ ] Task 8.3 — Trigger Overlay
+- [x] Task 8.1 — Trigger System (Backend)
+- [x] Task 8.2 — Trigger Manager UI
+- [x] Task 8.3 — Trigger Overlay
 
 ## Phase 9 — Audio Alerts
 - [ ] Task 9.1 — Audio Engine
