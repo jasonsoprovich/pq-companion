@@ -98,4 +98,4 @@ Full parsing logic should be in `internal/db/special_abilities.go`
 - Zeal log extensions add extra info to the standard EQ log format
 
 ## Current Phase
-Phase 3 — Zeal Integration & Backup Manager
+Phase 6 — Windows Build & Distribution
