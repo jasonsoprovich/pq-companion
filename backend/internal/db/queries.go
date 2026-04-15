@@ -280,6 +280,21 @@ func (db *DB) GetSpell(id int) (*Spell, error) {
 	return sp, nil
 }
 
+// GetSpellByExactName returns the first spell whose name matches exactly
+// (case-insensitive). Returns nil, nil when no match is found.
+func (db *DB) GetSpellByExactName(name string) (*Spell, error) {
+	q := fmt.Sprintf("SELECT %s FROM spells_new s WHERE LOWER(s.name) = LOWER(?) AND s.name != '' LIMIT 1", spellColumns)
+	row := db.QueryRow(q, name)
+	sp, err := scanSpell(row)
+	if err != nil {
+		if strings.Contains(err.Error(), "no rows") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get spell by name %q: %w", name, err)
+	}
+	return sp, nil
+}
+
 // SearchSpells searches spells by name (case-insensitive substring match).
 func (db *DB) SearchSpells(query string, limit, offset int) (*SearchResult[Spell], error) {
 	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"

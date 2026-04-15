@@ -489,10 +489,50 @@ Subsequent release builds download it automatically from that release.
   - `latest.yml` and `latest-mac.yml` are now part of every release; `electron-updater` reads these to detect new versions
 
 ## Phase 7 — Spell Timer Engine
-- Countdown tracking for mez, stuns, DoTs, buffs
-- Server-tick-aware duration calculations
-- Timer overlay: color-coded bars grouped by type (mez / DoT / buff / debuff)
-- Buff window enhancement: self-buff tracking with exact remaining durations
+
+### Task 7.1 — Spell Timer Engine (Backend)
+
+**`backend/internal/spelltimer/`** — new package
+
+- **`models.go`** — data types:
+  - `Category` string type with constants: `buff`, `debuff`, `mez`, `dot`, `stun`
+  - `ActiveTimer` — one live spell timer: `ID` (spell name key), `SpellName`, `SpellID`, `Category`, `CastAt`, `StartsAt` (cast_at + cast_time_ms), `ExpiresAt`, `DurationSeconds`, `RemainingSeconds`
+  - `TimerState` — full broadcast payload: `Timers []ActiveTimer` sorted by remaining time ascending, `LastUpdated`
+  - Constants: `WSEventTimers = "overlay:timers"`, `eqTickSeconds = 6.0`, `defaultCasterLevel = 60`
+
+- **`duration.go`** — EQ spell duration formula engine:
+  - `CalcDurationTicks(formula, base, level int) int` — implements EQEmu's `CalcBuffDuration_formula` for the 13 known formula codes (0–11, 50, 3600) used in classic-era EQ; returns tick count (multiply by 6 for seconds); formula 0 and 3600 return 0 (instant/no timer)
+
+- **`engine.go`** — the timer engine:
+  - `Engine` struct: `hub *ws.Hub`, `db *db.DB`, `mu sync.Mutex`, `timers map[string]*ActiveTimer` (keyed by spell name — one timer per spell, recasting refreshes)
+  - `NewEngine(hub, db) *Engine`
+  - `Start(ctx) ` — background goroutine that ticks every second: prunes expired timers (silently) and broadcasts current `TimerState`
+  - `Handle(ev LogEvent)` — routes log events:
+    - `EventSpellCast` → DB lookup by spell name, `CalcDurationTicks`, compute `StartsAt = CastAt + CastTime_ms`, `ExpiresAt = StartsAt + duration`; upserts timer and broadcasts
+    - `EventSpellResist` → removes timer (spell was resisted, never landed)
+    - `EventSpellFade` → removes timer (spell naturally wore off)
+    - `EventZone`, `EventDeath` → clears all timers and broadcasts
+  - `GetState() TimerState` — point-in-time snapshot for REST API
+  - `categorize(*db.Spell) Category` — classifies spell: effect 18 → mez; effect 23 → stun; effect 0 with negative base value → dot; target type 3/6/10/41 → buff; otherwise → debuff
+
+**`backend/internal/db/queries.go`**
+- Added `GetSpellByExactName(name string) (*Spell, error)` — case-insensitive exact match on `spells_new.name`, returns nil when not found (no error)
+
+**`backend/internal/api/timers.go`** — new handler
+- `timerHandler{engine *spelltimer.Engine}` — `state` handles `GET /api/overlay/timers`
+
+**`backend/internal/api/router.go`**
+- `NewRouter` signature extended with `timerEngine *spelltimer.Engine`
+- Route added: `GET /api/overlay/timers`
+
+**`backend/cmd/server/main.go`**
+- `spelltimer.NewEngine(hub, database)` created after hub, before tailer
+- `go timerEngine.Start(ctx)` launched
+- `timerEngine.Handle(ev)` added to the log event dispatch function
+
+**`backend/internal/spelltimer/duration_test.go`** — 13 table-driven test cases covering all formula branches, cap behaviour, and the level-0 guard
+
+WebSocket event `overlay:timers` is broadcast on every timer change (cast, resist, fade, zone, death) and once per second from the background ticker.
 
 ## Phase 8 — Audio Alerts
 - System audio integration via Web Audio API

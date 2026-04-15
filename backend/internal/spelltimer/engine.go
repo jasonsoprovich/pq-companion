@@ -1,0 +1,228 @@
+package spelltimer
+
+import (
+	"context"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
+)
+
+// broadcastInterval is how often the engine pushes timer state updates to
+// WebSocket clients while timers are active.
+const broadcastInterval = time.Second
+
+// Engine watches parsed log events, maintains a live map of active spell
+// timers, and broadcasts state changes via WebSocket.
+//
+// Each spell is keyed by its name. Casting the same spell a second time
+// replaces the existing timer (e.g. refreshing Slow). This is the correct
+// behaviour for self-buffs and single-target debuffs.
+type Engine struct {
+	hub *ws.Hub
+	db  *db.DB
+
+	mu     sync.Mutex
+	timers map[string]*ActiveTimer // keyed by spell name
+}
+
+// NewEngine returns an initialised Engine ready to receive log events.
+func NewEngine(hub *ws.Hub, database *db.DB) *Engine {
+	return &Engine{
+		hub:    hub,
+		db:     database,
+		timers: make(map[string]*ActiveTimer),
+	}
+}
+
+// Start runs the background ticker that prunes expired timers and broadcasts
+// current state once per second. Blocks until ctx is cancelled.
+func (e *Engine) Start(ctx context.Context) {
+	ticker := time.NewTicker(broadcastInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			e.pruneExpired()
+			e.broadcast()
+		}
+	}
+}
+
+// Handle processes a single parsed log event.
+func (e *Engine) Handle(ev logparser.LogEvent) {
+	switch ev.Type {
+	case logparser.EventSpellCast:
+		data, ok := ev.Data.(logparser.SpellCastData)
+		if !ok {
+			return
+		}
+		e.onSpellCast(ev.Timestamp, data.SpellName)
+
+	case logparser.EventSpellResist:
+		data, ok := ev.Data.(logparser.SpellResistData)
+		if !ok {
+			return
+		}
+		// Spell was resisted — cancel the pending timer.
+		e.removeTimer(data.SpellName)
+
+	case logparser.EventSpellFade:
+		data, ok := ev.Data.(logparser.SpellFadeData)
+		if !ok {
+			return
+		}
+		// Buff naturally wore off — remove the timer.
+		e.removeTimer(data.SpellName)
+
+	case logparser.EventZone, logparser.EventDeath:
+		// Zone change or death clears all active timers.
+		e.clearAll()
+	}
+}
+
+// GetState returns a point-in-time snapshot of all active timers.
+func (e *Engine) GetState() TimerState {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.snapshot(time.Now())
+}
+
+// ── internal helpers ──────────────────────────────────────────────────────────
+
+func (e *Engine) onSpellCast(castAt time.Time, spellName string) {
+	spell, err := e.db.GetSpellByExactName(spellName)
+	if err != nil {
+		slog.Warn("spelltimer: DB error looking up spell", "name", spellName, "err", err)
+		return
+	}
+	if spell == nil {
+		slog.Debug("spelltimer: spell not found in DB", "name", spellName)
+		return
+	}
+
+	durationTicks := CalcDurationTicks(spell.BuffDurationFormula, spell.BuffDuration, defaultCasterLevel)
+	if durationTicks <= 0 {
+		// Instant spell or no buff component — nothing to track.
+		return
+	}
+
+	durationSeconds := float64(durationTicks) * eqTickSeconds
+	startsAt := castAt.Add(time.Duration(spell.CastTime) * time.Millisecond)
+	expiresAt := startsAt.Add(time.Duration(float64(time.Second) * durationSeconds))
+
+	timer := &ActiveTimer{
+		ID:              spellName,
+		SpellName:       spellName,
+		SpellID:         spell.ID,
+		Category:        categorize(spell),
+		CastAt:          castAt,
+		StartsAt:        startsAt,
+		ExpiresAt:       expiresAt,
+		DurationSeconds: durationSeconds,
+	}
+
+	e.mu.Lock()
+	e.timers[spellName] = timer
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+}
+
+func (e *Engine) removeTimer(spellName string) {
+	e.mu.Lock()
+	_, had := e.timers[spellName]
+	delete(e.timers, spellName)
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	if had {
+		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+	}
+}
+
+func (e *Engine) clearAll() {
+	e.mu.Lock()
+	wasEmpty := len(e.timers) == 0
+	e.timers = make(map[string]*ActiveTimer)
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	if !wasEmpty {
+		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+	}
+}
+
+// pruneExpired removes timers whose expiry time has passed.
+func (e *Engine) pruneExpired() {
+	now := time.Now()
+	e.mu.Lock()
+	for name, t := range e.timers {
+		if now.After(t.ExpiresAt) {
+			delete(e.timers, name)
+		}
+	}
+	e.mu.Unlock()
+}
+
+func (e *Engine) broadcast() {
+	e.mu.Lock()
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+	e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+}
+
+// snapshot builds an immutable TimerState. Must be called with e.mu held.
+func (e *Engine) snapshot(now time.Time) TimerState {
+	timers := make([]ActiveTimer, 0, len(e.timers))
+	for _, t := range e.timers {
+		remaining := t.ExpiresAt.Sub(now).Seconds()
+		if remaining < 0 {
+			remaining = 0
+		}
+		entry := *t
+		entry.RemainingSeconds = remaining
+		timers = append(timers, entry)
+	}
+	// Sort ascending by remaining time so the most urgent timers appear first.
+	for i := 1; i < len(timers); i++ {
+		for j := i; j > 0 && timers[j].RemainingSeconds < timers[j-1].RemainingSeconds; j-- {
+			timers[j], timers[j-1] = timers[j-1], timers[j]
+		}
+	}
+	return TimerState{
+		Timers:      timers,
+		LastUpdated: now,
+	}
+}
+
+// categorize determines the timer category from a spell's effect IDs and
+// target type. Checked in priority order: mez > stun > DoT > buff > debuff.
+func categorize(spell *db.Spell) Category {
+	for i, effID := range spell.EffectIDs {
+		switch effID {
+		case 18: // Mesmerize
+			return CategoryMez
+		case 23: // Stun
+			return CategoryStun
+		case 0:
+			// Effect 0 is HP: positive base = heal/regen, negative = damage over time.
+			if spell.EffectBaseValues[i] < 0 {
+				return CategoryDot
+			}
+		}
+	}
+	// Target type determines buff vs debuff for everything else.
+	// 3 = Group v1, 6 = Self, 10 = Group v2, 41 = All of group
+	switch spell.TargetType {
+	case 3, 6, 10, 41:
+		return CategoryBuff
+	}
+	return CategoryDebuff
+}

@@ -16,6 +16,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
@@ -66,16 +67,22 @@ func main() {
 	// per-entity damage, and broadcast overlay:combat WebSocket events.
 	combatTracker := combat.NewTracker(hub)
 
+	// Spell timer engine: watches cast/resist/fade events, maintains countdown
+	// timers per active spell, and broadcasts overlay:timers WebSocket events.
+	timerEngine := spelltimer.NewEngine(hub, database)
+	go timerEngine.Start(context.Background())
+
 	// Log tailer: reads new lines from the EQ log file and broadcasts parsed
 	// events to all connected WebSocket clients. Also feeds overlay trackers.
 	tailer := logparser.NewTailer(cfgMgr, func(ev logparser.LogEvent) {
 		hub.Broadcast(ws.Event{Type: string(ev.Type), Data: ev})
 		npcTracker.Handle(ev)
 		combatTracker.Handle(ev)
+		timerEngine.Handle(ev)
 	})
 	go tailer.Start(context.Background())
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, timerEngine)
 
 	slog.Info("server starting", "addr", listenAddr, "db", *dbPath)
 	if err := http.ListenAndServe(listenAddr, router); err != nil {
