@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom'
 import TitleBar from './TitleBar'
 import Sidebar from './Sidebar'
 import GlobalSearch from './GlobalSearch'
+import UpdateNotification from './UpdateNotification'
 
 export default function Layout(): React.ReactElement {
   const [searchOpen, setSearchOpen] = useState(false)
@@ -34,6 +35,7 @@ export default function Layout(): React.ReactElement {
         </main>
       </div>
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <UpdateNotification />
     </div>
   )
 }

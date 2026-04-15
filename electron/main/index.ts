@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog } from 'electro
 import { join } from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
+import { autoUpdater } from 'electron-updater'
 
 const isDev = !app.isPackaged
 
@@ -52,6 +53,49 @@ function stopSidecar(): void {
     sidecarProcess.kill()
     sidecarProcess = null
   }
+}
+
+// ── Auto-updater ──────────────────────────────────────────────────────────────
+
+function setupAutoUpdater(): void {
+  if (isDev) return // not applicable outside a packaged build
+
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('checking-for-update', () => {
+    console.log('[updater] Checking for updates…')
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    console.log(`[updater] Update available: ${info.version}`)
+    mainWindow?.webContents.send('updater:available', { version: info.version })
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    console.log('[updater] Already up to date')
+  })
+
+  autoUpdater.on('download-progress', (progress) => {
+    mainWindow?.webContents.send('updater:progress', {
+      percent: Math.floor(progress.percent),
+      transferred: progress.transferred,
+      total: progress.total,
+    })
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[updater] Update downloaded: ${info.version}`)
+    mainWindow?.webContents.send('updater:downloaded', { version: info.version })
+  })
+
+  autoUpdater.on('error', (err) => {
+    console.error('[updater] Error:', err.message)
+    mainWindow?.webContents.send('updater:error', err.message)
+  })
+
+  // Delay first check so the app finishes launching before hitting the network.
+  setTimeout(() => autoUpdater.checkForUpdates(), 5_000)
 }
 
 // ── Window management ─────────────────────────────────────────────────────────
@@ -187,11 +231,22 @@ ipcMain.handle('dialog:select-folder', async () => {
   return result.canceled ? null : result.filePaths[0]
 })
 
+// ── IPC handlers — auto-updater ───────────────────────────────────────────────
+
+ipcMain.handle('updater:check', () => {
+  if (!isDev) autoUpdater.checkForUpdates()
+})
+
+ipcMain.handle('updater:quit-and-install', () => {
+  autoUpdater.quitAndInstall()
+})
+
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
   startSidecar()
   createMainWindow()
+  setupAutoUpdater()
 
   // macOS: re-create window when dock icon is clicked and no windows are open
   app.on('activate', () => {

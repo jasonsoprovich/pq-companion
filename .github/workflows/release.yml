@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # required to create a GitHub Release
+  contents: write   # required to create and publish a GitHub Release
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PREREQUISITES
@@ -22,6 +22,16 @@ permissions:
 #      --notes "EQ game data — regenerate with backend/cmd/dbconvert"
 #
 #  The build jobs download it from that release at build time.
+#
+# AUTO-UPDATER
+#
+#  Each build job publishes with `--publish always`, which uploads the
+#  installer and the update manifest (latest.yml / latest-mac.yml) directly
+#  to the GitHub release.  electron-updater reads these manifests on startup
+#  to detect and download new versions.
+#
+#  The final `release` job promotes the draft to a published release so that
+#  the auto-updater can find it.
 # ─────────────────────────────────────────────────────────────────────────────
 
 jobs:
@@ -77,16 +87,13 @@ jobs:
       - name: Build Electron renderer + main
         run: npm run build
 
-      - name: Package Windows installer (NSIS)
+      # Publish uploads the installer + latest.yml to the GitHub release.
+      # The release starts as a draft (releaseType: draft in electron-builder.yml).
+      - name: Package and publish Windows installer (NSIS)
         shell: bash
-        run: npx electron-builder --win --publish never
-
-      - name: Upload Windows installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-installer
-          path: dist/*.exe
-          if-no-files-found: error
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish always
 
   # ── macOS (arm64) ────────────────────────────────────────────────────────────
   build-macos:
@@ -135,40 +142,24 @@ jobs:
       - name: Build Electron renderer + main
         run: npm run build
 
-      - name: Package macOS DMG (arm64)
-        run: npx electron-builder --mac --arch arm64 --publish never
+      # Publish uploads the DMG + latest-mac.yml to the GitHub release.
+      - name: Package and publish macOS DMG (arm64)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --mac --arch arm64 --publish always
 
-      - name: Upload macOS DMG
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-dmg
-          path: dist/*.dmg
-          if-no-files-found: error
-
-  # ── Create draft GitHub Release ───────────────────────────────────────────────
+  # ── Promote draft release ─────────────────────────────────────────────────────
   release:
-    name: Publish Draft Release
+    name: Publish Release
     needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download Windows installer
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-installer
-          path: dist-win
-
-      - name: Download macOS DMG
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-dmg
-          path: dist-mac
-
-      - name: Create draft GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          generate_release_notes: true
-          files: |
-            dist-win/*.exe
-            dist-mac/*.dmg
+      - name: Promote draft to published release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          gh release edit "$TAG" \
+            --draft=false \
+            --repo "${{ github.repository }}"

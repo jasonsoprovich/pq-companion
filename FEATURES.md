@@ -462,6 +462,32 @@ gh release create data-latest backend/data/quarm.db \
 ```
 Subsequent release builds download it automatically from that release.
 
+### Task 6.2 — Auto-Updater ✅
+- **`electron/main/index.ts`** — `setupAutoUpdater()` wires `electron-updater` into the main process:
+  - Skipped in dev mode (`!app.isPackaged`)
+  - `autoDownload: true`, `autoInstallOnAppQuit: true`
+  - Checks for updates 5 s after launch (gives sidecar + window time to initialise)
+  - Events forwarded to the renderer via `mainWindow.webContents.send`:
+    - `updater:available` → `{ version }` — new version detected, download started
+    - `updater:progress` → `{ percent, transferred, total }` — download progress
+    - `updater:downloaded` → `{ version }` — ready to install
+    - `updater:error` → error message string
+  - IPC handlers: `updater:check` (manual recheck), `updater:quit-and-install`
+- **`electron/preload/index.ts`** — `updater` namespace exposed via `contextBridge`:
+  - `check()`, `quitAndInstall()` — invoke IPC handlers
+  - `onAvailable(cb)`, `onProgress(cb)`, `onDownloaded(cb)`, `onError(cb)` — subscribe to update events; each returns an unsubscribe function for `useEffect` cleanup
+- **`frontend/src/types/electron.d.ts`** — `updater` added to `ElectronAPI` interface
+- **`frontend/src/components/UpdateNotification.tsx`** — bottom-of-app banner with four states:
+  - `available` — "Update vX.Y.Z available — downloading in the background…" (dismissible)
+  - `downloading` — gold progress bar with percentage
+  - `downloaded` — "vX.Y.Z ready — restart to install" + **Restart** button
+  - `error` — silent fallback message (dismissible); does not interrupt the user
+- **`frontend/src/components/Layout.tsx`** — `<UpdateNotification />` added below `<GlobalSearch />`
+- **`.github/workflows/release.yml`** — updated for auto-updater:
+  - Both `build-windows` and `build-macos` jobs changed to `--publish always`; `GH_TOKEN` is passed so `electron-builder` uploads the installer + update manifest (`latest.yml` / `latest-mac.yml`) directly to the GitHub release
+  - `release` job simplified: promotes the draft release (`gh release edit --draft=false`) after both builds succeed
+  - `latest.yml` and `latest-mac.yml` are now part of every release; `electron-updater` reads these to detect new versions
+
 ## Phase 7 — Spell Timer Engine
 - Countdown tracking for mez, stuns, DoTs, buffs
 - Server-tick-aware duration calculations

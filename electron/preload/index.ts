@@ -20,5 +20,29 @@ contextBridge.exposeInMainWorld('electron', {
   },
   dialog: {
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-folder'),
+  },
+  updater: {
+    check: (): Promise<void> => ipcRenderer.invoke('updater:check'),
+    quitAndInstall: (): Promise<void> => ipcRenderer.invoke('updater:quit-and-install'),
+    onAvailable: (cb: (info: { version: string }) => void): (() => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, info: { version: string }) => cb(info)
+      ipcRenderer.on('updater:available', listener)
+      return () => ipcRenderer.removeListener('updater:available', listener)
+    },
+    onProgress: (cb: (p: { percent: number; transferred: number; total: number }) => void): (() => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, p: { percent: number; transferred: number; total: number }) => cb(p)
+      ipcRenderer.on('updater:progress', listener)
+      return () => ipcRenderer.removeListener('updater:progress', listener)
+    },
+    onDownloaded: (cb: (info: { version: string }) => void): (() => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, info: { version: string }) => cb(info)
+      ipcRenderer.on('updater:downloaded', listener)
+      return () => ipcRenderer.removeListener('updater:downloaded', listener)
+    },
+    onError: (cb: (message: string) => void): (() => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, message: string) => cb(message)
+      ipcRenderer.on('updater:error', listener)
+      return () => ipcRenderer.removeListener('updater:error', listener)
+    },
   }
 })

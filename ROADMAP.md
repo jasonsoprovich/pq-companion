@@ -61,6 +61,9 @@ The **Inventory Tracker** page shows every item across all of your characters at
 ### Key Tracker (Phase 3, Task 3.4) ✅
 The **Key Tracker** page cross-references your characters' inventories against the item components required for the major Planes of Power keying quests. Six keys are currently tracked: Veeshan's Peak, Old Sebilis, Howling Stones (Charasis), Grieg's End, Grimling Forest Shackle Pens, and Katta Castellum. Expand any key card to see a component table — one column per character — with green checkmarks for items in inventory, a gold **SB** badge if the item is in the Shared Bank, and empty circles for missing pieces. Filter by All / In Progress / Complete.
 
+### Windows Build & Distribution (Phase 6) ✅
+The app ships as a one-click Windows NSIS installer distributed via GitHub Releases. The Go binary is bundled as a sidecar inside the Electron app package — no separate installation required. Silent background updates via electron-updater keep users on the latest version automatically.
+
 ### Config Backup Manager (Phase 3, Tasks 3.5–3.6) ✅
 The **Config Backup Manager** (Zeal section in the sidebar) lets you snapshot and restore all of your EverQuest `.ini` configuration files — `eqclient.ini`, per-character UI settings, hotkey files, and anything else in your EQ directory with a `.ini` extension. Create a named backup in one click; every backup shows its file count, size, and creation timestamp. Restore any backup with a single click and an inline confirmation to prevent accidents. Backups are stored as zip archives in `~/.pq-companion/backups/` and their metadata is kept in `user.db`. Phase 3 is now complete.
 
@@ -69,9 +72,6 @@ The app will watch your EQ log file in real time and parse every combat, spell, 
 
 ### DPS Meter
 A clean, transparent overlay showing live damage output for you, your pet, and your group. Tracks the current fight, rolling DPS, and session totals. Everything stays out of the game window until you need it.
-
-### Windows Build & Distribution (Phase 6)
-One-click installer for Windows, distributed via GitHub Releases. A working Windows build is the next priority so the app can be tested in-game on the platform it actually runs on. Silent background updates so you're always on the latest version without thinking about it.
 
 ### Spell Timer Engine (Phase 7)
 Countdown bars for every mez, stun, DoT, and debuff you have active — aware of EverQuest's server tick timing so durations are accurate. Color-coded by type, configurable layout. Never wonder how long your mez has left again.
@@ -87,6 +87,12 @@ A per-character checklist for tracking Planes of Power progression flags — the
 
 ### Character Todo List (Phase 10, Task 10.2)
 A simple, per-character task list so you can track anything you want to get done on each of your characters — quests to complete, items to farm, skills to max, people to meet. Add a task, check it off when done, delete it when you're finished. No categories, no due dates, no complexity — just a scratch pad that lives next to your character data and persists between sessions. Kept simple intentionally; additional structure can be added based on feedback once people start using it.
+
+### Project Website (Phase 11)
+A public-facing site for the project — feature overview, download links, screenshots, and documentation. Deferred until the app is stable and feature-complete enough to be worth promoting.
+
+### Hosted Web API (Phase 12)
+A cloud-hosted version of the backend API so external tools and the project website can query EQ game data without requiring the desktop app. Lowest priority — only relevant once the app has an established user base and the data model is stable.
 
 ---
 

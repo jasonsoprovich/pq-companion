@@ -39,11 +39,9 @@
 - [x] Task 5.2 — DPS Overlay
 - [x] Task 5.3 — Combat Log History
 
-## Phase 6 — Windows Build & Distribution
+## Phase 6 — Windows Build & Distribution ✅
 - [x] Task 6.1 — Windows Build Pipeline
-- [ ] Task 6.2 — Auto-Updater
-- [ ] Task 6.3 — Hosted Web API (Optional)
-- [ ] Task 6.4 — Project Website
+- [x] Task 6.2 — Auto-Updater
 
 ## Phase 7 — Spell Timer Engine
 - [ ] Task 7.1 — Spell Timer Engine (Backend)
@@ -63,3 +61,9 @@
 ## Phase 10 — Character Tools
 - [ ] Task 10.1 — Planes of Power Flag Tracker
 - [ ] Task 10.2 — Character Todo List
+
+## Phase 11 — Project Website
+- [ ] Task 11.1 — Project Website
+
+## Phase 12 — Hosted Web API
+- [ ] Task 12.1 — Hosted Web API

@@ -20,6 +20,14 @@ export interface ElectronAPI {
   dialog: {
     selectFolder: () => Promise<string | null>
   }
+  updater: {
+    check: () => Promise<void>
+    quitAndInstall: () => Promise<void>
+    onAvailable: (cb: (info: { version: string }) => void) => () => void
+    onProgress: (cb: (p: { percent: number; transferred: number; total: number }) => void) => () => void
+    onDownloaded: (cb: (info: { version: string }) => void) => () => void
+    onError: (cb: (message: string) => void) => () => void
+  }
 }
 
 declare global {
