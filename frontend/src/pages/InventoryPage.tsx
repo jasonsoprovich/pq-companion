@@ -253,12 +253,12 @@ export default function InventoryPage(): React.ReactElement {
     <div className="flex h-full flex-col">
       {/* Header bar */}
       <div
-        className="flex items-center justify-between border-b px-4 py-2 shrink-0"
+        className="flex items-center justify-between border-b px-4 py-3 shrink-0"
         style={{ borderColor: 'var(--color-border)' }}
       >
         <div className="flex items-center gap-3">
-          <Package size={16} style={{ color: 'var(--color-primary)' }} />
-          <span className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+          <Package size={18} style={{ color: 'var(--color-primary)' }} />
+          <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
             {inventory.character}
           </span>
           <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>

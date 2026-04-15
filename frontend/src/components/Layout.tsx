@@ -26,7 +26,7 @@ export default function Layout(): React.ReactElement {
     >
       <TitleBar />
       <div className="flex min-h-0 flex-1">
-        <Sidebar />
+        <Sidebar onSearchClick={() => setSearchOpen(true)} />
         <main
           className="selectable flex-1 overflow-auto"
           style={{ backgroundColor: 'var(--color-background)' }}

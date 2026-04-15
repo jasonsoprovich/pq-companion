@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X } from 'lucide-react'
 import { getConfig, updateConfig } from '../services/api'
 import type { Config } from '../types/config'
@@ -6,6 +7,7 @@ import type { Config } from '../types/config'
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 export default function SettingsPage(): React.ReactElement {
+  const navigate = useNavigate()
   const [config, setConfig] = useState<Config | null>(null)
   const [originalConfig, setOriginalConfig] = useState<Config | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -32,9 +34,8 @@ export default function SettingsPage(): React.ReactElement {
   function handleCancel(): void {
     if (originalConfig) {
       setConfig(originalConfig)
-      setSaveState('idle')
-      setSaveError(null)
     }
+    navigate(-1)
   }
 
   async function handleSave(): Promise<void> {
@@ -46,7 +47,7 @@ export default function SettingsPage(): React.ReactElement {
       setConfig(saved)
       setOriginalConfig(saved)
       setSaveState('saved')
-      setTimeout(() => setSaveState('idle'), 2500)
+      setTimeout(() => navigate(-1), 800)
     } catch (err) {
       setSaveError((err as Error).message)
       setSaveState('error')
@@ -370,7 +371,7 @@ export default function SettingsPage(): React.ReactElement {
                 height: 22,
                 borderRadius: 11,
                 backgroundColor: config.preferences.overlay_hps_enabled
-                  ? '#16a34a'
+                  ? 'var(--color-primary)'
                   : 'var(--color-surface-2)',
                 border: '1px solid var(--color-border)',
                 cursor: 'pointer',

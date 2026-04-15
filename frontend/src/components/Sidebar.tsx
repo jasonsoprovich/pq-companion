@@ -49,7 +49,11 @@ function SidebarLink({ to, label, icon }: NavItem): React.ReactElement {
   )
 }
 
-export default function Sidebar(): React.ReactElement {
+interface SidebarProps {
+  onSearchClick: () => void
+}
+
+export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactElement {
   return (
     <aside
       className="drag-region flex w-48 shrink-0 flex-col border-r"
@@ -60,8 +64,9 @@ export default function Sidebar(): React.ReactElement {
     >
       {/* Global search hint */}
       <div className="no-drag px-2 pb-1 pt-3">
-        <div
-          className="flex items-center justify-between rounded px-3 py-1.5"
+        <button
+          onClick={onSearchClick}
+          className="flex w-full cursor-pointer items-center justify-between rounded px-3 py-1.5 transition-colors hover:bg-(--color-surface-3)"
           style={{
             backgroundColor: 'var(--color-surface-2)',
             border: '1px solid var(--color-border)',
@@ -77,7 +82,7 @@ export default function Sidebar(): React.ReactElement {
           >
             ⌘K
           </kbd>
-        </div>
+        </button>
       </div>
 
       {/* Section header */}

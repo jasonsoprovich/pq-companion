@@ -394,7 +394,7 @@ export default function SpellTimerPage(): React.ReactElement {
           </div>
         }
         defaultWidth={300}
-        defaultHeight={400}
+        defaultHeight={380}
         defaultX={24}
         defaultY={24}
         minWidth={220}
@@ -445,15 +445,17 @@ export default function SpellTimerPage(): React.ReactElement {
                 <ExternalLink size={12} />
               </button>
             )}
+            <ConnPill state={wsState} />
           </div>
         }
         defaultWidth={300}
-        defaultHeight={340}
-        defaultX={344}
+        defaultHeight={380}
+        defaultX={340}
         defaultY={24}
         minWidth={220}
         minHeight={160}
       >
+        <StatusBar status={status} />
         <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
           {timerState === null ? (
             <EmptyState

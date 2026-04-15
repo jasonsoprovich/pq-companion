@@ -191,8 +191,8 @@ export default function SpellChecklistPage(): React.ReactElement {
       >
         {/* Row 1: icon + title + class selector */}
         <div className="flex items-center gap-3">
-          <BookOpen size={16} style={{ color: 'var(--color-primary)' }} />
-          <span className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+          <BookOpen size={18} style={{ color: 'var(--color-primary)' }} />
+          <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
             Spell Checklist
           </span>
 
@@ -359,7 +359,7 @@ export default function SpellChecklistPage(): React.ReactElement {
         )}
 
         {!loading && !spellError && filteredSpells.length === 0 && (
-          <div className="flex h-32 items-center justify-center">
+          <div className="flex h-full items-center justify-center">
             <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
               {filter === 'known'
                 ? 'No known spells for this class.'

@@ -383,41 +383,26 @@ export default function CombatLogPage(): React.ReactElement {
   const fights = combat?.recent_fights ?? []
 
   return (
-    <div
-      style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        backgroundColor: 'var(--color-background)',
-      }}
-    >
-      {/* Page title */}
+    <div className="flex h-full flex-col overflow-hidden" style={{ backgroundColor: 'var(--color-background)' }}>
+      {/* Header */}
       <div
-        style={{
-          padding: '12px 16px',
-          borderBottom: '1px solid var(--color-border)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          flexShrink: 0,
-        }}
+        className="flex shrink-0 items-center justify-between border-b px-4 py-3"
+        style={{ borderColor: 'var(--color-border)' }}
       >
-        <ScrollText size={18} style={{ color: 'var(--color-primary)' }} />
-        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-foreground)' }}>
-          Combat Log
-        </span>
-        {combat && (
-          <span
-            style={{
-              marginLeft: 4,
-              fontSize: 11,
-              color: 'var(--color-muted)',
-            }}
-          >
-            {fights.length} recent fight{fights.length !== 1 ? 's' : ''}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          <ScrollText size={18} style={{ color: 'var(--color-primary)' }} />
+          <h1 className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+            Combat Log
+          </h1>
+          {combat && (
+            <span
+              className="rounded px-1.5 py-0.5 text-[10px]"
+              style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}
+            >
+              {fights.length} fight{fights.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
       </div>
 
       <StatusBar status={status} />

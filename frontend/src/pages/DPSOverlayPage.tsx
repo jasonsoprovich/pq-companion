@@ -96,6 +96,110 @@ function StatusBar({ status }: { status: LogTailerStatus | null }): React.ReactE
   )
 }
 
+// ── Filter toggle ──────────────────────────────────────────────────────────────
+
+function FilterButton({
+  showAll,
+  onToggle,
+}: {
+  showAll: boolean
+  onToggle: () => void
+}): React.ReactElement {
+  return (
+    <button
+      onClick={onToggle}
+      style={{
+        fontSize: 10,
+        padding: '2px 7px',
+        borderRadius: 4,
+        border: '1px solid var(--color-border)',
+        backgroundColor: showAll ? 'var(--color-primary)' : 'var(--color-surface)',
+        color: showAll ? '#fff' : 'var(--color-muted-foreground)',
+        cursor: 'pointer',
+        fontWeight: 600,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+      }}
+    >
+      {showAll ? 'All' : 'Me'}
+    </button>
+  )
+}
+
+// ── Combat status strip ────────────────────────────────────────────────────────
+
+function CombatStrip({ combat, kind }: { combat: CombatState; kind: 'dps' | 'hps' }): React.ReactElement {
+  const fight = combat.current_fight
+  return (
+    <div
+      style={{
+        padding: '4px 10px',
+        fontSize: 11,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        borderBottom: '1px solid var(--color-border)',
+        flexShrink: 0,
+        backgroundColor: combat.in_combat ? 'rgba(220,38,38,0.15)' : 'transparent',
+        color: combat.in_combat ? '#f87171' : 'var(--color-muted)',
+      }}
+    >
+      <span
+        style={{
+          width: 7,
+          height: 7,
+          borderRadius: '50%',
+          backgroundColor: combat.in_combat ? '#ef4444' : '#6b7280',
+          display: 'inline-block',
+          flexShrink: 0,
+        }}
+      />
+      {combat.in_combat && fight ? (
+        <>
+          <span style={{ fontWeight: 600, color: '#f87171' }}>In Combat</span>
+          <span style={{ color: 'var(--color-muted)' }}>·</span>
+          <span>{fmtDuration(fight.duration_seconds)}</span>
+          <span style={{ color: 'var(--color-muted)' }}>·</span>
+          {kind === 'dps' ? (
+            <span style={{ color: '#f97316' }}>{fmtRate(fight.total_dps)} DPS</span>
+          ) : (
+            <span style={{ color: '#22c55e' }}>{fmtRate(fight.total_hps)} HPS</span>
+          )}
+        </>
+      ) : (
+        <span>Not in combat</span>
+      )}
+    </div>
+  )
+}
+
+// ── Column header row ──────────────────────────────────────────────────────────
+
+function ColHeaders({ rateLabel }: { rateLabel: string }): React.ReactElement {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr auto auto auto',
+        gap: '0 10px',
+        padding: '4px 10px',
+        fontSize: 10,
+        fontWeight: 600,
+        textTransform: 'uppercase',
+        letterSpacing: '0.05em',
+        color: 'var(--color-muted)',
+        borderBottom: '1px solid var(--color-border)',
+        flexShrink: 0,
+      }}
+    >
+      <span>Name</span>
+      <span>%</span>
+      <span>{rateLabel === 'DPS' ? 'Dmg' : 'Heal'}</span>
+      <span style={{ textAlign: 'right' }}>{rateLabel}</span>
+    </div>
+  )
+}
+
 // ── DPS row ────────────────────────────────────────────────────────────────────
 
 function DPSRow({
@@ -222,42 +326,9 @@ function HPSRow({
   )
 }
 
-// ── Column header row ──────────────────────────────────────────────────────────
-
-function ColHeaders({ rateLabel }: { rateLabel: string }): React.ReactElement {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr auto auto auto',
-        gap: '0 10px',
-        padding: '4px 10px',
-        fontSize: 10,
-        fontWeight: 600,
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em',
-        color: 'var(--color-muted)',
-        borderBottom: '1px solid var(--color-border)',
-        flexShrink: 0,
-      }}
-    >
-      <span>Name</span>
-      <span>%</span>
-      <span>{rateLabel === 'DPS' ? 'Dmg' : 'Heal'}</span>
-      <span style={{ textAlign: 'right' }}>{rateLabel}</span>
-    </div>
-  )
-}
-
 // ── DPS fight panel ────────────────────────────────────────────────────────────
 
-function DPSPanel({
-  fight,
-  showAll,
-}: {
-  fight: FightState
-  showAll: boolean
-}): React.ReactElement {
+function DPSPanel({ fight, showAll }: { fight: FightState; showAll: boolean }): React.ReactElement {
   const combatants = fight.combatants ?? []
   const rows = showAll ? combatants : combatants.filter((c) => c.name === 'You')
   const totalDmg = showAll ? fight.total_damage : fight.you_damage
@@ -280,13 +351,7 @@ function DPSPanel({
 
 // ── HPS fight panel ────────────────────────────────────────────────────────────
 
-function HPSPanel({
-  fight,
-  showAll,
-}: {
-  fight: FightState
-  showAll: boolean
-}): React.ReactElement {
+function HPSPanel({ fight, showAll }: { fight: FightState; showAll: boolean }): React.ReactElement {
   const healers = fight.healers ?? []
   const rows = showAll ? healers : healers.filter((h) => h.name === 'You')
   const totalHeal = showAll ? fight.total_heal : fight.you_heal
@@ -309,7 +374,7 @@ function HPSPanel({
 
 // ── Not-in-combat placeholder ──────────────────────────────────────────────────
 
-function NotInCombat({ tab }: { tab: 'dps' | 'hps' }): React.ReactElement {
+function NotInCombat({ kind }: { kind: 'dps' | 'hps' }): React.ReactElement {
   return (
     <div
       style={{
@@ -322,7 +387,9 @@ function NotInCombat({ tab }: { tab: 'dps' | 'hps' }): React.ReactElement {
         color: 'var(--color-muted)',
       }}
     >
-      {tab === 'dps' ? <Swords size={32} style={{ opacity: 0.3 }} /> : <HeartPulse size={32} style={{ opacity: 0.3 }} />}
+      {kind === 'dps'
+        ? <Swords size={32} style={{ opacity: 0.3 }} />
+        : <HeartPulse size={32} style={{ opacity: 0.3 }} />}
       <p style={{ fontSize: 12, margin: 0 }}>Not in combat</p>
     </div>
   )
@@ -330,7 +397,7 @@ function NotInCombat({ tab }: { tab: 'dps' | 'hps' }): React.ReactElement {
 
 // ── Session bar ────────────────────────────────────────────────────────────────
 
-function SessionBar({ combat, tab }: { combat: CombatState; tab: 'dps' | 'hps' }): React.ReactElement {
+function SessionBar({ combat, kind }: { combat: CombatState; kind: 'dps' | 'hps' }): React.ReactElement {
   const fights = (combat.recent_fights ?? []).length
   return (
     <div
@@ -347,7 +414,7 @@ function SessionBar({ combat, tab }: { combat: CombatState; tab: 'dps' | 'hps' }
       }}
     >
       <span>{fights} fight{fights !== 1 ? 's' : ''}</span>
-      {tab === 'dps' ? (
+      {kind === 'dps' ? (
         <>
           <span style={{ color: 'var(--color-foreground)' }}>{fmt(combat.session_damage)} dmg</span>
           <span style={{ color: '#f97316' }}>{fmtRate(combat.session_dps)} DPS (session)</span>
@@ -362,148 +429,13 @@ function SessionBar({ combat, tab }: { combat: CombatState; tab: 'dps' | 'hps' }
   )
 }
 
-// ── Filter toggle ──────────────────────────────────────────────────────────────
-
-function FilterButton({
-  showAll,
-  onToggle,
-}: {
-  showAll: boolean
-  onToggle: () => void
-}): React.ReactElement {
-  return (
-    <button
-      onClick={onToggle}
-      style={{
-        fontSize: 10,
-        padding: '2px 7px',
-        borderRadius: 4,
-        border: '1px solid var(--color-border)',
-        backgroundColor: showAll ? 'var(--color-primary)' : 'var(--color-surface)',
-        color: showAll ? '#fff' : 'var(--color-muted-foreground)',
-        cursor: 'pointer',
-        fontWeight: 600,
-        letterSpacing: '0.04em',
-        textTransform: 'uppercase',
-      }}
-    >
-      {showAll ? 'All' : 'Me'}
-    </button>
-  )
-}
-
-// ── Combat status strip ────────────────────────────────────────────────────────
-
-function CombatStrip({ combat, tab }: { combat: CombatState; tab: 'dps' | 'hps' }): React.ReactElement {
-  const fight = combat.current_fight
-  return (
-    <div
-      style={{
-        padding: '4px 10px',
-        fontSize: 11,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        borderBottom: '1px solid var(--color-border)',
-        flexShrink: 0,
-        backgroundColor: combat.in_combat ? 'rgba(220,38,38,0.15)' : 'transparent',
-        color: combat.in_combat ? '#f87171' : 'var(--color-muted)',
-      }}
-    >
-      <span
-        style={{
-          width: 7,
-          height: 7,
-          borderRadius: '50%',
-          backgroundColor: combat.in_combat ? '#ef4444' : '#6b7280',
-          display: 'inline-block',
-          flexShrink: 0,
-        }}
-      />
-      {combat.in_combat && fight ? (
-        <>
-          <span style={{ fontWeight: 600, color: '#f87171' }}>In Combat</span>
-          <span style={{ color: 'var(--color-muted)' }}>·</span>
-          <span>{fmtDuration(fight.duration_seconds)}</span>
-          <span style={{ color: 'var(--color-muted)' }}>·</span>
-          {tab === 'dps' ? (
-            <span style={{ color: '#f97316' }}>{fmtRate(fight.total_dps)} DPS</span>
-          ) : (
-            <span style={{ color: '#22c55e' }}>{fmtRate(fight.total_hps)} HPS</span>
-          )}
-        </>
-      ) : (
-        <span>Not in combat</span>
-      )}
-    </div>
-  )
-}
-
-// ── Tab bar ────────────────────────────────────────────────────────────────────
-
-function TabBar({
-  tab,
-  onSwitch,
-}: {
-  tab: 'dps' | 'hps'
-  onSwitch: (t: 'dps' | 'hps') => void
-}): React.ReactElement {
-  const baseStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 5,
-    padding: '5px 12px',
-    fontSize: 11,
-    fontWeight: 600,
-    cursor: 'pointer',
-    border: 'none',
-    background: 'none',
-    borderBottom: '2px solid transparent',
-    transition: 'color 0.1s, border-color 0.1s',
-  }
-
-  return (
-    <div
-      style={{
-        display: 'flex',
-        borderBottom: '1px solid var(--color-border)',
-        backgroundColor: 'var(--color-surface-2)',
-        flexShrink: 0,
-      }}
-    >
-      <button
-        onClick={() => onSwitch('dps')}
-        style={{
-          ...baseStyle,
-          color: tab === 'dps' ? '#f97316' : 'var(--color-muted)',
-          borderBottomColor: tab === 'dps' ? '#f97316' : 'transparent',
-        }}
-      >
-        <Swords size={12} />
-        DPS
-      </button>
-      <button
-        onClick={() => onSwitch('hps')}
-        style={{
-          ...baseStyle,
-          color: tab === 'hps' ? '#22c55e' : 'var(--color-muted)',
-          borderBottomColor: tab === 'hps' ? '#22c55e' : 'transparent',
-        }}
-      >
-        <HeartPulse size={12} />
-        HPS
-      </button>
-    </div>
-  )
-}
-
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function DPSOverlayPage(): React.ReactElement {
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
-  const [showAll, setShowAll] = useState(true)
-  const [tab, setTab] = useState<'dps' | 'hps'>('dps')
+  const [showAllDPS, setShowAllDPS] = useState(true)
+  const [showAllHPS, setShowAllHPS] = useState(true)
 
   useEffect(() => {
     getCombatState().then(setCombat).catch(() => {})
@@ -517,44 +449,6 @@ export default function DPSOverlayPage(): React.ReactElement {
   }, [])
 
   const wsState = useWebSocket(handleMessage)
-
-  const popOutButton = tab === 'dps' ? (
-    window.electron?.overlay && (
-      <button
-        onClick={() => window.electron.overlay.toggleDPS()}
-        title="Pop out DPS as floating overlay"
-        style={{
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          padding: '1px 3px',
-          color: 'var(--color-muted)',
-          display: 'flex',
-          alignItems: 'center',
-        }}
-      >
-        <ExternalLink size={12} />
-      </button>
-    )
-  ) : (
-    window.electron?.overlay && (
-      <button
-        onClick={() => window.electron.overlay.toggleHPS()}
-        title="Pop out HPS as floating overlay"
-        style={{
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          padding: '1px 3px',
-          color: 'var(--color-muted)',
-          display: 'flex',
-          alignItems: 'center',
-        }}
-      >
-        <ExternalLink size={12} />
-      </button>
-    )
-  )
 
   return (
     <div
@@ -578,35 +472,49 @@ export default function DPSOverlayPage(): React.ReactElement {
         }}
       >
         <p style={{ fontSize: 12, color: 'var(--color-muted)', opacity: 0.4 }}>
-          Drag title bar to move · Drag edges/corners to resize
+          Drag title bars to move · Drag edges/corners to resize
         </p>
       </div>
 
+      {/* ── DPS panel ─────────────────────────────────────────────────── */}
       <OverlayWindow
         title={
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            {tab === 'dps' ? (
-              <Swords size={13} style={{ color: 'var(--color-primary)' }} />
-            ) : (
-              <HeartPulse size={13} style={{ color: '#22c55e' }} />
-            )}
-            {tab === 'dps' ? 'DPS Meter' : 'HPS Meter'}
+            <Swords size={13} style={{ color: 'var(--color-primary)' }} />
+            DPS Meter
           </span>
         }
         headerRight={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <FilterButton showAll={showAll} onToggle={() => setShowAll((v) => !v)} />
-            {popOutButton}
+            <FilterButton showAll={showAllDPS} onToggle={() => setShowAllDPS((v) => !v)} />
+            {window.electron?.overlay && (
+              <button
+                onClick={() => window.electron.overlay.toggleDPS()}
+                title="Pop out DPS as floating overlay"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '1px 3px',
+                  color: 'var(--color-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                <ExternalLink size={12} />
+              </button>
+            )}
             <ConnPill state={wsState} status={status} />
           </div>
         }
-        defaultWidth={400}
-        defaultHeight={480}
+        defaultWidth={380}
+        defaultHeight={420}
         defaultX={24}
         defaultY={24}
+        minWidth={260}
+        minHeight={180}
       >
         <StatusBar status={status} />
-        <TabBar tab={tab} onSwitch={setTab} />
 
         {combat === null ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -614,19 +522,70 @@ export default function DPSOverlayPage(): React.ReactElement {
           </div>
         ) : (
           <>
-            <CombatStrip combat={combat} tab={tab} />
-
+            <CombatStrip combat={combat} kind="dps" />
             {combat.in_combat && combat.current_fight ? (
-              tab === 'dps' ? (
-                <DPSPanel fight={combat.current_fight} showAll={showAll} />
-              ) : (
-                <HPSPanel fight={combat.current_fight} showAll={showAll} />
-              )
+              <DPSPanel fight={combat.current_fight} showAll={showAllDPS} />
             ) : (
-              <NotInCombat tab={tab} />
+              <NotInCombat kind="dps" />
             )}
+            <SessionBar combat={combat} kind="dps" />
+          </>
+        )}
+      </OverlayWindow>
 
-            <SessionBar combat={combat} tab={tab} />
+      {/* ── HPS panel ─────────────────────────────────────────────────── */}
+      <OverlayWindow
+        title={
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <HeartPulse size={13} style={{ color: '#22c55e' }} />
+            HPS Meter
+          </span>
+        }
+        headerRight={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <FilterButton showAll={showAllHPS} onToggle={() => setShowAllHPS((v) => !v)} />
+            {window.electron?.overlay && (
+              <button
+                onClick={() => window.electron.overlay.toggleHPS()}
+                title="Pop out HPS as floating overlay"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '1px 3px',
+                  color: 'var(--color-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                <ExternalLink size={12} />
+              </button>
+            )}
+            <ConnPill state={wsState} status={status} />
+          </div>
+        }
+        defaultWidth={380}
+        defaultHeight={420}
+        defaultX={420}
+        defaultY={24}
+        minWidth={260}
+        minHeight={180}
+      >
+        <StatusBar status={status} />
+
+        {combat === null ? (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <p style={{ fontSize: 12, color: 'var(--color-muted)' }}>Loading…</p>
+          </div>
+        ) : (
+          <>
+            <CombatStrip combat={combat} kind="hps" />
+            {combat.in_combat && combat.current_fight ? (
+              <HPSPanel fight={combat.current_fight} showAll={showAllHPS} />
+            ) : (
+              <NotInCombat kind="hps" />
+            )}
+            <SessionBar combat={combat} kind="hps" />
           </>
         )}
       </OverlayWindow>

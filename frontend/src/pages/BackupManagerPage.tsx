@@ -430,11 +430,11 @@ export default function BackupManagerPage(): React.ReactElement {
     <div className="flex h-full flex-col">
       {/* Header */}
       <div
-        className="flex items-center gap-3 border-b px-4 py-2 shrink-0"
+        className="flex items-center gap-3 border-b px-4 py-3 shrink-0"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <HardDrive size={16} style={{ color: 'var(--color-primary)' }} />
-        <span className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+        <HardDrive size={18} style={{ color: 'var(--color-primary)' }} />
+        <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
           Config Backup Manager
         </span>
         <div className="ml-auto flex items-center gap-2">
@@ -494,7 +494,7 @@ export default function BackupManagerPage(): React.ReactElement {
 
         {/* Empty state */}
         {backups.length === 0 && !showCreate && (
-          <div className="flex h-40 flex-col items-center justify-center gap-3">
+          <div className="flex h-full flex-col items-center justify-center gap-3">
             <Archive size={32} style={{ color: 'var(--color-muted)' }} />
             <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
               No backups yet.

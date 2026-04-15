@@ -332,11 +332,11 @@ export default function KeyTrackerPage(): React.ReactElement {
     <div className="flex h-full flex-col">
       {/* Header bar */}
       <div
-        className="flex items-center gap-3 border-b px-4 py-2 shrink-0"
+        className="flex items-center gap-3 border-b px-4 py-3 shrink-0"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <Key size={16} style={{ color: 'var(--color-primary)' }} />
-        <span className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+        <Key size={18} style={{ color: 'var(--color-primary)' }} />
+        <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
           Key Tracker
         </span>
         <button
@@ -380,7 +380,7 @@ export default function KeyTrackerPage(): React.ReactElement {
       {/* Key cards */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {filteredKeys.length === 0 ? (
-          <div className="flex h-40 items-center justify-center">
+          <div className="flex h-full items-center justify-center">
             <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
               {filter === 'complete'
                 ? 'No keys completed yet.'
