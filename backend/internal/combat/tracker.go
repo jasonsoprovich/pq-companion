@@ -48,7 +48,10 @@ type Tracker struct {
 
 // NewTracker returns an initialised combat Tracker.
 func NewTracker(hub *ws.Hub) *Tracker {
-	return &Tracker{hub: hub}
+	return &Tracker{
+		hub:          hub,
+		recentFights: []FightSummary{},
+	}
 }
 
 // Handle processes a single parsed log event.

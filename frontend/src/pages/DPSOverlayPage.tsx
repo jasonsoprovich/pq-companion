@@ -161,9 +161,10 @@ function FightPanel({
   fight: FightState
   showAll: boolean
 }): React.ReactElement {
+  const combatants = fight.combatants ?? []
   const rows = showAll
-    ? fight.combatants
-    : fight.combatants.filter((c) => c.name === 'You')
+    ? combatants
+    : combatants.filter((c) => c.name === 'You')
 
   const totalDmg = showAll ? fight.total_damage : fight.you_damage
 
@@ -228,7 +229,7 @@ function NotInCombat(): React.ReactElement {
 // ── Session summary ────────────────────────────────────────────────────────────
 
 function SessionBar({ combat }: { combat: CombatState }): React.ReactElement {
-  const fights = combat.recent_fights.length
+  const fights = (combat.recent_fights ?? []).length
   return (
     <div
       style={{

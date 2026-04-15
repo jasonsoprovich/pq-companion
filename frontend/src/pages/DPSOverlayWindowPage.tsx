@@ -92,7 +92,8 @@ function Row({ stat, totalDmg }: { stat: EntityStats; totalDmg: number }): React
 // ── Fight table ────────────────────────────────────────────────────────────────
 
 function FightTable({ fight, showAll }: { fight: FightState; showAll: boolean }): React.ReactElement {
-  const rows = showAll ? fight.combatants : fight.combatants.filter((c) => c.name === 'You')
+  const combatants = fight.combatants ?? []
+  const rows = showAll ? combatants : combatants.filter((c) => c.name === 'You')
   const totalDmg = showAll ? fight.total_damage : fight.you_damage
 
   return (
@@ -282,7 +283,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
             flexShrink: 0,
           }}
         >
-          <span>{combat.recent_fights.length} fights</span>
+          <span>{(combat.recent_fights ?? []).length} fights</span>
           <span>{fmt(combat.session_damage)} dmg</span>
           <span style={{ color: '#fb923c' }}>{fmtDPS(combat.session_dps)} DPS</span>
         </div>
