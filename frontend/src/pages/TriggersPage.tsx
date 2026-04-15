@@ -14,6 +14,7 @@ import {
   Clock,
   ChevronDown,
   ChevronUp,
+  MonitorPlay,
 } from 'lucide-react'
 import {
   listTriggers,
@@ -912,6 +913,19 @@ export default function TriggersPage(): React.ReactElement {
           Custom Triggers
         </span>
         <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => window.electron?.overlay?.toggleTrigger()}
+            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+            title="Toggle trigger overlay window"
+          >
+            <MonitorPlay size={11} />
+            Overlay
+          </button>
           {tab === 'triggers' && (
             <>
               <button

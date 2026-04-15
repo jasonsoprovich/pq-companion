@@ -26,6 +26,9 @@ contextBridge.exposeInMainWorld('electron', {
     openDetrimTimer: (): Promise<void> => ipcRenderer.invoke('overlay:detrimtimer:open'),
     closeDetrimTimer: (): Promise<void> => ipcRenderer.invoke('overlay:detrimtimer:close'),
     toggleDetrimTimer: (): Promise<void> => ipcRenderer.invoke('overlay:detrimtimer:toggle'),
+    openTrigger: (): Promise<void> => ipcRenderer.invoke('overlay:trigger:open'),
+    closeTrigger: (): Promise<void> => ipcRenderer.invoke('overlay:trigger:close'),
+    toggleTrigger: (): Promise<void> => ipcRenderer.invoke('overlay:trigger:toggle'),
   },
   dialog: {
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-folder'),

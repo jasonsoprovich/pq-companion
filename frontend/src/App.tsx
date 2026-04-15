@@ -21,6 +21,7 @@ import DetrimTimerWindowPage from './pages/DetrimTimerWindowPage'
 import SpellTimerPage from './pages/SpellTimerPage'
 import CombatLogPage from './pages/CombatLogPage'
 import TriggersPage from './pages/TriggersPage'
+import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
 
 export default function App(): React.ReactElement {
   return (
@@ -31,6 +32,7 @@ export default function App(): React.ReactElement {
         <Route path="hps-overlay-window" element={<HPSOverlayWindowPage />} />
         <Route path="buff-timer-window" element={<BuffTimerWindowPage />} />
         <Route path="detrim-timer-window" element={<DetrimTimerWindowPage />} />
+        <Route path="trigger-overlay-window" element={<TriggerOverlayWindowPage />} />
 
         {/* Main app routes — wrapped in full Layout */}
         <Route path="/" element={<Layout />}>

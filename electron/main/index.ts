@@ -11,6 +11,7 @@ let dpsOverlayWindow: BrowserWindow | null = null
 let hpsOverlayWindow: BrowserWindow | null = null
 let buffTimerWindow: BrowserWindow | null = null
 let detrimTimerWindow: BrowserWindow | null = null
+let triggerOverlayWindow: BrowserWindow | null = null
 let sidecarProcess: ChildProcess | null = null
 
 // ── Sidecar (Go backend) lifecycle ────────────────────────────────────────────
@@ -326,6 +327,51 @@ function createDetrimTimerOverlay(): void {
   })
 }
 
+// ── Trigger Overlay window ────────────────────────────────────────────────────
+
+function createTriggerOverlay(): void {
+  if (triggerOverlayWindow && !triggerOverlayWindow.isDestroyed()) {
+    triggerOverlayWindow.focus()
+    return
+  }
+
+  triggerOverlayWindow = new BrowserWindow({
+    width: 340,
+    height: 360,
+    minWidth: 240,
+    minHeight: 100,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    },
+  })
+
+  triggerOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
+  triggerOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    triggerOverlayWindow.loadURL(`${rendererUrl}/#/trigger-overlay-window`)
+  } else {
+    triggerOverlayWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/trigger-overlay-window',
+    })
+  }
+
+  triggerOverlayWindow.on('closed', () => {
+    triggerOverlayWindow = null
+  })
+}
+
 // ── IPC handlers — window controls ───────────────────────────────────────────
 
 ipcMain.handle('window:minimize', () => mainWindow?.minimize())
@@ -410,6 +456,24 @@ ipcMain.handle('overlay:detrimtimer:toggle', () => {
     detrimTimerWindow.close()
   } else {
     createDetrimTimerOverlay()
+  }
+})
+
+ipcMain.handle('overlay:trigger:open', () => {
+  createTriggerOverlay()
+})
+
+ipcMain.handle('overlay:trigger:close', () => {
+  if (triggerOverlayWindow && !triggerOverlayWindow.isDestroyed()) {
+    triggerOverlayWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:trigger:toggle', () => {
+  if (triggerOverlayWindow && !triggerOverlayWindow.isDestroyed()) {
+    triggerOverlayWindow.close()
+  } else {
+    createTriggerOverlay()
   }
 })
 

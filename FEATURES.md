@@ -706,6 +706,32 @@ Two separate overlay windows are provided from the start — one for beneficial 
 **`frontend/src/App.tsx`**
 - Added `/triggers` route mapped to `TriggersPage`
 
+### Task 8.3 — Trigger Overlay ✅
+
+**`frontend/src/pages/TriggerOverlayWindowPage.tsx`**
+- Transparent, always-on-top, frameless overlay window for trigger alert display
+- Subscribes to `trigger:fired` WebSocket events; only shows alerts with an `overlay_text` action
+- Each alert auto-dismisses after its configured `duration_secs`; fades out in the last 500 ms
+- Up to 8 alerts visible simultaneously, newest on top (older alerts pushed down)
+- Alert card: large bold text in the action's configured color with matching glow shadow; truncated matched log line shown below in muted monospace
+- Garbage collection timer (250 ms) prunes expired+faded entries from state
+- Drag handle at top allows repositioning; close button sends `overlay:trigger:close` IPC
+- Background: nearly transparent when empty (alert window doesn't block the game UI), semi-opaque when alerts are present
+
+**`electron/main/index.ts`**
+- Added `triggerOverlayWindow` variable and `createTriggerOverlay()` function
+- Window: 340×360 px, transparent, frameless, always-on-top (`screen-saver` level), `skipTaskbar`, `visibleOnAllWorkspaces`
+- IPC handlers: `overlay:trigger:open`, `overlay:trigger:close`, `overlay:trigger:toggle`
+
+**`electron/preload/index.ts`**
+- Added `openTrigger`, `closeTrigger`, `toggleTrigger` to the `overlay` bridge
+
+**`frontend/src/types/electron.d.ts`**
+- Added `openTrigger`, `closeTrigger`, `toggleTrigger` to `ElectronAPI.overlay`
+
+**`frontend/src/pages/TriggersPage.tsx`**
+- Added "Overlay" button (MonitorPlay icon) in the page header that calls `window.electron?.overlay?.toggleTrigger()` — present on all tabs
+
 ## Phase 9 — Audio Alerts
 - System audio integration via Web Audio API
 - Configurable alerts when timers expire (sound file or TTS)
