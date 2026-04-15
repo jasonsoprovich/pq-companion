@@ -39,26 +39,26 @@
 - [x] Task 5.2 — DPS Overlay
 - [x] Task 5.3 — Combat Log History
 
-## Phase 6 — Spell Timer Engine
-- [ ] Task 6.1 — Spell Timer Engine (Backend)
-- [ ] Task 6.2 — Timer Overlay (Frontend)
-- [ ] Task 6.3 — Buff Window Enhancement
+## Phase 6 — Windows Build & Distribution
+- [ ] Task 6.1 — Windows Build Pipeline
+- [ ] Task 6.2 — Auto-Updater
+- [ ] Task 6.3 — Hosted Web API (Optional)
+- [ ] Task 6.4 — Project Website
 
-## Phase 7 — Audio Alerts
-- [ ] Task 7.1 — Audio Engine
-- [ ] Task 7.2 — Timer Audio Alerts
-- [ ] Task 7.3 — Event Notifications
+## Phase 7 — Spell Timer Engine
+- [ ] Task 7.1 — Spell Timer Engine (Backend)
+- [ ] Task 7.2 — Timer Overlay (Frontend)
+- [ ] Task 7.3 — Buff Window Enhancement
 
-## Phase 8 — Custom Trigger System
-- [ ] Task 8.1 — Trigger System (Backend)
-- [ ] Task 8.2 — Trigger Manager UI
-- [ ] Task 8.3 — Trigger Overlay
+## Phase 8 — Audio Alerts
+- [ ] Task 8.1 — Audio Engine
+- [ ] Task 8.2 — Timer Audio Alerts
+- [ ] Task 8.3 — Event Notifications
 
-## Phase 9 — Build & Distribution
-- [ ] Task 9.1 — Windows Build Pipeline
-- [ ] Task 9.2 — Auto-Updater
-- [ ] Task 9.3 — Hosted Web API (Optional)
-- [ ] Task 9.4 — Project Website
+## Phase 9 — Custom Trigger System
+- [ ] Task 9.1 — Trigger System (Backend)
+- [ ] Task 9.2 — Trigger Manager UI
+- [ ] Task 9.3 — Trigger Overlay
 
 ## Phase 10 — Character Tools
 - [ ] Task 10.1 — Planes of Power Flag Tracker

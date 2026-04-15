@@ -70,13 +70,16 @@ The app will watch your EQ log file in real time and parse every combat, spell, 
 ### DPS Meter
 A clean, transparent overlay showing live damage output for you, your pet, and your group. Tracks the current fight, rolling DPS, and session totals. Everything stays out of the game window until you need it.
 
-### Spell Timer Engine
+### Windows Build & Distribution (Phase 6)
+One-click installer for Windows, distributed via GitHub Releases. A working Windows build is the next priority so the app can be tested in-game on the platform it actually runs on. Silent background updates so you're always on the latest version without thinking about it.
+
+### Spell Timer Engine (Phase 7)
 Countdown bars for every mez, stun, DoT, and debuff you have active — aware of EverQuest's server tick timing so durations are accurate. Color-coded by type, configurable layout. Never wonder how long your mez has left again.
 
-### Audio Alerts
+### Audio Alerts (Phase 8)
 Configurable sound and text-to-speech alerts tied to any timer or game event. Hear when your mez is about to break. Get a voice alert when you receive a tell. Works with any audio file or your system's built-in TTS.
 
-### Custom Trigger System
+### Custom Trigger System (Phase 9)
 A full GINA-style trigger engine, built from scratch for Project Quarm. Write regex patterns against the log, fire any combination of sound, TTS, and on-screen text. Import and export trigger packs. Ships with a pre-built pack for enchanters and common group scenarios.
 
 ### Planes of Power Flag Tracker (Phase 10, Task 10.1)
@@ -84,9 +87,6 @@ A per-character checklist for tracking Planes of Power progression flags — the
 
 ### Character Todo List (Phase 10, Task 10.2)
 A simple, per-character task list so you can track anything you want to get done on each of your characters — quests to complete, items to farm, skills to max, people to meet. Add a task, check it off when done, delete it when you're finished. No categories, no due dates, no complexity — just a scratch pad that lives next to your character data and persists between sessions. Kept simple intentionally; additional structure can be added based on feedback once people start using it.
-
-### Windows Build & Auto-Updater (Phase 9)
-One-click installer for Windows, distributed via GitHub Releases. Silent background updates so you're always on the latest version without thinking about it.
 
 ---
 
