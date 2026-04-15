@@ -441,11 +441,45 @@
 - Pre-built trigger packs (enchanter mez breaks, resist spam, named spawns)
 - Text overlay window for trigger output display
 
-## Phase 9 — Build & Distribution
-- Windows `.exe` installer via electron-builder + GitHub Actions CI
-- Auto-updater: silent background updates via electron-updater + GitHub Releases
-- Optional hosted web API on Cloudflare Workers (same Go API, cloud DB)
-- Project website on Cloudflare Pages
+## Phase 6 — Windows Build & Distribution
+
+### Task 6.1 — Windows Build Pipeline ✅
+- **`.github/workflows/release.yml`** — release workflow triggered on `v*` tags (and `workflow_dispatch`):
+  - `build-windows` job on `windows-latest`: downloads `quarm.db` from `data-latest` release, cross-compiles Go backend with `CGO_ENABLED=0 GOOS=windows GOARCH=amd64`, runs `electron-vite build` + `electron-builder --win --publish never`, uploads NSIS `.exe` as a workflow artifact
+  - `build-macos` job on `macos-latest`: same flow for `darwin/arm64`, produces a DMG artifact
+  - `release` job (needs both builders): downloads artifacts, creates a draft GitHub Release with NSIS installer + DMG attached
+- **`.github/workflows/ci.yml`** — CI workflow triggered on push/PR to `main`:
+  - `test-backend`: runs `go test ./...` against the real SQLite backend
+  - `typecheck-frontend`: runs `npm run typecheck` (all three tsconfig targets)
+- **`electron-builder.yml`** — restructured `extraResources` into platform-specific sections; added `backend/data/quarm.db → bin/data/quarm.db` to both `mac` and `win` sections so the sidecar can locate the database at `resources/bin/data/quarm.db` at runtime; removed shared top-level `extraResources` block that would fail when the opposite-platform binary was absent
+- **`package.json`** — added `build:backend`, `build:backend:win`, and `build:backend:mac` scripts for building the Go sidecar locally before packaging
+
+**Data release prerequisite** — `quarm.db` is gitignored (84 MB). Before the first release build, upload it once:
+```
+gh release create data-latest backend/data/quarm.db \
+  --prerelease --title "Game Database" \
+  --notes "EQ game data — regenerate with backend/cmd/dbconvert"
+```
+Subsequent release builds download it automatically from that release.
+
+## Phase 7 — Spell Timer Engine
+- Countdown tracking for mez, stuns, DoTs, buffs
+- Server-tick-aware duration calculations
+- Timer overlay: color-coded bars grouped by type (mez / DoT / buff / debuff)
+- Buff window enhancement: self-buff tracking with exact remaining durations
+
+## Phase 8 — Audio Alerts
+- System audio integration via Web Audio API
+- Configurable alerts when timers expire (sound file or TTS)
+- TTS notifications for game events (tells, death, zone messages)
+- Per-trigger volume and voice settings
+
+## Phase 9 — Custom Trigger System
+- Regex-based trigger engine: match log lines → fire actions
+- Actions: play sound, speak TTS, display overlay text, log to history
+- Trigger Manager UI: create/edit/delete triggers, import/export packs
+- Pre-built trigger packs (enchanter mez breaks, resist spam, named spawns)
+- Text overlay window for trigger output display
 
 ## Phase 10 — Character Tools
 

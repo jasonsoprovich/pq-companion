@@ -40,7 +40,7 @@
 - [x] Task 5.3 — Combat Log History
 
 ## Phase 6 — Windows Build & Distribution
-- [ ] Task 6.1 — Windows Build Pipeline
+- [x] Task 6.1 — Windows Build Pipeline
 - [ ] Task 6.2 — Auto-Updater
 - [ ] Task 6.3 — Hosted Web API (Optional)
 - [ ] Task 6.4 — Project Website

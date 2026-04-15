@@ -4,35 +4,38 @@ copyright: Copyright © 2026 jasonsoprovich
 
 directories:
   output: dist
-  buildResources: build
+  buildResources: build   # electron-builder looks here for icon.icns / icon.ico
 
 files:
   - out/**/*
   - "!out/**/*.map"
 
-# Go backend sidecar bundled into the app
-extraResources:
-  - from: backend/bin/pq-companion-server
-    to: bin/pq-companion-server
-    filter:
-      - "**/*"
-  - from: backend/bin/pq-companion-server.exe
-    to: bin/pq-companion-server.exe
-    filter:
-      - "**/*"
-
+# ── macOS ─────────────────────────────────────────────────────────────────────
 mac:
   category: public.app-category.utilities
   target:
     - target: dmg
       arch: [x64, arm64]
-  icon: build/icon.icns
+  extraResources:
+    # Go sidecar (unix, no extension)
+    - from: backend/bin/pq-companion-server
+      to: bin/pq-companion-server
+    # EQ game database — required at runtime
+    - from: backend/data/quarm.db
+      to: bin/data/quarm.db
 
+# ── Windows ───────────────────────────────────────────────────────────────────
 win:
   target:
     - target: nsis
       arch: [x64]
-  icon: build/icon.ico
+  extraResources:
+    # Go sidecar (.exe)
+    - from: backend/bin/pq-companion-server.exe
+      to: bin/pq-companion-server.exe
+    # EQ game database — required at runtime
+    - from: backend/data/quarm.db
+      to: bin/data/quarm.db
 
 nsis:
   oneClick: false
@@ -41,6 +44,7 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
 
+# ── Auto-updater publish config (used by Task 6.2) ───────────────────────────
 publish:
   provider: github
   owner: jasonsoprovich

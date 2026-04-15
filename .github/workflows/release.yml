@@ -1,0 +1,174 @@
+name: Release
+
+# Triggers on version tags (e.g. v0.2.0) or manual dispatch.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # required to create a GitHub Release
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PREREQUISITES
+#
+#  quarm.db is not committed to the repository (84 MB binary). Before this
+#  workflow can succeed you must upload it once to a GitHub Release tagged
+#  "data-latest":
+#
+#    gh release create data-latest backend/data/quarm.db \
+#      --prerelease --title "Game Database" \
+#      --notes "EQ game data — regenerate with backend/cmd/dbconvert"
+#
+#  The build jobs download it from that release at build time.
+# ─────────────────────────────────────────────────────────────────────────────
+
+jobs:
+  # ── Windows (amd64) ──────────────────────────────────────────────────────────
+  build-windows:
+    name: Build (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Download the EQ game database from the data release.
+      - name: Download game database
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p backend/data
+          if gh release download data-latest \
+              --pattern "quarm.db" \
+              --dir backend/data \
+              --repo "$GITHUB_REPOSITORY" 2>/dev/null; then
+            echo "quarm.db downloaded ($(du -sh backend/data/quarm.db | cut -f1))"
+          else
+            echo "::error::quarm.db not found in the 'data-latest' release."
+            echo "::error::Run: gh release create data-latest backend/data/quarm.db --prerelease --title 'Game Database'"
+            exit 1
+          fi
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: backend/go.sum
+
+      # Cross-compile Go backend for Windows/amd64.
+      # modernc.org/sqlite is pure Go so CGO_ENABLED=0 works cleanly.
+      - name: Build Go backend (Windows/amd64)
+        shell: bash
+        working-directory: backend
+        run: |
+          mkdir -p bin
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+            go build -ldflags="-s -w" -o bin/pq-companion-server.exe ./cmd/server
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build Electron renderer + main
+        run: npm run build
+
+      - name: Package Windows installer (NSIS)
+        shell: bash
+        run: npx electron-builder --win --publish never
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/*.exe
+          if-no-files-found: error
+
+  # ── macOS (arm64) ────────────────────────────────────────────────────────────
+  build-macos:
+    name: Build (macOS arm64)
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download game database
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p backend/data
+          if gh release download data-latest \
+              --pattern "quarm.db" \
+              --dir backend/data \
+              --repo "$GITHUB_REPOSITORY" 2>/dev/null; then
+            echo "quarm.db downloaded ($(du -sh backend/data/quarm.db | cut -f1))"
+          else
+            echo "::error::quarm.db not found in the 'data-latest' release."
+            echo "::error::Run: gh release create data-latest backend/data/quarm.db --prerelease --title 'Game Database'"
+            exit 1
+          fi
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: backend/go.sum
+
+      - name: Build Go backend (macOS/arm64)
+        working-directory: backend
+        run: |
+          mkdir -p bin
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 \
+            go build -ldflags="-s -w" -o bin/pq-companion-server ./cmd/server
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build Electron renderer + main
+        run: npm run build
+
+      - name: Package macOS DMG (arm64)
+        run: npx electron-builder --mac --arch arm64 --publish never
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  # ── Create draft GitHub Release ───────────────────────────────────────────────
+  release:
+    name: Publish Draft Release
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: dist-win
+
+      - name: Download macOS DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist-mac
+
+      - name: Create draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            dist-win/*.exe
+            dist-mac/*.dmg
