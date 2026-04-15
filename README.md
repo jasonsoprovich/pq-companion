@@ -25,9 +25,8 @@ A free desktop companion app for [Project Quarm](https://www.projectquarm.com/) 
 
 ## Download & Install
 
-1. Go to the [Releases page](../../releases) and download the latest installer for your platform:
+1. Go to the [Releases page](../../releases) and download the latest installer:
    - **Windows** — `PQ-Companion-Setup-x.x.x.exe` (NSIS installer)
-   - **macOS** — `PQ-Companion-x.x.x.dmg`
 
 2. Run the installer and launch **PQ Companion**.
 
@@ -43,7 +42,7 @@ A free desktop companion app for [Project Quarm](https://www.projectquarm.com/) 
 
 ## Requirements
 
-- Windows 10/11 or macOS 12+
+- Windows 10/11
 - [Zeal](https://github.com/iamclint/Zeal) installed (recommended) — enables the Spell Checklist, Inventory Tracker, and Key Tracker
 - EverQuest log file enabled — in EQ, type `/log on` to start writing the combat log
 

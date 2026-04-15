@@ -25,9 +25,9 @@ permissions:
 #
 # AUTO-UPDATER
 #
-#  Each build job publishes with `--publish always`, which uploads the
-#  installer and the update manifest (latest.yml / latest-mac.yml) directly
-#  to the GitHub release.  electron-updater reads these manifests on startup
+#  The build job publishes with `--publish always`, which uploads the
+#  installer and the update manifest (latest.yml) directly to the GitHub
+#  release.  electron-updater reads this manifest on startup
 #  to detect and download new versions.
 #
 #  The final `release` job promotes the draft to a published release so that
@@ -95,63 +95,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --win --publish always
 
-  # ── macOS (arm64) ────────────────────────────────────────────────────────────
-  build-macos:
-    name: Build (macOS arm64)
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download game database
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p backend/data
-          if gh release download data-latest \
-              --pattern "quarm.db" \
-              --dir backend/data \
-              --repo "$GITHUB_REPOSITORY" 2>/dev/null; then
-            echo "quarm.db downloaded ($(du -sh backend/data/quarm.db | cut -f1))"
-          else
-            echo "::error::quarm.db not found in the 'data-latest' release."
-            echo "::error::Run: gh release create data-latest backend/data/quarm.db --prerelease --title 'Game Database'"
-            exit 1
-          fi
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-          cache-dependency-path: backend/go.sum
-
-      - name: Build Go backend (macOS/arm64)
-        working-directory: backend
-        run: |
-          mkdir -p bin
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 \
-            go build -ldflags="-s -w" -o bin/pq-companion-server ./cmd/server
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install Node dependencies
-        run: npm ci
-
-      - name: Build Electron renderer + main
-        run: npm run build
-
-      # Publish uploads the DMG + latest-mac.yml to the GitHub release.
-      - name: Package and publish macOS DMG (arm64)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --mac --arch arm64 --publish always
-
   # ── Promote draft release ─────────────────────────────────────────────────────
   release:
     name: Publish Release
-    needs: [build-windows, build-macos]
+    needs: [build-windows]
     runs-on: ubuntu-latest
 
     steps:
