@@ -54,9 +54,9 @@
 - [x] Task 8.3 — Trigger Overlay
 
 ## Phase 9 — Audio Alerts
-- [ ] Task 9.1 — Audio Engine
+- [x] Task 9.1 — Audio Engine
 - [x] Task 9.2 — Timer Audio Alerts
-- [ ] Task 9.3 — Event Notifications
+- [x] Task 9.3 — Event Notifications
 
 ## Phase 10 — Character Tools
 - [ ] Task 10.1 — Character Todo List

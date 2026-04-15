@@ -51,14 +51,14 @@ The app ships as a one-click Windows NSIS installer distributed via GitHub Relea
 Countdown bars for every buff, debuff, mez, stun, and DoT you cast — aware of EverQuest's server tick timing so durations are accurate. Two separate overlay windows: one for beneficial spells (buffs), one for detrimental spells (DoTs, mezzes, stuns, debuffs). Each can be popped out as a standalone always-on-top overlay.
 
 ### Custom Trigger System (Phase 8)
-A GINA-style trigger engine built from scratch for Project Quarm. Write regex patterns against the log and fire configurable on-screen text alerts. Triggers are stored in user.db, fully CRUD-managed through the Trigger Manager UI. Import and export trigger packs as JSON. Ships with pre-built packs for enchanters (mez breaks, charm breaks, resists, interrupts) and group awareness (tells, deaths). Trigger firings appear in a live History feed and in a standalone transparent overlay window that auto-dismisses each alert after its configured duration.
+A GINA-style trigger engine built from scratch for Project Quarm. Write regex patterns against the log and fire configurable on-screen text alerts. Triggers are stored in user.db, fully CRUD-managed through the Trigger Manager UI. Import and export trigger packs as JSON. Ships with pre-built packs for enchanters (mez breaks, charm breaks, resists, interrupts) and group awareness (tells, deaths). Trigger firings appear in a live History feed and in a standalone transparent overlay window that auto-dismisses each alerts after its configured duration.
+
+### Audio Alerts (Phase 9)
+Configurable sound and text-to-speech alerts for timers and game events. A shared audio engine fires any trigger's `play_sound` or `text_to_speech` action. Timer alerts warn you when any buff, debuff, or DoT is about to expire — configurable per-threshold with custom messages and `{spell}` substitution. Event notifications fire on high-signal log events (death, zone change, spell resist, spell interrupt) with per-event enable toggles, TTS templates with context placeholders (`{zone}`, `{spell}`, `{slain_by}`), voice selection, and volume control. All configuration persists in localStorage; no backend involvement required. Accessible via a Bell button in the Log Feed header.
 
 ---
 
 ## What's Coming
-
-### Audio Alerts (Phase 9)
-Configurable sound and text-to-speech alerts tied to any timer or game event. Hear when your mez is about to break. Get a voice alert when you receive a tell. Works with any audio file or your system's built-in TTS.
 
 ### Character Tools (Phase 10)
 A simple, per-character task list so you can track anything you want to get done on each of your characters — quests to complete, items to farm, skills to max, people to meet. Add a task, check it off when done. No categories, no due dates, no complexity — just a scratch pad that lives next to your character data and persists between sessions.

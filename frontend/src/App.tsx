@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useTimerAlerts } from './hooks/useTimerAlerts'
+import { useEventAlerts } from './hooks/useEventAlerts'
 import ItemsPage from './pages/ItemsPage'
 import SpellsPage from './pages/SpellsPage'
 import NpcsPage from './pages/NpcsPage'
@@ -28,6 +29,7 @@ import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
 export default function App(): React.ReactElement {
   useAudioEngine()
   useTimerAlerts()
+  useEventAlerts()
 
   return (
     <HashRouter>

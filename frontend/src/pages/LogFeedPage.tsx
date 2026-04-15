@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Activity, Trash2, AlertTriangle, CheckCircle2, Circle } from 'lucide-react'
+import { Activity, Bell, Trash2, AlertTriangle, CheckCircle2, Circle } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getLogStatus } from '../services/api'
+import EventAlertsPanel from '../components/EventAlertsPanel'
 import type { LogEvent, LogTailerStatus } from '../types/logEvent'
 
 const MAX_EVENTS = 200
@@ -132,6 +133,7 @@ function ConnPill({
 export default function LogFeedPage(): React.ReactElement {
   const [events, setEvents] = useState<LogEvent[]>([])
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
+  const [showAlerts, setShowAlerts] = useState(false)
   const feedRef = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
 
@@ -167,7 +169,7 @@ export default function LogFeedPage(): React.ReactElement {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden" style={{ position: 'relative' }}>
       {/* Header */}
       <div
         className="flex shrink-0 items-center justify-between border-b px-4 py-3"
@@ -187,6 +189,18 @@ export default function LogFeedPage(): React.ReactElement {
         </div>
         <div className="flex items-center gap-3">
           <ConnPill state={wsState} status={status} />
+          <button
+            onClick={() => setShowAlerts((v) => !v)}
+            className="flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
+            style={{
+              color: showAlerts ? 'var(--color-primary)' : 'var(--color-muted)',
+              border: `1px solid ${showAlerts ? 'var(--color-primary)' : 'var(--color-border)'}`,
+            }}
+            title="Event audio alerts"
+          >
+            <Bell size={12} />
+            Alerts
+          </button>
           <button
             onClick={() => setEvents([])}
             className="flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
@@ -231,6 +245,9 @@ export default function LogFeedPage(): React.ReactElement {
           </table>
         )}
       </div>
+
+      {/* Event alerts config panel */}
+      {showAlerts && <EventAlertsPanel onClose={() => setShowAlerts(false)} />}
     </div>
   )
 }

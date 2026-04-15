@@ -801,6 +801,48 @@ Adds configurable audio alerts that fire whenever an active spell timer's remain
 **`frontend/src/App.tsx`**
 - Calls `useTimerAlerts()` alongside `useAudioEngine()` at the App root — fires alerts regardless of active page
 
+### Task 9.3 — Event Notifications
+
+Audio alerts (TTS or sound file) for important game events parsed from the EQ log. Fires independently of the trigger system — these are always-on, low-config alerts for high-signal events.
+
+**Supported events:**
+- `log:death` — player death; supports `{slain_by}` placeholder
+- `log:zone` — zone change; supports `{zone}` placeholder
+- `log:spell_resist` — spell resisted by target; supports `{spell}` placeholder
+- `log:spell_interrupt` — spell cast interrupted; supports `{spell}` placeholder
+
+Combat hit/miss events are intentionally excluded — too frequent to be useful as audio alerts.
+
+**`frontend/src/types/eventAlerts.ts`** _(new)_
+- `AlertableEventType` — union of the four supported log event types
+- `EventAlertRule` — per-event config: `enabled`, `type` (play_sound | text_to_speech), `sound_path`, `volume`, `tts_template`, `voice`, `tts_volume`
+- `EventAlertConfig` — global `enabled` flag + array of `EventAlertRule`
+
+**`frontend/src/services/eventAlertStore.ts`** _(new)_
+- `loadEventAlertConfig()` / `saveEventAlertConfig()` — localStorage persistence under `pq-event-alerts`
+- Ships with four default rules (all TTS, all enabled): death → "You have died", zone → "Entering {zone}", resist → "{spell} resisted", interrupt → "Spell interrupted"
+
+**`frontend/src/hooks/useEventAlerts.ts`** _(new)_
+- Subscribes to WebSocket messages via `useWebSocket`
+- Filters to the four alertable event types; reads config fresh from localStorage on each event
+- Builds per-event template variables from the typed payload (`ZoneData`, `DeathData`, etc.)
+- Calls `playSound()` or `speakText()` with substituted text and normalised volume (0–100 → 0.0–1.0)
+
+**`frontend/src/components/EventAlertsPanel.tsx`** _(new)_
+- Slide-in panel (same style as `TimerAlertsPanel`): 380 px wide, anchored right, z-index 10
+- Global enable/disable toggle at the top
+- One `RuleRow` per supported event type, always displayed in fixed order (death, zone, resist, interrupt)
+- Each row: event label + description, enabled toggle, alert type selector, TTS or sound-file fields, placeholder hint
+- Missing rules (e.g. after first load with no stored config) are synthesised as disabled placeholders and merged into config on first edit
+- Changes persist to localStorage immediately on every input
+
+**`frontend/src/pages/LogFeedPage.tsx`**
+- Added "Alerts" button (Bell icon) in the header toolbar; tinted primary when panel is open
+- Renders `EventAlertsPanel` as an absolute-positioned overlay inside the page container when open
+
+**`frontend/src/App.tsx`**
+- Calls `useEventAlerts()` at the App root alongside `useAudioEngine()` and `useTimerAlerts()`
+
 ## Phase 10 — Character Tools
 
 ### Task 10.1 — Character Todo List
