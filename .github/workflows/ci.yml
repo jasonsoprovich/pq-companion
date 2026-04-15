@@ -12,8 +12,27 @@ jobs:
     name: Go Tests
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
+
+      # The internal/db tests run against the real quarm.db. Download it from
+      # the data-latest release (same pattern as release.yml).
+      - name: Download game database
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p backend/data
+          if gh release download data-latest \
+              --pattern "quarm.db" \
+              --dir backend/data \
+              --repo "$GITHUB_REPOSITORY" 2>/dev/null; then
+            echo "quarm.db downloaded ($(du -sh backend/data/quarm.db | cut -f1))"
+          else
+            echo "::warning::quarm.db not found in data-latest release — db tests will be skipped"
+          fi
 
       - uses: actions/setup-go@v5
         with:
