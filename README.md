@@ -1,27 +1,78 @@
 # PQ Companion
 
-A desktop companion app for the [Project Quarm](https://www.projectquarm.com/) EverQuest emulated server.
+A free desktop companion app for [Project Quarm](https://www.projectquarm.com/) — the EverQuest classic emulated server. It sits alongside the game and gives you the tools you wish were built into the client.
 
-Features: database explorer (items, spells, NPCs, zones), combat log parser, DPS meter, spell/buff/DoT timer overlays, NPC info overlay, spell checklist, config backup manager, and a custom trigger system.
-
-> **Status:** Active development — Phase 0 complete (database foundation + Go data layer). Phase 1 complete: REST API, WebSocket server, and configuration system. Phase 2 complete: Electron + React shell, app layout and navigation, Item/Spell/NPC/Zone explorers, and Global Search. Phase 3 complete: Zeal Export Reader, Spell Checklist, Inventory Tracker, Key Tracker, and Config Backup Manager. Now entering Phase 4 — log parsing and NPC info overlay. See [ROADMAP.md](ROADMAP.md) for what's coming.
+> **Status:** Active development. Phases 0–7 complete. See [ROADMAP.md](ROADMAP.md) for what's built and what's coming.
 
 ---
 
-## Development Setup
+## What It Does
 
-### Prerequisites
-
-- [Docker](https://www.docker.com/) — for local MySQL database exploration
-- [Go 1.22+](https://go.dev/) — backend
-- [Node.js 20+](https://nodejs.org/) — frontend + Electron
-- A MySQL client (optional) — [DBeaver](https://dbeaver.io/) or MySQL Workbench
+- **Database Explorer** — Search every item, spell, NPC, and zone in the Project Quarm database. Full stat panels, resist info, class restrictions, spell effects, NPC special abilities, and zone NPC rosters.
+- **Global Search** — Press `Cmd+K` / `Ctrl+K` to search items, spells, NPCs, and zones simultaneously from anywhere in the app.
+- **NPC Info Overlay** — See your current target's level, class, HP, resists, and special abilities (Summon, Unmezzable, Uncharmable, etc.) the moment you engage — pulled from the database automatically via your combat log.
+- **DPS Meter** — A transparent overlay showing live damage output for you and your group, with fight duration and session totals. Floats above the game as a standalone window.
+- **Combat Log** — Full fight history with expandable per-combatant breakdowns.
+- **Spell Timer Engine** — Countdown bars for every buff, debuff, mez, stun, and DoT. Tick-accurate durations. Separate overlay windows for buffs and detrimentals.
+- **Log Feed** — Real-time feed of every parsed combat, spell, and zone event from your EQ log.
+- **Spell Checklist** — See every spell your class can learn, cross-referenced against your Zeal spellbook, so you always know what you're missing.
+- **Inventory Tracker** — All items across all your characters in one searchable view, including bank and shared bank.
+- **Key Tracker** — Tracks item components for major raid keys (Veeshan's Peak, Old Sebilis, Howling Stones, and more) across all your characters.
+- **Config Backup Manager** — Snapshot and restore all your EQ `.ini` config files with one click.
+- **Settings** — Point the app at your EQ folder and character name; everything else is automatic.
 
 ---
 
-## Running the App (Dev)
+## Download & Install
 
-Open two terminals:
+1. Go to the [Releases page](../../releases) and download the latest installer for your platform:
+   - **Windows** — `PQ-Companion-Setup-x.x.x.exe` (NSIS installer)
+   - **macOS** — `PQ-Companion-x.x.x.dmg`
+
+2. Run the installer and launch **PQ Companion**.
+
+3. Open **Settings** (bottom of the sidebar) and set:
+   - **EverQuest Path** — the folder where EverQuest is installed (e.g. `C:\EverQuest`)
+   - **Character Name** — your character's name exactly as it appears in-game
+
+4. That's it. The app will find your log file and Zeal exports automatically.
+
+> **Note:** PQ Companion includes everything it needs. No Go, Node.js, or Docker required to run the app.
+
+---
+
+## Requirements
+
+- Windows 10/11 or macOS 12+
+- [Zeal](https://github.com/iamclint/Zeal) installed (recommended) — enables the Spell Checklist, Inventory Tracker, and Key Tracker
+- EverQuest log file enabled — in EQ, type `/log on` to start writing the combat log
+
+---
+
+## Getting Started with Overlays
+
+The overlay windows (NPC Info, DPS Meter, Spell Timers) float above the game window as transparent, click-through panels.
+
+1. Make sure **Parse Combat Log** is enabled in Settings.
+2. Make sure your EQ log file is active (`/log on` in-game).
+3. Navigate to the overlay tab in the app (e.g. **DPS Overlay**, **Spell Timers**).
+4. Click the pop-out button (⤢) to launch the overlay as a standalone window above the game.
+
+The app connects to your live EQ log file. As you play, overlays update in real time — no manual refresh needed.
+
+---
+
+## Auto-Updates
+
+PQ Companion updates itself automatically. When a new version is available it downloads in the background and prompts you to restart. No action needed other than approving the restart.
+
+---
+
+## For Developers
+
+If you want to build from source or contribute, see the [developer setup guide](docs/01_stack.md) and [PROGRESS.md](PROGRESS.md) for the current implementation status.
+
+Quick start:
 
 ```bash
 # Terminal 1 — Go backend
@@ -29,238 +80,17 @@ cd backend
 go run ./cmd/server
 
 # Terminal 2 — Electron + React frontend
-npm run dev   # from repo root
+npm run dev
 ```
 
-The Vite dev server starts on port 5173; Electron opens a window pointing to it. The Go backend is expected on port 8080.
+Requires Go 1.22+ and Node.js 20+. The Vite dev server starts on port 5173; Electron opens pointing at it. The Go backend runs on port 8080.
 
-### Build
-
-```bash
-npm run build          # compile all three processes to out/
-npm run dist:mac       # package as macOS DMG
-npm run dist:win       # package as Windows NSIS installer (requires Wine on macOS)
-```
+See [FEATURES.md](FEATURES.md) for detailed implementation notes on every completed task, and [ROADMAP.md](ROADMAP.md) for the full feature plan.
 
 ---
 
-## Quick Start: Generate the SQLite Database
+## License
 
-The app ships with a pre-converted `quarm.db`. To regenerate it from the MySQL dumps:
+Open source. Fork it, extend it, contribute.
 
-### Option A — From dump files (no Docker needed)
-
-```bash
-cd backend
-go run ./cmd/dbconvert --from-dump --sql-dir ../sql --output ./data/quarm.db
-```
-
-This reads the `.sql` dump files in `sql/` and converts them directly to SQLite.
-Typical runtime: **under 60 seconds** for ~1.1 million rows.
-
-### Option B — From a live MySQL container
-
-```bash
-# Start MySQL and wait for it to finish importing
-docker compose up -d
-docker compose logs -f mysql   # wait for "ready for connections"
-
-# Run the converter
-cd backend
-go run ./cmd/dbconvert --from-mysql --output ./data/quarm.db
-```
-
-#### dbconvert flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--from-dump` | — | Convert from `.sql` dump files |
-| `--from-mysql` | — | Convert from live MySQL connection |
-| `--sql-dir` | `./sql` | Directory containing dump files |
-| `--sql-files` | — | Comma-separated list of specific `.sql` files |
-| `--mysql-dsn` | `root:quarmbuddy@tcp(localhost:3306)/quarm` | MySQL DSN |
-| `--output` | `backend/data/quarm.db` | Output SQLite path |
-| `--verbose` | false | Verbose logging |
-
----
-
-## Phase 0: MySQL Database Setup (for exploration)
-
-The raw EQ game data is distributed as MySQL dumps from the EQEmu project. Use Docker to load them locally for ad-hoc SQL exploration.
-
-### 1. Place dump files
-
-```
-sql/
-├── quarm_<date>.sql           ← main game data (items, spells, NPCs, zones …)
-├── player_tables_<date>.sql
-├── login_tables_<date>.sql
-└── data_tables_<date>.sql
-```
-
-### 2. Start MySQL
-
-```bash
-docker compose up -d
-```
-
-On first run, MySQL auto-executes all `.sql` files in `sql/`. Watch progress:
-
-```bash
-docker compose logs -f mysql
-```
-
-Wait until you see `ready for connections`.
-
-### 3. Connect
-
-| Field    | Value         |
-|----------|---------------|
-| Host     | `127.0.0.1`   |
-| Port     | `3306`        |
-| User     | `root`        |
-| Password | `quarmbuddy`  |
-| Database | `quarm`       |
-
-```bash
-mysql -h127.0.0.1 -uroot -pquarmbuddy quarm
-```
-
-### 4. Stop / Reset
-
-```bash
-docker compose down        # stop (data persists)
-docker compose down -v     # wipe and start fresh
-```
-
----
-
-## Go Database Layer
-
-The `internal/db` package provides typed, read-only access to `quarm.db`:
-
-```go
-d, _ := db.Open("backend/data/quarm.db")
-
-// Look up by ID
-item, _ := d.GetItem(1001)
-spell, _ := d.GetSpell(1)
-npc, _   := d.GetNPC(42)
-zone, _  := d.GetZoneByShortName("qeynos")
-
-// Paginated name search
-res, _ := d.SearchItems("Sword", 20, 0)
-fmt.Println(res.Total, res.Items[0].Name)
-
-// Parse NPC special abilities
-abilities := db.ParseSpecialAbilities(npc.SpecialAbilities)
-// → [{Code:1 Value:1 Name:"Summon"}, {Code:18 Value:1 Name:"Unmezzable"}, ...]
-```
-
----
-
-## REST API Server
-
-Start the API server (defaults to `:8080`, reads `data/quarm.db`):
-
-```bash
-cd backend
-go run ./cmd/server
-# or with flags:
-go run ./cmd/server --addr :9000 --db /path/to/quarm.db
-```
-
-#### Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/items?q=&limit=&offset=` | Search items by name |
-| `GET` | `/api/items/{id}` | Get item by ID |
-| `GET` | `/api/spells?q=&limit=&offset=` | Search spells by name |
-| `GET` | `/api/spells/{id}` | Get spell by ID |
-| `GET` | `/api/spells/class/{classIndex}` | All spells for a class (0=WAR … 14=BST), ordered by required level |
-| `GET` | `/api/npcs?q=&limit=&offset=` | Search NPCs by name |
-| `GET` | `/api/npcs/{id}` | Get NPC by ID |
-| `GET` | `/api/zones?q=&limit=&offset=` | Search zones by long name |
-| `GET` | `/api/zones/{id}` | Get zone by ID |
-| `GET` | `/api/zones/short/{name}` | Get zone by short name |
-| `GET` | `/api/zones/short/{name}/npcs` | Paginated NPC residents for a zone |
-| `GET` | `/api/search?q=&limit=` | Global search across items, spells, NPCs, and zones |
-| `GET` | `/api/config` | Get current configuration |
-| `PUT` | `/api/config` | Update and persist configuration |
-| `GET` | `/api/zeal/inventory` | Active character's Zeal inventory export (null if not yet available) |
-| `GET` | `/api/zeal/spells` | Active character's Zeal spellbook export (null if not yet available) |
-| `GET` | `/api/zeal/all-inventories` | All characters' inventories + shared bank (scanned on demand) |
-| `GET` | `/api/keys` | All key definitions (static) |
-| `GET` | `/api/keys/progress` | Key component progress cross-referenced against all character inventories |
-| `GET` | `/api/backups` | List all config backups, newest first |
-| `POST` | `/api/backups` | Create a new backup of all `*.ini` files in `eq_path` |
-| `GET` | `/api/backups/{id}` | Get a single backup record |
-| `DELETE` | `/api/backups/{id}` | Delete a backup (zip + record) |
-| `POST` | `/api/backups/{id}/restore` | Restore a backup to `eq_path` |
-
-All search endpoints return `{"items": [...], "total": N}`. Max `limit` is 100.
-
----
-
-## Configuration
-
-On first run the server creates `~/.pq-companion/config.yaml` with defaults:
-
-```yaml
-eq_path: ""
-character: ""
-server_addr: :8080
-preferences:
-    overlay_opacity: 0.9
-    minimize_to_tray: true
-    parse_combat_log: true
-```
-
-Edit the file directly, or use the API:
-
-```bash
-# Read current config
-curl http://localhost:8080/api/config
-
-# Update config (full replacement)
-curl -X PUT http://localhost:8080/api/config \
-  -H 'Content-Type: application/json' \
-  -d '{"eq_path":"/games/EverQuest","character":"Testerino","server_addr":":8080","preferences":{"overlay_opacity":0.9,"minimize_to_tray":true,"parse_combat_log":true}}'
-```
-
-The `--addr` CLI flag overrides `server_addr` from the config file when provided.
-
----
-
-## WebSocket Server
-
-Connect to `ws://localhost:8080/ws` to receive real-time events from the backend.
-
-Messages are JSON with a type/data envelope:
-
-```json
-{"type": "zone_change", "data": {"zone": "crushbone"}}
-{"type": "combat",      "data": {"actor": "You", "target": "an orc", "damage": 150}}
-```
-
-The connection is receive-only from the client side — the server broadcasts; clients do not send messages. Ping/pong keepalive runs every 54 seconds.
-
----
-
-## Architecture
-
-- **Go backend** (`backend/`): API server, log parser, timer engine, database queries, converter CLI
-- **Electron shell** (`electron/`): window management, overlay windows, sidecar process lifecycle
-- **React frontend** (`frontend/`): all UI, communicates with Go via REST + WebSocket
-- **SQLite** (`backend/data/quarm.db`): converted EQ game data — generated once, ships with the app
-
-See `docs/02_architecture.txt` for the full system diagram.
-
----
-
-## Progress
-
-See [PROGRESS.md](PROGRESS.md) for phase-by-phase task completion.
-See [FEATURES.md](FEATURES.md) for the full feature list.
-See [ROADMAP.md](ROADMAP.md) for a user-facing summary of what's built and what's coming.
+*Built by players, for players.*

@@ -29,13 +29,29 @@ function fmtDuration(secs: number): string {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-function ConnPill({ state }: { state: string }): React.ReactElement {
-  const color =
-    state === 'open' ? '#22c55e' : state === 'connecting' ? '#f97316' : '#6b7280'
+function ConnPill({
+  state,
+  status,
+}: {
+  state: string
+  status: LogTailerStatus | null
+}): React.ReactElement {
+  let color: string
+  let label: string
+  if (state !== 'open') {
+    color = state === 'connecting' ? '#f97316' : '#6b7280'
+    label = state === 'connecting' ? 'Connecting' : 'Off'
+  } else if (!status || !status.enabled || !status.file_exists) {
+    color = '#f97316'
+    label = 'No Log'
+  } else {
+    color = '#22c55e'
+    label = 'Live'
+  }
   return (
     <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color }}>
       <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: color, display: 'inline-block' }} />
-      {state === 'open' ? 'Live' : state === 'connecting' ? 'Connecting' : 'Off'}
+      {label}
     </span>
   )
 }
@@ -397,7 +413,7 @@ export default function DPSOverlayPage(): React.ReactElement {
                 <ExternalLink size={12} />
               </button>
             )}
-            <ConnPill state={wsState} />
+            <ConnPill state={wsState} status={status} />
           </div>
         }
         defaultWidth={400}

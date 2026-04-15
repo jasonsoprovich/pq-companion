@@ -395,7 +395,7 @@ export default function CombatLogPage(): React.ReactElement {
       {/* Page title */}
       <div
         style={{
-          padding: '10px 14px 8px',
+          padding: '12px 16px',
           borderBottom: '1px solid var(--color-border)',
           display: 'flex',
           alignItems: 'center',
@@ -403,7 +403,7 @@ export default function CombatLogPage(): React.ReactElement {
           flexShrink: 0,
         }}
       >
-        <ScrollText size={16} style={{ color: 'var(--color-primary)' }} />
+        <ScrollText size={18} style={{ color: 'var(--color-primary)' }} />
         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-foreground)' }}>
           Combat Log
         </span>

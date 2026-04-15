@@ -422,25 +422,6 @@
 - **`components/Sidebar.tsx`** — added `Combat Log` nav entry (`ScrollText` icon) after DPS Overlay in the Parsing section
 - **`App.tsx`** — added `/combat-log` route
 
-## Phase 6 — Spell Timer Engine
-- Countdown tracking for mez, stuns, DoTs, buffs
-- Server-tick-aware duration calculations
-- Timer overlay: color-coded bars grouped by type (mez / DoT / buff / debuff)
-- Buff window enhancement: self-buff tracking with exact remaining durations
-
-## Phase 7 — Audio Alerts
-- System audio integration via Web Audio API
-- Configurable alerts when timers expire (sound file or TTS)
-- TTS notifications for game events (tells, death, zone messages)
-- Per-trigger volume and voice settings
-
-## Phase 8 — Custom Trigger System
-- Regex-based trigger engine: match log lines → fire actions
-- Actions: play sound, speak TTS, display overlay text, log to history
-- Trigger Manager UI: create/edit/delete triggers, import/export packs
-- Pre-built trigger packs (enchanter mez breaks, resist spam, named spawns)
-- Text overlay window for trigger output display
-
 ## Phase 6 — Windows Build & Distribution
 
 ### Task 6.1 — Windows Build Pipeline ✅
@@ -581,23 +562,43 @@ Two separate overlay windows are provided from the start — one for beneficial 
 **`frontend/src/components/Sidebar.tsx`**
 - Added "Spell Timers" nav item (Timer icon) between DPS Overlay and Combat Log under Parsing section
 
-## Phase 8 — Audio Alerts
-- System audio integration via Web Audio API
-- Configurable alerts when timers expire (sound file or TTS)
-- TTS notifications for game events (tells, death, zone messages)
-- Per-trigger volume and voice settings
-
-## Phase 9 — Custom Trigger System
+## Phase 8 — Custom Trigger System
 - Regex-based trigger engine: match log lines → fire actions
 - Actions: play sound, speak TTS, display overlay text, log to history
 - Trigger Manager UI: create/edit/delete triggers, import/export packs
 - Pre-built trigger packs (enchanter mez breaks, resist spam, named spawns)
 - Text overlay window for trigger output display
 
+## Phase 9 — Audio Alerts
+- System audio integration via Web Audio API
+- Configurable alerts when timers expire (sound file or TTS)
+- TTS notifications for game events (tells, death, zone messages)
+- Per-trigger volume and voice settings
+
 ## Phase 10 — Character Tools
 
-### Task 10.1 — Planes of Power Flag Tracker
+### Task 10.1 — Character Todo List
 _Planned_
+
+Simple per-character todo list for tracking arbitrary in-game goals. Keeps it minimal by design; complexity added only based on user feedback.
+
+Design notes:
+- Each todo item: ID, character name, text (free-form string), checked bool, created_at timestamp
+- Items stored in user.db (`todo_items` table)
+- Backend: `GET /api/todos/{character}`, `POST /api/todos/{character}`, `PATCH /api/todos/{character}/{id}` (toggle checked), `DELETE /api/todos/{character}/{id}`
+- Frontend: character selector (populated from known Zeal export characters), text input + Add button, list of items with checkboxes, delete button per item, optional "hide completed" toggle
+- No categories, priorities, or due dates for v1 — just text + checkbox
+
+## Phase 11 — Project Website
+_Planned_
+
+A public-facing site for the project — feature overview, download links, screenshots, and documentation. Deferred until the app is stable and feature-complete enough to be worth promoting.
+
+## Future Plans
+
+The following features are tracked but not scheduled for a specific phase. They will be prioritized based on demand and feasibility once the core app is mature.
+
+### Planes of Power Flag Tracker
 
 Manual per-character checklist for tracking Planes of Power progression flags. Players tick off flags as they earn them; data persists in user.db.
 
@@ -611,14 +612,6 @@ Design notes:
 - Frontend: character tabs, grouped flag sections, checkboxes, progress summary per tier
 - Future: wire to automatic detection if Zeal adds flag export support
 
-### Task 10.2 — Character Todo List
-_Planned_
+### Hosted Web API
 
-Simple per-character todo list for tracking arbitrary in-game goals. Keeps it minimal by design; complexity added only based on user feedback.
-
-Design notes:
-- Each todo item: ID, character name, text (free-form string), checked bool, created_at timestamp
-- Items stored in user.db (`todo_items` table)
-- Backend: `GET /api/todos/{character}`, `POST /api/todos/{character}`, `PATCH /api/todos/{character}/{id}` (toggle checked), `DELETE /api/todos/{character}/{id}`
-- Frontend: character selector (populated from known Zeal export characters), text input + Add button, list of items with checkboxes, delete button per item, optional "hide completed" toggle
-- No categories, priorities, or due dates for v1 — just text + checkbox
+A cloud-hosted version of the backend API so external tools and the project website can query EQ game data without requiring the desktop app. Lowest priority — only relevant once the app has an established user base and the data model is stable.

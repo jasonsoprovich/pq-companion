@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X } from 'lucide-react'
 import { getConfig, updateConfig } from '../services/api'
 import type { Config } from '../types/config'
 
@@ -7,13 +7,17 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 export default function SettingsPage(): React.ReactElement {
   const [config, setConfig] = useState<Config | null>(null)
+  const [originalConfig, setOriginalConfig] = useState<Config | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     getConfig()
-      .then(setConfig)
+      .then((c) => {
+        setConfig(c)
+        setOriginalConfig(c)
+      })
       .catch((err: Error) => setLoadError(err.message))
   }, [])
 
@@ -25,6 +29,14 @@ export default function SettingsPage(): React.ReactElement {
     }
   }
 
+  function handleCancel(): void {
+    if (originalConfig) {
+      setConfig(originalConfig)
+      setSaveState('idle')
+      setSaveError(null)
+    }
+  }
+
   async function handleSave(): Promise<void> {
     if (!config) return
     setSaveState('saving')
@@ -32,6 +44,7 @@ export default function SettingsPage(): React.ReactElement {
     try {
       const saved = await updateConfig(config)
       setConfig(saved)
+      setOriginalConfig(saved)
       setSaveState('saved')
       setTimeout(() => setSaveState('idle'), 2500)
     } catch (err) {
@@ -270,7 +283,7 @@ export default function SettingsPage(): React.ReactElement {
           </label>
         </section>
 
-        {/* ── Save button ────────────────────────────────────────────────── */}
+        {/* ── Save / Discard buttons ─────────────────────────────────────── */}
         <div className="flex items-center gap-3">
           <button
             onClick={handleSave}
@@ -290,6 +303,22 @@ export default function SettingsPage(): React.ReactElement {
               <Save size={14} />
             )}
             {saveState === 'saving' ? 'Saving…' : 'Save Settings'}
+          </button>
+
+          <button
+            onClick={handleCancel}
+            disabled={saveState === 'saving'}
+            className="flex items-center gap-2 rounded px-4 py-2 text-sm font-semibold"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-foreground)',
+              border: '1px solid var(--color-border)',
+              cursor: saveState === 'saving' ? 'not-allowed' : 'pointer',
+              opacity: saveState === 'saving' ? 0.7 : 1,
+            }}
+          >
+            <X size={14} />
+            Discard
           </button>
 
           {saveState === 'saved' && (

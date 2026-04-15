@@ -97,11 +97,25 @@ function StatusBar({ status }: { status: LogTailerStatus | null }): React.ReactE
 
 // ── Connection pill ────────────────────────────────────────────────────────────
 
-function ConnPill({ state }: { state: string }): React.ReactElement {
-  const color =
-    state === 'open' ? '#22c55e' : state === 'connecting' ? '#f97316' : '#6b7280'
-  const label =
-    state === 'open' ? 'Connected' : state === 'connecting' ? 'Connecting…' : 'Disconnected'
+function ConnPill({
+  state,
+  status,
+}: {
+  state: string
+  status: LogTailerStatus | null
+}): React.ReactElement {
+  let color: string
+  let label: string
+  if (state !== 'open') {
+    color = state === 'connecting' ? '#f97316' : '#6b7280'
+    label = state === 'connecting' ? 'Connecting…' : 'Disconnected'
+  } else if (!status || !status.enabled || !status.file_exists) {
+    color = '#f97316'
+    label = 'No Log'
+  } else {
+    color = '#22c55e'
+    label = 'Live'
+  }
   return (
     <span className="flex items-center gap-1.5 text-xs" style={{ color }}>
       <span
@@ -172,7 +186,7 @@ export default function LogFeedPage(): React.ReactElement {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <ConnPill state={wsState} />
+          <ConnPill state={wsState} status={status} />
           <button
             onClick={() => setEvents([])}
             className="flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
