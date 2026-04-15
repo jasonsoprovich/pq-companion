@@ -42,8 +42,9 @@ type Status struct {
 // closes the old file and begins tailing the new one (seeking to the end so
 // historical lines are not replayed).
 type Tailer struct {
-	cfgMgr  *config.Manager
-	handler func(LogEvent)
+	cfgMgr      *config.Manager
+	handler     func(LogEvent)
+	lineHandler func(time.Time, string) // called for every valid EQ log line (parsed or not)
 
 	mu        sync.Mutex
 	file      *os.File
@@ -53,8 +54,11 @@ type Tailer struct {
 }
 
 // NewTailer creates a Tailer. Call Start in a goroutine to begin tailing.
-func NewTailer(cfgMgr *config.Manager, handler func(LogEvent)) *Tailer {
-	return &Tailer{cfgMgr: cfgMgr, handler: handler}
+// lineHandler, if non-nil, is called for every line that has a valid EQ
+// timestamp — regardless of whether it matches a known event pattern. This
+// allows the trigger engine to match arbitrary log text.
+func NewTailer(cfgMgr *config.Manager, handler func(LogEvent), lineHandler func(time.Time, string)) *Tailer {
+	return &Tailer{cfgMgr: cfgMgr, handler: handler, lineHandler: lineHandler}
 }
 
 // Start begins the polling loop. It blocks until ctx is done.
@@ -94,6 +98,12 @@ func (t *Tailer) Status() Status {
 	}
 }
 
+// rawLine holds the timestamp and message extracted from a raw EQ log line.
+type rawLine struct {
+	ts  time.Time
+	msg string
+}
+
 // tick is the polling body. It is called every pollInterval and does all file I/O.
 func (t *Tailer) tick() {
 	cfg := t.cfgMgr.Get()
@@ -103,21 +113,29 @@ func (t *Tailer) tick() {
 
 	logPath := logFilePath(cfg.EQPath, cfg.Character)
 
-	// Collect events while the mutex is held, then dispatch without it.
+	// Collect events and raw lines while the mutex is held, then dispatch without it.
 	var events []LogEvent
+	var rawLines []rawLine
 
 	t.mu.Lock()
-	events = t.readEvents(logPath)
+	events, rawLines = t.readLines(logPath)
 	t.mu.Unlock()
 
+	// Deliver raw lines first so trigger handlers see every line.
+	if t.lineHandler != nil {
+		for _, rl := range rawLines {
+			t.lineHandler(rl.ts, rl.msg)
+		}
+	}
 	for _, ev := range events {
 		t.handler(ev)
 	}
 }
 
-// readEvents opens/maintains the file handle and returns any new events.
+// readLines opens/maintains the file handle and returns any new events and
+// raw lines parsed from newly-appended content.
 // Must be called with t.mu held.
-func (t *Tailer) readEvents(logPath string) []LogEvent {
+func (t *Tailer) readLines(logPath string) ([]LogEvent, []rawLine) {
 	// Config changed — close old handle and target the new path.
 	if logPath != t.filePath {
 		t.closeFile()
@@ -131,18 +149,18 @@ func (t *Tailer) readEvents(logPath string) []LogEvent {
 			if !errors.Is(err, os.ErrNotExist) {
 				slog.Warn("logparser: open log file", "path", logPath, "err", err)
 			}
-			return nil
+			return nil, nil
 		}
 		// Seek to end so we don't replay historical log lines.
 		pos, err := f.Seek(0, io.SeekEnd)
 		if err != nil {
 			_ = f.Close()
-			return nil
+			return nil, nil
 		}
 		t.file = f
 		t.offset = pos
 		slog.Info("logparser: tailing log file", "path", logPath, "offset", pos)
-		return nil
+		return nil, nil
 	}
 
 	// Re-stat to detect file truncation (shouldn't happen with EQ, but be safe).
@@ -150,7 +168,7 @@ func (t *Tailer) readEvents(logPath string) []LogEvent {
 	if err != nil {
 		slog.Warn("logparser: stat log file", "err", err)
 		t.closeFile()
-		return nil
+		return nil, nil
 	}
 	if info.Size() < t.offset {
 		slog.Info("logparser: log file truncated, resetting offset")
@@ -158,7 +176,7 @@ func (t *Tailer) readEvents(logPath string) []LogEvent {
 		t.remainder = nil
 	}
 	if info.Size() == t.offset {
-		return nil // no new data
+		return nil, nil // no new data
 	}
 
 	// Clamp read size to maxReadPerTick.
@@ -174,10 +192,10 @@ func (t *Tailer) readEvents(logPath string) []LogEvent {
 	}
 	if err != nil && !errors.Is(err, io.EOF) {
 		slog.Warn("logparser: read log file", "err", err)
-		return nil
+		return nil, nil
 	}
 	if n == 0 {
-		return nil
+		return nil, nil
 	}
 
 	return t.parseChunk(buf[:n])
@@ -185,14 +203,17 @@ func (t *Tailer) readEvents(logPath string) []LogEvent {
 
 // parseChunk splits raw bytes into lines and parses each complete line.
 // Any trailing incomplete line is saved in t.remainder for the next call.
+// Returns the set of recognised LogEvents and every raw line that had a valid
+// EQ timestamp (for trigger matching).
 // Must be called with t.mu held.
-func (t *Tailer) parseChunk(data []byte) []LogEvent {
+func (t *Tailer) parseChunk(data []byte) ([]LogEvent, []rawLine) {
 	if len(t.remainder) > 0 {
 		data = append(t.remainder, data...)
 		t.remainder = nil
 	}
 
 	var events []LogEvent
+	var raws []rawLine
 
 	for len(data) > 0 {
 		idx := bytes.IndexByte(data, '\n')
@@ -209,6 +230,11 @@ func (t *Tailer) parseChunk(data []byte) []LogEvent {
 			continue
 		}
 
+		// Feed every line with a valid EQ timestamp to the raw handler (triggers).
+		if ts, msg, ok := ParseRawLine(line); ok {
+			raws = append(raws, rawLine{ts: ts, msg: msg})
+		}
+
 		ev, ok := ParseLine(line)
 		if !ok {
 			continue
@@ -216,7 +242,7 @@ func (t *Tailer) parseChunk(data []byte) []LogEvent {
 		events = append(events, ev)
 	}
 
-	return events
+	return events, raws
 }
 
 // closeFile closes the current file handle if open.

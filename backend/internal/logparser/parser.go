@@ -80,6 +80,23 @@ var (
 	reThirdPartyHeal = regexp.MustCompile(`^(\w+) healed (.+?) for (\d+) hit points?\.$`)
 )
 
+// ParseRawLine extracts the timestamp and message from any valid EQ log line
+// without classifying it as a specific event type. Use this when you need to
+// process every log line (e.g. custom trigger matching) regardless of whether
+// the line matches a known event pattern.
+// Returns (timestamp, message, true) on success, or zero values and false if
+// the line does not start with a valid EQ timestamp.
+func ParseRawLine(line string) (time.Time, string, bool) {
+	if len(line) < tsLen+1 || line[0] != '[' {
+		return time.Time{}, "", false
+	}
+	ts, err := time.Parse(tsLayout, line[:tsLen])
+	if err != nil {
+		return time.Time{}, "", false
+	}
+	return ts, line[tsLen+1:], true
+}
+
 // ParseLine parses a single raw line from an EQ log file into a LogEvent.
 // Returns (event, true) on success, or (zero, false) if the line is not a
 // recognised EQ log format or does not match any known event pattern.

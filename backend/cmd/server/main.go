@@ -17,6 +17,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
@@ -59,6 +60,23 @@ func main() {
 	}
 	defer backupMgr.Close()
 
+	// Trigger store: uses the same user.db as the backup manager but opens its
+	// own connection (WAL mode handles concurrent access safely).
+	home, err := os.UserHomeDir()
+	if err != nil {
+		slog.Error("get home dir", "err", err)
+		os.Exit(1)
+	}
+	triggerStore, err := trigger.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	if err != nil {
+		slog.Error("open trigger store", "err", err)
+		os.Exit(1)
+	}
+	defer triggerStore.Close()
+
+	triggerEngine := trigger.NewEngine(triggerStore, hub)
+	triggerEngine.Reload()
+
 	// NPC overlay tracker: watches log events to infer the current combat target
 	// and broadcasts overlay:npc_target WebSocket events with full NPC data.
 	npcTracker := overlay.NewNPCTracker(hub, database)
@@ -73,16 +91,17 @@ func main() {
 	go timerEngine.Start(context.Background())
 
 	// Log tailer: reads new lines from the EQ log file and broadcasts parsed
-	// events to all connected WebSocket clients. Also feeds overlay trackers.
+	// events to all connected WebSocket clients. Also feeds overlay trackers
+	// and the trigger engine.
 	tailer := logparser.NewTailer(cfgMgr, func(ev logparser.LogEvent) {
 		hub.Broadcast(ws.Event{Type: string(ev.Type), Data: ev})
 		npcTracker.Handle(ev)
 		combatTracker.Handle(ev)
 		timerEngine.Handle(ev)
-	})
+	}, triggerEngine.Handle)
 	go tailer.Start(context.Background())
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, timerEngine)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, timerEngine, triggerStore, triggerEngine)
 
 	slog.Info("server starting", "addr", listenAddr, "db", *dbPath)
 	if err := http.ListenAndServe(listenAddr, router); err != nil {

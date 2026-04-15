@@ -598,11 +598,71 @@ Two separate overlay windows are provided from the start — one for beneficial 
 - Added "Spell Timers" nav item (Timer icon) between DPS Overlay and Combat Log under Parsing section
 
 ## Phase 8 — Custom Trigger System
-- Regex-based trigger engine: match log lines → fire actions
-- Actions: play sound, speak TTS, display overlay text, log to history
-- Trigger Manager UI: create/edit/delete triggers, import/export packs
-- Pre-built trigger packs (enchanter mez breaks, resist spam, named spawns)
-- Text overlay window for trigger output display
+
+### Task 8.1 — Trigger System (Backend) ✅
+
+**`backend/internal/trigger/models.go`**
+- `Trigger` struct: ID, Name, Enabled, Pattern (regex), Actions (JSON), PackName, CreatedAt
+- `Action` struct: Type (`overlay_text`), Text, DurationSecs, Color
+- `TriggerFired` struct: TriggerID, TriggerName, MatchedLine, Actions, FiredAt — used as WebSocket payload and history entry
+- `TriggerPack` struct for import/export
+- `WSEventTriggerFired = "trigger:fired"` WebSocket event constant
+
+**`backend/internal/trigger/store.go`**
+- SQLite persistence in `~/.pq-companion/user.db` (separate connection from backup store, WAL-safe)
+- `triggers` table: id, name, enabled, pattern, actions (JSON), pack_name, created_at
+- Full CRUD: `Insert`, `Get`, `List`, `Update`, `Delete`, `DeleteByPack`
+- Schema migration via `migrate()` using `CREATE TABLE IF NOT EXISTS`
+
+**`backend/internal/trigger/engine.go`**
+- `Engine` compiles trigger patterns on `Reload()` and matches every incoming raw log line
+- `Handle(timestamp, message)` tests all enabled triggers; fires `trigger:fired` WebSocket event on match
+- In-memory ring buffer history (last 200 entries); `GetHistory()` returns a copy
+- Invalid regex patterns are skipped with a warning log; engine remains operational
+- `NewID()` exported for use by API handlers
+
+**`backend/internal/trigger/packs.go`**
+- **Enchanter Pack**: Mez Worn Off, Mez Resisted, Charm Broke, Spell Interrupted — all with colored overlay text
+- **Group Awareness Pack**: Incoming Tell, You Died, Group Member Died
+- `AllPacks()` returns all built-in packs; `InstallPack(store, pack)` replaces existing triggers for a pack and assigns fresh IDs
+
+**`backend/internal/logparser/parser.go`**
+- Added `ParseRawLine(line string) (time.Time, string, bool)` — extracts timestamp and message from any valid EQ log line without classifying the event type, used by the trigger engine to match against all log lines
+
+**`backend/internal/logparser/tailer.go`**
+- `NewTailer` now accepts an optional `lineHandler func(time.Time, string)` parameter
+- `parseChunk` returns `([]LogEvent, []rawLine)` — raw lines (valid EQ timestamp, any content) are fed to the trigger engine before classified events are dispatched
+- `rawLine` struct carries the parsed timestamp and message text
+
+**`backend/internal/api/triggers.go`**
+- `GET /api/triggers` — list all triggers
+- `POST /api/triggers` — create a trigger (name + pattern required)
+- `PUT /api/triggers/{id}` — update an existing trigger
+- `DELETE /api/triggers/{id}` — delete a trigger
+- `GET /api/triggers/history` — recent firing history (in-memory, last 200)
+- `POST /api/triggers/import` — import a JSON trigger pack (replaces existing for same pack_name)
+- `GET /api/triggers/export` — export all triggers as a JSON pack
+- `GET /api/triggers/packs` — list available built-in packs
+- `POST /api/triggers/packs/{name}` — install a built-in pack by name
+- All mutations call `engine.Reload()` to keep the engine in sync
+
+**`backend/internal/api/router.go`**
+- Added `/api/triggers` route group wired to `triggerHandler`
+- `NewRouter` signature extended with `triggerStore` and `triggerEngine` parameters
+
+**`backend/cmd/server/main.go`**
+- Opens `trigger.Store` against `~/.pq-companion/user.db`
+- Creates `trigger.Engine`, calls `Reload()` at startup
+- Passes `triggerEngine.Handle` as the raw line handler to `logparser.NewTailer`
+
+**Tests** (`backend/internal/trigger/engine_test.go`) — 7 table-driven tests:
+- Engine fires on matching line, suppresses non-matching lines
+- Disabled triggers never fire
+- `Reload()` picks up enable/disable changes mid-session
+- History ring buffer caps at 200 entries
+- Store CRUD round-trip with action JSON serialisation
+- `ErrNotFound` on get/update/delete of missing ID
+- `InstallPack` replaces rather than duplicates on re-install
 
 ## Phase 9 — Audio Alerts
 - System audio integration via Web Audio API
