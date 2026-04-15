@@ -1,10 +1,13 @@
-export type ActionType = 'overlay_text'
+export type ActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
 
 export interface Action {
   type: ActionType
   text: string
   duration_secs: number
   color: string
+  sound_path: string
+  volume: number   // 0.0–1.0; 0 means use default (1.0)
+  voice: string    // TTS voice name; empty = system default
 }
 
 export interface Trigger {

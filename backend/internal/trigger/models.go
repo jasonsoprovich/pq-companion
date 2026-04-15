@@ -16,14 +16,21 @@ type ActionType string
 const (
 	// ActionOverlayText displays text in the trigger overlay window.
 	ActionOverlayText ActionType = "overlay_text"
+	// ActionPlaySound plays a local audio file.
+	ActionPlaySound ActionType = "play_sound"
+	// ActionTextToSpeech speaks text aloud using the system TTS engine.
+	ActionTextToSpeech ActionType = "text_to_speech"
 )
 
 // Action describes a single effect fired when a trigger matches a log line.
 type Action struct {
 	Type         ActionType `json:"type"`
-	Text         string     `json:"text"`          // text to display in the overlay
-	DurationSecs int        `json:"duration_secs"` // seconds to show the overlay text (0 = default 5s)
-	Color        string     `json:"color"`         // optional hex color string (e.g. "#ff4444")
+	Text         string     `json:"text"`          // overlay text or TTS speech text
+	DurationSecs int        `json:"duration_secs"` // seconds to show overlay text (0 = default 5s)
+	Color        string     `json:"color"`         // optional hex color for overlay text
+	SoundPath    string     `json:"sound_path"`    // local file path for play_sound action
+	Volume       float64    `json:"volume"`        // playback volume 0.0–1.0 (0 = default 1.0)
+	Voice        string     `json:"voice"`         // TTS voice name (empty = system default)
 }
 
 // Trigger is a user-defined log line matcher with associated actions.

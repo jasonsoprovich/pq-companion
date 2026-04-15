@@ -733,10 +733,38 @@ Two separate overlay windows are provided from the start — one for beneficial 
 - Added "Overlay" button (MonitorPlay icon) in the page header that calls `window.electron?.overlay?.toggleTrigger()` — present on all tabs
 
 ## Phase 9 — Audio Alerts
-- System audio integration via Web Audio API
-- Configurable alerts when timers expire (sound file or TTS)
-- TTS notifications for game events (tells, death, zone messages)
-- Per-trigger volume and voice settings
+
+### Task 9.1 — Audio Engine
+
+Extends the trigger system with two new action types — `play_sound` and `text_to_speech` — and wires up a frontend audio engine that fires them whenever a trigger matches a log line.
+
+**`backend/internal/trigger/models.go`**
+- Added `ActionPlaySound ActionType = "play_sound"` — plays a local audio file
+- Added `ActionTextToSpeech ActionType = "text_to_speech"` — speaks text via TTS
+- Added fields to `Action`: `SoundPath string`, `Volume float64` (0.0–1.0), `Voice string` (TTS voice name)
+
+**`frontend/src/types/trigger.ts`**
+- Extended `ActionType` union: `'overlay_text' | 'play_sound' | 'text_to_speech'`
+- Added `sound_path`, `volume`, `voice` fields to `Action`
+
+**`frontend/src/services/audio.ts`** _(new)_
+- `playSound(filePath, volume)` — plays a local file via the HTML5 `Audio` constructor with `file://` URL normalisation (Windows back-slash safe); silently ignores playback errors
+- `speakText(text, voice, volume)` — speaks via `window.speechSynthesis`; cancels any queued utterances before speaking to prevent pile-up; matches voice by name against `getVoices()`
+- `getAvailableVoices()` — returns sorted list of available TTS voice names for the UI
+
+**`frontend/src/hooks/useAudioEngine.ts`** _(new)_
+- Subscribes to the singleton WebSocket connection
+- On every `trigger:fired` event, iterates the fired actions and dispatches `play_sound` actions to `playSound()` and `text_to_speech` actions to `speakText()`
+- Designed to be mounted once at the App level so audio fires regardless of active page
+
+**`frontend/src/App.tsx`**
+- Calls `useAudioEngine()` at the top of the App component — one mount, always active
+
+**`frontend/src/pages/TriggersPage.tsx`**
+- `ActionEditor` now renders a type dropdown (`overlay_text` / `play_sound` / `text_to_speech`)
+- `play_sound`: sound file path input + volume slider (0–100%)
+- `text_to_speech`: text input + voice dropdown (populated from `getAvailableVoices()`, fallback to free-text input) + volume slider
+- All new action types default their fields (empty path/text, 0 volume = 100%, empty voice = system default)
 
 ## Phase 10 — Character Tools
 

@@ -15,7 +15,9 @@ import {
   ChevronDown,
   ChevronUp,
   MonitorPlay,
+  Volume2,
 } from 'lucide-react'
+import { getAvailableVoices } from '../services/audio'
 import {
   listTriggers,
   createTrigger,
@@ -74,10 +76,17 @@ interface ActionEditorProps {
 }
 
 function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps): React.ReactElement {
+  const [voices] = useState<string[]>(() => getAvailableVoices())
+
   const inputStyle = {
     backgroundColor: 'var(--color-surface-2)',
     border: '1px solid var(--color-border)',
     color: 'var(--color-foreground)',
+  }
+
+  const selectStyle = {
+    ...inputStyle,
+    appearance: 'none' as const,
   }
 
   return (
@@ -85,63 +94,179 @@ function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps):
       className="rounded p-3 space-y-2"
       style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-          Action {index + 1}: Overlay Text
-        </span>
+      {/* Header row: type selector + remove */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 flex-1">
+          <span className="text-xs font-medium shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+            Action {index + 1}:
+          </span>
+          <select
+            value={action.type}
+            onChange={(e) => {
+              const t = e.target.value as Action['type']
+              onChange(index, {
+                type: t,
+                text: action.text,
+                duration_secs: action.duration_secs || 5,
+                color: action.color || '#ffffff',
+                sound_path: action.sound_path || '',
+                volume: action.volume || 0,
+                voice: action.voice || '',
+              })
+            }}
+            className="rounded px-2 py-0.5 text-xs outline-none flex-1"
+            style={selectStyle}
+          >
+            <option value="overlay_text">Overlay Text</option>
+            <option value="play_sound">Play Sound</option>
+            <option value="text_to_speech">Text to Speech</option>
+          </select>
+        </div>
         <button
           type="button"
           onClick={() => onRemove(index)}
-          className="text-xs px-1.5 py-0.5 rounded"
+          className="text-xs px-1.5 py-0.5 rounded shrink-0"
           style={{ color: 'var(--color-danger)' }}
         >
           <X size={12} />
         </button>
       </div>
 
-      <input
-        type="text"
-        placeholder="Display text (e.g. MEZ BROKE!)"
-        value={action.text}
-        onChange={(e) => onChange(index, { ...action, text: e.target.value })}
-        className="w-full rounded px-2 py-1 text-xs outline-none font-mono"
-        style={inputStyle}
-      />
-
-      <div className="flex gap-2">
-        <div className="flex items-center gap-1.5 flex-1">
-          <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-            Duration (s)
-          </label>
+      {/* ── Overlay Text fields ── */}
+      {action.type === 'overlay_text' && (
+        <>
           <input
-            type="number"
-            min={1}
-            max={30}
-            value={action.duration_secs || 5}
-            onChange={(e) =>
-              onChange(index, { ...action, duration_secs: Math.max(1, parseInt(e.target.value) || 5) })
-            }
-            className="w-14 rounded px-2 py-0.5 text-xs outline-none text-center"
+            type="text"
+            placeholder="Display text (e.g. MEZ BROKE!)"
+            value={action.text}
+            onChange={(e) => onChange(index, { ...action, text: e.target.value })}
+            className="w-full rounded px-2 py-1 text-xs outline-none font-mono"
             style={inputStyle}
           />
-        </div>
+          <div className="flex gap-2">
+            <div className="flex items-center gap-1.5 flex-1">
+              <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                Duration (s)
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={30}
+                value={action.duration_secs || 5}
+                onChange={(e) =>
+                  onChange(index, { ...action, duration_secs: Math.max(1, parseInt(e.target.value) || 5) })
+                }
+                className="w-14 rounded px-2 py-0.5 text-xs outline-none text-center"
+                style={inputStyle}
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                Color
+              </label>
+              <input
+                type="color"
+                value={action.color || '#ffffff'}
+                onChange={(e) => onChange(index, { ...action, color: e.target.value })}
+                className="w-8 h-6 rounded cursor-pointer"
+                style={{ border: '1px solid var(--color-border)', padding: '1px' }}
+              />
+              <span className="text-[11px] font-mono" style={{ color: 'var(--color-muted)' }}>
+                {action.color || '#ffffff'}
+              </span>
+            </div>
+          </div>
+        </>
+      )}
 
-        <div className="flex items-center gap-1.5">
-          <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-            Color
-          </label>
+      {/* ── Play Sound fields ── */}
+      {action.type === 'play_sound' && (
+        <>
           <input
-            type="color"
-            value={action.color || '#ffffff'}
-            onChange={(e) => onChange(index, { ...action, color: e.target.value })}
-            className="w-8 h-6 rounded cursor-pointer"
-            style={{ border: '1px solid var(--color-border)', padding: '1px' }}
+            type="text"
+            placeholder="Sound file path (e.g. C:\sounds\alert.wav)"
+            value={action.sound_path || ''}
+            onChange={(e) => onChange(index, { ...action, sound_path: e.target.value })}
+            className="w-full rounded px-2 py-1 text-xs outline-none font-mono"
+            style={inputStyle}
           />
-          <span className="text-[11px] font-mono" style={{ color: 'var(--color-muted)' }}>
-            {action.color || '#ffffff'}
-          </span>
-        </div>
-      </div>
+          <div className="flex items-center gap-1.5">
+            <Volume2 size={12} style={{ color: 'var(--color-muted-foreground)' }} />
+            <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+              Volume
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round((action.volume || 1.0) * 100)}
+              onChange={(e) => onChange(index, { ...action, volume: parseInt(e.target.value) / 100 })}
+              className="flex-1"
+            />
+            <span className="text-[11px] w-8 text-right font-mono" style={{ color: 'var(--color-muted)' }}>
+              {Math.round((action.volume || 1.0) * 100)}%
+            </span>
+          </div>
+        </>
+      )}
+
+      {/* ── Text to Speech fields ── */}
+      {action.type === 'text_to_speech' && (
+        <>
+          <input
+            type="text"
+            placeholder="Text to speak (e.g. Mez broke)"
+            value={action.text}
+            onChange={(e) => onChange(index, { ...action, text: e.target.value })}
+            className="w-full rounded px-2 py-1 text-xs outline-none font-mono"
+            style={inputStyle}
+          />
+          <div className="flex gap-2">
+            <div className="flex items-center gap-1.5 flex-1">
+              <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                Voice
+              </label>
+              {voices.length > 0 ? (
+                <select
+                  value={action.voice || ''}
+                  onChange={(e) => onChange(index, { ...action, voice: e.target.value })}
+                  className="rounded px-2 py-0.5 text-xs outline-none flex-1"
+                  style={selectStyle}
+                >
+                  <option value="">System default</option>
+                  {voices.map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  placeholder="Voice name (leave blank for default)"
+                  value={action.voice || ''}
+                  onChange={(e) => onChange(index, { ...action, voice: e.target.value })}
+                  className="rounded px-2 py-0.5 text-xs outline-none flex-1 font-mono"
+                  style={inputStyle}
+                />
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Volume2 size={12} style={{ color: 'var(--color-muted-foreground)' }} />
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={Math.round((action.volume || 1.0) * 100)}
+                onChange={(e) => onChange(index, { ...action, volume: parseInt(e.target.value) / 100 })}
+                className="w-20"
+              />
+              <span className="text-[11px] w-8 text-right font-mono" style={{ color: 'var(--color-muted)' }}>
+                {Math.round((action.volume || 1.0) * 100)}%
+              </span>
+            </div>
+          </div>
+        </>
+      )}
+
     </div>
   )
 }
@@ -159,7 +284,7 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
   const [pattern, setPattern] = useState(initial?.pattern ?? '')
   const [enabled, setEnabled] = useState(initial?.enabled ?? true)
   const [actions, setActions] = useState<Action[]>(
-    initial?.actions ?? [{ type: 'overlay_text', text: '', duration_secs: 5, color: '#ffffff' }],
+    initial?.actions ?? [{ type: 'overlay_text', text: '', duration_secs: 5, color: '#ffffff', sound_path: '', volume: 0, voice: '' }],
   )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -194,7 +319,7 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
   }
 
   const handleAddAction = () => {
-    setActions((prev) => [...prev, { type: 'overlay_text', text: '', duration_secs: 5, color: '#ffffff' }])
+    setActions((prev) => [...prev, { type: 'overlay_text', text: '', duration_secs: 5, color: '#ffffff', sound_path: '', volume: 0, voice: '' }])
   }
 
   const handleSubmit = (e: React.FormEvent) => {
