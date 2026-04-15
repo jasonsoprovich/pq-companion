@@ -283,6 +283,118 @@ export default function SettingsPage(): React.ReactElement {
           </label>
         </section>
 
+        {/* ── Overlay Toggles ─────────────────────────────────────────────── */}
+        <section
+          className="rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <h2
+            className="mb-1 text-sm font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            Overlays
+          </h2>
+          <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Enable or disable individual floating overlay windows.
+          </p>
+
+          <label className="flex cursor-pointer items-center justify-between py-1">
+            <div>
+              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                DPS Overlay
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                Show the floating damage-per-second meter overlay.
+              </p>
+            </div>
+            <div
+              onClick={() =>
+                setConfig({
+                  ...config,
+                  preferences: {
+                    ...config.preferences,
+                    overlay_dps_enabled: !config.preferences.overlay_dps_enabled,
+                  },
+                })
+              }
+              style={{
+                width: 40,
+                height: 22,
+                borderRadius: 11,
+                backgroundColor: config.preferences.overlay_dps_enabled
+                  ? 'var(--color-primary)'
+                  : 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+                position: 'relative',
+                flexShrink: 0,
+                transition: 'background-color 0.15s',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 2,
+                  left: config.preferences.overlay_dps_enabled ? 20 : 2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  backgroundColor: '#fff',
+                  transition: 'left 0.15s',
+                }}
+              />
+            </div>
+          </label>
+
+          <label className="flex cursor-pointer items-center justify-between py-1 mt-2">
+            <div>
+              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                HPS Overlay
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                Show the floating heals-per-second meter overlay.
+              </p>
+            </div>
+            <div
+              onClick={() =>
+                setConfig({
+                  ...config,
+                  preferences: {
+                    ...config.preferences,
+                    overlay_hps_enabled: !config.preferences.overlay_hps_enabled,
+                  },
+                })
+              }
+              style={{
+                width: 40,
+                height: 22,
+                borderRadius: 11,
+                backgroundColor: config.preferences.overlay_hps_enabled
+                  ? '#16a34a'
+                  : 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+                position: 'relative',
+                flexShrink: 0,
+                transition: 'background-color 0.15s',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 2,
+                  left: config.preferences.overlay_hps_enabled ? 20 : 2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  backgroundColor: '#fff',
+                  transition: 'left 0.15s',
+                }}
+              />
+            </div>
+          </label>
+        </section>
+
         {/* ── Save / Discard buttons ─────────────────────────────────────── */}
         <div className="flex items-center gap-3">
           <button

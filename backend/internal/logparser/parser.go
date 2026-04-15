@@ -64,6 +64,20 @@ var (
 
 	// Death: "You have been slain by a gnoll."
 	reDeath = regexp.MustCompile(`^You have been slain by (.+)\.$`)
+
+	// Heals — player heals a target:
+	// "You healed Playerone for 150 hit points."
+	// "You healed yourself for 150 hit points."
+	reYouHeal = regexp.MustCompile(`^You healed (.+?) for (\d+) hit points?\.$`)
+
+	// Heals — someone heals the player:
+	// "Playerone healed you for 150 hit points."
+	reHealedYou = regexp.MustCompile(`^(.+?) healed [Yy]ou for (\d+) hit points?\.$`)
+
+	// Heals — third-party: another entity heals someone else.
+	// "Playerone healed Playertwo for 150 hit points."
+	// Checked after reYouHeal and reHealedYou so those take priority.
+	reThirdPartyHeal = regexp.MustCompile(`^(\w+) healed (.+?) for (\d+) hit points?\.$`)
 )
 
 // ParseLine parses a single raw line from an EQ log file into a LogEvent.
@@ -221,6 +235,39 @@ func classifyMessage(msg string) (LogEvent, bool) {
 					Target: m[3],
 					Damage: dmg,
 				},
+			}, true
+		}
+	}
+
+	// --- Player heals a target ---
+	if m := reYouHeal.FindStringSubmatch(msg); m != nil {
+		amt, _ := strconv.Atoi(m[2])
+		target := m[1]
+		if strings.EqualFold(target, "yourself") {
+			target = "You"
+		}
+		return LogEvent{
+			Type: EventHeal,
+			Data: HealData{Actor: "You", Target: target, Amount: amt},
+		}, true
+	}
+
+	// --- Someone heals the player ---
+	if m := reHealedYou.FindStringSubmatch(msg); m != nil {
+		amt, _ := strconv.Atoi(m[2])
+		return LogEvent{
+			Type: EventHeal,
+			Data: HealData{Actor: m[1], Target: "You", Amount: amt},
+		}, true
+	}
+
+	// --- Third-party heal ---
+	if m := reThirdPartyHeal.FindStringSubmatch(msg); m != nil {
+		if m[1] != "You" && !strings.EqualFold(m[2], "you") {
+			amt, _ := strconv.Atoi(m[3])
+			return LogEvent{
+				Type: EventHeal,
+				Data: HealData{Actor: m[1], Target: m[2], Amount: amt},
 			}, true
 		}
 	}

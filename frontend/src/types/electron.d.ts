@@ -16,6 +16,9 @@ export interface ElectronAPI {
     openDPS: () => Promise<void>
     closeDPS: () => Promise<void>
     toggleDPS: () => Promise<void>
+    openHPS: () => Promise<void>
+    closeHPS: () => Promise<void>
+    toggleHPS: () => Promise<void>
     openBuffTimer: () => Promise<void>
     closeBuffTimer: () => Promise<void>
     toggleBuffTimer: () => Promise<void>

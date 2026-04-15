@@ -422,6 +422,41 @@
 - **`components/Sidebar.tsx`** — added `Combat Log` nav entry (`ScrollText` icon) after DPS Overlay in the Parsing section
 - **`App.tsx`** — added `/combat-log` route
 
+### Task 5.4 — HPS Meter ✅
+- **Heal log parsing** (`internal/logparser/`):
+  - `models.go` — added `EventHeal` event type constant (`log:heal`) and `HealData` struct (`Actor`, `Target`, `Amount`)
+  - `parser.go` — three new regex patterns:
+    - `reYouHeal` — `"You healed <target> for <N> hit points."` (player casts heal; `yourself` normalised to `You`)
+    - `reHealedYou` — `"<actor> healed you for <N> hit points."` (someone heals the player)
+    - `reThirdPartyHeal` — `"<actor> healed <target> for <N> hit points."` (third-party; checked last to avoid false-matching prior patterns)
+- **Combat tracker extended** (`internal/combat/`):
+  - `models.go` — added `HealerStats` struct (`Name`, `TotalHeal`, `HealCount`, `MaxHeal`, `HPS`); extended `FightState` and `FightSummary` with `Healers`, `TotalHeal`, `TotalHPS`, `YouHeal`, `YouHPS`; extended `CombatState` with `SessionHeal` and `SessionHPS`
+  - `tracker.go` — `internalHealer` struct mirrors `internalEntity`; `internalFight.healers` map added; `Handle()` dispatches `EventHeal` to new `recordHeal()` method; `recordHeal()` only tracks heals during an active fight; `archiveFight()` and `snapshot()` compute healer stats and session HPS via `buildHealerStats()`; session heal total accumulated alongside damage
+- **`types/combat.ts`** — added `HealerStats` interface; extended `FightState`, `FightSummary`, `CombatState` with all new heal fields
+- **`pages/DPSOverlayPage.tsx`** — renamed conceptually to "DPS / HPS meter" (route unchanged at `/dps-overlay`):
+  - **Tab bar** — DPS (orange, Swords icon) and HPS (green, HeartPulse icon) tabs; switching tabs changes the displayed data, the combat strip rate label, and the session footer values
+  - **HPS panel** — `HPSRow` and `HPSPanel` components mirror DPS equivalents; green color accent; bar width proportional to healer's share of total healing
+  - **Pop-out button** — per-tab: DPS tab shows `toggleDPS()`, HPS tab shows `toggleHPS()`; invokes the respective Electron IPC to open/close the standalone window
+  - Session bar shows fight count + total healed + session HPS when HPS tab is active
+- **`pages/HPSOverlayWindowPage.tsx`** — standalone always-on-top HPS overlay window (route `/hps-overlay-window`):
+  - Same layout as `DPSOverlayWindowPage`: transparent dark background, drag-region title bar, All/Me filter toggle, × close button (calls `overlay.closeHPS()`)
+  - Green color accent (`#4ade80`) throughout; title shows live current HPS in header
+  - Session footer: fight count, total healed, session HPS
+- **Electron main** (`electron/main/index.ts`) — `createHPSOverlay()` creates 420×460 transparent frameless always-on-top window; IPC handlers `overlay:hps:open`, `overlay:hps:close`, `overlay:hps:toggle`
+- **Electron preload** (`electron/preload/index.ts`) — exposes `window.electron.overlay.{openHPS, closeHPS, toggleHPS}`
+- **`types/electron.d.ts`** — added `openHPS`, `closeHPS`, `toggleHPS` to `ElectronAPI.overlay`
+- **`App.tsx`** — added `/hps-overlay-window` standalone route
+
+### Task 5.5 — Overlay Toggle Switches ✅
+- **Config extended** (`internal/config/config.go`):
+  - `Preferences` — added `OverlayDPSEnabled bool` (`yaml:"overlay_dps_enabled"`) and `OverlayHPSEnabled bool` (`yaml:"overlay_hps_enabled"`)
+  - Defaults: `overlay_dps_enabled: true`, `overlay_hps_enabled: false`
+- **`types/config.ts`** — added `overlay_dps_enabled` and `overlay_hps_enabled` to `Preferences` interface
+- **`pages/SettingsPage.tsx`** — new **Overlays** settings section with two toggle switches:
+  - **DPS Overlay** — enables/disables the floating DPS meter window
+  - **HPS Overlay** — enables/disables the floating HPS meter window
+  - Each switch persists through the existing config save flow (`PUT /api/config`); green accent used for HPS toggle thumb to distinguish it from the primary-color DPS toggle
+
 ## Phase 6 — Windows Build & Distribution
 
 ### Task 6.1 — Windows Build Pipeline ✅

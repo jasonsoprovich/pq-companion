@@ -33,6 +33,9 @@ const (
 
 	// EventDeath is emitted when the player is slain.
 	EventDeath EventType = "log:death"
+
+	// EventHeal is emitted when a heal lands (player → target or target → player).
+	EventHeal EventType = "log:heal"
 )
 
 // LogEvent is the parsed representation of a single EQ log line.
@@ -93,4 +96,14 @@ type SpellFadeData struct {
 // DeathData is the structured payload for EventDeath.
 type DeathData struct {
 	SlainBy string `json:"slain_by"`
+}
+
+// HealData is the structured payload for EventHeal.
+type HealData struct {
+	// Actor is "You" for player-cast heals, or the healer's name.
+	Actor string `json:"actor"`
+	// Target is the entity that was healed. "You" means the player was healed.
+	Target string `json:"target"`
+	// Amount is the number of hit points restored.
+	Amount int `json:"amount"`
 }

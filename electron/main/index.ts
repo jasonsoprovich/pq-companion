@@ -8,6 +8,7 @@ const isDev = !app.isPackaged
 
 let mainWindow: BrowserWindow | null = null
 let dpsOverlayWindow: BrowserWindow | null = null
+let hpsOverlayWindow: BrowserWindow | null = null
 let buffTimerWindow: BrowserWindow | null = null
 let detrimTimerWindow: BrowserWindow | null = null
 let sidecarProcess: ChildProcess | null = null
@@ -190,6 +191,51 @@ function createDPSOverlay(): void {
   })
 }
 
+// ── HPS Overlay window ────────────────────────────────────────────────────────
+
+function createHPSOverlay(): void {
+  if (hpsOverlayWindow && !hpsOverlayWindow.isDestroyed()) {
+    hpsOverlayWindow.focus()
+    return
+  }
+
+  hpsOverlayWindow = new BrowserWindow({
+    width: 420,
+    height: 460,
+    minWidth: 260,
+    minHeight: 180,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    },
+  })
+
+  hpsOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
+  hpsOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    hpsOverlayWindow.loadURL(`${rendererUrl}/#/hps-overlay-window`)
+  } else {
+    hpsOverlayWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/hps-overlay-window',
+    })
+  }
+
+  hpsOverlayWindow.on('closed', () => {
+    hpsOverlayWindow = null
+  })
+}
+
 // ── Buff Timer overlay window ─────────────────────────────────────────────────
 
 function createBuffTimerOverlay(): void {
@@ -310,6 +356,24 @@ ipcMain.handle('overlay:dps:toggle', () => {
     dpsOverlayWindow.close()
   } else {
     createDPSOverlay()
+  }
+})
+
+ipcMain.handle('overlay:hps:open', () => {
+  createHPSOverlay()
+})
+
+ipcMain.handle('overlay:hps:close', () => {
+  if (hpsOverlayWindow && !hpsOverlayWindow.isDestroyed()) {
+    hpsOverlayWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:hps:toggle', () => {
+  if (hpsOverlayWindow && !hpsOverlayWindow.isDestroyed()) {
+    hpsOverlayWindow.close()
+  } else {
+    createHPSOverlay()
   }
 })
 

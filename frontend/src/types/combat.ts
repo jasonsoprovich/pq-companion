@@ -6,6 +6,14 @@ export interface EntityStats {
   dps: number
 }
 
+export interface HealerStats {
+  name: string
+  total_heal: number
+  heal_count: number
+  max_heal: number
+  hps: number
+}
+
 export interface FightState {
   start_time: string
   duration_seconds: number
@@ -14,6 +22,11 @@ export interface FightState {
   total_dps: number          // all outgoing DPS
   you_damage: number         // player personal damage
   you_dps: number            // player personal DPS
+  healers: HealerStats[]     // healers sorted by total heal desc
+  total_heal: number         // all healing done (all healers)
+  total_hps: number          // all HPS
+  you_heal: number           // player personal healing done
+  you_hps: number            // player personal HPS
 }
 
 export interface FightSummary {
@@ -25,6 +38,11 @@ export interface FightSummary {
   total_dps: number
   you_damage: number
   you_dps: number
+  healers: HealerStats[]
+  total_heal: number
+  total_hps: number
+  you_heal: number
+  you_hps: number
 }
 
 export interface CombatState {
@@ -33,5 +51,7 @@ export interface CombatState {
   recent_fights: FightSummary[]
   session_damage: number  // player personal only
   session_dps: number     // player personal only
+  session_heal: number    // player personal healing only
+  session_hps: number     // player personal HPS only
   last_updated: string
 }

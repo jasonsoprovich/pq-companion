@@ -39,6 +39,12 @@ type Preferences struct {
 
 	// ParseCombatLog enables real-time combat log parsing.
 	ParseCombatLog bool `yaml:"parse_combat_log" json:"parse_combat_log"`
+
+	// OverlayDPSEnabled controls whether the DPS floating overlay is shown.
+	OverlayDPSEnabled bool `yaml:"overlay_dps_enabled" json:"overlay_dps_enabled"`
+
+	// OverlayHPSEnabled controls whether the HPS floating overlay is shown.
+	OverlayHPSEnabled bool `yaml:"overlay_hps_enabled" json:"overlay_hps_enabled"`
 }
 
 // defaults returns a Config populated with sensible default values.
@@ -46,9 +52,11 @@ func defaults() Config {
 	return Config{
 		ServerAddr: ":8080",
 		Preferences: Preferences{
-			OverlayOpacity: 0.9,
-			MinimizeToTray: true,
-			ParseCombatLog: true,
+			OverlayOpacity:    0.9,
+			MinimizeToTray:    true,
+			ParseCombatLog:    true,
+			OverlayDPSEnabled: true,
+			OverlayHPSEnabled: false,
 		},
 	}
 }

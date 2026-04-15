@@ -16,6 +16,13 @@ type internalEntity struct {
 	maxHit      int
 }
 
+// internalHealer accumulates raw heal data for one healer inside an active fight.
+type internalHealer struct {
+	totalHeal int64
+	healCount int
+	maxHeal   int
+}
+
 // internalFight holds mutable state for the currently active fight.
 type internalFight struct {
 	// id is a monotonic counter used to guard against stale timer callbacks.
@@ -27,10 +34,12 @@ type internalFight struct {
 	outgoing map[string]*internalEntity
 	// incoming tracks actors dealing damage to "You" (NPCs hitting the player).
 	incoming map[string]*internalEntity
+	// healers tracks entities that cast heals during this fight.
+	healers map[string]*internalHealer
 }
 
 // Tracker watches parsed log events, groups them into fights, and maintains
-// per-entity damage statistics and session-level DPS aggregates.
+// per-entity damage statistics, session-level DPS aggregates, and HPS data.
 type Tracker struct {
 	hub *ws.Hub
 
@@ -44,6 +53,9 @@ type Tracker struct {
 	// session aggregates (player personal outgoing damage only)
 	sessionDamage    int64
 	sessionFightTime float64 // total seconds spent in completed fights
+
+	// session heal aggregates (player personal healing done only)
+	sessionHeal int64
 }
 
 // NewTracker returns an initialised combat Tracker.
@@ -63,6 +75,13 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 			return
 		}
 		t.recordHit(ev.Timestamp, data)
+
+	case logparser.EventHeal:
+		data, ok := ev.Data.(logparser.HealData)
+		if !ok {
+			return
+		}
+		t.recordHeal(ev.Timestamp, data)
 
 	case logparser.EventZone, logparser.EventDeath:
 		t.endFight(true)
@@ -90,6 +109,7 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 			lastHit:   ts,
 			outgoing:  make(map[string]*internalEntity),
 			incoming:  make(map[string]*internalEntity),
+			healers:   make(map[string]*internalHealer),
 		}
 	} else {
 		t.active.lastHit = ts
@@ -122,6 +142,33 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	t.endTimer = time.AfterFunc(combatGap, func() {
 		t.timerExpired(fightID)
 	})
+
+	snap := t.snapshot(ts)
+	t.mu.Unlock()
+
+	t.broadcast(snap)
+}
+
+// recordHeal processes a heal event and accumulates per-healer stats.
+func (t *Tracker) recordHeal(ts time.Time, data logparser.HealData) {
+	t.mu.Lock()
+
+	// Only track heals during an active fight; heals outside combat are ignored.
+	if t.active == nil {
+		t.mu.Unlock()
+		return
+	}
+
+	h := t.active.healers[data.Actor]
+	if h == nil {
+		h = &internalHealer{}
+		t.active.healers[data.Actor] = h
+	}
+	h.totalHeal += int64(data.Amount)
+	h.healCount++
+	if data.Amount > h.maxHeal {
+		h.maxHeal = data.Amount
+	}
 
 	snap := t.snapshot(ts)
 	t.mu.Unlock()
@@ -185,9 +232,20 @@ func (t *Tracker) archiveFight(endTime time.Time) {
 		}
 	}
 
-	// Session tracking uses player personal outgoing damage only.
+	healers := buildHealerStats(f.healers, duration)
+	totalHeal := int64(0)
+	youHeal := int64(0)
+	for _, h := range healers {
+		totalHeal += h.TotalHeal
+		if h.Name == "You" {
+			youHeal = h.TotalHeal
+		}
+	}
+
+	// Session tracking uses player personal outgoing damage and healing only.
 	t.sessionDamage += youDmg
 	t.sessionFightTime += duration
+	t.sessionHeal += youHeal
 
 	summary := FightSummary{
 		StartTime:   f.startTime,
@@ -198,6 +256,11 @@ func (t *Tracker) archiveFight(endTime time.Time) {
 		TotalDPS:    safeDivide(float64(totalDmg), duration),
 		YouDamage:   youDmg,
 		YouDPS:      safeDivide(float64(youDmg), duration),
+		Healers:     healers,
+		TotalHeal:   totalHeal,
+		TotalHPS:    safeDivide(float64(totalHeal), duration),
+		YouHeal:     youHeal,
+		YouHPS:      safeDivide(float64(youHeal), duration),
 	}
 
 	// Prepend and cap at maxRecentFights.
@@ -213,11 +276,13 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 	state := CombatState{
 		RecentFights:  t.recentFights,
 		SessionDamage: t.sessionDamage,
+		SessionHeal:   t.sessionHeal,
 		LastUpdated:   now,
 	}
 
 	if t.sessionFightTime > 0 {
 		state.SessionDPS = safeDivide(float64(t.sessionDamage), t.sessionFightTime)
+		state.SessionHPS = safeDivide(float64(t.sessionHeal), t.sessionFightTime)
 	}
 
 	if t.active != nil {
@@ -237,6 +302,16 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 			}
 		}
 
+		healers := buildHealerStats(t.active.healers, duration)
+		totalHeal := int64(0)
+		youHeal := int64(0)
+		for _, h := range healers {
+			totalHeal += h.TotalHeal
+			if h.Name == "You" {
+				youHeal = h.TotalHeal
+			}
+		}
+
 		state.CurrentFight = &FightState{
 			StartTime:   t.active.startTime,
 			Duration:    duration,
@@ -245,6 +320,11 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 			TotalDPS:    safeDivide(float64(totalDmg), duration),
 			YouDamage:   youDmg,
 			YouDPS:      safeDivide(float64(youDmg), duration),
+			Healers:     healers,
+			TotalHeal:   totalHeal,
+			TotalHPS:    safeDivide(float64(totalHeal), duration),
+			YouHeal:     youHeal,
+			YouHPS:      safeDivide(float64(youHeal), duration),
 		}
 	}
 
@@ -266,6 +346,25 @@ func buildEntityStats(entities map[string]*internalEntity, duration float64) []E
 	}
 	sort.Slice(stats, func(i, j int) bool {
 		return stats[i].TotalDamage > stats[j].TotalDamage
+	})
+	return stats
+}
+
+// buildHealerStats converts the raw healer map to a sorted []HealerStats slice.
+// Sorted descending by total healing.
+func buildHealerStats(healers map[string]*internalHealer, duration float64) []HealerStats {
+	stats := make([]HealerStats, 0, len(healers))
+	for name, h := range healers {
+		stats = append(stats, HealerStats{
+			Name:      name,
+			TotalHeal: h.totalHeal,
+			HealCount: h.healCount,
+			MaxHeal:   h.maxHeal,
+			HPS:       safeDivide(float64(h.totalHeal), duration),
+		})
+	}
+	sort.Slice(stats, func(i, j int) bool {
+		return stats[i].TotalHeal > stats[j].TotalHeal
 	})
 	return stats
 }
