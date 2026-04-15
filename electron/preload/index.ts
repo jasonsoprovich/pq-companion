@@ -17,6 +17,12 @@ contextBridge.exposeInMainWorld('electron', {
     openDPS: (): Promise<void> => ipcRenderer.invoke('overlay:dps:open'),
     closeDPS: (): Promise<void> => ipcRenderer.invoke('overlay:dps:close'),
     toggleDPS: (): Promise<void> => ipcRenderer.invoke('overlay:dps:toggle'),
+    openBuffTimer: (): Promise<void> => ipcRenderer.invoke('overlay:bufftimer:open'),
+    closeBuffTimer: (): Promise<void> => ipcRenderer.invoke('overlay:bufftimer:close'),
+    toggleBuffTimer: (): Promise<void> => ipcRenderer.invoke('overlay:bufftimer:toggle'),
+    openDetrimTimer: (): Promise<void> => ipcRenderer.invoke('overlay:detrimtimer:open'),
+    closeDetrimTimer: (): Promise<void> => ipcRenderer.invoke('overlay:detrimtimer:close'),
+    toggleDetrimTimer: (): Promise<void> => ipcRenderer.invoke('overlay:detrimtimer:toggle'),
   },
   dialog: {
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-folder'),

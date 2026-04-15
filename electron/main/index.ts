@@ -8,6 +8,8 @@ const isDev = !app.isPackaged
 
 let mainWindow: BrowserWindow | null = null
 let dpsOverlayWindow: BrowserWindow | null = null
+let buffTimerWindow: BrowserWindow | null = null
+let detrimTimerWindow: BrowserWindow | null = null
 let sidecarProcess: ChildProcess | null = null
 
 // ── Sidecar (Go backend) lifecycle ────────────────────────────────────────────
@@ -188,6 +190,96 @@ function createDPSOverlay(): void {
   })
 }
 
+// ── Buff Timer overlay window ─────────────────────────────────────────────────
+
+function createBuffTimerOverlay(): void {
+  if (buffTimerWindow && !buffTimerWindow.isDestroyed()) {
+    buffTimerWindow.focus()
+    return
+  }
+
+  buffTimerWindow = new BrowserWindow({
+    width: 280,
+    height: 380,
+    minWidth: 200,
+    minHeight: 140,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    },
+  })
+
+  buffTimerWindow.setAlwaysOnTop(true, 'screen-saver')
+  buffTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    buffTimerWindow.loadURL(`${rendererUrl}/#/buff-timer-window`)
+  } else {
+    buffTimerWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/buff-timer-window',
+    })
+  }
+
+  buffTimerWindow.on('closed', () => {
+    buffTimerWindow = null
+  })
+}
+
+// ── Detrimental Timer overlay window ─────────────────────────────────────────
+
+function createDetrimTimerOverlay(): void {
+  if (detrimTimerWindow && !detrimTimerWindow.isDestroyed()) {
+    detrimTimerWindow.focus()
+    return
+  }
+
+  detrimTimerWindow = new BrowserWindow({
+    width: 300,
+    height: 320,
+    minWidth: 200,
+    minHeight: 140,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    },
+  })
+
+  detrimTimerWindow.setAlwaysOnTop(true, 'screen-saver')
+  detrimTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    detrimTimerWindow.loadURL(`${rendererUrl}/#/detrim-timer-window`)
+  } else {
+    detrimTimerWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/detrim-timer-window',
+    })
+  }
+
+  detrimTimerWindow.on('closed', () => {
+    detrimTimerWindow = null
+  })
+}
+
 // ── IPC handlers — window controls ───────────────────────────────────────────
 
 ipcMain.handle('window:minimize', () => mainWindow?.minimize())
@@ -218,6 +310,42 @@ ipcMain.handle('overlay:dps:toggle', () => {
     dpsOverlayWindow.close()
   } else {
     createDPSOverlay()
+  }
+})
+
+ipcMain.handle('overlay:bufftimer:open', () => {
+  createBuffTimerOverlay()
+})
+
+ipcMain.handle('overlay:bufftimer:close', () => {
+  if (buffTimerWindow && !buffTimerWindow.isDestroyed()) {
+    buffTimerWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:bufftimer:toggle', () => {
+  if (buffTimerWindow && !buffTimerWindow.isDestroyed()) {
+    buffTimerWindow.close()
+  } else {
+    createBuffTimerOverlay()
+  }
+})
+
+ipcMain.handle('overlay:detrimtimer:open', () => {
+  createDetrimTimerOverlay()
+})
+
+ipcMain.handle('overlay:detrimtimer:close', () => {
+  if (detrimTimerWindow && !detrimTimerWindow.isDestroyed()) {
+    detrimTimerWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:detrimtimer:toggle', () => {
+  if (detrimTimerWindow && !detrimTimerWindow.isDestroyed()) {
+    detrimTimerWindow.close()
+  } else {
+    createDetrimTimerOverlay()
   }
 })
 

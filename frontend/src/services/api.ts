@@ -9,6 +9,7 @@ import type { Backup, BackupsResponse } from '../types/backup'
 import type { LogTailerStatus } from '../types/logEvent'
 import type { TargetState } from '../types/overlay'
 import type { CombatState } from '../types/combat'
+import type { TimerState } from '../types/timer'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -206,6 +207,10 @@ export function getOverlayNPCTarget(): Promise<TargetState> {
 
 export function getCombatState(): Promise<CombatState> {
   return get<CombatState>('/api/overlay/combat')
+}
+
+export function getTimerState(): Promise<TimerState> {
+  return get<TimerState>('/api/overlay/timers')
 }
 
 // ── Config ─────────────────────────────────────────────────────────────────────

@@ -534,6 +534,53 @@ Subsequent release builds download it automatically from that release.
 
 WebSocket event `overlay:timers` is broadcast on every timer change (cast, resist, fade, zone, death) and once per second from the background ticker.
 
+### Task 7.2 — Timer Overlay (Frontend) / Task 7.3 — Buff & Detrimental Windows
+
+Two separate overlay windows are provided from the start — one for beneficial spells, one for detrimental spells — rather than a single combined window.
+
+**`frontend/src/types/timer.ts`** — TypeScript types mirroring Go models
+- `TimerCategory` string union: `'buff' | 'debuff' | 'mez' | 'dot' | 'stun'`
+- `ActiveTimer` — mirrors Go `ActiveTimer` struct with all fields
+- `TimerState` — mirrors Go `TimerState` struct
+
+**`frontend/src/services/api.ts`**
+- Added `getTimerState()` — `GET /api/overlay/timers`
+
+**`frontend/src/pages/SpellTimerPage.tsx`** — in-app page with two floating draggable/resizable `OverlayWindow` panels:
+- **Buffs panel** — shows `buff` category timers; default position top-left (24, 24); pop-out button opens standalone buff overlay window
+- **Detrimental panel** — shows `debuff`, `dot`, `mez`, `stun` timers; default position top-right (344, 24); pop-out button opens standalone detrimental overlay window
+- Each row: spell name, remaining time countdown, depleting progress bar; bar color shifts green → orange → red as time runs low (< 50% / < 20%)
+- Detrimental rows have a color-coded left accent line and category badge (DoT, Mez, Stun, Debuff)
+- Empty state: icon + "No active buffs" / "No active detrimentals"
+- Shared log-status status bar on the buff panel
+
+**`frontend/src/pages/BuffTimerWindowPage.tsx`** — standalone transparent always-on-top buff overlay
+- Route: `/buff-timer-window`; Electron window: 280×380, transparent, frameless, alwaysOnTop
+- Shows `buff` category timers sorted by remaining time ascending
+- Drag handle header with timer count; close button
+
+**`frontend/src/pages/DetrimTimerWindowPage.tsx`** — standalone transparent always-on-top detrimental overlay
+- Route: `/detrim-timer-window`; Electron window: 300×320, transparent, frameless, alwaysOnTop
+- Shows `debuff`, `dot`, `mez`, `stun` timers sorted by remaining time ascending
+- Color-coded left accent lines and category badges per row
+
+**`electron/main/index.ts`**
+- `createBuffTimerOverlay()` — 280×380 transparent frameless always-on-top window; route `#/buff-timer-window`
+- `createDetrimTimerOverlay()` — 300×320 transparent frameless always-on-top window; route `#/detrim-timer-window`
+- IPC handlers: `overlay:bufftimer:open/close/toggle`, `overlay:detrimtimer:open/close/toggle`
+
+**`electron/preload/index.ts`**
+- Exposed new methods: `openBuffTimer`, `closeBuffTimer`, `toggleBuffTimer`, `openDetrimTimer`, `closeDetrimTimer`, `toggleDetrimTimer`
+
+**`frontend/src/types/electron.d.ts`**
+- Added six new overlay methods to `ElectronAPI.overlay`
+
+**`frontend/src/App.tsx`**
+- Routes added: `/buff-timer-window`, `/detrim-timer-window`, `/spell-timers`
+
+**`frontend/src/components/Sidebar.tsx`**
+- Added "Spell Timers" nav item (Timer icon) between DPS Overlay and Combat Log under Parsing section
+
 ## Phase 8 — Audio Alerts
 - System audio integration via Web Audio API
 - Configurable alerts when timers expire (sound file or TTS)

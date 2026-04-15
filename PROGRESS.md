@@ -44,9 +44,9 @@
 - [x] Task 6.2 — Auto-Updater
 
 ## Phase 7 — Spell Timer Engine
-- [ ] Task 7.1 — Spell Timer Engine (Backend)
-- [ ] Task 7.2 — Timer Overlay (Frontend)
-- [ ] Task 7.3 — Buff Window Enhancement
+- [x] Task 7.1 — Spell Timer Engine (Backend)
+- [x] Task 7.2 — Timer Overlay (Frontend)
+- [x] Task 7.3 — Buff Window Enhancement
 
 ## Phase 8 — Audio Alerts
 - [ ] Task 8.1 — Audio Engine

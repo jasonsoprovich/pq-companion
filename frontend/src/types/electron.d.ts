@@ -16,6 +16,12 @@ export interface ElectronAPI {
     openDPS: () => Promise<void>
     closeDPS: () => Promise<void>
     toggleDPS: () => Promise<void>
+    openBuffTimer: () => Promise<void>
+    closeBuffTimer: () => Promise<void>
+    toggleBuffTimer: () => Promise<void>
+    openDetrimTimer: () => Promise<void>
+    closeDetrimTimer: () => Promise<void>
+    toggleDetrimTimer: () => Promise<void>
   }
   dialog: {
     selectFolder: () => Promise<string | null>

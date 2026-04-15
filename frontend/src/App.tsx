@@ -15,6 +15,9 @@ import LogFeedPage from './pages/LogFeedPage'
 import NPCOverlayPage from './pages/NPCOverlayPage'
 import DPSOverlayPage from './pages/DPSOverlayPage'
 import DPSOverlayWindowPage from './pages/DPSOverlayWindowPage'
+import BuffTimerWindowPage from './pages/BuffTimerWindowPage'
+import DetrimTimerWindowPage from './pages/DetrimTimerWindowPage'
+import SpellTimerPage from './pages/SpellTimerPage'
 import CombatLogPage from './pages/CombatLogPage'
 
 export default function App(): React.ReactElement {
@@ -23,6 +26,8 @@ export default function App(): React.ReactElement {
       <Routes>
         {/* Standalone overlay windows — no sidebar/titlebar Layout */}
         <Route path="dps-overlay-window" element={<DPSOverlayWindowPage />} />
+        <Route path="buff-timer-window" element={<BuffTimerWindowPage />} />
+        <Route path="detrim-timer-window" element={<DetrimTimerWindowPage />} />
 
         {/* Main app routes — wrapped in full Layout */}
         <Route path="/" element={<Layout />}>
@@ -39,6 +44,7 @@ export default function App(): React.ReactElement {
           <Route path="log-feed" element={<LogFeedPage />} />
           <Route path="npc-overlay" element={<NPCOverlayPage />} />
           <Route path="dps-overlay" element={<DPSOverlayPage />} />
+          <Route path="spell-timers" element={<SpellTimerPage />} />
           <Route path="combat-log" element={<CombatLogPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
