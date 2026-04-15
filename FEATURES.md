@@ -766,6 +766,41 @@ Extends the trigger system with two new action types — `play_sound` and `text_
 - `text_to_speech`: text input + voice dropdown (populated from `getAvailableVoices()`, fallback to free-text input) + volume slider
 - All new action types default their fields (empty path/text, 0 volume = 100%, empty voice = system default)
 
+### Task 9.2 — Timer Audio Alerts
+
+Adds configurable audio alerts that fire whenever an active spell timer's remaining time crosses a user-defined threshold. Alerts are fully independent of the trigger system — they operate directly on `overlay:timers` WebSocket events.
+
+**`frontend/src/types/timerAlerts.ts`** _(new)_
+- `TimerAlertType` — `'play_sound' | 'text_to_speech'`
+- `TimerAlertThreshold` — one configured alert: `id`, `seconds` (fire when remaining ≤ this), `type`, `sound_path`, `volume`, `tts_template` (supports `{spell}` placeholder), `voice`, `tts_volume`
+- `TimerAlertConfig` — top-level config: `enabled` flag + `thresholds[]`
+
+**`frontend/src/services/timerAlertStore.ts`** _(new)_
+- `loadTimerAlertConfig()` — reads from `localStorage` key `pq-timer-alerts`; returns a built-in default (30s TTS alert) on first run
+- `saveTimerAlertConfig(cfg)` — serialises config to `localStorage`; silently ignores quota errors
+
+**`frontend/src/hooks/useTimerAlerts.ts`** _(new)_
+- Subscribes to `overlay:timers` WebSocket events
+- Tracks `prevRemaining: Map<timerId, number>` across renders via `useRef`
+- Each update: for each timer × threshold pair, if `prev > threshold.seconds && remaining ≤ threshold.seconds` → fire `playSound()` or `speakText()` with `{spell}` interpolated
+- Cleans up stale timer entries when they expire or are removed
+- Reads config fresh on every tick (picks up changes instantly without requiring a remount)
+
+**`frontend/src/components/TimerAlertsPanel.tsx`** _(new)_
+- Slide-in panel (right side of SpellTimerPage, 380 px wide) for managing alert thresholds
+- Global enable/disable toggle
+- Per-threshold row: seconds input, type selector (`text_to_speech` / `play_sound`), and type-specific fields:
+  - TTS: message template input, voice dropdown (populated from `speechSynthesis.getVoices()`), volume %
+  - Sound: file path input, volume %
+- Add / remove threshold buttons; changes save to localStorage immediately on every edit
+
+**`frontend/src/pages/SpellTimerPage.tsx`**
+- Added Bell icon button in the Buffs panel header that toggles `TimerAlertsPanel` open/closed; icon tinted with `--color-primary` when panel is open
+- `TimerAlertsPanel` is rendered inside the page container so it overlays the timer panels without affecting the overlay window positions
+
+**`frontend/src/App.tsx`**
+- Calls `useTimerAlerts()` alongside `useAudioEngine()` at the App root — fires alerts regardless of active page
+
 ## Phase 10 — Character Tools
 
 ### Task 10.1 — Character Todo List

@@ -55,7 +55,7 @@
 
 ## Phase 9 — Audio Alerts
 - [ ] Task 9.1 — Audio Engine
-- [ ] Task 9.2 — Timer Audio Alerts
+- [x] Task 9.2 — Timer Audio Alerts
 - [ ] Task 9.3 — Event Notifications
 
 ## Phase 10 — Character Tools
