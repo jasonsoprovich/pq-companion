@@ -14,6 +14,7 @@ import { playSound, speakText } from '../services/audio'
 import { loadEventAlertConfig } from '../services/eventAlertStore'
 import type { AlertableEventType } from '../types/eventAlerts'
 import type {
+  LogEvent,
   ZoneData,
   SpellResistData,
   SpellInterruptData,
@@ -46,26 +47,28 @@ export function useEventAlerts(): void {
     const rule = cfg.rules.find((r) => r.event_type === eventType && r.enabled)
     if (!rule) return
 
-    // Build template variables from the event payload.
+    // msg.data is the full LogEvent envelope; the typed payload is in its nested
+    // data field. Cast through LogEvent first, then unwrap the inner data.
+    const logEvent = msg.data as LogEvent | undefined
     const vars: Record<string, string> = {}
     switch (eventType) {
       case 'log:death': {
-        const d = msg.data as DeathData | undefined
+        const d = logEvent?.data as DeathData | undefined
         vars.slain_by = d?.slain_by ?? 'something'
         break
       }
       case 'log:zone': {
-        const d = msg.data as ZoneData | undefined
+        const d = logEvent?.data as ZoneData | undefined
         vars.zone = d?.zone_name ?? 'unknown zone'
         break
       }
       case 'log:spell_resist': {
-        const d = msg.data as SpellResistData | undefined
+        const d = logEvent?.data as SpellResistData | undefined
         vars.spell = d?.spell_name ?? 'spell'
         break
       }
       case 'log:spell_interrupt': {
-        const d = msg.data as SpellInterruptData | undefined
+        const d = logEvent?.data as SpellInterruptData | undefined
         vars.spell = d?.spell_name ?? 'spell'
         break
       }
