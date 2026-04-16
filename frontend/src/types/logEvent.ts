@@ -7,6 +7,7 @@ export type LogEventType =
   | 'log:spell_resist'
   | 'log:spell_fade'
   | 'log:death'
+  | 'log:heal'
 
 export interface LogEvent {
   type: LogEventType

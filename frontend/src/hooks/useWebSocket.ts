@@ -41,11 +41,17 @@ function connect(): void {
   ws.onopen = () => setState('open')
 
   ws.onmessage = (e) => {
-    try {
-      const msg = JSON.parse(e.data as string) as WsMessage
-      messageHandlers.forEach((h) => h(msg))
-    } catch {
-      // ignore non-JSON frames
+    // The backend may batch multiple JSON objects into one frame, separated by
+    // newlines. Split and parse each line individually.
+    for (const line of (e.data as string).split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      try {
+        const msg = JSON.parse(trimmed) as WsMessage
+        messageHandlers.forEach((h) => h(msg))
+      } catch {
+        // ignore non-JSON frames
+      }
     }
   }
 

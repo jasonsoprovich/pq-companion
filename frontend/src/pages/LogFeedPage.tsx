@@ -22,6 +22,7 @@ const TYPE_META: Record<
   'log:spell_resist':    { label: 'Resist',    color: '#f97316' }, // orange
   'log:spell_fade':      { label: 'Fade',      color: '#14b8a6' }, // teal
   'log:death':           { label: 'Death',     color: '#dc2626' }, // dark red
+  'log:heal':            { label: 'Heal',      color: '#22c55e' }, // green
 }
 
 function EventBadge({ type }: { type: string }): React.ReactElement {

@@ -294,12 +294,12 @@
   - One connection per app lifetime; auto-reconnects every 2 s on drop
   - `useWebSocket(onMessage?)` — returns `WsReadyState` ('connecting' | 'open' | 'closed'); callback is stable via ref (no need to memoize at call site)
   - Module-level `messageHandlers` / `stateHandlers` sets; connect/reconnect only while consumers are mounted
-- **`types/logEvent.ts`** — TypeScript types mirroring Go structs: `LogEvent`, `LogEventType`, all per-event `Data` types (`ZoneData`, `CombatHitData`, `CombatMissData`, `SpellCastData`, `SpellInterruptData`, `SpellResistData`, `SpellFadeData`, `DeathData`), `LogTailerStatus`
+- **`types/logEvent.ts`** — TypeScript types mirroring Go structs: `LogEvent`, `LogEventType` (all event types including `log:heal`), all per-event `Data` types (`ZoneData`, `CombatHitData`, `CombatMissData`, `SpellCastData`, `SpellInterruptData`, `SpellResistData`, `SpellFadeData`, `DeathData`, `HealData`), `LogTailerStatus`
 - **`services/api.ts`** — added `getLogStatus()` fetching `GET /api/log/status`
 - **`pages/LogFeedPage.tsx`** — live log event feed at `/log-feed`:
   - **Header**: title, event counter (`X / 200`), WebSocket connection pill (green/orange/gray), Clear button
   - **Status bar**: tailer state inline — disabled warning with Settings link, file-not-found warning with path, or green "Tailing" with file path
-  - **Event feed**: newest events at top; each row shows hh:mm:ss timestamp, color-coded type badge (blue=Zone, red=Hit, gray=Miss, purple=Cast, orange=Interrupt/Resist, teal=Fade, dark-red=Death), raw EQ log message in monospace; capped at 200 events
+  - **Event feed**: newest events at top; each row shows hh:mm:ss timestamp, color-coded type badge (blue=Zone, red=Hit, gray=Miss, purple=Cast, orange=Interrupt/Resist, teal=Fade, dark-red=Death, green=Heal), raw EQ log message in monospace; capped at 200 events
   - **Empty state**: activity icon + "Waiting for log events…" with setup instructions
 - **Sidebar** — new "Parsing" section with "Log Feed" (`Activity` icon) at `/log-feed`
 - **`App.tsx`** — `/log-feed` route wired up
