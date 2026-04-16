@@ -10,13 +10,11 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder",
-    "dist:mac": "npm run build && electron-builder --mac",
+    "dist": "npm run build && electron-builder --win",
     "dist:win": "npm run build && electron-builder --win",
     "typecheck": "tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json",
-    "build:backend": "cd backend && go build -ldflags=\"-s -w\" -o bin/pq-companion-server ./cmd/server",
-    "build:backend:win": "cd backend && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o bin/pq-companion-server.exe ./cmd/server",
-    "build:backend:mac": "cd backend && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags=\"-s -w\" -o bin/pq-companion-server ./cmd/server"
+    "build:backend": "cd backend && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o bin/pq-companion-server.exe ./cmd/server",
+    "build:backend:win": "cd backend && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o bin/pq-companion-server.exe ./cmd/server"
   },
   "dependencies": {
     "electron-updater": "^6.3.0",

@@ -10,21 +10,7 @@ files:
   - out/**/*
   - "!out/**/*.map"
 
-# ── macOS ─────────────────────────────────────────────────────────────────────
-mac:
-  category: public.app-category.utilities
-  target:
-    - target: dmg
-      arch: [x64, arm64]
-  extraResources:
-    # Go sidecar (unix, no extension)
-    - from: backend/bin/pq-companion-server
-      to: bin/pq-companion-server
-    # EQ game database — required at runtime
-    - from: backend/data/quarm.db
-      to: bin/data/quarm.db
-
-# ── Windows ───────────────────────────────────────────────────────────────────
+# ── Windows (only supported platform — EverQuest only runs on Windows) ────────
 win:
   target:
     - target: nsis
