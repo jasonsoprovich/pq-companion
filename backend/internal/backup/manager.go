@@ -17,26 +17,28 @@ import (
 )
 
 // Manager handles backup creation, restoration, and deletion.
-// Backups are zip archives stored under <eq_path>/backups/.
+// Backups are zip archives stored under <backupDir>/.
 // Metadata is persisted in a Store backed by user.db.
 type Manager struct {
-	store  *Store
-	cfgMgr *config.Manager
+	store     *Store
+	cfgMgr    *config.Manager
+	backupDir string
 }
 
 // NewManager opens (or creates) the user.db under ~/.pq-companion/ and
-// returns a ready Manager.
+// returns a ready Manager.  Backup archives are stored in <exe_dir>/backups/.
 func NewManager(cfgMgr *config.Manager) (*Manager, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("home dir: %w", err)
 	}
-	return NewManagerAt(cfgMgr, filepath.Join(home, ".pq-companion"))
+	return NewManagerAt(cfgMgr, filepath.Join(home, ".pq-companion"), exeBackupDir())
 }
 
-// NewManagerAt is like NewManager but uses baseDir as the root directory for
-// user.db.  Intended for testing.
-func NewManagerAt(cfgMgr *config.Manager, baseDir string) (*Manager, error) {
+// NewManagerAt is like NewManager but uses explicit directories.  baseDir is
+// the root for user.db; backupDir is where zip archives are written.
+// Intended for testing.
+func NewManagerAt(cfgMgr *config.Manager, baseDir, backupDir string) (*Manager, error) {
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create pq-companion dir: %w", err)
 	}
@@ -46,7 +48,16 @@ func NewManagerAt(cfgMgr *config.Manager, baseDir string) (*Manager, error) {
 		return nil, err
 	}
 
-	return &Manager{store: store, cfgMgr: cfgMgr}, nil
+	return &Manager{store: store, cfgMgr: cfgMgr, backupDir: backupDir}, nil
+}
+
+// exeBackupDir returns <exe_dir>/backups, falling back to "backups" for dev.
+func exeBackupDir() string {
+	exe, err := os.Executable()
+	if err == nil {
+		return filepath.Join(filepath.Dir(exe), "backups")
+	}
+	return "backups"
 }
 
 // Close releases the underlying database connection.
@@ -78,7 +89,7 @@ func (m *Manager) Create(name, notes string) (*Backup, error) {
 		return nil, fmt.Errorf("no *.ini files found in %s", eqPath)
 	}
 
-	backupDir := filepath.Join(eqPath, "backups")
+	backupDir := m.backupDir
 	if err := os.MkdirAll(backupDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create backups dir: %w", err)
 	}
@@ -121,8 +132,7 @@ func (m *Manager) Delete(id string) error {
 		return err
 	}
 
-	eqPath := m.cfgMgr.Get().EQPath
-	zipPath := filepath.Join(eqPath, "backups", id+".zip")
+	zipPath := filepath.Join(m.backupDir, id+".zip")
 	if err := os.Remove(zipPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove zip: %w", err)
 	}
@@ -149,7 +159,7 @@ func (m *Manager) Restore(id string) error {
 		return err
 	}
 
-	zipPath := filepath.Join(eqPath, "backups", id+".zip")
+	zipPath := filepath.Join(m.backupDir, id+".zip")
 	if err := extractZip(zipPath, eqPath); err != nil {
 		return fmt.Errorf("restore zip: %w", err)
 	}

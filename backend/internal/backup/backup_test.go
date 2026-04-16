@@ -138,7 +138,7 @@ func newTestManager(t *testing.T, eqPath string) *backup.Manager {
 		t.Fatalf("LoadFrom: %v", err)
 	}
 
-	bm, err := backup.NewManagerAt(mgr, base)
+	bm, err := backup.NewManagerAt(mgr, base, filepath.Join(base, "backups"))
 	if err != nil {
 		t.Fatalf("NewManagerAt: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestManagerCreateNoEQPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFrom: %v", err)
 	}
-	bm, err := backup.NewManagerAt(mgr, base)
+	bm, err := backup.NewManagerAt(mgr, base, filepath.Join(base, "backups"))
 	if err != nil {
 		t.Fatalf("NewManagerAt: %v", err)
 	}
