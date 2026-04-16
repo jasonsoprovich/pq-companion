@@ -139,7 +139,7 @@ export default function SettingsPage(): React.ReactElement {
           {config.eq_path && (
             <p className="mt-2 text-xs" style={{ color: 'var(--color-muted)' }}>
               Log file: <code style={{ color: 'var(--color-foreground)' }}>
-                {config.eq_path}/Logs/eqlog_{config.character || '<Character>'}_pq.proj.txt
+                {config.eq_path}/eqlog_{config.character || '<auto>'}_pq.proj.txt
               </code>
             </p>
           )}
@@ -157,7 +157,7 @@ export default function SettingsPage(): React.ReactElement {
             Character
           </h2>
           <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Your character name — used to locate the correct log file.
+            Optional. Leave blank to auto-select the most recently active log file. Set a name to override auto-selection (useful for testing).
           </p>
 
           <input

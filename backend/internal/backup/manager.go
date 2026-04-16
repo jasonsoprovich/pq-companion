@@ -17,16 +17,15 @@ import (
 )
 
 // Manager handles backup creation, restoration, and deletion.
-// Backups are zip archives stored under ~/.pq-companion/backups/.
+// Backups are zip archives stored under <eq_path>/backups/.
 // Metadata is persisted in a Store backed by user.db.
 type Manager struct {
-	store     *Store
-	backupDir string
-	cfgMgr    *config.Manager
+	store  *Store
+	cfgMgr *config.Manager
 }
 
-// NewManager opens (or creates) the user.db and backup directory under
-// ~/.pq-companion/ and returns a ready Manager.
+// NewManager opens (or creates) the user.db under ~/.pq-companion/ and
+// returns a ready Manager.
 func NewManager(cfgMgr *config.Manager) (*Manager, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -36,7 +35,7 @@ func NewManager(cfgMgr *config.Manager) (*Manager, error) {
 }
 
 // NewManagerAt is like NewManager but uses baseDir as the root directory for
-// user.db and the backups/ sub-directory.  Intended for testing.
+// user.db.  Intended for testing.
 func NewManagerAt(cfgMgr *config.Manager, baseDir string) (*Manager, error) {
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create pq-companion dir: %w", err)
@@ -47,13 +46,7 @@ func NewManagerAt(cfgMgr *config.Manager, baseDir string) (*Manager, error) {
 		return nil, err
 	}
 
-	backupDir := filepath.Join(baseDir, "backups")
-	if err := os.MkdirAll(backupDir, 0o755); err != nil {
-		store.Close()
-		return nil, fmt.Errorf("create backups dir: %w", err)
-	}
-
-	return &Manager{store: store, backupDir: backupDir, cfgMgr: cfgMgr}, nil
+	return &Manager{store: store, cfgMgr: cfgMgr}, nil
 }
 
 // Close releases the underlying database connection.
@@ -85,12 +78,17 @@ func (m *Manager) Create(name, notes string) (*Backup, error) {
 		return nil, fmt.Errorf("no *.ini files found in %s", eqPath)
 	}
 
+	backupDir := filepath.Join(eqPath, "backups")
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create backups dir: %w", err)
+	}
+
 	id, err := newID()
 	if err != nil {
 		return nil, err
 	}
 
-	zipPath := filepath.Join(m.backupDir, id+".zip")
+	zipPath := filepath.Join(backupDir, id+".zip")
 	sizeBytes, err := createZip(zipPath, files)
 	if err != nil {
 		return nil, fmt.Errorf("create zip: %w", err)
@@ -123,7 +121,8 @@ func (m *Manager) Delete(id string) error {
 		return err
 	}
 
-	zipPath := filepath.Join(m.backupDir, id+".zip")
+	eqPath := m.cfgMgr.Get().EQPath
+	zipPath := filepath.Join(eqPath, "backups", id+".zip")
 	if err := os.Remove(zipPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove zip: %w", err)
 	}
@@ -150,7 +149,7 @@ func (m *Manager) Restore(id string) error {
 		return err
 	}
 
-	zipPath := filepath.Join(m.backupDir, id+".zip")
+	zipPath := filepath.Join(eqPath, "backups", id+".zip")
 	if err := extractZip(zipPath, eqPath); err != nil {
 		return fmt.Errorf("restore zip: %w", err)
 	}

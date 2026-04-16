@@ -857,6 +857,14 @@ Design notes:
 - Frontend: character selector (populated from known Zeal export characters), text input + Add button, list of items with checkboxes, delete button per item, optional "hide completed" toggle
 - No categories, priorities, or due dates for v1 — just text + checkbox
 
+## v0.1.1 — File Location Fixes
+
+- **Log file path**: Removed `Logs/` subdirectory — EQ log files are in the root of the TAKPv22 game folder (`<eq_path>/eqlog_<CharName>_pq.proj.txt`)
+- **Auto log selection**: When character name is left blank in settings, the backend automatically selects the most recently modified `eqlog_*_pq.proj.txt` file in the EQ folder — no need to configure a character name during normal play. An explicit character name in settings overrides auto-selection (useful for testing/debugging).
+- **Zeal export paths**: Updated inventory and spellbook file name formats from `<CharName>_pq.proj-Inventory.txt` / `<CharName>_pq.proj-Spells.txt` to `<CharName>-Inventory.txt` / `<CharName>-Spellbook.txt`, and removed the `Logs/` subdirectory reference
+- **Backup location**: Backups now saved to `<eq_path>/backups/` (inside the game folder) instead of `~/.pq-companion/backups/`
+- **Version bump**: 0.1.0-beta.1 → 0.1.1
+
 ## Phase 11 — Project Website
 _Planned_
 

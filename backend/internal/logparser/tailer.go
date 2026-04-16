@@ -86,7 +86,11 @@ func (t *Tailer) Status() Status {
 	defer t.mu.Unlock()
 
 	cfg := t.cfgMgr.Get()
-	fp := logFilePath(cfg.EQPath, cfg.Character)
+	character := cfg.Character
+	if character == "" {
+		character = resolveActiveCharacter(cfg.EQPath)
+	}
+	fp := logFilePath(cfg.EQPath, character)
 	_, statErr := os.Stat(fp)
 
 	return Status{
@@ -107,11 +111,19 @@ type rawLine struct {
 // tick is the polling body. It is called every pollInterval and does all file I/O.
 func (t *Tailer) tick() {
 	cfg := t.cfgMgr.Get()
-	if !cfg.Preferences.ParseCombatLog || cfg.EQPath == "" || cfg.Character == "" {
+	if !cfg.Preferences.ParseCombatLog || cfg.EQPath == "" {
 		return
 	}
 
-	logPath := logFilePath(cfg.EQPath, cfg.Character)
+	character := cfg.Character
+	if character == "" {
+		character = resolveActiveCharacter(cfg.EQPath)
+		if character == "" {
+			return
+		}
+	}
+
+	logPath := logFilePath(cfg.EQPath, character)
 
 	// Collect events and raw lines while the mutex is held, then dispatch without it.
 	var events []LogEvent
@@ -256,10 +268,46 @@ func (t *Tailer) closeFile() {
 }
 
 // logFilePath returns the full path to the EQ log file for the given character.
-// EQ log files live at: <EQ_DIR>/Logs/eqlog_<CharName>_pq.proj.txt
+// EQ log files live at: <EQ_DIR>/eqlog_<CharName>_pq.proj.txt
 func logFilePath(eqPath, character string) string {
 	if eqPath == "" || character == "" {
 		return ""
 	}
-	return filepath.Join(eqPath, "Logs", "eqlog_"+character+"_pq.proj.txt")
+	return filepath.Join(eqPath, "eqlog_"+character+"_pq.proj.txt")
+}
+
+// resolveActiveCharacter scans eqPath for eqlog_*_pq.proj.txt files and
+// returns the character name from the most recently modified file.
+// Returns empty string if no log files are found.
+func resolveActiveCharacter(eqPath string) string {
+	if eqPath == "" {
+		return ""
+	}
+	pattern := filepath.Join(eqPath, "eqlog_*_pq.proj.txt")
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		return ""
+	}
+
+	var newest string
+	var newestTime time.Time
+	for _, path := range matches {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(newestTime) {
+			newestTime = info.ModTime()
+			newest = path
+		}
+	}
+	if newest == "" {
+		return ""
+	}
+
+	base := filepath.Base(newest)
+	// Strip "eqlog_" prefix and "_pq.proj.txt" suffix.
+	name := strings.TrimPrefix(base, "eqlog_")
+	name = strings.TrimSuffix(name, "_pq.proj.txt")
+	return name
 }

@@ -3,6 +3,9 @@ package zeal
 import (
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -96,15 +99,54 @@ func (w *Watcher) AllInventories() (*AllInventoriesResponse, error) {
 // check reads current config and re-parses files if their mod times have changed.
 func (w *Watcher) check() {
 	cfg := w.cfgMgr.Get()
-	if cfg.EQPath == "" || cfg.Character == "" {
+	if cfg.EQPath == "" {
 		return
 	}
 
-	invPath := InventoryPath(cfg.EQPath, cfg.Character)
-	spellPath := SpellbookPath(cfg.EQPath, cfg.Character)
+	character := cfg.Character
+	if character == "" {
+		character = resolveActiveCharacter(cfg.EQPath)
+		if character == "" {
+			return
+		}
+	}
 
-	w.checkInventory(invPath, cfg.Character)
-	w.checkSpellbook(spellPath, cfg.Character)
+	invPath := InventoryPath(cfg.EQPath, character)
+	spellPath := SpellbookPath(cfg.EQPath, character)
+
+	w.checkInventory(invPath, character)
+	w.checkSpellbook(spellPath, character)
+}
+
+// resolveActiveCharacter scans eqPath for eqlog_*_pq.proj.txt files and
+// returns the character name from the most recently modified file.
+func resolveActiveCharacter(eqPath string) string {
+	pattern := filepath.Join(eqPath, "eqlog_*_pq.proj.txt")
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		return ""
+	}
+
+	var newest string
+	var newestTime time.Time
+	for _, path := range matches {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(newestTime) {
+			newestTime = info.ModTime()
+			newest = path
+		}
+	}
+	if newest == "" {
+		return ""
+	}
+
+	base := filepath.Base(newest)
+	name := strings.TrimPrefix(base, "eqlog_")
+	name = strings.TrimSuffix(name, "_pq.proj.txt")
+	return name
 }
 
 func (w *Watcher) checkInventory(path, character string) {

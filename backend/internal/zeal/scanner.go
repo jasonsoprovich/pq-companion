@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// inventoryFileRe matches "<CharName>_pq.proj-Inventory.txt" and captures the character name.
-var inventoryFileRe = regexp.MustCompile(`(?i)^(.+?)_pq\.proj-Inventory\.txt$`)
+// inventoryFileRe matches "<CharName>-Inventory.txt" and captures the character name.
+var inventoryFileRe = regexp.MustCompile(`(?i)^(.+?)-Inventory\.txt$`)
 
 // ScanAllInventories discovers and parses every Zeal inventory export in eqPath.
 //
@@ -16,7 +16,7 @@ var inventoryFileRe = regexp.MustCompile(`(?i)^(.+?)_pq\.proj-Inventory\.txt$`)
 //   - chars: one *Inventory per discovered file, with SharedBank entries removed
 //   - sharedBank: the SharedBank entries from the most-recently-modified export file
 func ScanAllInventories(eqPath string) ([]*Inventory, []InventoryEntry, error) {
-	pattern := filepath.Join(eqPath, "*_pq.proj-Inventory.txt")
+	pattern := filepath.Join(eqPath, "*-Inventory.txt")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, nil, err

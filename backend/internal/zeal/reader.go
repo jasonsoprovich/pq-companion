@@ -11,15 +11,15 @@ import (
 )
 
 // InventoryPath returns the expected Zeal inventory export path for a character.
-// Zeal writes: <eq_path>/<CharName>_pq.proj-Inventory.txt
+// Zeal writes: <eq_path>/<CharName>-Inventory.txt
 func InventoryPath(eqPath, character string) string {
-	return filepath.Join(eqPath, fmt.Sprintf("%s_pq.proj-Inventory.txt", character))
+	return filepath.Join(eqPath, fmt.Sprintf("%s-Inventory.txt", character))
 }
 
 // SpellbookPath returns the expected Zeal spellbook export path for a character.
-// Zeal writes: <eq_path>/<CharName>_pq.proj-Spells.txt
+// Zeal writes: <eq_path>/<CharName>-Spellbook.txt
 func SpellbookPath(eqPath, character string) string {
-	return filepath.Join(eqPath, fmt.Sprintf("%s_pq.proj-Spells.txt", character))
+	return filepath.Join(eqPath, fmt.Sprintf("%s-Spellbook.txt", character))
 }
 
 // ParseInventory reads and parses a Zeal inventory export file.

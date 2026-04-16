@@ -144,7 +144,7 @@ func TestParseSpellbook_Deduplication(t *testing.T) {
 
 func TestInventoryPath(t *testing.T) {
 	got := InventoryPath("/eq", "Aradune")
-	want := filepath.Join("/eq", "Aradune_pq.proj-Inventory.txt")
+	want := filepath.Join("/eq", "Aradune-Inventory.txt")
 	if got != want {
 		t.Errorf("InventoryPath = %q, want %q", got, want)
 	}
@@ -152,7 +152,7 @@ func TestInventoryPath(t *testing.T) {
 
 func TestSpellbookPath(t *testing.T) {
 	got := SpellbookPath("/eq", "Aradune")
-	want := filepath.Join("/eq", "Aradune_pq.proj-Spells.txt")
+	want := filepath.Join("/eq", "Aradune-Spellbook.txt")
 	if got != want {
 		t.Errorf("SpellbookPath = %q, want %q", got, want)
 	}
