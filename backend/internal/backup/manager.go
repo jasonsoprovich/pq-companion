@@ -2,6 +2,7 @@ package backup
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -76,6 +77,11 @@ func (m *Manager) Get(id string) (*Backup, error) {
 // Create zips all *.ini files found in the configured EQ directory and records
 // the backup in user.db.  name and notes are free-form strings from the caller.
 func (m *Manager) Create(name, notes string) (*Backup, error) {
+	return m.create(name, notes, TriggerManual)
+}
+
+// create is the internal implementation; triggerReason is one of the Trigger* constants.
+func (m *Manager) create(name, notes, triggerReason string) (*Backup, error) {
 	eqPath := m.cfgMgr.Get().EQPath
 	if eqPath == "" {
 		return nil, errors.New("eq_path is not configured")
@@ -106,21 +112,161 @@ func (m *Manager) Create(name, notes string) (*Backup, error) {
 	}
 
 	b := &Backup{
-		ID:        id,
-		Name:      name,
-		Notes:     notes,
-		CreatedAt: time.Now().UTC(),
-		SizeBytes: sizeBytes,
-		FileCount: len(files),
+		ID:            id,
+		Name:          name,
+		Notes:         notes,
+		CreatedAt:     time.Now().UTC(),
+		SizeBytes:     sizeBytes,
+		FileCount:     len(files),
+		TriggerReason: triggerReason,
 	}
 	if err := m.store.Insert(b); err != nil {
-		// Best-effort cleanup of the zip if the DB write fails.
 		_ = os.Remove(zipPath)
 		return nil, err
 	}
 
-	slog.Info("backup created", "id", id, "files", len(files), "size", sizeBytes)
+	slog.Info("backup created", "id", id, "trigger", triggerReason, "files", len(files), "size", sizeBytes)
+
+	// Enforce retention limit after each creation.
+	cfg := m.cfgMgr.Get()
+	if cfg.Backup.MaxBackups > 0 {
+		if _, err := m.Prune(cfg.Backup.MaxBackups); err != nil {
+			slog.Warn("prune after create failed", "err", err)
+		}
+	}
 	return b, nil
+}
+
+// Lock marks a backup as protected from automatic cleanup.
+func (m *Manager) Lock(id string) error {
+	if _, err := m.store.Get(id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("backup %s: %w", id, ErrNotFound)
+		}
+		return err
+	}
+	return m.store.SetLocked(id, true)
+}
+
+// Unlock removes the protection flag from a backup.
+func (m *Manager) Unlock(id string) error {
+	if _, err := m.store.Get(id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("backup %s: %w", id, ErrNotFound)
+		}
+		return err
+	}
+	return m.store.SetLocked(id, false)
+}
+
+// Prune deletes the oldest unlocked backups so the total does not exceed
+// maxBackups.  Returns the number of backups deleted.
+func (m *Manager) Prune(maxBackups int) (int, error) {
+	if maxBackups <= 0 {
+		return 0, nil
+	}
+	total, err := m.store.Count()
+	if err != nil {
+		return 0, fmt.Errorf("count backups: %w", err)
+	}
+	excess := total - maxBackups
+	if excess <= 0 {
+		return 0, nil
+	}
+	ids, err := m.store.OldestUnlocked(excess)
+	if err != nil {
+		return 0, fmt.Errorf("oldest unlocked: %w", err)
+	}
+	deleted := 0
+	for _, id := range ids {
+		if err := m.Delete(id); err != nil {
+			slog.Warn("prune: delete failed", "id", id, "err", err)
+			continue
+		}
+		deleted++
+	}
+	if deleted > 0 {
+		slog.Info("backup prune", "deleted", deleted, "max", maxBackups)
+	}
+	return deleted, nil
+}
+
+// StartWatcher monitors *.ini files in the configured EQ directory for
+// modifications and creates an auto-backup whenever changes are detected.
+// It polls every 60 seconds.  The caller must hold cfgMgr.AutoBackup = true.
+func (m *Manager) StartWatcher(ctx context.Context) {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	// Track last-seen modification times.
+	lastMod := map[string]time.Time{}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cfg := m.cfgMgr.Get()
+			if !cfg.Backup.AutoBackup || cfg.EQPath == "" {
+				continue
+			}
+			files, _ := filepath.Glob(filepath.Join(cfg.EQPath, "*.ini"))
+			changed := false
+			for _, f := range files {
+				info, err := os.Stat(f)
+				if err != nil {
+					continue
+				}
+				if prev, ok := lastMod[f]; !ok || info.ModTime().After(prev) {
+					lastMod[f] = info.ModTime()
+					if ok {
+						changed = true
+					}
+				}
+			}
+			if changed {
+				name := "Auto-backup " + time.Now().UTC().Format("2006-01-02 15:04")
+				if _, err := m.create(name, "", TriggerAuto); err != nil {
+					slog.Warn("auto-backup failed", "err", err)
+				}
+			}
+		}
+	}
+}
+
+// StartScheduler creates periodic backups according to the configured schedule
+// ("hourly" or "daily").  Runs until ctx is cancelled.
+func (m *Manager) StartScheduler(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
+	lastRun := time.Time{}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			cfg := m.cfgMgr.Get()
+			var interval time.Duration
+			switch cfg.Backup.Schedule {
+			case "hourly":
+				interval = time.Hour
+			case "daily":
+				interval = 24 * time.Hour
+			default:
+				lastRun = time.Time{} // reset so it fires immediately when re-enabled
+				continue
+			}
+			if lastRun.IsZero() || now.Sub(lastRun) >= interval {
+				lastRun = now
+				name := "Scheduled " + now.UTC().Format("2006-01-02 15:04")
+				if _, err := m.create(name, "", TriggerScheduled); err != nil {
+					slog.Warn("scheduled backup failed", "err", err)
+				}
+			}
+		}
+	}
 }
 
 // Delete removes a backup's zip archive and its database record.

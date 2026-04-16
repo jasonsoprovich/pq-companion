@@ -59,6 +59,8 @@ func main() {
 		os.Exit(1)
 	}
 	defer backupMgr.Close()
+	go backupMgr.StartWatcher(context.Background())
+	go backupMgr.StartScheduler(context.Background())
 
 	// Trigger store: uses the same user.db as the backup manager but opens its
 	// own connection (WAL mode handles concurrent access safely).

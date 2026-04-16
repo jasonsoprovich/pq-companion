@@ -276,3 +276,87 @@ func TestManagerRestoreNotFound(t *testing.T) {
 		t.Fatal("expected error restoring nonexistent backup")
 	}
 }
+
+func TestManagerLockUnlock(t *testing.T) {
+	eqDir := t.TempDir()
+	os.WriteFile(filepath.Join(eqDir, "eqclient.ini"), []byte("[foo]\n"), 0o644)
+
+	bm := newTestManager(t, eqDir)
+	b, err := bm.Create("lock test", "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if err := bm.Lock(b.ID); err != nil {
+		t.Fatalf("Lock: %v", err)
+	}
+	got, _ := bm.Get(b.ID)
+	if !got.Locked {
+		t.Error("expected locked=true after Lock")
+	}
+
+	if err := bm.Unlock(b.ID); err != nil {
+		t.Fatalf("Unlock: %v", err)
+	}
+	got, _ = bm.Get(b.ID)
+	if got.Locked {
+		t.Error("expected locked=false after Unlock")
+	}
+}
+
+func TestManagerPrune(t *testing.T) {
+	eqDir := t.TempDir()
+	os.WriteFile(filepath.Join(eqDir, "eqclient.ini"), []byte("[foo]\n"), 0o644)
+
+	bm := newTestManager(t, eqDir)
+
+	// Create 5 backups.
+	var ids []string
+	for i := 0; i < 5; i++ {
+		b, err := bm.Create("backup", "")
+		if err != nil {
+			t.Fatalf("Create %d: %v", i, err)
+		}
+		ids = append(ids, b.ID)
+	}
+
+	// Lock the first one — it should survive pruning.
+	if err := bm.Lock(ids[0]); err != nil {
+		t.Fatalf("Lock: %v", err)
+	}
+
+	// Prune to max 3; 2 oldest unlocked should be deleted (ids[1] and ids[2]).
+	deleted, err := bm.Prune(3)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+	if deleted != 2 {
+		t.Errorf("deleted: got %d, want 2", deleted)
+	}
+
+	list, _ := bm.List()
+	if len(list) != 3 {
+		t.Errorf("remaining: got %d, want 3", len(list))
+	}
+	// The locked backup must still be present.
+	for _, b := range list {
+		if b.ID == ids[0] {
+			return
+		}
+	}
+	t.Error("locked backup was deleted during prune")
+}
+
+func TestManagerTriggerReason(t *testing.T) {
+	eqDir := t.TempDir()
+	os.WriteFile(filepath.Join(eqDir, "eqclient.ini"), []byte("[foo]\n"), 0o644)
+
+	bm := newTestManager(t, eqDir)
+	b, err := bm.Create("manual", "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if b.TriggerReason != backup.TriggerManual {
+		t.Errorf("trigger_reason: got %q, want %q", b.TriggerReason, backup.TriggerManual)
+	}
+}

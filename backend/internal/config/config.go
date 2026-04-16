@@ -27,6 +27,22 @@ type Config struct {
 
 	// Preferences holds UI and overlay preferences.
 	Preferences Preferences `yaml:"preferences" json:"preferences"`
+
+	// Backup holds backup manager settings.
+	Backup BackupSettings `yaml:"backup" json:"backup"`
+}
+
+// BackupSettings configures automatic backup behaviour.
+type BackupSettings struct {
+	// AutoBackup enables file-watcher-triggered backups when *.ini files change.
+	AutoBackup bool `yaml:"auto_backup" json:"auto_backup"`
+
+	// Schedule controls periodic backups: "off", "hourly", or "daily".
+	Schedule string `yaml:"schedule" json:"schedule"`
+
+	// MaxBackups is the maximum number of backups to retain (0 = unlimited).
+	// When exceeded, the oldest unlocked backups are deleted automatically.
+	MaxBackups int `yaml:"max_backups" json:"max_backups"`
 }
 
 // Preferences holds optional UI and overlay settings.
@@ -57,6 +73,11 @@ func defaults() Config {
 			ParseCombatLog:    true,
 			OverlayDPSEnabled: true,
 			OverlayHPSEnabled: false,
+		},
+		Backup: BackupSettings{
+			AutoBackup: false,
+			Schedule:   "off",
+			MaxBackups: 10,
 		},
 	}
 }

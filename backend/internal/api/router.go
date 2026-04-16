@@ -90,9 +90,12 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		r.Route("/backups", func(r chi.Router) {
 			r.Get("/", backupH.list)
 			r.Post("/", backupH.create)
+			r.Post("/prune", backupH.prune)
 			r.Get("/{id}", backupH.get)
 			r.Delete("/{id}", backupH.delete)
 			r.Post("/{id}/restore", backupH.restore)
+			r.Put("/{id}/lock", backupH.lock)
+			r.Put("/{id}/unlock", backupH.unlock)
 		})
 		r.Route("/log", func(r chi.Router) {
 			r.Get("/status", logH.status)

@@ -93,3 +93,48 @@ func (h *backupHandler) restore(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "restored"})
 }
+
+// lock handles PUT /api/backups/{id}/lock.
+func (h *backupHandler) lock(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.mgr.Lock(id); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, backup.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		http.Error(w, `{"error":"`+err.Error()+`"}`, status)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "locked"})
+}
+
+// unlock handles PUT /api/backups/{id}/unlock.
+func (h *backupHandler) unlock(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.mgr.Unlock(id); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, backup.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		http.Error(w, `{"error":"`+err.Error()+`"}`, status)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "unlocked"})
+}
+
+// prune handles POST /api/backups/prune — body: {"max_backups": N}.
+func (h *backupHandler) prune(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		MaxBackups int `json:"max_backups"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.MaxBackups <= 0 {
+		http.Error(w, `{"error":"max_backups must be a positive integer"}`, http.StatusBadRequest)
+		return
+	}
+	deleted, err := h.mgr.Prune(req.MaxBackups)
+	if err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]int{"deleted": deleted})
+}

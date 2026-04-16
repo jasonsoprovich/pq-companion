@@ -194,6 +194,18 @@ export function restoreBackup(id: string): Promise<void> {
   return post<void>(`/api/backups/${encodeURIComponent(id)}/restore`)
 }
 
+export function lockBackup(id: string): Promise<void> {
+  return put<void>(`/api/backups/${encodeURIComponent(id)}/lock`, {})
+}
+
+export function unlockBackup(id: string): Promise<void> {
+  return put<void>(`/api/backups/${encodeURIComponent(id)}/unlock`, {})
+}
+
+export function pruneBackups(maxBackups: number): Promise<{ deleted: number }> {
+  return post<{ deleted: number }>('/api/backups/prune', { max_backups: maxBackups })
+}
+
 // ── Log Parser ─────────────────────────────────────────────────────────────────
 
 export function getLogStatus(): Promise<LogTailerStatus> {
