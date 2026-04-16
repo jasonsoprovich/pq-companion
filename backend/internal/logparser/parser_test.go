@@ -178,6 +178,19 @@ func TestParseLine(t *testing.T) {
 			wantType: EventCombatHit,
 			wantData: CombatHitData{Actor: "Guildmate", Skill: "pierces", Target: "a young gnoll", Damage: 30},
 		},
+		// A multi-word NPC acting as the source (e.g. a pet or NPC fighting another NPC)
+		// must NOT be parsed — the regex would capture only "a"/"an"/"the" as the actor,
+		// producing a spurious DPS entry for the bare article.
+		{
+			name:   "combat: multi-word NPC actor not parsed as third-party",
+			line:   "[Mon Apr 13 06:00:00 2026] a fire elemental slashes a gnoll for 80 points of damage.",
+			wantOK: false,
+		},
+		{
+			name:   "combat: 'an' prefix NPC actor not parsed as third-party",
+			line:   "[Mon Apr 13 06:00:00 2026] an orc warrior bashes a gnoll for 60 points of damage.",
+			wantOK: false,
+		},
 
 		// --- Combat: misses ---
 		{

@@ -240,9 +240,11 @@ func classifyMessage(msg string) (LogEvent, bool) {
 	// --- Third-party hit (other players hitting NPCs, etc.) ---
 	// Checked after all player/NPC-specific patterns to avoid false matches.
 	if m := reThirdPartyHit.FindStringSubmatch(msg); m != nil {
-		// Guard: skip if actor is "You" (reYouHit already handled it) or if
-		// the target contains "you" (reNPCHitYou already handled it).
-		if m[1] != "You" && !strings.EqualFold(m[3], "you") {
+		// Guard: skip if actor is "You" (reYouHit already handled it), if the
+		// target contains "you" (reNPCHitYou already handled it), or if the
+		// actor is a bare article ("a", "an", "the") — this means the regex
+		// captured only the first word of a multi-word NPC name.
+		if m[1] != "You" && !strings.EqualFold(m[3], "you") && !isArticle(m[1]) {
 			dmg, _ := strconv.Atoi(m[4])
 			return LogEvent{
 				Type: EventCombatHit,
@@ -311,4 +313,15 @@ func extractVerb(msg, actor string) string {
 		return ""
 	}
 	return fields[0]
+}
+
+// isArticle reports whether word is a bare English article (a, an, the).
+// Used to prevent the third-party hit regex from misparsing multi-word NPC
+// names where only the leading article is captured as the actor.
+func isArticle(word string) bool {
+	switch strings.ToLower(word) {
+	case "a", "an", "the":
+		return true
+	}
+	return false
 }

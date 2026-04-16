@@ -380,7 +380,7 @@
 - **`cmd/server/main.go`** — `combat.NewTracker(hub)` instantiated; `combatTracker.Handle(ev)` called in the log-tailer event handler alongside the existing `npcTracker.Handle(ev)`
 
 ### Task 5.2 — DPS Overlay ✅
-- **Log parser extended** (`internal/logparser/parser.go`) — added `reThirdPartyHit` regex to capture other players dealing damage: `"Playername verb target for N points of damage."` — checked after player/NPC-specific patterns to prevent false matches; guards skip if actor is `"You"` or target contains `"you"` (already handled by prior patterns)
+- **Log parser extended** (`internal/logparser/parser.go`) — added `reThirdPartyHit` regex to capture other players dealing damage: `"Playername verb target for N points of damage."` — checked after player/NPC-specific patterns to prevent false matches; guards skip if actor is `"You"` or target contains `"you"` (already handled by prior patterns); also skips if actor is a bare English article (`"a"`, `"an"`, `"the"`) to prevent multi-word NPC names (e.g. `"a fire elemental"`) from injecting a spurious `"a"` entry into the DPS table (fixes #42)
 - **`types/combat.ts`** — TypeScript types mirroring Go structs: `EntityStats`, `FightState`, `FightSummary`, `CombatState` with all new `YouDamage`/`YouDPS` fields
 - **`services/api.ts`** — added `getCombatState()` → `GET /api/overlay/combat`
 - **`components/OverlayWindow.tsx`** — reusable draggable/resizable floating panel component:
