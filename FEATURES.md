@@ -439,6 +439,20 @@
 - **`components/Sidebar.tsx`** — added `Combat Log` nav entry (`ScrollText` icon) after DPS Overlay in the Parsing section
 - **`App.tsx`** — added `/combat-log` route
 
+### Issue #47 — Combat Log Filtering ✅
+- **`internal/combat/tracker.go`** — added `Reset()` method: stops the inactivity timer, clears active fight, resets all aggregates and death records, then broadcasts the empty state
+- **`internal/api/combat.go`** — added `reset` handler for `POST /api/combat/reset` (returns 204 No Content)
+- **`internal/api/router.go`** — registered `POST /api/combat/reset` under `/api/combat/reset`
+- **`services/api.ts`** — added `resetCombatState()` typed API call
+- **`pages/CombatLogPage.tsx`** — added filter bar with:
+  - Combatant name search (text input) — filters fights to those containing a matching combatant
+  - Time range selector (All / Last 30m / Last 1h / Last 2h) — hides fights outside the window
+  - "Me only" toggle — shows only fights where the player dealt damage (`you_damage > 0`)
+  - Export CSV button — downloads visible fights with per-combatant breakdown
+  - Clear button — calls `POST /api/combat/reset` to wipe all fight history and session totals
+  - Filter badge in header ("N / M fights") when any filter is active
+  - Contextual empty-state message distinguishing no fights vs. no matching fights
+
 ### Issue #48 — Death Tracker (Combat Log tab) ✅
 - **`internal/logparser/parser.go`** — added `reDiedSimple` regex (`^You died\.$`) emitting `EventDeath` with empty `SlainBy` (complements the existing `reDeath` "slain by" pattern)
 - **`internal/combat/models.go`** — added `DeathRecord` struct (`Timestamp`, `Zone`, `SlainBy`); added `Deaths []DeathRecord` and `DeathCount int` to `CombatState`

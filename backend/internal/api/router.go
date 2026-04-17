@@ -105,6 +105,9 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/combat", combatH.state)
 			r.Get("/timers", timerH.state)
 		})
+		r.Route("/combat", func(r chi.Router) {
+			r.Post("/reset", combatH.reset)
+		})
 		r.Route("/triggers", func(r chi.Router) {
 			r.Get("/", triggerH.list)
 			r.Post("/", triggerH.create)

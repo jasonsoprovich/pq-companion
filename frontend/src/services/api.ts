@@ -222,6 +222,10 @@ export function getCombatState(): Promise<CombatState> {
   return get<CombatState>('/api/overlay/combat')
 }
 
+export function resetCombatState(): Promise<void> {
+  return post<void>('/api/combat/reset')
+}
+
 export function getTimerState(): Promise<TimerState> {
   return get<TimerState>('/api/overlay/timers')
 }

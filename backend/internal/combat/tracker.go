@@ -122,6 +122,26 @@ func (t *Tracker) GetState() CombatState {
 	return t.snapshot(time.Now())
 }
 
+// Reset clears all fight history, session aggregates, and death records,
+// returning the tracker to a clean state without restarting the process.
+func (t *Tracker) Reset() {
+	t.mu.Lock()
+	if t.endTimer != nil {
+		t.endTimer.Stop()
+		t.endTimer = nil
+	}
+	t.active = nil
+	t.recentFights = []FightSummary{}
+	t.sessionDamage = 0
+	t.sessionFightTime = 0
+	t.sessionHeal = 0
+	t.deaths = []DeathRecord{}
+	snap := t.snapshot(time.Now())
+	t.mu.Unlock()
+
+	t.broadcast(snap)
+}
+
 // ── internal helpers ──────────────────────────────────────────────────────────
 
 func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {

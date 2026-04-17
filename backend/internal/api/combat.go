@@ -15,3 +15,10 @@ type combatHandler struct {
 func (h *combatHandler) state(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.tracker.GetState())
 }
+
+// reset handles POST /api/combat/reset.
+// Clears all fight history, session totals, and deaths from the tracker.
+func (h *combatHandler) reset(w http.ResponseWriter, r *http.Request) {
+	h.tracker.Reset()
+	w.WriteHeader(http.StatusNoContent)
+}

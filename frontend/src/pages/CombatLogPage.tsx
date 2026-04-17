@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ScrollText,
   ChevronDown,
@@ -7,9 +7,12 @@ import {
   Circle,
   CheckCircle2,
   Skull,
+  Search,
+  Download,
+  Trash2,
 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { getCombatState, getLogStatus } from '../services/api'
+import { getCombatState, getLogStatus, resetCombatState } from '../services/api'
 import type { CombatState, DeathRecord, EntityStats, FightSummary } from '../types/combat'
 import type { LogTailerStatus } from '../types/logEvent'
 
@@ -434,11 +437,224 @@ function SessionFooter({ combat }: { combat: CombatState }): React.ReactElement 
   )
 }
 
+// ── Filter bar ─────────────────────────────────────────────────────────────────
+
+type TimeRange = 'all' | '30m' | '1h' | '2h'
+
+interface FilterState {
+  search: string
+  timeRange: TimeRange
+  meOnly: boolean
+}
+
+function FilterBar({
+  filters,
+  onChange,
+  onClear,
+  onExport,
+}: {
+  filters: FilterState
+  onChange: (f: FilterState) => void
+  onClear: () => void
+  onExport: () => void
+}): React.ReactElement {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '6px 14px',
+        borderBottom: '1px solid var(--color-border)',
+        backgroundColor: 'var(--color-surface-2)',
+        flexShrink: 0,
+        flexWrap: 'wrap',
+      }}
+    >
+      {/* Search input */}
+      <div style={{ position: 'relative', flex: '1 1 140px', minWidth: 120, maxWidth: 220 }}>
+        <Search
+          size={11}
+          style={{
+            position: 'absolute',
+            left: 7,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            color: 'var(--color-muted)',
+            pointerEvents: 'none',
+          }}
+        />
+        <input
+          type="text"
+          placeholder="Search combatants…"
+          value={filters.search}
+          onChange={(e) => onChange({ ...filters, search: e.target.value })}
+          style={{
+            width: '100%',
+            paddingLeft: 24,
+            paddingRight: 8,
+            paddingTop: 4,
+            paddingBottom: 4,
+            fontSize: 11,
+            background: 'var(--color-background)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4,
+            color: 'var(--color-foreground)',
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+      </div>
+
+      {/* Time range */}
+      <select
+        value={filters.timeRange}
+        onChange={(e) => onChange({ ...filters, timeRange: e.target.value as TimeRange })}
+        style={{
+          padding: '4px 6px',
+          fontSize: 11,
+          background: 'var(--color-background)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 4,
+          color: 'var(--color-foreground)',
+          cursor: 'pointer',
+        }}
+      >
+        <option value="all">All time</option>
+        <option value="30m">Last 30m</option>
+        <option value="1h">Last 1h</option>
+        <option value="2h">Last 2h</option>
+      </select>
+
+      {/* Me only toggle */}
+      <button
+        onClick={() => onChange({ ...filters, meOnly: !filters.meOnly })}
+        style={{
+          padding: '4px 8px',
+          fontSize: 11,
+          background: filters.meOnly ? 'var(--color-primary)' : 'var(--color-background)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 4,
+          color: filters.meOnly ? '#000' : 'var(--color-foreground)',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        Me only
+      </button>
+
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+        {/* Export */}
+        <button
+          onClick={onExport}
+          title="Export visible fights as CSV"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 8px',
+            fontSize: 11,
+            background: 'var(--color-background)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4,
+            color: 'var(--color-muted)',
+            cursor: 'pointer',
+          }}
+        >
+          <Download size={11} /> Export
+        </button>
+
+        {/* Clear */}
+        <button
+          onClick={onClear}
+          title="Clear combat log"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 8px',
+            fontSize: 11,
+            background: 'var(--color-background)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4,
+            color: '#ef4444',
+            cursor: 'pointer',
+          }}
+        >
+          <Trash2 size={11} /> Clear
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Filter logic ───────────────────────────────────────────────────────────────
+
+function applyFilters(fights: FightSummary[], filters: FilterState): FightSummary[] {
+  let result = fights
+
+  if (filters.timeRange !== 'all') {
+    const minutes = filters.timeRange === '30m' ? 30 : filters.timeRange === '1h' ? 60 : 120
+    const cutoff = Date.now() - minutes * 60 * 1000
+    result = result.filter((f) => new Date(f.start_time).getTime() >= cutoff)
+  }
+
+  if (filters.meOnly) {
+    result = result.filter((f) => f.you_damage > 0)
+  }
+
+  const query = filters.search.trim().toLowerCase()
+  if (query) {
+    result = result.filter((f) =>
+      f.combatants.some((c) => c.name.toLowerCase().includes(query))
+    )
+  }
+
+  return result
+}
+
+// ── Export helpers ─────────────────────────────────────────────────────────────
+
+function exportFightsCSV(fights: FightSummary[]): void {
+  const rows: string[] = [
+    'Fight,Start Time,Duration (s),Total Damage,Total DPS,My Damage,My DPS,Combatant,Combatant Damage,Combatant DPS,Combatant Max Hit',
+  ]
+
+  fights.forEach((f, i) => {
+    const fightNum = fights.length - i
+    const baseRow = [
+      fightNum,
+      f.start_time,
+      f.duration_seconds.toFixed(1),
+      f.total_damage,
+      f.total_dps.toFixed(1),
+      f.you_damage,
+      f.you_dps.toFixed(1),
+    ]
+    if (f.combatants.length === 0) {
+      rows.push([...baseRow, '', '', '', ''].join(','))
+    } else {
+      f.combatants.forEach((c) => {
+        rows.push([...baseRow, c.name, c.total_damage, c.dps.toFixed(1), c.max_hit].join(','))
+      })
+    }
+  })
+
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `combat-log-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function CombatLogPage(): React.ReactElement {
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
+  const [filters, setFilters] = useState<FilterState>({ search: '', timeRange: 'all', meOnly: false })
 
   useEffect(() => {
     getCombatState().then(setCombat).catch(() => {})
@@ -453,8 +669,21 @@ export default function CombatLogPage(): React.ReactElement {
 
   useWebSocket(handleMessage)
 
-  const fights = combat?.recent_fights ?? []
+  const allFights = combat?.recent_fights ?? []
   const deaths = combat?.deaths ?? []
+
+  const visibleFights = useMemo(() => applyFilters(allFights, filters), [allFights, filters])
+
+  const handleClear = useCallback(() => {
+    resetCombatState().catch(() => {})
+  }, [])
+
+  const handleExport = useCallback(() => {
+    exportFightsCSV(visibleFights)
+  }, [visibleFights])
+
+  const isFiltered =
+    filters.search !== '' || filters.timeRange !== 'all' || filters.meOnly
 
   return (
     <div className="flex h-full flex-col overflow-hidden" style={{ backgroundColor: 'var(--color-background)' }}>
@@ -473,13 +702,22 @@ export default function CombatLogPage(): React.ReactElement {
               className="rounded px-1.5 py-0.5 text-[10px]"
               style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}
             >
-              {fights.length} fight{fights.length !== 1 ? 's' : ''}
+              {isFiltered
+                ? `${visibleFights.length} / ${allFights.length} fight${allFights.length !== 1 ? 's' : ''}`
+                : `${allFights.length} fight${allFights.length !== 1 ? 's' : ''}`}
             </span>
           )}
         </div>
       </div>
 
       <StatusBar status={status} />
+
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        onClear={handleClear}
+        onExport={handleExport}
+      />
 
       {combat === null ? (
         <div
@@ -492,7 +730,7 @@ export default function CombatLogPage(): React.ReactElement {
         >
           <p style={{ fontSize: 12, color: 'var(--color-muted)' }}>Loading…</p>
         </div>
-      ) : fights.length === 0 ? (
+      ) : visibleFights.length === 0 ? (
         <>
           <div
             style={{
@@ -506,9 +744,13 @@ export default function CombatLogPage(): React.ReactElement {
             }}
           >
             <ScrollText size={32} style={{ opacity: 0.3 }} />
-            <p style={{ fontSize: 12, margin: 0 }}>No completed fights yet</p>
+            <p style={{ fontSize: 12, margin: 0 }}>
+              {isFiltered ? 'No fights match your filters' : 'No completed fights yet'}
+            </p>
             <p style={{ fontSize: 11, margin: 0, opacity: 0.6 }}>
-              Fight history will appear here as you engage enemies
+              {isFiltered
+                ? 'Try adjusting the search or time range'
+                : 'Fight history will appear here as you engage enemies'}
             </p>
           </div>
           {deaths.length > 0 && <DeathLogSection deaths={deaths} />}
@@ -518,12 +760,12 @@ export default function CombatLogPage(): React.ReactElement {
           <TableHeader />
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {fights.map((fight, i) => (
+            {visibleFights.map((fight, i) => (
               <FightRow
                 key={fight.start_time}
                 fight={fight}
                 index={i}
-                total={fights.length}
+                total={visibleFights.length}
               />
             ))}
           </div>
