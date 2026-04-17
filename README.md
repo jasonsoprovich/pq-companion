@@ -89,9 +89,9 @@ See [FEATURES.md](FEATURES.md) for detailed implementation notes on every comple
 
 ---
 
-## Support
+## Donate
 
-<a href="https://www.buymeacoffee.com/jasonsoprovich"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=jasonsoprovich&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" /></a>
+[![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/jasonsoprovich)
 
 ---
 
