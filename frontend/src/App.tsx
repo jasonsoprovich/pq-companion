@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import { useAudioEngine } from './hooks/useAudioEngine'
@@ -27,6 +27,14 @@ import TriggersPage from './pages/TriggersPage'
 import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
 import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
 
+function OverlayPage({ children }: { children: React.ReactNode }): React.ReactElement {
+  useEffect(() => {
+    document.body.style.backgroundColor = 'transparent'
+    return () => { document.body.style.backgroundColor = '' }
+  }, [])
+  return <>{children}</>
+}
+
 export default function App(): React.ReactElement {
   useAudioEngine()
   useTimerAlerts()
@@ -36,12 +44,12 @@ export default function App(): React.ReactElement {
     <HashRouter>
       <Routes>
         {/* Standalone overlay windows — no sidebar/titlebar Layout */}
-        <Route path="dps-overlay-window" element={<DPSOverlayWindowPage />} />
-        <Route path="hps-overlay-window" element={<HPSOverlayWindowPage />} />
-        <Route path="buff-timer-window" element={<BuffTimerWindowPage />} />
-        <Route path="detrim-timer-window" element={<DetrimTimerWindowPage />} />
-        <Route path="trigger-overlay-window" element={<TriggerOverlayWindowPage />} />
-        <Route path="npc-overlay-window" element={<NPCOverlayWindowPage />} />
+        <Route path="dps-overlay-window" element={<OverlayPage><DPSOverlayWindowPage /></OverlayPage>} />
+        <Route path="hps-overlay-window" element={<OverlayPage><HPSOverlayWindowPage /></OverlayPage>} />
+        <Route path="buff-timer-window" element={<OverlayPage><BuffTimerWindowPage /></OverlayPage>} />
+        <Route path="detrim-timer-window" element={<OverlayPage><DetrimTimerWindowPage /></OverlayPage>} />
+        <Route path="trigger-overlay-window" element={<OverlayPage><TriggerOverlayWindowPage /></OverlayPage>} />
+        <Route path="npc-overlay-window" element={<OverlayPage><NPCOverlayWindowPage /></OverlayPage>} />
 
         {/* Main app routes — wrapped in full Layout */}
         <Route path="/" element={<Layout />}>
