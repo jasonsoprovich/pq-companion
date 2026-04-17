@@ -159,6 +159,11 @@
   - **Left pane (288px)**: debounced search by long name, result count, list showing long name + short name + min level; selected zone highlighted with gold left-border accent
   - **Detail panel (right)**: two sections — Zone Info (Zone ID, min level, safe coordinates, note) and Residents (NPC list loaded on zone selection)
   - **NPC Resident list**: scrollable list showing NPC display name, class, level, and HP; fetched per-zone on demand; shows "Showing X of Y" when truncated; graceful empty-state for zones with no spawn data
+- **Issue #30 — Zone attributes** (`outdoor`, `hotzone`, `can_levitate`, `can_bind`, `exp_mod`, `expansion`):
+  - **Backend `models.go`** — added six fields to `Zone` struct
+  - **Backend `queries.go`** — extended `zoneColumns` and `scanZone` to select `castoutdoor`, `hotzone`, `canlevitate`, `canbind`, `zone_exp_multiplier`, `expansion`
+  - **`types/zone.ts`** — added matching fields to the TypeScript `Zone` interface
+  - **`pages/ZonesPage.tsx`** — new **Quick Facts** section in the detail panel: Expansion name, XP Modifier %, Outdoor, Hotzone, Levitation, and Binding (with human-readable labels)
 
 ### Task 2.7 — Global Search ✅
 - **`GET /api/search?q=&limit=`** — new backend endpoint; runs all four searches (items, spells, NPCs, zones) in parallel via goroutines and returns a single grouped response (`internal/api/search.go`)

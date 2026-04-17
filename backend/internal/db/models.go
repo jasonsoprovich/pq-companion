@@ -178,16 +178,22 @@ type Spell struct {
 
 // Zone represents a row from the zone table.
 type Zone struct {
-	ID          int     `json:"id"`
-	ShortName   string  `json:"short_name"`
-	LongName    string  `json:"long_name"`
-	FileName    string  `json:"file_name"`
-	ZoneIDNumber int    `json:"zone_id_number"`
-	SafeX       float64 `json:"safe_x"`
-	SafeY       float64 `json:"safe_y"`
-	SafeZ       float64 `json:"safe_z"`
-	MinLevel    int     `json:"min_level"`
-	Note        string  `json:"note"`
+	ID           int     `json:"id"`
+	ShortName    string  `json:"short_name"`
+	LongName     string  `json:"long_name"`
+	FileName     string  `json:"file_name"`
+	ZoneIDNumber int     `json:"zone_id_number"`
+	SafeX        float64 `json:"safe_x"`
+	SafeY        float64 `json:"safe_y"`
+	SafeZ        float64 `json:"safe_z"`
+	MinLevel     int     `json:"min_level"`
+	Note         string  `json:"note"`
+	Outdoor      int     `json:"outdoor"`
+	Hotzone      int     `json:"hotzone"`
+	CanLevitate  int     `json:"can_levitate"`
+	CanBind      int     `json:"can_bind"`
+	ExpMod       float64 `json:"exp_mod"`
+	Expansion    int     `json:"expansion"`
 }
 
 // SearchResult wraps paginated query results.

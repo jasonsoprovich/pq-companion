@@ -9,6 +9,12 @@ export interface Zone {
   safe_z: number
   min_level: number
   note: string
+  outdoor: number
+  hotzone: number
+  can_levitate: number
+  can_bind: number
+  exp_mod: number
+  expansion: number
 }
 
 export interface SearchResult<T> {

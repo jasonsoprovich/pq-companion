@@ -6,6 +6,38 @@ import type { NPC } from '../types/npc'
 import type { Zone } from '../types/zone'
 import { className, npcDisplayName } from '../lib/npcHelpers'
 
+const EQ_EXPANSIONS: Record<number, string> = {
+  0: 'Classic',
+  1: 'Ruins of Kunark',
+  2: 'Scars of Velious',
+  3: 'Shadows of Luclin',
+  4: 'Planes of Power',
+  5: 'Legacy of Ykesha',
+  6: 'Lost Dungeons of Norrath',
+  7: 'Gates of Discord',
+  8: 'Omens of War',
+  9: 'Dragons of Norrath',
+  10: 'Depths of Darkhollow',
+  11: 'Prophecy of Ro',
+  12: "The Serpent's Spine",
+  13: 'The Buried Sea',
+  14: 'Secrets of Faydwer',
+}
+
+function expansionName(id: number): string {
+  return EQ_EXPANSIONS[id] ?? `Expansion ${id}`
+}
+
+function bindLabel(canbind: number): string {
+  if (canbind === 0) return 'No'
+  if (canbind === 1) return 'Druid / Wizard only'
+  return 'Yes'
+}
+
+function expModLabel(mod: number): string {
+  return `${Math.round(mod * 100)}%`
+}
+
 // ── Search pane ────────────────────────────────────────────────────────────────
 
 interface SearchPaneProps {
@@ -302,6 +334,16 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
       </div>
 
       <div className="flex flex-col gap-3">
+        {/* Quick Facts */}
+        <Section title="Quick Facts">
+          <StatRow label="Expansion" value={expansionName(zone.expansion)} />
+          <StatRow label="XP Modifier" value={expModLabel(zone.exp_mod)} />
+          <StatRow label="Outdoor" value={zone.outdoor ? 'Yes' : 'No'} />
+          <StatRow label="Hotzone" value={zone.hotzone ? 'Yes' : 'No'} />
+          <StatRow label="Levitation" value={zone.can_levitate ? 'Allowed' : 'Restricted'} />
+          <StatRow label="Binding" value={bindLabel(zone.can_bind)} />
+        </Section>
+
         {/* Zone Info */}
         <Section title="Zone Info">
           <StatRow label="Zone ID" value={zone.zone_id_number} />

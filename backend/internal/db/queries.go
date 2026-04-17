@@ -385,7 +385,9 @@ func (db *DB) GetSpellsByClass(classIndex, limit, offset int) (*SearchResult[Spe
 const zoneColumns = `
   z.id, COALESCE(z.short_name,''), z.long_name, COALESCE(z.file_name,''),
   z.zoneidnumber, z.safe_x, z.safe_y, z.safe_z,
-  z.min_level, COALESCE(z.note,'')`
+  z.min_level, COALESCE(z.note,''),
+  z.castoutdoor, z.hotzone, z.canlevitate, z.canbind,
+  z.zone_exp_multiplier, z.expansion`
 
 func scanZone(row interface {
 	Scan(...any) error
@@ -395,6 +397,8 @@ func scanZone(row interface {
 		&z.ID, &z.ShortName, &z.LongName, &z.FileName,
 		&z.ZoneIDNumber, &z.SafeX, &z.SafeY, &z.SafeZ,
 		&z.MinLevel, &z.Note,
+		&z.Outdoor, &z.Hotzone, &z.CanLevitate, &z.CanBind,
+		&z.ExpMod, &z.Expansion,
 	)
 	if err != nil {
 		return nil, err
