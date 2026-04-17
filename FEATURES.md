@@ -772,6 +772,23 @@ Two separate overlay windows are provided from the start — one for beneficial 
 **`frontend/src/pages/TriggersPage.tsx`**
 - Added "Overlay" button (MonitorPlay icon) in the page header that calls `window.electron?.overlay?.toggleTrigger()` — present on all tabs
 
+### Task 8.4 — Settings Tab Redesign ✅
+
+**`frontend/src/pages/SettingsPage.tsx`**
+- Added **App** section at the top: displays current app version (read via `app:version` IPC from Electron `app.getVersion()`) and a **Check for Updates** button
+- Update button drives a state machine: `idle → checking → up-to-date / available → downloading → downloaded` — shows inline feedback and an "Install & Restart" button when a download is ready
+- Removed **Overlays** section (DPS/HPS toggle switches) — overlay state now lives on each overlay's own controls, removing redundancy and confusion
+- Kept: EverQuest Installation, Character, Preferences sections unchanged
+
+**`electron/main/index.ts`**
+- Added `ipcMain.handle('app:version', () => app.getVersion())` IPC handler
+
+**`electron/preload/index.ts`**
+- Exposed `app.getVersion` bridge to renderer
+
+**`frontend/src/types/electron.d.ts`**
+- Added `app: { getVersion: () => Promise<string> }` to `ElectronAPI`
+
 ## Phase 9 — Audio Alerts
 
 ### Task 9.1 — Audio Engine

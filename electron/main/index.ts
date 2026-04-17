@@ -553,6 +553,8 @@ ipcMain.handle('dialog:select-folder', async () => {
 
 // ── IPC handlers — auto-updater ───────────────────────────────────────────────
 
+ipcMain.handle('app:version', () => app.getVersion())
+
 ipcMain.handle('updater:check', () => {
   if (!isDev) autoUpdater.checkForUpdates()
 })

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw } from 'lucide-react'
 import { getConfig, updateConfig } from '../services/api'
 import type { Config } from '../types/config'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
 
 export default function SettingsPage(): React.ReactElement {
   const navigate = useNavigate()
@@ -13,6 +14,10 @@ export default function SettingsPage(): React.ReactElement {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [appVersion, setAppVersion] = useState<string | null>(null)
+  const [updateState, setUpdateState] = useState<UpdateState>('idle')
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null)
+  const [updateError, setUpdateError] = useState<string | null>(null)
 
   useEffect(() => {
     getConfig()
@@ -21,6 +26,35 @@ export default function SettingsPage(): React.ReactElement {
         setOriginalConfig(c)
       })
       .catch((err: Error) => setLoadError(err.message))
+
+    if (window.electron?.app) {
+      window.electron.app.getVersion().then(setAppVersion).catch(() => null)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!window.electron?.updater) return
+    const offAvailable = window.electron.updater.onAvailable((info) => {
+      setUpdateState('available')
+      setUpdateVersion(info.version)
+    })
+    const offProgress = window.electron.updater.onProgress(() => {
+      setUpdateState('downloading')
+    })
+    const offDownloaded = window.electron.updater.onDownloaded((info) => {
+      setUpdateState('downloaded')
+      setUpdateVersion(info.version)
+    })
+    const offError = window.electron.updater.onError((msg) => {
+      setUpdateState('error')
+      setUpdateError(msg)
+    })
+    return () => {
+      offAvailable()
+      offProgress()
+      offDownloaded()
+      offError()
+    }
   }, [])
 
   async function handleBrowse(): Promise<void> {
@@ -54,6 +88,21 @@ export default function SettingsPage(): React.ReactElement {
     }
   }
 
+  async function handleCheckForUpdates(): Promise<void> {
+    if (!window.electron?.updater) return
+    setUpdateState('checking')
+    setUpdateError(null)
+    await window.electron.updater.check()
+    // If no event fires within 4s, assume up to date
+    setTimeout(() => {
+      setUpdateState((prev) => (prev === 'checking' ? 'up-to-date' : prev))
+    }, 4_000)
+  }
+
+  function handleQuitAndInstall(): void {
+    window.electron?.updater?.quitAndInstall()
+  }
+
   if (loadError) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3">
@@ -77,6 +126,7 @@ export default function SettingsPage(): React.ReactElement {
   }
 
   const hasElectronDialog = Boolean(window.electron?.dialog)
+  const hasElectronUpdater = Boolean(window.electron?.updater)
 
   return (
     <div className="mx-auto max-w-xl p-6">
@@ -89,6 +139,92 @@ export default function SettingsPage(): React.ReactElement {
       </div>
 
       <div className="flex flex-col gap-6">
+        {/* ── App ──────────────────────────────────────────────────────────── */}
+        <section
+          className="rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <h2
+            className="mb-3 text-sm font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            App
+          </h2>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                Version
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                {appVersion ? `v${appVersion}` : 'Unknown'}
+              </p>
+            </div>
+
+            {hasElectronUpdater && (
+              <div className="flex items-center gap-2">
+                {updateState === 'downloaded' && (
+                  <button
+                    onClick={handleQuitAndInstall}
+                    className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold"
+                    style={{
+                      backgroundColor: '#22c55e',
+                      color: '#fff',
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Install v{updateVersion} &amp; Restart
+                  </button>
+                )}
+                {updateState !== 'downloaded' && (
+                  <button
+                    onClick={handleCheckForUpdates}
+                    disabled={updateState === 'checking' || updateState === 'downloading'}
+                    className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
+                    style={{
+                      backgroundColor: 'var(--color-surface-2)',
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-foreground)',
+                      cursor: updateState === 'checking' || updateState === 'downloading' ? 'not-allowed' : 'pointer',
+                      opacity: updateState === 'checking' || updateState === 'downloading' ? 0.7 : 1,
+                    }}
+                  >
+                    {updateState === 'checking' || updateState === 'downloading' ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={12} />
+                    )}
+                    {updateState === 'checking'
+                      ? 'Checking…'
+                      : updateState === 'downloading'
+                        ? 'Downloading…'
+                        : 'Check for Updates'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {updateState === 'up-to-date' && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: '#22c55e' }}>
+              <CheckCircle2 size={12} />
+              Up to date
+            </p>
+          )}
+          {updateState === 'available' && (
+            <p className="mt-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              v{updateVersion} available — downloading…
+            </p>
+          )}
+          {updateState === 'error' && updateError && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: '#f87171' }}>
+              <AlertTriangle size={12} />
+              {updateError}
+            </p>
+          )}
+        </section>
+
         {/* ── EverQuest Path ─────────────────────────────────────────────── */}
         <section
           className="rounded-lg p-4"
@@ -109,7 +245,7 @@ export default function SettingsPage(): React.ReactElement {
               type="text"
               value={config.eq_path}
               onChange={(e) => setConfig({ ...config, eq_path: e.target.value })}
-              placeholder="e.g. C:\EverQuest or /Applications/EverQuest"
+              placeholder="e.g. C:\EverQuest"
               className="flex-1 rounded px-3 py-2 text-sm"
               style={{
                 backgroundColor: 'var(--color-surface-2)',
@@ -308,118 +444,6 @@ export default function SettingsPage(): React.ReactElement {
                   position: 'absolute',
                   top: 2,
                   left: config.preferences.minimize_to_tray ? 20 : 2,
-                  width: 16,
-                  height: 16,
-                  borderRadius: '50%',
-                  backgroundColor: '#fff',
-                  transition: 'left 0.15s',
-                }}
-              />
-            </div>
-          </label>
-        </section>
-
-        {/* ── Overlay Toggles ─────────────────────────────────────────────── */}
-        <section
-          className="rounded-lg p-4"
-          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-        >
-          <h2
-            className="mb-1 text-sm font-semibold uppercase tracking-wide"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            Overlays
-          </h2>
-          <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Enable or disable individual floating overlay windows.
-          </p>
-
-          <label className="flex cursor-pointer items-center justify-between py-1">
-            <div>
-              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-                DPS Overlay
-              </p>
-              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                Show the floating damage-per-second meter overlay.
-              </p>
-            </div>
-            <div
-              onClick={() =>
-                setConfig({
-                  ...config,
-                  preferences: {
-                    ...config.preferences,
-                    overlay_dps_enabled: !config.preferences.overlay_dps_enabled,
-                  },
-                })
-              }
-              style={{
-                width: 40,
-                height: 22,
-                borderRadius: 11,
-                backgroundColor: config.preferences.overlay_dps_enabled
-                  ? 'var(--color-primary)'
-                  : 'var(--color-surface-2)',
-                border: '1px solid var(--color-border)',
-                cursor: 'pointer',
-                position: 'relative',
-                flexShrink: 0,
-                transition: 'background-color 0.15s',
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 2,
-                  left: config.preferences.overlay_dps_enabled ? 20 : 2,
-                  width: 16,
-                  height: 16,
-                  borderRadius: '50%',
-                  backgroundColor: '#fff',
-                  transition: 'left 0.15s',
-                }}
-              />
-            </div>
-          </label>
-
-          <label className="flex cursor-pointer items-center justify-between py-1 mt-2">
-            <div>
-              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-                HPS Overlay
-              </p>
-              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                Show the floating heals-per-second meter overlay.
-              </p>
-            </div>
-            <div
-              onClick={() =>
-                setConfig({
-                  ...config,
-                  preferences: {
-                    ...config.preferences,
-                    overlay_hps_enabled: !config.preferences.overlay_hps_enabled,
-                  },
-                })
-              }
-              style={{
-                width: 40,
-                height: 22,
-                borderRadius: 11,
-                backgroundColor: config.preferences.overlay_hps_enabled
-                  ? 'var(--color-primary)'
-                  : 'var(--color-surface-2)',
-                border: '1px solid var(--color-border)',
-                cursor: 'pointer',
-                position: 'relative',
-                flexShrink: 0,
-                transition: 'background-color 0.15s',
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 2,
-                  left: config.preferences.overlay_hps_enabled ? 20 : 2,
                   width: 16,
                   height: 16,
                   borderRadius: '50%',

@@ -1,6 +1,9 @@
 // Type definitions for the Electron contextBridge API exposed in preload/index.ts
 
 export interface ElectronAPI {
+  app: {
+    getVersion: () => Promise<string>
+  }
   versions: {
     node: string
     chrome: string

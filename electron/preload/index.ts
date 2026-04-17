@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 // Expose a safe, typed API to the renderer — no direct Node/Electron access
 contextBridge.exposeInMainWorld('electron', {
+  app: {
+    getVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
+  },
   versions: {
     node: process.versions.node,
     chrome: process.versions.chrome,
