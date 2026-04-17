@@ -5,6 +5,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { HeartPulse } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { getCombatState } from '../services/api'
 import type { CombatState, HealerStats, FightState } from '../types/combat'
 
@@ -128,6 +129,7 @@ function HealTable({ fight, showAll }: { fight: FightState; showAll: boolean }):
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function HPSOverlayWindowPage(): React.ReactElement {
+  const opacity = useOverlayOpacity()
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
 
@@ -150,7 +152,7 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
       style={{
         width: '100vw',
         height: '100vh',
-        backgroundColor: 'rgba(10,10,12,0.88)',
+        backgroundColor: `rgba(10,10,12,${opacity})`,
         border: '1px solid rgba(255,255,255,0.12)',
         borderRadius: 8,
         display: 'flex',

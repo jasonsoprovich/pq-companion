@@ -455,6 +455,69 @@ export default function SettingsPage(): React.ReactElement {
           </label>
         </section>
 
+        {/* ── Overlays ───────────────────────────────────────────────────── */}
+        <section
+          className="rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <h2
+            className="mb-1 text-sm font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            Overlays
+          </h2>
+          <p className="mb-4 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Controls transparency for all popout overlay windows (DPS, HPS, Buff Timers, NPC, Triggers).
+          </p>
+
+          <div className="flex items-center gap-4">
+            <div style={{ flex: 1 }}>
+              <div className="mb-1 flex items-center justify-between">
+                <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  Opacity
+                </p>
+                <span className="text-xs font-mono" style={{ color: 'var(--color-muted-foreground)' }}>
+                  {Math.round(config.preferences.overlay_opacity * 100)}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min={10}
+                max={100}
+                step={1}
+                value={Math.round(config.preferences.overlay_opacity * 100)}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    preferences: {
+                      ...config.preferences,
+                      overlay_opacity: Number(e.target.value) / 100,
+                    },
+                  })
+                }
+                style={{ width: '100%', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+              />
+              <div className="mt-1 flex justify-between text-xs" style={{ color: 'var(--color-muted)' }}>
+                <span>10%</span>
+                <span>100%</span>
+              </div>
+            </div>
+
+            {/* Preview swatch */}
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: 6,
+                border: '1px solid rgba(255,255,255,0.15)',
+                backgroundColor: `rgba(10,10,12,${config.preferences.overlay_opacity})`,
+                flexShrink: 0,
+              }}
+              title="Overlay background preview"
+            />
+          </div>
+        </section>
+
         {/* ── Save / Discard buttons ─────────────────────────────────────── */}
         <div className="flex items-center gap-3">
           <button

@@ -780,6 +780,21 @@ Two separate overlay windows are provided from the start — one for beneficial 
 - Removed **Overlays** section (DPS/HPS toggle switches) — overlay state now lives on each overlay's own controls, removing redundancy and confusion
 - Kept: EverQuest Installation, Character, Preferences sections unchanged
 
+### Issue #62 — Overlay Transparency Control ✅
+
+**`frontend/src/hooks/useOverlayOpacity.ts`** (new)
+- Custom hook that reads `preferences.overlay_opacity` from `GET /api/config` on mount and re-polls every 3 s so overlay windows pick up changes without requiring a restart
+
+**`frontend/src/pages/SettingsPage.tsx`**
+- Added **Overlays** section between Preferences and Save/Discard buttons
+- `<input type="range">` slider (10–100%) controls `preferences.overlay_opacity`; live percentage readout updates beside the slider label
+- Preview swatch (`rgba(10,10,12,{opacity})`) shows the resulting overlay background colour in real-time as the slider moves
+- Value is persisted via the existing Save flow
+
+**Overlay window pages** (DPS, HPS, BuffTimer, DetrimTimer, NPC, Trigger)
+- Each calls `useOverlayOpacity()` and uses the returned value as the alpha channel of the root container's `backgroundColor` (`rgba(10,10,12,{opacity})`)
+- `TriggerOverlayWindowPage`: drag-handle alpha and `AlertCard` background alpha scale proportionally with the configured opacity
+
 **`electron/main/index.ts`**
 - Added `ipcMain.handle('app:version', () => app.getVersion())` IPC handler
 

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Crosshair, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { getOverlayNPCTarget } from '../services/api'
 import { className, raceName, bodyTypeName } from '../lib/npcHelpers'
 import type { TargetState, SpecialAbility } from '../types/overlay'
@@ -201,6 +202,7 @@ function NPCContent({ state }: { state: TargetState }): React.ReactElement {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function NPCOverlayWindowPage(): React.ReactElement {
+  const opacity = useOverlayOpacity()
   const [target, setTarget] = useState<TargetState | null>(null)
 
   useEffect(() => {
@@ -223,7 +225,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
         height: '100vh',
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: 'rgba(10,10,12,0.88)',
+        backgroundColor: `rgba(10,10,12,${opacity})`,
         color: 'rgba(255,255,255,0.85)',
         fontFamily: 'system-ui, sans-serif',
         overflow: 'hidden',

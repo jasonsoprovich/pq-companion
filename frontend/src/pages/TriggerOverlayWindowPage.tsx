@@ -6,6 +6,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Zap } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import type { TriggerFired } from '../types/trigger'
 
 interface AlertEntry {
@@ -18,7 +19,7 @@ let nextId = 1
 
 // ── Alert card ─────────────────────────────────────────────────────────────────
 
-function AlertCard({ entry }: { entry: AlertEntry }): React.ReactElement {
+function AlertCard({ entry, bgOpacity }: { entry: AlertEntry; bgOpacity: number }): React.ReactElement {
   const [opacity, setOpacity] = useState(1)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -46,7 +47,7 @@ function AlertCard({ entry }: { entry: AlertEntry }): React.ReactElement {
       style={{
         padding: '10px 14px',
         borderRadius: 6,
-        backgroundColor: 'rgba(10,10,12,0.92)',
+        backgroundColor: `rgba(10,10,12,${bgOpacity})`,
         border: `1px solid ${color}44`,
         boxShadow: `0 0 12px ${color}22`,
         transition: 'opacity 0.5s ease',
@@ -89,6 +90,7 @@ function AlertCard({ entry }: { entry: AlertEntry }): React.ReactElement {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function TriggerOverlayWindowPage(): React.ReactElement {
+  const overlayOpacity = useOverlayOpacity()
   const [alerts, setAlerts] = useState<AlertEntry[]>([])
   const gcTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -146,7 +148,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '4px 8px',
-          backgroundColor: isEmpty ? 'rgba(10,10,12,0.55)' : 'rgba(10,10,12,0.75)',
+          backgroundColor: isEmpty ? `rgba(10,10,12,${overlayOpacity * 0.6})` : `rgba(10,10,12,${overlayOpacity * 0.82})`,
           borderBottom: '1px solid rgba(255,255,255,0.08)',
           flexShrink: 0,
           userSelect: 'none',
@@ -196,7 +198,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         }}
       >
         {alerts.map((entry) => (
-          <AlertCard key={entry.id} entry={entry} />
+          <AlertCard key={entry.id} entry={entry} bgOpacity={overlayOpacity} />
         ))}
       </div>
     </div>

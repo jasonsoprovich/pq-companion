@@ -6,6 +6,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Shield } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { getTimerState } from '../services/api'
 import type { ActiveTimer, TimerState } from '../types/timer'
 
@@ -100,6 +101,7 @@ function TimerRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function BuffTimerWindowPage(): React.ReactElement {
+  const opacity = useOverlayOpacity()
   const [state, setState] = useState<TimerState | null>(null)
 
   useEffect(() => {
@@ -121,7 +123,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
       style={{
         width: '100vw',
         height: '100vh',
-        backgroundColor: 'rgba(10,10,12,0.88)',
+        backgroundColor: `rgba(10,10,12,${opacity})`,
         border: '1px solid rgba(255,255,255,0.12)',
         borderRadius: 8,
         display: 'flex',
