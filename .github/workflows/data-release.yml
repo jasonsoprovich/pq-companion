@@ -1,0 +1,126 @@
+name: Data Release
+
+# Rebuilds the EQ game database (`quarm.db`) from a MySQL dump and uploads
+# it to the `data-latest` release. The release and the installer workflows
+# both download `quarm.db` from that release at build time.
+#
+# Two triggers:
+#   * workflow_dispatch — manual rebuild. Upload a dump .sql file as an
+#     artifact ahead of time and pass its artifact name via the input, or
+#     commit a dump to `sql/` and reference it by filename.
+#   * push to main under sql/** — auto-rebuild when a new dump is committed.
+#
+# The job is idempotent: same dump in, same database out (modulo SQLite
+# internal rowids).
+
+on:
+  workflow_dispatch:
+    inputs:
+      sql_file:
+        description: 'Relative path of the MySQL dump under sql/ (e.g. quarm_2026-03-20-09:37.sql). Leave blank to convert all .sql files in sql/.'
+        required: false
+        default: ''
+      notes:
+        description: 'Release notes for data-latest (optional)'
+        required: false
+        default: ''
+  push:
+    branches: [main]
+    paths:
+      - 'sql/**.sql'
+
+permissions:
+  contents: write   # required to create/update the data-latest release
+
+jobs:
+  rebuild-database:
+    name: Rebuild quarm.db
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: backend/go.sum
+
+      - name: Verify dump file(s) present
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.sql_file }}" ]; then
+            f="sql/${{ github.event.inputs.sql_file }}"
+            if [ ! -f "$f" ]; then
+              echo "::error::Dump file $f not found in repository"
+              exit 1
+            fi
+            echo "Using single dump: $f"
+          else
+            count=$(ls -1 sql/*.sql 2>/dev/null | wc -l)
+            if [ "$count" -eq 0 ]; then
+              echo "::error::No .sql files found in sql/"
+              exit 1
+            fi
+            echo "Using all .sql files in sql/ ($count files)"
+          fi
+
+      - name: Convert dump(s) to SQLite
+        shell: bash
+        working-directory: backend
+        run: |
+          mkdir -p data
+          if [ -n "${{ github.event.inputs.sql_file }}" ]; then
+            go run ./cmd/dbconvert \
+              --from-dump \
+              --sql-files "../sql/${{ github.event.inputs.sql_file }}" \
+              --output data/quarm.db
+          else
+            go run ./cmd/dbconvert \
+              --from-dump \
+              --sql-dir ../sql \
+              --output data/quarm.db
+          fi
+
+      - name: Report database size
+        shell: bash
+        run: |
+          size=$(du -sh backend/data/quarm.db | cut -f1)
+          echo "quarm.db: $size"
+          echo "### quarm.db built — $size" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload quarm.db as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: quarm-db
+          path: backend/data/quarm.db
+          retention-days: 30
+
+      - name: Publish to data-latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          NOTES="${{ github.event.inputs.notes }}"
+          if [ -z "$NOTES" ]; then
+            NOTES="Rebuilt by data-release workflow from commit ${GITHUB_SHA:0:7}"
+          fi
+
+          # Create release if missing, then upload/overwrite the asset.
+          if ! gh release view data-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Creating data-latest release"
+            gh release create data-latest \
+              --prerelease \
+              --title "Game Database" \
+              --notes "$NOTES" \
+              --repo "$GITHUB_REPOSITORY"
+          else
+            echo "Updating data-latest release notes"
+            gh release edit data-latest \
+              --notes "$NOTES" \
+              --repo "$GITHUB_REPOSITORY"
+          fi
+
+          echo "Uploading quarm.db"
+          gh release upload data-latest backend/data/quarm.db \
+            --clobber \
+            --repo "$GITHUB_REPOSITORY"

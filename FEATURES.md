@@ -5,9 +5,20 @@
 - Go CLI tool (`dbconvert`): MySQL dump → SQLite converter
   - `--from-dump` mode: parses `.sql` dump files directly, no MySQL required
   - `--from-mysql` mode: reads from a live MySQL connection
+  - `--validate` / `--validate-only`: post-conversion data validation (row counts, FK integrity, spot checks)
   - Handles all MySQL→SQLite type mapping, index conversion, and data migration
   - Converts ~1.1 million rows in under 60 seconds
-- Documented schema for all key tables (items, spells, NPCs, zones, loot, spawns)
+- Validation suite (`internal/converter/validate.go`, closes #55)
+  - 14 core-table row-count checks — fails the build when a dump import drops a table
+  - 10 referential-integrity checks across the loot, spawn, and NPC spell chains — warns on small orphan counts, escalates to error above 500 orphans per FK
+  - Spot checks on classic-EQ records (`Cloth Cap`, `northkarana`, `Complete Healing`, `Minor Healing`) to catch partial imports that still hit row-count minimums
+  - Exits non-zero on any error; unit-tested with in-memory SQLite
+- `data-release` GitHub Actions workflow (`.github/workflows/data-release.yml`)
+  - Manual dispatch (pick a specific dump from `sql/`) or auto-trigger on `sql/**` pushes
+  - Converts, validates, uploads `quarm.db` to the `data-latest` prerelease (with `--clobber`), and archives a 30-day workflow artifact as a safety net
+  - Both `ci.yml` (Go tests) and `release.yml` (Windows installer) pull `quarm.db` from that release
+- Documented schema for all key tables (items, spells, NPCs, zones, loot, spawns) in `SCHEMA.md`
+- Full pipeline documentation in `docs/db-pipeline.md` — local workflow, CI flow, bootstrap, idempotency guarantees, schema-diff procedure
 - Go database layer (`internal/db`): typed read-only access to quarm.db
   - `Get` and `Search` functions for items, spells, NPCs, and zones
   - Paginated search results with total count

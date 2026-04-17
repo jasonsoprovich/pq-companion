@@ -36,6 +36,8 @@ func run() error {
 	mysqlDSN := flag.String("mysql-dsn", "root:quarmbuddy@tcp(localhost:3306)/quarm", "MySQL DSN for --from-mysql mode")
 	output := flag.String("output", "", "Output SQLite database path (default: backend/data/quarm.db)")
 	verbose := flag.Bool("verbose", false, "Enable verbose logging")
+	validate := flag.Bool("validate", true, "Run validation after conversion (row counts, FK integrity, spot checks)")
+	validateOnly := flag.Bool("validate-only", false, "Skip conversion; only validate the existing output database")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `dbconvert — MySQL to SQLite converter for PQ Companion
@@ -63,17 +65,29 @@ Examples:
 
   # Convert from MySQL with custom DSN and output path
   dbconvert --from-mysql --mysql-dsn "user:pass@tcp(host:3306)/db" --output /path/to/out.db
+
+  # Skip validation (e.g. for a partial test run)
+  dbconvert --from-dump --validate=false
+
+  # Validate an existing database without re-running the conversion
+  dbconvert --validate-only --output /path/to/quarm.db
 `)
 	}
 
 	flag.Parse()
 
-	if !*fromDump && !*fromMySQL {
-		flag.Usage()
-		return fmt.Errorf("must specify --from-dump or --from-mysql")
-	}
-	if *fromDump && *fromMySQL {
-		return fmt.Errorf("cannot specify both --from-dump and --from-mysql")
+	if *validateOnly {
+		if *fromDump || *fromMySQL {
+			return fmt.Errorf("--validate-only cannot be combined with --from-dump/--from-mysql")
+		}
+	} else {
+		if !*fromDump && !*fromMySQL {
+			flag.Usage()
+			return fmt.Errorf("must specify --from-dump, --from-mysql, or --validate-only")
+		}
+		if *fromDump && *fromMySQL {
+			return fmt.Errorf("cannot specify both --from-dump and --from-mysql")
+		}
 	}
 
 	// Determine output path
@@ -114,17 +128,39 @@ Examples:
 
 	ctx := context.Background()
 
-	if *fromDump {
+	switch {
+	case *validateOnly:
+		logger.Info("validating existing database", "path", outPath)
+	case *fromDump:
 		files, err := resolveDumpFiles(*sqlDir, *sqlFiles)
 		if err != nil {
 			return fmt.Errorf("resolve dump files: %w", err)
 		}
 		logger.Info("converting from dump files", "files", files, "output", outPath)
-		return converter.ConvertFromDump(ctx, cfg, files, db)
+		if err := converter.ConvertFromDump(ctx, cfg, files, db); err != nil {
+			return err
+		}
+	case *fromMySQL:
+		logger.Info("converting from MySQL", "dsn", redactDSN(*mysqlDSN), "output", outPath)
+		if err := converter.ConvertFromMySQL(ctx, cfg, *mysqlDSN, db); err != nil {
+			return err
+		}
 	}
 
-	logger.Info("converting from MySQL", "dsn", redactDSN(*mysqlDSN), "output", outPath)
-	return converter.ConvertFromMySQL(ctx, cfg, *mysqlDSN, db)
+	if !*validate && !*validateOnly {
+		return nil
+	}
+
+	logger.Info("running validation")
+	rep, err := converter.Validate(ctx, cfg, db)
+	if err != nil {
+		return fmt.Errorf("validate: %w", err)
+	}
+	if rep.Errors > 0 {
+		return fmt.Errorf("validation failed: %d error(s), %d warning(s)", rep.Errors, rep.Warnings)
+	}
+	logger.Info("validation passed", "warnings", rep.Warnings)
+	return nil
 }
 
 // resolveDumpFiles returns the list of SQL dump files to process.
