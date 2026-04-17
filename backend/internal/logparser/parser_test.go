@@ -261,6 +261,64 @@ func TestParseLine(t *testing.T) {
 			wantData: DeathData{SlainBy: "a greater gnoll"},
 		},
 
+		// --- /con considered ---
+		{
+			name:     "con: regards you as ally (multi-word NPC)",
+			line:     "[Mon Apr 13 06:00:00 2026] a grimling cadaverist regards you as an ally.",
+			wantOK:   true,
+			wantType: EventConsidered,
+			wantData: ConsideredData{TargetName: "a grimling cadaverist"},
+		},
+		{
+			name:     "con: scowls at you",
+			line:     "[Mon Apr 13 06:00:00 2026] a gnoll scowls at you, ready to attack.",
+			wantOK:   true,
+			wantType: EventConsidered,
+			wantData: ConsideredData{TargetName: "a gnoll"},
+		},
+		{
+			name:     "con: glares at you",
+			line:     "[Mon Apr 13 06:00:00 2026] a young gnoll glares at you threateningly.",
+			wantOK:   true,
+			wantType: EventConsidered,
+			wantData: ConsideredData{TargetName: "a young gnoll"},
+		},
+		{
+			name:     "con: judges you indifferently",
+			line:     "[Mon Apr 13 06:00:00 2026] a goblin warrior judges you indifferently, what is your business here?",
+			wantOK:   true,
+			wantType: EventConsidered,
+			wantData: ConsideredData{TargetName: "a goblin warrior"},
+		},
+		{
+			name:     "con: warmly regards you",
+			line:     "[Mon Apr 13 06:00:00 2026] a halfling guard warmly regards you as a friend.",
+			wantOK:   true,
+			wantType: EventConsidered,
+			wantData: ConsideredData{TargetName: "a halfling guard"},
+		},
+		{
+			name:     "con: considers you",
+			line:     "[Mon Apr 13 06:00:00 2026] an orc pawn considers you amiably.",
+			wantOK:   true,
+			wantType: EventConsidered,
+			wantData: ConsideredData{TargetName: "an orc pawn"},
+		},
+		{
+			name:     "con: looks upon you",
+			line:     "[Mon Apr 13 06:00:00 2026] a skeleton looks upon you with suspicion.",
+			wantOK:   true,
+			wantType: EventConsidered,
+			wantData: ConsideredData{TargetName: "a skeleton"},
+		},
+		{
+			name:     "con: looks your way",
+			line:     "[Mon Apr 13 06:00:00 2026] a lizardman looks your way apprehensively.",
+			wantOK:   true,
+			wantType: EventConsidered,
+			wantData: ConsideredData{TargetName: "a lizardman"},
+		},
+
 		// --- Unrecognised messages ---
 		{
 			name:   "unrecognised: chat message",
@@ -377,6 +435,14 @@ func compareData(t *testing.T, got, want interface{}) {
 		}
 		if g != w {
 			t.Errorf("KillData = %+v, want %+v", g, w)
+		}
+	case ConsideredData:
+		g, ok := got.(ConsideredData)
+		if !ok {
+			t.Fatalf("Data type = %T, want ConsideredData", got)
+		}
+		if g != w {
+			t.Errorf("ConsideredData = %+v, want %+v", g, w)
 		}
 	default:
 		t.Fatalf("compareData: unhandled want type %T", want)

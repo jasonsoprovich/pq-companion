@@ -78,6 +78,29 @@ func (t *NPCTracker) Handle(ev logparser.LogEvent) {
 			t.setTarget(data.Target)
 		}
 
+	// ── /con result → target is whatever was considered. ─────────────────────
+	case logparser.EventConsidered:
+		data, ok := ev.Data.(logparser.ConsideredData)
+		if !ok {
+			return
+		}
+		if data.TargetName != "" {
+			t.setTarget(data.TargetName)
+		}
+
+	// ── Kill → clear target only if the slain mob is the current target. ─────
+	case logparser.EventKill:
+		data, ok := ev.Data.(logparser.KillData)
+		if !ok {
+			return
+		}
+		t.mu.RLock()
+		match := t.st.HasTarget && t.st.TargetName == data.Target
+		t.mu.RUnlock()
+		if match {
+			t.clearTarget()
+		}
+
 	// ── Zone change or death → clear target. ──────────────────────────────────
 	case logparser.EventZone:
 		zd, ok := ev.Data.(logparser.ZoneData)

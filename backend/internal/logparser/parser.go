@@ -55,6 +55,14 @@ var (
 	// Combat — NPC misses player: "A gnoll tries to slash you, but misses!"
 	reNPCMissYou = regexp.MustCompile(`^(.+?) tries to \w+ you, but misses?!$`)
 
+	// /con output — EQ's consider system. The NPC name precedes a fixed set of
+	// disposition phrases. Ordered longest-first so "warmly regards you" and
+	// "kindly regards you" are tried before the shorter "regards you".
+	// Examples:
+	//   "a grimling cadaverist regards you as an ally."
+	//   "a gnoll scowls at you, ready to attack -- what would you like your tombstone to say?"
+	reConsider = regexp.MustCompile(`^(.+?) (?:scowls at you|glares at you|looks your way|looks upon you|judges you|warmly regards you|kindly regards you|regards you|considers you)`)
+
 	// Combat — dodge/parry/riposte/block by player:
 	// "You dodge a gnoll's attack!"
 	// "You parry a gnoll's attack!"
@@ -318,6 +326,14 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		return LogEvent{
 			Type: EventDeath,
 			Data: DeathData{SlainBy: m[1]},
+		}, true
+	}
+
+	// --- /con result ---
+	if m := reConsider.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventConsidered,
+			Data: ConsideredData{TargetName: m[1]},
 		}, true
 	}
 

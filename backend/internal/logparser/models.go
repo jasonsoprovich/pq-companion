@@ -39,6 +39,10 @@ const (
 
 	// EventHeal is emitted when a heal lands (player → target or target → player).
 	EventHeal EventType = "log:heal"
+
+	// EventConsidered is emitted when the player /con's a target and EQ prints
+	// the disposition message (e.g. "a gnoll regards you as an ally.").
+	EventConsidered EventType = "log:considered"
 )
 
 // LogEvent is the parsed representation of a single EQ log line.
@@ -115,4 +119,10 @@ type HealData struct {
 	Target string `json:"target"`
 	// Amount is the number of hit points restored.
 	Amount int `json:"amount"`
+}
+
+// ConsideredData is the structured payload for EventConsidered.
+type ConsideredData struct {
+	// TargetName is the NPC display name as it appeared in the /con output.
+	TargetName string `json:"target_name"`
 }
