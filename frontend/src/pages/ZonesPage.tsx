@@ -145,9 +145,25 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
               >
                 {zone.long_name || zone.short_name}
               </div>
-              <div className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                {zone.short_name}
-                {zone.min_level > 0 && ` · Lv ${zone.min_level}+`}
+              <div className="mt-0.5 flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                <span className="truncate">
+                  {zone.short_name}
+                  {zone.min_level > 0 && ` · Lv ${zone.min_level}+`}
+                </span>
+                {zone.exp_mod !== 1.0 && (
+                  <span
+                    className="shrink-0 rounded px-1 py-0.5 text-[10px] font-semibold"
+                    style={{
+                      backgroundColor:
+                        zone.exp_mod > 1.0
+                          ? 'rgba(34,197,94,0.15)'
+                          : 'rgba(234,179,8,0.15)',
+                      color: zone.exp_mod > 1.0 ? 'rgb(134,239,172)' : 'rgb(253,224,71)',
+                    }}
+                  >
+                    ZEM {Math.round(zone.exp_mod * 100)}%
+                  </span>
+                )}
               </div>
             </button>
           ))}
@@ -323,13 +339,34 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
         >
           {zone.long_name || zone.short_name}
         </h2>
-        <div className="mt-1 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-          {zone.short_name}
-          {zone.file_name && zone.file_name !== zone.short_name && (
-            <span className="ml-2" style={{ color: 'var(--color-muted)' }}>
-              ({zone.file_name})
-            </span>
-          )}
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+          <span>
+            {zone.short_name}
+            {zone.file_name && zone.file_name !== zone.short_name && (
+              <span className="ml-2" style={{ color: 'var(--color-muted)' }}>
+                ({zone.file_name})
+              </span>
+            )}
+          </span>
+          <span
+            className="rounded px-1.5 py-0.5 text-[11px] font-semibold"
+            style={{
+              backgroundColor:
+                zone.exp_mod > 1.0
+                  ? 'rgba(34,197,94,0.15)'
+                  : zone.exp_mod < 1.0
+                    ? 'rgba(234,179,8,0.15)'
+                    : 'rgba(100,116,139,0.15)',
+              color:
+                zone.exp_mod > 1.0
+                  ? 'rgb(134,239,172)'
+                  : zone.exp_mod < 1.0
+                    ? 'rgb(253,224,71)'
+                    : 'var(--color-muted)',
+            }}
+          >
+            ZEM {Math.round(zone.exp_mod * 100)}%
+          </span>
         </div>
       </div>
 
