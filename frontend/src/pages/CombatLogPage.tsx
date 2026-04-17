@@ -6,10 +6,11 @@ import {
   AlertTriangle,
   Circle,
   CheckCircle2,
+  Skull,
 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getCombatState, getLogStatus } from '../services/api'
-import type { CombatState, EntityStats, FightSummary } from '../types/combat'
+import type { CombatState, DeathRecord, EntityStats, FightSummary } from '../types/combat'
 import type { LogTailerStatus } from '../types/logEvent'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -332,6 +333,78 @@ function TableHeader(): React.ReactElement {
   )
 }
 
+// ── Death log section ──────────────────────────────────────────────────────────
+
+function DeathLogSection({ deaths }: { deaths: DeathRecord[] }): React.ReactElement {
+  const [expanded, setExpanded] = useState(false)
+  const count = deaths.length
+
+  return (
+    <div
+      style={{
+        borderTop: '1px solid var(--color-border)',
+        flexShrink: 0,
+        backgroundColor: 'var(--color-surface-2)',
+      }}
+    >
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '6px 14px',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          textAlign: 'left',
+          color: 'var(--color-foreground)',
+          fontSize: 11,
+        }}
+      >
+        <span style={{ color: '#ef4444', display: 'flex', alignItems: 'center' }}>
+          <Skull size={12} />
+        </span>
+        <span style={{ color: '#ef4444', fontWeight: 600 }}>
+          {count} death{count !== 1 ? 's' : ''} this session
+        </span>
+        <span style={{ color: 'var(--color-muted)', marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </span>
+      </button>
+
+      {expanded && (
+        <div style={{ maxHeight: 160, overflowY: 'auto', padding: '0 14px 8px' }}>
+          {[...deaths].reverse().map((d, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '70px 1fr 1fr',
+                gap: '0 12px',
+                padding: '3px 0',
+                fontSize: 11,
+                borderBottom: '1px solid rgba(255,255,255,0.03)',
+              }}
+            >
+              <span style={{ color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                {fmtTime(d.timestamp)}
+              </span>
+              <span style={{ color: 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {d.zone || '—'}
+              </span>
+              <span style={{ color: '#ef4444', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {d.slain_by ? `by ${d.slain_by}` : 'unknown cause'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Session footer ─────────────────────────────────────────────────────────────
 
 function SessionFooter({ combat }: { combat: CombatState }): React.ReactElement {
@@ -381,6 +454,7 @@ export default function CombatLogPage(): React.ReactElement {
   useWebSocket(handleMessage)
 
   const fights = combat?.recent_fights ?? []
+  const deaths = combat?.deaths ?? []
 
   return (
     <div className="flex h-full flex-col overflow-hidden" style={{ backgroundColor: 'var(--color-background)' }}>
@@ -419,23 +493,26 @@ export default function CombatLogPage(): React.ReactElement {
           <p style={{ fontSize: 12, color: 'var(--color-muted)' }}>Loading…</p>
         </div>
       ) : fights.length === 0 ? (
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            color: 'var(--color-muted)',
-          }}
-        >
-          <ScrollText size={32} style={{ opacity: 0.3 }} />
-          <p style={{ fontSize: 12, margin: 0 }}>No completed fights yet</p>
-          <p style={{ fontSize: 11, margin: 0, opacity: 0.6 }}>
-            Fight history will appear here as you engage enemies
-          </p>
-        </div>
+        <>
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              color: 'var(--color-muted)',
+            }}
+          >
+            <ScrollText size={32} style={{ opacity: 0.3 }} />
+            <p style={{ fontSize: 12, margin: 0 }}>No completed fights yet</p>
+            <p style={{ fontSize: 11, margin: 0, opacity: 0.6 }}>
+              Fight history will appear here as you engage enemies
+            </p>
+          </div>
+          {deaths.length > 0 && <DeathLogSection deaths={deaths} />}
+        </>
       ) : (
         <>
           <TableHeader />
@@ -452,6 +529,7 @@ export default function CombatLogPage(): React.ReactElement {
           </div>
 
           <SessionFooter combat={combat} />
+          {deaths.length > 0 && <DeathLogSection deaths={deaths} />}
         </>
       )}
     </div>

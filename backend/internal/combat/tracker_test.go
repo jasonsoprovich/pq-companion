@@ -37,6 +37,22 @@ func zoneEvent(ts time.Time) logparser.LogEvent {
 	}
 }
 
+func zoneEventNamed(name string, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventZone,
+		Timestamp: ts,
+		Data:      logparser.ZoneData{ZoneName: name},
+	}
+}
+
+func deathEvent(slainBy string, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventDeath,
+		Timestamp: ts,
+		Data:      logparser.DeathData{SlainBy: slainBy},
+	}
+}
+
 func killEvent(killer, target string, ts time.Time) logparser.LogEvent {
 	return logparser.LogEvent{
 		Type:      logparser.EventKill,
@@ -243,5 +259,88 @@ func TestThirdPartyDamageTracked(t *testing.T) {
 	// 2 outgoing combatants (You + Guildmate), NPC excluded
 	if len(st.CurrentFight.Combatants) != 2 {
 		t.Fatalf("expected 2 outgoing combatants, got %d", len(st.CurrentFight.Combatants))
+	}
+}
+
+func TestDeathRecorded(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(zoneEventNamed("The North Karana", now))
+	tr.Handle(hitEvent("a gnoll", "You", 500, now.Add(time.Second)))
+	tr.Handle(deathEvent("a gnoll", now.Add(2*time.Second)))
+
+	st := tr.GetState()
+	if st.DeathCount != 1 {
+		t.Fatalf("expected DeathCount=1, got %d", st.DeathCount)
+	}
+	if len(st.Deaths) != 1 {
+		t.Fatalf("expected 1 death record, got %d", len(st.Deaths))
+	}
+	d := st.Deaths[0]
+	if d.SlainBy != "a gnoll" {
+		t.Errorf("expected SlainBy=%q, got %q", "a gnoll", d.SlainBy)
+	}
+	if d.Zone != "The North Karana" {
+		t.Errorf("expected Zone=%q, got %q", "The North Karana", d.Zone)
+	}
+	if !st.InCombat {
+		// death ends the fight
+	}
+	if st.InCombat {
+		t.Fatal("expected InCombat=false after death")
+	}
+}
+
+func TestDeathWithNoKillerRecorded(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(zoneEventNamed("West Commonlands", now))
+	tr.Handle(deathEvent("", now.Add(time.Second)))
+
+	st := tr.GetState()
+	if st.DeathCount != 1 {
+		t.Fatalf("expected DeathCount=1, got %d", st.DeathCount)
+	}
+	if st.Deaths[0].SlainBy != "" {
+		t.Errorf("expected empty SlainBy for anonymous death, got %q", st.Deaths[0].SlainBy)
+	}
+	if st.Deaths[0].Zone != "West Commonlands" {
+		t.Errorf("expected Zone=%q, got %q", "West Commonlands", st.Deaths[0].Zone)
+	}
+}
+
+func TestMultipleDeathsAccumulate(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(zoneEventNamed("Crushbone", now))
+	tr.Handle(deathEvent("an orc pawn", now.Add(time.Second)))
+	tr.Handle(zoneEventNamed("East Commonlands", now.Add(10*time.Second)))
+	tr.Handle(deathEvent("a large snake", now.Add(20*time.Second)))
+
+	st := tr.GetState()
+	if st.DeathCount != 2 {
+		t.Fatalf("expected DeathCount=2, got %d", st.DeathCount)
+	}
+	if st.Deaths[0].Zone != "Crushbone" {
+		t.Errorf("expected first death in Crushbone, got %q", st.Deaths[0].Zone)
+	}
+	if st.Deaths[1].Zone != "East Commonlands" {
+		t.Errorf("expected second death in East Commonlands, got %q", st.Deaths[1].Zone)
+	}
+}
+
+func TestZoneTrackedForDeath(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Death before any zone event — zone should be empty string.
+	tr.Handle(deathEvent("a bat", now))
+
+	st := tr.GetState()
+	if st.Deaths[0].Zone != "" {
+		t.Errorf("expected empty zone before any zone event, got %q", st.Deaths[0].Zone)
 	}
 }

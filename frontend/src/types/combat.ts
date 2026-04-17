@@ -45,6 +45,12 @@ export interface FightSummary {
   you_hps: number
 }
 
+export interface DeathRecord {
+  timestamp: string
+  zone: string
+  slain_by: string
+}
+
 export interface CombatState {
   in_combat: boolean
   current_fight?: FightState
@@ -53,5 +59,7 @@ export interface CombatState {
   session_dps: number     // player personal only
   session_heal: number    // player personal healing only
   session_hps: number     // player personal HPS only
+  deaths: DeathRecord[]
+  death_count: number
   last_updated: string
 }

@@ -56,6 +56,10 @@ type Tracker struct {
 
 	// session heal aggregates (player personal healing done only)
 	sessionHeal int64
+
+	// death tracking
+	currentZone string
+	deaths      []DeathRecord
 }
 
 // NewTracker returns an initialised combat Tracker.
@@ -63,6 +67,7 @@ func NewTracker(hub *ws.Hub) *Tracker {
 	return &Tracker{
 		hub:          hub,
 		recentFights: []FightSummary{},
+		deaths:       []DeathRecord{},
 	}
 }
 
@@ -86,7 +91,26 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 	case logparser.EventKill:
 		t.endFightAt(ev.Timestamp)
 
-	case logparser.EventZone, logparser.EventDeath:
+	case logparser.EventZone:
+		if data, ok := ev.Data.(logparser.ZoneData); ok {
+			t.mu.Lock()
+			t.currentZone = data.ZoneName
+			t.mu.Unlock()
+		}
+		t.endFight(true)
+
+	case logparser.EventDeath:
+		slainBy := ""
+		if data, ok := ev.Data.(logparser.DeathData); ok {
+			slainBy = data.SlainBy
+		}
+		t.mu.Lock()
+		t.deaths = append(t.deaths, DeathRecord{
+			Timestamp: ev.Timestamp,
+			Zone:      t.currentZone,
+			SlainBy:   slainBy,
+		})
+		t.mu.Unlock()
 		t.endFight(true)
 	}
 }
@@ -300,6 +324,8 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 		RecentFights:  t.recentFights,
 		SessionDamage: t.sessionDamage,
 		SessionHeal:   t.sessionHeal,
+		Deaths:        append([]DeathRecord(nil), t.deaths...),
+		DeathCount:    len(t.deaths),
 		LastUpdated:   now,
 	}
 

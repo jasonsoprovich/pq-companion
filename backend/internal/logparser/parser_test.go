@@ -260,6 +260,13 @@ func TestParseLine(t *testing.T) {
 			wantType: EventDeath,
 			wantData: DeathData{SlainBy: "a greater gnoll"},
 		},
+		{
+			name:     "death: you died (no named killer)",
+			line:     "[Mon Apr 13 06:00:00 2026] You died.",
+			wantOK:   true,
+			wantType: EventDeath,
+			wantData: DeathData{},
+		},
 
 		// --- /con considered ---
 		{

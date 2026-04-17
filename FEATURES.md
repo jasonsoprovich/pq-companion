@@ -438,6 +438,13 @@
 - **`components/Sidebar.tsx`** — added `Combat Log` nav entry (`ScrollText` icon) after DPS Overlay in the Parsing section
 - **`App.tsx`** — added `/combat-log` route
 
+### Issue #48 — Death Tracker (Combat Log tab) ✅
+- **`internal/logparser/parser.go`** — added `reDiedSimple` regex (`^You died\.$`) emitting `EventDeath` with empty `SlainBy` (complements the existing `reDeath` "slain by" pattern)
+- **`internal/combat/models.go`** — added `DeathRecord` struct (`Timestamp`, `Zone`, `SlainBy`); added `Deaths []DeathRecord` and `DeathCount int` to `CombatState`
+- **`internal/combat/tracker.go`** — added `currentZone string` and `deaths []DeathRecord` to `Tracker`; separated `EventZone` and `EventDeath` handling in `Handle()`: zone events update `currentZone` before ending the fight; death events append a `DeathRecord` (with timestamp, current zone, and optional killer) then end the fight; `snapshot()` copies deaths slice into state
+- **`types/combat.ts`** — added `DeathRecord` interface; added `deaths` and `death_count` to `CombatState`
+- **`pages/CombatLogPage.tsx`** — added `DeathLogSection` component: collapsible panel at the bottom of the Combat Log page, showing session death count with Skull icon and an expandable per-death table (time, zone, killer or "unknown cause"); shown in both normal and empty-fight states when deaths > 0
+
 ### Task 5.4 — HPS Meter ✅
 - **Heal log parsing** (`internal/logparser/`):
   - `models.go` — added `EventHeal` event type constant (`log:heal`) and `HealData` struct (`Actor`, `Target`, `Amount`)

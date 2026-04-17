@@ -73,6 +73,9 @@ var (
 	// Death: "You have been slain by a gnoll."
 	reDeath = regexp.MustCompile(`^You have been slain by (.+)\.$`)
 
+	// Death (no killer): "You died."
+	reDiedSimple = regexp.MustCompile(`^You died\.$`)
+
 	// Kill — player slays mob: "You have slain a gnoll!"
 	reYouKill = regexp.MustCompile(`^You have slain (.+)!$`)
 
@@ -326,6 +329,12 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		return LogEvent{
 			Type: EventDeath,
 			Data: DeathData{SlainBy: m[1]},
+		}, true
+	}
+	if reDiedSimple.MatchString(msg) {
+		return LogEvent{
+			Type: EventDeath,
+			Data: DeathData{},
 		}, true
 	}
 

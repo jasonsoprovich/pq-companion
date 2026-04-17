@@ -66,6 +66,13 @@ type FightSummary struct {
 	YouHPS      float64       `json:"you_hps"`
 }
 
+// DeathRecord captures a single player death event.
+type DeathRecord struct {
+	Timestamp time.Time `json:"timestamp"`
+	Zone      string    `json:"zone"`
+	SlainBy   string    `json:"slain_by"` // empty when "You died." (no named killer)
+}
+
 // CombatState is the full state payload sent over WebSocket and returned by
 // GET /api/overlay/combat.
 type CombatState struct {
@@ -76,5 +83,7 @@ type CombatState struct {
 	SessionDPS    float64        `json:"session_dps"`    // player personal only
 	SessionHeal   int64          `json:"session_heal"`   // player personal healing only
 	SessionHPS    float64        `json:"session_hps"`    // player personal HPS only
+	Deaths        []DeathRecord  `json:"deaths"`
+	DeathCount    int            `json:"death_count"`
 	LastUpdated   time.Time      `json:"last_updated"`
 }
