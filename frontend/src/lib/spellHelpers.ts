@@ -97,7 +97,7 @@ const SKILL_LABELS: Record<number, string> = {
 }
 
 export function skillLabel(s: number): string {
-  return SKILL_LABELS[s] ?? `Skill ${s}`
+  return SKILL_LABELS[s] ?? ''
 }
 
 // ── Timing helpers ─────────────────────────────────────────────────────────────

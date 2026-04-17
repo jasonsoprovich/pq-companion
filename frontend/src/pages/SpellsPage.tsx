@@ -217,9 +217,11 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
           {spell.name}
         </h2>
         <div className="mt-1 flex flex-wrap items-center gap-2">
-          <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-            {skillLabel(spell.skill)}
-          </span>
+          {skillLabel(spell.skill) && (
+            <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              {skillLabel(spell.skill)}
+            </span>
+          )}
           {flags.map((f) => (
             <span
               key={f}
@@ -239,7 +241,7 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
       <div className="flex flex-col gap-3">
         {/* Casting */}
         <Section title="Casting">
-          <StatRow label="Skill" value={skillLabel(spell.skill)} />
+          {skillLabel(spell.skill) && <StatRow label="Skill" value={skillLabel(spell.skill)} />}
           <StatRow label="Mana Cost" value={spell.mana > 0 ? spell.mana : 'None'} />
           <StatRow label="Cast Time" value={msLabel(spell.cast_time)} />
           {spell.recast_time > 0 && (
