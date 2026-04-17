@@ -25,6 +25,7 @@ import SpellTimerPage from './pages/SpellTimerPage'
 import CombatLogPage from './pages/CombatLogPage'
 import TriggersPage from './pages/TriggersPage'
 import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
+import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
 
 export default function App(): React.ReactElement {
   useAudioEngine()
@@ -40,6 +41,7 @@ export default function App(): React.ReactElement {
         <Route path="buff-timer-window" element={<BuffTimerWindowPage />} />
         <Route path="detrim-timer-window" element={<DetrimTimerWindowPage />} />
         <Route path="trigger-overlay-window" element={<TriggerOverlayWindowPage />} />
+        <Route path="npc-overlay-window" element={<NPCOverlayWindowPage />} />
 
         {/* Main app routes — wrapped in full Layout */}
         <Route path="/" element={<Layout />}>

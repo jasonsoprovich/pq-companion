@@ -355,6 +355,15 @@
 - **Sidebar** — "NPC Overlay" (`Crosshair` icon) added to the Parsing nav section
 - **`App.tsx`** — `/npc-overlay` route wired up
 
+### Task 4.5 — NPC Info Overlay Window (Pop-Out) ✅
+
+- **`electron/main/index.ts`** — `createNPCOverlay()` function creates a 360×480 transparent, frameless, always-on-top `BrowserWindow` loading `/#/npc-overlay-window`; IPC handlers `overlay:npc:open`, `overlay:npc:close`, `overlay:npc:toggle` wired up
+- **`electron/preload/index.ts`** — `openNPC`, `closeNPC`, `toggleNPC` methods added to `window.electron.overlay`
+- **`frontend/src/types/electron.d.ts`** — NPC overlay methods added to `ElectronAPI.overlay` type
+- **`frontend/src/pages/NPCOverlayWindowPage.tsx`** — standalone overlay window page: drag-region header with `Crosshair` icon and close button, scrollable NPC content (identity, combat, resists, attributes, special abilities), no-target state; subscribes to `overlay:npc_target` WebSocket messages for real-time updates
+- **`frontend/src/App.tsx`** — `/npc-overlay-window` route wired up outside the main `Layout`
+- **`frontend/src/pages/NPCOverlayPage.tsx`** — "Pop out" button (`ExternalLink` icon) added to header; calls `window.electron.overlay.toggleNPC()`; only rendered inside Electron
+
 ## Phase 5 — Combat Tracking & DPS Meter
 
 ### Task 5.1 — Combat Parser ✅

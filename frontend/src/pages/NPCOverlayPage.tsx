@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Crosshair, AlertTriangle, CheckCircle2, Circle } from 'lucide-react'
+import { Crosshair, AlertTriangle, CheckCircle2, Circle, ExternalLink } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getOverlayNPCTarget, getLogStatus } from '../services/api'
 import { className, raceName, bodyTypeName } from '../lib/npcHelpers'
@@ -357,7 +357,27 @@ export default function NPCOverlayPage(): React.ReactElement {
             NPC Overlay
           </h1>
         </div>
-        <ConnPill state={wsState} status={status} />
+        <div className="flex items-center gap-2">
+          {window.electron?.overlay && (
+            <button
+              onClick={() => window.electron.overlay.toggleNPC()}
+              title="Pop out NPC overlay as floating window"
+              style={{
+                background: 'none',
+                border: '1px solid var(--color-border)',
+                borderRadius: 4,
+                cursor: 'pointer',
+                color: 'var(--color-muted)',
+                padding: '2px 5px',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              <ExternalLink size={12} />
+            </button>
+          )}
+          <ConnPill state={wsState} status={status} />
+        </div>
       </div>
 
       {/* Tailer status */}

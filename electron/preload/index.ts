@@ -29,6 +29,9 @@ contextBridge.exposeInMainWorld('electron', {
     openTrigger: (): Promise<void> => ipcRenderer.invoke('overlay:trigger:open'),
     closeTrigger: (): Promise<void> => ipcRenderer.invoke('overlay:trigger:close'),
     toggleTrigger: (): Promise<void> => ipcRenderer.invoke('overlay:trigger:toggle'),
+    openNPC: (): Promise<void> => ipcRenderer.invoke('overlay:npc:open'),
+    closeNPC: (): Promise<void> => ipcRenderer.invoke('overlay:npc:close'),
+    toggleNPC: (): Promise<void> => ipcRenderer.invoke('overlay:npc:toggle'),
   },
   dialog: {
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-folder'),

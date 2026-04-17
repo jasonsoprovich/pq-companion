@@ -12,6 +12,7 @@ let hpsOverlayWindow: BrowserWindow | null = null
 let buffTimerWindow: BrowserWindow | null = null
 let detrimTimerWindow: BrowserWindow | null = null
 let triggerOverlayWindow: BrowserWindow | null = null
+let npcOverlayWindow: BrowserWindow | null = null
 let sidecarProcess: ChildProcess | null = null
 
 // ── Sidecar (Go backend) lifecycle ────────────────────────────────────────────
@@ -372,6 +373,51 @@ function createTriggerOverlay(): void {
   })
 }
 
+// ── NPC Overlay window ────────────────────────────────────────────────────────
+
+function createNPCOverlay(): void {
+  if (npcOverlayWindow && !npcOverlayWindow.isDestroyed()) {
+    npcOverlayWindow.focus()
+    return
+  }
+
+  npcOverlayWindow = new BrowserWindow({
+    width: 360,
+    height: 480,
+    minWidth: 280,
+    minHeight: 200,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    },
+  })
+
+  npcOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
+  npcOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    npcOverlayWindow.loadURL(`${rendererUrl}/#/npc-overlay-window`)
+  } else {
+    npcOverlayWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/npc-overlay-window',
+    })
+  }
+
+  npcOverlayWindow.on('closed', () => {
+    npcOverlayWindow = null
+  })
+}
+
 // ── IPC handlers — window controls ───────────────────────────────────────────
 
 ipcMain.handle('window:minimize', () => mainWindow?.minimize())
@@ -474,6 +520,24 @@ ipcMain.handle('overlay:trigger:toggle', () => {
     triggerOverlayWindow.close()
   } else {
     createTriggerOverlay()
+  }
+})
+
+ipcMain.handle('overlay:npc:open', () => {
+  createNPCOverlay()
+})
+
+ipcMain.handle('overlay:npc:close', () => {
+  if (npcOverlayWindow && !npcOverlayWindow.isDestroyed()) {
+    npcOverlayWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:npc:toggle', () => {
+  if (npcOverlayWindow && !npcOverlayWindow.isDestroyed()) {
+    npcOverlayWindow.close()
+  } else {
+    createNPCOverlay()
   }
 })
 

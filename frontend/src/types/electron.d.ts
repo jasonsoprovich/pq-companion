@@ -28,6 +28,9 @@ export interface ElectronAPI {
     openTrigger: () => Promise<void>
     closeTrigger: () => Promise<void>
     toggleTrigger: () => Promise<void>
+    openNPC: () => Promise<void>
+    closeNPC: () => Promise<void>
+    toggleNPC: () => Promise<void>
   }
   dialog: {
     selectFolder: () => Promise<string | null>
