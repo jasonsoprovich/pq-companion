@@ -31,6 +31,10 @@ const (
 	// EventSpellFade is emitted when a spell effect wears off.
 	EventSpellFade EventType = "log:spell_fade"
 
+	// EventSpellFadeFrom is emitted when a spell effect fades from a specific
+	// target (e.g. "Tashanian effect fades from Soandso.").
+	EventSpellFadeFrom EventType = "log:spell_fade_from"
+
 	// EventDeath is emitted when the player is slain.
 	EventDeath EventType = "log:death"
 
@@ -98,6 +102,12 @@ type SpellResistData struct {
 // SpellFadeData is the structured payload for EventSpellFade.
 type SpellFadeData struct {
 	SpellName string `json:"spell_name"`
+}
+
+// SpellFadeFromData is the structured payload for EventSpellFadeFrom.
+type SpellFadeFromData struct {
+	SpellName  string `json:"spell_name"`
+	TargetName string `json:"target_name"`
 }
 
 // DeathData is the structured payload for EventDeath.

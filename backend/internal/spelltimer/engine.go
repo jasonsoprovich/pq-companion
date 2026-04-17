@@ -64,6 +64,14 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		}
 		e.onSpellCast(ev.Timestamp, data.SpellName)
 
+	case logparser.EventSpellInterrupt:
+		data, ok := ev.Data.(logparser.SpellInterruptData)
+		if !ok || data.SpellName == "" {
+			return
+		}
+		// Named interrupt — cancel the pending timer for this spell.
+		e.removeTimer(data.SpellName)
+
 	case logparser.EventSpellResist:
 		data, ok := ev.Data.(logparser.SpellResistData)
 		if !ok {
@@ -78,6 +86,14 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 			return
 		}
 		// Buff naturally wore off — remove the timer.
+		e.removeTimer(data.SpellName)
+
+	case logparser.EventSpellFadeFrom:
+		data, ok := ev.Data.(logparser.SpellFadeFromData)
+		if !ok {
+			return
+		}
+		// Buff faded from a specific target — remove the timer keyed by spell name.
 		e.removeTimer(data.SpellName)
 
 	case logparser.EventZone, logparser.EventDeath:

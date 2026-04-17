@@ -131,6 +131,29 @@ func TestParseLine(t *testing.T) {
 			wantData: SpellFadeData{SpellName: "Color Flux"},
 		},
 
+		// --- Spell fade from target ---
+		{
+			name:     "spell: fade from target single-word spell",
+			line:     "[Mon Apr 13 06:00:00 2026] Tashanian effect fades from Soandso.",
+			wantOK:   true,
+			wantType: EventSpellFadeFrom,
+			wantData: SpellFadeFromData{SpellName: "Tashanian", TargetName: "Soandso"},
+		},
+		{
+			name:     "spell: fade from target multi-word spell",
+			line:     "[Mon Apr 13 06:00:00 2026] Color Flux effect fades from Playerone.",
+			wantOK:   true,
+			wantType: EventSpellFadeFrom,
+			wantData: SpellFadeFromData{SpellName: "Color Flux", TargetName: "Playerone"},
+		},
+		{
+			name:     "spell: fade from target multi-word target",
+			line:     "[Mon Apr 13 06:00:00 2026] Clarity effect fades from a gnoll.",
+			wantOK:   true,
+			wantType: EventSpellFadeFrom,
+			wantData: SpellFadeFromData{SpellName: "Clarity", TargetName: "a gnoll"},
+		},
+
 		// --- Combat: player hits NPC ---
 		{
 			name:     "combat: you slash NPC",
@@ -410,6 +433,14 @@ func compareData(t *testing.T, got, want interface{}) {
 		}
 		if g != w {
 			t.Errorf("SpellFadeData = %+v, want %+v", g, w)
+		}
+	case SpellFadeFromData:
+		g, ok := got.(SpellFadeFromData)
+		if !ok {
+			t.Fatalf("Data type = %T, want SpellFadeFromData", got)
+		}
+		if g != w {
+			t.Errorf("SpellFadeFromData = %+v, want %+v", g, w)
 		}
 	case CombatHitData:
 		g, ok := got.(CombatHitData)

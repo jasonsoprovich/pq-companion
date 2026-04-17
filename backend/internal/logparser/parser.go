@@ -34,6 +34,9 @@ var (
 	// Spell fade: "Your Mesmerization spell has worn off."
 	reSpellFade = regexp.MustCompile(`^Your (.+) spell has worn off\.$`)
 
+	// Spell fade from target: "Tashanian effect fades from Soandso."
+	reSpellFadeFrom = regexp.MustCompile(`^(.+) effect fades from (.+)\.$`)
+
 	// Combat — player hits NPC:
 	// "You slash a gnoll for 150 points of damage."
 	reYouHit = regexp.MustCompile(`^You (\w+) (.+) for (\d+) points? of damage\.$`)
@@ -186,6 +189,14 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		return LogEvent{
 			Type: EventSpellFade,
 			Data: SpellFadeData{SpellName: m[1]},
+		}, true
+	}
+
+	// --- Spell fade from target ---
+	if m := reSpellFadeFrom.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventSpellFadeFrom,
+			Data: SpellFadeFromData{SpellName: m[1], TargetName: m[2]},
 		}, true
 	}
 

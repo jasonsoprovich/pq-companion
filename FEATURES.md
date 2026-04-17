@@ -259,7 +259,7 @@
 
 ### Task 4.1 — Log File Tailer ✅
 - **`internal/logparser/` package** — real-time EQ log file tailer and event parser:
-  - `models.go` — typed `LogEvent` struct with `EventType` constants: `log:zone`, `log:combat_hit`, `log:combat_miss`, `log:spell_cast`, `log:spell_interrupt`, `log:spell_resist`, `log:spell_fade`, `log:death`; per-type data structs (`ZoneData`, `CombatHitData`, `CombatMissData`, `SpellCastData`, `SpellInterruptData`, `SpellResistData`, `SpellFadeData`, `DeathData`)
+  - `models.go` — typed `LogEvent` struct with `EventType` constants: `log:zone`, `log:combat_hit`, `log:combat_miss`, `log:spell_cast`, `log:spell_interrupt`, `log:spell_resist`, `log:spell_fade`, `log:spell_fade_from`, `log:death`; per-type data structs (`ZoneData`, `CombatHitData`, `CombatMissData`, `SpellCastData`, `SpellInterruptData`, `SpellResistData`, `SpellFadeData`, `SpellFadeFromData`, `DeathData`)
   - `parser.go` — `ParseLine(line string) (LogEvent, bool)` regex-based classifier:
     - Timestamp: `[Mon Jan _2 15:04:05 2006]` layout; handles space-padded single-digit days (ctime format)
     - Zone change: `"You have entered <ZoneName>."`
@@ -267,6 +267,7 @@
     - Spell interrupted: generic `"Your spell is interrupted."` and named `"Your <SpellName> spell is interrupted."`
     - Spell resist: `"Your target resisted the <SpellName> spell."`
     - Spell fade: `"Your <SpellName> spell has worn off."`
+    - Spell fade from target: `"<SpellName> effect fades from <Name>."` → `EventSpellFadeFrom` with `SpellName` and `TargetName`
     - Combat hit (player→NPC): `"You <verb> <target> for <N> points of damage."` — extracts actor, verb, target, damage
     - Combat hit (NPC→player): `"<Actor> <verb>s you for <N> points of damage."` — extracts actor, conjugated verb, damage
     - Combat miss (player→NPC): `"You try to <verb> <target>, but miss!"`
@@ -548,8 +549,10 @@ Subsequent release builds download it automatically from that release.
   - `Start(ctx) ` — background goroutine that ticks every second: prunes expired timers (silently) and broadcasts current `TimerState`
   - `Handle(ev LogEvent)` — routes log events:
     - `EventSpellCast` → DB lookup by spell name, `CalcDurationTicks`, compute `StartsAt = CastAt + CastTime_ms`, `ExpiresAt = StartsAt + duration`; upserts timer and broadcasts
+    - `EventSpellInterrupt` → removes timer by spell name if named interrupt (e.g. "Your Mesmerization spell is interrupted.")
     - `EventSpellResist` → removes timer (spell was resisted, never landed)
-    - `EventSpellFade` → removes timer (spell naturally wore off)
+    - `EventSpellFade` → removes timer (personal fade: "Your X spell has worn off.")
+    - `EventSpellFadeFrom` → removes timer by spell name (target fade: "X effect fades from Name.")
     - `EventZone`, `EventDeath` → clears all timers and broadcasts
   - `GetState() TimerState` — point-in-time snapshot for REST API
   - `categorize(*db.Spell) Category` — classifies spell: effect 18 → mez; effect 23 → stun; effect 0 with negative base value → dot; target type 3/6/10/41 → buff; otherwise → debuff
