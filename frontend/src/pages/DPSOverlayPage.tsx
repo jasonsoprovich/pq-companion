@@ -128,8 +128,25 @@ function FilterButton({
 
 // ── Combat status strip ────────────────────────────────────────────────────────
 
-function CombatStrip({ combat, kind }: { combat: CombatState; kind: 'dps' | 'hps' }): React.ReactElement {
+function CombatStrip({
+  combat,
+  kind,
+  now,
+}: {
+  combat: CombatState
+  kind: 'dps' | 'hps'
+  now: number
+}): React.ReactElement {
   const fight = combat.current_fight
+
+  // Compute live duration from wall-clock so the timer ticks every second even
+  // between log events, then clamp to at least the backend-reported value.
+  const liveSecs = fight
+    ? Math.max((now - new Date(fight.start_time).getTime()) / 1000, fight.duration_seconds)
+    : 0
+  const liveTotalDPS = fight && liveSecs > 0 ? fight.total_damage / liveSecs : 0
+  const liveTotalHPS = fight && liveSecs > 0 ? fight.total_heal / liveSecs : 0
+
   return (
     <div
       style={{
@@ -158,12 +175,12 @@ function CombatStrip({ combat, kind }: { combat: CombatState; kind: 'dps' | 'hps
         <>
           <span style={{ fontWeight: 600, color: '#f87171' }}>In Combat</span>
           <span style={{ color: 'var(--color-muted)' }}>·</span>
-          <span>{fmtDuration(fight.duration_seconds)}</span>
+          <span>{fmtDuration(liveSecs)}</span>
           <span style={{ color: 'var(--color-muted)' }}>·</span>
           {kind === 'dps' ? (
-            <span style={{ color: '#f97316' }}>{fmtRate(fight.total_dps)} DPS</span>
+            <span style={{ color: '#f97316' }}>{fmtRate(liveTotalDPS)} DPS</span>
           ) : (
-            <span style={{ color: '#22c55e' }}>{fmtRate(fight.total_hps)} HPS</span>
+            <span style={{ color: '#22c55e' }}>{fmtRate(liveTotalHPS)} HPS</span>
           )}
         </>
       ) : (
@@ -436,11 +453,19 @@ export default function DPSOverlayPage(): React.ReactElement {
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
   const [showAllDPS, setShowAllDPS] = useState(true)
   const [showAllHPS, setShowAllHPS] = useState(true)
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
     getCombatState().then(setCombat).catch(() => {})
     getLogStatus().then(setStatus).catch(() => {})
   }, [])
+
+  // Tick every second while in combat so the fight timer advances in real-time.
+  useEffect(() => {
+    if (!combat?.in_combat) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [combat?.in_combat])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === 'overlay:combat') {
@@ -522,7 +547,7 @@ export default function DPSOverlayPage(): React.ReactElement {
           </div>
         ) : (
           <>
-            <CombatStrip combat={combat} kind="dps" />
+            <CombatStrip combat={combat} kind="dps" now={now} />
             {combat.in_combat && combat.current_fight ? (
               <DPSPanel fight={combat.current_fight} showAll={showAllDPS} />
             ) : (
@@ -579,7 +604,7 @@ export default function DPSOverlayPage(): React.ReactElement {
           </div>
         ) : (
           <>
-            <CombatStrip combat={combat} kind="hps" />
+            <CombatStrip combat={combat} kind="hps" now={now} />
             {combat.in_combat && combat.current_fight ? (
               <HPSPanel fight={combat.current_fight} showAll={showAllHPS} />
             ) : (

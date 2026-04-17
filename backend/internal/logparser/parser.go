@@ -65,6 +65,12 @@ var (
 	// Death: "You have been slain by a gnoll."
 	reDeath = regexp.MustCompile(`^You have been slain by (.+)\.$`)
 
+	// Kill — player slays mob: "You have slain a gnoll!"
+	reYouKill = regexp.MustCompile(`^You have slain (.+)!$`)
+
+	// Kill — group member slays mob: "Playerone has slain a gnoll!"
+	reSomeoneSlay = regexp.MustCompile(`^(\w+) has slain (.+)!$`)
+
 	// Heals — player heals a target:
 	// "You healed Playerone for 150 hit points."
 	// "You healed yourself for 150 hit points."
@@ -289,6 +295,22 @@ func classifyMessage(msg string) (LogEvent, bool) {
 				Data: HealData{Actor: m[1], Target: m[2], Amount: amt},
 			}, true
 		}
+	}
+
+	// --- Player slays mob ---
+	if m := reYouKill.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventKill,
+			Data: KillData{Killer: "You", Target: m[1]},
+		}, true
+	}
+
+	// --- Group member slays mob ---
+	if m := reSomeoneSlay.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventKill,
+			Data: KillData{Killer: m[1], Target: m[2]},
+		}, true
 	}
 
 	// --- Death ---

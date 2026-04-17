@@ -37,6 +37,14 @@ func zoneEvent(ts time.Time) logparser.LogEvent {
 	}
 }
 
+func killEvent(killer, target string, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventKill,
+		Timestamp: ts,
+		Data:      logparser.KillData{Killer: killer, Target: target},
+	}
+}
+
 func TestNoFightInitially(t *testing.T) {
 	tr := newTestTracker(t)
 	st := tr.GetState()
@@ -183,6 +191,35 @@ func TestCombatantsSortedByDamageDescending(t *testing.T) {
 	// TotalDamage is the sum of all outgoing combatants.
 	if st.CurrentFight.TotalDamage != 250 {
 		t.Fatalf("expected TotalDamage=250, got %d", st.CurrentFight.TotalDamage)
+	}
+}
+
+func TestKillEventEndsFightAtKillTime(t *testing.T) {
+	tr := newTestTracker(t)
+	start := time.Now()
+
+	tr.Handle(hitEvent("You", "a gnoll", 300, start))
+	tr.Handle(hitEvent("You", "a gnoll", 200, start.Add(2*time.Second)))
+	killTS := start.Add(3 * time.Second)
+	tr.Handle(killEvent("You", "a gnoll", killTS))
+
+	st := tr.GetState()
+	if st.InCombat {
+		t.Fatal("expected InCombat=false after kill event")
+	}
+	if len(st.RecentFights) != 1 {
+		t.Fatalf("expected 1 recent fight, got %d", len(st.RecentFights))
+	}
+	f := st.RecentFights[0]
+	if f.TotalDamage != 500 {
+		t.Fatalf("expected TotalDamage=500, got %d", f.TotalDamage)
+	}
+	// Duration should be ~3s (start to killTS), well under combatGap (6s).
+	if f.Duration < 2.9 || f.Duration > 3.1 {
+		t.Fatalf("expected fight duration ~3s, got %.3f", f.Duration)
+	}
+	if !f.EndTime.Equal(killTS) {
+		t.Fatalf("expected EndTime=%v, got %v", killTS, f.EndTime)
 	}
 }
 

@@ -367,20 +367,20 @@
     - `WSEventCombat = "overlay:combat"` — WebSocket event type constant
   - `tracker.go` — `Tracker` struct:
     - `NewTracker(hub *ws.Hub) *Tracker`
-    - `Handle(ev logparser.LogEvent)` — processes `EventCombatHit` (records hit, starts/continues fight, arms inactivity timer), `EventZone` and `EventDeath` (immediately ends active fight)
+    - `Handle(ev logparser.LogEvent)` — processes `EventCombatHit` (records hit, starts/continues fight, arms inactivity timer), `EventKill` (ends fight at kill timestamp), `EventZone` and `EventDeath` (immediately ends active fight)
     - `GetState() CombatState` — thread-safe point-in-time snapshot
-    - Fight boundary detection: inactivity timer fires after **6 seconds** (≈2 EQ server ticks) with no new hits; uses monotonic `fightID` counter to guard stale `time.AfterFunc` callbacks
+    - Fight boundary detection: `EventKill` ends fight immediately at log-event timestamp (accurate duration); inactivity timer fires after **6 seconds** with no new hits as fallback; uses monotonic `fightID` counter to guard stale `time.AfterFunc` callbacks
     - Per-entity tracking: `internalFight` maintains separate `outgoing` map (actors hitting non-"You" targets) and `incoming` map (actors hitting "You"); `Combatants` only reflects outgoing damage dealers
     - `TotalDamage` / `TotalDPS` = sum of all outgoing damage (all players); `YouDamage` / `YouDPS` = player personal only
     - Session aggregates: `SessionDamage` = player personal outgoing summed across completed fights; `SessionDPS` = SessionDamage / total fight time
     - Completed fights stored in a ring buffer capped at 20 entries, newest first
-  - `tracker_test.go` — 8 unit tests covering: no fight initially, fight starts on first hit, hits accumulate, incoming damage excluded from Combatants, zone change ends fight, session aggregates, sort order, third-party player damage tracking
+  - `tracker_test.go` — 9 unit tests covering: no fight initially, fight starts on first hit, hits accumulate, incoming damage excluded from Combatants, zone change ends fight, kill event ends fight at kill timestamp, session aggregates, sort order, third-party player damage tracking
 - **`internal/api/combat.go`** — `combatHandler` wired to `GET /api/overlay/combat`; returns current `CombatState` as JSON
 - **`internal/api/router.go`** — `NewRouter` signature extended with `*combat.Tracker`; `/api/overlay/combat` route added under `/api/overlay`
 - **`cmd/server/main.go`** — `combat.NewTracker(hub)` instantiated; `combatTracker.Handle(ev)` called in the log-tailer event handler alongside the existing `npcTracker.Handle(ev)`
 
 ### Task 5.2 — DPS Overlay ✅
-- **Log parser extended** (`internal/logparser/parser.go`) — added `reThirdPartyHit` regex to capture other players dealing damage: `"Playername verb target for N points of damage."` — checked after player/NPC-specific patterns to prevent false matches; guards skip if actor is `"You"` or target contains `"you"` (already handled by prior patterns); also skips if actor is a bare English article (`"a"`, `"an"`, `"the"`) to prevent multi-word NPC names (e.g. `"a fire elemental"`) from injecting a spurious `"a"` entry into the DPS table (fixes #42)
+- **Log parser extended** (`internal/logparser/parser.go`) — added `reThirdPartyHit` regex to capture other players dealing damage: `"Playername verb target for N points of damage."` — checked after player/NPC-specific patterns to prevent false matches; guards skip if actor is `"You"` or target contains `"you"` (already handled by prior patterns); also skips if actor is a bare English article (`"a"`, `"an"`, `"the"`) to prevent multi-word NPC names (e.g. `"a fire elemental"`) from injecting a spurious `"a"` entry into the DPS table (fixes #42); added `EventKill` (`log:kill`) with `KillData{Killer, Target}` — parsed from `"You have slain X!"` and `"Playername has slain X!"` log lines (closes #40)
 - **`types/combat.ts`** — TypeScript types mirroring Go structs: `EntityStats`, `FightState`, `FightSummary`, `CombatState` with all new `YouDamage`/`YouDPS` fields
 - **`services/api.ts`** — added `getCombatState()` → `GET /api/overlay/combat`
 - **`components/OverlayWindow.tsx`** — reusable draggable/resizable floating panel component:
@@ -394,7 +394,7 @@
   - Floating `OverlayWindow` panel with drag/resize; hint text on background
   - **Filter toggle button** — `All` (shows every outgoing damage dealer) / `Me` (shows only `"You"`)
   - **Pop Out button** (⤢ icon) — invokes `window.electron.overlay.toggleDPS()` to open/close the standalone overlay window; only shown when running in Electron
-  - Connection pill (live WS status), log-tailer status bar, combat status strip with fight duration and live DPS
+  - Connection pill (live WS status), log-tailer status bar, combat status strip with fight duration (ticks every second via `setInterval`) and live DPS (recomputed from wall-clock start time so display updates continuously between log events)
   - Combatants table: per-row damage bar (width = % of total), name (player highlighted), % share, total damage, DPS; column headers; empty state
   - Session footer: fight count, total damage, session DPS
   - Subscribes to `overlay:combat` WebSocket events; initial state fetched via REST on mount

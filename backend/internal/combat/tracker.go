@@ -83,6 +83,9 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 		}
 		t.recordHeal(ev.Timestamp, data)
 
+	case logparser.EventKill:
+		t.endFightAt(ev.Timestamp)
+
 	case logparser.EventZone, logparser.EventDeath:
 		t.endFight(true)
 	}
@@ -205,6 +208,26 @@ func (t *Tracker) endFight(forced bool) {
 	}
 	t.archiveFight(time.Now())
 	snap := t.snapshot(time.Now())
+	t.mu.Unlock()
+
+	t.broadcast(snap)
+}
+
+// endFightAt ends the active fight at the given log-event timestamp (e.g. on a
+// kill event), so the archived duration reflects first-hit to kill rather than
+// first-hit to inactivity-timer expiry.
+func (t *Tracker) endFightAt(ts time.Time) {
+	t.mu.Lock()
+	if t.active == nil {
+		t.mu.Unlock()
+		return
+	}
+	if t.endTimer != nil {
+		t.endTimer.Stop()
+		t.endTimer = nil
+	}
+	t.archiveFight(ts)
+	snap := t.snapshot(ts)
 	t.mu.Unlock()
 
 	t.broadcast(snap)

@@ -222,6 +222,29 @@ func TestParseLine(t *testing.T) {
 			wantData: CombatMissData{Actor: "a gnoll", Target: "You", MissType: "parry"},
 		},
 
+		// --- Kill ---
+		{
+			name:     "kill: you slay single-word mob",
+			line:     "[Mon Apr 13 06:00:00 2026] You have slain a gnoll!",
+			wantOK:   true,
+			wantType: EventKill,
+			wantData: KillData{Killer: "You", Target: "a gnoll"},
+		},
+		{
+			name:     "kill: you slay multi-word mob",
+			line:     "[Mon Apr 13 06:00:00 2026] You have slain a greater gnoll!",
+			wantOK:   true,
+			wantType: EventKill,
+			wantData: KillData{Killer: "You", Target: "a greater gnoll"},
+		},
+		{
+			name:     "kill: group member slays mob",
+			line:     "[Mon Apr 13 06:00:00 2026] Osui has slain a gnoll!",
+			wantOK:   true,
+			wantType: EventKill,
+			wantData: KillData{Killer: "Osui", Target: "a gnoll"},
+		},
+
 		// --- Death ---
 		{
 			name:     "death: slain by NPC",
@@ -346,6 +369,14 @@ func compareData(t *testing.T, got, want interface{}) {
 		}
 		if g != w {
 			t.Errorf("DeathData = %+v, want %+v", g, w)
+		}
+	case KillData:
+		g, ok := got.(KillData)
+		if !ok {
+			t.Fatalf("Data type = %T, want KillData", got)
+		}
+		if g != w {
+			t.Errorf("KillData = %+v, want %+v", g, w)
 		}
 	default:
 		t.Fatalf("compareData: unhandled want type %T", want)

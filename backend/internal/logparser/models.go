@@ -34,6 +34,9 @@ const (
 	// EventDeath is emitted when the player is slain.
 	EventDeath EventType = "log:death"
 
+	// EventKill is emitted when a mob is slain by the player or a group member.
+	EventKill EventType = "log:kill"
+
 	// EventHeal is emitted when a heal lands (player → target or target → player).
 	EventHeal EventType = "log:heal"
 )
@@ -96,6 +99,12 @@ type SpellFadeData struct {
 // DeathData is the structured payload for EventDeath.
 type DeathData struct {
 	SlainBy string `json:"slain_by"`
+}
+
+// KillData is the structured payload for EventKill.
+type KillData struct {
+	Killer string `json:"killer"` // "You" or the player's name
+	Target string `json:"target"` // the mob that was slain
 }
 
 // HealData is the structured payload for EventHeal.

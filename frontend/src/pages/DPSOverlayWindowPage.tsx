@@ -133,10 +133,18 @@ function FightTable({ fight, showAll }: { fight: FightState; showAll: boolean })
 export default function DPSOverlayWindowPage(): React.ReactElement {
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
     getCombatState().then(setCombat).catch(() => {})
   }, [])
+
+  // Tick every second while in combat so the fight timer advances in real-time.
+  useEffect(() => {
+    if (!combat?.in_combat) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [combat?.in_combat])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === 'overlay:combat') {
@@ -147,6 +155,11 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   useWebSocket(handleMessage)
 
   const fight = combat?.current_fight
+  const liveSecs = fight
+    ? Math.max((now - new Date(fight.start_time).getTime()) / 1000, fight.duration_seconds)
+    : 0
+  const liveTotalDPS = fight && liveSecs > 0 ? fight.total_damage / liveSecs : 0
+  const liveYouDPS = fight && liveSecs > 0 ? fight.you_damage / liveSecs : 0
 
   return (
     <div
@@ -182,7 +195,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>DPS</span>
           {fight && (
             <span style={{ fontSize: 10, color: '#fb923c', marginLeft: 4 }}>
-              {fmtDPS(showAll ? fight.total_dps : fight.you_dps)}
+              {fmtDPS(showAll ? liveTotalDPS : liveYouDPS)}
             </span>
           )}
         </div>
@@ -250,7 +263,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           }}
         />
         {combat?.in_combat && fight ? (
-          <span>{fmtDur(fight.duration_seconds)} · {fmt(fight.total_damage)} dmg</span>
+          <span>{fmtDur(liveSecs)} · {fmt(fight.total_damage)} dmg</span>
         ) : (
           <span>Not in combat</span>
         )}
