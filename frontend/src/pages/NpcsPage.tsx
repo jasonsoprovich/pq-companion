@@ -8,7 +8,6 @@ import {
   className,
   npcDisplayName,
   parseSpecialAbilities,
-  raceName,
 } from '../lib/npcHelpers'
 
 // ── Search pane ────────────────────────────────────────────────────────────────
@@ -209,7 +208,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
         </h2>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-            {`Level ${npc.level} ${className(npc.class)} · ${raceName(npc.race)}`}
+            {`Level ${npc.level} ${className(npc.class)} · ${npc.race_name}`}
           </span>
           {flags.map((f) => (
             <span

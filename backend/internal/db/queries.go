@@ -113,7 +113,7 @@ func collectItems(rows *sql.Rows) ([]Item, error) {
 // ─── NPCs ─────────────────────────────────────────────────────────────────────
 
 const npcColumns = `
-  n.id, n.name, COALESCE(n.lastname, ''), n.level, n.race, n.class, n.bodytype,
+  n.id, n.name, COALESCE(n.lastname, ''), n.level, n.race, COALESCE(r.name, 'Race ' || n.race), n.class, n.bodytype,
   n.hp, n.mana, n.mindmg, n.maxdmg, n.attack_count,
   n.MR, n.CR, n.DR, n.FR, n.PR, n.AC,
   n.STR, n.STA, n.DEX, n.AGI, n."_INT", n.WIS, n.CHA,
@@ -123,12 +123,14 @@ const npcColumns = `
   COALESCE(n.special_abilities, ''),
   n.spellscale, n.healscale, n.exp_pct`
 
+const npcJoin = `LEFT JOIN races r ON r.id = n.race`
+
 func scanNPC(row interface {
 	Scan(...any) error
 }) (*NPC, error) {
 	var n NPC
 	err := row.Scan(
-		&n.ID, &n.Name, &n.LastName, &n.Level, &n.Race, &n.Class, &n.BodyType,
+		&n.ID, &n.Name, &n.LastName, &n.Level, &n.Race, &n.RaceName, &n.Class, &n.BodyType,
 		&n.HP, &n.Mana, &n.MinDmg, &n.MaxDmg, &n.AttackCount,
 		&n.MR, &n.CR, &n.DR, &n.FR, &n.PR, &n.AC,
 		&n.STR, &n.STA, &n.DEX, &n.AGI, &n.INT, &n.WIS, &n.CHA,
@@ -146,7 +148,7 @@ func scanNPC(row interface {
 
 // GetNPC returns the NPC with the given ID, or sql.ErrNoRows if not found.
 func (db *DB) GetNPC(id int) (*NPC, error) {
-	q := fmt.Sprintf("SELECT %s FROM npc_types n WHERE n.id = ?", npcColumns)
+	q := fmt.Sprintf("SELECT %s FROM npc_types n %s WHERE n.id = ?", npcColumns, npcJoin)
 	row := db.QueryRow(q, id)
 	n, err := scanNPC(row)
 	if err != nil {
@@ -161,8 +163,8 @@ func (db *DB) GetNPC(id int) (*NPC, error) {
 // Returns sql.ErrNoRows (wrapped) when no match is found.
 func (db *DB) GetNPCByName(name string) (*NPC, error) {
 	q := fmt.Sprintf(
-		"SELECT %s FROM npc_types n WHERE n.name = ? COLLATE NOCASE LIMIT 1",
-		npcColumns,
+		"SELECT %s FROM npc_types n %s WHERE n.name = ? COLLATE NOCASE LIMIT 1",
+		npcColumns, npcJoin,
 	)
 	row := db.QueryRow(q, name)
 	n, err := scanNPC(row)
@@ -185,8 +187,8 @@ func (db *DB) SearchNPCs(query string, limit, offset int) (*SearchResult[NPC], e
 	}
 
 	q := fmt.Sprintf(
-		"SELECT %s FROM npc_types n WHERE n.name LIKE ? ESCAPE '\\' ORDER BY n.name LIMIT ? OFFSET ?",
-		npcColumns,
+		"SELECT %s FROM npc_types n %s WHERE n.name LIKE ? ESCAPE '\\' ORDER BY n.name LIMIT ? OFFSET ?",
+		npcColumns, npcJoin,
 	)
 	rows, err := db.Query(q, pattern, limit, offset)
 	if err != nil {
@@ -432,8 +434,8 @@ func (db *DB) GetNPCsByZone(shortName string, limit, offset int) (*SearchResult[
 	}
 
 	q := fmt.Sprintf(
-		"SELECT %s FROM npc_types n WHERE n.id IN (%s) ORDER BY n.name LIMIT ? OFFSET ?",
-		npcColumns, idSubquery,
+		"SELECT %s FROM npc_types n %s WHERE n.id IN (%s) ORDER BY n.name LIMIT ? OFFSET ?",
+		npcColumns, npcJoin, idSubquery,
 	)
 	rows, err := db.Query(q, shortName, shortName, limit, offset)
 	if err != nil {

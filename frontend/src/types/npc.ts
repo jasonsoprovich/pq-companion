@@ -4,6 +4,7 @@ export interface NPC {
   last_name: string
   level: number
   race: number
+  race_name: string
   class: number
   body_type: number
 

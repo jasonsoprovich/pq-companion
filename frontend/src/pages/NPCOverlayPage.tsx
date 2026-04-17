@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Crosshair, AlertTriangle, CheckCircle2, Circle, ExternalLink } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getOverlayNPCTarget, getLogStatus } from '../services/api'
-import { className, raceName, bodyTypeName } from '../lib/npcHelpers'
+import { className, bodyTypeName } from '../lib/npcHelpers'
 import type { TargetState, SpecialAbility } from '../types/overlay'
 import type { LogTailerStatus } from '../types/logEvent'
 
@@ -231,7 +231,7 @@ function NPCCard({ state }: { state: TargetState }): React.ReactElement {
             <div className="flex flex-wrap gap-2">
               <Stat label="Level" value={npc.level} color="var(--color-primary)" />
               <Stat label="Class" value={className(npc.class)} />
-              <Stat label="Race" value={raceName(npc.race)} />
+              <Stat label="Race" value={npc.race_name} />
               <Stat label="Body" value={bodyTypeName(npc.body_type)} />
             </div>
           </div>

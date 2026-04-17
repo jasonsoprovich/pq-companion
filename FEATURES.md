@@ -141,7 +141,7 @@
 - **`lib/npcHelpers.ts`** — EverQuest NPC data decoders:
   - `npcDisplayName(npc)` — combines name + last_name, converting EQEmu underscores to spaces
   - `className(classId)` — maps NPC class IDs 1–16 to full class names (Warrior → Berserker)
-  - `raceName(raceId)` — maps race IDs to names (Human, Barbarian, Iksar, Skeleton, Dragon, etc.)
+  - `raceName(raceId)` — maps race IDs to names (Human, Barbarian, Iksar, Skeleton, Dragon, etc.); display now uses `race_name` resolved via SQL JOIN to `races` table, covering all race IDs (e.g. 202 = Grimling) without a hard-coded lookup (fixes #27)
   - `bodyTypeName(bodyType)` — maps body type codes to labels (Humanoid, Undead, Magical, Invulnerable, etc.)
   - `parseSpecialAbilities(raw)` — parses caret-delimited `code,value^…` string into `{code, value, name}` objects; filters out disabled abilities (value = 0)
 - **`pages/NpcsPage.tsx`** — split-pane layout matching Item/Spell Explorer:
