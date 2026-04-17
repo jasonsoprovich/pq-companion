@@ -81,13 +81,19 @@ export function targetLabel(t: number): string {
 // ── Spell skill (school) ───────────────────────────────────────────────────────
 
 const SKILL_LABELS: Record<number, string> = {
-  24: 'Alteration',
-  26: 'Abjuration',
-  29: 'Conjuration',
-  14: 'Divination',
-  31: 'Evocation',
+  4: 'Abjuration',
+  5: 'Alteration',
+  12: 'Percussion Instruments',
+  14: 'Conjuration',
+  15: 'Discipline',
+  18: 'Divination',
+  24: 'Evocation',
+  33: 'Discipline',
+  41: 'Brass Instruments',
+  49: 'Singing',
   52: 'Channeling',
-  0: 'Melee',
+  54: 'Stringed Instruments',
+  70: 'Wind Instruments',
 }
 
 export function skillLabel(s: number): string {

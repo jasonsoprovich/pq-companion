@@ -239,6 +239,7 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
       <div className="flex flex-col gap-3">
         {/* Casting */}
         <Section title="Casting">
+          <StatRow label="Skill" value={skillLabel(spell.skill)} />
           <StatRow label="Mana Cost" value={spell.mana > 0 ? spell.mana : 'None'} />
           <StatRow label="Cast Time" value={msLabel(spell.cast_time)} />
           {spell.recast_time > 0 && (

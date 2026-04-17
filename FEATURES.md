@@ -125,13 +125,13 @@
   - `castableClassesShort` — compact list of first 4 castable classes for list row subtitles
   - `resistLabel` — maps resist type int to name (Magic, Fire, Cold, Poison, Disease, Chromatic, etc.)
   - `targetLabel` — maps target type int to description (Self, Single, Targeted AE, PB AE, Caster Group, etc.)
-  - `skillLabel` — maps skill ID to school name (Alteration, Abjuration, Conjuration, Divination, Evocation)
+  - `skillLabel` — maps skill ID to school/skill name (Abjuration, Alteration, Conjuration, Divination, Evocation, Discipline, Bard instruments, etc.); corrected ID mapping to match actual spells_new DB values
   - `msLabel` — converts milliseconds to `"2.5s"` / `"Instant"` display strings
   - `durationLabel` — converts buff_duration ticks + formula to human-readable string (1 tick = 6s); distinguishes fixed vs. level-scaling durations
   - `effectLabel` — maps spell effect IDs to readable names (160+ effects mapped)
 - **`pages/SpellsPage.tsx`** — split-pane layout matching Item Explorer:
   - **Left pane (288px)**: debounced search input, result count, scrollable list showing name + castable classes with levels + mana cost; selected spell highlighted with gold left-border accent; blank-name spell IDs filtered out
-  - **Detail panel (right)**: spell data in labeled sections — Casting (mana, cast/recast/recovery time, duration), Targeting (target type, resist type, range, AoE range), Classes (full class names with required level), Effects (effect name + base value for each active slot), Messages (cast_on_you, cast_on_other, spell_fades flavor text), Info (Spell ID)
+  - **Detail panel (right)**: spell data in labeled sections — Casting (skill school, mana, cast/recast/recovery time, duration), Targeting (target type, resist type, range, AoE range), Classes (full class names with required level), Effects (effect name + base value for each active slot), Messages (cast_on_you, cast_on_other, spell_fades flavor text), Info (Spell ID)
   - Flags rendered as pill badges: DISCIPLINE, SUSPENDABLE, NO DISPELL
   - Sections only rendered when they have relevant data
 
