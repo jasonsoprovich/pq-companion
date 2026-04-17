@@ -60,3 +60,6 @@ desktop.ini
 *.swp
 *.swo
 *~
+
+# ── Test Logs from game (all files found within /TAKPv22/ root directory) ────────────────────────────────────
+testdata/
