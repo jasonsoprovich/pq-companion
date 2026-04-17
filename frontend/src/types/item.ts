@@ -11,6 +11,9 @@ export interface Item {
   delay: number
   range: number
   ac: number
+  bane_amt: number
+  bane_body: number
+  bane_race: number
 
   // Stats
   hp: number

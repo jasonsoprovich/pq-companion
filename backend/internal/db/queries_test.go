@@ -35,7 +35,7 @@ func openTestDB(t *testing.T) *db.DB {
 func TestGetItem_Found(t *testing.T) {
 	d := openTestDB(t)
 	// ID 1000 is a well-known item in EQ data; use a search to find a valid ID first.
-	res, err := d.SearchItems("Sword", 1, 0)
+	res, err := d.SearchItems("Sword", 0, 1, 0)
 	if err != nil {
 		t.Fatalf("search items: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestSearchItems(t *testing.T) {
 	d := openTestDB(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := d.SearchItems(tt.query, 20, 0)
+			res, err := d.SearchItems(tt.query, 0, 20, 0)
 			if err != nil {
 				t.Fatalf("SearchItems(%q): %v", tt.query, err)
 			}
@@ -92,14 +92,14 @@ func TestSearchItems(t *testing.T) {
 
 func TestSearchItems_Pagination(t *testing.T) {
 	d := openTestDB(t)
-	page1, err := d.SearchItems("a", 5, 0)
+	page1, err := d.SearchItems("a", 0, 5, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(page1.Items) == 0 {
 		t.Skip("no items for pagination test")
 	}
-	page2, err := d.SearchItems("a", 5, 5)
+	page2, err := d.SearchItems("a", 0, 5, 5)
 	if err != nil {
 		t.Fatal(err)
 	}

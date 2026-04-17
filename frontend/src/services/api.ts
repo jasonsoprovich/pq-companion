@@ -71,8 +71,10 @@ export function searchItems(
   q: string,
   limit = 50,
   offset = 0,
+  baneBody = 0,
 ): Promise<SearchResult<Item>> {
   const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) })
+  if (baneBody > 0) params.set('bane_body', String(baneBody))
   return get<SearchResult<Item>>(`/api/items?${params}`)
 }
 

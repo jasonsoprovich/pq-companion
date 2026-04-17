@@ -11,6 +11,7 @@ import (
 const itemColumns = `
   i.id, i.Name, i.lore, i.idfile, i.itemclass, i.itemtype,
   i.damage, i.delay, i.range, i.ac,
+  i.banedmgamt, i.banedmgbody, i.banedmgrace,
   i.hp, i.mana, i.astr, i.asta, i.aagi, i.adex, i.awis, i.aint, i.acha,
   i.mr, i.cr, i.dr, i.fr, i.pr,
   i.magic, i.nodrop, i.norent,
@@ -29,6 +30,7 @@ func scanItem(row interface {
 	err := row.Scan(
 		&it.ID, &it.Name, &it.Lore, &it.IDFile, &it.ItemClass, &it.ItemType,
 		&it.Damage, &it.Delay, &it.Range, &it.AC,
+		&it.BaneAmt, &it.BaneBody, &it.BaneRace,
 		&it.HP, &it.Mana, &it.Strength, &it.Stamina, &it.Agility, &it.Dexterity,
 		&it.Wisdom, &it.Intelligence, &it.Charisma,
 		&it.MagicResist, &it.ColdResist, &it.DiseaseResist, &it.FireResist, &it.PoisonResist,
@@ -59,23 +61,31 @@ func (db *DB) GetItem(id int) (*Item, error) {
 }
 
 // SearchItems searches items by name (case-insensitive prefix/substring match).
+// When baneBody > 0, only items with that bane damage body type are returned.
 // Returns a page of results and the total count of matching rows.
-func (db *DB) SearchItems(query string, limit, offset int) (*SearchResult[Item], error) {
+func (db *DB) SearchItems(query string, baneBody, limit, offset int) (*SearchResult[Item], error) {
 	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
+
+	where := "Name LIKE ? ESCAPE '\\'"
+	args := []any{pattern}
+	if baneBody > 0 {
+		where += " AND banedmgbody = ?"
+		args = append(args, baneBody)
+	}
 
 	var total int
 	if err := db.QueryRow(
-		"SELECT COUNT(*) FROM items WHERE Name LIKE ? ESCAPE '\\'",
-		pattern,
+		fmt.Sprintf("SELECT COUNT(*) FROM items WHERE %s", where),
+		args...,
 	).Scan(&total); err != nil {
 		return nil, fmt.Errorf("count items: %w", err)
 	}
 
 	q := fmt.Sprintf(
-		"SELECT %s FROM items i WHERE i.Name LIKE ? ESCAPE '\\' ORDER BY i.Name LIMIT ? OFFSET ?",
-		itemColumns,
+		"SELECT %s FROM items i WHERE i.%s ORDER BY i.Name LIMIT ? OFFSET ?",
+		itemColumns, where,
 	)
-	rows, err := db.Query(q, pattern, limit, offset)
+	rows, err := db.Query(q, append(args, limit, offset)...)
 	if err != nil {
 		return nil, fmt.Errorf("search items: %w", err)
 	}

@@ -11,10 +11,13 @@ type Item struct {
 	ItemType  int    `json:"item_type"`
 
 	// Combat
-	Damage int `json:"damage"`
-	Delay  int `json:"delay"`
-	Range  int `json:"range"`
-	AC     int `json:"ac"`
+	Damage  int `json:"damage"`
+	Delay   int `json:"delay"`
+	Range   int `json:"range"`
+	AC      int `json:"ac"`
+	BaneAmt  int `json:"bane_amt"`
+	BaneBody int `json:"bane_body"`
+	BaneRace int `json:"bane_race"`
 
 	// Stats
 	HP       int `json:"hp"`
