@@ -266,8 +266,8 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
         </Section>
 
         {/* Classes */}
-        {classes.length > 0 && (
-          <Section title="Classes">
+        <Section title="Classes">
+          {classes.length > 0 ? (
             <div className="flex flex-wrap gap-x-4 gap-y-1 py-0.5">
               {classes.map((c) => (
                 <div key={c.abbr} className="flex items-baseline gap-1 text-sm">
@@ -281,8 +281,12 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
                 </div>
               ))}
             </div>
-          </Section>
-        )}
+          ) : (
+            <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              NPC Only
+            </span>
+          )}
+        </Section>
 
         {/* Effects */}
         {activeEffects.length > 0 && (
