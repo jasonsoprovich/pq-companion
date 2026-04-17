@@ -203,7 +203,6 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
 
   const flags: string[] = []
   if (spell.is_discipline) flags.push('DISCIPLINE')
-  if (spell.suspendable) flags.push('SUSPENDABLE')
   if (spell.no_dispell) flags.push('NO DISPELL')
 
   return (

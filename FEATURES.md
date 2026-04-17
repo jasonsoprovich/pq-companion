@@ -132,7 +132,7 @@
 - **`pages/SpellsPage.tsx`** — split-pane layout matching Item Explorer:
   - **Left pane (288px)**: debounced search input, result count, scrollable list showing name + castable classes with levels + mana cost; selected spell highlighted with gold left-border accent; blank-name spell IDs filtered out
   - **Detail panel (right)**: spell data in labeled sections — Casting (skill school, mana, cast/recast/recovery time, duration), Targeting (target type, resist type, range, AoE range), Classes (full class names with required level), Effects (effect name + base value for each active slot), Messages (cast_on_you, cast_on_other, spell_fades flavor text), Info (Spell ID)
-  - Flags rendered as pill badges: DISCIPLINE, SUSPENDABLE, NO DISPELL
+  - Flags rendered as pill badges: DISCIPLINE, NO DISPELL
   - Sections only rendered when they have relevant data
 
 ### Task 2.5 — Database Explorer: NPCs ✅
