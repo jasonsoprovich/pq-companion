@@ -173,6 +173,41 @@ export default function SettingsPage(): React.ReactElement {
               outline: 'none',
             }}
           />
+
+          <p className="mt-4 mb-1 text-xs font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+            Character Class
+          </p>
+          <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Select your class to auto-populate the Spell Checklist. Leave as "Not set" to choose manually in the checklist.
+          </p>
+          <select
+            value={config.character_class}
+            onChange={(e) => setConfig({ ...config, character_class: Number(e.target.value) })}
+            className="w-full rounded px-3 py-2 text-sm"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-foreground)',
+              outline: 'none',
+            }}
+          >
+            <option value={-1}>Not set</option>
+            <option value={0}>WAR — Warrior</option>
+            <option value={1}>CLR — Cleric</option>
+            <option value={2}>PAL — Paladin</option>
+            <option value={3}>RNG — Ranger</option>
+            <option value={4}>SHD — Shadow Knight</option>
+            <option value={5}>DRU — Druid</option>
+            <option value={6}>MNK — Monk</option>
+            <option value={7}>BRD — Bard</option>
+            <option value={8}>ROG — Rogue</option>
+            <option value={9}>SHM — Shaman</option>
+            <option value={10}>NEC — Necromancer</option>
+            <option value={11}>WIZ — Wizard</option>
+            <option value={12}>MAG — Magician</option>
+            <option value={13}>ENC — Enchanter</option>
+            <option value={14}>BST — Beastlord</option>
+          </select>
         </section>
 
         {/* ── Preferences ────────────────────────────────────────────────── */}

@@ -8,7 +8,7 @@ import {
   RefreshCw,
   AlertCircle,
 } from 'lucide-react'
-import { getSpellsByClass, getZealSpellbook } from '../services/api'
+import { getConfig, getSpellsByClass, getZealSpellbook } from '../services/api'
 import type { Spell } from '../types/spell'
 import type { Spellbook } from '../types/zeal'
 
@@ -137,10 +137,23 @@ export default function SpellChecklistPage(): React.ReactElement {
   const [filter, setFilter] = useState<Filter>('all')
   const [spells, setSpells] = useState<Spell[]>([])
   const [spellbook, setSpellbook] = useState<Spellbook | null>(null)
+  const [characterName, setCharacterName] = useState<string>('')
   const [loadingSpells, setLoadingSpells] = useState(true)
   const [loadingBook, setLoadingBook] = useState(true)
   const [spellError, setSpellError] = useState<string | null>(null)
   const navigate = useNavigate()
+
+  // On mount, fetch config to auto-detect character class and name.
+  useEffect(() => {
+    getConfig()
+      .then((cfg) => {
+        if (cfg.character) setCharacterName(cfg.character)
+        if (cfg.character_class >= 0 && cfg.character_class <= 14) {
+          setClassIndex(cfg.character_class)
+        }
+      })
+      .catch(() => { /* non-fatal: fall back to localStorage */ })
+  }, [])
 
   const loadSpells = useCallback((idx: number) => {
     setLoadingSpells(true)
@@ -154,7 +167,10 @@ export default function SpellChecklistPage(): React.ReactElement {
   const loadSpellbook = useCallback(() => {
     setLoadingBook(true)
     getZealSpellbook()
-      .then((res) => setSpellbook(res.spellbook))
+      .then((res) => {
+        setSpellbook(res.spellbook)
+        if (res.spellbook?.character) setCharacterName(res.spellbook.character)
+      })
       .catch(() => setSpellbook(null))
       .finally(() => setLoadingBook(false))
   }, [])
@@ -189,12 +205,17 @@ export default function SpellChecklistPage(): React.ReactElement {
         className="shrink-0 flex flex-col gap-2 border-b px-4 py-3"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        {/* Row 1: icon + title + class selector */}
+        {/* Row 1: icon + title + character name + class selector */}
         <div className="flex items-center gap-3">
           <BookOpen size={18} style={{ color: 'var(--color-primary)' }} />
           <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
             Spell Checklist
           </span>
+          {characterName && (
+            <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              — {characterName}
+            </span>
+          )}
 
           <div className="flex-1" />
 

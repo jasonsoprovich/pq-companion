@@ -15,6 +15,7 @@ export interface BackupSettings {
 export interface Config {
   eq_path: string
   character: string
+  character_class: number // -1 = not set, 0-14 = EQ class index
   server_addr: string
   preferences: Preferences
   backup: BackupSettings

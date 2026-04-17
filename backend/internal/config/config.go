@@ -22,6 +22,12 @@ type Config struct {
 	// Used to locate the correct log file: eqlog_<Character>_pq.proj.txt
 	Character string `yaml:"character" json:"character"`
 
+	// CharacterClass is the EverQuest class index (0–14) for the active
+	// character. Used to auto-select the correct class in the Spell Checklist.
+	// 0=WAR 1=CLR 2=PAL 3=RNG 4=SHD 5=DRU 6=MNK 7=BRD 8=ROG 9=SHM
+	// 10=NEC 11=WIZ 12=MAG 13=ENC 14=BST   -1 = not set
+	CharacterClass int `yaml:"character_class" json:"character_class"`
+
 	// ServerAddr is the HTTP listen address for the backend API.
 	ServerAddr string `yaml:"server_addr" json:"server_addr"`
 
@@ -66,7 +72,8 @@ type Preferences struct {
 // defaults returns a Config populated with sensible default values.
 func defaults() Config {
 	return Config{
-		ServerAddr: ":8080",
+		ServerAddr:     ":8080",
+		CharacterClass: -1,
 		Preferences: Preferences{
 			OverlayOpacity:    0.9,
 			MinimizeToTray:    true,
