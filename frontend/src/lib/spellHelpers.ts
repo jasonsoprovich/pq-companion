@@ -109,6 +109,21 @@ export function msLabel(ms: number): string {
   return s === Math.floor(s) ? `${s}s` : `${s.toFixed(1)}s`
 }
 
+/** Convert ticks to a human-readable duration string (1 tick = 6 seconds). */
+export function ticksToTime(ticks: number): string {
+  if (ticks <= 0) return 'Instant'
+  if (ticks >= 50000) return 'Permanent'
+  const seconds = ticks * 6
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return mins > 0 ? (secs > 0 ? `${mins}m ${secs}s` : `${mins}m`) : `${secs}s`
+}
+
+/** Returns true if the spell duration scales with caster level. */
+export function durationScales(formula: number, ticks: number): boolean {
+  return formula !== 0 && ticks > 0 && ticks < 50000
+}
+
 /** Convert buff duration ticks to a human-readable string (1 tick = 6 seconds). */
 export function durationLabel(formula: number, ticks: number): string {
   if (ticks === 0) return 'Instant'
@@ -119,7 +134,6 @@ export function durationLabel(formula: number, ticks: number): string {
   const timeStr = mins > 0
     ? (secs > 0 ? `${mins}m ${secs}s` : `${mins}m`)
     : `${secs}s`
-  // Formula 0 = fixed; anything else = scales with caster level up to max
   return formula === 0 ? timeStr : `up to ${timeStr}`
 }
 
@@ -294,4 +308,93 @@ const EFFECT_LABELS: Record<number, string> = {
 export function effectLabel(id: number): string {
   if (id === 254 || id === 255 || id === 320) return ''
   return EFFECT_LABELS[id] ?? `Effect ${id}`
+}
+
+// ── Zone type ──────────────────────────────────────────────────────────────────
+
+const ZONE_TYPE_LABELS: Record<number, string> = {
+  1: 'Outdoor',
+  2: 'Indoor',
+  3: 'Outdoor & Underground',
+  4: 'City',
+}
+
+/** Returns zone restriction label, or empty string for unrestricted (0). */
+export function zoneTypeLabel(z: number): string {
+  return ZONE_TYPE_LABELS[z] ?? ''
+}
+
+// ── Effect descriptions ────────────────────────────────────────────────────────
+
+const STAT_NAMES: Record<number, string> = {
+  5: 'STR', 6: 'DEX', 7: 'AGI', 8: 'STA', 9: 'WIS', 10: 'INT', 11: 'CHA',
+}
+
+const RESIST_NAMES: Record<number, string> = {
+  17: 'Magic', 18: 'Fire', 19: 'Cold', 20: 'Poison', 21: 'Disease',
+}
+
+/**
+ * Returns a human-readable description for a spell effect slot.
+ * Returns empty string for effects that should not be displayed.
+ */
+export function effectDescription(id: number, base: number, buffduration: number): string {
+  if (id === 0 || id === 254 || id === 255 || id === 320) return ''
+
+  const sign = base > 0 ? '+' : ''
+
+  // Stat buffs — hide zero-value slots
+  if (STAT_NAMES[id] !== undefined) {
+    if (base === 0) return ''
+    return `${sign}${base} ${STAT_NAMES[id]}`
+  }
+
+  // Resist buffs
+  if (RESIST_NAMES[id] !== undefined) {
+    if (base === 0) return ''
+    return `${sign}${base} ${RESIST_NAMES[id]} Resist`
+  }
+
+  switch (id) {
+    case 1: // Current HP (heal or direct damage)
+      if (base === 0) return ''
+      return base > 0 ? `Heal ${base} HP` : `Deal ${Math.abs(base)} damage`
+    case 2: // AC
+      if (base === 0) return ''
+      return `${sign}${base} AC`
+    case 3: // ATK
+      if (base === 0) return ''
+      return `${sign}${base} ATK`
+    case 4: // Movement Speed
+      if (base === 0) return ''
+      return `Movement Speed ${sign}${base}%`
+    case 14: // Mana pool bonus
+      if (base === 0) return ''
+      return `${sign}${base} Max Mana`
+    case 15: { // HP Regen
+      if (base === 0) return ''
+      const total = buffduration > 0 ? ` (total ${base * buffduration})` : ''
+      return `Increase HP by ${base} per tick${total}`
+    }
+    case 16: { // Mana Regen
+      if (base === 0) return ''
+      const total = buffduration > 0 ? ` (total ${base * buffduration})` : ''
+      return `Increase Mana by ${base} per tick${total}`
+    }
+    case 43: // Max HP
+      if (base === 0) return ''
+      return `${sign}${base} Max HP`
+    case 63: // Damage Shield
+      if (base === 0) return ''
+      return `Damage Shield: ${Math.abs(base)} per hit`
+    case 25: // Stun
+      if (base === 0) return ''
+      return `Stun: ${base}ms`
+    default: {
+      const label = effectLabel(id)
+      if (!label) return ''
+      if (base === 0) return label
+      return `${label}: ${sign}${base}`
+    }
+  }
 }

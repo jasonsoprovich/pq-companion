@@ -40,4 +40,5 @@ export interface Spell {
   is_discipline: number
   suspendable: number
   no_dispell: number
+  zone_type: number
 }

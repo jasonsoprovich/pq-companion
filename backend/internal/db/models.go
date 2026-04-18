@@ -175,6 +175,7 @@ type Spell struct {
 	IsDiscipline int `json:"is_discipline"`
 	Suspendable  int `json:"suspendable"`
 	NoDispell    int `json:"no_dispell"`
+	ZoneType     int `json:"zone_type"`
 }
 
 // Zone represents a row from the zone table.

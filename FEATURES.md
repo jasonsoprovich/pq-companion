@@ -129,11 +129,13 @@
   - `targetLabel` — maps target type int to description (Self, Single, Targeted AE, PB AE, Caster Group, etc.)
   - `skillLabel` — maps skill ID to school/skill name (Abjuration, Alteration, Conjuration, Divination, Evocation, Discipline, Bard instruments, etc.); corrected ID mapping to match actual spells_new DB values
   - `msLabel` — converts milliseconds to `"2.5s"` / `"Instant"` display strings
-  - `durationLabel` — converts buff_duration ticks + formula to human-readable string (1 tick = 6s); distinguishes fixed vs. level-scaling durations
+  - `durationLabel` / `durationScales` / `ticksToTime` — converts buff_duration ticks + formula to human-readable string (1 tick = 6s); distinguishes fixed vs. level-scaling durations
   - `effectLabel` — maps spell effect IDs to readable names (160+ effects mapped)
+  - `effectDescription(id, base, buffduration)` — human-readable effect descriptions: regen effects show "Increase Mana/HP by N per tick (total T)", stat buffs show "+N STR" etc.; zero-value stat slots filtered out
+  - `zoneTypeLabel` — maps zone_type int to restriction string (Outdoor, Indoor, Outdoor & Underground, City); empty for unrestricted (0)
 - **`pages/SpellsPage.tsx`** — split-pane layout matching Item Explorer:
   - **Left pane (288px)**: debounced search input, result count, scrollable list showing name + castable classes with levels + mana cost; selected spell highlighted with gold left-border accent; blank-name spell IDs filtered out
-  - **Detail panel (right)**: spell data in labeled sections — Casting (skill school, mana, cast/recast/recovery time, duration), Targeting (target type, resist type, range, AoE range), Classes (full class names with required level), Effects (effect name + base value for each active slot), Messages (cast_on_you, cast_on_other, spell_fades flavor text), Info (Spell ID)
+  - **Detail panel (right)**: spell data in labeled sections — Casting (skill school, mana, cast/recast/recovery time, duration labeled "Max Duration" for scaling spells), Targeting (target type, resist type, range, AoE range, Zone Type when restricted), Classes (full class names with required level), Effects (human-readable descriptions per slot), Messages (cast_on_you, cast_on_other, spell_fades flavor text), Info (Spell ID)
   - Flags rendered as pill badges: DISCIPLINE, NO DISPELL
   - Sections only rendered when they have relevant data
 

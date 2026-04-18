@@ -7,11 +7,13 @@ import {
   castableClasses,
   castableClassesShort,
   durationLabel,
-  effectLabel,
+  durationScales,
+  effectDescription,
   msLabel,
   resistLabel,
   skillLabel,
   targetLabel,
+  zoneTypeLabel,
 } from '../lib/spellHelpers'
 
 // ── Search pane ────────────────────────────────────────────────────────────────
@@ -195,11 +197,17 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
   const classes = castableClasses(spell.class_levels)
   const hasDuration = spell.buff_duration > 0
   const hasAoE = spell.aoe_range > 0
+  const isScalingDuration = durationScales(spell.buff_duration_formula, spell.buff_duration)
+  const zoneType = zoneTypeLabel(spell.zone_type)
 
-  // Collect active effect slots
+  // Collect active effect slots with human-readable descriptions
   const activeEffects = spell.effect_ids
-    .map((id, i) => ({ id, base: spell.effect_base_values[i] ?? 0, label: effectLabel(id) }))
-    .filter((e) => e.label !== '')
+    .map((id, i) => ({
+      id,
+      base: spell.effect_base_values[i] ?? 0,
+      description: effectDescription(id, spell.effect_base_values[i] ?? 0, spell.buff_duration),
+    }))
+    .filter((e) => e.description !== '')
 
   const flags: string[] = []
   if (spell.is_discipline) flags.push('DISCIPLINE')
@@ -251,7 +259,7 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
           )}
           {hasDuration && (
             <StatRow
-              label="Duration"
+              label={isScalingDuration ? 'Max Duration' : 'Duration'}
               value={durationLabel(spell.buff_duration_formula, spell.buff_duration)}
             />
           )}
@@ -263,6 +271,7 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
           <StatRow label="Resist" value={resistLabel(spell.resist_type)} />
           {spell.range > 0 && <StatRow label="Range" value={`${spell.range} units`} />}
           {hasAoE && <StatRow label="AoE Range" value={`${spell.aoe_range} units`} />}
+          {zoneType && <StatRow label="Zone Type" value={zoneType} />}
         </Section>
 
         {/* Classes */}
@@ -292,11 +301,9 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
         {activeEffects.length > 0 && (
           <Section title="Effects">
             {activeEffects.map((e, i) => (
-              <StatRow
-                key={i}
-                label={e.label}
-                value={e.base > 0 ? `+${e.base}` : e.base < 0 ? `${e.base}` : '—'}
-              />
+              <div key={i} className="py-0.5 text-sm" style={{ color: 'var(--color-foreground)' }}>
+                {e.description}
+              </div>
             ))}
           </Section>
         )}
