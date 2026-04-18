@@ -226,9 +226,9 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
   const hasCombat = item.damage > 0 || item.ac > 0
   const hasBane = item.bane_amt > 0 || item.bane_body > 0 || item.bane_race > 0
   const hasStats =
-    item.hp || item.mana || item.str || item.sta || item.agi ||
-    item.dex || item.wis || item.int || item.cha
-  const hasResists = item.mr || item.cr || item.dr || item.fr || item.pr
+    item.hp > 0 || item.mana > 0 || item.str > 0 || item.sta > 0 || item.agi > 0 ||
+    item.dex > 0 || item.wis > 0 || item.int > 0 || item.cha > 0
+  const hasResists = item.mr > 0 || item.cr > 0 || item.dr > 0 || item.fr > 0 || item.pr > 0
   const hasEffects =
     (item.click_effect > 0 && !!item.click_name) ||
     (item.proc_effect > 0 && !!item.proc_name) ||
