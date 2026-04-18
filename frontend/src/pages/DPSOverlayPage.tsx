@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Swords, HeartPulse, Circle, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react'
+import { DEV_HPS } from '../lib/devFlags'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getCombatState, getLogStatus } from '../services/api'
 import OverlayWindow from '../components/OverlayWindow'
@@ -452,7 +453,7 @@ export default function DPSOverlayPage(): React.ReactElement {
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
   const [showAllDPS, setShowAllDPS] = useState(true)
-  const [showAllHPS, setShowAllHPS] = useState(true)
+  const [showAllHPS, setShowAllHPS] = useState(true) // only used when DEV_HPS
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -558,62 +559,64 @@ export default function DPSOverlayPage(): React.ReactElement {
         )}
       </OverlayWindow>
 
-      {/* ── HPS panel ─────────────────────────────────────────────────── */}
-      <OverlayWindow
-        title={
-          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <HeartPulse size={13} style={{ color: '#22c55e' }} />
-            HPS Meter
-          </span>
-        }
-        headerRight={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <FilterButton showAll={showAllHPS} onToggle={() => setShowAllHPS((v) => !v)} />
-            {window.electron?.overlay && (
-              <button
-                onClick={() => window.electron.overlay.toggleHPS()}
-                title="Pop out HPS as floating overlay"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '1px 3px',
-                  color: 'var(--color-muted)',
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-              >
-                <ExternalLink size={12} />
-              </button>
-            )}
-            <ConnPill state={wsState} status={status} />
-          </div>
-        }
-        defaultWidth={380}
-        defaultHeight={420}
-        defaultX={420}
-        defaultY={24}
-        minWidth={260}
-        minHeight={180}
-      >
-        <StatusBar status={status} />
+      {/* ── HPS panel — hidden until EQ logs expose healing events ─────── */}
+      {DEV_HPS && (
+        <OverlayWindow
+          title={
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <HeartPulse size={13} style={{ color: '#22c55e' }} />
+              HPS Meter
+            </span>
+          }
+          headerRight={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <FilterButton showAll={showAllHPS} onToggle={() => setShowAllHPS((v) => !v)} />
+              {window.electron?.overlay && (
+                <button
+                  onClick={() => window.electron.overlay.toggleHPS()}
+                  title="Pop out HPS as floating overlay"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '1px 3px',
+                    color: 'var(--color-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  <ExternalLink size={12} />
+                </button>
+              )}
+              <ConnPill state={wsState} status={status} />
+            </div>
+          }
+          defaultWidth={380}
+          defaultHeight={420}
+          defaultX={420}
+          defaultY={24}
+          minWidth={260}
+          minHeight={180}
+        >
+          <StatusBar status={status} />
 
-        {combat === null ? (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <p style={{ fontSize: 12, color: 'var(--color-muted)' }}>Loading…</p>
-          </div>
-        ) : (
-          <>
-            <CombatStrip combat={combat} kind="hps" now={now} />
-            {combat.in_combat && combat.current_fight ? (
-              <HPSPanel fight={combat.current_fight} showAll={showAllHPS} />
-            ) : (
-              <NotInCombat kind="hps" />
-            )}
-            <SessionBar combat={combat} kind="hps" />
-          </>
-        )}
-      </OverlayWindow>
+          {combat === null ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <p style={{ fontSize: 12, color: 'var(--color-muted)' }}>Loading…</p>
+            </div>
+          ) : (
+            <>
+              <CombatStrip combat={combat} kind="hps" now={now} />
+              {combat.in_combat && combat.current_fight ? (
+                <HPSPanel fight={combat.current_fight} showAll={showAllHPS} />
+              ) : (
+                <NotInCombat kind="hps" />
+              )}
+              <SessionBar combat={combat} kind="hps" />
+            </>
+          )}
+        </OverlayWindow>
+      )}
     </div>
   )
 }

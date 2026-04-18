@@ -336,7 +336,7 @@ export default function NpcsPage(): React.ReactElement {
       .then(setSelected)
       .catch(() => {/* ignore */})
       .finally(() => setSearchParams({}, { replace: true }))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchParams, setSearchParams])
 
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>
