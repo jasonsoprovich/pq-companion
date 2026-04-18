@@ -370,7 +370,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
               <StatRow label="Bag Size" value={sizeLabel(item.bag_size)} />
             </>
           )}
-          <StatRow label="Price" value={priceLabel(item.price)} />
+          {item.price > 0 && <StatRow label="Value" value={priceLabel(item.price)} />}
           <StatRow label="Item ID" value={item.id} />
         </Section>
       </div>
