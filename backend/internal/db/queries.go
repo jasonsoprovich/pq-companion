@@ -391,7 +391,7 @@ const zoneColumns = `
   z.zoneidnumber, z.safe_x, z.safe_y, z.safe_z,
   z.min_level, COALESCE(z.note,''),
   z.castoutdoor, z.hotzone, z.canlevitate, z.canbind,
-  z.zone_exp_multiplier, z.expansion,
+  COALESCE(z.zone_exp_multiplier, 1.0), z.expansion,
   COALESCE((SELECT MIN(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name), 0),
   COALESCE((SELECT MAX(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name), 0)`
 

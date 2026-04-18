@@ -35,6 +35,7 @@ function bindLabel(canbind: number): string {
 }
 
 function expModLabel(mod: number): string {
+  if (mod == null || !isFinite(mod)) return '—'
   return `${Math.round(mod * 100)}%`
 }
 
@@ -154,7 +155,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
                       : ` · Lv ${zone.npc_level_min}–${zone.npc_level_max}`
                   )}
                 </span>
-                {zone.exp_mod !== 1.0 && (
+                {isFinite(zone.exp_mod) && zone.exp_mod !== 1.0 && (
                   <span
                     className="shrink-0 rounded px-1 py-0.5 text-[10px] font-semibold"
                     style={{
@@ -369,7 +370,7 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
                     : 'var(--color-muted)',
             }}
           >
-            ZEM {Math.round(zone.exp_mod * 100)}%
+            ZEM {expModLabel(zone.exp_mod)}
           </span>
         </div>
       </div>
