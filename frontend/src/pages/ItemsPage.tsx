@@ -168,9 +168,9 @@ interface StatRowProps {
 
 function StatRow({ label, value }: StatRowProps): React.ReactElement {
   return (
-    <div className="flex justify-between py-0.5 text-sm">
-      <span style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>
-      <span style={{ color: 'var(--color-foreground)' }}>{value}</span>
+    <div className="flex justify-between gap-3 py-0.5 text-sm">
+      <span className="shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>
+      <span className="min-w-0 break-words text-right" style={{ color: 'var(--color-foreground)' }}>{value}</span>
     </div>
   )
 }
