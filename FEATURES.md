@@ -171,6 +171,7 @@
 - **Issue #31 — Succor Point label** (`pages/ZonesPage.tsx`): renamed "Safe Point" to "Succor Point" and reformatted coordinates to `Y: ..., X: ..., Z: ...` to match EverQuest/YAQDS conventions
 - **Issue #32 — Zone level range** (`models.go`, `queries.go`, `types/zone.ts`, `pages/ZonesPage.tsx`): added `npc_level_min`/`npc_level_max` fields derived via correlated subqueries (spawnentry→npc_types per zone); displayed as "Level Range: 1–66" in the Zone Info section and as "Lv 1–66" in the search list subtitle
 - **Issue #63 — ZEM/XP modifier NaN% fix** (`queries.go`, `pages/ZonesPage.tsx`): added `COALESCE(z.zone_exp_multiplier, 1.0)` to the SQL query so NULL DB values default to 1.0; added NaN/undefined guard in `expModLabel` (returns `—` for non-finite values); replaced raw `Math.round` in the detail-panel header ZEM badge with `expModLabel`; wrapped the search-list ZEM badge with `isFinite()` check
+- **Issue #64 — Hotzone flag field mapping verification** (`queries_test.go`): extended `TestGetZoneByShortName` with explicit assertions on `Hotzone`, `Outdoor`, and `ExpMod` fields to guard against scanZone column misalignment; verified the hotzone integer (0/1) round-trips correctly from SQLite through the Go API to the `zone.hotzone ? 'Yes' : 'No'` display in the detail panel
 
 ### Task 2.7 — Global Search ✅
 - **`GET /api/search?q=&limit=`** — new backend endpoint; runs all four searches (items, spells, NPCs, zones) in parallel via goroutines and returns a single grouped response (`internal/api/search.go`)

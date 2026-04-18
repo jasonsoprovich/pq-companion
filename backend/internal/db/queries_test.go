@@ -235,6 +235,18 @@ func TestGetZoneByShortName(t *testing.T) {
 	if z.ShortName != "qeynos" {
 		t.Errorf("got short_name %q, want %q", z.ShortName, "qeynos")
 	}
+	// Verify zone attribute fields are scanned into the correct struct fields.
+	// qeynos has hotzone=1, outdoor=1, exp_mod=1.0 in the DB.
+	// A misaligned scanZone would silently produce wrong values here.
+	if z.Hotzone != 1 {
+		t.Errorf("hotzone: got %d, want 1", z.Hotzone)
+	}
+	if z.Outdoor != 1 {
+		t.Errorf("outdoor: got %d, want 1", z.Outdoor)
+	}
+	if z.ExpMod != 1.0 {
+		t.Errorf("exp_mod: got %f, want 1.0", z.ExpMod)
+	}
 }
 
 func TestGetZone_NotFound(t *testing.T) {
