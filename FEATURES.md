@@ -852,6 +852,14 @@ Two separate overlay windows are provided from the start — one for beneficial 
 - When the character field is blank and a character is detected, shows a muted banner below the input: "Auto-detected: **Firiona**" with a **Use This** button that copies the name into the character field
 - Banner dismisses automatically when the character field is manually filled
 
+### Issue #70 — Spell/Caster DPS Not Tracked ✅
+
+**`backend/internal/logparser/parser.go`**
+- Added `reTargetHitNonMelee` regex — matches `"<target> was hit by non-melee for <N> points of damage."` (the passive form EQ logs when the player's own spell damages a target); emits `EventCombatHit` with `Actor: "You"`, `Skill: "spell"`, and the target/damage extracted from the match
+- Added `reNonMeleeHit` regex — matches `"<Actor> hit <Target> for <N> points of non-melee damage."` (the active form used for other players' and NPCs' spell damage, including multi-word actor names like `"A Shissar Arch Arcanist"`); emits `EventCombatHit` with `Skill: "spell"`
+- Both patterns inserted in `classifyMessage` before `reNPCHitYou` and `reThirdPartyHit` so they take priority over melee patterns; non-melee hits now flow through the existing combat tracker logic and appear in DPS totals
+- **`parser_test.go`** — 5 new table-driven test cases: passive player spell hit (single-word target), passive player spell hit (multi-word target), third-party caster hit, multi-word NPC spell hit (A Shissar Arch Arcanist), and NPC self-damage via spell
+
 ## Phase 9 — Audio Alerts
 
 ### Task 9.1 — Audio Engine

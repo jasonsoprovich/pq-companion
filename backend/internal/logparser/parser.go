@@ -58,6 +58,15 @@ var (
 	// Combat — NPC misses player: "A gnoll tries to slash you, but misses!"
 	reNPCMissYou = regexp.MustCompile(`^(.+?) tries to \w+ you, but misses?!$`)
 
+	// Non-melee damage — player's spell hits target (EQ passive form seen in own log):
+	// "a giant wasp drone was hit by non-melee for 4 points of damage."
+	reTargetHitNonMelee = regexp.MustCompile(`^(.+?) was hit by non-melee for (\d+) points? of damage\.$`)
+
+	// Non-melee damage — named actor hits named target (other players' / NPCs' spells):
+	// "Takkisina hit a temple skirmisher for 18 points of non-melee damage."
+	// "A Shissar Arch Arcanist hit Takkisina for 640 points of non-melee damage."
+	reNonMeleeHit = regexp.MustCompile(`^(.+?) hit (.+) for (\d+) points? of non-melee damage\.$`)
+
 	// /con output — EQ's consider system. The NPC name precedes a fixed set of
 	// disposition phrases. Ordered longest-first so "warmly regards you" and
 	// "kindly regards you" are tried before the shorter "regards you".
@@ -209,6 +218,39 @@ func classifyMessage(msg string) (LogEvent, bool) {
 				Actor:  "You",
 				Skill:  m[1],
 				Target: m[2],
+				Damage: dmg,
+			},
+		}, true
+	}
+
+	// --- Player's spell hits target (passive non-melee form) ---
+	if m := reTargetHitNonMelee.FindStringSubmatch(msg); m != nil {
+		dmg, _ := strconv.Atoi(m[2])
+		return LogEvent{
+			Type: EventCombatHit,
+			Data: CombatHitData{
+				Actor:  "You",
+				Skill:  "spell",
+				Target: m[1],
+				Damage: dmg,
+			},
+		}, true
+	}
+
+	// --- Named entity hits another with non-melee (spell damage) ---
+	if m := reNonMeleeHit.FindStringSubmatch(msg); m != nil {
+		actor := m[1]
+		target := m[2]
+		dmg, _ := strconv.Atoi(m[3])
+		if strings.EqualFold(target, "you") {
+			target = "You"
+		}
+		return LogEvent{
+			Type: EventCombatHit,
+			Data: CombatHitData{
+				Actor:  actor,
+				Skill:  "spell",
+				Target: target,
 				Damage: dmg,
 			},
 		}, true
