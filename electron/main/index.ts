@@ -105,6 +105,12 @@ function setupAutoUpdater(): void {
 
 // ── Window management ─────────────────────────────────────────────────────────
 
+function closeAllOverlays(): void {
+  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, triggerOverlayWindow, npcOverlayWindow]) {
+    if (win && !win.isDestroyed()) win.destroy()
+  }
+}
+
 function createMainWindow(): void {
   nativeTheme.themeSource = 'dark'
 
@@ -143,6 +149,7 @@ function createMainWindow(): void {
   })
 
   mainWindow.on('closed', () => {
+    closeAllOverlays()
     mainWindow = null
   })
 }
