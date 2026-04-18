@@ -340,12 +340,16 @@
 - Target is also set immediately on a `log:considered` event (EQ `/con` output) so the overlay updates before combat begins
 - Target is cleared on zone change (`log:zone`), player death (`log:death`), or when a `log:kill` event names the currently-tracked target as the slain mob
 - Duplicate target updates (same name) are skipped to avoid redundant DB lookups
+- Zone-name guard: if a proposed target name exactly matches the current zone name it is rejected, preventing false-positive target updates from any misidentified zone-entry line (closes #71)
+- Nil-DB guard added to `lookupNPC` so the tracker is usable without a live database (NPC data returns nil gracefully)
 
 **`/con` Target Detection**
 - New `EventConsidered` (`log:considered`) event type added to the log parser
 - New `ConsideredData` struct carries the target name extracted from the disposition message
 - Regex `reConsider` matches all classic EQ consider phrases: "scowls at you", "glares at you", "looks your way", "looks upon you", "judges you", "regards you", "warmly/kindly regards you", "considers you"
 - Multi-word NPC names (e.g. "a grimling cadaverist") are correctly captured via non-greedy group before the disposition phrase
+- Parser guard: after `reConsider` matches, names starting with "You" are rejected (NPC names never start with "You"; this prevents any player-action line from being misclassified as a consider event)
+- Six behavioural unit tests added (`internal/overlay/npc_test.go`) covering: zone clear, zone-name guard, consider sets target, kill clears matching target, kill preserves unrelated target, death clears target
 
 **NPC Database Lookup**
 - When the target name changes, the tracker converts the log display name (spaces) to the EQ database format (underscores) and calls the new `db.GetNPCByName` query

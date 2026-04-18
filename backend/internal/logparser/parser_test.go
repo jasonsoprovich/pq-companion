@@ -349,6 +349,16 @@ func TestParseLine(t *testing.T) {
 			wantData: ConsideredData{TargetName: "a lizardman"},
 		},
 
+		// --- /con false-positive guard ---
+		// Lines starting with "You " must never be classified as EventConsidered.
+		// Zone-entry lines reach reZone first, but the regex guard provides
+		// belt-and-suspenders protection for any unclassified "You …" lines.
+		{
+			name:   "con: 'You' prefix line is not parsed as a consider event",
+			line:   "[Mon Apr 13 06:00:00 2026] You considers you amiably.",
+			wantOK: false,
+		},
+
 		// --- Unrecognised messages ---
 		{
 			name:   "unrecognised: chat message",

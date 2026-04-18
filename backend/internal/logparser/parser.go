@@ -351,10 +351,15 @@ func classifyMessage(msg string) (LogEvent, bool) {
 
 	// --- /con result ---
 	if m := reConsider.FindStringSubmatch(msg); m != nil {
-		return LogEvent{
-			Type: EventConsidered,
-			Data: ConsideredData{TargetName: m[1]},
-		}, true
+		// NPC names never start with "You" — guard against player-action lines
+		// (e.g. "You have entered …") that the regex could otherwise match if
+		// they contain a disposition phrase elsewhere in the text.
+		if !strings.HasPrefix(m[1], "You") {
+			return LogEvent{
+				Type: EventConsidered,
+				Data: ConsideredData{TargetName: m[1]},
+			}, true
+		}
 	}
 
 	return LogEvent{}, false
