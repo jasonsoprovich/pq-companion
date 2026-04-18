@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, X } from 'lucide-react'
 import { getNPCsByZone, getZone, searchZones } from '../services/api'
 import type { NPC } from '../types/npc'
@@ -227,6 +227,7 @@ interface NPCListProps {
 }
 
 function NPCList({ shortName }: NPCListProps): React.ReactElement {
+  const navigate = useNavigate()
   const [npcs, setNpcs] = useState<NPC[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -283,11 +284,23 @@ function NPCList({ shortName }: NPCListProps): React.ReactElement {
         }}
       >
         {npcs.map((npc, i) => (
-          <div
+          <button
             key={npc.id}
-            className="flex items-baseline justify-between px-3 py-1.5"
+            onClick={() => navigate(`/npcs?select=${npc.id}`)}
+            className="flex w-full cursor-pointer items-baseline justify-between px-3 py-1.5 text-left transition-colors"
             style={{
               borderTop: i > 0 ? '1px solid var(--color-border)' : undefined,
+              borderLeft: '2px solid transparent',
+            }}
+            onMouseEnter={(e) => {
+              ;(e.currentTarget as HTMLElement).style.backgroundColor =
+                'var(--color-surface-2)'
+              ;(e.currentTarget as HTMLElement).style.borderLeftColor =
+                'var(--color-primary)'
+            }}
+            onMouseLeave={(e) => {
+              ;(e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
+              ;(e.currentTarget as HTMLElement).style.borderLeftColor = 'transparent'
             }}
           >
             <div className="flex flex-col">
@@ -308,7 +321,7 @@ function NPCList({ shortName }: NPCListProps): React.ReactElement {
                 </div>
               )}
             </div>
-          </div>
+          </button>
         ))}
       </div>
     </div>
