@@ -148,7 +148,11 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
               <div className="mt-0.5 flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
                 <span className="truncate">
                   {zone.short_name}
-                  {zone.min_level > 0 && ` · Lv ${zone.min_level}+`}
+                  {zone.npc_level_max > 0 && (
+                    zone.npc_level_min === zone.npc_level_max
+                      ? ` · Lv ${zone.npc_level_min}`
+                      : ` · Lv ${zone.npc_level_min}–${zone.npc_level_max}`
+                  )}
                 </span>
                 {zone.exp_mod !== 1.0 && (
                   <span
@@ -384,7 +388,16 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
         {/* Zone Info */}
         <Section title="Zone Info">
           <StatRow label="Zone ID" value={zone.zone_id_number} />
-          <StatRow label="Min Level" value={zone.min_level > 0 ? zone.min_level : 'None'} />
+          <StatRow
+            label="Level Range"
+            value={
+              zone.npc_level_max > 0
+                ? zone.npc_level_min === zone.npc_level_max
+                  ? `${zone.npc_level_min}`
+                  : `${zone.npc_level_min}–${zone.npc_level_max}`
+                : 'Unknown'
+            }
+          />
           <StatRow label="Succor Point" value={coordStr} />
           {zone.note && <StatRow label="Note" value={zone.note} />}
         </Section>

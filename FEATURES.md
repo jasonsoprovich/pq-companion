@@ -167,6 +167,7 @@
   - **`types/zone.ts`** — added matching fields to the TypeScript `Zone` interface
   - **`pages/ZonesPage.tsx`** — new **Quick Facts** section in the detail panel: Expansion name, XP Modifier %, Outdoor, Hotzone, Levitation, and Binding (with human-readable labels)
 - **Issue #31 — Succor Point label** (`pages/ZonesPage.tsx`): renamed "Safe Point" to "Succor Point" and reformatted coordinates to `Y: ..., X: ..., Z: ...` to match EverQuest/YAQDS conventions
+- **Issue #32 — Zone level range** (`models.go`, `queries.go`, `types/zone.ts`, `pages/ZonesPage.tsx`): added `npc_level_min`/`npc_level_max` fields derived via correlated subqueries (spawnentry→npc_types per zone); displayed as "Level Range: 1–66" in the Zone Info section and as "Lv 1–66" in the search list subtitle
 
 ### Task 2.7 — Global Search ✅
 - **`GET /api/search?q=&limit=`** — new backend endpoint; runs all four searches (items, spells, NPCs, zones) in parallel via goroutines and returns a single grouped response (`internal/api/search.go`)

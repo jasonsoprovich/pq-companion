@@ -15,6 +15,8 @@ export interface Zone {
   can_bind: number
   exp_mod: number
   expansion: number
+  npc_level_min: number
+  npc_level_max: number
 }
 
 export interface SearchResult<T> {

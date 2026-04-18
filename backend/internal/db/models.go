@@ -195,6 +195,8 @@ type Zone struct {
 	CanBind      int     `json:"can_bind"`
 	ExpMod       float64 `json:"exp_mod"`
 	Expansion    int     `json:"expansion"`
+	NPCLevelMin  int     `json:"npc_level_min"`
+	NPCLevelMax  int     `json:"npc_level_max"`
 }
 
 // SearchResult wraps paginated query results.

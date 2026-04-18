@@ -389,7 +389,9 @@ const zoneColumns = `
   z.zoneidnumber, z.safe_x, z.safe_y, z.safe_z,
   z.min_level, COALESCE(z.note,''),
   z.castoutdoor, z.hotzone, z.canlevitate, z.canbind,
-  z.zone_exp_multiplier, z.expansion`
+  z.zone_exp_multiplier, z.expansion,
+  COALESCE((SELECT MIN(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name), 0),
+  COALESCE((SELECT MAX(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name), 0)`
 
 func scanZone(row interface {
 	Scan(...any) error
@@ -401,6 +403,7 @@ func scanZone(row interface {
 		&z.MinLevel, &z.Note,
 		&z.Outdoor, &z.Hotzone, &z.CanLevitate, &z.CanBind,
 		&z.ExpMod, &z.Expansion,
+		&z.NPCLevelMin, &z.NPCLevelMax,
 	)
 	if err != nil {
 		return nil, err
