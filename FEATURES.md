@@ -213,7 +213,7 @@
   - **Stats bar**: shows `X / Y known` when spellbook is loaded, or `Y spells` when no export is available
   - **Spellbook status banner**: green checkmark + character name + export timestamp when Zeal spellbook is loaded; amber warning with link to Settings when no export is found
   - **Spell list**: flat scrollable list ordered by class level (ascending); each row shows — known indicator (filled circle in gold vs. empty circle in gray), spell name (clickable), level badge, mana cost
-  - Clicking any row navigates to `/spells?select={id}` to open that spell in the Spell Explorer detail panel
+  - Clicking any row opens an inline modal popup with full spell details (casting, targeting, classes, effects, messages); modal has an "Explorer" button to navigate to `/spells?select={id}` and a close button; backdrop click also closes the modal
   - Loading and error states with retry button
   - Empty states per filter ("All spells known!", "No known spells", "No spells for this class")
 - **Sidebar** (`components/Sidebar.tsx`) — "Spell Checklist" added to the Zeal nav section with `BookOpen` icon
