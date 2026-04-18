@@ -546,23 +546,24 @@ Subsequent release builds download it automatically from that release.
 ### Task 6.2 — Auto-Updater ✅
 - **`electron/main/index.ts`** — `setupAutoUpdater()` wires `electron-updater` into the main process:
   - Skipped in dev mode (`!app.isPackaged`)
-  - `autoDownload: true`, `autoInstallOnAppQuit: true`
+  - `autoDownload: false` — download only triggers when user clicks Update; `autoInstallOnAppQuit: true` as fallback
   - Checks for updates 5 s after launch (gives sidecar + window time to initialise)
   - Events forwarded to the renderer via `mainWindow.webContents.send`:
-    - `updater:available` → `{ version }` — new version detected, download started
+    - `updater:available` → `{ version }` — new version detected, awaiting user action
     - `updater:progress` → `{ percent, transferred, total }` — download progress
     - `updater:downloaded` → `{ version }` — ready to install
     - `updater:error` → error message string
-  - IPC handlers: `updater:check` (manual recheck), `updater:quit-and-install`
+  - IPC handlers: `updater:check` (manual recheck), `updater:download` (trigger download), `updater:quit-and-install` (silent install with `isSilent=true, isForceRunAfter=true` — no UAC/path dialog, restarts to the same directory automatically)
 - **`electron/preload/index.ts`** — `updater` namespace exposed via `contextBridge`:
-  - `check()`, `quitAndInstall()` — invoke IPC handlers
+  - `check()`, `download()`, `quitAndInstall()` — invoke IPC handlers
   - `onAvailable(cb)`, `onProgress(cb)`, `onDownloaded(cb)`, `onError(cb)` — subscribe to update events; each returns an unsubscribe function for `useEffect` cleanup
-- **`frontend/src/types/electron.d.ts`** — `updater` added to `ElectronAPI` interface
-- **`frontend/src/components/UpdateNotification.tsx`** — bottom-of-app banner with four states:
-  - `available` — "Update vX.Y.Z available — downloading in the background…" (dismissible)
-  - `downloading` — gold progress bar with percentage
-  - `downloaded` — "vX.Y.Z ready — restart to install" + **Restart** button
-  - `error` — silent fallback message (dismissible); does not interrupt the user
+- **`frontend/src/types/electron.d.ts`** — `updater` added to `ElectronAPI` interface; includes `download()`
+- **`frontend/src/components/UpdateNotification.tsx`** — bottom-of-app banner with six states:
+  - `available` — "Update vX.Y.Z available" + **Update** button (user-initiated download)
+  - `downloading` — gold progress bar with percentage (no user action needed)
+  - `downloaded` — "Restarting in Ns" countdown (5 s) then auto-calls `quitAndInstall(true, true)` for silent install; **Restart now** button skips countdown
+  - `installing` — "Installing — restarting…" with spinner (briefly shown before app exits)
+  - `error` — error message + **Retry** button (re-triggers `check()`), dismissible
 - **`frontend/src/components/Layout.tsx`** — `<UpdateNotification />` added below `<GlobalSearch />`
 - **`.github/workflows/release.yml`** — updated for auto-updater:
   - Both `build-windows` and `build-macos` jobs changed to `--publish always`; `GH_TOKEN` is passed so `electron-builder` uploads the installer + update manifest (`latest.yml` / `latest-mac.yml`) directly to the GitHub release

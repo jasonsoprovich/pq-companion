@@ -65,7 +65,7 @@ function stopSidecar(): void {
 function setupAutoUpdater(): void {
   if (isDev) return // not applicable outside a packaged build
 
-  autoUpdater.autoDownload = true
+  autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
 
   autoUpdater.on('checking-for-update', () => {
@@ -566,8 +566,12 @@ ipcMain.handle('updater:check', () => {
   if (!isDev) autoUpdater.checkForUpdates()
 })
 
+ipcMain.handle('updater:download', () => {
+  if (!isDev) autoUpdater.downloadUpdate()
+})
+
 ipcMain.handle('updater:quit-and-install', () => {
-  autoUpdater.quitAndInstall()
+  autoUpdater.quitAndInstall(true, true)
 })
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
