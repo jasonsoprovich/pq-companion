@@ -75,7 +75,7 @@ func defaults() Config {
 		ServerAddr:     ":8080",
 		CharacterClass: -1,
 		Preferences: Preferences{
-			OverlayOpacity:    0.9,
+			OverlayOpacity:    0.25,
 			MinimizeToTray:    true,
 			ParseCombatLog:    true,
 			OverlayDPSEnabled: true,
