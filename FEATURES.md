@@ -106,6 +106,8 @@
   - `classesLabel` — decodes `classes` bitmask into class names; "All" when all bits set
   - `racesLabel` — decodes `races` bitmask into race names; "All" when all bits set
   - `itemTypeLabel` — maps `item_type` int to weapon/armor/misc label
+  - `effectiveItemTypeLabel` — resolves display label using `item_class` first (Container/Book overrides) then `item_type`
+  - `isLoreItem` — detects lore (unique) items via EQ's `*`-prefixed lore string convention
   - `sizeLabel`, `weightLabel`, `priceLabel` (copper → pp/gp/sp/cp)
   - `baneBodyLabel` — maps `bane_body` int to body type name (Humanoid, Undead, Dragon, etc.)
   - `BANE_BODY_OPTIONS` — sorted option list for bane body type filter dropdown

@@ -114,6 +114,18 @@ export function itemTypeLabel(itemType: number): string {
   return ITEM_TYPES[itemType] ?? `Type ${itemType}`
 }
 
+/** Returns the display label accounting for item_class (container/book) overrides. */
+export function effectiveItemTypeLabel(itemClass: number, itemType: number): string {
+  if (itemClass === 1) return 'Container'
+  if (itemClass === 2) return 'Book'
+  return itemTypeLabel(itemType)
+}
+
+/** Returns true if the item is a lore (unique) item — EQ stores this as lore string starting with '*'. */
+export function isLoreItem(lore: string): boolean {
+  return lore.startsWith('*')
+}
+
 // ── Size ───────────────────────────────────────────────────────────────────────
 
 const SIZE_NAMES = ['Tiny', 'Small', 'Medium', 'Large', 'Giant', 'Gigantic']

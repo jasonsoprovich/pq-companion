@@ -7,6 +7,8 @@ import {
   BANE_BODY_OPTIONS,
   baneBodyLabel,
   classesLabel,
+  effectiveItemTypeLabel,
+  isLoreItem,
   itemTypeLabel,
   priceLabel,
   racesLabel,
@@ -147,7 +149,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
                 {item.name}
               </div>
               <div className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                {itemTypeLabel(item.item_type)}
+                {effectiveItemTypeLabel(item.item_class, item.item_type)}
                 {item.req_level > 0 && ` · Req ${item.req_level}`}
               </div>
             </button>
@@ -217,7 +219,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
 
   const flags: string[] = []
   if (item.magic) flags.push('MAGIC')
-  if (item.lore_flag) flags.push('LORE')
+  if (isLoreItem(item.lore)) flags.push('LORE')
   if (item.nodrop) flags.push('NO DROP')
   if (item.norent) flags.push('NO RENT')
 
@@ -243,7 +245,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
         </h2>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-            {itemTypeLabel(item.item_type)}
+            {effectiveItemTypeLabel(item.item_class, item.item_type)}
           </span>
           {flags.map((f) => (
             <span
@@ -264,7 +266,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
             className="mt-1.5 text-xs italic"
             style={{ color: 'var(--color-muted-foreground)' }}
           >
-            {item.lore}
+            {item.lore.startsWith('*') ? item.lore.slice(1) : item.lore}
           </p>
         )}
       </div>
