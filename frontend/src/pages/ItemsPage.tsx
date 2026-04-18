@@ -220,8 +220,8 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
   const flags: string[] = []
   if (item.magic) flags.push('MAGIC')
   if (isLoreItem(item.lore)) flags.push('LORE')
-  if (item.nodrop) flags.push('NO DROP')
-  if (item.norent) flags.push('NO RENT')
+  if (item.nodrop === 0) flags.push('NO DROP')
+  if (item.norent === 0) flags.push('NO RENT')
 
   const hasCombat = item.damage > 0 || item.ac > 0
   const hasBane = item.bane_amt > 0 || item.bane_body > 0 || item.bane_race > 0
