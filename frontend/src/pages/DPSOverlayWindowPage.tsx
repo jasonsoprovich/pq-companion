@@ -5,7 +5,7 @@
  * The window frame is removed; the user drags via the OS title-bar area
  * (CSS -webkit-app-region: drag on the header strip).
  */
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Swords } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
@@ -131,22 +131,45 @@ function FightTable({ fight, showAll }: { fight: FightState; showAll: boolean })
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
+const POST_FIGHT_PERSIST_MS = 30_000
+
 export default function DPSOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
   const [now, setNow] = useState(() => Date.now())
 
+  // Track the last seen fight and when combat ended, to persist the overlay for
+  // 30 seconds after the fight ends so the player can review the numbers.
+  const [frozenFight, setFrozenFight] = useState<FightState | null>(null)
+  const [frozenExpiry, setFrozenExpiry] = useState<number>(0)
+  const prevInCombat = useRef<boolean | null>(null)
+
   useEffect(() => {
     getCombatState().then(setCombat).catch(() => {})
   }, [])
 
-  // Tick every second while in combat so the fight timer advances in real-time.
+  // Capture the current fight data while in combat; on transition out, set 30s expiry.
   useEffect(() => {
-    if (!combat?.in_combat) return
+    if (!combat) return
+    const wasInCombat = prevInCombat.current
+    prevInCombat.current = combat.in_combat
+
+    if (combat.in_combat && combat.current_fight) {
+      setFrozenFight(combat.current_fight)
+      setFrozenExpiry(0)
+    } else if (!combat.in_combat && wasInCombat === true) {
+      setFrozenExpiry(Date.now() + POST_FIGHT_PERSIST_MS)
+    }
+  }, [combat])
+
+  // Tick every second while in combat or showing post-fight data.
+  const shouldTick = combat?.in_combat || frozenExpiry > 0
+  useEffect(() => {
+    if (!shouldTick) return
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
-  }, [combat?.in_combat])
+  }, [shouldTick])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === 'overlay:combat') {
@@ -156,7 +179,10 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
 
   useWebSocket(handleMessage)
 
-  const fight = combat?.current_fight
+  const inCombat = combat?.in_combat ?? false
+  const showingPostFight = !inCombat && frozenFight !== null && now < frozenExpiry
+  const fight = inCombat ? combat?.current_fight : showingPostFight ? frozenFight : null
+
   const liveSecs = fight
     ? Math.max((now - new Date(fight.start_time).getTime()) / 1000, fight.duration_seconds)
     : 0
@@ -252,7 +278,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           gap: 6,
           borderBottom: '1px solid rgba(255,255,255,0.06)',
           flexShrink: 0,
-          color: combat?.in_combat ? '#f87171' : 'rgba(255,255,255,0.3)',
+          color: inCombat ? '#f87171' : showingPostFight ? '#fb923c' : 'rgba(255,255,255,0.3)',
         }}
       >
         <span
@@ -260,12 +286,19 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
             width: 6,
             height: 6,
             borderRadius: '50%',
-            backgroundColor: combat?.in_combat ? '#ef4444' : 'rgba(255,255,255,0.2)',
+            backgroundColor: inCombat ? '#ef4444' : showingPostFight ? '#fb923c' : 'rgba(255,255,255,0.2)',
             display: 'inline-block',
           }}
         />
-        {combat?.in_combat && fight ? (
-          <span>{fmtDur(liveSecs)} · {fmt(fight.total_damage)} dmg</span>
+        {fight ? (
+          <span>
+            {fmtDur(liveSecs)} · {fmt(fight.total_damage)} dmg
+            {showingPostFight && (
+              <span style={{ color: 'rgba(255,255,255,0.3)', marginLeft: 4 }}>
+                (ends in {Math.max(0, Math.ceil((frozenExpiry - now) / 1000))}s)
+              </span>
+            )}
+          </span>
         ) : (
           <span>Not in combat</span>
         )}
@@ -276,7 +309,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
         <p style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'rgba(255,255,255,0.3)', margin: 0 }}>
           Connecting…
         </p>
-      ) : combat.in_combat && fight ? (
+      ) : fight ? (
         <FightTable fight={fight} showAll={showAll} />
       ) : (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>

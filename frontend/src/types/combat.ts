@@ -17,7 +17,8 @@ export interface HealerStats {
 export interface FightState {
   start_time: string
   duration_seconds: number
-  combatants: EntityStats[]  // outgoing damage dealers sorted by DPS desc
+  primary_target?: string    // most-hit NPC target
+  combatants: EntityStats[]  // outgoing damage dealers sorted by DPS desc (NPCs excluded)
   total_damage: number       // all outgoing damage (all players)
   total_dps: number          // all outgoing DPS
   you_damage: number         // player personal damage
@@ -33,6 +34,7 @@ export interface FightSummary {
   start_time: string
   end_time: string
   duration_seconds: number
+  primary_target?: string    // most-hit NPC target
   combatants: EntityStats[]
   total_damage: number
   total_dps: number

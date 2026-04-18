@@ -35,35 +35,37 @@ type HealerStats struct {
 
 // FightState describes the currently active fight.
 type FightState struct {
-	StartTime   time.Time     `json:"start_time"`
-	Duration    float64       `json:"duration_seconds"`
-	Combatants  []EntityStats `json:"combatants"`   // outgoing damage dealers sorted by DPS desc
-	TotalDamage int64         `json:"total_damage"` // sum of all outgoing damage (all players)
-	TotalDPS    float64       `json:"total_dps"`    // total outgoing DPS (all players)
-	YouDamage   int64         `json:"you_damage"`   // player personal outgoing damage
-	YouDPS      float64       `json:"you_dps"`      // player personal DPS
-	Healers     []HealerStats `json:"healers"`      // healers sorted by total heal desc
-	TotalHeal   int64         `json:"total_heal"`   // sum of all healing done (all healers)
-	TotalHPS    float64       `json:"total_hps"`    // total HPS (all healers)
-	YouHeal     int64         `json:"you_heal"`     // player personal healing done
-	YouHPS      float64       `json:"you_hps"`      // player personal HPS
+	StartTime     time.Time     `json:"start_time"`
+	Duration      float64       `json:"duration_seconds"`
+	PrimaryTarget string        `json:"primary_target,omitempty"` // most-hit NPC target
+	Combatants    []EntityStats `json:"combatants"`                // outgoing damage dealers sorted by DPS desc (NPCs excluded)
+	TotalDamage   int64         `json:"total_damage"`              // sum of all outgoing damage (all players)
+	TotalDPS      float64       `json:"total_dps"`                 // total outgoing DPS (all players)
+	YouDamage     int64         `json:"you_damage"`                // player personal outgoing damage
+	YouDPS        float64       `json:"you_dps"`                   // player personal DPS
+	Healers       []HealerStats `json:"healers"`                   // healers sorted by total heal desc
+	TotalHeal     int64         `json:"total_heal"`                // sum of all healing done (all healers)
+	TotalHPS      float64       `json:"total_hps"`                 // total HPS (all healers)
+	YouHeal       int64         `json:"you_heal"`                  // player personal healing done
+	YouHPS        float64       `json:"you_hps"`                   // player personal HPS
 }
 
 // FightSummary is an immutable snapshot of a completed fight.
 type FightSummary struct {
-	StartTime   time.Time     `json:"start_time"`
-	EndTime     time.Time     `json:"end_time"`
-	Duration    float64       `json:"duration_seconds"`
-	Combatants  []EntityStats `json:"combatants"`
-	TotalDamage int64         `json:"total_damage"`
-	TotalDPS    float64       `json:"total_dps"`
-	YouDamage   int64         `json:"you_damage"`
-	YouDPS      float64       `json:"you_dps"`
-	Healers     []HealerStats `json:"healers"`
-	TotalHeal   int64         `json:"total_heal"`
-	TotalHPS    float64       `json:"total_hps"`
-	YouHeal     int64         `json:"you_heal"`
-	YouHPS      float64       `json:"you_hps"`
+	StartTime     time.Time     `json:"start_time"`
+	EndTime       time.Time     `json:"end_time"`
+	Duration      float64       `json:"duration_seconds"`
+	PrimaryTarget string        `json:"primary_target,omitempty"` // most-hit NPC target
+	Combatants    []EntityStats `json:"combatants"`
+	TotalDamage   int64         `json:"total_damage"`
+	TotalDPS      float64       `json:"total_dps"`
+	YouDamage     int64         `json:"you_damage"`
+	YouDPS        float64       `json:"you_dps"`
+	Healers       []HealerStats `json:"healers"`
+	TotalHeal     int64         `json:"total_heal"`
+	TotalHPS      float64       `json:"total_hps"`
+	YouHeal       int64         `json:"you_heal"`
+	YouHPS        float64       `json:"you_hps"`
 }
 
 // DeathRecord captures a single player death event.
