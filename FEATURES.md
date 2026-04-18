@@ -182,7 +182,7 @@
   - Keyboard navigation: `↑`/`↓` to move, `↵` to open, `Esc` to close; click outside to dismiss
   - Navigates to the correct explorer page (`/items`, `/spells`, `/npcs`, `/zones`) with `?select=ID` query param
 - **Sidebar search hint** (`components/Sidebar.tsx`): `⌘K` shortcut pill shown above the nav links for discoverability
-- **Pre-select via URL** (`?select=ID`): all four explorer pages now read the `select` query param on mount, fetch the record by ID, and pre-populate the detail panel; param is cleared from the URL after selection
+- **Pre-select via URL** (`?select=ID`): all four explorer pages read the `select` query param and fetch the record by ID; the `useEffect` depends on `searchParams` so it re-runs whenever the URL param changes — this ensures global search results are correctly selected even when the user is already on the target page (e.g. clicking a spell scroll from the Items page while already browsing items); param is cleared from the URL after selection (closes #5)
 
 ## Phase 3 — Zeal Integration & Backup Manager
 
