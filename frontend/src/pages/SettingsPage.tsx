@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Radar } from 'lucide-react'
 import { getConfig, updateConfig } from '../services/api'
 import type { Config } from '../types/config'
+import { useWebSocket } from '../hooks/useWebSocket'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
@@ -18,6 +19,14 @@ export default function SettingsPage(): React.ReactElement {
   const [updateState, setUpdateState] = useState<UpdateState>('idle')
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const [updateError, setUpdateError] = useState<string | null>(null)
+  const [detectedCharacter, setDetectedCharacter] = useState<string | null>(null)
+
+  useWebSocket((msg) => {
+    if (msg.type === 'config:character_detected') {
+      const data = msg.data as { character: string }
+      setDetectedCharacter(data.character)
+    }
+  })
 
   useEffect(() => {
     getConfig()
@@ -310,6 +319,34 @@ export default function SettingsPage(): React.ReactElement {
             }}
           />
 
+          {detectedCharacter && !config.character && (
+            <div
+              className="mt-2 flex items-center justify-between gap-2 rounded px-3 py-2 text-xs"
+              style={{
+                backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--color-primary) 30%, transparent)',
+              }}
+            >
+              <span className="flex items-center gap-1.5" style={{ color: 'var(--color-foreground)' }}>
+                <Radar size={12} style={{ color: 'var(--color-primary)' }} />
+                Auto-detected: <strong>{detectedCharacter}</strong>
+              </span>
+              <button
+                onClick={() => setConfig({ ...config, character: detectedCharacter })}
+                className="rounded px-2 py-0.5 text-xs font-medium"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  color: '#fff',
+                  border: 'none',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Use This
+              </button>
+            </div>
+          )}
+
           <p className="mt-4 mb-1 text-xs font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
             Character Class
           </p>
@@ -467,7 +504,7 @@ export default function SettingsPage(): React.ReactElement {
             Overlays
           </h2>
           <p className="mb-4 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Controls transparency for all popout overlay windows (DPS, HPS, Buff Timers, NPC, Triggers).
+            Controls transparency for all popout overlay windows (DPS, Buff Timers, NPC, Triggers).
           </p>
 
           <div className="flex items-center gap-4">

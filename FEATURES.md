@@ -832,6 +832,22 @@ Two separate overlay windows are provided from the start — one for beneficial 
 **`frontend/src/types/electron.d.ts`**
 - Added `app: { getVersion: () => Promise<string> }` to `ElectronAPI`
 
+### Issue #72 — Auto-detect active character from log file activity ✅
+
+**`backend/internal/logparser/tailer.go`**
+- Added `onCharacterChange func(string)` field to `Tailer` — called when the auto-detected active character changes
+- Added `detectedCharacter string` field to track the last auto-detected character name (empty when character is set manually in config)
+- Updated `NewTailer` to accept an `onCharacterChange` callback parameter
+- In `tick()`, when `config.Character` is blank, the resolved character is compared against `detectedCharacter`; if it changed the callback fires and `detectedCharacter` is updated; when a manual character override is set `detectedCharacter` is cleared
+
+**`backend/cmd/server/main.go`**
+- Passes an `onCharacterChange` callback to `NewTailer` that logs the detection and broadcasts a `config:character_detected` WebSocket event with `{character: "<name>"}` payload
+
+**`frontend/src/pages/SettingsPage.tsx`**
+- Subscribes to `config:character_detected` WebSocket events via `useWebSocket`
+- When the character field is blank and a character is detected, shows a muted banner below the input: "Auto-detected: **Firiona**" with a **Use This** button that copies the name into the character field
+- Banner dismisses automatically when the character field is manually filled
+
 ## Phase 9 — Audio Alerts
 
 ### Task 9.1 — Audio Engine

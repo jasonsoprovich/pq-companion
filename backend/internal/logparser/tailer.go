@@ -42,23 +42,34 @@ type Status struct {
 // closes the old file and begins tailing the new one (seeking to the end so
 // historical lines are not replayed).
 type Tailer struct {
-	cfgMgr      *config.Manager
-	handler     func(LogEvent)
-	lineHandler func(time.Time, string) // called for every valid EQ log line (parsed or not)
+	cfgMgr            *config.Manager
+	handler           func(LogEvent)
+	lineHandler       func(time.Time, string) // called for every valid EQ log line (parsed or not)
+	onCharacterChange func(string)            // called when auto-detected character changes; nil = disabled
 
-	mu        sync.Mutex
-	file      *os.File
-	filePath  string
-	offset    int64
-	remainder []byte // incomplete line fragment from the previous read
+	mu                sync.Mutex
+	file              *os.File
+	filePath          string
+	offset            int64
+	remainder         []byte // incomplete line fragment from the previous read
+	detectedCharacter string // last auto-detected character name (empty when manually configured)
 }
 
 // NewTailer creates a Tailer. Call Start in a goroutine to begin tailing.
 // lineHandler, if non-nil, is called for every line that has a valid EQ
 // timestamp — regardless of whether it matches a known event pattern. This
 // allows the trigger engine to match arbitrary log text.
-func NewTailer(cfgMgr *config.Manager, handler func(LogEvent), lineHandler func(time.Time, string)) *Tailer {
-	return &Tailer{cfgMgr: cfgMgr, handler: handler, lineHandler: lineHandler}
+// onCharacterChange, if non-nil, is called whenever the auto-detected active
+// character changes (i.e. when config.Character is blank and a different log
+// file becomes most-recently-modified). It is not called when the character
+// is set manually in the config.
+func NewTailer(cfgMgr *config.Manager, handler func(LogEvent), lineHandler func(time.Time, string), onCharacterChange func(string)) *Tailer {
+	return &Tailer{
+		cfgMgr:            cfgMgr,
+		handler:           handler,
+		lineHandler:       lineHandler,
+		onCharacterChange: onCharacterChange,
+	}
 }
 
 // Start begins the polling loop. It blocks until ctx is done.
@@ -116,7 +127,8 @@ func (t *Tailer) tick() {
 	}
 
 	character := cfg.Character
-	if character == "" {
+	autoDetected := character == ""
+	if autoDetected {
 		character = resolveActiveCharacter(cfg.EQPath)
 		if character == "" {
 			return
@@ -128,10 +140,23 @@ func (t *Tailer) tick() {
 	// Collect events and raw lines while the mutex is held, then dispatch without it.
 	var events []LogEvent
 	var rawLines []rawLine
+	var changedCharacter string
 
 	t.mu.Lock()
+	if autoDetected && character != t.detectedCharacter {
+		t.detectedCharacter = character
+		changedCharacter = character
+	} else if !autoDetected && t.detectedCharacter != "" {
+		// Manual character set — clear the auto-detected state.
+		t.detectedCharacter = ""
+	}
 	events, rawLines = t.readLines(logPath)
 	t.mu.Unlock()
+
+	// Notify listener of character change outside the mutex.
+	if changedCharacter != "" && t.onCharacterChange != nil {
+		t.onCharacterChange(changedCharacter)
+	}
 
 	// Deliver raw lines first so trigger handlers see every line.
 	if t.lineHandler != nil {

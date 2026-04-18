@@ -100,7 +100,10 @@ func main() {
 		npcTracker.Handle(ev)
 		combatTracker.Handle(ev)
 		timerEngine.Handle(ev)
-	}, triggerEngine.Handle)
+	}, triggerEngine.Handle, func(character string) {
+		slog.Info("logparser: auto-detected active character", "character", character)
+		hub.Broadcast(ws.Event{Type: "config:character_detected", Data: map[string]string{"character": character}})
+	})
 	go tailer.Start(context.Background())
 
 	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, timerEngine, triggerStore, triggerEngine)
