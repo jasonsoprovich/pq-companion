@@ -230,8 +230,10 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
     item.dex || item.wis || item.int || item.cha
   const hasResists = item.mr || item.cr || item.dr || item.fr || item.pr
   const hasEffects =
-    item.click_effect > 0 || item.proc_effect > 0 ||
-    item.worn_effect > 0 || item.focus_effect > 0
+    (item.click_effect > 0 && !!item.click_name) ||
+    (item.proc_effect > 0 && !!item.proc_name) ||
+    (item.worn_effect > 0 && !!item.worn_name) ||
+    (item.focus_effect > 0 && !!item.focus_name)
 
   return (
     <div className="flex-1 overflow-y-auto px-5 py-4">
