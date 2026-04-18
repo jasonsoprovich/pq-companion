@@ -235,7 +235,7 @@
 - **Sidebar**: "Inventory" entry renamed to "Inventory Tracker" pointing at `/inventory-tracker`; old `/inventory` route kept but removed from sidebar
 
 ### Task 3.4 — Key Tracker ✅
-- **`internal/keys/keys.go`** — static key definitions (no DB needed). Each `KeyDef` has an ID, name, description, and ordered `[]Component{ItemID, ItemName, Notes}`. Item IDs are canonical; names are for display only. Ships with 6 keys: Veeshan's Peak, Old Sebilis, Howling Stones (Charasis), Grieg's End, Grimling Forest Shackle Pens, and Katta Castellum.
+- **`internal/keys/keys.go`** — static key definitions (no DB needed). Each `KeyDef` has an ID, name, description, and ordered `[]Component{ItemID, ItemName, Notes}`. Item IDs are canonical; names are for display only. Ships with 10 keys: Veeshan's Peak, Sleeper's Tomb, Old Sebilis, Howling Stones (Charasis), Grieg's End, Grimling Forest Shackle Pens, Katta Castellum, Arx Seru, Temple of Ssraeshza (Emperor Access), and Vex Thal (flag-based, no item components).
 - **`GET /api/keys`** — returns all key definitions as `{"keys": [...]}`.
 - **`GET /api/keys/progress`** — cross-references all character inventories (via `AllInventories`) against each key's component item IDs. Response: `{configured, keys[{key_id, characters[{character, has_export, components[{item_id, item_name, have, shared_bank}]}]}]}`. `have` is true if the item is in that character's equipped/bag/bank slots. `shared_bank` is true when the only copy is in the Shared Bank (available to all characters, deduplicated).
 - **`types/keys.ts`** — TypeScript types mirroring all Go response structs.

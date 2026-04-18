@@ -38,6 +38,18 @@ func All() []KeyDef {
 			},
 		},
 		{
+			ID:          "sleepers_tomb",
+			Name:        "Sleeper's Tomb",
+			Description: "The Sleeper's Key is obtained by completing the Warders quest chain in Velious. Hand in quest items to the relevant NPC to receive the key and gain access to Sleeper's Tomb.",
+			Components: []Component{
+				{
+					ItemID:   27265,
+					ItemName: "Sleeper's Key",
+					Notes:    "Reward from the Warders keying quest chain in Velious.",
+				},
+			},
+		},
+		{
 			ID:          "old_sebilis",
 			Name:        "Old Sebilis",
 			Description: "A Trakanon's Tooth is required to zone into Old Sebilis. The tooth is carried — it is not consumed on entry.",
@@ -96,6 +108,36 @@ func All() []KeyDef {
 					Notes:    "Obtained via citizenship quest with the Combine ambassador.",
 				},
 			},
+		},
+		{
+			ID:          "arx_seru",
+			Name:        "Arx Seru",
+			Description: "The Arx Key is required to access Arx Seru on Luclin. Obtained from Arbitor Xxylm in Katta Castellum after completing the citizenship quest chain.",
+			Components: []Component{
+				{
+					ItemID:   3650,
+					ItemName: "Arx Key",
+					Notes:    "Obtained from Arbitor Xxylm in Katta Castellum.",
+				},
+			},
+		},
+		{
+			ID:          "ssra_emperor",
+			Name:        "Temple of Ssraeshza (Emperor Access)",
+			Description: "The Ssraeshzian Insignia grants access to the Temple of Ssraeshza. Defeating the nine high priests allows progression to Emperor Ssraeshza's chamber deep within the temple.",
+			Components: []Component{
+				{
+					ItemID:   19718,
+					ItemName: "Ssraeshzian Insignia",
+					Notes:    "Obtained by completing the Ssraeshza Temple access quest.",
+				},
+			},
+		},
+		{
+			ID:          "vex_thal",
+			Name:        "Vex Thal",
+			Description: "Access to Vex Thal is a server-side progression flag granted after defeating Emperor Ssraeshza in the Temple of Ssraeshza. There is no physical key item — all raid members must be individually flagged by completing the SSRA Emperor encounter.",
+			Components:  []Component{},
 		},
 	}
 }
