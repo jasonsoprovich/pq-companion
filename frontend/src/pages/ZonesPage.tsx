@@ -327,7 +327,7 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
     )
   }
 
-  const coordStr = `${zone.safe_x.toFixed(1)}, ${zone.safe_y.toFixed(1)}, ${zone.safe_z.toFixed(1)}`
+  const coordStr = `Y: ${zone.safe_y.toFixed(1)}, X: ${zone.safe_x.toFixed(1)}, Z: ${zone.safe_z.toFixed(1)}`
 
   return (
     <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -385,7 +385,7 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
         <Section title="Zone Info">
           <StatRow label="Zone ID" value={zone.zone_id_number} />
           <StatRow label="Min Level" value={zone.min_level > 0 ? zone.min_level : 'None'} />
-          <StatRow label="Safe Point" value={coordStr} />
+          <StatRow label="Succor Point" value={coordStr} />
           {zone.note && <StatRow label="Note" value={zone.note} />}
         </Section>
 

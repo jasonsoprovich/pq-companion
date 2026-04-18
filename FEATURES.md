@@ -166,6 +166,7 @@
   - **Backend `queries.go`** — extended `zoneColumns` and `scanZone` to select `castoutdoor`, `hotzone`, `canlevitate`, `canbind`, `zone_exp_multiplier`, `expansion`
   - **`types/zone.ts`** — added matching fields to the TypeScript `Zone` interface
   - **`pages/ZonesPage.tsx`** — new **Quick Facts** section in the detail panel: Expansion name, XP Modifier %, Outdoor, Hotzone, Levitation, and Binding (with human-readable labels)
+- **Issue #31 — Succor Point label** (`pages/ZonesPage.tsx`): renamed "Safe Point" to "Succor Point" and reformatted coordinates to `Y: ..., X: ..., Z: ...` to match EverQuest/YAQDS conventions
 
 ### Task 2.7 — Global Search ✅
 - **`GET /api/search?q=&limit=`** — new backend endpoint; runs all four searches (items, spells, NPCs, zones) in parallel via goroutines and returns a single grouped response (`internal/api/search.go`)
