@@ -9,6 +9,7 @@ export interface KeyDef {
   name: string
   description: string
   components: KeyComponent[]
+  final_item?: KeyComponent
 }
 
 export interface KeysResponse {
@@ -26,6 +27,7 @@ export interface CharacterKeyProgress {
   character: string
   has_export: boolean
   components: ComponentStatus[]
+  final_item?: ComponentStatus
 }
 
 export interface KeyProgress {

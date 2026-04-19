@@ -237,16 +237,16 @@
 - **Sidebar**: "Inventory" entry renamed to "Inventory Tracker" pointing at `/inventory-tracker`; old `/inventory` route kept but removed from sidebar
 
 ### Task 3.4 — Key Tracker ✅
-- **`internal/keys/keys.go`** — static key definitions (no DB needed). Each `KeyDef` has an ID, name, description, and ordered `[]Component{ItemID, ItemName, Notes}`. Item IDs are canonical; names are for display only. Ships with 10 keys: Veeshan's Peak, Sleeper's Tomb, Old Sebilis, Howling Stones (Charasis), Grieg's End, Grimling Forest Shackle Pens, Katta Castellum, Arx Seru, Temple of Ssraeshza (Emperor Access), and Vex Thal (flag-based, no item components).
-- **`GET /api/keys`** — returns all key definitions as `{"keys": [...]}`.
-- **`GET /api/keys/progress`** — cross-references all character inventories (via `AllInventories`) against each key's component item IDs. Response: `{configured, keys[{key_id, characters[{character, has_export, components[{item_id, item_name, have, shared_bank}]}]}]}`. `have` is true if the item is in that character's equipped/bag/bank slots. `shared_bank` is true when the only copy is in the Shared Bank (available to all characters, deduplicated).
-- **`types/keys.ts`** — TypeScript types mirroring all Go response structs.
-- **`services/api.ts`** — added `getKeys()` and `getKeysProgress()` typed fetch wrappers.
+- **`internal/keys/keys.go`** — static key definitions (no DB needed). Each `KeyDef` has an ID, name, description, ordered `[]Component{ItemID, ItemName, Notes}`, and an optional `FinalItem *Component` representing the assembled key. Item IDs are canonical; names are for display only. Ships with the following keys: Veeshan's Peak, Sleeper's Tomb, Old Sebilis, Howling Stones (Charasis), Grieg's End, Grimling Forest Shackle Pens, Katta Castellum, Arx Seru, Temple of Ssraeshza (Ring of the Shissar — 4 components, FinalItem `Ring of the Shissar` 19719), and Vex Thal (Scepter of Shadows — 13 components incl. all 10 Lucid Shards, Shadowed Scepter Frame, A Planes Rift, A Glowing Orb of Luclinite; FinalItem `The Scepter of Shadows` 22198).
+- **`GET /api/keys`** — returns all key definitions as `{"keys": [...]}`. Each key may include a `final_item` field.
+- **`GET /api/keys/progress`** — cross-references all character inventories (via `AllInventories`) against each key's component item IDs. Response: `{configured, keys[{key_id, characters[{character, has_export, components[{item_id, item_name, have, shared_bank}], final_item?{item_id, item_name, have, shared_bank}}]}]}`. `have` is true if the item is in that character's equipped/bag/bank slots. `shared_bank` is true when the only copy is in the Shared Bank (available to all characters, deduplicated). `final_item` is populated only when the key defines an assembled-key item, and a character holding it is treated as fully keyed.
+- **`types/keys.ts`** — TypeScript types mirroring all Go response structs (`KeyDef.final_item?`, `CharacterKeyProgress.final_item?`).
+- **`services/api.ts`** — `getKeys()` and `getKeysProgress()` typed fetch wrappers.
 - **`pages/KeyTrackerPage.tsx`** — Key Tracker page at `/key-tracker`:
   - **Header bar**: Key Tracker title and Refresh button.
-  - **Filter tabs**: All / In Progress / Complete — filters the key card list by aggregate progress across all characters.
+  - **Filter tabs**: All / In Progress / Complete — filters the key card list by aggregate progress across all characters. Holding the `final_item` short-circuits the per-component count and counts as "complete".
   - **Key cards**: expandable accordion cards; collapsed state shows key name and a progress bar (`X / Y components` aggregated across all characters). Complete keys render with a green border.
-  - **Component table** (expanded): rows = components, columns = one per character with a Zeal export. Each cell shows a green checkmark (character has the item), `SB` gold badge (only in shared bank), or an empty circle (missing). Component notes shown as muted subtitle text.
+  - **Component table** (expanded): when the key defines a `final_item`, an "Assembled Key" header row is rendered above the component rows with distinct styling and a green badge. Component rows show a green checkmark (character has the item), `SB` gold badge (only in shared bank), faded checkmark (covered transitively by the assembled key in this character's inventory), or empty circle (missing). Component notes shown as muted subtitle text.
   - Empty states for each filter tab; not-configured state with link to Settings; no-exports state per key.
 - **Sidebar**: "Key Tracker" added to the Zeal nav section with `KeyRound` icon.
 
