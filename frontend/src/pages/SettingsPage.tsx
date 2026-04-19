@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Radar, Trash2 } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2 } from 'lucide-react'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog } from '../services/api'
 import type { Config } from '../types/config'
 import type { LogFileInfo } from '../types/logEvent'
-import { useWebSocket } from '../hooks/useWebSocket'
+
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
@@ -20,7 +20,7 @@ export default function SettingsPage(): React.ReactElement {
   const [updateState, setUpdateState] = useState<UpdateState>('idle')
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const [updateError, setUpdateError] = useState<string | null>(null)
-  const [detectedCharacter, setDetectedCharacter] = useState<string | null>(null)
+
   const [logLargeFile, setLogLargeFile] = useState(false)
   const [logFileInfo, setLogFileInfo] = useState<LogFileInfo | null>(null)
   const [logInfoLoading, setLogInfoLoading] = useState(false)
@@ -28,12 +28,6 @@ export default function SettingsPage(): React.ReactElement {
   const [cleanupResult, setCleanupResult] = useState<string | null>(null)
   const logPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  useWebSocket((msg) => {
-    if (msg.type === 'config:character_detected') {
-      const data = msg.data as { character: string }
-      setDetectedCharacter(data.character)
-    }
-  })
 
   useEffect(() => {
     getConfig()
@@ -333,99 +327,6 @@ export default function SettingsPage(): React.ReactElement {
               </code>
             </p>
           )}
-        </section>
-
-        {/* ── Character ──────────────────────────────────────────────────── */}
-        <section
-          className="rounded-lg p-4"
-          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-        >
-          <h2
-            className="mb-1 text-sm font-semibold uppercase tracking-wide"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            Character
-          </h2>
-          <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Optional. Leave blank to auto-select the most recently active log file. Set a name to override auto-selection (useful for testing).
-          </p>
-
-          <input
-            type="text"
-            value={config.character}
-            onChange={(e) => setConfig({ ...config, character: e.target.value })}
-            placeholder="e.g. Firiona"
-            className="w-full rounded px-3 py-2 text-sm"
-            style={{
-              backgroundColor: 'var(--color-surface-2)',
-              border: '1px solid var(--color-border)',
-              color: 'var(--color-foreground)',
-              outline: 'none',
-            }}
-          />
-
-          {detectedCharacter && !config.character && (
-            <div
-              className="mt-2 flex items-center justify-between gap-2 rounded px-3 py-2 text-xs"
-              style={{
-                backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
-                border: '1px solid color-mix(in srgb, var(--color-primary) 30%, transparent)',
-              }}
-            >
-              <span className="flex items-center gap-1.5" style={{ color: 'var(--color-foreground)' }}>
-                <Radar size={12} style={{ color: 'var(--color-primary)' }} />
-                Auto-detected: <strong>{detectedCharacter}</strong>
-              </span>
-              <button
-                onClick={() => setConfig({ ...config, character: detectedCharacter })}
-                className="rounded px-2 py-0.5 text-xs font-medium"
-                style={{
-                  backgroundColor: 'var(--color-primary)',
-                  color: '#fff',
-                  border: 'none',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                Use This
-              </button>
-            </div>
-          )}
-
-          <p className="mt-4 mb-1 text-xs font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-            Character Class
-          </p>
-          <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Select your class to auto-populate the Spell Checklist. Leave as "Not set" to choose manually in the checklist.
-          </p>
-          <select
-            value={config.character_class}
-            onChange={(e) => setConfig({ ...config, character_class: Number(e.target.value) })}
-            className="w-full rounded px-3 py-2 text-sm"
-            style={{
-              backgroundColor: 'var(--color-surface-2)',
-              border: '1px solid var(--color-border)',
-              color: 'var(--color-foreground)',
-              outline: 'none',
-            }}
-          >
-            <option value={-1}>Not set</option>
-            <option value={0}>WAR — Warrior</option>
-            <option value={1}>CLR — Cleric</option>
-            <option value={2}>PAL — Paladin</option>
-            <option value={3}>RNG — Ranger</option>
-            <option value={4}>SHD — Shadow Knight</option>
-            <option value={5}>DRU — Druid</option>
-            <option value={6}>MNK — Monk</option>
-            <option value={7}>BRD — Bard</option>
-            <option value={8}>ROG — Rogue</option>
-            <option value={9}>SHM — Shaman</option>
-            <option value={10}>NEC — Necromancer</option>
-            <option value={11}>WIZ — Wizard</option>
-            <option value={12}>MAG — Magician</option>
-            <option value={13}>ENC — Enchanter</option>
-            <option value={14}>BST — Beastlord</option>
-          </select>
         </section>
 
         {/* ── Preferences ────────────────────────────────────────────────── */}

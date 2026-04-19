@@ -27,6 +27,7 @@ import CombatLogPage from './pages/CombatLogPage'
 import TriggersPage from './pages/TriggersPage'
 import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
 import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
+import CharactersPage from './pages/CharactersPage'
 
 function OverlayPage({ children }: { children: React.ReactNode }): React.ReactElement {
   useEffect(() => {
@@ -70,6 +71,7 @@ export default function App(): React.ReactElement {
           <Route path="spell-timers" element={<SpellTimerPage />} />
           <Route path="combat-log" element={<CombatLogPage />} />
           <Route path="triggers" element={<TriggersPage />} />
+          <Route path="characters" element={<CharactersPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>

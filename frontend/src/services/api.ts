@@ -288,19 +288,39 @@ export function updateConfig(cfg: Config): Promise<Config> {
 
 // ── Characters ─────────────────────────────────────────────────────────────────
 
-export interface DiscoveredCharacter {
+export interface Character {
+  id: number
   name: string
-  mod_time: number
+  class: number  // -1=not set, 0-14=EQ class index
+  level: number
 }
 
 export interface CharactersResponse {
-  characters: DiscoveredCharacter[]
+  characters: Character[]
   active: string
   manual: boolean
 }
 
+export interface CharacterRequest {
+  name: string
+  class: number
+  level: number
+}
+
 export function listCharacters(): Promise<CharactersResponse> {
   return get<CharactersResponse>('/api/characters')
+}
+
+export function createCharacter(req: CharacterRequest): Promise<Character> {
+  return post<Character>('/api/characters', req)
+}
+
+export function updateCharacter(id: number, req: CharacterRequest): Promise<Character> {
+  return put<Character>(`/api/characters/${id}`, req)
+}
+
+export function deleteCharacter(id: number): Promise<void> {
+  return del(`/api/characters/${id}`)
 }
 
 // ── Triggers ───────────────────────────────────────────────────────────────────

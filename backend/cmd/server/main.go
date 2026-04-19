@@ -11,6 +11,7 @@ import (
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/api"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
@@ -76,6 +77,13 @@ func main() {
 	}
 	defer triggerStore.Close()
 
+	charStore, err := character.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	if err != nil {
+		slog.Error("open character store", "err", err)
+		os.Exit(1)
+	}
+	defer charStore.Close()
+
 	triggerEngine := trigger.NewEngine(triggerStore, hub)
 	triggerEngine.Reload()
 
@@ -106,7 +114,7 @@ func main() {
 	})
 	go tailer.Start(context.Background())
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, timerEngine, triggerStore, triggerEngine)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, timerEngine, triggerStore, triggerEngine, charStore)
 
 	slog.Info("server starting", "addr", listenAddr, "db", *dbPath)
 	if err := http.ListenAndServe(listenAddr, router); err != nil {

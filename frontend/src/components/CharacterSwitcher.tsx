@@ -6,7 +6,6 @@ import {
   updateConfig,
   type CharactersResponse,
 } from '../services/api'
-import type { Config } from '../types/config'
 
 const POLL_MS = 30_000
 
@@ -42,8 +41,14 @@ export default function CharacterSwitcher(): React.ReactElement | null {
       if (busy) return
       setBusy(true)
       try {
-        const cfg: Config = await getConfig()
-        await updateConfig({ ...cfg, character: name })
+        const cfg = await getConfig()
+        const chars = data?.characters ?? []
+        const char = chars.find((c) => c.name === name)
+        await updateConfig({
+          ...cfg,
+          character: name,
+          character_class: char?.class ?? (name === '' ? -1 : cfg.character_class),
+        })
         await refresh()
         setOpen(false)
       } catch {
@@ -52,10 +57,11 @@ export default function CharacterSwitcher(): React.ReactElement | null {
         setBusy(false)
       }
     },
-    [busy, refresh],
+    [busy, data, refresh],
   )
 
-  if (!data || data.characters.length === 0) return null
+  // Show switcher even with no characters so Auto option is always accessible.
+  if (!data) return null
 
   const activeLabel = data.active || 'No character'
 
@@ -115,12 +121,14 @@ export default function CharacterSwitcher(): React.ReactElement | null {
             <span className="flex-1">Auto (most recent)</span>
             {!data.manual && <Check size={11} style={{ color: 'var(--color-primary)' }} />}
           </button>
-          <div style={{ borderTop: '1px solid var(--color-border)' }} />
+          {data.characters.length > 0 && (
+            <div style={{ borderTop: '1px solid var(--color-border)' }} />
+          )}
           {data.characters.map((c) => {
             const selected = data.manual && data.active === c.name
             return (
               <button
-                key={c.name}
+                key={c.id}
                 onClick={() => selectCharacter(c.name)}
                 disabled={busy}
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-(--color-surface-2)"

@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
@@ -19,7 +20,7 @@ import (
 )
 
 // NewRouter builds and returns the chi router wired to all backend components.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, timerEngine *spelltimer.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine) http.Handler {
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, timerEngine *spelltimer.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -42,7 +43,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	npcs := &npcsHandler{db: database}
 	zones := &zonesHandler{db: database}
 	cfg := &configHandler{mgr: cfgMgr}
-	charactersH := &charactersHandler{mgr: cfgMgr}
+	charactersH := &charactersHandler{store: charStore, mgr: cfgMgr}
 	search := &searchHandler{db: database}
 	zealH := &zealHandler{watcher: zealWatcher}
 	keysH := &keysHandler{watcher: zealWatcher}
@@ -88,7 +89,12 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/", cfg.get)
 			r.Put("/", cfg.update)
 		})
-		r.Get("/characters", charactersH.list)
+		r.Route("/characters", func(r chi.Router) {
+			r.Get("/", charactersH.list)
+			r.Post("/", charactersH.create)
+			r.Put("/{id}", charactersH.update)
+			r.Delete("/{id}", charactersH.del)
+		})
 		r.Route("/zeal", func(r chi.Router) {
 			r.Get("/inventory", zealH.inventory)
 			r.Get("/spells", zealH.spellbook)
