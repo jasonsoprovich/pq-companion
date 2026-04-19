@@ -183,6 +183,29 @@ function formatNPCName(name: string): string {
   return name.replace(/_/g, ' ')
 }
 
+interface SpellEffectRowProps {
+  label: string
+  spellId: number
+  name: string
+}
+
+function SpellEffectRow({ label, spellId, name }: SpellEffectRowProps): React.ReactElement {
+  const navigate = useNavigate()
+  return (
+    <div className="flex justify-between gap-3 py-0.5 text-sm">
+      <span className="shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>
+      <button
+        onClick={() => navigate(`/spells?select=${spellId}`)}
+        className="min-w-0 truncate text-right underline decoration-dotted"
+        style={{ color: 'var(--color-primary)' }}
+        title="View spell details"
+      >
+        {name}
+      </button>
+    </div>
+  )
+}
+
 interface SourceNPCLinkProps {
   npc: ItemSourceNPC
 }
@@ -367,16 +390,16 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
         {hasEffects && (
           <Section title="Effects">
             {item.click_effect > 0 && item.click_name && (
-              <StatRow label="Click" value={item.click_name} />
+              <SpellEffectRow label="Click" spellId={item.click_effect} name={item.click_name} />
             )}
             {item.proc_effect > 0 && item.proc_name && (
-              <StatRow label="Proc" value={item.proc_name} />
+              <SpellEffectRow label="Proc" spellId={item.proc_effect} name={item.proc_name} />
             )}
             {item.worn_effect > 0 && item.worn_name && (
-              <StatRow label="Worn" value={item.worn_name} />
+              <SpellEffectRow label="Worn" spellId={item.worn_effect} name={item.worn_name} />
             )}
             {item.focus_effect > 0 && item.focus_name && (
-              <StatRow label="Focus" value={item.focus_name} />
+              <SpellEffectRow label="Focus" spellId={item.focus_effect} name={item.focus_name} />
             )}
           </Section>
         )}

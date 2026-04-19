@@ -8,6 +8,7 @@ import {
   className,
   npcDisplayName,
   parseSpecialAbilities,
+  type SpecialAbility,
 } from '../lib/npcHelpers'
 
 function formatRespawnTime(seconds: number): string {
@@ -186,6 +187,53 @@ function Section({ title, children }: SectionProps): React.ReactElement {
   )
 }
 
+// ── Special Abilities list with popover ────────────────────────────────────────
+
+interface SpecialAbilitiesListProps {
+  abilities: SpecialAbility[]
+}
+
+function SpecialAbilitiesList({ abilities }: SpecialAbilitiesListProps): React.ReactElement {
+  const [activeCode, setActiveCode] = useState<number | null>(null)
+
+  function toggle(code: number) {
+    setActiveCode((prev) => (prev === code ? null : code))
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1.5 py-1">
+      {abilities.map((sa) => (
+        <div key={sa.code} className="relative">
+          <button
+            onClick={() => toggle(sa.code)}
+            className="rounded px-2 py-0.5 text-[11px] font-medium transition-colors"
+            style={{
+              backgroundColor: activeCode === sa.code ? 'var(--color-surface-3, var(--color-surface-2))' : 'var(--color-surface-2)',
+              color: activeCode === sa.code ? 'var(--color-primary)' : 'var(--color-foreground)',
+              border: `1px solid ${activeCode === sa.code ? 'var(--color-primary)' : 'var(--color-border)'}`,
+              cursor: sa.description ? 'pointer' : 'default',
+            }}
+          >
+            {sa.name}
+          </button>
+          {activeCode === sa.code && sa.description && (
+            <div
+              className="absolute left-0 top-full z-10 mt-1 w-56 rounded border p-2 text-xs shadow-lg"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-muted-foreground)',
+              }}
+            >
+              {sa.description}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Detail panel ───────────────────────────────────────────────────────────────
 
 interface DetailPanelProps {
@@ -315,21 +363,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
         {/* Special Abilities */}
         {specialAbilities.length > 0 && (
           <Section title="Special Abilities">
-            <div className="flex flex-wrap gap-1.5 py-1">
-              {specialAbilities.map((sa) => (
-                <span
-                  key={sa.code}
-                  className="rounded px-2 py-0.5 text-[11px] font-medium"
-                  style={{
-                    backgroundColor: 'var(--color-surface-2)',
-                    color: 'var(--color-foreground)',
-                    border: '1px solid var(--color-border)',
-                  }}
-                >
-                  {sa.name}
-                </span>
-              ))}
-            </div>
+            <SpecialAbilitiesList abilities={specialAbilities} />
           </Section>
         )}
 
