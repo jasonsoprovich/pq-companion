@@ -110,6 +110,67 @@ func collectItems(rows *sql.Rows) ([]Item, error) {
 	return result, rows.Err()
 }
 
+// GetItemSources returns the NPCs that drop or sell the item with the given ID.
+// Results are capped at 50 per source type to keep response sizes reasonable.
+func (db *DB) GetItemSources(itemID int) (*ItemSources, error) {
+	const zoneJoin = `
+		LEFT JOIN spawnentry se ON se.npcid = n.id
+		LEFT JOIN spawngroup sg ON sg.id = se.spawngroupid
+		LEFT JOIN spawn2 s2 ON s2.spawngroupID = sg.id
+		LEFT JOIN zone z ON z.short_name = s2.zone`
+
+	dropRows, err := db.Query(`
+		SELECT n.id, n.name, COALESCE(MIN(z.long_name), '') AS zone_name
+		FROM npc_types n
+		JOIN loottable_entries lte ON lte.loottable_id = n.loottable_id
+		JOIN lootdrop_entries lde ON lde.lootdrop_id = lte.lootdrop_id
+		`+zoneJoin+`
+		WHERE lde.item_id = ? AND n.loottable_id > 0
+		GROUP BY n.id
+		ORDER BY n.name
+		LIMIT 50`, itemID)
+	if err != nil {
+		return nil, fmt.Errorf("get item drop sources %d: %w", itemID, err)
+	}
+	defer dropRows.Close()
+	drops, err := collectSourceNPCs(dropRows)
+	if err != nil {
+		return nil, err
+	}
+
+	merchantRows, err := db.Query(`
+		SELECT n.id, n.name, COALESCE(MIN(z.long_name), '') AS zone_name
+		FROM npc_types n
+		JOIN merchantlist ml ON ml.merchantid = n.merchant_id
+		`+zoneJoin+`
+		WHERE ml.item = ? AND n.merchant_id > 0
+		GROUP BY n.id
+		ORDER BY n.name
+		LIMIT 50`, itemID)
+	if err != nil {
+		return nil, fmt.Errorf("get item merchant sources %d: %w", itemID, err)
+	}
+	defer merchantRows.Close()
+	merchants, err := collectSourceNPCs(merchantRows)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ItemSources{Drops: drops, Merchants: merchants}, nil
+}
+
+func collectSourceNPCs(rows *sql.Rows) ([]ItemSourceNPC, error) {
+	var result []ItemSourceNPC
+	for rows.Next() {
+		var s ItemSourceNPC
+		if err := rows.Scan(&s.ID, &s.Name, &s.ZoneName); err != nil {
+			return nil, fmt.Errorf("scan source npc: %w", err)
+		}
+		result = append(result, s)
+	}
+	return result, rows.Err()
+}
+
 // ─── NPCs ─────────────────────────────────────────────────────────────────────
 
 const npcColumns = `

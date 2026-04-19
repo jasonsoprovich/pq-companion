@@ -200,6 +200,19 @@ type Zone struct {
 	NPCLevelMax  int     `json:"npc_level_max"`
 }
 
+// ItemSourceNPC is a minimal NPC record used in item source listings.
+type ItemSourceNPC struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	ZoneName string `json:"zone_name"`
+}
+
+// ItemSources holds the NPCs that drop or sell a given item.
+type ItemSources struct {
+	Drops     []ItemSourceNPC `json:"drops"`
+	Merchants []ItemSourceNPC `json:"merchants"`
+}
+
 // SearchResult wraps paginated query results.
 type SearchResult[T any] struct {
 	Items []T `json:"items"`

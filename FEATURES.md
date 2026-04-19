@@ -118,6 +118,11 @@
   - Sections only rendered when they have non-zero values
   - Initial load fetches all items (empty query); debounced at 300ms
 - **Backend `GET /api/items?bane_body=N`** — optional filter; when N > 0 restricts results to items with `banedmgbody = N`; `bane_amt`, `bane_body`, `bane_race` fields exposed on all item responses
+- **Item Sources** (closes #78):
+  - **Backend `GET /api/items/{id}/sources`** — returns `{ drops: [...], merchants: [...] }` with NPC `id`, `name`, and `zone_name` for each source; joins `lootdrop_entries → loottable_entries → npc_types` for drops and `merchantlist → npc_types` for merchants; zone resolved via `spawnentry → spawngroup → spawn2 → zone`; capped at 50 results per source type
+  - **`types/item.ts`** — added `ItemSourceNPC` and `ItemSources` TypeScript types
+  - **`services/api.ts`** — added `getItemSources(id)` fetch wrapper
+  - **`pages/ItemsPage.tsx`** — "Item Sources" section in detail panel showing "Dropped by" and "Sold by" sub-groups; each NPC name is a clickable link that navigates to `/npcs?select=<id>`; zone name shown alongside NPC; section only rendered when at least one source exists
 
 ### Task 2.4 — Database Explorer: Spells ✅
 - **`types/spell.ts`** — TypeScript `Spell` type mirroring Go backend struct (timing, duration, effects, class levels)

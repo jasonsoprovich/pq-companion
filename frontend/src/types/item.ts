@@ -74,6 +74,17 @@ export interface Item {
   min_status: number
 }
 
+export interface ItemSourceNPC {
+  id: number
+  name: string
+  zone_name: string
+}
+
+export interface ItemSources {
+  drops: ItemSourceNPC[]
+  merchants: ItemSourceNPC[]
+}
+
 export interface SearchResult<T> {
   items: T[]
   total: number

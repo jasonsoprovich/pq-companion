@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, X } from 'lucide-react'
-import { searchItems, getItem } from '../services/api'
-import type { Item } from '../types/item'
+import { searchItems, getItem, getItemSources } from '../services/api'
+import type { Item, ItemSourceNPC, ItemSources } from '../types/item'
 import {
   baneBodyLabel,
   baneRaceLabel,
@@ -179,11 +179,50 @@ function Section({ title, children }: SectionProps): React.ReactElement {
   )
 }
 
+function formatNPCName(name: string): string {
+  return name.replace(/_/g, ' ')
+}
+
+interface SourceNPCLinkProps {
+  npc: ItemSourceNPC
+}
+
+function SourceNPCLink({ npc }: SourceNPCLinkProps): React.ReactElement {
+  const navigate = useNavigate()
+  return (
+    <button
+      onClick={() => navigate(`/npcs?select=${npc.id}`)}
+      className="flex w-full items-center justify-between gap-3 py-0.5 text-sm text-left"
+    >
+      <span
+        className="truncate underline decoration-dotted"
+        style={{ color: 'var(--color-primary)' }}
+      >
+        {formatNPCName(npc.name)}
+      </span>
+      {npc.zone_name && (
+        <span className="shrink-0 text-xs" style={{ color: 'var(--color-muted)' }}>
+          {npc.zone_name}
+        </span>
+      )}
+    </button>
+  )
+}
+
 interface DetailPanelProps {
   item: Item | null
 }
 
 function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
+  const [sources, setSources] = useState<ItemSources | null>(null)
+
+  useEffect(() => {
+    if (!item) { setSources(null); return }
+    getItemSources(item.id)
+      .then(setSources)
+      .catch(() => setSources({ drops: [], merchants: [] }))
+  }, [item?.id])
+
   if (!item) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -350,6 +389,32 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
           {item.price > 0 && <StatRow label="Value" value={priceLabel(item.price)} />}
           <StatRow label="Item ID" value={item.id} />
         </Section>
+
+        {/* Sources */}
+        {sources && (sources.drops.length > 0 || sources.merchants.length > 0) && (
+          <Section title="Item Sources">
+            {sources.drops.length > 0 && (
+              <>
+                <div className="pb-0.5 pt-1 text-[11px] font-medium" style={{ color: 'var(--color-muted)' }}>
+                  Dropped by
+                </div>
+                {sources.drops.map((npc) => (
+                  <SourceNPCLink key={npc.id} npc={npc} />
+                ))}
+              </>
+            )}
+            {sources.merchants.length > 0 && (
+              <>
+                <div className={`pb-0.5 text-[11px] font-medium ${sources.drops.length > 0 ? 'pt-2' : 'pt-1'}`} style={{ color: 'var(--color-muted)' }}>
+                  Sold by
+                </div>
+                {sources.merchants.map((npc) => (
+                  <SourceNPCLink key={npc.id} npc={npc} />
+                ))}
+              </>
+            )}
+          </Section>
+        )}
       </div>
     </div>
   )

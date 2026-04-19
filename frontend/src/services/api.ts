@@ -1,5 +1,5 @@
 import type { Config } from '../types/config'
-import type { Item, SearchResult } from '../types/item'
+import type { Item, ItemSources, SearchResult } from '../types/item'
 import type { NPC } from '../types/npc'
 import type { Spell } from '../types/spell'
 import type { Zone } from '../types/zone'
@@ -80,6 +80,10 @@ export function searchItems(
 
 export function getItem(id: number): Promise<Item> {
   return get<Item>(`/api/items/${id}`)
+}
+
+export function getItemSources(id: number): Promise<ItemSources> {
+  return get<ItemSources>(`/api/items/${id}/sources`)
 }
 
 // ── Spells ─────────────────────────────────────────────────────────────────────

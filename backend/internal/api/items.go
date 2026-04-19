@@ -30,6 +30,20 @@ func (h *itemsHandler) get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, item)
 }
 
+func (h *itemsHandler) sources(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	sources, err := h.db.GetItemSources(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sources)
+}
+
 func (h *itemsHandler) search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	limit := queryInt(r, "limit", 20)
