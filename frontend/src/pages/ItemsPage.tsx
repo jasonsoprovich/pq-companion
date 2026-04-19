@@ -4,8 +4,8 @@ import { Search, X } from 'lucide-react'
 import { searchItems, getItem } from '../services/api'
 import type { Item } from '../types/item'
 import {
-  BANE_BODY_OPTIONS,
   baneBodyLabel,
+  baneRaceLabel,
   classesLabel,
   effectiveItemTypeLabel,
   isLoreItem,
@@ -26,17 +26,16 @@ interface SearchPaneProps {
 
 function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactElement {
   const [query, setQuery] = useState('')
-  const [baneBody, setBaneBody] = useState(0)
   const [items, setItems] = useState<Item[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const runSearch = useCallback((q: string, body: number) => {
+  const runSearch = useCallback((q: string) => {
     setLoading(true)
     setError(null)
-    searchItems(q, 50, 0, body)
+    searchItems(q, 50, 0, 0)
       .then((res) => {
         setItems(res.items ?? [])
         setTotal(res.total)
@@ -47,15 +46,15 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => runSearch(query, baneBody), 300)
+    debounceRef.current = setTimeout(() => runSearch(query), 300)
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [query, baneBody, runSearch])
+  }, [query, runSearch])
 
   // Run initial search on mount
   useEffect(() => {
-    runSearch('', 0)
+    runSearch('')
   }, [runSearch])
 
   return (
@@ -83,28 +82,6 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
             <X size={12} style={{ color: 'var(--color-muted)' }} />
           </button>
         )}
-      </div>
-
-      {/* Bane filter */}
-      <div
-        className="flex items-center gap-2 border-b px-3 py-1.5"
-        style={{ borderColor: 'var(--color-border)' }}
-      >
-        <span className="shrink-0 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-          Bane vs
-        </span>
-        <select
-          className="flex-1 bg-transparent text-[11px] outline-none"
-          style={{ color: 'var(--color-foreground)' }}
-          value={baneBody}
-          onChange={(e) => setBaneBody(Number(e.target.value))}
-        >
-          {BANE_BODY_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
       </div>
 
       {/* Result count */}
@@ -292,7 +269,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
             {item.bane_body > 0 && (
               <StatRow label="Bane vs Body" value={baneBodyLabel(item.bane_body)} />
             )}
-            {item.bane_race > 0 && <StatRow label="Bane vs Race" value={item.bane_race} />}
+            {item.bane_race > 0 && <StatRow label="Bane vs Race" value={baneRaceLabel(item.bane_race)} />}
           </Section>
         )}
 
