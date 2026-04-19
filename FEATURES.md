@@ -574,6 +574,12 @@ Subsequent release builds download it automatically from that release.
   - `release` job simplified: promotes the draft release (`gh release edit --draft=false`) after both builds succeed
   - `latest.yml` and `latest-mac.yml` are now part of every release; `electron-updater` reads these to detect new versions
 
+### Task 6.3 — Windows Code Signing ✅
+- **`electron-builder.yml`** — added `signingHashAlgorithms: ['sha256']` to the `win` section; added comments documenting the two required secrets (`WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`) and graceful unsigned fallback
+- **`.github/workflows/release.yml`** — `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` secrets are now forwarded to the `electron-builder` packaging step; when both secrets are present, the installer and its NSIS stub are SHA-256 signed, suppressing Windows SmartScreen warnings; when absent the build succeeds unsigned (no CI failure)
+- Electron Forge migration evaluated and rejected — `electron-builder` already supports Windows signing natively via env vars; no toolchain change needed
+- To activate signing: export your PFX as base64 (`openssl base64 -in cert.pfx | tr -d '\n'`) and add `WIN_CSC_LINK` + `WIN_CSC_KEY_PASSWORD` as GitHub repository secrets under Settings → Secrets → Actions
+
 ## Phase 7 — Spell Timer Engine
 
 ### Task 7.1 — Spell Timer Engine (Backend)
