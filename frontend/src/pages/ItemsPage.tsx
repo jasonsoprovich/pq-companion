@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, X } from 'lucide-react'
+import { Check, Copy, Search, X } from 'lucide-react'
 import { searchItems, getItem, getItemSources } from '../services/api'
 import type { Item, ItemSourceNPC, ItemSources } from '../types/item'
 import {
@@ -215,6 +215,7 @@ interface DetailPanelProps {
 
 function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
   const [sources, setSources] = useState<ItemSources | null>(null)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     if (!item) { setSources(null); return }
@@ -222,6 +223,15 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
       .then(setSources)
       .catch(() => setSources({ drops: [], merchants: [] }))
   }, [item?.id])
+
+  function copyIngameLink() {
+    if (!item) return
+    const link = `\\aITEM ${item.id} 0 0 0 0 0:${item.name}\\a/`
+    navigator.clipboard.writeText(link).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
 
   if (!item) {
     return (
@@ -255,12 +265,27 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
     <div className="flex-1 overflow-y-auto px-5 py-4">
       {/* Header */}
       <div className="mb-4">
-        <h2
-          className="text-xl font-bold leading-tight"
-          style={{ color: 'var(--color-primary)' }}
-        >
-          {item.name}
-        </h2>
+        <div className="flex items-start justify-between gap-2">
+          <h2
+            className="text-xl font-bold leading-tight"
+            style={{ color: 'var(--color-primary)' }}
+          >
+            {item.name}
+          </h2>
+          <button
+            onClick={copyIngameLink}
+            title="Copy In-Game Link"
+            className="flex shrink-0 items-center gap-1.5 rounded border px-2 py-1 text-[11px] font-medium transition-colors"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              borderColor: 'var(--color-border)',
+              color: copied ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
+            }}
+          >
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+            {copied ? 'Copied!' : 'Copy Link'}
+          </button>
+        </div>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
             {effectiveItemTypeLabel(item.item_class, item.item_type)}
