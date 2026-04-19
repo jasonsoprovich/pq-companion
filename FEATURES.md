@@ -863,6 +863,25 @@ Two separate overlay windows are provided from the start — one for beneficial 
 - When the character field is blank and a character is detected, shows a muted banner below the input: "Auto-detected: **Firiona**" with a **Use This** button that copies the name into the character field
 - Banner dismisses automatically when the character field is manually filled
 
+### Issue #49 — Copy DPS Summary to Clipboard ✅
+
+**`frontend/src/pages/CombatLogPage.tsx`**
+- Added `Clipboard` / `ClipboardCheck` icon imports from lucide-react
+- Added `buildFightText(fight)` — formats a fight into EQ-chat-safe lines: header `[PQ Companion] Fight: <target> (<duration>)` followed by `<name>: X.X DPS (N total)` per combatant
+- Added `buildSessionText(fights, sessionDPS)` — formats a one-liner session summary with fight count and session average DPS
+- `FightRow`: converted summary row from `<button>` to `<div>` with `onClick`; added a 7th grid column (24px) for a per-row clipboard icon button; button flips to `ClipboardCheck` (green) for 1.5 s after a successful copy
+- `TableHeader`: added matching 7th column header (blank) to keep grid alignment
+- `FilterBar`: added `onCopySession` / `sessionCopied` props; added "Copy" button (clipboard icon + label) to the right-side action group; flips to `ClipboardCheck` green for 1.5 s after copy
+
+**`frontend/src/pages/DPSOverlayPage.tsx`**
+- Added `buildFightText(fight)` helper (same format as above, operates on `FightState`)
+- Added `CopyFightButton` component — clipboard icon button; disabled and faded when no active fight; toggles to green `ClipboardCheck` for 1.5 s on copy
+- `CopyFightButton` placed in the DPS Meter `headerRight` between the All/Me toggle and the pop-out button; copies `combat.current_fight` data
+
+**`frontend/src/pages/DPSOverlayWindowPage.tsx`**
+- Added `buildFightText(fight)` helper for the floating overlay context
+- Added `copied` state; clipboard icon button in the no-drag controls zone (between All/Me toggle and close ×); disabled and dimmed when no fight is active; green for 1.5 s on copy
+
 ### Issue #70 — Spell/Caster DPS Not Tracked ✅
 
 **`backend/internal/logparser/parser.go`**

@@ -10,6 +10,8 @@ import {
   Search,
   Download,
   Trash2,
+  Clipboard,
+  ClipboardCheck,
 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getCombatState, getLogStatus, resetCombatState } from '../services/api'
@@ -204,7 +206,16 @@ function FightRow({
   total: number
 }): React.ReactElement {
   const [expanded, setExpanded] = useState(false)
+  const [copied, setCopied] = useState(false)
   const fightNum = total - index
+
+  function handleCopy(e: React.MouseEvent): void {
+    e.stopPropagation()
+    navigator.clipboard.writeText(buildFightText(fight)).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }).catch(() => {})
+  }
 
   return (
     <div
@@ -213,22 +224,19 @@ function FightRow({
       }}
     >
       {/* Summary row */}
-      <button
-        onClick={() => setExpanded((v) => !v)}
+      <div
         style={{
           width: '100%',
           display: 'grid',
-          gridTemplateColumns: '20px 60px 1fr 90px 90px 90px',
+          gridTemplateColumns: '20px 60px 1fr 90px 90px 90px 24px',
           gap: '0 12px',
           alignItems: 'center',
           padding: '7px 14px',
-          background: 'none',
-          border: 'none',
           cursor: 'pointer',
-          textAlign: 'left',
           color: 'var(--color-foreground)',
           fontSize: 12,
         }}
+        onClick={() => setExpanded((v) => !v)}
       >
         {/* Chevron */}
         <span style={{ color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}>
@@ -286,7 +294,25 @@ function FightRow({
         >
           {fight.you_damage > 0 ? `${fmtDPS(fight.you_dps)} me` : '—'}
         </span>
-      </button>
+
+        {/* Copy fight summary */}
+        <button
+          onClick={handleCopy}
+          title="Copy fight summary to clipboard"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 2,
+            color: copied ? '#22c55e' : 'var(--color-muted)',
+          }}
+        >
+          {copied ? <ClipboardCheck size={12} /> : <Clipboard size={12} />}
+        </button>
+      </div>
 
       {/* Expanded combatant breakdown */}
       {expanded && fight.combatants.length > 0 && (
@@ -319,7 +345,7 @@ function TableHeader(): React.ReactElement {
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '20px 60px 1fr 90px 90px 90px',
+        gridTemplateColumns: '20px 60px 1fr 90px 90px 90px 24px',
         gap: '0 12px',
         padding: '5px 14px',
         fontSize: 10,
@@ -338,6 +364,7 @@ function TableHeader(): React.ReactElement {
       <span style={{ textAlign: 'right' }}>Total Dmg</span>
       <span style={{ textAlign: 'right' }}>Total DPS</span>
       <span style={{ textAlign: 'right' }}>My DPS</span>
+      <span />
     </div>
   )
 }
@@ -458,11 +485,15 @@ function FilterBar({
   onChange,
   onClear,
   onExport,
+  onCopySession,
+  sessionCopied,
 }: {
   filters: FilterState
   onChange: (f: FilterState) => void
   onClear: () => void
   onExport: () => void
+  onCopySession: () => void
+  sessionCopied: boolean
 }): React.ReactElement {
   return (
     <div
@@ -550,6 +581,26 @@ function FilterBar({
       </button>
 
       <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+        {/* Copy session summary */}
+        <button
+          onClick={onCopySession}
+          title="Copy session summary to clipboard"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 8px',
+            fontSize: 11,
+            background: 'var(--color-background)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4,
+            color: sessionCopied ? '#22c55e' : 'var(--color-muted)',
+            cursor: 'pointer',
+          }}
+        >
+          {sessionCopied ? <ClipboardCheck size={11} /> : <Clipboard size={11} />} Copy
+        </button>
+
         {/* Export */}
         <button
           onClick={onExport}
@@ -619,6 +670,23 @@ function applyFilters(fights: FightSummary[], filters: FilterState): FightSummar
   return result
 }
 
+// ── Clipboard helpers ──────────────────────────────────────────────────────────
+
+function buildFightText(fight: FightSummary): string {
+  const target = fight.primary_target ?? 'Unknown'
+  const dur = fmtDuration(fight.duration_seconds)
+  const lines: string[] = [`[PQ Companion] Fight: ${target} (${dur})`]
+  for (const c of fight.combatants) {
+    lines.push(`${c.name}: ${fmtDPS(c.dps)} DPS (${fmt(c.total_damage)} total)`)
+  }
+  return lines.join('\n')
+}
+
+function buildSessionText(fights: FightSummary[], sessionDPS: number): string {
+  const lines: string[] = [`[PQ Companion] Session: ${fights.length} fight${fights.length !== 1 ? 's' : ''} | ${fmtDPS(sessionDPS)} DPS avg (me)`]
+  return lines.join('\n')
+}
+
 // ── Export helpers ─────────────────────────────────────────────────────────────
 
 function exportFightsCSV(fights: FightSummary[]): void {
@@ -661,6 +729,7 @@ export default function CombatLogPage(): React.ReactElement {
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
   const [filters, setFilters] = useState<FilterState>({ search: '', timeRange: 'all', meOnly: false })
+  const [sessionCopied, setSessionCopied] = useState(false)
 
   useEffect(() => {
     getCombatState().then(setCombat).catch(() => {})
@@ -687,6 +756,15 @@ export default function CombatLogPage(): React.ReactElement {
   const handleExport = useCallback(() => {
     exportFightsCSV(visibleFights)
   }, [visibleFights])
+
+  const handleCopySession = useCallback(() => {
+    if (!combat) return
+    const text = buildSessionText(visibleFights, combat.session_dps)
+    navigator.clipboard.writeText(text).then(() => {
+      setSessionCopied(true)
+      setTimeout(() => setSessionCopied(false), 1500)
+    }).catch(() => {})
+  }, [combat, visibleFights])
 
   const isFiltered =
     filters.search !== '' || filters.timeRange !== 'all' || filters.meOnly
@@ -723,6 +801,8 @@ export default function CombatLogPage(): React.ReactElement {
         onChange={setFilters}
         onClear={handleClear}
         onExport={handleExport}
+        onCopySession={handleCopySession}
+        sessionCopied={sessionCopied}
       />
 
       {combat === null ? (
