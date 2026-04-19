@@ -213,6 +213,40 @@ type ItemSources struct {
 	Merchants []ItemSourceNPC `json:"merchants"`
 }
 
+// NPCSpawnPoint represents a single spawn point for an NPC.
+type NPCSpawnPoint struct {
+	ID              int     `json:"id"`
+	Zone            string  `json:"zone"`
+	ZoneName        string  `json:"zone_name"`
+	X               float64 `json:"x"`
+	Y               float64 `json:"y"`
+	Z               float64 `json:"z"`
+	RespawnTime     int     `json:"respawn_time"`
+	FastRespawnTime int     `json:"fast_respawn_time"`
+}
+
+// SpawnGroupMember is one NPC entry within a spawn group.
+type SpawnGroupMember struct {
+	NPCID  int    `json:"npc_id"`
+	Name   string `json:"name"`
+	Chance int    `json:"chance"`
+}
+
+// NPCSpawnGroup represents a spawn group and all of its NPC members.
+type NPCSpawnGroup struct {
+	ID              int                `json:"id"`
+	Name            string             `json:"name"`
+	RespawnTime     int                `json:"respawn_time"`
+	FastRespawnTime int                `json:"fast_respawn_time"`
+	Members         []SpawnGroupMember `json:"members"`
+}
+
+// NPCSpawns holds spawn point and spawn group data for an NPC.
+type NPCSpawns struct {
+	SpawnPoints []NPCSpawnPoint `json:"spawn_points"`
+	SpawnGroups []NPCSpawnGroup `json:"spawn_groups"`
+}
+
 // SearchResult wraps paginated query results.
 type SearchResult[T any] struct {
 	Items []T `json:"items"`

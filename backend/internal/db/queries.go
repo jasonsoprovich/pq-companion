@@ -276,6 +276,93 @@ func collectNPCs(rows *sql.Rows) ([]NPC, error) {
 	return result, rows.Err()
 }
 
+// GetNPCSpawns returns spawn point and spawn group data for the NPC with the given ID.
+func (db *DB) GetNPCSpawns(npcID int) (*NPCSpawns, error) {
+	// Spawn points: each row is one spawn2 entry where this NPC can appear.
+	spawnRows, err := db.Query(`
+		SELECT s2.id, s2.zone, COALESCE(z.long_name, s2.zone),
+		       s2.x, s2.y, s2.z, s2.respawntime, s2.boot_respawntime
+		FROM spawnentry se
+		JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
+		LEFT JOIN zone z ON z.short_name = s2.zone
+		WHERE se.npcID = ?
+		ORDER BY z.long_name, s2.id
+		LIMIT 200`, npcID)
+	if err != nil {
+		return nil, fmt.Errorf("get npc spawn points %d: %w", npcID, err)
+	}
+	defer spawnRows.Close()
+
+	var points []NPCSpawnPoint
+	for spawnRows.Next() {
+		var p NPCSpawnPoint
+		if err := spawnRows.Scan(&p.ID, &p.Zone, &p.ZoneName, &p.X, &p.Y, &p.Z, &p.RespawnTime, &p.FastRespawnTime); err != nil {
+			return nil, fmt.Errorf("scan spawn point: %w", err)
+		}
+		points = append(points, p)
+	}
+	if err := spawnRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Spawn groups with members: join to get all NPCs in every group this NPC belongs to.
+	groupRows, err := db.Query(`
+		SELECT sg.id, sg.name,
+		       COALESCE((SELECT s2.respawntime FROM spawn2 s2 WHERE s2.spawngroupID = sg.id LIMIT 1), 0),
+		       COALESCE((SELECT s2.boot_respawntime FROM spawn2 s2 WHERE s2.spawngroupID = sg.id LIMIT 1), 0),
+		       se2.npcID, COALESCE(n2.name, ''), se2.chance
+		FROM spawnentry se
+		JOIN spawngroup sg ON sg.id = se.spawngroupID
+		JOIN spawnentry se2 ON se2.spawngroupID = sg.id
+		JOIN npc_types n2 ON n2.id = se2.npcID
+		WHERE se.npcID = ?
+		ORDER BY sg.id, se2.chance DESC
+		LIMIT 500`, npcID)
+	if err != nil {
+		return nil, fmt.Errorf("get npc spawn groups %d: %w", npcID, err)
+	}
+	defer groupRows.Close()
+
+	groupMap := make(map[int]*NPCSpawnGroup)
+	var groupOrder []int
+	for groupRows.Next() {
+		var (
+			gID, respawn, fastRespawn int
+			gName                     string
+			memberID, chance          int
+			memberName                string
+		)
+		if err := groupRows.Scan(&gID, &gName, &respawn, &fastRespawn, &memberID, &memberName, &chance); err != nil {
+			return nil, fmt.Errorf("scan spawn group row: %w", err)
+		}
+		g, exists := groupMap[gID]
+		if !exists {
+			g = &NPCSpawnGroup{
+				ID:              gID,
+				Name:            gName,
+				RespawnTime:     respawn,
+				FastRespawnTime: fastRespawn,
+			}
+			groupMap[gID] = g
+			groupOrder = append(groupOrder, gID)
+		}
+		g.Members = append(g.Members, SpawnGroupMember{NPCID: memberID, Name: memberName, Chance: chance})
+	}
+	if err := groupRows.Err(); err != nil {
+		return nil, err
+	}
+
+	groups := make([]NPCSpawnGroup, 0, len(groupOrder))
+	for _, gID := range groupOrder {
+		groups = append(groups, *groupMap[gID])
+	}
+
+	return &NPCSpawns{
+		SpawnPoints: points,
+		SpawnGroups: groups,
+	}, nil
+}
+
 // ─── Spells ───────────────────────────────────────────────────────────────────
 
 const spellColumns = `

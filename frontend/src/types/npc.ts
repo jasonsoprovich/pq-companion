@@ -52,6 +52,36 @@ export interface NPC {
   exp_pct: number
 }
 
+export interface NPCSpawnPoint {
+  id: number
+  zone: string
+  zone_name: string
+  x: number
+  y: number
+  z: number
+  respawn_time: number
+  fast_respawn_time: number
+}
+
+export interface SpawnGroupMember {
+  npc_id: number
+  name: string
+  chance: number
+}
+
+export interface NPCSpawnGroup {
+  id: number
+  name: string
+  respawn_time: number
+  fast_respawn_time: number
+  members: SpawnGroupMember[]
+}
+
+export interface NPCSpawns {
+  spawn_points: NPCSpawnPoint[]
+  spawn_groups: NPCSpawnGroup[]
+}
+
 export interface SearchResult<T> {
   items: T[]
   total: number

@@ -1,14 +1,30 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Search, X } from 'lucide-react'
-import { searchNPCs, getNPC } from '../services/api'
-import type { NPC } from '../types/npc'
+import { searchNPCs, getNPC, getNPCSpawns } from '../services/api'
+import type { NPC, NPCSpawns } from '../types/npc'
 import {
   bodyTypeName,
   className,
   npcDisplayName,
   parseSpecialAbilities,
 } from '../lib/npcHelpers'
+
+function formatRespawnTime(seconds: number): string {
+  if (seconds <= 0) return '—'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  const parts: string[] = []
+  if (h > 0) parts.push(`${h}h`)
+  if (m > 0) parts.push(`${m}m`)
+  if (s > 0 || parts.length === 0) parts.push(`${s}s`)
+  return parts.join(' ')
+}
+
+function formatNPCName(name: string): string {
+  return name.replace(/_/g, ' ')
+}
 
 // ── Search pane ────────────────────────────────────────────────────────────────
 
@@ -177,6 +193,15 @@ interface DetailPanelProps {
 }
 
 function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
+  const [spawns, setSpawns] = useState<NPCSpawns | null>(null)
+
+  useEffect(() => {
+    if (!npc) { setSpawns(null); return }
+    getNPCSpawns(npc.id)
+      .then(setSpawns)
+      .catch(() => setSpawns({ spawn_points: [], spawn_groups: [] }))
+  }, [npc?.id])
+
   if (!npc) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -318,6 +343,97 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
             <StatRow label="Heal Scale" value={`${npc.heal_scale.toFixed(0)}%`} />
           )}
         </Section>
+
+        {/* Spawns */}
+        {spawns && spawns.spawn_points.length > 0 && (
+          <Section title="Spawns">
+            <div
+              className="mb-1 grid gap-x-3 pt-1 text-[11px] font-medium"
+              style={{
+                gridTemplateColumns: '1fr auto auto auto auto',
+                color: 'var(--color-muted)',
+              }}
+            >
+              <span>Zone</span>
+              <span className="text-right">Y</span>
+              <span className="text-right">X</span>
+              <span className="text-right">Z</span>
+              <span className="text-right">Respawn</span>
+            </div>
+            {spawns.spawn_points.map((sp) => (
+              <div
+                key={sp.id}
+                className="grid items-center gap-x-3 border-t py-0.5 text-sm"
+                style={{
+                  gridTemplateColumns: '1fr auto auto auto auto',
+                  borderColor: 'var(--color-border)',
+                }}
+              >
+                <span className="truncate" style={{ color: 'var(--color-foreground)' }}>
+                  {sp.zone_name || sp.zone}
+                </span>
+                <span className="font-mono text-xs text-right" style={{ color: 'var(--color-muted-foreground)' }}>
+                  {sp.y.toFixed(0)}
+                </span>
+                <span className="font-mono text-xs text-right" style={{ color: 'var(--color-muted-foreground)' }}>
+                  {sp.x.toFixed(0)}
+                </span>
+                <span className="font-mono text-xs text-right" style={{ color: 'var(--color-muted-foreground)' }}>
+                  {sp.z.toFixed(0)}
+                </span>
+                <span className="text-xs text-right whitespace-nowrap" style={{ color: 'var(--color-muted-foreground)' }}>
+                  {sp.fast_respawn_time > 0
+                    ? `${formatRespawnTime(sp.fast_respawn_time)} / ${formatRespawnTime(sp.respawn_time)}`
+                    : formatRespawnTime(sp.respawn_time)}
+                </span>
+              </div>
+            ))}
+          </Section>
+        )}
+
+        {/* Spawn Groups */}
+        {spawns && spawns.spawn_groups.length > 0 && (
+          <Section title="Spawn Groups">
+            {spawns.spawn_groups.map((sg, i) => (
+              <div
+                key={sg.id}
+                className={i > 0 ? 'mt-3' : ''}
+              >
+                <div className="flex items-center justify-between pt-1 pb-0.5">
+                  <span className="text-xs font-medium" style={{ color: 'var(--color-foreground)' }}>
+                    {sg.name}
+                  </span>
+                  <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                    {sg.fast_respawn_time > 0
+                      ? `${formatRespawnTime(sg.fast_respawn_time)} / ${formatRespawnTime(sg.respawn_time)}`
+                      : formatRespawnTime(sg.respawn_time)}
+                  </span>
+                </div>
+                {sg.members.map((m) => (
+                  <div
+                    key={m.npc_id}
+                    className="flex items-center justify-between border-t py-0.5 text-sm"
+                    style={{ borderColor: 'var(--color-border)' }}
+                  >
+                    <span
+                      className="truncate"
+                      style={{
+                        color: m.npc_id === npc.id
+                          ? 'var(--color-primary)'
+                          : 'var(--color-foreground)',
+                      }}
+                    >
+                      {formatNPCName(m.name)}
+                    </span>
+                    <span className="ml-3 shrink-0 text-xs" style={{ color: 'var(--color-muted)' }}>
+                      {m.chance}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Section>
+        )}
       </div>
     </div>
   )
