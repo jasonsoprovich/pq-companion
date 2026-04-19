@@ -2,7 +2,7 @@ import type { Config } from '../types/config'
 import type { Item, ItemSources, SearchResult } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction } from '../types/npc'
 import type { Spell, SpellCrossRefs } from '../types/spell'
-import type { Zone } from '../types/zone'
+import type { Zone, ZoneConnection, ZoneGroundSpawn, ZoneForageItem, ZoneDropItem } from '../types/zone'
 import type { ZealInventoryResponse, ZealSpellbookResponse, AllInventoriesResponse } from '../types/zeal'
 import type { KeysResponse, KeysProgressResponse } from '../types/keys'
 import type { Backup, BackupsResponse } from '../types/backup'
@@ -161,6 +161,22 @@ export function getNPCsByZone(
 ): Promise<SearchResult<NPC>> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   return get<SearchResult<NPC>>(`/api/zones/short/${encodeURIComponent(shortName)}/npcs?${params}`)
+}
+
+export function getZoneConnections(shortName: string): Promise<ZoneConnection[]> {
+  return get<ZoneConnection[]>(`/api/zones/short/${encodeURIComponent(shortName)}/connections`)
+}
+
+export function getZoneGroundSpawns(shortName: string): Promise<ZoneGroundSpawn[]> {
+  return get<ZoneGroundSpawn[]>(`/api/zones/short/${encodeURIComponent(shortName)}/ground-spawns`)
+}
+
+export function getZoneForage(shortName: string): Promise<ZoneForageItem[]> {
+  return get<ZoneForageItem[]>(`/api/zones/short/${encodeURIComponent(shortName)}/forage`)
+}
+
+export function getZoneDrops(shortName: string): Promise<ZoneDropItem[]> {
+  return get<ZoneDropItem[]>(`/api/zones/short/${encodeURIComponent(shortName)}/drops`)
 }
 
 // ── Zeal ───────────────────────────────────────────────────────────────────────

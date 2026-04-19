@@ -847,3 +847,107 @@ func collectZones(rows *sql.Rows) ([]Zone, error) {
 	}
 	return result, rows.Err()
 }
+
+// GetZoneConnections returns all zones reachable via zone lines from the given short_name.
+func (db *DB) GetZoneConnections(shortName string) ([]ZoneConnection, error) {
+	rows, err := db.Query(`
+		SELECT DISTINCT z.id, z.short_name, z.long_name, z.expansion
+		FROM zone_points zp
+		JOIN zone z ON z.zoneidnumber = zp.target_zone_id
+		WHERE zp.zone = ?
+		ORDER BY z.long_name`, shortName)
+	if err != nil {
+		return nil, fmt.Errorf("get zone connections %q: %w", shortName, err)
+	}
+	defer rows.Close()
+
+	var result []ZoneConnection
+	for rows.Next() {
+		var c ZoneConnection
+		if err := rows.Scan(&c.ZoneID, &c.ShortName, &c.LongName, &c.Expansion); err != nil {
+			return nil, fmt.Errorf("scan zone connection: %w", err)
+		}
+		result = append(result, c)
+	}
+	return result, rows.Err()
+}
+
+// GetZoneGroundSpawns returns items that spawn on the ground in the given zone.
+func (db *DB) GetZoneGroundSpawns(shortName string) ([]ZoneGroundSpawn, error) {
+	rows, err := db.Query(`
+		SELECT g.id, g.item, COALESCE(i.Name, ''), g.name, g.max_allowed, g.respawn_timer
+		FROM ground_spawns g
+		LEFT JOIN items i ON i.id = g.item
+		WHERE g.zoneid = (SELECT zoneidnumber FROM zone WHERE short_name = ? LIMIT 1)
+		ORDER BY i.Name`, shortName)
+	if err != nil {
+		return nil, fmt.Errorf("get zone ground spawns %q: %w", shortName, err)
+	}
+	defer rows.Close()
+
+	var result []ZoneGroundSpawn
+	for rows.Next() {
+		var g ZoneGroundSpawn
+		if err := rows.Scan(&g.ID, &g.ItemID, &g.ItemName, &g.Name, &g.MaxAllowed, &g.RespawnTimer); err != nil {
+			return nil, fmt.Errorf("scan ground spawn: %w", err)
+		}
+		result = append(result, g)
+	}
+	return result, rows.Err()
+}
+
+// GetZoneForage returns items obtainable via Forage in the given zone.
+func (db *DB) GetZoneForage(shortName string) ([]ZoneForageItem, error) {
+	rows, err := db.Query(`
+		SELECT f.id, f.Itemid, COALESCE(i.Name, ''), f.chance, f.level
+		FROM forage f
+		LEFT JOIN items i ON i.id = f.Itemid
+		WHERE f.zoneid = (SELECT zoneidnumber FROM zone WHERE short_name = ? LIMIT 1)
+		ORDER BY i.Name`, shortName)
+	if err != nil {
+		return nil, fmt.Errorf("get zone forage %q: %w", shortName, err)
+	}
+	defer rows.Close()
+
+	var result []ZoneForageItem
+	for rows.Next() {
+		var f ZoneForageItem
+		if err := rows.Scan(&f.ID, &f.ItemID, &f.ItemName, &f.Chance, &f.Level); err != nil {
+			return nil, fmt.Errorf("scan forage item: %w", err)
+		}
+		result = append(result, f)
+	}
+	return result, rows.Err()
+}
+
+// GetZoneDrops returns items dropped by NPCs in the given zone (capped at 500).
+func (db *DB) GetZoneDrops(shortName string) ([]ZoneDropItem, error) {
+	rows, err := db.Query(`
+		SELECT DISTINCT lde.item_id, i.Name, n.id, n.name, lde.chance
+		FROM npc_types n
+		JOIN loottable_entries lte ON lte.loottable_id = n.loottable_id
+		JOIN lootdrop_entries lde ON lde.lootdrop_id = lte.lootdrop_id
+		JOIN items i ON i.id = lde.item_id
+		WHERE n.id IN (
+			SELECT DISTINCT se.npcID
+			FROM spawnentry se
+			JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
+			WHERE s2.zone = ?
+		) AND n.loottable_id > 0
+		ORDER BY i.Name, n.name
+		LIMIT 500`, shortName)
+	if err != nil {
+		return nil, fmt.Errorf("get zone drops %q: %w", shortName, err)
+	}
+	defer rows.Close()
+
+	var result []ZoneDropItem
+	for rows.Next() {
+		var d ZoneDropItem
+		if err := rows.Scan(&d.ItemID, &d.ItemName, &d.NPCID, &d.NPCName, &d.Chance); err != nil {
+			return nil, fmt.Errorf("scan zone drop: %w", err)
+		}
+		result = append(result, d)
+	}
+	return result, rows.Err()
+}

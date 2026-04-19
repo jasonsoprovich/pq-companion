@@ -1,9 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, X } from 'lucide-react'
-import { getNPCsByZone, getZone, searchZones } from '../services/api'
+import {
+  getNPCsByZone,
+  getZone,
+  getZoneConnections,
+  getZoneDrops,
+  getZoneForage,
+  getZoneGroundSpawns,
+  searchZones,
+} from '../services/api'
 import type { NPC } from '../types/npc'
-import type { Zone } from '../types/zone'
+import type { Zone, ZoneConnection, ZoneDropItem, ZoneForageItem, ZoneGroundSpawn } from '../types/zone'
 import { className, npcDisplayName } from '../lib/npcHelpers'
 
 const EQ_EXPANSIONS: Record<number, string> = {
@@ -37,6 +45,19 @@ function bindLabel(canbind: number): string {
 function expModLabel(mod: number): string {
   if (mod == null || !isFinite(mod)) return '—'
   return `${Math.round(mod * 100)}%`
+}
+
+function formatRespawn(ms: number): string {
+  if (ms <= 0) return '—'
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  const rem = s % 60
+  return rem > 0 ? `${m}m ${rem}s` : `${m}m`
+}
+
+function npcNameDisplay(raw: string): string {
+  return raw.replace(/_/g, ' ')
 }
 
 // ── Search pane ────────────────────────────────────────────────────────────────
@@ -83,7 +104,6 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
       className="flex w-72 shrink-0 flex-col border-r"
       style={{ borderColor: 'var(--color-border)' }}
     >
-      {/* Search input */}
       <div
         className="flex items-center gap-2 border-b px-3 py-2"
         style={{ borderColor: 'var(--color-border)' }}
@@ -105,7 +125,6 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
         )}
       </div>
 
-      {/* Result count */}
       <div
         className="border-b px-3 py-1.5 text-[11px]"
         style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
@@ -113,7 +132,6 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
         {loading ? 'Searching…' : error ? 'Error' : `${total.toLocaleString()} zones`}
       </div>
 
-      {/* Results list */}
       <div className="flex-1 overflow-y-auto">
         {error && (
           <p className="px-3 py-4 text-xs" style={{ color: 'var(--color-destructive)' }}>
@@ -177,7 +195,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   )
 }
 
-// ── Detail panel helpers ───────────────────────────────────────────────────────
+// ── Shared helpers ─────────────────────────────────────────────────────────────
 
 interface StatRowProps {
   label: string
@@ -220,13 +238,66 @@ function Section({ title, children }: SectionProps): React.ReactElement {
   )
 }
 
-// ── NPC list within detail panel ───────────────────────────────────────────────
-
-interface NPCListProps {
-  shortName: string
+function EmptyState({ message }: { message: string }): React.ReactElement {
+  return (
+    <p className="py-4 text-center text-sm" style={{ color: 'var(--color-muted)' }}>
+      {message}
+    </p>
+  )
 }
 
-function NPCList({ shortName }: NPCListProps): React.ReactElement {
+function LoadingState(): React.ReactElement {
+  return (
+    <p className="py-4 text-center text-sm" style={{ color: 'var(--color-muted)' }}>
+      Loading…
+    </p>
+  )
+}
+
+function ErrorState({ message }: { message: string }): React.ReactElement {
+  return (
+    <p className="py-4 text-center text-sm" style={{ color: 'var(--color-destructive)' }}>
+      {message}
+    </p>
+  )
+}
+
+// ── Tab: Overview ──────────────────────────────────────────────────────────────
+
+function OverviewTab({ zone }: { zone: Zone }): React.ReactElement {
+  const coordStr = `Y: ${zone.safe_y.toFixed(1)}, X: ${zone.safe_x.toFixed(1)}, Z: ${zone.safe_z.toFixed(1)}`
+  return (
+    <div className="flex flex-col gap-3">
+      <Section title="Quick Facts">
+        <StatRow label="Expansion" value={expansionName(zone.expansion)} />
+        <StatRow label="XP Modifier" value={expModLabel(zone.exp_mod)} />
+        <StatRow label="Outdoor" value={zone.outdoor ? 'Yes' : 'No'} />
+        <StatRow label="Hotzone" value={zone.hotzone ? 'Yes' : 'No'} />
+        <StatRow label="Levitation" value={zone.can_levitate ? 'Allowed' : 'Restricted'} />
+        <StatRow label="Binding" value={bindLabel(zone.can_bind)} />
+      </Section>
+      <Section title="Zone Info">
+        <StatRow label="Zone ID" value={zone.zone_id_number} />
+        <StatRow
+          label="Level Range"
+          value={
+            zone.npc_level_max > 0
+              ? zone.npc_level_min === zone.npc_level_max
+                ? `${zone.npc_level_min}`
+                : `${zone.npc_level_min}–${zone.npc_level_max}`
+              : 'Unknown'
+          }
+        />
+        <StatRow label="Succor Point" value={coordStr} />
+        {zone.note && <StatRow label="Note" value={zone.note} />}
+      </Section>
+    </div>
+  )
+}
+
+// ── Tab: NPCs ──────────────────────────────────────────────────────────────────
+
+function NPCsTab({ shortName }: { shortName: string }): React.ReactElement {
   const navigate = useNavigate()
   const [npcs, setNpcs] = useState<NPC[]>([])
   const [total, setTotal] = useState(0)
@@ -245,43 +316,20 @@ function NPCList({ shortName }: NPCListProps): React.ReactElement {
       .finally(() => setLoading(false))
   }, [shortName])
 
-  if (loading) {
-    return (
-      <p className="py-2 text-xs" style={{ color: 'var(--color-muted)' }}>
-        Loading…
-      </p>
-    )
-  }
-
-  if (error) {
-    return (
-      <p className="py-2 text-xs" style={{ color: 'var(--color-destructive)' }}>
-        {error}
-      </p>
-    )
-  }
-
-  if (npcs.length === 0) {
-    return (
-      <p className="py-2 text-xs" style={{ color: 'var(--color-muted)' }}>
-        No spawn data found.
-      </p>
-    )
-  }
+  if (loading) return <LoadingState />
+  if (error) return <ErrorState message={error} />
+  if (npcs.length === 0) return <EmptyState message="No spawn data found." />
 
   return (
     <div>
       {total > npcs.length && (
-        <p className="mb-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+        <p className="mb-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
           Showing {npcs.length} of {total.toLocaleString()}
         </p>
       )}
       <div
         className="rounded border"
-        style={{
-          backgroundColor: 'var(--color-surface)',
-          borderColor: 'var(--color-border)',
-        }}
+        style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
       >
         {npcs.map((npc, i) => (
           <button
@@ -293,10 +341,8 @@ function NPCList({ shortName }: NPCListProps): React.ReactElement {
               borderLeft: '2px solid transparent',
             }}
             onMouseEnter={(e) => {
-              ;(e.currentTarget as HTMLElement).style.backgroundColor =
-                'var(--color-surface-2)'
-              ;(e.currentTarget as HTMLElement).style.borderLeftColor =
-                'var(--color-primary)'
+              ;(e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-surface-2)'
+              ;(e.currentTarget as HTMLElement).style.borderLeftColor = 'var(--color-primary)'
             }}
             onMouseLeave={(e) => {
               ;(e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
@@ -328,13 +374,293 @@ function NPCList({ shortName }: NPCListProps): React.ReactElement {
   )
 }
 
+// ── Tab: Connected Zones ───────────────────────────────────────────────────────
+
+function ConnectionsTab({ shortName }: { shortName: string }): React.ReactElement {
+  const navigate = useNavigate()
+  const [connections, setConnections] = useState<ZoneConnection[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    getZoneConnections(shortName)
+      .then(setConnections)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [shortName])
+
+  if (loading) return <LoadingState />
+  if (error) return <ErrorState message={error} />
+  if (connections.length === 0) return <EmptyState message="No connected zones found." />
+
+  return (
+    <div
+      className="rounded border"
+      style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+    >
+      {connections.map((c, i) => (
+        <button
+          key={c.zone_id}
+          onClick={() => navigate(`/zones?select=${c.zone_id}`)}
+          className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left transition-colors"
+          style={{
+            borderTop: i > 0 ? '1px solid var(--color-border)' : undefined,
+            borderLeft: '2px solid transparent',
+          }}
+          onMouseEnter={(e) => {
+            ;(e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-surface-2)'
+            ;(e.currentTarget as HTMLElement).style.borderLeftColor = 'var(--color-primary)'
+          }}
+          onMouseLeave={(e) => {
+            ;(e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
+            ;(e.currentTarget as HTMLElement).style.borderLeftColor = 'transparent'
+          }}
+        >
+          <div className="flex flex-col">
+            <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+              {c.long_name || c.short_name}
+            </span>
+            <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+              {c.short_name}
+            </span>
+          </div>
+          <span
+            className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+            style={{
+              backgroundColor: 'rgba(100,116,139,0.15)',
+              color: 'var(--color-muted-foreground)',
+            }}
+          >
+            {expansionName(c.expansion)}
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── Tab: Drops ─────────────────────────────────────────────────────────────────
+
+function DropsTab({ shortName }: { shortName: string }): React.ReactElement {
+  const navigate = useNavigate()
+  const [drops, setDrops] = useState<ZoneDropItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    getZoneDrops(shortName)
+      .then(setDrops)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [shortName])
+
+  if (loading) return <LoadingState />
+  if (error) return <ErrorState message={error} />
+  if (drops.length === 0) return <EmptyState message="No drops found." />
+
+  return (
+    <div>
+      {drops.length >= 500 && (
+        <p className="mb-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+          Showing first 500 results
+        </p>
+      )}
+      <div
+        className="rounded border"
+        style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+      >
+        {drops.map((d, i) => (
+          <button
+            key={`${d.item_id}-${d.npc_id}`}
+            onClick={() => navigate(`/items?select=${d.item_id}`)}
+            className="flex w-full cursor-pointer items-baseline justify-between px-3 py-1.5 text-left transition-colors"
+            style={{
+              borderTop: i > 0 ? '1px solid var(--color-border)' : undefined,
+              borderLeft: '2px solid transparent',
+            }}
+            onMouseEnter={(e) => {
+              ;(e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-surface-2)'
+              ;(e.currentTarget as HTMLElement).style.borderLeftColor = 'var(--color-primary)'
+            }}
+            onMouseLeave={(e) => {
+              ;(e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
+              ;(e.currentTarget as HTMLElement).style.borderLeftColor = 'transparent'
+            }}
+          >
+            <div className="flex flex-col">
+              <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                {d.item_name}
+              </span>
+              <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                {npcNameDisplay(d.npc_name)}
+              </span>
+            </div>
+            {d.chance > 0 && (
+              <span className="ml-4 shrink-0 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+                {d.chance.toFixed(2)}%
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Tab: Ground Spawns ─────────────────────────────────────────────────────────
+
+function GroundSpawnsTab({ shortName }: { shortName: string }): React.ReactElement {
+  const navigate = useNavigate()
+  const [spawns, setSpawns] = useState<ZoneGroundSpawn[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    getZoneGroundSpawns(shortName)
+      .then(setSpawns)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [shortName])
+
+  if (loading) return <LoadingState />
+  if (error) return <ErrorState message={error} />
+  if (spawns.length === 0) return <EmptyState message="No ground spawns found." />
+
+  return (
+    <div
+      className="rounded border"
+      style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+    >
+      {spawns.map((g, i) => (
+        <button
+          key={g.id}
+          onClick={() => g.item_id > 0 && navigate(`/items?select=${g.item_id}`)}
+          className="flex w-full cursor-pointer items-baseline justify-between px-3 py-1.5 text-left transition-colors"
+          style={{
+            borderTop: i > 0 ? '1px solid var(--color-border)' : undefined,
+            borderLeft: '2px solid transparent',
+          }}
+          onMouseEnter={(e) => {
+            ;(e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-surface-2)'
+            ;(e.currentTarget as HTMLElement).style.borderLeftColor = 'var(--color-primary)'
+          }}
+          onMouseLeave={(e) => {
+            ;(e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
+            ;(e.currentTarget as HTMLElement).style.borderLeftColor = 'transparent'
+          }}
+        >
+          <div className="flex flex-col">
+            <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+              {g.item_name || g.name}
+            </span>
+            {g.item_name && g.name && g.name !== g.item_name && (
+              <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                {g.name}
+              </span>
+            )}
+          </div>
+          <div className="ml-4 shrink-0 text-right">
+            <div className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              {formatRespawn(g.respawn_timer)}
+            </div>
+            {g.max_allowed > 1 && (
+              <div className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                ×{g.max_allowed}
+              </div>
+            )}
+          </div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── Tab: Forage ────────────────────────────────────────────────────────────────
+
+function ForageTab({ shortName }: { shortName: string }): React.ReactElement {
+  const navigate = useNavigate()
+  const [items, setItems] = useState<ZoneForageItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    getZoneForage(shortName)
+      .then(setItems)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [shortName])
+
+  if (loading) return <LoadingState />
+  if (error) return <ErrorState message={error} />
+  if (items.length === 0) return <EmptyState message="No forageable items found." />
+
+  return (
+    <div
+      className="rounded border"
+      style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+    >
+      {items.map((f, i) => (
+        <button
+          key={f.id}
+          onClick={() => navigate(`/items?select=${f.item_id}`)}
+          className="flex w-full cursor-pointer items-baseline justify-between px-3 py-1.5 text-left transition-colors"
+          style={{
+            borderTop: i > 0 ? '1px solid var(--color-border)' : undefined,
+            borderLeft: '2px solid transparent',
+          }}
+          onMouseEnter={(e) => {
+            ;(e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-surface-2)'
+            ;(e.currentTarget as HTMLElement).style.borderLeftColor = 'var(--color-primary)'
+          }}
+          onMouseLeave={(e) => {
+            ;(e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
+            ;(e.currentTarget as HTMLElement).style.borderLeftColor = 'transparent'
+          }}
+        >
+          <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+            {f.item_name}
+          </span>
+          <span className="ml-4 shrink-0 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+            {f.chance}%
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ── Detail panel ───────────────────────────────────────────────────────────────
+
+type TabKey = 'overview' | 'npcs' | 'connections' | 'drops' | 'ground-spawns' | 'forage'
+
+const TABS: { key: TabKey; label: string }[] = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'npcs', label: 'NPCs' },
+  { key: 'connections', label: 'Connected Zones' },
+  { key: 'drops', label: 'Drops' },
+  { key: 'ground-spawns', label: 'Ground Spawns' },
+  { key: 'forage', label: 'Forage' },
+]
 
 interface DetailPanelProps {
   zone: Zone | null
 }
 
 function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
+  const [activeTab, setActiveTab] = useState<TabKey>('overview')
+
+  useEffect(() => {
+    setActiveTab('overview')
+  }, [zone?.id])
+
   if (!zone) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -345,19 +671,23 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
     )
   }
 
-  const coordStr = `Y: ${zone.safe_y.toFixed(1)}, X: ${zone.safe_x.toFixed(1)}, Z: ${zone.safe_z.toFixed(1)}`
-
   return (
-    <div className="flex-1 overflow-y-auto px-5 py-4">
+    <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="mb-4">
+      <div
+        className="shrink-0 border-b px-5 pt-4 pb-0"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
         <h2
           className="text-xl font-bold leading-tight"
           style={{ color: 'var(--color-primary)' }}
         >
           {zone.long_name || zone.short_name}
         </h2>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+        <div
+          className="mt-1 mb-3 flex flex-wrap items-center gap-2 text-sm"
+          style={{ color: 'var(--color-muted-foreground)' }}
+        >
           <span>
             {zone.short_name}
             {zone.file_name && zone.file_name !== zone.short_name && (
@@ -386,46 +716,36 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
             ZEM {expModLabel(zone.exp_mod)}
           </span>
         </div>
+
+        {/* Tabs */}
+        <div className="flex gap-0 overflow-x-auto">
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className="shrink-0 px-3 py-1.5 text-xs font-medium transition-colors"
+              style={{
+                color: activeTab === tab.key ? 'var(--color-primary)' : 'var(--color-muted)',
+                borderBottom:
+                  activeTab === tab.key
+                    ? '2px solid var(--color-primary)'
+                    : '2px solid transparent',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="flex flex-col gap-3">
-        {/* Quick Facts */}
-        <Section title="Quick Facts">
-          <StatRow label="Expansion" value={expansionName(zone.expansion)} />
-          <StatRow label="XP Modifier" value={expModLabel(zone.exp_mod)} />
-          <StatRow label="Outdoor" value={zone.outdoor ? 'Yes' : 'No'} />
-          <StatRow label="Hotzone" value={zone.hotzone ? 'Yes' : 'No'} />
-          <StatRow label="Levitation" value={zone.can_levitate ? 'Allowed' : 'Restricted'} />
-          <StatRow label="Binding" value={bindLabel(zone.can_bind)} />
-        </Section>
-
-        {/* Zone Info */}
-        <Section title="Zone Info">
-          <StatRow label="Zone ID" value={zone.zone_id_number} />
-          <StatRow
-            label="Level Range"
-            value={
-              zone.npc_level_max > 0
-                ? zone.npc_level_min === zone.npc_level_max
-                  ? `${zone.npc_level_min}`
-                  : `${zone.npc_level_min}–${zone.npc_level_max}`
-                : 'Unknown'
-            }
-          />
-          <StatRow label="Succor Point" value={coordStr} />
-          {zone.note && <StatRow label="Note" value={zone.note} />}
-        </Section>
-
-        {/* Residents */}
-        <div>
-          <div
-            className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            Residents
-          </div>
-          <NPCList shortName={zone.short_name} />
-        </div>
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto px-5 py-4">
+        {activeTab === 'overview' && <OverviewTab zone={zone} />}
+        {activeTab === 'npcs' && <NPCsTab shortName={zone.short_name} />}
+        {activeTab === 'connections' && <ConnectionsTab shortName={zone.short_name} />}
+        {activeTab === 'drops' && <DropsTab shortName={zone.short_name} />}
+        {activeTab === 'ground-spawns' && <GroundSpawnsTab shortName={zone.short_name} />}
+        {activeTab === 'forage' && <ForageTab shortName={zone.short_name} />}
       </div>
     </div>
   )

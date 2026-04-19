@@ -298,6 +298,42 @@ type NPCSpawns struct {
 	SpawnGroups []NPCSpawnGroup `json:"spawn_groups"`
 }
 
+// ZoneConnection is a zone reachable via a zone line from a source zone.
+type ZoneConnection struct {
+	ZoneID    int    `json:"zone_id"`
+	ShortName string `json:"short_name"`
+	LongName  string `json:"long_name"`
+	Expansion int    `json:"expansion"`
+}
+
+// ZoneGroundSpawn is an item that spawns on the ground in a zone.
+type ZoneGroundSpawn struct {
+	ID           int    `json:"id"`
+	ItemID       int    `json:"item_id"`
+	ItemName     string `json:"item_name"`
+	Name         string `json:"name"`
+	MaxAllowed   int    `json:"max_allowed"`
+	RespawnTimer int    `json:"respawn_timer"`
+}
+
+// ZoneForageItem is an item obtainable via the Forage skill in a zone.
+type ZoneForageItem struct {
+	ID       int    `json:"id"`
+	ItemID   int    `json:"item_id"`
+	ItemName string `json:"item_name"`
+	Chance   int    `json:"chance"`
+	Level    int    `json:"level"`
+}
+
+// ZoneDropItem is an item that can drop from an NPC in a zone.
+type ZoneDropItem struct {
+	ItemID   int     `json:"item_id"`
+	ItemName string  `json:"item_name"`
+	NPCID    int     `json:"npc_id"`
+	NPCName  string  `json:"npc_name"`
+	Chance   float64 `json:"chance"`
+}
+
 // SearchResult wraps paginated query results.
 type SearchResult[T any] struct {
 	Items []T `json:"items"`

@@ -73,3 +73,55 @@ func (h *zonesHandler) search(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, result)
 }
+
+func (h *zonesHandler) getConnections(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	result, err := h.db.GetZoneConnections(name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if result == nil {
+		result = []db.ZoneConnection{}
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *zonesHandler) getGroundSpawns(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	result, err := h.db.GetZoneGroundSpawns(name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if result == nil {
+		result = []db.ZoneGroundSpawn{}
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *zonesHandler) getForage(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	result, err := h.db.GetZoneForage(name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if result == nil {
+		result = []db.ZoneForageItem{}
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *zonesHandler) getDrops(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	result, err := h.db.GetZoneDrops(name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if result == nil {
+		result = []db.ZoneDropItem{}
+	}
+	writeJSON(w, http.StatusOK, result)
+}
