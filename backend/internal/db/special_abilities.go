@@ -6,7 +6,7 @@ import (
 )
 
 // SpecialAbility names keyed by their numeric code.
-// Source: CLAUDE.md and EQEmu documentation.
+// Source: SCHEMA.md (quarm.db special_abilities field reference).
 var specialAbilityNames = map[int]string{
 	1:  "Summon",
 	2:  "Enrage",
@@ -14,15 +14,25 @@ var specialAbilityNames = map[int]string{
 	4:  "Flurry",
 	5:  "Triple Attack",
 	6:  "Dual Wield",
+	7:  "Bane Damage",
+	10: "Unflinching",
 	12: "Immune to Melee",
 	13: "Immune to Magic",
+	14: "Immune to Fire",
+	15: "Immune to Cold",
+	16: "Immune to Poison",
 	17: "Uncharmable",
 	18: "Unmezzable",
 	19: "Unfearable",
 	20: "Immune to Slow",
+	21: "Immune to Stun",
+	23: "Immune to Fleeing",
 	24: "No Target",
 	26: "See Through Invis",
 	28: "See Through Invis vs Undead",
+	31: "Immune to Dispel",
+	35: "Immune to NPC Aggro",
+	42: "Destructible Object",
 }
 
 // SpecialAbility represents a single parsed ability from the special_abilities field.

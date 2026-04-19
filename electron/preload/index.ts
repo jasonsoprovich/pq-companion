@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('electron', {
   },
   updater: {
     check: (): Promise<void> => ipcRenderer.invoke('updater:check'),
+    download: (): Promise<void> => ipcRenderer.invoke('updater:download'),
     quitAndInstall: (): Promise<void> => ipcRenderer.invoke('updater:quit-and-install'),
     onAvailable: (cb: (info: { version: string }) => void): (() => void) => {
       const listener = (_e: Electron.IpcRendererEvent, info: { version: string }) => cb(info)

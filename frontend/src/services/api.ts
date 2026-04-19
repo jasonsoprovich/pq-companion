@@ -6,7 +6,7 @@ import type { Zone } from '../types/zone'
 import type { ZealInventoryResponse, ZealSpellbookResponse, AllInventoriesResponse } from '../types/zeal'
 import type { KeysResponse, KeysProgressResponse } from '../types/keys'
 import type { Backup, BackupsResponse } from '../types/backup'
-import type { LogTailerStatus } from '../types/logEvent'
+import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { TargetState } from '../types/overlay'
 import type { CombatState } from '../types/combat'
 import type { TimerState } from '../types/timer'
@@ -71,8 +71,10 @@ export function searchItems(
   q: string,
   limit = 50,
   offset = 0,
+  baneBody = 0,
 ): Promise<SearchResult<Item>> {
   const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) })
+  if (baneBody > 0) params.set('bane_body', String(baneBody))
   return get<SearchResult<Item>>(`/api/items?${params}`)
 }
 
@@ -212,6 +214,14 @@ export function getLogStatus(): Promise<LogTailerStatus> {
   return get<LogTailerStatus>('/api/log/status')
 }
 
+export function getLogFileInfo(): Promise<LogFileInfo> {
+  return get<LogFileInfo>('/api/log/info')
+}
+
+export function cleanupLog(): Promise<{ backup_path: string }> {
+  return post<{ backup_path: string }>('/api/log/cleanup', {})
+}
+
 // ── Overlay ────────────────────────────────────────────────────────────────────
 
 export function getOverlayNPCTarget(): Promise<TargetState> {
@@ -238,6 +248,23 @@ export function getConfig(): Promise<Config> {
 
 export function updateConfig(cfg: Config): Promise<Config> {
   return put<Config>('/api/config', cfg)
+}
+
+// ── Characters ─────────────────────────────────────────────────────────────────
+
+export interface DiscoveredCharacter {
+  name: string
+  mod_time: number
+}
+
+export interface CharactersResponse {
+  characters: DiscoveredCharacter[]
+  active: string
+  manual: boolean
+}
+
+export function listCharacters(): Promise<CharactersResponse> {
+  return get<CharactersResponse>('/api/characters')
 }
 
 // ── Triggers ───────────────────────────────────────────────────────────────────

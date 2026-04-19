@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw } from 'lucide-react'
-import { getConfig, updateConfig } from '../services/api'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Radar, Trash2 } from 'lucide-react'
+import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog } from '../services/api'
 import type { Config } from '../types/config'
+import type { LogFileInfo } from '../types/logEvent'
+import { useWebSocket } from '../hooks/useWebSocket'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
@@ -18,6 +20,20 @@ export default function SettingsPage(): React.ReactElement {
   const [updateState, setUpdateState] = useState<UpdateState>('idle')
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const [updateError, setUpdateError] = useState<string | null>(null)
+  const [detectedCharacter, setDetectedCharacter] = useState<string | null>(null)
+  const [logLargeFile, setLogLargeFile] = useState(false)
+  const [logFileInfo, setLogFileInfo] = useState<LogFileInfo | null>(null)
+  const [logInfoLoading, setLogInfoLoading] = useState(false)
+  const [cleanupState, setCleanupState] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
+  const [cleanupResult, setCleanupResult] = useState<string | null>(null)
+  const logPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useWebSocket((msg) => {
+    if (msg.type === 'config:character_detected') {
+      const data = msg.data as { character: string }
+      setDetectedCharacter(data.character)
+    }
+  })
 
   useEffect(() => {
     getConfig()
@@ -29,6 +45,17 @@ export default function SettingsPage(): React.ReactElement {
 
     if (window.electron?.app) {
       window.electron.app.getVersion().then(setAppVersion).catch(() => null)
+    }
+
+    const pollLogSize = () => {
+      getLogStatus()
+        .then((s) => setLogLargeFile(s.large_file))
+        .catch(() => null)
+    }
+    pollLogSize()
+    logPollRef.current = setInterval(pollLogSize, 10 * 60 * 1000)
+    return () => {
+      if (logPollRef.current) clearInterval(logPollRef.current)
     }
   }, [])
 
@@ -101,6 +128,33 @@ export default function SettingsPage(): React.ReactElement {
 
   function handleQuitAndInstall(): void {
     window.electron?.updater?.quitAndInstall()
+  }
+
+  function handleLoadLogInfo(): void {
+    setLogInfoLoading(true)
+    getLogFileInfo()
+      .then((fi) => setLogFileInfo(fi))
+      .catch(() => null)
+      .finally(() => setLogInfoLoading(false))
+  }
+
+  async function handleCleanupLog(): Promise<void> {
+    setCleanupState('running')
+    setCleanupResult(null)
+    try {
+      const result = await cleanupLog()
+      setCleanupResult(result.backup_path)
+      setCleanupState('done')
+      setLogLargeFile(false)
+      setLogFileInfo(null)
+      // Re-poll size after purge
+      getLogStatus()
+        .then((s) => setLogLargeFile(s.large_file))
+        .catch(() => null)
+    } catch (err) {
+      setCleanupResult((err as Error).message)
+      setCleanupState('error')
+    }
   }
 
   if (loadError) {
@@ -310,6 +364,34 @@ export default function SettingsPage(): React.ReactElement {
             }}
           />
 
+          {detectedCharacter && !config.character && (
+            <div
+              className="mt-2 flex items-center justify-between gap-2 rounded px-3 py-2 text-xs"
+              style={{
+                backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--color-primary) 30%, transparent)',
+              }}
+            >
+              <span className="flex items-center gap-1.5" style={{ color: 'var(--color-foreground)' }}>
+                <Radar size={12} style={{ color: 'var(--color-primary)' }} />
+                Auto-detected: <strong>{detectedCharacter}</strong>
+              </span>
+              <button
+                onClick={() => setConfig({ ...config, character: detectedCharacter })}
+                className="rounded px-2 py-0.5 text-xs font-medium"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  color: '#fff',
+                  border: 'none',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Use This
+              </button>
+            </div>
+          )}
+
           <p className="mt-4 mb-1 text-xs font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
             Character Class
           </p>
@@ -467,7 +549,7 @@ export default function SettingsPage(): React.ReactElement {
             Overlays
           </h2>
           <p className="mb-4 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Controls transparency for all popout overlay windows (DPS, HPS, Buff Timers, NPC, Triggers).
+            Controls transparency for all popout overlay windows (DPS, Buff Timers, NPC, Triggers).
           </p>
 
           <div className="flex items-center gap-4">
@@ -516,6 +598,156 @@ export default function SettingsPage(): React.ReactElement {
               title="Overlay background preview"
             />
           </div>
+        </section>
+
+        {/* ── Log Files ──────────────────────────────────────────────────── */}
+        <section
+          className="rounded-lg p-4"
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: logLargeFile
+              ? '1px solid #f97316'
+              : '1px solid var(--color-border)',
+          }}
+        >
+          <h2
+            className="mb-1 text-sm font-semibold uppercase tracking-wide flex items-center gap-2"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            Log Files
+            {logLargeFile && (
+              <span
+                className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                style={{ backgroundColor: '#f97316', color: '#fff' }}
+              >
+                Large file detected
+              </span>
+            )}
+          </h2>
+          <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Back up and purge your EverQuest log file, keeping only the most recent 7 days of entries. Files over 75 MB are flagged for cleanup.
+          </p>
+
+          {/* Load file info */}
+          {!logFileInfo && cleanupState === 'idle' && (
+            <button
+              onClick={handleLoadLogInfo}
+              disabled={logInfoLoading}
+              className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                cursor: logInfoLoading ? 'not-allowed' : 'pointer',
+                opacity: logInfoLoading ? 0.7 : 1,
+              }}
+            >
+              {logInfoLoading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              {logInfoLoading ? 'Loading…' : 'Check Log File'}
+            </button>
+          )}
+
+          {/* File info display */}
+          {logFileInfo && cleanupState === 'idle' && (
+            <div className="mb-3 space-y-1">
+              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                Size: <span style={{ color: 'var(--color-foreground)' }}>{(logFileInfo.size_bytes / 1024 / 1024).toFixed(1)} MB</span>
+              </p>
+              {logFileInfo.oldest_entry && (
+                <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Oldest entry: <span style={{ color: 'var(--color-foreground)' }}>{new Date(logFileInfo.oldest_entry).toLocaleDateString()}</span>
+                </p>
+              )}
+              {logFileInfo.newest_entry && (
+                <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Newest entry: <span style={{ color: 'var(--color-foreground)' }}>{new Date(logFileInfo.newest_entry).toLocaleDateString()}</span>
+                </p>
+              )}
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={handleCleanupLog}
+                  className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold"
+                  style={{
+                    backgroundColor: '#f97316',
+                    color: '#fff',
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Trash2 size={12} />
+                  Backup &amp; Purge
+                </button>
+                <button
+                  onClick={() => setLogFileInfo(null)}
+                  className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
+                  style={{
+                    backgroundColor: 'var(--color-surface-2)',
+                    border: '1px solid var(--color-border)',
+                    color: 'var(--color-foreground)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Running */}
+          {cleanupState === 'running' && (
+            <p className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              <Loader2 size={12} className="animate-spin" />
+              Backing up and purging log…
+            </p>
+          )}
+
+          {/* Done */}
+          {cleanupState === 'done' && cleanupResult && (
+            <div className="space-y-1">
+              <p className="flex items-center gap-1.5 text-xs" style={{ color: '#22c55e' }}>
+                <CheckCircle2 size={12} />
+                Purge complete. Backup saved to:
+              </p>
+              <p className="text-xs font-mono break-all" style={{ color: 'var(--color-muted-foreground)' }}>
+                {cleanupResult}
+              </p>
+              <button
+                onClick={() => { setCleanupState('idle'); setCleanupResult(null) }}
+                className="mt-2 flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-foreground)',
+                  cursor: 'pointer',
+                }}
+              >
+                <RefreshCw size={12} />
+                Check Again
+              </button>
+            </div>
+          )}
+
+          {/* Error */}
+          {cleanupState === 'error' && cleanupResult && (
+            <div className="space-y-1">
+              <p className="flex items-center gap-1.5 text-xs" style={{ color: '#f87171' }}>
+                <AlertTriangle size={12} />
+                {cleanupResult}
+              </p>
+              <button
+                onClick={() => { setCleanupState('idle'); setCleanupResult(null) }}
+                className="mt-2 flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-foreground)',
+                  cursor: 'pointer',
+                }}
+              >
+                Try Again
+              </button>
+            </div>
+          )}
         </section>
 
         {/* ── Save / Discard buttons ─────────────────────────────────────── */}

@@ -40,6 +40,7 @@ export interface ElectronAPI {
   }
   updater: {
     check: () => Promise<void>
+    download: () => Promise<void>
     quitAndInstall: () => Promise<void>
     onAvailable: (cb: (info: { version: string }) => void) => () => void
     onProgress: (cb: (p: { percent: number; transferred: number; total: number }) => void) => () => void

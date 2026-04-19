@@ -34,10 +34,14 @@ type keyProgress struct {
 }
 
 // characterKeyProgress is the per-character view of one key.
+// FinalItem is non-nil only when the KeyDef defines a FinalItem; if Have or
+// SharedBank is true, the character is considered fully keyed regardless of
+// component progress.
 type characterKeyProgress struct {
 	Character  string            `json:"character"`
 	HasExport  bool              `json:"has_export"`
 	Components []componentStatus `json:"components"`
+	FinalItem  *componentStatus  `json:"final_item,omitempty"`
 }
 
 // componentStatus is the status of one component for one character.
@@ -120,6 +124,15 @@ func (h *keysHandler) progress(w http.ResponseWriter, r *http.Request) {
 					SharedBank: !cp.HaveIDs[comp.ItemID] && sharedIDs[comp.ItemID],
 				}
 				ckp.Components = append(ckp.Components, cs)
+			}
+			if kd.FinalItem != nil {
+				fi := *kd.FinalItem
+				ckp.FinalItem = &componentStatus{
+					ItemID:     fi.ItemID,
+					ItemName:   fi.ItemName,
+					Have:       cp.HaveIDs[fi.ItemID],
+					SharedBank: !cp.HaveIDs[fi.ItemID] && sharedIDs[fi.ItemID],
+				}
 			}
 			kp.Characters = append(kp.Characters, ckp)
 		}

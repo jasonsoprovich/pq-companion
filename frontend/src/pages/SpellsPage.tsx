@@ -7,11 +7,13 @@ import {
   castableClasses,
   castableClassesShort,
   durationLabel,
-  effectLabel,
+  durationScales,
+  effectDescription,
   msLabel,
   resistLabel,
   skillLabel,
   targetLabel,
+  zoneTypeLabel,
 } from '../lib/spellHelpers'
 
 // ── Search pane ────────────────────────────────────────────────────────────────
@@ -195,15 +197,20 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
   const classes = castableClasses(spell.class_levels)
   const hasDuration = spell.buff_duration > 0
   const hasAoE = spell.aoe_range > 0
+  const isScalingDuration = durationScales(spell.buff_duration_formula, spell.buff_duration)
+  const zoneType = zoneTypeLabel(spell.zone_type)
 
-  // Collect active effect slots
+  // Collect active effect slots with human-readable descriptions
   const activeEffects = spell.effect_ids
-    .map((id, i) => ({ id, base: spell.effect_base_values[i] ?? 0, label: effectLabel(id) }))
-    .filter((e) => e.label !== '')
+    .map((id, i) => ({
+      id,
+      base: spell.effect_base_values[i] ?? 0,
+      description: effectDescription(id, spell.effect_base_values[i] ?? 0, spell.buff_duration),
+    }))
+    .filter((e) => e.description !== '')
 
   const flags: string[] = []
   if (spell.is_discipline) flags.push('DISCIPLINE')
-  if (spell.suspendable) flags.push('SUSPENDABLE')
   if (spell.no_dispell) flags.push('NO DISPELL')
 
   return (
@@ -217,9 +224,11 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
           {spell.name}
         </h2>
         <div className="mt-1 flex flex-wrap items-center gap-2">
-          <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-            {skillLabel(spell.skill)}
-          </span>
+          {skillLabel(spell.skill) && (
+            <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              {skillLabel(spell.skill)}
+            </span>
+          )}
           {flags.map((f) => (
             <span
               key={f}
@@ -239,6 +248,7 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
       <div className="flex flex-col gap-3">
         {/* Casting */}
         <Section title="Casting">
+          {skillLabel(spell.skill) && <StatRow label="Skill" value={skillLabel(spell.skill)} />}
           <StatRow label="Mana Cost" value={spell.mana > 0 ? spell.mana : 'None'} />
           <StatRow label="Cast Time" value={msLabel(spell.cast_time)} />
           {spell.recast_time > 0 && (
@@ -249,7 +259,7 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
           )}
           {hasDuration && (
             <StatRow
-              label="Duration"
+              label={isScalingDuration ? 'Max Duration' : 'Duration'}
               value={durationLabel(spell.buff_duration_formula, spell.buff_duration)}
             />
           )}
@@ -261,11 +271,12 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
           <StatRow label="Resist" value={resistLabel(spell.resist_type)} />
           {spell.range > 0 && <StatRow label="Range" value={`${spell.range} units`} />}
           {hasAoE && <StatRow label="AoE Range" value={`${spell.aoe_range} units`} />}
+          {zoneType && <StatRow label="Zone Type" value={zoneType} />}
         </Section>
 
         {/* Classes */}
-        {classes.length > 0 && (
-          <Section title="Classes">
+        <Section title="Classes">
+          {classes.length > 0 ? (
             <div className="flex flex-wrap gap-x-4 gap-y-1 py-0.5">
               {classes.map((c) => (
                 <div key={c.abbr} className="flex items-baseline gap-1 text-sm">
@@ -279,18 +290,20 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
                 </div>
               ))}
             </div>
-          </Section>
-        )}
+          ) : (
+            <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              NPC Only
+            </span>
+          )}
+        </Section>
 
         {/* Effects */}
         {activeEffects.length > 0 && (
           <Section title="Effects">
             {activeEffects.map((e, i) => (
-              <StatRow
-                key={i}
-                label={e.label}
-                value={e.base > 0 ? `+${e.base}` : e.base < 0 ? `${e.base}` : '—'}
-              />
+              <div key={i} className="py-0.5 text-sm" style={{ color: 'var(--color-foreground)' }}>
+                {e.description}
+              </div>
             ))}
           </Section>
         )}
@@ -347,7 +360,7 @@ export default function SpellsPage(): React.ReactElement {
       .then(setSelected)
       .catch(() => {/* ignore */})
       .finally(() => setSearchParams({}, { replace: true }))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchParams, setSearchParams])
 
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>

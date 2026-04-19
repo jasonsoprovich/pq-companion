@@ -7,10 +7,22 @@ import {
   ExternalLink,
   RefreshCw,
   AlertCircle,
+  X,
 } from 'lucide-react'
-import { getConfig, getSpellsByClass, getZealSpellbook } from '../services/api'
+import { getConfig, getSpell, getSpellsByClass, getZealSpellbook } from '../services/api'
 import type { Spell } from '../types/spell'
 import type { Spellbook } from '../types/zeal'
+import {
+  castableClasses,
+  durationLabel,
+  durationScales,
+  effectDescription,
+  msLabel,
+  resistLabel,
+  skillLabel,
+  targetLabel,
+  zoneTypeLabel,
+} from '../lib/spellHelpers'
 
 // ── Class definitions ──────────────────────────────────────────────────────────
 
@@ -54,6 +66,189 @@ function savedClass(): number {
     // ignore
   }
   return DEFAULT_CLASS
+}
+
+// ── Spell detail modal ─────────────────────────────────────────────────────────
+
+interface SpellDetailModalProps {
+  spell: Spell
+  onClose: () => void
+  onOpenInExplorer: (id: number) => void
+}
+
+function SpellDetailModal({ spell, onClose, onOpenInExplorer }: SpellDetailModalProps): React.ReactElement {
+  const classes = castableClasses(spell.class_levels)
+  const hasDuration = spell.buff_duration > 0
+  const hasAoE = spell.aoe_range > 0
+  const isScalingDuration = durationScales(spell.buff_duration_formula, spell.buff_duration)
+  const zoneType = zoneTypeLabel(spell.zone_type)
+
+  const activeEffects = spell.effect_ids
+    .map((id, i) => ({
+      id,
+      base: spell.effect_base_values[i] ?? 0,
+      description: effectDescription(id, spell.effect_base_values[i] ?? 0, spell.buff_duration),
+    }))
+    .filter((e) => e.description !== '')
+
+  const flags: string[] = []
+  if (spell.is_discipline) flags.push('DISCIPLINE')
+  if (spell.no_dispell) flags.push('NO DISPELL')
+
+  function StatRow({ label, value }: { label: string; value: string | number }) {
+    return (
+      <div className="flex justify-between py-0.5 text-sm">
+        <span style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>
+        <span style={{ color: 'var(--color-foreground)' }}>{value}</span>
+      </div>
+    )
+  }
+
+  function Section({ title, children }: { title: string; children: React.ReactNode }) {
+    return (
+      <div>
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
+          {title}
+        </div>
+        <div className="rounded border px-3 py-1" style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+          {children}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+      onClick={onClose}
+    >
+      <div
+        className="relative flex flex-col w-full max-w-lg max-h-[80vh] rounded-lg overflow-hidden"
+        style={{ backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Modal header */}
+        <div
+          className="shrink-0 flex items-start justify-between px-5 pt-4 pb-3"
+          style={{ borderBottom: '1px solid var(--color-border)' }}
+        >
+          <div>
+            <h2 className="text-lg font-bold leading-tight" style={{ color: 'var(--color-primary)' }}>
+              {spell.name}
+            </h2>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              {skillLabel(spell.skill) && (
+                <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+                  {skillLabel(spell.skill)}
+                </span>
+              )}
+              {flags.map((f) => (
+                <span
+                  key={f}
+                  className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                  style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-primary)', border: '1px solid var(--color-border)' }}
+                >
+                  {f}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 ml-3">
+            <button
+              onClick={() => onOpenInExplorer(spell.id)}
+              className="flex items-center gap-1 text-xs px-2 py-1 rounded"
+              style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)', border: '1px solid var(--color-border)' }}
+              title="Open in Spell Explorer"
+            >
+              <ExternalLink size={11} />
+              Explorer
+            </button>
+            <button onClick={onClose} title="Close">
+              <X size={16} style={{ color: 'var(--color-muted)' }} />
+            </button>
+          </div>
+        </div>
+
+        {/* Modal body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
+          <Section title="Casting">
+            {skillLabel(spell.skill) && <StatRow label="Skill" value={skillLabel(spell.skill)} />}
+            <StatRow label="Mana Cost" value={spell.mana > 0 ? spell.mana : 'None'} />
+            <StatRow label="Cast Time" value={msLabel(spell.cast_time)} />
+            {spell.recast_time > 0 && <StatRow label="Recast Time" value={msLabel(spell.recast_time)} />}
+            {spell.recovery_time > 0 && <StatRow label="Recovery" value={msLabel(spell.recovery_time)} />}
+            {hasDuration && (
+              <StatRow
+                label={isScalingDuration ? 'Max Duration' : 'Duration'}
+                value={durationLabel(spell.buff_duration_formula, spell.buff_duration)}
+              />
+            )}
+          </Section>
+
+          <Section title="Targeting">
+            <StatRow label="Target" value={targetLabel(spell.target_type)} />
+            <StatRow label="Resist" value={resistLabel(spell.resist_type)} />
+            {spell.range > 0 && <StatRow label="Range" value={`${spell.range} units`} />}
+            {hasAoE && <StatRow label="AoE Range" value={`${spell.aoe_range} units`} />}
+            {zoneType && <StatRow label="Zone Type" value={zoneType} />}
+          </Section>
+
+          <Section title="Classes">
+            {classes.length > 0 ? (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 py-0.5">
+                {classes.map((c) => (
+                  <div key={c.abbr} className="flex items-baseline gap-1 text-sm">
+                    <span style={{ color: 'var(--color-foreground)' }}>{c.full}</span>
+                    <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Lv {c.level}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>NPC Only</span>
+            )}
+          </Section>
+
+          {activeEffects.length > 0 && (
+            <Section title="Effects">
+              {activeEffects.map((e, i) => (
+                <div key={i} className="py-0.5 text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  {e.description}
+                </div>
+              ))}
+            </Section>
+          )}
+
+          {(spell.cast_on_you || spell.cast_on_other || spell.spell_fades) && (
+            <Section title="Messages">
+              {spell.cast_on_you && (
+                <div className="py-0.5 text-sm">
+                  <span style={{ color: 'var(--color-muted-foreground)' }}>On you: </span>
+                  <span className="italic" style={{ color: 'var(--color-foreground)' }}>{spell.cast_on_you}</span>
+                </div>
+              )}
+              {spell.cast_on_other && (
+                <div className="py-0.5 text-sm">
+                  <span style={{ color: 'var(--color-muted-foreground)' }}>On other: </span>
+                  <span className="italic" style={{ color: 'var(--color-foreground)' }}>{spell.cast_on_other}</span>
+                </div>
+              )}
+              {spell.spell_fades && (
+                <div className="py-0.5 text-sm">
+                  <span style={{ color: 'var(--color-muted-foreground)' }}>Fades: </span>
+                  <span className="italic" style={{ color: 'var(--color-foreground)' }}>{spell.spell_fades}</span>
+                </div>
+              )}
+            </Section>
+          )}
+
+          <Section title="Info">
+            <StatRow label="Spell ID" value={spell.id} />
+          </Section>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
@@ -141,6 +336,7 @@ export default function SpellChecklistPage(): React.ReactElement {
   const [loadingSpells, setLoadingSpells] = useState(true)
   const [loadingBook, setLoadingBook] = useState(true)
   const [spellError, setSpellError] = useState<string | null>(null)
+  const [modalSpell, setModalSpell] = useState<Spell | null>(null)
   const navigate = useNavigate()
 
   // On mount, fetch config to auto-detect character class and name.
@@ -184,6 +380,13 @@ export default function SpellChecklistPage(): React.ReactElement {
   }
 
   function handleSelectSpell(id: number) {
+    getSpell(id)
+      .then(setModalSpell)
+      .catch(() => { /* non-fatal */ })
+  }
+
+  function handleOpenInExplorer(id: number) {
+    setModalSpell(null)
     navigate(`/spells?select=${id}`)
   }
 
@@ -401,6 +604,14 @@ export default function SpellChecklistPage(): React.ReactElement {
           />
         ))}
       </div>
+
+      {modalSpell && (
+        <SpellDetailModal
+          spell={modalSpell}
+          onClose={() => setModalSpell(null)}
+          onOpenInExplorer={handleOpenInExplorer}
+        />
+      )}
     </div>
   )
 }

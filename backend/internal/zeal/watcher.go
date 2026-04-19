@@ -3,13 +3,11 @@ package zeal
 import (
 	"context"
 	"log/slog"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
@@ -105,7 +103,7 @@ func (w *Watcher) check() {
 
 	character := cfg.Character
 	if character == "" {
-		character = resolveActiveCharacter(cfg.EQPath)
+		character = logparser.ResolveActiveCharacter(cfg.EQPath)
 		if character == "" {
 			return
 		}
@@ -116,37 +114,6 @@ func (w *Watcher) check() {
 
 	w.checkInventory(invPath, character)
 	w.checkSpellbook(spellPath, character)
-}
-
-// resolveActiveCharacter scans eqPath for eqlog_*_pq.proj.txt files and
-// returns the character name from the most recently modified file.
-func resolveActiveCharacter(eqPath string) string {
-	pattern := filepath.Join(eqPath, "eqlog_*_pq.proj.txt")
-	matches, err := filepath.Glob(pattern)
-	if err != nil || len(matches) == 0 {
-		return ""
-	}
-
-	var newest string
-	var newestTime time.Time
-	for _, path := range matches {
-		info, err := os.Stat(path)
-		if err != nil {
-			continue
-		}
-		if info.ModTime().After(newestTime) {
-			newestTime = info.ModTime()
-			newest = path
-		}
-	}
-	if newest == "" {
-		return ""
-	}
-
-	base := filepath.Base(newest)
-	name := strings.TrimPrefix(base, "eqlog_")
-	name = strings.TrimSuffix(name, "_pq.proj.txt")
-	return name
 }
 
 func (w *Watcher) checkInventory(path, character string) {

@@ -240,11 +240,17 @@ function FightRow({
           #{fightNum}
         </span>
 
-        {/* Time */}
-        <span style={{ color: 'var(--color-muted)', fontSize: 11 }}>
+        {/* Time + NPC target */}
+        <span style={{ color: 'var(--color-muted)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {fmtTime(fight.start_time)}
           <span style={{ color: 'var(--color-border)', margin: '0 4px' }}>·</span>
           {fmtDuration(fight.duration_seconds)}
+          {fight.primary_target && (
+            <>
+              <span style={{ color: 'var(--color-border)', margin: '0 4px' }}>—</span>
+              <span style={{ color: 'var(--color-foreground)', fontStyle: 'italic' }}>{fight.primary_target}</span>
+            </>
+          )}
         </span>
 
         {/* Total damage */}

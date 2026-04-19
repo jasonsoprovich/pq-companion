@@ -36,6 +36,8 @@ type internalFight struct {
 	incoming map[string]*internalEntity
 	// healers tracks entities that cast heals during this fight.
 	healers map[string]*internalHealer
+	// targetCounts tracks how many times each NPC target was hit (outgoing only).
+	targetCounts map[string]int
 }
 
 // Tracker watches parsed log events, groups them into fights, and maintains
@@ -151,12 +153,13 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	if t.active == nil {
 		t.fightCounter++
 		t.active = &internalFight{
-			id:        t.fightCounter,
-			startTime: ts,
-			lastHit:   ts,
-			outgoing:  make(map[string]*internalEntity),
-			incoming:  make(map[string]*internalEntity),
-			healers:   make(map[string]*internalHealer),
+			id:           t.fightCounter,
+			startTime:    ts,
+			lastHit:      ts,
+			outgoing:     make(map[string]*internalEntity),
+			incoming:     make(map[string]*internalEntity),
+			healers:      make(map[string]*internalHealer),
+			targetCounts: make(map[string]int),
 		}
 	} else {
 		t.active.lastHit = ts
@@ -168,6 +171,7 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 		entityMap = t.active.incoming
 	} else {
 		entityMap = t.active.outgoing
+		t.active.targetCounts[data.Target]++
 	}
 
 	ent := entityMap[data.Actor]
@@ -231,8 +235,12 @@ func (t *Tracker) timerExpired(fightID int) {
 		t.mu.Unlock()
 		return
 	}
-	t.archiveFight(time.Now())
-	snap := t.snapshot(time.Now())
+	// Use the log-file timestamp of the last hit, not wall-clock time, so that
+	// duration reflects in-game elapsed time rather than real time (which diverges
+	// wildly when parsing historical log files).
+	endTime := t.active.lastHit
+	t.archiveFight(endTime)
+	snap := t.snapshot(endTime)
 	t.mu.Unlock()
 
 	t.broadcast(snap)
@@ -250,8 +258,9 @@ func (t *Tracker) endFight(forced bool) {
 		t.endTimer.Stop()
 		t.endTimer = nil
 	}
-	t.archiveFight(time.Now())
-	snap := t.snapshot(time.Now())
+	endTime := t.active.lastHit
+	t.archiveFight(endTime)
+	snap := t.snapshot(endTime)
 	t.mu.Unlock()
 
 	t.broadcast(snap)
@@ -290,6 +299,30 @@ func (t *Tracker) archiveFight(endTime time.Time) {
 
 	combatants := buildEntityStats(f.outgoing, duration)
 
+	// Exclude hostile NPCs (entities that also attacked "You") from the player
+	// combatants list, since they are the enemy being fought, not allies.
+	hostiles := make(map[string]bool, len(f.incoming))
+	for name := range f.incoming {
+		hostiles[name] = true
+	}
+	filtered := combatants[:0]
+	for _, c := range combatants {
+		if !hostiles[c.Name] {
+			filtered = append(filtered, c)
+		}
+	}
+	combatants = filtered
+
+	// Determine the primary NPC target (most-hit by outgoing attacks).
+	primaryTarget := ""
+	maxTargetCount := 0
+	for target, count := range f.targetCounts {
+		if count > maxTargetCount {
+			maxTargetCount = count
+			primaryTarget = target
+		}
+	}
+
 	totalDmg := int64(0)
 	youDmg := int64(0)
 	for _, e := range combatants {
@@ -315,19 +348,20 @@ func (t *Tracker) archiveFight(endTime time.Time) {
 	t.sessionHeal += youHeal
 
 	summary := FightSummary{
-		StartTime:   f.startTime,
-		EndTime:     endTime,
-		Duration:    duration,
-		Combatants:  combatants,
-		TotalDamage: totalDmg,
-		TotalDPS:    safeDivide(float64(totalDmg), duration),
-		YouDamage:   youDmg,
-		YouDPS:      safeDivide(float64(youDmg), duration),
-		Healers:     healers,
-		TotalHeal:   totalHeal,
-		TotalHPS:    safeDivide(float64(totalHeal), duration),
-		YouHeal:     youHeal,
-		YouHPS:      safeDivide(float64(youHeal), duration),
+		StartTime:     f.startTime,
+		EndTime:       endTime,
+		Duration:      duration,
+		PrimaryTarget: primaryTarget,
+		Combatants:    combatants,
+		TotalDamage:   totalDmg,
+		TotalDPS:      safeDivide(float64(totalDmg), duration),
+		YouDamage:     youDmg,
+		YouDPS:        safeDivide(float64(youDmg), duration),
+		Healers:       healers,
+		TotalHeal:     totalHeal,
+		TotalHPS:      safeDivide(float64(totalHeal), duration),
+		YouHeal:       youHeal,
+		YouHPS:        safeDivide(float64(youHeal), duration),
 	}
 
 	// Prepend and cap at maxRecentFights.
@@ -362,6 +396,29 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 		}
 		combatants := buildEntityStats(t.active.outgoing, duration)
 
+		// Exclude hostile NPCs from the player combatants list.
+		hostiles := make(map[string]bool, len(t.active.incoming))
+		for name := range t.active.incoming {
+			hostiles[name] = true
+		}
+		filtered := combatants[:0]
+		for _, c := range combatants {
+			if !hostiles[c.Name] {
+				filtered = append(filtered, c)
+			}
+		}
+		combatants = filtered
+
+		// Determine the primary NPC target.
+		primaryTarget := ""
+		maxTargetCount := 0
+		for target, count := range t.active.targetCounts {
+			if count > maxTargetCount {
+				maxTargetCount = count
+				primaryTarget = target
+			}
+		}
+
 		totalDmg := int64(0)
 		youDmg := int64(0)
 		for _, e := range combatants {
@@ -382,18 +439,19 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 		}
 
 		state.CurrentFight = &FightState{
-			StartTime:   t.active.startTime,
-			Duration:    duration,
-			Combatants:  combatants,
-			TotalDamage: totalDmg,
-			TotalDPS:    safeDivide(float64(totalDmg), duration),
-			YouDamage:   youDmg,
-			YouDPS:      safeDivide(float64(youDmg), duration),
-			Healers:     healers,
-			TotalHeal:   totalHeal,
-			TotalHPS:    safeDivide(float64(totalHeal), duration),
-			YouHeal:     youHeal,
-			YouHPS:      safeDivide(float64(youHeal), duration),
+			StartTime:     t.active.startTime,
+			Duration:      duration,
+			PrimaryTarget: primaryTarget,
+			Combatants:    combatants,
+			TotalDamage:   totalDmg,
+			TotalDPS:      safeDivide(float64(totalDmg), duration),
+			YouDamage:     youDmg,
+			YouDPS:        safeDivide(float64(youDmg), duration),
+			Healers:       healers,
+			TotalHeal:     totalHeal,
+			TotalHPS:      safeDivide(float64(totalHeal), duration),
+			YouHeal:       youHeal,
+			YouHPS:        safeDivide(float64(youHeal), duration),
 		}
 	}
 

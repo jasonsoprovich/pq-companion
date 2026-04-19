@@ -1,10 +1,43 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, X } from 'lucide-react'
 import { getNPCsByZone, getZone, searchZones } from '../services/api'
 import type { NPC } from '../types/npc'
 import type { Zone } from '../types/zone'
 import { className, npcDisplayName } from '../lib/npcHelpers'
+
+const EQ_EXPANSIONS: Record<number, string> = {
+  0: 'Classic',
+  1: 'Ruins of Kunark',
+  2: 'Scars of Velious',
+  3: 'Shadows of Luclin',
+  4: 'Planes of Power',
+  5: 'Legacy of Ykesha',
+  6: 'Lost Dungeons of Norrath',
+  7: 'Gates of Discord',
+  8: 'Omens of War',
+  9: 'Dragons of Norrath',
+  10: 'Depths of Darkhollow',
+  11: 'Prophecy of Ro',
+  12: "The Serpent's Spine",
+  13: 'The Buried Sea',
+  14: 'Secrets of Faydwer',
+}
+
+function expansionName(id: number): string {
+  return EQ_EXPANSIONS[id] ?? `Expansion ${id}`
+}
+
+function bindLabel(canbind: number): string {
+  if (canbind === 0) return 'No'
+  if (canbind === 1) return 'Druid / Wizard only'
+  return 'Yes'
+}
+
+function expModLabel(mod: number): string {
+  if (mod == null || !isFinite(mod)) return '—'
+  return `${Math.round(mod * 100)}%`
+}
 
 // ── Search pane ────────────────────────────────────────────────────────────────
 
@@ -113,9 +146,29 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
               >
                 {zone.long_name || zone.short_name}
               </div>
-              <div className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                {zone.short_name}
-                {zone.min_level > 0 && ` · Lv ${zone.min_level}+`}
+              <div className="mt-0.5 flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                <span className="truncate">
+                  {zone.short_name}
+                  {zone.npc_level_max > 0 && (
+                    zone.npc_level_min === zone.npc_level_max
+                      ? ` · Lv ${zone.npc_level_min}`
+                      : ` · Lv ${zone.npc_level_min}–${zone.npc_level_max}`
+                  )}
+                </span>
+                {isFinite(zone.exp_mod) && zone.exp_mod !== 1.0 && (
+                  <span
+                    className="shrink-0 rounded px-1 py-0.5 text-[10px] font-semibold"
+                    style={{
+                      backgroundColor:
+                        zone.exp_mod > 1.0
+                          ? 'rgba(34,197,94,0.15)'
+                          : 'rgba(234,179,8,0.15)',
+                      color: zone.exp_mod > 1.0 ? 'rgb(134,239,172)' : 'rgb(253,224,71)',
+                    }}
+                  >
+                    ZEM {Math.round(zone.exp_mod * 100)}%
+                  </span>
+                )}
               </div>
             </button>
           ))}
@@ -174,6 +227,7 @@ interface NPCListProps {
 }
 
 function NPCList({ shortName }: NPCListProps): React.ReactElement {
+  const navigate = useNavigate()
   const [npcs, setNpcs] = useState<NPC[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -230,11 +284,23 @@ function NPCList({ shortName }: NPCListProps): React.ReactElement {
         }}
       >
         {npcs.map((npc, i) => (
-          <div
+          <button
             key={npc.id}
-            className="flex items-baseline justify-between px-3 py-1.5"
+            onClick={() => navigate(`/npcs?select=${npc.id}`)}
+            className="flex w-full cursor-pointer items-baseline justify-between px-3 py-1.5 text-left transition-colors"
             style={{
               borderTop: i > 0 ? '1px solid var(--color-border)' : undefined,
+              borderLeft: '2px solid transparent',
+            }}
+            onMouseEnter={(e) => {
+              ;(e.currentTarget as HTMLElement).style.backgroundColor =
+                'var(--color-surface-2)'
+              ;(e.currentTarget as HTMLElement).style.borderLeftColor =
+                'var(--color-primary)'
+            }}
+            onMouseLeave={(e) => {
+              ;(e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
+              ;(e.currentTarget as HTMLElement).style.borderLeftColor = 'transparent'
             }}
           >
             <div className="flex flex-col">
@@ -255,7 +321,7 @@ function NPCList({ shortName }: NPCListProps): React.ReactElement {
                 </div>
               )}
             </div>
-          </div>
+          </button>
         ))}
       </div>
     </div>
@@ -279,7 +345,7 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
     )
   }
 
-  const coordStr = `${zone.safe_x.toFixed(1)}, ${zone.safe_y.toFixed(1)}, ${zone.safe_z.toFixed(1)}`
+  const coordStr = `Y: ${zone.safe_y.toFixed(1)}, X: ${zone.safe_x.toFixed(1)}, Z: ${zone.safe_z.toFixed(1)}`
 
   return (
     <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -291,22 +357,62 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
         >
           {zone.long_name || zone.short_name}
         </h2>
-        <div className="mt-1 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-          {zone.short_name}
-          {zone.file_name && zone.file_name !== zone.short_name && (
-            <span className="ml-2" style={{ color: 'var(--color-muted)' }}>
-              ({zone.file_name})
-            </span>
-          )}
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+          <span>
+            {zone.short_name}
+            {zone.file_name && zone.file_name !== zone.short_name && (
+              <span className="ml-2" style={{ color: 'var(--color-muted)' }}>
+                ({zone.file_name})
+              </span>
+            )}
+          </span>
+          <span
+            className="rounded px-1.5 py-0.5 text-[11px] font-semibold"
+            style={{
+              backgroundColor:
+                zone.exp_mod > 1.0
+                  ? 'rgba(34,197,94,0.15)'
+                  : zone.exp_mod < 1.0
+                    ? 'rgba(234,179,8,0.15)'
+                    : 'rgba(100,116,139,0.15)',
+              color:
+                zone.exp_mod > 1.0
+                  ? 'rgb(134,239,172)'
+                  : zone.exp_mod < 1.0
+                    ? 'rgb(253,224,71)'
+                    : 'var(--color-muted)',
+            }}
+          >
+            ZEM {expModLabel(zone.exp_mod)}
+          </span>
         </div>
       </div>
 
       <div className="flex flex-col gap-3">
+        {/* Quick Facts */}
+        <Section title="Quick Facts">
+          <StatRow label="Expansion" value={expansionName(zone.expansion)} />
+          <StatRow label="XP Modifier" value={expModLabel(zone.exp_mod)} />
+          <StatRow label="Outdoor" value={zone.outdoor ? 'Yes' : 'No'} />
+          <StatRow label="Hotzone" value={zone.hotzone ? 'Yes' : 'No'} />
+          <StatRow label="Levitation" value={zone.can_levitate ? 'Allowed' : 'Restricted'} />
+          <StatRow label="Binding" value={bindLabel(zone.can_bind)} />
+        </Section>
+
         {/* Zone Info */}
         <Section title="Zone Info">
           <StatRow label="Zone ID" value={zone.zone_id_number} />
-          <StatRow label="Min Level" value={zone.min_level > 0 ? zone.min_level : 'None'} />
-          <StatRow label="Safe Point" value={coordStr} />
+          <StatRow
+            label="Level Range"
+            value={
+              zone.npc_level_max > 0
+                ? zone.npc_level_min === zone.npc_level_max
+                  ? `${zone.npc_level_min}`
+                  : `${zone.npc_level_min}–${zone.npc_level_max}`
+                : 'Unknown'
+            }
+          />
+          <StatRow label="Succor Point" value={coordStr} />
           {zone.note && <StatRow label="Note" value={zone.note} />}
         </Section>
 
@@ -338,7 +444,7 @@ export default function ZonesPage(): React.ReactElement {
       .then(setSelected)
       .catch(() => {/* ignore */})
       .finally(() => setSearchParams({}, { replace: true }))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchParams, setSearchParams])
 
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>

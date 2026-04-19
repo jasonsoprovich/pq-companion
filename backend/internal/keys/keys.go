@@ -10,11 +10,14 @@ type Component struct {
 }
 
 // KeyDef describes a zone key or access-item quest.
+// FinalItem, when set, is the assembled key item — holding it short-circuits
+// the per-component checklist and marks the character as fully keyed.
 type KeyDef struct {
 	ID          string      `json:"id"`
 	Name        string      `json:"name"`
 	Description string      `json:"description"`
 	Components  []Component `json:"components"`
+	FinalItem   *Component  `json:"final_item,omitempty"`
 }
 
 // All returns all key definitions, ordered from classic Kunark through Luclin.
@@ -34,6 +37,18 @@ func All() []KeyDef {
 					ItemID:   18302,
 					ItemName: "Book of Scale",
 					Notes:    "Drops from Lady Vox (Permafrost) and Lord Nagafen (Sol B).",
+				},
+			},
+		},
+		{
+			ID:          "sleepers_tomb",
+			Name:        "Sleeper's Tomb",
+			Description: "The Sleeper's Key is obtained by completing the Warders quest chain in Velious. Hand in quest items to the relevant NPC to receive the key and gain access to Sleeper's Tomb.",
+			Components: []Component{
+				{
+					ItemID:   27265,
+					ItemName: "Sleeper's Key",
+					Notes:    "Reward from the Warders keying quest chain in Velious.",
 				},
 			},
 		},
@@ -95,6 +110,87 @@ func All() []KeyDef {
 					ItemName: "Katta Castellum Badge of Service",
 					Notes:    "Obtained via citizenship quest with the Combine ambassador.",
 				},
+			},
+		},
+		{
+			ID:          "arx_seru",
+			Name:        "Arx Seru",
+			Description: "The Arx Key is required to access Arx Seru on Luclin. Obtained from Arbitor Xxylm in Katta Castellum after completing the citizenship quest chain.",
+			Components: []Component{
+				{
+					ItemID:   3650,
+					ItemName: "Arx Key",
+					Notes:    "Obtained from Arbitor Xxylm in Katta Castellum.",
+				},
+			},
+		},
+		{
+			ID:          "ssra_emperor",
+			Name:        "Temple of Ssraeshza — Ring of the Shissar (Emperor Access)",
+			Description: "The Ring of the Shissar is required to access Emperor Ssraeshza's chamber in the Temple of Ssraeshza. It is assembled in a Taskmaster's Pouch from three components dropped by named mobs throughout the temple.",
+			Components: []Component{
+				{
+					ItemID:   17118,
+					ItemName: "Taskmaster's Pouch",
+					Notes:    "Combine container — drops in Ssraeshza Temple.",
+				},
+				{
+					ItemID:   19716,
+					ItemName: "Zazuzh's Idol",
+					Notes:    "Drops from Vyzh`dra the Cursed in Ssraeshza Temple.",
+				},
+				{
+					ItemID:   19717,
+					ItemName: "Zeruzsh's Ring",
+					Notes:    "Drops from Vyzh`dra the Exiled in Ssraeshza Temple.",
+				},
+				{
+					ItemID:   19718,
+					ItemName: "Ssraeshzian Insignia",
+					Notes:    "Drops from Diabo Xi Va Xakra in Ssraeshza Temple.",
+				},
+			},
+			FinalItem: &Component{
+				ItemID:   19719,
+				ItemName: "Ring of the Shissar",
+				Notes:    "Assembled key — holding it grants Emperor Ssraeshza access.",
+			},
+		},
+		{
+			ID:          "vex_thal",
+			Name:        "Vex Thal — The Scepter of Shadows",
+			Description: "The Scepter of Shadows is the key to Vex Thal. Combine 10 Lucid Shards (one from each Luclin zone) in a Shadowed Scepter Frame to make the Unadorned Scepter of Shadows, then combine A Planes Rift and A Glowing Orb of Luclinite inside the Unadorned Scepter to forge The Scepter of Shadows.",
+			Components: []Component{
+				{
+					ItemID:   17323,
+					ItemName: "Shadowed Scepter Frame",
+					Notes:    "Combine container for the 10 Lucid Shards. Quest reward in Sanctus Seru.",
+				},
+				{ItemID: 22185, ItemName: "A Lucid Shard (Acrylia Caverns)", Notes: "Drops in Acrylia Caverns."},
+				{ItemID: 22186, ItemName: "A Lucid Shard (Dawnshroud Peaks)", Notes: "Drops in Dawnshroud Peaks."},
+				{ItemID: 22187, ItemName: "A Lucid Shard (Echo Caverns)", Notes: "Drops in Echo Caverns."},
+				{ItemID: 22188, ItemName: "A Lucid Shard (Fungus Grove)", Notes: "Drops in Fungus Grove."},
+				{ItemID: 22189, ItemName: "A Lucid Shard (Grieg's End)", Notes: "Drops in Grieg's End."},
+				{ItemID: 22190, ItemName: "A Lucid Shard (Grimling Forest)", Notes: "Drops in Grimling Forest."},
+				{ItemID: 22191, ItemName: "A Lucid Shard (Hollowshade Moor)", Notes: "Drops in Hollowshade Moor."},
+				{ItemID: 22192, ItemName: "A Lucid Shard (Maiden's Eye)", Notes: "Drops in Maiden's Eye."},
+				{ItemID: 22193, ItemName: "A Lucid Shard (Marus Seru)", Notes: "Drops in Marus Seru."},
+				{ItemID: 22194, ItemName: "A Lucid Shard (The Deep)", Notes: "Drops in The Deep."},
+				{
+					ItemID:   9410,
+					ItemName: "A Planes Rift",
+					Notes:    "Final-combine ingredient — drops from planar bosses.",
+				},
+				{
+					ItemID:   22196,
+					ItemName: "A Glowing Orb of Luclinite",
+					Notes:    "Final-combine ingredient — drops from Akheva Ruins / Vex Thal area.",
+				},
+			},
+			FinalItem: &Component{
+				ItemID:   22198,
+				ItemName: "The Scepter of Shadows",
+				Notes:    "Assembled key — holding it grants Vex Thal access.",
 			},
 		},
 	}

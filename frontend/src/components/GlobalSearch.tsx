@@ -6,7 +6,7 @@ import type { Item } from '../types/item'
 import type { Spell } from '../types/spell'
 import type { NPC } from '../types/npc'
 import type { Zone } from '../types/zone'
-import { itemTypeLabel } from '../lib/itemHelpers'
+import { effectiveItemTypeLabel } from '../lib/itemHelpers'
 import { castableClassesShort } from '../lib/spellHelpers'
 import { npcDisplayName, className as npcClassName } from '../lib/npcHelpers'
 
@@ -39,7 +39,7 @@ function ResultRow({ entry, active, onHover, onClick }: ResultRowProps): React.R
 
   if (entry.kind === 'item') {
     name = entry.item.name
-    subtitle = itemTypeLabel(entry.item.item_type)
+    subtitle = effectiveItemTypeLabel(entry.item.item_class, entry.item.item_type)
     if (entry.item.req_level > 0) subtitle += ` · Req ${entry.item.req_level}`
   } else if (entry.kind === 'spell') {
     name = entry.spell.name

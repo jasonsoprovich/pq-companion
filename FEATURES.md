@@ -5,9 +5,20 @@
 - Go CLI tool (`dbconvert`): MySQL dump → SQLite converter
   - `--from-dump` mode: parses `.sql` dump files directly, no MySQL required
   - `--from-mysql` mode: reads from a live MySQL connection
+  - `--validate` / `--validate-only`: post-conversion data validation (row counts, FK integrity, spot checks)
   - Handles all MySQL→SQLite type mapping, index conversion, and data migration
   - Converts ~1.1 million rows in under 60 seconds
-- Documented schema for all key tables (items, spells, NPCs, zones, loot, spawns)
+- Validation suite (`internal/converter/validate.go`, closes #55)
+  - 14 core-table row-count checks — fails the build when a dump import drops a table
+  - 10 referential-integrity checks across the loot, spawn, and NPC spell chains — warns on small orphan counts, escalates to error above 500 orphans per FK
+  - Spot checks on classic-EQ records (`Cloth Cap`, `northkarana`, `Complete Healing`, `Minor Healing`) to catch partial imports that still hit row-count minimums
+  - Exits non-zero on any error; unit-tested with in-memory SQLite
+- `data-release` GitHub Actions workflow (`.github/workflows/data-release.yml`)
+  - Manual dispatch (pick a specific dump from `sql/`) or auto-trigger on `sql/**` pushes
+  - Converts, validates, uploads `quarm.db` to the `data-latest` prerelease (with `--clobber`), and archives a 30-day workflow artifact as a safety net
+  - Both `ci.yml` (Go tests) and `release.yml` (Windows installer) pull `quarm.db` from that release
+- Documented schema for all key tables (items, spells, NPCs, zones, loot, spawns) in `SCHEMA.md`
+- Full pipeline documentation in `docs/db-pipeline.md` — local workflow, CI flow, bootstrap, idempotency guarantees, schema-diff procedure
 - Go database layer (`internal/db`): typed read-only access to quarm.db
   - `Get` and `Search` functions for items, spells, NPCs, and zones
   - Paginated search results with total count
@@ -89,19 +100,24 @@
 
 ### Task 2.3 — Database Explorer: Items ✅
 - **`types/item.ts`** — TypeScript `Item` type mirroring Go backend struct; `SearchResult<T>` generic
-- **`services/api.ts`** — typed fetch client: `searchItems(q, limit, offset)`, `getItem(id)`
+- **`services/api.ts`** — typed fetch client: `searchItems(q, limit, offset, baneBody?)`, `getItem(id)`
 - **`lib/itemHelpers.ts`** — EverQuest bitmask/label decoders:
   - `slotsLabel` — decodes `slots` bitmask into slot names (Charm, Head, Primary, etc.)
   - `classesLabel` — decodes `classes` bitmask into class names; "All" when all bits set
   - `racesLabel` — decodes `races` bitmask into race names; "All" when all bits set
   - `itemTypeLabel` — maps `item_type` int to weapon/armor/misc label
+  - `effectiveItemTypeLabel` — resolves display label using `item_class` first (Container/Book overrides) then `item_type`
+  - `isLoreItem` — detects lore (unique) items via EQ's `*`-prefixed lore string convention
   - `sizeLabel`, `weightLabel`, `priceLabel` (copper → pp/gp/sp/cp)
+  - `baneBodyLabel` — maps `bane_body` int to body type name (Humanoid, Undead, Dragon, etc.)
+  - `BANE_BODY_OPTIONS` — sorted option list for bane body type filter dropdown
 - **`pages/ItemsPage.tsx`** — split-pane layout:
-  - **Left pane (288px)**: debounced search input, result count, scrollable list showing name + item type + req level; selected item highlighted with gold left-border accent
-  - **Detail panel (right)**: full item data in labeled sections — Combat (DMG/DLY/Range/AC), Stats (HP/Mana/STR/STA/AGI/DEX/WIS/INT/CHA), Resists (MR/CR/DR/FR/PR), Effects (Click/Proc/Worn/Focus), Restrictions (Req/Rec level, Slots, Classes, Races), Info (Weight, Size, Stack, Bag info, Price, Item ID)
+  - **Left pane (288px)**: debounced search input, bane body type filter dropdown, result count, scrollable list showing name + item type + req level; selected item highlighted with gold left-border accent
+  - **Detail panel (right)**: full item data in labeled sections — Combat (DMG/DLY/Range/AC), Bane Damage (Bane Damage/Bane vs Body/Bane vs Race, shown only when present), Stats (HP/Mana/STR/STA/AGI/DEX/WIS/INT/CHA), Resists (MR/CR/DR/FR/PR), Effects (Click/Proc/Worn/Focus), Restrictions (Req/Rec level, Slots, Classes, Races), Info (Weight, Size, Stack, Bag info, Price, Item ID)
   - Flags rendered as pill badges: MAGIC, LORE, NO DROP, NO RENT
   - Sections only rendered when they have non-zero values
   - Initial load fetches all items (empty query); debounced at 300ms
+- **Backend `GET /api/items?bane_body=N`** — optional filter; when N > 0 restricts results to items with `banedmgbody = N`; `bane_amt`, `bane_body`, `bane_race` fields exposed on all item responses
 
 ### Task 2.4 — Database Explorer: Spells ✅
 - **`types/spell.ts`** — TypeScript `Spell` type mirroring Go backend struct (timing, duration, effects, class levels)
@@ -111,14 +127,16 @@
   - `castableClassesShort` — compact list of first 4 castable classes for list row subtitles
   - `resistLabel` — maps resist type int to name (Magic, Fire, Cold, Poison, Disease, Chromatic, etc.)
   - `targetLabel` — maps target type int to description (Self, Single, Targeted AE, PB AE, Caster Group, etc.)
-  - `skillLabel` — maps skill ID to school name (Alteration, Abjuration, Conjuration, Divination, Evocation)
+  - `skillLabel` — maps skill ID to school/skill name (Abjuration, Alteration, Conjuration, Divination, Evocation, Discipline, Bard instruments, etc.); corrected ID mapping to match actual spells_new DB values
   - `msLabel` — converts milliseconds to `"2.5s"` / `"Instant"` display strings
-  - `durationLabel` — converts buff_duration ticks + formula to human-readable string (1 tick = 6s); distinguishes fixed vs. level-scaling durations
+  - `durationLabel` / `durationScales` / `ticksToTime` — converts buff_duration ticks + formula to human-readable string (1 tick = 6s); distinguishes fixed vs. level-scaling durations
   - `effectLabel` — maps spell effect IDs to readable names (160+ effects mapped)
+  - `effectDescription(id, base, buffduration)` — human-readable effect descriptions: regen effects show "Increase Mana/HP by N per tick (total T)", stat buffs show "+N STR" etc.; zero-value stat slots filtered out
+  - `zoneTypeLabel` — maps zone_type int to restriction string (Outdoor, Indoor, Outdoor & Underground, City); empty for unrestricted (0)
 - **`pages/SpellsPage.tsx`** — split-pane layout matching Item Explorer:
   - **Left pane (288px)**: debounced search input, result count, scrollable list showing name + castable classes with levels + mana cost; selected spell highlighted with gold left-border accent; blank-name spell IDs filtered out
-  - **Detail panel (right)**: spell data in labeled sections — Casting (mana, cast/recast/recovery time, duration), Targeting (target type, resist type, range, AoE range), Classes (full class names with required level), Effects (effect name + base value for each active slot), Messages (cast_on_you, cast_on_other, spell_fades flavor text), Info (Spell ID)
-  - Flags rendered as pill badges: DISCIPLINE, SUSPENDABLE, NO DISPELL
+  - **Detail panel (right)**: spell data in labeled sections — Casting (skill school, mana, cast/recast/recovery time, duration labeled "Max Duration" for scaling spells), Targeting (target type, resist type, range, AoE range, Zone Type when restricted), Classes (full class names with required level), Effects (human-readable descriptions per slot), Messages (cast_on_you, cast_on_other, spell_fades flavor text), Info (Spell ID)
+  - Flags rendered as pill badges: DISCIPLINE, NO DISPELL
   - Sections only rendered when they have relevant data
 
 ### Task 2.5 — Database Explorer: NPCs ✅
@@ -127,7 +145,7 @@
 - **`lib/npcHelpers.ts`** — EverQuest NPC data decoders:
   - `npcDisplayName(npc)` — combines name + last_name, converting EQEmu underscores to spaces
   - `className(classId)` — maps NPC class IDs 1–16 to full class names (Warrior → Berserker)
-  - `raceName(raceId)` — maps race IDs to names (Human, Barbarian, Iksar, Skeleton, Dragon, etc.)
+  - `raceName(raceId)` — maps race IDs to names (Human, Barbarian, Iksar, Skeleton, Dragon, etc.); display now uses `race_name` resolved via SQL JOIN to `races` table, covering all race IDs (e.g. 202 = Grimling) without a hard-coded lookup (fixes #27)
   - `bodyTypeName(bodyType)` — maps body type codes to labels (Humanoid, Undead, Magical, Invulnerable, etc.)
   - `parseSpecialAbilities(raw)` — parses caret-delimited `code,value^…` string into `{code, value, name}` objects; filters out disabled abilities (value = 0)
 - **`pages/NpcsPage.tsx`** — split-pane layout matching Item/Spell Explorer:
@@ -145,6 +163,15 @@
   - **Left pane (288px)**: debounced search by long name, result count, list showing long name + short name + min level; selected zone highlighted with gold left-border accent
   - **Detail panel (right)**: two sections — Zone Info (Zone ID, min level, safe coordinates, note) and Residents (NPC list loaded on zone selection)
   - **NPC Resident list**: scrollable list showing NPC display name, class, level, and HP; fetched per-zone on demand; shows "Showing X of Y" when truncated; graceful empty-state for zones with no spawn data
+- **Issue #30 — Zone attributes** (`outdoor`, `hotzone`, `can_levitate`, `can_bind`, `exp_mod`, `expansion`):
+  - **Backend `models.go`** — added six fields to `Zone` struct
+  - **Backend `queries.go`** — extended `zoneColumns` and `scanZone` to select `castoutdoor`, `hotzone`, `canlevitate`, `canbind`, `zone_exp_multiplier`, `expansion`
+  - **`types/zone.ts`** — added matching fields to the TypeScript `Zone` interface
+  - **`pages/ZonesPage.tsx`** — new **Quick Facts** section in the detail panel: Expansion name, XP Modifier %, Outdoor, Hotzone, Levitation, and Binding (with human-readable labels)
+- **Issue #31 — Succor Point label** (`pages/ZonesPage.tsx`): renamed "Safe Point" to "Succor Point" and reformatted coordinates to `Y: ..., X: ..., Z: ...` to match EverQuest/YAQDS conventions
+- **Issue #32 — Zone level range** (`models.go`, `queries.go`, `types/zone.ts`, `pages/ZonesPage.tsx`): added `npc_level_min`/`npc_level_max` fields derived via correlated subqueries (spawnentry→npc_types per zone); displayed as "Level Range: 1–66" in the Zone Info section and as "Lv 1–66" in the search list subtitle
+- **Issue #63 — ZEM/XP modifier NaN% fix** (`queries.go`, `pages/ZonesPage.tsx`): added `COALESCE(z.zone_exp_multiplier, 1.0)` to the SQL query so NULL DB values default to 1.0; added NaN/undefined guard in `expModLabel` (returns `—` for non-finite values); replaced raw `Math.round` in the detail-panel header ZEM badge with `expModLabel`; wrapped the search-list ZEM badge with `isFinite()` check
+- **Issue #64 — Hotzone flag field mapping verification** (`queries_test.go`): extended `TestGetZoneByShortName` with explicit assertions on `Hotzone`, `Outdoor`, and `ExpMod` fields to guard against scanZone column misalignment; verified the hotzone integer (0/1) round-trips correctly from SQLite through the Go API to the `zone.hotzone ? 'Yes' : 'No'` display in the detail panel
 
 ### Task 2.7 — Global Search ✅
 - **`GET /api/search?q=&limit=`** — new backend endpoint; runs all four searches (items, spells, NPCs, zones) in parallel via goroutines and returns a single grouped response (`internal/api/search.go`)
@@ -155,7 +182,7 @@
   - Keyboard navigation: `↑`/`↓` to move, `↵` to open, `Esc` to close; click outside to dismiss
   - Navigates to the correct explorer page (`/items`, `/spells`, `/npcs`, `/zones`) with `?select=ID` query param
 - **Sidebar search hint** (`components/Sidebar.tsx`): `⌘K` shortcut pill shown above the nav links for discoverability
-- **Pre-select via URL** (`?select=ID`): all four explorer pages now read the `select` query param on mount, fetch the record by ID, and pre-populate the detail panel; param is cleared from the URL after selection
+- **Pre-select via URL** (`?select=ID`): all four explorer pages read the `select` query param and fetch the record by ID; the `useEffect` depends on `searchParams` so it re-runs whenever the URL param changes — this ensures global search results are correctly selected even when the user is already on the target page (e.g. clicking a spell scroll from the Items page while already browsing items); param is cleared from the URL after selection (closes #5)
 
 ## Phase 3 — Zeal Integration & Backup Manager
 
@@ -188,7 +215,7 @@
   - **Stats bar**: shows `X / Y known` when spellbook is loaded, or `Y spells` when no export is available
   - **Spellbook status banner**: green checkmark + character name + export timestamp when Zeal spellbook is loaded; amber warning with link to Settings when no export is found
   - **Spell list**: flat scrollable list ordered by class level (ascending); each row shows — known indicator (filled circle in gold vs. empty circle in gray), spell name (clickable), level badge, mana cost
-  - Clicking any row navigates to `/spells?select={id}` to open that spell in the Spell Explorer detail panel
+  - Clicking any row opens an inline modal popup with full spell details (casting, targeting, classes, effects, messages); modal has an "Explorer" button to navigate to `/spells?select={id}` and a close button; backdrop click also closes the modal
   - Loading and error states with retry button
   - Empty states per filter ("All spells known!", "No known spells", "No spells for this class")
 - **Sidebar** (`components/Sidebar.tsx`) — "Spell Checklist" added to the Zeal nav section with `BookOpen` icon
@@ -210,16 +237,16 @@
 - **Sidebar**: "Inventory" entry renamed to "Inventory Tracker" pointing at `/inventory-tracker`; old `/inventory` route kept but removed from sidebar
 
 ### Task 3.4 — Key Tracker ✅
-- **`internal/keys/keys.go`** — static key definitions (no DB needed). Each `KeyDef` has an ID, name, description, and ordered `[]Component{ItemID, ItemName, Notes}`. Item IDs are canonical; names are for display only. Ships with 6 keys: Veeshan's Peak, Old Sebilis, Howling Stones (Charasis), Grieg's End, Grimling Forest Shackle Pens, and Katta Castellum.
-- **`GET /api/keys`** — returns all key definitions as `{"keys": [...]}`.
-- **`GET /api/keys/progress`** — cross-references all character inventories (via `AllInventories`) against each key's component item IDs. Response: `{configured, keys[{key_id, characters[{character, has_export, components[{item_id, item_name, have, shared_bank}]}]}]}`. `have` is true if the item is in that character's equipped/bag/bank slots. `shared_bank` is true when the only copy is in the Shared Bank (available to all characters, deduplicated).
-- **`types/keys.ts`** — TypeScript types mirroring all Go response structs.
-- **`services/api.ts`** — added `getKeys()` and `getKeysProgress()` typed fetch wrappers.
+- **`internal/keys/keys.go`** — static key definitions (no DB needed). Each `KeyDef` has an ID, name, description, ordered `[]Component{ItemID, ItemName, Notes}`, and an optional `FinalItem *Component` representing the assembled key. Item IDs are canonical; names are for display only. Ships with the following keys: Veeshan's Peak, Sleeper's Tomb, Old Sebilis, Howling Stones (Charasis), Grieg's End, Grimling Forest Shackle Pens, Katta Castellum, Arx Seru, Temple of Ssraeshza (Ring of the Shissar — 4 components, FinalItem `Ring of the Shissar` 19719), and Vex Thal (Scepter of Shadows — 13 components incl. all 10 Lucid Shards, Shadowed Scepter Frame, A Planes Rift, A Glowing Orb of Luclinite; FinalItem `The Scepter of Shadows` 22198).
+- **`GET /api/keys`** — returns all key definitions as `{"keys": [...]}`. Each key may include a `final_item` field.
+- **`GET /api/keys/progress`** — cross-references all character inventories (via `AllInventories`) against each key's component item IDs. Response: `{configured, keys[{key_id, characters[{character, has_export, components[{item_id, item_name, have, shared_bank}], final_item?{item_id, item_name, have, shared_bank}}]}]}`. `have` is true if the item is in that character's equipped/bag/bank slots. `shared_bank` is true when the only copy is in the Shared Bank (available to all characters, deduplicated). `final_item` is populated only when the key defines an assembled-key item, and a character holding it is treated as fully keyed.
+- **`types/keys.ts`** — TypeScript types mirroring all Go response structs (`KeyDef.final_item?`, `CharacterKeyProgress.final_item?`).
+- **`services/api.ts`** — `getKeys()` and `getKeysProgress()` typed fetch wrappers.
 - **`pages/KeyTrackerPage.tsx`** — Key Tracker page at `/key-tracker`:
   - **Header bar**: Key Tracker title and Refresh button.
-  - **Filter tabs**: All / In Progress / Complete — filters the key card list by aggregate progress across all characters.
+  - **Filter tabs**: All / In Progress / Complete — filters the key card list by aggregate progress across all characters. Holding the `final_item` short-circuits the per-component count and counts as "complete".
   - **Key cards**: expandable accordion cards; collapsed state shows key name and a progress bar (`X / Y components` aggregated across all characters). Complete keys render with a green border.
-  - **Component table** (expanded): rows = components, columns = one per character with a Zeal export. Each cell shows a green checkmark (character has the item), `SB` gold badge (only in shared bank), or an empty circle (missing). Component notes shown as muted subtitle text.
+  - **Component table** (expanded): when the key defines a `final_item`, an "Assembled Key" header row is rendered above the component rows with distinct styling and a green badge. Component rows show a green checkmark (character has the item), `SB` gold badge (only in shared bank), faded checkmark (covered transitively by the assembled key in this character's inventory), or empty circle (missing). Component notes shown as muted subtitle text.
   - Empty states for each filter tab; not-configured state with link to Settings; no-exports state per key.
 - **Sidebar**: "Key Tracker" added to the Zeal nav section with `KeyRound` icon.
 
@@ -313,12 +340,16 @@
 - Target is also set immediately on a `log:considered` event (EQ `/con` output) so the overlay updates before combat begins
 - Target is cleared on zone change (`log:zone`), player death (`log:death`), or when a `log:kill` event names the currently-tracked target as the slain mob
 - Duplicate target updates (same name) are skipped to avoid redundant DB lookups
+- Zone-name guard: if a proposed target name exactly matches the current zone name it is rejected, preventing false-positive target updates from any misidentified zone-entry line (closes #71)
+- Nil-DB guard added to `lookupNPC` so the tracker is usable without a live database (NPC data returns nil gracefully)
 
 **`/con` Target Detection**
 - New `EventConsidered` (`log:considered`) event type added to the log parser
 - New `ConsideredData` struct carries the target name extracted from the disposition message
 - Regex `reConsider` matches all classic EQ consider phrases: "scowls at you", "glares at you", "looks your way", "looks upon you", "judges you", "regards you", "warmly/kindly regards you", "considers you"
 - Multi-word NPC names (e.g. "a grimling cadaverist") are correctly captured via non-greedy group before the disposition phrase
+- Parser guard: after `reConsider` matches, names starting with "You" are rejected (NPC names never start with "You"; this prevents any player-action line from being misclassified as a consider event)
+- Six behavioural unit tests added (`internal/overlay/npc_test.go`) covering: zone clear, zone-name guard, consider sets target, kill clears matching target, kill preserves unrelated target, death clears target
 
 **NPC Database Lookup**
 - When the target name changes, the tracker converts the log display name (spaces) to the EQ database format (underscores) and calls the new `db.GetNPCByName` query
@@ -519,28 +550,35 @@ Subsequent release builds download it automatically from that release.
 ### Task 6.2 — Auto-Updater ✅
 - **`electron/main/index.ts`** — `setupAutoUpdater()` wires `electron-updater` into the main process:
   - Skipped in dev mode (`!app.isPackaged`)
-  - `autoDownload: true`, `autoInstallOnAppQuit: true`
+  - `autoDownload: false` — download only triggers when user clicks Update; `autoInstallOnAppQuit: true` as fallback
   - Checks for updates 5 s after launch (gives sidecar + window time to initialise)
   - Events forwarded to the renderer via `mainWindow.webContents.send`:
-    - `updater:available` → `{ version }` — new version detected, download started
+    - `updater:available` → `{ version }` — new version detected, awaiting user action
     - `updater:progress` → `{ percent, transferred, total }` — download progress
     - `updater:downloaded` → `{ version }` — ready to install
     - `updater:error` → error message string
-  - IPC handlers: `updater:check` (manual recheck), `updater:quit-and-install`
+  - IPC handlers: `updater:check` (manual recheck), `updater:download` (trigger download), `updater:quit-and-install` (silent install with `isSilent=true, isForceRunAfter=true` — no UAC/path dialog, restarts to the same directory automatically)
 - **`electron/preload/index.ts`** — `updater` namespace exposed via `contextBridge`:
-  - `check()`, `quitAndInstall()` — invoke IPC handlers
+  - `check()`, `download()`, `quitAndInstall()` — invoke IPC handlers
   - `onAvailable(cb)`, `onProgress(cb)`, `onDownloaded(cb)`, `onError(cb)` — subscribe to update events; each returns an unsubscribe function for `useEffect` cleanup
-- **`frontend/src/types/electron.d.ts`** — `updater` added to `ElectronAPI` interface
-- **`frontend/src/components/UpdateNotification.tsx`** — bottom-of-app banner with four states:
-  - `available` — "Update vX.Y.Z available — downloading in the background…" (dismissible)
-  - `downloading` — gold progress bar with percentage
-  - `downloaded` — "vX.Y.Z ready — restart to install" + **Restart** button
-  - `error` — silent fallback message (dismissible); does not interrupt the user
+- **`frontend/src/types/electron.d.ts`** — `updater` added to `ElectronAPI` interface; includes `download()`
+- **`frontend/src/components/UpdateNotification.tsx`** — bottom-of-app banner with six states:
+  - `available` — "Update vX.Y.Z available" + **Update** button (user-initiated download)
+  - `downloading` — gold progress bar with percentage (no user action needed)
+  - `downloaded` — "Restarting in Ns" countdown (5 s) then auto-calls `quitAndInstall(true, true)` for silent install; **Restart now** button skips countdown
+  - `installing` — "Installing — restarting…" with spinner (briefly shown before app exits)
+  - `error` — error message + **Retry** button (re-triggers `check()`), dismissible
 - **`frontend/src/components/Layout.tsx`** — `<UpdateNotification />` added below `<GlobalSearch />`
 - **`.github/workflows/release.yml`** — updated for auto-updater:
   - Both `build-windows` and `build-macos` jobs changed to `--publish always`; `GH_TOKEN` is passed so `electron-builder` uploads the installer + update manifest (`latest.yml` / `latest-mac.yml`) directly to the GitHub release
   - `release` job simplified: promotes the draft release (`gh release edit --draft=false`) after both builds succeed
   - `latest.yml` and `latest-mac.yml` are now part of every release; `electron-updater` reads these to detect new versions
+
+### Task 6.3 — Windows Code Signing ✅
+- **`electron-builder.yml`** — added `signingHashAlgorithms: ['sha256']` to the `win` section; added comments documenting the two required secrets (`WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`) and graceful unsigned fallback
+- **`.github/workflows/release.yml`** — `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` secrets are now forwarded to the `electron-builder` packaging step; when both secrets are present, the installer and its NSIS stub are SHA-256 signed, suppressing Windows SmartScreen warnings; when absent the build succeeds unsigned (no CI failure)
+- Electron Forge migration evaluated and rejected — `electron-builder` already supports Windows signing natively via env vars; no toolchain change needed
+- To activate signing: export your PFX as base64 (`openssl base64 -in cert.pfx | tr -d '\n'`) and add `WIN_CSC_LINK` + `WIN_CSC_KEY_PASSWORD` as GitHub repository secrets under Settings → Secrets → Actions
 
 ## Phase 7 — Spell Timer Engine
 
@@ -803,6 +841,30 @@ Two separate overlay windows are provided from the start — one for beneficial 
 
 **`frontend/src/types/electron.d.ts`**
 - Added `app: { getVersion: () => Promise<string> }` to `ElectronAPI`
+
+### Issue #72 — Auto-detect active character from log file activity ✅
+
+**`backend/internal/logparser/tailer.go`**
+- Added `onCharacterChange func(string)` field to `Tailer` — called when the auto-detected active character changes
+- Added `detectedCharacter string` field to track the last auto-detected character name (empty when character is set manually in config)
+- Updated `NewTailer` to accept an `onCharacterChange` callback parameter
+- In `tick()`, when `config.Character` is blank, the resolved character is compared against `detectedCharacter`; if it changed the callback fires and `detectedCharacter` is updated; when a manual character override is set `detectedCharacter` is cleared
+
+**`backend/cmd/server/main.go`**
+- Passes an `onCharacterChange` callback to `NewTailer` that logs the detection and broadcasts a `config:character_detected` WebSocket event with `{character: "<name>"}` payload
+
+**`frontend/src/pages/SettingsPage.tsx`**
+- Subscribes to `config:character_detected` WebSocket events via `useWebSocket`
+- When the character field is blank and a character is detected, shows a muted banner below the input: "Auto-detected: **Firiona**" with a **Use This** button that copies the name into the character field
+- Banner dismisses automatically when the character field is manually filled
+
+### Issue #70 — Spell/Caster DPS Not Tracked ✅
+
+**`backend/internal/logparser/parser.go`**
+- Added `reTargetHitNonMelee` regex — matches `"<target> was hit by non-melee for <N> points of damage."` (the passive form EQ logs when the player's own spell damages a target); emits `EventCombatHit` with `Actor: "You"`, `Skill: "spell"`, and the target/damage extracted from the match
+- Added `reNonMeleeHit` regex — matches `"<Actor> hit <Target> for <N> points of non-melee damage."` (the active form used for other players' and NPCs' spell damage, including multi-word actor names like `"A Shissar Arch Arcanist"`); emits `EventCombatHit` with `Skill: "spell"`
+- Both patterns inserted in `classifyMessage` before `reNPCHitYou` and `reThirdPartyHit` so they take priority over melee patterns; non-melee hits now flow through the existing combat tracker logic and appear in DPS totals
+- **`parser_test.go`** — 5 new table-driven test cases: passive player spell hit (single-word target), passive player spell hit (multi-word target), third-party caster hit, multi-word NPC spell hit (A Shissar Arch Arcanist), and NPC self-damage via spell
 
 ## Phase 9 — Audio Alerts
 

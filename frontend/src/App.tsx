@@ -19,6 +19,7 @@ import NPCOverlayPage from './pages/NPCOverlayPage'
 import DPSOverlayPage from './pages/DPSOverlayPage'
 import DPSOverlayWindowPage from './pages/DPSOverlayWindowPage'
 import HPSOverlayWindowPage from './pages/HPSOverlayWindowPage'
+import { DEV_HPS } from './lib/devFlags'
 import BuffTimerWindowPage from './pages/BuffTimerWindowPage'
 import DetrimTimerWindowPage from './pages/DetrimTimerWindowPage'
 import SpellTimerPage from './pages/SpellTimerPage'
@@ -45,7 +46,7 @@ export default function App(): React.ReactElement {
       <Routes>
         {/* Standalone overlay windows — no sidebar/titlebar Layout */}
         <Route path="dps-overlay-window" element={<OverlayPage><DPSOverlayWindowPage /></OverlayPage>} />
-        <Route path="hps-overlay-window" element={<OverlayPage><HPSOverlayWindowPage /></OverlayPage>} />
+        {DEV_HPS && <Route path="hps-overlay-window" element={<OverlayPage><HPSOverlayWindowPage /></OverlayPage>} />}
         <Route path="buff-timer-window" element={<OverlayPage><BuffTimerWindowPage /></OverlayPage>} />
         <Route path="detrim-timer-window" element={<OverlayPage><DetrimTimerWindowPage /></OverlayPage>} />
         <Route path="trigger-overlay-window" element={<OverlayPage><TriggerOverlayWindowPage /></OverlayPage>} />

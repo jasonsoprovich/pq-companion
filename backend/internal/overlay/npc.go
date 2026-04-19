@@ -133,8 +133,15 @@ func (t *NPCTracker) setTarget(displayName string) {
 	// Avoid redundant DB lookups when the same target is already tracked.
 	t.mu.RLock()
 	same := t.st.HasTarget && t.st.TargetName == displayName
+	zone := t.st.CurrentZone
 	t.mu.RUnlock()
 	if same {
+		return
+	}
+	// Guard: reject names that exactly match the current zone name.  Zone
+	// entry lines should never produce a target update, but this provides a
+	// belt-and-suspenders defence against any false-positive from the parser.
+	if zone != "" && displayName == zone {
 		return
 	}
 
@@ -175,6 +182,9 @@ func (t *NPCTracker) clearTarget() {
 // lookupNPC converts the log display name (spaces) to the DB name format
 // (underscores) and queries the database.
 func (t *NPCTracker) lookupNPC(displayName string) (*db.NPC, []db.SpecialAbility) {
+	if t.db == nil {
+		return nil, nil
+	}
 	dbName := strings.ReplaceAll(displayName, " ", "_")
 	npc, err := t.db.GetNPCByName(dbName)
 	if err != nil {

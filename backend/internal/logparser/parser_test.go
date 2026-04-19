@@ -177,6 +177,43 @@ func TestParseLine(t *testing.T) {
 			wantData: CombatHitData{Actor: "You", Skill: "pierce", Target: "a young gnoll", Damage: 45},
 		},
 
+		// --- Combat: non-melee / spell damage ---
+		{
+			name:     "combat: player spell hits target (passive non-melee)",
+			line:     "[Mon Apr 13 06:00:00 2026] a giant wasp drone was hit by non-melee for 4 points of damage.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "You", Skill: "spell", Target: "a giant wasp drone", Damage: 4},
+		},
+		{
+			name:     "combat: player spell hits multi-word target (passive non-melee)",
+			line:     "[Mon Apr 13 06:00:00 2026] a greater gnoll shaman was hit by non-melee for 150 points of damage.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "You", Skill: "spell", Target: "a greater gnoll shaman", Damage: 150},
+		},
+		{
+			name:     "combat: other player's spell hits NPC (active non-melee)",
+			line:     "[Mon Apr 13 06:00:00 2026] Takkisina hit a temple skirmisher for 18 points of non-melee damage.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "Takkisina", Skill: "spell", Target: "a temple skirmisher", Damage: 18},
+		},
+		{
+			name:     "combat: multi-word NPC spell hits player (active non-melee)",
+			line:     "[Mon Apr 13 06:00:00 2026] A Shissar Arch Arcanist hit Takkisina for 640 points of non-melee damage.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "A Shissar Arch Arcanist", Skill: "spell", Target: "Takkisina", Damage: 640},
+		},
+		{
+			name:     "combat: NPC self-damage via spell (active non-melee)",
+			line:     "[Mon Apr 13 06:00:00 2026] Gormak hit Gormak for 50 points of non-melee damage.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "Gormak", Skill: "spell", Target: "Gormak", Damage: 50},
+		},
+
 		// --- Combat: NPC hits player ---
 		{
 			name:     "combat: NPC hits you",
@@ -347,6 +384,16 @@ func TestParseLine(t *testing.T) {
 			wantOK:   true,
 			wantType: EventConsidered,
 			wantData: ConsideredData{TargetName: "a lizardman"},
+		},
+
+		// --- /con false-positive guard ---
+		// Lines starting with "You " must never be classified as EventConsidered.
+		// Zone-entry lines reach reZone first, but the regex guard provides
+		// belt-and-suspenders protection for any unclassified "You …" lines.
+		{
+			name:   "con: 'You' prefix line is not parsed as a consider event",
+			line:   "[Mon Apr 13 06:00:00 2026] You considers you amiably.",
+			wantOK: false,
 		},
 
 		// --- Unrecognised messages ---

@@ -10,9 +10,15 @@ type Filter = 'all' | 'in_progress' | 'complete'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+function hasFinalKey(chars: CharacterKeyProgress[]): boolean {
+  return chars.some((c) => c.final_item && (c.final_item.have || c.final_item.shared_bank))
+}
+
 /** Returns the number of components obtained (own + shared bank) across all characters for one key. */
 function countHave(chars: CharacterKeyProgress[], componentCount: number): number {
   if (chars.length === 0 || componentCount === 0) return 0
+  // Holding the assembled final key short-circuits component tracking.
+  if (hasFinalKey(chars)) return componentCount
   // For each component index, count it if ANY character has it (or it's in shared bank).
   let have = 0
   for (let i = 0; i < componentCount; i++) {
@@ -26,10 +32,12 @@ function countHave(chars: CharacterKeyProgress[], componentCount: number): numbe
 }
 
 function keyIsComplete(chars: CharacterKeyProgress[], componentCount: number): boolean {
+  if (hasFinalKey(chars)) return true
   return componentCount > 0 && countHave(chars, componentCount) === componentCount
 }
 
 function keyIsInProgress(chars: CharacterKeyProgress[], componentCount: number): boolean {
+  if (hasFinalKey(chars)) return false
   const h = countHave(chars, componentCount)
   return h > 0 && h < componentCount
 }
@@ -156,6 +164,76 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
                   </tr>
                 </thead>
                 <tbody>
+                  {/* Assembled key row (rendered above components, highlighted) */}
+                  {keyDef.final_item && (
+                    <tr
+                      style={{
+                        borderBottom: '1px solid var(--color-border)',
+                        backgroundColor: 'var(--color-surface-2)',
+                      }}
+                    >
+                      <td className="px-4 py-2">
+                        <div className="flex flex-col gap-0.5">
+                          <span
+                            className="font-semibold"
+                            style={{ color: 'var(--color-success)' }}
+                          >
+                            {keyDef.final_item.item_name}{' '}
+                            <span
+                              className="ml-1 text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider"
+                              style={{
+                                backgroundColor: 'var(--color-success)',
+                                color: 'var(--color-surface)',
+                              }}
+                            >
+                              Assembled Key
+                            </span>
+                          </span>
+                          {keyDef.final_item.notes && (
+                            <span style={{ color: 'var(--color-muted)' }} className="text-[10px]">
+                              {keyDef.final_item.notes}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      {hasExportChars.map((charProg) => {
+                        const fi = charProg.final_item
+                        return (
+                          <td key={charProg.character} className="px-3 py-2 text-center">
+                            {fi?.have ? (
+                              <span title="Keyed">
+                                <CheckCircle2
+                                  size={14}
+                                  className="inline-block"
+                                  style={{ color: 'var(--color-success)' }}
+                                />
+                              </span>
+                            ) : fi?.shared_bank ? (
+                              <span
+                                className="inline-block text-[9px] px-1.5 py-0.5 rounded font-medium"
+                                style={{
+                                  backgroundColor: 'var(--color-surface-2)',
+                                  color: 'var(--color-primary)',
+                                  border: '1px solid var(--color-border)',
+                                }}
+                                title="In Shared Bank"
+                              >
+                                SB
+                              </span>
+                            ) : (
+                              <span title="Not assembled">
+                                <Circle
+                                  size={14}
+                                  className="inline-block"
+                                  style={{ color: 'var(--color-muted)' }}
+                                />
+                              </span>
+                            )}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )}
                   {keyDef.components.map((comp, ci) => (
                     <tr
                       key={comp.item_id}
@@ -175,6 +253,7 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
                       {/* Per-character status */}
                       {hasExportChars.map((charProg) => {
                         const cs = charProg.components[ci]
+                        const keyedViaFinal = !!(charProg.final_item && (charProg.final_item.have || charProg.final_item.shared_bank))
                         return (
                           <td key={charProg.character} className="px-3 py-2 text-center">
                             {cs.have ? (
@@ -196,6 +275,14 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
                                 title="In Shared Bank"
                               >
                                 SB
+                              </span>
+                            ) : keyedViaFinal ? (
+                              <span title="Covered by assembled key">
+                                <CheckCircle2
+                                  size={14}
+                                  className="inline-block opacity-40"
+                                  style={{ color: 'var(--color-success)' }}
+                                />
                               </span>
                             ) : (
                               <span title="Missing">

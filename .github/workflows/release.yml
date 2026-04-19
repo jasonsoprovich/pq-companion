@@ -88,11 +88,24 @@ jobs:
         run: npm run build
 
       # Publish uploads the installer + latest.yml to the GitHub release.
-      # The release starts as a draft (releaseType: draft in electron-builder.yml).
+      # Code signing: electron-builder automatically signs when WIN_CSC_LINK and
+      # WIN_CSC_KEY_PASSWORD are set as repository secrets (base64-encoded PFX).
+      # Unsigned builds still work — SmartScreen will warn until a cert is added.
+      - name: Mask signing secrets
+        shell: bash
+        env:
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if [ -n "$WIN_CSC_KEY_PASSWORD" ]; then
+            echo "::add-mask::$WIN_CSC_KEY_PASSWORD"
+          fi
+
       - name: Package and publish Windows installer (NSIS)
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: npx electron-builder --win --publish always
 
   # ── Promote draft release ─────────────────────────────────────────────────────

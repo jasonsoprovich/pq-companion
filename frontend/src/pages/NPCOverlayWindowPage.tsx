@@ -3,7 +3,7 @@ import { Crosshair, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { getOverlayNPCTarget } from '../services/api'
-import { className, raceName, bodyTypeName } from '../lib/npcHelpers'
+import { className, bodyTypeName } from '../lib/npcHelpers'
 import type { TargetState, SpecialAbility } from '../types/overlay'
 
 // ── Ability badge colours ──────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ function NPCContent({ state }: { state: TargetState }): React.ReactElement {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               <Stat label="Level" value={npc.level} color="#c9a84c" />
               <Stat label="Class" value={className(npc.class)} />
-              <Stat label="Race" value={raceName(npc.race)} />
+              <Stat label="Race" value={npc.race_name} />
               <Stat label="Body" value={bodyTypeName(npc.body_type)} />
             </div>
           </div>

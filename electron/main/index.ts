@@ -65,7 +65,7 @@ function stopSidecar(): void {
 function setupAutoUpdater(): void {
   if (isDev) return // not applicable outside a packaged build
 
-  autoUpdater.autoDownload = true
+  autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
 
   autoUpdater.on('checking-for-update', () => {
@@ -105,6 +105,12 @@ function setupAutoUpdater(): void {
 
 // ── Window management ─────────────────────────────────────────────────────────
 
+function closeAllOverlays(): void {
+  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, triggerOverlayWindow, npcOverlayWindow]) {
+    if (win && !win.isDestroyed()) win.destroy()
+  }
+}
+
 function createMainWindow(): void {
   nativeTheme.themeSource = 'dark'
 
@@ -143,6 +149,7 @@ function createMainWindow(): void {
   })
 
   mainWindow.on('closed', () => {
+    closeAllOverlays()
     mainWindow = null
   })
 }
@@ -559,8 +566,12 @@ ipcMain.handle('updater:check', () => {
   if (!isDev) autoUpdater.checkForUpdates()
 })
 
+ipcMain.handle('updater:download', () => {
+  if (!isDev) autoUpdater.downloadUpdate()
+})
+
 ipcMain.handle('updater:quit-and-install', () => {
-  autoUpdater.quitAndInstall()
+  autoUpdater.quitAndInstall(true, true)
 })
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────

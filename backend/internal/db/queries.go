@@ -11,6 +11,7 @@ import (
 const itemColumns = `
   i.id, i.Name, i.lore, i.idfile, i.itemclass, i.itemtype,
   i.damage, i.delay, i.range, i.ac,
+  i.banedmgamt, i.banedmgbody, i.banedmgrace,
   i.hp, i.mana, i.astr, i.asta, i.aagi, i.adex, i.awis, i.aint, i.acha,
   i.mr, i.cr, i.dr, i.fr, i.pr,
   i.magic, i.nodrop, i.norent,
@@ -29,6 +30,7 @@ func scanItem(row interface {
 	err := row.Scan(
 		&it.ID, &it.Name, &it.Lore, &it.IDFile, &it.ItemClass, &it.ItemType,
 		&it.Damage, &it.Delay, &it.Range, &it.AC,
+		&it.BaneAmt, &it.BaneBody, &it.BaneRace,
 		&it.HP, &it.Mana, &it.Strength, &it.Stamina, &it.Agility, &it.Dexterity,
 		&it.Wisdom, &it.Intelligence, &it.Charisma,
 		&it.MagicResist, &it.ColdResist, &it.DiseaseResist, &it.FireResist, &it.PoisonResist,
@@ -59,23 +61,31 @@ func (db *DB) GetItem(id int) (*Item, error) {
 }
 
 // SearchItems searches items by name (case-insensitive prefix/substring match).
+// When baneBody > 0, only items with that bane damage body type are returned.
 // Returns a page of results and the total count of matching rows.
-func (db *DB) SearchItems(query string, limit, offset int) (*SearchResult[Item], error) {
+func (db *DB) SearchItems(query string, baneBody, limit, offset int) (*SearchResult[Item], error) {
 	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
+
+	where := "Name LIKE ? ESCAPE '\\'"
+	args := []any{pattern}
+	if baneBody > 0 {
+		where += " AND banedmgbody = ?"
+		args = append(args, baneBody)
+	}
 
 	var total int
 	if err := db.QueryRow(
-		"SELECT COUNT(*) FROM items WHERE Name LIKE ? ESCAPE '\\'",
-		pattern,
+		fmt.Sprintf("SELECT COUNT(*) FROM items WHERE %s", where),
+		args...,
 	).Scan(&total); err != nil {
 		return nil, fmt.Errorf("count items: %w", err)
 	}
 
 	q := fmt.Sprintf(
-		"SELECT %s FROM items i WHERE i.Name LIKE ? ESCAPE '\\' ORDER BY i.Name LIMIT ? OFFSET ?",
-		itemColumns,
+		"SELECT %s FROM items i WHERE i.%s ORDER BY i.Name LIMIT ? OFFSET ?",
+		itemColumns, where,
 	)
-	rows, err := db.Query(q, pattern, limit, offset)
+	rows, err := db.Query(q, append(args, limit, offset)...)
 	if err != nil {
 		return nil, fmt.Errorf("search items: %w", err)
 	}
@@ -103,7 +113,7 @@ func collectItems(rows *sql.Rows) ([]Item, error) {
 // ─── NPCs ─────────────────────────────────────────────────────────────────────
 
 const npcColumns = `
-  n.id, n.name, COALESCE(n.lastname, ''), n.level, n.race, n.class, n.bodytype,
+  n.id, n.name, COALESCE(n.lastname, ''), n.level, n.race, COALESCE(r.name, 'Race ' || n.race), n.class, n.bodytype,
   n.hp, n.mana, n.mindmg, n.maxdmg, n.attack_count,
   n.MR, n.CR, n.DR, n.FR, n.PR, n.AC,
   n.STR, n.STA, n.DEX, n.AGI, n."_INT", n.WIS, n.CHA,
@@ -113,12 +123,14 @@ const npcColumns = `
   COALESCE(n.special_abilities, ''),
   n.spellscale, n.healscale, n.exp_pct`
 
+const npcJoin = `LEFT JOIN races r ON r.id = n.race`
+
 func scanNPC(row interface {
 	Scan(...any) error
 }) (*NPC, error) {
 	var n NPC
 	err := row.Scan(
-		&n.ID, &n.Name, &n.LastName, &n.Level, &n.Race, &n.Class, &n.BodyType,
+		&n.ID, &n.Name, &n.LastName, &n.Level, &n.Race, &n.RaceName, &n.Class, &n.BodyType,
 		&n.HP, &n.Mana, &n.MinDmg, &n.MaxDmg, &n.AttackCount,
 		&n.MR, &n.CR, &n.DR, &n.FR, &n.PR, &n.AC,
 		&n.STR, &n.STA, &n.DEX, &n.AGI, &n.INT, &n.WIS, &n.CHA,
@@ -136,7 +148,7 @@ func scanNPC(row interface {
 
 // GetNPC returns the NPC with the given ID, or sql.ErrNoRows if not found.
 func (db *DB) GetNPC(id int) (*NPC, error) {
-	q := fmt.Sprintf("SELECT %s FROM npc_types n WHERE n.id = ?", npcColumns)
+	q := fmt.Sprintf("SELECT %s FROM npc_types n %s WHERE n.id = ?", npcColumns, npcJoin)
 	row := db.QueryRow(q, id)
 	n, err := scanNPC(row)
 	if err != nil {
@@ -151,8 +163,8 @@ func (db *DB) GetNPC(id int) (*NPC, error) {
 // Returns sql.ErrNoRows (wrapped) when no match is found.
 func (db *DB) GetNPCByName(name string) (*NPC, error) {
 	q := fmt.Sprintf(
-		"SELECT %s FROM npc_types n WHERE n.name = ? COLLATE NOCASE LIMIT 1",
-		npcColumns,
+		"SELECT %s FROM npc_types n %s WHERE n.name = ? COLLATE NOCASE LIMIT 1",
+		npcColumns, npcJoin,
 	)
 	row := db.QueryRow(q, name)
 	n, err := scanNPC(row)
@@ -175,8 +187,8 @@ func (db *DB) SearchNPCs(query string, limit, offset int) (*SearchResult[NPC], e
 	}
 
 	q := fmt.Sprintf(
-		"SELECT %s FROM npc_types n WHERE n.name LIKE ? ESCAPE '\\' ORDER BY n.name LIMIT ? OFFSET ?",
-		npcColumns,
+		"SELECT %s FROM npc_types n %s WHERE n.name LIKE ? ESCAPE '\\' ORDER BY n.name LIMIT ? OFFSET ?",
+		npcColumns, npcJoin,
 	)
 	rows, err := db.Query(q, pattern, limit, offset)
 	if err != nil {
@@ -229,7 +241,8 @@ const spellColumns = `
   s.classes1,  s.classes2,  s.classes3,  s.classes4,  s.classes5,
   s.classes6,  s.classes7,  s.classes8,  s.classes9,  s.classes10,
   s.classes11, s.classes12, s.classes13, s.classes14, s.classes15,
-  s.icon, s.new_icon, s.IsDiscipline, s.suspendable, s.nodispell`
+  s.icon, s.new_icon, s.IsDiscipline, s.suspendable, s.nodispell,
+  COALESCE(s.zonetype, 0)`
 
 func scanSpell(row interface {
 	Scan(...any) error
@@ -262,6 +275,7 @@ func scanSpell(row interface {
 		&sp.ClassLevels[9], &sp.ClassLevels[10], &sp.ClassLevels[11],
 		&sp.ClassLevels[12], &sp.ClassLevels[13], &sp.ClassLevels[14],
 		&sp.Icon, &sp.NewIcon, &sp.IsDiscipline, &sp.Suspendable, &sp.NoDispell,
+		&sp.ZoneType,
 	)
 	if err != nil {
 		return nil, err
@@ -375,7 +389,11 @@ func (db *DB) GetSpellsByClass(classIndex, limit, offset int) (*SearchResult[Spe
 const zoneColumns = `
   z.id, COALESCE(z.short_name,''), z.long_name, COALESCE(z.file_name,''),
   z.zoneidnumber, z.safe_x, z.safe_y, z.safe_z,
-  z.min_level, COALESCE(z.note,'')`
+  z.min_level, COALESCE(z.note,''),
+  z.castoutdoor, z.hotzone, z.canlevitate, z.canbind,
+  COALESCE(z.zone_exp_multiplier, 1.0), z.expansion,
+  COALESCE((SELECT MIN(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name), 0),
+  COALESCE((SELECT MAX(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name), 0)`
 
 func scanZone(row interface {
 	Scan(...any) error
@@ -385,6 +403,9 @@ func scanZone(row interface {
 		&z.ID, &z.ShortName, &z.LongName, &z.FileName,
 		&z.ZoneIDNumber, &z.SafeX, &z.SafeY, &z.SafeZ,
 		&z.MinLevel, &z.Note,
+		&z.Outdoor, &z.Hotzone, &z.CanLevitate, &z.CanBind,
+		&z.ExpMod, &z.Expansion,
+		&z.NPCLevelMin, &z.NPCLevelMax,
 	)
 	if err != nil {
 		return nil, err
@@ -418,8 +439,8 @@ func (db *DB) GetNPCsByZone(shortName string, limit, offset int) (*SearchResult[
 	}
 
 	q := fmt.Sprintf(
-		"SELECT %s FROM npc_types n WHERE n.id IN (%s) ORDER BY n.name LIMIT ? OFFSET ?",
-		npcColumns, idSubquery,
+		"SELECT %s FROM npc_types n %s WHERE n.id IN (%s) ORDER BY n.name LIMIT ? OFFSET ?",
+		npcColumns, npcJoin, idSubquery,
 	)
 	rows, err := db.Query(q, shortName, shortName, limit, offset)
 	if err != nil {

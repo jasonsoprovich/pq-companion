@@ -59,4 +59,13 @@ export interface LogTailerStatus {
   file_exists: boolean
   tailing: boolean
   offset: number
+  size_bytes: number
+  large_file: boolean
+}
+
+export interface LogFileInfo {
+  size_bytes: number
+  oldest_entry: string
+  newest_entry: string
+  large_file: boolean
 }

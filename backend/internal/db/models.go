@@ -11,10 +11,13 @@ type Item struct {
 	ItemType  int    `json:"item_type"`
 
 	// Combat
-	Damage int `json:"damage"`
-	Delay  int `json:"delay"`
-	Range  int `json:"range"`
-	AC     int `json:"ac"`
+	Damage  int `json:"damage"`
+	Delay   int `json:"delay"`
+	Range   int `json:"range"`
+	AC      int `json:"ac"`
+	BaneAmt  int `json:"bane_amt"`
+	BaneBody int `json:"bane_body"`
+	BaneRace int `json:"bane_race"`
 
 	// Stats
 	HP       int `json:"hp"`
@@ -82,6 +85,7 @@ type NPC struct {
 	LastName string `json:"last_name"`
 	Level    int    `json:"level"`
 	Race     int    `json:"race"`
+	RaceName string `json:"race_name"`
 	Class    int    `json:"class"`
 	BodyType int    `json:"body_type"`
 
@@ -171,20 +175,29 @@ type Spell struct {
 	IsDiscipline int `json:"is_discipline"`
 	Suspendable  int `json:"suspendable"`
 	NoDispell    int `json:"no_dispell"`
+	ZoneType     int `json:"zone_type"`
 }
 
 // Zone represents a row from the zone table.
 type Zone struct {
-	ID          int     `json:"id"`
-	ShortName   string  `json:"short_name"`
-	LongName    string  `json:"long_name"`
-	FileName    string  `json:"file_name"`
-	ZoneIDNumber int    `json:"zone_id_number"`
-	SafeX       float64 `json:"safe_x"`
-	SafeY       float64 `json:"safe_y"`
-	SafeZ       float64 `json:"safe_z"`
-	MinLevel    int     `json:"min_level"`
-	Note        string  `json:"note"`
+	ID           int     `json:"id"`
+	ShortName    string  `json:"short_name"`
+	LongName     string  `json:"long_name"`
+	FileName     string  `json:"file_name"`
+	ZoneIDNumber int     `json:"zone_id_number"`
+	SafeX        float64 `json:"safe_x"`
+	SafeY        float64 `json:"safe_y"`
+	SafeZ        float64 `json:"safe_z"`
+	MinLevel     int     `json:"min_level"`
+	Note         string  `json:"note"`
+	Outdoor      int     `json:"outdoor"`
+	Hotzone      int     `json:"hotzone"`
+	CanLevitate  int     `json:"can_levitate"`
+	CanBind      int     `json:"can_bind"`
+	ExpMod       float64 `json:"exp_mod"`
+	Expansion    int     `json:"expansion"`
+	NPCLevelMin  int     `json:"npc_level_min"`
+	NPCLevelMax  int     `json:"npc_level_max"`
 }
 
 // SearchResult wraps paginated query results.

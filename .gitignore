@@ -3,7 +3,11 @@
 !sql/example_queries.sql
 
 # ── Task docs (distilled into FEATURES.md) ────────────────────────────────────
-/docs/
+# Ignore everything under /docs/ except the persistent reference docs we
+# intentionally keep in tree. A parent-level `/docs/` rule would hide the
+# whole directory and make `!` exceptions unreachable, so ignore contents instead.
+/docs/*
+!/docs/db-pipeline.md
 
 # ── Environment & secrets ─────────────────────────────────────────────────────
 .env

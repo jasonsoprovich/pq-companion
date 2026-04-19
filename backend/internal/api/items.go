@@ -34,10 +34,11 @@ func (h *itemsHandler) search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	limit := queryInt(r, "limit", 20)
 	offset := queryInt(r, "offset", 0)
+	baneBody := queryInt(r, "bane_body", 0)
 	if limit > 100 {
 		limit = 100
 	}
-	result, err := h.db.SearchItems(q, limit, offset)
+	result, err := h.db.SearchItems(q, baneBody, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

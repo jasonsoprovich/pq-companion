@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Activity, Bell, Trash2, AlertTriangle, CheckCircle2, Circle } from 'lucide-react'
+import { Activity, Bell, Trash2, AlertTriangle, CheckCircle2, Circle, Search } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getLogStatus } from '../services/api'
 import EventAlertsPanel from '../components/EventAlertsPanel'
@@ -135,6 +135,7 @@ export default function LogFeedPage(): React.ReactElement {
   const [events, setEvents] = useState<LogEvent[]>([])
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
   const [showAlerts, setShowAlerts] = useState(false)
+  const [search, setSearch] = useState('')
   const feedRef = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
 
@@ -156,6 +157,16 @@ export default function LogFeedPage(): React.ReactElement {
   }, [])
 
   const wsState = useWebSocket(handleMessage)
+
+  const visibleEvents = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return events
+    return events.filter(
+      (ev) =>
+        ev.message.toLowerCase().includes(q) ||
+        ev.type.toLowerCase().includes(q)
+    )
+  }, [events, search])
 
   // Auto-scroll to top when new events arrive (feed is newest-first).
   useEffect(() => {
@@ -185,10 +196,43 @@ export default function LogFeedPage(): React.ReactElement {
             className="rounded px-1.5 py-0.5 text-[10px]"
             style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}
           >
-            {events.length} / {MAX_EVENTS}
+            {search ? `${visibleEvents.length} / ${events.length}` : `${events.length} / ${MAX_EVENTS}`}
           </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Search input */}
+          <div style={{ position: 'relative' }}>
+            <Search
+              size={11}
+              style={{
+                position: 'absolute',
+                left: 7,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: 'var(--color-muted)',
+                pointerEvents: 'none',
+              }}
+            />
+            <input
+              type="text"
+              placeholder="Filter events…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{
+                paddingLeft: 24,
+                paddingRight: 8,
+                paddingTop: 4,
+                paddingBottom: 4,
+                fontSize: 11,
+                width: 160,
+                background: 'var(--color-background)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 4,
+                color: 'var(--color-foreground)',
+                outline: 'none',
+              }}
+            />
+          </div>
           <ConnPill state={wsState} status={status} />
           <button
             onClick={() => setShowAlerts((v) => !v)}
@@ -203,7 +247,7 @@ export default function LogFeedPage(): React.ReactElement {
             Alerts
           </button>
           <button
-            onClick={() => setEvents([])}
+            onClick={() => { setEvents([]); setSearch('') }}
             className="flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
             style={{ color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}
             title="Clear events"
@@ -236,10 +280,17 @@ export default function LogFeedPage(): React.ReactElement {
               Make sure <strong>Parse Combat Log</strong> is enabled in Settings and EQ is running.
             </p>
           </div>
+        ) : visibleEvents.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-20">
+            <Search size={32} style={{ color: 'var(--color-muted)' }} />
+            <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
+              No events match "{search}"
+            </p>
+          </div>
         ) : (
           <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
             <tbody>
-              {events.map((ev, i) => (
+              {visibleEvents.map((ev, i) => (
                 <EventRow key={i} ev={ev} />
               ))}
             </tbody>

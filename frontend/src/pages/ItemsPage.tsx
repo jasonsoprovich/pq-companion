@@ -4,7 +4,11 @@ import { Search, X } from 'lucide-react'
 import { searchItems, getItem } from '../services/api'
 import type { Item } from '../types/item'
 import {
+  baneBodyLabel,
+  baneRaceLabel,
   classesLabel,
+  effectiveItemTypeLabel,
+  isLoreItem,
   itemTypeLabel,
   priceLabel,
   racesLabel,
@@ -31,7 +35,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   const runSearch = useCallback((q: string) => {
     setLoading(true)
     setError(null)
-    searchItems(q, 50, 0)
+    searchItems(q, 50, 0, 0)
       .then((res) => {
         setItems(res.items ?? [])
         setTotal(res.total)
@@ -122,7 +126,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
                 {item.name}
               </div>
               <div className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                {itemTypeLabel(item.item_type)}
+                {effectiveItemTypeLabel(item.item_class, item.item_type)}
                 {item.req_level > 0 && ` · Req ${item.req_level}`}
               </div>
             </button>
@@ -141,9 +145,9 @@ interface StatRowProps {
 
 function StatRow({ label, value }: StatRowProps): React.ReactElement {
   return (
-    <div className="flex justify-between py-0.5 text-sm">
-      <span style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>
-      <span style={{ color: 'var(--color-foreground)' }}>{value}</span>
+    <div className="flex justify-between gap-3 py-0.5 text-sm">
+      <span className="shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>
+      <span className="min-w-0 break-words text-right" style={{ color: 'var(--color-foreground)' }}>{value}</span>
     </div>
   )
 }
@@ -192,18 +196,21 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
 
   const flags: string[] = []
   if (item.magic) flags.push('MAGIC')
-  if (item.lore_flag) flags.push('LORE')
-  if (item.nodrop) flags.push('NO DROP')
-  if (item.norent) flags.push('NO RENT')
+  if (isLoreItem(item.lore)) flags.push('LORE')
+  if (item.nodrop === 0) flags.push('NO DROP')
+  if (item.norent === 0) flags.push('NO RENT')
 
   const hasCombat = item.damage > 0 || item.ac > 0
+  const hasBane = item.bane_amt > 0 || item.bane_body > 0 || item.bane_race > 0
   const hasStats =
-    item.hp || item.mana || item.str || item.sta || item.agi ||
-    item.dex || item.wis || item.int || item.cha
-  const hasResists = item.mr || item.cr || item.dr || item.fr || item.pr
+    item.hp > 0 || item.mana > 0 || item.str > 0 || item.sta > 0 || item.agi > 0 ||
+    item.dex > 0 || item.wis > 0 || item.int > 0 || item.cha > 0
+  const hasResists = item.mr > 0 || item.cr > 0 || item.dr > 0 || item.fr > 0 || item.pr > 0
   const hasEffects =
-    item.click_effect > 0 || item.proc_effect > 0 ||
-    item.worn_effect > 0 || item.focus_effect > 0
+    (item.click_effect > 0 && !!item.click_name) ||
+    (item.proc_effect > 0 && !!item.proc_name) ||
+    (item.worn_effect > 0 && !!item.worn_name) ||
+    (item.focus_effect > 0 && !!item.focus_name)
 
   return (
     <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -217,7 +224,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
         </h2>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-            {itemTypeLabel(item.item_type)}
+            {effectiveItemTypeLabel(item.item_class, item.item_type)}
           </span>
           {flags.map((f) => (
             <span
@@ -238,7 +245,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
             className="mt-1.5 text-xs italic"
             style={{ color: 'var(--color-muted-foreground)' }}
           >
-            {item.lore}
+            {item.lore.startsWith('*') ? item.lore.slice(1) : item.lore}
           </p>
         )}
       </div>
@@ -252,6 +259,17 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
             )}
             {item.range > 0 && <StatRow label="Range" value={item.range} />}
             {item.ac > 0 && <StatRow label="AC" value={item.ac} />}
+          </Section>
+        )}
+
+        {/* Bane Damage */}
+        {hasBane && (
+          <Section title="Bane Damage">
+            {item.bane_amt > 0 && <StatRow label="Bane Damage" value={`+${item.bane_amt}`} />}
+            {item.bane_body > 0 && (
+              <StatRow label="Bane vs Body" value={baneBodyLabel(item.bane_body)} />
+            )}
+            {item.bane_race > 0 && <StatRow label="Bane vs Race" value={baneRaceLabel(item.bane_race)} />}
           </Section>
         )}
 
@@ -329,7 +347,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
               <StatRow label="Bag Size" value={sizeLabel(item.bag_size)} />
             </>
           )}
-          <StatRow label="Price" value={priceLabel(item.price)} />
+          {item.price > 0 && <StatRow label="Value" value={priceLabel(item.price)} />}
           <StatRow label="Item ID" value={item.id} />
         </Section>
       </div>
@@ -350,7 +368,7 @@ export default function ItemsPage(): React.ReactElement {
       .then(setSelected)
       .catch(() => {/* ignore */})
       .finally(() => setSearchParams({}, { replace: true }))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchParams, setSearchParams])
 
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>
