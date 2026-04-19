@@ -253,15 +253,46 @@ type NPCLootTable struct {
 
 // ItemSourceNPC is a minimal NPC record used in item source listings.
 type ItemSourceNPC struct {
-	ID       int    `json:"id"`
-	Name     string `json:"name"`
-	ZoneName string `json:"zone_name"`
+	ID            int     `json:"id"`
+	Name          string  `json:"name"`
+	ZoneName      string  `json:"zone_name"`
+	ZoneShortName string  `json:"zone_short_name"`
+	DropRate      float64 `json:"drop_rate,omitempty"`
 }
 
-// ItemSources holds the NPCs that drop or sell a given item.
+// ItemForageZone is a zone where an item can be obtained via the Forage skill.
+type ItemForageZone struct {
+	ZoneShortName string `json:"zone_short_name"`
+	ZoneName      string `json:"zone_name"`
+	Chance        int    `json:"chance"`
+}
+
+// ItemGroundSpawnZone is a zone where an item spawns as a ground item.
+type ItemGroundSpawnZone struct {
+	ZoneShortName string `json:"zone_short_name"`
+	ZoneName      string `json:"zone_name"`
+	Name          string `json:"name"`
+	MaxAllowed    int    `json:"max_allowed"`
+	RespawnTimer  int    `json:"respawn_timer"`
+}
+
+// ItemTradeskillEntry is a tradeskill recipe that involves an item as a product or ingredient.
+type ItemTradeskillEntry struct {
+	RecipeID   int    `json:"recipe_id"`
+	RecipeName string `json:"recipe_name"`
+	Tradeskill int    `json:"tradeskill"`
+	Trivial    int    `json:"trivial"`
+	Role       string `json:"role"`  // "product" or "ingredient"
+	Count      int    `json:"count"` // successcount or componentcount
+}
+
+// ItemSources holds the ways to obtain a given item.
 type ItemSources struct {
-	Drops     []ItemSourceNPC `json:"drops"`
-	Merchants []ItemSourceNPC `json:"merchants"`
+	Drops        []ItemSourceNPC       `json:"drops"`
+	Merchants    []ItemSourceNPC       `json:"merchants"`
+	ForageZones  []ItemForageZone      `json:"forage_zones"`
+	GroundSpawns []ItemGroundSpawnZone `json:"ground_spawns"`
+	Tradeskills  []ItemTradeskillEntry `json:"tradeskills"`
 }
 
 // NPCSpawnPoint represents a single spawn point for an NPC.

@@ -78,11 +78,39 @@ export interface ItemSourceNPC {
   id: number
   name: string
   zone_name: string
+  zone_short_name: string
+  drop_rate?: number
+}
+
+export interface ItemForageZone {
+  zone_short_name: string
+  zone_name: string
+  chance: number
+}
+
+export interface ItemGroundSpawnZone {
+  zone_short_name: string
+  zone_name: string
+  name: string
+  max_allowed: number
+  respawn_timer: number
+}
+
+export interface ItemTradeskillEntry {
+  recipe_id: number
+  recipe_name: string
+  tradeskill: number
+  trivial: number
+  role: 'product' | 'ingredient'
+  count: number
 }
 
 export interface ItemSources {
   drops: ItemSourceNPC[]
   merchants: ItemSourceNPC[]
+  forage_zones: ItemForageZone[]
+  ground_spawns: ItemGroundSpawnZone[]
+  tradeskills: ItemTradeskillEntry[]
 }
 
 export interface SearchResult<T> {

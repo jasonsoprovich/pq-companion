@@ -111,8 +111,7 @@ func collectItems(rows *sql.Rows) ([]Item, error) {
 	return result, rows.Err()
 }
 
-// GetItemSources returns the NPCs that drop or sell the item with the given ID.
-// Results are capped at 50 per source type to keep response sizes reasonable.
+// GetItemSources returns all the ways to obtain the item with the given ID.
 func (db *DB) GetItemSources(itemID int) (*ItemSources, error) {
 	const zoneJoin = `
 		LEFT JOIN spawnentry se ON se.npcid = n.id
@@ -121,51 +120,138 @@ func (db *DB) GetItemSources(itemID int) (*ItemSources, error) {
 		LEFT JOIN zone z ON z.short_name = s2.zone`
 
 	dropRows, err := db.Query(`
-		SELECT n.id, n.name, COALESCE(MIN(z.long_name), '') AS zone_name
+		SELECT n.id, n.name,
+		       COALESCE(MIN(z.long_name), '') AS zone_name,
+		       COALESCE(MIN(s2.zone), '') AS zone_short_name,
+		       ROUND(MAX(CAST(lte.probability AS REAL) * lde.chance / 100.0), 2) AS drop_rate
 		FROM npc_types n
 		JOIN loottable_entries lte ON lte.loottable_id = n.loottable_id
 		JOIN lootdrop_entries lde ON lde.lootdrop_id = lte.lootdrop_id
 		`+zoneJoin+`
 		WHERE lde.item_id = ? AND n.loottable_id > 0
 		GROUP BY n.id
-		ORDER BY n.name
-		LIMIT 50`, itemID)
+		ORDER BY drop_rate DESC, n.name
+		LIMIT 100`, itemID)
 	if err != nil {
 		return nil, fmt.Errorf("get item drop sources %d: %w", itemID, err)
 	}
 	defer dropRows.Close()
-	drops, err := collectSourceNPCs(dropRows)
+	drops, err := collectSourceNPCs(dropRows, true)
 	if err != nil {
 		return nil, err
 	}
 
 	merchantRows, err := db.Query(`
-		SELECT n.id, n.name, COALESCE(MIN(z.long_name), '') AS zone_name
+		SELECT n.id, n.name,
+		       COALESCE(MIN(z.long_name), '') AS zone_name,
+		       COALESCE(MIN(s2.zone), '') AS zone_short_name
 		FROM npc_types n
 		JOIN merchantlist ml ON ml.merchantid = n.merchant_id
 		`+zoneJoin+`
 		WHERE ml.item = ? AND n.merchant_id > 0
 		GROUP BY n.id
 		ORDER BY n.name
-		LIMIT 50`, itemID)
+		LIMIT 100`, itemID)
 	if err != nil {
 		return nil, fmt.Errorf("get item merchant sources %d: %w", itemID, err)
 	}
 	defer merchantRows.Close()
-	merchants, err := collectSourceNPCs(merchantRows)
+	merchants, err := collectSourceNPCs(merchantRows, false)
 	if err != nil {
 		return nil, err
 	}
 
-	return &ItemSources{Drops: drops, Merchants: merchants}, nil
+	forageRows, err := db.Query(`
+		SELECT COALESCE(z.short_name, ''), COALESCE(z.long_name, ''), f.chance
+		FROM forage f
+		LEFT JOIN zone z ON z.zoneidnumber = f.zoneid
+		WHERE f.Itemid = ?
+		ORDER BY z.long_name`, itemID)
+	if err != nil {
+		return nil, fmt.Errorf("get item forage zones %d: %w", itemID, err)
+	}
+	defer forageRows.Close()
+	var forageZones []ItemForageZone
+	for forageRows.Next() {
+		var fz ItemForageZone
+		if err := forageRows.Scan(&fz.ZoneShortName, &fz.ZoneName, &fz.Chance); err != nil {
+			return nil, fmt.Errorf("scan forage zone: %w", err)
+		}
+		forageZones = append(forageZones, fz)
+	}
+	if err := forageRows.Err(); err != nil {
+		return nil, err
+	}
+
+	gsRows, err := db.Query(`
+		SELECT COALESCE(z.short_name, ''), COALESCE(z.long_name, ''), g.name, g.max_allowed, g.respawn_timer
+		FROM ground_spawns g
+		LEFT JOIN zone z ON z.zoneidnumber = g.zoneid
+		WHERE g.item = ?
+		ORDER BY z.long_name`, itemID)
+	if err != nil {
+		return nil, fmt.Errorf("get item ground spawns %d: %w", itemID, err)
+	}
+	defer gsRows.Close()
+	var groundSpawns []ItemGroundSpawnZone
+	for gsRows.Next() {
+		var gs ItemGroundSpawnZone
+		if err := gsRows.Scan(&gs.ZoneShortName, &gs.ZoneName, &gs.Name, &gs.MaxAllowed, &gs.RespawnTimer); err != nil {
+			return nil, fmt.Errorf("scan ground spawn zone: %w", err)
+		}
+		groundSpawns = append(groundSpawns, gs)
+	}
+	if err := gsRows.Err(); err != nil {
+		return nil, err
+	}
+
+	tsRows, err := db.Query(`
+		SELECT r.id, r.name, r.tradeskill, r.trivial,
+		       CASE WHEN tre.successcount > 0 THEN 'product' ELSE 'ingredient' END AS role,
+		       CASE WHEN tre.successcount > 0 THEN tre.successcount ELSE tre.componentcount END AS cnt
+		FROM tradeskill_recipe_entries tre
+		JOIN tradeskill_recipe r ON r.id = tre.recipe_id
+		WHERE tre.item_id = ? AND tre.iscontainer = 0 AND (tre.successcount > 0 OR tre.componentcount > 0)
+		  AND r.enabled = 1
+		ORDER BY role DESC, r.name
+		LIMIT 100`, itemID)
+	if err != nil {
+		return nil, fmt.Errorf("get item tradeskills %d: %w", itemID, err)
+	}
+	defer tsRows.Close()
+	var tradeskills []ItemTradeskillEntry
+	for tsRows.Next() {
+		var ts ItemTradeskillEntry
+		if err := tsRows.Scan(&ts.RecipeID, &ts.RecipeName, &ts.Tradeskill, &ts.Trivial, &ts.Role, &ts.Count); err != nil {
+			return nil, fmt.Errorf("scan tradeskill entry: %w", err)
+		}
+		tradeskills = append(tradeskills, ts)
+	}
+	if err := tsRows.Err(); err != nil {
+		return nil, err
+	}
+
+	return &ItemSources{
+		Drops:        drops,
+		Merchants:    merchants,
+		ForageZones:  forageZones,
+		GroundSpawns: groundSpawns,
+		Tradeskills:  tradeskills,
+	}, nil
 }
 
-func collectSourceNPCs(rows *sql.Rows) ([]ItemSourceNPC, error) {
+func collectSourceNPCs(rows *sql.Rows, withDropRate bool) ([]ItemSourceNPC, error) {
 	var result []ItemSourceNPC
 	for rows.Next() {
 		var s ItemSourceNPC
-		if err := rows.Scan(&s.ID, &s.Name, &s.ZoneName); err != nil {
-			return nil, fmt.Errorf("scan source npc: %w", err)
+		if withDropRate {
+			if err := rows.Scan(&s.ID, &s.Name, &s.ZoneName, &s.ZoneShortName, &s.DropRate); err != nil {
+				return nil, fmt.Errorf("scan source npc: %w", err)
+			}
+		} else {
+			if err := rows.Scan(&s.ID, &s.Name, &s.ZoneName, &s.ZoneShortName); err != nil {
+				return nil, fmt.Errorf("scan source npc: %w", err)
+			}
 		}
 		result = append(result, s)
 	}
