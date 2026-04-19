@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Search, X } from 'lucide-react'
-import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot } from '../services/api'
-import type { NPC, NPCSpawns, NPCLootTable } from '../types/npc'
+import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot, getNPCFaction } from '../services/api'
+import type { NPC, NPCSpawns, NPCLootTable, NPCFaction } from '../types/npc'
 import {
   bodyTypeName,
   className,
@@ -196,16 +196,24 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
   const navigate = useNavigate()
   const [spawns, setSpawns] = useState<NPCSpawns | null>(null)
   const [loot, setLoot] = useState<NPCLootTable | null>(null)
+  const [faction, setFaction] = useState<NPCFaction | null>(null)
   const [bulkCopied, setBulkCopied] = useState<number | null>(null)
 
   useEffect(() => {
-    if (!npc) { setSpawns(null); setLoot(null); return }
+    if (!npc) { setSpawns(null); setLoot(null); setFaction(null); return }
     getNPCSpawns(npc.id)
       .then(setSpawns)
       .catch(() => setSpawns({ spawn_points: [], spawn_groups: [] }))
     getNPCLoot(npc.id)
       .then(setLoot)
       .catch(() => setLoot(null))
+    if (npc.npc_faction_id > 0) {
+      getNPCFaction(npc.id)
+        .then(setFaction)
+        .catch(() => setFaction(null))
+    } else {
+      setFaction(null)
+    }
   }, [npc?.id])
 
   function copyBulkLinks(dropId: number, items: { item_id: number; item_name: string }[]) {
@@ -344,7 +352,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
           {npc.npc_spells_id > 0 && (
             <StatRow label="Spells ID" value={npc.npc_spells_id} />
           )}
-          {npc.npc_faction_id > 0 && (
+          {npc.npc_faction_id > 0 && !faction && (
             <StatRow label="Faction ID" value={npc.npc_faction_id} />
           )}
           {npc.spell_scale !== 100 && (
@@ -354,6 +362,38 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
             <StatRow label="Heal Scale" value={`${npc.heal_scale.toFixed(0)}%`} />
           )}
         </Section>
+
+        {/* Faction */}
+        {faction && (
+          <Section title="Faction">
+            {faction.primary_faction_name && (
+              <StatRow label="Primary" value={faction.primary_faction_name} />
+            )}
+            {faction.hits.length > 0 && (
+              <div className="py-1">
+                <div
+                  className="mb-1 text-[10px] font-medium uppercase tracking-wide"
+                  style={{ color: 'var(--color-muted)' }}
+                >
+                  On Kill
+                </div>
+                {faction.hits.map((hit) => (
+                  <div key={hit.faction_id} className="flex justify-between border-t py-0.5 text-sm" style={{ borderColor: 'var(--color-border)' }}>
+                    <span style={{ color: 'var(--color-muted-foreground)' }}>{hit.faction_name}</span>
+                    <span
+                      style={{
+                        color: hit.value > 0 ? 'var(--color-primary)' : hit.value < 0 ? '#f87171' : 'var(--color-muted)',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {hit.value > 0 ? `+${hit.value}` : hit.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+        )}
 
         {/* Loot Table */}
         {loot && loot.drops.length > 0 && (

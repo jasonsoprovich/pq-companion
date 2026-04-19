@@ -131,6 +131,20 @@ type NPC struct {
 	ExpPct     int     `json:"exp_pct"`
 }
 
+// FactionHit represents a single faction's standing change when an NPC is killed.
+type FactionHit struct {
+	FactionID   int    `json:"faction_id"`
+	FactionName string `json:"faction_name"`
+	Value       int    `json:"value"`
+}
+
+// NPCFaction holds the resolved faction info for an NPC.
+type NPCFaction struct {
+	PrimaryFactionID   int          `json:"primary_faction_id"`
+	PrimaryFactionName string       `json:"primary_faction_name"`
+	Hits               []FactionHit `json:"hits"`
+}
+
 // Spell represents a row from the spells_new table.
 // Effect slots are stored as parallel slices for convenience.
 type Spell struct {

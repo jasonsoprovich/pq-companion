@@ -103,6 +103,18 @@ export interface NPCSpawns {
   spawn_groups: NPCSpawnGroup[]
 }
 
+export interface FactionHit {
+  faction_id: number
+  faction_name: string
+  value: number
+}
+
+export interface NPCFaction {
+  primary_faction_id: number
+  primary_faction_name: string
+  hits: FactionHit[]
+}
+
 export interface SearchResult<T> {
   items: T[]
   total: number

@@ -277,6 +277,55 @@ func collectNPCs(rows *sql.Rows) ([]NPC, error) {
 	return result, rows.Err()
 }
 
+// GetNPCFaction returns resolved faction info for the NPC with the given ID.
+// Returns nil (no error) when the NPC has no faction or the faction record is missing.
+func (db *DB) GetNPCFaction(npcID int) (*NPCFaction, error) {
+	var npcFactionID int
+	err := db.QueryRow("SELECT npc_faction_id FROM npc_types WHERE id = ?", npcID).Scan(&npcFactionID)
+	if err != nil {
+		return nil, fmt.Errorf("get npc faction id: %w", err)
+	}
+	if npcFactionID == 0 {
+		return nil, nil
+	}
+
+	var result NPCFaction
+	err = db.QueryRow(`
+		SELECT nf.primaryfaction, COALESCE(fl.name, '')
+		FROM npc_faction nf
+		LEFT JOIN faction_list fl ON fl.id = nf.primaryfaction
+		WHERE nf.id = ?`, npcFactionID,
+	).Scan(&result.PrimaryFactionID, &result.PrimaryFactionName)
+	if err != nil {
+		return nil, fmt.Errorf("get npc faction info: %w", err)
+	}
+
+	rows, err := db.Query(`
+		SELECT nfe.faction_id, fl.name, nfe.value
+		FROM npc_faction_entries nfe
+		JOIN faction_list fl ON fl.id = nfe.faction_id
+		WHERE nfe.npc_faction_id = ?
+		ORDER BY nfe.sort_order, nfe.faction_id`, npcFactionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get faction hits: %w", err)
+	}
+	defer rows.Close()
+
+	result.Hits = []FactionHit{}
+	for rows.Next() {
+		var h FactionHit
+		if err := rows.Scan(&h.FactionID, &h.FactionName, &h.Value); err != nil {
+			return nil, fmt.Errorf("scan faction hit: %w", err)
+		}
+		result.Hits = append(result.Hits, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // GetNPCSpawns returns spawn point and spawn group data for the NPC with the given ID.
 func (db *DB) GetNPCSpawns(npcID int) (*NPCSpawns, error) {
 	// Spawn points: each row is one spawn2 entry where this NPC can appear.
