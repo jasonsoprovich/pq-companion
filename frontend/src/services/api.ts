@@ -6,7 +6,7 @@ import type { Zone } from '../types/zone'
 import type { ZealInventoryResponse, ZealSpellbookResponse, AllInventoriesResponse } from '../types/zeal'
 import type { KeysResponse, KeysProgressResponse } from '../types/keys'
 import type { Backup, BackupsResponse } from '../types/backup'
-import type { LogTailerStatus } from '../types/logEvent'
+import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { TargetState } from '../types/overlay'
 import type { CombatState } from '../types/combat'
 import type { TimerState } from '../types/timer'
@@ -212,6 +212,14 @@ export function pruneBackups(maxBackups: number): Promise<{ deleted: number }> {
 
 export function getLogStatus(): Promise<LogTailerStatus> {
   return get<LogTailerStatus>('/api/log/status')
+}
+
+export function getLogFileInfo(): Promise<LogFileInfo> {
+  return get<LogFileInfo>('/api/log/info')
+}
+
+export function cleanupLog(): Promise<{ backup_path: string }> {
+  return post<{ backup_path: string }>('/api/log/cleanup', {})
 }
 
 // ── Overlay ────────────────────────────────────────────────────────────────────

@@ -99,6 +99,8 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		})
 		r.Route("/log", func(r chi.Router) {
 			r.Get("/status", logH.status)
+			r.Get("/info", logH.info)
+			r.Post("/cleanup", logH.cleanup)
 		})
 		r.Route("/overlay", func(r chi.Router) {
 			r.Get("/npc/target", overlayH.npcTarget)

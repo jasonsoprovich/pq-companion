@@ -1,6 +1,7 @@
-import React from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { Sword, Sparkles, Skull, Map, Settings, Search, Package, BookOpen, KeyRound, HardDrive, Activity, Crosshair, Swords, ScrollText, Timer, Zap } from 'lucide-react'
+import { getLogStatus } from '../services/api'
 
 interface NavItem {
   to: string
@@ -55,6 +56,22 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactElement {
+  const [logLargeFile, setLogLargeFile] = useState(false)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    const poll = () => {
+      getLogStatus()
+        .then((s) => setLogLargeFile(s.large_file))
+        .catch(() => null)
+    }
+    poll()
+    pollRef.current = setInterval(poll, 10 * 60 * 1000)
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [])
+
   return (
     <aside
       className="drag-region flex w-48 shrink-0 flex-col border-r"
@@ -138,11 +155,29 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
         className="border-t px-2 py-2"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <SidebarLink
+        <NavLink
           to="/settings"
-          label="Settings"
-          icon={<Settings size={16} />}
-        />
+          className={({ isActive }) =>
+            [
+              'no-drag flex items-center gap-3 rounded px-3 py-2 text-sm transition-colors',
+              isActive
+                ? 'bg-(--color-surface-2) text-(--color-primary) font-medium'
+                : 'text-(--color-muted-foreground) hover:bg-(--color-surface-2) hover:text-(--color-foreground)',
+            ].join(' ')
+          }
+        >
+          <span className="relative">
+            <Settings size={16} />
+            {logLargeFile && (
+              <span
+                className="absolute -top-1 -right-1 h-2 w-2 rounded-full"
+                style={{ backgroundColor: '#f97316' }}
+                title="Log file is large — cleanup recommended"
+              />
+            )}
+          </span>
+          Settings
+        </NavLink>
       </div>
     </aside>
   )
