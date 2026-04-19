@@ -1,14 +1,31 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { Search, X } from 'lucide-react'
-import { searchNPCs, getNPC } from '../services/api'
-import type { NPC } from '../types/npc'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Check, Copy, Search, X } from 'lucide-react'
+import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot, getNPCFaction } from '../services/api'
+import type { NPC, NPCSpawns, NPCLootTable, NPCFaction } from '../types/npc'
 import {
   bodyTypeName,
   className,
   npcDisplayName,
   parseSpecialAbilities,
+  type SpecialAbility,
 } from '../lib/npcHelpers'
+
+function formatRespawnTime(seconds: number): string {
+  if (seconds <= 0) return '—'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  const parts: string[] = []
+  if (h > 0) parts.push(`${h}h`)
+  if (m > 0) parts.push(`${m}m`)
+  if (s > 0 || parts.length === 0) parts.push(`${s}s`)
+  return parts.join(' ')
+}
+
+function formatNPCName(name: string): string {
+  return name.replace(/_/g, ' ')
+}
 
 // ── Search pane ────────────────────────────────────────────────────────────────
 
@@ -170,6 +187,53 @@ function Section({ title, children }: SectionProps): React.ReactElement {
   )
 }
 
+// ── Special Abilities list with popover ────────────────────────────────────────
+
+interface SpecialAbilitiesListProps {
+  abilities: SpecialAbility[]
+}
+
+function SpecialAbilitiesList({ abilities }: SpecialAbilitiesListProps): React.ReactElement {
+  const [activeCode, setActiveCode] = useState<number | null>(null)
+
+  function toggle(code: number) {
+    setActiveCode((prev) => (prev === code ? null : code))
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1.5 py-1">
+      {abilities.map((sa) => (
+        <div key={sa.code} className="relative">
+          <button
+            onClick={() => toggle(sa.code)}
+            className="rounded px-2 py-0.5 text-[11px] font-medium transition-colors"
+            style={{
+              backgroundColor: activeCode === sa.code ? 'var(--color-surface-3, var(--color-surface-2))' : 'var(--color-surface-2)',
+              color: activeCode === sa.code ? 'var(--color-primary)' : 'var(--color-foreground)',
+              border: `1px solid ${activeCode === sa.code ? 'var(--color-primary)' : 'var(--color-border)'}`,
+              cursor: sa.description ? 'pointer' : 'default',
+            }}
+          >
+            {sa.name}
+          </button>
+          {activeCode === sa.code && sa.description && (
+            <div
+              className="absolute left-0 top-full z-10 mt-1 w-56 rounded border p-2 text-xs shadow-lg"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-muted-foreground)',
+              }}
+            >
+              {sa.description}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Detail panel ───────────────────────────────────────────────────────────────
 
 interface DetailPanelProps {
@@ -177,6 +241,37 @@ interface DetailPanelProps {
 }
 
 function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
+  const navigate = useNavigate()
+  const [spawns, setSpawns] = useState<NPCSpawns | null>(null)
+  const [loot, setLoot] = useState<NPCLootTable | null>(null)
+  const [faction, setFaction] = useState<NPCFaction | null>(null)
+  const [bulkCopied, setBulkCopied] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!npc) { setSpawns(null); setLoot(null); setFaction(null); return }
+    getNPCSpawns(npc.id)
+      .then(setSpawns)
+      .catch(() => setSpawns({ spawn_points: [], spawn_groups: [] }))
+    getNPCLoot(npc.id)
+      .then(setLoot)
+      .catch(() => setLoot(null))
+    if (npc.npc_faction_id > 0) {
+      getNPCFaction(npc.id)
+        .then(setFaction)
+        .catch(() => setFaction(null))
+    } else {
+      setFaction(null)
+    }
+  }, [npc?.id])
+
+  function copyBulkLinks(dropId: number, items: { item_id: number; item_name: string }[]) {
+    const links = items.map((it) => `\\aITEM ${it.item_id} 0 0 0 0 0:${it.item_name}\\a/`).join('\n')
+    navigator.clipboard.writeText(links).then(() => {
+      setBulkCopied(dropId)
+      setTimeout(() => setBulkCopied(null), 2000)
+    })
+  }
+
   if (!npc) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -268,21 +363,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
         {/* Special Abilities */}
         {specialAbilities.length > 0 && (
           <Section title="Special Abilities">
-            <div className="flex flex-wrap gap-1.5 py-1">
-              {specialAbilities.map((sa) => (
-                <span
-                  key={sa.code}
-                  className="rounded px-2 py-0.5 text-[11px] font-medium"
-                  style={{
-                    backgroundColor: 'var(--color-surface-2)',
-                    color: 'var(--color-foreground)',
-                    border: '1px solid var(--color-border)',
-                  }}
-                >
-                  {sa.name}
-                </span>
-              ))}
-            </div>
+            <SpecialAbilitiesList abilities={specialAbilities} />
           </Section>
         )}
 
@@ -299,16 +380,13 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
         <Section title="Info">
           <StatRow label="NPC ID" value={npc.id} />
           {npc.exp_pct !== 100 && <StatRow label="Exp %" value={`${npc.exp_pct}%`} />}
-          {npc.loottable_id > 0 && (
-            <StatRow label="Loot Table" value={npc.loottable_id} />
-          )}
           {npc.merchant_id > 0 && (
             <StatRow label="Merchant ID" value={npc.merchant_id} />
           )}
           {npc.npc_spells_id > 0 && (
             <StatRow label="Spells ID" value={npc.npc_spells_id} />
           )}
-          {npc.npc_faction_id > 0 && (
+          {npc.npc_faction_id > 0 && !faction && (
             <StatRow label="Faction ID" value={npc.npc_faction_id} />
           )}
           {npc.spell_scale !== 100 && (
@@ -318,6 +396,177 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
             <StatRow label="Heal Scale" value={`${npc.heal_scale.toFixed(0)}%`} />
           )}
         </Section>
+
+        {/* Faction */}
+        {faction && (
+          <Section title="Faction">
+            {faction.primary_faction_name && (
+              <StatRow label="Primary" value={faction.primary_faction_name} />
+            )}
+            {faction.hits.length > 0 && (
+              <div className="py-1">
+                <div
+                  className="mb-1 text-[10px] font-medium uppercase tracking-wide"
+                  style={{ color: 'var(--color-muted)' }}
+                >
+                  On Kill
+                </div>
+                {faction.hits.map((hit) => (
+                  <div key={hit.faction_id} className="flex justify-between border-t py-0.5 text-sm" style={{ borderColor: 'var(--color-border)' }}>
+                    <span style={{ color: 'var(--color-muted-foreground)' }}>{hit.faction_name}</span>
+                    <span
+                      style={{
+                        color: hit.value > 0 ? 'var(--color-primary)' : hit.value < 0 ? '#f87171' : 'var(--color-muted)',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {hit.value > 0 ? `+${hit.value}` : hit.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+        )}
+
+        {/* Loot Table */}
+        {loot && loot.drops.length > 0 && (
+          <Section title="Loot Table">
+            {loot.drops.map((drop) => (
+              <div key={drop.id} className="mb-2 last:mb-0">
+                <div className="flex items-center justify-between pt-1 pb-0.5">
+                  <span className="text-[11px] font-medium" style={{ color: 'var(--color-muted)' }}>
+                    {drop.multiplier > 1 ? `×${drop.multiplier} · ` : ''}
+                    {drop.probability < 100 ? `${drop.probability}% chance` : 'Always drops'}
+                  </span>
+                  <button
+                    onClick={() => copyBulkLinks(drop.id, drop.items)}
+                    title="Bulk copy in-game links"
+                    className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+                    style={{
+                      backgroundColor: 'var(--color-surface)',
+                      borderColor: 'var(--color-border)',
+                      color: bulkCopied === drop.id ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
+                    }}
+                  >
+                    {bulkCopied === drop.id ? <Check size={10} /> : <Copy size={10} />}
+                    {bulkCopied === drop.id ? 'Copied!' : 'Copy links'}
+                  </button>
+                </div>
+                {drop.items.map((item) => (
+                  <button
+                    key={item.item_id}
+                    onClick={() => navigate(`/items?select=${item.item_id}`)}
+                    className="flex w-full items-center justify-between border-t py-0.5 text-left text-sm"
+                    style={{ borderColor: 'var(--color-border)' }}
+                  >
+                    <span
+                      className="truncate underline decoration-dotted"
+                      style={{ color: 'var(--color-primary)' }}
+                    >
+                      {item.item_name}
+                    </span>
+                    <span className="ml-3 shrink-0 text-xs" style={{ color: 'var(--color-muted)' }}>
+                      {item.chance.toFixed(1)}%
+                      {item.multiplier > 1 && ` ×${item.multiplier}`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </Section>
+        )}
+
+        {/* Spawns */}
+        {spawns && spawns.spawn_points.length > 0 && (
+          <Section title="Spawns">
+            <div
+              className="mb-1 grid gap-x-3 pt-1 text-[11px] font-medium"
+              style={{
+                gridTemplateColumns: '1fr auto auto auto auto',
+                color: 'var(--color-muted)',
+              }}
+            >
+              <span>Zone</span>
+              <span className="text-right">Y</span>
+              <span className="text-right">X</span>
+              <span className="text-right">Z</span>
+              <span className="text-right">Respawn</span>
+            </div>
+            {spawns.spawn_points.map((sp) => (
+              <div
+                key={sp.id}
+                className="grid items-center gap-x-3 border-t py-0.5 text-sm"
+                style={{
+                  gridTemplateColumns: '1fr auto auto auto auto',
+                  borderColor: 'var(--color-border)',
+                }}
+              >
+                <span className="truncate" style={{ color: 'var(--color-foreground)' }}>
+                  {sp.zone_name || sp.zone}
+                </span>
+                <span className="font-mono text-xs text-right" style={{ color: 'var(--color-muted-foreground)' }}>
+                  {sp.y.toFixed(0)}
+                </span>
+                <span className="font-mono text-xs text-right" style={{ color: 'var(--color-muted-foreground)' }}>
+                  {sp.x.toFixed(0)}
+                </span>
+                <span className="font-mono text-xs text-right" style={{ color: 'var(--color-muted-foreground)' }}>
+                  {sp.z.toFixed(0)}
+                </span>
+                <span className="text-xs text-right whitespace-nowrap" style={{ color: 'var(--color-muted-foreground)' }}>
+                  {sp.fast_respawn_time > 0
+                    ? `${formatRespawnTime(sp.fast_respawn_time)} / ${formatRespawnTime(sp.respawn_time)}`
+                    : formatRespawnTime(sp.respawn_time)}
+                </span>
+              </div>
+            ))}
+          </Section>
+        )}
+
+        {/* Spawn Groups */}
+        {spawns && spawns.spawn_groups.length > 0 && (
+          <Section title="Spawn Groups">
+            {spawns.spawn_groups.map((sg, i) => (
+              <div
+                key={sg.id}
+                className={i > 0 ? 'mt-3' : ''}
+              >
+                <div className="flex items-center justify-between pt-1 pb-0.5">
+                  <span className="text-xs font-medium" style={{ color: 'var(--color-foreground)' }}>
+                    {sg.name}
+                  </span>
+                  <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                    {sg.fast_respawn_time > 0
+                      ? `${formatRespawnTime(sg.fast_respawn_time)} / ${formatRespawnTime(sg.respawn_time)}`
+                      : formatRespawnTime(sg.respawn_time)}
+                  </span>
+                </div>
+                {sg.members.map((m) => (
+                  <div
+                    key={m.npc_id}
+                    className="flex items-center justify-between border-t py-0.5 text-sm"
+                    style={{ borderColor: 'var(--color-border)' }}
+                  >
+                    <span
+                      className="truncate"
+                      style={{
+                        color: m.npc_id === npc.id
+                          ? 'var(--color-primary)'
+                          : 'var(--color-foreground)',
+                      }}
+                    >
+                      {formatNPCName(m.name)}
+                    </span>
+                    <span className="ml-3 shrink-0 text-xs" style={{ color: 'var(--color-muted)' }}>
+                      {m.chance}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Section>
+        )}
       </div>
     </div>
   )

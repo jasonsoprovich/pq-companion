@@ -6,7 +6,7 @@
  * (CSS -webkit-app-region: drag on the header strip).
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Swords } from 'lucide-react'
+import { Swords, Clipboard, ClipboardCheck } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { getCombatState } from '../services/api'
@@ -31,6 +31,20 @@ function fmtDur(secs: number): string {
 function pct(part: number, total: number): string {
   if (total === 0) return '—'
   return `${Math.round((part / total) * 100)}%`
+}
+
+// ── Clipboard ──────────────────────────────────────────────────────────────────
+
+function buildFightText(fight: FightState): string {
+  const target = fight.primary_target ?? 'Unknown'
+  const m = Math.floor(fight.duration_seconds / 60)
+  const s = Math.floor(fight.duration_seconds % 60)
+  const dur = m > 0 ? `${m}m ${s}s` : `${s}s`
+  const lines: string[] = [`[PQ Companion] Fight: ${target} (${dur})`]
+  for (const c of fight.combatants) {
+    lines.push(`${c.name}: ${c.dps.toFixed(1)} DPS (${c.total_damage.toLocaleString()} total)`)
+  }
+  return lines.join('\n')
 }
 
 // ── Row ────────────────────────────────────────────────────────────────────────
@@ -138,6 +152,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
   const [now, setNow] = useState(() => Date.now())
+  const [copied, setCopied] = useState(false)
 
   // Track the last seen fight and when combat ended, to persist the overlay for
   // 30 seconds after the fight ends so the player can review the numbers.
@@ -247,6 +262,30 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
             }}
           >
             {showAll ? 'All' : 'Me'}
+          </button>
+          {/* copy fight summary */}
+          <button
+            onClick={() => {
+              if (!fight) return
+              navigator.clipboard.writeText(buildFightText(fight)).then(() => {
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1500)
+              }).catch(() => {})
+            }}
+            disabled={!fight}
+            title="Copy DPS summary"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'none',
+              border: 'none',
+              padding: '1px 3px',
+              cursor: fight ? 'pointer' : 'default',
+              color: copied ? '#4ade80' : 'rgba(255,255,255,0.4)',
+              opacity: fight ? 1 : 0.3,
+            }}
+          >
+            {copied ? <ClipboardCheck size={11} /> : <Clipboard size={11} />}
           </button>
           {/* close */}
           <button

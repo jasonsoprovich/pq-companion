@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Swords, HeartPulse, Circle, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react'
+import { Swords, HeartPulse, Circle, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck } from 'lucide-react'
 import { DEV_HPS } from '../lib/devFlags'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getCombatState, getLogStatus } from '../services/api'
@@ -26,6 +26,50 @@ function fmtDuration(secs: number): string {
   const m = Math.floor(secs / 60)
   const s = Math.floor(secs % 60)
   return m > 0 ? `${m}m ${s}s` : `${s}s`
+}
+
+// ── Clipboard ──────────────────────────────────────────────────────────────────
+
+function buildFightText(fight: FightState): string {
+  const target = fight.primary_target ?? 'Unknown'
+  const dur = fmtDuration(fight.duration_seconds)
+  const lines: string[] = [`[PQ Companion] Fight: ${target} (${dur})`]
+  for (const c of fight.combatants) {
+    lines.push(`${c.name}: ${fmtRate(c.dps)} DPS (${fmt(c.total_damage)} total)`)
+  }
+  return lines.join('\n')
+}
+
+function CopyFightButton({ fight }: { fight: FightState | null }): React.ReactElement {
+  const [copied, setCopied] = useState(false)
+
+  function handleCopy(): void {
+    if (!fight) return
+    navigator.clipboard.writeText(buildFightText(fight)).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }).catch(() => {})
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      disabled={!fight}
+      title="Copy DPS summary to clipboard"
+      style={{
+        background: 'none',
+        border: 'none',
+        cursor: fight ? 'pointer' : 'default',
+        padding: '1px 3px',
+        color: copied ? '#22c55e' : 'var(--color-muted)',
+        display: 'flex',
+        alignItems: 'center',
+        opacity: fight ? 1 : 0.4,
+      }}
+    >
+      {copied ? <ClipboardCheck size={12} /> : <Clipboard size={12} />}
+    </button>
+  )
 }
 
 // ── Connection pill ────────────────────────────────────────────────────────────
@@ -513,6 +557,7 @@ export default function DPSOverlayPage(): React.ReactElement {
         headerRight={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <FilterButton showAll={showAllDPS} onToggle={() => setShowAllDPS((v) => !v)} />
+            <CopyFightButton fight={combat?.current_fight ?? null} />
             {window.electron?.overlay && (
               <button
                 onClick={() => window.electron.overlay.toggleDPS()}

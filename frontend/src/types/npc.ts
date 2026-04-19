@@ -52,6 +52,69 @@ export interface NPC {
   exp_pct: number
 }
 
+export interface LootDropItem {
+  item_id: number
+  item_name: string
+  chance: number
+  multiplier: number
+}
+
+export interface LootDrop {
+  id: number
+  name: string
+  multiplier: number
+  probability: number
+  items: LootDropItem[]
+}
+
+export interface NPCLootTable {
+  id: number
+  name: string
+  drops: LootDrop[]
+}
+
+export interface NPCSpawnPoint {
+  id: number
+  zone: string
+  zone_name: string
+  x: number
+  y: number
+  z: number
+  respawn_time: number
+  fast_respawn_time: number
+}
+
+export interface SpawnGroupMember {
+  npc_id: number
+  name: string
+  chance: number
+}
+
+export interface NPCSpawnGroup {
+  id: number
+  name: string
+  respawn_time: number
+  fast_respawn_time: number
+  members: SpawnGroupMember[]
+}
+
+export interface NPCSpawns {
+  spawn_points: NPCSpawnPoint[]
+  spawn_groups: NPCSpawnGroup[]
+}
+
+export interface FactionHit {
+  faction_id: number
+  faction_name: string
+  value: number
+}
+
+export interface NPCFaction {
+  primary_faction_id: number
+  primary_faction_name: string
+  hits: FactionHit[]
+}
+
 export interface SearchResult<T> {
   items: T[]
   total: number

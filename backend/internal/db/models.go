@@ -131,6 +131,20 @@ type NPC struct {
 	ExpPct     int     `json:"exp_pct"`
 }
 
+// FactionHit represents a single faction's standing change when an NPC is killed.
+type FactionHit struct {
+	FactionID   int    `json:"faction_id"`
+	FactionName string `json:"faction_name"`
+	Value       int    `json:"value"`
+}
+
+// NPCFaction holds the resolved faction info for an NPC.
+type NPCFaction struct {
+	PrimaryFactionID   int          `json:"primary_faction_id"`
+	PrimaryFactionName string       `json:"primary_faction_name"`
+	Hits               []FactionHit `json:"hits"`
+}
+
 // Spell represents a row from the spells_new table.
 // Effect slots are stored as parallel slices for convenience.
 type Spell struct {
@@ -178,6 +192,19 @@ type Spell struct {
 	ZoneType     int `json:"zone_type"`
 }
 
+// SpellItemRef is a slim item reference used in spell cross-reference queries.
+type SpellItemRef struct {
+	ID         int    `json:"id"`
+	Name       string `json:"name"`
+	EffectType string `json:"effect_type,omitempty"` // "click", "worn", "proc", "focus", or "" for scroll
+}
+
+// SpellCrossRefs holds items that reference a spell, grouped by relationship type.
+type SpellCrossRefs struct {
+	ScrollItems []SpellItemRef `json:"scroll_items"` // items that teach this spell
+	EffectItems []SpellItemRef `json:"effect_items"` // items with this spell as click/worn/proc/focus
+}
+
 // Zone represents a row from the zone table.
 type Zone struct {
 	ID           int     `json:"id"`
@@ -198,6 +225,144 @@ type Zone struct {
 	Expansion    int     `json:"expansion"`
 	NPCLevelMin  int     `json:"npc_level_min"`
 	NPCLevelMax  int     `json:"npc_level_max"`
+}
+
+// LootDropItem is one item within a loot drop entry.
+type LootDropItem struct {
+	ItemID     int     `json:"item_id"`
+	ItemName   string  `json:"item_name"`
+	Chance     float64 `json:"chance"`
+	Multiplier int     `json:"multiplier"`
+}
+
+// LootDrop is one loot drop group within a loottable entry.
+type LootDrop struct {
+	ID          int            `json:"id"`
+	Name        string         `json:"name"`
+	Multiplier  int            `json:"multiplier"`
+	Probability int            `json:"probability"`
+	Items       []LootDropItem `json:"items"`
+}
+
+// NPCLootTable holds the resolved loot table for an NPC.
+type NPCLootTable struct {
+	ID    int        `json:"id"`
+	Name  string     `json:"name"`
+	Drops []LootDrop `json:"drops"`
+}
+
+// ItemSourceNPC is a minimal NPC record used in item source listings.
+type ItemSourceNPC struct {
+	ID            int     `json:"id"`
+	Name          string  `json:"name"`
+	ZoneName      string  `json:"zone_name"`
+	ZoneShortName string  `json:"zone_short_name"`
+	DropRate      float64 `json:"drop_rate,omitempty"`
+}
+
+// ItemForageZone is a zone where an item can be obtained via the Forage skill.
+type ItemForageZone struct {
+	ZoneShortName string `json:"zone_short_name"`
+	ZoneName      string `json:"zone_name"`
+	Chance        int    `json:"chance"`
+}
+
+// ItemGroundSpawnZone is a zone where an item spawns as a ground item.
+type ItemGroundSpawnZone struct {
+	ZoneShortName string `json:"zone_short_name"`
+	ZoneName      string `json:"zone_name"`
+	Name          string `json:"name"`
+	MaxAllowed    int    `json:"max_allowed"`
+	RespawnTimer  int    `json:"respawn_timer"`
+}
+
+// ItemTradeskillEntry is a tradeskill recipe that involves an item as a product or ingredient.
+type ItemTradeskillEntry struct {
+	RecipeID   int    `json:"recipe_id"`
+	RecipeName string `json:"recipe_name"`
+	Tradeskill int    `json:"tradeskill"`
+	Trivial    int    `json:"trivial"`
+	Role       string `json:"role"`  // "product" or "ingredient"
+	Count      int    `json:"count"` // successcount or componentcount
+}
+
+// ItemSources holds the ways to obtain a given item.
+type ItemSources struct {
+	Drops        []ItemSourceNPC       `json:"drops"`
+	Merchants    []ItemSourceNPC       `json:"merchants"`
+	ForageZones  []ItemForageZone      `json:"forage_zones"`
+	GroundSpawns []ItemGroundSpawnZone `json:"ground_spawns"`
+	Tradeskills  []ItemTradeskillEntry `json:"tradeskills"`
+}
+
+// NPCSpawnPoint represents a single spawn point for an NPC.
+type NPCSpawnPoint struct {
+	ID              int     `json:"id"`
+	Zone            string  `json:"zone"`
+	ZoneName        string  `json:"zone_name"`
+	X               float64 `json:"x"`
+	Y               float64 `json:"y"`
+	Z               float64 `json:"z"`
+	RespawnTime     int     `json:"respawn_time"`
+	FastRespawnTime int     `json:"fast_respawn_time"`
+}
+
+// SpawnGroupMember is one NPC entry within a spawn group.
+type SpawnGroupMember struct {
+	NPCID  int    `json:"npc_id"`
+	Name   string `json:"name"`
+	Chance int    `json:"chance"`
+}
+
+// NPCSpawnGroup represents a spawn group and all of its NPC members.
+type NPCSpawnGroup struct {
+	ID              int                `json:"id"`
+	Name            string             `json:"name"`
+	RespawnTime     int                `json:"respawn_time"`
+	FastRespawnTime int                `json:"fast_respawn_time"`
+	Members         []SpawnGroupMember `json:"members"`
+}
+
+// NPCSpawns holds spawn point and spawn group data for an NPC.
+type NPCSpawns struct {
+	SpawnPoints []NPCSpawnPoint `json:"spawn_points"`
+	SpawnGroups []NPCSpawnGroup `json:"spawn_groups"`
+}
+
+// ZoneConnection is a zone reachable via a zone line from a source zone.
+type ZoneConnection struct {
+	ZoneID    int    `json:"zone_id"`
+	ShortName string `json:"short_name"`
+	LongName  string `json:"long_name"`
+	Expansion int    `json:"expansion"`
+}
+
+// ZoneGroundSpawn is an item that spawns on the ground in a zone.
+type ZoneGroundSpawn struct {
+	ID           int    `json:"id"`
+	ItemID       int    `json:"item_id"`
+	ItemName     string `json:"item_name"`
+	Name         string `json:"name"`
+	MaxAllowed   int    `json:"max_allowed"`
+	RespawnTimer int    `json:"respawn_timer"`
+}
+
+// ZoneForageItem is an item obtainable via the Forage skill in a zone.
+type ZoneForageItem struct {
+	ID       int    `json:"id"`
+	ItemID   int    `json:"item_id"`
+	ItemName string `json:"item_name"`
+	Chance   int    `json:"chance"`
+	Level    int    `json:"level"`
+}
+
+// ZoneDropItem is an item that can drop from an NPC in a zone.
+type ZoneDropItem struct {
+	ItemID   int     `json:"item_id"`
+	ItemName string  `json:"item_name"`
+	NPCID    int     `json:"npc_id"`
+	NPCName  string  `json:"npc_name"`
+	Chance   float64 `json:"chance"`
 }
 
 // SearchResult wraps paginated query results.

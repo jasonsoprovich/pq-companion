@@ -181,34 +181,35 @@ export interface SpecialAbility {
   code: number
   value: number
   name: string
+  description: string
 }
 
-const SPECIAL_ABILITY_NAMES: Record<number, string> = {
-  1: 'Summon',
-  2: 'Enrage',
-  3: 'Rampage',
-  4: 'Flurry',
-  5: 'Triple Attack',
-  6: 'Dual Wield',
-  7: 'Bane Damage',
-  10: 'Unflinching',
-  12: 'Immune to Melee',
-  13: 'Immune to Magic',
-  14: 'Immune to Fire',
-  15: 'Immune to Cold',
-  16: 'Immune to Poison',
-  17: 'Uncharmable',
-  18: 'Unmezzable',
-  19: 'Unfearable',
-  20: 'Immune to Slow',
-  21: 'Immune to Stun',
-  23: 'Immune to Fleeing',
-  24: 'No Target',
-  26: 'See Through Invis',
-  28: 'See Through Invis vs Undead',
-  31: 'Immune to Dispel',
-  35: 'Immune to NPC Aggro',
-  42: 'Destructible Object',
+const SPECIAL_ABILITIES: Record<number, { name: string; description: string }> = {
+  1:  { name: 'Summon',                    description: 'Will summon players who run out of melee range.' },
+  2:  { name: 'Enrage',                    description: 'Randomly enrages at low HP, attacking all nearby players for a short duration.' },
+  3:  { name: 'Rampage',                   description: 'Randomly hits nearby players instead of only the current target.' },
+  4:  { name: 'Flurry',                    description: 'Can strike multiple times in rapid succession on a single attack round.' },
+  5:  { name: 'Triple Attack',             description: 'Attacks three times per combat round.' },
+  6:  { name: 'Dual Wield',                description: 'Attacks with two weapons simultaneously.' },
+  7:  { name: 'Bane Damage',               description: 'Weapons below a certain material type do reduced or no damage.' },
+  10: { name: 'Unflinching',               description: 'Does not flee at low HP.' },
+  12: { name: 'Immune to Melee',           description: 'Cannot be damaged by melee attacks.' },
+  13: { name: 'Immune to Magic',           description: 'Immune to magic-based spells and effects.' },
+  14: { name: 'Immune to Fire',            description: 'Takes no damage from fire-based spells.' },
+  15: { name: 'Immune to Cold',            description: 'Takes no damage from cold-based spells.' },
+  16: { name: 'Immune to Poison',          description: 'Immune to poison-based spells and effects.' },
+  17: { name: 'Uncharmable',               description: 'Cannot be charmed by any spell or effect.' },
+  18: { name: 'Unmezzable',                description: 'Cannot be mesmerized or sleep-stunned.' },
+  19: { name: 'Unfearable',                description: 'Cannot be feared or made to flee.' },
+  20: { name: 'Immune to Slow',            description: 'Cannot be slowed by any spell or effect.' },
+  21: { name: 'Immune to Stun',            description: 'Cannot be stunned.' },
+  23: { name: 'Immune to Fleeing',         description: 'Does not flee when health drops low.' },
+  24: { name: 'No Target',                 description: 'Cannot be targeted directly by players.' },
+  26: { name: 'See Through Invis',         description: 'Can see invisible players and pets.' },
+  28: { name: 'See Through Invis vs Undead', description: 'Can see players hidden with Invisibility vs. Undead.' },
+  31: { name: 'Immune to Dispel',          description: 'Buffs and effects cannot be removed by dispel spells.' },
+  35: { name: 'Immune to NPC Aggro',       description: 'Will not be attacked by other NPCs.' },
+  42: { name: 'Destructible Object',       description: 'Can be destroyed by player damage (e.g. doors, crates).' },
 }
 
 export function parseSpecialAbilities(raw: string): SpecialAbility[] {
@@ -222,7 +223,13 @@ export function parseSpecialAbilities(raw: string): SpecialAbility[] {
       const code = parseInt(codeStr ?? '', 10)
       const value = parseInt(valueStr ?? '0', 10)
       if (isNaN(code) || isNaN(value)) return []
-      return [{ code, value, name: SPECIAL_ABILITY_NAMES[code] ?? `Ability ${code}` }]
+      const entry = SPECIAL_ABILITIES[code]
+      return [{
+        code,
+        value,
+        name: entry?.name ?? `Ability ${code}`,
+        description: entry?.description ?? '',
+      }]
     })
     .filter((sa) => sa.value !== 0)
 }

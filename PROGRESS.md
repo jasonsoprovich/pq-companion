@@ -59,7 +59,8 @@
 - [x] Task 9.3 — Event Notifications
 
 ## Phase 10 — Character Tools
-- [ ] Task 10.1 — Character Todo List
+- [x] Task 10.1 — Multi-Character Support (Characters tab, CRUD, switcher fix)
+- [x] Task 10.2 — Character tracking: race field, Discover from logs auto-import (closes #45)
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website

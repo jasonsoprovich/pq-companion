@@ -1,8 +1,8 @@
 import type { Config } from '../types/config'
-import type { Item, SearchResult } from '../types/item'
-import type { NPC } from '../types/npc'
-import type { Spell } from '../types/spell'
-import type { Zone } from '../types/zone'
+import type { Item, ItemSources, SearchResult } from '../types/item'
+import type { NPC, NPCSpawns, NPCLootTable, NPCFaction } from '../types/npc'
+import type { Spell, SpellCrossRefs } from '../types/spell'
+import type { Zone, ZoneConnection, ZoneGroundSpawn, ZoneForageItem, ZoneDropItem } from '../types/zone'
 import type { ZealInventoryResponse, ZealSpellbookResponse, AllInventoriesResponse } from '../types/zeal'
 import type { KeysResponse, KeysProgressResponse } from '../types/keys'
 import type { Backup, BackupsResponse } from '../types/backup'
@@ -82,6 +82,10 @@ export function getItem(id: number): Promise<Item> {
   return get<Item>(`/api/items/${id}`)
 }
 
+export function getItemSources(id: number): Promise<ItemSources> {
+  return get<ItemSources>(`/api/items/${id}/sources`)
+}
+
 // ── Spells ─────────────────────────────────────────────────────────────────────
 
 export function searchSpells(
@@ -97,6 +101,10 @@ export function getSpell(id: number): Promise<Spell> {
   return get<Spell>(`/api/spells/${id}`)
 }
 
+export function getSpellCrossRefs(id: number): Promise<SpellCrossRefs> {
+  return get<SpellCrossRefs>(`/api/spells/${id}/items`)
+}
+
 // ── NPCs ───────────────────────────────────────────────────────────────────────
 
 export function searchNPCs(
@@ -110,6 +118,18 @@ export function searchNPCs(
 
 export function getNPC(id: number): Promise<NPC> {
   return get<NPC>(`/api/npcs/${id}`)
+}
+
+export function getNPCSpawns(id: number): Promise<NPCSpawns> {
+  return get<NPCSpawns>(`/api/npcs/${id}/spawns`)
+}
+
+export function getNPCLoot(id: number): Promise<NPCLootTable> {
+  return get<NPCLootTable>(`/api/npcs/${id}/loot`)
+}
+
+export function getNPCFaction(id: number): Promise<NPCFaction | null> {
+  return get<NPCFaction | null>(`/api/npcs/${id}/faction`)
 }
 
 // ── Zones ──────────────────────────────────────────────────────────────────────
@@ -141,6 +161,22 @@ export function getNPCsByZone(
 ): Promise<SearchResult<NPC>> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   return get<SearchResult<NPC>>(`/api/zones/short/${encodeURIComponent(shortName)}/npcs?${params}`)
+}
+
+export function getZoneConnections(shortName: string): Promise<ZoneConnection[]> {
+  return get<ZoneConnection[]>(`/api/zones/short/${encodeURIComponent(shortName)}/connections`)
+}
+
+export function getZoneGroundSpawns(shortName: string): Promise<ZoneGroundSpawn[]> {
+  return get<ZoneGroundSpawn[]>(`/api/zones/short/${encodeURIComponent(shortName)}/ground-spawns`)
+}
+
+export function getZoneForage(shortName: string): Promise<ZoneForageItem[]> {
+  return get<ZoneForageItem[]>(`/api/zones/short/${encodeURIComponent(shortName)}/forage`)
+}
+
+export function getZoneDrops(shortName: string): Promise<ZoneDropItem[]> {
+  return get<ZoneDropItem[]>(`/api/zones/short/${encodeURIComponent(shortName)}/drops`)
 }
 
 // ── Zeal ───────────────────────────────────────────────────────────────────────
@@ -252,19 +288,45 @@ export function updateConfig(cfg: Config): Promise<Config> {
 
 // ── Characters ─────────────────────────────────────────────────────────────────
 
-export interface DiscoveredCharacter {
+export interface Character {
+  id: number
   name: string
-  mod_time: number
+  class: number  // -1=not set, 0-14=EQ class index
+  race: number   // -1=not set, EQ race id
+  level: number
 }
 
 export interface CharactersResponse {
-  characters: DiscoveredCharacter[]
+  characters: Character[]
   active: string
   manual: boolean
 }
 
+export interface CharacterRequest {
+  name: string
+  class: number
+  race: number
+  level: number
+}
+
 export function listCharacters(): Promise<CharactersResponse> {
   return get<CharactersResponse>('/api/characters')
+}
+
+export function createCharacter(req: CharacterRequest): Promise<Character> {
+  return post<Character>('/api/characters', req)
+}
+
+export function updateCharacter(id: number, req: CharacterRequest): Promise<Character> {
+  return put<Character>(`/api/characters/${id}`, req)
+}
+
+export function deleteCharacter(id: number): Promise<void> {
+  return del(`/api/characters/${id}`)
+}
+
+export function discoverCharacters(): Promise<{ names: string[] }> {
+  return get<{ names: string[] }>('/api/characters/discover')
 }
 
 // ── Triggers ───────────────────────────────────────────────────────────────────

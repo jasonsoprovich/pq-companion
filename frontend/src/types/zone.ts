@@ -19,6 +19,38 @@ export interface Zone {
   npc_level_max: number
 }
 
+export interface ZoneConnection {
+  zone_id: number
+  short_name: string
+  long_name: string
+  expansion: number
+}
+
+export interface ZoneGroundSpawn {
+  id: number
+  item_id: number
+  item_name: string
+  name: string
+  max_allowed: number
+  respawn_timer: number
+}
+
+export interface ZoneForageItem {
+  id: number
+  item_id: number
+  item_name: string
+  chance: number
+  level: number
+}
+
+export interface ZoneDropItem {
+  item_id: number
+  item_name: string
+  npc_id: number
+  npc_name: string
+  chance: number
+}
+
 export interface SearchResult<T> {
   items: T[]
   total: number

@@ -118,6 +118,11 @@
   - Sections only rendered when they have non-zero values
   - Initial load fetches all items (empty query); debounced at 300ms
 - **Backend `GET /api/items?bane_body=N`** — optional filter; when N > 0 restricts results to items with `banedmgbody = N`; `bane_amt`, `bane_body`, `bane_race` fields exposed on all item responses
+- **Item Sources** (closes #78):
+  - **Backend `GET /api/items/{id}/sources`** — returns `{ drops: [...], merchants: [...] }` with NPC `id`, `name`, and `zone_name` for each source; joins `lootdrop_entries → loottable_entries → npc_types` for drops and `merchantlist → npc_types` for merchants; zone resolved via `spawnentry → spawngroup → spawn2 → zone`; capped at 50 results per source type
+  - **`types/item.ts`** — added `ItemSourceNPC` and `ItemSources` TypeScript types
+  - **`services/api.ts`** — added `getItemSources(id)` fetch wrapper
+  - **`pages/ItemsPage.tsx`** — "Item Sources" section in detail panel showing "Dropped by" and "Sold by" sub-groups; each NPC name is a clickable link that navigates to `/npcs?select=<id>`; zone name shown alongside NPC; section only rendered when at least one source exists
 
 ### Task 2.4 — Database Explorer: Spells ✅
 - **`types/spell.ts`** — TypeScript `Spell` type mirroring Go backend struct (timing, duration, effects, class levels)
@@ -135,7 +140,7 @@
   - `zoneTypeLabel` — maps zone_type int to restriction string (Outdoor, Indoor, Outdoor & Underground, City); empty for unrestricted (0)
 - **`pages/SpellsPage.tsx`** — split-pane layout matching Item Explorer:
   - **Left pane (288px)**: debounced search input, result count, scrollable list showing name + castable classes with levels + mana cost; selected spell highlighted with gold left-border accent; blank-name spell IDs filtered out
-  - **Detail panel (right)**: spell data in labeled sections — Casting (skill school, mana, cast/recast/recovery time, duration labeled "Max Duration" for scaling spells), Targeting (target type, resist type, range, AoE range, Zone Type when restricted), Classes (full class names with required level), Effects (human-readable descriptions per slot), Messages (cast_on_you, cast_on_other, spell_fades flavor text), Info (Spell ID)
+  - **Detail panel (right)**: spell data in labeled sections — Casting (skill school, mana, cast/recast/recovery time, duration labeled "Max Duration" for scaling spells), Targeting (target type, resist type, range, AoE range, Zone Type when restricted), Classes (full class names with required level), Effects (human-readable descriptions per slot), Messages (cast_on_you, cast_on_other, spell_fades flavor text), Taught by (clickable links to scroll items that teach this spell), Items with this effect (clickable links to click/worn/proc/focus items grouped by effect type), Info (Spell ID)
   - Flags rendered as pill badges: DISCIPLINE, NO DISPELL
   - Sections only rendered when they have relevant data
 
@@ -150,7 +155,7 @@
   - `parseSpecialAbilities(raw)` — parses caret-delimited `code,value^…` string into `{code, value, name}` objects; filters out disabled abilities (value = 0)
 - **`pages/NpcsPage.tsx`** — split-pane layout matching Item/Spell Explorer:
   - **Left pane (288px)**: debounced search input, result count, scrollable list showing formatted name + level + class; selected NPC highlighted with gold left-border accent
-  - **Detail panel (right)**: NPC data in labeled sections — Combat (HP/Mana/Damage range/Attacks/AC), Attributes (STR/STA/DEX/AGI/INT/WIS/CHA, omitted when all zero), Resists (MR/CR/DR/FR/PR, omitted when all zero), Special Abilities (parsed as pill badges), Behavior (Aggro Radius/Run Speed/Size), Info (NPC ID/Loot Table/Merchant/Spells/Faction IDs, Exp%, Spell/Heal Scale)
+  - **Detail panel (right)**: NPC data in labeled sections — Combat (HP/Mana/Damage range/Attacks/AC), Attributes (STR/STA/DEX/AGI/INT/WIS/CHA, omitted when all zero), Resists (MR/CR/DR/FR/PR, omitted when all zero), Special Abilities (parsed as pill badges), Behavior (Aggro Radius/Run Speed/Size), Info (NPC ID/Loot Table/Merchant/Spells/Faction IDs, Exp%, Spell/Heal Scale), Faction (primary faction name + per-faction kill hits with color-coded +/- values)
   - Flags rendered as pill badges: RAID TARGET, RARE SPAWN
   - Sections only rendered when they have non-zero values
 
@@ -172,6 +177,14 @@
 - **Issue #32 — Zone level range** (`models.go`, `queries.go`, `types/zone.ts`, `pages/ZonesPage.tsx`): added `npc_level_min`/`npc_level_max` fields derived via correlated subqueries (spawnentry→npc_types per zone); displayed as "Level Range: 1–66" in the Zone Info section and as "Lv 1–66" in the search list subtitle
 - **Issue #63 — ZEM/XP modifier NaN% fix** (`queries.go`, `pages/ZonesPage.tsx`): added `COALESCE(z.zone_exp_multiplier, 1.0)` to the SQL query so NULL DB values default to 1.0; added NaN/undefined guard in `expModLabel` (returns `—` for non-finite values); replaced raw `Math.round` in the detail-panel header ZEM badge with `expModLabel`; wrapped the search-list ZEM badge with `isFinite()` check
 - **Issue #64 — Hotzone flag field mapping verification** (`queries_test.go`): extended `TestGetZoneByShortName` with explicit assertions on `Hotzone`, `Outdoor`, and `ExpMod` fields to guard against scanZone column misalignment; verified the hotzone integer (0/1) round-trips correctly from SQLite through the Go API to the `zone.hotzone ? 'Yes' : 'No'` display in the detail panel
+- **Issue #33 — Zone detail tabs** (connected zones, drops, ground spawns, foraged items, NPC spawns):
+  - **Backend models** (`internal/db/models.go`): added `ZoneConnection`, `ZoneGroundSpawn`, `ZoneForageItem`, `ZoneDropItem` structs
+  - **Backend queries** (`internal/db/queries.go`): added `GetZoneConnections` (zone_points→zone join, distinct by target zone), `GetZoneGroundSpawns` (ground_spawns by zoneidnumber), `GetZoneForage` (forage table by zoneidnumber), `GetZoneDrops` (aggregate loot from all NPC spawns in zone, capped at 500)
+  - **Backend API** (`internal/api/zones.go`): added `getConnections`, `getGroundSpawns`, `getForage`, `getDrops` handlers
+  - **Router** (`internal/api/router.go`): registered four new routes under `/api/zones/short/{name}/`
+  - **Frontend types** (`types/zone.ts`): added `ZoneConnection`, `ZoneGroundSpawn`, `ZoneForageItem`, `ZoneDropItem` interfaces
+  - **Frontend API** (`services/api.ts`): added `getZoneConnections`, `getZoneGroundSpawns`, `getZoneForage`, `getZoneDrops` functions
+  - **`pages/ZonesPage.tsx`**: converted detail panel to tabbed layout (Overview, NPCs, Connected Zones, Drops, Ground Spawns, Forage); each tab lazy-loads its data on first view; connected zones and NPC rows are clickable links; drops and items navigate to their detail pages; respawn timers formatted as minutes/seconds
 
 ### Task 2.7 — Global Search ✅
 - **`GET /api/search?q=&limit=`** — new backend endpoint; runs all four searches (items, spells, NPCs, zones) in parallel via goroutines and returns a single grouped response (`internal/api/search.go`)
@@ -857,6 +870,25 @@ Two separate overlay windows are provided from the start — one for beneficial 
 - Subscribes to `config:character_detected` WebSocket events via `useWebSocket`
 - When the character field is blank and a character is detected, shows a muted banner below the input: "Auto-detected: **Firiona**" with a **Use This** button that copies the name into the character field
 - Banner dismisses automatically when the character field is manually filled
+
+### Issue #49 — Copy DPS Summary to Clipboard ✅
+
+**`frontend/src/pages/CombatLogPage.tsx`**
+- Added `Clipboard` / `ClipboardCheck` icon imports from lucide-react
+- Added `buildFightText(fight)` — formats a fight into EQ-chat-safe lines: header `[PQ Companion] Fight: <target> (<duration>)` followed by `<name>: X.X DPS (N total)` per combatant
+- Added `buildSessionText(fights, sessionDPS)` — formats a one-liner session summary with fight count and session average DPS
+- `FightRow`: converted summary row from `<button>` to `<div>` with `onClick`; added a 7th grid column (24px) for a per-row clipboard icon button; button flips to `ClipboardCheck` (green) for 1.5 s after a successful copy
+- `TableHeader`: added matching 7th column header (blank) to keep grid alignment
+- `FilterBar`: added `onCopySession` / `sessionCopied` props; added "Copy" button (clipboard icon + label) to the right-side action group; flips to `ClipboardCheck` green for 1.5 s after copy
+
+**`frontend/src/pages/DPSOverlayPage.tsx`**
+- Added `buildFightText(fight)` helper (same format as above, operates on `FightState`)
+- Added `CopyFightButton` component — clipboard icon button; disabled and faded when no active fight; toggles to green `ClipboardCheck` for 1.5 s on copy
+- `CopyFightButton` placed in the DPS Meter `headerRight` between the All/Me toggle and the pop-out button; copies `combat.current_fight` data
+
+**`frontend/src/pages/DPSOverlayWindowPage.tsx`**
+- Added `buildFightText(fight)` helper for the floating overlay context
+- Added `copied` state; clipboard icon button in the no-drag controls zone (between All/Me toggle and close ×); disabled and dimmed when no fight is active; green for 1.5 s on copy
 
 ### Issue #70 — Spell/Caster DPS Not Tracked ✅
 

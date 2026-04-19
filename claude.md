@@ -62,9 +62,9 @@ config backup manager, and custom trigger system into a single application.
 - Commit messages: conventional commits (feat:, fix:, docs:, etc.)
 - Test every feature before moving to the next phase
 - When completing a task, update ONLY the following before committing:
-  - `FEATURES.md` — expand the feature entry with implementation details
-- Update `PROGRESS.md`, `README.md`, and `ROADMAP.md` only at the end of
-  each complete phase (all tasks in the phase done), not after individual tasks.
+  - `PROGRESS.md` — mark the task `[x]`
+- Update `FEATURES.md`, `README.md`, and `ROADMAP.md` only at release time
+  (when running `/newrelease`), not after individual tasks or phases.
 - Commit everything for the task in a single conventional commit (e.g. `feat: Task 1.1 — REST API`)
 
 ## EverQuest-Specific Knowledge
