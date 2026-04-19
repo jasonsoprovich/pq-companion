@@ -19,7 +19,8 @@ files:
 # When absent, the installer is unsigned (SmartScreen will warn on first run).
 win:
   artifactName: "PQ-Companion-Setup-${version}.exe"
-  signingHashAlgorithms: ['sha256']
+  signtoolOptions:
+    signingHashAlgorithms: ['sha256']
   target:
     - target: nsis
       arch: [x64]
