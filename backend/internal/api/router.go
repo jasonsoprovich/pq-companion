@@ -42,6 +42,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	npcs := &npcsHandler{db: database}
 	zones := &zonesHandler{db: database}
 	cfg := &configHandler{mgr: cfgMgr}
+	charactersH := &charactersHandler{mgr: cfgMgr}
 	search := &searchHandler{db: database}
 	zealH := &zealHandler{watcher: zealWatcher}
 	keysH := &keysHandler{watcher: zealWatcher}
@@ -78,6 +79,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/", cfg.get)
 			r.Put("/", cfg.update)
 		})
+		r.Get("/characters", charactersH.list)
 		r.Route("/zeal", func(r chi.Router) {
 			r.Get("/inventory", zealH.inventory)
 			r.Get("/spells", zealH.spellbook)

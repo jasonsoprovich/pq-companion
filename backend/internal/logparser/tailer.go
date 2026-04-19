@@ -99,7 +99,7 @@ func (t *Tailer) Status() Status {
 	cfg := t.cfgMgr.Get()
 	character := cfg.Character
 	if character == "" {
-		character = resolveActiveCharacter(cfg.EQPath)
+		character = ResolveActiveCharacter(cfg.EQPath)
 	}
 	fp := logFilePath(cfg.EQPath, character)
 	_, statErr := os.Stat(fp)
@@ -129,7 +129,7 @@ func (t *Tailer) tick() {
 	character := cfg.Character
 	autoDetected := character == ""
 	if autoDetected {
-		character = resolveActiveCharacter(cfg.EQPath)
+		character = ResolveActiveCharacter(cfg.EQPath)
 		if character == "" {
 			return
 		}
@@ -301,38 +301,3 @@ func logFilePath(eqPath, character string) string {
 	return filepath.Join(eqPath, "eqlog_"+character+"_pq.proj.txt")
 }
 
-// resolveActiveCharacter scans eqPath for eqlog_*_pq.proj.txt files and
-// returns the character name from the most recently modified file.
-// Returns empty string if no log files are found.
-func resolveActiveCharacter(eqPath string) string {
-	if eqPath == "" {
-		return ""
-	}
-	pattern := filepath.Join(eqPath, "eqlog_*_pq.proj.txt")
-	matches, err := filepath.Glob(pattern)
-	if err != nil || len(matches) == 0 {
-		return ""
-	}
-
-	var newest string
-	var newestTime time.Time
-	for _, path := range matches {
-		info, err := os.Stat(path)
-		if err != nil {
-			continue
-		}
-		if info.ModTime().After(newestTime) {
-			newestTime = info.ModTime()
-			newest = path
-		}
-	}
-	if newest == "" {
-		return ""
-	}
-
-	base := filepath.Base(newest)
-	// Strip "eqlog_" prefix and "_pq.proj.txt" suffix.
-	name := strings.TrimPrefix(base, "eqlog_")
-	name = strings.TrimSuffix(name, "_pq.proj.txt")
-	return name
-}

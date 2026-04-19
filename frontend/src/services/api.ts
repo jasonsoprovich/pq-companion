@@ -250,6 +250,23 @@ export function updateConfig(cfg: Config): Promise<Config> {
   return put<Config>('/api/config', cfg)
 }
 
+// ── Characters ─────────────────────────────────────────────────────────────────
+
+export interface DiscoveredCharacter {
+  name: string
+  mod_time: number
+}
+
+export interface CharactersResponse {
+  characters: DiscoveredCharacter[]
+  active: string
+  manual: boolean
+}
+
+export function listCharacters(): Promise<CharactersResponse> {
+  return get<CharactersResponse>('/api/characters')
+}
+
 // ── Triggers ───────────────────────────────────────────────────────────────────
 
 export function listTriggers(): Promise<Trigger[]> {

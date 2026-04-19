@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { Sword, Sparkles, Skull, Map, Settings, Search, Package, BookOpen, KeyRound, HardDrive, Activity, Crosshair, Swords, ScrollText, Timer, Zap } from 'lucide-react'
 import { getLogStatus } from '../services/api'
+import CharacterSwitcher from './CharacterSwitcher'
 
 interface NavItem {
   to: string
@@ -102,6 +103,9 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
           </kbd>
         </button>
       </div>
+
+      {/* Character switcher */}
+      <CharacterSwitcher />
 
       {/* Section header */}
       <div className="px-4 pb-1 pt-3">
