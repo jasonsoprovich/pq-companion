@@ -1,7 +1,7 @@
 import type { Config } from '../types/config'
 import type { Item, ItemSources, SearchResult } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction } from '../types/npc'
-import type { Spell } from '../types/spell'
+import type { Spell, SpellCrossRefs } from '../types/spell'
 import type { Zone } from '../types/zone'
 import type { ZealInventoryResponse, ZealSpellbookResponse, AllInventoriesResponse } from '../types/zeal'
 import type { KeysResponse, KeysProgressResponse } from '../types/keys'
@@ -99,6 +99,10 @@ export function searchSpells(
 
 export function getSpell(id: number): Promise<Spell> {
   return get<Spell>(`/api/spells/${id}`)
+}
+
+export function getSpellCrossRefs(id: number): Promise<SpellCrossRefs> {
+  return get<SpellCrossRefs>(`/api/spells/${id}/items`)
 }
 
 // ── NPCs ───────────────────────────────────────────────────────────────────────

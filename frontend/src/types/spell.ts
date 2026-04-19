@@ -42,3 +42,14 @@ export interface Spell {
   no_dispell: number
   zone_type: number
 }
+
+export interface SpellItemRef {
+  id: number
+  name: string
+  effect_type?: string // "click" | "worn" | "proc" | "focus"
+}
+
+export interface SpellCrossRefs {
+  scroll_items: SpellItemRef[]
+  effect_items: SpellItemRef[]
+}

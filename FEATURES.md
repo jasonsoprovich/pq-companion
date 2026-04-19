@@ -140,7 +140,7 @@
   - `zoneTypeLabel` — maps zone_type int to restriction string (Outdoor, Indoor, Outdoor & Underground, City); empty for unrestricted (0)
 - **`pages/SpellsPage.tsx`** — split-pane layout matching Item Explorer:
   - **Left pane (288px)**: debounced search input, result count, scrollable list showing name + castable classes with levels + mana cost; selected spell highlighted with gold left-border accent; blank-name spell IDs filtered out
-  - **Detail panel (right)**: spell data in labeled sections — Casting (skill school, mana, cast/recast/recovery time, duration labeled "Max Duration" for scaling spells), Targeting (target type, resist type, range, AoE range, Zone Type when restricted), Classes (full class names with required level), Effects (human-readable descriptions per slot), Messages (cast_on_you, cast_on_other, spell_fades flavor text), Info (Spell ID)
+  - **Detail panel (right)**: spell data in labeled sections — Casting (skill school, mana, cast/recast/recovery time, duration labeled "Max Duration" for scaling spells), Targeting (target type, resist type, range, AoE range, Zone Type when restricted), Classes (full class names with required level), Effects (human-readable descriptions per slot), Messages (cast_on_you, cast_on_other, spell_fades flavor text), Taught by (clickable links to scroll items that teach this spell), Items with this effect (clickable links to click/worn/proc/focus items grouped by effect type), Info (Spell ID)
   - Flags rendered as pill badges: DISCIPLINE, NO DISPELL
   - Sections only rendered when they have relevant data
 

@@ -657,6 +657,63 @@ func (db *DB) GetSpellsByClass(classIndex, limit, offset int) (*SearchResult[Spe
 	return &SearchResult[Spell]{Items: spells, Total: total}, nil
 }
 
+// GetSpellCrossRefs returns items that reference the given spell ID, split into
+// scroll items (which teach the spell) and effect items (click/worn/proc/focus).
+func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
+	scrollRows, err := db.Query(
+		"SELECT id, name FROM items WHERE scrolleffect = ? ORDER BY name",
+		spellID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get spell scroll items: %w", err)
+	}
+	defer scrollRows.Close()
+
+	result := &SpellCrossRefs{
+		ScrollItems: []SpellItemRef{},
+		EffectItems: []SpellItemRef{},
+	}
+	for scrollRows.Next() {
+		var ref SpellItemRef
+		if err := scrollRows.Scan(&ref.ID, &ref.Name); err != nil {
+			return nil, fmt.Errorf("scan scroll item: %w", err)
+		}
+		result.ScrollItems = append(result.ScrollItems, ref)
+	}
+	if err := scrollRows.Err(); err != nil {
+		return nil, err
+	}
+
+	effectRows, err := db.Query(`
+		SELECT effect_type, id, name FROM (
+			SELECT 'click' AS effect_type, id, name FROM items WHERE clickeffect = ?
+			UNION
+			SELECT 'worn', id, name FROM items WHERE worneffect = ?
+			UNION
+			SELECT 'proc', id, name FROM items WHERE proceffect = ?
+			UNION
+			SELECT 'focus', id, name FROM items WHERE focuseffect = ?
+		) ORDER BY effect_type, name`,
+		spellID, spellID, spellID, spellID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get spell effect items: %w", err)
+	}
+	defer effectRows.Close()
+
+	for effectRows.Next() {
+		var ref SpellItemRef
+		if err := effectRows.Scan(&ref.EffectType, &ref.ID, &ref.Name); err != nil {
+			return nil, fmt.Errorf("scan effect item: %w", err)
+		}
+		result.EffectItems = append(result.EffectItems, ref)
+	}
+	if err := effectRows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // ─── Zones ────────────────────────────────────────────────────────────────────
 
 const zoneColumns = `

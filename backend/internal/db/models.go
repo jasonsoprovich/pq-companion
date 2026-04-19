@@ -192,6 +192,19 @@ type Spell struct {
 	ZoneType     int `json:"zone_type"`
 }
 
+// SpellItemRef is a slim item reference used in spell cross-reference queries.
+type SpellItemRef struct {
+	ID         int    `json:"id"`
+	Name       string `json:"name"`
+	EffectType string `json:"effect_type,omitempty"` // "click", "worn", "proc", "focus", or "" for scroll
+}
+
+// SpellCrossRefs holds items that reference a spell, grouped by relationship type.
+type SpellCrossRefs struct {
+	ScrollItems []SpellItemRef `json:"scroll_items"` // items that teach this spell
+	EffectItems []SpellItemRef `json:"effect_items"` // items with this spell as click/worn/proc/focus
+}
+
 // Zone represents a row from the zone table.
 type Zone struct {
 	ID           int     `json:"id"`

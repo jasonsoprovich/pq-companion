@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, X } from 'lucide-react'
-import { searchSpells, getSpell } from '../services/api'
-import type { Spell } from '../types/spell'
+import { searchSpells, getSpell, getSpellCrossRefs } from '../services/api'
+import type { Spell, SpellCrossRefs } from '../types/spell'
 import {
   castableClasses,
   castableClassesShort,
@@ -184,6 +184,16 @@ interface DetailPanelProps {
 }
 
 function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
+  const navigate = useNavigate()
+  const [crossRefs, setCrossRefs] = useState<SpellCrossRefs | null>(null)
+
+  useEffect(() => {
+    if (!spell) { setCrossRefs(null); return }
+    getSpellCrossRefs(spell.id)
+      .then(setCrossRefs)
+      .catch(() => setCrossRefs(null))
+  }, [spell?.id])
+
   if (!spell) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -335,6 +345,62 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
                 </span>
               </div>
             )}
+          </Section>
+        )}
+
+        {/* Taught by */}
+        {crossRefs && crossRefs.scroll_items.length > 0 && (
+          <Section title="Taught by">
+            {crossRefs.scroll_items.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => navigate(`/items?select=${item.id}`)}
+                className="flex w-full items-center border-t py-0.5 text-left text-sm first:border-t-0"
+                style={{ borderColor: 'var(--color-border)' }}
+              >
+                <span
+                  className="underline decoration-dotted"
+                  style={{ color: 'var(--color-primary)' }}
+                >
+                  {item.name}
+                </span>
+              </button>
+            ))}
+          </Section>
+        )}
+
+        {/* Items with this effect */}
+        {crossRefs && crossRefs.effect_items.length > 0 && (
+          <Section title="Items with this effect">
+            {(['click', 'worn', 'proc', 'focus'] as const).map((type) => {
+              const items = crossRefs.effect_items.filter((i) => i.effect_type === type)
+              if (items.length === 0) return null
+              return (
+                <div key={type} className="py-1 first:pt-0">
+                  <div
+                    className="mb-0.5 text-[10px] font-medium uppercase tracking-wide"
+                    style={{ color: 'var(--color-muted)' }}
+                  >
+                    {type}
+                  </div>
+                  {items.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => navigate(`/items?select=${item.id}`)}
+                      className="flex w-full items-center border-t py-0.5 text-left text-sm"
+                      style={{ borderColor: 'var(--color-border)' }}
+                    >
+                      <span
+                        className="underline decoration-dotted"
+                        style={{ color: 'var(--color-primary)' }}
+                      >
+                        {item.name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )
+            })}
           </Section>
         )}
 
