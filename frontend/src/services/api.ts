@@ -1,6 +1,6 @@
 import type { Config } from '../types/config'
 import type { Item, ItemSources, SearchResult } from '../types/item'
-import type { NPC, NPCSpawns } from '../types/npc'
+import type { NPC, NPCSpawns, NPCLootTable } from '../types/npc'
 import type { Spell } from '../types/spell'
 import type { Zone } from '../types/zone'
 import type { ZealInventoryResponse, ZealSpellbookResponse, AllInventoriesResponse } from '../types/zeal'
@@ -118,6 +118,10 @@ export function getNPC(id: number): Promise<NPC> {
 
 export function getNPCSpawns(id: number): Promise<NPCSpawns> {
   return get<NPCSpawns>(`/api/npcs/${id}/spawns`)
+}
+
+export function getNPCLoot(id: number): Promise<NPCLootTable> {
+  return get<NPCLootTable>(`/api/npcs/${id}/loot`)
 }
 
 // ── Zones ──────────────────────────────────────────────────────────────────────

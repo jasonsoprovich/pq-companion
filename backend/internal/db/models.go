@@ -200,6 +200,30 @@ type Zone struct {
 	NPCLevelMax  int     `json:"npc_level_max"`
 }
 
+// LootDropItem is one item within a loot drop entry.
+type LootDropItem struct {
+	ItemID     int     `json:"item_id"`
+	ItemName   string  `json:"item_name"`
+	Chance     float64 `json:"chance"`
+	Multiplier int     `json:"multiplier"`
+}
+
+// LootDrop is one loot drop group within a loottable entry.
+type LootDrop struct {
+	ID          int            `json:"id"`
+	Name        string         `json:"name"`
+	Multiplier  int            `json:"multiplier"`
+	Probability int            `json:"probability"`
+	Items       []LootDropItem `json:"items"`
+}
+
+// NPCLootTable holds the resolved loot table for an NPC.
+type NPCLootTable struct {
+	ID    int        `json:"id"`
+	Name  string     `json:"name"`
+	Drops []LootDrop `json:"drops"`
+}
+
 // ItemSourceNPC is a minimal NPC record used in item source listings.
 type ItemSourceNPC struct {
 	ID       int    `json:"id"`

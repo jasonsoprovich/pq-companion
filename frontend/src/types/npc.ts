@@ -52,6 +52,27 @@ export interface NPC {
   exp_pct: number
 }
 
+export interface LootDropItem {
+  item_id: number
+  item_name: string
+  chance: number
+  multiplier: number
+}
+
+export interface LootDrop {
+  id: number
+  name: string
+  multiplier: number
+  probability: number
+  items: LootDropItem[]
+}
+
+export interface NPCLootTable {
+  id: number
+  name: string
+  drops: LootDrop[]
+}
+
 export interface NPCSpawnPoint {
   id: number
   zone: string

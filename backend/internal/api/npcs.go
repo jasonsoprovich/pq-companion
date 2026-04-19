@@ -58,3 +58,21 @@ func (h *npcsHandler) spawns(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, spawns)
 }
+
+func (h *npcsHandler) loot(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	loot, err := h.db.GetNPCLoot(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if loot == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"drops": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, loot)
+}

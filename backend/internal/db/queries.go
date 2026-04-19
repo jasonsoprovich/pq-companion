@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -361,6 +362,81 @@ func (db *DB) GetNPCSpawns(npcID int) (*NPCSpawns, error) {
 		SpawnPoints: points,
 		SpawnGroups: groups,
 	}, nil
+}
+
+// GetNPCLoot returns the resolved loot table for the NPC with the given ID.
+// Returns nil when the NPC has no loottable_id set.
+func (db *DB) GetNPCLoot(npcID int) (*NPCLootTable, error) {
+	// Resolve the loottable_id for this NPC.
+	var ltID int
+	var ltName string
+	err := db.QueryRow(`
+		SELECT lt.id, lt.name
+		FROM npc_types n
+		JOIN loottable lt ON lt.id = n.loottable_id
+		WHERE n.id = ? AND n.loottable_id > 0`, npcID).Scan(&ltID, &ltName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get npc loottable %d: %w", npcID, err)
+	}
+
+	rows, err := db.Query(`
+		SELECT lte.lootdrop_id, ld.name, lte.multiplier, lte.probability,
+		       lde.item_id, i.Name, lde.chance, lde.multiplier
+		FROM loottable_entries lte
+		JOIN lootdrop ld ON ld.id = lte.lootdrop_id
+		JOIN lootdrop_entries lde ON lde.lootdrop_id = lte.lootdrop_id
+		JOIN items i ON i.id = lde.item_id
+		WHERE lte.loottable_id = ?
+		ORDER BY lte.lootdrop_id, lde.chance DESC
+		LIMIT 500`, ltID)
+	if err != nil {
+		return nil, fmt.Errorf("get npc loot entries %d: %w", npcID, err)
+	}
+	defer rows.Close()
+
+	dropMap := make(map[int]*LootDrop)
+	var dropOrder []int
+	for rows.Next() {
+		var (
+			dropID, lteMultiplier, lteProbability int
+			dropName                               string
+			itemID, ldeMultiplier                 int
+			itemName                               string
+			chance                                 float64
+		)
+		if err := rows.Scan(&dropID, &dropName, &lteMultiplier, &lteProbability, &itemID, &itemName, &chance, &ldeMultiplier); err != nil {
+			return nil, fmt.Errorf("scan loot row: %w", err)
+		}
+		d, exists := dropMap[dropID]
+		if !exists {
+			d = &LootDrop{
+				ID:          dropID,
+				Name:        dropName,
+				Multiplier:  lteMultiplier,
+				Probability: lteProbability,
+			}
+			dropMap[dropID] = d
+			dropOrder = append(dropOrder, dropID)
+		}
+		d.Items = append(d.Items, LootDropItem{
+			ItemID:     itemID,
+			ItemName:   itemName,
+			Chance:     chance,
+			Multiplier: ldeMultiplier,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	drops := make([]LootDrop, 0, len(dropOrder))
+	for _, id := range dropOrder {
+		drops = append(drops, *dropMap[id])
+	}
+	return &NPCLootTable{ID: ltID, Name: ltName, Drops: drops}, nil
 }
 
 // ─── Spells ───────────────────────────────────────────────────────────────────

@@ -70,6 +70,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/", npcs.search)
 			r.Get("/{id}", npcs.get)
 			r.Get("/{id}/spawns", npcs.spawns)
+			r.Get("/{id}/loot", npcs.loot)
 		})
 		r.Route("/zones", func(r chi.Router) {
 			r.Get("/", zones.search)

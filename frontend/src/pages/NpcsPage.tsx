@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { Search, X } from 'lucide-react'
-import { searchNPCs, getNPC, getNPCSpawns } from '../services/api'
-import type { NPC, NPCSpawns } from '../types/npc'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Check, Copy, Search, X } from 'lucide-react'
+import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot } from '../services/api'
+import type { NPC, NPCSpawns, NPCLootTable } from '../types/npc'
 import {
   bodyTypeName,
   className,
@@ -193,14 +193,28 @@ interface DetailPanelProps {
 }
 
 function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
+  const navigate = useNavigate()
   const [spawns, setSpawns] = useState<NPCSpawns | null>(null)
+  const [loot, setLoot] = useState<NPCLootTable | null>(null)
+  const [bulkCopied, setBulkCopied] = useState<number | null>(null)
 
   useEffect(() => {
-    if (!npc) { setSpawns(null); return }
+    if (!npc) { setSpawns(null); setLoot(null); return }
     getNPCSpawns(npc.id)
       .then(setSpawns)
       .catch(() => setSpawns({ spawn_points: [], spawn_groups: [] }))
+    getNPCLoot(npc.id)
+      .then(setLoot)
+      .catch(() => setLoot(null))
   }, [npc?.id])
+
+  function copyBulkLinks(dropId: number, items: { item_id: number; item_name: string }[]) {
+    const links = items.map((it) => `\\aITEM ${it.item_id} 0 0 0 0 0:${it.item_name}\\a/`).join('\n')
+    navigator.clipboard.writeText(links).then(() => {
+      setBulkCopied(dropId)
+      setTimeout(() => setBulkCopied(null), 2000)
+    })
+  }
 
   if (!npc) {
     return (
@@ -324,9 +338,6 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
         <Section title="Info">
           <StatRow label="NPC ID" value={npc.id} />
           {npc.exp_pct !== 100 && <StatRow label="Exp %" value={`${npc.exp_pct}%`} />}
-          {npc.loottable_id > 0 && (
-            <StatRow label="Loot Table" value={npc.loottable_id} />
-          )}
           {npc.merchant_id > 0 && (
             <StatRow label="Merchant ID" value={npc.merchant_id} />
           )}
@@ -343,6 +354,54 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
             <StatRow label="Heal Scale" value={`${npc.heal_scale.toFixed(0)}%`} />
           )}
         </Section>
+
+        {/* Loot Table */}
+        {loot && loot.drops.length > 0 && (
+          <Section title="Loot Table">
+            {loot.drops.map((drop) => (
+              <div key={drop.id} className="mb-2 last:mb-0">
+                <div className="flex items-center justify-between pt-1 pb-0.5">
+                  <span className="text-[11px] font-medium" style={{ color: 'var(--color-muted)' }}>
+                    {drop.multiplier > 1 ? `×${drop.multiplier} · ` : ''}
+                    {drop.probability < 100 ? `${drop.probability}% chance` : 'Always drops'}
+                  </span>
+                  <button
+                    onClick={() => copyBulkLinks(drop.id, drop.items)}
+                    title="Bulk copy in-game links"
+                    className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+                    style={{
+                      backgroundColor: 'var(--color-surface)',
+                      borderColor: 'var(--color-border)',
+                      color: bulkCopied === drop.id ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
+                    }}
+                  >
+                    {bulkCopied === drop.id ? <Check size={10} /> : <Copy size={10} />}
+                    {bulkCopied === drop.id ? 'Copied!' : 'Copy links'}
+                  </button>
+                </div>
+                {drop.items.map((item) => (
+                  <button
+                    key={item.item_id}
+                    onClick={() => navigate(`/items?select=${item.item_id}`)}
+                    className="flex w-full items-center justify-between border-t py-0.5 text-left text-sm"
+                    style={{ borderColor: 'var(--color-border)' }}
+                  >
+                    <span
+                      className="truncate underline decoration-dotted"
+                      style={{ color: 'var(--color-primary)' }}
+                    >
+                      {item.item_name}
+                    </span>
+                    <span className="ml-3 shrink-0 text-xs" style={{ color: 'var(--color-muted)' }}>
+                      {item.chance.toFixed(1)}%
+                      {item.multiplier > 1 && ` ×${item.multiplier}`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </Section>
+        )}
 
         {/* Spawns */}
         {spawns && spawns.spawn_points.length > 0 && (
