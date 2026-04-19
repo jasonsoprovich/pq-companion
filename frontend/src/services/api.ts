@@ -292,6 +292,7 @@ export interface Character {
   id: number
   name: string
   class: number  // -1=not set, 0-14=EQ class index
+  race: number   // -1=not set, EQ race id
   level: number
 }
 
@@ -304,6 +305,7 @@ export interface CharactersResponse {
 export interface CharacterRequest {
   name: string
   class: number
+  race: number
   level: number
 }
 
@@ -321,6 +323,10 @@ export function updateCharacter(id: number, req: CharacterRequest): Promise<Char
 
 export function deleteCharacter(id: number): Promise<void> {
   return del(`/api/characters/${id}`)
+}
+
+export function discoverCharacters(): Promise<{ names: string[] }> {
+  return get<{ names: string[] }>('/api/characters/discover')
 }
 
 // ── Triggers ───────────────────────────────────────────────────────────────────

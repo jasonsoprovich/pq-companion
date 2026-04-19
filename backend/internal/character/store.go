@@ -13,6 +13,7 @@ type Character struct {
 	ID    int    `json:"id"`
 	Name  string `json:"name"`
 	Class int    `json:"class"` // -1=not set, 0-14=EQ class index
+	Race  int    `json:"race"`  // -1=not set, EQ race id (1=Human, 2=Barbarian, …)
 	Level int    `json:"level"` // 1-60
 }
 
@@ -46,20 +47,25 @@ func OpenStore(path string) (*Store, error) {
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) migrate() error {
-	_, err := s.db.Exec(`
+	if _, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS characters (
 			id    INTEGER PRIMARY KEY AUTOINCREMENT,
 			name  TEXT    NOT NULL UNIQUE COLLATE NOCASE,
 			class INTEGER NOT NULL DEFAULT -1,
+			race  INTEGER NOT NULL DEFAULT -1,
 			level INTEGER NOT NULL DEFAULT 1
 		)
-	`)
-	return err
+	`); err != nil {
+		return err
+	}
+	// Add race column to existing installations that pre-date this migration.
+	_, _ = s.db.Exec(`ALTER TABLE characters ADD COLUMN race INTEGER NOT NULL DEFAULT -1`)
+	return nil
 }
 
 // List returns all stored characters ordered by name.
 func (s *Store) List() ([]Character, error) {
-	rows, err := s.db.Query(`SELECT id, name, class, level FROM characters ORDER BY name`)
+	rows, err := s.db.Query(`SELECT id, name, class, race, level FROM characters ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +73,7 @@ func (s *Store) List() ([]Character, error) {
 	var out []Character
 	for rows.Next() {
 		var c Character
-		if err := rows.Scan(&c.ID, &c.Name, &c.Class, &c.Level); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Class, &c.Race, &c.Level); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -76,23 +82,23 @@ func (s *Store) List() ([]Character, error) {
 }
 
 // Create inserts a new character and returns the created record.
-func (s *Store) Create(name string, class, level int) (Character, error) {
+func (s *Store) Create(name string, class, race, level int) (Character, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO characters (name, class, level) VALUES (?, ?, ?)`,
-		name, class, level,
+		`INSERT INTO characters (name, class, race, level) VALUES (?, ?, ?, ?)`,
+		name, class, race, level,
 	)
 	if err != nil {
 		return Character{}, fmt.Errorf("create character: %w", err)
 	}
 	id, _ := res.LastInsertId()
-	return Character{ID: int(id), Name: name, Class: class, Level: level}, nil
+	return Character{ID: int(id), Name: name, Class: class, Race: race, Level: level}, nil
 }
 
-// Update replaces name/class/level for the character with the given id.
-func (s *Store) Update(id int, name string, class, level int) error {
+// Update replaces name/class/race/level for the character with the given id.
+func (s *Store) Update(id int, name string, class, race, level int) error {
 	_, err := s.db.Exec(
-		`UPDATE characters SET name=?, class=?, level=? WHERE id=?`,
-		name, class, level, id,
+		`UPDATE characters SET name=?, class=?, race=?, level=? WHERE id=?`,
+		name, class, race, level, id,
 	)
 	return err
 }
@@ -107,9 +113,9 @@ func (s *Store) Delete(id int) error {
 func (s *Store) GetByName(name string) (Character, bool, error) {
 	var c Character
 	err := s.db.QueryRow(
-		`SELECT id, name, class, level FROM characters WHERE name = ? COLLATE NOCASE`,
+		`SELECT id, name, class, race, level FROM characters WHERE name = ? COLLATE NOCASE`,
 		name,
-	).Scan(&c.ID, &c.Name, &c.Class, &c.Level)
+	).Scan(&c.ID, &c.Name, &c.Class, &c.Race, &c.Level)
 	if err == sql.ErrNoRows {
 		return Character{}, false, nil
 	}
@@ -117,4 +123,22 @@ func (s *Store) GetByName(name string) (Character, bool, error) {
 		return Character{}, false, err
 	}
 	return c, true, nil
+}
+
+// Names returns the set of stored character names (case-preserved).
+func (s *Store) Names() (map[string]struct{}, error) {
+	rows, err := s.db.Query(`SELECT name FROM characters`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]struct{})
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out[name] = struct{}{}
+	}
+	return out, rows.Err()
 }

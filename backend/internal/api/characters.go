@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 )
 
 type charactersHandler struct {
@@ -41,9 +43,43 @@ func (h *charactersHandler) list(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// discover returns character names found in EQ log files that are not yet stored.
+func (h *charactersHandler) discover(w http.ResponseWriter, r *http.Request) {
+	cfg := h.mgr.Get()
+	discovered := logparser.DiscoverCharacters(cfg.EQPath)
+
+	stored, err := h.store.Names()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var untracked []string
+	for _, d := range discovered {
+		if _, exists := stored[strings.ToLower(d.Name)]; !exists {
+			// Check case-insensitively
+			found := false
+			for k := range stored {
+				if strings.EqualFold(k, d.Name) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				untracked = append(untracked, d.Name)
+			}
+		}
+	}
+	if untracked == nil {
+		untracked = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string][]string{"names": untracked})
+}
+
 type characterRequest struct {
 	Name  string `json:"name"`
 	Class int    `json:"class"`
+	Race  int    `json:"race"`
 	Level int    `json:"level"`
 }
 
@@ -61,7 +97,7 @@ func (h *charactersHandler) create(w http.ResponseWriter, r *http.Request) {
 	if req.Level < 1 {
 		req.Level = 1
 	}
-	c, err := h.store.Create(req.Name, req.Class, req.Level)
+	c, err := h.store.Create(req.Name, req.Class, req.Race, req.Level)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create character: %s", err))
 		return
@@ -69,7 +105,7 @@ func (h *charactersHandler) create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, c)
 }
 
-// update replaces name/class/level for an existing character.
+// update replaces name/class/race/level for an existing character.
 func (h *charactersHandler) update(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
@@ -88,11 +124,11 @@ func (h *charactersHandler) update(w http.ResponseWriter, r *http.Request) {
 	if req.Level < 1 {
 		req.Level = 1
 	}
-	if err := h.store.Update(id, req.Name, req.Class, req.Level); err != nil {
+	if err := h.store.Update(id, req.Name, req.Class, req.Race, req.Level); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, character.Character{ID: id, Name: req.Name, Class: req.Class, Level: req.Level})
+	writeJSON(w, http.StatusOK, character.Character{ID: id, Name: req.Name, Class: req.Class, Race: req.Race, Level: req.Level})
 }
 
 // del removes a character profile.

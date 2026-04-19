@@ -92,6 +92,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		r.Route("/characters", func(r chi.Router) {
 			r.Get("/", charactersH.list)
 			r.Post("/", charactersH.create)
+			r.Get("/discover", charactersH.discover)
 			r.Put("/{id}", charactersH.update)
 			r.Delete("/{id}", charactersH.del)
 		})

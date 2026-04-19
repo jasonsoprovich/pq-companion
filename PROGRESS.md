@@ -60,6 +60,7 @@
 
 ## Phase 10 — Character Tools
 - [x] Task 10.1 — Multi-Character Support (Characters tab, CRUD, switcher fix)
+- [x] Task 10.2 — Character tracking: race field, Discover from logs auto-import (closes #45)
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website
