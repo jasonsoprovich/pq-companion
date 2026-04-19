@@ -52,12 +52,46 @@ function startSidecar(): void {
   console.log(`[main] Backend sidecar started (pid ${sidecarProcess.pid})`)
 }
 
-function stopSidecar(): void {
-  if (sidecarProcess) {
-    console.log('[main] Stopping backend sidecar…')
-    sidecarProcess.kill()
+function stopSidecar(): Promise<void> {
+  const proc = sidecarProcess
+  if (!proc || proc.exitCode !== null || !proc.pid) {
     sidecarProcess = null
+    return Promise.resolve()
   }
+
+  const pid = proc.pid
+  sidecarProcess = null
+  console.log(`[main] Stopping backend sidecar (pid ${pid})…`)
+
+  const exited = new Promise<void>((resolve) => {
+    if (proc.exitCode !== null) {
+      resolve()
+      return
+    }
+    proc.once('exit', () => resolve())
+  })
+
+  if (process.platform === 'win32') {
+    // child.kill() on Windows is unreliable for cross-compiled Go binaries:
+    // it can leave the process alive, holding file locks on the installed
+    // .exe. That blocks the NSIS installer/uninstaller and auto-updater
+    // ("application is still open"). taskkill /F /T terminates the process
+    // tree synchronously at the OS level.
+    spawn('taskkill', ['/F', '/T', '/PID', String(pid)], { stdio: 'ignore' })
+      .on('error', (err) => {
+        console.error('[main] taskkill failed:', err.message)
+        try { proc.kill('SIGKILL') } catch { /* already gone */ }
+      })
+  } else {
+    proc.kill('SIGTERM')
+  }
+
+  // Bound the wait — if the child really is wedged we still let Electron exit
+  // rather than hang forever.
+  return Promise.race([
+    exited,
+    new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+  ])
 }
 
 // ── Auto-updater ──────────────────────────────────────────────────────────────
@@ -570,7 +604,11 @@ ipcMain.handle('updater:download', () => {
   if (!isDev) autoUpdater.downloadUpdate()
 })
 
-ipcMain.handle('updater:quit-and-install', () => {
+ipcMain.handle('updater:quit-and-install', async () => {
+  // Kill the sidecar before handing off to the updater. quitAndInstall exits
+  // the main process quickly; if the sidecar is still alive the NSIS updater
+  // cannot replace pq-companion-server.exe and the install wedges.
+  await stopSidecar()
   autoUpdater.quitAndInstall(true, true)
 })
 
@@ -589,13 +627,20 @@ app.whenReady().then(() => {
   })
 })
 
+let isGracefulQuit = false
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    stopSidecar()
     app.quit()
   }
 })
 
-app.on('before-quit', () => {
-  stopSidecar()
+app.on('before-quit', (event) => {
+  if (isGracefulQuit || !sidecarProcess) return
+  // Electron only waits for before-quit synchronously. To stop the sidecar
+  // and confirm exit before we really quit, cancel this pass, run the async
+  // cleanup, then quit again with the flag set.
+  event.preventDefault()
+  isGracefulQuit = true
+  stopSidecar().finally(() => app.quit())
 })
