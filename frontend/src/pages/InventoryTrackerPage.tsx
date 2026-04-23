@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Package, RefreshCw, ExternalLink, AlertCircle, Search, X } from 'lucide-react'
-import { getAllInventories } from '../services/api'
+import { getAllInventories, getItem } from '../services/api'
 import type { AllInventoriesResponse, Inventory, InventoryEntry } from '../types/zeal'
+import type { Item } from '../types/item'
+import ItemDetailModal from '../components/ItemDetailModal'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -130,7 +132,7 @@ function ItemRow({ entry, showCharBadge, indent = false, onLookup }: ItemRowProp
       <button
         onClick={() => onLookup(entry.id)}
         className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Look up in Item Explorer"
+        title="View item details"
       >
         <ExternalLink size={12} style={{ color: 'var(--color-muted)' }} />
       </button>
@@ -173,6 +175,8 @@ export default function InventoryTrackerPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [selectedChar, setSelectedChar] = useState<string>('all')
   const [query, setQuery] = useState('')
+  const [modalItem, setModalItem] = useState<Item | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
 
@@ -196,7 +200,15 @@ export default function InventoryTrackerPage(): React.ReactElement {
   useEffect(() => { load() }, [load])
 
   function handleLookup(id: number) {
-    navigate(`/items?select=${id}`)
+    getItem(id)
+      .then((item) => {
+        setModalItem(item)
+        setModalOpen(true)
+      })
+      .catch(() => {
+        // Item not found in database — fall back to Items Explorer
+        navigate(`/items?select=${id}`)
+      })
   }
 
   // ── Derived data ─────────────────────────────────────────────────────────────
@@ -344,6 +356,11 @@ export default function InventoryTrackerPage(): React.ReactElement {
 
   return (
     <div className="flex h-full flex-col">
+      <ItemDetailModal
+        item={modalItem}
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+      />
       {/* Header bar */}
       <div
         className="flex items-center gap-3 border-b px-4 py-3 shrink-0"
