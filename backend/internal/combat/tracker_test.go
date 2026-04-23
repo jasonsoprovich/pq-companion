@@ -332,6 +332,28 @@ func TestMultipleDeathsAccumulate(t *testing.T) {
 	}
 }
 
+// TestActiveFightDurationUsesLogTimestamps verifies that GetState() returns a
+// fight duration based on log timestamps, not wall-clock time. This guards
+// against the "300+ minute timer" bug where historical log replay caused
+// startTime (log-domain) to be compared against time.Now() (wall-clock).
+func TestActiveFightDurationUsesLogTimestamps(t *testing.T) {
+	tr := newTestTracker(t)
+
+	// Simulate a fight that happened in the past (5 hours ago in log time).
+	logStart := time.Now().Add(-5 * time.Hour)
+	tr.Handle(hitEvent("You", "a gnoll", 100, logStart))
+	tr.Handle(hitEvent("You", "a gnoll", 200, logStart.Add(10*time.Second)))
+
+	st := tr.GetState()
+	if !st.InCombat {
+		t.Fatal("expected InCombat=true")
+	}
+	// Duration must be ~10s (log time between first and last hit), not ~5h.
+	if st.CurrentFight.Duration > 60 {
+		t.Fatalf("expected fight duration ~10s, got %.1fs — likely using wall-clock vs log timestamp", st.CurrentFight.Duration)
+	}
+}
+
 func TestZoneTrackedForDeath(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()

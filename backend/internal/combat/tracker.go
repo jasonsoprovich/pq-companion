@@ -390,7 +390,10 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 
 	if t.active != nil {
 		state.InCombat = true
-		duration := now.Sub(t.active.startTime).Seconds()
+		// Use log-file timestamps exclusively so that GetState() called long after
+		// the last hit (e.g. during historical log replay) doesn't inflate duration
+		// by comparing a past startTime against the current wall clock.
+		duration := t.active.lastHit.Sub(t.active.startTime).Seconds()
 		if duration < 0.001 {
 			duration = 0.001
 		}
