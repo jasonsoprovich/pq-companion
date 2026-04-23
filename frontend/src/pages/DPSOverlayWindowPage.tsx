@@ -36,15 +36,10 @@ function pct(part: number, total: number): string {
 // ── Clipboard ──────────────────────────────────────────────────────────────────
 
 function buildFightText(fight: FightState): string {
-  const target = fight.primary_target ?? 'Unknown'
-  const m = Math.floor(fight.duration_seconds / 60)
-  const s = Math.floor(fight.duration_seconds % 60)
-  const dur = m > 0 ? `${m}m ${s}s` : `${s}s`
-  const lines: string[] = [`[PQ Companion] Fight: ${target} (${dur})`]
-  for (const c of fight.combatants) {
-    lines.push(`${c.name}: ${c.dps.toFixed(1)} DPS (${c.total_damage.toLocaleString()} total)`)
-  }
-  return lines.join('\n')
+  const sorted = [...(fight.combatants ?? [])].sort((a, b) => b.dps - a.dps).slice(0, 10)
+  return sorted
+    .map((c, i) => `#${i + 1} ${c.name} ${Math.round(c.dps)}dps ${c.total_damage.toLocaleString()}dmg`)
+    .join(' | ')
 }
 
 // ── Row ────────────────────────────────────────────────────────────────────────
