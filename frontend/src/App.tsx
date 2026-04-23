@@ -37,11 +37,17 @@ function OverlayPage({ children }: { children: React.ReactNode }): React.ReactEl
   return <>{children}</>
 }
 
-export default function App(): React.ReactElement {
+// MainWindowLayout mounts the audio/alert hooks and renders the main Layout.
+// It is only rendered for the "/" route so overlay windows never run these hooks
+// and never fire duplicate TTS or sound alerts.
+function MainWindowLayout(): React.ReactElement {
   useAudioEngine()
   useTimerAlerts()
   useEventAlerts()
+  return <Layout />
+}
 
+export default function App(): React.ReactElement {
   return (
     <HashRouter>
       <Routes>
@@ -53,8 +59,8 @@ export default function App(): React.ReactElement {
         <Route path="trigger-overlay-window" element={<OverlayPage><TriggerOverlayWindowPage /></OverlayPage>} />
         <Route path="npc-overlay-window" element={<OverlayPage><NPCOverlayWindowPage /></OverlayPage>} />
 
-        {/* Main app routes — wrapped in full Layout */}
-        <Route path="/" element={<Layout />}>
+        {/* Main app routes — wrapped in full Layout with audio/alert hooks */}
+        <Route path="/" element={<MainWindowLayout />}>
           <Route index element={<Navigate to="/items" replace />} />
           <Route path="items" element={<ItemsPage />} />
           <Route path="spells" element={<SpellsPage />} />
