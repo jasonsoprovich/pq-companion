@@ -12,12 +12,17 @@ type Component struct {
 // KeyDef describes a zone key or access-item quest.
 // FinalItem, when set, is the assembled key item — holding it short-circuits
 // the per-component checklist and marks the character as fully keyed.
+// IntermediateItem, when set, is an intermediate combine result; holding it
+// marks the first IntermediateCoverCount components as complete, while the
+// remaining components are still checked individually.
 type KeyDef struct {
-	ID          string      `json:"id"`
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	Components  []Component `json:"components"`
-	FinalItem   *Component  `json:"final_item,omitempty"`
+	ID                    string      `json:"id"`
+	Name                  string      `json:"name"`
+	Description           string      `json:"description"`
+	Components            []Component `json:"components"`
+	FinalItem             *Component  `json:"final_item,omitempty"`
+	IntermediateItem      *Component  `json:"intermediate_item,omitempty"`
+	IntermediateCoverCount int        `json:"intermediate_cover_count,omitempty"`
 }
 
 // All returns all key definitions, ordered from classic Kunark through Luclin.
@@ -187,6 +192,15 @@ func All() []KeyDef {
 					Notes:    "Final-combine ingredient — drops from Akheva Ruins / Vex Thal area.",
 				},
 			},
+			// IntermediateItem: holding the Unadorned Scepter of Shadows means the
+			// Frame + 10 Lucid Shards combine has already been done (those items were
+			// consumed). The first 11 components (Frame + shards) are marked covered.
+			IntermediateItem: &Component{
+				ItemID:   17324,
+				ItemName: "Unadorned Scepter of Shadows",
+				Notes:    "Result of combining the Frame + 10 Lucid Shards. Still needs A Planes Rift and A Glowing Orb of Luclinite.",
+			},
+			IntermediateCoverCount: 11,
 			FinalItem: &Component{
 				ItemID:   22198,
 				ItemName: "The Scepter of Shadows",

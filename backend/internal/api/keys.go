@@ -37,11 +37,15 @@ type keyProgress struct {
 // FinalItem is non-nil only when the KeyDef defines a FinalItem; if Have or
 // SharedBank is true, the character is considered fully keyed regardless of
 // component progress.
+// IntermediateItem is non-nil when the KeyDef defines an IntermediateItem; if
+// Have or SharedBank is true, the first IntermediateCoverCount components are
+// considered complete (the intermediate combine consumed them).
 type characterKeyProgress struct {
-	Character  string            `json:"character"`
-	HasExport  bool              `json:"has_export"`
-	Components []componentStatus `json:"components"`
-	FinalItem  *componentStatus  `json:"final_item,omitempty"`
+	Character      string            `json:"character"`
+	HasExport      bool              `json:"has_export"`
+	Components     []componentStatus `json:"components"`
+	FinalItem      *componentStatus  `json:"final_item,omitempty"`
+	IntermediateItem *componentStatus `json:"intermediate_item,omitempty"`
 }
 
 // componentStatus is the status of one component for one character.
@@ -124,6 +128,15 @@ func (h *keysHandler) progress(w http.ResponseWriter, r *http.Request) {
 					SharedBank: !cp.HaveIDs[comp.ItemID] && sharedIDs[comp.ItemID],
 				}
 				ckp.Components = append(ckp.Components, cs)
+			}
+			if kd.IntermediateItem != nil {
+				ii := *kd.IntermediateItem
+				ckp.IntermediateItem = &componentStatus{
+					ItemID:     ii.ItemID,
+					ItemName:   ii.ItemName,
+					Have:       cp.HaveIDs[ii.ItemID],
+					SharedBank: !cp.HaveIDs[ii.ItemID] && sharedIDs[ii.ItemID],
+				}
 			}
 			if kd.FinalItem != nil {
 				fi := *kd.FinalItem

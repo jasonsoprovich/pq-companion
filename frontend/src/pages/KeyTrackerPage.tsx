@@ -14,14 +14,23 @@ function hasFinalKey(chars: CharacterKeyProgress[]): boolean {
   return chars.some((c) => c.final_item && (c.final_item.have || c.final_item.shared_bank))
 }
 
+function hasIntermediateItem(chars: CharacterKeyProgress[]): boolean {
+  return chars.some((c) => c.intermediate_item && (c.intermediate_item.have || c.intermediate_item.shared_bank))
+}
+
 /** Returns the number of components obtained (own + shared bank) across all characters for one key. */
-function countHave(chars: CharacterKeyProgress[], componentCount: number): number {
+function countHave(chars: CharacterKeyProgress[], componentCount: number, intermediateCoverCount = 0): number {
   if (chars.length === 0 || componentCount === 0) return 0
   // Holding the assembled final key short-circuits component tracking.
   if (hasFinalKey(chars)) return componentCount
-  // For each component index, count it if ANY character has it (or it's in shared bank).
   let have = 0
   for (let i = 0; i < componentCount; i++) {
+    // Components within the intermediate cover range are complete if any character
+    // holds the intermediate item (the combine consumed those components).
+    if (i < intermediateCoverCount && hasIntermediateItem(chars)) {
+      have++
+      continue
+    }
     const anyHave = chars.some((c) => {
       const cs = c.components[i]
       return cs && (cs.have || cs.shared_bank)
@@ -31,14 +40,14 @@ function countHave(chars: CharacterKeyProgress[], componentCount: number): numbe
   return have
 }
 
-function keyIsComplete(chars: CharacterKeyProgress[], componentCount: number): boolean {
+function keyIsComplete(chars: CharacterKeyProgress[], componentCount: number, intermediateCoverCount = 0): boolean {
   if (hasFinalKey(chars)) return true
-  return componentCount > 0 && countHave(chars, componentCount) === componentCount
+  return componentCount > 0 && countHave(chars, componentCount, intermediateCoverCount) === componentCount
 }
 
-function keyIsInProgress(chars: CharacterKeyProgress[], componentCount: number): boolean {
+function keyIsInProgress(chars: CharacterKeyProgress[], componentCount: number, intermediateCoverCount = 0): boolean {
   if (hasFinalKey(chars)) return false
-  const h = countHave(chars, componentCount)
+  const h = countHave(chars, componentCount, intermediateCoverCount)
   return h > 0 && h < componentCount
 }
 
@@ -84,8 +93,9 @@ interface KeyCardProps {
 
 function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.ReactElement {
   const [open, setOpen] = useState(defaultOpen)
-  const have = countHave(chars, keyDef.components.length)
-  const complete = keyIsComplete(chars, keyDef.components.length)
+  const coverCount = keyDef.intermediate_cover_count ?? 0
+  const have = countHave(chars, keyDef.components.length, coverCount)
+  const complete = keyIsComplete(chars, keyDef.components.length, coverCount)
   const hasExportChars = chars.filter((c) => c.has_export)
 
   return (
@@ -234,6 +244,76 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
                       })}
                     </tr>
                   )}
+                  {/* Intermediate item row (e.g. Unadorned Scepter for Vex Thal) */}
+                  {keyDef.intermediate_item && (
+                    <tr
+                      style={{
+                        borderBottom: '1px solid var(--color-border)',
+                        backgroundColor: 'var(--color-surface-2)',
+                      }}
+                    >
+                      <td className="px-4 py-2">
+                        <div className="flex flex-col gap-0.5">
+                          <span
+                            className="font-semibold"
+                            style={{ color: 'var(--color-primary)' }}
+                          >
+                            {keyDef.intermediate_item.item_name}{' '}
+                            <span
+                              className="ml-1 text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider"
+                              style={{
+                                backgroundColor: 'var(--color-primary)',
+                                color: 'var(--color-surface)',
+                              }}
+                            >
+                              Intermediate Combine
+                            </span>
+                          </span>
+                          {keyDef.intermediate_item.notes && (
+                            <span style={{ color: 'var(--color-muted)' }} className="text-[10px]">
+                              {keyDef.intermediate_item.notes}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      {hasExportChars.map((charProg) => {
+                        const ii = charProg.intermediate_item
+                        return (
+                          <td key={charProg.character} className="px-3 py-2 text-center">
+                            {ii?.have ? (
+                              <span title="Have it — first-combine complete">
+                                <CheckCircle2
+                                  size={14}
+                                  className="inline-block"
+                                  style={{ color: 'var(--color-primary)' }}
+                                />
+                              </span>
+                            ) : ii?.shared_bank ? (
+                              <span
+                                className="inline-block text-[9px] px-1.5 py-0.5 rounded font-medium"
+                                style={{
+                                  backgroundColor: 'var(--color-surface-2)',
+                                  color: 'var(--color-primary)',
+                                  border: '1px solid var(--color-border)',
+                                }}
+                                title="In Shared Bank"
+                              >
+                                SB
+                              </span>
+                            ) : (
+                              <span title="Not yet combined">
+                                <Circle
+                                  size={14}
+                                  className="inline-block"
+                                  style={{ color: 'var(--color-muted)' }}
+                                />
+                              </span>
+                            )}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )}
                   {keyDef.components.map((comp, ci) => (
                     <tr
                       key={comp.item_id}
@@ -254,6 +334,11 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
                       {hasExportChars.map((charProg) => {
                         const cs = charProg.components[ci]
                         const keyedViaFinal = !!(charProg.final_item && (charProg.final_item.have || charProg.final_item.shared_bank))
+                        const coveredByIntermediate = !!(
+                          ci < coverCount &&
+                          charProg.intermediate_item &&
+                          (charProg.intermediate_item.have || charProg.intermediate_item.shared_bank)
+                        )
                         return (
                           <td key={charProg.character} className="px-3 py-2 text-center">
                             {cs.have ? (
@@ -282,6 +367,14 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
                                   size={14}
                                   className="inline-block opacity-40"
                                   style={{ color: 'var(--color-success)' }}
+                                />
+                              </span>
+                            ) : coveredByIntermediate ? (
+                              <span title="Covered by intermediate combine">
+                                <CheckCircle2
+                                  size={14}
+                                  className="inline-block opacity-40"
+                                  style={{ color: 'var(--color-primary)' }}
                                 />
                               </span>
                             ) : (
@@ -353,8 +446,9 @@ export default function KeyTrackerPage(): React.ReactElement {
     if (filter === 'all') return keyDefs
     return keyDefs.filter((kd) => {
       const chars = progressByKey.get(kd.id) ?? []
-      if (filter === 'complete') return keyIsComplete(chars, kd.components.length)
-      if (filter === 'in_progress') return keyIsInProgress(chars, kd.components.length)
+      const cc = kd.intermediate_cover_count ?? 0
+      if (filter === 'complete') return keyIsComplete(chars, kd.components.length, cc)
+      if (filter === 'in_progress') return keyIsInProgress(chars, kd.components.length, cc)
       return true
     })
   }, [keyDefs, progressByKey, filter])

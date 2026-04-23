@@ -10,6 +10,8 @@ export interface KeyDef {
   description: string
   components: KeyComponent[]
   final_item?: KeyComponent
+  intermediate_item?: KeyComponent
+  intermediate_cover_count?: number
 }
 
 export interface KeysResponse {
@@ -28,6 +30,7 @@ export interface CharacterKeyProgress {
   has_export: boolean
   components: ComponentStatus[]
   final_item?: ComponentStatus
+  intermediate_item?: ComponentStatus
 }
 
 export interface KeyProgress {
