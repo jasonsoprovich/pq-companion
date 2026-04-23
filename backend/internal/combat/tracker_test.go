@@ -262,6 +262,35 @@ func TestThirdPartyDamageTracked(t *testing.T) {
 	}
 }
 
+// TestNPCExcludedWhenAttackingGroupMember verifies that an NPC is excluded from
+// the DPS list even when it never attacks "You" directly — only a group member.
+// This guards against the bug where NPCs using spells on group members appeared
+// as DPS contributors because they were absent from the incoming map.
+func TestNPCExcludedWhenAttackingGroupMember(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Players attack "a gnoll" — puts "a gnoll" in targetCounts.
+	tr.Handle(hitEvent("You", "a gnoll", 200, now))
+	tr.Handle(hitEvent("Guildmate", "a gnoll", 150, now.Add(time.Second)))
+
+	// "a gnoll" casts a spell on Guildmate (not on "You") — puts "a gnoll" in
+	// outgoing since the target is not "You". Without the fix this would have
+	// caused "a gnoll" to appear as a DPS contributor.
+	tr.Handle(hitEvent("a gnoll", "Guildmate", 80, now.Add(2*time.Second)))
+
+	st := tr.GetState()
+	// Only "You" and "Guildmate" should appear — "a gnoll" must be excluded.
+	if len(st.CurrentFight.Combatants) != 2 {
+		t.Fatalf("expected 2 combatants (You + Guildmate), got %d", len(st.CurrentFight.Combatants))
+	}
+	for _, c := range st.CurrentFight.Combatants {
+		if c.Name == "a gnoll" {
+			t.Fatalf("NPC %q must not appear in the DPS list", c.Name)
+		}
+	}
+}
+
 func TestDeathRecorded(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()

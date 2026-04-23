@@ -38,6 +38,9 @@ type internalFight struct {
 	healers map[string]*internalHealer
 	// targetCounts tracks how many times each NPC target was hit (outgoing only).
 	targetCounts map[string]int
+	// youTargets holds the names of every entity attacked by "You". Because the
+	// player can only attack NPCs in PvE, every entry here is a confirmed NPC.
+	youTargets map[string]bool
 }
 
 // Tracker watches parsed log events, groups them into fights, and maintains
@@ -160,6 +163,7 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 			incoming:     make(map[string]*internalEntity),
 			healers:      make(map[string]*internalHealer),
 			targetCounts: make(map[string]int),
+			youTargets:   make(map[string]bool),
 		}
 	} else {
 		t.active.lastHit = ts
@@ -172,6 +176,10 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	} else {
 		entityMap = t.active.outgoing
 		t.active.targetCounts[data.Target]++
+		if data.Actor == "You" {
+			// Every entity attacked by "You" is a confirmed NPC (PvE only).
+			t.active.youTargets[data.Target] = true
+		}
 	}
 
 	ent := entityMap[data.Actor]
@@ -299,15 +307,20 @@ func (t *Tracker) archiveFight(endTime time.Time) {
 
 	combatants := buildEntityStats(f.outgoing, duration)
 
-	// Exclude hostile NPCs (entities that also attacked "You") from the player
-	// combatants list, since they are the enemy being fought, not allies.
-	hostiles := make(map[string]bool, len(f.incoming))
+	// Exclude hostile NPCs from the player combatants list. An entity is a
+	// confirmed NPC if it attacked "You" (incoming) OR if "You" attacked it
+	// (youTargets — "You" only attacks NPCs in PvE). This catches NPCs that
+	// hit group members without ever targeting "You" directly.
+	knownNPCs := make(map[string]bool, len(f.incoming)+len(f.youTargets))
 	for name := range f.incoming {
-		hostiles[name] = true
+		knownNPCs[name] = true
+	}
+	for name := range f.youTargets {
+		knownNPCs[name] = true
 	}
 	filtered := combatants[:0]
 	for _, c := range combatants {
-		if !hostiles[c.Name] {
+		if !knownNPCs[c.Name] {
 			filtered = append(filtered, c)
 		}
 	}
@@ -399,14 +412,18 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 		}
 		combatants := buildEntityStats(t.active.outgoing, duration)
 
-		// Exclude hostile NPCs from the player combatants list.
-		hostiles := make(map[string]bool, len(t.active.incoming))
+		// Exclude hostile NPCs from the player combatants list (same logic as
+		// archiveFight: incoming ∪ youTargets defines the confirmed-NPC set).
+		knownNPCs := make(map[string]bool, len(t.active.incoming)+len(t.active.youTargets))
 		for name := range t.active.incoming {
-			hostiles[name] = true
+			knownNPCs[name] = true
+		}
+		for name := range t.active.youTargets {
+			knownNPCs[name] = true
 		}
 		filtered := combatants[:0]
 		for _, c := range combatants {
-			if !hostiles[c.Name] {
+			if !knownNPCs[c.Name] {
 				filtered = append(filtered, c)
 			}
 		}
