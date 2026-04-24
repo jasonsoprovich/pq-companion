@@ -22,6 +22,18 @@ const (
 	ActionTextToSpeech ActionType = "text_to_speech"
 )
 
+// TimerType identifies the overlay a trigger-driven timer should appear on.
+type TimerType string
+
+const (
+	// TimerTypeNone means the trigger does not start a spell timer on match.
+	TimerTypeNone TimerType = "none"
+	// TimerTypeBuff starts a timer on the Buff overlay when the trigger fires.
+	TimerTypeBuff TimerType = "buff"
+	// TimerTypeDetrimental starts a timer on the Detrimental overlay.
+	TimerTypeDetrimental TimerType = "detrimental"
+)
+
 // Action describes a single effect fired when a trigger matches a log line.
 type Action struct {
 	Type         ActionType `json:"type"`
@@ -38,10 +50,18 @@ type Trigger struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Enabled   bool      `json:"enabled"`
-	Pattern   string    `json:"pattern"`   // regexp matched against the message portion of log lines
+	Pattern   string    `json:"pattern"` // regexp matched against the message portion of log lines
 	Actions   []Action  `json:"actions"`
 	PackName  string    `json:"pack_name"` // empty for user-created triggers; pack name for built-in packs
 	CreatedAt time.Time `json:"created_at"`
+
+	// Timer integration — when TimerType is buff or detrimental, a match starts
+	// a countdown timer on the corresponding overlay. WornOffPattern optionally
+	// clears the timer before its natural expiry.
+	TimerType         TimerType `json:"timer_type"`
+	TimerDurationSecs int       `json:"timer_duration_secs"`
+	WornOffPattern    string    `json:"worn_off_pattern"`
+	SpellID           int       `json:"spell_id"` // optional — 0 means not linked to a specific DB spell
 }
 
 // TriggerFired is the payload of a WSEventTriggerFired WebSocket event and a

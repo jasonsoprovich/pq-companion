@@ -324,6 +324,89 @@ export function zoneTypeLabel(z: number): string {
   return ZONE_TYPE_LABELS[z] ?? ''
 }
 
+// ── Timer trigger helpers ──────────────────────────────────────────────────────
+
+export type SpellTimerTriggerPrefill = {
+  name: string
+  pattern: string
+  wornOffPattern: string
+  timerType: 'buff' | 'detrimental'
+  timerDurationSecs: number
+  spellId: number
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Decide whether a spell is a buff (beneficial) or detrimental based on its
+ * target type. Mirrors the Go backend's spelltimer.categorize() heuristic.
+ * Target types 3 (Group v1), 6 (Self), 10 (Group v2), 41 (All of group) → buff.
+ */
+export function spellIsBuff(targetType: number): boolean {
+  return targetType === 3 || targetType === 6 || targetType === 10 || targetType === 41
+}
+
+/**
+ * Build a trigger prefill from a spell DB record. Chooses the best available
+ * landed-message (cast_on_you → cast_on_other → spell name) and the
+ * spell_fades message as the worn-off pattern.
+ */
+export function buildSpellTriggerPrefill(spell: {
+  id: number
+  name: string
+  cast_on_you: string
+  cast_on_other: string
+  spell_fades: string
+  target_type: number
+  buff_duration: number
+  buff_duration_formula: number
+}): SpellTimerTriggerPrefill {
+  const landed = spell.cast_on_you || spell.cast_on_other || spell.name
+  const pattern = escapeRegex(landed)
+  const wornOff = spell.spell_fades ? escapeRegex(spell.spell_fades) : ''
+
+  // Approximate duration at the level cap; scaling formulas generally hit
+  // their cap by 60, so this is a useful default the user can tweak.
+  const durationTicks = approxDurationTicks(spell.buff_duration_formula, spell.buff_duration, 60)
+  const durationSecs = durationTicks > 0 ? durationTicks * 6 : 0
+
+  return {
+    name: spell.name,
+    pattern,
+    wornOffPattern: wornOff,
+    timerType: spellIsBuff(spell.target_type) ? 'buff' : 'detrimental',
+    timerDurationSecs: durationSecs,
+    spellId: spell.id,
+  }
+}
+
+/**
+ * Mirror of backend spelltimer.CalcDurationTicks for the common formulas.
+ * Returns 0 for instant / permanent / unknown cases.
+ */
+function approxDurationTicks(formula: number, base: number, level: number): number {
+  if (level <= 0) level = 1
+  switch (formula) {
+    case 0: return 0
+    case 1: return Math.min(Math.floor(level / 2), base)
+    case 2: return Math.min(Math.floor(30 / level) + base, base * 2)
+    case 3: return Math.min(level * 30, base)
+    case 4: return Math.min(level * 2 + base, base * 3)
+    case 5: return Math.min(level * 5 + base, base * 3)
+    case 6: return Math.min(level * 30 + base, base * 3)
+    case 7: return Math.min(level * 5, base)
+    case 8: return Math.min(level + base, base * 3)
+    case 9: return Math.min(level * 2, base)
+    case 10: return Math.min(level, base)
+    case 11: return base
+    case 50: return Math.max(1, Math.floor(level / 5))
+    case 3600: return 0
+    default: return base
+  }
+}
+
 // ── Effect descriptions ────────────────────────────────────────────────────────
 
 const STAT_NAMES: Record<number, string> = {

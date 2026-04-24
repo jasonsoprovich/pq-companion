@@ -14,10 +14,20 @@ import (
 
 const historyMaxSize = 200
 
-// compiled pairs a Trigger with its pre-compiled regexp for efficient matching.
+// TimerSink is the minimal interface the trigger engine needs to start and
+// stop externally-driven spell timers. It is implemented by
+// *spelltimer.Engine; kept abstract here to avoid an import cycle.
+type TimerSink interface {
+	StartExternal(name, category string, durationSecs int, startedAt time.Time)
+	StopExternal(name string)
+}
+
+// compiled pairs a Trigger with its pre-compiled patterns for efficient matching.
 type compiled struct {
-	trigger *Trigger
-	re      *regexp.Regexp
+	trigger  *Trigger
+	re       *regexp.Regexp
+	wornOff  *regexp.Regexp // non-nil only when the trigger has a worn-off pattern
+	timerKey string         // cached spelltimer key when timer_type != none
 }
 
 // Engine loads triggers from the store and tests every incoming log line
@@ -25,6 +35,7 @@ type compiled struct {
 type Engine struct {
 	store *Store
 	hub   *ws.Hub
+	sink  TimerSink
 
 	mu       sync.RWMutex
 	compiled []compiled
@@ -33,9 +44,10 @@ type Engine struct {
 	history []TriggerFired // ring buffer, newest appended last
 }
 
-// NewEngine creates an Engine backed by store. Call Reload before routing lines.
-func NewEngine(store *Store, hub *ws.Hub) *Engine {
-	return &Engine{store: store, hub: hub}
+// NewEngine creates an Engine backed by store. Call Reload before routing
+// lines. sink may be nil when timer integration is disabled (e.g. in tests).
+func NewEngine(store *Store, hub *ws.Hub, sink TimerSink) *Engine {
+	return &Engine{store: store, hub: hub, sink: sink}
 }
 
 // Reload re-reads all enabled triggers from the store and recompiles their
@@ -57,7 +69,18 @@ func (e *Engine) Reload() {
 			slog.Warn("trigger: invalid pattern, skipping", "id", t.ID, "name", t.Name, "err", err)
 			continue
 		}
-		cs = append(cs, compiled{trigger: t, re: re})
+		c := compiled{trigger: t, re: re}
+		if t.WornOffPattern != "" {
+			if wornRe, err := regexp.Compile(t.WornOffPattern); err == nil {
+				c.wornOff = wornRe
+			} else {
+				slog.Warn("trigger: invalid worn-off pattern", "id", t.ID, "name", t.Name, "err", err)
+			}
+		}
+		if t.TimerType == TimerTypeBuff || t.TimerType == TimerTypeDetrimental {
+			c.timerKey = timerKeyFor(t)
+		}
+		cs = append(cs, c)
 	}
 
 	e.mu.Lock()
@@ -77,7 +100,12 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 
 	for _, c := range cs {
 		if c.re.MatchString(message) {
-			e.fire(c.trigger, message, timestamp)
+			e.fire(c, message, timestamp)
+		}
+		if c.wornOff != nil && c.wornOff.MatchString(message) {
+			if e.sink != nil && c.timerKey != "" {
+				e.sink.StopExternal(c.timerKey)
+			}
 		}
 	}
 }
@@ -93,7 +121,8 @@ func (e *Engine) GetHistory() []TriggerFired {
 
 // ── internal ─────────────────────────────────────────────────────────────────
 
-func (e *Engine) fire(t *Trigger, matchedLine string, firedAt time.Time) {
+func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time) {
+	t := c.trigger
 	event := TriggerFired{
 		TriggerID:   t.ID,
 		TriggerName: t.Name,
@@ -111,6 +140,31 @@ func (e *Engine) fire(t *Trigger, matchedLine string, firedAt time.Time) {
 
 	e.hub.Broadcast(ws.Event{Type: WSEventTriggerFired, Data: event})
 	slog.Debug("trigger fired", "trigger", t.Name, "line", matchedLine)
+
+	if e.sink != nil && c.timerKey != "" && t.TimerDurationSecs > 0 {
+		e.sink.StartExternal(c.timerKey, timerCategory(t.TimerType), t.TimerDurationSecs, firedAt)
+	}
+}
+
+// timerKeyFor returns the spelltimer key for a trigger. Prefers the trigger
+// name so user-configured timers are stable across edits of the pattern.
+func timerKeyFor(t *Trigger) string {
+	if t.Name != "" {
+		return t.Name
+	}
+	return t.ID
+}
+
+// timerCategory maps a trigger's TimerType onto a spelltimer category string.
+// Kept in string form to avoid depending on the spelltimer package here.
+func timerCategory(tt TimerType) string {
+	switch tt {
+	case TimerTypeBuff:
+		return "buff"
+	case TimerTypeDetrimental:
+		return "debuff"
+	}
+	return ""
 }
 
 // NewID generates a short random hex identifier suitable for trigger IDs.

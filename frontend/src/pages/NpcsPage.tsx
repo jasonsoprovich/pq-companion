@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Check, Copy, Search, X } from 'lucide-react'
+import { Check, Copy, Search, X, Bell } from 'lucide-react'
 import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot, getNPCFaction } from '../services/api'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction } from '../types/npc'
 import {
@@ -8,8 +8,10 @@ import {
   className,
   npcDisplayName,
   parseSpecialAbilities,
+  specialAbilityAlertPattern,
   type SpecialAbility,
 } from '../lib/npcHelpers'
+import CreateTriggerModal, { type TriggerPrefill } from '../components/CreateTriggerModal'
 
 function formatRespawnTime(seconds: number): string {
   if (seconds <= 0) return '—'
@@ -208,9 +210,22 @@ interface SpecialAbilitiesListProps {
 
 function SpecialAbilitiesList({ abilities }: SpecialAbilitiesListProps): React.ReactElement {
   const [activeCode, setActiveCode] = useState<number | null>(null)
+  const [alertPrefill, setAlertPrefill] = useState<TriggerPrefill | null>(null)
 
   function toggle(code: number) {
     setActiveCode((prev) => (prev === code ? null : code))
+  }
+
+  function openCreateAlert(sa: SpecialAbility) {
+    const known = specialAbilityAlertPattern(sa.code)
+    setAlertPrefill({
+      name: `${sa.name} Alert`,
+      pattern: known?.pattern ?? '',
+      displayText: known?.text ?? sa.name.toUpperCase(),
+      displayColor: '#ff4444',
+      timerType: 'none',
+    })
+    setActiveCode(null)
   }
 
   return (
@@ -224,25 +239,42 @@ function SpecialAbilitiesList({ abilities }: SpecialAbilitiesListProps): React.R
               backgroundColor: activeCode === sa.code ? 'var(--color-surface-3, var(--color-surface-2))' : 'var(--color-surface-2)',
               color: activeCode === sa.code ? 'var(--color-primary)' : 'var(--color-foreground)',
               border: `1px solid ${activeCode === sa.code ? 'var(--color-primary)' : 'var(--color-border)'}`,
-              cursor: sa.description ? 'pointer' : 'default',
+              cursor: 'pointer',
             }}
           >
             {sa.name}
           </button>
-          {activeCode === sa.code && sa.description && (
+          {activeCode === sa.code && (
             <div
-              className="absolute left-0 top-full z-10 mt-1 w-56 rounded border p-2 text-xs shadow-lg"
+              className="absolute left-0 top-full z-10 mt-1 w-64 rounded border p-2 text-xs shadow-lg"
               style={{
                 backgroundColor: 'var(--color-surface)',
                 borderColor: 'var(--color-border)',
                 color: 'var(--color-muted-foreground)',
               }}
             >
-              {sa.description}
+              {sa.description && <p className="mb-1.5">{sa.description}</p>}
+              <button
+                onClick={() => openCreateAlert(sa)}
+                className="flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded font-medium"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  color: 'var(--color-background)',
+                  border: '1px solid transparent',
+                }}
+              >
+                <Bell size={10} /> Create Alert
+              </button>
             </div>
           )}
         </div>
       ))}
+      {alertPrefill && (
+        <CreateTriggerModal
+          prefill={alertPrefill}
+          onClose={() => setAlertPrefill(null)}
+        />
+      )}
     </div>
   )
 }

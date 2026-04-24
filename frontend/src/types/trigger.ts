@@ -1,5 +1,7 @@
 export type ActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
 
+export type TimerType = 'none' | 'buff' | 'detrimental'
+
 export interface Action {
   type: ActionType
   text: string
@@ -18,6 +20,10 @@ export interface Trigger {
   actions: Action[]
   pack_name: string
   created_at: string
+  timer_type: TimerType
+  timer_duration_secs: number
+  worn_off_pattern: string
+  spell_id: number
 }
 
 export interface TriggerFired {

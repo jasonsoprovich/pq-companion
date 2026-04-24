@@ -109,6 +109,55 @@ func (e *Engine) GetState() TimerState {
 	return e.snapshot(time.Now())
 }
 
+// StartExternal adds a timer not driven by a log cast event. Used by the
+// trigger engine when a user-defined trigger with timer_type set matches a log
+// line. If a timer with the same name already exists it is replaced. Category
+// is a plain string (to avoid a dependency cycle from trigger package) and
+// must be one of "buff", "debuff", "mez", "dot", "stun" — anything else is
+// treated as "debuff".
+//
+// durationSecs must be > 0. Returns early without change if duration is 0.
+func (e *Engine) StartExternal(name string, category string, durationSecs int, startedAt time.Time) {
+	if name == "" || durationSecs <= 0 {
+		return
+	}
+	cat := Category(category)
+	switch cat {
+	case CategoryBuff, CategoryDebuff, CategoryMez, CategoryDot, CategoryStun:
+	default:
+		cat = CategoryDebuff
+	}
+	duration := float64(durationSecs)
+	timer := &ActiveTimer{
+		ID:              name,
+		SpellName:       name,
+		Category:        cat,
+		CastAt:          startedAt,
+		StartsAt:        startedAt,
+		ExpiresAt:       startedAt.Add(time.Duration(durationSecs) * time.Second),
+		DurationSeconds: duration,
+	}
+
+	e.mu.Lock()
+	e.timers[name] = timer
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+}
+
+// StopExternal removes a timer by name. Used by the trigger engine when a
+// "worn off" pattern matches for a timer-driven trigger.
+func (e *Engine) StopExternal(name string) {
+	e.removeTimer(name)
+}
+
+// ClearAll removes every active timer and broadcasts the resulting empty
+// state. Used when the user globally disables the timer system.
+func (e *Engine) ClearAll() {
+	e.clearAll()
+}
+
 // ── internal helpers ──────────────────────────────────────────────────────────
 
 func (e *Engine) onSpellCast(castAt time.Time, spellName string) {

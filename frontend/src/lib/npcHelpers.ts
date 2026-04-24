@@ -214,6 +214,23 @@ const SPECIAL_ABILITIES: Record<number, { name: string; description: string }> =
   43: { name: 'Immune to Lull',            description: 'Cannot be pacified or lulled by any spell or effect.' },
 }
 
+/**
+ * Log-line patterns to alert on when an NPC uses a special ability. Only codes
+ * with a well-known trigger message are listed here — for the rest, the user
+ * can write a custom pattern. Patterns intentionally match any attacker so the
+ * trigger works regardless of which specific mob uses the ability.
+ */
+export const SPECIAL_ABILITY_ALERT_PATTERNS: Record<number, { pattern: string; text: string }> = {
+  1:  { pattern: `You have been summoned!`, text: 'SUMMONED!' },
+  2:  { pattern: `\\w+ has become ENRAGED\\.`, text: 'ENRAGED!' },
+  3:  { pattern: `\\w+ goes on a rampage!`, text: 'RAMPAGE!' },
+  4:  { pattern: `\\w+ flurries a strike!`, text: 'FLURRY!' },
+}
+
+export function specialAbilityAlertPattern(code: number): { pattern: string; text: string } | null {
+  return SPECIAL_ABILITY_ALERT_PATTERNS[code] ?? null
+}
+
 export function parseSpecialAbilities(raw: string): SpecialAbility[] {
   if (!raw || raw.trim() === '') return []
   return raw

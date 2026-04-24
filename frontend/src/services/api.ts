@@ -10,7 +10,7 @@ import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { TargetState } from '../types/overlay'
 import type { CombatState } from '../types/combat'
 import type { TimerState } from '../types/timer'
-import type { Trigger, TriggerFired, TriggerPack, Action } from '../types/trigger'
+import type { Trigger, TriggerFired, TriggerPack, Action, TimerType } from '../types/trigger'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -394,6 +394,10 @@ export interface CreateTriggerRequest {
   enabled: boolean
   pattern: string
   actions: Action[]
+  timer_type?: TimerType
+  timer_duration_secs?: number
+  worn_off_pattern?: string
+  spell_id?: number
 }
 
 export function createTrigger(req: CreateTriggerRequest): Promise<Trigger> {
@@ -426,4 +430,21 @@ export function importTriggerPack(pack: TriggerPack): Promise<{ status: string; 
 
 export function exportTriggerPack(): Promise<TriggerPack> {
   return get<TriggerPack>('/api/triggers/export')
+}
+
+export async function importGINAxml(
+  xml: string,
+  packName: string,
+): Promise<{ status: string; pack_name: string; imported: number }> {
+  const url = `${BASE_URL}/api/triggers/import-gina?pack_name=${encodeURIComponent(packName)}`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: xml,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error ?? res.statusText)
+  }
+  return res.json()
 }

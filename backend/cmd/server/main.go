@@ -84,9 +84,6 @@ func main() {
 	}
 	defer charStore.Close()
 
-	triggerEngine := trigger.NewEngine(triggerStore, hub)
-	triggerEngine.Reload()
-
 	// NPC overlay tracker: watches log events to infer the current combat target
 	// and broadcasts overlay:npc_target WebSocket events with full NPC data.
 	npcTracker := overlay.NewNPCTracker(hub, database)
@@ -99,6 +96,9 @@ func main() {
 	// timers per active spell, and broadcasts overlay:timers WebSocket events.
 	timerEngine := spelltimer.NewEngine(hub, database)
 	go timerEngine.Start(context.Background())
+
+	triggerEngine := trigger.NewEngine(triggerStore, hub, timerEngine)
+	triggerEngine.Reload()
 
 	// Log tailer: reads new lines from the EQ log file and broadcasts parsed
 	// events to all connected WebSocket clients. Also feeds overlay trackers

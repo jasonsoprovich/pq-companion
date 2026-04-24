@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, X } from 'lucide-react'
+import { Search, X, Clock } from 'lucide-react'
 import { searchSpells, getSpell, getSpellCrossRefs } from '../services/api'
 import type { Spell, SpellCrossRefs } from '../types/spell'
 import {
+  buildSpellTriggerPrefill,
   castableClasses,
   castableClassesShort,
   durationLabel,
@@ -15,6 +16,7 @@ import {
   targetLabel,
   zoneTypeLabel,
 } from '../lib/spellHelpers'
+import CreateTriggerModal from '../components/CreateTriggerModal'
 
 const SPELL_CLASSES: { index: number; abbr: string; full: string }[] = [
   { index: 0,  abbr: 'WAR', full: 'Warrior' },
@@ -277,6 +279,7 @@ interface DetailPanelProps {
 function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
   const navigate = useNavigate()
   const [crossRefs, setCrossRefs] = useState<SpellCrossRefs | null>(null)
+  const [showTriggerModal, setShowTriggerModal] = useState(false)
 
   useEffect(() => {
     if (!spell) { setCrossRefs(null); return }
@@ -317,34 +320,58 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
   return (
     <div className="flex-1 overflow-y-auto px-5 py-4">
       {/* Header */}
-      <div className="mb-4">
-        <h2
-          className="text-xl font-bold leading-tight"
-          style={{ color: 'var(--color-primary)' }}
-        >
-          {spell.name}
-        </h2>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
-          {skillLabel(spell.skill) && (
-            <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-              {skillLabel(spell.skill)}
-            </span>
-          )}
-          {flags.map((f) => (
-            <span
-              key={f}
-              className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-              style={{
-                backgroundColor: 'var(--color-surface-2)',
-                color: 'var(--color-primary)',
-                border: '1px solid var(--color-border)',
-              }}
-            >
-              {f}
-            </span>
-          ))}
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2
+            className="text-xl font-bold leading-tight"
+            style={{ color: 'var(--color-primary)' }}
+          >
+            {spell.name}
+          </h2>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            {skillLabel(spell.skill) && (
+              <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+                {skillLabel(spell.skill)}
+              </span>
+            )}
+            {flags.map((f) => (
+              <span
+                key={f}
+                className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-primary)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                {f}
+              </span>
+            ))}
+          </div>
         </div>
+        {hasDuration && (
+          <button
+            onClick={() => setShowTriggerModal(true)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium shrink-0"
+            style={{
+              backgroundColor: 'var(--color-primary)',
+              color: 'var(--color-background)',
+              border: '1px solid transparent',
+            }}
+            title="Create a trigger and timer from this spell"
+          >
+            <Clock size={12} />
+            Create Timer Trigger
+          </button>
+        )}
       </div>
+
+      {showTriggerModal && (
+        <CreateTriggerModal
+          prefill={buildSpellTriggerPrefill(spell)}
+          onClose={() => setShowTriggerModal(false)}
+        />
+      )}
 
       <div className="flex flex-col gap-3">
         {/* Casting */}

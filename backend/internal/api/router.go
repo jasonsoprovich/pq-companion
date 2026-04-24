@@ -135,6 +135,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Delete("/{id}", triggerH.del)
 			r.Get("/history", triggerH.history)
 			r.Post("/import", triggerH.importPack)
+			r.Post("/import-gina", triggerH.importGINA)
 			r.Get("/export", triggerH.exportPack)
 			r.Get("/packs", triggerH.listBuiltinPacks)
 			r.Post("/packs/{name}", triggerH.installBuiltinPack)

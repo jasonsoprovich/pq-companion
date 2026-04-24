@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -28,14 +29,31 @@ func (h *triggerHandler) list(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, triggers)
 }
 
+// triggerRequest is the shared JSON payload accepted by create and update.
+type triggerRequest struct {
+	Name              string            `json:"name"`
+	Enabled           bool              `json:"enabled"`
+	Pattern           string            `json:"pattern"`
+	Actions           []trigger.Action  `json:"actions"`
+	TimerType         trigger.TimerType `json:"timer_type"`
+	TimerDurationSecs int               `json:"timer_duration_secs"`
+	WornOffPattern    string            `json:"worn_off_pattern"`
+	SpellID           int               `json:"spell_id"`
+}
+
+// normalizeTimerType coerces an incoming timer_type into one of the valid
+// values, defaulting to "none" for anything else (including blank).
+func normalizeTimerType(t trigger.TimerType) trigger.TimerType {
+	switch t {
+	case trigger.TimerTypeBuff, trigger.TimerTypeDetrimental:
+		return t
+	}
+	return trigger.TimerTypeNone
+}
+
 // create adds a new trigger.
 func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name    string           `json:"name"`
-		Enabled bool             `json:"enabled"`
-		Pattern string           `json:"pattern"`
-		Actions []trigger.Action `json:"actions"`
-	}
+	var req triggerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
@@ -51,12 +69,16 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t := &trigger.Trigger{
-		ID:        id,
-		Name:      req.Name,
-		Enabled:   req.Enabled,
-		Pattern:   req.Pattern,
-		Actions:   req.Actions,
-		CreatedAt: time.Now().UTC(),
+		ID:                id,
+		Name:              req.Name,
+		Enabled:           req.Enabled,
+		Pattern:           req.Pattern,
+		Actions:           req.Actions,
+		CreatedAt:         time.Now().UTC(),
+		TimerType:         normalizeTimerType(req.TimerType),
+		TimerDurationSecs: req.TimerDurationSecs,
+		WornOffPattern:    req.WornOffPattern,
+		SpellID:           req.SpellID,
 	}
 	if t.Actions == nil {
 		t.Actions = []trigger.Action{}
@@ -82,12 +104,7 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Name    string           `json:"name"`
-		Enabled bool             `json:"enabled"`
-		Pattern string           `json:"pattern"`
-		Actions []trigger.Action `json:"actions"`
-	}
+	var req triggerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
@@ -101,6 +118,10 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	existing.Enabled = req.Enabled
 	existing.Pattern = req.Pattern
 	existing.Actions = req.Actions
+	existing.TimerType = normalizeTimerType(req.TimerType)
+	existing.TimerDurationSecs = req.TimerDurationSecs
+	existing.WornOffPattern = req.WornOffPattern
+	existing.SpellID = req.SpellID
 	if existing.Actions == nil {
 		existing.Actions = []trigger.Action{}
 	}
@@ -174,6 +195,40 @@ func (h *triggerHandler) exportPack(w http.ResponseWriter, r *http.Request) {
 		Triggers:    plain,
 	}
 	writeJSON(w, http.StatusOK, pack)
+}
+
+// importGINA imports triggers from a GINA share XML document in the request
+// body. The pack_name is taken from the ?pack_name= query param or a default.
+func (h *triggerHandler) importGINA(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "read body: "+err.Error())
+		return
+	}
+	if len(body) == 0 {
+		writeError(w, http.StatusBadRequest, "empty body")
+		return
+	}
+	packName := r.URL.Query().Get("pack_name")
+	pack, err := trigger.ParseGINA(body, packName)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(pack.Triggers) == 0 {
+		writeError(w, http.StatusBadRequest, "no triggers found in GINA document")
+		return
+	}
+	if err := trigger.InstallPack(h.store, pack); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.engine.Reload()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":    "ok",
+		"pack_name": pack.PackName,
+		"imported":  len(pack.Triggers),
+	})
 }
 
 // listBuiltinPacks returns all available pre-built trigger packs.

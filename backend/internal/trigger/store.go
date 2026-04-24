@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -39,18 +40,37 @@ func OpenStore(path string) (*Store, error) {
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) migrate() error {
-	_, err := s.db.Exec(`
+	if _, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS triggers (
-			id         TEXT    NOT NULL PRIMARY KEY,
-			name       TEXT    NOT NULL,
-			enabled    INTEGER NOT NULL DEFAULT 1,
-			pattern    TEXT    NOT NULL,
-			actions    TEXT    NOT NULL DEFAULT '[]',
-			pack_name  TEXT    NOT NULL DEFAULT '',
-			created_at INTEGER NOT NULL
+			id                 TEXT    NOT NULL PRIMARY KEY,
+			name               TEXT    NOT NULL,
+			enabled            INTEGER NOT NULL DEFAULT 1,
+			pattern            TEXT    NOT NULL,
+			actions            TEXT    NOT NULL DEFAULT '[]',
+			pack_name          TEXT    NOT NULL DEFAULT '',
+			created_at         INTEGER NOT NULL,
+			timer_type         TEXT    NOT NULL DEFAULT 'none',
+			timer_duration_secs INTEGER NOT NULL DEFAULT 0,
+			worn_off_pattern   TEXT    NOT NULL DEFAULT '',
+			spell_id           INTEGER NOT NULL DEFAULT 0
 		)
-	`)
-	return err
+	`); err != nil {
+		return err
+	}
+
+	// Idempotently add timer columns for databases created before the timer feature.
+	addColumns := []string{
+		`ALTER TABLE triggers ADD COLUMN timer_type TEXT NOT NULL DEFAULT 'none'`,
+		`ALTER TABLE triggers ADD COLUMN timer_duration_secs INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE triggers ADD COLUMN worn_off_pattern TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE triggers ADD COLUMN spell_id INTEGER NOT NULL DEFAULT 0`,
+	}
+	for _, stmt := range addColumns {
+		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("add column: %w", err)
+		}
+	}
+	return nil
 }
 
 // Insert saves a new trigger to the database.
@@ -59,10 +79,15 @@ func (s *Store) Insert(t *Trigger) error {
 	if err != nil {
 		return fmt.Errorf("marshal actions: %w", err)
 	}
+	if t.TimerType == "" {
+		t.TimerType = TimerTypeNone
+	}
 	_, err = s.db.Exec(
-		`INSERT INTO triggers (id, name, enabled, pattern, actions, pack_name, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO triggers (id, name, enabled, pattern, actions, pack_name, created_at,
+		                       timer_type, timer_duration_secs, worn_off_pattern, spell_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName, t.CreatedAt.Unix(),
+		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 	)
 	if err != nil {
 		return fmt.Errorf("insert trigger: %w", err)
@@ -73,7 +98,8 @@ func (s *Store) Insert(t *Trigger) error {
 // List returns all triggers ordered by creation time ascending.
 func (s *Store) List() ([]*Trigger, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, enabled, pattern, actions, pack_name, created_at
+		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
+		        timer_type, timer_duration_secs, worn_off_pattern, spell_id
 		 FROM triggers ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -95,7 +121,8 @@ func (s *Store) List() ([]*Trigger, error) {
 // Get returns the trigger with the given ID, or ErrNotFound.
 func (s *Store) Get(id string) (*Trigger, error) {
 	row := s.db.QueryRow(
-		`SELECT id, name, enabled, pattern, actions, pack_name, created_at
+		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
+		        timer_type, timer_duration_secs, worn_off_pattern, spell_id
 		 FROM triggers WHERE id = ?`, id,
 	)
 	t, err := scanTrigger(row)
@@ -114,10 +141,16 @@ func (s *Store) Update(t *Trigger) error {
 	if err != nil {
 		return fmt.Errorf("marshal actions: %w", err)
 	}
+	if t.TimerType == "" {
+		t.TimerType = TimerTypeNone
+	}
 	res, err := s.db.Exec(
-		`UPDATE triggers SET name=?, enabled=?, pattern=?, actions=?, pack_name=?
+		`UPDATE triggers SET name=?, enabled=?, pattern=?, actions=?, pack_name=?,
+		                     timer_type=?, timer_duration_secs=?, worn_off_pattern=?, spell_id=?
 		 WHERE id=?`,
-		t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName, t.ID,
+		t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName,
+		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
+		t.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update trigger: %w", err)
@@ -160,11 +193,19 @@ func scanTrigger(row scanner) (*Trigger, error) {
 	var enabledInt int
 	var actJSON string
 	var unixSec int64
-	if err := row.Scan(&t.ID, &t.Name, &enabledInt, &t.Pattern, &actJSON, &t.PackName, &unixSec); err != nil {
+	var timerType string
+	if err := row.Scan(
+		&t.ID, &t.Name, &enabledInt, &t.Pattern, &actJSON, &t.PackName, &unixSec,
+		&timerType, &t.TimerDurationSecs, &t.WornOffPattern, &t.SpellID,
+	); err != nil {
 		return nil, err
 	}
 	t.Enabled = enabledInt != 0
 	t.CreatedAt = time.Unix(unixSec, 0).UTC()
+	t.TimerType = TimerType(timerType)
+	if t.TimerType == "" {
+		t.TimerType = TimerTypeNone
+	}
 	if err := json.Unmarshal([]byte(actJSON), &t.Actions); err != nil {
 		t.Actions = []Action{}
 	}

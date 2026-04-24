@@ -30,10 +30,11 @@ import {
   installBuiltinPack,
   importTriggerPack,
   exportTriggerPack,
+  importGINAxml,
   type CreateTriggerRequest,
 } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
-import type { Trigger, TriggerFired, TriggerPack, Action } from '../types/trigger'
+import type { Trigger, TriggerFired, TriggerPack, Action, TimerType } from '../types/trigger'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -288,6 +289,9 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
   const [actions, setActions] = useState<Action[]>(
     initial?.actions ?? [{ type: 'overlay_text', text: '', duration_secs: 5, color: '#ffffff', sound_path: '', volume: 0, voice: '' }],
   )
+  const [timerType, setTimerType] = useState<TimerType>(initial?.timer_type ?? 'none')
+  const [timerDuration, setTimerDuration] = useState(initial?.timer_duration_secs ?? 0)
+  const [wornOffPattern, setWornOffPattern] = useState(initial?.worn_off_pattern ?? '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [patternError, setPatternError] = useState<string | null>(null)
@@ -334,6 +338,10 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
       enabled,
       pattern: pattern.trim(),
       actions,
+      timer_type: timerType,
+      timer_duration_secs: timerType === 'none' ? 0 : Math.max(0, timerDuration),
+      worn_off_pattern: timerType === 'none' ? '' : wornOffPattern.trim(),
+      spell_id: initial?.spell_id ?? 0,
     }
 
     setSubmitting(true)
@@ -417,6 +425,60 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
         <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
           Matched against the log message text (after the timestamp).
         </p>
+      </div>
+
+      {/* Timer */}
+      <div className="space-y-2">
+        <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+          Spell timer
+        </label>
+        <div className="flex gap-1">
+          {(['none', 'buff', 'detrimental'] as TimerType[]).map((tt) => {
+            const active = timerType === tt
+            return (
+              <button
+                key={tt}
+                type="button"
+                onClick={() => setTimerType(tt)}
+                className="flex-1 rounded px-2 py-1 text-xs font-medium capitalize"
+                style={{
+                  backgroundColor: active ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                  color: active ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+                  border: '1px solid transparent',
+                }}
+              >
+                {tt === 'none' ? 'No timer' : tt}
+              </button>
+            )
+          })}
+        </div>
+        {timerType !== 'none' && (
+          <div className="flex gap-2">
+            <div className="flex items-center gap-1.5 flex-1">
+              <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                Duration (s)
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={timerDuration}
+                onChange={(e) => setTimerDuration(Math.max(0, parseInt(e.target.value) || 0))}
+                className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center"
+                style={inputStyle}
+                disabled={submitting}
+              />
+            </div>
+            <input
+              type="text"
+              placeholder="worn-off regex (optional)"
+              value={wornOffPattern}
+              onChange={(e) => setWornOffPattern(e.target.value)}
+              className="flex-1 rounded px-2 py-0.5 text-xs outline-none font-mono"
+              style={inputStyle}
+              disabled={submitting}
+            />
+          </div>
+        )}
       </div>
 
       {/* Actions */}
@@ -508,6 +570,23 @@ function TriggerRow({ trigger, onEdit, onDeleted, onToggled }: TriggerRowProps):
   const [toggling, setToggling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [shared, setShared] = useState(false)
+
+  const handleShare = () => {
+    const pack: TriggerPack = {
+      pack_name: `Share: ${trigger.name}`,
+      description: `Single-trigger share from PQ Companion`,
+      triggers: [trigger],
+    }
+    navigator.clipboard.writeText(JSON.stringify(pack, null, 2))
+      .then(() => {
+        setShared(true)
+        setTimeout(() => setShared(false), 2000)
+      })
+      .catch(() => {
+        setError('failed to copy to clipboard')
+      })
+  }
 
   const handleDelete = () => {
     setDeleting(true)
@@ -562,6 +641,18 @@ function TriggerRow({ trigger, onEdit, onDeleted, onToggled }: TriggerRowProps):
             <span className="text-sm font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
               {trigger.name}
             </span>
+            {trigger.timer_type && trigger.timer_type !== 'none' && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded shrink-0 font-medium capitalize"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: trigger.timer_type === 'buff' ? '#22c55e' : '#ef4444',
+                  border: `1px solid ${trigger.timer_type === 'buff' ? '#22c55e' : '#ef4444'}`,
+                }}
+              >
+                {trigger.timer_type} · {trigger.timer_duration_secs}s
+              </span>
+            )}
             {trigger.pack_name && (
               <span
                 className="text-[10px] px-1.5 py-0.5 rounded shrink-0"
@@ -585,7 +676,7 @@ function TriggerRow({ trigger, onEdit, onDeleted, onToggled }: TriggerRowProps):
           {trigger.actions.length} action{trigger.actions.length !== 1 ? 's' : ''}
         </span>
 
-        {/* Expand / edit / delete */}
+        {/* Expand / share / edit / delete */}
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={() => setExpanded((v) => !v)}
@@ -594,6 +685,14 @@ function TriggerRow({ trigger, onEdit, onDeleted, onToggled }: TriggerRowProps):
             title={expanded ? 'Collapse' : 'Expand'}
           >
             {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
+          <button
+            onClick={handleShare}
+            className="p-1 rounded"
+            style={{ color: shared ? 'var(--color-success)' : 'var(--color-muted-foreground)' }}
+            title="Copy quick-share JSON to clipboard"
+          >
+            {shared ? <CheckCircle2 size={13} /> : <Upload size={13} />}
           </button>
           <button
             onClick={() => onEdit(trigger)}
@@ -777,6 +876,7 @@ function PacksTab({ onInstalled }: PacksTabProps): React.ReactElement {
   const [installed, setInstalled] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const ginaInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     getBuiltinPacks()
@@ -834,6 +934,25 @@ function PacksTab({ onInstalled }: PacksTabProps): React.ReactElement {
     e.target.value = ''
   }
 
+  const handleGINAImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const xml = ev.target?.result as string
+      const packName = file.name.replace(/\.(xml|gtp)$/i, '') || 'GINA Import'
+      importGINAxml(xml, packName)
+        .then((r) => {
+          onInstalled()
+          setInstalled(`${r.pack_name} (${r.imported})`)
+          setTimeout(() => setInstalled(null), 3000)
+        })
+        .catch((err: Error) => setError(err.message))
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -878,11 +997,30 @@ function PacksTab({ onInstalled }: PacksTabProps): React.ReactElement {
           >
             <Upload size={12} /> Import Pack
           </button>
+          <button
+            onClick={() => ginaInputRef.current?.click()}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+            title="Import a GINA trigger share (.xml / .gtp)"
+          >
+            <Upload size={12} /> Import GINA
+          </button>
           <input
             ref={fileInputRef}
             type="file"
             accept=".json,application/json"
             onChange={handleImport}
+            className="hidden"
+          />
+          <input
+            ref={ginaInputRef}
+            type="file"
+            accept=".xml,.gtp,application/xml,text/xml"
+            onChange={handleGINAImport}
             className="hidden"
           />
         </div>
