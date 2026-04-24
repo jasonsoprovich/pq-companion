@@ -211,16 +211,22 @@ func classifyMessage(msg string) (LogEvent, bool) {
 
 	// --- Player hits NPC ---
 	if m := reYouHit.FindStringSubmatch(msg); m != nil {
-		dmg, _ := strconv.Atoi(m[3])
-		return LogEvent{
-			Type: EventCombatHit,
-			Data: CombatHitData{
-				Actor:  "You",
-				Skill:  m[1],
-				Target: m[2],
-				Damage: dmg,
-			},
-		}, true
+		// Guard: auxiliary verbs ("have", "are", "were", etc.) indicate passive
+		// constructions like "You have been healed for X points of damage." that
+		// are not combat hits. Only real attack verbs (slash, kick, bash…) pass.
+		verb := strings.ToLower(m[1])
+		if verb != "have" && verb != "are" && verb != "were" && verb != "been" && verb != "is" {
+			dmg, _ := strconv.Atoi(m[3])
+			return LogEvent{
+				Type: EventCombatHit,
+				Data: CombatHitData{
+					Actor:  "You",
+					Skill:  m[1],
+					Target: m[2],
+					Damage: dmg,
+				},
+			}, true
+		}
 	}
 
 	// --- Player's spell hits target (passive non-melee form) ---

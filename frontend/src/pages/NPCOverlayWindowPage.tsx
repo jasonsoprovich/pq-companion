@@ -8,13 +8,19 @@ import { className, bodyTypeName } from '../lib/npcHelpers'
 import type { TargetState, SpecialAbility } from '../types/overlay'
 
 // ── Ability badge colours ──────────────────────────────────────────────────────
+// Yellow  = special attacks (direct combat threat to the player)
+// Red     = damage/magic immunities (NPC can't be killed normally)
+// Orange  = crowd-control immunities (NPC resists player CC tactics)
+// Gray    = passive/informational
 
-const DANGER_ABILITIES = new Set([1, 2, 3, 4, 5, 12, 13])
-const IMMUNE_ABILITIES = new Set([17, 18, 19, 20])
+const ATTACK_ABILITIES = new Set([1, 2, 3, 4, 5, 6])
+const DAMAGE_IMMUNE_ABILITIES = new Set([12, 13, 14, 15, 16, 20, 21, 31, 43])
+const CC_IMMUNE_ABILITIES = new Set([17, 18, 19, 23])
 
 function abilityBadgeColor(code: number): string {
-  if (DANGER_ABILITIES.has(code)) return '#dc2626'
-  if (IMMUNE_ABILITIES.has(code)) return '#f97316'
+  if (ATTACK_ABILITIES.has(code)) return '#ca8a04'
+  if (DAMAGE_IMMUNE_ABILITIES.has(code)) return '#dc2626'
+  if (CC_IMMUNE_ABILITIES.has(code)) return '#f97316'
   return '#6b7280'
 }
 
@@ -149,7 +155,7 @@ function NPCContent({ state }: { state: TargetState }): React.ReactElement {
               <Stat label="AC" value={npc.ac} />
               <Stat label="Min DMG" value={npc.min_dmg} color="#ef4444" />
               <Stat label="Max DMG" value={npc.max_dmg} color="#ef4444" />
-              <Stat label="Attacks" value={npc.attack_count} />
+              <Stat label="Attacks" value={npc.attack_count < 0 ? '—' : npc.attack_count} />
             </div>
           </div>
 

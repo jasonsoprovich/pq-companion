@@ -177,6 +177,19 @@ func TestParseLine(t *testing.T) {
 			wantData: CombatHitData{Actor: "You", Skill: "pierce", Target: "a young gnoll", Damage: 45},
 		},
 
+		// Passive constructions starting with an auxiliary verb must not be
+		// misidentified as player-hits-NPC events.
+		{
+			name:   "combat: passive construction 'You have been healed' not a combat hit",
+			line:   "[Mon Apr 13 06:00:00 2026] You have been healed for 150 points of damage.",
+			wantOK: false,
+		},
+		{
+			name:   "combat: passive construction 'You are poisoned' not a combat hit",
+			line:   "[Mon Apr 13 06:00:00 2026] You are poisoned for 5 points of damage.",
+			wantOK: false,
+		},
+
 		// --- Combat: non-melee / spell damage ---
 		{
 			name:     "combat: player spell hits target (passive non-melee)",

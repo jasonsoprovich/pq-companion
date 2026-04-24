@@ -160,6 +160,7 @@ const BODY_TYPES: Record<number, string> = {
   10: 'Slime',
   11: 'Plant',
   12: 'Dragon',
+  14: 'Akheva',
   21: 'Untargetable',
   23: 'Muramite',
   25: 'Swarmcreature',
@@ -210,6 +211,7 @@ const SPECIAL_ABILITIES: Record<number, { name: string; description: string }> =
   31: { name: 'Immune to Dispel',          description: 'Buffs and effects cannot be removed by dispel spells.' },
   35: { name: 'Immune to NPC Aggro',       description: 'Will not be attacked by other NPCs.' },
   42: { name: 'Destructible Object',       description: 'Can be destroyed by player damage (e.g. doors, crates).' },
+  43: { name: 'Immune to Lull',            description: 'Cannot be pacified or lulled by any spell or effect.' },
 }
 
 export function parseSpecialAbilities(raw: string): SpecialAbility[] {

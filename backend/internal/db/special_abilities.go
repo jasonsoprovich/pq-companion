@@ -33,6 +33,7 @@ var specialAbilityNames = map[int]string{
 	31: "Immune to Dispel",
 	35: "Immune to NPC Aggro",
 	42: "Destructible Object",
+	43: "Immune to Lull",
 }
 
 // SpecialAbility represents a single parsed ability from the special_abilities field.
