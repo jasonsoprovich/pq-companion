@@ -64,6 +64,7 @@
 - [x] Bug fix — Character switcher and Characters tab active selection sync (closes #83)
 - [x] Feature — Advanced item filter modal: race, class, level, slot, type, stat/resist minimums (closes #94)
 - [x] Bug/Feature — Move Alerts panel into Triggers tab; deduplicate voice alert sounds (closes #68)
+- [x] Feature — Persist overlay window size and position across sessions (closes #85)
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website

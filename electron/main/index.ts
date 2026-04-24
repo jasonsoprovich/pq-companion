@@ -1,10 +1,82 @@
-import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen } from 'electron'
 import { join } from 'path'
 import { spawn, ChildProcess } from 'child_process'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { autoUpdater } from 'electron-updater'
 
 const isDev = !app.isPackaged
+
+// ── Overlay bounds persistence ────────────────────────────────────────────────
+
+type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'trigger' | 'npc'
+type Bounds = { x: number; y: number; width: number; height: number }
+
+type BoundsStore = Partial<Record<OverlayName, Bounds>>
+
+function boundsFilePath(): string {
+  return join(app.getPath('userData'), 'overlayBounds.json')
+}
+
+function loadBoundsStore(): BoundsStore {
+  try {
+    const raw = readFileSync(boundsFilePath(), 'utf8')
+    return JSON.parse(raw) as BoundsStore
+  } catch {
+    return {}
+  }
+}
+
+function saveBoundsStore(store: BoundsStore): void {
+  try {
+    writeFileSync(boundsFilePath(), JSON.stringify(store, null, 2), 'utf8')
+  } catch (err) {
+    console.error('[main] Failed to write overlay bounds:', err)
+  }
+}
+
+const boundsDebounceTimers = new Map<OverlayName, ReturnType<typeof setTimeout>>()
+
+function persistBounds(name: OverlayName, win: BrowserWindow): void {
+  const existing = boundsDebounceTimers.get(name)
+  if (existing) clearTimeout(existing)
+  boundsDebounceTimers.set(
+    name,
+    setTimeout(() => {
+      if (win.isDestroyed()) return
+      const b = win.getBounds()
+      const store = loadBoundsStore()
+      store[name] = { x: b.x, y: b.y, width: b.width, height: b.height }
+      saveBoundsStore(store)
+      boundsDebounceTimers.delete(name)
+    }, 500),
+  )
+}
+
+function isOnScreen(bounds: Bounds): boolean {
+  const displays = screen.getAllDisplays()
+  return displays.some((d) => {
+    const wa = d.workArea
+    return (
+      bounds.x < wa.x + wa.width &&
+      bounds.x + bounds.width > wa.x &&
+      bounds.y < wa.y + wa.height &&
+      bounds.y + bounds.height > wa.y
+    )
+  })
+}
+
+function getRestoredBounds(name: OverlayName, defaults: Bounds): Bounds {
+  const store = loadBoundsStore()
+  const saved = store[name]
+  if (saved && isOnScreen(saved)) return saved
+  return defaults
+}
+
+function trackOverlayBounds(name: OverlayName, win: BrowserWindow): void {
+  win.on('move', () => persistBounds(name, win))
+  win.on('resize', () => persistBounds(name, win))
+  win.on('close', () => persistBounds(name, win))
+}
 
 let mainWindow: BrowserWindow | null = null
 let dpsOverlayWindow: BrowserWindow | null = null
@@ -196,9 +268,12 @@ function createDPSOverlay(): void {
     return
   }
 
+  const { x, y, width, height } = getRestoredBounds('dps', { x: 0, y: 0, width: 420, height: 460 })
   dpsOverlayWindow = new BrowserWindow({
-    width: 420,
-    height: 460,
+    x,
+    y,
+    width,
+    height,
     minWidth: 260,
     minHeight: 180,
     transparent: true,
@@ -220,6 +295,7 @@ function createDPSOverlay(): void {
   dpsOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   dpsOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   dpsOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  trackOverlayBounds('dps', dpsOverlayWindow)
 
   if (isDev) {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
@@ -243,9 +319,12 @@ function createHPSOverlay(): void {
     return
   }
 
+  const { x, y, width, height } = getRestoredBounds('hps', { x: 0, y: 0, width: 420, height: 460 })
   hpsOverlayWindow = new BrowserWindow({
-    width: 420,
-    height: 460,
+    x,
+    y,
+    width,
+    height,
     minWidth: 260,
     minHeight: 180,
     transparent: true,
@@ -266,6 +345,7 @@ function createHPSOverlay(): void {
   hpsOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   hpsOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   hpsOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  trackOverlayBounds('hps', hpsOverlayWindow)
 
   if (isDev) {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
@@ -289,9 +369,12 @@ function createBuffTimerOverlay(): void {
     return
   }
 
+  const { x, y, width, height } = getRestoredBounds('buffTimer', { x: 0, y: 0, width: 280, height: 380 })
   buffTimerWindow = new BrowserWindow({
-    width: 280,
-    height: 380,
+    x,
+    y,
+    width,
+    height,
     minWidth: 200,
     minHeight: 140,
     transparent: true,
@@ -312,6 +395,7 @@ function createBuffTimerOverlay(): void {
   buffTimerWindow.setAlwaysOnTop(true, 'screen-saver')
   buffTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   buffTimerWindow.setIgnoreMouseEvents(true, { forward: true })
+  trackOverlayBounds('buffTimer', buffTimerWindow)
 
   if (isDev) {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
@@ -335,9 +419,12 @@ function createDetrimTimerOverlay(): void {
     return
   }
 
+  const { x, y, width, height } = getRestoredBounds('detrimTimer', { x: 0, y: 0, width: 300, height: 320 })
   detrimTimerWindow = new BrowserWindow({
-    width: 300,
-    height: 320,
+    x,
+    y,
+    width,
+    height,
     minWidth: 200,
     minHeight: 140,
     transparent: true,
@@ -358,6 +445,7 @@ function createDetrimTimerOverlay(): void {
   detrimTimerWindow.setAlwaysOnTop(true, 'screen-saver')
   detrimTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   detrimTimerWindow.setIgnoreMouseEvents(true, { forward: true })
+  trackOverlayBounds('detrimTimer', detrimTimerWindow)
 
   if (isDev) {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
@@ -381,9 +469,12 @@ function createTriggerOverlay(): void {
     return
   }
 
+  const { x, y, width, height } = getRestoredBounds('trigger', { x: 0, y: 0, width: 340, height: 360 })
   triggerOverlayWindow = new BrowserWindow({
-    width: 340,
-    height: 360,
+    x,
+    y,
+    width,
+    height,
     minWidth: 240,
     minHeight: 100,
     transparent: true,
@@ -404,6 +495,7 @@ function createTriggerOverlay(): void {
   triggerOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   triggerOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   triggerOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  trackOverlayBounds('trigger', triggerOverlayWindow)
 
   if (isDev) {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
@@ -427,9 +519,12 @@ function createNPCOverlay(): void {
     return
   }
 
+  const { x, y, width, height } = getRestoredBounds('npc', { x: 0, y: 0, width: 360, height: 480 })
   npcOverlayWindow = new BrowserWindow({
-    width: 360,
-    height: 480,
+    x,
+    y,
+    width,
+    height,
     minWidth: 280,
     minHeight: 200,
     transparent: true,
@@ -450,6 +545,7 @@ function createNPCOverlay(): void {
   npcOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   npcOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   npcOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  trackOverlayBounds('npc', npcOverlayWindow)
 
   if (isDev) {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
