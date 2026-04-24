@@ -40,12 +40,13 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showPlaceholders, setShowPlaceholders] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const runSearch = useCallback((q: string) => {
+  const runSearch = useCallback((q: string, placeholders: boolean) => {
     setLoading(true)
     setError(null)
-    searchNPCs(q, 50, 0)
+    searchNPCs(q, 50, 0, placeholders)
       .then((res) => {
         setNpcs(res.items ?? [])
         setTotal(res.total)
@@ -56,14 +57,14 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => runSearch(query), 300)
+    debounceRef.current = setTimeout(() => runSearch(query, showPlaceholders), 300)
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [query, runSearch])
+  }, [query, showPlaceholders, runSearch])
 
   useEffect(() => {
-    runSearch('')
+    runSearch('', showPlaceholders)
   }, [runSearch])
 
   return (
@@ -93,12 +94,24 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
         )}
       </div>
 
-      {/* Result count */}
+      {/* Result count + placeholder toggle */}
       <div
-        className="border-b px-3 py-1.5 text-[11px]"
+        className="flex items-center justify-between border-b px-3 py-1.5 text-[11px]"
         style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
       >
-        {loading ? 'Searching…' : error ? 'Error' : `${total.toLocaleString()} NPCs`}
+        <span>{loading ? 'Searching…' : error ? 'Error' : `${total.toLocaleString()} NPCs`}</span>
+        <button
+          onClick={() => setShowPlaceholders((v) => !v)}
+          title={showPlaceholders ? 'Hide placeholder NPCs' : 'Show placeholder NPCs'}
+          className="rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+          style={{
+            backgroundColor: showPlaceholders ? 'var(--color-surface-2)' : 'transparent',
+            color: showPlaceholders ? 'var(--color-primary)' : 'var(--color-muted)',
+            border: `1px solid ${showPlaceholders ? 'var(--color-primary)' : 'var(--color-border)'}`,
+          }}
+        >
+          +placeholders
+        </button>
       </div>
 
       {/* Results list */}

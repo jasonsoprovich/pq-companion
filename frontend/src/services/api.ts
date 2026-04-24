@@ -163,8 +163,10 @@ export function searchNPCs(
   q: string,
   limit = 50,
   offset = 0,
+  showPlaceholders = false,
 ): Promise<SearchResult<NPC>> {
   const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) })
+  if (showPlaceholders) params.set('show_placeholders', '1')
   return get<SearchResult<NPC>>(`/api/npcs?${params}`)
 }
 

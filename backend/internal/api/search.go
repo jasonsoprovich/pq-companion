@@ -66,7 +66,7 @@ func (h *searchHandler) global(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		defer wg.Done()
-		res, err := h.db.SearchNPCs(q, limit, 0)
+		res, err := h.db.SearchNPCs(q, limit, 0, true)
 		if err != nil {
 			setErr(err.Error())
 			return

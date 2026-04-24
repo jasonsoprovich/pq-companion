@@ -407,20 +407,27 @@ func (db *DB) GetNPCByName(name string) (*NPC, error) {
 }
 
 // SearchNPCs searches NPCs by name (case-insensitive substring match).
-func (db *DB) SearchNPCs(query string, limit, offset int) (*SearchResult[NPC], error) {
+// When hidePlaceholders is true, entries with level 0, class 0, or names
+// starting with "#" are excluded.
+func (db *DB) SearchNPCs(query string, limit, offset int, hidePlaceholders bool) (*SearchResult[NPC], error) {
 	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
+
+	placeholderClause := ""
+	if hidePlaceholders {
+		placeholderClause = " AND n.name NOT LIKE '#%' AND n.level > 0 AND n.class > 0"
+	}
 
 	var total int
 	if err := db.QueryRow(
-		"SELECT COUNT(*) FROM npc_types WHERE name LIKE ? ESCAPE '\\'",
+		"SELECT COUNT(*) FROM npc_types n WHERE n.name LIKE ? ESCAPE '\\'"+placeholderClause,
 		pattern,
 	).Scan(&total); err != nil {
 		return nil, fmt.Errorf("count npcs: %w", err)
 	}
 
 	q := fmt.Sprintf(
-		"SELECT %s FROM npc_types n %s WHERE n.name LIKE ? ESCAPE '\\' ORDER BY n.name LIMIT ? OFFSET ?",
-		npcColumns, npcJoin,
+		"SELECT %s FROM npc_types n %s WHERE n.name LIKE ? ESCAPE '\\'%s ORDER BY n.name LIMIT ? OFFSET ?",
+		npcColumns, npcJoin, placeholderClause,
 	)
 	rows, err := db.Query(q, pattern, limit, offset)
 	if err != nil {

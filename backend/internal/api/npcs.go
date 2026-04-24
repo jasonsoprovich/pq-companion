@@ -37,7 +37,8 @@ func (h *npcsHandler) search(w http.ResponseWriter, r *http.Request) {
 	if limit > 100 {
 		limit = 100
 	}
-	result, err := h.db.SearchNPCs(q, limit, offset)
+	showPlaceholders := r.URL.Query().Get("show_placeholders") == "1"
+	result, err := h.db.SearchNPCs(q, limit, offset, !showPlaceholders)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
