@@ -96,7 +96,7 @@ function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps):
     >
       {/* Header row: type selector + remove */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 flex-1">
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
           <span className="text-xs font-medium shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
             Action {index + 1}:
           </span>
@@ -114,7 +114,7 @@ function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps):
                 voice: action.voice || '',
               })
             }}
-            className="rounded px-2 py-0.5 text-xs outline-none flex-1"
+            className="rounded px-2 py-0.5 text-xs outline-none flex-1 min-w-0"
             style={selectStyle}
           >
             <option value="overlay_text">Overlay Text</option>
@@ -221,8 +221,8 @@ function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps):
             className="w-full rounded px-2 py-1 text-xs outline-none font-mono"
             style={inputStyle}
           />
-          <div className="flex gap-2">
-            <div className="flex items-center gap-1.5 flex-1">
+          <div className="flex gap-2 min-w-0">
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
               <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
                 Voice
               </label>
@@ -230,7 +230,7 @@ function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps):
                 <select
                   value={action.voice || ''}
                   onChange={(e) => onChange(index, { ...action, voice: e.target.value })}
-                  className="rounded px-2 py-0.5 text-xs outline-none flex-1"
+                  className="rounded px-2 py-0.5 text-xs outline-none flex-1 min-w-0"
                   style={selectStyle}
                 >
                   <option value="">System default</option>

@@ -156,12 +156,12 @@ function RuleRow({ rule, voices, onChange }: RuleRowProps): React.ReactElement {
             Use <code style={{ color: 'var(--color-foreground)' }}>{meta.placeholders}</code> to insert context.
           </p>
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs flex-1" style={{ color: 'var(--color-muted-foreground)' }}>
+            <label className="flex items-center gap-2 text-xs flex-1 min-w-0" style={{ color: 'var(--color-muted-foreground)' }}>
               <span className="shrink-0" style={{ minWidth: 48 }}>Voice</span>
               <select
                 value={rule.voice}
                 onChange={(e) => onChange({ ...rule, voice: e.target.value })}
-                style={{ ...selectStyle, flex: 1, paddingRight: 24 }}
+                style={{ ...selectStyle, flex: 1, minWidth: 0, paddingRight: 24 }}
               >
                 <option value="">System default</option>
                 {voices.map((v) => (
