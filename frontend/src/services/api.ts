@@ -92,8 +92,14 @@ export function searchSpells(
   q: string,
   limit = 50,
   offset = 0,
+  classIndex = -1,
+  minLevel = 0,
+  maxLevel = 0,
 ): Promise<SearchResult<Spell>> {
   const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) })
+  if (classIndex >= 0) params.set('class', String(classIndex))
+  if (minLevel > 0) params.set('minLevel', String(minLevel))
+  if (maxLevel > 0) params.set('maxLevel', String(maxLevel))
   return get<SearchResult<Spell>>(`/api/spells?${params}`)
 }
 

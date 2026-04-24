@@ -169,7 +169,7 @@ func TestSearchNPCs(t *testing.T) {
 
 func TestGetSpell_Found(t *testing.T) {
 	d := openTestDB(t)
-	res, err := d.SearchSpells("Fire", 1, 0)
+	res, err := d.SearchSpells("Fire", -1, 0, 0, 1, 0)
 	if err != nil {
 		t.Fatalf("search spells: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestSearchSpells(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := d.SearchSpells(tt.query, 20, 0)
+			res, err := d.SearchSpells(tt.query, -1, 0, 0, 20, 0)
 			if err != nil {
 				t.Fatalf("SearchSpells(%q): %v", tt.query, err)
 			}

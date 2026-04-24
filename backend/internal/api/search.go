@@ -54,7 +54,7 @@ func (h *searchHandler) global(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		defer wg.Done()
-		res, err := h.db.SearchSpells(q, limit, 0)
+		res, err := h.db.SearchSpells(q, -1, 0, 0, limit, 0)
 		if err != nil {
 			setErr(err.Error())
 			return

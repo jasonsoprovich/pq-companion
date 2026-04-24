@@ -49,6 +49,11 @@ const DEFAULT_CLASS = 13 // Enchanter
 
 type Filter = 'all' | 'known' | 'missing'
 
+interface LevelFilter {
+  min: string
+  max: string
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function classLevel(spell: Spell, classIndex: number): number {
@@ -330,6 +335,7 @@ function SpellRow({ spell, classIndex, known, onSelect }: SpellRowProps): React.
 export default function SpellChecklistPage(): React.ReactElement {
   const [classIndex, setClassIndex] = useState<number>(savedClass)
   const [filter, setFilter] = useState<Filter>('all')
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>({ min: '', max: '' })
   const [spells, setSpells] = useState<Spell[]>([])
   const [spellbook, setSpellbook] = useState<Spellbook | null>(null)
   const [characterName, setCharacterName] = useState<string>('')
@@ -376,6 +382,7 @@ export default function SpellChecklistPage(): React.ReactElement {
 
   function handleClassChange(idx: number) {
     setClassIndex(idx)
+    setLevelFilter({ min: '', max: '' })
     try { localStorage.setItem(LS_CLASS_KEY, String(idx)) } catch { /* ignore */ }
   }
 
@@ -392,9 +399,15 @@ export default function SpellChecklistPage(): React.ReactElement {
 
   const knownIds = new Set(spellbook?.spell_ids ?? [])
 
+  const minLvl = parseInt(levelFilter.min) || 0
+  const maxLvl = parseInt(levelFilter.max) || 0
+
   const filteredSpells = spells.filter((s) => {
-    if (filter === 'known') return knownIds.has(s.id)
-    if (filter === 'missing') return !knownIds.has(s.id)
+    if (filter === 'known' && !knownIds.has(s.id)) return false
+    if (filter === 'missing' && knownIds.has(s.id)) return false
+    const lvl = classLevel(s, classIndex)
+    if (minLvl > 0 && lvl < minLvl) return false
+    if (maxLvl > 0 && lvl > maxLvl) return false
     return true
   })
 
@@ -441,8 +454,8 @@ export default function SpellChecklistPage(): React.ReactElement {
           </select>
         </div>
 
-        {/* Row 2: filter tabs + stats */}
-        <div className="flex items-center gap-3">
+        {/* Row 2: filter tabs + level range + stats */}
+        <div className="flex items-center gap-3 flex-wrap">
           {/* Filter tabs */}
           <div
             className="flex rounded overflow-hidden text-xs"
@@ -466,6 +479,37 @@ export default function SpellChecklistPage(): React.ReactElement {
                 {f}
               </button>
             ))}
+          </div>
+
+          {/* Level range filter */}
+          <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--color-muted)' }}>
+            <span>Lvl</span>
+            <input
+              type="number"
+              min={1}
+              max={255}
+              placeholder="min"
+              value={levelFilter.min}
+              onChange={(e) => setLevelFilter((f) => ({ ...f, min: e.target.value }))}
+              className="rounded border px-1.5 py-0.5 outline-none bg-transparent"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-foreground)', width: '3.5rem' }}
+            />
+            <span>–</span>
+            <input
+              type="number"
+              min={1}
+              max={255}
+              placeholder="max"
+              value={levelFilter.max}
+              onChange={(e) => setLevelFilter((f) => ({ ...f, max: e.target.value }))}
+              className="rounded border px-1.5 py-0.5 outline-none bg-transparent"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-foreground)', width: '3.5rem' }}
+            />
+            {(levelFilter.min || levelFilter.max) && (
+              <button onClick={() => setLevelFilter({ min: '', max: '' })} title="Clear level filter">
+                <X size={11} style={{ color: 'var(--color-muted)' }} />
+              </button>
+            )}
           </div>
 
           <div className="flex-1" />

@@ -74,7 +74,10 @@ func (h *spellsHandler) search(w http.ResponseWriter, r *http.Request) {
 	if limit > 100 {
 		limit = 100
 	}
-	result, err := h.db.SearchSpells(q, limit, offset)
+	classIndex := queryInt(r, "class", -1)
+	minLevel := queryInt(r, "minLevel", 0)
+	maxLevel := queryInt(r, "maxLevel", 0)
+	result, err := h.db.SearchSpells(q, classIndex, minLevel, maxLevel, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

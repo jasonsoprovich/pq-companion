@@ -16,6 +16,24 @@ import {
   zoneTypeLabel,
 } from '../lib/spellHelpers'
 
+const SPELL_CLASSES: { index: number; abbr: string; full: string }[] = [
+  { index: 0,  abbr: 'WAR', full: 'Warrior' },
+  { index: 1,  abbr: 'CLR', full: 'Cleric' },
+  { index: 2,  abbr: 'PAL', full: 'Paladin' },
+  { index: 3,  abbr: 'RNG', full: 'Ranger' },
+  { index: 4,  abbr: 'SHD', full: 'Shadow Knight' },
+  { index: 5,  abbr: 'DRU', full: 'Druid' },
+  { index: 6,  abbr: 'MNK', full: 'Monk' },
+  { index: 7,  abbr: 'BRD', full: 'Bard' },
+  { index: 8,  abbr: 'ROG', full: 'Rogue' },
+  { index: 9,  abbr: 'SHM', full: 'Shaman' },
+  { index: 10, abbr: 'NEC', full: 'Necromancer' },
+  { index: 11, abbr: 'WIZ', full: 'Wizard' },
+  { index: 12, abbr: 'MAG', full: 'Magician' },
+  { index: 13, abbr: 'ENC', full: 'Enchanter' },
+  { index: 14, abbr: 'BST', full: 'Beastlord' },
+]
+
 // ── Search pane ────────────────────────────────────────────────────────────────
 
 interface SearchPaneProps {
@@ -25,18 +43,23 @@ interface SearchPaneProps {
 
 function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactElement {
   const [query, setQuery] = useState('')
+  const [classIndex, setClassIndex] = useState(-1)
+  const [minLevel, setMinLevel] = useState('')
+  const [maxLevel, setMaxLevel] = useState('')
   const [spells, setSpells] = useState<Spell[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const runSearch = useCallback((q: string) => {
+  const runSearch = useCallback((q: string, cls: number, min: string, max: string) => {
     setLoading(true)
     setError(null)
-    searchSpells(q, 50, 0)
+    const minLvl = parseInt(min) || 0
+    const maxLvl = parseInt(max) || 0
+    searchSpells(q, 50, 0, cls, minLvl, maxLvl)
       .then((res) => {
-        setSpells((res.items ?? []).filter((s) => s.name.trim() !== ''))
+        setSpells(res.items ?? [])
         setTotal(res.total)
       })
       .catch((err: Error) => setError(err.message))
@@ -45,15 +68,27 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => runSearch(query), 300)
+    debounceRef.current = setTimeout(() => runSearch(query, classIndex, minLevel, maxLevel), 300)
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [query, runSearch])
+  }, [query, classIndex, minLevel, maxLevel, runSearch])
 
   useEffect(() => {
-    runSearch('')
+    runSearch('', -1, '', '')
   }, [runSearch])
+
+  const selectStyle = {
+    backgroundColor: 'var(--color-surface-2)',
+    color: 'var(--color-foreground)',
+    border: '1px solid var(--color-border)',
+  }
+
+  const levelInputStyle = {
+    backgroundColor: 'transparent',
+    color: 'var(--color-foreground)',
+    width: '3.5rem',
+  }
 
   return (
     <div
@@ -80,6 +115,62 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
             <X size={12} style={{ color: 'var(--color-muted)' }} />
           </button>
         )}
+      </div>
+
+      {/* Filters */}
+      <div
+        className="flex flex-col gap-1.5 border-b px-3 py-2"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        {/* Class filter */}
+        <select
+          value={classIndex}
+          onChange={(e) => setClassIndex(Number(e.target.value))}
+          className="w-full rounded px-2 py-1 text-xs outline-none"
+          style={selectStyle}
+        >
+          <option value={-1}>All Classes</option>
+          {SPELL_CLASSES.map((c) => (
+            <option key={c.index} value={c.index}>{c.abbr} — {c.full}</option>
+          ))}
+        </select>
+
+        {/* Level range — only useful with a class selected */}
+        <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
+          <span>Lvl</span>
+          <input
+            type="number"
+            min={1}
+            max={255}
+            placeholder="min"
+            value={minLevel}
+            onChange={(e) => setMinLevel(e.target.value)}
+            disabled={classIndex < 0}
+            className="rounded border px-1.5 py-0.5 text-xs outline-none disabled:opacity-40"
+            style={{ ...levelInputStyle, borderColor: 'var(--color-border)' }}
+          />
+          <span>–</span>
+          <input
+            type="number"
+            min={1}
+            max={255}
+            placeholder="max"
+            value={maxLevel}
+            onChange={(e) => setMaxLevel(e.target.value)}
+            disabled={classIndex < 0}
+            className="rounded border px-1.5 py-0.5 text-xs outline-none disabled:opacity-40"
+            style={{ ...levelInputStyle, borderColor: 'var(--color-border)' }}
+          />
+          {(classIndex >= 0 || minLevel || maxLevel) && (
+            <button
+              onClick={() => { setClassIndex(-1); setMinLevel(''); setMaxLevel('') }}
+              className="ml-auto shrink-0"
+              title="Clear filters"
+            >
+              <X size={11} style={{ color: 'var(--color-muted)' }} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Result count */}

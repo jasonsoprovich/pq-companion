@@ -668,23 +668,50 @@ func (db *DB) GetSpellByExactName(name string) (*Spell, error) {
 	return sp, nil
 }
 
-// SearchSpells searches spells by name (case-insensitive substring match).
-func (db *DB) SearchSpells(query string, limit, offset int) (*SearchResult[Spell], error) {
+// SearchSpells searches spells by name with optional class and level filters.
+// classIndex: -1 = all classes, 0–14 = filter to that class.
+// minLevel/maxLevel: 0 = no bound; only applied when classIndex >= 0.
+func (db *DB) SearchSpells(query string, classIndex, minLevel, maxLevel, limit, offset int) (*SearchResult[Spell], error) {
 	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
 
+	conditions := []string{"s.name LIKE ? ESCAPE '\\'", "s.name != ''"}
+	args := []any{pattern}
+
+	var classCol string
+	if classIndex >= 0 && classIndex <= 14 {
+		classCol = fmt.Sprintf("s.classes%d", classIndex+1)
+		conditions = append(conditions, classCol+" < 255")
+		if minLevel > 0 {
+			conditions = append(conditions, classCol+" >= ?")
+			args = append(args, minLevel)
+		}
+		if maxLevel > 0 {
+			conditions = append(conditions, classCol+" <= ?")
+			args = append(args, maxLevel)
+		}
+	}
+
+	where := strings.Join(conditions, " AND ")
+	orderBy := "s.name"
+	if classCol != "" {
+		orderBy = classCol + ", s.name"
+	}
+
 	var total int
+	countArgs := append([]any{}, args...)
 	if err := db.QueryRow(
-		"SELECT COUNT(*) FROM spells_new WHERE name LIKE ? ESCAPE '\\'",
-		pattern,
+		"SELECT COUNT(*) FROM spells_new s WHERE "+where,
+		countArgs...,
 	).Scan(&total); err != nil {
 		return nil, fmt.Errorf("count spells: %w", err)
 	}
 
 	q := fmt.Sprintf(
-		"SELECT %s FROM spells_new s WHERE s.name LIKE ? ESCAPE '\\' ORDER BY s.name LIMIT ? OFFSET ?",
-		spellColumns,
+		"SELECT %s FROM spells_new s WHERE %s ORDER BY %s LIMIT ? OFFSET ?",
+		spellColumns, where, orderBy,
 	)
-	rows, err := db.Query(q, pattern, limit, offset)
+	queryArgs := append(args, limit, offset)
+	rows, err := db.Query(q, queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("search spells: %w", err)
 	}
