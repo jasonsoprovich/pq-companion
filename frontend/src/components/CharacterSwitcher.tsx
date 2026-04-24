@@ -6,6 +6,7 @@ import {
   updateConfig,
   type CharactersResponse,
 } from '../services/api'
+import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 
 const POLL_MS = 30_000
 
@@ -14,12 +15,16 @@ export default function CharacterSwitcher(): React.ReactElement | null {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const { active, manual, setActive } = useActiveCharacter()
 
   const refresh = useCallback(() => {
     listCharacters()
-      .then(setData)
+      .then((d) => {
+        setData(d)
+        setActive(d.active, d.manual)
+      })
       .catch(() => setData(null))
-  }, [])
+  }, [setActive])
 
   useEffect(() => {
     refresh()
@@ -63,7 +68,7 @@ export default function CharacterSwitcher(): React.ReactElement | null {
   // Show switcher even with no characters so Auto option is always accessible.
   if (!data) return null
 
-  const activeLabel = data.active || 'No character'
+  const activeLabel = active || 'No character'
 
   return (
     <div ref={containerRef} className="no-drag relative px-2 pt-1 pb-2">
@@ -74,7 +79,7 @@ export default function CharacterSwitcher(): React.ReactElement | null {
           backgroundColor: 'var(--color-surface-2)',
           border: '1px solid var(--color-border)',
         }}
-        title={data.manual ? 'Character override (click to change)' : 'Auto-detected character (click to change)'}
+        title={manual ? 'Character override (click to change)' : 'Auto-detected character (click to change)'}
       >
         <div className="flex min-w-0 items-center gap-2">
           <User size={12} style={{ color: 'var(--color-muted)', flexShrink: 0 }} />
@@ -84,7 +89,7 @@ export default function CharacterSwitcher(): React.ReactElement | null {
           >
             {activeLabel}
           </span>
-          {!data.manual && (
+          {!manual && (
             <span
               className="shrink-0 rounded px-1 py-px text-[9px] uppercase tracking-wider"
               style={{ color: 'var(--color-muted)', backgroundColor: 'var(--color-surface-3)' }}
@@ -119,13 +124,13 @@ export default function CharacterSwitcher(): React.ReactElement | null {
           >
             <Wand2 size={11} style={{ color: 'var(--color-muted)' }} />
             <span className="flex-1">Auto (most recent)</span>
-            {!data.manual && <Check size={11} style={{ color: 'var(--color-primary)' }} />}
+            {!manual && <Check size={11} style={{ color: 'var(--color-primary)' }} />}
           </button>
           {data.characters.length > 0 && (
             <div style={{ borderTop: '1px solid var(--color-border)' }} />
           )}
           {data.characters.map((c) => {
-            const selected = data.manual && data.active === c.name
+            const selected = manual && active === c.name
             return (
               <button
                 key={c.id}

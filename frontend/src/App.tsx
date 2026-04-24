@@ -28,6 +28,7 @@ import TriggersPage from './pages/TriggersPage'
 import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
 import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
 import CharactersPage from './pages/CharactersPage'
+import { ActiveCharacterProvider } from './contexts/ActiveCharacterContext'
 
 function OverlayPage({ children }: { children: React.ReactNode }): React.ReactElement {
   useEffect(() => {
@@ -44,7 +45,11 @@ function MainWindowLayout(): React.ReactElement {
   useAudioEngine()
   useTimerAlerts()
   useEventAlerts()
-  return <Layout />
+  return (
+    <ActiveCharacterProvider>
+      <Layout />
+    </ActiveCharacterProvider>
+  )
 }
 
 export default function App(): React.ReactElement {

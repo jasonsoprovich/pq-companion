@@ -10,6 +10,7 @@ import {
   updateConfig,
   type Character,
 } from '../services/api'
+import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 
 const CLASS_LABELS: Record<number, string> = {
   [-1]: 'Not set',
@@ -257,8 +258,8 @@ function CharacterForm({ initial, onSave, onCancel, saving, error }: CharacterFo
 type Mode = 'idle' | 'creating' | { editing: Character }
 
 export default function CharactersPage(): React.ReactElement {
+  const { active: activeCharacter, setActive } = useActiveCharacter()
   const [characters, setCharacters] = useState<Character[]>([])
-  const [activeCharacter, setActiveCharacter] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>('idle')
@@ -272,10 +273,10 @@ export default function CharactersPage(): React.ReactElement {
     return listCharacters()
       .then((resp) => {
         setCharacters(resp.characters)
-        setActiveCharacter(resp.active)
+        setActive(resp.active, resp.manual)
       })
       .catch((err: Error) => setLoadError(err.message))
-  }, [])
+  }, [setActive])
 
   useEffect(() => {
     setLoading(true)
@@ -286,7 +287,7 @@ export default function CharactersPage(): React.ReactElement {
     try {
       const cfg = await getConfig()
       await updateConfig({ ...cfg, character: char.name, character_class: char.class })
-      setActiveCharacter(char.name)
+      setActive(char.name, true)
     } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : 'Failed to select character')
     }
@@ -323,7 +324,7 @@ export default function CharactersPage(): React.ReactElement {
       if (activeCharacter === char.name) {
         const cfg = await getConfig()
         await updateConfig({ ...cfg, character: '', character_class: -1 })
-        setActiveCharacter('')
+        setActive('', false)
       }
       await load()
     } catch (err: unknown) {
