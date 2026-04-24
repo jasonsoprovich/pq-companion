@@ -16,8 +16,10 @@ import {
   ChevronUp,
   MonitorPlay,
   Volume2,
+  Bell,
 } from 'lucide-react'
 import { getAvailableVoices } from '../services/audio'
+import EventAlertsPanel from '../components/EventAlertsPanel'
 import {
   listTriggers,
   createTrigger,
@@ -971,7 +973,7 @@ function PacksTab({ onInstalled }: PacksTabProps): React.ReactElement {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-type Tab = 'triggers' | 'history' | 'packs'
+type Tab = 'triggers' | 'history' | 'packs' | 'alerts'
 
 export default function TriggersPage(): React.ReactElement {
   const [tab, setTab] = useState<Tab>('triggers')
@@ -1087,7 +1089,7 @@ export default function TriggersPage(): React.ReactElement {
         className="flex gap-0 border-b shrink-0"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        {(['triggers', 'history', 'packs'] as Tab[]).map((t) => (
+        {(['triggers', 'history', 'packs', 'alerts'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -1097,6 +1099,12 @@ export default function TriggersPage(): React.ReactElement {
             {t === 'triggers' && <span>Triggers ({triggers.length})</span>}
             {t === 'history' && <span>History</span>}
             {t === 'packs' && <span>Packs</span>}
+            {t === 'alerts' && (
+              <span className="flex items-center gap-1">
+                <Bell size={10} />
+                Alerts
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -1192,6 +1200,9 @@ export default function TriggersPage(): React.ReactElement {
 
       {/* Tab: Packs */}
       {tab === 'packs' && <PacksTab onInstalled={load} />}
+
+      {/* Tab: Alerts */}
+      {tab === 'alerts' && <EventAlertsPanel inline />}
     </div>
   )
 }

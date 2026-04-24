@@ -223,10 +223,12 @@ function RuleRow({ rule, voices, onChange }: RuleRowProps): React.ReactElement {
 // ── Panel ──────────────────────────────────────────────────────────────────────
 
 interface Props {
-  onClose: () => void
+  /** When true, renders inline (no slide-over wrapper or close button). */
+  inline?: boolean
+  onClose?: () => void
 }
 
-export default function EventAlertsPanel({ onClose }: Props): React.ReactElement {
+export default function EventAlertsPanel({ inline = false, onClose }: Props): React.ReactElement {
   const [cfg, setCfg] = useState<EventAlertConfig>(() => loadEventAlertConfig())
   const [voices, setVoices] = useState<string[]>([])
 
@@ -268,6 +270,68 @@ export default function EventAlertsPanel({ onClose }: Props): React.ReactElement
       tts_volume: 80,
     }
   })
+
+  const ruleList = (
+    <>
+      {/* Global enable toggle */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 14px',
+          borderBottom: '1px solid var(--color-border)',
+          flexShrink: 0,
+        }}
+      >
+        <div>
+          <p style={{ fontSize: 13, color: 'var(--color-foreground)', margin: 0 }}>
+            Enable event alerts
+          </p>
+          <p style={{ fontSize: 11, color: 'var(--color-muted-foreground)', margin: '2px 0 0' }}>
+            Play audio when important game events occur.
+          </p>
+        </div>
+        <Toggle
+          checked={cfg.enabled}
+          onChange={(v) => update({ ...cfg, enabled: v })}
+        />
+      </div>
+
+      {/* Rule list */}
+      <div
+        style={{
+          flex: 1,
+          overflow: 'auto',
+          padding: 14,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+        }}
+      >
+        {displayRules.map((rule, i) => (
+          <RuleRow
+            key={rule.event_type}
+            rule={rule}
+            voices={voices}
+            onChange={(next) => {
+              const realIndex = cfg.rules.findIndex((r) => r.event_type === rule.event_type)
+              if (realIndex >= 0) {
+                handleRuleChange(realIndex, next)
+              } else {
+                update({ ...cfg, rules: [...cfg.rules, next] })
+              }
+              void i
+            }}
+          />
+        ))}
+      </div>
+    </>
+  )
+
+  if (inline) {
+    return <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>{ruleList}</div>
+  }
 
   return (
     <div
@@ -324,62 +388,7 @@ export default function EventAlertsPanel({ onClose }: Props): React.ReactElement
           <X size={15} />
         </button>
       </div>
-
-      {/* Global enable toggle */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 14px',
-          borderBottom: '1px solid var(--color-border)',
-          flexShrink: 0,
-        }}
-      >
-        <div>
-          <p style={{ fontSize: 13, color: 'var(--color-foreground)', margin: 0 }}>
-            Enable event alerts
-          </p>
-          <p style={{ fontSize: 11, color: 'var(--color-muted-foreground)', margin: '2px 0 0' }}>
-            Play audio when important game events occur.
-          </p>
-        </div>
-        <Toggle
-          checked={cfg.enabled}
-          onChange={(v) => update({ ...cfg, enabled: v })}
-        />
-      </div>
-
-      {/* Rule list */}
-      <div
-        style={{
-          flex: 1,
-          overflow: 'auto',
-          padding: 14,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-        }}
-      >
-        {displayRules.map((rule, i) => (
-          <RuleRow
-            key={rule.event_type}
-            rule={rule}
-            voices={voices}
-            onChange={(next) => {
-              // Find the real index in cfg.rules by event_type.
-              const realIndex = cfg.rules.findIndex((r) => r.event_type === rule.event_type)
-              if (realIndex >= 0) {
-                handleRuleChange(realIndex, next)
-              } else {
-                // Rule was generated as a placeholder — add it to the config.
-                update({ ...cfg, rules: [...cfg.rules, next] })
-              }
-              void i
-            }}
-          />
-        ))}
-      </div>
+      {ruleList}
     </div>
   )
 }

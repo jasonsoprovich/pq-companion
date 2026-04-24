@@ -5,6 +5,20 @@
  * speakText  — speaks text aloud via the Web Speech Synthesis API.
  */
 
+// Deduplication: track when each unique audio key was last fired.
+// Prevents the same sound/utterance from playing twice when multiple alert
+// systems (event alerts + trigger actions) fire for the same log line.
+const lastFiredAt = new Map<string, number>()
+const AUDIO_DEDUP_MS = 400
+
+function isDuplicate(key: string): boolean {
+  const now = Date.now()
+  const last = lastFiredAt.get(key) ?? 0
+  if (now - last < AUDIO_DEDUP_MS) return true
+  lastFiredAt.set(key, now)
+  return false
+}
+
 /**
  * Play a local sound file at the given volume.
  *
@@ -14,6 +28,7 @@
  */
 export function playSound(filePath: string, volume = 1.0): void {
   if (!filePath) return
+  if (isDuplicate(`sound:${filePath}`)) return
 
   // Normalise Windows back-slashes and ensure the file:// scheme is present.
   const normalised = filePath.replace(/\\/g, '/')
@@ -37,6 +52,7 @@ export function playSound(filePath: string, volume = 1.0): void {
  */
 export function speakText(text: string, voice = '', volume = 1.0): void {
   if (!text || !window.speechSynthesis) return
+  if (isDuplicate(`tts:${text}`)) return
 
   // Cancel any queued utterances so a rapid sequence of triggers doesn't pile up.
   window.speechSynthesis.cancel()
