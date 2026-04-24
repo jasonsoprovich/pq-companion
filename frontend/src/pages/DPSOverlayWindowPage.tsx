@@ -9,6 +9,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Swords, Clipboard, ClipboardCheck } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { useOverlayClickThrough } from '../hooks/useOverlayClickThrough'
 import { getCombatState } from '../services/api'
 import type { CombatState, EntityStats, FightState } from '../types/combat'
 
@@ -144,6 +145,7 @@ const POST_FIGHT_PERSIST_MS = 30_000
 
 export default function DPSOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
+  const { enableInteraction, enableClickThrough } = useOverlayClickThrough()
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
   const [now, setNow] = useState(() => Date.now())
@@ -201,6 +203,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
 
   return (
     <div
+      onMouseLeave={enableClickThrough}
       style={{
         width: '100vw',
         height: '100vh',
@@ -217,6 +220,8 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
         className="drag-region"
+        onMouseEnter={enableInteraction}
+        onMouseLeave={enableClickThrough}
         style={{
           display: 'flex',
           alignItems: 'center',

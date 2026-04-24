@@ -219,6 +219,7 @@ function createDPSOverlay(): void {
   // Keep it above fullscreen apps on macOS/Windows.
   dpsOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   dpsOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  dpsOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
 
   if (isDev) {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
@@ -264,6 +265,7 @@ function createHPSOverlay(): void {
 
   hpsOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   hpsOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  hpsOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
 
   if (isDev) {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
@@ -309,6 +311,7 @@ function createBuffTimerOverlay(): void {
 
   buffTimerWindow.setAlwaysOnTop(true, 'screen-saver')
   buffTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  buffTimerWindow.setIgnoreMouseEvents(true, { forward: true })
 
   if (isDev) {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
@@ -354,6 +357,7 @@ function createDetrimTimerOverlay(): void {
 
   detrimTimerWindow.setAlwaysOnTop(true, 'screen-saver')
   detrimTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  detrimTimerWindow.setIgnoreMouseEvents(true, { forward: true })
 
   if (isDev) {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
@@ -399,6 +403,7 @@ function createTriggerOverlay(): void {
 
   triggerOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   triggerOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  triggerOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
 
   if (isDev) {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
@@ -444,6 +449,7 @@ function createNPCOverlay(): void {
 
   npcOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   npcOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  npcOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
 
   if (isDev) {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
@@ -580,6 +586,13 @@ ipcMain.handle('overlay:npc:toggle', () => {
   } else {
     createNPCOverlay()
   }
+})
+
+// ── IPC handlers — click-through ─────────────────────────────────────────────
+
+ipcMain.handle('overlay:set-ignore-mouse-events', (event, ignore: boolean) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  win?.setIgnoreMouseEvents(ignore, { forward: true })
 })
 
 // ── IPC handlers — dialogs ────────────────────────────────────────────────────

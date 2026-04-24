@@ -34,6 +34,7 @@ export interface ElectronAPI {
     openNPC: () => Promise<void>
     closeNPC: () => Promise<void>
     toggleNPC: () => Promise<void>
+    setIgnoreMouseEvents: (ignore: boolean) => Promise<void>
   }
   dialog: {
     selectFolder: () => Promise<string | null>

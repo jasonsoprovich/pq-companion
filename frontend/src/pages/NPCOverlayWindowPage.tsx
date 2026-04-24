@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Crosshair, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { useOverlayClickThrough } from '../hooks/useOverlayClickThrough'
 import { getOverlayNPCTarget } from '../services/api'
 import { className, bodyTypeName } from '../lib/npcHelpers'
 import type { TargetState, SpecialAbility } from '../types/overlay'
@@ -203,6 +204,7 @@ function NPCContent({ state }: { state: TargetState }): React.ReactElement {
 
 export default function NPCOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
+  const { enableInteraction, enableClickThrough } = useOverlayClickThrough()
   const [target, setTarget] = useState<TargetState | null>(null)
 
   useEffect(() => {
@@ -220,6 +222,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
 
   return (
     <div
+      onMouseLeave={enableClickThrough}
       style={{
         width: '100vw',
         height: '100vh',
@@ -236,6 +239,8 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
       {/* Drag region header */}
       <div
         className="drag-region"
+        onMouseEnter={enableInteraction}
+        onMouseLeave={enableClickThrough}
         style={{
           display: 'flex',
           alignItems: 'center',

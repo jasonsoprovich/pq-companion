@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Zap } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { useOverlayClickThrough } from '../hooks/useOverlayClickThrough'
 import type { TriggerFired } from '../types/trigger'
 
 interface AlertEntry {
@@ -91,6 +92,7 @@ function AlertCard({ entry, bgOpacity }: { entry: AlertEntry; bgOpacity: number 
 
 export default function TriggerOverlayWindowPage(): React.ReactElement {
   const overlayOpacity = useOverlayOpacity()
+  const { enableInteraction, enableClickThrough } = useOverlayClickThrough()
   const [alerts, setAlerts] = useState<AlertEntry[]>([])
   const gcTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -129,6 +131,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
 
   return (
     <div
+      onMouseLeave={enableClickThrough}
       style={{
         width: '100vw',
         height: '100vh',
@@ -143,6 +146,8 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
       {/* Drag handle — always present so the window can be repositioned */}
       <div
         className="drag-region"
+        onMouseEnter={enableInteraction}
+        onMouseLeave={enableClickThrough}
         style={{
           display: 'flex',
           alignItems: 'center',
