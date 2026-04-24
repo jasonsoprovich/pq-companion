@@ -51,8 +51,8 @@ func main() {
 	hub := ws.NewHub()
 	go hub.Run()
 
-	zealWatcher := zeal.NewWatcher(cfgMgr, hub)
-	go zealWatcher.Start(context.Background())
+	// zealWatcher is initialized after charStore is opened; see below.
+
 
 	backupMgr, err := backup.NewManager(cfgMgr)
 	if err != nil {
@@ -83,6 +83,9 @@ func main() {
 		os.Exit(1)
 	}
 	defer charStore.Close()
+
+	zealWatcher := zeal.NewWatcher(cfgMgr, hub, charStore)
+	go zealWatcher.Start(context.Background())
 
 	// NPC overlay tracker: watches log events to infer the current combat target
 	// and broadcasts overlay:npc_target WebSocket events with full NPC data.

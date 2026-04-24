@@ -28,6 +28,7 @@ import TriggersPage from './pages/TriggersPage'
 import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
 import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
 import CharactersPage from './pages/CharactersPage'
+import CharacterProgressPage from './pages/CharacterProgressPage'
 import { ActiveCharacterProvider } from './contexts/ActiveCharacterContext'
 
 function OverlayPage({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -83,6 +84,7 @@ export default function App(): React.ReactElement {
           <Route path="combat-log" element={<CombatLogPage />} />
           <Route path="triggers" element={<TriggersPage />} />
           <Route path="characters" element={<CharactersPage />} />
+          <Route path="character-progress" element={<CharacterProgressPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
@@ -14,24 +15,28 @@ import (
 const pollInterval = 5 * time.Second
 
 // Watcher polls Zeal export files for changes and keeps an in-memory
-// snapshot of the latest inventory and spellbook data.
-// It broadcasts a WebSocket event whenever either file is updated.
+// snapshot of the latest inventory, spellbook, and quarmy data.
+// It broadcasts a WebSocket event whenever any file is updated.
 type Watcher struct {
-	cfgMgr *config.Manager
-	hub    *ws.Hub
+	cfgMgr    *config.Manager
+	hub       *ws.Hub
+	charStore *character.Store
 
-	mu           sync.RWMutex
-	inventory    *Inventory
-	spellbook    *Spellbook
-	invModTime   time.Time
-	spellModTime time.Time
+	mu             sync.RWMutex
+	inventory      *Inventory
+	spellbook      *Spellbook
+	quarmy         *QuarmyData
+	invModTime     time.Time
+	spellModTime   time.Time
+	quarmyModTime  time.Time
 }
 
 // NewWatcher creates a Watcher. Call Start to begin polling.
-func NewWatcher(cfgMgr *config.Manager, hub *ws.Hub) *Watcher {
+func NewWatcher(cfgMgr *config.Manager, hub *ws.Hub, charStore *character.Store) *Watcher {
 	return &Watcher{
-		cfgMgr: cfgMgr,
-		hub:    hub,
+		cfgMgr:    cfgMgr,
+		hub:       hub,
+		charStore: charStore,
 	}
 }
 
@@ -66,6 +71,13 @@ func (w *Watcher) Spellbook() *Spellbook {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.spellbook
+}
+
+// Quarmy returns the most recently parsed quarmy data, or nil if none.
+func (w *Watcher) Quarmy() *QuarmyData {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.quarmy
 }
 
 // AllInventories scans the EQ directory for all character inventory exports and
@@ -111,9 +123,11 @@ func (w *Watcher) check() {
 
 	invPath := InventoryPath(cfg.EQPath, character)
 	spellPath := SpellbookPath(cfg.EQPath, character)
+	quarmyPath := QuarmyPath(cfg.EQPath, character)
 
 	w.checkInventory(invPath, character)
 	w.checkSpellbook(spellPath, character)
+	w.checkQuarmy(quarmyPath, character)
 }
 
 func (w *Watcher) checkInventory(path, character string) {
@@ -172,4 +186,57 @@ func (w *Watcher) checkSpellbook(path, character string) {
 
 	slog.Info("zeal: spellbook updated", "character", character, "spells", len(sb.SpellIDs))
 	w.hub.Broadcast(ws.Event{Type: "zeal:spellbook", Data: sb})
+}
+
+func (w *Watcher) checkQuarmy(path, charName string) {
+	mt := ModTime(path)
+	if mt.IsZero() {
+		return
+	}
+
+	w.mu.RLock()
+	unchanged := mt.Equal(w.quarmyModTime)
+	w.mu.RUnlock()
+
+	if unchanged {
+		return
+	}
+
+	data, err := ParseQuarmy(path, charName)
+	if err != nil {
+		slog.Warn("zeal: parse quarmy", "path", path, "err", err)
+		return
+	}
+
+	w.mu.Lock()
+	w.quarmy = data
+	w.quarmyModTime = mt
+	w.mu.Unlock()
+
+	slog.Info("zeal: quarmy updated", "character", charName, "aas", len(data.AAs))
+	w.hub.Broadcast(ws.Event{Type: "zeal:quarmy", Data: data})
+
+	// Persist stats and AAs to user.db if character store is available.
+	if w.charStore == nil {
+		return
+	}
+	char, found, err := w.charStore.GetByName(charName)
+	if err != nil {
+		slog.Warn("zeal: lookup character for quarmy import", "name", charName, "err", err)
+		return
+	}
+	if !found {
+		return
+	}
+	s := data.Stats
+	if err := w.charStore.UpdateStats(char.ID, s.BaseSTR, s.BaseSTA, s.BaseCHA, s.BaseDEX, s.BaseINT, s.BaseAGI, s.BaseWIS); err != nil {
+		slog.Warn("zeal: save character stats", "character", charName, "err", err)
+	}
+	aas := make([]character.AAEntry, len(data.AAs))
+	for i, aa := range data.AAs {
+		aas[i] = character.AAEntry{AAID: aa.ID, Rank: aa.Rank}
+	}
+	if err := w.charStore.ReplaceAAs(char.ID, aas); err != nil {
+		slog.Warn("zeal: save character aas", "character", charName, "err", err)
+	}
 }

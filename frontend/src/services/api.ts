@@ -348,6 +348,44 @@ export interface Character {
   class: number  // -1=not set, 0-14=EQ class index
   race: number   // -1=not set, EQ race id
   level: number
+  base_str: number
+  base_sta: number
+  base_cha: number
+  base_dex: number
+  base_int: number
+  base_agi: number
+  base_wis: number
+}
+
+export interface CharacterAA {
+  aa_id: number
+  rank: number
+}
+
+export interface QuarmyStats {
+  base_str: number
+  base_sta: number
+  base_cha: number
+  base_dex: number
+  base_int: number
+  base_agi: number
+  base_wis: number
+}
+
+export interface QuarmyInventoryEntry {
+  location: string
+  name: string
+  id: number
+  count: number
+  slots: number
+}
+
+export interface QuarmyData {
+  character: string
+  exported_at: string
+  stats: QuarmyStats
+  inventory: QuarmyInventoryEntry[]
+  aas: CharacterAA[]
 }
 
 export interface CharactersResponse {
@@ -381,6 +419,14 @@ export function deleteCharacter(id: number): Promise<void> {
 
 export function discoverCharacters(): Promise<{ names: string[] }> {
   return get<{ names: string[] }>('/api/characters/discover')
+}
+
+export function getCharacterAAs(id: number): Promise<{ aas: CharacterAA[] }> {
+  return get<{ aas: CharacterAA[] }>(`/api/characters/${id}/aas`)
+}
+
+export function getZealQuarmy(): Promise<{ quarmy: QuarmyData | null }> {
+  return get<{ quarmy: QuarmyData | null }>('/api/zeal/quarmy')
 }
 
 // ── Triggers ───────────────────────────────────────────────────────────────────

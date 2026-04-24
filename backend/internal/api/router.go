@@ -95,11 +95,13 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/discover", charactersH.discover)
 			r.Put("/{id}", charactersH.update)
 			r.Delete("/{id}", charactersH.del)
+			r.Get("/{id}/aas", charactersH.aas)
 		})
 		r.Route("/zeal", func(r chi.Router) {
 			r.Get("/inventory", zealH.inventory)
 			r.Get("/spells", zealH.spellbook)
 			r.Get("/all-inventories", zealH.allInventories)
+			r.Get("/quarmy", zealH.quarmy)
 		})
 		r.Route("/keys", func(r chi.Router) {
 			r.Get("/", keysH.list)

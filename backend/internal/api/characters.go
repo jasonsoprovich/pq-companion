@@ -144,3 +144,21 @@ func (h *charactersHandler) del(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// aas returns the stored AA abilities for a character.
+func (h *charactersHandler) aas(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	aas, err := h.store.ListAAs(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if aas == nil {
+		aas = []character.AAEntry{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"aas": aas})
+}

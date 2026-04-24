@@ -172,6 +172,117 @@ func parseSpellbookLine(line string) (int, bool) {
 	return 0, false
 }
 
+// QuarmyPath returns the expected Zeal quarmy export path for a character.
+// Zeal writes: <eq_path>/<CharName>-Quarmy.txt
+func QuarmyPath(eqPath, character string) string {
+	return filepath.Join(eqPath, fmt.Sprintf("%s-Quarmy.txt", character))
+}
+
+// ParseQuarmy reads and parses a Zeal quarmy export file.
+// The file has three sections separated by header rows:
+//  1. Character stats header + one data row (BaseSTR … BaseWIS)
+//  2. Inventory section (identical format to -Inventory.txt)
+//  3. AA section: "AAIndex\tRank" header followed by id\trank rows
+//
+// Returns a non-nil QuarmyData even if individual sections are missing.
+func ParseQuarmy(path, character string) (*QuarmyData, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	data := &QuarmyData{
+		Character:  character,
+		ExportedAt: info.ModTime(),
+		Inventory:  []InventoryEntry{},
+		AAs:        []AAEntry{},
+	}
+
+	type section int
+	const (
+		secStats     section = iota // lines 1-2: char header + data
+		secInventory                // lines 3+: inventory
+		secAA                       // after "AAIndex" header
+	)
+
+	cur := secStats
+	statsHeaderSeen := false
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		// Detect section transitions by first field.
+		firstField := strings.ToLower(strings.SplitN(line, "\t", 2)[0])
+
+		switch {
+		case firstField == "aaindex":
+			cur = secAA
+			continue
+		case firstField == "location":
+			cur = secInventory
+			continue
+		case firstField == "checksum":
+			continue
+		}
+
+		switch cur {
+		case secStats:
+			if !statsHeaderSeen && firstField == "character" {
+				statsHeaderSeen = true
+				continue // skip header row
+			}
+			// Data row: Character\tName\tLastName\tLevel\tClass\tRace\tGender\tDeity\tGuild\tGuildRank\tBaseSTR\tBaseSTA\tBaseCHA\tBaseDEX\tBaseINT\tBaseAGI\tBaseWIS
+			parts := strings.Split(line, "\t")
+			if len(parts) >= 17 {
+				data.Stats = CharStats{
+					BaseSTR: parseInt(parts[10]),
+					BaseSTA: parseInt(parts[11]),
+					BaseCHA: parseInt(parts[12]),
+					BaseDEX: parseInt(parts[13]),
+					BaseINT: parseInt(parts[14]),
+					BaseAGI: parseInt(parts[15]),
+					BaseWIS: parseInt(parts[16]),
+				}
+			}
+			cur = secInventory // next section starts after stats row
+
+		case secInventory:
+			entry, ok := parseInventoryLine(line)
+			if ok {
+				data.Inventory = append(data.Inventory, entry)
+			}
+
+		case secAA:
+			parts := strings.SplitN(line, "\t", 2)
+			if len(parts) == 2 {
+				id, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+				rank, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+				if err1 == nil && err2 == nil {
+					data.AAs = append(data.AAs, AAEntry{ID: id, Rank: rank})
+				}
+			}
+		}
+	}
+
+	return data, scanner.Err()
+}
+
+// parseInt converts a string to int, returning 0 on error.
+func parseInt(s string) int {
+	n, _ := strconv.Atoi(strings.TrimSpace(s))
+	return n
+}
+
 // ModTime returns the modification time of the file at path, or zero if not found.
 func ModTime(path string) time.Time {
 	info, err := os.Stat(path)

@@ -66,6 +66,7 @@
 - [x] Bug/Feature — Move Alerts panel into Triggers tab; deduplicate voice alert sounds (closes #68)
 - [x] Feature — Persist overlay window size and position across sessions (closes #85)
 - [x] Feature — Trigger-driven buff/detrimental timers from Spells tab and overlay "Add Timer" button; Create Alert from NPC special abilities; GINA import and quick-share export; global spell timer on/off toggle (closes #88, #52, #51, #50)
+- [x] Feature — Character progression: base stat tracking, equipped gear view, and AA tracking from quarmy.txt; split gear upgrade suggestions into #95 (closes #61)
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website

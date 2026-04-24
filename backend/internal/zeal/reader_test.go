@@ -172,3 +172,85 @@ func TestModTime_Present(t *testing.T) {
 		t.Error("expected non-zero mod time for existing file")
 	}
 }
+
+func TestParseQuarmy_StatsAndAAs(t *testing.T) {
+	content := "Character\tName\tLastName\tLevel\tClass\tRace\tGender\tDeity\tGuild\tGuildRank\tBaseSTR\tBaseSTA\tBaseCHA\tBaseDEX\tBaseINT\tBaseAGI\tBaseWIS\n" +
+		"Character\tOsui\t\t60\t14\t6\t1\t396\tSeekers of Souls\t0\t60\t65\t95\t75\t114\t90\t83\n" +
+		"Location\tName\tID\tCount\tSlots\n" +
+		"Head\tCirclet of the Falinkan\t1867\t1\t0\n" +
+		"Primary\tWand of Tranquility\t26768\t1\t0\n" +
+		"AAIndex\tRank\n" +
+		"5\t3\n" +
+		"13\t3\n" +
+		"211\t3\n" +
+		"Checksum\t12345\n"
+
+	path := writeTemp(t, "Osui-Quarmy.txt", content)
+	data, err := ParseQuarmy(path, "Osui")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if data.Character != "Osui" {
+		t.Errorf("character = %q, want Osui", data.Character)
+	}
+
+	// Stats
+	got := data.Stats
+	want := CharStats{BaseSTR: 60, BaseSTA: 65, BaseCHA: 95, BaseDEX: 75, BaseINT: 114, BaseAGI: 90, BaseWIS: 83}
+	if got != want {
+		t.Errorf("stats = %+v, want %+v", got, want)
+	}
+
+	// Inventory
+	if len(data.Inventory) != 2 {
+		t.Errorf("inventory count = %d, want 2", len(data.Inventory))
+	}
+	if data.Inventory[0].Location != "Head" || data.Inventory[0].ID != 1867 {
+		t.Errorf("inventory[0] = %+v", data.Inventory[0])
+	}
+
+	// AAs
+	if len(data.AAs) != 3 {
+		t.Errorf("aa count = %d, want 3", len(data.AAs))
+	}
+	wantAAs := []AAEntry{{ID: 5, Rank: 3}, {ID: 13, Rank: 3}, {ID: 211, Rank: 3}}
+	for i, aa := range wantAAs {
+		if data.AAs[i] != aa {
+			t.Errorf("aa[%d] = %+v, want %+v", i, data.AAs[i], aa)
+		}
+	}
+}
+
+func TestParseQuarmy_MissingFile(t *testing.T) {
+	_, err := ParseQuarmy("/nonexistent/path/Foo-Quarmy.txt", "Foo")
+	if err == nil {
+		t.Error("expected error for missing file")
+	}
+}
+
+func TestParseQuarmy_RealOsui(t *testing.T) {
+	// Use the real testdata file to verify end-to-end parsing.
+	path := filepath.Join("..", "..", "..", "testdata", "Osui-Quarmy.txt")
+	data, err := ParseQuarmy(path, "Osui")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if data.Stats.BaseINT != 114 {
+		t.Errorf("Osui BaseINT = %d, want 114", data.Stats.BaseINT)
+	}
+	if len(data.AAs) == 0 {
+		t.Error("expected at least one AA for Osui")
+	}
+	if len(data.Inventory) == 0 {
+		t.Error("expected inventory entries for Osui")
+	}
+}
+
+func TestQuarmyPath(t *testing.T) {
+	got := QuarmyPath("/eq", "Aradune")
+	want := filepath.Join("/eq", "Aradune-Quarmy.txt")
+	if got != want {
+		t.Errorf("QuarmyPath = %q, want %q", got, want)
+	}
+}

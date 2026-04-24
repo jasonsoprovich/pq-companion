@@ -43,3 +43,13 @@ func (h *zealHandler) allInventories(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(resp)
 }
+
+// GET /api/zeal/quarmy
+// Returns the most recently parsed quarmy export (stats, inventory, AAs).
+// Returns {"quarmy": null} if no quarmy file has been found yet.
+func (h *zealHandler) quarmy(w http.ResponseWriter, r *http.Request) {
+	q := h.watcher.Quarmy()
+	json.NewEncoder(w).Encode(struct {
+		Quarmy interface{} `json:"quarmy"`
+	}{Quarmy: q})
+}
