@@ -42,7 +42,7 @@ func (h *searchHandler) global(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		defer wg.Done()
-		res, err := h.db.SearchItems(q, 0, limit, 0)
+		res, err := h.db.SearchItems(db.ItemFilter{Query: q, ItemType: -1, Limit: limit})
 		if err != nil {
 			setErr(err.Error())
 			return

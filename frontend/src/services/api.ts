@@ -67,14 +67,60 @@ async function del(path: string): Promise<void> {
 
 // ── Items ──────────────────────────────────────────────────────────────────────
 
+export interface ItemSearchFilter {
+  baneBody?: number
+  race?: number
+  class?: number
+  minLevel?: number
+  maxLevel?: number
+  slot?: number
+  itemType?: number // -1 = any
+  minSTR?: number
+  minSTA?: number
+  minAGI?: number
+  minDEX?: number
+  minWIS?: number
+  minINT?: number
+  minCHA?: number
+  minHP?: number
+  minMana?: number
+  minAC?: number
+  minMR?: number
+  minCR?: number
+  minDR?: number
+  minFR?: number
+  minPR?: number
+}
+
 export function searchItems(
   q: string,
   limit = 50,
   offset = 0,
-  baneBody = 0,
+  filter: ItemSearchFilter = {},
 ): Promise<SearchResult<Item>> {
   const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) })
-  if (baneBody > 0) params.set('bane_body', String(baneBody))
+  if (filter.baneBody && filter.baneBody > 0) params.set('bane_body', String(filter.baneBody))
+  if (filter.race && filter.race > 0) params.set('race', String(filter.race))
+  if (filter.class && filter.class > 0) params.set('class', String(filter.class))
+  if (filter.minLevel && filter.minLevel > 0) params.set('min_level', String(filter.minLevel))
+  if (filter.maxLevel && filter.maxLevel > 0) params.set('max_level', String(filter.maxLevel))
+  if (filter.slot && filter.slot > 0) params.set('slot', String(filter.slot))
+  if (filter.itemType !== undefined && filter.itemType >= 0) params.set('item_type', String(filter.itemType))
+  if (filter.minSTR && filter.minSTR > 0) params.set('min_str', String(filter.minSTR))
+  if (filter.minSTA && filter.minSTA > 0) params.set('min_sta', String(filter.minSTA))
+  if (filter.minAGI && filter.minAGI > 0) params.set('min_agi', String(filter.minAGI))
+  if (filter.minDEX && filter.minDEX > 0) params.set('min_dex', String(filter.minDEX))
+  if (filter.minWIS && filter.minWIS > 0) params.set('min_wis', String(filter.minWIS))
+  if (filter.minINT && filter.minINT > 0) params.set('min_int', String(filter.minINT))
+  if (filter.minCHA && filter.minCHA > 0) params.set('min_cha', String(filter.minCHA))
+  if (filter.minHP && filter.minHP > 0) params.set('min_hp', String(filter.minHP))
+  if (filter.minMana && filter.minMana > 0) params.set('min_mana', String(filter.minMana))
+  if (filter.minAC && filter.minAC > 0) params.set('min_ac', String(filter.minAC))
+  if (filter.minMR && filter.minMR > 0) params.set('min_mr', String(filter.minMR))
+  if (filter.minCR && filter.minCR > 0) params.set('min_cr', String(filter.minCR))
+  if (filter.minDR && filter.minDR > 0) params.set('min_dr', String(filter.minDR))
+  if (filter.minFR && filter.minFR > 0) params.set('min_fr', String(filter.minFR))
+  if (filter.minPR && filter.minPR > 0) params.set('min_pr', String(filter.minPR))
   return get<SearchResult<Item>>(`/api/items?${params}`)
 }
 

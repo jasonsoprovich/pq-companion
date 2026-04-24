@@ -62,6 +62,7 @@
 - [x] Task 10.1 — Multi-Character Support (Characters tab, CRUD, switcher fix)
 - [x] Task 10.2 — Character tracking: race field, Discover from logs auto-import (closes #45)
 - [x] Bug fix — Character switcher and Characters tab active selection sync (closes #83)
+- [x] Feature — Advanced item filter modal: race, class, level, slot, type, stat/resist minimums (closes #94)
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website

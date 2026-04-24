@@ -61,17 +61,101 @@ func (db *DB) GetItem(id int) (*Item, error) {
 	return it, nil
 }
 
-// SearchItems searches items by name (case-insensitive prefix/substring match).
-// When baneBody > 0, only items with that bane damage body type are returned.
-// Returns a page of results and the total count of matching rows.
-func (db *DB) SearchItems(query string, baneBody, limit, offset int) (*SearchResult[Item], error) {
-	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
+// SearchItems returns a filtered, paginated list of items.
+// Zero-value fields in f mean "no filter" (except ItemType: -1 = any).
+func (db *DB) SearchItems(f ItemFilter) (*SearchResult[Item], error) {
+	pattern := "%" + strings.ReplaceAll(f.Query, "%", "\\%") + "%"
 
 	where := "Name LIKE ? ESCAPE '\\'"
 	args := []any{pattern}
-	if baneBody > 0 {
+
+	if f.BaneBody > 0 {
 		where += " AND banedmgbody = ?"
-		args = append(args, baneBody)
+		args = append(args, f.BaneBody)
+	}
+	if f.Race > 0 {
+		where += " AND (races = 0 OR races >= 65535 OR (races & ?) != 0)"
+		args = append(args, f.Race)
+	}
+	if f.Class > 0 {
+		where += " AND (classes = 0 OR classes >= 32767 OR (classes & ?) != 0)"
+		args = append(args, f.Class)
+	}
+	if f.MinLevel > 0 {
+		where += " AND reqlevel >= ?"
+		args = append(args, f.MinLevel)
+	}
+	if f.MaxLevel > 0 {
+		where += " AND (reqlevel = 0 OR reqlevel <= ?)"
+		args = append(args, f.MaxLevel)
+	}
+	if f.Slot > 0 {
+		where += " AND (slots & ?) != 0"
+		args = append(args, f.Slot)
+	}
+	if f.ItemType >= 0 {
+		where += " AND itemtype = ?"
+		args = append(args, f.ItemType)
+	}
+	if f.MinSTR > 0 {
+		where += " AND astr >= ?"
+		args = append(args, f.MinSTR)
+	}
+	if f.MinSTA > 0 {
+		where += " AND asta >= ?"
+		args = append(args, f.MinSTA)
+	}
+	if f.MinAGI > 0 {
+		where += " AND aagi >= ?"
+		args = append(args, f.MinAGI)
+	}
+	if f.MinDEX > 0 {
+		where += " AND adex >= ?"
+		args = append(args, f.MinDEX)
+	}
+	if f.MinWIS > 0 {
+		where += " AND awis >= ?"
+		args = append(args, f.MinWIS)
+	}
+	if f.MinINT > 0 {
+		where += " AND aint >= ?"
+		args = append(args, f.MinINT)
+	}
+	if f.MinCHA > 0 {
+		where += " AND acha >= ?"
+		args = append(args, f.MinCHA)
+	}
+	if f.MinHP > 0 {
+		where += " AND hp >= ?"
+		args = append(args, f.MinHP)
+	}
+	if f.MinMana > 0 {
+		where += " AND mana >= ?"
+		args = append(args, f.MinMana)
+	}
+	if f.MinAC > 0 {
+		where += " AND ac >= ?"
+		args = append(args, f.MinAC)
+	}
+	if f.MinMR > 0 {
+		where += " AND mr >= ?"
+		args = append(args, f.MinMR)
+	}
+	if f.MinCR > 0 {
+		where += " AND cr >= ?"
+		args = append(args, f.MinCR)
+	}
+	if f.MinDR > 0 {
+		where += " AND dr >= ?"
+		args = append(args, f.MinDR)
+	}
+	if f.MinFR > 0 {
+		where += " AND fr >= ?"
+		args = append(args, f.MinFR)
+	}
+	if f.MinPR > 0 {
+		where += " AND pr >= ?"
+		args = append(args, f.MinPR)
 	}
 
 	var total int
@@ -86,7 +170,7 @@ func (db *DB) SearchItems(query string, baneBody, limit, offset int) (*SearchRes
 		"SELECT %s FROM items i WHERE i.%s ORDER BY i.Name LIMIT ? OFFSET ?",
 		itemColumns, where,
 	)
-	rows, err := db.Query(q, append(args, limit, offset)...)
+	rows, err := db.Query(q, append(args, f.Limit, f.Offset)...)
 	if err != nil {
 		return nil, fmt.Errorf("search items: %w", err)
 	}

@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Check, Copy, Search, X } from 'lucide-react'
+import { Check, Copy, Filter, Search, X } from 'lucide-react'
 import { searchItems, getItem, getItemSources } from '../services/api'
+import type { ItemSearchFilter } from '../services/api'
 import type { Item, ItemSourceNPC, ItemSources, ItemForageZone, ItemGroundSpawnZone, ItemTradeskillEntry } from '../types/item'
 import {
   baneBodyLabel,
@@ -17,6 +18,374 @@ import {
   weightLabel,
 } from '../lib/itemHelpers'
 
+// ── Filter definitions ─────────────────────────────────────────────────────────
+
+const ITEM_CLASSES: { value: number; label: string }[] = [
+  { value: 1, label: 'Warrior' },
+  { value: 2, label: 'Cleric' },
+  { value: 4, label: 'Paladin' },
+  { value: 8, label: 'Ranger' },
+  { value: 16, label: 'Shadow Knight' },
+  { value: 32, label: 'Druid' },
+  { value: 64, label: 'Monk' },
+  { value: 128, label: 'Bard' },
+  { value: 256, label: 'Rogue' },
+  { value: 512, label: 'Shaman' },
+  { value: 1024, label: 'Necromancer' },
+  { value: 2048, label: 'Wizard' },
+  { value: 4096, label: 'Magician' },
+  { value: 8192, label: 'Enchanter' },
+  { value: 16384, label: 'Beastlord' },
+]
+
+const ITEM_RACES: { value: number; label: string }[] = [
+  { value: 1, label: 'Human' },
+  { value: 2, label: 'Barbarian' },
+  { value: 4, label: 'Erudite' },
+  { value: 8, label: 'Wood Elf' },
+  { value: 16, label: 'High Elf' },
+  { value: 32, label: 'Dark Elf' },
+  { value: 64, label: 'Half Elf' },
+  { value: 128, label: 'Dwarf' },
+  { value: 256, label: 'Troll' },
+  { value: 512, label: 'Ogre' },
+  { value: 1024, label: 'Halfling' },
+  { value: 2048, label: 'Gnome' },
+  { value: 4096, label: 'Iksar' },
+  { value: 8192, label: 'Vah Shir' },
+]
+
+const ITEM_SLOTS: { value: number; label: string }[] = [
+  { value: 0x000001, label: 'Charm' },
+  { value: 0x000012, label: 'Ear' },
+  { value: 0x000004, label: 'Head' },
+  { value: 0x000008, label: 'Face' },
+  { value: 0x000020, label: 'Neck' },
+  { value: 0x000040, label: 'Shoulder' },
+  { value: 0x000080, label: 'Arms' },
+  { value: 0x000100, label: 'Back' },
+  { value: 0x000600, label: 'Wrist' },
+  { value: 0x000800, label: 'Range' },
+  { value: 0x001000, label: 'Hands' },
+  { value: 0x002000, label: 'Primary' },
+  { value: 0x004000, label: 'Secondary' },
+  { value: 0x018000, label: 'Finger' },
+  { value: 0x020000, label: 'Chest' },
+  { value: 0x040000, label: 'Legs' },
+  { value: 0x080000, label: 'Feet' },
+  { value: 0x100000, label: 'Waist' },
+  { value: 0x800000, label: 'Ammo' },
+]
+
+const ITEM_TYPES: { value: number; label: string }[] = [
+  { value: 0, label: '1H Slashing' },
+  { value: 1, label: '2H Slashing' },
+  { value: 2, label: '1H Piercing' },
+  { value: 3, label: '1H Blunt' },
+  { value: 4, label: '2H Blunt' },
+  { value: 5, label: 'Archery' },
+  { value: 7, label: 'Throwing' },
+  { value: 8, label: 'Shield' },
+  { value: 10, label: 'Armor' },
+  { value: 11, label: 'Miscellaneous' },
+  { value: 14, label: 'Food' },
+  { value: 15, label: 'Drink' },
+  { value: 17, label: 'Combinable' },
+  { value: 20, label: 'Spell Scroll' },
+  { value: 21, label: 'Potion' },
+  { value: 22, label: 'Tradeskill' },
+  { value: 28, label: 'Jewelry' },
+  { value: 30, label: 'Book' },
+  { value: 32, label: 'Key' },
+  { value: 34, label: '2H Piercing' },
+  { value: 40, label: 'Poison' },
+  { value: 52, label: 'Martial' },
+]
+
+interface FilterState {
+  race: number
+  class: number
+  minLevel: string
+  maxLevel: string
+  slot: number
+  itemType: number
+  minHP: string
+  minMana: string
+  minAC: string
+  minSTR: string
+  minSTA: string
+  minAGI: string
+  minDEX: string
+  minWIS: string
+  minINT: string
+  minCHA: string
+  minMR: string
+  minCR: string
+  minDR: string
+  minFR: string
+  minPR: string
+}
+
+const EMPTY_FILTER: FilterState = {
+  race: 0, class: 0, minLevel: '', maxLevel: '',
+  slot: 0, itemType: -1,
+  minHP: '', minMana: '', minAC: '',
+  minSTR: '', minSTA: '', minAGI: '', minDEX: '',
+  minWIS: '', minINT: '', minCHA: '',
+  minMR: '', minCR: '', minDR: '', minFR: '', minPR: '',
+}
+
+function filterToApiParams(f: FilterState): ItemSearchFilter {
+  return {
+    race: f.race > 0 ? f.race : undefined,
+    class: f.class > 0 ? f.class : undefined,
+    minLevel: parseInt(f.minLevel) > 0 ? parseInt(f.minLevel) : undefined,
+    maxLevel: parseInt(f.maxLevel) > 0 ? parseInt(f.maxLevel) : undefined,
+    slot: f.slot > 0 ? f.slot : undefined,
+    itemType: f.itemType >= 0 ? f.itemType : undefined,
+    minHP: parseInt(f.minHP) > 0 ? parseInt(f.minHP) : undefined,
+    minMana: parseInt(f.minMana) > 0 ? parseInt(f.minMana) : undefined,
+    minAC: parseInt(f.minAC) > 0 ? parseInt(f.minAC) : undefined,
+    minSTR: parseInt(f.minSTR) > 0 ? parseInt(f.minSTR) : undefined,
+    minSTA: parseInt(f.minSTA) > 0 ? parseInt(f.minSTA) : undefined,
+    minAGI: parseInt(f.minAGI) > 0 ? parseInt(f.minAGI) : undefined,
+    minDEX: parseInt(f.minDEX) > 0 ? parseInt(f.minDEX) : undefined,
+    minWIS: parseInt(f.minWIS) > 0 ? parseInt(f.minWIS) : undefined,
+    minINT: parseInt(f.minINT) > 0 ? parseInt(f.minINT) : undefined,
+    minCHA: parseInt(f.minCHA) > 0 ? parseInt(f.minCHA) : undefined,
+    minMR: parseInt(f.minMR) > 0 ? parseInt(f.minMR) : undefined,
+    minCR: parseInt(f.minCR) > 0 ? parseInt(f.minCR) : undefined,
+    minDR: parseInt(f.minDR) > 0 ? parseInt(f.minDR) : undefined,
+    minFR: parseInt(f.minFR) > 0 ? parseInt(f.minFR) : undefined,
+    minPR: parseInt(f.minPR) > 0 ? parseInt(f.minPR) : undefined,
+  }
+}
+
+function activeChips(f: FilterState): { key: keyof FilterState; label: string }[] {
+  const chips: { key: keyof FilterState; label: string }[] = []
+  if (f.race > 0) chips.push({ key: 'race', label: `Race: ${ITEM_RACES.find(r => r.value === f.race)?.label ?? f.race}` })
+  if (f.class > 0) chips.push({ key: 'class', label: `Class: ${ITEM_CLASSES.find(c => c.value === f.class)?.label ?? f.class}` })
+  if (parseInt(f.minLevel) > 0) chips.push({ key: 'minLevel', label: `Min Lvl: ${f.minLevel}` })
+  if (parseInt(f.maxLevel) > 0) chips.push({ key: 'maxLevel', label: `Max Lvl: ${f.maxLevel}` })
+  if (f.slot > 0) chips.push({ key: 'slot', label: `Slot: ${ITEM_SLOTS.find(s => s.value === f.slot)?.label ?? f.slot}` })
+  if (f.itemType >= 0) chips.push({ key: 'itemType', label: `Type: ${ITEM_TYPES.find(t => t.value === f.itemType)?.label ?? f.itemType}` })
+  if (parseInt(f.minHP) > 0) chips.push({ key: 'minHP', label: `HP ≥ ${f.minHP}` })
+  if (parseInt(f.minMana) > 0) chips.push({ key: 'minMana', label: `Mana ≥ ${f.minMana}` })
+  if (parseInt(f.minAC) > 0) chips.push({ key: 'minAC', label: `AC ≥ ${f.minAC}` })
+  if (parseInt(f.minSTR) > 0) chips.push({ key: 'minSTR', label: `STR ≥ ${f.minSTR}` })
+  if (parseInt(f.minSTA) > 0) chips.push({ key: 'minSTA', label: `STA ≥ ${f.minSTA}` })
+  if (parseInt(f.minAGI) > 0) chips.push({ key: 'minAGI', label: `AGI ≥ ${f.minAGI}` })
+  if (parseInt(f.minDEX) > 0) chips.push({ key: 'minDEX', label: `DEX ≥ ${f.minDEX}` })
+  if (parseInt(f.minWIS) > 0) chips.push({ key: 'minWIS', label: `WIS ≥ ${f.minWIS}` })
+  if (parseInt(f.minINT) > 0) chips.push({ key: 'minINT', label: `INT ≥ ${f.minINT}` })
+  if (parseInt(f.minCHA) > 0) chips.push({ key: 'minCHA', label: `CHA ≥ ${f.minCHA}` })
+  if (parseInt(f.minMR) > 0) chips.push({ key: 'minMR', label: `MR ≥ ${f.minMR}` })
+  if (parseInt(f.minCR) > 0) chips.push({ key: 'minCR', label: `CR ≥ ${f.minCR}` })
+  if (parseInt(f.minDR) > 0) chips.push({ key: 'minDR', label: `DR ≥ ${f.minDR}` })
+  if (parseInt(f.minFR) > 0) chips.push({ key: 'minFR', label: `FR ≥ ${f.minFR}` })
+  if (parseInt(f.minPR) > 0) chips.push({ key: 'minPR', label: `PR ≥ ${f.minPR}` })
+  return chips
+}
+
+// ── Filter Modal ───────────────────────────────────────────────────────────────
+
+interface FilterModalProps {
+  filter: FilterState
+  onChange: (f: FilterState) => void
+  onClose: () => void
+}
+
+function FilterModal({ filter, onChange, onClose }: FilterModalProps): React.ReactElement {
+  const [draft, setDraft] = useState<FilterState>(filter)
+
+  function set<K extends keyof FilterState>(key: K, value: FilterState[K]) {
+    setDraft((prev) => ({ ...prev, [key]: value }))
+  }
+
+  function apply() {
+    onChange(draft)
+    onClose()
+  }
+
+  function clearAll() {
+    setDraft(EMPTY_FILTER)
+    onChange(EMPTY_FILTER)
+    onClose()
+  }
+
+  const selectStyle = {
+    backgroundColor: 'var(--color-surface-2)',
+    color: 'var(--color-foreground)',
+    border: '1px solid var(--color-border)',
+  }
+
+  const inputStyle = {
+    backgroundColor: 'var(--color-surface-2)',
+    color: 'var(--color-foreground)',
+    border: '1px solid var(--color-border)',
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center pt-16"
+      style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+      onClick={onClose}
+    >
+      <div
+        className="flex w-full max-w-lg flex-col overflow-hidden rounded-lg shadow-2xl"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', maxHeight: 'calc(100vh - 8rem)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center justify-between border-b px-4 py-3"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+            Filter Items
+          </span>
+          <button onClick={onClose}>
+            <X size={14} style={{ color: 'var(--color-muted)' }} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-4">
+
+          {/* Usability */}
+          <section>
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
+              Usability
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>Race</label>
+                <select value={draft.race} onChange={(e) => set('race', Number(e.target.value))} className="rounded px-2 py-1 text-xs outline-none" style={selectStyle}>
+                  <option value={0}>Any Race</option>
+                  {ITEM_RACES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>Class</label>
+                <select value={draft.class} onChange={(e) => set('class', Number(e.target.value))} className="rounded px-2 py-1 text-xs outline-none" style={selectStyle}>
+                  <option value={0}>Any Class</option>
+                  {ITEM_CLASSES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>Min Level</label>
+                <input type="number" min={0} max={255} placeholder="0" value={draft.minLevel} onChange={(e) => set('minLevel', e.target.value)} className="rounded px-2 py-1 text-xs outline-none" style={inputStyle} />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>Max Level</label>
+                <input type="number" min={0} max={255} placeholder="0" value={draft.maxLevel} onChange={(e) => set('maxLevel', e.target.value)} className="rounded px-2 py-1 text-xs outline-none" style={inputStyle} />
+              </div>
+            </div>
+          </section>
+
+          {/* Equipment */}
+          <section>
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
+              Equipment
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>Slot</label>
+                <select value={draft.slot} onChange={(e) => set('slot', Number(e.target.value))} className="rounded px-2 py-1 text-xs outline-none" style={selectStyle}>
+                  <option value={0}>Any Slot</option>
+                  {ITEM_SLOTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>Item Type</label>
+                <select value={draft.itemType} onChange={(e) => set('itemType', Number(e.target.value))} className="rounded px-2 py-1 text-xs outline-none" style={selectStyle}>
+                  <option value={-1}>Any Type</option>
+                  {ITEM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+            </div>
+          </section>
+
+          {/* Stats */}
+          <section>
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
+              Min Stats
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  ['minHP', 'HP'], ['minMana', 'Mana'], ['minAC', 'AC'],
+                  ['minSTR', 'STR'], ['minSTA', 'STA'], ['minAGI', 'AGI'],
+                  ['minDEX', 'DEX'], ['minWIS', 'WIS'], ['minINT', 'INT'],
+                  ['minCHA', 'CHA'],
+                ] as [keyof FilterState, string][]
+              ).map(([key, label]) => (
+                <div key={key} className="flex flex-col gap-1">
+                  <label className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>{label}</label>
+                  <input
+                    type="number" min={0} placeholder="0"
+                    value={draft[key] as string}
+                    onChange={(e) => set(key, e.target.value)}
+                    className="rounded px-2 py-1 text-xs outline-none"
+                    style={inputStyle}
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Resists */}
+          <section>
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
+              Min Resists
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  ['minMR', 'Magic'], ['minCR', 'Cold'], ['minDR', 'Disease'],
+                  ['minFR', 'Fire'], ['minPR', 'Poison'],
+                ] as [keyof FilterState, string][]
+              ).map(([key, label]) => (
+                <div key={key} className="flex flex-col gap-1">
+                  <label className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>{label}</label>
+                  <input
+                    type="number" min={0} placeholder="0"
+                    value={draft[key] as string}
+                    onChange={(e) => set(key, e.target.value)}
+                    className="rounded px-2 py-1 text-xs outline-none"
+                    style={inputStyle}
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        {/* Footer */}
+        <div
+          className="flex items-center justify-between border-t px-4 py-3"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          <button
+            onClick={clearAll}
+            className="text-xs"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            Clear All
+          </button>
+          <button
+            onClick={apply}
+            className="rounded px-3 py-1.5 text-xs font-medium"
+            style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-primary-foreground)' }}
+          >
+            Apply Filters
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Search pane ────────────────────────────────────────────────────────────────
 
 interface SearchPaneProps {
@@ -26,16 +395,21 @@ interface SearchPaneProps {
 
 function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactElement {
   const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<FilterState>(EMPTY_FILTER)
+  const [showModal, setShowModal] = useState(false)
   const [items, setItems] = useState<Item[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const runSearch = useCallback((q: string) => {
+  const chips = activeChips(filter)
+  const hasFilter = chips.length > 0
+
+  const runSearch = useCallback((q: string, f: FilterState) => {
     setLoading(true)
     setError(null)
-    searchItems(q, 50, 0, 0)
+    searchItems(q, 50, 0, filterToApiParams(f))
       .then((res) => {
         setItems(res.items ?? [])
         setTotal(res.total)
@@ -46,23 +420,26 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => runSearch(query), 300)
+    debounceRef.current = setTimeout(() => runSearch(query, filter), 300)
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [query, runSearch])
+  }, [query, filter, runSearch])
 
-  // Run initial search on mount
   useEffect(() => {
-    runSearch('')
+    runSearch('', EMPTY_FILTER)
   }, [runSearch])
+
+  function dismissChip(key: keyof FilterState) {
+    setFilter((prev) => ({ ...prev, [key]: EMPTY_FILTER[key] }))
+  }
 
   return (
     <div
       className="flex w-72 shrink-0 flex-col border-r"
       style={{ borderColor: 'var(--color-border)' }}
     >
-      {/* Search input */}
+      {/* Search + filter button row */}
       <div
         className="flex items-center gap-2 border-b px-3 py-2"
         style={{ borderColor: 'var(--color-border)' }}
@@ -82,7 +459,50 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
             <X size={12} style={{ color: 'var(--color-muted)' }} />
           </button>
         )}
+        <button
+          onClick={() => setShowModal(true)}
+          title="Filter"
+          className="shrink-0 rounded p-0.5 transition-colors"
+          style={{
+            color: hasFilter ? 'var(--color-primary)' : 'var(--color-muted)',
+            backgroundColor: hasFilter ? 'color-mix(in srgb, var(--color-primary) 15%, transparent)' : 'transparent',
+          }}
+        >
+          <Filter size={14} />
+        </button>
       </div>
+
+      {/* Active filter chips */}
+      {chips.length > 0 && (
+        <div
+          className="flex flex-wrap gap-1 border-b px-3 py-2"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          {chips.map((chip) => (
+            <span
+              key={chip.key}
+              className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{
+                backgroundColor: 'color-mix(in srgb, var(--color-primary) 15%, transparent)',
+                color: 'var(--color-primary)',
+                border: '1px solid color-mix(in srgb, var(--color-primary) 30%, transparent)',
+              }}
+            >
+              {chip.label}
+              <button onClick={() => dismissChip(chip.key)} className="shrink-0 leading-none">
+                <X size={10} />
+              </button>
+            </span>
+          ))}
+          <button
+            onClick={() => setFilter(EMPTY_FILTER)}
+            className="text-[10px]"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            Clear all
+          </button>
+        </div>
+      )}
 
       {/* Result count */}
       <div
@@ -132,6 +552,14 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
             </button>
           ))}
       </div>
+
+      {showModal && (
+        <FilterModal
+          filter={filter}
+          onChange={setFilter}
+          onClose={() => setShowModal(false)}
+        />
+      )}
     </div>
   )
 }

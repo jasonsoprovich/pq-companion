@@ -78,6 +78,36 @@ type Item struct {
 	MinStatus int   `json:"min_status"`
 }
 
+// ItemFilter holds filter parameters for SearchItems.
+// Zero values mean "no filter" for all fields except ItemType, where -1 means "any".
+type ItemFilter struct {
+	Query    string
+	BaneBody int
+	Race     int // single race bit (1=Human, 2=Barbarian, …); 0=any
+	Class    int // single class bit (1=Warrior, 2=Cleric, …); 0=any
+	MinLevel int // 0=no minimum
+	MaxLevel int // 0=no maximum
+	Slot     int // slot bitmask; 0=any slot
+	ItemType int // -1=any, 0=1H Slashing, 10=Armor, …
+	MinSTR   int
+	MinSTA   int
+	MinAGI   int
+	MinDEX   int
+	MinWIS   int
+	MinINT   int
+	MinCHA   int
+	MinHP    int
+	MinMana  int
+	MinAC    int
+	MinMR    int
+	MinCR    int
+	MinDR    int
+	MinFR    int
+	MinPR    int
+	Limit    int
+	Offset   int
+}
+
 // NPC represents a row from the npc_types table.
 type NPC struct {
 	ID       int    `json:"id"`
