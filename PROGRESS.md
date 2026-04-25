@@ -71,6 +71,7 @@
 - [x] Chore — Move Backup Manager from nav bar into Settings as a tab (closes #98)
 - [x] Chore — Consolidate character-related nav items under a single Characters section with sub-tabs (closes #99)
 - [x] Chore — Consolidate NPC, DPS, and Spell Timer overlays into a single Overlays nav section (closes #100)
+- [x] Feature — Paper-doll inventory layout with collapsible bag/bank cards; fix bag separator parsing (closes #73)
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website
