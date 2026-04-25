@@ -29,6 +29,7 @@ import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
 import CharactersPage from './pages/CharactersPage'
 import CharacterProgressPage from './pages/CharacterProgressPage'
 import CharactersLayout from './components/CharactersLayout'
+import OverlaysLayout from './components/OverlaysLayout'
 import { ActiveCharacterProvider } from './contexts/ActiveCharacterContext'
 
 function OverlayPage({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -75,9 +76,15 @@ export default function App(): React.ReactElement {
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="backup-manager" element={<Navigate to="/settings" replace />} />
           <Route path="log-feed" element={<LogFeedPage />} />
-          <Route path="npc-overlay" element={<NPCOverlayPage />} />
-          <Route path="dps-overlay" element={<DPSOverlayPage />} />
-          <Route path="spell-timers" element={<SpellTimerPage />} />
+          <Route path="overlays" element={<OverlaysLayout />}>
+            <Route index element={<Navigate to="/overlays/npc" replace />} />
+            <Route path="npc" element={<NPCOverlayPage />} />
+            <Route path="dps" element={<DPSOverlayPage />} />
+            <Route path="timers" element={<SpellTimerPage />} />
+          </Route>
+          <Route path="npc-overlay" element={<Navigate to="/overlays/npc" replace />} />
+          <Route path="dps-overlay" element={<Navigate to="/overlays/dps" replace />} />
+          <Route path="spell-timers" element={<Navigate to="/overlays/timers" replace />} />
           <Route path="combat-log" element={<CombatLogPage />} />
           <Route path="triggers" element={<TriggersPage />} />
           <Route path="characters" element={<CharactersLayout />}>

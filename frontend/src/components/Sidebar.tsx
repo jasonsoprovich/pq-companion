@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Sword, Sparkles, Skull, Map, Settings, Search, Activity, Crosshair, Swords, ScrollText, Timer, Zap, Users, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Sword, Sparkles, Skull, Map, Settings, Search, Activity, Layers, ScrollText, Zap, Users, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import CharacterSwitcher from './CharacterSwitcher'
 import { useHistoryNav } from '../hooks/useHistoryNav'
@@ -24,9 +24,7 @@ const ZEAL_NAV: NavItem[] = [
 
 const PARSING_NAV: NavItem[] = [
   { to: '/log-feed', label: 'Log Feed', icon: <Activity size={16} /> },
-  { to: '/npc-overlay', label: 'NPC Overlay', icon: <Crosshair size={16} /> },
-  { to: '/dps-overlay', label: 'DPS Overlay', icon: <Swords size={16} /> },
-  { to: '/spell-timers', label: 'Spell Timers', icon: <Timer size={16} /> },
+  { to: '/overlays', label: 'Overlays', icon: <Layers size={16} /> },
   { to: '/combat-log', label: 'Combat Log', icon: <ScrollText size={16} /> },
   { to: '/triggers', label: 'Triggers', icon: <Zap size={16} /> },
 ]
