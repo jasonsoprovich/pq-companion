@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Sword, Sparkles, Skull, Map, Settings, Search, Package, BookOpen, KeyRound, HardDrive, Activity, Crosshair, Swords, ScrollText, Timer, Zap, Users, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Sword, Sparkles, Skull, Map, Settings, Search, Package, BookOpen, KeyRound, Activity, Crosshair, Swords, ScrollText, Timer, Zap, Users, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import CharacterSwitcher from './CharacterSwitcher'
 import { useHistoryNav } from '../hooks/useHistoryNav'
@@ -24,7 +24,6 @@ const ZEAL_NAV: NavItem[] = [
   { to: '/inventory-tracker', label: 'Inventory Tracker', icon: <Package size={16} /> },
   { to: '/spell-checklist', label: 'Spell Checklist', icon: <BookOpen size={16} /> },
   { to: '/key-tracker', label: 'Key Tracker', icon: <KeyRound size={16} /> },
-  { to: '/backup-manager', label: 'Backup Manager', icon: <HardDrive size={16} /> },
 ]
 
 const PARSING_NAV: NavItem[] = [

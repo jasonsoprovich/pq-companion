@@ -1,16 +1,50 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2 } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive } from 'lucide-react'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog } from '../services/api'
 import type { Config } from '../types/config'
 import type { LogFileInfo } from '../types/logEvent'
+import BackupManagerPage from './BackupManagerPage'
 
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
+type Tab = 'settings' | 'backups'
+
+interface TabBarProps {
+  tabs: { id: Tab; label: string; icon: React.ReactNode }[]
+  active: Tab
+  onChange: (t: Tab) => void
+}
+
+function TabBar({ tabs, active, onChange }: TabBarProps): React.ReactElement {
+  return (
+    <div
+      className="flex shrink-0 border-b"
+      style={{ borderColor: 'var(--color-border)' }}
+    >
+      {tabs.map(({ id, label, icon }) => (
+        <button
+          key={id}
+          onClick={() => onChange(id)}
+          className="flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-xs font-medium transition-colors"
+          style={{
+            borderBottomColor: active === id ? 'var(--color-primary)' : 'transparent',
+            color: active === id ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
+            backgroundColor: 'transparent',
+          }}
+        >
+          {icon}
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 export default function SettingsPage(): React.ReactElement {
   const navigate = useNavigate()
+  const [tab, setTab] = useState<Tab>('settings')
   const [config, setConfig] = useState<Config | null>(null)
   const [originalConfig, setOriginalConfig] = useState<Config | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -151,24 +185,46 @@ export default function SettingsPage(): React.ReactElement {
     }
   }
 
-  if (loadError) {
+  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    { id: 'settings', label: 'Settings', icon: <Settings size={13} /> },
+    { id: 'backups', label: 'Backup Manager', icon: <HardDrive size={13} /> },
+  ]
+
+  if (loadError && tab === 'settings') {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3">
-        <AlertTriangle size={28} style={{ color: '#f97316' }} />
-        <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-          Failed to load settings: {loadError}
-        </p>
+      <div className="flex h-full flex-col">
+        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3">
+          <AlertTriangle size={28} style={{ color: '#f97316' }} />
+          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+            Failed to load settings: {loadError}
+          </p>
+        </div>
       </div>
     )
   }
 
-  if (!config) {
+  if (!config && tab === 'settings') {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3">
-        <Loader2 size={24} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
-        <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-          Loading settings…
-        </p>
+      <div className="flex h-full flex-col">
+        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3">
+          <Loader2 size={24} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
+          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+            Loading settings…
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (tab === 'backups') {
+    return (
+      <div className="flex h-full flex-col">
+        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <div className="min-h-0 flex-1">
+          <BackupManagerPage />
+        </div>
       </div>
     )
   }
@@ -177,7 +233,10 @@ export default function SettingsPage(): React.ReactElement {
   const hasElectronUpdater = Boolean(window.electron?.updater)
 
   return (
-    <div className="mx-auto max-w-xl p-6">
+    <div className="flex h-full flex-col">
+      <TabBar tabs={tabs} active={tab} onChange={setTab} />
+      <div className="flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-xl p-6">
       {/* Page header */}
       <div className="mb-6 flex items-center gap-3">
         <Settings size={20} style={{ color: 'var(--color-primary)' }} />
@@ -709,6 +768,8 @@ export default function SettingsPage(): React.ReactElement {
           Settings are stored at{' '}
           <code style={{ color: 'var(--color-foreground)' }}>~/.pq-companion/config.yaml</code>
         </p>
+      </div>
+      </div>
       </div>
     </div>
   )

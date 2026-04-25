@@ -68,6 +68,7 @@
 - [x] Feature — Trigger-driven buff/detrimental timers from Spells tab and overlay "Add Timer" button; Create Alert from NPC special abilities; GINA import and quick-share export; global spell timer on/off toggle (closes #88, #52, #51, #50)
 - [x] Feature — Character progression: base stat tracking, equipped gear view, and AA tracking from quarmy.txt; split gear upgrade suggestions into #95 (closes #61)
 - [x] Bug — Resolve AA names from altadv_vars in quarm.db; fix gear tab scroll clipping (closes #96)
+- [x] Chore — Move Backup Manager from nav bar into Settings as a tab (closes #98)
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website

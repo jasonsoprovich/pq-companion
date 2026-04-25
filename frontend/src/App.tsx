@@ -13,7 +13,6 @@ import InventoryPage from './pages/InventoryPage'
 import SpellChecklistPage from './pages/SpellChecklistPage'
 import InventoryTrackerPage from './pages/InventoryTrackerPage'
 import KeyTrackerPage from './pages/KeyTrackerPage'
-import BackupManagerPage from './pages/BackupManagerPage'
 import LogFeedPage from './pages/LogFeedPage'
 import NPCOverlayPage from './pages/NPCOverlayPage'
 import DPSOverlayPage from './pages/DPSOverlayPage'
@@ -76,7 +75,7 @@ export default function App(): React.ReactElement {
           <Route path="inventory-tracker" element={<InventoryTrackerPage />} />
           <Route path="spell-checklist" element={<SpellChecklistPage />} />
           <Route path="key-tracker" element={<KeyTrackerPage />} />
-          <Route path="backup-manager" element={<BackupManagerPage />} />
+          <Route path="backup-manager" element={<Navigate to="/settings" replace />} />
           <Route path="log-feed" element={<LogFeedPage />} />
           <Route path="npc-overlay" element={<NPCOverlayPage />} />
           <Route path="dps-overlay" element={<DPSOverlayPage />} />
