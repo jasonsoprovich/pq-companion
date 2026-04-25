@@ -83,6 +83,15 @@ body {
   background: var(--scrollbar-thumb-hover);
 }
 
+/* ── Scrollbar hidden utility ─────────────────────────────────────────────── */
+
+.scrollbar-hidden {
+  scrollbar-width: none;
+}
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
 /* ── Electron drag region ─────────────────────────────────────────────────── */
 
 .drag-region {

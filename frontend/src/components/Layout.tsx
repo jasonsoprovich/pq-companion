@@ -21,7 +21,7 @@ export default function Layout(): React.ReactElement {
 
   return (
     <div
-      className="flex h-full flex-col"
+      className="flex h-screen flex-col overflow-hidden"
       style={{ backgroundColor: 'var(--color-background)' }}
     >
       <TitleBar />
