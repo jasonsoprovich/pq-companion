@@ -6,6 +6,15 @@ import { autoUpdater } from 'electron-updater'
 
 const isDev = !app.isPackaged
 
+// Resolve the app icon for runtime BrowserWindow use.
+// In packaged Windows builds the exe already embeds build/icon.ico via
+// electron-builder, so the taskbar/title-bar icon comes from there. We only
+// need an explicit icon path during `npm run dev` so the dev taskbar entry
+// doesn't fall back to the default Electron icon.
+const appIconPath = isDev
+  ? join(__dirname, '../../build/icon.png')
+  : join(process.resourcesPath, 'icon.png')
+
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
 type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'trigger' | 'npc'
@@ -226,6 +235,7 @@ function createMainWindow(): void {
     minWidth: 960,
     minHeight: 640,
     backgroundColor: '#0a0a0a',
+    icon: appIconPath,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

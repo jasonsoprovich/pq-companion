@@ -19,6 +19,7 @@ files:
 # When absent, the installer is unsigned (SmartScreen will warn on first run).
 win:
   artifactName: "PQ-Companion-Setup-${version}.exe"
+  icon: build/icon.ico
   signtoolOptions:
     signingHashAlgorithms: ['sha256']
   target:
@@ -31,6 +32,9 @@ win:
     # EQ game database — required at runtime
     - from: backend/data/quarm.db
       to: bin/data/quarm.db
+    # Runtime icon — used by BrowserWindow.icon for the taskbar/title-bar
+    - from: build/icon.png
+      to: icon.png
 
 nsis:
   oneClick: false
@@ -38,6 +42,9 @@ nsis:
   deleteAppDataOnUninstall: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
 
 # ── Auto-updater publish config (used by Task 6.2) ───────────────────────────
 publish:

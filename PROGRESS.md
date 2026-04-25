@@ -73,6 +73,7 @@
 - [x] Chore — Consolidate NPC, DPS, and Spell Timer overlays into a single Overlays nav section (closes #100)
 - [x] Feature — Paper-doll inventory layout with collapsible bag/bank cards; fix bag separator parsing (closes #73)
 - [x] Feature — First-launch onboarding wizard: welcome, EQ folder selection with validation, character pick from log discovery, Zeal info, confirmation; re-runnable from Settings (closes #46)
+- [x] Chore — Custom PQ Companion app icon: build/icon.ico (multi-res Windows ICO 16/24/32/48/64/128/256), build/icon.png runtime, NSIS installer/uninstaller, and BrowserWindow taskbar icon (closes #6)
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website
