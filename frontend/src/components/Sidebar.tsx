@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Sword, Sparkles, Skull, Map, Settings, Search, Package, BookOpen, KeyRound, Activity, Crosshair, Swords, ScrollText, Timer, Zap, Users, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Sword, Sparkles, Skull, Map, Settings, Search, Activity, Crosshair, Swords, ScrollText, Timer, Zap, Users, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import CharacterSwitcher from './CharacterSwitcher'
 import { useHistoryNav } from '../hooks/useHistoryNav'
@@ -20,10 +20,6 @@ const PRIMARY_NAV: NavItem[] = [
 
 const ZEAL_NAV: NavItem[] = [
   { to: '/characters', label: 'Characters', icon: <Users size={16} /> },
-  { to: '/character-progress', label: 'Char Progress', icon: <TrendingUp size={16} /> },
-  { to: '/inventory-tracker', label: 'Inventory Tracker', icon: <Package size={16} /> },
-  { to: '/spell-checklist', label: 'Spell Checklist', icon: <BookOpen size={16} /> },
-  { to: '/key-tracker', label: 'Key Tracker', icon: <KeyRound size={16} /> },
 ]
 
 const PARSING_NAV: NavItem[] = [

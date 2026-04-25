@@ -28,6 +28,7 @@ import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
 import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
 import CharactersPage from './pages/CharactersPage'
 import CharacterProgressPage from './pages/CharacterProgressPage'
+import CharactersLayout from './components/CharactersLayout'
 import { ActiveCharacterProvider } from './contexts/ActiveCharacterContext'
 
 function OverlayPage({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -72,9 +73,6 @@ export default function App(): React.ReactElement {
           <Route path="npcs" element={<NpcsPage />} />
           <Route path="zones" element={<ZonesPage />} />
           <Route path="inventory" element={<InventoryPage />} />
-          <Route path="inventory-tracker" element={<InventoryTrackerPage />} />
-          <Route path="spell-checklist" element={<SpellChecklistPage />} />
-          <Route path="key-tracker" element={<KeyTrackerPage />} />
           <Route path="backup-manager" element={<Navigate to="/settings" replace />} />
           <Route path="log-feed" element={<LogFeedPage />} />
           <Route path="npc-overlay" element={<NPCOverlayPage />} />
@@ -82,8 +80,18 @@ export default function App(): React.ReactElement {
           <Route path="spell-timers" element={<SpellTimerPage />} />
           <Route path="combat-log" element={<CombatLogPage />} />
           <Route path="triggers" element={<TriggersPage />} />
-          <Route path="characters" element={<CharactersPage />} />
-          <Route path="character-progress" element={<CharacterProgressPage />} />
+          <Route path="characters" element={<CharactersLayout />}>
+            <Route index element={<Navigate to="/characters/overview" replace />} />
+            <Route path="overview" element={<CharactersPage />} />
+            <Route path="progress" element={<CharacterProgressPage />} />
+            <Route path="inventory" element={<InventoryTrackerPage />} />
+            <Route path="spells" element={<SpellChecklistPage />} />
+            <Route path="keys" element={<KeyTrackerPage />} />
+          </Route>
+          <Route path="character-progress" element={<Navigate to="/characters/progress" replace />} />
+          <Route path="inventory-tracker" element={<Navigate to="/characters/inventory" replace />} />
+          <Route path="spell-checklist" element={<Navigate to="/characters/spells" replace />} />
+          <Route path="key-tracker" element={<Navigate to="/characters/keys" replace />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>

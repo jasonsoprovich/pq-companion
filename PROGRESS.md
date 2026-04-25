@@ -69,6 +69,7 @@
 - [x] Feature — Character progression: base stat tracking, equipped gear view, and AA tracking from quarmy.txt; split gear upgrade suggestions into #95 (closes #61)
 - [x] Bug — Resolve AA names from altadv_vars in quarm.db; fix gear tab scroll clipping (closes #96)
 - [x] Chore — Move Backup Manager from nav bar into Settings as a tab (closes #98)
+- [x] Chore — Consolidate character-related nav items under a single Characters section with sub-tabs (closes #99)
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website
