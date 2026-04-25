@@ -113,6 +113,24 @@ func (t *Tailer) Status() Status {
 	}
 }
 
+// ActiveCharacter returns the name of the currently active character: the
+// manual override from config when set, otherwise the auto-detected character
+// (the most-recently-modified eqlog file). Returns "" if no character can be
+// resolved.
+func (t *Tailer) ActiveCharacter() string {
+	cfg := t.cfgMgr.Get()
+	if cfg.Character != "" {
+		return cfg.Character
+	}
+	t.mu.Lock()
+	detected := t.detectedCharacter
+	t.mu.Unlock()
+	if detected != "" {
+		return detected
+	}
+	return ResolveActiveCharacter(cfg.EQPath)
+}
+
 // rawLine holds the timestamp and message extracted from a raw EQ log line.
 type rawLine struct {
 	ts  time.Time

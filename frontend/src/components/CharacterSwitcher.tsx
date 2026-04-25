@@ -7,6 +7,7 @@ import {
   type CharactersResponse,
 } from '../services/api'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
+import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 
 const POLL_MS = 30_000
 
@@ -31,6 +32,24 @@ export default function CharacterSwitcher(): React.ReactElement | null {
     const id = setInterval(refresh, POLL_MS)
     return () => clearInterval(id)
   }, [refresh])
+
+  // Subscribe to live auto-detection events from the backend tailer so the
+  // selector reflects the active character as soon as a new log file becomes
+  // active, without waiting for the 30s poll.
+  const handleWsMessage = useCallback(
+    (msg: WsMessage) => {
+      if (msg.type !== 'config:character_detected') return
+      const payload = msg.data as { character?: string } | null
+      const name = payload?.character ?? ''
+      if (!name) return
+      setData((prev) =>
+        prev ? { ...prev, active: name, manual: false } : prev,
+      )
+      setActive(name, false)
+    },
+    [setActive],
+  )
+  useWebSocket(handleWsMessage)
 
   useEffect(() => {
     if (!open) return

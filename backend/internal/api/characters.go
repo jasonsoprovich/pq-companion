@@ -15,18 +15,21 @@ import (
 )
 
 type charactersHandler struct {
-	store *character.Store
-	mgr   *config.Manager
-	db    *db.DB
+	store  *character.Store
+	mgr    *config.Manager
+	db     *db.DB
+	tailer *logparser.Tailer
 }
 
 type charactersListResponse struct {
 	Characters []character.Character `json:"characters"`
-	Active     string               `json:"active"`
-	Manual     bool                 `json:"manual"`
+	Active     string                `json:"active"`
+	Manual     bool                  `json:"manual"`
 }
 
 // list returns all stored characters and the currently active selection.
+// Active is the manually-configured character when set; otherwise the
+// auto-detected character (most-recently-modified EQ log file).
 func (h *charactersHandler) list(w http.ResponseWriter, r *http.Request) {
 	chars, err := h.store.List()
 	if err != nil {
@@ -37,10 +40,15 @@ func (h *charactersHandler) list(w http.ResponseWriter, r *http.Request) {
 		chars = []character.Character{}
 	}
 	cfg := h.mgr.Get()
+	manual := cfg.Character != ""
+	active := cfg.Character
+	if !manual && h.tailer != nil {
+		active = h.tailer.ActiveCharacter()
+	}
 	resp := charactersListResponse{
 		Characters: chars,
-		Manual:     cfg.Character != "",
-		Active:     cfg.Character,
+		Manual:     manual,
+		Active:     active,
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
