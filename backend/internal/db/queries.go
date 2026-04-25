@@ -1155,3 +1155,37 @@ func (db *DB) GetZoneDrops(shortName string) ([]ZoneDropItem, error) {
 	}
 	return result, rows.Err()
 }
+
+// ─── AA ───────────────────────────────────────────────────────────────────────
+
+// LookupAANames returns a map of skill_id → name for the given AA IDs.
+// IDs not found in altadv_vars are omitted from the result.
+func (db *DB) LookupAANames(ids []int) (map[int]string, error) {
+	if len(ids) == 0 {
+		return map[int]string{}, nil
+	}
+	placeholders := strings.Repeat("?,", len(ids))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := db.Query(
+		`SELECT skill_id, name FROM altadv_vars WHERE skill_id IN (`+placeholders+`)`,
+		args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("lookup aa names: %w", err)
+	}
+	defer rows.Close()
+	result := make(map[int]string, len(ids))
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("scan aa name: %w", err)
+		}
+		result[id] = name
+	}
+	return result, rows.Err()
+}

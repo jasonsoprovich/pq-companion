@@ -300,11 +300,11 @@ function GearPanel({ gear, hasQuarmy }: GearPanelProps): React.ReactElement {
 
   return (
     <div
-      className="rounded-lg overflow-hidden"
+      className="rounded-lg overflow-hidden overflow-y-auto"
       style={{ border: '1px solid var(--color-border)' }}
     >
       <table className="w-full text-sm">
-        <thead>
+        <thead className="sticky top-0">
           <tr style={{ backgroundColor: 'var(--color-surface-2)' }}>
             <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)', width: '120px' }}>Slot</th>
             <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Item</th>
@@ -354,13 +354,13 @@ function AAPanel({ aas }: AAPanelProps): React.ReactElement {
 
   return (
     <div
-      className="rounded-lg overflow-hidden"
+      className="rounded-lg overflow-hidden overflow-y-auto"
       style={{ border: '1px solid var(--color-border)' }}
     >
       <table className="w-full text-sm">
-        <thead>
+        <thead className="sticky top-0">
           <tr style={{ backgroundColor: 'var(--color-surface-2)' }}>
-            <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)', width: '80px' }}>AA ID</th>
+            <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Ability</th>
             <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)', width: '80px' }}>Rank</th>
           </tr>
         </thead>
@@ -373,8 +373,12 @@ function AAPanel({ aas }: AAPanelProps): React.ReactElement {
                 borderTop: '1px solid var(--color-border)',
               }}
             >
-              <td className="px-4 py-2 font-mono text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                {aa.aa_id}
+              <td className="px-4 py-2" style={{ color: 'var(--color-foreground)' }}>
+                {aa.name ?? (
+                  <span className="font-mono text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                    AA #{aa.aa_id}
+                  </span>
+                )}
               </td>
               <td className="px-4 py-2">
                 <span

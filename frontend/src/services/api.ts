@@ -360,6 +360,7 @@ export interface Character {
 export interface CharacterAA {
   aa_id: number
   rank: number
+  name?: string
 }
 
 export interface QuarmyStats {

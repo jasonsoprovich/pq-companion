@@ -26,8 +26,9 @@ type Character struct {
 
 // AAEntry is a purchased AA ability with its current rank.
 type AAEntry struct {
-	AAID int `json:"aa_id"`
-	Rank int `json:"rank"`
+	AAID int    `json:"aa_id"`
+	Rank int    `json:"rank"`
+	Name string `json:"name,omitempty"`
 }
 
 // Store persists character profiles in user.db.

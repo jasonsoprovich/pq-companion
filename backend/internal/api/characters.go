@@ -10,12 +10,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 )
 
 type charactersHandler struct {
 	store *character.Store
 	mgr   *config.Manager
+	db    *db.DB
 }
 
 type charactersListResponse struct {
@@ -145,7 +147,7 @@ func (h *charactersHandler) del(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// aas returns the stored AA abilities for a character.
+// aas returns the stored AA abilities for a character, with names resolved from quarm.db.
 func (h *charactersHandler) aas(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
@@ -160,5 +162,20 @@ func (h *charactersHandler) aas(w http.ResponseWriter, r *http.Request) {
 	if aas == nil {
 		aas = []character.AAEntry{}
 	}
+
+	// Resolve AA names from quarm.db.
+	if len(aas) > 0 && h.db != nil {
+		ids := make([]int, len(aas))
+		for i, aa := range aas {
+			ids[i] = aa.AAID
+		}
+		names, err := h.db.LookupAANames(ids)
+		if err == nil {
+			for i := range aas {
+				aas[i].Name = names[aas[i].AAID]
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{"aas": aas})
 }
