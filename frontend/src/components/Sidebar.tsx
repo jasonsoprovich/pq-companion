@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Sword, Sparkles, Skull, Map, Settings, Search, Package, BookOpen, KeyRound, HardDrive, Activity, Crosshair, Swords, ScrollText, Timer, Zap, Users, TrendingUp } from 'lucide-react'
+import { Sword, Sparkles, Skull, Map, Settings, Search, Package, BookOpen, KeyRound, HardDrive, Activity, Crosshair, Swords, ScrollText, Timer, Zap, Users, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import CharacterSwitcher from './CharacterSwitcher'
+import { useHistoryNav } from '../hooks/useHistoryNav'
 
 interface NavItem {
   to: string
@@ -61,6 +62,7 @@ interface SidebarProps {
 export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactElement {
   const [logLargeFile, setLogLargeFile] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const { canGoBack, canGoForward, goBack, goForward } = useHistoryNav()
 
   useEffect(() => {
     const poll = () => {
@@ -83,11 +85,29 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
         borderColor: 'var(--color-border)',
       }}
     >
-      {/* Global search hint */}
-      <div className="no-drag px-2 pb-1 pt-3">
+      {/* Nav buttons + global search hint */}
+      <div className="no-drag flex items-center gap-1 px-2 pb-1 pt-3">
+        <button
+          onClick={goBack}
+          disabled={!canGoBack}
+          className="flex h-[30px] w-7 shrink-0 items-center justify-center rounded transition-colors hover:bg-(--color-surface-3) disabled:opacity-30 disabled:cursor-not-allowed"
+          style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface-2)' }}
+          title="Go back"
+        >
+          <ChevronLeft size={13} style={{ color: 'var(--color-muted)' }} />
+        </button>
+        <button
+          onClick={goForward}
+          disabled={!canGoForward}
+          className="flex h-[30px] w-7 shrink-0 items-center justify-center rounded transition-colors hover:bg-(--color-surface-3) disabled:opacity-30 disabled:cursor-not-allowed"
+          style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface-2)' }}
+          title="Go forward"
+        >
+          <ChevronRight size={13} style={{ color: 'var(--color-muted)' }} />
+        </button>
         <button
           onClick={onSearchClick}
-          className="flex w-full cursor-pointer items-center justify-between rounded px-3 py-1.5 transition-colors hover:bg-(--color-surface-3)"
+          className="flex min-w-0 flex-1 cursor-pointer items-center justify-between rounded px-2 py-1.5 transition-colors hover:bg-(--color-surface-3)"
           style={{
             backgroundColor: 'var(--color-surface-2)',
             border: '1px solid var(--color-border)',
