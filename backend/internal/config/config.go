@@ -36,6 +36,10 @@ type Config struct {
 
 	// Backup holds backup manager settings.
 	Backup BackupSettings `yaml:"backup" json:"backup"`
+
+	// OnboardingCompleted is true once the user has finished the first-launch
+	// setup wizard. When false (default), the wizard is shown on app launch.
+	OnboardingCompleted bool `yaml:"onboarding_completed" json:"onboarding_completed"`
 }
 
 // BackupSettings configures automatic backup behaviour.

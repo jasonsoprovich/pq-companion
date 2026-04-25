@@ -1,6 +1,8 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
+import OnboardingWizard from './components/OnboardingWizard'
+import { getConfig } from './services/api'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useTimerAlerts } from './hooks/useTimerAlerts'
 import { useEventAlerts } from './hooks/useEventAlerts'
@@ -47,8 +49,36 @@ function MainWindowLayout(): React.ReactElement {
   useAudioEngine()
   useTimerAlerts()
   useEventAlerts()
+
+  // 'unknown' until config has been loaded; then either true (skip wizard)
+  // or false (show wizard before mounting the main Layout).
+  const [onboardingDone, setOnboardingDone] = useState<boolean | 'unknown'>('unknown')
+
+  useEffect(() => {
+    getConfig()
+      .then((c) => setOnboardingDone(Boolean(c.onboarding_completed)))
+      // If the backend is briefly unreachable on first launch, default to
+      // showing the wizard rather than the main UI in an unconfigured state.
+      .catch(() => setOnboardingDone(false))
+
+    function handleReopen(): void {
+      setOnboardingDone(false)
+    }
+    window.addEventListener('pq:open-onboarding', handleReopen)
+    return () => window.removeEventListener('pq:open-onboarding', handleReopen)
+  }, [])
+
+  if (onboardingDone === 'unknown') return <></>
+
   return (
     <ActiveCharacterProvider>
+      {onboardingDone === false && (
+        <OnboardingWizard
+          allowCancel
+          onCancel={() => setOnboardingDone(true)}
+          onComplete={() => setOnboardingDone(true)}
+        />
+      )}
       <Layout />
     </ActiveCharacterProvider>
   )

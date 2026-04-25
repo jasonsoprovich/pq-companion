@@ -88,6 +88,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		r.Route("/config", func(r chi.Router) {
 			r.Get("/", cfg.get)
 			r.Put("/", cfg.update)
+			r.Post("/validate-eq-path", cfg.validateEQPath)
 		})
 		r.Route("/characters", func(r chi.Router) {
 			r.Get("/", charactersH.list)

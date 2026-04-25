@@ -19,4 +19,5 @@ export interface Config {
   server_addr: string
   preferences: Preferences
   backup: BackupSettings
+  onboarding_completed: boolean
 }

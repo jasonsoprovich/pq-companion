@@ -340,6 +340,22 @@ export function updateConfig(cfg: Config): Promise<Config> {
   return put<Config>('/api/config', cfg)
 }
 
+export interface DiscoveredCharacter {
+  name: string
+  mod_time: number
+}
+
+export interface ValidateEQPathResponse {
+  valid: boolean
+  error?: string
+  has_logs: boolean
+  characters: DiscoveredCharacter[]
+}
+
+export function validateEQPath(path: string): Promise<ValidateEQPathResponse> {
+  return post<ValidateEQPathResponse>('/api/config/validate-eq-path', { path })
+}
+
 // ── Characters ─────────────────────────────────────────────────────────────────
 
 export interface Character {

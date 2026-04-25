@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles } from 'lucide-react'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog } from '../services/api'
 import type { Config } from '../types/config'
 import type { LogFileInfo } from '../types/logEvent'
@@ -386,6 +386,25 @@ export default function SettingsPage(): React.ReactElement {
               </code>
             </p>
           )}
+
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Want to redo first-launch setup?
+            </p>
+            <button
+              onClick={() => window.dispatchEvent(new Event('pq:open-onboarding'))}
+              className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                cursor: 'pointer',
+              }}
+            >
+              <Sparkles size={12} />
+              Run Setup Wizard
+            </button>
+          </div>
         </section>
 
         {/* ── Preferences ────────────────────────────────────────────────── */}
