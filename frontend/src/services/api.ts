@@ -54,6 +54,7 @@ async function put<T>(path: string, body: unknown): Promise<T> {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error ?? res.statusText)
   }
+  if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
 
@@ -444,6 +445,70 @@ export function getCharacterAAs(id: number): Promise<{ aas: CharacterAA[] }> {
 
 export function getZealQuarmy(): Promise<{ quarmy: QuarmyData | null }> {
   return get<{ quarmy: QuarmyData | null }>('/api/zeal/quarmy')
+}
+
+// ── Character Tasks ────────────────────────────────────────────────────────────
+
+export interface Subtask {
+  id: number
+  task_id: number
+  name: string
+  completed: boolean
+  position: number
+}
+
+export interface CharacterTask {
+  id: number
+  character_id: number
+  name: string
+  description: string
+  position: number
+  completed: boolean
+  created_at: number
+  subtasks: Subtask[]
+}
+
+export interface TaskRequest {
+  name: string
+  description: string
+  completed: boolean
+}
+
+export interface SubtaskRequest {
+  name: string
+  completed: boolean
+}
+
+export function listCharacterTasks(charID: number): Promise<{ tasks: CharacterTask[] }> {
+  return get<{ tasks: CharacterTask[] }>(`/api/characters/${charID}/tasks`)
+}
+
+export function createCharacterTask(charID: number, req: TaskRequest): Promise<CharacterTask> {
+  return post<CharacterTask>(`/api/characters/${charID}/tasks`, req)
+}
+
+export function updateCharacterTask(charID: number, taskID: number, req: TaskRequest): Promise<void> {
+  return put<void>(`/api/characters/${charID}/tasks/${taskID}`, req)
+}
+
+export function deleteCharacterTask(charID: number, taskID: number): Promise<void> {
+  return del(`/api/characters/${charID}/tasks/${taskID}`)
+}
+
+export function reorderCharacterTasks(charID: number, orderedIDs: number[]): Promise<void> {
+  return put<void>(`/api/characters/${charID}/tasks/reorder`, { ordered_ids: orderedIDs })
+}
+
+export function createCharacterSubtask(charID: number, taskID: number, req: SubtaskRequest): Promise<Subtask> {
+  return post<Subtask>(`/api/characters/${charID}/tasks/${taskID}/subtasks`, req)
+}
+
+export function updateCharacterSubtask(charID: number, taskID: number, subtaskID: number, req: SubtaskRequest): Promise<void> {
+  return put<void>(`/api/characters/${charID}/tasks/${taskID}/subtasks/${subtaskID}`, req)
+}
+
+export function deleteCharacterSubtask(charID: number, taskID: number, subtaskID: number): Promise<void> {
+  return del(`/api/characters/${charID}/tasks/${taskID}/subtasks/${subtaskID}`)
 }
 
 // ── Triggers ───────────────────────────────────────────────────────────────────

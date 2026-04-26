@@ -30,6 +30,7 @@ import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
 import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
 import CharactersPage from './pages/CharactersPage'
 import CharacterProgressPage from './pages/CharacterProgressPage'
+import CharacterTasksPage from './pages/CharacterTasksPage'
 import CharactersLayout from './components/CharactersLayout'
 import OverlaysLayout from './components/OverlaysLayout'
 import { ActiveCharacterProvider } from './contexts/ActiveCharacterContext'
@@ -124,6 +125,7 @@ export default function App(): React.ReactElement {
             <Route path="inventory" element={<InventoryTrackerPage />} />
             <Route path="spells" element={<SpellChecklistPage />} />
             <Route path="keys" element={<KeyTrackerPage />} />
+            <Route path="tasks" element={<CharacterTasksPage />} />
           </Route>
           <Route path="character-progress" element={<Navigate to="/characters/progress" replace />} />
           <Route path="inventory-tracker" element={<Navigate to="/characters/inventory" replace />} />

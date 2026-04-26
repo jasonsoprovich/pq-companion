@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { Users, TrendingUp, Package, BookOpen, KeyRound } from 'lucide-react'
+import { Users, TrendingUp, Package, BookOpen, KeyRound, ListChecks } from 'lucide-react'
 
 interface CharactersTab {
   to: string
@@ -14,6 +14,7 @@ const TABS: CharactersTab[] = [
   { to: '/characters/inventory', label: 'Inventory', icon: <Package size={14} /> },
   { to: '/characters/spells', label: 'Spells', icon: <BookOpen size={14} /> },
   { to: '/characters/keys', label: 'Keys', icon: <KeyRound size={14} /> },
+  { to: '/characters/tasks', label: 'Tasks', icon: <ListChecks size={14} /> },
 ]
 
 export default function CharactersLayout(): React.ReactElement {

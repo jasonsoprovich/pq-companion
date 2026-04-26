@@ -93,6 +93,9 @@ func (s *Store) migrate() error {
 	`); err != nil {
 		return err
 	}
+	if err := s.migrateTasks(); err != nil {
+		return err
+	}
 	return nil
 }
 

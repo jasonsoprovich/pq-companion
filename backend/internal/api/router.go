@@ -53,6 +53,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	combatH := &combatHandler{tracker: combatTracker}
 	timerH := &timerHandler{engine: timerEngine}
 	triggerH := &triggerHandler{store: triggerStore, engine: triggerEngine}
+	tasksH := &tasksHandler{store: charStore}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
@@ -97,6 +98,14 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Put("/{id}", charactersH.update)
 			r.Delete("/{id}", charactersH.del)
 			r.Get("/{id}/aas", charactersH.aas)
+			r.Get("/{id}/tasks", tasksH.list)
+			r.Post("/{id}/tasks", tasksH.create)
+			r.Put("/{id}/tasks/reorder", tasksH.reorder)
+			r.Put("/{id}/tasks/{taskID}", tasksH.update)
+			r.Delete("/{id}/tasks/{taskID}", tasksH.del)
+			r.Post("/{id}/tasks/{taskID}/subtasks", tasksH.createSubtask)
+			r.Put("/{id}/tasks/{taskID}/subtasks/{subtaskID}", tasksH.updateSubtask)
+			r.Delete("/{id}/tasks/{taskID}/subtasks/{subtaskID}", tasksH.deleteSubtask)
 		})
 		r.Route("/zeal", func(r chi.Router) {
 			r.Get("/inventory", zealH.inventory)
