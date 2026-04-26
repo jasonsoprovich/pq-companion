@@ -229,6 +229,9 @@ export default function SettingsPage(): React.ReactElement {
     )
   }
 
+  if (!config) return <></>
+
+
   const hasElectronDialog = Boolean(window.electron?.dialog)
   const hasElectronUpdater = Boolean(window.electron?.updater)
 

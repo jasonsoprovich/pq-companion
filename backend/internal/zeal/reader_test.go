@@ -231,7 +231,11 @@ func TestParseQuarmy_MissingFile(t *testing.T) {
 
 func TestParseQuarmy_RealOsui(t *testing.T) {
 	// Use the real testdata file to verify end-to-end parsing.
+	// testdata/ is gitignored, so skip when the fixture isn't present (e.g. in CI).
 	path := filepath.Join("..", "..", "..", "testdata", "Osui-Quarmy.txt")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skipf("testdata fixture %s not present", path)
+	}
 	data, err := ParseQuarmy(path, "Osui")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
