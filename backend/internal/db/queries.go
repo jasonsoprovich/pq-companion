@@ -1158,8 +1158,21 @@ func (db *DB) GetZoneDrops(shortName string) ([]ZoneDropItem, error) {
 
 // ─── AA ───────────────────────────────────────────────────────────────────────
 
-// LookupAANames returns a map of skill_id → name for the given AA IDs.
-// IDs not found in altadv_vars are omitted from the result.
+// AAInfo describes a single Alternate Advancement ability from altadv_vars.
+// AAID is altadv_vars.eqmacid — the AA index used by the EQ client and by the
+// Zeal "AAIndex" export (NOT altadv_vars.skill_id, which is an internal EQEmu
+// row id that isn't 1:1 with what the client/server reference).
+type AAInfo struct {
+	AAID     int    `json:"aa_id"` // altadv_vars.eqmacid
+	Name     string `json:"name"`
+	Cost     int    `json:"cost"`
+	CostInc  int    `json:"cost_inc"`
+	MaxLevel int    `json:"max_level"`
+	Type     int    `json:"type"` // 1=General, 2=Archetype, 3=Class, 4=PoP Advance, 5=PoP Ability
+}
+
+// LookupAANames returns a map of eqmacid → name for the given AA indexes.
+// Indexes not found in altadv_vars are omitted from the result.
 func (db *DB) LookupAANames(ids []int) (map[int]string, error) {
 	if len(ids) == 0 {
 		return map[int]string{}, nil
@@ -1171,7 +1184,8 @@ func (db *DB) LookupAANames(ids []int) (map[int]string, error) {
 		args[i] = id
 	}
 	rows, err := db.Query(
-		`SELECT skill_id, name FROM altadv_vars WHERE skill_id IN (`+placeholders+`)`,
+		`SELECT eqmacid, name FROM altadv_vars
+		 WHERE eqmacid IN (`+placeholders+`) AND name != 'NOT USED'`,
 		args...,
 	)
 	if err != nil {
@@ -1188,4 +1202,67 @@ func (db *DB) LookupAANames(ids []int) (map[int]string, error) {
 		result[id] = name
 	}
 	return result, rows.Err()
+}
+
+// ListAvailableAAs returns all Alternate Advancement abilities eligible for the
+// given EQ class index (1-15). The classes column is a bitmask where bit N
+// (1-indexed) is set when class N can purchase the AA.
+//
+// Filters:
+//   - name != 'NOT USED'   — placeholder rows kept for AA index slot reservation.
+//   - cost > 0             — disabled / template rows.
+//   - eqmacid > 0          — rows the client AA window can't reference.
+//   - class_type != 0      — class_type=0 marks rogue rows that lie about their
+//     classes mask (e.g. Sonic Call, Chain Combo, Quick Hide, Quick Throw,
+//     Advanced Spell Casting Mastery). They claim classes=65534 (all classes)
+//     but are really class-specific bonus AAs misfiled with type=1 (General).
+//     Real General AAs use class_type=51; every legitimate row uses a non-zero
+//     class_type matched to its category.
+//
+// Some abilities (e.g. "Mental Clarity", "Innate Regeneration") appear twice
+// in altadv_vars — once with a legacy eqmacid and again with the current
+// client-facing eqmacid. We dedupe by name keeping the row with the highest
+// eqmacid, which is what the client/Zeal export references.
+func (db *DB) ListAvailableAAs(class int) ([]AAInfo, error) {
+	if class < 1 || class > 15 {
+		return []AAInfo{}, nil
+	}
+	mask := 1 << class
+	rows, err := db.Query(
+		`SELECT eqmacid, name, cost, cost_inc, max_level, type
+		 FROM altadv_vars
+		 WHERE name != 'NOT USED'
+		   AND cost > 0
+		   AND eqmacid > 0
+		   AND class_type != 0
+		   AND (classes & ?) != 0
+		 ORDER BY eqmacid`,
+		mask,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list available aas: %w", err)
+	}
+	defer rows.Close()
+
+	byName := make(map[string]AAInfo)
+	for rows.Next() {
+		var info AAInfo
+		if err := rows.Scan(&info.AAID, &info.Name, &info.Cost, &info.CostInc, &info.MaxLevel, &info.Type); err != nil {
+			return nil, fmt.Errorf("scan aa: %w", err)
+		}
+		// Keep the entry with the highest eqmacid for each duplicated name —
+		// it's the one the live client/Zeal export references.
+		if existing, ok := byName[info.Name]; !ok || info.AAID > existing.AAID {
+			byName[info.Name] = info
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]AAInfo, 0, len(byName))
+	for _, info := range byName {
+		out = append(out, info)
+	}
+	return out, nil
 }

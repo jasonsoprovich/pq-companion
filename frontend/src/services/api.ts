@@ -380,6 +380,23 @@ export interface CharacterAA {
   name?: string
 }
 
+// AAInfo describes a single AA in the catalog returned from /characters/{id}/aas.
+// aa_id is altadv_vars.eqmacid (the EQ client AA index used by the Zeal export).
+// type: 1=General, 2=Archetype, 3=Class, 4=PoP Advance, 5=PoP Ability.
+export interface AAInfo {
+  aa_id: number
+  name: string
+  cost: number
+  cost_inc: number
+  max_level: number
+  type: number
+}
+
+export interface CharacterAAsResponse {
+  trained: CharacterAA[]
+  available: AAInfo[]
+}
+
 export interface QuarmyStats {
   base_str: number
   base_sta: number
@@ -439,8 +456,8 @@ export function discoverCharacters(): Promise<{ names: string[] }> {
   return get<{ names: string[] }>('/api/characters/discover')
 }
 
-export function getCharacterAAs(id: number): Promise<{ aas: CharacterAA[] }> {
-  return get<{ aas: CharacterAA[] }>(`/api/characters/${id}/aas`)
+export function getCharacterAAs(id: number): Promise<CharacterAAsResponse> {
+  return get<CharacterAAsResponse>(`/api/characters/${id}/aas`)
 }
 
 export function getZealQuarmy(): Promise<{ quarmy: QuarmyData | null }> {

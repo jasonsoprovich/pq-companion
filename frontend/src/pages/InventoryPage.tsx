@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Package, RefreshCw, ExternalLink, AlertCircle } from 'lucide-react'
-import { getZealInventory } from '../services/api'
+import { getZealInventory, getItem } from '../services/api'
 import type { Inventory, InventoryEntry } from '../types/zeal'
+import type { Item } from '../types/item'
+import ItemDetailModal from '../components/ItemDetailModal'
 
 // ── Slot ordering for equipment display ───────────────────────────────────────
 
@@ -86,13 +88,21 @@ interface ItemRowProps {
 }
 
 function ItemRow({ entry, indent = false, onLookup }: ItemRowProps): React.ReactElement {
+  const clickable = entry.id > 0
   return (
     <div
+      onClick={clickable ? () => onLookup(entry.id) : undefined}
       className={`group flex items-center gap-2 px-3 py-1.5 ${indent ? 'pl-8' : ''}`}
-      style={{ borderBottom: '1px solid var(--color-border)' }}
+      style={{
+        borderBottom: '1px solid var(--color-border)',
+        cursor: clickable ? 'pointer' : 'default',
+      }}
     >
       <div className="flex-1 min-w-0">
-        <span className="text-sm truncate" style={{ color: 'var(--color-foreground)' }}>
+        <span
+          className="text-sm truncate"
+          style={{ color: clickable ? 'var(--color-primary)' : 'var(--color-foreground)' }}
+        >
           {entry.name}
         </span>
         {entry.count > 1 && (
@@ -104,13 +114,13 @@ function ItemRow({ entry, indent = false, onLookup }: ItemRowProps): React.React
           </span>
         )}
       </div>
-      <button
-        onClick={() => onLookup(entry.id)}
-        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Look up in Item Explorer"
-      >
-        <ExternalLink size={12} style={{ color: 'var(--color-muted)' }} />
-      </button>
+      {clickable && (
+        <ExternalLink
+          size={12}
+          className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ color: 'var(--color-muted)' }}
+        />
+      )}
     </div>
   )
 }
@@ -148,6 +158,8 @@ export default function InventoryPage(): React.ReactElement {
   const [inventory, setInventory] = useState<Inventory | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [modalItem, setModalItem] = useState<Item | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
   const navigate = useNavigate()
 
   const load = useCallback(() => {
@@ -162,7 +174,15 @@ export default function InventoryPage(): React.ReactElement {
   useEffect(() => { load() }, [load])
 
   function handleLookup(id: number) {
-    navigate(`/items?select=${id}`)
+    if (!id) return
+    getItem(id)
+      .then((item) => {
+        setModalItem(item)
+        setModalOpen(true)
+      })
+      .catch(() => {
+        navigate(`/items?select=${id}`)
+      })
   }
 
   if (loading) {
@@ -251,6 +271,12 @@ export default function InventoryPage(): React.ReactElement {
 
   return (
     <div className="flex h-full flex-col">
+      <ItemDetailModal
+        item={modalItem}
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+      />
+
       {/* Header bar */}
       <div
         className="flex items-center justify-between border-b px-4 py-3 shrink-0"

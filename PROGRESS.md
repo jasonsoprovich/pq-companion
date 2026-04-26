@@ -75,6 +75,7 @@
 - [x] Feature — First-launch onboarding wizard: welcome, EQ folder selection with validation, character pick from log discovery, Zeal info, confirmation; re-runnable from Settings (closes #46)
 - [x] Chore — Custom PQ Companion app icon: build/icon.ico (multi-res Windows ICO 16/24/32/48/64/128/256), build/icon.png runtime, NSIS installer/uninstaller, and BrowserWindow taskbar icon (closes #6)
 - [x] Feature — Per-character to-do list: Tasks tab with name/description, drag-to-reorder, expandable subtask checkboxes, and delete confirmation
+- [x] Feature — Character Progress AA tab shows trained vs available AAs filtered by class; gear-slot and inventory rows open the item detail modal in-place instead of jumping to the Item Explorer
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website

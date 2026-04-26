@@ -155,35 +155,71 @@ func (h *charactersHandler) del(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// aas returns the stored AA abilities for a character, with names resolved from quarm.db.
+// aas returns the AA abilities for a character: both the trained list (with
+// names resolved from quarm.db) and the full catalog of class-eligible AAs so
+// the UI can render every ability and dim untrained ones.
+//
+// AA IDs throughout this endpoint are altadv_vars.eqmacid values (the EQ
+// client AA index used by the Zeal "AAIndex" export).
 func (h *charactersHandler) aas(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	aas, err := h.store.ListAAs(id)
+	char, ok, err := h.store.Get(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if aas == nil {
-		aas = []character.AAEntry{}
+	if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
 	}
 
-	// Resolve AA names from quarm.db.
-	if len(aas) > 0 && h.db != nil {
-		ids := make([]int, len(aas))
-		for i, aa := range aas {
-			ids[i] = aa.AAID
-		}
-		names, err := h.db.LookupAANames(ids)
+	trained, err := h.store.ListAAs(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if trained == nil {
+		trained = []character.AAEntry{}
+	}
+
+	var available []db.AAInfo
+	if h.db != nil {
+		// EQ class indices in our character store run 0-14 (zero-indexed); the
+		// altadv_vars `classes` bitmask uses bit N for class N (1-indexed). Map
+		// from our 0-indexed class to the bitmask's 1-indexed class id.
+		eqClass := char.Class + 1
+
+		available, err = h.db.ListAvailableAAs(eqClass)
 		if err == nil {
-			for i := range aas {
-				aas[i].Name = names[aas[i].AAID]
+			ids := make([]int, len(available))
+			for i, a := range available {
+				ids[i] = a.AAID
+			}
+			// Resolve names for trained AAs that may not be in the available
+			// list (e.g. cross-class AAs from older exports).
+			ids = append(ids, func() []int {
+				out := make([]int, len(trained))
+				for i, t := range trained {
+					out[i] = t.AAID
+				}
+				return out
+			}()...)
+			names, _ := h.db.LookupAANames(ids)
+			for i := range trained {
+				trained[i].Name = names[trained[i].AAID]
 			}
 		}
 	}
+	if available == nil {
+		available = []db.AAInfo{}
+	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"aas": aas})
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"trained":   trained,
+		"available": available,
+	})
 }

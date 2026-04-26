@@ -149,6 +149,25 @@ func (s *Store) Delete(id int) error {
 	return err
 }
 
+// Get returns the character with the given id.
+func (s *Store) Get(id int) (Character, bool, error) {
+	var c Character
+	err := s.db.QueryRow(
+		`SELECT id, name, class, race, level,
+		        base_str, base_sta, base_cha, base_dex, base_int, base_agi, base_wis
+		 FROM characters WHERE id = ?`,
+		id,
+	).Scan(&c.ID, &c.Name, &c.Class, &c.Race, &c.Level,
+		&c.BaseSTR, &c.BaseSTA, &c.BaseCHA, &c.BaseDEX, &c.BaseINT, &c.BaseAGI, &c.BaseWIS)
+	if err == sql.ErrNoRows {
+		return Character{}, false, nil
+	}
+	if err != nil {
+		return Character{}, false, err
+	}
+	return c, true, nil
+}
+
 // GetByName returns the character matching name (case-insensitive).
 func (s *Store) GetByName(name string) (Character, bool, error) {
 	var c Character

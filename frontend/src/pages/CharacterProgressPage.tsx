@@ -1,8 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react'
-import { TrendingUp, RefreshCw, AlertCircle } from 'lucide-react'
-import { getZealQuarmy, getCharacterAAs, listCharacters } from '../services/api'
-import type { QuarmyData, CharacterAA, Character } from '../services/api'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { TrendingUp, RefreshCw, AlertCircle, Check, Search } from 'lucide-react'
+import { getZealQuarmy, getCharacterAAs, listCharacters, getItem } from '../services/api'
+import type { QuarmyData, CharacterAA, AAInfo, Character } from '../services/api'
+import type { Item } from '../types/item'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
+import ItemDetailModal from '../components/ItemDetailModal'
 
 // ── Equipment slot ordering ────────────────────────────────────────────────────
 
@@ -87,12 +90,31 @@ function TabButton({ active, onClick, children }: TabButtonProps): React.ReactEl
 
 export default function CharacterProgressPage(): React.ReactElement {
   const { active: activeCharacter } = useActiveCharacter()
+  const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('stats')
   const [quarmy, setQuarmy] = useState<QuarmyData | null>(null)
-  const [aas, setAAs] = useState<CharacterAA[]>([])
+  const [trainedAAs, setTrainedAAs] = useState<CharacterAA[]>([])
+  const [availableAAs, setAvailableAAs] = useState<AAInfo[]>([])
   const [activeChar, setActiveChar] = useState<Character | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [modalItem, setModalItem] = useState<Item | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+
+  const handleLookup = useCallback(
+    (id: number) => {
+      if (!id) return
+      getItem(id)
+        .then((item) => {
+          setModalItem(item)
+          setModalOpen(true)
+        })
+        .catch(() => {
+          navigate(`/items?select=${id}`)
+        })
+    },
+    [navigate],
+  )
 
   const load = useCallback(async () => {
     setError(null)
@@ -109,9 +131,11 @@ export default function CharacterProgressPage(): React.ReactElement {
 
       if (found) {
         const aaResp = await getCharacterAAs(found.id)
-        setAAs(aaResp.aas)
+        setTrainedAAs(aaResp.trained ?? [])
+        setAvailableAAs(aaResp.available ?? [])
       } else {
-        setAAs([])
+        setTrainedAAs([])
+        setAvailableAAs([])
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load data')
@@ -147,6 +171,12 @@ export default function CharacterProgressPage(): React.ReactElement {
 
   return (
     <div className="flex h-full flex-col overflow-auto p-6">
+      <ItemDetailModal
+        item={modalItem}
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+      />
+
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -214,7 +244,7 @@ export default function CharacterProgressPage(): React.ReactElement {
             <TabButton active={tab === 'stats'} onClick={() => setTab('stats')}>Stats</TabButton>
             <TabButton active={tab === 'gear'} onClick={() => setTab('gear')}>Gear</TabButton>
             <TabButton active={tab === 'aas'} onClick={() => setTab('aas')}>
-              Alternate Advancement {aas.length > 0 ? `(${aas.length})` : ''}
+              Alternate Advancement {trainedAAs.length > 0 ? `(${trainedAAs.length})` : ''}
             </TabButton>
           </div>
 
@@ -226,10 +256,10 @@ export default function CharacterProgressPage(): React.ReactElement {
                 <StatsPanel stats={statsSource} hasStats={!!hasStats} />
               )}
               {tab === 'gear' && (
-                <GearPanel gear={equippedGear} hasQuarmy={!!quarmy} />
+                <GearPanel gear={equippedGear} hasQuarmy={!!quarmy} onLookup={handleLookup} />
               )}
               {tab === 'aas' && (
-                <AAPanel aas={aas} />
+                <AAPanel trained={trainedAAs} available={availableAAs} />
               )}
             </>
           )}
@@ -282,9 +312,10 @@ function StatsPanel({ stats, hasStats }: StatsPanelProps): React.ReactElement {
 interface GearPanelProps {
   gear: Array<{ location: string; name: string; id: number; count: number }>
   hasQuarmy: boolean
+  onLookup: (id: number) => void
 }
 
-function GearPanel({ gear, hasQuarmy }: GearPanelProps): React.ReactElement {
+function GearPanel({ gear, hasQuarmy, onLookup }: GearPanelProps): React.ReactElement {
   if (!hasQuarmy) {
     return (
       <EmptyState
@@ -311,25 +342,33 @@ function GearPanel({ gear, hasQuarmy }: GearPanelProps): React.ReactElement {
           </tr>
         </thead>
         <tbody>
-          {gear.map((item, i) => (
-            <tr
-              key={`${item.location}-${i}`}
-              style={{
-                backgroundColor: i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-2)',
-                borderTop: '1px solid var(--color-border)',
-              }}
-            >
-              <td
-                className="px-4 py-2 text-xs font-medium"
-                style={{ color: 'var(--color-muted-foreground)' }}
+          {gear.map((item, i) => {
+            const clickable = item.id > 0
+            return (
+              <tr
+                key={`${item.location}-${i}`}
+                onClick={clickable ? () => onLookup(item.id) : undefined}
+                style={{
+                  backgroundColor: i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-2)',
+                  borderTop: '1px solid var(--color-border)',
+                  cursor: clickable ? 'pointer' : 'default',
+                }}
               >
-                {item.location}
-              </td>
-              <td className="px-4 py-2" style={{ color: 'var(--color-foreground)' }}>
-                {item.name}
-              </td>
-            </tr>
-          ))}
+                <td
+                  className="px-4 py-2 text-xs font-medium"
+                  style={{ color: 'var(--color-muted-foreground)' }}
+                >
+                  {item.location}
+                </td>
+                <td
+                  className="px-4 py-2"
+                  style={{ color: clickable ? 'var(--color-primary)' : 'var(--color-foreground)' }}
+                >
+                  {item.name}
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -338,12 +377,87 @@ function GearPanel({ gear, hasQuarmy }: GearPanelProps): React.ReactElement {
 
 // ── AA Panel ──────────────────────────────────────────────────────────────────
 
-interface AAPanelProps {
-  aas: CharacterAA[]
+// AA categories map to altadv_vars.type. type=7 (e.g. Fletching Mastery) is
+// folded into Class for the rare cases it shows up.
+const AA_CATEGORIES: Array<{ key: AACategoryKey; label: string; types: number[] }> = [
+  { key: 'general',    label: 'General',     types: [1] },
+  { key: 'archetype',  label: 'Archetype',   types: [2] },
+  { key: 'class',      label: 'Class',       types: [3, 7] },
+  { key: 'pop_advance',label: 'PoP Advance', types: [4] },
+  { key: 'pop_ability',label: 'PoP Ability', types: [5] },
+]
+
+type AACategoryKey = 'general' | 'archetype' | 'class' | 'pop_advance' | 'pop_ability'
+
+interface AARow extends AAInfo {
+  rank: number
+  isMaxed: boolean
+  pointsSpent: number
+  nextRankCost: number
 }
 
-function AAPanel({ aas }: AAPanelProps): React.ReactElement {
-  if (aas.length === 0) {
+// Cumulative cost for the first `rank` ranks of an AA. EQEmu's formula is:
+//   rank_cost(k) = cost + (k - 1) * cost_inc, for k = 1..rank
+function cumulativeCost(cost: number, costInc: number, rank: number): number {
+  if (rank <= 0) return 0
+  let total = 0
+  for (let k = 1; k <= rank; k++) total += cost + (k - 1) * costInc
+  return total
+}
+
+interface AAPanelProps {
+  trained: CharacterAA[]
+  available: AAInfo[]
+}
+
+function AAPanel({ trained, available }: AAPanelProps): React.ReactElement {
+  const [category, setCategory] = useState<AACategoryKey>('general')
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<AARow | null>(null)
+
+  // Index trained ranks by aa_id (eqmacid) for quick lookup.
+  const trainedByID = useMemo(() => {
+    const m = new Map<number, number>()
+    for (const t of trained) m.set(t.aa_id, t.rank)
+    return m
+  }, [trained])
+
+  // Build rows merging the catalog with the character's trained ranks.
+  const allRows = useMemo<AARow[]>(() => {
+    return available.map((info) => {
+      const rank = trainedByID.get(info.aa_id) ?? 0
+      const max = Math.max(info.max_level, rank)
+      const isMaxed = rank > 0 && rank >= max
+      return {
+        ...info,
+        rank,
+        isMaxed,
+        pointsSpent: cumulativeCost(info.cost, info.cost_inc, rank),
+        nextRankCost: info.cost + rank * info.cost_inc,
+      }
+    })
+  }, [available, trainedByID])
+
+  // Total points spent across all categories — based on the catalog so we don't
+  // double-count duplicated old/new rows that the dedupe collapsed.
+  const totalPointsSpent = useMemo(
+    () => allRows.reduce((sum, r) => sum + r.pointsSpent, 0),
+    [allRows],
+  )
+
+  const cat = AA_CATEGORIES.find((c) => c.key === category) ?? AA_CATEGORIES[0]
+  const term = search.trim().toLowerCase()
+
+  const visibleRows = useMemo(() => {
+    return allRows
+      .filter((r) => cat.types.includes(r.type))
+      .filter((r) => term === '' || r.name.toLowerCase().includes(term))
+      .sort((a, b) => a.aa_id - b.aa_id)
+  }, [allRows, cat, term])
+
+  // Empty-catalog case: backend returned no class-eligible AAs (e.g. new
+  // character with class = -1, or quarm.db unavailable).
+  if (available.length === 0 && trained.length === 0) {
     return (
       <EmptyState
         message="No AA data available"
@@ -353,53 +467,137 @@ function AAPanel({ aas }: AAPanelProps): React.ReactElement {
   }
 
   return (
-    <div
-      className="rounded-lg overflow-hidden overflow-y-auto"
-      style={{ border: '1px solid var(--color-border)' }}
-    >
-      <table className="w-full text-sm">
-        <thead className="sticky top-0">
-          <tr style={{ backgroundColor: 'var(--color-surface-2)' }}>
-            <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Ability</th>
-            <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)', width: '80px' }}>Rank</th>
-          </tr>
-        </thead>
-        <tbody>
-          {aas.map((aa, i) => (
-            <tr
-              key={aa.aa_id}
-              style={{
-                backgroundColor: i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-2)',
-                borderTop: '1px solid var(--color-border)',
-              }}
-            >
-              <td className="px-4 py-2" style={{ color: 'var(--color-foreground)' }}>
-                {aa.name ?? (
-                  <span className="font-mono text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                    AA #{aa.aa_id}
-                  </span>
-                )}
-              </td>
-              <td className="px-4 py-2">
-                <span
-                  className="inline-flex items-center justify-center rounded px-2 py-0.5 text-xs font-semibold"
-                  style={{
-                    backgroundColor: 'color-mix(in srgb, var(--color-primary) 15%, transparent)',
-                    color: 'var(--color-primary)',
-                  }}
-                >
-                  Rank {aa.rank}
-                </span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="flex flex-col gap-3" style={{ minHeight: 0 }}>
+      {/* Header: points spent + search */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+          AA Points Spent:{' '}
+          <span className="font-semibold" style={{ color: 'var(--color-foreground)' }}>
+            {totalPointsSpent}
+          </span>
+        </div>
+        <div
+          className="flex items-center gap-2 rounded px-2 py-1"
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            minWidth: '220px',
+          }}
+        >
+          <Search size={14} style={{ color: 'var(--color-muted)' }} />
+          <input
+            type="text"
+            placeholder="Search AAs…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="flex-1 bg-transparent text-sm outline-none"
+            style={{ color: 'var(--color-foreground)' }}
+          />
+        </div>
+      </div>
+
+      {/* Category sub-tabs */}
+      <div className="flex gap-1 border-b" style={{ borderColor: 'var(--color-border)' }}>
+        {AA_CATEGORIES.map((c) => (
+          <TabButton key={c.key} active={category === c.key} onClick={() => setCategory(c.key)}>
+            {c.label}
+          </TabButton>
+        ))}
+      </div>
+
+      {/* Ability list */}
       <div
-        className="px-4 py-2 text-xs"
-        style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)', borderTop: '1px solid var(--color-border)' }}
+        className="rounded-lg overflow-hidden flex-1"
+        style={{ border: '1px solid var(--color-border)', minHeight: 0 }}
       >
-        {aas.length} {aas.length === 1 ? 'ability' : 'abilities'} purchased
+        <div className="overflow-y-auto h-full">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 z-10">
+              <tr style={{ backgroundColor: 'var(--color-surface-2)' }}>
+                <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+                  Title
+                </th>
+                <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)', width: '100px' }}>
+                  Cur/Max
+                </th>
+                <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)', width: '70px' }}>
+                  Cost
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRows.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="px-4 py-6 text-center text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                    {term ? 'No matching abilities.' : 'No abilities in this category.'}
+                  </td>
+                </tr>
+              ) : (
+                visibleRows.map((r, i) => {
+                  const dim = r.rank === 0
+                  const isSel = selected?.aa_id === r.aa_id
+                  const max = Math.max(r.max_level, r.rank)
+                  return (
+                    <tr
+                      key={r.aa_id}
+                      onClick={() => setSelected(r)}
+                      style={{
+                        backgroundColor: isSel
+                          ? 'color-mix(in srgb, var(--color-primary) 12%, transparent)'
+                          : i % 2 === 0
+                          ? 'var(--color-surface)'
+                          : 'var(--color-surface-2)',
+                        borderTop: '1px solid var(--color-border)',
+                        cursor: 'pointer',
+                        opacity: dim ? 0.45 : 1,
+                      }}
+                    >
+                      <td className="px-4 py-2" style={{ color: 'var(--color-foreground)' }}>
+                        {r.name}
+                      </td>
+                      <td
+                        className="px-4 py-2 text-right font-mono text-xs"
+                        style={{ color: r.isMaxed ? 'var(--color-muted-foreground)' : 'var(--color-foreground)' }}
+                      >
+                        {r.rank}/{max}
+                      </td>
+                      <td className="px-4 py-2 text-right font-mono text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                        {r.isMaxed ? (
+                          <Check size={14} style={{ color: 'var(--color-primary)', display: 'inline' }} />
+                        ) : (
+                          r.nextRankCost
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Description placeholder */}
+      <div
+        className="rounded-lg p-3"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+          Description
+        </p>
+        {selected ? (
+          <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+            <span className="font-semibold">{selected.name}</span>
+            <span className="ml-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              max rank {Math.max(selected.max_level, selected.rank)} · base cost {selected.cost}
+              {selected.cost_inc > 0 ? ` (+${selected.cost_inc}/rank)` : ''}
+            </span>
+          </p>
+        ) : (
+          <p className="text-sm italic" style={{ color: 'var(--color-muted-foreground)' }}>
+            Select an AA to see its description.
+          </p>
+        )}
       </div>
     </div>
   )
