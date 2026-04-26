@@ -51,7 +51,11 @@ func scanItem(row interface {
 }
 
 // GetItem returns the item with the given ID, or sql.ErrNoRows if not found.
+// Returns sql.ErrNoRows for any ID on the hidden list.
 func (db *DB) GetItem(id int) (*Item, error) {
+	if isHiddenItem(id) {
+		return nil, fmt.Errorf("get item %d: %w", id, sql.ErrNoRows)
+	}
 	q := fmt.Sprintf("SELECT %s FROM items i WHERE i.id = ?", itemColumns)
 	row := db.QueryRow(q, id)
 	it, err := scanItem(row)
@@ -156,6 +160,11 @@ func (db *DB) SearchItems(f ItemFilter) (*SearchResult[Item], error) {
 	if f.MinPR > 0 {
 		where += " AND pr >= ?"
 		args = append(args, f.MinPR)
+	}
+
+	if clause, hargs := hiddenItemClause(); clause != "" {
+		where += " AND " + clause
+		args = append(args, hargs...)
 	}
 
 	var total int
