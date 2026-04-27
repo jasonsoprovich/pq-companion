@@ -77,6 +77,8 @@
 - [x] Feature — Per-character to-do list: Tasks tab with name/description, drag-to-reorder, expandable subtask checkboxes, and delete confirmation
 - [x] Feature — Character Progress AA tab shows trained vs available AAs filtered by class; gear-slot and inventory rows open the item detail modal in-place instead of jumping to the Item Explorer
 - [x] Chore — Move timer alert configuration from buff overlay Bell button into the Triggers → Alerts tab as a sub-tab alongside Event Alerts (closes #108)
+- [x] Bug — Resolve item click/proc/worn/focus effect names from spells_new when items.*name columns are blank (closes #107)
+- [x] Bug — Rebuild spell SPA label table from canonical EQEmu spdat.h codes; format focus/limit effects (124-144) like pqdi.cc; add anchor-spell test guarding against future DB shifts
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website

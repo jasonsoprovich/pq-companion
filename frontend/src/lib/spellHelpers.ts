@@ -138,171 +138,142 @@ export function durationLabel(formula: number, ticks: number): string {
 }
 
 // ── Effect ID labels ───────────────────────────────────────────────────────────
+//
+// Source: EQEmu spdat.h SE_* enum (canonical Spell Affecting Attribute codes).
+// The codes stored in `spells_new.effectidN` are these canonical values, copied
+// verbatim from the Quarm MySQL dump by the converter — they are stable
+// across DB rebuilds and EQEmu forks. Only display labels live here; if a new
+// Quarm-specific SPA appears, add it below by ID rather than renumbering.
+//
+// IDs 254 and 255 are sentinel "blank slot" markers used by EQEmu to terminate
+// the 12-slot effect array. They must never render.
 
 const EFFECT_LABELS: Record<number, string> = {
-  0: 'Blank',
-  1: 'HP Bonus',
-  2: 'AC Bonus',
-  3: 'ATK Bonus',
-  4: 'Movement Speed',
-  5: 'STR',
-  6: 'DEX',
-  7: 'AGI',
-  8: 'STA',
+  0: 'Hitpoints',
+  1: 'AC',
+  2: 'ATK',
+  3: 'Movement Speed',
+  4: 'STR',
+  5: 'DEX',
+  6: 'AGI',
+  7: 'STA',
+  8: 'INT',
   9: 'WIS',
-  10: 'INT',
-  11: 'CHA',
-  12: 'WIS (Cap)',
-  13: 'INT (Cap)',
-  14: 'Mana Bonus',
-  15: 'HP Regen',
-  16: 'Mana Regen',
-  17: 'Magic Resist',
-  18: 'Fire Resist',
-  19: 'Cold Resist',
-  20: 'Poison Resist',
-  21: 'Disease Resist',
-  22: 'Summon Item',
-  23: 'Summon Pet',
-  24: 'Blind',
-  25: 'Stun',
-  26: 'Charm',
-  27: 'Fear',
-  28: 'Fatigue',
-  29: 'Bind Affinity',
-  30: 'Gate',
-  31: 'Cancel Magic',
-  32: 'Invisibility',
-  33: 'See Invisible',
-  34: 'WaterBreathing',
-  35: 'Current HP',
-  36: 'Stacking Blocker',
-  37: 'Mesmerize',
-  38: 'Summon Item',
-  39: 'Feign Death',
-  40: 'Vision',
-  41: 'Eye of Zomm',
-  42: 'Reclaim Energy',
-  43: 'Max HP',
-  44: 'Corpse Bomb',
-  45: 'NPC Frenzy',
-  46: 'NPC Awareness',
-  47: 'NPC Aggro',
-  48: 'NPC Faction',
-  49: 'Destroy',
-  50: 'Shadow Step',
-  51: 'Berserk',
-  52: 'AE Amnesia',
-  53: 'Hate',
-  54: 'Magic Resist',
-  55: 'Sense Undead',
-  56: 'Sense Summoned',
-  57: 'Sense Animals',
-  58: 'Absorb',
-  59: 'Rune',
-  60: 'True North',
-  61: 'Levitate',
-  62: 'Illusion',
-  63: 'Damage Shield',
-  64: 'Identify',
-  65: 'Item ID',
-  66: 'Memblur',
-  67: 'Spin Stun',
-  68: 'Infravision',
-  69: 'Ultravision',
-  70: 'Eye of Zomm',
-  71: 'Reclaim Energy',
-  72: 'Teleport',
-  73: 'Teleport 2',
-  74: 'Current HP v2',
-  75: 'Empathy',
-  76: 'Translocate',
-  77: 'NPC Special Attack',
-  78: 'Enthrall',
-  79: 'Create Item',
-  80: 'Summon Pet v2',
-  81: 'Confuse',
-  82: 'Disease',
-  83: 'Poison',
-  84: 'Unknown',
-  85: 'Invuln',
-  86: 'Illusion',
-  87: 'Spell Damage',
-  88: 'Heal',
-  89: 'Resurrect',
-  90: 'Summon PC',
-  91: 'Dispel',
-  92: 'Movement Speed',
-  93: 'Disguise',
-  94: 'Invuln',
-  95: 'SpellShield',
-  96: 'Absorption',
-  97: 'Unknown',
-  98: 'Riposte',
-  99: 'Dodge',
-  100: 'Parry',
-  101: 'Dual Wield',
-  102: 'Double Attack',
-  103: 'Lifetap',
-  104: 'Weapon Proc',
-  105: 'Block',
-  106: 'Endurance',
-  107: 'Discipline',
-  108: 'Fizzle Rate',
-  109: 'Mana Pool',
-  110: 'Healing Bonus',
-  111: 'Spell Dmg Bonus',
-  112: 'Clairvoyance',
-  113: 'Spell Crit',
-  114: 'Add Proc',
-  115: 'HP Regen v2',
-  116: 'Mana Regen v2',
-  117: 'Spell Duration',
-  118: 'Spell Range',
-  119: 'Spell Hate',
-  120: 'Talent',
-  121: 'Lifetap',
-  122: 'Amnesia',
-  123: 'Invis v2',
-  124: 'Invis vs. Undead',
-  125: 'Invis vs. Animals',
-  126: 'Frenzied Burnout',
-  127: 'Pet ATK',
-  128: 'Max Mana',
-  129: 'Frenzy Radius',
-  130: 'Add Hate',
-  131: 'Fade',
-  132: 'Stacking Blocker',
-  133: 'Mana Burn',
-  134: 'Persistent Effect',
-  135: 'Trap Circumvent',
-  136: 'Voice Graft',
-  137: 'Sentinel',
-  138: 'Locate Corpse',
-  139: 'Spell Resist',
-  140: 'TB Combat',
-  141: 'Teleport (Group)',
-  142: 'Translocate (Group)',
-  143: 'Assassinate',
-  144: 'FinHold',
-  145: 'Song Duration',
-  146: 'Purify',
-  147: 'Invis (Enhanced)',
-  148: 'Melee Haste v2',
-  149: 'WS Increase',
-  150: 'Limit Max Level',
-  151: 'Limit Resist',
-  152: 'Limit Target',
-  153: 'Limit Spell Type',
-  154: 'Limit Spell',
-  155: 'Limit Min Mana',
-  156: 'Limit Effect',
-  157: 'Limit Spell Cat',
-  158: 'Limit Min Level',
-  159: 'Limit Cast Time (Min)',
-  160: 'Limit Cast Time (Max)',
-  320: 'Blank',
-  254: 'Blank',
+  10: 'CHA',
+  11: 'Melee Haste',
+  12: 'Invisibility',
+  13: 'See Invisible',
+  14: 'Enduring Breath',
+  15: 'Mana',
+  18: 'Lull',
+  19: 'Faction',
+  20: 'Blind',
+  21: 'Stun',
+  22: 'Charm',
+  23: 'Fear',
+  24: 'Fatigue',
+  25: 'Bind Affinity',
+  26: 'Gate',
+  27: 'Cancel Magic',
+  28: 'Invis vs Undead',
+  29: 'Invis vs Animals',
+  31: 'Mez',
+  32: 'Summon Item',
+  33: 'Summon Pet',
+  35: 'Disease Counter',
+  36: 'Poison Counter',
+  40: 'Divine Aura',
+  41: 'Shadow Step',
+  42: 'Berserker Strength',
+  44: 'Lycanthropy',
+  46: 'Resist Fire',
+  47: 'Resist Cold',
+  48: 'Resist Poison',
+  49: 'Resist Disease',
+  50: 'Resist Magic',
+  52: 'Sense Undead',
+  53: 'Sense Summoned',
+  54: 'Sense Animals',
+  55: 'Stoneskin',
+  57: 'True North',
+  58: 'Levitate',
+  59: 'Damage Shield',
+  61: 'Identify',
+  63: 'Memblur',
+  64: 'Spin Stun',
+  65: 'Infravision',
+  66: 'Ultravision',
+  67: 'Eye of Zomm',
+  68: 'Reclaim Energy',
+  69: 'Max HP',
+  73: 'Bind Sight',
+  74: 'Feign Death',
+  75: 'Voice Graft',
+  76: 'Sentinel',
+  77: 'Locate Corpse',
+  78: 'Absorb Magic Damage',
+  79: 'Current HP',
+  81: 'Resurrect',
+  83: 'Teleport',
+  85: 'Add Proc',
+  86: 'Reaction Radius',
+  87: 'Magnification',
+  88: 'Evacuate',
+  89: 'Player Size',
+  90: 'Cloak',
+  91: 'Summon Corpse',
+  92: 'Hate',
+  94: 'Stop Rain',
+  96: 'Silence',
+  97: 'Mana Pool',
+  98: 'Bard Haste',
+  99: 'Root',
+  100: 'Heal Over Time',
+  101: 'Complete Heal',
+  102: 'Pet Fearless',
+  103: 'Summon Pet',
+  104: 'Translocate',
+  105: 'Anti-Gate',
+  106: 'Summon Warder',
+  108: 'Summon Familiar',
+  109: 'Summon Item Group',
+  111: 'Resistances',
+  112: 'Casting Level',
+  113: 'Summon Mount',
+  114: 'Hate Generated',
+  115: 'Cannibalize',
+  116: 'Crit Melee',
+  117: 'Crit Direct Damage',
+  118: 'Crippling Blow',
+  119: 'Melee Haste v2',
+  120: 'Healing Bonus',
+  121: 'Reverse Damage Shield',
+  123: 'Reflect Spell',
+  124: 'Spell Damage Bonus',
+  125: 'Healing Effectiveness',
+  126: 'Spell Resist Reduction',
+  127: 'Spell Haste',
+  128: 'Spell Duration',
+  129: 'Spell Range',
+  130: 'Spell Hate',
+  131: 'Reagent Chance',
+  132: 'Mana Cost',
+  134: 'Limit: Max Level',
+  135: 'Limit: Resist',
+  136: 'Limit: Target',
+  137: 'Limit: Effect',
+  138: 'Limit: Spell Type',
+  139: 'Limit: Spell',
+  140: 'Limit: Min Duration',
+  141: 'Limit: Instant Only',
+  142: 'Limit: Min Level',
+  143: 'Limit: Min Cast Time',
+  144: 'Limit: Max Cast Time',
+  148: 'Stacking Block',
+  149: 'Stacking Override',
+  150: 'Death Save',
+  161: 'Rune',
+  162: 'Magic Rune',
 }
 
 export function effectLabel(id: number): string {
@@ -410,69 +381,155 @@ function approxDurationTicks(formula: number, base: number, level: number): numb
 // ── Effect descriptions ────────────────────────────────────────────────────────
 
 const STAT_NAMES: Record<number, string> = {
-  5: 'STR', 6: 'DEX', 7: 'AGI', 8: 'STA', 9: 'WIS', 10: 'INT', 11: 'CHA',
+  4: 'STR', 5: 'DEX', 6: 'AGI', 7: 'STA', 8: 'INT', 9: 'WIS', 10: 'CHA',
 }
 
 const RESIST_NAMES: Record<number, string> = {
-  17: 'Magic', 18: 'Fire', 19: 'Cold', 20: 'Poison', 21: 'Disease',
+  46: 'Fire', 47: 'Cold', 48: 'Poison', 49: 'Disease', 50: 'Magic',
+}
+
+// SPA 138 base value → spell-type filter label.
+const SPELL_TYPE_FILTER: Record<number, string> = {
+  0: 'Detrimental only',
+  1: 'Beneficial only',
+  2: 'Beneficial - Group Only',
 }
 
 /**
  * Returns a human-readable description for a spell effect slot.
- * Returns empty string for effects that should not be displayed.
+ *
+ * `id` is the canonical EQEmu SPA code (see EFFECT_LABELS above). `base` is the
+ * unscaled base value from `effect_base_valueN`; level/formula scaling is not
+ * modelled — this matches how pqdi.cc displays focus and limit effects.
+ *
+ * Returns empty string for sentinel/blank slots and for ID/base combinations
+ * that should not render.
  */
 export function effectDescription(id: number, base: number, buffduration: number): string {
-  if (id === 0 || id === 254 || id === 255 || id === 320) return ''
+  if (id === 254 || id === 255 || id === 320) return ''
 
   const sign = base > 0 ? '+' : ''
 
-  // Stat buffs — hide zero-value slots
+  // Stat buffs/debuffs (SPAs 4-10) — render as "+42 STR".
   if (STAT_NAMES[id] !== undefined) {
     if (base === 0) return ''
     return `${sign}${base} ${STAT_NAMES[id]}`
   }
 
-  // Resist buffs
+  // Per-resist SPAs (46-50).
   if (RESIST_NAMES[id] !== undefined) {
     if (base === 0) return ''
     return `${sign}${base} ${RESIST_NAMES[id]} Resist`
   }
 
   switch (id) {
-    case 1: // Current HP (heal or direct damage)
+    case 0: // Hitpoints — heal/instant damage, or HoT/DoT when buffduration>0
+      if (base === 0) return ''
+      if (buffduration > 0) {
+        return base > 0
+          ? `Increase HP by ${base} per tick`
+          : `Decrease HP by ${Math.abs(base)} per tick`
+      }
+      return base > 0 ? `Heal ${base} HP` : `Deal ${Math.abs(base)} damage`
+    case 79: // Current HP (single application — nuke/heal landing)
       if (base === 0) return ''
       return base > 0 ? `Heal ${base} HP` : `Deal ${Math.abs(base)} damage`
-    case 2: // AC
+    case 1: // AC
       if (base === 0) return ''
       return `${sign}${base} AC`
-    case 3: // ATK
+    case 2: // ATK
       if (base === 0) return ''
       return `${sign}${base} ATK`
-    case 4: // Movement Speed
+    case 3: // Movement Speed (% modifier)
       if (base === 0) return ''
       return `Movement Speed ${sign}${base}%`
-    case 14: // Mana pool bonus
+    case 11: // Melee Haste / Attack Speed (% modifier)
       if (base === 0) return ''
-      return `${sign}${base} Max Mana`
-    case 15: { // HP Regen
+      return `Attack Speed ${sign}${base}%`
+    case 15: { // Mana — instant or per-tick depending on buff duration
       if (base === 0) return ''
-      const total = buffduration > 0 ? ` (total ${base * buffduration})` : ''
-      return `Increase HP by ${base} per tick${total}`
+      if (buffduration > 0) {
+        return base > 0
+          ? `Increase Mana by ${base} per tick`
+          : `Decrease Mana by ${Math.abs(base)} per tick`
+      }
+      return base > 0 ? `Restore ${base} Mana` : `Drain ${Math.abs(base)} Mana`
     }
-    case 16: { // Mana Regen
+    case 21: // Stun (duration in ms)
       if (base === 0) return ''
-      const total = buffduration > 0 ? ` (total ${base * buffduration})` : ''
-      return `Increase Mana by ${base} per tick${total}`
-    }
-    case 43: // Max HP
+      return `Stun for ${(base / 1000).toFixed(base % 1000 === 0 ? 0 : 1)}s`
+    case 35: // Disease counter
       if (base === 0) return ''
-      return `${sign}${base} Max HP`
-    case 63: // Damage Shield
+      return base > 0 ? `Apply ${base} Disease counters` : `Cure ${Math.abs(base)} Disease counters`
+    case 36: // Poison counter
+      if (base === 0) return ''
+      return base > 0 ? `Apply ${base} Poison counters` : `Cure ${Math.abs(base)} Poison counters`
+    case 59: // Damage Shield
       if (base === 0) return ''
       return `Damage Shield: ${Math.abs(base)} per hit`
-    case 25: // Stun
+    case 69: // Max HP
       if (base === 0) return ''
-      return `Stun: ${base}ms`
+      return `${sign}${base} Max HP`
+    case 92: // Hate
+      if (base === 0) return ''
+      return `${sign}${base} Hate`
+    case 97: // Mana Pool / Max Mana
+      if (base === 0) return ''
+      return `${sign}${base} Max Mana`
+    case 100: // Heal Over Time
+      if (base === 0) return ''
+      return `Increase HP by ${base} per tick`
+
+    // ── Focus effects (% modifiers on other spells) ─────────────────────────
+    case 124: // Spell Damage % bonus
+      return `Increase Spell Damage by ${base}%`
+    case 125: // Healing Effectiveness % bonus (outgoing)
+      return `Increase Healing by ${base}%`
+    case 126: // Spell Resist Reduction
+      return `Decrease Resist Check by ${base}`
+    case 127: // Spell Haste — decrease cast time %
+      return base > 0 ? `Decrease Spell Cast Time by ${base}%` : `Increase Spell Cast Time by ${Math.abs(base)}%`
+    case 128: // Spell Duration — increase by %
+      return `Increase Spell Duration by ${base}%`
+    case 129: // Spell Range %
+      return `Increase Spell Range by ${base}%`
+    case 130: // Spell Hate %
+      return `Modify Spell Hate by ${sign}${base}%`
+    case 131: // Reagent Chance — chance to not consume reagent
+      return `${base}% chance to not consume reagent`
+    case 132: // Mana Cost — decrease %
+      return `Decrease Mana Cost by ${base}%`
+
+    // ── Focus limits (constrain which spells the focus applies to) ──────────
+    case 134: // Limit: Max Level
+      return `Limit: Max Level (${base})`
+    case 135: // Limit: Resist — base value matches the EQEmu resist code
+      return `Limit: Resist (${RESIST_LABELS[base] ?? `code ${base}`})`
+    case 136: // Limit: Target Type
+      return `Limit: Target (${TARGET_LABELS[base] ?? `code ${base}`})`
+    case 137: { // Limit: Effect — base is itself an SPA code; negative = exclude
+      const verb = base < 0 ? 'Exclude' : 'Include'
+      const spa = Math.abs(base)
+      const name = EFFECT_LABELS[spa] ?? `Effect ${spa}`
+      return `${verb}: Effect(${name})`
+    }
+    case 138: // Limit: Spell Type
+      return `Limit: Spell Type (${SPELL_TYPE_FILTER[base] ?? `code ${base}`})`
+    case 139: { // Limit: Spell ID — base is a spell ID; negative = exclude
+      const verb = base < 0 ? 'Exclude' : 'Include'
+      return `${verb}: Spell(ID ${Math.abs(base)})`
+    }
+    case 140: // Limit: Min Duration — base is in 6-second ticks
+      return `Limit: Min Duration (${base * 6} sec)`
+    case 141: // Limit: Instant only
+      return 'Limit: Instant Spells Only'
+    case 142: // Limit: Min Level
+      return `Limit: Min Level (${base})`
+    case 143: // Limit: Min Cast Time (ms)
+      return `Limit: Min Cast Time (${(base / 1000).toFixed(base % 1000 === 0 ? 0 : 1)}s)`
+    case 144: // Limit: Max Cast Time (ms)
+      return `Limit: Max Cast Time (${(base / 1000).toFixed(base % 1000 === 0 ? 0 : 1)}s)`
+
     default: {
       const label = effectLabel(id)
       if (!label) return ''
