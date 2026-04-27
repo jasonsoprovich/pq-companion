@@ -2,6 +2,7 @@ package spelltimer
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -60,8 +61,10 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 	case logparser.EventSpellCast:
 		data, ok := ev.Data.(logparser.SpellCastData)
 		if !ok {
+			slog.Info("timer-debug: spell-cast event with bad payload", "data_type", fmt.Sprintf("%T", ev.Data))
 			return
 		}
+		slog.Info("timer-debug: spell-cast event received", "spell", data.SpellName, "ts", ev.Timestamp)
 		e.onSpellCast(ev.Timestamp, data.SpellName)
 
 	case logparser.EventSpellInterrupt:
@@ -143,6 +146,12 @@ func (e *Engine) StartExternal(name string, category string, durationSecs int, s
 	snap := e.snapshot(time.Now())
 	e.mu.Unlock()
 
+	slog.Info("timer-debug: external timer started (trigger-driven)",
+		"name", name,
+		"category", cat,
+		"duration_secs", durationSecs,
+		"active_timer_count", len(snap.Timers),
+	)
 	e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 }
 
@@ -167,13 +176,17 @@ func (e *Engine) onSpellCast(castAt time.Time, spellName string) {
 		return
 	}
 	if spell == nil {
-		slog.Debug("spelltimer: spell not found in DB", "name", spellName)
+		slog.Info("timer-debug: spell not found in DB (no timer created)", "name", spellName)
 		return
 	}
 
 	durationTicks := CalcDurationTicks(spell.BuffDurationFormula, spell.BuffDuration, defaultCasterLevel)
 	if durationTicks <= 0 {
-		// Instant spell or no buff component — nothing to track.
+		slog.Info("timer-debug: spell has zero duration (no timer created)",
+			"name", spellName,
+			"formula", spell.BuffDurationFormula,
+			"buff_duration", spell.BuffDuration,
+		)
 		return
 	}
 
@@ -197,6 +210,12 @@ func (e *Engine) onSpellCast(castAt time.Time, spellName string) {
 	snap := e.snapshot(time.Now())
 	e.mu.Unlock()
 
+	slog.Info("timer-debug: timer created and broadcast",
+		"name", spellName,
+		"category", timer.Category,
+		"duration_secs", durationSeconds,
+		"active_timer_count", len(snap.Timers),
+	)
 	e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 }
 

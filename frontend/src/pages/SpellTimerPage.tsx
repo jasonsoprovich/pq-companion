@@ -352,7 +352,14 @@ export default function SpellTimerPage(): React.ReactElement {
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === 'overlay:timers') {
-      setTimerState(msg.data as TimerState)
+      const data = msg.data as TimerState
+      // eslint-disable-next-line no-console
+      console.log('[timer-debug] SpellTimerPage state update:', {
+        total: data?.timers?.length ?? 0,
+        buffs: data?.timers?.filter((t) => t.category === 'buff').length ?? 0,
+        detrim: data?.timers?.filter((t) => t.category !== 'buff').length ?? 0,
+      })
+      setTimerState(data)
     }
   }, [])
 
