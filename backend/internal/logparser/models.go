@@ -35,6 +35,13 @@ const (
 	// target (e.g. "Tashanian effect fades from Soandso.").
 	EventSpellFadeFrom EventType = "log:spell_fade_from"
 
+	// EventSpellDidNotTakeHold is emitted when a spell the player just cast
+	// fails to take effect because a stronger version is already on the target
+	// (e.g. casting Major Shielding when Greater Shielding is already up).
+	// EQ does not include the spell name in this message — consumers must
+	// correlate with the most recent EventSpellCast.
+	EventSpellDidNotTakeHold EventType = "log:spell_did_not_take_hold"
+
 	// EventDeath is emitted when the player is slain.
 	EventDeath EventType = "log:death"
 
@@ -109,6 +116,12 @@ type SpellFadeFromData struct {
 	SpellName  string `json:"spell_name"`
 	TargetName string `json:"target_name"`
 }
+
+// SpellDidNotTakeHoldData is the structured payload for EventSpellDidNotTakeHold.
+// EQ's "did not take hold" message carries no spell name — the empty struct
+// signals the event type only and consumers correlate with the most recent
+// cast event themselves.
+type SpellDidNotTakeHoldData struct{}
 
 // DeathData is the structured payload for EventDeath.
 type DeathData struct {

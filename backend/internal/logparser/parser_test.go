@@ -154,6 +154,22 @@ func TestParseLine(t *testing.T) {
 			wantData: SpellFadeFromData{SpellName: "Clarity", TargetName: "a gnoll"},
 		},
 
+		// --- Spell did not take hold ---
+		{
+			name:     "spell: did not take hold (self)",
+			line:     "[Mon Apr 13 06:00:00 2026] Your spell did not take hold.",
+			wantOK:   true,
+			wantType: EventSpellDidNotTakeHold,
+			wantData: SpellDidNotTakeHoldData{},
+		},
+		{
+			name:     "spell: did not take hold (on target)",
+			line:     "[Mon Apr 13 06:00:00 2026] Your spell did not take hold on your target.",
+			wantOK:   true,
+			wantType: EventSpellDidNotTakeHold,
+			wantData: SpellDidNotTakeHoldData{},
+		},
+
 		// --- Combat: player hits NPC ---
 		{
 			name:     "combat: you slash NPC",
@@ -501,6 +517,10 @@ func compareData(t *testing.T, got, want interface{}) {
 		}
 		if g != w {
 			t.Errorf("SpellFadeFromData = %+v, want %+v", g, w)
+		}
+	case SpellDidNotTakeHoldData:
+		if _, ok := got.(SpellDidNotTakeHoldData); !ok {
+			t.Fatalf("Data type = %T, want SpellDidNotTakeHoldData", got)
 		}
 	case CombatHitData:
 		g, ok := got.(CombatHitData)

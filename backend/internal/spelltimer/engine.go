@@ -16,6 +16,20 @@ import (
 // WebSocket clients while timers are active.
 const broadcastInterval = time.Second
 
+// dedupGraceWindow is the time after a timer is created during which a second
+// create attempt for the same spell is treated as a redundant duplicate (e.g.
+// the cast-event path and a user trigger both firing for the same cast).
+// Outside this window a same-name create overwrites — supporting buff refresh
+// on real recasts.
+const dedupGraceWindow = 3 * time.Second
+
+// didNotTakeHoldWindow is the time after EventSpellCast during which a
+// "Your spell did not take hold." message is correlated to that cast and
+// triggers cancellation of the just-created timer. EQ emits the failure
+// message immediately after the cast resolves (sub-second), so a small
+// window is enough to filter out unrelated past casts.
+const didNotTakeHoldWindow = 5 * time.Second
+
 // Engine watches parsed log events, maintains a live map of active spell
 // timers, and broadcasts state changes via WebSocket.
 //
@@ -28,6 +42,12 @@ type Engine struct {
 
 	mu     sync.Mutex
 	timers map[string]*ActiveTimer // keyed by spell name
+
+	// lastCastSpell and lastCastAt track the most recent EventSpellCast so the
+	// engine can correlate "Your spell did not take hold." (EQ omits the spell
+	// name from that message) with the spell it just tried to cast.
+	lastCastSpell string
+	lastCastAt    time.Time
 }
 
 // NewEngine returns an initialised Engine ready to receive log events.
@@ -65,7 +85,35 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 			return
 		}
 		slog.Info("timer-debug: spell-cast event received", "spell", data.SpellName, "ts", ev.Timestamp)
+		// Record the cast so a subsequent "did not take hold" message can be
+		// correlated back to this spell (EQ omits the spell name from that
+		// message). Recorded with wall time, not log time, because the
+		// correlation window is measured against time.Now() in Handle.
+		e.mu.Lock()
+		e.lastCastSpell = data.SpellName
+		e.lastCastAt = time.Now()
+		e.mu.Unlock()
 		e.onSpellCast(ev.Timestamp, data.SpellName)
+
+	case logparser.EventSpellDidNotTakeHold:
+		// Cancel the just-created timer for the most recent cast, if any and
+		// if the cast was recent enough to be the spell EQ is referring to.
+		e.mu.Lock()
+		spell := e.lastCastSpell
+		age := time.Since(e.lastCastAt)
+		e.mu.Unlock()
+		if spell == "" || age > didNotTakeHoldWindow {
+			slog.Info("timer-debug: did-not-take-hold seen but no recent cast to cancel",
+				"last_spell", spell,
+				"last_cast_age_ms", age.Milliseconds(),
+			)
+			return
+		}
+		slog.Info("timer-debug: did-not-take-hold cancelling timer",
+			"spell", spell,
+			"cast_age_ms", age.Milliseconds(),
+		)
+		e.removeTimer(spell)
 
 	case logparser.EventSpellInterrupt:
 		data, ok := ev.Data.(logparser.SpellInterruptData)
@@ -142,6 +190,14 @@ func (e *Engine) StartExternal(name string, category string, durationSecs int, s
 	}
 
 	e.mu.Lock()
+	if existing, ok := e.timers[name]; ok && time.Since(existing.CastAt) < dedupGraceWindow {
+		e.mu.Unlock()
+		slog.Info("timer-debug: duplicate external timer suppressed (within grace window)",
+			"name", name,
+			"existing_age_ms", time.Since(existing.CastAt).Milliseconds(),
+		)
+		return
+	}
 	e.timers[name] = timer
 	snap := e.snapshot(time.Now())
 	e.mu.Unlock()
@@ -206,6 +262,14 @@ func (e *Engine) onSpellCast(castAt time.Time, spellName string) {
 	}
 
 	e.mu.Lock()
+	if existing, ok := e.timers[spellName]; ok && time.Since(existing.CastAt) < dedupGraceWindow {
+		e.mu.Unlock()
+		slog.Info("timer-debug: duplicate cast suppressed (within grace window)",
+			"name", spellName,
+			"existing_age_ms", time.Since(existing.CastAt).Milliseconds(),
+		)
+		return
+	}
 	e.timers[spellName] = timer
 	snap := e.snapshot(time.Now())
 	e.mu.Unlock()

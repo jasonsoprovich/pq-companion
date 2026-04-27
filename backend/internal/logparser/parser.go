@@ -41,6 +41,14 @@ var (
 	// Spell fade from target: "Tashanian effect fades from Soandso."
 	reSpellFadeFrom = regexp.MustCompile(`^(.+) effect fades from (.+)\.$`)
 
+	// Spell did not take hold — buff overwritten by a stronger version.
+	// Two known variants:
+	//   "Your spell did not take hold."
+	//   "Your spell did not take hold on your target."
+	// EQ does not include the spell name; consumers correlate with the most
+	// recent cast.
+	reSpellDidNotTakeHold = regexp.MustCompile(`^Your spell did not take hold(?: on your target)?\.$`)
+
 	// Combat — player hits NPC:
 	// "You slash a gnoll for 150 points of damage."
 	reYouHit = regexp.MustCompile(`^You (\w+) (.+) for (\d+) points? of damage\.$`)
@@ -210,6 +218,14 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		return LogEvent{
 			Type: EventSpellFadeFrom,
 			Data: SpellFadeFromData{SpellName: m[1], TargetName: m[2]},
+		}, true
+	}
+
+	// --- Spell did not take hold ---
+	if reSpellDidNotTakeHold.MatchString(msg) {
+		return LogEvent{
+			Type: EventSpellDidNotTakeHold,
+			Data: SpellDidNotTakeHoldData{},
 		}, true
 	}
 
