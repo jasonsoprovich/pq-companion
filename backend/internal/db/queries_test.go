@@ -35,7 +35,7 @@ func openTestDB(t *testing.T) *db.DB {
 func TestGetItem_Found(t *testing.T) {
 	d := openTestDB(t)
 	// ID 1000 is a well-known item in EQ data; use a search to find a valid ID first.
-	res, err := d.SearchItems("Sword", 0, 1, 0)
+	res, err := d.SearchItems(db.ItemFilter{Query: "Sword", ItemType: -1, Limit: 1})
 	if err != nil {
 		t.Fatalf("search items: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestSearchItems(t *testing.T) {
 	d := openTestDB(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := d.SearchItems(tt.query, 0, 20, 0)
+			res, err := d.SearchItems(db.ItemFilter{Query: tt.query, ItemType: -1, Limit: 20})
 			if err != nil {
 				t.Fatalf("SearchItems(%q): %v", tt.query, err)
 			}
@@ -92,14 +92,14 @@ func TestSearchItems(t *testing.T) {
 
 func TestSearchItems_Pagination(t *testing.T) {
 	d := openTestDB(t)
-	page1, err := d.SearchItems("a", 0, 5, 0)
+	page1, err := d.SearchItems(db.ItemFilter{Query: "a", ItemType: -1, Limit: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(page1.Items) == 0 {
 		t.Skip("no items for pagination test")
 	}
-	page2, err := d.SearchItems("a", 0, 5, 5)
+	page2, err := d.SearchItems(db.ItemFilter{Query: "a", ItemType: -1, Limit: 5, Offset: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestSearchItems_Pagination(t *testing.T) {
 
 func TestGetNPC_Found(t *testing.T) {
 	d := openTestDB(t)
-	res, err := d.SearchNPCs("gnoll", 1, 0)
+	res, err := d.SearchNPCs("gnoll", 1, 0, false)
 	if err != nil {
 		t.Fatalf("search npcs: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestSearchNPCs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := d.SearchNPCs(tt.query, 20, 0)
+			res, err := d.SearchNPCs(tt.query, 20, 0, false)
 			if err != nil {
 				t.Fatalf("SearchNPCs(%q): %v", tt.query, err)
 			}
