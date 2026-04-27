@@ -278,9 +278,12 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
                       </td>
                       {hasExportChars.map((charProg) => {
                         const ii = charProg.intermediate_item
+                        const doneViaFinal = !!(
+                          charProg.final_item?.have || charProg.final_item?.shared_bank
+                        )
                         return (
                           <td key={charProg.character} className="px-3 py-2 text-center">
-                            {ii?.have ? (
+                            {ii?.have || doneViaFinal ? (
                               <span title="Have it — first-combine complete">
                                 <CheckCircle2
                                   size={14}
