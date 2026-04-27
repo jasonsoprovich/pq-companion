@@ -79,6 +79,7 @@
 - [x] Chore — Move timer alert configuration from buff overlay Bell button into the Triggers → Alerts tab as a sub-tab alongside Event Alerts (closes #108)
 - [x] Bug — Resolve item click/proc/worn/focus effect names from spells_new when items.*name columns are blank (closes #107)
 - [x] Bug — Rebuild spell SPA label table from canonical EQEmu spdat.h codes; format focus/limit effects (124-144) like pqdi.cc; add anchor-spell test guarding against future DB shifts
+- [x] Chore — Consolidate overlay sections into a single Overlays dashboard tab; remove per-section sub-tab bar; show Buff Timers, Detrimental Timers, DPS Meter, and NPC Overlay together with per-panel pop-out (closes #103)
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website

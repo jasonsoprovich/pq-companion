@@ -16,14 +16,12 @@ import SpellChecklistPage from './pages/SpellChecklistPage'
 import InventoryTrackerPage from './pages/InventoryTrackerPage'
 import KeyTrackerPage from './pages/KeyTrackerPage'
 import LogFeedPage from './pages/LogFeedPage'
-import NPCOverlayPage from './pages/NPCOverlayPage'
-import DPSOverlayPage from './pages/DPSOverlayPage'
 import DPSOverlayWindowPage from './pages/DPSOverlayWindowPage'
 import HPSOverlayWindowPage from './pages/HPSOverlayWindowPage'
 import { DEV_HPS } from './lib/devFlags'
 import BuffTimerWindowPage from './pages/BuffTimerWindowPage'
 import DetrimTimerWindowPage from './pages/DetrimTimerWindowPage'
-import SpellTimerPage from './pages/SpellTimerPage'
+import OverlaysDashboard from './pages/OverlaysDashboard'
 import CombatLogPage from './pages/CombatLogPage'
 import TriggersPage from './pages/TriggersPage'
 import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
@@ -32,7 +30,6 @@ import CharactersPage from './pages/CharactersPage'
 import CharacterProgressPage from './pages/CharacterProgressPage'
 import CharacterTasksPage from './pages/CharacterTasksPage'
 import CharactersLayout from './components/CharactersLayout'
-import OverlaysLayout from './components/OverlaysLayout'
 import { ActiveCharacterProvider } from './contexts/ActiveCharacterContext'
 
 function OverlayPage({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -107,15 +104,13 @@ export default function App(): React.ReactElement {
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="backup-manager" element={<Navigate to="/settings" replace />} />
           <Route path="log-feed" element={<LogFeedPage />} />
-          <Route path="overlays" element={<OverlaysLayout />}>
-            <Route index element={<Navigate to="/overlays/npc" replace />} />
-            <Route path="npc" element={<NPCOverlayPage />} />
-            <Route path="dps" element={<DPSOverlayPage />} />
-            <Route path="timers" element={<SpellTimerPage />} />
-          </Route>
-          <Route path="npc-overlay" element={<Navigate to="/overlays/npc" replace />} />
-          <Route path="dps-overlay" element={<Navigate to="/overlays/dps" replace />} />
-          <Route path="spell-timers" element={<Navigate to="/overlays/timers" replace />} />
+          <Route path="overlays" element={<OverlaysDashboard />} />
+          <Route path="overlays/npc" element={<Navigate to="/overlays" replace />} />
+          <Route path="overlays/dps" element={<Navigate to="/overlays" replace />} />
+          <Route path="overlays/timers" element={<Navigate to="/overlays" replace />} />
+          <Route path="npc-overlay" element={<Navigate to="/overlays" replace />} />
+          <Route path="dps-overlay" element={<Navigate to="/overlays" replace />} />
+          <Route path="spell-timers" element={<Navigate to="/overlays" replace />} />
           <Route path="combat-log" element={<CombatLogPage />} />
           <Route path="triggers" element={<TriggersPage />} />
           <Route path="characters" element={<CharactersLayout />}>
