@@ -7,7 +7,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Zap } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
-import { useOverlayClickThrough } from '../hooks/useOverlayClickThrough'
+import { useOverlayLock } from '../hooks/useOverlayLock'
+import OverlayLockButton from '../components/OverlayLockButton'
 import type { TriggerFired } from '../types/trigger'
 
 interface AlertEntry {
@@ -92,7 +93,7 @@ function AlertCard({ entry, bgOpacity }: { entry: AlertEntry; bgOpacity: number 
 
 export default function TriggerOverlayWindowPage(): React.ReactElement {
   const overlayOpacity = useOverlayOpacity()
-  const { enableInteraction, enableClickThrough } = useOverlayClickThrough()
+  const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
   const [alerts, setAlerts] = useState<AlertEntry[]>([])
   const gcTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -145,9 +146,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     >
       {/* Drag handle — always present so the window can be repositioned */}
       <div
-        className="drag-region"
-        onMouseEnter={enableInteraction}
-        onMouseLeave={enableClickThrough}
+        className={locked ? 'no-drag' : 'drag-region'}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -171,7 +170,13 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
             </span>
           )}
         </div>
-        <div className="no-drag">
+        <div
+          className="no-drag"
+          onMouseEnter={enableInteraction}
+          onMouseLeave={enableClickThrough}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeTrigger()}
             style={{

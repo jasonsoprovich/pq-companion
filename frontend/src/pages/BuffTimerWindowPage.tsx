@@ -7,7 +7,8 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Shield } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
-import { useOverlayClickThrough } from '../hooks/useOverlayClickThrough'
+import { useOverlayLock } from '../hooks/useOverlayLock'
+import OverlayLockButton from '../components/OverlayLockButton'
 import { getTimerState } from '../services/api'
 import type { ActiveTimer, TimerState } from '../types/timer'
 
@@ -103,7 +104,7 @@ function TimerRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
 
 export default function BuffTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const { enableInteraction, enableClickThrough } = useOverlayClickThrough()
+  const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
   const [state, setState] = useState<TimerState | null>(null)
 
   useEffect(() => {
@@ -141,9 +142,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
-        className="drag-region"
-        onMouseEnter={enableInteraction}
-        onMouseLeave={enableClickThrough}
+        className={locked ? 'no-drag' : 'drag-region'}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -166,7 +165,13 @@ export default function BuffTimerWindowPage(): React.ReactElement {
             </span>
           )}
         </div>
-        <div className="no-drag">
+        <div
+          className="no-drag"
+          onMouseEnter={enableInteraction}
+          onMouseLeave={enableClickThrough}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeBuffTimer()}
             style={{

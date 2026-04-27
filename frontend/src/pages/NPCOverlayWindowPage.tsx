@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Crosshair, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
-import { useOverlayClickThrough } from '../hooks/useOverlayClickThrough'
+import { useOverlayLock } from '../hooks/useOverlayLock'
+import OverlayLockButton from '../components/OverlayLockButton'
 import { getOverlayNPCTarget } from '../services/api'
 import { className, bodyTypeName } from '../lib/npcHelpers'
 import type { TargetState, SpecialAbility } from '../types/overlay'
@@ -210,7 +211,7 @@ function NPCContent({ state }: { state: TargetState }): React.ReactElement {
 
 export default function NPCOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const { enableInteraction, enableClickThrough } = useOverlayClickThrough()
+  const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
   const [target, setTarget] = useState<TargetState | null>(null)
 
   useEffect(() => {
@@ -244,9 +245,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
     >
       {/* Drag region header */}
       <div
-        className="drag-region"
-        onMouseEnter={enableInteraction}
-        onMouseLeave={enableClickThrough}
+        className={locked ? 'no-drag' : 'drag-region'}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -260,24 +259,31 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
           <Crosshair size={13} style={{ color: '#c9a84c' }} />
           <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>NPC Target</span>
         </div>
-        <button
+        <div
           className="no-drag"
-          onClick={() => window.electron?.overlay?.closeNPC()}
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'rgba(255,255,255,0.4)',
-            padding: '2px 4px',
-            lineHeight: 1,
-            borderRadius: 3,
-            display: 'flex',
-            alignItems: 'center',
-          }}
-          title="Close"
+          onMouseEnter={enableInteraction}
+          onMouseLeave={enableClickThrough}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
-          <X size={13} />
-        </button>
+          <OverlayLockButton locked={locked} onToggle={toggleLocked} size={12} />
+          <button
+            onClick={() => window.electron?.overlay?.closeNPC()}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'rgba(255,255,255,0.4)',
+              padding: '2px 4px',
+              lineHeight: 1,
+              borderRadius: 3,
+              display: 'flex',
+              alignItems: 'center',
+            }}
+            title="Close"
+          >
+            <X size={13} />
+          </button>
+        </div>
       </div>
 
       {/* Content */}

@@ -21,9 +21,14 @@ type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'trigger' | 'np
 type Bounds = { x: number; y: number; width: number; height: number }
 
 type BoundsStore = Partial<Record<OverlayName, Bounds>>
+type LockStore = Partial<Record<OverlayName, boolean>>
 
 function boundsFilePath(): string {
   return join(app.getPath('userData'), 'overlayBounds.json')
+}
+
+function lockFilePath(): string {
+  return join(app.getPath('userData'), 'overlayLockState.json')
 }
 
 function loadBoundsStore(): BoundsStore {
@@ -42,6 +47,37 @@ function saveBoundsStore(store: BoundsStore): void {
     console.error('[main] Failed to write overlay bounds:', err)
   }
 }
+
+function loadLockStore(): LockStore {
+  try {
+    const raw = readFileSync(lockFilePath(), 'utf8')
+    return JSON.parse(raw) as LockStore
+  } catch {
+    return {}
+  }
+}
+
+function saveLockStore(store: LockStore): void {
+  try {
+    writeFileSync(lockFilePath(), JSON.stringify(store, null, 2), 'utf8')
+  } catch (err) {
+    console.error('[main] Failed to write overlay lock state:', err)
+  }
+}
+
+function getOverlayLocked(name: OverlayName): boolean {
+  return loadLockStore()[name] === true
+}
+
+function setOverlayLocked(name: OverlayName, locked: boolean): void {
+  const store = loadLockStore()
+  store[name] = locked
+  saveLockStore(store)
+}
+
+// Map a BrowserWindow back to its overlay name so IPC handlers can look up
+// which overlay is sending lock state changes.
+const windowToOverlayName = new WeakMap<BrowserWindow, OverlayName>()
 
 const boundsDebounceTimers = new Map<OverlayName, ReturnType<typeof setTimeout>>()
 
@@ -304,7 +340,10 @@ function createDPSOverlay(): void {
   // Keep it above fullscreen apps on macOS/Windows.
   dpsOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   dpsOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  dpsOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  windowToOverlayName.set(dpsOverlayWindow, 'dps')
+  if (getOverlayLocked('dps')) {
+    dpsOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  }
   trackOverlayBounds('dps', dpsOverlayWindow)
 
   if (isDev) {
@@ -354,7 +393,10 @@ function createHPSOverlay(): void {
 
   hpsOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   hpsOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  hpsOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  windowToOverlayName.set(hpsOverlayWindow, 'hps')
+  if (getOverlayLocked('hps')) {
+    hpsOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  }
   trackOverlayBounds('hps', hpsOverlayWindow)
 
   if (isDev) {
@@ -404,7 +446,10 @@ function createBuffTimerOverlay(): void {
 
   buffTimerWindow.setAlwaysOnTop(true, 'screen-saver')
   buffTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  buffTimerWindow.setIgnoreMouseEvents(true, { forward: true })
+  windowToOverlayName.set(buffTimerWindow, 'buffTimer')
+  if (getOverlayLocked('buffTimer')) {
+    buffTimerWindow.setIgnoreMouseEvents(true, { forward: true })
+  }
   trackOverlayBounds('buffTimer', buffTimerWindow)
 
   if (isDev) {
@@ -454,7 +499,10 @@ function createDetrimTimerOverlay(): void {
 
   detrimTimerWindow.setAlwaysOnTop(true, 'screen-saver')
   detrimTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  detrimTimerWindow.setIgnoreMouseEvents(true, { forward: true })
+  windowToOverlayName.set(detrimTimerWindow, 'detrimTimer')
+  if (getOverlayLocked('detrimTimer')) {
+    detrimTimerWindow.setIgnoreMouseEvents(true, { forward: true })
+  }
   trackOverlayBounds('detrimTimer', detrimTimerWindow)
 
   if (isDev) {
@@ -504,7 +552,10 @@ function createTriggerOverlay(): void {
 
   triggerOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   triggerOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  triggerOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  windowToOverlayName.set(triggerOverlayWindow, 'trigger')
+  if (getOverlayLocked('trigger')) {
+    triggerOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  }
   trackOverlayBounds('trigger', triggerOverlayWindow)
 
   if (isDev) {
@@ -554,7 +605,10 @@ function createNPCOverlay(): void {
 
   npcOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   npcOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  npcOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  windowToOverlayName.set(npcOverlayWindow, 'npc')
+  if (getOverlayLocked('npc')) {
+    npcOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  }
   trackOverlayBounds('npc', npcOverlayWindow)
 
   if (isDev) {
@@ -699,6 +753,24 @@ ipcMain.handle('overlay:npc:toggle', () => {
 ipcMain.handle('overlay:set-ignore-mouse-events', (event, ignore: boolean) => {
   const win = BrowserWindow.fromWebContents(event.sender)
   win?.setIgnoreMouseEvents(ignore, { forward: true })
+})
+
+// ── IPC handlers — overlay lock state ────────────────────────────────────────
+
+ipcMain.handle('overlay:lock:get', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) return false
+  const name = windowToOverlayName.get(win)
+  return name ? getOverlayLocked(name) : false
+})
+
+ipcMain.handle('overlay:lock:set', (event, locked: boolean) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) return
+  const name = windowToOverlayName.get(win)
+  if (!name) return
+  setOverlayLocked(name, locked)
+  win.setIgnoreMouseEvents(locked, { forward: true })
 })
 
 // ── IPC handlers — dialogs ────────────────────────────────────────────────────

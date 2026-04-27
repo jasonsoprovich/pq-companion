@@ -6,7 +6,8 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { HeartPulse } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
-import { useOverlayClickThrough } from '../hooks/useOverlayClickThrough'
+import { useOverlayLock } from '../hooks/useOverlayLock'
+import OverlayLockButton from '../components/OverlayLockButton'
 import { getCombatState } from '../services/api'
 import type { CombatState, HealerStats, FightState } from '../types/combat'
 
@@ -131,7 +132,7 @@ function HealTable({ fight, showAll }: { fight: FightState; showAll: boolean }):
 
 export default function HPSOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const { enableInteraction, enableClickThrough } = useOverlayClickThrough()
+  const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
 
@@ -167,9 +168,7 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
-        className="drag-region"
-        onMouseEnter={enableInteraction}
-        onMouseLeave={enableClickThrough}
+        className={locked ? 'no-drag' : 'drag-region'}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -191,8 +190,14 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
           )}
         </div>
 
-        {/* Controls — no-drag zone */}
-        <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {/* Controls — no-drag zone. When locked, hover here re-enables clicks
+            so the buttons remain interactive. */}
+        <div
+          className="no-drag"
+          onMouseEnter={enableInteraction}
+          onMouseLeave={enableClickThrough}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+        >
           {/* filter toggle */}
           <button
             onClick={() => setShowAll((v) => !v)}
@@ -211,6 +216,8 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
           >
             {showAll ? 'All' : 'Me'}
           </button>
+          {/* lock */}
+          <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           {/* close */}
           <button
             onClick={() => window.electron?.overlay?.closeHPS()}

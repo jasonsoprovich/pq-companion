@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld('electron', {
     toggleNPC: (): Promise<void> => ipcRenderer.invoke('overlay:npc:toggle'),
     setIgnoreMouseEvents: (ignore: boolean): Promise<void> =>
       ipcRenderer.invoke('overlay:set-ignore-mouse-events', ignore),
+    getLocked: (): Promise<boolean> => ipcRenderer.invoke('overlay:lock:get'),
+    setLocked: (locked: boolean): Promise<void> =>
+      ipcRenderer.invoke('overlay:lock:set', locked),
   },
   dialog: {
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-folder'),

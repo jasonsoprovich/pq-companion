@@ -2,14 +2,16 @@
  * DPSOverlayWindowPage — renders in the dedicated always-on-top Electron overlay
  * window. No sidebar, no title bar, transparent background.
  *
- * The window frame is removed; the user drags via the OS title-bar area
- * (CSS -webkit-app-region: drag on the header strip).
+ * Unlocked: the window is movable (OS drag region on the header) and resizable.
+ * Locked: setIgnoreMouseEvents passes clicks through to the game; header
+ * buttons remain clickable via mouseenter/mouseleave forwarding.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Swords, Clipboard, ClipboardCheck } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
-import { useOverlayClickThrough } from '../hooks/useOverlayClickThrough'
+import { useOverlayLock } from '../hooks/useOverlayLock'
+import OverlayLockButton from '../components/OverlayLockButton'
 import { getCombatState } from '../services/api'
 import type { CombatState, EntityStats, FightState } from '../types/combat'
 
@@ -145,7 +147,7 @@ const POST_FIGHT_PERSIST_MS = 30_000
 
 export default function DPSOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const { enableInteraction, enableClickThrough } = useOverlayClickThrough()
+  const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
   const [now, setNow] = useState(() => Date.now())
@@ -219,9 +221,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
-        className="drag-region"
-        onMouseEnter={enableInteraction}
-        onMouseLeave={enableClickThrough}
+        className={locked ? 'no-drag' : 'drag-region'}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -243,8 +243,14 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           )}
         </div>
 
-        {/* Controls — no-drag zone */}
-        <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {/* Controls — no-drag zone. When locked, hover here re-enables clicks
+            so the buttons remain interactive. */}
+        <div
+          className="no-drag"
+          onMouseEnter={enableInteraction}
+          onMouseLeave={enableClickThrough}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+        >
           {/* filter toggle */}
           <button
             onClick={() => setShowAll((v) => !v)}
@@ -287,6 +293,8 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           >
             {copied ? <ClipboardCheck size={11} /> : <Clipboard size={11} />}
           </button>
+          {/* lock */}
+          <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           {/* close */}
           <button
             onClick={() => window.electron?.overlay?.closeDPS()}
