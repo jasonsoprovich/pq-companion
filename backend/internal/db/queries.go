@@ -778,16 +778,24 @@ func (db *DB) GetSpellByExactName(name string) (*Spell, error) {
 }
 
 // SearchSpells searches spells by name with optional class and level filters.
-// classIndex: -1 = all classes, 0–14 = filter to that class.
-// minLevel/maxLevel: 0 = no bound; only applied when classIndex >= 0.
+// classIndex: -1 = all classes (excludes NPC-only spells), 0–14 = filter to
+// that player class, 15 = NPC-only (every classes1–classes15 column is 255).
+// minLevel/maxLevel: 0 = no bound; only applied when classIndex is 0–14.
 func (db *DB) SearchSpells(query string, classIndex, minLevel, maxLevel, limit, offset int) (*SearchResult[Spell], error) {
 	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
 
 	conditions := []string{"s.name LIKE ? ESCAPE '\\'", "s.name != ''"}
 	args := []any{pattern}
 
+	npcOnlyExpr := "(s.classes1 = 255 AND s.classes2 = 255 AND s.classes3 = 255 AND " +
+		"s.classes4 = 255 AND s.classes5 = 255 AND s.classes6 = 255 AND " +
+		"s.classes7 = 255 AND s.classes8 = 255 AND s.classes9 = 255 AND " +
+		"s.classes10 = 255 AND s.classes11 = 255 AND s.classes12 = 255 AND " +
+		"s.classes13 = 255 AND s.classes14 = 255 AND s.classes15 = 255)"
+
 	var classCol string
-	if classIndex >= 0 && classIndex <= 14 {
+	switch {
+	case classIndex >= 0 && classIndex <= 14:
 		classCol = fmt.Sprintf("s.classes%d", classIndex+1)
 		conditions = append(conditions, classCol+" < 255")
 		if minLevel > 0 {
@@ -798,6 +806,10 @@ func (db *DB) SearchSpells(query string, classIndex, minLevel, maxLevel, limit, 
 			conditions = append(conditions, classCol+" <= ?")
 			args = append(args, maxLevel)
 		}
+	case classIndex == 15:
+		conditions = append(conditions, npcOnlyExpr)
+	default:
+		conditions = append(conditions, "NOT "+npcOnlyExpr)
 	}
 
 	where := strings.Join(conditions, " AND ")

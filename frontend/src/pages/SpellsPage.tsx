@@ -135,6 +135,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
           {SPELL_CLASSES.map((c) => (
             <option key={c.index} value={c.index}>{c.abbr} — {c.full}</option>
           ))}
+          <option value={15}>NPC Only</option>
         </select>
 
         {/* Level range — only useful with a class selected */}
@@ -147,7 +148,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
             placeholder="min"
             value={minLevel}
             onChange={(e) => setMinLevel(e.target.value)}
-            disabled={classIndex < 0}
+            disabled={classIndex < 0 || classIndex === 15}
             className="rounded border px-1.5 py-0.5 text-xs outline-none disabled:opacity-40"
             style={{ ...levelInputStyle, borderColor: 'var(--color-border)' }}
           />
@@ -159,7 +160,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
             placeholder="max"
             value={maxLevel}
             onChange={(e) => setMaxLevel(e.target.value)}
-            disabled={classIndex < 0}
+            disabled={classIndex < 0 || classIndex === 15}
             className="rounded border px-1.5 py-0.5 text-xs outline-none disabled:opacity-40"
             style={{ ...levelInputStyle, borderColor: 'var(--color-border)' }}
           />
