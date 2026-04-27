@@ -195,19 +195,23 @@ func (h *charactersHandler) aas(w http.ResponseWriter, r *http.Request) {
 
 		available, err = h.db.ListAvailableAAs(eqClass)
 		if err == nil {
+			eligible := make(map[int]bool, len(available))
 			ids := make([]int, len(available))
 			for i, a := range available {
 				ids[i] = a.AAID
+				eligible[a.AAID] = true
 			}
-			// Resolve names for trained AAs that may not be in the available
-			// list (e.g. cross-class AAs from older exports).
-			ids = append(ids, func() []int {
-				out := make([]int, len(trained))
-				for i, t := range trained {
-					out[i] = t.AAID
+			// Drop trained entries that aren't eligible for this class. Zeal's
+			// AAIndex export can contain cross-class AAs (e.g. Fleet of Foot
+			// for a Wizard) that the character can't actually use; including
+			// them makes the tab badge disagree with the points-spent total.
+			filtered := trained[:0]
+			for _, t := range trained {
+				if eligible[t.AAID] {
+					filtered = append(filtered, t)
 				}
-				return out
-			}()...)
+			}
+			trained = filtered
 			names, _ := h.db.LookupAANames(ids)
 			for i := range trained {
 				trained[i].Name = names[trained[i].AAID]
