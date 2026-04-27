@@ -1,7 +1,8 @@
 /**
- * TimerAlertsPanel — slide-in configuration panel for Timer Audio Alerts.
+ * TimerAlertsPanel — configuration panel for Timer Audio Alerts.
  *
- * Rendered by SpellTimerPage when the user clicks the bell/gear icon.
+ * Rendered inside the Triggers tab's Alerts sub-section. Supports an
+ * `inline` prop that drops the slide-over chrome for embedding in a tab.
  * Changes are saved to localStorage immediately on every edit via
  * saveTimerAlertConfig().
  */
@@ -194,10 +195,12 @@ function ThresholdRow({ threshold, voices, onChange, onRemove }: ThresholdRowPro
 }
 
 interface Props {
-  onClose: () => void
+  /** When true, renders inline (no slide-over wrapper or close button). */
+  inline?: boolean
+  onClose?: () => void
 }
 
-export default function TimerAlertsPanel({ onClose }: Props): React.ReactElement {
+export default function TimerAlertsPanel({ inline = false, onClose }: Props): React.ReactElement {
   const [cfg, setCfg] = useState<TimerAlertConfig>(() => loadTimerAlertConfig())
   const [voices, setVoices] = useState<string[]>([])
 
@@ -236,46 +239,8 @@ export default function TimerAlertsPanel({ onClose }: Props): React.ReactElement
     update({ ...cfg, thresholds: [...cfg.thresholds, newThreshold()] })
   }
 
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        bottom: 0,
-        width: 380,
-        backgroundColor: 'var(--color-surface)',
-        borderLeft: '1px solid var(--color-border)',
-        display: 'flex',
-        flexDirection: 'column',
-        zIndex: 10,
-        boxShadow: '-4px 0 16px rgba(0,0,0,0.4)',
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 14px',
-          borderBottom: '1px solid var(--color-border)',
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: 'var(--color-foreground)' }}>
-          <Volume2 size={14} style={{ color: 'var(--color-primary)' }} />
-          Timer Audio Alerts
-        </span>
-        <button
-          type="button"
-          onClick={onClose}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}
-        >
-          <X size={15} />
-        </button>
-      </div>
-
+  const body = (
+    <>
       {/* Enable toggle */}
       <div
         style={{
@@ -339,6 +304,53 @@ export default function TimerAlertsPanel({ onClose }: Props): React.ReactElement
           Add threshold
         </button>
       </div>
+    </>
+  )
+
+  if (inline) {
+    return <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>{body}</div>
+  }
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        bottom: 0,
+        width: 380,
+        backgroundColor: 'var(--color-surface)',
+        borderLeft: '1px solid var(--color-border)',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 10,
+        boxShadow: '-4px 0 16px rgba(0,0,0,0.4)',
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 14px',
+          borderBottom: '1px solid var(--color-border)',
+          flexShrink: 0,
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: 'var(--color-foreground)' }}>
+          <Volume2 size={14} style={{ color: 'var(--color-primary)' }} />
+          Timer Audio Alerts
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}
+        >
+          <X size={15} />
+        </button>
+      </div>
+      {body}
     </div>
   )
 }

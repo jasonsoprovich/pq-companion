@@ -76,6 +76,7 @@
 - [x] Chore — Custom PQ Companion app icon: build/icon.ico (multi-res Windows ICO 16/24/32/48/64/128/256), build/icon.png runtime, NSIS installer/uninstaller, and BrowserWindow taskbar icon (closes #6)
 - [x] Feature — Per-character to-do list: Tasks tab with name/description, drag-to-reorder, expandable subtask checkboxes, and delete confirmation
 - [x] Feature — Character Progress AA tab shows trained vs available AAs filtered by class; gear-slot and inventory rows open the item detail modal in-place instead of jumping to the Item Explorer
+- [x] Chore — Move timer alert configuration from buff overlay Bell button into the Triggers → Alerts tab as a sub-tab alongside Event Alerts (closes #108)
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website

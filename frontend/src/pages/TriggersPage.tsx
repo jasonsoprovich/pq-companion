@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { getAvailableVoices } from '../services/audio'
 import EventAlertsPanel from '../components/EventAlertsPanel'
+import TimerAlertsPanel from '../components/TimerAlertsPanel'
 import {
   listTriggers,
   createTrigger,
@@ -1109,6 +1110,43 @@ function PacksTab({ onInstalled }: PacksTabProps): React.ReactElement {
   )
 }
 
+// ── Alerts tab ────────────────────────────────────────────────────────────────
+
+type AlertSubTab = 'events' | 'timers'
+
+function AlertsTab(): React.ReactElement {
+  const [sub, setSub] = useState<AlertSubTab>('events')
+
+  const pillStyle = (active: boolean): React.CSSProperties => ({
+    padding: '4px 12px',
+    fontSize: 12,
+    fontWeight: 500,
+    borderRadius: 4,
+    border: '1px solid transparent',
+    backgroundColor: active ? 'var(--color-primary)' : 'var(--color-surface-2)',
+    color: active ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+    cursor: 'pointer',
+  })
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
+      <div
+        className="flex items-center gap-2 px-4 py-2 shrink-0"
+        style={{ borderBottom: '1px solid var(--color-border)' }}
+      >
+        <button onClick={() => setSub('events')} style={pillStyle(sub === 'events')}>
+          Event Alerts
+        </button>
+        <button onClick={() => setSub('timers')} style={pillStyle(sub === 'timers')}>
+          Timer Alerts
+        </button>
+      </div>
+      {sub === 'events' && <EventAlertsPanel inline />}
+      {sub === 'timers' && <TimerAlertsPanel inline />}
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 type Tab = 'triggers' | 'history' | 'packs' | 'alerts'
@@ -1340,7 +1378,7 @@ export default function TriggersPage(): React.ReactElement {
       {tab === 'packs' && <PacksTab onInstalled={load} />}
 
       {/* Tab: Alerts */}
-      {tab === 'alerts' && <EventAlertsPanel inline />}
+      {tab === 'alerts' && <AlertsTab />}
     </div>
   )
 }
