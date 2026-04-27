@@ -7,8 +7,8 @@ import (
 
 func TestParseLine(t *testing.T) {
 	// Reference timestamp used across cases.
-	wantTS, _ := time.Parse(tsLayout, "[Mon Apr 13 06:00:00 2026]")
-	wantTSSingle, _ := time.Parse(tsLayout, "[Mon Apr  3 06:00:00 2026]")
+	wantTS, _ := time.ParseInLocation(tsLayout, "[Mon Apr 13 06:00:00 2026]", time.Local)
+	wantTSSingle, _ := time.ParseInLocation(tsLayout, "[Mon Apr  3 06:00:00 2026]", time.Local)
 
 	tests := []struct {
 		name     string

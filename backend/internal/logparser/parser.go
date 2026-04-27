@@ -10,6 +10,10 @@ import (
 // tsLayout is the Go time layout for EQ log timestamps.
 // EQ uses ctime()-style formatting: [Mon Jan _2 15:04:05 2006]
 // _2 handles space-padded single-digit days (e.g., " 3") and two-digit days.
+// EQ writes the player's local time with no timezone marker, so parsing must
+// use ParseInLocation(time.Local) — bare time.Parse would assume UTC and put
+// every event hours into the past for any non-UTC player, causing freshly
+// created spell timers to be pruned as already-expired.
 const tsLayout = "[Mon Jan _2 15:04:05 2006]"
 
 // tsLen is the fixed character length of an EQ log timestamp.
@@ -119,7 +123,7 @@ func ParseRawLine(line string) (time.Time, string, bool) {
 	if len(line) < tsLen+1 || line[0] != '[' {
 		return time.Time{}, "", false
 	}
-	ts, err := time.Parse(tsLayout, line[:tsLen])
+	ts, err := time.ParseInLocation(tsLayout, line[:tsLen], time.Local)
 	if err != nil {
 		return time.Time{}, "", false
 	}
@@ -135,7 +139,7 @@ func ParseLine(line string) (LogEvent, bool) {
 	}
 
 	tsStr := line[:tsLen]
-	ts, err := time.Parse(tsLayout, tsStr)
+	ts, err := time.ParseInLocation(tsLayout, tsStr, time.Local)
 	if err != nil {
 		return LogEvent{}, false
 	}
