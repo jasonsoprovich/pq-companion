@@ -76,6 +76,7 @@
 - [x] Chore — Custom PQ Companion app icon: build/icon.ico (multi-res Windows ICO 16/24/32/48/64/128/256), build/icon.png runtime, NSIS installer/uninstaller, and BrowserWindow taskbar icon (closes #6)
 - [x] Feature — Per-character to-do list: Tasks tab with name/description, drag-to-reorder, expandable subtask checkboxes, and delete confirmation
 - [x] Feature — Character Progress AA tab shows trained vs available AAs filtered by class; gear-slot and inventory rows open the item detail modal in-place instead of jumping to the Item Explorer
+- [x] Bug — Resolve item click/proc/worn/focus effect names from spells_new when items.*name columns are blank (closes #107)
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website
