@@ -244,7 +244,7 @@ export default function CharacterProgressPage(): React.ReactElement {
             <TabButton active={tab === 'stats'} onClick={() => setTab('stats')}>Stats</TabButton>
             <TabButton active={tab === 'gear'} onClick={() => setTab('gear')}>Gear</TabButton>
             <TabButton active={tab === 'aas'} onClick={() => setTab('aas')}>
-              Alternate Advancement {trainedAAs.length > 0 ? `(${trainedAAs.length})` : ''}
+              Alternate Advancement {trainedAAs.filter(t => t.rank > 0).length > 0 ? `(${trainedAAs.filter(t => t.rank > 0).length})` : ''}
             </TabButton>
           </div>
 

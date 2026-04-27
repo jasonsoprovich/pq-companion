@@ -267,7 +267,7 @@ func ParseQuarmy(path, character string) (*QuarmyData, error) {
 			if len(parts) == 2 {
 				id, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
 				rank, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
-				if err1 == nil && err2 == nil {
+				if err1 == nil && err2 == nil && rank > 0 {
 					data.AAs = append(data.AAs, AAEntry{ID: id, Rank: rank})
 				}
 			}

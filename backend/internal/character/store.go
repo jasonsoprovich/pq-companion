@@ -220,7 +220,7 @@ func (s *Store) ReplaceAAs(characterID int, aas []AAEntry) error {
 // ListAAs returns all stored AA entries for the character with the given id.
 func (s *Store) ListAAs(characterID int) ([]AAEntry, error) {
 	rows, err := s.db.Query(
-		`SELECT aa_id, rank FROM character_aas WHERE character_id=? ORDER BY aa_id`,
+		`SELECT aa_id, rank FROM character_aas WHERE character_id=? AND rank > 0 ORDER BY aa_id`,
 		characterID,
 	)
 	if err != nil {
