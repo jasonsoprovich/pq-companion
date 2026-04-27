@@ -331,6 +331,10 @@ export function getTimerState(): Promise<TimerState> {
   return get<TimerState>('/api/overlay/timers')
 }
 
+export function clearTimers(category: 'buff' | 'detrimental' | 'all'): Promise<void> {
+  return post<void>(`/api/overlay/timers/clear?category=${category}`)
+}
+
 // ── Config ─────────────────────────────────────────────────────────────────────
 
 export function getConfig(): Promise<Config> {

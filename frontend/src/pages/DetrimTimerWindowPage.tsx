@@ -5,12 +5,12 @@
  * Shows timers with category in: 'debuff' | 'dot' | 'mez' | 'stun'.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Skull } from 'lucide-react'
+import { Skull, Eraser } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import OverlayLockButton from '../components/OverlayLockButton'
-import { getTimerState } from '../services/api'
+import { clearTimers, getTimerState } from '../services/api'
 import type { ActiveTimer, TimerCategory, TimerState } from '../types/timer'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -218,6 +218,23 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
           onMouseLeave={enableClickThrough}
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
+          <button
+            onClick={() => clearTimers('detrimental').catch(() => {})}
+            title="Clear all active detrimental timers"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '1px 5px',
+              borderRadius: 3,
+              border: '1px solid rgba(255,255,255,0.1)',
+              backgroundColor: 'transparent',
+              color: 'rgba(255,255,255,0.4)',
+              cursor: 'pointer',
+              lineHeight: 1,
+            }}
+          >
+            <Eraser size={11} />
+          </button>
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeDetrimTimer()}

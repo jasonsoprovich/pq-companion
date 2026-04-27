@@ -7,9 +7,9 @@
  * always-on-top window via Electron IPC.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Shield, Skull, ExternalLink, Circle, CheckCircle2, AlertTriangle, Bell, Plus, Power } from 'lucide-react'
+import { Shield, Skull, ExternalLink, Circle, CheckCircle2, AlertTriangle, Bell, Plus, Eraser } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { getTimerState, getLogStatus } from '../services/api'
+import { getTimerState, getLogStatus, clearTimers } from '../services/api'
 import OverlayWindow from '../components/OverlayWindow'
 import TimerAlertsPanel from '../components/TimerAlertsPanel'
 import CreateTriggerModal from '../components/CreateTriggerModal'
@@ -331,14 +331,6 @@ export default function SpellTimerPage(): React.ReactElement {
   const [pickerTimerType, setPickerTimerType] = useState<TimerType | null>(null)
   // When set, a trigger-create modal is open for the picked spell.
   const [pickedSpell, setPickedSpell] = useState<{ spell: Spell; type: TimerType } | null>(null)
-  // Global on/off — when off, all timer entries are hidden. Persists across sessions.
-  const [globalEnabled, setGlobalEnabled] = useState<boolean>(() => {
-    return localStorage.getItem('spell-timers-enabled') !== '0'
-  })
-  useEffect(() => {
-    localStorage.setItem('spell-timers-enabled', globalEnabled ? '1' : '0')
-  }, [globalEnabled])
-
   const handleSpellPicked = (spell: Spell) => {
     if (!pickerTimerType) return
     setPickedSpell({ spell, type: pickerTimerType })
@@ -365,12 +357,8 @@ export default function SpellTimerPage(): React.ReactElement {
 
   const wsState = useWebSocket(handleMessage)
 
-  const buffs = globalEnabled
-    ? (timerState?.timers ?? []).filter((t) => t.category === 'buff')
-    : []
-  const detrims = globalEnabled
-    ? (timerState?.timers ?? []).filter((t) => DETRIM_CATEGORIES.has(t.category))
-    : []
+  const buffs = (timerState?.timers ?? []).filter((t) => t.category === 'buff')
+  const detrims = (timerState?.timers ?? []).filter((t) => DETRIM_CATEGORIES.has(t.category))
 
   return (
     <div
@@ -409,19 +397,19 @@ export default function SpellTimerPage(): React.ReactElement {
         headerRight={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
-              onClick={() => setGlobalEnabled((v) => !v)}
-              title={globalEnabled ? 'Disable all spell timers' : 'Enable all spell timers'}
+              onClick={() => clearTimers('buff').catch(() => {})}
+              title="Clear all active buff timers"
               style={{
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',
                 padding: '1px 3px',
-                color: globalEnabled ? '#22c55e' : '#6b7280',
+                color: 'var(--color-muted)',
                 display: 'flex',
                 alignItems: 'center',
               }}
             >
-              <Power size={12} />
+              <Eraser size={12} />
             </button>
             <button
               onClick={() => setPickerTimerType('buff')}
@@ -513,6 +501,21 @@ export default function SpellTimerPage(): React.ReactElement {
         }
         headerRight={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              onClick={() => clearTimers('detrimental').catch(() => {})}
+              title="Clear all active detrimental timers"
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '1px 3px',
+                color: 'var(--color-muted)',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              <Eraser size={12} />
+            </button>
             <button
               onClick={() => setPickerTimerType('detrimental')}
               title="Add a detrimental timer from a spell"

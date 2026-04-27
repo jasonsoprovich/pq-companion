@@ -223,6 +223,41 @@ func (e *Engine) ClearAll() {
 	e.clearAll()
 }
 
+// ClearCategory removes active timers belonging to the given category group
+// and broadcasts the resulting state. Accepted values:
+//
+//	"buff"        — only beneficial buffs
+//	"detrimental" — debuffs, dots, mez, stuns
+//	"all" / ""    — every active timer
+func (e *Engine) ClearCategory(group string) {
+	e.mu.Lock()
+	removed := 0
+	for name, t := range e.timers {
+		if categoryMatchesGroup(t.Category, group) {
+			delete(e.timers, name)
+			removed++
+		}
+	}
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	if removed > 0 {
+		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+	}
+}
+
+func categoryMatchesGroup(cat Category, group string) bool {
+	switch group {
+	case "", "all":
+		return true
+	case "buff":
+		return cat == CategoryBuff
+	case "detrimental":
+		return cat == CategoryDebuff || cat == CategoryDot || cat == CategoryMez || cat == CategoryStun
+	}
+	return false
+}
+
 // ── internal helpers ──────────────────────────────────────────────────────────
 
 func (e *Engine) onSpellCast(castAt time.Time, spellName string) {
