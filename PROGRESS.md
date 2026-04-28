@@ -80,6 +80,7 @@
 - [x] Bug — Resolve item click/proc/worn/focus effect names from spells_new when items.*name columns are blank (closes #107)
 - [x] Bug — Rebuild spell SPA label table from canonical EQEmu spdat.h codes; format focus/limit effects (124-144) like pqdi.cc; add anchor-spell test guarding against future DB shifts
 - [x] Chore — Consolidate overlay sections into a single Overlays dashboard tab; remove per-section sub-tab bar; show Buff Timers, Detrimental Timers, DPS Meter, and NPC Overlay together with per-panel pop-out (closes #103)
+- [x] Feature — Spell Modifiers tab on Character Progress: detect duration/cast-time focus contributions from equipped item focuses (data-driven via items.focuseffect → spells_new SPA 127/128) and from trained AAs (Spell Casting Reinforcement, Spell Casting Reinforcement Mastery); per-spell test resolver applies EQEmu filter limits (max level, min level, spell type, min duration, exclusions) and stacking (best item-focus + AA sum)
 
 ## Phase 11 — Project Website
 - [ ] Task 11.1 — Project Website

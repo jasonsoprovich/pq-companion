@@ -67,6 +67,13 @@ config backup manager, and custom trigger system into a single application.
   (when running `/newrelease`), not after individual tasks or phases.
 - Commit everything for the task in a single conventional commit (e.g. `feat: Task 1.1 — REST API`)
 
+### Branching
+- All development, fixes, and testing happen directly on `main`. There is no
+  long-lived `develop` branch (the previous branch-per-phase workflow caused
+  hotfixes on `main` to look like regressions when work resumed elsewhere).
+- Short-lived topic branches are fine when useful, but they merge straight
+  back into `main` — not into an integration branch.
+
 ## EverQuest-Specific Knowledge
 
 ### Log File Format

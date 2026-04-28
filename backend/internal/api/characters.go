@@ -8,10 +8,12 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/buffmod"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 )
 
 type charactersHandler struct {
@@ -226,4 +228,96 @@ func (h *charactersHandler) aas(w http.ResponseWriter, r *http.Request) {
 		"trained":   trained,
 		"available": available,
 	})
+}
+
+// spellModifiers returns the focus contributions (item focuses + AA focuses)
+// available to the character from their most recent Quarmy export.
+//
+// Optional `spell_id` query param: when set, the response also includes a
+// per-spell Resolution showing which contributors apply to that spell after
+// EQEmu's filter and stacking rules. Use this to sanity-check the math
+// (e.g. Aegolism on Osui should resolve to +65% duration).
+func (h *charactersHandler) spellModifiers(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	char, ok, err := h.store.Get(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+
+	cfg := h.mgr.Get()
+	if cfg.EQPath == "" {
+		writeError(w, http.StatusBadRequest, "eq_path not configured")
+		return
+	}
+
+	res, err := buffmod.Compute(cfg.EQPath, char.Name, h.db)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("compute modifiers: %s", err))
+		return
+	}
+
+	resp := map[string]interface{}{
+		"character":    res.Character,
+		"contributors": res.Contributors,
+	}
+
+	if sidStr := r.URL.Query().Get("spell_id"); sidStr != "" {
+		spellID, err := strconv.Atoi(sidStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid spell_id")
+			return
+		}
+		sp, err := h.db.GetSpell(spellID)
+		if err != nil || sp == nil {
+			writeError(w, http.StatusNotFound, "spell not found")
+			return
+		}
+		spellType := buffmod.SpellTypeBeneficial
+		if !isBeneficialSpell(h.db, spellID) {
+			spellType = buffmod.SpellTypeDetrimental
+		}
+		spellLevel := buffmod.SpellLevel(sp.ClassLevels)
+		// character_aas table defaults level=1, so anything ≤ 1 likely means
+		// "not set yet" rather than literally a level-1 character. Treat that
+		// as "cast at the spell's effective level" so the duration formula
+		// produces a useful number for sanity-checking modifiers.
+		casterLevel := char.Level
+		if casterLevel <= 1 {
+			casterLevel = spellLevel
+		}
+		if casterLevel < 1 {
+			casterLevel = 60
+		}
+		baseTicks := spelltimer.CalcDurationTicks(sp.BuffDurationFormula, sp.BuffDuration, casterLevel)
+		resolution := buffmod.Resolve(
+			sp.ID, sp.Name, spellLevel, casterLevel,
+			baseTicks*6, // ticks → seconds
+			spellType, sp.EffectIDs[:],
+			res.Contributors,
+		)
+		resp["resolution"] = resolution
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// isBeneficialSpell pulls spells_new.goodEffect (1 = beneficial). On any
+// error, defaults to beneficial — the caller's filter check already handles
+// the "no SPA 138 limit" case correctly for either bucket.
+func isBeneficialSpell(d *db.DB, spellID int) bool {
+	var good int
+	err := d.QueryRow(`SELECT goodEffect FROM spells_new WHERE id = ?`, spellID).Scan(&good)
+	if err != nil {
+		return true
+	}
+	return good == 1
 }

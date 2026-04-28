@@ -1,8 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TrendingUp, RefreshCw, AlertCircle, Check, Search } from 'lucide-react'
-import { getZealQuarmy, getCharacterAAs, listCharacters, getItem } from '../services/api'
-import type { QuarmyData, CharacterAA, AAInfo, Character } from '../services/api'
+import {
+  getZealQuarmy, getCharacterAAs, listCharacters, getItem,
+  getCharacterSpellModifiers, searchSpells,
+} from '../services/api'
+import type {
+  QuarmyData, CharacterAA, AAInfo, Character,
+  SpellModifier, SpellModifierResolution,
+} from '../services/api'
+import type { Spell } from '../types/spell'
 import type { Item } from '../types/item'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import ItemDetailModal from '../components/ItemDetailModal'
@@ -60,7 +67,7 @@ function StatBar({ label, value, max = 255 }: StatBarProps): React.ReactElement 
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-type Tab = 'stats' | 'gear' | 'aas'
+type Tab = 'stats' | 'gear' | 'aas' | 'modifiers'
 
 interface TabButtonProps {
   active: boolean
@@ -95,6 +102,7 @@ export default function CharacterProgressPage(): React.ReactElement {
   const [quarmy, setQuarmy] = useState<QuarmyData | null>(null)
   const [trainedAAs, setTrainedAAs] = useState<CharacterAA[]>([])
   const [availableAAs, setAvailableAAs] = useState<AAInfo[]>([])
+  const [modifiers, setModifiers] = useState<SpellModifier[] | null>(null)
   const [activeChar, setActiveChar] = useState<Character | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -133,9 +141,17 @@ export default function CharacterProgressPage(): React.ReactElement {
         const aaResp = await getCharacterAAs(found.id)
         setTrainedAAs(aaResp.trained ?? [])
         setAvailableAAs(aaResp.available ?? [])
+        try {
+          const modResp = await getCharacterSpellModifiers(found.id)
+          setModifiers(modResp.contributors ?? [])
+        } catch {
+          // Quarmy export not available — modifiers panel will show its own empty state
+          setModifiers(null)
+        }
       } else {
         setTrainedAAs([])
         setAvailableAAs([])
+        setModifiers(null)
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load data')
@@ -183,7 +199,7 @@ export default function CharacterProgressPage(): React.ReactElement {
           <TrendingUp size={20} style={{ color: 'var(--color-primary)' }} />
           <div>
             <h1 className="text-lg font-semibold" style={{ color: 'var(--color-foreground)' }}>
-              Character Progress
+              Character Info
             </h1>
             <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
               {activeCharacter
@@ -246,6 +262,9 @@ export default function CharacterProgressPage(): React.ReactElement {
             <TabButton active={tab === 'aas'} onClick={() => setTab('aas')}>
               Alternate Advancement {trainedAAs.filter(t => t.rank > 0).length > 0 ? `(${trainedAAs.filter(t => t.rank > 0).length})` : ''}
             </TabButton>
+            <TabButton active={tab === 'modifiers'} onClick={() => setTab('modifiers')}>
+              Spell Modifiers {modifiers && modifiers.length > 0 ? `(${modifiers.length})` : ''}
+            </TabButton>
           </div>
 
           {loading ? (
@@ -260,6 +279,12 @@ export default function CharacterProgressPage(): React.ReactElement {
               )}
               {tab === 'aas' && (
                 <AAPanel trained={trainedAAs} available={availableAAs} />
+              )}
+              {tab === 'modifiers' && (
+                <SpellModifiersPanel
+                  characterID={activeChar?.id ?? null}
+                  contributors={modifiers}
+                />
               )}
             </>
           )}
@@ -599,6 +624,323 @@ function AAPanel({ trained, available }: AAPanelProps): React.ReactElement {
           </p>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Spell Modifiers Panel ─────────────────────────────────────────────────────
+
+function spaLabel(spa: number): string {
+  if (spa === 128) return 'Duration'
+  if (spa === 127) return 'Cast Time'
+  return `SPA ${spa}`
+}
+
+function spellTypeLabel(type: number): string {
+  if (type === 1) return 'beneficial'
+  if (type === 0) return 'detrimental'
+  if (type === 2) return 'any'
+  return 'any'
+}
+
+interface SpellModifiersPanelProps {
+  characterID: number | null
+  contributors: SpellModifier[] | null
+}
+
+function SpellModifiersPanel({ characterID, contributors }: SpellModifiersPanelProps): React.ReactElement {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<Spell[]>([])
+  const [resolution, setResolution] = useState<SpellModifierResolution | null>(null)
+  const [resolveLoading, setResolveLoading] = useState(false)
+
+  // Debounced spell search.
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); return }
+    const t = setTimeout(() => {
+      searchSpells(query, 8)
+        .then((r) => setResults(r.items ?? []))
+        .catch(() => setResults([]))
+    }, 200)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const resolve = useCallback(async (spellID: number) => {
+    if (!characterID) return
+    setResolveLoading(true)
+    try {
+      const resp = await getCharacterSpellModifiers(characterID, spellID)
+      setResolution(resp.resolution ?? null)
+    } finally {
+      setResolveLoading(false)
+    }
+  }, [characterID])
+
+  if (contributors === null) {
+    return (
+      <EmptyState
+        message="No quarmy export available"
+        hint="Spell modifiers are computed from your most recent <CharName>-Quarmy.txt file. Make sure Zeal is installed and that you've logged out at least once with this character."
+      />
+    )
+  }
+  if (contributors.length === 0) {
+    return (
+      <EmptyState
+        message="No focus modifiers detected"
+        hint="No equipped items have focus effects, and no duration-extending AAs are trained."
+      />
+    )
+  }
+
+  const items = contributors.filter((c) => c.source === 'item')
+  const aas = contributors.filter((c) => c.source === 'aa')
+
+  return (
+    <div className="space-y-5">
+      {/* Contributors */}
+      <div
+        className="rounded-lg p-4"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+          Contributors ({contributors.length})
+        </p>
+        {items.length > 0 && (
+          <div className="mb-3">
+            <p className="mb-2 text-xs font-medium" style={{ color: 'var(--color-foreground)' }}>
+              From equipped items
+            </p>
+            <div className="space-y-1.5">
+              {items.map((m, i) => (
+                <ModifierRow key={`item-${i}`} m={m} />
+              ))}
+            </div>
+          </div>
+        )}
+        {aas.length > 0 && (
+          <div>
+            <p className="mb-2 text-xs font-medium" style={{ color: 'var(--color-foreground)' }}>
+              From trained AAs
+            </p>
+            <div className="space-y-1.5">
+              {aas.map((m, i) => (
+                <ModifierRow key={`aa-${i}`} m={m} />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Test Resolution */}
+      <div
+        className="rounded-lg p-4"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+          Test Resolution
+        </p>
+        <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          Pick a spell to see exactly how this character's modifiers apply, after EQEmu's filter and stacking rules
+          (best item-focus + AA percentages summed).
+        </p>
+        <div className="relative mb-3">
+          <Search size={14} style={{
+            position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)',
+            color: 'var(--color-muted-foreground)',
+          }} />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search spells (e.g. Aegolism, Snare, Clarity)…"
+            className="w-full rounded px-3 py-1.5 pl-8 text-sm"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-foreground)',
+            }}
+          />
+        </div>
+        {results.length > 0 && (
+          <div
+            className="mb-3 max-h-48 overflow-y-auto rounded"
+            style={{ border: '1px solid var(--color-border)' }}
+          >
+            {results.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => { setQuery(s.name); setResults([]); resolve(s.id) }}
+                className="block w-full px-3 py-1.5 text-left text-sm"
+                style={{
+                  backgroundColor: 'transparent',
+                  color: 'var(--color-foreground)',
+                  borderBottom: '1px solid var(--color-border)',
+                  cursor: 'pointer',
+                  border: 'none',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-surface-2)')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+              >
+                {s.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {resolveLoading && (
+          <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Resolving…</p>
+        )}
+        {resolution && !resolveLoading && (
+          <ResolutionDisplay r={resolution} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ModifierRow({ m }: { m: SpellModifier }): React.ReactElement {
+  const sourceLabel = m.source === 'item'
+    ? `${m.source_item_name}${m.source_item_slot ? ` (${m.source_item_slot})` : ''}`
+    : `${m.source_aa_name}${m.source_aa_rank ? ` rank ${m.source_aa_rank}` : ''}`
+  const focusLabel = m.focus_spell_name ? ` · ${m.focus_spell_name}` : ''
+  const sign = m.spa === 127 ? '−' : '+'
+  return (
+    <div
+      className="rounded px-3 py-2 text-xs"
+      style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span style={{ color: 'var(--color-foreground)' }}>
+          <span className="font-medium">{sourceLabel}</span>
+          <span style={{ color: 'var(--color-muted-foreground)' }}>{focusLabel}</span>
+        </span>
+        <span className="font-mono font-semibold" style={{ color: 'var(--color-primary)' }}>
+          {sign}{m.percent}% {spaLabel(m.spa)}
+        </span>
+      </div>
+      <div className="mt-1 flex flex-wrap gap-1">
+        <FilterTag label={spellTypeLabel(m.limits.spell_type)} />
+        {m.limits.max_level ? <FilterTag label={`≤ L${m.limits.max_level}`} /> : null}
+        {m.limits.min_level ? <FilterTag label={`≥ L${m.limits.min_level}`} /> : null}
+        {m.limits.min_duration_sec ? <FilterTag label={`≥ ${m.limits.min_duration_sec}s`} /> : null}
+        {m.limits.exclude_effects && m.limits.exclude_effects.length > 0 ? (
+          <FilterTag label={`excl. ${m.limits.exclude_effects.length} effect${m.limits.exclude_effects.length > 1 ? 's' : ''}`} />
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function FilterTag({ label }: { label: string }): React.ReactElement {
+  return (
+    <span
+      className="rounded px-1.5 py-0.5 text-[10px]"
+      style={{
+        backgroundColor: 'var(--color-surface-3)',
+        color: 'var(--color-muted-foreground)',
+      }}
+    >
+      {label}
+    </span>
+  )
+}
+
+function formatDuration(sec: number): string {
+  if (sec <= 0) return '0s'
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = sec % 60
+  const parts: string[] = []
+  if (h) parts.push(`${h}h`)
+  if (m) parts.push(`${m}m`)
+  if (s || parts.length === 0) parts.push(`${s}s`)
+  return parts.join(' ')
+}
+
+function ResolutionDisplay({ r }: { r: SpellModifierResolution }): React.ReactElement {
+  const ctSign = r.cast_time_percent > 0 ? '−' : ''
+  return (
+    <div
+      className="rounded p-3"
+      style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+    >
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+          {r.spell_name}
+        </span>
+        <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          spell L{r.spell_level} · cast at L{r.caster_level} · {spellTypeLabel(r.spell_type)}
+        </span>
+      </div>
+
+      {/* Duration block — AAs apply first, then item focus on top of that. */}
+      <div className="mb-3 grid grid-cols-4 gap-3 text-xs">
+        <div>
+          <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            Base
+          </p>
+          <p className="mt-0.5 font-mono" style={{ color: 'var(--color-foreground)' }}>
+            {r.base_duration_sec}s
+          </p>
+          <p className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+            {formatDuration(r.base_duration_sec)}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            AA Modifier
+          </p>
+          <p className="mt-0.5 font-mono font-semibold" style={{ color: r.duration_aa_percent > 0 ? 'var(--color-primary)' : 'var(--color-muted)' }}>
+            +{r.duration_aa_percent}%
+          </p>
+          <p className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+            applied first
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            Item Modifier
+          </p>
+          <p className="mt-0.5 font-mono font-semibold" style={{ color: r.duration_item_percent > 0 ? 'var(--color-primary)' : 'var(--color-muted)' }}>
+            +{r.duration_item_percent}%
+          </p>
+          <p className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+            stacked on top
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            Effective
+          </p>
+          <p className="mt-0.5 font-mono font-semibold" style={{ color: 'var(--color-foreground)' }}>
+            {r.extended_duration_sec}s
+          </p>
+          <p className="text-[11px]" style={{ color: 'var(--color-primary)' }}>
+            {formatDuration(r.extended_duration_sec)}
+          </p>
+        </div>
+      </div>
+      <p className="mb-3 text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+        Total {r.base_duration_sec}s × {(1 + r.duration_aa_percent / 100).toFixed(2)} × {(1 + r.duration_item_percent / 100).toFixed(2)} = {r.extended_duration_sec}s · cast time {ctSign}{r.cast_time_percent}%
+      </p>
+
+      {r.applied.length > 0 && (
+        <div>
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            Applied ({r.applied.length})
+          </p>
+          <div className="space-y-1">
+            {r.applied.map((m, i) => (
+              <div key={i} className="text-xs" style={{ color: 'var(--color-foreground)' }}>
+                {m.source === 'item' ? m.source_item_name : `${m.source_aa_name} rank ${m.source_aa_rank}`}
+                <span className="ml-2 font-mono" style={{ color: 'var(--color-primary)' }}>
+                  {m.spa === 127 ? '−' : '+'}{m.percent}% {spaLabel(m.spa)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

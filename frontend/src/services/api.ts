@@ -464,6 +464,62 @@ export function getCharacterAAs(id: number): Promise<CharacterAAsResponse> {
   return get<CharacterAAsResponse>(`/api/characters/${id}/aas`)
 }
 
+// ── Spell modifiers (focus extensions from items + AAs) ───────────────────────
+
+export interface SpellModifierLimits {
+  max_level?: number
+  min_level?: number
+  spell_type: number // -1 unset, 0 detrimental, 1 beneficial, 2 any
+  min_duration_sec?: number
+  exclude_effects?: number[]
+  include_spells?: number[]
+  target_types?: number[]
+}
+
+export interface SpellModifier {
+  source: 'item' | 'aa'
+  source_item_id?: number
+  source_item_name?: string
+  source_item_slot?: string
+  source_aa_id?: number
+  source_aa_name?: string
+  source_aa_rank?: number
+  focus_spell_id?: number
+  focus_spell_name?: string
+  spa: number // 127 cast time, 128 duration
+  percent: number
+  limits: SpellModifierLimits
+}
+
+export interface SpellModifierResolution {
+  spell_id: number
+  spell_name: string
+  spell_type: number
+  spell_level: number
+  caster_level: number
+  base_duration_sec: number
+  extended_duration_sec: number
+  duration_aa_percent: number
+  duration_item_percent: number
+  duration_percent: number
+  cast_time_percent: number
+  applied: SpellModifier[]
+}
+
+export interface SpellModifiersResponse {
+  character: string
+  contributors: SpellModifier[]
+  resolution?: SpellModifierResolution
+}
+
+export function getCharacterSpellModifiers(
+  id: number,
+  spellID?: number,
+): Promise<SpellModifiersResponse> {
+  const qs = spellID ? `?spell_id=${spellID}` : ''
+  return get<SpellModifiersResponse>(`/api/characters/${id}/spell-modifiers${qs}`)
+}
+
 export function getZealQuarmy(): Promise<{ quarmy: QuarmyData | null }> {
   return get<{ quarmy: QuarmyData | null }>('/api/zeal/quarmy')
 }
