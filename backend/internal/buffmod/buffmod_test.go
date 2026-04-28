@@ -1,6 +1,7 @@
 package buffmod_test
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -8,6 +9,17 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/buffmod"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 )
+
+// requireTestdata skips the test when the named file under testdata/ is not
+// present. testdata/ is gitignored (real game exports), so CI lacks it.
+func requireTestdata(t *testing.T, name string) string {
+	t.Helper()
+	path := filepath.Join(repoRoot(t), "testdata", name)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skipf("testdata fixture %s not present", path)
+	}
+	return path
+}
 
 // repoRoot returns the repo root, derived from this test file's location.
 // This file lives at backend/internal/buffmod/.
@@ -37,6 +49,7 @@ func openDB(t *testing.T) *db.DB {
 // Mastery rank 1 (+20% beneficial). Resolving against a long-duration L60
 // beneficial buff should land at +65%.
 func TestComputeOsui(t *testing.T) {
+	requireTestdata(t, "Osui-Quarmy.txt")
 	gameDB := openDB(t)
 	eqPath := filepath.Join(repoRoot(t), "testdata")
 
@@ -96,6 +109,7 @@ func TestComputeOsui(t *testing.T) {
 // TestKEIOsuiExtendedDuration locks in the user-confirmed math: KEI base
 // 9000s at L60 caster × (1 + 0.50 AA) × (1 + 0.15 item) = 15525s.
 func TestKEIOsuiExtendedDuration(t *testing.T) {
+	requireTestdata(t, "Osui-Quarmy.txt")
 	gameDB := openDB(t)
 	eqPath := filepath.Join(repoRoot(t), "testdata")
 	res, err := buffmod.Compute(eqPath, "Osui", gameDB)
@@ -129,6 +143,7 @@ func TestKEIOsuiExtendedDuration(t *testing.T) {
 // not contribute cast-time reduction to KEI. Duration should still resolve to
 // +65% from the three beneficial-duration contributors.
 func TestKEIRejectsEH1(t *testing.T) {
+	requireTestdata(t, "Osui-Quarmy.txt")
 	gameDB := openDB(t)
 	eqPath := filepath.Join(repoRoot(t), "testdata")
 	res, err := buffmod.Compute(eqPath, "Osui", gameDB)
@@ -206,6 +221,7 @@ func TestKEIBlocksEH1(t *testing.T) {
 // list of Extended Enhancement III, so the Dragon Mask focus must not apply.
 // The two AAs have no exclude list, so 30 + 20 = 50% should still resolve.
 func TestExclusionFilter(t *testing.T) {
+	requireTestdata(t, "Osui-Quarmy.txt")
 	gameDB := openDB(t)
 	eqPath := filepath.Join(repoRoot(t), "testdata")
 	res, err := buffmod.Compute(eqPath, "Osui", gameDB)
