@@ -22,6 +22,11 @@ type Watcher struct {
 	hub       *ws.Hub
 	charStore *character.Store
 
+	// onQuarmyChanged is invoked after a successful Quarmy refresh. Used by
+	// the spell timer engine to invalidate its cached buffmod contributors.
+	// nil-safe.
+	onQuarmyChanged func(charName string)
+
 	mu             sync.RWMutex
 	inventory      *Inventory
 	spellbook      *Spellbook
@@ -38,6 +43,15 @@ func NewWatcher(cfgMgr *config.Manager, hub *ws.Hub, charStore *character.Store)
 		hub:       hub,
 		charStore: charStore,
 	}
+}
+
+// SetQuarmyCallback registers a callback fired whenever the Quarmy export is
+// successfully refreshed (i.e. inventory + AAs have new data). Replaces any
+// previously-registered callback. Pass nil to clear.
+func (w *Watcher) SetQuarmyCallback(fn func(charName string)) {
+	w.mu.Lock()
+	w.onQuarmyChanged = fn
+	w.mu.Unlock()
 }
 
 // Start begins the polling loop. It blocks until ctx is cancelled.
@@ -215,6 +229,13 @@ func (w *Watcher) checkQuarmy(path, charName string) {
 
 	slog.Info("zeal: quarmy updated", "character", charName, "aas", len(data.AAs))
 	w.hub.Broadcast(ws.Event{Type: "zeal:quarmy", Data: data})
+
+	w.mu.RLock()
+	cb := w.onQuarmyChanged
+	w.mu.RUnlock()
+	if cb != nil {
+		cb(charName)
+	}
 
 	// Persist stats and AAs to user.db if character store is available.
 	if w.charStore == nil {

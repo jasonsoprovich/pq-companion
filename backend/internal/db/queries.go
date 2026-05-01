@@ -710,7 +710,8 @@ const spellColumns = `
   s.classes6,  s.classes7,  s.classes8,  s.classes9,  s.classes10,
   s.classes11, s.classes12, s.classes13, s.classes14, s.classes15,
   s.icon, s.new_icon, s.IsDiscipline, s.suspendable, s.nodispell,
-  COALESCE(s.zonetype, 0)`
+  COALESCE(s.zonetype, 0),
+  COALESCE(s.goodEffect, 0)`
 
 func scanSpell(row interface {
 	Scan(...any) error
@@ -744,6 +745,7 @@ func scanSpell(row interface {
 		&sp.ClassLevels[12], &sp.ClassLevels[13], &sp.ClassLevels[14],
 		&sp.Icon, &sp.NewIcon, &sp.IsDiscipline, &sp.Suspendable, &sp.NoDispell,
 		&sp.ZoneType,
+		&sp.GoodEffect,
 	)
 	if err != nil {
 		return nil, err

@@ -95,10 +95,33 @@ func main() {
 	// per-entity damage, and broadcast overlay:combat WebSocket events.
 	combatTracker := combat.NewTracker(hub)
 
+	// Forward declaration so the tailer pointer can be referenced inside the
+	// CharacterContext closure passed to the timer engine. The tailer is
+	// created below after the engine is wired up.
+	var tailer *logparser.Tailer
+
 	// Spell timer engine: watches cast/resist/fade events, maintains countdown
 	// timers per active spell, and broadcasts overlay:timers WebSocket events.
-	timerEngine := spelltimer.NewEngine(hub, database)
+	// The CharacterContext closure feeds buffmod the active char + EQ path so
+	// AA/item duration focuses extend the displayed timer.
+	timerEngine := spelltimer.NewEngine(hub, database, func() (string, string) {
+		cfg := cfgMgr.Get()
+		var charName string
+		if tailer != nil {
+			charName = tailer.ActiveCharacter()
+		} else {
+			charName = cfg.Character
+		}
+		return cfg.EQPath, charName
+	})
 	go timerEngine.Start(context.Background())
+
+	// Invalidate the engine's modifier cache whenever the Quarmy export is
+	// refreshed (new inventory or AAs). Without this, equipping/unequipping a
+	// focus item wouldn't take effect until the app restarts.
+	zealWatcher.SetQuarmyCallback(func(_ string) {
+		timerEngine.RefreshModifiers()
+	})
 
 	triggerEngine := trigger.NewEngine(triggerStore, hub, timerEngine)
 	triggerEngine.Reload()
@@ -106,7 +129,7 @@ func main() {
 	// Log tailer: reads new lines from the EQ log file and broadcasts parsed
 	// events to all connected WebSocket clients. Also feeds overlay trackers
 	// and the trigger engine.
-	tailer := logparser.NewTailer(cfgMgr, func(ev logparser.LogEvent) {
+	tailer = logparser.NewTailer(cfgMgr, func(ev logparser.LogEvent) {
 		hub.Broadcast(ws.Event{Type: string(ev.Type), Data: ev})
 		npcTracker.Handle(ev)
 		combatTracker.Handle(ev)
@@ -114,6 +137,9 @@ func main() {
 	}, triggerEngine.Handle, func(character string) {
 		slog.Info("logparser: auto-detected active character", "character", character)
 		hub.Broadcast(ws.Event{Type: "config:character_detected", Data: map[string]string{"character": character}})
+		// Active character changed — drop cached buffmod contributors so the
+		// next cast recomputes against the new character's inventory + AAs.
+		timerEngine.RefreshModifiers()
 	})
 	go tailer.Start(context.Background())
 

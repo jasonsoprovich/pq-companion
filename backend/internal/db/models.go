@@ -220,6 +220,11 @@ type Spell struct {
 	Suspendable  int `json:"suspendable"`
 	NoDispell    int `json:"no_dispell"`
 	ZoneType     int `json:"zone_type"`
+
+	// GoodEffect comes from spells_new.goodEffect: 1 = beneficial buff,
+	// 0 = detrimental. Used to classify timer category for spells whose
+	// target type doesn't disambiguate (e.g. single-target friendly buffs).
+	GoodEffect int `json:"good_effect"`
 }
 
 // SpellItemRef is a slim item reference used in spell cross-reference queries.

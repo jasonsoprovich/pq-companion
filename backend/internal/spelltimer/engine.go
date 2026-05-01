@@ -7,10 +7,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/buffmod"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
+
+// CharacterContext supplies the active character + EQ install path so the
+// engine can resolve item/AA duration focuses for a cast. Returning empty
+// strings disables modifier resolution (timers fall back to base duration).
+type CharacterContext func() (eqPath, charName string)
 
 // broadcastInterval is how often the engine pushes timer state updates to
 // WebSocket clients while timers are active.
@@ -37,8 +43,9 @@ const didNotTakeHoldWindow = 5 * time.Second
 // replaces the existing timer (e.g. refreshing Slow). This is the correct
 // behaviour for self-buffs and single-target debuffs.
 type Engine struct {
-	hub *ws.Hub
-	db  *db.DB
+	hub      *ws.Hub
+	db       *db.DB
+	charCtx  CharacterContext
 
 	mu     sync.Mutex
 	timers map[string]*ActiveTimer // keyed by spell name
@@ -48,15 +55,35 @@ type Engine struct {
 	// name from that message) with the spell it just tried to cast.
 	lastCastSpell string
 	lastCastAt    time.Time
+
+	// modifier cache: keeps the last-computed contributors per character so
+	// the engine doesn't re-parse the Quarmy export on every cast. Invalidated
+	// by character change or RefreshModifiers().
+	modMu        sync.Mutex
+	modCharName  string
+	modContribs  []buffmod.Modifier
 }
 
-// NewEngine returns an initialised Engine ready to receive log events.
-func NewEngine(hub *ws.Hub, database *db.DB) *Engine {
+// NewEngine returns an initialised Engine ready to receive log events. charCtx
+// may be nil; when nil, timers fall back to base (unextended) duration.
+func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext) *Engine {
 	return &Engine{
-		hub:    hub,
-		db:     database,
-		timers: make(map[string]*ActiveTimer),
+		hub:     hub,
+		db:      database,
+		charCtx: charCtx,
+		timers:  make(map[string]*ActiveTimer),
 	}
+}
+
+// RefreshModifiers clears the cached buffmod contributors so the next cast
+// will recompute from the current Quarmy export. Call when the active
+// character's inventory or AAs are known to have changed (e.g. zeal watcher
+// detected a new export).
+func (e *Engine) RefreshModifiers() {
+	e.modMu.Lock()
+	e.modCharName = ""
+	e.modContribs = nil
+	e.modMu.Unlock()
 }
 
 // Start runs the background ticker that prunes expired timers and broadcasts
@@ -281,7 +308,8 @@ func (e *Engine) onSpellCast(castAt time.Time, spellName string) {
 		return
 	}
 
-	durationSeconds := float64(durationTicks) * eqTickSeconds
+	baseDurationSec := float64(durationTicks) * eqTickSeconds
+	durationSeconds := e.applyDurationModifiers(spell, baseDurationSec)
 	startsAt := castAt.Add(time.Duration(spell.CastTime) * time.Millisecond)
 	expiresAt := startsAt.Add(time.Duration(float64(time.Second) * durationSeconds))
 
@@ -385,8 +413,85 @@ func (e *Engine) snapshot(now time.Time) TimerState {
 	}
 }
 
-// categorize determines the timer category from a spell's effect IDs and
-// target type. Checked in priority order: mez > stun > DoT > buff > debuff.
+// applyDurationModifiers extends baseDurationSec by any matching item/AA
+// duration focuses for the active character. Returns baseDurationSec unchanged
+// when no character context is configured, no modifiers apply, or any lookup
+// fails (errors are logged at info level — a missing Quarmy file just means
+// "no extensions yet" and shouldn't break timers).
+func (e *Engine) applyDurationModifiers(spell *db.Spell, baseDurationSec float64) float64 {
+	if e.charCtx == nil {
+		return baseDurationSec
+	}
+	eqPath, charName := e.charCtx()
+	if eqPath == "" || charName == "" {
+		return baseDurationSec
+	}
+
+	contribs, ok := e.contributorsFor(eqPath, charName)
+	if !ok {
+		return baseDurationSec
+	}
+
+	spellType := buffmod.SpellTypeBeneficial
+	if spell.GoodEffect != 1 {
+		spellType = buffmod.SpellTypeDetrimental
+	}
+	res := buffmod.Resolve(
+		spell.ID, spell.Name,
+		buffmod.SpellLevel(spell.ClassLevels),
+		defaultCasterLevel,
+		int(baseDurationSec),
+		spellType,
+		spell.EffectIDs[:],
+		contribs,
+	)
+	if res.ExtendedDurationSec <= 0 || res.ExtendedDurationSec == int(baseDurationSec) {
+		return baseDurationSec
+	}
+	slog.Info("timer-debug: applied duration modifiers",
+		"name", spell.Name,
+		"base_sec", int(baseDurationSec),
+		"extended_sec", res.ExtendedDurationSec,
+		"aa_pct", res.DurationAAPercent,
+		"item_pct", res.DurationItemPercent,
+	)
+	return float64(res.ExtendedDurationSec)
+}
+
+// contributorsFor returns the cached buffmod contributors for charName,
+// recomputing from the Quarmy export if the cache is empty or stale.
+// The bool is false when computation failed (e.g. no export yet) — callers
+// should fall back to the unextended duration.
+func (e *Engine) contributorsFor(eqPath, charName string) ([]buffmod.Modifier, bool) {
+	e.modMu.Lock()
+	if e.modCharName == charName && e.modContribs != nil {
+		c := e.modContribs
+		e.modMu.Unlock()
+		return c, true
+	}
+	e.modMu.Unlock()
+
+	res, err := buffmod.Compute(eqPath, charName, e.db)
+	if err != nil {
+		slog.Info("timer-debug: buffmod.Compute failed (using base duration)",
+			"character", charName, "err", err)
+		return nil, false
+	}
+
+	e.modMu.Lock()
+	e.modCharName = charName
+	e.modContribs = res.Contributors
+	c := e.modContribs
+	e.modMu.Unlock()
+	return c, true
+}
+
+// categorize determines the timer category from a spell's effect IDs and the
+// goodEffect flag. Checked in priority order: mez > stun > DoT > buff/debuff.
+//
+// The mez/stun/DoT precedence intentionally runs first so a damage-over-time
+// spell with goodEffect=1 (rare but it happens for certain proc effects)
+// still surfaces as a DoT.
 func categorize(spell *db.Spell) Category {
 	for i, effID := range spell.EffectIDs {
 		switch effID {
@@ -401,10 +506,10 @@ func categorize(spell *db.Spell) Category {
 			}
 		}
 	}
-	// Target type determines buff vs debuff for everything else.
-	// 3 = Group v1, 6 = Self, 10 = Group v2, 41 = All of group
-	switch spell.TargetType {
-	case 3, 6, 10, 41:
+	// spells_new.goodEffect is authoritative for buff vs debuff classification:
+	// EQ devs hand-flag every beneficial spell. Target type alone misses
+	// single-target friendly buffs (target type 5 with goodEffect=1).
+	if spell.GoodEffect == 1 {
 		return CategoryBuff
 	}
 	return CategoryDebuff
