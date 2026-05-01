@@ -42,6 +42,12 @@ const (
 	// correlate with the most recent EventSpellCast.
 	EventSpellDidNotTakeHold EventType = "log:spell_did_not_take_hold"
 
+	// EventSpellLanded is emitted when a log line matches a spell's cast_on_you
+	// or cast_on_other text — i.e. the spell actually took effect on a target.
+	// This is the authoritative signal for starting a spell timer (the
+	// EventSpellCast "begin casting" event only signals an attempt).
+	EventSpellLanded EventType = "log:spell_landed"
+
 	// EventDeath is emitted when the player is slain.
 	EventDeath EventType = "log:death"
 
@@ -122,6 +128,41 @@ type SpellFadeFromData struct {
 // signals the event type only and consumers correlate with the most recent
 // cast event themselves.
 type SpellDidNotTakeHoldData struct{}
+
+// SpellLandedKind discriminates the two cast-text variants:
+//
+//	"you"   — line matched cast_on_you (the active player is the target)
+//	"other" — line matched cast_on_other (TargetName is the captured name)
+type SpellLandedKind string
+
+const (
+	SpellLandedKindYou   SpellLandedKind = "you"
+	SpellLandedKindOther SpellLandedKind = "other"
+)
+
+// SpellLandedCandidate is one possible (id, name) pair when a cast line is
+// ambiguous — multiple spells share identical cast text (e.g. 17 distinct
+// spells all log "Your eyes tingle." on land). The engine resolves these
+// against its lastCastSpell record.
+type SpellLandedCandidate struct {
+	SpellID   int    `json:"spell_id"`
+	SpellName string `json:"spell_name"`
+}
+
+// SpellLandedData is the structured payload for EventSpellLanded.
+//
+// When the cast text uniquely identifies a spell, SpellID and SpellName are
+// populated and Candidates is empty. When multiple spells share the text,
+// SpellID is 0, SpellName is empty, and every candidate is listed. TargetName
+// is empty for SpellLandedKindYou (the active character is the implicit
+// target) and the captured name for SpellLandedKindOther.
+type SpellLandedData struct {
+	Kind       SpellLandedKind        `json:"kind"`
+	SpellID    int                    `json:"spell_id"`
+	SpellName  string                 `json:"spell_name"`
+	TargetName string                 `json:"target_name"`
+	Candidates []SpellLandedCandidate `json:"candidates,omitempty"`
+}
 
 // DeathData is the structured payload for EventDeath.
 type DeathData struct {

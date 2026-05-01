@@ -3,7 +3,22 @@ package logparser
 import (
 	"regexp"
 	"sort"
+	"sync/atomic"
 )
+
+// activeCastIndex holds the index used by ParseLine to detect spell-landed
+// events. It's a process-wide singleton (the spell DB is read-only and the
+// index is built once at startup) installed via SetCastIndex. nil means the
+// feature is disabled and ParseLine emits no EventSpellLanded events —
+// existing behaviour for callers that don't wire the index in.
+var activeCastIndex atomic.Pointer[CastIndex]
+
+// SetCastIndex installs the spell-landed lookup index used by ParseLine.
+// Call once at startup after loading cast messages from the database. Pass
+// nil to disable. Safe to call concurrently with ParseLine.
+func SetCastIndex(idx *CastIndex) {
+	activeCastIndex.Store(idx)
+}
 
 // MatchKind describes which side of a spell's cast text matched a log line.
 type MatchKind int
