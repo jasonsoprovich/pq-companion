@@ -448,10 +448,6 @@ export function createCharacter(req: CharacterRequest): Promise<Character> {
   return post<Character>('/api/characters', req)
 }
 
-export function updateCharacter(id: number, req: CharacterRequest): Promise<Character> {
-  return put<Character>(`/api/characters/${id}`, req)
-}
-
 export function deleteCharacter(id: number): Promise<void> {
   return del(`/api/characters/${id}`)
 }

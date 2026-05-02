@@ -117,32 +117,6 @@ func (h *charactersHandler) create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, c)
 }
 
-// update replaces name/class/race/level for an existing character.
-func (h *charactersHandler) update(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
-		return
-	}
-	var req characterRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "name is required")
-		return
-	}
-	if req.Level < 1 {
-		req.Level = 1
-	}
-	if err := h.store.Update(id, req.Name, req.Class, req.Race, req.Level); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, character.Character{ID: id, Name: req.Name, Class: req.Class, Race: req.Race, Level: req.Level})
-}
-
 // del removes a character profile.
 func (h *charactersHandler) del(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))

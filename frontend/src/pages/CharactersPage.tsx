@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Users, Plus, Pencil, Trash2, Check, X, Radar } from 'lucide-react'
+import { Users, Plus, Trash2, Check, X, Radar } from 'lucide-react'
 import {
   listCharacters,
   createCharacter,
-  updateCharacter,
   deleteCharacter,
   discoverCharacters,
   getConfig,
@@ -65,11 +64,10 @@ interface CharacterRowProps {
   char: Character
   active: boolean
   onSelect: (c: Character) => void
-  onEdit: (c: Character) => void
   onDelete: (c: Character) => void
 }
 
-function CharacterRow({ char, active, onSelect, onEdit, onDelete }: CharacterRowProps): React.ReactElement {
+function CharacterRow({ char, active, onSelect, onDelete }: CharacterRowProps): React.ReactElement {
   const raceLabel = RACE_LABELS[char.race] ?? 'Unknown'
   const classLabel = CLASS_LABELS[char.class] ?? 'Unknown'
   const details = [
@@ -116,14 +114,6 @@ function CharacterRow({ char, active, onSelect, onEdit, onDelete }: CharacterRow
             Select
           </button>
         )}
-        <button
-          onClick={() => onEdit(char)}
-          className="rounded p-1 transition-colors hover:bg-(--color-surface-2)"
-          style={{ color: 'var(--color-muted)' }}
-          title="Edit"
-        >
-          <Pencil size={14} />
-        </button>
         <button
           onClick={() => onDelete(char)}
           className="rounded p-1 transition-colors hover:bg-(--color-surface-2)"
@@ -255,7 +245,7 @@ function CharacterForm({ initial, onSave, onCancel, saving, error }: CharacterFo
   )
 }
 
-type Mode = 'idle' | 'creating' | { editing: Character }
+type Mode = 'idle' | 'creating'
 
 export default function CharactersPage(): React.ReactElement {
   const { active: activeCharacter, setActive } = useActiveCharacter()
@@ -298,11 +288,7 @@ export default function CharactersPage(): React.ReactElement {
     setSaving(true)
     setFormError(null)
     try {
-      if (mode === 'creating') {
-        await createCharacter({ name: form.name.trim(), class: form.class, race: form.race, level: form.level })
-      } else if (typeof mode === 'object') {
-        await updateCharacter(mode.editing.id, { name: form.name.trim(), class: form.class, race: form.race, level: form.level })
-      }
+      await createCharacter({ name: form.name.trim(), class: form.class, race: form.race, level: form.level })
       setMode('idle')
       setDiscovered(null)
       await load()
@@ -491,59 +477,46 @@ export default function CharactersPage(): React.ReactElement {
       ) : (
         <div className="space-y-2">
           {characters.map((char) => (
-            <React.Fragment key={char.id}>
-              {typeof mode === 'object' && mode.editing.id === char.id ? (
-                <CharacterForm
-                  initial={{ name: char.name, class: char.class, race: char.race, level: char.level }}
-                  onSave={handleSave}
-                  onCancel={() => { setMode('idle'); setFormError(null) }}
-                  saving={saving}
-                  error={formError}
-                />
-              ) : (
-                <div>
-                  <CharacterRow
-                    char={char}
-                    active={activeCharacter === char.name}
-                    onSelect={handleSelect}
-                    onEdit={(c) => { setMode({ editing: c }); setFormError(null) }}
-                    onDelete={handleDelete}
-                  />
-                  {deleteConfirm === char.id && (
-                    <div
-                      className="mt-1 flex items-center justify-between rounded px-4 py-2 text-xs"
+            <div key={char.id}>
+              <CharacterRow
+                char={char}
+                active={activeCharacter === char.name}
+                onSelect={handleSelect}
+                onDelete={handleDelete}
+              />
+              {deleteConfirm === char.id && (
+                <div
+                  className="mt-1 flex items-center justify-between rounded px-4 py-2 text-xs"
+                  style={{
+                    backgroundColor: 'color-mix(in srgb, #f87171 10%, var(--color-surface))',
+                    border: '1px solid color-mix(in srgb, #f87171 30%, transparent)',
+                  }}
+                >
+                  <span style={{ color: 'var(--color-foreground)' }}>Delete {char.name}?</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setDeleteConfirm(null)}
+                      className="rounded px-2 py-0.5"
                       style={{
-                        backgroundColor: 'color-mix(in srgb, #f87171 10%, var(--color-surface))',
-                        border: '1px solid color-mix(in srgb, #f87171 30%, transparent)',
+                        backgroundColor: 'var(--color-surface-2)',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-muted-foreground)',
+                        cursor: 'pointer',
                       }}
                     >
-                      <span style={{ color: 'var(--color-foreground)' }}>Delete {char.name}?</span>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setDeleteConfirm(null)}
-                          className="rounded px-2 py-0.5"
-                          style={{
-                            backgroundColor: 'var(--color-surface-2)',
-                            border: '1px solid var(--color-border)',
-                            color: 'var(--color-muted-foreground)',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => handleDelete(char)}
-                          className="rounded px-2 py-0.5 font-medium"
-                          style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer' }}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleDelete(char)}
+                      className="rounded px-2 py-0.5 font-medium"
+                      style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer' }}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               )}
-            </React.Fragment>
+            </div>
           ))}
         </div>
       )}

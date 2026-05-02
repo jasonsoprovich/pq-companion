@@ -95,7 +95,6 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/", charactersH.list)
 			r.Post("/", charactersH.create)
 			r.Get("/discover", charactersH.discover)
-			r.Put("/{id}", charactersH.update)
 			r.Delete("/{id}", charactersH.del)
 			r.Get("/{id}/aas", charactersH.aas)
 			r.Get("/{id}/spell-modifiers", charactersH.spellModifiers)
