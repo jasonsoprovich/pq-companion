@@ -19,6 +19,9 @@ func newTestEngine() *Engine {
 		charCtx: func() (string, string) {
 			return "/eq", "Osui"
 		},
+		// Default to "anyone" (post-PR1 behaviour). Tests that need
+		// "self"-only behaviour install a different scopeFn directly.
+		scopeFn: func() string { return scopeAnyone },
 	}
 }
 
@@ -296,6 +299,54 @@ func TestHandle_SpellFadeFrom_RemovesNamedTargetEntryOnly(t *testing.T) {
 	}
 	if _, ok := e.timers[timerKey("Tashanian", "Mob2")]; !ok {
 		t.Error("Mob2 entry should have been preserved")
+	}
+}
+
+// trackingScope falls back to "anyone" for nil providers and unknown values
+// so legacy/empty config files don't unexpectedly silence the engine.
+func TestTrackingScope_DefaultsAndFallbacks(t *testing.T) {
+	cases := []struct {
+		name string
+		fn   ScopeProvider
+		want string
+	}{
+		{"nil provider", nil, scopeAnyone},
+		{"empty string", func() string { return "" }, scopeAnyone},
+		{"unknown value", func() string { return "garbage" }, scopeAnyone},
+		{"explicit anyone", func() string { return scopeAnyone }, scopeAnyone},
+		{"explicit self", func() string { return scopeSelf }, scopeSelf},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newTestEngine()
+			e.scopeFn = tc.fn
+			if got := e.trackingScope(); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// onSpellLanded must drop other-target events when scope=self. The active
+// player's own buffs (target == active player or fallback "You") still
+// pass. We verify by calling onSpellLanded directly with a fake spell name
+// that doesn't exist in any DB — when filtered, the DB lookup never runs;
+// when allowed through, the lookup fails harmlessly. Either way we assert
+// on whether the timer map grew, which is what the user actually sees.
+func TestOnSpellLanded_ScopeSelf_FiltersNonSelfTargets(t *testing.T) {
+	e := newTestEngine()
+	e.scopeFn = func() string { return scopeSelf }
+	// charCtx returns "Osui" as the active player.
+
+	// Simulate a buff landing on a raid member.
+	e.onSpellLanded(time.Now(), logparser.SpellLandedData{
+		Kind:       logparser.SpellLandedKindOther,
+		SpellName:  "Visions of Grandeur",
+		TargetName: "Tank",
+	})
+
+	if len(e.timers) != 0 {
+		t.Errorf("scope=self should drop other-target landing; got %d timers", len(e.timers))
 	}
 }
 

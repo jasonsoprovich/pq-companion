@@ -12,6 +12,17 @@ export interface BackupSettings {
   max_backups: number
 }
 
+export type TrackingScope = 'self' | 'anyone'
+
+export interface SpellTimerSettings {
+  /**
+   * Whose spell lands the engine tracks as timers.
+   *   "self"   — only buffs/debuffs landing on the active player
+   *   "anyone" — every recognised land (default; required for raid buff tracking)
+   */
+  tracking_scope: TrackingScope
+}
+
 export interface Config {
   eq_path: string
   character: string
@@ -19,5 +30,6 @@ export interface Config {
   server_addr: string
   preferences: Preferences
   backup: BackupSettings
+  spell_timer: SpellTimerSettings
   onboarding_completed: boolean
 }

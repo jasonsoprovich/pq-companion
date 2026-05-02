@@ -18,6 +18,17 @@ import (
 // strings disables modifier resolution (timers fall back to base duration).
 type CharacterContext func() (eqPath, charName string)
 
+// ScopeProvider returns the user-configured tracking scope ("self" or
+// "anyone"). The engine calls this on every landed event so a config change
+// takes effect immediately without restarting the engine. Empty / unknown
+// values are treated as "anyone" to match the default behaviour.
+type ScopeProvider func() string
+
+const (
+	scopeSelf   = "self"
+	scopeAnyone = "anyone"
+)
+
 // broadcastInterval is how often the engine pushes timer state updates to
 // WebSocket clients while timers are active.
 const broadcastInterval = time.Second
@@ -56,9 +67,10 @@ func timerKey(spellName, targetName string) string {
 // a Visions of Grandeur cast on three different group members produces three
 // independently-tracked timers.
 type Engine struct {
-	hub     *ws.Hub
-	db      *db.DB
-	charCtx CharacterContext
+	hub      *ws.Hub
+	db       *db.DB
+	charCtx  CharacterContext
+	scopeFn  ScopeProvider
 
 	mu     sync.Mutex
 	timers map[string]*ActiveTimer // keyed by timerKey(spell, target)
@@ -78,14 +90,30 @@ type Engine struct {
 	modContribs  []buffmod.Modifier
 }
 
-// NewEngine returns an initialised Engine ready to receive log events. charCtx
-// may be nil; when nil, timers fall back to base (unextended) duration.
-func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext) *Engine {
+// NewEngine returns an initialised Engine ready to receive log events.
+// charCtx may be nil (timers fall back to base / unextended duration).
+// scopeFn may be nil (engine behaves as if scope is "anyone").
+func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn ScopeProvider) *Engine {
 	return &Engine{
 		hub:     hub,
 		db:      database,
 		charCtx: charCtx,
+		scopeFn: scopeFn,
 		timers:  make(map[string]*ActiveTimer),
+	}
+}
+
+// trackingScope returns the user's currently-configured scope, defaulting to
+// "anyone" when the provider is absent or returns an empty/unknown value.
+func (e *Engine) trackingScope() string {
+	if e.scopeFn == nil {
+		return scopeAnyone
+	}
+	switch s := e.scopeFn(); s {
+	case scopeSelf:
+		return scopeSelf
+	default:
+		return scopeAnyone
 	}
 }
 
@@ -334,6 +362,19 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		// Defensive — should be unreachable now activePlayerName falls back
 		// to "You". Skip rather than create a key like "Spell@".
 		return
+	}
+
+	// Tracking scope filter: in "self" mode the engine drops every land
+	// whose recipient isn't the active player. The "You" fallback is also
+	// treated as self so users testing before the active character is known
+	// still see their own buffs.
+	if e.trackingScope() == scopeSelf {
+		active := e.activePlayerName()
+		if target != active && target != "You" {
+			slog.Info("timer-debug: spell-landed skipped (scope=self, non-self target)",
+				"spell", spellName, "target", target, "active", active)
+			return
+		}
 	}
 
 	spell, err := e.db.GetSpellByExactName(spellName)

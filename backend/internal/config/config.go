@@ -37,6 +37,9 @@ type Config struct {
 	// Backup holds backup manager settings.
 	Backup BackupSettings `yaml:"backup" json:"backup"`
 
+	// SpellTimer holds spell timer engine settings.
+	SpellTimer SpellTimerSettings `yaml:"spell_timer" json:"spell_timer"`
+
 	// OnboardingCompleted is true once the user has finished the first-launch
 	// setup wizard. When false (default), the wizard is shown on app launch.
 	OnboardingCompleted bool `yaml:"onboarding_completed" json:"onboarding_completed"`
@@ -54,6 +57,27 @@ type BackupSettings struct {
 	// When exceeded, the oldest unlocked backups are deleted automatically.
 	MaxBackups int `yaml:"max_backups" json:"max_backups"`
 }
+
+// SpellTimerSettings configures the spell timer engine.
+type SpellTimerSettings struct {
+	// TrackingScope controls which spell-landed events become timers.
+	//
+	//	"self"   — only spells where the recipient is the active player; buffs
+	//	           and debuffs landing on other characters are ignored.
+	//	"anyone" — every spell that lands on a recognised target name (default;
+	//	           matches the post-PR1 behaviour and is what raid-buff trackers
+	//	           need).
+	//
+	// An empty string is treated as "anyone" so existing config files don't
+	// need migration.
+	TrackingScope string `yaml:"tracking_scope" json:"tracking_scope"`
+}
+
+// TrackingScope* are the canonical values for SpellTimerSettings.TrackingScope.
+const (
+	TrackingScopeSelf   = "self"
+	TrackingScopeAnyone = "anyone"
+)
 
 // Preferences holds optional UI and overlay settings.
 type Preferences struct {
@@ -89,6 +113,9 @@ func defaults() Config {
 			AutoBackup: false,
 			Schedule:   "off",
 			MaxBackups: 10,
+		},
+		SpellTimer: SpellTimerSettings{
+			TrackingScope: TrackingScopeAnyone,
 		},
 	}
 }
@@ -131,8 +158,18 @@ func LoadFrom(path string) (*Manager, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
+	applyDefaults(&cfg)
 
 	return &Manager{cfg: cfg, path: path}, nil
+}
+
+// applyDefaults fills in fields the user's on-disk file may be missing.
+// Older config files predate newly-added settings; setting safe defaults
+// here keeps the engine and UI from having to special-case empty values.
+func applyDefaults(cfg *Config) {
+	if cfg.SpellTimer.TrackingScope == "" {
+		cfg.SpellTimer.TrackingScope = TrackingScopeAnyone
+	}
 }
 
 // Get returns a copy of the current config.

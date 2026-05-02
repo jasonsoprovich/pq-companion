@@ -133,6 +133,8 @@ func main() {
 			charName = cfg.Character
 		}
 		return cfg.EQPath, charName
+	}, func() string {
+		return cfgMgr.Get().SpellTimer.TrackingScope
 	})
 	go timerEngine.Start(context.Background())
 

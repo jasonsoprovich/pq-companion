@@ -582,6 +582,58 @@ export default function SettingsPage(): React.ReactElement {
           </div>
         </section>
 
+        {/* ── Spell Timers ───────────────────────────────────────────────── */}
+        <section
+          className="rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <h2
+            className="mb-1 text-sm font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            Spell Timers
+          </h2>
+          <p className="mb-4 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Controls which spells the timer overlays track.
+          </p>
+
+          <div>
+            <p className="mb-1 text-sm" style={{ color: 'var(--color-foreground)' }}>
+              Tracking scope
+            </p>
+            <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Choose <b>Anyone</b> to track buffs you cast on group / raid members in addition to your own; choose <b>Self only</b> to ignore landings on other players.
+            </p>
+            <div className="flex gap-2">
+              {(['anyone', 'self'] as const).map((scope) => {
+                const active = (config.spell_timer?.tracking_scope ?? 'anyone') === scope
+                return (
+                  <button
+                    key={scope}
+                    type="button"
+                    onClick={() =>
+                      setConfig({
+                        ...config,
+                        spell_timer: { ...config.spell_timer, tracking_scope: scope },
+                      })
+                    }
+                    className="rounded px-3 py-1.5 text-xs font-medium"
+                    style={{
+                      backgroundColor: active ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                      color: active ? '#000' : 'var(--color-foreground)',
+                      border: '1px solid var(--color-border)',
+                      cursor: 'pointer',
+                      minWidth: 90,
+                    }}
+                  >
+                    {scope === 'anyone' ? 'Anyone' : 'Self only'}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </section>
+
         {/* ── Log Files ──────────────────────────────────────────────────── */}
         <section
           className="rounded-lg p-4"
