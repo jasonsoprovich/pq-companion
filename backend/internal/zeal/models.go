@@ -67,10 +67,18 @@ type AAEntry struct {
 }
 
 // QuarmyData is the parsed contents of a <CharName>-Quarmy.txt file.
-// It contains character stats, full inventory, and purchased AA abilities.
+// It contains character identity (level/class/race), stats, inventory, and AAs.
+//
+// Class and Race are the raw EQ 1-indexed IDs as written by Zeal:
+//   Class: 1=Warrior … 14=Enchanter, 15=Beastlord
+//   Race:  1=Human, 2=Barbarian, 3=Erudite, 4=Wood Elf, …
+// Callers persisting to user.db must convert Class to the app's 0-indexed scheme.
 type QuarmyData struct {
 	Character  string           `json:"character"`
 	ExportedAt time.Time        `json:"exported_at"`
+	Level      int              `json:"level"`
+	Class      int              `json:"class"`
+	Race       int              `json:"race"`
 	Stats      CharStats        `json:"stats"`
 	Inventory  []InventoryEntry `json:"inventory"`
 	AAs        []AAEntry        `json:"aas"`

@@ -134,15 +134,6 @@ func (s *Store) Create(name string, class, race, level int) (Character, error) {
 	return Character{ID: int(id), Name: name, Class: class, Race: race, Level: level}, nil
 }
 
-// Update replaces name/class/race/level for the character with the given id.
-func (s *Store) Update(id int, name string, class, race, level int) error {
-	_, err := s.db.Exec(
-		`UPDATE characters SET name=?, class=?, race=?, level=? WHERE id=?`,
-		name, class, race, level, id,
-	)
-	return err
-}
-
 // Delete removes the character with the given id.
 func (s *Store) Delete(id int) error {
 	_, err := s.db.Exec(`DELETE FROM characters WHERE id=?`, id)
@@ -185,6 +176,16 @@ func (s *Store) GetByName(name string) (Character, bool, error) {
 		return Character{}, false, err
 	}
 	return c, true, nil
+}
+
+// UpdatePersona saves level/class/race imported from quarmy.txt. Class and race
+// must already be in the app's internal scheme (class 0-indexed, race 1-indexed).
+func (s *Store) UpdatePersona(id, class, race, level int) error {
+	_, err := s.db.Exec(
+		`UPDATE characters SET class=?, race=?, level=? WHERE id=?`,
+		class, race, level, id,
+	)
+	return err
 }
 
 // UpdateStats saves base stats imported from quarmy.txt for the character with the given id.

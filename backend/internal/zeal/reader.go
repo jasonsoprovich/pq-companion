@@ -244,6 +244,9 @@ func ParseQuarmy(path, character string) (*QuarmyData, error) {
 			// Data row: Character\tName\tLastName\tLevel\tClass\tRace\tGender\tDeity\tGuild\tGuildRank\tBaseSTR\tBaseSTA\tBaseCHA\tBaseDEX\tBaseINT\tBaseAGI\tBaseWIS
 			parts := strings.Split(line, "\t")
 			if len(parts) >= 17 {
+				data.Level = parseInt(parts[3])
+				data.Class = parseInt(parts[4])
+				data.Race = parseInt(parts[5])
 				data.Stats = CharStats{
 					BaseSTR: parseInt(parts[10]),
 					BaseSTA: parseInt(parts[11]),

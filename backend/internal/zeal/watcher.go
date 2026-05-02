@@ -253,6 +253,14 @@ func (w *Watcher) checkQuarmy(path, charName string) {
 	if err := w.charStore.UpdateStats(char.ID, s.BaseSTR, s.BaseSTA, s.BaseCHA, s.BaseDEX, s.BaseINT, s.BaseAGI, s.BaseWIS); err != nil {
 		slog.Warn("zeal: save character stats", "character", charName, "err", err)
 	}
+	// Quarmy stores Class as the EQ 1-indexed ID (1=WAR … 15=BST); the app
+	// uses a 0-indexed scheme (0=WAR … 14=BST). Race uses the same 1-indexed
+	// scheme on both sides. Level is a direct copy.
+	if data.Level > 0 && data.Class > 0 && data.Race > 0 {
+		if err := w.charStore.UpdatePersona(char.ID, data.Class-1, data.Race, data.Level); err != nil {
+			slog.Warn("zeal: save character persona", "character", charName, "err", err)
+		}
+	}
 	aas := make([]character.AAEntry, len(data.AAs))
 	for i, aa := range data.AAs {
 		aas[i] = character.AAEntry{AAID: aa.ID, Rank: aa.Rank}

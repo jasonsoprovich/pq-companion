@@ -195,6 +195,17 @@ func TestParseQuarmy_StatsAndAAs(t *testing.T) {
 		t.Errorf("character = %q, want Osui", data.Character)
 	}
 
+	// Identity (raw EQ 1-indexed values from the file)
+	if data.Level != 60 {
+		t.Errorf("level = %d, want 60", data.Level)
+	}
+	if data.Class != 14 {
+		t.Errorf("class = %d, want 14 (Enchanter)", data.Class)
+	}
+	if data.Race != 6 {
+		t.Errorf("race = %d, want 6 (Dark Elf)", data.Race)
+	}
+
 	// Stats
 	got := data.Stats
 	want := CharStats{BaseSTR: 60, BaseSTA: 65, BaseCHA: 95, BaseDEX: 75, BaseINT: 114, BaseAGI: 90, BaseWIS: 83}
