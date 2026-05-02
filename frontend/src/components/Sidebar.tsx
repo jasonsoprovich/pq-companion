@@ -102,22 +102,14 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
           </button>
           <button
             onClick={onSearchClick}
-            className="flex min-w-0 flex-1 cursor-pointer items-center justify-between rounded px-2 py-1.5 transition-colors hover:bg-(--color-surface-3)"
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded px-2 py-1.5 transition-colors hover:bg-(--color-surface-3)"
             style={{
               backgroundColor: 'var(--color-surface-2)',
               border: '1px solid var(--color-border)',
             }}
           >
-            <div className="flex items-center gap-2">
-              <Search size={12} style={{ color: 'var(--color-muted)' }} />
-              <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>Search</span>
-            </div>
-            <kbd
-              className="text-[10px]"
-              style={{ color: 'var(--color-muted)' }}
-            >
-              ⌘K
-            </kbd>
+            <Search size={12} style={{ color: 'var(--color-muted)' }} />
+            <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>Search</span>
           </button>
         </div>
 
