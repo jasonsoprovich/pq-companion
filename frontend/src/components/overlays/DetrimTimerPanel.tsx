@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Skull, ExternalLink, Plus, Eraser, Circle, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { useActivePlayerName, targetSuffix } from '../../hooks/useActivePlayerName'
 import { clearTimers, getLogStatus, getTimerState } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import CreateTriggerModal from '../CreateTriggerModal'
@@ -48,7 +49,7 @@ function barColor(remaining: number, total: number, category: TimerCategory): st
   return remaining / total > 0.2 ? CATEGORY_COLORS[category] : '#ef4444'
 }
 
-function DetrimRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
+function DetrimRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: string }): React.ReactElement {
   const pct =
     timer.duration_seconds > 0
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
@@ -56,6 +57,7 @@ function DetrimRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
   const color = barColor(timer.remaining_seconds, timer.duration_seconds, timer.category)
   const urgent = pct < 0.2
   const catColor = CATEGORY_COLORS[timer.category]
+  const onTarget = targetSuffix(timer.target_name, activePlayer)
 
   return (
     <div style={{ position: 'relative', padding: '5px 10px', borderBottom: '1px solid var(--color-border)', overflow: 'hidden' }}>
@@ -74,6 +76,9 @@ function DetrimRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
           </span>
           <span style={{ fontSize: 12, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
             {timer.spell_name}
+            {onTarget && (
+              <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{onTarget}</span>
+            )}
           </span>
         </div>
         <span style={{ fontSize: 11, color: urgent ? '#f87171' : color, fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: urgent ? 700 : 400 }}>
@@ -117,6 +122,7 @@ export default function DetrimTimerPanel({
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickedSpell, setPickedSpell] = useState<Spell | null>(null)
+  const activePlayer = useActivePlayerName()
 
   useEffect(() => {
     getTimerState().then(setTimerState).catch(() => {})
@@ -188,7 +194,7 @@ export default function DetrimTimerPanel({
               <p style={{ fontSize: 12, margin: 0 }}>No active detrimentals</p>
             </div>
           ) : (
-            detrims.map((t) => <DetrimRow key={t.id} timer={t} />)
+            detrims.map((t) => <DetrimRow key={t.id} timer={t} activePlayer={activePlayer} />)
           )}
         </div>
       </OverlayWindow>

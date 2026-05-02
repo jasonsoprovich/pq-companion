@@ -6,6 +6,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Shield, Eraser } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useActivePlayerName, targetSuffix } from '../hooks/useActivePlayerName'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import OverlayLockButton from '../components/OverlayLockButton'
@@ -32,13 +33,14 @@ function barColor(remaining: number, total: number): string {
 
 // ── Timer row ──────────────────────────────────────────────────────────────────
 
-function TimerRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
+function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: string }): React.ReactElement {
   const pct =
     timer.duration_seconds > 0
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
       : 0
   const color = barColor(timer.remaining_seconds, timer.duration_seconds)
   const urgent = pct < 0.2
+  const onTarget = targetSuffix(timer.target_name, activePlayer)
 
   return (
     <div
@@ -83,6 +85,9 @@ function TimerRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
           }}
         >
           {timer.spell_name}
+          {onTarget && (
+            <span style={{ color: 'rgba(255,255,255,0.45)', fontWeight: 400 }}>{onTarget}</span>
+          )}
         </span>
         <span
           style={{
@@ -106,6 +111,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
   const [state, setState] = useState<TimerState | null>(null)
+  const activePlayer = useActivePlayerName()
 
   useEffect(() => {
     getTimerState().then(setState).catch(() => {})
@@ -240,7 +246,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
             </p>
           </div>
         ) : (
-          buffs.map((t) => <TimerRow key={t.id} timer={t} />)
+          buffs.map((t) => <TimerRow key={t.id} timer={t} activePlayer={activePlayer} />)
         )}
       </div>
     </div>

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Shield, ExternalLink, Plus, Eraser, Circle, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { useActivePlayerName, targetSuffix } from '../../hooks/useActivePlayerName'
 import { clearTimers, getLogStatus, getTimerState } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import CreateTriggerModal from '../CreateTriggerModal'
@@ -33,13 +34,14 @@ function barColor(remaining: number, total: number): string {
   return '#ef4444'
 }
 
-function BuffRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
+function BuffRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: string }): React.ReactElement {
   const pct =
     timer.duration_seconds > 0
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
       : 0
   const color = barColor(timer.remaining_seconds, timer.duration_seconds)
   const urgent = pct < 0.2
+  const onTarget = targetSuffix(timer.target_name, activePlayer)
 
   return (
     <div style={{ position: 'relative', padding: '5px 10px', borderBottom: '1px solid var(--color-border)', overflow: 'hidden' }}>
@@ -53,6 +55,9 @@ function BuffRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 12, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
           {timer.spell_name}
+          {onTarget && (
+            <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{onTarget}</span>
+          )}
         </span>
         <span style={{ fontSize: 11, color: urgent ? '#f87171' : color, fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: urgent ? 700 : 400 }}>
           {fmtRemaining(timer.remaining_seconds)}
@@ -95,6 +100,7 @@ export default function BuffTimerPanel({
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickedSpell, setPickedSpell] = useState<Spell | null>(null)
+  const activePlayer = useActivePlayerName()
 
   useEffect(() => {
     getTimerState().then(setTimerState).catch(() => {})
@@ -166,7 +172,7 @@ export default function BuffTimerPanel({
               <p style={{ fontSize: 12, margin: 0 }}>No active buffs</p>
             </div>
           ) : (
-            buffs.map((t) => <BuffRow key={t.id} timer={t} />)
+            buffs.map((t) => <BuffRow key={t.id} timer={t} activePlayer={activePlayer} />)
           )}
         </div>
       </OverlayWindow>
