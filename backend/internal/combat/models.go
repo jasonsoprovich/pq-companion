@@ -8,8 +8,17 @@ import "time"
 // WSEventCombat is the WebSocket event type broadcast when combat state changes.
 const WSEventCombat = "overlay:combat"
 
-// combatGap is how long with no incoming hits before a fight is considered over.
-const combatGap = 6 * time.Second
+// combatGap is how long with no combat activity before a fight is considered
+// over. Bumped from 6s to 15s so raid-boss heal phases and similar lulls
+// (where damage briefly stops while mechanics resolve) no longer fragment a
+// single boss fight into multiple log entries.
+const combatGap = 15 * time.Second
+
+// mergeWindow is how long after a fight ends the tracker will reopen it if
+// combat resumes against the same enemy. Together with combatGap, this gives
+// boss mechanics generous slack while still cleanly separating distinct pulls
+// of the same trash mob name (which typically happen >30s apart).
+const mergeWindow = 30 * time.Second
 
 // maxRecentFights is the number of completed fights retained in memory.
 const maxRecentFights = 20

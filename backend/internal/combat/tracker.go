@@ -56,6 +56,13 @@ type Tracker struct {
 
 	recentFights []FightSummary
 
+	// lastArchived holds the raw internal state of the most recently archived
+	// fight so a quick re-engage against the same enemy (within mergeWindow)
+	// can reopen it instead of starting a new fight. Cleared once the merge
+	// window passes or another fight is archived.
+	lastArchived    *internalFight
+	lastArchivedEnd time.Time
+
 	// session aggregates (player personal outgoing damage only)
 	sessionDamage    int64
 	sessionFightTime float64 // total seconds spent in completed fights
@@ -100,6 +107,19 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 			return
 		}
 		t.recordHeal(ev.Timestamp, data)
+
+	case logparser.EventCombatMiss:
+		// Misses, dodges, parries, ripostes, and blocks are combat activity
+		// even though no damage lands. Push the inactivity timer so a long
+		// string of misses (or a tank tanking only via avoidance) doesn't
+		// drop the fight.
+		t.extendActivity(ev.Timestamp)
+
+	case logparser.EventSpellLanded:
+		// A spell landing during combat (heals, debuffs, mez, DoT applications)
+		// proves combat is still live. Push the inactivity timer; never seed a
+		// fresh fight from a spell-land alone (buffs land outside combat too).
+		t.extendActivity(ev.Timestamp)
 
 	case logparser.EventKill:
 		t.endFightAt(ev.Timestamp)
@@ -157,6 +177,8 @@ func (t *Tracker) Reset() {
 	t.sessionHeal = 0
 	t.deaths = []DeathRecord{}
 	t.petOwners = make(map[string]string)
+	t.lastArchived = nil
+	t.lastArchivedEnd = time.Time{}
 	snap := t.snapshot(time.Now())
 	t.mu.Unlock()
 
@@ -178,16 +200,22 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 			t.mu.Unlock()
 			return
 		}
-		t.fightCounter++
-		t.active = &internalFight{
-			id:           t.fightCounter,
-			startTime:    ts,
-			lastHit:      ts,
-			outgoing:     make(map[string]*internalEntity),
-			incoming:     make(map[string]*internalEntity),
-			healers:      make(map[string]*internalHealer),
-			targetCounts: make(map[string]int),
-			youTargets:   make(map[string]bool),
+		// If the most recent archived fight ended within mergeWindow against
+		// this same enemy, reopen it. Heal phases / brief pauses where the
+		// inactivity timer fires before combat resumes no longer split a
+		// single boss fight into pieces.
+		if !t.tryReopenLastArchivedLocked(ts, data) {
+			t.fightCounter++
+			t.active = &internalFight{
+				id:           t.fightCounter,
+				startTime:    ts,
+				lastHit:      ts,
+				outgoing:     make(map[string]*internalEntity),
+				incoming:     make(map[string]*internalEntity),
+				healers:      make(map[string]*internalHealer),
+				targetCounts: make(map[string]int),
+				youTargets:   make(map[string]bool),
+			}
 		}
 	} else {
 		t.active.lastHit = ts
@@ -223,7 +251,17 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 		ent.maxHit = data.Damage
 	}
 
-	// Arm (or reset) the inactivity timer.
+	t.armEndTimerLocked()
+
+	snap := t.snapshot(ts)
+	t.mu.Unlock()
+
+	t.broadcast(snap)
+}
+
+// armEndTimerLocked (re)starts the inactivity timer against the current
+// active fight. Caller must hold t.mu and t.active must not be nil.
+func (t *Tracker) armEndTimerLocked() {
 	fightID := t.active.id
 	if t.endTimer != nil {
 		t.endTimer.Stop()
@@ -231,11 +269,55 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	t.endTimer = time.AfterFunc(combatGap, func() {
 		t.timerExpired(fightID)
 	})
+}
 
-	snap := t.snapshot(ts)
+// extendActivity pushes the inactivity timer for the currently active fight,
+// without recording any damage or healing. Used by misses, dodges, parries,
+// ripostes, and spell-land events — combat activity that proves the fight is
+// still alive even when no damage lands. No-op when no fight is active.
+func (t *Tracker) extendActivity(ts time.Time) {
+	t.mu.Lock()
+	if t.active != nil {
+		t.active.lastHit = ts
+		t.armEndTimerLocked()
+	}
 	t.mu.Unlock()
+}
 
-	t.broadcast(snap)
+// tryReopenLastArchivedLocked returns true when the just-arrived hit can be
+// merged into the most recently archived fight (same primary enemy, ended
+// within mergeWindow). On success it pops the matching FightSummary from
+// recentFights and restores t.active to the saved internalFight, rolls back
+// the session aggregates that were applied at archive time, and clears the
+// lastArchived slot. Caller must hold t.mu.
+func (t *Tracker) tryReopenLastArchivedLocked(ts time.Time, data logparser.CombatHitData) bool {
+	if t.lastArchived == nil {
+		return false
+	}
+	if ts.Sub(t.lastArchivedEnd) > mergeWindow {
+		t.lastArchived = nil
+		return false
+	}
+	npcs := confirmedNPCs(t.lastArchived)
+	if !npcs[data.Actor] && !npcs[data.Target] {
+		// Re-engage is against a different enemy — start a fresh fight and
+		// let the lastArchived slot age out naturally.
+		return false
+	}
+	// Pop the matching summary from the front of recentFights (archiveFight
+	// prepends, so the most recent fight is index 0). Roll back the session
+	// aggregates so they don't double-count once the merged fight re-archives.
+	if len(t.recentFights) > 0 {
+		popped := t.recentFights[0]
+		t.recentFights = t.recentFights[1:]
+		t.sessionDamage -= popped.YouDamage
+		t.sessionHeal -= popped.YouHeal
+		t.sessionFightTime -= popped.Duration
+	}
+	t.active = t.lastArchived
+	t.active.lastHit = ts
+	t.lastArchived = nil
+	return true
 }
 
 // recordPetOwner stores a pet→owner binding announced by EQ's "My leader is X"
@@ -272,6 +354,12 @@ func (t *Tracker) recordHeal(ts time.Time, data logparser.HealData) {
 		h.maxHeal = data.Amount
 	}
 
+	// A heal during combat counts as activity — extend the inactivity timer
+	// so a long heal window (e.g. group recovering after a boss spike) does
+	// not end the fight prematurely.
+	t.active.lastHit = ts
+	t.armEndTimerLocked()
+
 	snap := t.snapshot(ts)
 	t.mu.Unlock()
 
@@ -290,7 +378,13 @@ func (t *Tracker) timerExpired(fightID int) {
 	// duration reflects in-game elapsed time rather than real time (which diverges
 	// wildly when parsing historical log files).
 	endTime := t.active.lastHit
-	t.archiveFight(endTime)
+	archived := t.archiveFight(endTime)
+	// Retain the archived fight so a quick re-engage against the same enemy
+	// can pop it back out and merge into one fight.
+	if archived != nil {
+		t.lastArchived = archived
+		t.lastArchivedEnd = endTime
+	}
 	snap := t.snapshot(endTime)
 	t.mu.Unlock()
 
@@ -311,6 +405,9 @@ func (t *Tracker) endFight(forced bool) {
 	}
 	endTime := t.active.lastHit
 	t.archiveFight(endTime)
+	// Forced ends (zone change, death) close the chapter — no merge possible
+	// because the next fight is in a different context.
+	t.lastArchived = nil
 	snap := t.snapshot(endTime)
 	t.mu.Unlock()
 
@@ -331,6 +428,9 @@ func (t *Tracker) endFightAt(ts time.Time) {
 		t.endTimer = nil
 	}
 	t.archiveFight(ts)
+	// A kill event is a definitive end — the mob is dead, so there is no
+	// same-enemy re-engage to merge into.
+	t.lastArchived = nil
 	snap := t.snapshot(ts)
 	t.mu.Unlock()
 
@@ -338,8 +438,10 @@ func (t *Tracker) endFightAt(ts time.Time) {
 }
 
 // archiveFight finalises the active fight and prepends it to recentFights.
-// Must be called with t.mu held.
-func (t *Tracker) archiveFight(endTime time.Time) {
+// Returns the internalFight that was archived (so callers can retain it as
+// lastArchived for the merge window) or nil if the fight was discarded as
+// noise. Must be called with t.mu held.
+func (t *Tracker) archiveFight(endTime time.Time) *internalFight {
 	f := t.active
 	t.active = nil
 
@@ -348,7 +450,7 @@ func (t *Tracker) archiveFight(endTime time.Time) {
 	// guildmate's spell on another guildmate) and should not be archived.
 	npcs := confirmedNPCs(f)
 	if len(npcs) == 0 {
-		return
+		return nil
 	}
 
 	duration := endTime.Sub(f.startTime).Seconds()
@@ -406,6 +508,7 @@ func (t *Tracker) archiveFight(endTime time.Time) {
 	if len(t.recentFights) > maxRecentFights {
 		t.recentFights = t.recentFights[:maxRecentFights]
 	}
+	return f
 }
 
 // snapshot builds an immutable CombatState from current mutable state.
