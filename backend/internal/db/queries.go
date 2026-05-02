@@ -368,6 +368,7 @@ const npcColumns = `
   n.raid_target, COALESCE(n.rare_spawn, 0),
   n.loottable_id, n.merchant_id, n.npc_spells_id, n.npc_faction_id,
   COALESCE(n.special_abilities, ''),
+  n.see_invis, n.see_invis_undead,
   n.spellscale, n.healscale, n.exp_pct`
 
 const npcJoin = `LEFT JOIN races r ON r.id = n.race`
@@ -385,6 +386,7 @@ func scanNPC(row interface {
 		&n.RaidTarget, &n.RareSpawn,
 		&n.LootTableID, &n.MerchantID, &n.NPCSpellsID, &n.NPCFactionID,
 		&n.SpecialAbilities,
+		&n.SeeInvis, &n.SeeInvisUndead,
 		&n.SpellScale, &n.HealScale, &n.ExpPct,
 	)
 	if err != nil {
@@ -424,11 +426,12 @@ func (db *DB) GetNPCByName(name string) (*NPC, error) {
 // SearchNPCs searches NPCs by name (case-insensitive substring match).
 // When hidePlaceholders is true, entries with level 0, class 0, or names
 // starting with "#" are excluded.
-// NPCs with empty names are always excluded regardless of the placeholder flag.
+// NPCs with empty names or a name of just "#" are always excluded — those
+// rows do not reference real in-game NPCs.
 func (db *DB) SearchNPCs(query string, limit, offset int, hidePlaceholders bool) (*SearchResult[NPC], error) {
 	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
 
-	baseClause := " AND n.name != ''"
+	baseClause := " AND n.name != '' AND n.name != '#'"
 	placeholderClause := ""
 	if hidePlaceholders {
 		placeholderClause = " AND n.name NOT LIKE '#%' AND n.level > 0 AND n.class > 0"
@@ -538,7 +541,7 @@ func (db *DB) GetNPCSpawns(npcID int) (*NPCSpawns, error) {
 	}
 	defer spawnRows.Close()
 
-	var points []NPCSpawnPoint
+	points := []NPCSpawnPoint{}
 	for spawnRows.Next() {
 		var p NPCSpawnPoint
 		if err := spawnRows.Scan(&p.ID, &p.Zone, &p.ZoneName, &p.X, &p.Y, &p.Z, &p.RespawnTime, &p.FastRespawnTime); err != nil {

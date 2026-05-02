@@ -252,3 +252,24 @@ export function parseSpecialAbilities(raw: string): SpecialAbility[] {
     })
     .filter((sa) => sa.value !== 0)
 }
+
+// Returns the parsed special-ability list for an NPC, merged with synthetic
+// entries derived from the dedicated see_invis / see_invis_undead columns.
+// Those columns are the authoritative source for codes 26/28 — the
+// special_abilities string sets them on only a handful of NPCs in practice.
+export function npcSpecialAbilities(npc: NPC): SpecialAbility[] {
+  const abilities = parseSpecialAbilities(npc.special_abilities)
+  const ensure = (code: number) => {
+    if (abilities.some((a) => a.code === code)) return
+    const entry = SPECIAL_ABILITIES[code]
+    abilities.push({
+      code,
+      value: 1,
+      name: entry?.name ?? `Ability ${code}`,
+      description: entry?.description ?? '',
+    })
+  }
+  if (npc.see_invis) ensure(26)
+  if (npc.see_invis_undead) ensure(28)
+  return abilities
+}

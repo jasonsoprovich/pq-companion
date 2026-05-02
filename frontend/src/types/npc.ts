@@ -47,6 +47,10 @@ export interface NPC {
   // Raw caret-delimited special abilities string
   special_abilities: string
 
+  // Dedicated invis-detection columns (authoritative source for codes 26/28).
+  see_invis: number
+  see_invis_undead: number
+
   spell_scale: number
   heal_scale: number
   exp_pct: number

@@ -156,6 +156,12 @@ type NPC struct {
 	// Raw special abilities string; parsed separately via ParseSpecialAbilities.
 	SpecialAbilities string `json:"special_abilities"`
 
+	// Dedicated invis-detection columns. The special_abilities string covers
+	// codes 26/28 for the same concept but is only set on a tiny fraction of
+	// NPCs — the columns below are the authoritative source.
+	SeeInvis       int `json:"see_invis"`
+	SeeInvisUndead int `json:"see_invis_undead"`
+
 	SpellScale float64 `json:"spell_scale"`
 	HealScale  float64 `json:"heal_scale"`
 	ExpPct     int     `json:"exp_pct"`

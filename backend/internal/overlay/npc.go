@@ -192,7 +192,31 @@ func (t *NPCTracker) lookupNPC(displayName string) (*db.NPC, []db.SpecialAbility
 		return nil, nil
 	}
 	abilities := db.ParseSpecialAbilities(npc.SpecialAbilities)
+	abilities = mergeInvisFlags(abilities, npc)
 	return npc, abilities
+}
+
+// mergeInvisFlags appends synthetic SpecialAbility entries for the dedicated
+// see_invis / see_invis_undead columns so the overlay surfaces them like any
+// other ability badge. The columns are the authoritative source for these
+// flags — codes 26/28 in the special_abilities string are set on only a
+// handful of NPCs.
+func mergeInvisFlags(abilities []db.SpecialAbility, npc *db.NPC) []db.SpecialAbility {
+	add := func(code int, name string) {
+		for _, sa := range abilities {
+			if sa.Code == code {
+				return
+			}
+		}
+		abilities = append(abilities, db.SpecialAbility{Code: code, Value: 1, Name: name})
+	}
+	if npc.SeeInvis != 0 {
+		add(26, "See Through Invis")
+	}
+	if npc.SeeInvisUndead != 0 {
+		add(28, "See Through Invis vs Undead")
+	}
+	return abilities
 }
 
 func (t *NPCTracker) broadcast(state TargetState) {

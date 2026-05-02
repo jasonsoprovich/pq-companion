@@ -7,7 +7,7 @@ import {
   bodyTypeName,
   className,
   npcDisplayName,
-  parseSpecialAbilities,
+  npcSpecialAbilities,
   specialAbilityAlertPattern,
   type SpecialAbility,
 } from '../lib/npcHelpers'
@@ -42,7 +42,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showPlaceholders, setShowPlaceholders] = useState(false)
+  const [showPlaceholders, setShowPlaceholders] = useState(true)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const runSearch = useCallback((q: string, placeholders: boolean) => {
@@ -327,7 +327,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
     )
   }
 
-  const specialAbilities = parseSpecialAbilities(npc.special_abilities)
+  const specialAbilities = npcSpecialAbilities(npc)
 
   const flags: string[] = []
   if (npc.raid_target) flags.push('RAID TARGET')
@@ -523,7 +523,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
         )}
 
         {/* Spawns */}
-        {spawns && spawns.spawn_points.length > 0 && (
+        {spawns && (spawns.spawn_points?.length ?? 0) > 0 && (
           <Section title="Spawns">
             <div
               className="mb-1 grid gap-x-3 pt-1 text-[11px] font-medium"
@@ -570,7 +570,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
         )}
 
         {/* Spawn Groups */}
-        {spawns && spawns.spawn_groups.length > 0 && (
+        {spawns && (spawns.spawn_groups?.length ?? 0) > 0 && (
           <Section title="Spawn Groups">
             {spawns.spawn_groups.map((sg, i) => (
               <div
