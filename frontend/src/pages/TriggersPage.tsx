@@ -13,6 +13,7 @@ import {
   Package,
   Clock,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   MonitorPlay,
   Volume2,
@@ -898,8 +899,18 @@ function PacksTab({ onInstalled }: PacksTabProps): React.ReactElement {
   const [installing, setInstalling] = useState<string | null>(null)
   const [installed, setInstalled] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const fileInputRef = useRef<HTMLInputElement>(null)
   const ginaInputRef = useRef<HTMLInputElement>(null)
+
+  const toggleExpanded = (packName: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(packName)) next.delete(packName)
+      else next.add(packName)
+      return next
+    })
+  }
 
   useEffect(() => {
     getBuiltinPacks()
@@ -1066,66 +1077,98 @@ function PacksTab({ onInstalled }: PacksTabProps): React.ReactElement {
           Built-in Packs
         </p>
         <div className="space-y-3">
-          {packs.map((pack) => (
-            <div
-              key={pack.pack_name}
-              className="rounded-lg p-3"
-              style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Package size={14} style={{ color: 'var(--color-primary)' }} />
-                    <span className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
-                      {pack.pack_name}
-                    </span>
-                  </div>
-                  <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted-foreground)' }}>
-                    {pack.description}
-                  </p>
-                  <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted)' }}>
-                    {pack.triggers.length} trigger{pack.triggers.length !== 1 ? 's' : ''}
-                  </p>
-                </div>
+          {packs.map((pack) => {
+            const isOpen = expanded.has(pack.pack_name)
+            return (
+              <div
+                key={pack.pack_name}
+                className="rounded-lg"
+                style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+              >
                 <button
-                  onClick={() => handleInstall(pack.pack_name)}
-                  disabled={installing === pack.pack_name}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium shrink-0"
-                  style={{
-                    backgroundColor: installed === pack.pack_name
-                      ? 'var(--color-surface-2)'
-                      : 'var(--color-primary)',
-                    color: installed === pack.pack_name
-                      ? 'var(--color-success)'
-                      : 'var(--color-background)',
-                    border: '1px solid transparent',
-                  }}
+                  type="button"
+                  onClick={() => toggleExpanded(pack.pack_name)}
+                  aria-expanded={isOpen}
+                  className="w-full flex items-start justify-between gap-3 p-3 text-left"
                 >
-                  {installing === pack.pack_name ? (
-                    <RefreshCw size={11} className="animate-spin" />
-                  ) : installed === pack.pack_name ? (
-                    <CheckCircle2 size={11} />
-                  ) : (
-                    <Download size={11} />
-                  )}
-                  {installed === pack.pack_name ? 'Installed' : 'Install'}
-                </button>
-              </div>
-
-              {/* Pack trigger list */}
-              <div className="mt-2 space-y-1">
-                {pack.triggers.map((t, i) => (
-                  <div key={i} className="flex items-center gap-2 text-[11px]">
-                    <Zap size={10} style={{ color: 'var(--color-muted)' }} />
-                    <span style={{ color: 'var(--color-muted-foreground)' }}>{t.name}</span>
-                    <span className="font-mono truncate" style={{ color: 'var(--color-muted)' }}>
-                      {t.pattern}
-                    </span>
+                  <div className="flex-1 min-w-0 flex items-start gap-2">
+                    {isOpen ? (
+                      <ChevronDown size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--color-muted)' }} />
+                    ) : (
+                      <ChevronRight size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--color-muted)' }} />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Package size={14} style={{ color: 'var(--color-primary)' }} />
+                        <span className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+                          {pack.pack_name}
+                        </span>
+                        <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                          {pack.triggers.length} trigger{pack.triggers.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted-foreground)' }}>
+                        {pack.description}
+                      </p>
+                    </div>
                   </div>
-                ))}
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleInstall(pack.pack_name)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        handleInstall(pack.pack_name)
+                      }
+                    }}
+                    aria-disabled={installing === pack.pack_name}
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium shrink-0 cursor-pointer"
+                    style={{
+                      backgroundColor: installed === pack.pack_name
+                        ? 'var(--color-surface-2)'
+                        : 'var(--color-primary)',
+                      color: installed === pack.pack_name
+                        ? 'var(--color-success)'
+                        : 'var(--color-background)',
+                      border: '1px solid transparent',
+                      opacity: installing === pack.pack_name ? 0.6 : 1,
+                    }}
+                  >
+                    {installing === pack.pack_name ? (
+                      <RefreshCw size={11} className="animate-spin" />
+                    ) : installed === pack.pack_name ? (
+                      <CheckCircle2 size={11} />
+                    ) : (
+                      <Download size={11} />
+                    )}
+                    {installed === pack.pack_name ? 'Installed' : 'Install'}
+                  </span>
+                </button>
+
+                {isOpen && (
+                  <div
+                    className="px-3 pb-3 pt-0 space-y-1"
+                    style={{ borderTop: '1px solid var(--color-border)' }}
+                  >
+                    {pack.triggers.map((t, i) => (
+                      <div key={i} className="flex items-center gap-2 text-[11px] pt-2">
+                        <Zap size={10} style={{ color: 'var(--color-muted)' }} />
+                        <span style={{ color: 'var(--color-muted-foreground)' }}>{t.name}</span>
+                        <span className="font-mono truncate" style={{ color: 'var(--color-muted)' }}>
+                          {t.pattern}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
     </div>
