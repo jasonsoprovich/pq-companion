@@ -689,7 +689,7 @@ func (db *DB) GetNPCLoot(npcID int) (*NPCLootTable, error) {
 
 	rows, err := db.Query(`
 		SELECT lte.lootdrop_id, ld.name, lte.multiplier, lte.probability,
-		       lde.item_id, i.Name, lde.chance, lde.multiplier
+		       lde.item_id, i.Name, i.icon, lde.chance, lde.multiplier
 		FROM loottable_entries lte
 		JOIN lootdrop ld ON ld.id = lte.lootdrop_id
 		JOIN lootdrop_entries lde ON lde.lootdrop_id = lte.lootdrop_id
@@ -708,11 +708,11 @@ func (db *DB) GetNPCLoot(npcID int) (*NPCLootTable, error) {
 		var (
 			dropID, lteMultiplier, lteProbability int
 			dropName                               string
-			itemID, ldeMultiplier                 int
+			itemID, itemIcon, ldeMultiplier       int
 			itemName                               string
 			chance                                 float64
 		)
-		if err := rows.Scan(&dropID, &dropName, &lteMultiplier, &lteProbability, &itemID, &itemName, &chance, &ldeMultiplier); err != nil {
+		if err := rows.Scan(&dropID, &dropName, &lteMultiplier, &lteProbability, &itemID, &itemName, &itemIcon, &chance, &ldeMultiplier); err != nil {
 			return nil, fmt.Errorf("scan loot row: %w", err)
 		}
 		d, exists := dropMap[dropID]
@@ -729,6 +729,7 @@ func (db *DB) GetNPCLoot(npcID int) (*NPCLootTable, error) {
 		d.Items = append(d.Items, LootDropItem{
 			ItemID:     itemID,
 			ItemName:   itemName,
+			ItemIcon:   itemIcon,
 			Chance:     chance,
 			Multiplier: ldeMultiplier,
 		})
@@ -958,7 +959,7 @@ func (db *DB) GetSpellsByClass(classIndex, limit, offset int) (*SearchResult[Spe
 // scroll items (which teach the spell) and effect items (click/worn/proc/focus).
 func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
 	scrollRows, err := db.Query(
-		"SELECT id, name FROM items WHERE scrolleffect = ? ORDER BY name",
+		"SELECT id, name, icon FROM items WHERE scrolleffect = ? ORDER BY name",
 		spellID,
 	)
 	if err != nil {
@@ -972,7 +973,7 @@ func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
 	}
 	for scrollRows.Next() {
 		var ref SpellItemRef
-		if err := scrollRows.Scan(&ref.ID, &ref.Name); err != nil {
+		if err := scrollRows.Scan(&ref.ID, &ref.Name, &ref.Icon); err != nil {
 			return nil, fmt.Errorf("scan scroll item: %w", err)
 		}
 		result.ScrollItems = append(result.ScrollItems, ref)
@@ -982,14 +983,14 @@ func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
 	}
 
 	effectRows, err := db.Query(`
-		SELECT effect_type, id, name FROM (
-			SELECT 'click' AS effect_type, id, name FROM items WHERE clickeffect = ?
+		SELECT effect_type, id, name, icon FROM (
+			SELECT 'click' AS effect_type, id, name, icon FROM items WHERE clickeffect = ?
 			UNION
-			SELECT 'worn', id, name FROM items WHERE worneffect = ?
+			SELECT 'worn', id, name, icon FROM items WHERE worneffect = ?
 			UNION
-			SELECT 'proc', id, name FROM items WHERE proceffect = ?
+			SELECT 'proc', id, name, icon FROM items WHERE proceffect = ?
 			UNION
-			SELECT 'focus', id, name FROM items WHERE focuseffect = ?
+			SELECT 'focus', id, name, icon FROM items WHERE focuseffect = ?
 		) ORDER BY effect_type, name`,
 		spellID, spellID, spellID, spellID,
 	)
@@ -1000,7 +1001,7 @@ func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
 
 	for effectRows.Next() {
 		var ref SpellItemRef
-		if err := effectRows.Scan(&ref.EffectType, &ref.ID, &ref.Name); err != nil {
+		if err := effectRows.Scan(&ref.EffectType, &ref.ID, &ref.Name, &ref.Icon); err != nil {
 			return nil, fmt.Errorf("scan effect item: %w", err)
 		}
 		result.EffectItems = append(result.EffectItems, ref)

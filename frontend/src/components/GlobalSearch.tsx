@@ -9,6 +9,7 @@ import type { Zone } from '../types/zone'
 import { effectiveItemTypeLabel } from '../lib/itemHelpers'
 import { castableClassesShort } from '../lib/spellHelpers'
 import { npcDisplayName, className as npcClassName } from '../lib/npcHelpers'
+import { ItemIcon, SpellIcon } from './Icon'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,13 @@ function ResultRow({ entry, active, onHover, onClick }: ResultRowProps): React.R
     subtitle = entry.zone.short_name
   }
 
+  let leadingIcon: React.ReactNode = null
+  if (entry.kind === 'item') {
+    leadingIcon = <ItemIcon id={entry.item.icon} name={entry.item.name} size={24} />
+  } else if (entry.kind === 'spell') {
+    leadingIcon = <SpellIcon id={entry.spell.new_icon} name={entry.spell.name} size={24} />
+  }
+
   return (
     <button
       className="flex w-full items-center gap-3 px-4 py-2 text-left transition-none"
@@ -62,6 +70,7 @@ function ResultRow({ entry, active, onHover, onClick }: ResultRowProps): React.R
       onMouseEnter={onHover}
       onClick={onClick}
     >
+      {leadingIcon}
       <div className="min-w-0 flex-1">
         <div
           className="truncate text-sm font-medium"

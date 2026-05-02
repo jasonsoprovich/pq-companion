@@ -12,6 +12,7 @@ import {
   type SpecialAbility,
 } from '../lib/npcHelpers'
 import CreateTriggerModal, { type TriggerPrefill } from '../components/CreateTriggerModal'
+import { ItemIcon } from '../components/Icon'
 
 function formatRespawnTime(seconds: number): string {
   if (seconds <= 0) return '—'
@@ -502,11 +503,12 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
                   <button
                     key={item.item_id}
                     onClick={() => navigate(`/items?select=${item.item_id}`)}
-                    className="flex w-full items-center justify-between border-t py-0.5 text-left text-sm"
+                    className="flex w-full items-center gap-2 border-t py-0.5 text-left text-sm"
                     style={{ borderColor: 'var(--color-border)' }}
                   >
+                    <ItemIcon id={item.item_icon} name={item.item_name} size={20} />
                     <span
-                      className="truncate underline decoration-dotted"
+                      className="truncate underline decoration-dotted flex-1"
                       style={{ color: 'var(--color-primary)' }}
                     >
                       {item.item_name}

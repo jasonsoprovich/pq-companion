@@ -46,6 +46,7 @@ export interface Spell {
 export interface SpellItemRef {
   id: number
   name: string
+  icon?: number
   effect_type?: string // "click" | "worn" | "proc" | "focus"
 }
 

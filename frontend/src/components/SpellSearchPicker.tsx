@@ -3,6 +3,7 @@ import { Search, X, RefreshCw } from 'lucide-react'
 import { searchSpells } from '../services/api'
 import type { Spell } from '../types/spell'
 import { castableClassesShort } from '../lib/spellHelpers'
+import { SpellIcon } from './Icon'
 
 interface SpellSearchPickerProps {
   onPick: (spell: Spell) => void
@@ -107,14 +108,17 @@ export default function SpellSearchPicker({
               <button
                 key={s.id}
                 onClick={() => onPick(s)}
-                className="w-full px-3 py-2 text-left transition-colors border-t"
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors border-t"
                 style={{ borderColor: 'var(--color-border)' }}
               >
-                <div className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
-                  {s.name}
-                </div>
-                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                  {castableClassesShort(s.class_levels)}
+                <SpellIcon id={s.new_icon} name={s.name} size={24} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
+                    {s.name}
+                  </div>
+                  <div className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                    {castableClassesShort(s.class_levels)}
+                  </div>
                 </div>
               </button>
             ))}

@@ -237,6 +237,7 @@ type Spell struct {
 type SpellItemRef struct {
 	ID         int    `json:"id"`
 	Name       string `json:"name"`
+	Icon       int    `json:"icon,omitempty"`
 	EffectType string `json:"effect_type,omitempty"` // "click", "worn", "proc", "focus", or "" for scroll
 }
 
@@ -272,6 +273,7 @@ type Zone struct {
 type LootDropItem struct {
 	ItemID     int     `json:"item_id"`
 	ItemName   string  `json:"item_name"`
+	ItemIcon   int     `json:"item_icon,omitempty"`
 	Chance     float64 `json:"chance"`
 	Multiplier int     `json:"multiplier"`
 }

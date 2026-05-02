@@ -17,7 +17,7 @@ import {
   zoneTypeLabel,
 } from '../lib/spellHelpers'
 import CreateTriggerModal from '../components/CreateTriggerModal'
-import { SpellIcon } from '../components/Icon'
+import { ItemIcon, SpellIcon } from '../components/Icon'
 
 const SPELL_CLASSES: { index: number; abbr: string; full: string }[] = [
   { index: 0,  abbr: 'WAR', full: 'Warrior' },
@@ -481,9 +481,10 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
               <button
                 key={item.id}
                 onClick={() => navigate(`/items?select=${item.id}`)}
-                className="flex w-full items-center border-t py-0.5 text-left text-sm first:border-t-0"
+                className="flex w-full items-center gap-2 border-t py-0.5 text-left text-sm first:border-t-0"
                 style={{ borderColor: 'var(--color-border)' }}
               >
+                <ItemIcon id={item.icon} name={item.name} size={20} />
                 <span
                   className="underline decoration-dotted"
                   style={{ color: 'var(--color-primary)' }}
@@ -513,9 +514,10 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
                     <button
                       key={item.id}
                       onClick={() => navigate(`/items?select=${item.id}`)}
-                      className="flex w-full items-center border-t py-0.5 text-left text-sm"
+                      className="flex w-full items-center gap-2 border-t py-0.5 text-left text-sm"
                       style={{ borderColor: 'var(--color-border)' }}
                     >
+                      <ItemIcon id={item.icon} name={item.name} size={20} />
                       <span
                         className="underline decoration-dotted"
                         style={{ color: 'var(--color-primary)' }}

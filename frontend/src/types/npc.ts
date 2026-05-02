@@ -59,6 +59,7 @@ export interface NPC {
 export interface LootDropItem {
   item_id: number
   item_name: string
+  item_icon?: number
   chance: number
   multiplier: number
 }

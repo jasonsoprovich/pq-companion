@@ -15,6 +15,7 @@ import {
   slotsLabel,
   weightLabel,
 } from '../lib/itemHelpers'
+import { ItemIcon } from './Icon'
 
 // ── Shared primitives ──────────────────────────────────────────────────────────
 
@@ -386,9 +387,12 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
         {/* Header */}
         <div className="shrink-0 border-b px-5 pt-4 pb-0" style={{ borderColor: 'var(--color-border)' }}>
           <div className="flex items-start justify-between gap-2 mb-2">
-            <h2 className="text-xl font-bold leading-tight" style={{ color: 'var(--color-primary)' }}>
-              {item.name}
-            </h2>
+            <div className="flex items-start gap-3 min-w-0">
+              <ItemIcon id={item.icon} name={item.name} size={36} />
+              <h2 className="text-xl font-bold leading-tight" style={{ color: 'var(--color-primary)' }}>
+                {item.name}
+              </h2>
+            </div>
             <button onClick={onClose} className="shrink-0 mt-0.5" title="Close">
               <X size={16} style={{ color: 'var(--color-muted)' }} />
             </button>
