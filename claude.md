@@ -2,9 +2,22 @@
 
 ## Project Overview
 PQ Companion is a desktop companion app for the EverQuest emulated server
-"Project Quarm." It combines a database explorer, combat log parser, DPS
-meter, spell/buff/DOT timer overlays, NPC info overlay, spell checklist,
-config backup manager, and custom trigger system into a single application.
+"Project Quarm." The app is feature-complete and currently in a
+fine-tuning, bug-fixing, and maintenance phase — most ongoing work is
+polish, regressions, and incorporating periodic Project Quarm database
+updates.
+
+Capabilities (see `FEATURES.md` for the full implementation log):
+- Database explorer (items, spells, NPCs, zones) with global Cmd/Ctrl+K search
+- Combat log parser, DPS/HPS meter, and combat history with per-combatant breakdowns
+- Spell timer engine with separate buff and detrimental overlays
+- NPC info overlay (level, class, HP, resists, special abilities) keyed off the active target
+- Spell checklist cross-referenced against the Zeal spellbook export
+- Inventory tracker and key tracker (raid key components) across all characters
+- Character info pages (stats, AAs, spell modifiers)
+- Config backup manager for EQ `.ini` files
+- GINA-style custom trigger system with regex patterns, on-screen alerts, audio alerts, and importable trigger packs
+- Auto-updating Windows installer
 
 ## Architecture
 - **Go backend** (`backend/`): API server, log parser, timer engine, database
@@ -17,10 +30,12 @@ config backup manager, and custom trigger system into a single application.
   converted from MySQL dumps. Read-only.
 - **User database** (`~/.pq-companion/user.db`): User settings, triggers,
   backup history. Read-write.
+- **Marketing site** (separate repo `pq-companion-site/`): Astro + Tailwind
+  static site that mirrors the app's theme tokens. Lives outside this repo.
 
 ## Tech Stack
 - Go 1.22+ with `modernc.org/sqlite`, `go-chi/chi`, `gorilla/websocket`
-- Node.js 20+ with Electron, React 18, TypeScript, Vite, Tailwind CSS
+- Node.js 20+ with Electron 33, React 18, TypeScript, Vite (electron-vite), Tailwind CSS v4
 - SQLite for all data storage (no external DB dependency for end users)
 - electron-builder for packaging, electron-updater for auto-updates
 
@@ -28,12 +43,13 @@ config backup manager, and custom trigger system into a single application.
 
 ### Go Backend
 - Use standard library where possible, minimize dependencies
-- All database queries in `internal/db/queries.go`
-- All models in `internal/db/models.go` with JSON struct tags
+- Database queries live under `internal/db/` (and feature-specific subpackages where appropriate)
+- Models with JSON struct tags
 - API handlers in `internal/api/` — one file per resource
+- Feature packages under `internal/`: `logparser`, `combat`, `spelltimer`, `trigger`, `buffmod`, `character`, `backup`, `keys`, `overlay`, `zeal`, `converter`, `config`, `ws`
 - Use structured logging (slog)
 - Error handling: wrap errors with context, never panic in library code
-- Tests: table-driven tests, test against real SQLite DB with test fixtures
+- Tests: table-driven tests, test against real SQLite DB with test fixtures from `testdata/`
 
 ### Frontend (React + TypeScript)
 - Functional components only, hooks for state management
@@ -41,7 +57,7 @@ config backup manager, and custom trigger system into a single application.
 - WebSocket hook in `hooks/useWebSocket.ts` — singleton connection
 - API client in `services/api.ts` — typed fetch wrappers
 - Types mirror Go structs in `types/`
-- Dark theme only (for now)
+- Dark theme only
 - Tailwind for all styling, no CSS modules
 
 ### Electron
@@ -55,24 +71,30 @@ config backup manager, and custom trigger system into a single application.
 - User data goes in separate user.db
 - All queries must use parameterized statements (no string concatenation)
 - Add indexes for any column used in WHERE clauses or JOINs
+- `quarm.db` is regenerated from MySQL dumps via the `data-release` GitHub
+  Actions workflow — never hand-edit the file
 
 ### General
 - Format Go with `gofmt`
 - Format TypeScript with Prettier (80 char width)
-- Commit messages: conventional commits (feat:, fix:, docs:, etc.)
-- Test every feature before moving to the next phase
-- When completing a task, update ONLY the following before committing:
-  - `PROGRESS.md` — mark the task `[x]`
-- Update `FEATURES.md`, `README.md`, and `ROADMAP.md` only at release time
-  (when running `/newrelease`), not after individual tasks or phases.
-- Commit everything for the task in a single conventional commit (e.g. `feat: Task 1.1 — REST API`)
+- Commit messages: conventional commits (`feat:`, `fix:`, `docs:`, `chore:`, etc.)
+- Test changes locally before committing
+- `FEATURES.md` and `README.md` are only updated at release time (when running
+  `/newrelease`). For ordinary fixes and tweaks, just commit the code change.
+- Per-task progress tracking files (`PROGRESS.md`, `ROADMAP.md`) have been
+  removed — the app is past the phase-by-phase build-out. Track ongoing work
+  through GitHub issues and the git log instead.
 
 ### Branching
 - All development, fixes, and testing happen directly on `main`. There is no
-  long-lived `develop` branch (the previous branch-per-phase workflow caused
-  hotfixes on `main` to look like regressions when work resumed elsewhere).
+  long-lived `develop` branch.
 - Short-lived topic branches are fine when useful, but they merge straight
   back into `main` — not into an integration branch.
+
+### Releases
+- Run `/newrelease` to bump the version, build the Windows installer, tag,
+  and publish a GitHub release. Update `FEATURES.md` and `README.md` as part
+  of that flow if user-visible behavior changed.
 
 ## EverQuest-Specific Knowledge
 
@@ -97,12 +119,9 @@ Key codes to parse:
 - 17 = Uncharmable, 18 = Unmezzable, 19 = Unfearable
 - 20 = Immune to Slow, 24 = No Target
 - 26 = See Through Invis, 28 = See Through Invis vs Undead
-Full parsing logic should be in `internal/db/special_abilities.go`
+Parsing logic lives in `internal/db/special_abilities.go`.
 
 ### Zeal Integration
 - Zeal exports inventory/spellbook as files in the EQ directory on logout
 - ZealPipes provides real-time data via Windows named pipes (future feature)
 - Zeal log extensions add extra info to the standard EQ log format
-
-## Current Phase
-Phase 8 — Custom Trigger System

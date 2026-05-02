@@ -2,7 +2,7 @@
 
 A desktop companion app for [Project Quarm](https://www.projectquarm.com/) — the EverQuest classic emulated server. It sits alongside the game and gives you the tools you wish were built into the client.
 
-> **Status:** Active development. Phases 0–8 complete. See [ROADMAP.md](ROADMAP.md) for what's built and what's coming.
+> **Status:** Feature-complete and in active maintenance. See [FEATURES.md](FEATURES.md) for the full list of what's implemented.
 
 ---
 
@@ -70,7 +70,7 @@ PQ Companion updates itself automatically. When a new version is available it do
 
 ## For Developers
 
-If you want to build from source or contribute, see the [developer setup guide](docs/01_stack.md) and [PROGRESS.md](PROGRESS.md) for the current implementation status.
+If you want to build from source or contribute, see the [developer setup guide](docs/01_stack.md). [FEATURES.md](FEATURES.md) documents what's implemented under the hood.
 
 Quick start:
 
@@ -85,7 +85,7 @@ npm run dev
 
 Requires Go 1.22+ and Node.js 20+. The Vite dev server starts on port 5173; Electron opens pointing at it. The Go backend runs on port 8080.
 
-See [FEATURES.md](FEATURES.md) for detailed implementation notes on every completed task, and [ROADMAP.md](ROADMAP.md) for the full feature plan.
+See [FEATURES.md](FEATURES.md) for detailed implementation notes on every shipped feature.
 
 ---
 
