@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { TrendingUp, RefreshCw, AlertCircle, Check, Search } from 'lucide-react'
 import {
   getZealQuarmy, getCharacterAAs, listCharacters, getItem,
-  getCharacterSpellModifiers, searchSpells,
+  getCharacterSpellModifiers, searchSpells, getCharacterEquippedStats,
 } from '../services/api'
 import type {
   QuarmyData, CharacterAA, AAInfo, Character,
-  SpellModifier, SpellModifierResolution,
+  SpellModifier, SpellModifierResolution, EquippedStats,
 } from '../services/api'
 import type { Spell } from '../types/spell'
 import type { Item } from '../types/item'
@@ -109,6 +109,7 @@ export default function CharacterProgressPage(): React.ReactElement {
   const [trainedAAs, setTrainedAAs] = useState<CharacterAA[]>([])
   const [availableAAs, setAvailableAAs] = useState<AAInfo[]>([])
   const [modifiers, setModifiers] = useState<SpellModifier[] | null>(null)
+  const [equippedStats, setEquippedStats] = useState<EquippedStats | null>(null)
   const [activeChar, setActiveChar] = useState<Character | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -157,10 +158,17 @@ export default function CharacterProgressPage(): React.ReactElement {
           // Quarmy export not available — modifiers panel will show its own empty state
           setModifiers(null)
         }
+        try {
+          const eq = await getCharacterEquippedStats(found.id)
+          setEquippedStats(eq)
+        } catch {
+          setEquippedStats(null)
+        }
       } else {
         setTrainedAAs([])
         setAvailableAAs([])
         setModifiers(null)
+        setEquippedStats(null)
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load data')
@@ -287,7 +295,7 @@ export default function CharacterProgressPage(): React.ReactElement {
           ) : (
             <>
               {tab === 'stats' && (
-                <StatsPanel stats={statsSource} hasStats={!!hasStats} />
+                <StatsPanel stats={statsSource} hasStats={!!hasStats} gear={equippedStats} />
               )}
               {tab === 'gear' && (
                 <GearPanel gear={equippedGear} hasQuarmy={!!quarmy} onLookup={handleLookup} />
@@ -312,12 +320,79 @@ export default function CharacterProgressPage(): React.ReactElement {
 
 // ── Stats Panel ───────────────────────────────────────────────────────────────
 
+type StatMode = 'base' | 'equipped' | 'buffed'
+type AegolismChoice = 'aegolism' | 'glades'
+
+// StatDelta is the contribution of a single source (gear or a buff) to the
+// derived stat totals. Only the fields a source touches are non-zero.
+interface StatDelta {
+  hp?: number; mana?: number; ac?: number
+  str?: number; sta?: number; agi?: number; dex?: number
+  wis?: number; int?: number; cha?: number
+  pr?: number; mr?: number; dr?: number; fr?: number; cr?: number
+}
+
+// Raid buff list from quarmy.com's preset, used as a baseline. Aegolism vs.
+// Protection of the Glades is exposed as a swap because they don't stack and
+// different classes prefer different versions.
+const AEGOLISM_BUFF: StatDelta = { hp: 1300, ac: 89 }
+const GLADES_BUFF: StatDelta = { hp: 250, ac: 39 }
+
+const RAID_BUFFS: Array<{ name: string; delta: StatDelta }> = [
+  { name: "Khura's Focusing",        delta: { hp: 430, str: 67, dex: 60 } },
+  { name: 'Talisman of the Brute',   delta: { sta: 50 } },
+  { name: 'Talisman of the Cat',     delta: { agi: 52 } },
+  { name: "Brell's Mountainous Barrier", delta: { hp: 225 } },
+  { name: 'Visions of Grandeur',     delta: { agi: 40, dex: 25 } },
+  { name: "Koadic's Endless Intellect", delta: { mana: 250, wis: 25, int: 25 } },
+]
+
+function sumDeltas(deltas: StatDelta[]): Required<StatDelta> {
+  const out: Required<StatDelta> = {
+    hp: 0, mana: 0, ac: 0,
+    str: 0, sta: 0, agi: 0, dex: 0, wis: 0, int: 0, cha: 0,
+    pr: 0, mr: 0, dr: 0, fr: 0, cr: 0,
+  }
+  for (const d of deltas) {
+    out.hp += d.hp ?? 0
+    out.mana += d.mana ?? 0
+    out.ac += d.ac ?? 0
+    out.str += d.str ?? 0
+    out.sta += d.sta ?? 0
+    out.agi += d.agi ?? 0
+    out.dex += d.dex ?? 0
+    out.wis += d.wis ?? 0
+    out.int += d.int ?? 0
+    out.cha += d.cha ?? 0
+    out.pr += d.pr ?? 0
+    out.mr += d.mr ?? 0
+    out.dr += d.dr ?? 0
+    out.fr += d.fr ?? 0
+    out.cr += d.cr ?? 0
+  }
+  return out
+}
+
+function gearAsDelta(g: EquippedStats | null): StatDelta {
+  if (!g) return {}
+  return {
+    hp: g.hp, mana: g.mana, ac: g.ac,
+    str: g.str, sta: g.sta, agi: g.agi, dex: g.dex,
+    wis: g.wis, int: g.int, cha: g.cha,
+    pr: g.pr, mr: g.mr, dr: g.dr, fr: g.fr, cr: g.cr,
+  }
+}
+
 interface StatsPanelProps {
   stats: { base_str: number; base_sta: number; base_cha: number; base_dex: number; base_int: number; base_agi: number; base_wis: number } | null
   hasStats: boolean
+  gear: EquippedStats | null
 }
 
-function StatsPanel({ stats, hasStats }: StatsPanelProps): React.ReactElement {
+function StatsPanel({ stats, hasStats, gear }: StatsPanelProps): React.ReactElement {
+  const [mode, setMode] = useState<StatMode>('equipped')
+  const [aegolism, setAegolism] = useState<AegolismChoice>('aegolism')
+
   if (!hasStats || !stats) {
     return (
       <EmptyState
@@ -327,23 +402,180 @@ function StatsPanel({ stats, hasStats }: StatsPanelProps): React.ReactElement {
     )
   }
 
+  const includesGear = mode !== 'base'
+  const includesBuffs = mode === 'buffed'
+
+  // Base stats only have the seven attributes — HP/Mana/AC come from gear and
+  // buffs, so they read as 0 in 'base' mode.
+  const deltas: StatDelta[] = []
+  if (includesGear) deltas.push(gearAsDelta(gear))
+  if (includesBuffs) {
+    deltas.push(aegolism === 'aegolism' ? AEGOLISM_BUFF : GLADES_BUFF)
+    for (const b of RAID_BUFFS) deltas.push(b.delta)
+  }
+  const extra = sumDeltas(deltas)
+
+  const total = {
+    hp: extra.hp,
+    mana: extra.mana,
+    ac: extra.ac,
+    str: stats.base_str + extra.str,
+    sta: stats.base_sta + extra.sta,
+    agi: stats.base_agi + extra.agi,
+    dex: stats.base_dex + extra.dex,
+    wis: stats.base_wis + extra.wis,
+    int: stats.base_int + extra.int,
+    cha: stats.base_cha + extra.cha,
+    pr: extra.pr,
+    mr: extra.mr,
+    dr: extra.dr,
+    fr: extra.fr,
+    cr: extra.cr,
+  }
+
+  const gearMissing = includesGear && !gear
+  const showVitals = total.hp > 0 || total.mana > 0 || total.ac > 0
+  const showResists = total.pr > 0 || total.mr > 0 || total.dr > 0 || total.fr > 0 || total.cr > 0
+
   return (
     <div
       className="rounded-lg p-5"
-      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', maxWidth: '420px' }}
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', maxWidth: '480px' }}
     >
-      <p className="mb-4 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
-        Base Stats
-      </p>
+      <StatModeToggle mode={mode} onChange={setMode} />
+
+      {includesBuffs && (
+        <AegolismSwap value={aegolism} onChange={setAegolism} />
+      )}
+
+      {gearMissing && (
+        <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          Equipment stats unavailable — make sure Zeal is installed and the character has logged out at least once.
+        </p>
+      )}
+
+      {showVitals && (
+        <div className="mb-4 grid grid-cols-3 gap-3">
+          <VitalRow label="HP" value={total.hp} />
+          <VitalRow label="Mana" value={total.mana} />
+          <VitalRow label="AC" value={total.ac} />
+        </div>
+      )}
+
       <div className="space-y-3">
-        <StatBar label="STR" value={stats.base_str} />
-        <StatBar label="STA" value={stats.base_sta} />
-        <StatBar label="AGI" value={stats.base_agi} />
-        <StatBar label="DEX" value={stats.base_dex} />
-        <StatBar label="WIS" value={stats.base_wis} />
-        <StatBar label="INT" value={stats.base_int} />
-        <StatBar label="CHA" value={stats.base_cha} />
+        <StatBar label="STR" value={total.str} />
+        <StatBar label="STA" value={total.sta} />
+        <StatBar label="AGI" value={total.agi} />
+        <StatBar label="DEX" value={total.dex} />
+        <StatBar label="WIS" value={total.wis} />
+        <StatBar label="INT" value={total.int} />
+        <StatBar label="CHA" value={total.cha} />
       </div>
+
+      {showResists && (
+        <div className="mt-4 grid grid-cols-5 gap-2">
+          <ResistRow label="POISON" value={total.pr} />
+          <ResistRow label="MAGIC"  value={total.mr} />
+          <ResistRow label="DISEASE" value={total.dr} />
+          <ResistRow label="FIRE"   value={total.fr} />
+          <ResistRow label="COLD"   value={total.cr} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface StatModeToggleProps {
+  mode: StatMode
+  onChange: (m: StatMode) => void
+}
+
+function StatModeToggle({ mode, onChange }: StatModeToggleProps): React.ReactElement {
+  const options: Array<{ value: StatMode; label: string }> = [
+    { value: 'base',     label: 'Base' },
+    { value: 'equipped', label: '+Equipment' },
+    { value: 'buffed',   label: '+Raid Buffs' },
+  ]
+  return (
+    <div
+      className="mb-4 inline-flex rounded p-0.5"
+      style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+    >
+      {options.map((o) => {
+        const active = mode === o.value
+        return (
+          <button
+            key={o.value}
+            onClick={() => onChange(o.value)}
+            className="rounded px-3 py-1 text-xs font-medium transition-colors"
+            style={{
+              backgroundColor: active ? 'var(--color-primary)' : 'transparent',
+              color: active ? '#fff' : 'var(--color-muted-foreground)',
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+interface AegolismSwapProps {
+  value: AegolismChoice
+  onChange: (c: AegolismChoice) => void
+}
+
+function AegolismSwap({ value, onChange }: AegolismSwapProps): React.ReactElement {
+  const label = value === 'aegolism' ? 'Ancient: Gift of Aegolism' : 'Protection of the Glades'
+  const next: AegolismChoice = value === 'aegolism' ? 'glades' : 'aegolism'
+  return (
+    <div
+      className="mb-3 flex items-center justify-between rounded px-3 py-2 text-xs"
+      style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+    >
+      <div>
+        <p style={{ color: 'var(--color-foreground)' }}>{label}</p>
+        <p style={{ color: 'var(--color-muted-foreground)' }}>
+          Ancient: Gift of Aegolism and Protection of the Glades don&rsquo;t stack — pick whichever you raid with.
+        </p>
+      </div>
+      <button
+        onClick={() => onChange(next)}
+        className="ml-3 shrink-0 rounded px-2 py-1 font-medium"
+        style={{
+          backgroundColor: 'var(--color-surface-3)',
+          color: 'var(--color-foreground)',
+          border: '1px solid var(--color-border)',
+          cursor: 'pointer',
+        }}
+        title="Swap buff"
+      >
+        Swap
+      </button>
+    </div>
+  )
+}
+
+function VitalRow({ label, value }: { label: string; value: number }): React.ReactElement {
+  return (
+    <div
+      className="rounded px-3 py-2"
+      style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+    >
+      <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>{label}</p>
+      <p className="font-mono text-sm" style={{ color: 'var(--color-primary)' }}>{value}</p>
+    </div>
+  )
+}
+
+function ResistRow({ label, value }: { label: string; value: number }): React.ReactElement {
+  return (
+    <div className="text-center">
+      <p className="text-[10px] font-semibold tracking-wide" style={{ color: 'var(--color-muted)' }}>{label}</p>
+      <p className="font-mono text-sm" style={{ color: 'var(--color-primary)' }}>{value}</p>
     </div>
   )
 }

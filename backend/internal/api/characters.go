@@ -14,6 +14,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
 
 type charactersHandler struct {
@@ -279,6 +280,97 @@ func (h *charactersHandler) spellModifiers(w http.ResponseWriter, r *http.Reques
 			res.Contributors,
 		)
 		resp["resolution"] = resolution
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// equipSlots is the set of inventory locations we treat as worn equipment for
+// purposes of summing item stats. Bag/bank contents are ignored.
+var equipSlots = map[string]bool{
+	"Charm": true, "Ear": true, "Head": true, "Face": true, "Neck": true,
+	"Shoulders": true, "Arms": true, "Back": true, "Wrist": true,
+	"Range": true, "Hands": true, "Primary": true, "Secondary": true,
+	"Fingers": true, "Chest": true, "Legs": true, "Feet": true, "Waist": true,
+	"PowerSource": true, "Ammo": true,
+}
+
+// equippedStatsResponse is the aggregated stat contribution from a character's
+// currently equipped items, as listed in their most recent Quarmy export.
+type equippedStatsResponse struct {
+	Character string `json:"character"`
+	HP        int    `json:"hp"`
+	Mana      int    `json:"mana"`
+	AC        int    `json:"ac"`
+	STR       int    `json:"str"`
+	STA       int    `json:"sta"`
+	AGI       int    `json:"agi"`
+	DEX       int    `json:"dex"`
+	WIS       int    `json:"wis"`
+	INT       int    `json:"int"`
+	CHA       int    `json:"cha"`
+	PR        int    `json:"pr"`
+	MR        int    `json:"mr"`
+	DR        int    `json:"dr"`
+	FR        int    `json:"fr"`
+	CR        int    `json:"cr"`
+}
+
+// equippedStats sums HP / Mana / AC / attributes / resists across every item
+// equipped in the character's most recent Quarmy export. Used by the Character
+// Info → Stats panel to show "base + equipment" totals.
+func (h *charactersHandler) equippedStats(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	char, ok, err := h.store.Get(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+
+	cfg := h.mgr.Get()
+	if cfg.EQPath == "" {
+		writeError(w, http.StatusBadRequest, "eq_path not configured")
+		return
+	}
+
+	q, err := zeal.ParseQuarmy(zeal.QuarmyPath(cfg.EQPath, char.Name), char.Name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("parse quarmy: %s", err))
+		return
+	}
+
+	resp := equippedStatsResponse{Character: char.Name}
+	for _, entry := range q.Inventory {
+		if !equipSlots[entry.Location] || entry.ID <= 0 {
+			continue
+		}
+		item, err := h.db.GetItem(entry.ID)
+		if err != nil || item == nil {
+			continue
+		}
+		resp.HP += item.HP
+		resp.Mana += item.Mana
+		resp.AC += item.AC
+		resp.STR += item.Strength
+		resp.STA += item.Stamina
+		resp.AGI += item.Agility
+		resp.DEX += item.Dexterity
+		resp.WIS += item.Wisdom
+		resp.INT += item.Intelligence
+		resp.CHA += item.Charisma
+		resp.PR += item.PoisonResist
+		resp.MR += item.MagicResist
+		resp.DR += item.DiseaseResist
+		resp.FR += item.FireResist
+		resp.CR += item.ColdResist
 	}
 
 	writeJSON(w, http.StatusOK, resp)

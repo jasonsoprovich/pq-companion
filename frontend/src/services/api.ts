@@ -523,6 +523,29 @@ export function getZealQuarmy(character?: string): Promise<{ quarmy: QuarmyData 
   return get<{ quarmy: QuarmyData | null }>(`/api/zeal/quarmy${qs}`)
 }
 
+export interface EquippedStats {
+  character: string
+  hp: number
+  mana: number
+  ac: number
+  str: number
+  sta: number
+  agi: number
+  dex: number
+  wis: number
+  int: number
+  cha: number
+  pr: number
+  mr: number
+  dr: number
+  fr: number
+  cr: number
+}
+
+export function getCharacterEquippedStats(id: number): Promise<EquippedStats> {
+  return get<EquippedStats>(`/api/characters/${id}/equipped-stats`)
+}
+
 // ── Character Tasks ────────────────────────────────────────────────────────────
 
 export interface Subtask {
