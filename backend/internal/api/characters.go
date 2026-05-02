@@ -299,11 +299,9 @@ var equipSlots = map[string]bool{
 // vitals, attributes, resists, and worn-bonus stats from a single source
 // (base, equipment, or buffs).
 //
-// Attack / Haste / Regen / ManaRegen / FT / DmgShield are placeholders for
-// item worn-effect contributions. They're returned as zero today; populating
-// them requires walking each equipped item's worneffect spell and parsing
-// its SPA codes (SPA 11 haste, SPA 232 FT, etc) — which we'll wire up after
-// the base + flat-stat numbers are confirmed correct.
+// Worn-bonus fields (Attack, Haste, Regen, ManaRegen, FT, DmgShield) are
+// populated by walking each equipped item's worneffect spell and parsing
+// its SPA effect slots — see parseWornEffect.
 type statBlock struct {
 	HP        int `json:"hp"`
 	Mana      int `json:"mana"`
@@ -330,9 +328,13 @@ type statBlock struct {
 
 // equippedStatsResponse is the per-source breakdown the Stats panel renders.
 // Total = Base + (Equipment if mode != base) + (Buff sum if mode == buffed,
-// computed on the frontend).
+// computed on the frontend). Level and Class are echoed back so the frontend
+// can apply EQ's stat-derived HP/Mana bonus on top, using whichever STA/INT/
+// WIS the active mode produces.
 type equippedStatsResponse struct {
 	Character string    `json:"character"`
+	Level     int       `json:"level"`
+	Class     int       `json:"class"`
 	Base      statBlock `json:"base"`
 	Equipment statBlock `json:"equipment"`
 }
@@ -341,6 +343,119 @@ type equippedStatsResponse struct {
 // race or class adjustments. Hardcoded in EQEmu source rather than in the DB,
 // so we mirror it here.
 const defaultBaseResist = 25
+
+// itemFTCap is the per-character cap on item-sourced "Flowing Thought"
+// (worn mana regen) contributions, matching EQEmu's worn-bonus cap. Buff-
+// sourced mana regen (e.g. Clarity, KEI) is not capped against this.
+const itemFTCap = 15
+
+// EQEmu SPA codes referenced when parsing a worneffect spell.
+const (
+	spaHitpoints   = 0  // base/tick = HP regen on a worn buff
+	spaAC          = 1
+	spaATK         = 2
+	spaSTR         = 4
+	spaDEX         = 5
+	spaAGI         = 6
+	spaSTA         = 7
+	spaINT         = 8
+	spaWIS         = 9
+	spaCHA         = 10
+	spaMeleeHaste  = 11 // base = haste% + 100
+	spaMana        = 15 // base/tick = mana regen on a worn buff
+	spaResistFire  = 46
+	spaResistCold  = 47
+	spaPoisonRes   = 48
+	spaDiseaseRes  = 49
+	spaMagicRes    = 50
+	spaDmgShield   = 59
+	spaMaxHP       = 69
+	spaManaPool    = 97
+	spaMeleeHaste2 = 119
+)
+
+// parseWornEffect walks the 12 effect slots of a worneffect spell and adds
+// every recognized SPA contribution into `out`. SPA 11 (Melee Haste) is
+// returned separately so the caller can take the max across all items rather
+// than summing — worn haste doesn't stack.
+func parseWornEffect(s *db.Spell, out *statBlock) (haste int) {
+	for i := 0; i < 12; i++ {
+		spa := s.EffectIDs[i]
+		base := s.EffectBaseValues[i]
+		if spa == 254 || spa == 255 || spa == 0 && base == 0 {
+			continue
+		}
+		switch spa {
+		case spaAC:
+			out.AC += base
+		case spaATK:
+			out.Attack += base
+		case spaSTR:
+			out.STR += base
+		case spaSTA:
+			out.STA += base
+		case spaAGI:
+			out.AGI += base
+		case spaDEX:
+			out.DEX += base
+		case spaWIS:
+			out.WIS += base
+		case spaINT:
+			out.INT += base
+		case spaCHA:
+			out.CHA += base
+		case spaHitpoints:
+			// On a worn buff (long buff_duration), positive base = HP regen
+			// per tick. Negative base on a worn effect is rare and skipped.
+			if base > 0 {
+				out.Regen += base
+			}
+		case spaMana:
+			if base > 0 {
+				// All worn mana-regen items are exposed as "Flowing Thought
+				// N" by the spell name; that's the FT bucket. Anything else
+				// rolls into generic ManaRegen.
+				if strings.HasPrefix(s.Name, "Flowing Thought") {
+					out.FT += base
+				} else {
+					out.ManaRegen += base
+				}
+			}
+		case spaMeleeHaste, spaMeleeHaste2:
+			// Convert from EQEmu's "100 + percent" encoding back to a raw
+			// percent. Reported separately so the caller can max-stack.
+			if base > 100 {
+				h := base - 100
+				if h > haste {
+					haste = h
+				}
+			}
+		case spaResistFire:
+			out.FR += base
+		case spaResistCold:
+			out.CR += base
+		case spaPoisonRes:
+			out.PR += base
+		case spaDiseaseRes:
+			out.DR += base
+		case spaMagicRes:
+			out.MR += base
+		case spaDmgShield:
+			// SPA 59 base on items is conventionally negative (dmg dealt to
+			// attacker is "negative" hp). Show the magnitude.
+			if base < 0 {
+				out.DmgShield += -base
+			} else {
+				out.DmgShield += base
+			}
+		case spaMaxHP:
+			out.HP += base
+		case spaManaPool:
+			out.Mana += base
+		}
+	}
+	return haste
+}
 
 // equippedStats returns the character's "base" stats (level/class HP+Mana
 // from base_data, race resists, attribs from quarmy) and the summed
@@ -367,12 +482,17 @@ func (h *charactersHandler) equippedStats(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	resp := equippedStatsResponse{Character: char.Name}
+	resp := equippedStatsResponse{
+		Character: char.Name,
+		Level:     char.Level,
+		Class:     char.Class,
+	}
 
 	// ── Base block ──
 	// Quarmy attribs (already populated on the character row from the most
-	// recent export) become the seven attribute columns. base_data gives us a
-	// rough base HP/Mana, and we mirror EQ's blank-slate +25 resist.
+	// recent export) become the seven attribute columns. base_data gives us
+	// the level/class HP and Mana floor; the frontend layers a stat-derived
+	// bonus on top using whichever STA/INT/WIS the active mode produces.
 	resp.Base = statBlock{
 		STR: char.BaseSTR, STA: char.BaseSTA, AGI: char.BaseAGI,
 		DEX: char.BaseDEX, WIS: char.BaseWIS, INT: char.BaseINT, CHA: char.BaseCHA,
@@ -391,6 +511,9 @@ func (h *charactersHandler) equippedStats(w http.ResponseWriter, r *http.Request
 	// ── Equipment block ──
 	q, err := zeal.ParseQuarmy(zeal.QuarmyPath(cfg.EQPath, char.Name), char.Name)
 	if err == nil && q != nil {
+		// Worn haste doesn't stack — only the highest-haste item applies.
+		// Track the running max separately and assign at the end.
+		bestHaste := 0
 		for _, entry := range q.Inventory {
 			if !equipSlots[entry.Location] || entry.ID <= 0 {
 				continue
@@ -414,9 +537,21 @@ func (h *charactersHandler) equippedStats(w http.ResponseWriter, r *http.Request
 			resp.Equipment.DR += item.DiseaseResist
 			resp.Equipment.FR += item.FireResist
 			resp.Equipment.CR += item.ColdResist
-			// Attack / Haste / Regen / ManaRegen / FT / DmgShield come from
-			// the item's worneffect spell, not from item columns. Leaving
-			// these at zero until we wire the SPA-parsing path.
+
+			if item.WornEffect > 0 {
+				worn, err := h.db.GetSpell(item.WornEffect)
+				if err == nil && worn != nil {
+					if h := parseWornEffect(worn, &resp.Equipment); h > bestHaste {
+						bestHaste = h
+					}
+				}
+			}
+		}
+		resp.Equipment.Haste = bestHaste
+
+		// Item Flowing Thought is capped at 15 per EQ's worn-mana-regen rule.
+		if resp.Equipment.FT > itemFTCap {
+			resp.Equipment.FT = itemFTCap
 		}
 	}
 

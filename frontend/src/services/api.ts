@@ -534,6 +534,8 @@ export interface StatBlock {
 
 export interface EquippedStats {
   character: string
+  level: number
+  class: number
   base: StatBlock
   equipment: StatBlock
 }

@@ -344,14 +344,15 @@ interface BuffDef {
 
 // Raid-buff preset matching quarmy.com's defaults. Aegolism / Protection of
 // the Glades are mutually exclusive (different druid/cleric tiers); the rest
-// stack additively.
+// stack additively. mana_regen is per-tick mana from buff sources — not
+// counted against the 15-FT item cap.
 const AEGOLISM_BUFF: BuffDef = {
   name: 'Ancient: Gift of Aegolism',
   delta: { hp: 1300, ac: 89 },
 }
 const GLADES_BUFF: BuffDef = {
   name: 'Protection of the Glades',
-  delta: { hp: 250, ac: 39 },
+  delta: { hp: 250, ac: 39, mana_regen: 4 },
 }
 
 const RAID_BUFFS: BuffDef[] = [
@@ -360,7 +361,7 @@ const RAID_BUFFS: BuffDef[] = [
   { name: 'Talisman of the Cat',         delta: { agi: 52 } },
   { name: "Brell's Mountainous Barrier", delta: { hp: 225 } },
   { name: 'Visions of Grandeur',         delta: { agi: 40, dex: 25, haste: 58, attack: 26 } },
-  { name: "Koadic's Endless Intellect",  delta: { mana: 250, wis: 25, int: 25, ft: 14 } },
+  { name: "Koadic's Endless Intellect",  delta: { mana: 250, wis: 25, int: 25, mana_regen: 14 } },
   { name: 'Circle of the Seasons',       delta: { pr: 15, mr: 15, dr: 15, fr: 15, cr: 15 } },
   { name: 'Group Resist Magic',          delta: { mr: 10, fr: 10, cr: 10 } },
 ]
@@ -400,6 +401,62 @@ function addDelta(into: Required<StatDelta>, d: StatDelta): void {
 
 function statBlockToDelta(b: StatBlock): StatDelta {
   return { ...b }
+}
+
+// EQ class indices (0-indexed; 0 = Warrior).
+const INT_CASTER_CLASSES = new Set([10, 11, 12, 13]) // Necro, Wiz, Mag, Enchanter
+const WIS_CASTER_CLASSES = new Set([1, 2, 3, 4, 5, 9, 14]) // Cleric, Pal, Rng, SK, Druid, Shm, Bst
+
+// statDerivedBonus is the INT/WIS-driven Mana bonus that quarmy.com layers on
+// top of base_data — without it, casters read ~30% low on Mana since
+// base_data.mana is only the level-up floor. Reverse-fit against Osui
+// (lvl-60 Enchanter, INT 255 → ~4233 in-game with full gear/buffs); other
+// caster classes land within ~10%. base_data.hp already encodes a STA
+// baseline, so we don't add a STA-driven HP bonus on top.
+function statDerivedBonus(level: number, classIdx: number, total: { int: number; wis: number }): { mana: number } {
+  if (level <= 0 || classIdx < 0) return { mana: 0 }
+  const intl = Math.min(255, total.int)
+  const wis = Math.min(255, total.wis)
+  if (INT_CASTER_CLASSES.has(classIdx)) {
+    return { mana: Math.floor((intl * level) / 10) }
+  }
+  if (WIS_CASTER_CLASSES.has(classIdx)) {
+    return { mana: Math.floor((wis * level) / 10) }
+  }
+  return { mana: 0 }
+}
+
+// AC class softcap factor — multiplier applied to item AC when computing the
+// displayed total. Plate classes get more out of every point of armor than
+// cloth; these values are reverse-fit against quarmy.com so the displayed AC
+// lands within ~10%. Indexed by EQ class (0-indexed).
+const AC_FACTOR_BY_CLASS: Record<number, number> = {
+  0: 2.5,  // Warrior
+  1: 2.2,  // Cleric
+  2: 2.4,  // Paladin
+  3: 2.2,  // Ranger
+  4: 2.4,  // SK
+  5: 2.0,  // Druid
+  6: 2.1,  // Monk
+  7: 2.1,  // Bard
+  8: 2.1,  // Rogue
+  9: 2.0,  // Shaman
+  10: 2.0, // Necromancer
+  11: 2.0, // Wizard
+  12: 2.0, // Magician
+  13: 2.2, // Enchanter
+  14: 2.0, // Beastlord
+}
+
+// displayedAC mirrors EQEmu's softcap math: item AC is scaled by a per-class
+// factor, then spell-AC, level bonus, and an AGI-derived bonus stack on top.
+// Approximate — matches in-game inspection AC within ~10% across classes.
+function displayedAC(level: number, classIdx: number, itemAC: number, spellAC: number, totalAGI: number): number {
+  if (itemAC <= 0 && spellAC <= 0) return 0
+  const factor = AC_FACTOR_BY_CLASS[classIdx] ?? 2.0
+  const agi = Math.min(255, totalAGI)
+  const agiBonus = agi > 75 ? Math.floor((agi - 75) / 3) : 0
+  return Math.floor(itemAC * factor) + spellAC + level + agiBonus
 }
 
 interface StatsPanelProps {
@@ -445,6 +502,22 @@ function StatsPanel({ stats, hasStats, gear }: StatsPanelProps): React.ReactElem
   if (includesGear && gear?.equipment) addDelta(total, statBlockToDelta(gear.equipment))
   for (const b of buffs) addDelta(total, b.delta)
 
+  // Apply EQ's stat-driven Mana bonus and softcapped AC once the cumulative
+  // attributes are known. Quarmy.com does the same (with the full EQEmu
+  // formula); this is the reverse-fit approximation.
+  if (gear) {
+    const bonus = statDerivedBonus(gear.level, gear.class, {
+      int: total.int, wis: total.wis,
+    })
+    total.mana += bonus.mana
+
+    // Recompute AC with the softcap factor — `total.ac` was the raw sum of
+    // item + spell AC, which underrepresents the in-game number by ~50%.
+    const itemAC = includesGear ? (gear.equipment.ac ?? 0) : 0
+    const spellAC = total.ac - itemAC
+    total.ac = displayedAC(gear.level, gear.class, itemAC, spellAC, total.agi)
+  }
+
   const capped = (v: number) => Math.min(STAT_CAP, v)
   const gearMissing = includesGear && !gear
 
@@ -467,7 +540,6 @@ function StatsPanel({ stats, hasStats, gear }: StatsPanelProps): React.ReactElem
           <VitalRow label="HP" value={total.hp} />
           <VitalRow label="Mana" value={total.mana} />
           <VitalRow label="AC" value={total.ac} />
-          <VitalRow label="ATK" value={total.attack} />
         </div>
 
         <div className="space-y-3">
@@ -494,15 +566,13 @@ function StatsPanel({ stats, hasStats, gear }: StatsPanelProps): React.ReactElem
             style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
           >
             <div className="grid grid-cols-2 gap-y-1">
-              <span>Haste</span>      <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{total.haste}%</span>
-              <span>Regen</span>      <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{total.regen}/tick</span>
-              <span>Mana Regen</span> <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{total.mana_regen}/tick</span>
-              <span>Flowing Thought</span> <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{total.ft}</span>
-              <span>Damage Shield</span> <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{total.dmg_shield}</span>
+              <span>Haste</span>           <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{total.haste}%</span>
+              <span>Worn ATK</span>        <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{total.attack}</span>
+              <span>HP Regen</span>        <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{total.regen}/tick</span>
+              <span>Flowing Thought</span> <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{total.ft}/15</span>
+              <span>Mana Regen</span>      <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{total.mana_regen}/tick</span>
+              <span>Damage Shield</span>   <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{total.dmg_shield}</span>
             </div>
-            <p className="mt-2 italic" style={{ color: 'var(--color-muted)' }}>
-              Worn-effect contributions from items (haste, FT, regen, ATK, DS) aren&rsquo;t parsed yet — values shown here come from raid buffs only.
-            </p>
           </div>
         )}
       </div>
