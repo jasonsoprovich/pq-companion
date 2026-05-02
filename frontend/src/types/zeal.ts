@@ -4,6 +4,7 @@ export interface InventoryEntry {
   id: number
   count: number
   slots: number // bag capacity; 0 for non-containers
+  icon?: number // joined in by API from items.icon
 }
 
 export interface Inventory {

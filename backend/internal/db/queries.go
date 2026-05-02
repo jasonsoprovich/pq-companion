@@ -71,6 +71,35 @@ func (db *DB) GetItem(id int) (*Item, error) {
 	return it, nil
 }
 
+// ItemIcons returns a map of itemID → icon for the given IDs in a single query.
+// IDs not present in the items table (or with icon=0) are omitted from the map.
+func (db *DB) ItemIcons(ids []int) (map[int]int, error) {
+	out := make(map[int]int, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(ids))
+	placeholders = placeholders[:len(placeholders)-1]
+	q := fmt.Sprintf("SELECT id, icon FROM items WHERE icon > 0 AND id IN (%s)", placeholders)
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query item icons: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, icon int
+		if err := rows.Scan(&id, &icon); err != nil {
+			return nil, fmt.Errorf("scan item icon: %w", err)
+		}
+		out[id] = icon
+	}
+	return out, rows.Err()
+}
+
 // SearchItems returns a filtered, paginated list of items.
 // Zero-value fields in f mean "no filter" (except ItemType: -1 = any).
 func (db *DB) SearchItems(f ItemFilter) (*SearchResult[Item], error) {

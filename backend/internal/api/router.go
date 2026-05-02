@@ -45,7 +45,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	cfg := &configHandler{mgr: cfgMgr, hub: hub}
 	charactersH := &charactersHandler{store: charStore, mgr: cfgMgr, db: database, tailer: tailer}
 	search := &searchHandler{db: database}
-	zealH := &zealHandler{watcher: zealWatcher, cfgMgr: cfgMgr}
+	zealH := &zealHandler{watcher: zealWatcher, cfgMgr: cfgMgr, db: database}
 	keysH := &keysHandler{watcher: zealWatcher}
 	backupH := &backupHandler{mgr: backupMgr}
 	logH := &logHandler{tailer: tailer}

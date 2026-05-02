@@ -6,6 +6,7 @@ import type { AllInventoriesResponse, Inventory, InventoryEntry } from '../types
 import type { Item } from '../types/item'
 import ItemDetailModal from '../components/ItemDetailModal'
 import CharacterSubTabs from '../components/CharacterSubTabs'
+import { ItemIcon } from '../components/Icon'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -196,6 +197,7 @@ function SlotCell({ pos, entry, highlight, onLookup }: SlotCellProps): React.Rea
       </div>
       {entry ? (
         <div className="mt-0.5 flex items-center gap-1.5">
+          <ItemIcon id={entry.icon} name={entry.name} size={20} />
           <span className="text-xs leading-tight truncate" style={{ color: 'var(--color-foreground)' }}>
             {entry.name}
           </span>
@@ -312,7 +314,7 @@ function BagCard({ group, showCharBadge, query, onLookup }: BagCardProps): React
               <button
                 key={`${s.location}-${i}`}
                 onClick={() => onLookup(s.id)}
-                className="flex items-center justify-between gap-1 rounded px-2 py-1 text-left text-xs"
+                className="flex items-center gap-1.5 rounded px-2 py-1 text-left text-xs"
                 style={{
                   backgroundColor: 'var(--color-surface-2)',
                   border: '1px solid var(--color-border)',
@@ -320,7 +322,8 @@ function BagCard({ group, showCharBadge, query, onLookup }: BagCardProps): React
                 }}
                 title={s.name}
               >
-                <span className="truncate">{s.name}</span>
+                <ItemIcon id={s.icon} name={s.name} size={18} />
+                <span className="truncate flex-1">{s.name}</span>
                 {s.count > 1 && (
                   <span className="shrink-0 text-[10px]" style={{ color: 'var(--color-muted-foreground)' }}>
                     ×{s.count}

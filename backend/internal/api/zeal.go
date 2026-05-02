@@ -5,12 +5,39 @@ import (
 	"net/http"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
 
 type zealHandler struct {
 	watcher *zeal.Watcher
 	cfgMgr  *config.Manager
+	db      *db.DB
+}
+
+// enrichEntries fills in the Icon field on each entry by looking up
+// items.icon for all referenced IDs in a single query. Errors are logged
+// implicitly (entries are returned without icons) — icons are decorative
+// and shouldn't fail the inventory request.
+func (h *zealHandler) enrichEntries(entries []zeal.InventoryEntry) {
+	if len(entries) == 0 || h.db == nil {
+		return
+	}
+	ids := make([]int, 0, len(entries))
+	for _, e := range entries {
+		if e.ID > 0 {
+			ids = append(ids, e.ID)
+		}
+	}
+	icons, err := h.db.ItemIcons(ids)
+	if err != nil {
+		return
+	}
+	for i := range entries {
+		if icon, ok := icons[entries[i].ID]; ok {
+			entries[i].Icon = icon
+		}
+	}
 }
 
 // GET /api/zeal/inventory
@@ -19,6 +46,9 @@ type zealHandler struct {
 // or file not yet written) returns {"inventory": null}.
 func (h *zealHandler) inventory(w http.ResponseWriter, r *http.Request) {
 	inv := h.watcher.Inventory()
+	if inv != nil {
+		h.enrichEntries(inv.Entries)
+	}
 	json.NewEncoder(w).Encode(struct {
 		Inventory *zeal.Inventory `json:"inventory"`
 	}{Inventory: inv})
@@ -63,6 +93,12 @@ func (h *zealHandler) allInventories(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"failed to scan inventories"}`, http.StatusInternalServerError)
 		return
 	}
+	for _, c := range resp.Characters {
+		if c != nil {
+			h.enrichEntries(c.Entries)
+		}
+	}
+	h.enrichEntries(resp.SharedBank)
 	json.NewEncoder(w).Encode(resp)
 }
 
@@ -77,7 +113,11 @@ func (h *zealHandler) quarmy(w http.ResponseWriter, r *http.Request) {
 	}{}
 	name := r.URL.Query().Get("character")
 	if name == "" {
-		resp.Quarmy = h.watcher.Quarmy()
+		q := h.watcher.Quarmy()
+		if q != nil {
+			h.enrichEntries(q.Inventory)
+		}
+		resp.Quarmy = q
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
@@ -91,6 +131,7 @@ func (h *zealHandler) quarmy(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
+	h.enrichEntries(q.Inventory)
 	resp.Quarmy = q
 	json.NewEncoder(w).Encode(resp)
 }

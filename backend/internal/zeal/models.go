@@ -7,12 +7,14 @@ import "time"
 
 // InventoryEntry is one row from a Zeal inventory export file.
 // The file is tab-delimited with columns: Location, Name, ID, Count, Slots.
+// Icon is not in the export — it's joined in by the API layer from the items DB.
 type InventoryEntry struct {
 	Location string `json:"location"` // e.g. "Head", "General1", "General1:Slot1"
 	Name     string `json:"name"`
 	ID       int    `json:"id"`
 	Count    int    `json:"count"`
 	Slots    int    `json:"slots"` // bag capacity; 0 for non-containers
+	Icon     int    `json:"icon,omitempty"`
 }
 
 // Inventory is the full parsed state of a character's inventory export.

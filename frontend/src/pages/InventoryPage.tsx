@@ -5,6 +5,7 @@ import { getZealInventory, getItem } from '../services/api'
 import type { Inventory, InventoryEntry } from '../types/zeal'
 import type { Item } from '../types/item'
 import ItemDetailModal from '../components/ItemDetailModal'
+import { ItemIcon } from '../components/Icon'
 
 // ── Slot ordering for equipment display ───────────────────────────────────────
 
@@ -98,6 +99,7 @@ function ItemRow({ entry, indent = false, onLookup }: ItemRowProps): React.React
         cursor: clickable ? 'pointer' : 'default',
       }}
     >
+      <ItemIcon id={entry.icon} name={entry.name} size={20} />
       <div className="flex-1 min-w-0">
         <span
           className="text-sm truncate"
