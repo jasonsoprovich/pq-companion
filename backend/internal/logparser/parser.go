@@ -430,7 +430,47 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		}
 	}
 
+	// --- Spell landed (cast_on_you / cast_on_other) ---
+	// Tried last so structured event patterns take priority; this avoids
+	// misclassifying combat/heal/zone lines whose phrasing might happen to
+	// resemble a spell's flavor text.
+	if idx := activeCastIndex.Load(); idx != nil {
+		if cm := idx.Match(msg); cm != nil {
+			return LogEvent{
+				Type: EventSpellLanded,
+				Data: spellLandedData(cm),
+			}, true
+		}
+	}
+
 	return LogEvent{}, false
+}
+
+// spellLandedData converts a CastMatch into the JSON payload emitted on the
+// wire. Candidates is populated only for ambiguous matches so the typical
+// (unique-text) case stays compact.
+func spellLandedData(cm *CastMatch) SpellLandedData {
+	d := SpellLandedData{
+		SpellID:    cm.SpellID,
+		SpellName:  cm.SpellName,
+		TargetName: cm.TargetName,
+	}
+	switch cm.Kind {
+	case MatchSelf:
+		d.Kind = SpellLandedKindYou
+	case MatchOther:
+		d.Kind = SpellLandedKindOther
+	}
+	if cm.SpellID == 0 && len(cm.Candidates) > 1 {
+		d.Candidates = make([]SpellLandedCandidate, 0, len(cm.Candidates))
+		for _, c := range cm.Candidates {
+			d.Candidates = append(d.Candidates, SpellLandedCandidate{
+				SpellID:   c.SpellID,
+				SpellName: c.SpellName,
+			})
+		}
+	}
+	return d
 }
 
 // extractVerb attempts to pull the conjugated attack verb out of an NPC hit

@@ -24,6 +24,13 @@ export interface Trigger {
   timer_duration_secs: number
   worn_off_pattern: string
   spell_id: number
+  /**
+   * Per-trigger override for the global buff / detrim display threshold
+   * (in seconds). > 0 means the timer this trigger creates is hidden
+   * until its remaining time falls at or below this value. 0 (default)
+   * defers to the user's global setting.
+   */
+  display_threshold_secs: number
 }
 
 export interface TriggerFired {

@@ -7,6 +7,8 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Skull, Eraser } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useActivePlayerName, targetSuffix } from '../hooks/useActivePlayerName'
+import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresholds'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import OverlayLockButton from '../components/OverlayLockButton'
@@ -52,7 +54,7 @@ function barColor(remaining: number, total: number, category: TimerCategory): st
 
 // ── Timer row ──────────────────────────────────────────────────────────────────
 
-function TimerRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
+function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: string }): React.ReactElement {
   const pct =
     timer.duration_seconds > 0
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
@@ -60,6 +62,7 @@ function TimerRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
   const color = barColor(timer.remaining_seconds, timer.duration_seconds, timer.category)
   const urgent = pct < 0.2
   const catColor = CATEGORY_COLORS[timer.category]
+  const onTarget = targetSuffix(timer.target_name, activePlayer)
 
   return (
     <div
@@ -132,6 +135,9 @@ function TimerRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
             }}
           >
             {timer.spell_name}
+            {onTarget && (
+              <span style={{ color: 'rgba(255,255,255,0.45)', fontWeight: 400 }}>{onTarget}</span>
+            )}
           </span>
         </div>
         <span
@@ -156,6 +162,8 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
   const [state, setState] = useState<TimerState | null>(null)
+  const activePlayer = useActivePlayerName()
+  const thresholds = useDisplayThresholds()
 
   useEffect(() => {
     getTimerState().then(setState).catch(() => {})
@@ -169,7 +177,9 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
 
   useWebSocket(handleMessage)
 
-  const detrims = (state?.timers ?? []).filter((t) => DETRIM_CATEGORIES.has(t.category))
+  const detrims = (state?.timers ?? [])
+    .filter((t) => DETRIM_CATEGORIES.has(t.category))
+    .filter((t) => passesThreshold(t, thresholds))
 
   return (
     <div
@@ -287,7 +297,7 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
             </p>
           </div>
         ) : (
-          detrims.map((t) => <TimerRow key={t.id} timer={t} />)
+          detrims.map((t) => <TimerRow key={t.id} timer={t} activePlayer={activePlayer} />)
         )}
       </div>
     </div>

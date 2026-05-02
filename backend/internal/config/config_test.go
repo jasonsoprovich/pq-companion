@@ -102,3 +102,38 @@ func TestLoadFrom_mergesExistingFile(t *testing.T) {
 	// This is expected YAML behaviour — document it via the test.
 	_ = cfg.ServerAddr
 }
+
+// applyDefaults backfills newly-added fields when an existing config file
+// pre-dates them. We rely on this so users don't need to manually edit
+// ~/.pq-companion/config.yaml after upgrading.
+func TestLoadFrom_BackfillsSpellTimerDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	// Write a config from before SpellTimer existed.
+	const old = `eq_path: /games/EQ
+character: Osui
+server_addr: :8080
+`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	cfg := m.Get()
+
+	if cfg.SpellTimer.TrackingScope != TrackingScopeAnyone {
+		t.Errorf("TrackingScope: got %q, want %q (default)", cfg.SpellTimer.TrackingScope, TrackingScopeAnyone)
+	}
+	// Threshold defaults are 0 by design (always show); just confirm we
+	// didn't accidentally set them to anything else.
+	if cfg.SpellTimer.BuffDisplayThresholdSecs != 0 {
+		t.Errorf("BuffDisplayThresholdSecs: got %d, want 0", cfg.SpellTimer.BuffDisplayThresholdSecs)
+	}
+	if cfg.SpellTimer.DetrimDisplayThresholdSecs != 0 {
+		t.Errorf("DetrimDisplayThresholdSecs: got %d, want 0", cfg.SpellTimer.DetrimDisplayThresholdSecs)
+	}
+}

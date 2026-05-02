@@ -12,6 +12,30 @@ export interface BackupSettings {
   max_backups: number
 }
 
+export type TrackingScope = 'self' | 'anyone'
+
+export interface SpellTimerSettings {
+  /**
+   * Whose spell lands the engine tracks as timers.
+   *   "self"   — only buffs/debuffs landing on the active player
+   *   "anyone" — every recognised land (default; required for raid buff tracking)
+   */
+  tracking_scope: TrackingScope
+
+  /**
+   * Hide buff overlay rows whose remaining time exceeds this many seconds.
+   * 0 (default) means always show — useful as-is for most users; bump to
+   * e.g. 600 to only see buffs in the last 10 minutes of their duration.
+   */
+  buff_display_threshold_secs: number
+
+  /**
+   * Same as buff_display_threshold_secs, applied to the Detrimental
+   * overlay (debuffs, DoTs, mez, stuns). 0 (default) means always show.
+   */
+  detrim_display_threshold_secs: number
+}
+
 export interface Config {
   eq_path: string
   character: string
@@ -19,5 +43,6 @@ export interface Config {
   server_addr: string
   preferences: Preferences
   backup: BackupSettings
+  spell_timer: SpellTimerSettings
   onboarding_completed: boolean
 }

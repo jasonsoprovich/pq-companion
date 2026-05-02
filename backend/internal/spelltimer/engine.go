@@ -18,41 +18,67 @@ import (
 // strings disables modifier resolution (timers fall back to base duration).
 type CharacterContext func() (eqPath, charName string)
 
+// ScopeProvider returns the user-configured tracking scope ("self" or
+// "anyone"). The engine calls this on every landed event so a config change
+// takes effect immediately without restarting the engine. Empty / unknown
+// values are treated as "anyone" to match the default behaviour.
+type ScopeProvider func() string
+
+const (
+	scopeSelf   = "self"
+	scopeAnyone = "anyone"
+)
+
 // broadcastInterval is how often the engine pushes timer state updates to
 // WebSocket clients while timers are active.
 const broadcastInterval = time.Second
 
 // dedupGraceWindow is the time after a timer is created during which a second
-// create attempt for the same spell is treated as a redundant duplicate (e.g.
-// the cast-event path and a user trigger both firing for the same cast).
-// Outside this window a same-name create overwrites — supporting buff refresh
-// on real recasts.
+// create attempt for the same spell name (across any target) is treated as a
+// redundant duplicate. This catches the case where both the spell-landed
+// pipeline and a user-defined custom trigger fire for the same buff —
+// whichever wins first gets to define the timer; the other is suppressed.
 const dedupGraceWindow = 3 * time.Second
 
-// didNotTakeHoldWindow is the time after EventSpellCast during which a
-// "Your spell did not take hold." message is correlated to that cast and
-// triggers cancellation of the just-created timer. EQ emits the failure
-// message immediately after the cast resolves (sub-second), so a small
-// window is enough to filter out unrelated past casts.
-const didNotTakeHoldWindow = 5 * time.Second
+// lastCastWindow is the time after EventSpellCast within which a
+// landed/disambiguation/did-not-take-hold message is still considered to
+// refer to that cast. EQ's land messages typically follow the cast within
+// a second; this allows for slow casts plus modest log latency.
+const lastCastWindow = 30 * time.Second
+
+// timerKeySep separates the spell name from the target name in a timer's
+// composite key. Picked so a literal '@' never appears in either side.
+const timerKeySep = "@"
+
+// timerKey returns the composite map key used to identify a timer. Targets
+// that aren't tied to a specific recipient (e.g. trigger-driven timers) pass
+// an empty string — the resulting key still namespaces them away from any
+// spell-derived timer with the same spell name.
+func timerKey(spellName, targetName string) string {
+	return spellName + timerKeySep + targetName
+}
 
 // Engine watches parsed log events, maintains a live map of active spell
 // timers, and broadcasts state changes via WebSocket.
 //
-// Each spell is keyed by its name. Casting the same spell a second time
-// replaces the existing timer (e.g. refreshing Slow). This is the correct
-// behaviour for self-buffs and single-target debuffs.
+// Timers are keyed by (spell name, target). Casting the same spell again on
+// the same target replaces (refreshes) its timer; casting on a different
+// target creates a separate entry. This is what raid buff tracking needs —
+// a Visions of Grandeur cast on three different group members produces three
+// independently-tracked timers.
 type Engine struct {
 	hub      *ws.Hub
 	db       *db.DB
 	charCtx  CharacterContext
+	scopeFn  ScopeProvider
 
 	mu     sync.Mutex
-	timers map[string]*ActiveTimer // keyed by spell name
+	timers map[string]*ActiveTimer // keyed by timerKey(spell, target)
 
-	// lastCastSpell and lastCastAt track the most recent EventSpellCast so the
-	// engine can correlate "Your spell did not take hold." (EQ omits the spell
-	// name from that message) with the spell it just tried to cast.
+	// lastCastSpell and lastCastAt track the most recent EventSpellCast.
+	// Used (a) to disambiguate ambiguous EventSpellLanded matches — many
+	// spells share identical cast-on text — and (b) historically to
+	// correlate "Your spell did not take hold." with a specific cast.
 	lastCastSpell string
 	lastCastAt    time.Time
 
@@ -64,14 +90,30 @@ type Engine struct {
 	modContribs  []buffmod.Modifier
 }
 
-// NewEngine returns an initialised Engine ready to receive log events. charCtx
-// may be nil; when nil, timers fall back to base (unextended) duration.
-func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext) *Engine {
+// NewEngine returns an initialised Engine ready to receive log events.
+// charCtx may be nil (timers fall back to base / unextended duration).
+// scopeFn may be nil (engine behaves as if scope is "anyone").
+func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn ScopeProvider) *Engine {
 	return &Engine{
 		hub:     hub,
 		db:      database,
 		charCtx: charCtx,
+		scopeFn: scopeFn,
 		timers:  make(map[string]*ActiveTimer),
+	}
+}
+
+// trackingScope returns the user's currently-configured scope, defaulting to
+// "anyone" when the provider is absent or returns an empty/unknown value.
+func (e *Engine) trackingScope() string {
+	if e.scopeFn == nil {
+		return scopeAnyone
+	}
+	switch s := e.scopeFn(); s {
+	case scopeSelf:
+		return scopeSelf
+	default:
+		return scopeAnyone
 	}
 }
 
@@ -103,6 +145,12 @@ func (e *Engine) Start(ctx context.Context) {
 }
 
 // Handle processes a single parsed log event.
+//
+// Timer creation is driven exclusively by EventSpellLanded — the cast-begin
+// event only records the spell name so an ambiguous later land event can be
+// disambiguated. Resist / interrupt / did-not-take-hold mean the spell never
+// landed and therefore no timer was ever created; these handlers only clear
+// the recorded last-cast so a stale value can't bind to an unrelated spell.
 func (e *Engine) Handle(ev logparser.LogEvent) {
 	switch ev.Type {
 	case logparser.EventSpellCast:
@@ -111,73 +159,69 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 			slog.Info("timer-debug: spell-cast event with bad payload", "data_type", fmt.Sprintf("%T", ev.Data))
 			return
 		}
-		slog.Info("timer-debug: spell-cast event received", "spell", data.SpellName, "ts", ev.Timestamp)
-		// Record the cast so a subsequent "did not take hold" message can be
-		// correlated back to this spell (EQ omits the spell name from that
-		// message). Recorded with wall time, not log time, because the
-		// correlation window is measured against time.Now() in Handle.
 		e.mu.Lock()
 		e.lastCastSpell = data.SpellName
 		e.lastCastAt = time.Now()
 		e.mu.Unlock()
-		e.onSpellCast(ev.Timestamp, data.SpellName)
+		slog.Info("timer-debug: spell-cast recorded (awaiting land)", "spell", data.SpellName, "ts", ev.Timestamp)
 
-	case logparser.EventSpellDidNotTakeHold:
-		// Cancel the just-created timer for the most recent cast, if any and
-		// if the cast was recent enough to be the spell EQ is referring to.
-		e.mu.Lock()
-		spell := e.lastCastSpell
-		age := time.Since(e.lastCastAt)
-		e.mu.Unlock()
-		if spell == "" || age > didNotTakeHoldWindow {
-			slog.Info("timer-debug: did-not-take-hold seen but no recent cast to cancel",
-				"last_spell", spell,
-				"last_cast_age_ms", age.Milliseconds(),
-			)
+	case logparser.EventSpellLanded:
+		data, ok := ev.Data.(logparser.SpellLandedData)
+		if !ok {
 			return
 		}
-		slog.Info("timer-debug: did-not-take-hold cancelling timer",
-			"spell", spell,
-			"cast_age_ms", age.Milliseconds(),
-		)
-		e.removeTimer(spell)
+		e.onSpellLanded(ev.Timestamp, data)
 
-	case logparser.EventSpellInterrupt:
-		data, ok := ev.Data.(logparser.SpellInterruptData)
+	case logparser.EventSpellDidNotTakeHold,
+		logparser.EventSpellInterrupt,
+		logparser.EventSpellResist:
+		// Spell never landed — nothing to remove. Clear the recorded last
+		// cast so it can't accidentally disambiguate an unrelated future
+		// landed event.
+		e.mu.Lock()
+		e.lastCastSpell = ""
+		e.lastCastAt = time.Time{}
+		e.mu.Unlock()
+
+	case logparser.EventSpellFade:
+		// "Your X spell has worn off." — fires only on the active player.
+		data, ok := ev.Data.(logparser.SpellFadeData)
 		if !ok || data.SpellName == "" {
 			return
 		}
-		// Named interrupt — cancel the pending timer for this spell.
-		e.removeTimer(data.SpellName)
-
-	case logparser.EventSpellResist:
-		data, ok := ev.Data.(logparser.SpellResistData)
-		if !ok {
-			return
-		}
-		// Spell was resisted — cancel the pending timer.
-		e.removeTimer(data.SpellName)
-
-	case logparser.EventSpellFade:
-		data, ok := ev.Data.(logparser.SpellFadeData)
-		if !ok {
-			return
-		}
-		// Buff naturally wore off — remove the timer.
-		e.removeTimer(data.SpellName)
+		target := e.activePlayerName()
+		e.removeTimer(timerKey(data.SpellName, target))
 
 	case logparser.EventSpellFadeFrom:
+		// "Tashanian effect fades from Soandso." — target is in the event.
 		data, ok := ev.Data.(logparser.SpellFadeFromData)
-		if !ok {
+		if !ok || data.SpellName == "" {
 			return
 		}
-		// Buff faded from a specific target — remove the timer keyed by spell name.
-		e.removeTimer(data.SpellName)
+		// Remove the entry for this exact (spell, target). Some spell-fade
+		// messages use a short form of the name (e.g. "Tashanian" for the
+		// Tashan line) which still matches the DB spell name we keyed under.
+		e.removeTimer(timerKey(data.SpellName, data.TargetName))
 
 	case logparser.EventZone, logparser.EventDeath:
 		// Zone change or death clears all active timers.
 		e.clearAll()
 	}
+}
+
+// activePlayerName returns the active character's display name, used as the
+// implicit target of cast_on_you / "Your X spell has worn off." messages.
+// Falls back to the literal "You" when no character context is configured —
+// this only happens in tests and during early startup.
+func (e *Engine) activePlayerName() string {
+	if e.charCtx == nil {
+		return "You"
+	}
+	_, name := e.charCtx()
+	if name == "" {
+		return "You"
+	}
+	return name
 }
 
 // GetState returns a point-in-time snapshot of all active timers.
@@ -188,14 +232,20 @@ func (e *Engine) GetState() TimerState {
 }
 
 // StartExternal adds a timer not driven by a log cast event. Used by the
-// trigger engine when a user-defined trigger with timer_type set matches a log
-// line. If a timer with the same name already exists it is replaced. Category
-// is a plain string (to avoid a dependency cycle from trigger package) and
-// must be one of "buff", "debuff", "mez", "dot", "stun" — anything else is
-// treated as "debuff".
+// trigger engine when a user-defined trigger with timer_type set matches a
+// log line. Recasts within the dedup window — including ones triggered by
+// the spell-landed pipeline for a real spell of the same name — are
+// suppressed so the more specific path (whichever fired first) wins.
 //
-// durationSecs must be > 0. Returns early without change if duration is 0.
-func (e *Engine) StartExternal(name string, category string, durationSecs int, startedAt time.Time) {
+// Category is a plain string (to avoid a dependency cycle from the trigger
+// package) and must be one of "buff", "debuff", "mez", "dot", "stun";
+// anything else is treated as "debuff". durationSecs must be > 0.
+//
+// displayThresholdSecs lets a trigger override the user's global buff /
+// detrim display threshold for the timer it creates. > 0 means "only show
+// when remaining time is at or below this value"; 0 means "let the
+// frontend resolve against the global default for my category".
+func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs int, startedAt time.Time) {
 	if name == "" || durationSecs <= 0 {
 		return
 	}
@@ -205,27 +255,38 @@ func (e *Engine) StartExternal(name string, category string, durationSecs int, s
 	default:
 		cat = CategoryDebuff
 	}
-	duration := float64(durationSecs)
-	timer := &ActiveTimer{
-		ID:              name,
-		SpellName:       name,
-		Category:        cat,
-		CastAt:          startedAt,
-		StartsAt:        startedAt,
-		ExpiresAt:       startedAt.Add(time.Duration(durationSecs) * time.Second),
-		DurationSeconds: duration,
-	}
+
+	// Custom triggers don't carry a target. The composite key still
+	// namespaces them so a trigger named "Visions of Grandeur" can't collide
+	// with the per-target spell-landed entries, but we additionally dedup
+	// against any same-spell-name timer to avoid the user seeing two rows
+	// for the same buff (one from the spell-landed pipeline, one from a
+	// custom trigger they configured before the pipeline existed).
+	key := timerKey(name, "")
 
 	e.mu.Lock()
-	if existing, ok := e.timers[name]; ok && time.Since(existing.CastAt) < dedupGraceWindow {
-		e.mu.Unlock()
-		slog.Info("timer-debug: duplicate external timer suppressed (within grace window)",
-			"name", name,
-			"existing_age_ms", time.Since(existing.CastAt).Milliseconds(),
-		)
-		return
+	for _, existing := range e.timers {
+		if existing.SpellName == name && time.Since(existing.CastAt) < dedupGraceWindow {
+			e.mu.Unlock()
+			slog.Info("timer-debug: duplicate external timer suppressed (within grace window)",
+				"name", name,
+				"existing_target", existing.TargetName,
+				"existing_age_ms", time.Since(existing.CastAt).Milliseconds(),
+			)
+			return
+		}
 	}
-	e.timers[name] = timer
+	timer := &ActiveTimer{
+		ID:                   key,
+		SpellName:            name,
+		Category:             cat,
+		CastAt:               startedAt,
+		StartsAt:             startedAt,
+		ExpiresAt:            startedAt.Add(time.Duration(durationSecs) * time.Second),
+		DurationSeconds:      float64(durationSecs),
+		DisplayThresholdSecs: displayThresholdSecs,
+	}
+	e.timers[key] = timer
 	snap := e.snapshot(time.Now())
 	e.mu.Unlock()
 
@@ -238,10 +299,12 @@ func (e *Engine) StartExternal(name string, category string, durationSecs int, s
 	e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 }
 
-// StopExternal removes a timer by name. Used by the trigger engine when a
-// "worn off" pattern matches for a timer-driven trigger.
+// StopExternal removes any timer with this spell name, irrespective of
+// target. Called by the trigger engine when a worn-off pattern fires; we
+// match by name (not composite key) so a user-authored worn-off pattern
+// also clears any spell-landed entries for the same buff.
 func (e *Engine) StopExternal(name string) {
-	e.removeTimer(name)
+	e.removeBySpellName(name)
 }
 
 // ClearAll removes every active timer and broadcasts the resulting empty
@@ -287,20 +350,52 @@ func categoryMatchesGroup(cat Category, group string) bool {
 
 // ── internal helpers ──────────────────────────────────────────────────────────
 
-func (e *Engine) onSpellCast(castAt time.Time, spellName string) {
+// onSpellLanded creates (or refreshes) a timer for a spell that just took
+// effect. Resolves the spell name (disambiguating against lastCastSpell when
+// the cast text is shared by multiple spells), the target (the active player
+// for self-cast events), and the duration (with item/AA focus extensions).
+func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedData) {
+	spellName := e.resolveLandedSpellName(data)
+	if spellName == "" {
+		return
+	}
+
+	target := data.TargetName
+	if data.Kind == logparser.SpellLandedKindYou {
+		target = e.activePlayerName()
+	}
+	if target == "" {
+		// Defensive — should be unreachable now activePlayerName falls back
+		// to "You". Skip rather than create a key like "Spell@".
+		return
+	}
+
+	// Tracking scope filter: in "self" mode the engine drops every land
+	// whose recipient isn't the active player. The "You" fallback is also
+	// treated as self so users testing before the active character is known
+	// still see their own buffs.
+	if e.trackingScope() == scopeSelf {
+		active := e.activePlayerName()
+		if target != active && target != "You" {
+			slog.Info("timer-debug: spell-landed skipped (scope=self, non-self target)",
+				"spell", spellName, "target", target, "active", active)
+			return
+		}
+	}
+
 	spell, err := e.db.GetSpellByExactName(spellName)
 	if err != nil {
 		slog.Warn("spelltimer: DB error looking up spell", "name", spellName, "err", err)
 		return
 	}
 	if spell == nil {
-		slog.Info("timer-debug: spell not found in DB (no timer created)", "name", spellName)
+		slog.Info("timer-debug: landed spell not found in DB (no timer created)", "name", spellName)
 		return
 	}
 
 	durationTicks := CalcDurationTicks(spell.BuffDurationFormula, spell.BuffDuration, defaultCasterLevel)
 	if durationTicks <= 0 {
-		slog.Info("timer-debug: spell has zero duration (no timer created)",
+		slog.Info("timer-debug: landed spell has zero duration (no timer created)",
 			"name", spellName,
 			"formula", spell.BuffDurationFormula,
 			"buff_duration", spell.BuffDuration,
@@ -310,35 +405,32 @@ func (e *Engine) onSpellCast(castAt time.Time, spellName string) {
 
 	baseDurationSec := float64(durationTicks) * eqTickSeconds
 	durationSeconds := e.applyDurationModifiers(spell, baseDurationSec)
-	startsAt := castAt.Add(time.Duration(spell.CastTime) * time.Millisecond)
-	expiresAt := startsAt.Add(time.Duration(float64(time.Second) * durationSeconds))
+	expiresAt := landedAt.Add(time.Duration(float64(time.Second) * durationSeconds))
 
+	key := timerKey(spellName, target)
 	timer := &ActiveTimer{
-		ID:              spellName,
+		ID:              key,
 		SpellName:       spellName,
 		SpellID:         spell.ID,
+		TargetName:      target,
 		Category:        categorize(spell),
-		CastAt:          castAt,
-		StartsAt:        startsAt,
+		CastAt:          landedAt,
+		StartsAt:        landedAt,
 		ExpiresAt:       expiresAt,
 		DurationSeconds: durationSeconds,
 	}
 
 	e.mu.Lock()
-	if existing, ok := e.timers[spellName]; ok && time.Since(existing.CastAt) < dedupGraceWindow {
-		e.mu.Unlock()
-		slog.Info("timer-debug: duplicate cast suppressed (within grace window)",
-			"name", spellName,
-			"existing_age_ms", time.Since(existing.CastAt).Milliseconds(),
-		)
-		return
-	}
-	e.timers[spellName] = timer
+	// Recasting on the same target replaces the timer (refresh). No dedup
+	// against the same key is needed; with composite keys, recasts on the
+	// SAME target replace cleanly and casts on DIFFERENT targets coexist.
+	e.timers[key] = timer
 	snap := e.snapshot(time.Now())
 	e.mu.Unlock()
 
-	slog.Info("timer-debug: timer created and broadcast",
-		"name", spellName,
+	slog.Info("timer-debug: timer created from spell-landed",
+		"spell", spellName,
+		"target", target,
 		"category", timer.Category,
 		"duration_secs", durationSeconds,
 		"active_timer_count", len(snap.Timers),
@@ -346,14 +438,75 @@ func (e *Engine) onSpellCast(castAt time.Time, spellName string) {
 	e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 }
 
-func (e *Engine) removeTimer(spellName string) {
+// resolveLandedSpellName returns the canonical spell name for a landed event,
+// disambiguating ambiguous matches (multiple spells share the same cast text)
+// against the most recently observed cast. Returns "" if the event is
+// ambiguous and no recent cast points at any candidate.
+func (e *Engine) resolveLandedSpellName(data logparser.SpellLandedData) string {
+	if data.SpellName != "" {
+		return data.SpellName
+	}
+	if len(data.Candidates) == 0 {
+		return ""
+	}
 	e.mu.Lock()
-	_, had := e.timers[spellName]
-	delete(e.timers, spellName)
+	lastSpell := e.lastCastSpell
+	lastAge := time.Since(e.lastCastAt)
+	e.mu.Unlock()
+
+	if lastSpell == "" || lastAge > lastCastWindow {
+		slog.Info("timer-debug: ambiguous spell-landed with no recent cast — skipping",
+			"candidates", len(data.Candidates),
+			"last_cast_age_ms", lastAge.Milliseconds(),
+		)
+		return ""
+	}
+	for _, c := range data.Candidates {
+		if c.SpellName == lastSpell {
+			return c.SpellName
+		}
+	}
+	slog.Info("timer-debug: ambiguous spell-landed; recent cast doesn't match any candidate",
+		"last_spell", lastSpell,
+		"candidates", len(data.Candidates),
+	)
+	return ""
+}
+
+// removeTimer deletes a single timer by its composite key and broadcasts.
+// No-op if the key isn't present.
+func (e *Engine) removeTimer(key string) {
+	e.mu.Lock()
+	_, had := e.timers[key]
+	delete(e.timers, key)
 	snap := e.snapshot(time.Now())
 	e.mu.Unlock()
 
 	if had {
+		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+	}
+}
+
+// removeBySpellName deletes every timer whose SpellName matches, regardless
+// of target. Used by StopExternal: a custom-trigger worn-off pattern is
+// presumed to wipe the spell entirely (the user wrote it that way), and we
+// also want to catch any spell-landed timer we may have created in parallel.
+func (e *Engine) removeBySpellName(spellName string) {
+	if spellName == "" {
+		return
+	}
+	e.mu.Lock()
+	removed := 0
+	for k, t := range e.timers {
+		if t.SpellName == spellName {
+			delete(e.timers, k)
+			removed++
+		}
+	}
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	if removed > 0 {
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 	}
 }

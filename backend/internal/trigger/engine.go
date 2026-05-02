@@ -17,8 +17,13 @@ const historyMaxSize = 200
 // TimerSink is the minimal interface the trigger engine needs to start and
 // stop externally-driven spell timers. It is implemented by
 // *spelltimer.Engine; kept abstract here to avoid an import cycle.
+//
+// displayThresholdSecs is forwarded to the engine so a per-trigger
+// threshold (Trigger.DisplayThresholdSecs) can override the global
+// buff/detrim defaults the user sets in Settings. 0 means "use the
+// category default."
 type TimerSink interface {
-	StartExternal(name, category string, durationSecs int, startedAt time.Time)
+	StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time)
 	StopExternal(name string)
 }
 
@@ -142,7 +147,7 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time) {
 	slog.Debug("trigger fired", "trigger", t.Name, "line", matchedLine)
 
 	if e.sink != nil && c.timerKey != "" && t.TimerDurationSecs > 0 {
-		e.sink.StartExternal(c.timerKey, timerCategory(t.TimerType), t.TimerDurationSecs, firedAt)
+		e.sink.StartExternal(c.timerKey, timerCategory(t.TimerType), t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt)
 	}
 }
 

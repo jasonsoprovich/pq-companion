@@ -84,6 +84,26 @@ func main() {
 	}
 	defer charStore.Close()
 
+	// Build the spell-landed detection index from the read-only spells_new
+	// table. Failure here is non-fatal — without the index, ParseLine simply
+	// won't emit EventSpellLanded events and the engine falls back to the
+	// (less accurate) cast-begin path.
+	if msgs, err := database.LoadCastMessages(); err != nil {
+		slog.Warn("load cast messages (spell-landed detection disabled)", "err", err)
+	} else {
+		idxMsgs := make([]logparser.CastMessage, 0, len(msgs))
+		for _, m := range msgs {
+			idxMsgs = append(idxMsgs, logparser.CastMessage{
+				SpellID:     m.SpellID,
+				SpellName:   m.SpellName,
+				CastOnYou:   m.CastOnYou,
+				CastOnOther: m.CastOnOther,
+			})
+		}
+		logparser.SetCastIndex(logparser.NewCastIndex(idxMsgs))
+		slog.Info("spell-landed index loaded", "entries", len(idxMsgs))
+	}
+
 	zealWatcher := zeal.NewWatcher(cfgMgr, hub, charStore)
 	go zealWatcher.Start(context.Background())
 
@@ -113,6 +133,8 @@ func main() {
 			charName = cfg.Character
 		}
 		return cfg.EQPath, charName
+	}, func() string {
+		return cfgMgr.Get().SpellTimer.TrackingScope
 	})
 	go timerEngine.Start(context.Background())
 

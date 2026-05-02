@@ -7,10 +7,12 @@ import (
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
 type configHandler struct {
 	mgr *config.Manager
+	hub *ws.Hub
 }
 
 // get returns the current configuration as JSON.
@@ -28,6 +30,11 @@ func (h *configHandler) update(w http.ResponseWriter, r *http.Request) {
 	if err := h.mgr.Update(c); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save config")
 		return
+	}
+	// Notify connected overlay windows so they can re-read settings
+	// (e.g. spell-timer display thresholds) without a page reload.
+	if h.hub != nil {
+		h.hub.Broadcast(ws.Event{Type: "config:updated", Data: h.mgr.Get()})
 	}
 	writeJSON(w, http.StatusOK, h.mgr.Get())
 }
