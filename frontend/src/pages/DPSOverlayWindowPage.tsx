@@ -6,8 +6,8 @@
  * Locked: setIgnoreMouseEvents passes clicks through to the game; header
  * buttons remain clickable via mouseenter/mouseleave forwarding.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Swords, Clipboard, ClipboardCheck } from 'lucide-react'
+import React, { useCallback, useEffect, useState } from 'react'
+import { Swords, Clipboard, ClipboardCheck, Trash2 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -34,6 +34,10 @@ function fmtDur(secs: number): string {
 function pct(part: number, total: number): string {
   if (total === 0) return '—'
   return `${Math.round((part / total) * 100)}%`
+}
+
+function truncateName(name: string, max = 24): string {
+  return name.length > max ? `${name.slice(0, max - 1)}…` : name
 }
 
 // ── Clipboard ──────────────────────────────────────────────────────────────────
@@ -143,8 +147,6 @@ function FightTable({ fight, showAll }: { fight: FightState; showAll: boolean })
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
-const POST_FIGHT_PERSIST_MS = 30_000
-
 export default function DPSOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
@@ -153,37 +155,30 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   const [now, setNow] = useState(() => Date.now())
   const [copied, setCopied] = useState(false)
 
-  // Track the last seen fight and when combat ended, to persist the overlay for
-  // 30 seconds after the fight ends so the player can review the numbers.
+  // Hold the most recent fight so the overlay keeps the numbers visible after
+  // combat ends. Cleared when a new fight starts (replaced with current_fight)
+  // or via the manual clear button.
   const [frozenFight, setFrozenFight] = useState<FightState | null>(null)
-  const [frozenExpiry, setFrozenExpiry] = useState<number>(0)
-  const prevInCombat = useRef<boolean | null>(null)
 
   useEffect(() => {
     getCombatState().then(setCombat).catch(() => {})
   }, [])
 
-  // Capture the current fight data while in combat; on transition out, set 30s expiry.
+  // Capture the current fight while in combat; once combat ends we keep the
+  // last frozenFight in state until a new fight begins or the user clears it.
   useEffect(() => {
-    if (!combat) return
-    const wasInCombat = prevInCombat.current
-    prevInCombat.current = combat.in_combat
-
-    if (combat.in_combat && combat.current_fight) {
+    if (combat?.in_combat && combat.current_fight) {
       setFrozenFight(combat.current_fight)
-      setFrozenExpiry(0)
-    } else if (!combat.in_combat && wasInCombat === true) {
-      setFrozenExpiry(Date.now() + POST_FIGHT_PERSIST_MS)
     }
   }, [combat])
 
-  // Tick every second while in combat or showing post-fight data.
-  const shouldTick = combat?.in_combat || frozenExpiry > 0
+  // Tick every second while in combat so the live duration/DPS update.
+  const inCombat = combat?.in_combat ?? false
   useEffect(() => {
-    if (!shouldTick) return
+    if (!inCombat) return
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
-  }, [shouldTick])
+  }, [inCombat])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === 'overlay:combat') {
@@ -193,12 +188,13 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
 
   useWebSocket(handleMessage)
 
-  const inCombat = combat?.in_combat ?? false
-  const showingPostFight = !inCombat && frozenFight !== null && now < frozenExpiry
+  const showingPostFight = !inCombat && frozenFight !== null
   const fight = inCombat ? combat?.current_fight : showingPostFight ? frozenFight : null
 
   const liveSecs = fight
-    ? Math.max((now - new Date(fight.start_time).getTime()) / 1000, fight.duration_seconds)
+    ? inCombat
+      ? Math.max((now - new Date(fight.start_time).getTime()) / 1000, fight.duration_seconds)
+      : fight.duration_seconds
     : 0
   const liveTotalDPS = fight && liveSecs > 0 ? fight.total_damage / liveSecs : 0
   const liveYouDPS = fight && liveSecs > 0 ? fight.you_damage / liveSecs : 0
@@ -293,6 +289,24 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           >
             {copied ? <ClipboardCheck size={11} /> : <Clipboard size={11} />}
           </button>
+          {/* clear post-fight summary */}
+          <button
+            onClick={() => setFrozenFight(null)}
+            disabled={!showingPostFight}
+            title="Clear DPS"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'none',
+              border: 'none',
+              padding: '1px 3px',
+              cursor: showingPostFight ? 'pointer' : 'default',
+              color: 'rgba(255,255,255,0.4)',
+              opacity: showingPostFight ? 1 : 0.3,
+            }}
+          >
+            <Trash2 size={11} />
+          </button>
           {/* lock */}
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           {/* close */}
@@ -338,11 +352,17 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           }}
         />
         {fight ? (
-          <span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {fight.primary_target && (
+              <span style={{ fontWeight: 700, color: 'rgba(255,255,255,0.85)' }}>
+                {truncateName(fight.primary_target)}
+              </span>
+            )}
+            {fight.primary_target && <span style={{ color: 'rgba(255,255,255,0.3)' }}> · </span>}
             {fmtDur(liveSecs)} · {fmt(fight.total_damage)} dmg
             {showingPostFight && (
               <span style={{ color: 'rgba(255,255,255,0.3)', marginLeft: 4 }}>
-                (ends in {Math.max(0, Math.ceil((frozenExpiry - now) / 1000))}s)
+                (last fight)
               </span>
             )}
           </span>

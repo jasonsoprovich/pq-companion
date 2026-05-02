@@ -24,6 +24,9 @@ function fmtDuration(secs: number): string {
   const s = Math.floor(secs % 60)
   return m > 0 ? `${m}m ${s}s` : `${s}s`
 }
+function truncateName(name: string, max = 28): string {
+  return name.length > max ? `${name.slice(0, max - 1)}…` : name
+}
 
 function buildFightText(fight: FightState): string {
   const target = fight.primary_target ?? 'Unknown'
@@ -133,7 +136,9 @@ function CombatStrip({ combat, now }: { combat: CombatState; now: number }): Rea
       <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: combat.in_combat ? '#ef4444' : '#6b7280', display: 'inline-block', flexShrink: 0 }} />
       {combat.in_combat && fight ? (
         <>
-          <span style={{ fontWeight: 600, color: '#f87171' }}>In Combat</span>
+          <span style={{ fontWeight: 600, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+            {fight.primary_target ? truncateName(fight.primary_target) : 'In Combat'}
+          </span>
           <span style={{ color: 'var(--color-muted)' }}>·</span>
           <span>{fmtDuration(liveSecs)}</span>
           <span style={{ color: 'var(--color-muted)' }}>·</span>

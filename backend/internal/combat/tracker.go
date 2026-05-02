@@ -152,8 +152,16 @@ func (t *Tracker) Reset() {
 func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	t.mu.Lock()
 
-	// Start a new fight if none is active.
+	// Start a new fight if none is active. Require "You" to be involved (as
+	// actor or target) before seeding a fight — otherwise third-party damage
+	// (e.g. another player's spells, or NPC AoEs hitting only group members
+	// before they reach us) would create phantom fights that we'd later have
+	// to discard.
 	if t.active == nil {
+		if data.Actor != "You" && data.Target != "You" {
+			t.mu.Unlock()
+			return
+		}
 		t.fightCounter++
 		t.active = &internalFight{
 			id:           t.fightCounter,
@@ -300,41 +308,21 @@ func (t *Tracker) archiveFight(endTime time.Time) {
 	f := t.active
 	t.active = nil
 
+	// A fight is meaningful only if at least one confirmed NPC was involved.
+	// Without one, the recorded events are usually third-party noise (e.g. a
+	// guildmate's spell on another guildmate) and should not be archived.
+	npcs := confirmedNPCs(f)
+	if len(npcs) == 0 {
+		return
+	}
+
 	duration := endTime.Sub(f.startTime).Seconds()
 	if duration < 0.001 {
 		duration = 0.001 // guard against zero-division
 	}
 
-	combatants := buildEntityStats(f.outgoing, duration)
-
-	// Exclude hostile NPCs from the player combatants list. An entity is a
-	// confirmed NPC if it attacked "You" (incoming) OR if "You" attacked it
-	// (youTargets — "You" only attacks NPCs in PvE). This catches NPCs that
-	// hit group members without ever targeting "You" directly.
-	knownNPCs := make(map[string]bool, len(f.incoming)+len(f.youTargets))
-	for name := range f.incoming {
-		knownNPCs[name] = true
-	}
-	for name := range f.youTargets {
-		knownNPCs[name] = true
-	}
-	filtered := combatants[:0]
-	for _, c := range combatants {
-		if !knownNPCs[c.Name] {
-			filtered = append(filtered, c)
-		}
-	}
-	combatants = filtered
-
-	// Determine the primary NPC target (most-hit by outgoing attacks).
-	primaryTarget := ""
-	maxTargetCount := 0
-	for target, count := range f.targetCounts {
-		if count > maxTargetCount {
-			maxTargetCount = count
-			primaryTarget = target
-		}
-	}
+	combatants := excludeNPCs(buildEntityStats(f.outgoing, duration), npcs)
+	primaryTarget := pickPrimaryTarget(f, npcs)
 
 	totalDmg := int64(0)
 	youDmg := int64(0)
@@ -410,34 +398,10 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 		if duration < 0.001 {
 			duration = 0.001
 		}
-		combatants := buildEntityStats(t.active.outgoing, duration)
 
-		// Exclude hostile NPCs from the player combatants list (same logic as
-		// archiveFight: incoming ∪ youTargets defines the confirmed-NPC set).
-		knownNPCs := make(map[string]bool, len(t.active.incoming)+len(t.active.youTargets))
-		for name := range t.active.incoming {
-			knownNPCs[name] = true
-		}
-		for name := range t.active.youTargets {
-			knownNPCs[name] = true
-		}
-		filtered := combatants[:0]
-		for _, c := range combatants {
-			if !knownNPCs[c.Name] {
-				filtered = append(filtered, c)
-			}
-		}
-		combatants = filtered
-
-		// Determine the primary NPC target.
-		primaryTarget := ""
-		maxTargetCount := 0
-		for target, count := range t.active.targetCounts {
-			if count > maxTargetCount {
-				maxTargetCount = count
-				primaryTarget = target
-			}
-		}
+		npcs := confirmedNPCs(t.active)
+		combatants := excludeNPCs(buildEntityStats(t.active.outgoing, duration), npcs)
+		primaryTarget := pickPrimaryTarget(t.active, npcs)
 
 		totalDmg := int64(0)
 		youDmg := int64(0)
@@ -528,4 +492,56 @@ func safeDivide(numerator, denominator float64) float64 {
 		return 0
 	}
 	return numerator / denominator
+}
+
+// confirmedNPCs returns the set of names that are confirmed hostile NPCs for
+// this fight. An entity is a confirmed NPC if it hit "You" (incoming) or if
+// "You" attacked it (youTargets — the player only attacks NPCs in PvE).
+func confirmedNPCs(f *internalFight) map[string]bool {
+	set := make(map[string]bool, len(f.incoming)+len(f.youTargets))
+	for name := range f.incoming {
+		set[name] = true
+	}
+	for name := range f.youTargets {
+		set[name] = true
+	}
+	return set
+}
+
+// pickPrimaryTarget chooses the NPC name that best represents this fight,
+// scored by combined activity: hits dealt to it by anyone (targetCounts) plus
+// hits it dealt to "You" (incoming). Ranking by combined activity rather than
+// targetCounts alone ensures NPCs that mainly AoE the player still win when
+// they're not directly attacked, and excludes player names that may have been
+// hit by NPC spells. Returns "" if npcs is empty.
+func pickPrimaryTarget(f *internalFight, npcs map[string]bool) string {
+	primary := ""
+	best := -1
+	for name := range npcs {
+		score := f.targetCounts[name]
+		if ent := f.incoming[name]; ent != nil {
+			score += ent.hitCount
+		}
+		if score > best {
+			best = score
+			primary = name
+		}
+	}
+	return primary
+}
+
+// excludeNPCs returns combatants minus any name in the npcs set, preserving
+// the original ordering. The DPS list is for player damage dealers only;
+// hostile NPCs that landed outgoing damage on group members must be filtered.
+func excludeNPCs(combatants []EntityStats, npcs map[string]bool) []EntityStats {
+	if len(npcs) == 0 {
+		return combatants
+	}
+	filtered := combatants[:0]
+	for _, c := range combatants {
+		if !npcs[c.Name] {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
 }

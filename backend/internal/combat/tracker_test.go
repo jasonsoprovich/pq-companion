@@ -383,6 +383,72 @@ func TestActiveFightDurationUsesLogTimestamps(t *testing.T) {
 	}
 }
 
+// TestThirdPartyDamageDoesNotSeedFight verifies that damage events involving
+// neither "You" as actor nor as target (e.g. another player's spells, or NPC
+// AoEs hitting only group members) do not start a fight when no fight is
+// active. This guards against the bug where guild members being healed,
+// buffed, or spell-hit appeared as standalone fights in the combat log.
+func TestThirdPartyDamageDoesNotSeedFight(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("Kildrey", "Hawthor", 60, now))
+	tr.Handle(hitEvent("an undead pirate", "Kildrey", 50, now.Add(time.Second)))
+
+	st := tr.GetState()
+	if st.InCombat {
+		t.Fatal("expected no fight to be created from third-party damage events")
+	}
+	if st.CurrentFight != nil {
+		t.Fatal("expected CurrentFight to remain nil")
+	}
+}
+
+// TestPrimaryTargetIsAlwaysAnNPC verifies that PrimaryTarget is picked from the
+// confirmed-NPC set (incoming ∪ youTargets), not from raw target counts. This
+// guards against the bug where a raid boss AoE'd a guildmate many times and
+// the guildmate's name became the fight title.
+func TestPrimaryTargetIsAlwaysAnNPC(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// You hit the boss once — establishes the boss as a confirmed NPC.
+	tr.Handle(hitEvent("You", "Aten Ha Ra", 100, now))
+	// Boss AoEs Kildrey several times (Kildrey is a guildmate, not an NPC).
+	// Without the fix Kildrey would become PrimaryTarget by raw target count.
+	tr.Handle(hitEvent("Aten Ha Ra", "Kildrey", 60, now.Add(time.Second)))
+	tr.Handle(hitEvent("Aten Ha Ra", "Kildrey", 60, now.Add(2*time.Second)))
+	tr.Handle(hitEvent("Aten Ha Ra", "Kildrey", 60, now.Add(3*time.Second)))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil {
+		t.Fatal("expected an active fight")
+	}
+	if got := st.CurrentFight.PrimaryTarget; got != "Aten Ha Ra" {
+		t.Fatalf("expected PrimaryTarget=%q, got %q", "Aten Ha Ra", got)
+	}
+}
+
+// TestPrimaryTargetFallsBackToIncomingNPC verifies that an NPC who only ever
+// hits "You" (and is never the target of any outgoing attack we observe) is
+// still picked as PrimaryTarget — there are no targetCounts entries for it
+// since target=="You" routes to the incoming map instead.
+func TestPrimaryTargetFallsBackToIncomingNPC(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("a fire elemental", "You", 200, now))
+	tr.Handle(hitEvent("a fire elemental", "You", 180, now.Add(time.Second)))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil {
+		t.Fatal("expected an active fight (incoming damage seeds a fight)")
+	}
+	if got := st.CurrentFight.PrimaryTarget; got != "a fire elemental" {
+		t.Fatalf("expected PrimaryTarget=%q, got %q", "a fire elemental", got)
+	}
+}
+
 func TestZoneTrackedForDeath(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()
