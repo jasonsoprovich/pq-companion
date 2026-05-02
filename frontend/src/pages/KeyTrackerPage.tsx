@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { Key, RefreshCw, AlertCircle, CheckCircle2, Circle, ChevronDown, ChevronRight } from 'lucide-react'
 import { getKeys, getKeysProgress } from '../services/api'
 import type { KeyDef, KeysProgressResponse, CharacterKeyProgress } from '../types/keys'
+import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
+import CharacterSubTabs from '../components/CharacterSubTabs'
 
 // ── Filter tabs ────────────────────────────────────────────────────────────────
 
@@ -414,12 +416,19 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function KeyTrackerPage(): React.ReactElement {
+  const { active } = useActiveCharacter()
+  const [viewedCharacter, setViewedCharacter] = useState('')
   const [keyDefs, setKeyDefs] = useState<KeyDef[]>([])
   const [progress, setProgress] = useState<KeysProgressResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const navigate = useNavigate()
+
+  // Default the viewed character to the active character once it's known.
+  useEffect(() => {
+    if (!viewedCharacter && active) setViewedCharacter(active)
+  }, [active, viewedCharacter])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -435,15 +444,20 @@ export default function KeyTrackerPage(): React.ReactElement {
 
   useEffect(() => { load() }, [load])
 
-  // Build a lookup from key_id → CharacterKeyProgress[]
+  // Build a lookup from key_id → CharacterKeyProgress[]. When a single
+  // character is selected, filter each key's character list to just that one so
+  // both progress totals and table columns reflect that character only.
   const progressByKey = useMemo<Map<string, CharacterKeyProgress[]>>(() => {
     const m = new Map<string, CharacterKeyProgress[]>()
     if (!progress) return m
     for (const kp of progress.keys) {
-      m.set(kp.key_id, kp.characters)
+      const chars = viewedCharacter
+        ? kp.characters.filter((c) => c.character.toLowerCase() === viewedCharacter.toLowerCase())
+        : kp.characters
+      m.set(kp.key_id, chars)
     }
     return m
-  }, [progress])
+  }, [progress, viewedCharacter])
 
   const filteredKeys = useMemo<KeyDef[]>(() => {
     if (filter === 'all') return keyDefs
@@ -536,6 +550,13 @@ export default function KeyTrackerPage(): React.ReactElement {
           Refresh
         </button>
       </div>
+
+      {/* Character sub-tabs (per-character view; "All" shows the cross-character matrix) */}
+      <CharacterSubTabs
+        value={viewedCharacter}
+        onChange={setViewedCharacter}
+        allowAll
+      />
 
       {/* Filter tabs */}
       <div

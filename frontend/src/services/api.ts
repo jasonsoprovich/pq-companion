@@ -240,8 +240,9 @@ export function getZealInventory(): Promise<ZealInventoryResponse> {
   return get<ZealInventoryResponse>('/api/zeal/inventory')
 }
 
-export function getZealSpellbook(): Promise<ZealSpellbookResponse> {
-  return get<ZealSpellbookResponse>('/api/zeal/spells')
+export function getZealSpellbook(character?: string): Promise<ZealSpellbookResponse> {
+  const qs = character ? `?character=${encodeURIComponent(character)}` : ''
+  return get<ZealSpellbookResponse>(`/api/zeal/spells${qs}`)
 }
 
 export function getAllInventories(): Promise<AllInventoriesResponse> {
@@ -516,8 +517,9 @@ export function getCharacterSpellModifiers(
   return get<SpellModifiersResponse>(`/api/characters/${id}/spell-modifiers${qs}`)
 }
 
-export function getZealQuarmy(): Promise<{ quarmy: QuarmyData | null }> {
-  return get<{ quarmy: QuarmyData | null }>('/api/zeal/quarmy')
+export function getZealQuarmy(character?: string): Promise<{ quarmy: QuarmyData | null }> {
+  const qs = character ? `?character=${encodeURIComponent(character)}` : ''
+  return get<{ quarmy: QuarmyData | null }>(`/api/zeal/quarmy${qs}`)
 }
 
 // ── Character Tasks ────────────────────────────────────────────────────────────

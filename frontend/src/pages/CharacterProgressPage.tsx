@@ -13,6 +13,7 @@ import type { Spell } from '../types/spell'
 import type { Item } from '../types/item'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import ItemDetailModal from '../components/ItemDetailModal'
+import CharacterSubTabs from '../components/CharacterSubTabs'
 
 // ── Equipment slot ordering ────────────────────────────────────────────────────
 
@@ -97,6 +98,11 @@ function TabButton({ active, onClick, children }: TabButtonProps): React.ReactEl
 
 export default function CharacterProgressPage(): React.ReactElement {
   const { active: activeCharacter } = useActiveCharacter()
+  const [viewedCharacter, setViewedCharacter] = useState('')
+  // Default the viewed character to the active one when it first becomes known.
+  useEffect(() => {
+    if (!viewedCharacter && activeCharacter) setViewedCharacter(activeCharacter)
+  }, [activeCharacter, viewedCharacter])
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('stats')
   const [quarmy, setQuarmy] = useState<QuarmyData | null>(null)
@@ -126,16 +132,19 @@ export default function CharacterProgressPage(): React.ReactElement {
 
   const load = useCallback(async () => {
     setError(null)
+    if (!viewedCharacter) return
     try {
-      const [quarmyResp, charsResp] = await Promise.all([
-        getZealQuarmy(),
-        listCharacters(),
-      ])
-      setQuarmy(quarmyResp.quarmy)
+      const charsResp = await listCharacters()
       const found = charsResp.characters.find(
-        (c) => c.name.toLowerCase() === activeCharacter.toLowerCase()
+        (c) => c.name.toLowerCase() === viewedCharacter.toLowerCase()
       ) ?? null
       setActiveChar(found)
+
+      // For the active character we use the cached watcher data; for any other
+      // character we ask the backend to parse that character's quarmy file.
+      const isActive = activeCharacter && viewedCharacter.toLowerCase() === activeCharacter.toLowerCase()
+      const quarmyResp = await getZealQuarmy(isActive ? undefined : viewedCharacter)
+      setQuarmy(quarmyResp.quarmy)
 
       if (found) {
         const aaResp = await getCharacterAAs(found.id)
@@ -156,7 +165,7 @@ export default function CharacterProgressPage(): React.ReactElement {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load data')
     }
-  }, [activeCharacter])
+  }, [viewedCharacter, activeCharacter])
 
   useEffect(() => {
     setLoading(true)
@@ -186,13 +195,19 @@ export default function CharacterProgressPage(): React.ReactElement {
   })
 
   return (
-    <div className="flex h-full flex-col overflow-auto p-6">
+    <div className="flex h-full flex-col">
       <ItemDetailModal
         item={modalItem}
         open={modalOpen}
         onClose={() => setModalOpen(false)}
       />
 
+      <CharacterSubTabs
+        value={viewedCharacter}
+        onChange={setViewedCharacter}
+      />
+
+      <div className="flex-1 overflow-auto p-6">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -202,8 +217,8 @@ export default function CharacterProgressPage(): React.ReactElement {
               Character Info
             </h1>
             <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-              {activeCharacter
-                ? `Showing data for ${activeCharacter} — imported from Quarmy.txt on logout`
+              {viewedCharacter
+                ? `Showing data for ${viewedCharacter} — imported from Quarmy.txt on logout`
                 : 'Select a character to view progression data'}
             </p>
           </div>
@@ -239,7 +254,7 @@ export default function CharacterProgressPage(): React.ReactElement {
         </div>
       )}
 
-      {!activeCharacter ? (
+      {!viewedCharacter ? (
         <div
           className="flex flex-col items-center justify-center rounded-lg py-12 text-center"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
@@ -290,6 +305,7 @@ export default function CharacterProgressPage(): React.ReactElement {
           )}
         </>
       )}
+      </div>
     </div>
   )
 }

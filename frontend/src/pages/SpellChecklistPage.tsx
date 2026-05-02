@@ -9,9 +9,17 @@ import {
   AlertCircle,
   X,
 } from 'lucide-react'
-import { getConfig, getSpell, getSpellsByClass, getZealSpellbook } from '../services/api'
+import {
+  getSpell,
+  getSpellsByClass,
+  getZealSpellbook,
+  listCharacters,
+  type Character,
+} from '../services/api'
 import type { Spell } from '../types/spell'
 import type { Spellbook } from '../types/zeal'
+import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
+import CharacterSubTabs from '../components/CharacterSubTabs'
 import {
   castableClasses,
   durationLabel,
@@ -333,29 +341,41 @@ function SpellRow({ spell, classIndex, known, onSelect }: SpellRowProps): React.
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function SpellChecklistPage(): React.ReactElement {
+  const { active } = useActiveCharacter()
+  const [viewedCharacter, setViewedCharacter] = useState('')
+  const [characters, setCharacters] = useState<Character[]>([])
   const [classIndex, setClassIndex] = useState<number>(savedClass)
   const [filter, setFilter] = useState<Filter>('all')
   const [levelFilter, setLevelFilter] = useState<LevelFilter>({ min: '', max: '' })
   const [spells, setSpells] = useState<Spell[]>([])
   const [spellbook, setSpellbook] = useState<Spellbook | null>(null)
-  const [characterName, setCharacterName] = useState<string>('')
   const [loadingSpells, setLoadingSpells] = useState(true)
   const [loadingBook, setLoadingBook] = useState(true)
   const [spellError, setSpellError] = useState<string | null>(null)
   const [modalSpell, setModalSpell] = useState<Spell | null>(null)
   const navigate = useNavigate()
 
-  // On mount, fetch config to auto-detect character class and name.
+  // Default the viewed character to the active character once known.
   useEffect(() => {
-    getConfig()
-      .then((cfg) => {
-        if (cfg.character) setCharacterName(cfg.character)
-        if (cfg.character_class >= 0 && cfg.character_class <= 14) {
-          setClassIndex(cfg.character_class)
-        }
-      })
-      .catch(() => { /* non-fatal: fall back to localStorage */ })
+    if (!viewedCharacter && active) setViewedCharacter(active)
+  }, [active, viewedCharacter])
+
+  // Fetch the character list once so we can resolve the viewed char's class.
+  useEffect(() => {
+    listCharacters()
+      .then((res) => setCharacters(res.characters))
+      .catch(() => setCharacters([]))
   }, [])
+
+  // When the viewed character changes, default class to that character's class.
+  useEffect(() => {
+    if (!viewedCharacter) return
+    const c = characters.find((c) => c.name.toLowerCase() === viewedCharacter.toLowerCase())
+    if (c && c.class >= 0 && c.class <= 14) {
+      setClassIndex(c.class)
+      setLevelFilter({ min: '', max: '' })
+    }
+  }, [viewedCharacter, characters])
 
   const loadSpells = useCallback((idx: number) => {
     setLoadingSpells(true)
@@ -367,15 +387,14 @@ export default function SpellChecklistPage(): React.ReactElement {
   }, [])
 
   const loadSpellbook = useCallback(() => {
+    if (!viewedCharacter) return
     setLoadingBook(true)
-    getZealSpellbook()
-      .then((res) => {
-        setSpellbook(res.spellbook)
-        if (res.spellbook?.character) setCharacterName(res.spellbook.character)
-      })
+    const isActive = active && viewedCharacter.toLowerCase() === active.toLowerCase()
+    getZealSpellbook(isActive ? undefined : viewedCharacter)
+      .then((res) => setSpellbook(res.spellbook))
       .catch(() => setSpellbook(null))
       .finally(() => setLoadingBook(false))
-  }, [])
+  }, [viewedCharacter, active])
 
   useEffect(() => { loadSpells(classIndex) }, [classIndex, loadSpells])
   useEffect(() => { loadSpellbook() }, [loadSpellbook])
@@ -385,6 +404,8 @@ export default function SpellChecklistPage(): React.ReactElement {
     setLevelFilter({ min: '', max: '' })
     try { localStorage.setItem(LS_CLASS_KEY, String(idx)) } catch { /* ignore */ }
   }
+
+  const characterName = viewedCharacter
 
   function handleSelectSpell(id: number) {
     getSpell(id)
@@ -416,6 +437,10 @@ export default function SpellChecklistPage(): React.ReactElement {
 
   return (
     <div className="flex h-full flex-col" style={{ backgroundColor: 'var(--color-background)' }}>
+      <CharacterSubTabs
+        value={viewedCharacter}
+        onChange={setViewedCharacter}
+      />
       {/* ── Header ── */}
       <div
         className="shrink-0 flex flex-col gap-2 border-b px-4 py-3"

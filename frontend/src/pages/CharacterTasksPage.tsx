@@ -17,6 +17,7 @@ import {
   type Subtask,
 } from '../services/api'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
+import CharacterSubTabs from '../components/CharacterSubTabs'
 
 interface TaskFormProps {
   initialName: string
@@ -402,6 +403,11 @@ type Mode = 'idle' | 'creating' | { editing: number }
 
 export default function CharacterTasksPage(): React.ReactElement {
   const { active: activeCharacter } = useActiveCharacter()
+  const [viewedCharacter, setViewedCharacter] = useState('')
+  // Default the viewed character to the active character once it's known.
+  useEffect(() => {
+    if (!viewedCharacter && activeCharacter) setViewedCharacter(activeCharacter)
+  }, [activeCharacter, viewedCharacter])
   const [activeChar, setActiveChar] = useState<Character | null>(null)
   const [tasks, setTasks] = useState<CharacterTask[]>([])
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
@@ -417,10 +423,11 @@ export default function CharacterTasksPage(): React.ReactElement {
 
   const load = useCallback(async () => {
     setLoadError(null)
+    if (!viewedCharacter) { setActiveChar(null); setTasks([]); return }
     try {
       const charsResp = await listCharacters()
       const found = charsResp.characters.find(
-        (c) => c.name.toLowerCase() === activeCharacter.toLowerCase()
+        (c) => c.name.toLowerCase() === viewedCharacter.toLowerCase()
       ) ?? null
       setActiveChar(found)
       if (found) {
@@ -432,7 +439,7 @@ export default function CharacterTasksPage(): React.ReactElement {
     } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : 'Failed to load tasks')
     }
-  }, [activeCharacter])
+  }, [viewedCharacter])
 
   useEffect(() => {
     setLoading(true)
@@ -586,14 +593,19 @@ export default function CharacterTasksPage(): React.ReactElement {
   }
 
   const headerSubtitle = useMemo(() => {
-    if (!activeCharacter) return 'Select a character to track tasks.'
-    if (!activeChar) return `No tracked character matches "${activeCharacter}".`
+    if (!viewedCharacter) return 'Select a character to track tasks.'
+    if (!activeChar) return `No tracked character matches "${viewedCharacter}".`
     const completed = tasks.filter((t) => t.completed).length
     return `${activeChar.name} — ${completed}/${tasks.length} complete`
-  }, [activeCharacter, activeChar, tasks])
+  }, [viewedCharacter, activeChar, tasks])
 
   return (
-    <div className="flex h-full flex-col overflow-auto p-6">
+    <div className="flex h-full flex-col">
+      <CharacterSubTabs
+        value={viewedCharacter}
+        onChange={setViewedCharacter}
+      />
+      <div className="flex-1 overflow-auto p-6">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <ListChecks size={20} style={{ color: 'var(--color-primary)' }} />
@@ -662,7 +674,7 @@ export default function CharacterTasksPage(): React.ReactElement {
             No active character
           </p>
           <p className="mt-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Select a character on the Overview tab to start tracking tasks.
+            Select a character on the Active Character tab to start tracking tasks.
           </p>
         </div>
       ) : tasks.length === 0 && mode !== 'creating' ? (
@@ -711,6 +723,7 @@ export default function CharacterTasksPage(): React.ReactElement {
           ))}
         </div>
       )}
+      </div>
     </div>
   )
 }

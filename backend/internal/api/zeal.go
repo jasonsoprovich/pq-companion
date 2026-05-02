@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
 
 type zealHandler struct {
 	watcher *zeal.Watcher
+	cfgMgr  *config.Manager
 }
 
 // GET /api/zeal/inventory
@@ -23,13 +25,33 @@ func (h *zealHandler) inventory(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/zeal/spells
-// Returns the most recently parsed Zeal spellbook export.
-// If no export file has been found yet returns {"spellbook": null}.
+// Returns the most recently parsed Zeal spellbook export. With no query, returns
+// the active character's cached spellbook. With ?character=Name, parses that
+// character's <Name>-Spellbook.txt directly. Returns {"spellbook": null} if the
+// requested file doesn't exist yet.
 func (h *zealHandler) spellbook(w http.ResponseWriter, r *http.Request) {
-	sb := h.watcher.Spellbook()
-	json.NewEncoder(w).Encode(struct {
+	resp := struct {
 		Spellbook *zeal.Spellbook `json:"spellbook"`
-	}{Spellbook: sb})
+	}{}
+	name := r.URL.Query().Get("character")
+	if name == "" {
+		resp.Spellbook = h.watcher.Spellbook()
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	cfg := h.cfgMgr.Get()
+	if cfg.EQPath == "" {
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	sb, err := zeal.ParseSpellbook(zeal.SpellbookPath(cfg.EQPath, name), name)
+	if err != nil {
+		// Missing file is not an error from the caller's perspective.
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	resp.Spellbook = sb
+	json.NewEncoder(w).Encode(resp)
 }
 
 // GET /api/zeal/all-inventories
@@ -46,10 +68,29 @@ func (h *zealHandler) allInventories(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/zeal/quarmy
 // Returns the most recently parsed quarmy export (stats, inventory, AAs).
-// Returns {"quarmy": null} if no quarmy file has been found yet.
+// With no query returns the active character's cached data; with
+// ?character=Name parses that character's <Name>-Quarmy.txt directly.
+// Returns {"quarmy": null} if the file doesn't exist yet.
 func (h *zealHandler) quarmy(w http.ResponseWriter, r *http.Request) {
-	q := h.watcher.Quarmy()
-	json.NewEncoder(w).Encode(struct {
+	resp := struct {
 		Quarmy interface{} `json:"quarmy"`
-	}{Quarmy: q})
+	}{}
+	name := r.URL.Query().Get("character")
+	if name == "" {
+		resp.Quarmy = h.watcher.Quarmy()
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	cfg := h.cfgMgr.Get()
+	if cfg.EQPath == "" {
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	q, err := zeal.ParseQuarmy(zeal.QuarmyPath(cfg.EQPath, name), name)
+	if err != nil {
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	resp.Quarmy = q
+	json.NewEncoder(w).Encode(resp)
 }

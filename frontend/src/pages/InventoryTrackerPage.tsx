@@ -5,6 +5,7 @@ import { getAllInventories, getItem } from '../services/api'
 import type { AllInventoriesResponse, Inventory, InventoryEntry } from '../types/zeal'
 import type { Item } from '../types/item'
 import ItemDetailModal from '../components/ItemDetailModal'
+import CharacterSubTabs from '../components/CharacterSubTabs'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -361,7 +362,8 @@ export default function InventoryTrackerPage(): React.ReactElement {
   const [data, setData] = useState<AllInventoriesResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedChar, setSelectedChar] = useState<string>('all')
+  // Empty string = "All"; a name = single-character view. Matches CharacterSubTabs.
+  const [selectedChar, setSelectedChar] = useState<string>('')
   const [query, setQuery] = useState('')
   const [modalItem, setModalItem] = useState<Item | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
@@ -375,9 +377,11 @@ export default function InventoryTrackerPage(): React.ReactElement {
       .then((res) => {
         setData(res)
         setSelectedChar((prev) => {
-          if (prev === 'all') return res.characters.length === 1 ? res.characters[0].character : 'all'
-          if (res.characters.some((c) => c.character === prev)) return prev
-          return res.characters.length === 1 ? res.characters[0].character : 'all'
+          // CharacterSubTabs handles validation when characters are loaded; we
+          // only collapse to a single character when there's exactly one.
+          if (res.characters.length === 1) return res.characters[0].character
+          if (prev === '') return ''
+          return res.characters.some((c) => c.character === prev) ? prev : ''
         })
       })
       .catch((err: Error) => setError(err.message))
@@ -402,13 +406,13 @@ export default function InventoryTrackerPage(): React.ReactElement {
 
   const allTagged = useMemo<TaggedEntry[]>(() => {
     if (!data) return []
-    if (selectedChar === 'all') return data.characters.flatMap(tagEntries)
+    if (selectedChar === '') return data.characters.flatMap(tagEntries)
     const inv = data.characters.find((c) => c.character === selectedChar)
     return inv ? tagEntries(inv) : []
   }, [data, selectedChar])
 
-  const showCharBadge = selectedChar === 'all' && (data?.characters.length ?? 0) > 1
-  const singleCharacter = selectedChar !== 'all'
+  const showCharBadge = selectedChar === '' && (data?.characters.length ?? 0) > 1
+  const singleCharacter = selectedChar !== ''
 
   const equipped = useMemo(
     () => allTagged.filter((e) => isEquipmentSlot(e.location) && !isEmptyEntry(e)),
@@ -596,38 +600,12 @@ export default function InventoryTrackerPage(): React.ReactElement {
         </div>
       </div>
 
-      {/* Character tabs */}
-      <div
-        className="flex items-center gap-1 border-b px-4 shrink-0 overflow-x-auto"
-        style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
-      >
-        {[{ label: 'All', value: 'all' }, ...data.characters.map((c) => ({ label: c.character, value: c.character }))].map(
-          ({ label, value }) => {
-            const active = selectedChar === value
-            return (
-              <button
-                key={value}
-                onClick={() => setSelectedChar(value)}
-                className="px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap"
-                style={{
-                  color: active ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
-                  borderBottom: active ? '2px solid var(--color-primary)' : '2px solid transparent',
-                }}
-              >
-                {label}
-                {value !== 'all' && (
-                  <span
-                    className="ml-1.5 text-[10px]"
-                    style={{ color: active ? 'var(--color-primary)' : 'var(--color-muted)' }}
-                  >
-                    {data.characters.find((c) => c.character === value)?.entries.filter((e) => !isEmptyEntry(e)).length ?? 0}
-                  </span>
-                )}
-              </button>
-            )
-          },
-        )}
-      </div>
+      {/* Character sub-tabs */}
+      <CharacterSubTabs
+        value={selectedChar}
+        onChange={setSelectedChar}
+        allowAll
+      />
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">

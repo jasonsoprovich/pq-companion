@@ -9,7 +9,7 @@ interface CharactersTab {
 }
 
 const TABS: CharactersTab[] = [
-  { to: '/characters/overview', label: 'Overview', icon: <Users size={14} /> },
+  { to: '/characters/overview', label: 'Active Character', icon: <Users size={14} /> },
   { to: '/characters/progress', label: 'Character Info', icon: <TrendingUp size={14} /> },
   { to: '/characters/inventory', label: 'Inventory', icon: <Package size={14} /> },
   { to: '/characters/spells', label: 'Spells', icon: <BookOpen size={14} /> },
