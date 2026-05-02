@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Skull, ExternalLink, Plus, Eraser, Circle, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useActivePlayerName, targetSuffix } from '../../hooks/useActivePlayerName'
+import { useDisplayThresholds, passesThreshold } from '../../hooks/useDisplayThresholds'
 import { clearTimers, getLogStatus, getTimerState } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import CreateTriggerModal from '../CreateTriggerModal'
@@ -123,6 +124,7 @@ export default function DetrimTimerPanel({
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickedSpell, setPickedSpell] = useState<Spell | null>(null)
   const activePlayer = useActivePlayerName()
+  const thresholds = useDisplayThresholds()
 
   useEffect(() => {
     getTimerState().then(setTimerState).catch(() => {})
@@ -135,7 +137,9 @@ export default function DetrimTimerPanel({
 
   const wsState = useWebSocket(handleMessage)
 
-  const detrims = (timerState?.timers ?? []).filter((t) => DETRIM_CATEGORIES.has(t.category))
+  const detrims = (timerState?.timers ?? [])
+    .filter((t) => DETRIM_CATEGORIES.has(t.category))
+    .filter((t) => passesThreshold(t, thresholds))
 
   return (
     <>

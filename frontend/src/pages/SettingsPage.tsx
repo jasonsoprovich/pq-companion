@@ -632,6 +632,46 @@ export default function SettingsPage(): React.ReactElement {
               })}
             </div>
           </div>
+
+          <div className="mt-4">
+            <p className="mb-1 text-sm" style={{ color: 'var(--color-foreground)' }}>
+              Display thresholds
+            </p>
+            <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Hide overlay rows whose remaining time exceeds the threshold (in seconds). Set to <b>0</b> to always show — useful for keeping long-duration raid buffs out of view until they're close to expiring. Per-trigger overrides take precedence.
+            </p>
+            <div className="flex gap-3">
+              {([
+                { label: 'Buff', key: 'buff_display_threshold_secs' as const },
+                { label: 'Detrimental', key: 'detrim_display_threshold_secs' as const },
+              ]).map(({ label, key }) => (
+                <label key={key} className="flex flex-col gap-1" style={{ flex: 1 }}>
+                  <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={config.spell_timer?.[key] ?? 0}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        spell_timer: {
+                          ...config.spell_timer,
+                          [key]: Math.max(0, Number(e.target.value) || 0),
+                        },
+                      })
+                    }
+                    className="rounded px-2 py-1 text-sm"
+                    style={{
+                      backgroundColor: 'var(--color-surface-2)',
+                      color: 'var(--color-foreground)',
+                      border: '1px solid var(--color-border)',
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
         </section>
 
         {/* ── Log Files ──────────────────────────────────────────────────── */}

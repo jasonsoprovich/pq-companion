@@ -71,6 +71,18 @@ type SpellTimerSettings struct {
 	// An empty string is treated as "anyone" so existing config files don't
 	// need migration.
 	TrackingScope string `yaml:"tracking_scope" json:"tracking_scope"`
+
+	// BuffDisplayThresholdSecs hides buff overlay rows whose remaining time
+	// exceeds this value. 0 (default) means always show. Useful for raid
+	// buff tracking where dozens of long-duration buffs would otherwise
+	// drown the overlay — set to e.g. 600 to only see buffs in the last 10
+	// minutes of their duration.
+	BuffDisplayThresholdSecs int `yaml:"buff_display_threshold_secs" json:"buff_display_threshold_secs"`
+
+	// DetrimDisplayThresholdSecs is the corresponding cap for the
+	// Detrimental overlay. 0 (default) means always show. Detrimentals are
+	// usually short-lived so the default of 0 matches existing behaviour.
+	DetrimDisplayThresholdSecs int `yaml:"detrim_display_threshold_secs" json:"detrim_display_threshold_secs"`
 }
 
 // TrackingScope* are the canonical values for SpellTimerSettings.TrackingScope.

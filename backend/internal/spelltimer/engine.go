@@ -240,7 +240,12 @@ func (e *Engine) GetState() TimerState {
 // Category is a plain string (to avoid a dependency cycle from the trigger
 // package) and must be one of "buff", "debuff", "mez", "dot", "stun";
 // anything else is treated as "debuff". durationSecs must be > 0.
-func (e *Engine) StartExternal(name string, category string, durationSecs int, startedAt time.Time) {
+//
+// displayThresholdSecs lets a trigger override the user's global buff /
+// detrim display threshold for the timer it creates. > 0 means "only show
+// when remaining time is at or below this value"; 0 means "let the
+// frontend resolve against the global default for my category".
+func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs int, startedAt time.Time) {
 	if name == "" || durationSecs <= 0 {
 		return
 	}
@@ -272,13 +277,14 @@ func (e *Engine) StartExternal(name string, category string, durationSecs int, s
 		}
 	}
 	timer := &ActiveTimer{
-		ID:              key,
-		SpellName:       name,
-		Category:        cat,
-		CastAt:          startedAt,
-		StartsAt:        startedAt,
-		ExpiresAt:       startedAt.Add(time.Duration(durationSecs) * time.Second),
-		DurationSeconds: float64(durationSecs),
+		ID:                   key,
+		SpellName:            name,
+		Category:             cat,
+		CastAt:               startedAt,
+		StartsAt:             startedAt,
+		ExpiresAt:            startedAt.Add(time.Duration(durationSecs) * time.Second),
+		DurationSeconds:      float64(durationSecs),
+		DisplayThresholdSecs: displayThresholdSecs,
 	}
 	e.timers[key] = timer
 	snap := e.snapshot(time.Now())

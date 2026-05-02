@@ -603,6 +603,7 @@ export interface CreateTriggerRequest {
   timer_duration_secs?: number
   worn_off_pattern?: string
   spell_id?: number
+  display_threshold_secs?: number
 }
 
 export function createTrigger(req: CreateTriggerRequest): Promise<Trigger> {

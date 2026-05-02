@@ -21,6 +21,19 @@ export interface SpellTimerSettings {
    *   "anyone" — every recognised land (default; required for raid buff tracking)
    */
   tracking_scope: TrackingScope
+
+  /**
+   * Hide buff overlay rows whose remaining time exceeds this many seconds.
+   * 0 (default) means always show — useful as-is for most users; bump to
+   * e.g. 600 to only see buffs in the last 10 minutes of their duration.
+   */
+  buff_display_threshold_secs: number
+
+  /**
+   * Same as buff_display_threshold_secs, applied to the Detrimental
+   * overlay (debuffs, DoTs, mez, stuns). 0 (default) means always show.
+   */
+  detrim_display_threshold_secs: number
 }
 
 export interface Config {

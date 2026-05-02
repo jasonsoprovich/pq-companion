@@ -42,17 +42,18 @@ func (s *Store) Close() error { return s.db.Close() }
 func (s *Store) migrate() error {
 	if _, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS triggers (
-			id                 TEXT    NOT NULL PRIMARY KEY,
-			name               TEXT    NOT NULL,
-			enabled            INTEGER NOT NULL DEFAULT 1,
-			pattern            TEXT    NOT NULL,
-			actions            TEXT    NOT NULL DEFAULT '[]',
-			pack_name          TEXT    NOT NULL DEFAULT '',
-			created_at         INTEGER NOT NULL,
-			timer_type         TEXT    NOT NULL DEFAULT 'none',
-			timer_duration_secs INTEGER NOT NULL DEFAULT 0,
-			worn_off_pattern   TEXT    NOT NULL DEFAULT '',
-			spell_id           INTEGER NOT NULL DEFAULT 0
+			id                     TEXT    NOT NULL PRIMARY KEY,
+			name                   TEXT    NOT NULL,
+			enabled                INTEGER NOT NULL DEFAULT 1,
+			pattern                TEXT    NOT NULL,
+			actions                TEXT    NOT NULL DEFAULT '[]',
+			pack_name              TEXT    NOT NULL DEFAULT '',
+			created_at             INTEGER NOT NULL,
+			timer_type             TEXT    NOT NULL DEFAULT 'none',
+			timer_duration_secs    INTEGER NOT NULL DEFAULT 0,
+			worn_off_pattern       TEXT    NOT NULL DEFAULT '',
+			spell_id               INTEGER NOT NULL DEFAULT 0,
+			display_threshold_secs INTEGER NOT NULL DEFAULT 0
 		)
 	`); err != nil {
 		return err
@@ -64,6 +65,7 @@ func (s *Store) migrate() error {
 		`ALTER TABLE triggers ADD COLUMN timer_duration_secs INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE triggers ADD COLUMN worn_off_pattern TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE triggers ADD COLUMN spell_id INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE triggers ADD COLUMN display_threshold_secs INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, stmt := range addColumns {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
@@ -84,10 +86,12 @@ func (s *Store) Insert(t *Trigger) error {
 	}
 	_, err = s.db.Exec(
 		`INSERT INTO triggers (id, name, enabled, pattern, actions, pack_name, created_at,
-		                       timer_type, timer_duration_secs, worn_off_pattern, spell_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       timer_type, timer_duration_secs, worn_off_pattern, spell_id,
+		                       display_threshold_secs)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName, t.CreatedAt.Unix(),
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
+		t.DisplayThresholdSecs,
 	)
 	if err != nil {
 		return fmt.Errorf("insert trigger: %w", err)
@@ -99,7 +103,8 @@ func (s *Store) Insert(t *Trigger) error {
 func (s *Store) List() ([]*Trigger, error) {
 	rows, err := s.db.Query(
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
-		        timer_type, timer_duration_secs, worn_off_pattern, spell_id
+		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
+		        display_threshold_secs
 		 FROM triggers ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -122,7 +127,8 @@ func (s *Store) List() ([]*Trigger, error) {
 func (s *Store) Get(id string) (*Trigger, error) {
 	row := s.db.QueryRow(
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
-		        timer_type, timer_duration_secs, worn_off_pattern, spell_id
+		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
+		        display_threshold_secs
 		 FROM triggers WHERE id = ?`, id,
 	)
 	t, err := scanTrigger(row)
@@ -146,10 +152,12 @@ func (s *Store) Update(t *Trigger) error {
 	}
 	res, err := s.db.Exec(
 		`UPDATE triggers SET name=?, enabled=?, pattern=?, actions=?, pack_name=?,
-		                     timer_type=?, timer_duration_secs=?, worn_off_pattern=?, spell_id=?
+		                     timer_type=?, timer_duration_secs=?, worn_off_pattern=?, spell_id=?,
+		                     display_threshold_secs=?
 		 WHERE id=?`,
 		t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName,
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
+		t.DisplayThresholdSecs,
 		t.ID,
 	)
 	if err != nil {
@@ -197,6 +205,7 @@ func scanTrigger(row scanner) (*Trigger, error) {
 	if err := row.Scan(
 		&t.ID, &t.Name, &enabledInt, &t.Pattern, &actJSON, &t.PackName, &unixSec,
 		&timerType, &t.TimerDurationSecs, &t.WornOffPattern, &t.SpellID,
+		&t.DisplayThresholdSecs,
 	); err != nil {
 		return nil, err
 	}

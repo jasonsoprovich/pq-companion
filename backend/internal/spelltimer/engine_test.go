@@ -190,7 +190,7 @@ func TestStartExternal_DedupsAgainstSpellLandedTimer(t *testing.T) {
 	}
 
 	// User trigger fires with the same spell name moments later.
-	e.StartExternal("Visions of Grandeur", "buff", 1620, now.Add(time.Second))
+	e.StartExternal("Visions of Grandeur", "buff", 1620, 0, now.Add(time.Second))
 
 	// Still only the one entry — the trigger's would-be entry was suppressed.
 	if len(e.timers) != 1 {
@@ -205,7 +205,7 @@ func TestStartExternal_DedupsAgainstSpellLandedTimer(t *testing.T) {
 // spell already in the timer map) should create its entry as before.
 func TestStartExternal_CreatesEntryWhenNoSpellMatch(t *testing.T) {
 	e := newTestEngine()
-	e.StartExternal("AE Incoming", "debuff", 30, time.Now())
+	e.StartExternal("AE Incoming", "debuff", 30, 0, time.Now())
 
 	if len(e.timers) != 1 {
 		t.Fatalf("expected 1 timer, got %d", len(e.timers))
@@ -216,6 +216,21 @@ func TestStartExternal_CreatesEntryWhenNoSpellMatch(t *testing.T) {
 	}
 	if got.SpellName != "AE Incoming" || got.TargetName != "" {
 		t.Errorf("payload: name=%q target=%q", got.SpellName, got.TargetName)
+	}
+}
+
+// Per-trigger DisplayThresholdSecs must be copied onto the ActiveTimer so
+// the frontend can apply the override instead of the global default.
+func TestStartExternal_CopiesDisplayThreshold(t *testing.T) {
+	e := newTestEngine()
+	e.StartExternal("Long Buff", "buff", 7200, 600, time.Now())
+
+	got, ok := e.timers[timerKey("Long Buff", "")]
+	if !ok {
+		t.Fatalf("timer not found")
+	}
+	if got.DisplayThresholdSecs != 600 {
+		t.Errorf("threshold: got %d, want 600", got.DisplayThresholdSecs)
 	}
 }
 

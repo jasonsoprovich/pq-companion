@@ -62,6 +62,14 @@ type Trigger struct {
 	TimerDurationSecs int       `json:"timer_duration_secs"`
 	WornOffPattern    string    `json:"worn_off_pattern"`
 	SpellID           int       `json:"spell_id"` // optional — 0 means not linked to a specific DB spell
+
+	// DisplayThresholdSecs is a per-trigger override for the global buff /
+	// detrimental display threshold. When > 0, the timer this trigger
+	// creates is only shown in the overlay once its remaining time falls
+	// at or below this value. 0 (default) means "use the global default
+	// for my category"; the frontend resolves against the SpellTimer
+	// settings in user config.
+	DisplayThresholdSecs int `json:"display_threshold_secs"`
 }
 
 // TriggerFired is the payload of a WSEventTriggerFired WebSocket event and a

@@ -293,6 +293,7 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
   const [timerType, setTimerType] = useState<TimerType>(initial?.timer_type ?? 'none')
   const [timerDuration, setTimerDuration] = useState(initial?.timer_duration_secs ?? 0)
   const [wornOffPattern, setWornOffPattern] = useState(initial?.worn_off_pattern ?? '')
+  const [displayThreshold, setDisplayThreshold] = useState(initial?.display_threshold_secs ?? 0)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [patternError, setPatternError] = useState<string | null>(null)
@@ -343,6 +344,7 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
       timer_duration_secs: timerType === 'none' ? 0 : Math.max(0, timerDuration),
       worn_off_pattern: timerType === 'none' ? '' : wornOffPattern.trim(),
       spell_id: initial?.spell_id ?? 0,
+      display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
     }
 
     setSubmitting(true)
@@ -454,31 +456,51 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
           })}
         </div>
         {timerType !== 'none' && (
-          <div className="flex gap-2">
-            <div className="flex items-center gap-1.5 flex-1">
-              <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-                Duration (s)
-              </label>
+          <>
+            <div className="flex gap-2">
+              <div className="flex items-center gap-1.5 flex-1">
+                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Duration (s)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={timerDuration}
+                  onChange={(e) => setTimerDuration(Math.max(0, parseInt(e.target.value) || 0))}
+                  className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center"
+                  style={inputStyle}
+                  disabled={submitting}
+                />
+              </div>
               <input
-                type="number"
-                min={0}
-                value={timerDuration}
-                onChange={(e) => setTimerDuration(Math.max(0, parseInt(e.target.value) || 0))}
-                className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center"
+                type="text"
+                placeholder="worn-off regex (optional)"
+                value={wornOffPattern}
+                onChange={(e) => setWornOffPattern(e.target.value)}
+                className="flex-1 rounded px-2 py-0.5 text-xs outline-none font-mono"
                 style={inputStyle}
                 disabled={submitting}
               />
             </div>
-            <input
-              type="text"
-              placeholder="worn-off regex (optional)"
-              value={wornOffPattern}
-              onChange={(e) => setWornOffPattern(e.target.value)}
-              className="flex-1 rounded px-2 py-0.5 text-xs outline-none font-mono"
-              style={inputStyle}
-              disabled={submitting}
-            />
-          </div>
+            <div className="flex items-center gap-1.5">
+              <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                Display threshold (s)
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={displayThreshold}
+                onChange={(e) => setDisplayThreshold(Math.max(0, parseInt(e.target.value) || 0))}
+                className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center"
+                style={inputStyle}
+                disabled={submitting}
+                title="Hide this timer until remaining ≤ this value. 0 uses the global default."
+              />
+              <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                0 = use global default
+              </span>
+            </div>
+          </>
         )}
       </div>
 

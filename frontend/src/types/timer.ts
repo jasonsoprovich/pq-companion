@@ -19,6 +19,14 @@ export interface ActiveTimer {
   expires_at: string
   duration_seconds: number
   remaining_seconds: number
+  /**
+   * Per-timer override for the user-configured global display threshold.
+   * > 0 means "only show me when remaining time is at or below this
+   * value"; 0 (the typical case) means "let the frontend resolve against
+   * the global default for my category". Set on a per-trigger basis;
+   * spell-landed-driven timers always emit 0.
+   */
+  display_threshold_secs: number
 }
 
 export interface TimerState {

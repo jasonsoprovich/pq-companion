@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Shield, Eraser } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName, targetSuffix } from '../hooks/useActivePlayerName'
+import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresholds'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import OverlayLockButton from '../components/OverlayLockButton'
@@ -112,6 +113,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
   const [state, setState] = useState<TimerState | null>(null)
   const activePlayer = useActivePlayerName()
+  const thresholds = useDisplayThresholds()
 
   useEffect(() => {
     getTimerState().then(setState).catch(() => {})
@@ -128,7 +130,9 @@ export default function BuffTimerWindowPage(): React.ReactElement {
 
   useWebSocket(handleMessage)
 
-  const buffs = (state?.timers ?? []).filter((t) => t.category === 'buff')
+  const buffs = (state?.timers ?? [])
+    .filter((t) => t.category === 'buff')
+    .filter((t) => passesThreshold(t, thresholds))
 
   return (
     <div

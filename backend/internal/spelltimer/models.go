@@ -56,6 +56,14 @@ type ActiveTimer struct {
 
 	DurationSeconds  float64 `json:"duration_seconds"`
 	RemainingSeconds float64 `json:"remaining_seconds"`
+
+	// DisplayThresholdSecs is a per-timer override for the user-configured
+	// global display threshold. > 0 means "only show me when remaining
+	// time falls at or below this value"; 0 means "let the frontend resolve
+	// against the global default for my category". Set on a per-trigger
+	// basis (Trigger.DisplayThresholdSecs); spell-landed-driven timers
+	// always emit 0 here so a config change updates them retroactively.
+	DisplayThresholdSecs int `json:"display_threshold_secs"`
 }
 
 // TimerState is the full payload broadcast via WebSocket and returned by the

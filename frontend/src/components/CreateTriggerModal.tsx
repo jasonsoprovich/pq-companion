@@ -12,6 +12,7 @@ export interface TriggerPrefill {
   spellId?: number
   displayText?: string
   displayColor?: string
+  displayThresholdSecs?: number
 }
 
 interface CreateTriggerModalProps {
@@ -43,6 +44,7 @@ export default function CreateTriggerModal({
   const [wornOff, setWornOff] = useState(prefill.wornOffPattern ?? '')
   const [timerType, setTimerType] = useState<TimerType>(prefill.timerType ?? 'none')
   const [duration, setDuration] = useState(prefill.timerDurationSecs ?? 0)
+  const [displayThreshold, setDisplayThreshold] = useState(prefill.displayThresholdSecs ?? 0)
   const [displayText, setDisplayText] = useState(prefill.displayText ?? prefill.name)
   const [color, setColor] = useState(prefill.displayColor ?? '#ffffff')
   const [submitting, setSubmitting] = useState(false)
@@ -56,6 +58,7 @@ export default function CreateTriggerModal({
     setWornOff(prefill.wornOffPattern ?? '')
     setTimerType(prefill.timerType ?? 'none')
     setDuration(prefill.timerDurationSecs ?? 0)
+    setDisplayThreshold(prefill.displayThresholdSecs ?? 0)
     setDisplayText(prefill.displayText ?? prefill.name)
     setColor(prefill.displayColor ?? '#ffffff')
     setError(null)
@@ -66,6 +69,7 @@ export default function CreateTriggerModal({
     prefill.wornOffPattern,
     prefill.timerType,
     prefill.timerDurationSecs,
+    prefill.displayThresholdSecs,
     prefill.displayText,
     prefill.displayColor,
   ])
@@ -112,6 +116,7 @@ export default function CreateTriggerModal({
       timer_duration_secs: timerType === 'none' ? 0 : Math.max(0, duration),
       worn_off_pattern: timerType === 'none' ? '' : wornOff.trim(),
       spell_id: prefill.spellId ?? 0,
+      display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
     }
 
     setSubmitting(true)
@@ -253,6 +258,23 @@ export default function CreateTriggerModal({
                 style={inputStyle}
                 disabled={submitting}
               />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+                Display threshold (seconds, 0 = use global default)
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={displayThreshold}
+                onChange={(e) => setDisplayThreshold(Math.max(0, parseInt(e.target.value) || 0))}
+                className="w-full rounded px-3 py-1.5 text-sm outline-none"
+                style={inputStyle}
+                disabled={submitting}
+              />
+              <p className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                Hide this timer until its remaining time is at or below this value. Overrides the global Buff / Detrimental defaults in Settings.
+              </p>
             </div>
           </>
         )}
