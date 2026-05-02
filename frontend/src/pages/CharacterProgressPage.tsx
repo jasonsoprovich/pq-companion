@@ -7,7 +7,7 @@ import {
 } from '../services/api'
 import type {
   QuarmyData, CharacterAA, AAInfo, Character,
-  SpellModifier, SpellModifierResolution, EquippedStats,
+  SpellModifier, SpellModifierResolution, EquippedStats, StatBlock,
 } from '../services/api'
 import type { Spell } from '../types/spell'
 import type { Item } from '../types/item'
@@ -323,64 +323,83 @@ export default function CharacterProgressPage(): React.ReactElement {
 type StatMode = 'base' | 'equipped' | 'buffed'
 type AegolismChoice = 'aegolism' | 'glades'
 
-// StatDelta is the contribution of a single source (gear or a buff) to the
-// derived stat totals. Only the fields a source touches are non-zero.
+// EQ caps individual attribute stats at 255. Anything above the cap is wasted.
+const STAT_CAP = 255
+
+// StatDelta covers every dimension a buff or gear set might touch. Optional
+// fields keep buff definitions readable.
 interface StatDelta {
   hp?: number; mana?: number; ac?: number
   str?: number; sta?: number; agi?: number; dex?: number
   wis?: number; int?: number; cha?: number
   pr?: number; mr?: number; dr?: number; fr?: number; cr?: number
+  attack?: number; haste?: number; regen?: number
+  mana_regen?: number; ft?: number; dmg_shield?: number
 }
 
-// Raid buff list from quarmy.com's preset, used as a baseline. Aegolism vs.
-// Protection of the Glades is exposed as a swap because they don't stack and
-// different classes prefer different versions.
-const AEGOLISM_BUFF: StatDelta = { hp: 1300, ac: 89 }
-const GLADES_BUFF: StatDelta = { hp: 250, ac: 39 }
+interface BuffDef {
+  name: string
+  delta: StatDelta
+}
 
-const RAID_BUFFS: Array<{ name: string; delta: StatDelta }> = [
-  { name: "Khura's Focusing",        delta: { hp: 430, str: 67, dex: 60 } },
-  { name: 'Talisman of the Brute',   delta: { sta: 50 } },
-  { name: 'Talisman of the Cat',     delta: { agi: 52 } },
+// Raid-buff preset matching quarmy.com's defaults. Aegolism / Protection of
+// the Glades are mutually exclusive (different druid/cleric tiers); the rest
+// stack additively.
+const AEGOLISM_BUFF: BuffDef = {
+  name: 'Ancient: Gift of Aegolism',
+  delta: { hp: 1300, ac: 89 },
+}
+const GLADES_BUFF: BuffDef = {
+  name: 'Protection of the Glades',
+  delta: { hp: 250, ac: 39 },
+}
+
+const RAID_BUFFS: BuffDef[] = [
+  { name: "Khura's Focusing",            delta: { hp: 430, str: 67, dex: 60 } },
+  { name: 'Talisman of the Brute',       delta: { sta: 50 } },
+  { name: 'Talisman of the Cat',         delta: { agi: 52 } },
   { name: "Brell's Mountainous Barrier", delta: { hp: 225 } },
-  { name: 'Visions of Grandeur',     delta: { agi: 40, dex: 25 } },
-  { name: "Koadic's Endless Intellect", delta: { mana: 250, wis: 25, int: 25 } },
+  { name: 'Visions of Grandeur',         delta: { agi: 40, dex: 25, haste: 58, attack: 26 } },
+  { name: "Koadic's Endless Intellect",  delta: { mana: 250, wis: 25, int: 25, ft: 14 } },
+  { name: 'Circle of the Seasons',       delta: { pr: 15, mr: 15, dr: 15, fr: 15, cr: 15 } },
+  { name: 'Group Resist Magic',          delta: { mr: 10, fr: 10, cr: 10 } },
 ]
 
-function sumDeltas(deltas: StatDelta[]): Required<StatDelta> {
-  const out: Required<StatDelta> = {
+function emptyDelta(): Required<StatDelta> {
+  return {
     hp: 0, mana: 0, ac: 0,
     str: 0, sta: 0, agi: 0, dex: 0, wis: 0, int: 0, cha: 0,
     pr: 0, mr: 0, dr: 0, fr: 0, cr: 0,
+    attack: 0, haste: 0, regen: 0, mana_regen: 0, ft: 0, dmg_shield: 0,
   }
-  for (const d of deltas) {
-    out.hp += d.hp ?? 0
-    out.mana += d.mana ?? 0
-    out.ac += d.ac ?? 0
-    out.str += d.str ?? 0
-    out.sta += d.sta ?? 0
-    out.agi += d.agi ?? 0
-    out.dex += d.dex ?? 0
-    out.wis += d.wis ?? 0
-    out.int += d.int ?? 0
-    out.cha += d.cha ?? 0
-    out.pr += d.pr ?? 0
-    out.mr += d.mr ?? 0
-    out.dr += d.dr ?? 0
-    out.fr += d.fr ?? 0
-    out.cr += d.cr ?? 0
-  }
-  return out
 }
 
-function gearAsDelta(g: EquippedStats | null): StatDelta {
-  if (!g) return {}
-  return {
-    hp: g.hp, mana: g.mana, ac: g.ac,
-    str: g.str, sta: g.sta, agi: g.agi, dex: g.dex,
-    wis: g.wis, int: g.int, cha: g.cha,
-    pr: g.pr, mr: g.mr, dr: g.dr, fr: g.fr, cr: g.cr,
-  }
+function addDelta(into: Required<StatDelta>, d: StatDelta): void {
+  into.hp += d.hp ?? 0
+  into.mana += d.mana ?? 0
+  into.ac += d.ac ?? 0
+  into.str += d.str ?? 0
+  into.sta += d.sta ?? 0
+  into.agi += d.agi ?? 0
+  into.dex += d.dex ?? 0
+  into.wis += d.wis ?? 0
+  into.int += d.int ?? 0
+  into.cha += d.cha ?? 0
+  into.pr += d.pr ?? 0
+  into.mr += d.mr ?? 0
+  into.dr += d.dr ?? 0
+  into.fr += d.fr ?? 0
+  into.cr += d.cr ?? 0
+  into.attack += d.attack ?? 0
+  into.haste += d.haste ?? 0
+  into.regen += d.regen ?? 0
+  into.mana_regen += d.mana_regen ?? 0
+  into.ft += d.ft ?? 0
+  into.dmg_shield += d.dmg_shield ?? 0
+}
+
+function statBlockToDelta(b: StatBlock): StatDelta {
+  return { ...b }
 }
 
 interface StatsPanelProps {
@@ -405,81 +424,96 @@ function StatsPanel({ stats, hasStats, gear }: StatsPanelProps): React.ReactElem
   const includesGear = mode !== 'base'
   const includesBuffs = mode === 'buffed'
 
-  // Base stats only have the seven attributes — HP/Mana/AC come from gear and
-  // buffs, so they read as 0 in 'base' mode.
-  const deltas: StatDelta[] = []
-  if (includesGear) deltas.push(gearAsDelta(gear))
-  if (includesBuffs) {
-    deltas.push(aegolism === 'aegolism' ? AEGOLISM_BUFF : GLADES_BUFF)
-    for (const b of RAID_BUFFS) deltas.push(b.delta)
-  }
-  const extra = sumDeltas(deltas)
+  const buffs: BuffDef[] = includesBuffs
+    ? [aegolism === 'aegolism' ? AEGOLISM_BUFF : GLADES_BUFF, ...RAID_BUFFS]
+    : []
 
-  const total = {
-    hp: extra.hp,
-    mana: extra.mana,
-    ac: extra.ac,
-    str: stats.base_str + extra.str,
-    sta: stats.base_sta + extra.sta,
-    agi: stats.base_agi + extra.agi,
-    dex: stats.base_dex + extra.dex,
-    wis: stats.base_wis + extra.wis,
-    int: stats.base_int + extra.int,
-    cha: stats.base_cha + extra.cha,
-    pr: extra.pr,
-    mr: extra.mr,
-    dr: extra.dr,
-    fr: extra.fr,
-    cr: extra.cr,
+  // Sum every active source into one delta. Base attribs come from quarmy on
+  // the character row; the backend's `base` block fills in HP/Mana from
+  // base_data and the +25 starting resists.
+  const total = emptyDelta()
+  if (gear?.base) {
+    addDelta(total, statBlockToDelta(gear.base))
+  } else {
+    // Fall back to quarmy attribs only if the equipped-stats endpoint hasn't
+    // resolved yet — at least the seven attributes still show.
+    addDelta(total, {
+      str: stats.base_str, sta: stats.base_sta, agi: stats.base_agi,
+      dex: stats.base_dex, wis: stats.base_wis, int: stats.base_int, cha: stats.base_cha,
+    })
   }
+  if (includesGear && gear?.equipment) addDelta(total, statBlockToDelta(gear.equipment))
+  for (const b of buffs) addDelta(total, b.delta)
 
+  const capped = (v: number) => Math.min(STAT_CAP, v)
   const gearMissing = includesGear && !gear
-  const showVitals = total.hp > 0 || total.mana > 0 || total.ac > 0
-  const showResists = total.pr > 0 || total.mr > 0 || total.dr > 0 || total.fr > 0 || total.cr > 0
 
   return (
-    <div
-      className="rounded-lg p-5"
-      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', maxWidth: '480px' }}
-    >
-      <StatModeToggle mode={mode} onChange={setMode} />
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+      {/* Stats column */}
+      <div
+        className="rounded-lg p-5"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', flex: '0 0 auto', minWidth: '420px', maxWidth: '480px' }}
+      >
+        <StatModeToggle mode={mode} onChange={setMode} />
 
-      {includesBuffs && (
-        <AegolismSwap value={aegolism} onChange={setAegolism} />
-      )}
+        {gearMissing && (
+          <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Equipment stats unavailable — make sure Zeal is installed and the character has logged out at least once.
+          </p>
+        )}
 
-      {gearMissing && (
-        <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-          Equipment stats unavailable — make sure Zeal is installed and the character has logged out at least once.
-        </p>
-      )}
-
-      {showVitals && (
         <div className="mb-4 grid grid-cols-3 gap-3">
           <VitalRow label="HP" value={total.hp} />
           <VitalRow label="Mana" value={total.mana} />
           <VitalRow label="AC" value={total.ac} />
+          <VitalRow label="ATK" value={total.attack} />
         </div>
-      )}
 
-      <div className="space-y-3">
-        <StatBar label="STR" value={total.str} />
-        <StatBar label="STA" value={total.sta} />
-        <StatBar label="AGI" value={total.agi} />
-        <StatBar label="DEX" value={total.dex} />
-        <StatBar label="WIS" value={total.wis} />
-        <StatBar label="INT" value={total.int} />
-        <StatBar label="CHA" value={total.cha} />
+        <div className="space-y-3">
+          <StatBar label="STR" value={capped(total.str)} max={STAT_CAP} />
+          <StatBar label="STA" value={capped(total.sta)} max={STAT_CAP} />
+          <StatBar label="AGI" value={capped(total.agi)} max={STAT_CAP} />
+          <StatBar label="DEX" value={capped(total.dex)} max={STAT_CAP} />
+          <StatBar label="WIS" value={capped(total.wis)} max={STAT_CAP} />
+          <StatBar label="INT" value={capped(total.int)} max={STAT_CAP} />
+          <StatBar label="CHA" value={capped(total.cha)} max={STAT_CAP} />
+        </div>
+
+        <div className="mt-4 grid grid-cols-5 gap-2">
+          <ResistRow label="POISON"  value={total.pr} />
+          <ResistRow label="MAGIC"   value={total.mr} />
+          <ResistRow label="DISEASE" value={total.dr} />
+          <ResistRow label="FIRE"    value={total.fr} />
+          <ResistRow label="COLD"    value={total.cr} />
+        </div>
+
+        {includesGear && (
+          <div
+            className="mt-4 border-t pt-3 text-xs"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
+          >
+            <div className="grid grid-cols-2 gap-y-1">
+              <span>Haste</span>      <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{total.haste}%</span>
+              <span>Regen</span>      <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{total.regen}/tick</span>
+              <span>Mana Regen</span> <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{total.mana_regen}/tick</span>
+              <span>Flowing Thought</span> <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{total.ft}</span>
+              <span>Damage Shield</span> <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{total.dmg_shield}</span>
+            </div>
+            <p className="mt-2 italic" style={{ color: 'var(--color-muted)' }}>
+              Worn-effect contributions from items (haste, FT, regen, ATK, DS) aren&rsquo;t parsed yet — values shown here come from raid buffs only.
+            </p>
+          </div>
+        )}
       </div>
 
-      {showResists && (
-        <div className="mt-4 grid grid-cols-5 gap-2">
-          <ResistRow label="POISON" value={total.pr} />
-          <ResistRow label="MAGIC"  value={total.mr} />
-          <ResistRow label="DISEASE" value={total.dr} />
-          <ResistRow label="FIRE"   value={total.fr} />
-          <ResistRow label="COLD"   value={total.cr} />
-        </div>
+      {/* Raid Buffs side panel */}
+      {includesBuffs && (
+        <RaidBuffsPanel
+          aegolism={aegolism}
+          onSwap={() => setAegolism(aegolism === 'aegolism' ? 'glades' : 'aegolism')}
+          buffs={buffs}
+        />
       )}
     </div>
   )
@@ -523,42 +557,6 @@ function StatModeToggle({ mode, onChange }: StatModeToggleProps): React.ReactEle
   )
 }
 
-interface AegolismSwapProps {
-  value: AegolismChoice
-  onChange: (c: AegolismChoice) => void
-}
-
-function AegolismSwap({ value, onChange }: AegolismSwapProps): React.ReactElement {
-  const label = value === 'aegolism' ? 'Ancient: Gift of Aegolism' : 'Protection of the Glades'
-  const next: AegolismChoice = value === 'aegolism' ? 'glades' : 'aegolism'
-  return (
-    <div
-      className="mb-3 flex items-center justify-between rounded px-3 py-2 text-xs"
-      style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
-    >
-      <div>
-        <p style={{ color: 'var(--color-foreground)' }}>{label}</p>
-        <p style={{ color: 'var(--color-muted-foreground)' }}>
-          Ancient: Gift of Aegolism and Protection of the Glades don&rsquo;t stack — pick whichever you raid with.
-        </p>
-      </div>
-      <button
-        onClick={() => onChange(next)}
-        className="ml-3 shrink-0 rounded px-2 py-1 font-medium"
-        style={{
-          backgroundColor: 'var(--color-surface-3)',
-          color: 'var(--color-foreground)',
-          border: '1px solid var(--color-border)',
-          cursor: 'pointer',
-        }}
-        title="Swap buff"
-      >
-        Swap
-      </button>
-    </div>
-  )
-}
-
 function VitalRow({ label, value }: { label: string; value: number }): React.ReactElement {
   return (
     <div
@@ -578,6 +576,111 @@ function ResistRow({ label, value }: { label: string; value: number }): React.Re
       <p className="font-mono text-sm" style={{ color: 'var(--color-primary)' }}>{value}</p>
     </div>
   )
+}
+
+// ── Raid Buffs side panel ─────────────────────────────────────────────────────
+
+interface RaidBuffsPanelProps {
+  aegolism: AegolismChoice
+  onSwap: () => void
+  buffs: BuffDef[]
+}
+
+function RaidBuffsPanel({ aegolism, onSwap, buffs }: RaidBuffsPanelProps): React.ReactElement {
+  const total = emptyDelta()
+  for (const b of buffs) addDelta(total, b.delta)
+
+  return (
+    <div
+      className="rounded-lg p-4"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', flex: '1 1 auto', minWidth: '320px' }}
+    >
+      <div className="mb-3 flex items-center justify-between">
+        <span
+          className="rounded-full px-3 py-1 text-xs font-semibold"
+          style={{
+            border: '1px solid color-mix(in srgb, var(--color-primary) 60%, transparent)',
+            color: 'var(--color-primary)',
+          }}
+        >
+          Raid Buffs
+        </span>
+        <button
+          onClick={onSwap}
+          className="rounded px-2 py-1 text-xs font-medium"
+          style={{
+            backgroundColor: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-foreground)',
+            cursor: 'pointer',
+          }}
+          title={`Swap to ${aegolism === 'aegolism' ? 'Protection of the Glades' : 'Ancient: Gift of Aegolism'}`}
+        >
+          ⇄ Swap Aegolism / PotG
+        </button>
+      </div>
+
+      <p className="mb-3 text-xs italic" style={{ color: 'var(--color-muted-foreground)' }}>
+        Preset baseline — values match quarmy.com defaults. Aegolism and Protection of the Glades don&rsquo;t stack;
+        the rest are additive.
+      </p>
+
+      <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+        {buffs.map((b) => (
+          <div key={b.name} className="py-2">
+            <p className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>{b.name}</p>
+            <p className="font-mono text-xs" style={{ color: 'var(--color-primary)' }}>
+              {formatBuffEffects(b.delta) || <span style={{ color: 'var(--color-muted)' }}>—</span>}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div
+        className="mt-3 border-t pt-3 text-xs"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+          Total
+        </p>
+        <p className="font-mono leading-relaxed" style={{ color: 'var(--color-primary)' }}>
+          {formatBuffEffects(total)}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// formatBuffEffects renders one row of "+stat" tokens for a buff delta. Skips
+// zero-valued fields, and uses the same labels (Haste%, FT, ATK, etc) as the
+// stats panel so the two read consistently.
+function formatBuffEffects(d: StatDelta | Required<StatDelta>): string {
+  const parts: string[] = []
+  const push = (label: string, v: number | undefined, suffix = '') => {
+    if (v && v !== 0) parts.push(`${label}+${v}${suffix}`)
+  }
+  push('AC', d.ac)
+  push('HP', d.hp)
+  push('Mana', d.mana)
+  push('STR', d.str)
+  push('STA', d.sta)
+  push('AGI', d.agi)
+  push('DEX', d.dex)
+  push('WIS', d.wis)
+  push('INT', d.int)
+  push('CHA', d.cha)
+  push('PR', d.pr)
+  push('MR', d.mr)
+  push('DR', d.dr)
+  push('FR', d.fr)
+  push('CR', d.cr)
+  push('Haste', d.haste, '%')
+  push('ATK', d.attack)
+  push('Regen', d.regen)
+  push('Mana Regen', d.mana_regen)
+  push('FT', d.ft)
+  push('DS', d.dmg_shield)
+  return parts.join(' ')
 }
 
 // ── Gear Panel ────────────────────────────────────────────────────────────────

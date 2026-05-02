@@ -198,6 +198,35 @@ func (db *DB) SearchItems(f ItemFilter) (*SearchResult[Item], error) {
 	return &SearchResult[Item]{Items: items, Total: total}, nil
 }
 
+// BaseData is the per-(class, level) "blank-slate" HP/Mana values from the
+// base_data table — what a level-up gives a character before any stat-bonus
+// or equipment math is applied.
+type BaseData struct {
+	HP   float64
+	Mana float64
+}
+
+// GetBaseData returns the base HP/Mana for a given EQEmu class index
+// (1=Warrior … 14=Enchanter) at the given level. Returns zeros if the row
+// doesn't exist (e.g. caller passed class 0 / unset).
+func (db *DB) GetBaseData(level, classIdx int) (BaseData, error) {
+	if level <= 0 || classIdx <= 0 {
+		return BaseData{}, nil
+	}
+	var bd BaseData
+	err := db.QueryRow(
+		`SELECT hp, mana FROM base_data WHERE level = ? AND class = ?`,
+		level, classIdx,
+	).Scan(&bd.HP, &bd.Mana)
+	if err == sql.ErrNoRows {
+		return BaseData{}, nil
+	}
+	if err != nil {
+		return BaseData{}, fmt.Errorf("get base_data(%d,%d): %w", level, classIdx, err)
+	}
+	return bd, nil
+}
+
 func collectItems(rows *sql.Rows) ([]Item, error) {
 	var result []Item
 	for rows.Next() {

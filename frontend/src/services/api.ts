@@ -523,23 +523,19 @@ export function getZealQuarmy(character?: string): Promise<{ quarmy: QuarmyData 
   return get<{ quarmy: QuarmyData | null }>(`/api/zeal/quarmy${qs}`)
 }
 
+export interface StatBlock {
+  hp: number; mana: number; ac: number
+  str: number; sta: number; agi: number; dex: number
+  wis: number; int: number; cha: number
+  pr: number; mr: number; dr: number; fr: number; cr: number
+  attack: number; haste: number; regen: number
+  mana_regen: number; ft: number; dmg_shield: number
+}
+
 export interface EquippedStats {
   character: string
-  hp: number
-  mana: number
-  ac: number
-  str: number
-  sta: number
-  agi: number
-  dex: number
-  wis: number
-  int: number
-  cha: number
-  pr: number
-  mr: number
-  dr: number
-  fr: number
-  cr: number
+  base: StatBlock
+  equipment: StatBlock
 }
 
 export function getCharacterEquippedStats(id: number): Promise<EquippedStats> {

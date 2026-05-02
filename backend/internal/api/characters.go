@@ -295,30 +295,56 @@ var equipSlots = map[string]bool{
 	"PowerSource": true, "Ammo": true,
 }
 
-// equippedStatsResponse is the aggregated stat contribution from a character's
-// currently equipped items, as listed in their most recent Quarmy export.
-type equippedStatsResponse struct {
-	Character string `json:"character"`
-	HP        int    `json:"hp"`
-	Mana      int    `json:"mana"`
-	AC        int    `json:"ac"`
-	STR       int    `json:"str"`
-	STA       int    `json:"sta"`
-	AGI       int    `json:"agi"`
-	DEX       int    `json:"dex"`
-	WIS       int    `json:"wis"`
-	INT       int    `json:"int"`
-	CHA       int    `json:"cha"`
-	PR        int    `json:"pr"`
-	MR        int    `json:"mr"`
-	DR        int    `json:"dr"`
-	FR        int    `json:"fr"`
-	CR        int    `json:"cr"`
+// statBlock is one column of the Stats panel: a complete set of derived
+// vitals, attributes, resists, and worn-bonus stats from a single source
+// (base, equipment, or buffs).
+//
+// Attack / Haste / Regen / ManaRegen / FT / DmgShield are placeholders for
+// item worn-effect contributions. They're returned as zero today; populating
+// them requires walking each equipped item's worneffect spell and parsing
+// its SPA codes (SPA 11 haste, SPA 232 FT, etc) — which we'll wire up after
+// the base + flat-stat numbers are confirmed correct.
+type statBlock struct {
+	HP        int `json:"hp"`
+	Mana      int `json:"mana"`
+	AC        int `json:"ac"`
+	STR       int `json:"str"`
+	STA       int `json:"sta"`
+	AGI       int `json:"agi"`
+	DEX       int `json:"dex"`
+	WIS       int `json:"wis"`
+	INT       int `json:"int"`
+	CHA       int `json:"cha"`
+	PR        int `json:"pr"`
+	MR        int `json:"mr"`
+	DR        int `json:"dr"`
+	FR        int `json:"fr"`
+	CR        int `json:"cr"`
+	Attack    int `json:"attack"`
+	Haste     int `json:"haste"`
+	Regen     int `json:"regen"`
+	ManaRegen int `json:"mana_regen"`
+	FT        int `json:"ft"`
+	DmgShield int `json:"dmg_shield"`
 }
 
-// equippedStats sums HP / Mana / AC / attributes / resists across every item
-// equipped in the character's most recent Quarmy export. Used by the Character
-// Info → Stats panel to show "base + equipment" totals.
+// equippedStatsResponse is the per-source breakdown the Stats panel renders.
+// Total = Base + (Equipment if mode != base) + (Buff sum if mode == buffed,
+// computed on the frontend).
+type equippedStatsResponse struct {
+	Character string    `json:"character"`
+	Base      statBlock `json:"base"`
+	Equipment statBlock `json:"equipment"`
+}
+
+// defaultBaseResist is EQ's blank-slate per-resist starting value before any
+// race or class adjustments. Hardcoded in EQEmu source rather than in the DB,
+// so we mirror it here.
+const defaultBaseResist = 25
+
+// equippedStats returns the character's "base" stats (level/class HP+Mana
+// from base_data, race resists, attribs from quarmy) and the summed
+// contribution from currently equipped items.
 func (h *charactersHandler) equippedStats(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
@@ -341,36 +367,57 @@ func (h *charactersHandler) equippedStats(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	q, err := zeal.ParseQuarmy(zeal.QuarmyPath(cfg.EQPath, char.Name), char.Name)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("parse quarmy: %s", err))
-		return
+	resp := equippedStatsResponse{Character: char.Name}
+
+	// ── Base block ──
+	// Quarmy attribs (already populated on the character row from the most
+	// recent export) become the seven attribute columns. base_data gives us a
+	// rough base HP/Mana, and we mirror EQ's blank-slate +25 resist.
+	resp.Base = statBlock{
+		STR: char.BaseSTR, STA: char.BaseSTA, AGI: char.BaseAGI,
+		DEX: char.BaseDEX, WIS: char.BaseWIS, INT: char.BaseINT, CHA: char.BaseCHA,
+		PR: defaultBaseResist, MR: defaultBaseResist, DR: defaultBaseResist,
+		FR: defaultBaseResist, CR: defaultBaseResist,
+	}
+	if char.Class >= 0 && char.Level > 0 {
+		// character.Class is 0-indexed (0=WAR); base_data uses 1-indexed.
+		bd, err := h.db.GetBaseData(char.Level, char.Class+1)
+		if err == nil {
+			resp.Base.HP = int(bd.HP)
+			resp.Base.Mana = int(bd.Mana)
+		}
 	}
 
-	resp := equippedStatsResponse{Character: char.Name}
-	for _, entry := range q.Inventory {
-		if !equipSlots[entry.Location] || entry.ID <= 0 {
-			continue
+	// ── Equipment block ──
+	q, err := zeal.ParseQuarmy(zeal.QuarmyPath(cfg.EQPath, char.Name), char.Name)
+	if err == nil && q != nil {
+		for _, entry := range q.Inventory {
+			if !equipSlots[entry.Location] || entry.ID <= 0 {
+				continue
+			}
+			item, err := h.db.GetItem(entry.ID)
+			if err != nil || item == nil {
+				continue
+			}
+			resp.Equipment.HP += item.HP
+			resp.Equipment.Mana += item.Mana
+			resp.Equipment.AC += item.AC
+			resp.Equipment.STR += item.Strength
+			resp.Equipment.STA += item.Stamina
+			resp.Equipment.AGI += item.Agility
+			resp.Equipment.DEX += item.Dexterity
+			resp.Equipment.WIS += item.Wisdom
+			resp.Equipment.INT += item.Intelligence
+			resp.Equipment.CHA += item.Charisma
+			resp.Equipment.PR += item.PoisonResist
+			resp.Equipment.MR += item.MagicResist
+			resp.Equipment.DR += item.DiseaseResist
+			resp.Equipment.FR += item.FireResist
+			resp.Equipment.CR += item.ColdResist
+			// Attack / Haste / Regen / ManaRegen / FT / DmgShield come from
+			// the item's worneffect spell, not from item columns. Leaving
+			// these at zero until we wire the SPA-parsing path.
 		}
-		item, err := h.db.GetItem(entry.ID)
-		if err != nil || item == nil {
-			continue
-		}
-		resp.HP += item.HP
-		resp.Mana += item.Mana
-		resp.AC += item.AC
-		resp.STR += item.Strength
-		resp.STA += item.Stamina
-		resp.AGI += item.Agility
-		resp.DEX += item.Dexterity
-		resp.WIS += item.Wisdom
-		resp.INT += item.Intelligence
-		resp.CHA += item.Charisma
-		resp.PR += item.PoisonResist
-		resp.MR += item.MagicResist
-		resp.DR += item.DiseaseResist
-		resp.FR += item.FireResist
-		resp.CR += item.ColdResist
 	}
 
 	writeJSON(w, http.StatusOK, resp)
