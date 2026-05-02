@@ -395,6 +395,7 @@ export interface AAInfo {
   cost_inc: number
   max_level: number
   type: number
+  description?: string
 }
 
 export interface CharacterAAsResponse {

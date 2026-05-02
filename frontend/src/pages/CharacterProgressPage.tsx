@@ -618,7 +618,7 @@ function AAPanel({ trained, available }: AAPanelProps): React.ReactElement {
         </div>
       </div>
 
-      {/* Description placeholder */}
+      {/* Description */}
       <div
         className="rounded-lg p-3"
         style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
@@ -627,13 +627,20 @@ function AAPanel({ trained, available }: AAPanelProps): React.ReactElement {
           Description
         </p>
         {selected ? (
-          <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-            <span className="font-semibold">{selected.name}</span>
-            <span className="ml-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-              max rank {Math.max(selected.max_level, selected.rank)} · base cost {selected.cost}
-              {selected.cost_inc > 0 ? ` (+${selected.cost_inc}/rank)` : ''}
-            </span>
-          </p>
+          <div>
+            <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+              <span className="font-semibold">{selected.name}</span>
+              <span className="ml-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                max rank {Math.max(selected.max_level, selected.rank)} · base cost {selected.cost}
+                {selected.cost_inc > 0 ? ` (+${selected.cost_inc}/rank)` : ''}
+              </span>
+            </p>
+            {selected.description && (
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-foreground)' }}>
+                {selected.description}
+              </p>
+            )}
+          </div>
         ) : (
           <p className="text-sm italic" style={{ color: 'var(--color-muted-foreground)' }}>
             Select an AA to see its description.

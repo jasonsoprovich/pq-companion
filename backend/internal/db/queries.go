@@ -1198,12 +1198,13 @@ func (db *DB) GetZoneDrops(shortName string) ([]ZoneDropItem, error) {
 // Zeal "AAIndex" export (NOT altadv_vars.skill_id, which is an internal EQEmu
 // row id that isn't 1:1 with what the client/server reference).
 type AAInfo struct {
-	AAID     int    `json:"aa_id"` // altadv_vars.eqmacid
-	Name     string `json:"name"`
-	Cost     int    `json:"cost"`
-	CostInc  int    `json:"cost_inc"`
-	MaxLevel int    `json:"max_level"`
-	Type     int    `json:"type"` // 1=General, 2=Archetype, 3=Class, 4=PoP Advance, 5=PoP Ability
+	AAID        int    `json:"aa_id"` // altadv_vars.eqmacid
+	Name        string `json:"name"`
+	Cost        int    `json:"cost"`
+	CostInc     int    `json:"cost_inc"`
+	MaxLevel    int    `json:"max_level"`
+	Type        int    `json:"type"` // 1=General, 2=Archetype, 3=Class, 4=PoP Advance, 5=PoP Ability
+	Description string `json:"description,omitempty"`
 }
 
 // LookupAANames returns a map of eqmacid → name for the given AA indexes.
@@ -1295,8 +1296,10 @@ func (db *DB) ListAvailableAAs(class int) ([]AAInfo, error) {
 		return nil, err
 	}
 
+	descs := loadAADescriptions()
 	out := make([]AAInfo, 0, len(byName))
 	for _, info := range byName {
+		info.Description = descs[info.AAID]
 		out = append(out, info)
 	}
 	return out, nil

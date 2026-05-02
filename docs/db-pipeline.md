@@ -207,6 +207,75 @@ If the converter hits a new column type it cannot map, it falls back to
 When a rename breaks one of the queries in `backend/internal/db/queries.go`,
 the CI Go tests catch it — all queries run against the real database in CI.
 
+## AA descriptions (sibling asset)
+
+Quarm's MySQL dump carries no AA description text — `altadv_vars` only has
+names, costs, and types. The descriptions live client-side in TAKP's
+`eqstr_en.txt` (the EQ-retail equivalent is `dbstr_us.txt`). To surface them
+in the AA tab we generate `backend/internal/db/aa_descriptions.json` (keyed
+by `altadv_vars.eqmacid` → description text) from a TAKP client and embed
+the JSON into the Go binary at build time via `//go:embed`.
+
+This pipeline is **independent of the MySQL→SQLite dump pipeline** and runs
+on its own cadence — the JSON only needs regenerating when TAKP ships an
+updated `eqstr_en.txt` (rare, typically tied to client patches), not when a
+new game-DB dump lands.
+
+### Regenerating the JSON
+
+```bash
+cd backend
+go run ./cmd/aa-descriptions \
+  -strings <path-to-eqstr_en.txt> \
+  -db data/quarm.db \
+  -out internal/db/aa_descriptions.json
+```
+
+Inputs:
+- `-strings` — TAKP `eqstr_en.txt` from a client install. Format is
+  `<id> <text>` per line; each AA name line is followed by its description.
+- `-db` — path to a built `quarm.db` (so the generator knows which AAs to
+  emit and what `eqmacid` to key on). Filter matches `ListAvailableAAs`
+  minus the class bitmask.
+
+The generator:
+1. Indexes every string entry by exact text.
+2. For each AA name in `altadv_vars`, finds matching strings entries and
+   picks the candidate whose immediate next entry looks like a description
+   (length and sentence shape — avoids false hits on UI strings).
+3. Falls back to a normalized lookup (case + whitespace + apostrophes +
+   `/secondary` qualifiers stripped) to catch names that differ slightly
+   between the DB and the strings file (e.g. DB "Lifeburn" vs strings
+   "Life Burn", DB "Fletching Mastery" vs strings
+   "Fletching/Bowyer Mastery").
+4. Applies a small hard-override map for AAs whose entry in the strings
+   file is misaligned (the line after the name is a different AA's name or
+   description). Currently: "Advanced Innate Strength" (eqmacid 129) and
+   "Advanced Innate Wisdom" (eqmacid 134). If a future strings file changes
+   these alignments, update `stringIDByID` in
+   `backend/cmd/aa-descriptions/main.go`.
+
+The generator logs how many AA descriptions resolved and lists any names
+that didn't match. Current coverage is **213/213** AAs against the TAKPv22
+strings file.
+
+### When to regenerate
+
+- A new TAKP client patch ships a different `eqstr_en.txt` (existing
+  descriptions reworded, new AAs added, or alignments shifted).
+- The dump pipeline adds new AAs to `altadv_vars` that didn't exist before.
+  Re-run the generator and check the missing-names log; new AAs whose names
+  don't appear in the current `eqstr_en.txt` will need to wait for a TAKP
+  client update or get a manual entry in the override map.
+
+### Why JSON instead of a column on `altadv_vars`
+
+A column or sibling table inside `quarm.db` would get blown away every
+time the MySQL→SQLite pipeline regenerates the file. Keeping the
+descriptions in a separate JSON next to the Go code (and embedded into the
+binary) means dump regenerations don't touch this data at all — the two
+pipelines stay decoupled.
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
@@ -215,3 +284,4 @@ the CI Go tests catch it — all queries run against the real database in CI.
 | `validation failed: row count X` | The dump is missing rows — often a truncated file. Redownload and retry. |
 | `validation failed: spot check` | The conversion imported the row count but not the actual data — e.g., a silent `INSERT` parser failure. Run with `--verbose` and inspect logs. |
 | `data-release` workflow can't find dump | The workflow converts files under `sql/`. Commit the dump there (or adjust the input path). |
+| AA description box shows only the title (no body text) | `aa_descriptions.json` doesn't have an entry for that AA's `eqmacid`. Re-run `cmd/aa-descriptions` against a current `eqstr_en.txt`; check the missing-names log. |
