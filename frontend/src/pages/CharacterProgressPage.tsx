@@ -218,7 +218,7 @@ export default function CharacterProgressPage(): React.ReactElement {
             </h1>
             <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
               {viewedCharacter
-                ? `Showing data for ${viewedCharacter} — imported from Quarmy.txt on logout`
+                ? `Showing data for ${viewedCharacter}`
                 : 'Select a character to view progression data'}
             </p>
           </div>
