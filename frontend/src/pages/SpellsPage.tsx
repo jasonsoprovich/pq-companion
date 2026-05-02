@@ -17,6 +17,7 @@ import {
   zoneTypeLabel,
 } from '../lib/spellHelpers'
 import CreateTriggerModal from '../components/CreateTriggerModal'
+import { SpellIcon } from '../components/Icon'
 
 const SPELL_CLASSES: { index: number; abbr: string; full: string }[] = [
   { index: 0,  abbr: 'WAR', full: 'Warrior' },
@@ -196,7 +197,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
             <button
               key={spell.id}
               onClick={() => onSelect(spell)}
-              className="w-full px-3 py-2 text-left transition-colors"
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors"
               style={{
                 backgroundColor:
                   selectedId === spell.id ? 'var(--color-surface-2)' : 'transparent',
@@ -206,20 +207,23 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
                     : '2px solid transparent',
               }}
             >
-              <div
-                className="truncate text-sm font-medium"
-                style={{
-                  color:
-                    selectedId === spell.id
-                      ? 'var(--color-primary)'
-                      : 'var(--color-foreground)',
-                }}
-              >
-                {spell.name}
-              </div>
-              <div className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                {castableClassesShort(spell.class_levels)}
-                {spell.mana > 0 && ` · ${spell.mana} mana`}
+              <SpellIcon id={spell.new_icon} name={spell.name} size={28} />
+              <div className="min-w-0 flex-1">
+                <div
+                  className="truncate text-sm font-medium"
+                  style={{
+                    color:
+                      selectedId === spell.id
+                        ? 'var(--color-primary)'
+                        : 'var(--color-foreground)',
+                  }}
+                >
+                  {spell.name}
+                </div>
+                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                  {castableClassesShort(spell.class_levels)}
+                  {spell.mana > 0 && ` · ${spell.mana} mana`}
+                </div>
               </div>
             </button>
           ))}
@@ -322,32 +326,35 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
     <div className="flex-1 overflow-y-auto px-5 py-4">
       {/* Header */}
       <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h2
-            className="text-xl font-bold leading-tight"
-            style={{ color: 'var(--color-primary)' }}
-          >
-            {spell.name}
-          </h2>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            {skillLabel(spell.skill) && (
-              <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-                {skillLabel(spell.skill)}
-              </span>
-            )}
-            {flags.map((f) => (
-              <span
-                key={f}
-                className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                style={{
-                  backgroundColor: 'var(--color-surface-2)',
-                  color: 'var(--color-primary)',
-                  border: '1px solid var(--color-border)',
-                }}
-              >
-                {f}
-              </span>
-            ))}
+        <div className="flex items-start gap-3">
+          <SpellIcon id={spell.new_icon} name={spell.name} size={40} />
+          <div>
+            <h2
+              className="text-xl font-bold leading-tight"
+              style={{ color: 'var(--color-primary)' }}
+            >
+              {spell.name}
+            </h2>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              {skillLabel(spell.skill) && (
+                <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+                  {skillLabel(spell.skill)}
+                </span>
+              )}
+              {flags.map((f) => (
+                <span
+                  key={f}
+                  className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                  style={{
+                    backgroundColor: 'var(--color-surface-2)',
+                    color: 'var(--color-primary)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                >
+                  {f}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
         {hasDuration && (
