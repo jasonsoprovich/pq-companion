@@ -328,6 +328,52 @@ func TestHasSpecialAbility(t *testing.T) {
 	}
 }
 
+func TestItemIcons(t *testing.T) {
+	d := openTestDB(t)
+	// Empty input → empty result, no error.
+	got, err := d.ItemIcons(nil)
+	if err != nil {
+		t.Fatalf("ItemIcons(nil): %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("ItemIcons(nil) = %v, want empty map", got)
+	}
+	// Pick a few known IDs from the items table that have non-zero icons.
+	rows, err := d.Query("SELECT id, icon FROM items WHERE icon > 0 LIMIT 5")
+	if err != nil {
+		t.Fatalf("seed query: %v", err)
+	}
+	want := map[int]int{}
+	var ids []int
+	for rows.Next() {
+		var id, icon int
+		if err := rows.Scan(&id, &icon); err != nil {
+			rows.Close()
+			t.Fatalf("scan: %v", err)
+		}
+		want[id] = icon
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if len(ids) == 0 {
+		t.Skip("no items with icons in DB")
+	}
+	// Add a non-existent ID — it should be silently omitted.
+	ids = append(ids, -1)
+	got, err = d.ItemIcons(ids)
+	if err != nil {
+		t.Fatalf("ItemIcons: %v", err)
+	}
+	if len(got) != len(want) {
+		t.Errorf("got %d icons, want %d", len(got), len(want))
+	}
+	for id, icon := range want {
+		if got[id] != icon {
+			t.Errorf("ItemIcons[%d] = %d, want %d", id, got[id], icon)
+		}
+	}
+}
+
 func TestNPCSpecialAbilities_RealDB(t *testing.T) {
 	d := openTestDB(t)
 	// Find any NPC that has special abilities set.
