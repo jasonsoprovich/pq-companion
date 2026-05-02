@@ -17,6 +17,7 @@ import {
   slotsLabel,
   weightLabel,
 } from '../lib/itemHelpers'
+import { ItemIcon } from '../components/Icon'
 
 // ── Filter definitions ─────────────────────────────────────────────────────────
 
@@ -524,7 +525,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
             <button
               key={item.id}
               onClick={() => onSelect(item)}
-              className="w-full px-3 py-2 text-left transition-colors"
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors"
               style={{
                 backgroundColor:
                   selectedId === item.id ? 'var(--color-surface-2)' : 'transparent',
@@ -534,20 +535,23 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
                     : '2px solid transparent',
               }}
             >
-              <div
-                className="truncate text-sm font-medium"
-                style={{
-                  color:
-                    selectedId === item.id
-                      ? 'var(--color-primary)'
-                      : 'var(--color-foreground)',
-                }}
-              >
-                {item.name}
-              </div>
-              <div className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                {effectiveItemTypeLabel(item.item_class, item.item_type)}
-                {item.req_level > 0 && ` · Req ${item.req_level}`}
+              <ItemIcon id={item.icon} name={item.name} size={28} />
+              <div className="min-w-0 flex-1">
+                <div
+                  className="truncate text-sm font-medium"
+                  style={{
+                    color:
+                      selectedId === item.id
+                        ? 'var(--color-primary)'
+                        : 'var(--color-foreground)',
+                  }}
+                >
+                  {item.name}
+                </div>
+                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                  {effectiveItemTypeLabel(item.item_class, item.item_type)}
+                  {item.req_level > 0 && ` · Req ${item.req_level}`}
+                </div>
               </div>
             </button>
           ))}
@@ -1036,9 +1040,12 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
         className="shrink-0 border-b px-5 pt-4 pb-0"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <h2 className="text-xl font-bold leading-tight" style={{ color: 'var(--color-primary)' }}>
-          {item.name}
-        </h2>
+        <div className="flex items-center gap-3">
+          <ItemIcon id={item.icon} name={item.name} size={40} />
+          <h2 className="text-xl font-bold leading-tight" style={{ color: 'var(--color-primary)' }}>
+            {item.name}
+          </h2>
+        </div>
 
         {/* Tabs */}
         <div className="mt-3 flex gap-0 overflow-x-auto">
