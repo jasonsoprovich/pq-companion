@@ -7,13 +7,14 @@
  * buttons remain clickable via mouseenter/mouseleave forwarding.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Swords, Clipboard, ClipboardCheck, Trash2 } from 'lucide-react'
+import { Swords, Clipboard, ClipboardCheck, Trash2, Users } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { getCombatState } from '../services/api'
-import type { CombatState, EntityStats, FightState } from '../types/combat'
+import type { CombatState, FightState } from '../types/combat'
+import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -42,75 +43,102 @@ function truncateName(name: string, max = 24): string {
 
 // ── Clipboard ──────────────────────────────────────────────────────────────────
 
-function buildFightText(fight: FightState): string {
-  const sorted = [...(fight.combatants ?? [])].sort((a, b) => b.dps - a.dps).slice(0, 10)
-  return sorted
-    .map((c, i) => `#${i + 1} ${c.name} ${Math.round(c.dps)}dps ${c.total_damage.toLocaleString()}dmg`)
+function buildFightText(fight: FightState, combine: boolean): string {
+  const rolled = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
+  return rolled
+    .slice(0, 10)
+    .map((c, i) => `#${i + 1} ${c.name}${petBadge(c.pets)} ${Math.round(c.dps)}dps ${c.total_damage.toLocaleString()}dmg`)
     .join(' | ')
 }
 
 // ── Row ────────────────────────────────────────────────────────────────────────
 
-function Row({ stat, totalDmg }: { stat: EntityStats; totalDmg: number }): React.ReactElement {
+function Row({ stat, totalDmg, expanded, onToggle }: { stat: RolledUpEntity; totalDmg: number; expanded: boolean; onToggle: () => void }): React.ReactElement {
   const isYou = stat.name === 'You'
   const barPct = totalDmg > 0 ? (stat.total_damage / totalDmg) * 100 : 0
+  const hasPets = stat.pets.length > 0
 
   return (
-    <div
-      style={{
-        position: 'relative',
-        display: 'grid',
-        gridTemplateColumns: '1fr auto auto auto',
-        gap: '0 8px',
-        padding: '4px 8px',
-        alignItems: 'center',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-        overflow: 'hidden',
-      }}
-    >
-      {/* bar */}
+    <div>
       <div
+        onClick={hasPets ? onToggle : undefined}
         style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: `${barPct}%`,
-          backgroundColor: isYou ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)',
-          pointerEvents: 'none',
-        }}
-      />
-      <span
-        style={{
-          fontSize: 12,
-          fontWeight: isYou ? 700 : 400,
-          color: isYou ? '#818cf8' : 'rgba(255,255,255,0.85)',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
           position: 'relative',
+          display: 'grid',
+          gridTemplateColumns: '1fr auto auto auto',
+          gap: '0 8px',
+          padding: '4px 8px',
+          alignItems: 'center',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          overflow: 'hidden',
+          cursor: hasPets ? 'pointer' : 'default',
         }}
       >
-        {stat.name}
-      </span>
-      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontVariantNumeric: 'tabular-nums', position: 'relative' }}>
-        {pct(stat.total_damage, totalDmg)}
-      </span>
-      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontVariantNumeric: 'tabular-nums', position: 'relative' }}>
-        {fmt(stat.total_damage)}
-      </span>
-      <span style={{ fontSize: 11, color: '#fb923c', fontVariantNumeric: 'tabular-nums', position: 'relative', minWidth: 44, textAlign: 'right' }}>
-        {fmtDPS(stat.dps)}
-      </span>
+        {/* bar */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: `${barPct}%`,
+            backgroundColor: isYou ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)',
+            pointerEvents: 'none',
+          }}
+        />
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: isYou ? 700 : 400,
+            color: isYou ? '#818cf8' : 'rgba(255,255,255,0.85)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            position: 'relative',
+          }}
+        >
+          {stat.name}
+          {hasPets && <span style={{ color: 'rgba(255,255,255,0.45)', fontWeight: 400 }}>{petBadge(stat.pets)}</span>}
+        </span>
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontVariantNumeric: 'tabular-nums', position: 'relative' }}>
+          {pct(stat.total_damage, totalDmg)}
+        </span>
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontVariantNumeric: 'tabular-nums', position: 'relative' }}>
+          {fmt(stat.total_damage)}
+        </span>
+        <span style={{ fontSize: 11, color: '#fb923c', fontVariantNumeric: 'tabular-nums', position: 'relative', minWidth: 44, textAlign: 'right' }}>
+          {fmtDPS(stat.dps)}
+        </span>
+      </div>
+      {hasPets && expanded && stat.pets.map((p) => (
+        <div
+          key={p.name}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr auto auto auto',
+            gap: '0 8px',
+            padding: '2px 8px 2px 20px',
+            alignItems: 'center',
+            fontSize: 11,
+            color: 'rgba(255,255,255,0.55)',
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>↳ {p.name}</span>
+          <span style={{ color: 'rgba(255,255,255,0.35)', fontVariantNumeric: 'tabular-nums' }}>{pct(p.total_damage, totalDmg)}</span>
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(p.total_damage)}</span>
+          <span style={{ color: '#fb923c', fontVariantNumeric: 'tabular-nums', minWidth: 44, textAlign: 'right' }}>{fmtDPS(p.dps)}</span>
+        </div>
+      ))}
     </div>
   )
 }
 
 // ── Fight table ────────────────────────────────────────────────────────────────
 
-function FightTable({ fight, showAll }: { fight: FightState; showAll: boolean }): React.ReactElement {
-  const combatants = fight.combatants ?? []
-  const rows = showAll ? combatants : combatants.filter((c) => c.name === 'You')
+function FightTable({ fight, showAll, combine }: { fight: FightState; showAll: boolean; combine: boolean }): React.ReactElement {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const rolled = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
+  const rows = showAll ? rolled : rolled.filter((c) => c.name === 'You')
   const totalDmg = showAll ? fight.total_damage : fight.you_damage
 
   return (
@@ -139,7 +167,20 @@ function FightTable({ fight, showAll }: { fight: FightState; showAll: boolean })
       {rows.length === 0 ? (
         <p style={{ padding: 12, fontSize: 11, color: 'rgba(255,255,255,0.3)', textAlign: 'center', margin: 0 }}>No data</p>
       ) : (
-        rows.map((s) => <Row key={s.name} stat={s} totalDmg={totalDmg} />)
+        rows.map((s) => (
+          <Row
+            key={s.name}
+            stat={s}
+            totalDmg={totalDmg}
+            expanded={expanded.has(s.name)}
+            onToggle={() => setExpanded((prev) => {
+              const next = new Set(prev)
+              if (next.has(s.name)) next.delete(s.name)
+              else next.add(s.name)
+              return next
+            })}
+          />
+        ))
       )}
     </div>
   )
@@ -152,6 +193,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
+  const [combine, setCombine] = useCombinePetWithOwner()
   const [now, setNow] = useState(() => Date.now())
   const [copied, setCopied] = useState(false)
 
@@ -265,11 +307,27 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           >
             {showAll ? 'All' : 'Me'}
           </button>
+          {/* combine pets toggle */}
+          <button
+            onClick={() => setCombine(!combine)}
+            title={combine ? 'Pet damage rolled up — click to split' : 'Pets shown separately — click to combine'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'none',
+              border: 'none',
+              padding: '1px 3px',
+              cursor: 'pointer',
+              color: combine ? '#818cf8' : 'rgba(255,255,255,0.4)',
+            }}
+          >
+            <Users size={11} />
+          </button>
           {/* copy fight summary */}
           <button
             onClick={() => {
               if (!fight) return
-              navigator.clipboard.writeText(buildFightText(fight)).then(() => {
+              navigator.clipboard.writeText(buildFightText(fight, combine)).then(() => {
                 setCopied(true)
                 setTimeout(() => setCopied(false), 1500)
               }).catch(() => {})
@@ -377,7 +435,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           Connecting…
         </p>
       ) : fight ? (
-        <FightTable fight={fight} showAll={showAll} />
+        <FightTable fight={fight} showAll={showAll} combine={combine} />
       ) : (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
           <Swords size={24} style={{ opacity: 0.15 }} />

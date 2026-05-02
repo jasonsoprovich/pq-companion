@@ -4,6 +4,10 @@ export interface EntityStats {
   hit_count: number
   max_hit: number
   dps: number
+  // Controlling player's name when this entity is a pet (charmed NPC or
+  // summoned pet). Empty/undefined for player damage dealers and for pets
+  // whose owner could not be identified.
+  owner_name?: string
 }
 
 export interface HealerStats {

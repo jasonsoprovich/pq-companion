@@ -425,6 +425,22 @@ func TestParseLine(t *testing.T) {
 			wantOK: false,
 		},
 
+		// --- Pet owner binding ---
+		{
+			name:     "pet owner: charm bind names player",
+			line:     "[Mon Apr 13 06:00:00 2026] Kebartik says 'My leader is Kildrey.'",
+			wantOK:   true,
+			wantType: EventPetOwner,
+			wantData: PetOwnerData{Pet: "Kebartik", Owner: "Kildrey"},
+		},
+		{
+			name:     "pet owner: summoned warder names player",
+			line:     "[Mon Apr 13 06:00:00 2026] Grimrose`s warder says 'My leader is Grimrose.'",
+			wantOK:   true,
+			wantType: EventPetOwner,
+			wantData: PetOwnerData{Pet: "Grimrose`s warder", Owner: "Grimrose"},
+		},
+
 		// --- Unrecognised messages ---
 		{
 			name:   "unrecognised: chat message",
@@ -561,6 +577,14 @@ func compareData(t *testing.T, got, want interface{}) {
 		}
 		if g != w {
 			t.Errorf("ConsideredData = %+v, want %+v", g, w)
+		}
+	case PetOwnerData:
+		g, ok := got.(PetOwnerData)
+		if !ok {
+			t.Fatalf("Data type = %T, want PetOwnerData", got)
+		}
+		if g != w {
+			t.Errorf("PetOwnerData = %+v, want %+v", g, w)
 		}
 	default:
 		t.Fatalf("compareData: unhandled want type %T", want)

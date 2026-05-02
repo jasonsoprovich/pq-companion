@@ -12,11 +12,13 @@ import {
   Trash2,
   Clipboard,
   ClipboardCheck,
+  Users,
 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getCombatState, getLogStatus, resetCombatState } from '../services/api'
 import type { CombatState, DeathRecord, EntityStats, FightSummary } from '../types/combat'
 import type { LogTailerStatus } from '../types/logEvent'
+import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -91,10 +93,17 @@ function StatusBar({ status }: { status: LogTailerStatus | null }): React.ReactE
 function CombatantTable({
   combatants,
   totalDamage,
+  combine,
+  fightDuration,
 }: {
   combatants: EntityStats[]
   totalDamage: number
+  combine: boolean
+  fightDuration: number
 }): React.ReactElement {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const rolled = rollupCombatants(combatants, combine, fightDuration)
+
   return (
     <div
       style={{
@@ -126,71 +135,84 @@ function CombatantTable({
         <span style={{ textAlign: 'right' }}>Max</span>
       </div>
 
-      {combatants.map((c) => {
-        const isYou = c.name === 'You'
-        return (
-          <div
-            key={c.name}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 48px 72px 60px 48px',
-              gap: '0 8px',
-              padding: '3px 8px 3px 0',
-              borderBottom: '1px solid rgba(255,255,255,0.03)',
-              fontSize: 11,
-            }}
-          >
-            <span
-              style={{
-                color: isYou ? 'var(--color-primary)' : 'var(--color-foreground)',
-                fontWeight: isYou ? 600 : 400,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {c.name}
-            </span>
-            <span
-              style={{
-                textAlign: 'right',
-                color: 'var(--color-muted)',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {pct(c.total_damage, totalDamage)}
-            </span>
-            <span
-              style={{
-                textAlign: 'right',
-                color: 'var(--color-foreground)',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {fmt(c.total_damage)}
-            </span>
-            <span
-              style={{
-                textAlign: 'right',
-                color: '#f97316',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {fmtDPS(c.dps)}
-            </span>
-            <span
-              style={{
-                textAlign: 'right',
-                color: 'var(--color-muted)',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {fmt(c.max_hit)}
-            </span>
-          </div>
-        )
-      })}
+      {rolled.map((c) => renderRolledRow(c, totalDamage, expanded, setExpanded))}
     </div>
+  )
+}
+
+function renderRolledRow(
+  c: RolledUpEntity,
+  totalDamage: number,
+  expanded: Set<string>,
+  setExpanded: React.Dispatch<React.SetStateAction<Set<string>>>,
+): React.ReactNode {
+  const isYou = c.name === 'You'
+  const hasPets = c.pets.length > 0
+  const isExpanded = expanded.has(c.name)
+  return (
+    <React.Fragment key={c.name}>
+      <div
+        onClick={hasPets ? () => setExpanded((prev) => {
+          const next = new Set(prev)
+          if (next.has(c.name)) next.delete(c.name)
+          else next.add(c.name)
+          return next
+        }) : undefined}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 48px 72px 60px 48px',
+          gap: '0 8px',
+          padding: '3px 8px 3px 0',
+          borderBottom: '1px solid rgba(255,255,255,0.03)',
+          fontSize: 11,
+          cursor: hasPets ? 'pointer' : 'default',
+        }}
+      >
+        <span
+          style={{
+            color: isYou ? 'var(--color-primary)' : 'var(--color-foreground)',
+            fontWeight: isYou ? 600 : 400,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {c.name}
+          {hasPets && <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{petBadge(c.pets)}</span>}
+        </span>
+        <span style={{ textAlign: 'right', color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>
+          {pct(c.total_damage, totalDamage)}
+        </span>
+        <span style={{ textAlign: 'right', color: 'var(--color-foreground)', fontVariantNumeric: 'tabular-nums' }}>
+          {fmt(c.total_damage)}
+        </span>
+        <span style={{ textAlign: 'right', color: '#f97316', fontVariantNumeric: 'tabular-nums' }}>
+          {fmtDPS(c.dps)}
+        </span>
+        <span style={{ textAlign: 'right', color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>
+          {fmt(c.max_hit)}
+        </span>
+      </div>
+      {hasPets && isExpanded && c.pets.map((p) => (
+        <div
+          key={p.name}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 48px 72px 60px 48px',
+            gap: '0 8px',
+            padding: '2px 8px 2px 14px',
+            fontSize: 11,
+            color: 'var(--color-muted-foreground)',
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>↳ {p.name}</span>
+          <span style={{ textAlign: 'right', color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>{pct(p.total_damage, totalDamage)}</span>
+          <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(p.total_damage)}</span>
+          <span style={{ textAlign: 'right', color: '#f97316', fontVariantNumeric: 'tabular-nums' }}>{fmtDPS(p.dps)}</span>
+          <span style={{ textAlign: 'right', color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>{fmt(p.max_hit)}</span>
+        </div>
+      ))}
+    </React.Fragment>
   )
 }
 
@@ -200,10 +222,12 @@ function FightRow({
   fight,
   index,
   total,
+  combine,
 }: {
   fight: FightSummary
   index: number
   total: number
+  combine: boolean
 }): React.ReactElement {
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -211,7 +235,7 @@ function FightRow({
 
   function handleCopy(e: React.MouseEvent): void {
     e.stopPropagation()
-    navigator.clipboard.writeText(buildFightText(fight)).then(() => {
+    navigator.clipboard.writeText(buildFightText(fight, combine)).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     }).catch(() => {})
@@ -320,6 +344,8 @@ function FightRow({
           <CombatantTable
             combatants={fight.combatants}
             totalDamage={fight.total_damage}
+            combine={combine}
+            fightDuration={fight.duration_seconds}
           />
         </div>
       )}
@@ -487,6 +513,8 @@ function FilterBar({
   onExport,
   onCopySession,
   sessionCopied,
+  combine,
+  onToggleCombine,
 }: {
   filters: FilterState
   onChange: (f: FilterState) => void
@@ -494,6 +522,8 @@ function FilterBar({
   onExport: () => void
   onCopySession: () => void
   sessionCopied: boolean
+  combine: boolean
+  onToggleCombine: () => void
 }): React.ReactElement {
   return (
     <div
@@ -562,6 +592,27 @@ function FilterBar({
         <option value="1h">Last 1h</option>
         <option value="2h">Last 2h</option>
       </select>
+
+      {/* Combine pets toggle */}
+      <button
+        onClick={onToggleCombine}
+        title={combine ? 'Pet damage rolled up under owner — click to split' : 'Pets shown separately — click to combine'}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '4px 8px',
+          fontSize: 11,
+          background: combine ? 'var(--color-primary)' : 'var(--color-background)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 4,
+          color: combine ? '#000' : 'var(--color-foreground)',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <Users size={11} /> Pets
+      </button>
 
       {/* Me only toggle */}
       <button
@@ -672,12 +723,13 @@ function applyFilters(fights: FightSummary[], filters: FilterState): FightSummar
 
 // ── Clipboard helpers ──────────────────────────────────────────────────────────
 
-function buildFightText(fight: FightSummary): string {
+function buildFightText(fight: FightSummary, combine: boolean): string {
   const target = fight.primary_target ?? 'Unknown'
   const dur = fmtDuration(fight.duration_seconds)
   const lines: string[] = [`[PQ Companion] Fight: ${target} (${dur})`]
-  for (const c of fight.combatants) {
-    lines.push(`${c.name}: ${fmtDPS(c.dps)} DPS (${fmt(c.total_damage)} total)`)
+  const rows = rollupCombatants(fight.combatants, combine, fight.duration_seconds)
+  for (const c of rows) {
+    lines.push(`${c.name}${petBadge(c.pets)}: ${fmtDPS(c.dps)} DPS (${fmt(c.total_damage)} total)`)
   }
   return lines.join('\n')
 }
@@ -730,6 +782,7 @@ export default function CombatLogPage(): React.ReactElement {
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
   const [filters, setFilters] = useState<FilterState>({ search: '', timeRange: 'all', meOnly: false })
   const [sessionCopied, setSessionCopied] = useState(false)
+  const [combine, setCombine] = useCombinePetWithOwner()
 
   useEffect(() => {
     getCombatState().then(setCombat).catch(() => {})
@@ -803,6 +856,8 @@ export default function CombatLogPage(): React.ReactElement {
         onExport={handleExport}
         onCopySession={handleCopySession}
         sessionCopied={sessionCopied}
+        combine={combine}
+        onToggleCombine={() => setCombine(!combine)}
       />
 
       {combat === null ? (
@@ -852,6 +907,7 @@ export default function CombatLogPage(): React.ReactElement {
                 fight={fight}
                 index={i}
                 total={visibleFights.length}
+                combine={combine}
               />
             ))}
           </div>

@@ -60,6 +60,12 @@ const (
 	// EventConsidered is emitted when the player /con's a target and EQ prints
 	// the disposition message (e.g. "a gnoll regards you as an ally.").
 	EventConsidered EventType = "log:considered"
+
+	// EventPetOwner is emitted when a pet announces its owner. EQ prints this
+	// canonical line when a charm spell binds an NPC to a player ("Kebartik
+	// says 'My leader is Kildrey.'"). Consumers map the pet name to the owner
+	// so that pet damage can be rolled up under the owning player.
+	EventPetOwner EventType = "log:pet_owner"
 )
 
 // LogEvent is the parsed representation of a single EQ log line.
@@ -189,4 +195,14 @@ type HealData struct {
 type ConsideredData struct {
 	// TargetName is the NPC display name as it appeared in the /con output.
 	TargetName string `json:"target_name"`
+}
+
+// PetOwnerData is the structured payload for EventPetOwner. The pet announced
+// the binding by saying "My leader is <owner>." — Pet is the speaker, Owner
+// is the named leader. Owner may be "You" if the active character charmed the
+// pet (EQ does not differentiate; consumers can match Owner against the
+// character name).
+type PetOwnerData struct {
+	Pet   string `json:"pet"`
+	Owner string `json:"owner"`
 }

@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Swords, Circle, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck } from 'lucide-react'
+import { Swords, Circle, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { getCombatState, getLogStatus } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
-import type { CombatState, EntityStats, FightState } from '../../types/combat'
+import type { CombatState, FightState } from '../../types/combat'
 import type { LogTailerStatus } from '../../types/logEvent'
+import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../../lib/dpsRollup'
 
 interface DPSPanelProps {
   defaultX?: number
@@ -28,22 +29,23 @@ function truncateName(name: string, max = 28): string {
   return name.length > max ? `${name.slice(0, max - 1)}…` : name
 }
 
-function buildFightText(fight: FightState): string {
+function buildFightText(fight: FightState, combine: boolean): string {
   const target = fight.primary_target ?? 'Unknown'
   const dur = fmtDuration(fight.duration_seconds)
   const lines: string[] = [`[PQ Companion] Fight: ${target} (${dur})`]
-  for (const c of fight.combatants) {
-    lines.push(`${c.name}: ${fmtRate(c.dps)} DPS (${fmt(c.total_damage)} total)`)
+  const rows = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
+  for (const c of rows) {
+    lines.push(`${c.name}${petBadge(c.pets)}: ${fmtRate(c.dps)} DPS (${fmt(c.total_damage)} total)`)
   }
   return lines.join('\n')
 }
 
-function CopyFightButton({ fight }: { fight: FightState | null }): React.ReactElement {
+function CopyFightButton({ fight, combine }: { fight: FightState | null; combine: boolean }): React.ReactElement {
   const [copied, setCopied] = useState(false)
 
   function handleCopy(): void {
     if (!fight) return
-    navigator.clipboard.writeText(buildFightText(fight)).then(() => {
+    navigator.clipboard.writeText(buildFightText(fight, combine)).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     }).catch(() => {})
@@ -169,35 +171,64 @@ function ColHeaders(): React.ReactElement {
   )
 }
 
-function DPSRow({ stat, totalDamage, isYou }: { stat: EntityStats; totalDamage: number; isYou: boolean }): React.ReactElement {
+function DPSRow({ stat, totalDamage, isYou, expanded, onToggle }: { stat: RolledUpEntity; totalDamage: number; isYou: boolean; expanded: boolean; onToggle: () => void }): React.ReactElement {
   const barPct = totalDamage > 0 ? (stat.total_damage / totalDamage) * 100 : 0
+  const hasPets = stat.pets.length > 0
   return (
-    <div
-      style={{
-        position: 'relative', padding: '5px 10px',
-        display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '0 10px',
-        alignItems: 'center', borderBottom: '1px solid var(--color-border)', overflow: 'hidden',
-      }}
-    >
+    <div>
       <div
+        onClick={hasPets ? onToggle : undefined}
         style={{
-          position: 'absolute', left: 0, top: 0, bottom: 0,
-          width: `${barPct}%`,
-          backgroundColor: isYou ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.05)',
-          pointerEvents: 'none',
+          position: 'relative', padding: '5px 10px',
+          display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '0 10px',
+          alignItems: 'center', borderBottom: '1px solid var(--color-border)', overflow: 'hidden',
+          cursor: hasPets ? 'pointer' : 'default',
         }}
-      />
-      <span style={{ fontSize: 12, fontWeight: isYou ? 600 : 400, color: isYou ? 'var(--color-primary)' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', position: 'relative' }}>{stat.name}</span>
-      <span style={{ fontSize: 11, color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums', position: 'relative' }}>{pct(stat.total_damage, totalDamage)}</span>
-      <span style={{ fontSize: 11, color: 'var(--color-foreground)', fontVariantNumeric: 'tabular-nums', position: 'relative' }}>{fmt(stat.total_damage)}</span>
-      <span style={{ fontSize: 11, color: '#f97316', fontVariantNumeric: 'tabular-nums', position: 'relative', minWidth: 44, textAlign: 'right' }}>{fmtRate(stat.dps)}</span>
+      >
+        <div
+          style={{
+            position: 'absolute', left: 0, top: 0, bottom: 0,
+            width: `${barPct}%`,
+            backgroundColor: isYou ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.05)',
+            pointerEvents: 'none',
+          }}
+        />
+        <span style={{ fontSize: 12, fontWeight: isYou ? 600 : 400, color: isYou ? 'var(--color-primary)' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', position: 'relative' }}>
+          {stat.name}
+          {hasPets && <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{petBadge(stat.pets)}</span>}
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums', position: 'relative' }}>{pct(stat.total_damage, totalDamage)}</span>
+        <span style={{ fontSize: 11, color: 'var(--color-foreground)', fontVariantNumeric: 'tabular-nums', position: 'relative' }}>{fmt(stat.total_damage)}</span>
+        <span style={{ fontSize: 11, color: '#f97316', fontVariantNumeric: 'tabular-nums', position: 'relative', minWidth: 44, textAlign: 'right' }}>{fmtRate(stat.dps)}</span>
+      </div>
+      {hasPets && expanded && (
+        <div style={{ borderBottom: '1px solid var(--color-border)' }}>
+          {stat.pets.map((p) => (
+            <div
+              key={p.name}
+              style={{
+                padding: '3px 10px 3px 22px',
+                display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '0 10px',
+                alignItems: 'center', fontSize: 11,
+                color: 'var(--color-muted-foreground)',
+              }}
+            >
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>↳ {p.name}</span>
+              <span style={{ color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>{pct(p.total_damage, totalDamage)}</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(p.total_damage)}</span>
+              <span style={{ color: '#f97316', fontVariantNumeric: 'tabular-nums', minWidth: 44, textAlign: 'right' }}>{fmtRate(p.dps)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-function DPSContent({ fight, showAll }: { fight: FightState; showAll: boolean }): React.ReactElement {
-  const combatants = fight.combatants ?? []
-  const rows = showAll ? combatants : combatants.filter((c) => c.name === 'You')
+function DPSContent({ fight, showAll, combine }: { fight: FightState; showAll: boolean; combine: boolean }): React.ReactElement {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const rolled = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
+  const rows = showAll ? rolled : rolled.filter((c) => c.name === 'You')
   const totalDmg = showAll ? fight.total_damage : fight.you_damage
   return (
     <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
@@ -205,7 +236,21 @@ function DPSContent({ fight, showAll }: { fight: FightState; showAll: boolean })
       {rows.length === 0 ? (
         <div style={{ padding: '16px 10px', fontSize: 12, color: 'var(--color-muted)', textAlign: 'center' }}>No damage data</div>
       ) : (
-        rows.map((s) => <DPSRow key={s.name} stat={s} totalDamage={totalDmg} isYou={s.name === 'You'} />)
+        rows.map((s) => (
+          <DPSRow
+            key={s.name}
+            stat={s}
+            totalDamage={totalDmg}
+            isYou={s.name === 'You'}
+            expanded={expanded.has(s.name)}
+            onToggle={() => setExpanded((prev) => {
+              const next = new Set(prev)
+              if (next.has(s.name)) next.delete(s.name)
+              else next.add(s.name)
+              return next
+            })}
+          />
+        ))
       )}
     </div>
   )
@@ -247,6 +292,7 @@ export default function DPSPanel({
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
   const [showAll, setShowAll] = useState(true)
+  const [combine, setCombine] = useCombinePetWithOwner()
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -277,7 +323,18 @@ export default function DPSPanel({
       headerRight={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <FilterButton showAll={showAll} onToggle={() => setShowAll((v) => !v)} />
-          <CopyFightButton fight={combat?.current_fight ?? null} />
+          <button
+            onClick={() => setCombine(!combine)}
+            title={combine ? 'Pet damage rolled up under owner — click to split' : 'Pets shown as separate rows — click to combine'}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              padding: '1px 3px', display: 'flex', alignItems: 'center',
+              color: combine ? 'var(--color-primary)' : 'var(--color-muted)',
+            }}
+          >
+            <Users size={12} />
+          </button>
+          <CopyFightButton fight={combat?.current_fight ?? null} combine={combine} />
           {window.electron?.overlay && (
             <button
               onClick={() => window.electron.overlay.toggleDPS()}
@@ -307,7 +364,7 @@ export default function DPSPanel({
         <>
           <CombatStrip combat={combat} now={now} />
           {combat.in_combat && combat.current_fight ? (
-            <DPSContent fight={combat.current_fight} showAll={showAll} />
+            <DPSContent fight={combat.current_fight} showAll={showAll} combine={combine} />
           ) : (
             <NotInCombat />
           )}

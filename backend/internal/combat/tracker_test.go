@@ -449,6 +449,134 @@ func TestPrimaryTargetFallsBackToIncomingNPC(t *testing.T) {
 	}
 }
 
+func petOwnerEvent(pet, owner string, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventPetOwner,
+		Timestamp: ts,
+		Data:      logparser.PetOwnerData{Pet: pet, Owner: owner},
+	}
+}
+
+func findCombatant(combatants []EntityStats, name string) *EntityStats {
+	for i := range combatants {
+		if combatants[i].Name == name {
+			return &combatants[i]
+		}
+	}
+	return nil
+}
+
+// TestPetOwnerStampedFromCharmBind verifies that a pet damaging an NPC after
+// the "My leader is X" announcement gets OwnerName=X, so the frontend can
+// roll its damage up under the owning player.
+func TestPetOwnerStampedFromCharmBind(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Charm binds the pet to Kildrey before the fight starts.
+	tr.Handle(petOwnerEvent("Kebartik", "Kildrey", now))
+
+	// You engage the boss; pet (Kebartik) and Kildrey both deal damage.
+	tr.Handle(hitEvent("You", "Aten Ha Ra", 100, now.Add(time.Second)))
+	tr.Handle(hitEvent("Kildrey", "Aten Ha Ra", 200, now.Add(2*time.Second)))
+	tr.Handle(hitEvent("Kebartik", "Aten Ha Ra", 50, now.Add(3*time.Second)))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil {
+		t.Fatal("expected an active fight")
+	}
+	pet := findCombatant(st.CurrentFight.Combatants, "Kebartik")
+	if pet == nil {
+		t.Fatal("expected Kebartik in combatants")
+	}
+	if pet.OwnerName != "Kildrey" {
+		t.Errorf("expected Kebartik OwnerName=Kildrey, got %q", pet.OwnerName)
+	}
+	owner := findCombatant(st.CurrentFight.Combatants, "Kildrey")
+	if owner == nil {
+		t.Fatal("expected Kildrey in combatants")
+	}
+	if owner.OwnerName != "" {
+		t.Errorf("expected Kildrey OwnerName empty (player, not pet), got %q", owner.OwnerName)
+	}
+}
+
+// TestPetOwnerDerivedFromPossessiveName verifies that an entity whose name
+// follows the "Owner`s warder" pattern is stamped with the owner even when no
+// "My leader is X" line was ever seen — covers magician/necro/beastlord
+// summoned pets that don't always announce a leader.
+func TestPetOwnerDerivedFromPossessiveName(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("You", "a temple skirmisher", 100, now))
+	tr.Handle(hitEvent("Grimrose`s warder", "a temple skirmisher", 80, now.Add(time.Second)))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil {
+		t.Fatal("expected an active fight")
+	}
+	pet := findCombatant(st.CurrentFight.Combatants, "Grimrose`s warder")
+	if pet == nil {
+		t.Fatal("expected Grimrose`s warder in combatants")
+	}
+	if pet.OwnerName != "Grimrose" {
+		t.Errorf("expected OwnerName=Grimrose, got %q", pet.OwnerName)
+	}
+}
+
+// TestPetWithUnknownOwnerHasNoStamp verifies that a pet-named entity whose
+// owner is neither in petOwners nor derivable from the name is left with an
+// empty OwnerName so the UI keeps it as a separate row.
+func TestPetWithUnknownOwnerHasNoStamp(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("You", "a gnoll", 100, now))
+	tr.Handle(hitEvent("Lobarn", "a gnoll", 50, now.Add(time.Second)))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil {
+		t.Fatal("expected an active fight")
+	}
+	ent := findCombatant(st.CurrentFight.Combatants, "Lobarn")
+	if ent == nil {
+		t.Fatal("expected Lobarn in combatants")
+	}
+	if ent.OwnerName != "" {
+		t.Errorf("expected empty OwnerName for unknown pet, got %q", ent.OwnerName)
+	}
+}
+
+// TestCharmBreakClearsPetOwnerMapping verifies that once a former pet starts
+// hitting the player, the owner mapping is dropped — subsequent damage by
+// that entity should not roll up under the old owner.
+func TestCharmBreakClearsPetOwnerMapping(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Charm Kebartik to Kildrey, fight a boss.
+	tr.Handle(petOwnerEvent("Kebartik", "Kildrey", now))
+	tr.Handle(hitEvent("You", "Aten Ha Ra", 100, now.Add(time.Second)))
+	tr.Handle(hitEvent("Kebartik", "Aten Ha Ra", 50, now.Add(2*time.Second)))
+
+	// Charm breaks: Kebartik turns and hits You. Mapping should clear.
+	tr.Handle(hitEvent("Kebartik", "You", 80, now.Add(3*time.Second)))
+
+	// Now Kebartik attacks the boss again post-break (e.g. AI re-targeted).
+	tr.Handle(hitEvent("Kebartik", "Aten Ha Ra", 40, now.Add(4*time.Second)))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil {
+		t.Fatal("expected an active fight")
+	}
+	// Kebartik is now in the confirmed-NPC set (it hit You) and gets filtered
+	// from the combatants list — verify it does not appear there.
+	if pet := findCombatant(st.CurrentFight.Combatants, "Kebartik"); pet != nil {
+		t.Fatalf("expected Kebartik to be filtered after charm break, got %+v", pet)
+	}
+}
+
 func TestZoneTrackedForDeath(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()

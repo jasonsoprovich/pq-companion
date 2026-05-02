@@ -119,6 +119,12 @@ var (
 	// "Playerone healed Playertwo for 150 hit points."
 	// Checked after reYouHeal and reHealedYou so those take priority.
 	reThirdPartyHeal = regexp.MustCompile(`^(\w+) healed (.+?) for (\d+) hit points?\.$`)
+
+	// Pet owner binding — emitted by EQ when a charm spell takes hold:
+	// "Kebartik says 'My leader is Kildrey.'"
+	// Pet name allows possessive backtick (e.g. "Grimrose`s warder") and
+	// other words; owner is a single player name.
+	rePetOwner = regexp.MustCompile(`^(.+?) says '?My leader is (\w+)\.'?$`)
 )
 
 // ParseRawLine extracts the timestamp and message from any valid EQ log line
@@ -414,6 +420,15 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		return LogEvent{
 			Type: EventDeath,
 			Data: DeathData{},
+		}, true
+	}
+
+	// --- Pet owner binding ---
+	// Matched before /con because both consume "<name> says ..." style lines.
+	if m := rePetOwner.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventPetOwner,
+			Data: PetOwnerData{Pet: m[1], Owner: m[2]},
 		}, true
 	}
 

@@ -1,6 +1,7 @@
 package combat
 
 import (
+	"regexp"
 	"sort"
 	"sync"
 	"time"
@@ -65,6 +66,12 @@ type Tracker struct {
 	// death tracking
 	currentZone string
 	deaths      []DeathRecord
+
+	// petOwners maps a pet entity name to its controlling player. Populated by
+	// EventPetOwner ("Kebartik says 'My leader is Kildrey.'") and persists for
+	// the session — charm rebinds overwrite the entry, and a charm break
+	// clears it lazily when the former pet is seen attacking the player.
+	petOwners map[string]string
 }
 
 // NewTracker returns an initialised combat Tracker.
@@ -73,6 +80,7 @@ func NewTracker(hub *ws.Hub) *Tracker {
 		hub:          hub,
 		recentFights: []FightSummary{},
 		deaths:       []DeathRecord{},
+		petOwners:    make(map[string]string),
 	}
 }
 
@@ -103,6 +111,13 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 			t.mu.Unlock()
 		}
 		t.endFight(true)
+
+	case logparser.EventPetOwner:
+		data, ok := ev.Data.(logparser.PetOwnerData)
+		if !ok {
+			return
+		}
+		t.recordPetOwner(data.Pet, data.Owner)
 
 	case logparser.EventDeath:
 		slainBy := ""
@@ -141,6 +156,7 @@ func (t *Tracker) Reset() {
 	t.sessionFightTime = 0
 	t.sessionHeal = 0
 	t.deaths = []DeathRecord{}
+	t.petOwners = make(map[string]string)
 	snap := t.snapshot(time.Now())
 	t.mu.Unlock()
 
@@ -181,6 +197,12 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	var entityMap map[string]*internalEntity
 	if data.Target == "You" {
 		entityMap = t.active.incoming
+		// Charm-break detection: if a known pet starts attacking the player,
+		// it is no longer ours — drop the stale owner mapping so the row
+		// stops rolling up under that player.
+		if _, ok := t.petOwners[data.Actor]; ok {
+			delete(t.petOwners, data.Actor)
+		}
 	} else {
 		entityMap = t.active.outgoing
 		t.active.targetCounts[data.Target]++
@@ -214,6 +236,19 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	t.mu.Unlock()
 
 	t.broadcast(snap)
+}
+
+// recordPetOwner stores a pet→owner binding announced by EQ's "My leader is X"
+// message. The mapping is session-scoped (NewTracker / Reset) so it applies
+// across fights — once a charm is established, every hit the pet lands until
+// charm break gets attributed to the owner.
+func (t *Tracker) recordPetOwner(pet, owner string) {
+	if pet == "" || owner == "" {
+		return
+	}
+	t.mu.Lock()
+	t.petOwners[pet] = owner
+	t.mu.Unlock()
 }
 
 // recordHeal processes a heal event and accumulates per-healer stats.
@@ -322,6 +357,7 @@ func (t *Tracker) archiveFight(endTime time.Time) {
 	}
 
 	combatants := excludeNPCs(buildEntityStats(f.outgoing, duration), npcs)
+	stampPetOwners(combatants, t.petOwners)
 	primaryTarget := pickPrimaryTarget(f, npcs)
 
 	totalDmg := int64(0)
@@ -401,6 +437,7 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 
 		npcs := confirmedNPCs(t.active)
 		combatants := excludeNPCs(buildEntityStats(t.active.outgoing, duration), npcs)
+		stampPetOwners(combatants, t.petOwners)
 		primaryTarget := pickPrimaryTarget(t.active, npcs)
 
 		totalDmg := int64(0)
@@ -528,6 +565,43 @@ func pickPrimaryTarget(f *internalFight, npcs map[string]bool) string {
 		}
 	}
 	return primary
+}
+
+// rePossessivePet matches the canonical EQ summoned-pet name format:
+// "Owner`s warder", "Owner`s pet", etc. EQ uses a backtick (not apostrophe)
+// for possessive in pet names, which makes it a reliable owner signal even
+// without a prior "My leader is X" announcement.
+var rePossessivePet = regexp.MustCompile(`^(\w+)` + "`" + `s\s+\w+`)
+
+// stampPetOwners assigns OwnerName to each entity that maps to a known pet
+// owner. The mapping table from petOwners is checked first; absent that, a
+// name matching the "Owner`s <pet>" pattern is treated as a summoned pet of
+// the captured player. Owners who themselves appear in combatants get their
+// pets stamped, but standalone unrelated player names are left alone.
+func stampPetOwners(combatants []EntityStats, petOwners map[string]string) {
+	for i := range combatants {
+		name := combatants[i].Name
+		if name == "You" {
+			continue
+		}
+		if owner, ok := petOwners[name]; ok && owner != name {
+			combatants[i].OwnerName = owner
+			continue
+		}
+		if owner := deriveOwnerFromName(name); owner != "" && owner != name {
+			combatants[i].OwnerName = owner
+		}
+	}
+}
+
+// deriveOwnerFromName extracts an owner name from EQ's "Owner`s <pet>" format
+// (e.g. "Grimrose`s warder" → "Grimrose"). Returns "" if the name does not
+// match the possessive-pet pattern.
+func deriveOwnerFromName(name string) string {
+	if m := rePossessivePet.FindStringSubmatch(name); m != nil {
+		return m[1]
+	}
+	return ""
 }
 
 // excludeNPCs returns combatants minus any name in the npcs set, preserving

@@ -22,6 +22,10 @@ type EntityStats struct {
 	HitCount    int     `json:"hit_count"`
 	MaxHit      int     `json:"max_hit"`
 	DPS         float64 `json:"dps"`
+	// OwnerName is the controlling player's name when this entity is a pet
+	// (charmed NPC or summoned pet). Empty for player damage dealers and for
+	// pets whose owner could not be identified.
+	OwnerName string `json:"owner_name,omitempty"`
 }
 
 // HealerStats holds healing statistics for one healer within a fight.
