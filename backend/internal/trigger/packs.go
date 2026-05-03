@@ -1012,6 +1012,85 @@ func WarriorPack() TriggerPack {
 	}
 }
 
+// MonkPack returns the pre-built monk trigger pack: a Feign Death skill
+// overlay alert and timers for the four core monk disciplines
+// (Stonestance, Innerflame, Thunderkick, Ashenhand). Mend is intentionally
+// omitted — its exact log strings vary by classic-era client and we'd
+// risk false positives without verifying against real Quarm logs.
+//
+// The Feign Death entry overlaps with the Shadowknight pack — installing
+// both packs will cause duplicate overlay fires on FD; users can disable
+// one in the trigger editor if needed.
+func MonkPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Monk",
+		Description: "Feign Death alert plus spell timers for Stonestance, Innerflame, Thunderkick, and Ashenhand Disciplines.",
+		Triggers: []Trigger{
+			// ── Feign Death skill (overlay alert) ────────────────────────
+			{
+				Name:     "Feign Death",
+				Enabled:  true,
+				Pattern:  `^You feign death\.$`,
+				PackName: "Monk",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "FEIGN DEATH", DurationSecs: 4, Color: "#888888"},
+				},
+			},
+
+			// ── Disciplines (timers) ────────────────────────────────────
+			{
+				Name:              "Stonestance Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your body becomes one with the earth\.|[A-Z][a-zA-Z']{2,14}'s feet become one with the earth\.)$`,
+				WornOffPattern:    `^You are no longer one with the earth\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 12,
+				SpellID:           4510,
+				PackName:          "Monk",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Innerflame Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your muscles bulge with the force of will\.|[A-Z][a-zA-Z']{2,14}'s muscles bulge with the force of will\.)$`,
+				WornOffPattern:    `^Your strength of will fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 30,
+				SpellID:           4512,
+				PackName:          "Monk",
+				Actions:           []Action{},
+			},
+			// Thunderkick and Ashenhand are single-use "next strike" discs
+			// — they consume on the first melee hit, expiring the buff via
+			// spell_fades. The 72-second timer is the natural max lifetime
+			// (formula 50 = level/5 ticks); using before then clears it
+			// via the worn_off line.
+			{
+				Name:              "Thunderkick Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your feet glow with mystic power\.|[A-Z][a-zA-Z']{2,14}'s feet glow with mystic power\.)$`,
+				WornOffPattern:    `^The glow fades from your feet\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 72,
+				SpellID:           4511,
+				PackName:          "Monk",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Ashenhand Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your hands clench with fatal fervor\.|[A-Z][a-zA-Z']{2,14}'s fist clenches with fatal fervor\.)$`,
+				WornOffPattern:    `^Your fists lose their fervor\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 72,
+				SpellID:           4508,
+				PackName:          "Monk",
+				Actions:           []Action{},
+			},
+		},
+	}
+}
+
 // GroupAwarenessPack returns the pre-built group awareness trigger pack with
 // alerts for incoming tells, player deaths, and group member deaths.
 func GroupAwarenessPack() TriggerPack {
@@ -1060,6 +1139,7 @@ func AllPacks() []TriggerPack {
 		PaladinPack(),
 		ShadowknightPack(),
 		WarriorPack(),
+		MonkPack(),
 		GroupAwarenessPack(),
 	}
 }
