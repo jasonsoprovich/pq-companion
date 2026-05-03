@@ -950,6 +950,68 @@ func ShadowknightPack() TriggerPack {
 	}
 }
 
+// WarriorPack returns the pre-built warrior trigger pack: timer-creating
+// triggers for the four core warrior disciplines (Defensive, Evasive,
+// Aggressive, Furious). The Taunt skill is intentionally omitted — its
+// success/failure is not directly logged in classic-era EQ, only the
+// resulting aggro shift, which we can't detect from the log alone.
+func WarriorPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Warrior",
+		Description: "Spell timers for Defensive, Evasive, Aggressive, and Furious Disciplines.",
+		Triggers: []Trigger{
+			// ── Disciplines (timers) ────────────────────────────────────
+			// Defensive / Aggressive / Evasive share the fade text "You
+			// return to your normal fighting style." but have unique cast
+			// messages, so each is distinguishable on its land anchor.
+			{
+				Name:              "Defensive Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:You assume a defensive fighting style\.|[A-Z][a-zA-Z']{2,14} assumes a defensive fighting style\.)$`,
+				WornOffPattern:    `^You return to your normal fighting style\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 180,
+				SpellID:           4499,
+				PackName:          "Warrior",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Evasive Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:You assume an evasive fighting style\.|[A-Z][a-zA-Z']{2,14} assumes an evasive fighting style\.)$`,
+				WornOffPattern:    `^You return to your normal fighting style\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 180,
+				SpellID:           4503,
+				PackName:          "Warrior",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Aggressive Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:You assume an aggressive fighting style\.|[A-Z][a-zA-Z']{2,14} assumes an aggressive fighting style\.?)$`,
+				WornOffPattern:    `^You return to your normal fighting style\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 180,
+				SpellID:           4498,
+				PackName:          "Warrior",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Furious Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:A consuming rage takes over your weapons\.|[A-Z][a-zA-Z']{2,14}'s body is consumed in rage\.)$`,
+				WornOffPattern:    `^The rage leaves you\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 12,
+				SpellID:           4674,
+				PackName:          "Warrior",
+				Actions:           []Action{},
+			},
+		},
+	}
+}
+
 // GroupAwarenessPack returns the pre-built group awareness trigger pack with
 // alerts for incoming tells, player deaths, and group member deaths.
 func GroupAwarenessPack() TriggerPack {
@@ -997,6 +1059,7 @@ func AllPacks() []TriggerPack {
 		ShamanPack(),
 		PaladinPack(),
 		ShadowknightPack(),
+		WarriorPack(),
 		GroupAwarenessPack(),
 	}
 }
