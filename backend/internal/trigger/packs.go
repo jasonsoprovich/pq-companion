@@ -1560,6 +1560,94 @@ func WizardPack() TriggerPack {
 	}
 }
 
+// BeastlordPack returns the pre-built beastlord trigger pack: timer-creating
+// triggers for Spiritual Purity / Spiritual Dominion (group mana/HP),
+// Paragon of Spirit (regen burst), Ferocity (melee buff), and Sha's
+// Advantage (slow).
+//
+// The spec's "Sha's Legacy" doesn't exist in spells_new on Quarm; Sha's
+// Advantage (id 2942, level-60 BL slow) is used as the canonical
+// equivalent. Spirit of Arag is omitted — it's an instant pet summon
+// with empty cast_on_you / spell_fades, so there's no buff timer to
+// track.
+func BeastlordPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Beastlord",
+		Description: "Spell timers for Spiritual Purity, Spiritual Dominion, Paragon of Spirit, Ferocity, and Sha's Advantage.",
+		Triggers: []Trigger{
+			// ── Group mana/HP buffs (timers) ────────────────────────────
+			{
+				Name:              "Spiritual Purity",
+				Enabled:           true,
+				Pattern:           `^(?:An aura of spiritual purity envelops you\.|[A-Z][a-zA-Z']{2,14} is enveloped by an aura of spiritual purity\.)$`,
+				WornOffPattern:    `^The aura of purity fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 2700,
+				SpellID:           2629,
+				PackName:          "Beastlord",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Spiritual Dominion",
+				Enabled:           true,
+				Pattern:           `^(?:An aura of spiritual command envelops you\.|[A-Z][a-zA-Z']{2,14} is enveloped by an aura of spiritual dominion\.)$`,
+				WornOffPattern:    `^The dominion fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 2700,
+				SpellID:           3460,
+				PackName:          "Beastlord",
+				Actions:           []Action{},
+			},
+
+			// ── Regen burst (timer) ─────────────────────────────────────
+			// Paragon of Spirit shares "The aura of purity fades." with
+			// Spiritual Purity; each timer keys on its own name so the
+			// shared fade only clears the matching pack's timer.
+			{
+				Name:              "Paragon of Spirit",
+				Enabled:           true,
+				Pattern:           `^(?:Your spirit transcends\.|[A-Z][a-zA-Z']{2,14} becomes a paragon of spirit\.)$`,
+				WornOffPattern:    `^The aura of purity fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 36,
+				SpellID:           3291,
+				PackName:          "Beastlord",
+				Actions:           []Action{},
+			},
+
+			// ── Melee buff (timer) ──────────────────────────────────────
+			// Ferocity's cast_on_other in spells_new omits the leading
+			// apostrophe ("s lips curl...") which is a DB quirk; the
+			// pattern allows the apostrophe as optional to match either
+			// form in the actual log.
+			{
+				Name:              "Ferocity",
+				Enabled:           true,
+				Pattern:           `^(?:Your lips curl into a feral snarl as you descend into ferocity\.|[A-Z][a-zA-Z']{2,14}'?s lips curl into a feral snarl as they descend into ferocity\.)$`,
+				WornOffPattern:    `^The ferocity fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 390,
+				SpellID:           3463,
+				PackName:          "Beastlord",
+				Actions:           []Action{},
+			},
+
+			// ── Slow (timer) ────────────────────────────────────────────
+			{
+				Name:              "Sha's Advantage",
+				Enabled:           true,
+				Pattern:           `^(?:You lose your fighting edge\.|[A-Z][a-zA-Z']{2,14} loses their fighting edge\.)$`,
+				WornOffPattern:    `^You regain your fighting edge\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 630,
+				SpellID:           2942,
+				PackName:          "Beastlord",
+				Actions:           []Action{},
+			},
+		},
+	}
+}
+
 // GroupAwarenessPack returns the pre-built group awareness trigger pack with
 // alerts for incoming tells, player deaths, and group member deaths.
 func GroupAwarenessPack() TriggerPack {
@@ -1615,6 +1703,7 @@ func AllPacks() []TriggerPack {
 		MagicianPack(),
 		NecromancerPack(),
 		WizardPack(),
+		BeastlordPack(),
 		GroupAwarenessPack(),
 	}
 }
