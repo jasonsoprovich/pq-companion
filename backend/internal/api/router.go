@@ -52,7 +52,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	overlayH := &overlayHandler{npcTracker: npcTracker}
 	combatH := &combatHandler{tracker: combatTracker}
 	timerH := &timerHandler{engine: timerEngine}
-	triggerH := &triggerHandler{store: triggerStore, engine: triggerEngine}
+	triggerH := &triggerHandler{store: triggerStore, engine: triggerEngine, hub: hub}
 	tasksH := &tasksHandler{store: charStore}
 
 	r.Route("/api", func(r chi.Router) {
@@ -153,6 +153,8 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/export", triggerH.exportPack)
 			r.Get("/packs", triggerH.listBuiltinPacks)
 			r.Post("/packs/{name}", triggerH.installBuiltinPack)
+			r.Post("/test-overlay", triggerH.testOverlay)
+			r.Post("/test-overlay/position", triggerH.testOverlayPosition)
 		})
 	})
 

@@ -9,11 +9,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
 type triggerHandler struct {
 	store  *trigger.Store
 	engine *trigger.Engine
+	hub    *ws.Hub
 }
 
 // list returns all triggers.
@@ -234,6 +236,56 @@ func (h *triggerHandler) importGINA(w http.ResponseWriter, r *http.Request) {
 // listBuiltinPacks returns all available pre-built trigger packs.
 func (h *triggerHandler) listBuiltinPacks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, trigger.AllPacks())
+}
+
+// ── Test overlay (positioning) ───────────────────────────────────────────────
+//
+// The Test/Position button in the overlay-text editor uses these endpoints to
+// preview an alert in the live trigger overlay window and round-trip the new
+// position back when the user drags the test card. No persistence happens
+// here — the editor owns the unsaved form state and writes back via the
+// regular update endpoint.
+
+type testOverlayRequest struct {
+	TestID       string                  `json:"test_id"`
+	Text         string                  `json:"text"`
+	Color        string                  `json:"color"`
+	DurationSecs int                     `json:"duration_secs"`
+	FontSize     int                     `json:"font_size,omitempty"`
+	Position     *trigger.ActionPosition `json:"position,omitempty"`
+}
+
+func (h *triggerHandler) testOverlay(w http.ResponseWriter, r *http.Request) {
+	var req testOverlayRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.TestID == "" {
+		writeError(w, http.StatusBadRequest, "test_id is required")
+		return
+	}
+	h.hub.Broadcast(ws.Event{Type: "trigger:test", Data: req})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type testOverlayPositionRequest struct {
+	TestID   string                 `json:"test_id"`
+	Position trigger.ActionPosition `json:"position"`
+}
+
+func (h *triggerHandler) testOverlayPosition(w http.ResponseWriter, r *http.Request) {
+	var req testOverlayPositionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.TestID == "" {
+		writeError(w, http.StatusBadRequest, "test_id is required")
+		return
+	}
+	h.hub.Broadcast(ws.Event{Type: "trigger:test_position", Data: req})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // installBuiltinPack installs the named pre-built pack, replacing any existing

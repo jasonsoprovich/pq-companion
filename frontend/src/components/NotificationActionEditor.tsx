@@ -14,8 +14,10 @@
  * this initial extraction and wired up in subsequent tasks.
  */
 import React, { useEffect, useState } from 'react'
-import { Volume2, FolderOpen, Play, Square } from 'lucide-react'
+import { Volume2, FolderOpen, Play, Square, Crosshair, X as XIcon } from 'lucide-react'
 import { playSoundForTest, speakTextForTest, stopTestPlayback } from '../services/audio'
+import { fireTriggerTestOverlay } from '../services/api'
+import { useWebSocket } from '../hooks/useWebSocket'
 
 export type NotificationActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
 
@@ -44,6 +46,8 @@ interface OverlayTextFieldsProps {
   color: string
   onColorChange: (v: string) => void
   textPlaceholder?: string
+  position?: { x: number; y: number } | null
+  onPositionChange?: (p: { x: number; y: number } | null) => void
 }
 
 export function OverlayTextFields({
@@ -54,7 +58,37 @@ export function OverlayTextFields({
   color,
   onColorChange,
   textPlaceholder = 'Display text (e.g. MEZ BROKE!)',
+  position,
+  onPositionChange,
 }: OverlayTextFieldsProps): React.ReactElement {
+  // A per-editor session id is round-tripped through the test endpoints so
+  // simultaneous editors don't clobber each other's position updates.
+  const [testId] = useState(() => `test-${Math.random().toString(36).slice(2)}-${Date.now()}`)
+
+  useWebSocket((msg) => {
+    if (msg.type !== 'trigger:test_position') return
+    const data = msg.data as { test_id: string; position: { x: number; y: number } }
+    if (data.test_id !== testId) return
+    onPositionChange?.(data.position)
+  })
+
+  function handleTestPosition() {
+    // Make sure the overlay window is visible so the user can see the card.
+    void window.electron?.overlay?.openTrigger?.()
+    void fireTriggerTestOverlay({
+      test_id: testId,
+      text: text || 'Test alert',
+      color: color || '#ffffff',
+      // Show for at least 8s so the user has time to drag.
+      duration_secs: Math.max(8, durationSecs || 5),
+      position: position ?? null,
+    }).catch(() => { /* best-effort preview */ })
+  }
+
+  function handleClearPosition() {
+    onPositionChange?.(null)
+  }
+
   return (
     <>
       <input
@@ -65,8 +99,8 @@ export function OverlayTextFields({
         className="w-full rounded px-2 py-1 text-xs outline-none font-mono"
         style={inputStyle}
       />
-      <div className="flex gap-2">
-        <div className="flex items-center gap-1.5 flex-1">
+      <div className="flex gap-2 items-center flex-wrap">
+        <div className="flex items-center gap-1.5">
           <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
             Duration (s)
           </label>
@@ -95,7 +129,51 @@ export function OverlayTextFields({
             {color}
           </span>
         </div>
+        <button
+          type="button"
+          onClick={handleTestPosition}
+          className="flex items-center gap-1 rounded px-2 py-1 text-[11px] ml-auto"
+          style={{
+            backgroundColor: 'var(--color-primary)',
+            color: 'var(--color-background)',
+            border: '1px solid transparent',
+            cursor: 'pointer',
+          }}
+          title="Pop up the alert in the overlay so you can position it"
+        >
+          <Crosshair size={11} />
+          Test / Position
+        </button>
       </div>
+      {position && (
+        <div
+          className="flex items-center gap-1.5 text-[10px] rounded px-2 py-1"
+          style={{
+            color: 'var(--color-muted-foreground)',
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            fontFamily: 'monospace',
+          }}
+        >
+          <span>Pinned at x={position.x}, y={position.y}</span>
+          <button
+            type="button"
+            onClick={handleClearPosition}
+            className="ml-auto flex items-center gap-1 px-1 py-0.5 rounded"
+            style={{
+              backgroundColor: 'transparent',
+              color: 'var(--color-muted)',
+              border: '1px solid var(--color-border)',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+            title="Clear pinned position (use default stacking)"
+          >
+            <XIcon size={9} />
+            Reset
+          </button>
+        </div>
+      )}
     </>
   )
 }
@@ -363,6 +441,8 @@ interface NotificationActionEditorProps {
   onDurationSecsChange?: (v: number) => void
   color?: string
   onColorChange?: (v: string) => void
+  position?: { x: number; y: number } | null
+  onPositionChange?: (p: { x: number; y: number } | null) => void
 
   // play_sound fields
   soundPath?: string
@@ -402,6 +482,8 @@ export default function NotificationActionEditor(
         color={props.color ?? '#ffffff'}
         onColorChange={props.onColorChange ?? noop}
         textPlaceholder={props.overlayTextPlaceholder}
+        position={props.position}
+        onPositionChange={props.onPositionChange}
       />
     )
   }

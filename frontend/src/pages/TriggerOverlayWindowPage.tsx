@@ -10,6 +10,25 @@ import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import OverlayLockButton from '../components/OverlayLockButton'
 import type { TriggerFired } from '../types/trigger'
+import { postTriggerTestPosition } from '../services/api'
+
+interface TestAlert {
+  testId: string
+  text: string
+  color: string
+  fontSize: number
+  position: { x: number; y: number }
+  expiresAt: number
+}
+
+interface TriggerTestPayload {
+  test_id: string
+  text: string
+  color: string
+  duration_secs: number
+  font_size?: number
+  position?: { x: number; y: number } | null
+}
 
 interface AlertEntry {
   id: number
@@ -43,6 +62,9 @@ function AlertCard({ entry, bgOpacity }: { entry: AlertEntry; bgOpacity: number 
   const overlayAction = entry.event.actions.find((a) => a.type === 'overlay_text')
   const text = overlayAction?.text || entry.event.trigger_name
   const color = overlayAction?.color || '#ffffff'
+  const fontSize = overlayAction?.font_size && overlayAction.font_size > 0 ? overlayAction.font_size : 20
+  const position = overlayAction?.position
+  const positioned = !!position
 
   return (
     <div
@@ -55,11 +77,12 @@ function AlertCard({ entry, bgOpacity }: { entry: AlertEntry; bgOpacity: number 
         transition: 'opacity 0.5s ease',
         opacity,
         pointerEvents: 'none', // individual cards don't capture mouse
+        ...(positioned ? { position: 'absolute', left: position.x, top: position.y, zIndex: 10 } : {}),
       }}
     >
       <div
         style={{
-          fontSize: 20,
+          fontSize,
           fontWeight: 800,
           letterSpacing: '0.04em',
           color,
@@ -89,13 +112,99 @@ function AlertCard({ entry, bgOpacity }: { entry: AlertEntry; bgOpacity: number 
   )
 }
 
+// ── Test alert card (draggable) ────────────────────────────────────────────────
+
+interface TestAlertCardProps {
+  alert: TestAlert
+  onPositionCommit: (position: { x: number; y: number }) => void
+  onMouseEnter?: () => void
+  onMouseLeave?: () => void
+}
+
+function TestAlertCard({ alert, onPositionCommit, onMouseEnter, onMouseLeave }: TestAlertCardProps): React.ReactElement {
+  const [pos, setPos] = useState(alert.position)
+  const dragOffset = useRef<{ dx: number; dy: number } | null>(null)
+  const [dragging, setDragging] = useState(false)
+
+  useEffect(() => {
+    setPos(alert.position)
+  }, [alert.testId, alert.position.x, alert.position.y])
+
+  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragOffset.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y }
+    setDragging(true)
+  }
+
+  function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragOffset.current) return
+    const x = Math.max(0, Math.round(e.clientX - dragOffset.current.dx))
+    const y = Math.max(0, Math.round(e.clientY - dragOffset.current.dy))
+    setPos({ x, y })
+  }
+
+  function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragOffset.current) return
+    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
+    dragOffset.current = null
+    setDragging(false)
+    onPositionCommit(pos)
+  }
+
+  const { color, fontSize, text } = alert
+
+  return (
+    <div
+      className="no-drag"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      style={{
+        position: 'absolute',
+        left: pos.x,
+        top: pos.y,
+        padding: '10px 14px',
+        borderRadius: 6,
+        backgroundColor: 'rgba(10,10,12,0.85)',
+        border: `2px dashed ${color}`,
+        boxShadow: `0 0 12px ${color}55`,
+        cursor: dragging ? 'grabbing' : 'grab',
+        userSelect: 'none',
+        pointerEvents: 'auto',
+        zIndex: 50,
+      }}
+    >
+      <div
+        style={{
+          fontSize,
+          fontWeight: 800,
+          letterSpacing: '0.04em',
+          color,
+          textShadow: `0 0 8px ${color}88`,
+          textAlign: 'center',
+        }}
+      >
+        {text || 'Test Overlay'}
+      </div>
+      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', textAlign: 'center', marginTop: 4 }}>
+        Drag to position · auto-dismiss in a moment
+      </div>
+    </div>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function TriggerOverlayWindowPage(): React.ReactElement {
   const overlayOpacity = useOverlayOpacity()
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
   const [alerts, setAlerts] = useState<AlertEntry[]>([])
+  const [testAlert, setTestAlert] = useState<TestAlert | null>(null)
   const gcTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const testTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Garbage-collect expired alerts every 250 ms.
   useEffect(() => {
@@ -108,27 +217,66 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     }
   }, [])
 
-  const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type !== 'trigger:fired') return
-    const event = msg.data as TriggerFired
-
-    // Only show alerts that have an overlay_text action.
-    const overlayAction = event.actions.find((a) => a.type === 'overlay_text')
-    if (!overlayAction) return
-
-    const durationMs = (overlayAction.duration_secs || 5) * 1000
-    const entry: AlertEntry = {
-      id: nextId++,
-      event,
-      expiresAt: Date.now() + durationMs,
+  // Clear stale test alert when its timer expires.
+  useEffect(() => {
+    if (!testAlert) return
+    if (testTimerRef.current !== null) clearTimeout(testTimerRef.current)
+    const remaining = testAlert.expiresAt - Date.now()
+    testTimerRef.current = setTimeout(() => setTestAlert(null), Math.max(0, remaining))
+    return () => {
+      if (testTimerRef.current !== null) clearTimeout(testTimerRef.current)
     }
+  }, [testAlert])
 
-    setAlerts((prev) => [entry, ...prev].slice(0, 8)) // cap at 8 visible alerts
+  const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
+    if (msg.type === 'trigger:fired') {
+      const event = msg.data as TriggerFired
+      const overlayAction = event.actions.find((a) => a.type === 'overlay_text')
+      if (!overlayAction) return
+      const durationMs = (overlayAction.duration_secs || 5) * 1000
+      const entry: AlertEntry = {
+        id: nextId++,
+        event,
+        expiresAt: Date.now() + durationMs,
+      }
+      setAlerts((prev) => [entry, ...prev].slice(0, 8))
+      return
+    }
+    if (msg.type === 'trigger:test') {
+      const data = msg.data as TriggerTestPayload
+      const durationMs = Math.max(2, data.duration_secs || 5) * 1000
+      const fontSize = data.font_size && data.font_size > 0 ? data.font_size : 20
+      const defaultPos = {
+        x: Math.max(0, Math.round(window.innerWidth / 2 - 100)),
+        y: 60,
+      }
+      setTestAlert({
+        testId: data.test_id,
+        text: data.text || '',
+        color: data.color || '#ffffff',
+        fontSize,
+        position: data.position ?? defaultPos,
+        expiresAt: Date.now() + durationMs,
+      })
+      return
+    }
   }, [])
 
   useWebSocket(handleMessage)
 
-  const isEmpty = alerts.length === 0
+  const handleTestPositionCommit = useCallback(
+    (position: { x: number; y: number }) => {
+      if (!testAlert) return
+      // Echo locally so the card stays put even if the round-trip is slow.
+      setTestAlert((prev) => (prev ? { ...prev, position } : prev))
+      void postTriggerTestPosition(testAlert.testId, position).catch(() => {
+        // Best-effort; the editor may have closed. Card stays where dropped.
+      })
+    },
+    [testAlert],
+  )
+
+  const isEmpty = alerts.length === 0 && !testAlert
 
   return (
     <div
@@ -205,11 +353,20 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
           gap: 6,
           padding: alerts.length > 0 ? '8px 8px' : 0,
           overflow: 'hidden',
+          position: 'relative',
         }}
       >
         {alerts.map((entry) => (
           <AlertCard key={entry.id} entry={entry} bgOpacity={overlayOpacity} />
         ))}
+        {testAlert && (
+          <TestAlertCard
+            alert={testAlert}
+            onPositionCommit={handleTestPositionCommit}
+            onMouseEnter={enableInteraction}
+            onMouseLeave={enableClickThrough}
+          />
+        )}
       </div>
     </div>
   )

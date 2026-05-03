@@ -129,6 +129,8 @@ function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps):
         onDurationSecsChange={(v) => onChange(index, { ...action, duration_secs: v })}
         color={action.color || '#ffffff'}
         onColorChange={(v) => onChange(index, { ...action, color: v })}
+        position={action.position ?? null}
+        onPositionChange={(p) => onChange(index, { ...action, position: p })}
         soundPath={action.sound_path || ''}
         onSoundPathChange={(v) => onChange(index, { ...action, sound_path: v })}
         soundVolume={volume0to100}

@@ -658,6 +658,23 @@ export function exportTriggerPack(): Promise<TriggerPack> {
   return get<TriggerPack>('/api/triggers/export')
 }
 
+export interface TriggerTestOverlayRequest {
+  test_id: string
+  text: string
+  color: string
+  duration_secs: number
+  font_size?: number
+  position?: { x: number; y: number } | null
+}
+
+export function fireTriggerTestOverlay(req: TriggerTestOverlayRequest): Promise<void> {
+  return post<void>('/api/triggers/test-overlay', req)
+}
+
+export function postTriggerTestPosition(testId: string, position: { x: number; y: number }): Promise<void> {
+  return post<void>('/api/triggers/test-overlay/position', { test_id: testId, position })
+}
+
 export async function importGINAxml(
   xml: string,
   packName: string,
