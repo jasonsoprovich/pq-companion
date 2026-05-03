@@ -145,7 +145,27 @@ func main() {
 		timerEngine.RefreshModifiers()
 	})
 
-	triggerEngine := trigger.NewEngine(triggerStore, hub, timerEngine)
+	// One-time backfill: existing triggers (created before per-character
+	// support) get every known character checked, so the user can prune from
+	// there. Skipped on fresh installs with no characters yet.
+	if chars, err := charStore.List(); err == nil {
+		names := make([]string, 0, len(chars))
+		for _, c := range chars {
+			if c.Name != "" {
+				names = append(names, c.Name)
+			}
+		}
+		if err := triggerStore.BackfillCharactersIfNeeded(names); err != nil {
+			slog.Warn("trigger character backfill failed", "err", err)
+		}
+	}
+
+	triggerEngine := trigger.NewEngine(triggerStore, hub, timerEngine, func() string {
+		if tailer != nil {
+			return tailer.ActiveCharacter()
+		}
+		return cfgMgr.Get().Character
+	})
 	triggerEngine.Reload()
 
 	// Log tailer: reads new lines from the EQ log file and broadcasts parsed

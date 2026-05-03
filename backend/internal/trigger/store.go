@@ -53,24 +53,58 @@ func (s *Store) migrate() error {
 			timer_duration_secs    INTEGER NOT NULL DEFAULT 0,
 			worn_off_pattern       TEXT    NOT NULL DEFAULT '',
 			spell_id               INTEGER NOT NULL DEFAULT 0,
-			display_threshold_secs INTEGER NOT NULL DEFAULT 0
+			display_threshold_secs INTEGER NOT NULL DEFAULT 0,
+			characters             TEXT    NOT NULL DEFAULT '[]'
 		)
 	`); err != nil {
 		return err
 	}
 
-	// Idempotently add timer columns for databases created before the timer feature.
+	// Idempotently add columns for databases created before each feature.
 	addColumns := []string{
 		`ALTER TABLE triggers ADD COLUMN timer_type TEXT NOT NULL DEFAULT 'none'`,
 		`ALTER TABLE triggers ADD COLUMN timer_duration_secs INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE triggers ADD COLUMN worn_off_pattern TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE triggers ADD COLUMN spell_id INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE triggers ADD COLUMN display_threshold_secs INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE triggers ADD COLUMN characters TEXT NOT NULL DEFAULT '[]'`,
 	}
 	for _, stmt := range addColumns {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("add column: %w", err)
 		}
+	}
+	return nil
+}
+
+// BackfillCharactersIfNeeded is a one-time migration that populates the
+// characters list of every existing trigger with the supplied character
+// names. Triggered by PRAGMA user_version: runs only when the version is
+// below 1, then bumps it. Safe to call on every startup. Skips entirely
+// when names is empty so we don't lock in "no characters" before any have
+// been recorded.
+func (s *Store) BackfillCharactersIfNeeded(names []string) error {
+	var version int
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		return fmt.Errorf("read user_version: %w", err)
+	}
+	if version >= 1 {
+		return nil
+	}
+	if len(names) == 0 {
+		// No characters yet — defer migration to a future startup so we don't
+		// permanently lock existing triggers into an empty (= all) list.
+		return nil
+	}
+	payload, err := json.Marshal(names)
+	if err != nil {
+		return fmt.Errorf("marshal names: %w", err)
+	}
+	if _, err := s.db.Exec(`UPDATE triggers SET characters = ? WHERE characters = '[]' OR characters = '' OR characters IS NULL`, string(payload)); err != nil {
+		return fmt.Errorf("backfill characters: %w", err)
+	}
+	if _, err := s.db.Exec(`PRAGMA user_version = 1`); err != nil {
+		return fmt.Errorf("bump user_version: %w", err)
 	}
 	return nil
 }
@@ -81,17 +115,24 @@ func (s *Store) Insert(t *Trigger) error {
 	if err != nil {
 		return fmt.Errorf("marshal actions: %w", err)
 	}
+	if t.Characters == nil {
+		t.Characters = []string{}
+	}
+	charJSON, err := json.Marshal(t.Characters)
+	if err != nil {
+		return fmt.Errorf("marshal characters: %w", err)
+	}
 	if t.TimerType == "" {
 		t.TimerType = TimerTypeNone
 	}
 	_, err = s.db.Exec(
 		`INSERT INTO triggers (id, name, enabled, pattern, actions, pack_name, created_at,
 		                       timer_type, timer_duration_secs, worn_off_pattern, spell_id,
-		                       display_threshold_secs)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       display_threshold_secs, characters)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName, t.CreatedAt.Unix(),
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
-		t.DisplayThresholdSecs,
+		t.DisplayThresholdSecs, string(charJSON),
 	)
 	if err != nil {
 		return fmt.Errorf("insert trigger: %w", err)
@@ -104,7 +145,7 @@ func (s *Store) List() ([]*Trigger, error) {
 	rows, err := s.db.Query(
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
-		        display_threshold_secs
+		        display_threshold_secs, characters
 		 FROM triggers ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -128,7 +169,7 @@ func (s *Store) Get(id string) (*Trigger, error) {
 	row := s.db.QueryRow(
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
-		        display_threshold_secs
+		        display_threshold_secs, characters
 		 FROM triggers WHERE id = ?`, id,
 	)
 	t, err := scanTrigger(row)
@@ -147,17 +188,24 @@ func (s *Store) Update(t *Trigger) error {
 	if err != nil {
 		return fmt.Errorf("marshal actions: %w", err)
 	}
+	if t.Characters == nil {
+		t.Characters = []string{}
+	}
+	charJSON, err := json.Marshal(t.Characters)
+	if err != nil {
+		return fmt.Errorf("marshal characters: %w", err)
+	}
 	if t.TimerType == "" {
 		t.TimerType = TimerTypeNone
 	}
 	res, err := s.db.Exec(
 		`UPDATE triggers SET name=?, enabled=?, pattern=?, actions=?, pack_name=?,
 		                     timer_type=?, timer_duration_secs=?, worn_off_pattern=?, spell_id=?,
-		                     display_threshold_secs=?
+		                     display_threshold_secs=?, characters=?
 		 WHERE id=?`,
 		t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName,
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
-		t.DisplayThresholdSecs,
+		t.DisplayThresholdSecs, string(charJSON),
 		t.ID,
 	)
 	if err != nil {
@@ -199,13 +247,13 @@ type scanner interface {
 func scanTrigger(row scanner) (*Trigger, error) {
 	var t Trigger
 	var enabledInt int
-	var actJSON string
+	var actJSON, charJSON string
 	var unixSec int64
 	var timerType string
 	if err := row.Scan(
 		&t.ID, &t.Name, &enabledInt, &t.Pattern, &actJSON, &t.PackName, &unixSec,
 		&timerType, &t.TimerDurationSecs, &t.WornOffPattern, &t.SpellID,
-		&t.DisplayThresholdSecs,
+		&t.DisplayThresholdSecs, &charJSON,
 	); err != nil {
 		return nil, err
 	}
@@ -220,6 +268,14 @@ func scanTrigger(row scanner) (*Trigger, error) {
 	}
 	if t.Actions == nil {
 		t.Actions = []Action{}
+	}
+	if charJSON != "" {
+		if err := json.Unmarshal([]byte(charJSON), &t.Characters); err != nil {
+			t.Characters = []string{}
+		}
+	}
+	if t.Characters == nil {
+		t.Characters = []string{}
 	}
 	return &t, nil
 }

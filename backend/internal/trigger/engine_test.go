@@ -25,7 +25,7 @@ func openTestEngine(t *testing.T) (*Store, *Engine) {
 	t.Helper()
 	s := openTestStore(t)
 	hub := ws.NewHub()
-	e := NewEngine(s, hub, nil)
+	e := NewEngine(s, hub, nil, nil)
 	return s, e
 }
 

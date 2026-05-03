@@ -86,6 +86,11 @@ type Trigger struct {
 	// for my category"; the frontend resolves against the SpellTimer
 	// settings in user config.
 	DisplayThresholdSecs int `json:"display_threshold_secs"`
+
+	// Characters lists the character names this trigger fires for. Empty =
+	// fires for any active character (legacy + safety fallback). The frontend
+	// presents this as toggleable chips in the edit modal.
+	Characters []string `json:"characters"`
 }
 
 // TriggerFired is the payload of a WSEventTriggerFired WebSocket event and a

@@ -9,14 +9,16 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
 type triggerHandler struct {
-	store  *trigger.Store
-	engine *trigger.Engine
-	hub    *ws.Hub
+	store     *trigger.Store
+	engine    *trigger.Engine
+	hub       *ws.Hub
+	charStore *character.Store
 
 	// Latest active test/positioning session. Held in memory so the trigger
 	// overlay window can hydrate after a fresh mount even if it missed the
@@ -48,6 +50,7 @@ type triggerRequest struct {
 	TimerDurationSecs int               `json:"timer_duration_secs"`
 	WornOffPattern    string            `json:"worn_off_pattern"`
 	SpellID           int               `json:"spell_id"`
+	Characters        []string          `json:"characters"`
 }
 
 // normalizeTimerType coerces an incoming timer_type into one of the valid
@@ -88,9 +91,13 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 		TimerDurationSecs: req.TimerDurationSecs,
 		WornOffPattern:    req.WornOffPattern,
 		SpellID:           req.SpellID,
+		Characters:        req.Characters,
 	}
 	if t.Actions == nil {
 		t.Actions = []trigger.Action{}
+	}
+	if t.Characters == nil {
+		t.Characters = []string{}
 	}
 	if err := h.store.Insert(t); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -131,8 +138,12 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	existing.TimerDurationSecs = req.TimerDurationSecs
 	existing.WornOffPattern = req.WornOffPattern
 	existing.SpellID = req.SpellID
+	existing.Characters = req.Characters
 	if existing.Actions == nil {
 		existing.Actions = []trigger.Action{}
+	}
+	if existing.Characters == nil {
+		existing.Characters = []string{}
 	}
 
 	if err := h.store.Update(existing); err != nil {
@@ -167,6 +178,40 @@ func (h *triggerHandler) history(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, events)
 }
 
+// allCharacterNames returns every recorded character name. Used to populate
+// the Characters list of newly installed/imported pack triggers so they fire
+// for everyone by default.
+func (h *triggerHandler) allCharacterNames() []string {
+	if h.charStore == nil {
+		return nil
+	}
+	chars, err := h.charStore.List()
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(chars))
+	for _, c := range chars {
+		if c.Name != "" {
+			names = append(names, c.Name)
+		}
+	}
+	return names
+}
+
+// applyDefaultCharacters fills in Characters for any trigger in the pack that
+// doesn't already specify them. Pack triggers default to "all known
+// characters" — universal alerts the user can prune per-character.
+func applyDefaultCharacters(pack *trigger.TriggerPack, names []string) {
+	if len(names) == 0 {
+		return
+	}
+	for i := range pack.Triggers {
+		if len(pack.Triggers[i].Characters) == 0 {
+			pack.Triggers[i].Characters = append([]string(nil), names...)
+		}
+	}
+}
+
 // importPack imports triggers from a JSON trigger pack in the request body.
 // Existing triggers for the same pack_name are replaced.
 func (h *triggerHandler) importPack(w http.ResponseWriter, r *http.Request) {
@@ -179,6 +224,7 @@ func (h *triggerHandler) importPack(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "pack_name is required")
 		return
 	}
+	applyDefaultCharacters(&pack, h.allCharacterNames())
 	if err := trigger.InstallPack(h.store, pack); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -228,6 +274,7 @@ func (h *triggerHandler) importGINA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "no triggers found in GINA document")
 		return
 	}
+	applyDefaultCharacters(&pack, h.allCharacterNames())
 	if err := trigger.InstallPack(h.store, pack); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -359,6 +406,7 @@ func (h *triggerHandler) installBuiltinPack(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "pack not found")
 		return
 	}
+	applyDefaultCharacters(found, h.allCharacterNames())
 	if err := trigger.InstallPack(h.store, *found); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

@@ -38,9 +38,10 @@ type compiled struct {
 // Engine loads triggers from the store and tests every incoming log line
 // against them, firing actions and broadcasting events on match.
 type Engine struct {
-	store *Store
-	hub   *ws.Hub
-	sink  TimerSink
+	store      *Store
+	hub        *ws.Hub
+	sink       TimerSink
+	activeChar func() string // returns active character name, "" if unknown
 
 	mu       sync.RWMutex
 	compiled []compiled
@@ -51,8 +52,10 @@ type Engine struct {
 
 // NewEngine creates an Engine backed by store. Call Reload before routing
 // lines. sink may be nil when timer integration is disabled (e.g. in tests).
-func NewEngine(store *Store, hub *ws.Hub, sink TimerSink) *Engine {
-	return &Engine{store: store, hub: hub, sink: sink}
+// activeChar returns the currently active character name; nil disables
+// per-character filtering (used by tests).
+func NewEngine(store *Store, hub *ws.Hub, sink TimerSink, activeChar func() string) *Engine {
+	return &Engine{store: store, hub: hub, sink: sink, activeChar: activeChar}
 }
 
 // Reload re-reads all enabled triggers from the store and recompiles their
@@ -103,7 +106,15 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 	cs := e.compiled
 	e.mu.RUnlock()
 
+	active := ""
+	if e.activeChar != nil {
+		active = e.activeChar()
+	}
+
 	for _, c := range cs {
+		if !triggerAppliesTo(c.trigger, active) {
+			continue
+		}
 		if c.re.MatchString(message) {
 			e.fire(c, message, timestamp)
 		}
@@ -113,6 +124,22 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 			}
 		}
 	}
+}
+
+// triggerAppliesTo reports whether the trigger should fire for the given
+// active character. Empty Characters list = applies to any character (legacy
+// safety fallback). Empty active = trigger fires regardless (no character
+// detected yet — preserves boot-time behavior).
+func triggerAppliesTo(t *Trigger, active string) bool {
+	if len(t.Characters) == 0 || active == "" {
+		return true
+	}
+	for _, name := range t.Characters {
+		if name == active {
+			return true
+		}
+	}
+	return false
 }
 
 // GetHistory returns a copy of the recent trigger firing history, newest last.
