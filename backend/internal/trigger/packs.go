@@ -652,6 +652,131 @@ func DruidPack() TriggerPack {
 	}
 }
 
+// ShamanPack returns the pre-built shaman trigger pack: timer-creating
+// triggers for the standard slow (Turgur's Insects, Plague of Insects),
+// resist debuff (Malo, Malosini), self/tank buff (Torpor, Avatar, Focus
+// of Spirit, Regrowth of Dar Khura) lines. Instant utilities like
+// Cannibalize and Kragg's Mending are intentionally omitted (no timer
+// to track), and generic resist/interrupt overlays remain in the
+// Enchanter pack.
+func ShamanPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Shaman",
+		Description: "Spell timers for Turgur's Insects, Plague of Insects, Malo, Malosini, Torpor, Avatar, Focus of Spirit, and Regrowth of Dar Khura.",
+		Triggers: []Trigger{
+			// ── Slows (timers) ──────────────────────────────────────────
+			{
+				Name:              "Turgur's Insects",
+				Enabled:           true,
+				Pattern:           `^(?:You feel drowsy\.|[A-Z][a-zA-Z']{2,14} yawns\.)$`,
+				WornOffPattern:    `^You feel less drowsy\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 390,
+				SpellID:           1588,
+				PackName:          "Shaman",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Plague of Insects",
+				Enabled:           true,
+				Pattern:           `^(?:You're motions slow as a plague of insects chew at your skin\.|[A-Z][a-zA-Z']{2,14}'s motions slow as a plague of insects chews at their skin\.)$`,
+				WornOffPattern:    `^The plague of insects subsides\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 630,
+				SpellID:           2527,
+				PackName:          "Shaman",
+				Actions:           []Action{},
+			},
+
+			// ── Resist debuffs (timers) ─────────────────────────────────
+			// Malo and Malosini share identical anchors and fade text, so
+			// each is keyed on "You begin casting <SpellName>." The
+			// shared "Your vulnerability fades." fade clears whichever
+			// is active.
+			{
+				Name:              "Malo",
+				Enabled:           true,
+				Pattern:           `^You begin casting Malo\.$`,
+				WornOffPattern:    `^(?:Your vulnerability fades\.|Your target resisted the Malo spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 720,
+				SpellID:           1578,
+				PackName:          "Shaman",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Malosini",
+				Enabled:           true,
+				Pattern:           `^You begin casting Malosini\.$`,
+				WornOffPattern:    `^(?:Your vulnerability fades\.|Your target resisted the Malosini spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 360,
+				SpellID:           1577,
+				PackName:          "Shaman",
+				Actions:           []Action{},
+			},
+
+			// ── Tank-heal buff (timer) ──────────────────────────────────
+			{
+				Name:              "Torpor",
+				Enabled:           true,
+				Pattern:           `^(?:You fall into a state of torpor\.|[A-Z][a-zA-Z']{2,14} falls into a state of torpor\.)$`,
+				WornOffPattern:    `^Your state of torpor ends\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 24,
+				SpellID:           1576,
+				PackName:          "Shaman",
+				Actions:           []Action{},
+			},
+
+			// ── Melee buff (timer) ──────────────────────────────────────
+			// Two Avatar rows in spells_new (1598 = AA/raid version, 2434
+			// = epic 1.0 proc) share identical land/fade anchors and have
+			// nearly identical durations (60 vs 65 ticks). A single
+			// trigger covers both — the AA version's duration is used.
+			{
+				Name:              "Avatar",
+				Enabled:           true,
+				Pattern:           `^(?:Your body screams with the power of an Avatar\.|[A-Z][a-zA-Z']{2,14} has been infused with the power of an Avatar\.)$`,
+				WornOffPattern:    `^The Avatar departs\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 360,
+				SpellID:           1598,
+				PackName:          "Shaman",
+				Actions:           []Action{},
+			},
+
+			// ── Self / group buffs (timers) ─────────────────────────────
+			{
+				Name:              "Focus of Spirit",
+				Enabled:           true,
+				Pattern:           `^(?:You feel focused\.|[A-Z][a-zA-Z']{2,14} looks focused\.)$`,
+				WornOffPattern:    `^Your focus fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 6000,
+				SpellID:           1432,
+				PackName:          "Shaman",
+				Actions:           []Action{},
+			},
+			// Regrowth of Dar Khura shares "You begin to regenerate." /
+			// "You have stopped regenerating." with the druid's Blessing
+			// of Replenishment, so this trigger keys on "You begin
+			// casting Regrowth of Dar Khura." to disambiguate.
+			{
+				Name:              "Regrowth of Dar Khura",
+				Enabled:           true,
+				Pattern:           `^You begin casting Regrowth of Dar Khura\.$`,
+				WornOffPattern:    `^You have stopped regenerating\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 360,
+				SpellID:           2528,
+				PackName:          "Shaman",
+				Actions:           []Action{},
+			},
+		},
+	}
+}
+
 // GroupAwarenessPack returns the pre-built group awareness trigger pack with
 // alerts for incoming tells, player deaths, and group member deaths.
 func GroupAwarenessPack() TriggerPack {
@@ -696,6 +821,7 @@ func AllPacks() []TriggerPack {
 		EnchanterPack(),
 		ClericPack(),
 		DruidPack(),
+		ShamanPack(),
 		GroupAwarenessPack(),
 	}
 }
