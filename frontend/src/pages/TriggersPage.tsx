@@ -1290,6 +1290,9 @@ export default function TriggersPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<Trigger | null>(null)
+  const [search, setSearch] = useState('')
+  const [classFilter, setClassFilter] = useState<number | null>(null)
+  const [chars, setChars] = useState<Character[]>([])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -1301,6 +1304,55 @@ export default function TriggersPage(): React.ReactElement {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Characters power the class filter — when a class is selected, only
+  // triggers whose Characters list contains at least one character of that
+  // class are shown.
+  useEffect(() => {
+    listCharacters()
+      .then((resp) => setChars(resp.characters))
+      .catch(() => {})
+  }, [])
+
+  const filteredTriggers = (() => {
+    const q = search.trim().toLowerCase()
+    if (!q && classFilter === null) return triggers
+    let charsOfClass: Set<string> | null = null
+    if (classFilter !== null) {
+      charsOfClass = new Set(chars.filter((c) => c.class === classFilter).map((c) => c.name))
+    }
+    return triggers.filter((t) => {
+      if (q) {
+        const haystack = `${t.name}\n${t.pattern}\n${t.pack_name}`.toLowerCase()
+        if (!haystack.includes(q)) return false
+      }
+      if (charsOfClass) {
+        // Empty Characters list = fires for any character → always passes
+        // class filter (matches the engine's empty-list semantics).
+        if (t.characters && t.characters.length > 0) {
+          let any = false
+          for (const name of t.characters) {
+            if (charsOfClass.has(name)) {
+              any = true
+              break
+            }
+          }
+          if (!any) return false
+        }
+      }
+      return true
+    })
+  })()
+
+  // Classes that actually have at least one character — keeps the dropdown
+  // tight rather than showing all 15 EQ classes when only a few are in use.
+  const availableClasses = (() => {
+    const set = new Set<number>()
+    for (const c of chars) {
+      if (c.class >= 0) set.add(c.class)
+    }
+    return [...set].sort((a, b) => a - b)
+  })()
 
   const handleSaved = (t: Trigger) => {
     if (editing) {
@@ -1441,6 +1493,80 @@ export default function TriggersPage(): React.ReactElement {
                 <TriggerForm initial={editing} onSaved={handleSaved} onCancel={handleCancelForm} />
               )}
 
+              {/* Search + class filter */}
+              {triggers.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search
+                      size={12}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2"
+                      style={{ color: 'var(--color-muted)' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Search triggers by name, pattern, or pack…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="w-full rounded pl-7 pr-3 py-1.5 text-xs outline-none"
+                      style={{
+                        backgroundColor: 'var(--color-surface-2)',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-foreground)',
+                      }}
+                    />
+                  </div>
+                  {availableClasses.length > 0 && (
+                    <select
+                      value={classFilter === null ? '' : String(classFilter)}
+                      onChange={(e) =>
+                        setClassFilter(e.target.value === '' ? null : Number(e.target.value))
+                      }
+                      className="rounded px-2 py-1.5 text-xs outline-none"
+                      style={{
+                        backgroundColor: 'var(--color-surface-2)',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-foreground)',
+                      }}
+                      title="Filter by class of assigned characters"
+                    >
+                      <option value="">All classes</option>
+                      {availableClasses.map((idx) => (
+                        <option key={idx} value={idx}>
+                          {CLASS_NAMES[idx]}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {(search || classFilter !== null) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearch('')
+                        setClassFilter(null)
+                      }}
+                      className="text-[11px] px-2 py-1.5 rounded"
+                      style={{
+                        backgroundColor: 'var(--color-surface-2)',
+                        color: 'var(--color-muted-foreground)',
+                        border: '1px solid var(--color-border)',
+                      }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* No-match state */}
+              {triggers.length > 0 && filteredTriggers.length === 0 && (
+                <p
+                  className="text-xs italic px-1 py-2"
+                  style={{ color: 'var(--color-muted-foreground)' }}
+                >
+                  No triggers match the current filters.
+                </p>
+              )}
+
               {/* Empty state */}
               {triggers.length === 0 && !showCreate && (
                 <div className="flex h-full flex-col items-center justify-center gap-3 py-16">
@@ -1476,7 +1602,7 @@ export default function TriggersPage(): React.ReactElement {
               )}
 
               {/* Trigger list */}
-              {triggers.map((t) => (
+              {filteredTriggers.map((t) => (
                 <TriggerRow
                   key={t.id}
                   trigger={t}
