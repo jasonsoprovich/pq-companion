@@ -10,7 +10,16 @@ interface OverlayWindowProps {
   defaultY?: number
   minWidth?: number
   minHeight?: number
+  /** When set, drag/resize end positions are rounded to a multiple of this value. */
+  snapGridSize?: number
+  /** Fires once at the end of a drag or resize (mouseup) with the final bounds. */
+  onLayoutChange?: (bounds: { x: number; y: number; width: number; height: number }) => void
   children: React.ReactNode
+}
+
+function snap(value: number, grid?: number): number {
+  if (!grid || grid <= 1) return value
+  return Math.round(value / grid) * grid
 }
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
@@ -63,6 +72,8 @@ export default function OverlayWindow({
   defaultY = 24,
   minWidth = 260,
   minHeight = 180,
+  snapGridSize,
+  onLayoutChange,
   children,
 }: OverlayWindowProps): React.ReactElement {
   const [pos, setPos] = useState({ x: defaultX, y: defaultY })
@@ -70,6 +81,11 @@ export default function OverlayWindow({
 
   const dragRef = useRef<DragState | null>(null)
   const resizeRef = useRef<ResizeState | null>(null)
+  // Latest values for the mouseup handler — refs avoid recreating listeners.
+  const layoutRef = useRef({ pos, size })
+  layoutRef.current = { pos, size }
+  const onLayoutChangeRef = useRef(onLayoutChange)
+  onLayoutChangeRef.current = onLayoutChange
 
   // Attach/detach document-level mouse handlers once.
   useEffect(() => {
@@ -110,8 +126,19 @@ export default function OverlayWindow({
     }
 
     const onUp = (): void => {
+      const wasInteracting = dragRef.current !== null || resizeRef.current !== null
       dragRef.current = null
       resizeRef.current = null
+      if (!wasInteracting) return
+      // Snap final bounds to grid if requested, then notify the parent.
+      const { pos: p, size: s } = layoutRef.current
+      const x = Math.max(0, snap(p.x, snapGridSize))
+      const y = Math.max(0, snap(p.y, snapGridSize))
+      const width = Math.max(minWidth, snap(s.w, snapGridSize))
+      const height = Math.max(minHeight, snap(s.h, snapGridSize))
+      if (x !== p.x || y !== p.y) setPos({ x, y })
+      if (width !== s.w || height !== s.h) setSize({ w: width, h: height })
+      onLayoutChangeRef.current?.({ x, y, width, height })
     }
 
     document.addEventListener('mousemove', onMove)
@@ -120,7 +147,7 @@ export default function OverlayWindow({
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
     }
-  }, [minWidth, minHeight])
+  }, [minWidth, minHeight, snapGridSize])
 
   const startDrag = useCallback((e: React.MouseEvent): void => {
     e.preventDefault()

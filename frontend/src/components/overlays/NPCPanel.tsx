@@ -13,6 +13,8 @@ interface NPCPanelProps {
   defaultY?: number
   defaultWidth?: number
   defaultHeight?: number
+  snapGridSize?: number
+  onLayoutChange?: (b: { x: number; y: number; width: number; height: number }) => void
 }
 
 function ConnPill({ state, status }: { state: string; status: LogTailerStatus | null }): React.ReactElement {
@@ -221,6 +223,8 @@ export default function NPCPanel({
   defaultY = 24,
   defaultWidth = 380,
   defaultHeight = 600,
+  snapGridSize,
+  onLayoutChange,
 }: NPCPanelProps): React.ReactElement {
   const [target, setTarget] = useState<TargetState | null>(null)
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
@@ -265,6 +269,8 @@ export default function NPCPanel({
       defaultY={defaultY}
       minWidth={260}
       minHeight={200}
+      snapGridSize={snapGridSize}
+      onLayoutChange={onLayoutChange}
     >
       <StatusBar status={status} />
       {target === null ? (

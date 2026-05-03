@@ -12,6 +12,8 @@ interface DPSPanelProps {
   defaultY?: number
   defaultWidth?: number
   defaultHeight?: number
+  snapGridSize?: number
+  onLayoutChange?: (b: { x: number; y: number; width: number; height: number }) => void
 }
 
 function fmt(n: number): string { return n.toLocaleString() }
@@ -288,6 +290,8 @@ export default function DPSPanel({
   defaultY = 420,
   defaultWidth = 380,
   defaultHeight = 420,
+  snapGridSize,
+  onLayoutChange,
 }: DPSPanelProps): React.ReactElement {
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
@@ -353,6 +357,8 @@ export default function DPSPanel({
       defaultY={defaultY}
       minWidth={260}
       minHeight={180}
+      snapGridSize={snapGridSize}
+      onLayoutChange={onLayoutChange}
     >
       <StatusBar status={status} />
 

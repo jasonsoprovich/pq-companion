@@ -18,6 +18,8 @@ interface BuffTimerPanelProps {
   defaultY?: number
   defaultWidth?: number
   defaultHeight?: number
+  snapGridSize?: number
+  onLayoutChange?: (b: { x: number; y: number; width: number; height: number }) => void
 }
 
 function fmtRemaining(secs: number): string {
@@ -100,6 +102,8 @@ export default function BuffTimerPanel({
   defaultY = 24,
   defaultWidth = 300,
   defaultHeight = 380,
+  snapGridSize,
+  onLayoutChange,
 }: BuffTimerPanelProps): React.ReactElement {
   const [timerState, setTimerState] = useState<TimerState | null>(null)
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
@@ -166,6 +170,8 @@ export default function BuffTimerPanel({
         defaultY={defaultY}
         minWidth={220}
         minHeight={160}
+        snapGridSize={snapGridSize}
+        onLayoutChange={onLayoutChange}
       >
         <StatusBar status={status} />
         <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
