@@ -1513,16 +1513,14 @@ export default function TriggersPage(): React.ReactElement {
 
   useEffect(() => { load() }, [load])
 
-  // Characters power the class filter — when a class is selected, only
-  // triggers whose Characters list contains at least one character of that
-  // class are shown.
+  // Characters populate the character filter dropdown.
   useEffect(() => {
     listCharacters()
       .then((resp) => setChars(resp.characters))
       .catch(() => {})
   }, [])
 
-  // Pack → class map lets the class filter also match triggers by their
+  // Pack → class map drives the class filter — selecting "Cleric" surfaces
   // pack's class, so e.g. selecting "Cleric" surfaces an installed Cleric
   // pack even when no Cleric character has been added to the roster yet.
   useEffect(() => {
@@ -1540,43 +1538,26 @@ export default function TriggersPage(): React.ReactElement {
   const filteredTriggers = (() => {
     const q = search.trim().toLowerCase()
     if (!q && classFilter === null && !charFilter) return triggers
-    let charsOfClass: Set<string> | null = null
-    if (classFilter !== null) {
-      charsOfClass = new Set(chars.filter((c) => c.class === classFilter).map((c) => c.name))
-    }
     return triggers.filter((t) => {
       if (q) {
         const haystack = `${t.name}\n${t.pattern}\n${t.pack_name}`.toLowerCase()
         if (!haystack.includes(q)) return false
       }
-      // Empty Characters list = fires for any character (engine's legacy
-      // semantic). For the character filter we let universal triggers pass
-      // — global alerts (e.g. Group Awareness death notifications) stay
-      // visible no matter which character you narrow to. For the class
-      // filter we DON'T pass universals: a trigger with no class affinity
-      // shouldn't appear under a specific-class view, otherwise selecting
-      // a class with no installed pack would silently show everything.
+      // Character filter: empty Characters list = fires for any character
+      // (engine's legacy semantic), so universal triggers pass — global
+      // alerts (e.g. Group Awareness death notifications) stay visible
+      // no matter which character you narrow to.
       const universal = !t.characters || t.characters.length === 0
       if (charFilter && !universal) {
         if (!t.characters!.includes(charFilter)) return false
       }
       if (classFilter !== null) {
-        // A trigger matches the class filter when either:
-        //   (a) it belongs to a pack tagged with that class (covers both
-        //       installed-but-disabled packs whose Characters are empty
-        //       and active packs assigned to the matching character), or
-        //   (b) it's assigned to a character of that class (covers user-
-        //       authored / GINA-imported triggers without a pack class,
-        //       and triggers the user has manually scoped cross-class).
-        const packMatches =
-          !!t.pack_name && packClassByName.get(t.pack_name) === classFilter
-        let charMatches = false
-        if (!packMatches && !universal && charsOfClass) {
-          for (const name of t.characters!) {
-            if (charsOfClass.has(name)) { charMatches = true; break }
-          }
-        }
-        if (!packMatches && !charMatches) return false
+        // Class filter is a spell-type filter — match strictly on the
+        // trigger's pack class, ignoring character assignments. Otherwise
+        // an Enchanter-pack trigger that a Wizard character also has
+        // active would leak into the Wizard view.
+        if (!t.pack_name) return false
+        if (packClassByName.get(t.pack_name) !== classFilter) return false
       }
       return true
     })
