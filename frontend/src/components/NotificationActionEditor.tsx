@@ -13,9 +13,9 @@
  * Test buttons (file browse / play / position) are left as no-op slots in
  * this initial extraction and wired up in subsequent tasks.
  */
-import React from 'react'
-import { Volume2, FolderOpen, Play } from 'lucide-react'
-import { playSoundForTest, speakTextForTest } from '../services/audio'
+import React, { useEffect, useState } from 'react'
+import { Volume2, FolderOpen, Play, Square } from 'lucide-react'
+import { playSoundForTest, speakTextForTest, stopTestPlayback } from '../services/audio'
 
 export type NotificationActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
 
@@ -116,6 +116,10 @@ export function PlaySoundFields({
 }: PlaySoundFieldsProps): React.ReactElement {
   const canBrowse = typeof window !== 'undefined' && !!window.electron?.dialog?.selectSoundFile
   const canTest = soundPath.trim().length > 0
+  const [playing, setPlaying] = useState(false)
+
+  // If this component unmounts while playback is ours, stop it.
+  useEffect(() => () => { if (playing) stopTestPlayback() }, [playing])
 
   async function handleBrowse() {
     const picked = await window.electron?.dialog?.selectSoundFile()
@@ -123,7 +127,12 @@ export function PlaySoundFields({
   }
 
   function handleTest() {
-    playSoundForTest(soundPath, volume / 100)
+    if (playing) {
+      stopTestPlayback()
+      return
+    }
+    setPlaying(true)
+    playSoundForTest(soundPath, volume / 100, () => setPlaying(false))
   }
 
   return (
@@ -164,9 +173,13 @@ export function PlaySoundFields({
             color: canTest ? 'var(--color-background)' : 'var(--color-muted)',
             cursor: canTest ? 'pointer' : 'not-allowed',
           }}
-          title={canTest ? 'Play sound at the configured volume' : 'Enter a sound file path to test'}
+          title={
+            !canTest ? 'Enter a sound file path to test'
+              : playing ? 'Stop playback'
+              : 'Play sound at the configured volume'
+          }
         >
-          <Play size={12} />
+          {playing ? <Square size={12} /> : <Play size={12} />}
         </button>
       </div>
       <div className="flex items-center gap-1.5">
@@ -216,9 +229,17 @@ export function TextToSpeechFields({
   // hears something like "Mez broke" instead of literal "{spell} broke".
   const testText = text.replace(/\{[^}]+\}/g, '').replace(/\s+/g, ' ').trim()
   const canTest = testText.length > 0
+  const [playing, setPlaying] = useState(false)
+
+  useEffect(() => () => { if (playing) stopTestPlayback() }, [playing])
 
   function handleTest() {
-    speakTextForTest(testText, voice, volume / 100)
+    if (playing) {
+      stopTestPlayback()
+      return
+    }
+    setPlaying(true)
+    speakTextForTest(testText, voice, volume / 100, () => setPlaying(false))
   }
 
   return (
@@ -243,9 +264,13 @@ export function TextToSpeechFields({
             color: canTest ? 'var(--color-background)' : 'var(--color-muted)',
             cursor: canTest ? 'pointer' : 'not-allowed',
           }}
-          title={canTest ? 'Speak text with the configured voice and volume' : 'Enter text to test'}
+          title={
+            !canTest ? 'Enter text to test'
+              : playing ? 'Stop playback'
+              : 'Speak text with the configured voice and volume'
+          }
         >
-          <Play size={12} />
+          {playing ? <Square size={12} /> : <Play size={12} />}
         </button>
       </div>
       <div className="flex gap-2 min-w-0">

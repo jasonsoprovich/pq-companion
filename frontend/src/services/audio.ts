@@ -81,27 +81,80 @@ export function getAvailableVoices(): string[] {
     .sort()
 }
 
+// ── Test playback ─────────────────────────────────────────────────────────────
+//
+// Trigger / alert configuration UIs expose Test buttons that preview a sound
+// file or TTS utterance at the configured volume. Test playback is single-
+// channel: starting a new test stops the previous one, and clicking the same
+// button while it's playing stops it. The onEnd callback fires for both
+// natural completion and external interruption so the caller can flip the
+// button icon back to play.
+
+let activeStop: (() => void) | null = null
+
+/** Stop whichever test sound or TTS is currently playing, if any. */
+export function stopTestPlayback(): void {
+  const stop = activeStop
+  activeStop = null
+  if (stop) stop()
+}
+
+/** Returns true if a test sound or TTS is currently playing. */
+export function isTestPlaying(): boolean {
+  return activeStop !== null
+}
+
 /**
- * Play a local sound file once, bypassing the dedup window. Intended for
- * the "Test" buttons in trigger / alert configuration UIs, where the user
- * may want to re-trigger the same sound rapidly to compare volumes.
+ * Play a local sound file once at the given volume, stopping any prior
+ * test playback. Bypasses the production dedup window. The onEnd callback
+ * fires when playback finishes naturally or is interrupted.
  */
-export function playSoundForTest(filePath: string, volume = 1.0): void {
-  if (!filePath) return
+export function playSoundForTest(filePath: string, volume = 1.0, onEnd?: () => void): void {
+  stopTestPlayback()
+  if (!filePath) {
+    onEnd?.()
+    return
+  }
   const normalised = filePath.replace(/\\/g, '/')
   const url = normalised.startsWith('file://') ? normalised : `file:///${normalised}`
   const audio = new Audio(url)
   audio.volume = Math.min(1, Math.max(0, volume))
-  audio.play().catch(() => {})
+
+  let done = false
+  const finish = () => {
+    if (done) return
+    done = true
+    audio.removeEventListener('ended', finish)
+    audio.removeEventListener('error', finish)
+    if (activeStop === stop) activeStop = null
+    onEnd?.()
+  }
+  const stop = () => {
+    audio.pause()
+    finish()
+  }
+  audio.addEventListener('ended', finish)
+  audio.addEventListener('error', finish)
+  activeStop = stop
+  audio.play().catch(finish)
 }
 
 /**
- * Speak text once via Web Speech, bypassing the dedup window. Intended for
- * the "Test" buttons in TTS configuration UIs.
+ * Speak text via Web Speech at the given volume / voice, stopping any prior
+ * test playback. Bypasses the production dedup window. The onEnd callback
+ * fires when speech finishes naturally or is interrupted.
  */
-export function speakTextForTest(text: string, voice = '', volume = 1.0): void {
-  if (!text || !window.speechSynthesis) return
-  window.speechSynthesis.cancel()
+export function speakTextForTest(
+  text: string,
+  voice = '',
+  volume = 1.0,
+  onEnd?: () => void,
+): void {
+  stopTestPlayback()
+  if (!text || !window.speechSynthesis) {
+    onEnd?.()
+    return
+  }
   const utterance = new SpeechSynthesisUtterance(text)
   utterance.volume = Math.min(1, Math.max(0, volume))
   if (voice) {
@@ -109,5 +162,22 @@ export function speakTextForTest(text: string, voice = '', volume = 1.0): void {
     const match = voices.find((v) => v.name === voice)
     if (match) utterance.voice = match
   }
+
+  let done = false
+  const finish = () => {
+    if (done) return
+    done = true
+    utterance.removeEventListener('end', finish)
+    utterance.removeEventListener('error', finish)
+    if (activeStop === stop) activeStop = null
+    onEnd?.()
+  }
+  const stop = () => {
+    window.speechSynthesis.cancel()
+    finish()
+  }
+  utterance.addEventListener('end', finish)
+  utterance.addEventListener('error', finish)
+  activeStop = stop
   window.speechSynthesis.speak(utterance)
 }
