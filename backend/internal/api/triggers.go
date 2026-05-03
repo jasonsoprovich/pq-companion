@@ -42,15 +42,17 @@ func (h *triggerHandler) list(w http.ResponseWriter, r *http.Request) {
 
 // triggerRequest is the shared JSON payload accepted by create and update.
 type triggerRequest struct {
-	Name              string            `json:"name"`
-	Enabled           bool              `json:"enabled"`
-	Pattern           string            `json:"pattern"`
-	Actions           []trigger.Action  `json:"actions"`
-	TimerType         trigger.TimerType `json:"timer_type"`
-	TimerDurationSecs int               `json:"timer_duration_secs"`
-	WornOffPattern    string            `json:"worn_off_pattern"`
-	SpellID           int               `json:"spell_id"`
-	Characters        []string          `json:"characters"`
+	Name                 string               `json:"name"`
+	Enabled              bool                 `json:"enabled"`
+	Pattern              string               `json:"pattern"`
+	Actions              []trigger.Action     `json:"actions"`
+	TimerType            trigger.TimerType    `json:"timer_type"`
+	TimerDurationSecs    int                  `json:"timer_duration_secs"`
+	WornOffPattern       string               `json:"worn_off_pattern"`
+	SpellID              int                  `json:"spell_id"`
+	DisplayThresholdSecs int                  `json:"display_threshold_secs"`
+	Characters           []string             `json:"characters"`
+	TimerAlerts          []trigger.TimerAlert `json:"timer_alerts"`
 }
 
 // normalizeTimerType coerces an incoming timer_type into one of the valid
@@ -81,23 +83,28 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t := &trigger.Trigger{
-		ID:                id,
-		Name:              req.Name,
-		Enabled:           req.Enabled,
-		Pattern:           req.Pattern,
-		Actions:           req.Actions,
-		CreatedAt:         time.Now().UTC(),
-		TimerType:         normalizeTimerType(req.TimerType),
-		TimerDurationSecs: req.TimerDurationSecs,
-		WornOffPattern:    req.WornOffPattern,
-		SpellID:           req.SpellID,
-		Characters:        req.Characters,
+		ID:                   id,
+		Name:                 req.Name,
+		Enabled:              req.Enabled,
+		Pattern:              req.Pattern,
+		Actions:              req.Actions,
+		CreatedAt:            time.Now().UTC(),
+		TimerType:            normalizeTimerType(req.TimerType),
+		TimerDurationSecs:    req.TimerDurationSecs,
+		WornOffPattern:       req.WornOffPattern,
+		SpellID:              req.SpellID,
+		DisplayThresholdSecs: req.DisplayThresholdSecs,
+		Characters:           req.Characters,
+		TimerAlerts:          req.TimerAlerts,
 	}
 	if t.Actions == nil {
 		t.Actions = []trigger.Action{}
 	}
 	if t.Characters == nil {
 		t.Characters = []string{}
+	}
+	if t.TimerAlerts == nil {
+		t.TimerAlerts = []trigger.TimerAlert{}
 	}
 	if err := h.store.Insert(t); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -138,12 +145,17 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	existing.TimerDurationSecs = req.TimerDurationSecs
 	existing.WornOffPattern = req.WornOffPattern
 	existing.SpellID = req.SpellID
+	existing.DisplayThresholdSecs = req.DisplayThresholdSecs
 	existing.Characters = req.Characters
+	existing.TimerAlerts = req.TimerAlerts
 	if existing.Actions == nil {
 		existing.Actions = []trigger.Action{}
 	}
 	if existing.Characters == nil {
 		existing.Characters = []string{}
+	}
+	if existing.TimerAlerts == nil {
+		existing.TimerAlerts = []trigger.TimerAlert{}
 	}
 
 	if err := h.store.Update(existing); err != nil {

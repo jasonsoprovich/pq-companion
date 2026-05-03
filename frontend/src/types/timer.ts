@@ -1,5 +1,7 @@
 // TypeScript types mirroring backend/internal/spelltimer/models.go
 
+import type { TimerAlertThreshold } from './trigger'
+
 export type TimerCategory = 'buff' | 'debuff' | 'mez' | 'dot' | 'stun'
 
 export interface ActiveTimer {
@@ -28,6 +30,12 @@ export interface ActiveTimer {
    * spell-landed-driven timers always emit 0.
    */
   display_threshold_secs: number
+  /**
+   * Per-trigger fading-soon notifications, copied from the source trigger
+   * when the timer started. Only set on trigger-driven timers; absent (or
+   * empty) for spell-cast-driven timers, which never fire fading alerts.
+   */
+  timer_alerts?: TimerAlertThreshold[]
 }
 
 export interface TimerState {

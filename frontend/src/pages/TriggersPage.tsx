@@ -21,7 +21,6 @@ import {
 } from 'lucide-react'
 import { useVoices } from '../hooks/useVoices'
 import EventAlertsPanel from '../components/EventAlertsPanel'
-import TimerAlertsPanel from '../components/TimerAlertsPanel'
 import NotificationActionEditor, { NotificationTypeSelect } from '../components/NotificationActionEditor'
 import {
   listTriggers,
@@ -41,7 +40,15 @@ import {
 } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName } from '../hooks/useActivePlayerName'
-import type { Trigger, TriggerFired, TriggerPack, Action, TimerType } from '../types/trigger'
+import type {
+  Trigger,
+  TriggerFired,
+  TriggerPack,
+  Action,
+  TimerType,
+  TimerAlertThreshold,
+  TimerAlertType,
+} from '../types/trigger'
 
 const CLASS_NAMES = [
   'Warrior', 'Cleric', 'Paladin', 'Ranger', 'Shadow Knight',
@@ -79,6 +86,105 @@ function Toggle({
         style={{ transform: checked ? 'translateX(14px)' : 'translateX(2px)' }}
       />
     </button>
+  )
+}
+
+// ── Fading-alert threshold editor ─────────────────────────────────────────────
+
+function newTimerAlert(): TimerAlertThreshold {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    seconds: 30,
+    type: 'text_to_speech',
+    sound_path: '',
+    volume: 80,
+    tts_template: '{spell} expiring soon',
+    voice: '',
+    tts_volume: 80,
+  }
+}
+
+interface TimerAlertRowProps {
+  alert: TimerAlertThreshold
+  voices: string[]
+  onChange: (a: TimerAlertThreshold) => void
+  onRemove: () => void
+}
+
+function TimerAlertRow({ alert, voices, onChange, onRemove }: TimerAlertRowProps): React.ReactElement {
+  const inputStyle: React.CSSProperties = {
+    backgroundColor: 'var(--color-surface)',
+    border: '1px solid var(--color-border)',
+    color: 'var(--color-foreground)',
+    borderRadius: 4,
+    padding: '3px 7px',
+    fontSize: 12,
+    outline: 'none',
+  }
+
+  return (
+    <div
+      className="rounded p-3 space-y-2"
+      style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+    >
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          Alert at
+          <input
+            type="number"
+            min={1}
+            max={3600}
+            value={alert.seconds}
+            onChange={(e) => onChange({ ...alert, seconds: Math.max(1, parseInt(e.target.value) || 1) })}
+            style={{ ...inputStyle, width: 60 }}
+          />
+          s remaining
+        </label>
+
+        <div className="flex items-center gap-1.5 text-xs ml-auto" style={{ color: 'var(--color-muted-foreground)' }}>
+          <span>Type</span>
+          <NotificationTypeSelect
+            value={alert.type}
+            onChange={(t) => onChange({ ...alert, type: t as TimerAlertType })}
+            allowedTypes={['text_to_speech', 'play_sound']}
+            className="rounded px-2 py-0.5 text-xs outline-none"
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={onRemove}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--color-muted)',
+            padding: 2,
+            display: 'flex',
+            alignItems: 'center',
+          }}
+          title="Remove alert"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+
+      <NotificationActionEditor
+        type={alert.type}
+        voices={voices}
+        ttsText={alert.tts_template}
+        onTtsTextChange={(v) => onChange({ ...alert, tts_template: v })}
+        ttsTextPlaceholder="{spell} expiring soon"
+        voice={alert.voice}
+        onVoiceChange={(v) => onChange({ ...alert, voice: v })}
+        ttsVolume={alert.tts_volume}
+        onTtsVolumeChange={(v) => onChange({ ...alert, tts_volume: v })}
+        soundPath={alert.sound_path}
+        onSoundPathChange={(v) => onChange({ ...alert, sound_path: v })}
+        soundVolume={alert.volume}
+        onSoundVolumeChange={(v) => onChange({ ...alert, volume: v })}
+      />
+    </div>
   )
 }
 
@@ -176,6 +282,10 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
   const [timerDuration, setTimerDuration] = useState(initial?.timer_duration_secs ?? 0)
   const [wornOffPattern, setWornOffPattern] = useState(initial?.worn_off_pattern ?? '')
   const [displayThreshold, setDisplayThreshold] = useState(initial?.display_threshold_secs ?? 0)
+  const [timerAlerts, setTimerAlerts] = useState<TimerAlertThreshold[]>(
+    initial?.timer_alerts ?? [],
+  )
+  const voices = useVoices()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [patternError, setPatternError] = useState<string | null>(null)
@@ -278,6 +388,7 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
       spell_id: initial?.spell_id ?? 0,
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
       characters: Array.from(selectedChars),
+      timer_alerts: timerType === 'none' ? [] : timerAlerts,
     }
 
     setSubmitting(true)
@@ -497,6 +608,49 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
                 0 = use global default
               </span>
             </div>
+
+            {/* Fading-soon alerts */}
+            <div className="space-y-2 pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Fading-soon alerts
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setTimerAlerts((prev) => [...prev, newTimerAlert()])}
+                  className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded"
+                  style={{
+                    backgroundColor: 'var(--color-surface-2)',
+                    color: 'var(--color-muted-foreground)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                >
+                  <Plus size={10} /> Add
+                </button>
+              </div>
+              {timerAlerts.length === 0 ? (
+                <p className="text-[11px] italic" style={{ color: 'var(--color-muted)' }}>
+                  No fading alerts — timer counts down silently. Add one to get notified before it expires.
+                </p>
+              ) : (
+                <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                  Use <code style={{ color: 'var(--color-foreground)' }}>{'{spell}'}</code> in the message to insert the spell name.
+                </p>
+              )}
+              {timerAlerts.map((alert, i) => (
+                <TimerAlertRow
+                  key={alert.id}
+                  alert={alert}
+                  voices={voices}
+                  onChange={(next) =>
+                    setTimerAlerts((prev) => prev.map((a, idx) => (idx === i ? next : a)))
+                  }
+                  onRemove={() =>
+                    setTimerAlerts((prev) => prev.filter((_, idx) => idx !== i))
+                  }
+                />
+              ))}
+            </div>
           </>
         )}
       </div>
@@ -632,6 +786,7 @@ function TriggerRow({ trigger, onEdit, onDeleted, onToggled }: TriggerRowProps):
       spell_id: trigger.spell_id,
       display_threshold_secs: trigger.display_threshold_secs,
       characters: trigger.characters,
+      timer_alerts: trigger.timer_alerts ?? [],
     }
     updateTrigger(trigger.id, req)
       .then((updated) => {
@@ -1244,37 +1399,10 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
 
 // ── Alerts tab ────────────────────────────────────────────────────────────────
 
-type AlertSubTab = 'events' | 'timers'
-
 function AlertsTab(): React.ReactElement {
-  const [sub, setSub] = useState<AlertSubTab>('events')
-
-  const pillStyle = (active: boolean): React.CSSProperties => ({
-    padding: '4px 12px',
-    fontSize: 12,
-    fontWeight: 500,
-    borderRadius: 4,
-    border: '1px solid transparent',
-    backgroundColor: active ? 'var(--color-primary)' : 'var(--color-surface-2)',
-    color: active ? 'var(--color-background)' : 'var(--color-muted-foreground)',
-    cursor: 'pointer',
-  })
-
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <div
-        className="flex items-center gap-2 px-4 py-2 shrink-0"
-        style={{ borderBottom: '1px solid var(--color-border)' }}
-      >
-        <button onClick={() => setSub('events')} style={pillStyle(sub === 'events')}>
-          Event Alerts
-        </button>
-        <button onClick={() => setSub('timers')} style={pillStyle(sub === 'timers')}>
-          Timer Alerts
-        </button>
-      </div>
-      {sub === 'events' && <EventAlertsPanel inline />}
-      {sub === 'timers' && <TimerAlertsPanel inline />}
+      <EventAlertsPanel inline />
     </div>
   )
 }

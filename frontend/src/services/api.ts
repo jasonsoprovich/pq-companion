@@ -10,7 +10,7 @@ import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { TargetState } from '../types/overlay'
 import type { CombatState } from '../types/combat'
 import type { TimerState } from '../types/timer'
-import type { Trigger, TriggerFired, TriggerPack, Action, TimerType } from '../types/trigger'
+import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold } from '../types/trigger'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -625,6 +625,7 @@ export interface CreateTriggerRequest {
   spell_id?: number
   display_threshold_secs?: number
   characters?: string[]
+  timer_alerts?: TimerAlertThreshold[]
 }
 
 export function createTrigger(req: CreateTriggerRequest): Promise<Trigger> {

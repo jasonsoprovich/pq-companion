@@ -3,6 +3,7 @@ package trigger
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -22,8 +23,12 @@ const historyMaxSize = 200
 // threshold (Trigger.DisplayThresholdSecs) can override the global
 // buff/detrim defaults the user sets in Settings. 0 means "use the
 // category default."
+//
+// alerts is the per-trigger fading-soon configuration (Trigger.TimerAlerts)
+// pre-marshalled to JSON. Sink stores it opaquely on the active timer and
+// re-emits it on the WS payload; the frontend parses and acts on it.
 type TimerSink interface {
-	StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time)
+	StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage)
 	StopExternal(name string)
 }
 
@@ -174,7 +179,13 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time) {
 	slog.Debug("trigger fired", "trigger", t.Name, "line", matchedLine)
 
 	if e.sink != nil && c.timerKey != "" && t.TimerDurationSecs > 0 {
-		e.sink.StartExternal(c.timerKey, timerCategory(t.TimerType), t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt)
+		var alertJSON json.RawMessage
+		if len(t.TimerAlerts) > 0 {
+			if buf, err := json.Marshal(t.TimerAlerts); err == nil {
+				alertJSON = buf
+			}
+		}
+		e.sink.StartExternal(c.timerKey, timerCategory(t.TimerType), t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON)
 	}
 }
 

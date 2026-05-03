@@ -2,6 +2,24 @@ export type ActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
 
 export type TimerType = 'none' | 'buff' | 'detrimental'
 
+export type TimerAlertType = 'play_sound' | 'text_to_speech'
+
+/**
+ * One "fading soon" notification on a timer-bound trigger. Fires when the
+ * trigger's spell timer crosses {seconds} remaining. A trigger may carry any
+ * number of these (e.g. 300s + 60s for a long buff, 10s for a mez).
+ */
+export interface TimerAlertThreshold {
+  id: string
+  seconds: number
+  type: TimerAlertType
+  sound_path: string
+  volume: number       // 0–100
+  tts_template: string // supports {spell} placeholder
+  voice: string
+  tts_volume: number   // 0–100
+}
+
 /**
  * On-screen placement of an overlay_text action in the trigger overlay
  * window's local space (top-left origin, CSS pixels). Absence on an
@@ -50,6 +68,12 @@ export interface Trigger {
    * character (legacy / safety fallback).
    */
   characters: string[]
+  /**
+   * Per-trigger fading-soon notifications. Each entry fires an audio cue
+   * when the timer this trigger creates crosses the configured remaining
+   * seconds. Empty = no fading alert (timer counts down silently).
+   */
+  timer_alerts: TimerAlertThreshold[]
 }
 
 export interface TriggerFired {

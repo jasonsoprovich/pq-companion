@@ -4,7 +4,10 @@
 // over WebSocket and exposed via REST.
 package spelltimer
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // WSEventTimers is the WebSocket event type emitted when timer state changes.
 const WSEventTimers = "overlay:timers"
@@ -68,6 +71,12 @@ type ActiveTimer struct {
 	// basis (Trigger.DisplayThresholdSecs); spell-landed-driven timers
 	// always emit 0 here so a config change updates them retroactively.
 	DisplayThresholdSecs int `json:"display_threshold_secs"`
+
+	// TimerAlerts is opaque per-trigger fading-soon configuration carried
+	// through to the frontend as JSON. Spelltimer never introspects it; it
+	// just stores and emits whatever the trigger engine handed in. Empty
+	// (nil) for spell-cast-driven timers.
+	TimerAlerts json.RawMessage `json:"timer_alerts,omitempty"`
 }
 
 // TimerState is the full payload broadcast via WebSocket and returned by the

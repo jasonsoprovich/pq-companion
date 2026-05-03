@@ -61,6 +61,30 @@ type Action struct {
 	FontSize int `json:"font_size,omitempty"`
 }
 
+// TimerAlertType identifies the kind of audio alert fired when a timer-bound
+// trigger crosses one of its configured "fading soon" thresholds.
+type TimerAlertType string
+
+const (
+	TimerAlertTypePlaySound    TimerAlertType = "play_sound"
+	TimerAlertTypeTextToSpeech TimerAlertType = "text_to_speech"
+)
+
+// TimerAlert is a per-trigger "fading soon" notification that fires when the
+// trigger's spell timer crosses a remaining-seconds threshold. Each trigger
+// can carry an arbitrary list (e.g. 300s + 60s for a long buff, 10s for a
+// mez). Empty list = no fading alert.
+type TimerAlert struct {
+	ID          string         `json:"id"`
+	Seconds     int            `json:"seconds"`
+	Type        TimerAlertType `json:"type"`
+	SoundPath   string         `json:"sound_path"`
+	Volume      int            `json:"volume"` // 0–100
+	TTSTemplate string         `json:"tts_template"`
+	Voice       string         `json:"voice"`
+	TTSVolume   int            `json:"tts_volume"` // 0–100
+}
+
 // Trigger is a user-defined log line matcher with associated actions.
 type Trigger struct {
 	ID        string    `json:"id"`
@@ -91,6 +115,12 @@ type Trigger struct {
 	// fires for any active character (legacy + safety fallback). The frontend
 	// presents this as toggleable chips in the edit modal.
 	Characters []string `json:"characters"`
+
+	// TimerAlerts are the per-trigger "fading soon" thresholds. Each entry
+	// fires an audio cue (play_sound or TTS) when the timer this trigger
+	// creates crosses the configured remaining-seconds value. Empty = no
+	// fading notification (the timer still counts down silently).
+	TimerAlerts []TimerAlert `json:"timer_alerts"`
 }
 
 // TriggerFired is the payload of a WSEventTriggerFired WebSocket event and a

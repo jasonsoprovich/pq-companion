@@ -2,6 +2,7 @@ package spelltimer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -245,7 +246,7 @@ func (e *Engine) GetState() TimerState {
 // detrim display threshold for the timer it creates. > 0 means "only show
 // when remaining time is at or below this value"; 0 means "let the
 // frontend resolve against the global default for my category".
-func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs int, startedAt time.Time) {
+func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage) {
 	if name == "" || durationSecs <= 0 {
 		return
 	}
@@ -285,6 +286,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 		ExpiresAt:            startedAt.Add(time.Duration(durationSecs) * time.Second),
 		DurationSeconds:      float64(durationSecs),
 		DisplayThresholdSecs: displayThresholdSecs,
+		TimerAlerts:          alerts,
 	}
 	e.timers[key] = timer
 	snap := e.snapshot(time.Now())
