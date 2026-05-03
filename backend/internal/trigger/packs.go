@@ -2,16 +2,16 @@ package trigger
 
 import "time"
 
-// EnchanterPack returns the pre-built enchanter trigger pack covering the
-// crowd-control and raid-buff workflow: mez/charm/root breaks, resist and
-// immunity warnings, debuff-fade recast prompts (Tashanian, Cripple,
-// Asphyxiate, Overwhelming Splendor), and self-buff fade alerts for the
-// common raid buffs (VoG, KEI, Group Resist Magic, Speed of the Shissar/
-// Brood, Intellectual Superiority).
+// EnchanterPack returns the pre-built enchanter trigger pack: critical
+// crowd-control break alerts (mez/charm/root) and casting-failure alerts
+// (resist, immunities, interrupt). Buff and debuff timers — self-buffs cast
+// on the group, debuffs cast on enemies — are tracked per-target by the
+// spell-landed pipeline (with item/AA duration extensions) and don't need
+// a fade alert; the user reads them off the buff/detrim overlays.
 func EnchanterPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Enchanter",
-		Description: "Mez/charm/root breaks, resist and immunity alerts, and fade prompts for enchanter debuffs and raid buffs.",
+		Description: "Mez/charm/root break alerts and casting-failure alerts. Buff and debuff durations are tracked per-target on the spell timer overlays automatically — no fade alerts needed.",
 		Triggers: []Trigger{
 			// ── Crowd-control breaks ─────────────────────────────────────
 			{
@@ -77,91 +77,6 @@ func EnchanterPack() TriggerPack {
 				PackName: "Enchanter",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "INTERRUPTED!", DurationSecs: 3, Color: "#ffcc00"},
-				},
-			},
-
-			// ── Debuff fades (recast prompts) ────────────────────────────
-			{
-				Name:     "Tashanian Faded",
-				Enabled:  true,
-				Pattern:  `Your Tashanian spell has worn off\.`,
-				PackName: "Enchanter",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "TASH FADED", DurationSecs: 4, Color: "#ffaa44"},
-				},
-			},
-			{
-				Name:     "Cripple Faded",
-				Enabled:  true,
-				Pattern:  `Your Cripple spell has worn off\.`,
-				PackName: "Enchanter",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "CRIPPLE FADED", DurationSecs: 4, Color: "#ffaa44"},
-				},
-			},
-			{
-				Name:     "Asphyxiate Faded",
-				Enabled:  true,
-				Pattern:  `Your Asphyxiate spell has worn off\.`,
-				PackName: "Enchanter",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "ASPHYX FADED", DurationSecs: 4, Color: "#ffaa44"},
-				},
-			},
-			{
-				Name:     "Overwhelming Splendor Faded",
-				Enabled:  true,
-				Pattern:  `Your Overwhelming Splendor spell has worn off\.`,
-				PackName: "Enchanter",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "SPLENDOR FADED", DurationSecs: 4, Color: "#ffaa44"},
-				},
-			},
-
-			// ── Self-buff fades (recast prompts) ─────────────────────────
-			{
-				Name:     "Visions of Grandeur Faded",
-				Enabled:  true,
-				Pattern:  `Your visions fade\.`,
-				PackName: "Enchanter",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "VoG FADED", DurationSecs: 5, Color: "#44aaff"},
-				},
-			},
-			{
-				Name:     "KEI Faded",
-				Enabled:  true,
-				Pattern:  `Your mind returns to normal\.`,
-				PackName: "Enchanter",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "KEI FADED", DurationSecs: 5, Color: "#44aaff"},
-				},
-			},
-			{
-				Name:     "Group Resist Magic Faded",
-				Enabled:  true,
-				Pattern:  `Your protection fades\.`,
-				PackName: "Enchanter",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "GRM FADED", DurationSecs: 5, Color: "#44aaff"},
-				},
-			},
-			{
-				Name:     "Haste Faded (Shissar/Brood)",
-				Enabled:  true,
-				Pattern:  `Your body slows\.`,
-				PackName: "Enchanter",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "HASTE FADED", DurationSecs: 5, Color: "#44aaff"},
-				},
-			},
-			{
-				Name:     "Intellectual Superiority Faded",
-				Enabled:  true,
-				Pattern:  `The intellectual advancement fades\.`,
-				PackName: "Enchanter",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "IS FADED", DurationSecs: 5, Color: "#44aaff"},
 				},
 			},
 		},
