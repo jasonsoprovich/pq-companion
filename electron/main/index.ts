@@ -547,17 +547,28 @@ function createTriggerOverlay(): void {
   }
 
   // The trigger overlay is the canvas alerts are positioned within (via the
-  // Test/Position button on each overlay_text action). Defaulting to the full
-  // primary display area lets users place alerts anywhere on screen — the
-  // window itself is fully transparent and click-through when no test session
-  // is active, so a full-screen default isn't intrusive.
+  // Test/Position button on each overlay_text action). Default to ~90% of the
+  // primary display so it's a large draggable canvas that doesn't quite hit
+  // the screen edges; the window itself is fully transparent and click-
+  // through outside of a positioning session, so the size isn't intrusive.
   const primary = screen.getPrimaryDisplay().workArea
-  const { x, y, width, height } = getRestoredBounds('trigger', {
-    x: primary.x,
-    y: primary.y,
-    width: primary.width,
-    height: primary.height,
-  })
+  const desiredW = Math.round(primary.width * 0.9)
+  const desiredH = Math.round(primary.height * 0.9)
+  const triggerDefaults = {
+    x: primary.x + Math.round((primary.width - desiredW) / 2),
+    y: primary.y + Math.round((primary.height - desiredH) / 2),
+    width: desiredW,
+    height: desiredH,
+  }
+  // One-time migration: pre-fullscreen builds saved a 340×360 default that's
+  // too small for the chrome-less positioning model. Clear that so the new
+  // defaults take over. User-resized bounds are preserved.
+  const store = loadBoundsStore()
+  if (store.trigger && store.trigger.width === 340 && store.trigger.height === 360) {
+    delete store.trigger
+    saveBoundsStore(store)
+  }
+  const { x, y, width, height } = getRestoredBounds('trigger', triggerDefaults)
   triggerOverlayWindow = new BrowserWindow({
     x,
     y,

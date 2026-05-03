@@ -310,9 +310,13 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         transition: 'background-color 0.15s ease',
       }}
     >
-      {/* Positioning banner — only rendered during a session. */}
+      {/* Positioning banner — only rendered during a session. The whole banner
+          is a drag handle (drag-region) so the user can move the entire
+          positioning canvas around the screen; the Done button and label hint
+          opt out of dragging via no-drag so clicks register normally. */}
       {positioning && (
         <div
+          className="drag-region"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -323,6 +327,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
             borderBottom: '1px solid rgba(167,139,250,0.5)',
             flexShrink: 0,
             userSelect: 'none',
+            cursor: 'grab',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
@@ -331,10 +336,11 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
               Positioning trigger alert
             </span>
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              · drag the card anywhere on screen, then click Done
+              · drag this bar to move the canvas, drag the card to place the alert
             </span>
           </div>
           <button
+            className="no-drag"
             onClick={handleEndSession}
             style={{
               display: 'flex',
