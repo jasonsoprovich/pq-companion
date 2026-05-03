@@ -844,6 +844,112 @@ func PaladinPack() TriggerPack {
 	}
 }
 
+// ShadowknightPack returns the pre-built shadowknight trigger pack: a
+// Harm Touch overlay alert, a Feign Death skill alert, and timer-creating
+// triggers for Engulfing Darkness, Disease Cloud, Voice of Terris,
+// Asystole, and Unholy Aura Discipline. Drain Soul, Death Peace, and the
+// Feign Death spell (id 366) are intentionally omitted — instant or
+// unreliable to detect from the log without false positives.
+func ShadowknightPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Shadowknight",
+		Description: "Harm Touch and Feign Death alerts plus spell timers for Engulfing Darkness, Disease Cloud, Voice of Terris, Asystole, and Unholy Aura Discipline.",
+		Triggers: []Trigger{
+			// ── Emergency burst (overlay alert) ──────────────────────────
+			{
+				Name:     "Harm Touch",
+				Enabled:  true,
+				Pattern:  `^Your hands glow with malignant power\.$`,
+				PackName: "Shadowknight",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "HARM TOUCH!", DurationSecs: 5, Color: "#aa00ff"},
+				},
+			},
+
+			// ── Feign Death skill (overlay alert) ────────────────────────
+			// SK and monk both have the FD skill (skill_id 35). The classic
+			// EQ client emits "You feign death." on success — same line for
+			// both classes. The skill's strings are hardcoded client-side
+			// rather than DB anchors; if the exact text differs on Quarm,
+			// users can adjust the pattern in the trigger editor.
+			{
+				Name:     "Feign Death",
+				Enabled:  true,
+				Pattern:  `^You feign death\.$`,
+				PackName: "Shadowknight",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "FEIGN DEATH", DurationSecs: 4, Color: "#888888"},
+				},
+			},
+
+			// ── Snare/DoT (timer) ────────────────────────────────────────
+			{
+				Name:              "Engulfing Darkness",
+				Enabled:           true,
+				Pattern:           `^(?:You are engulfed by darkness\.|[A-Z][a-zA-Z']{2,14} is engulfed by darkness\.)$`,
+				WornOffPattern:    `^(?:The darkness fades\.|Your Engulfing Darkness spell has worn off\.|Your target resisted the Engulfing Darkness spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 60,
+				SpellID:           355,
+				PackName:          "Shadowknight",
+				Actions:           []Action{},
+			},
+
+			// ── Aggro debuff (timer) ─────────────────────────────────────
+			{
+				Name:              "Disease Cloud",
+				Enabled:           true,
+				Pattern:           `^(?:Your stomach begins to cramp\.|[A-Z][a-zA-Z']{2,14} doubles over in pain\.)$`,
+				WornOffPattern:    `^Your stomach feels better\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 360,
+				SpellID:           340,
+				PackName:          "Shadowknight",
+				Actions:           []Action{},
+			},
+
+			// ── Self aggro buff (timer) ──────────────────────────────────
+			{
+				Name:              "Voice of Terris",
+				Enabled:           true,
+				Pattern:           `^(?:Your voice fills with the power of nightmares\.|[A-Z][a-zA-Z']{2,14} speaks with the voice of nightmares\.)$`,
+				WornOffPattern:    `^The voice of nightmares fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 600,
+				SpellID:           1228,
+				PackName:          "Shadowknight",
+				Actions:           []Action{},
+			},
+
+			// ── DoT debuff (timer) ───────────────────────────────────────
+			{
+				Name:              "Asystole",
+				Enabled:           true,
+				Pattern:           `^(?:Your heart stops\.|[A-Z][a-zA-Z']{2,14} clutches their chest\.)$`,
+				WornOffPattern:    `^Your heartbeat resumes\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 60,
+				SpellID:           1508,
+				PackName:          "Shadowknight",
+				Actions:           []Action{},
+			},
+
+			// ── Discipline (timer) ───────────────────────────────────────
+			{
+				Name:              "Unholy Aura Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:An unholy aura envelopes your body\.|[A-Z][a-zA-Z']{2,14} is enveloped in an unholy aura\.)$`,
+				WornOffPattern:    `^The unholy aura fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 72,
+				SpellID:           4520,
+				PackName:          "Shadowknight",
+				Actions:           []Action{},
+			},
+		},
+	}
+}
+
 // GroupAwarenessPack returns the pre-built group awareness trigger pack with
 // alerts for incoming tells, player deaths, and group member deaths.
 func GroupAwarenessPack() TriggerPack {
@@ -890,6 +996,7 @@ func AllPacks() []TriggerPack {
 		DruidPack(),
 		ShamanPack(),
 		PaladinPack(),
+		ShadowknightPack(),
 		GroupAwarenessPack(),
 	}
 }
