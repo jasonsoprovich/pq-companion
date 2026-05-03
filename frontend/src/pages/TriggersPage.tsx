@@ -1073,6 +1073,8 @@ interface PacksTabProps {
   onInstalled: () => void
 }
 
+type PackConfirm = { packName: string; kind: 'deactivate' | 'reactivate' }
+
 function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactElement {
   const [packs, setPacks] = useState<TriggerPack[]>([])
   const [loading, setLoading] = useState(true)
@@ -1080,6 +1082,7 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
   const [installed, setInstalled] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [confirm, setConfirm] = useState<PackConfirm | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const ginaInputRef = useRef<HTMLInputElement>(null)
 
@@ -1099,14 +1102,14 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
   }, [])
 
   const handleInstall = (packName: string) => {
-    if (
-      installedPacks.has(packName) &&
-      !window.confirm(
-        `"${packName}" is already active. Re-activating will replace any customizations you made to its triggers. Continue?`,
-      )
-    ) {
+    if (installedPacks.has(packName)) {
+      setConfirm({ packName, kind: 'reactivate' })
       return
     }
+    runInstall(packName)
+  }
+
+  const runInstall = (packName: string) => {
     setBusy(packName)
     setError(null)
     installBuiltinPack(packName)
@@ -1120,13 +1123,10 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
   }
 
   const handleRemove = (packName: string) => {
-    if (
-      !window.confirm(
-        `Deactivate the "${packName}" pack? This deletes all triggers belonging to this pack, including any customizations.`,
-      )
-    ) {
-      return
-    }
+    setConfirm({ packName, kind: 'deactivate' })
+  }
+
+  const runRemove = (packName: string) => {
     setBusy(packName)
     setError(null)
     removeTriggerPack(packName)
@@ -1135,6 +1135,14 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setBusy(null))
+  }
+
+  const handleConfirm = () => {
+    if (!confirm) return
+    const { packName, kind } = confirm
+    setConfirm(null)
+    if (kind === 'reactivate') runInstall(packName)
+    else runRemove(packName)
   }
 
   const handleExport = () => {
@@ -1397,6 +1405,69 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
           })}
         </div>
       </div>
+
+      {confirm && (
+        <div
+          onClick={() => setConfirm(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.6)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="rounded-lg p-4 space-y-3"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              width: '100%',
+              maxWidth: 420,
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <AlertCircle size={16} style={{ color: 'var(--color-danger)' }} />
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+                {confirm.kind === 'deactivate' ? 'Deactivate pack?' : 'Re-activate pack?'}
+              </p>
+            </div>
+            <p className="text-xs leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>
+              {confirm.kind === 'deactivate'
+                ? `Deactivate the "${confirm.packName}" pack? This deletes all triggers belonging to this pack, including any customizations you made.`
+                : `"${confirm.packName}" is already active. Re-activating will replace any customizations you made to its triggers. Continue?`}
+            </p>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                onClick={() => setConfirm(null)}
+                className="text-xs px-3 py-1.5 rounded font-medium"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-foreground)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirm}
+                className="text-xs px-3 py-1.5 rounded font-medium"
+                style={{
+                  backgroundColor: 'var(--color-danger)',
+                  color: '#fff',
+                  border: '1px solid transparent',
+                }}
+              >
+                {confirm.kind === 'deactivate' ? 'Deactivate' : 'Re-activate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
