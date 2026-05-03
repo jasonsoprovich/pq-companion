@@ -1292,6 +1292,7 @@ export default function TriggersPage(): React.ReactElement {
   const [editing, setEditing] = useState<Trigger | null>(null)
   const [search, setSearch] = useState('')
   const [classFilter, setClassFilter] = useState<number | null>(null)
+  const [charFilter, setCharFilter] = useState<string>('')
   const [chars, setChars] = useState<Character[]>([])
 
   const load = useCallback(() => {
@@ -1316,7 +1317,7 @@ export default function TriggersPage(): React.ReactElement {
 
   const filteredTriggers = (() => {
     const q = search.trim().toLowerCase()
-    if (!q && classFilter === null) return triggers
+    if (!q && classFilter === null && !charFilter) return triggers
     let charsOfClass: Set<string> | null = null
     if (classFilter !== null) {
       charsOfClass = new Set(chars.filter((c) => c.class === classFilter).map((c) => c.name))
@@ -1326,19 +1327,22 @@ export default function TriggersPage(): React.ReactElement {
         const haystack = `${t.name}\n${t.pattern}\n${t.pack_name}`.toLowerCase()
         if (!haystack.includes(q)) return false
       }
-      if (charsOfClass) {
-        // Empty Characters list = fires for any character → always passes
-        // class filter (matches the engine's empty-list semantics).
-        if (t.characters && t.characters.length > 0) {
-          let any = false
-          for (const name of t.characters) {
-            if (charsOfClass.has(name)) {
-              any = true
-              break
-            }
+      // Empty Characters list = fires for any character → passes both
+      // character and class filters (matches the engine's empty-list
+      // semantics, so universal alerts stay visible under any narrowing).
+      const universal = !t.characters || t.characters.length === 0
+      if (charFilter && !universal) {
+        if (!t.characters!.includes(charFilter)) return false
+      }
+      if (charsOfClass && !universal) {
+        let any = false
+        for (const name of t.characters!) {
+          if (charsOfClass.has(name)) {
+            any = true
+            break
           }
-          if (!any) return false
         }
+        if (!any) return false
       }
       return true
     })
@@ -1515,6 +1519,26 @@ export default function TriggersPage(): React.ReactElement {
                       }}
                     />
                   </div>
+                  {chars.length > 0 && (
+                    <select
+                      value={charFilter}
+                      onChange={(e) => setCharFilter(e.target.value)}
+                      className="rounded px-2 py-1.5 text-xs outline-none"
+                      style={{
+                        backgroundColor: 'var(--color-surface-2)',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-foreground)',
+                      }}
+                      title="Show only triggers active for this character"
+                    >
+                      <option value="">All characters</option>
+                      {chars.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   {availableClasses.length > 0 && (
                     <select
                       value={classFilter === null ? '' : String(classFilter)}
@@ -1537,12 +1561,13 @@ export default function TriggersPage(): React.ReactElement {
                       ))}
                     </select>
                   )}
-                  {(search || classFilter !== null) && (
+                  {(search || classFilter !== null || charFilter) && (
                     <button
                       type="button"
                       onClick={() => {
                         setSearch('')
                         setClassFilter(null)
+                        setCharFilter('')
                       }}
                       className="text-[11px] px-2 py-1.5 rounded"
                       style={{
