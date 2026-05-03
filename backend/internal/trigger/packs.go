@@ -1407,6 +1407,98 @@ func MagicianPack() TriggerPack {
 	}
 }
 
+// NecromancerPack returns the pre-built necromancer trigger pack:
+// timer-creating triggers for Arch Lich (self-buff), Splurt / Ignite
+// Blood / Pyrocruor (DoTs), Bond of Death (DoT lifetap), and Harmshield
+// (defensive). Engulfing Darkness is intentionally omitted — already
+// covered by the Shadowknight pack with the same SpellID. Death Peace
+// is skipped: cast_on_other " dies." would match every mob death.
+// Pet summon/death and Call to Corpse AA are skipped — log strings
+// are environment-dependent and risk false positives.
+func NecromancerPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Necromancer",
+		Description: "Spell timers for Arch Lich, Splurt, Ignite Blood, Pyrocruor, Bond of Death, and Harmshield.",
+		Triggers: []Trigger{
+			// ── Self buff (timer) ───────────────────────────────────────
+			{
+				Name:              "Arch Lich",
+				Enabled:           true,
+				Pattern:           `^(?:You feel the skin peel from your bones\.|[A-Z][a-zA-Z']{2,14}'s skin peels away\.)$`,
+				WornOffPattern:    `^Your flesh returns\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 360,
+				SpellID:           1416,
+				PackName:          "Necromancer",
+				Actions:           []Action{},
+			},
+
+			// ── DoTs (timers) ───────────────────────────────────────────
+			{
+				Name:              "Splurt",
+				Enabled:           true,
+				Pattern:           `^(?:Your body begins to splurt\.|[A-Z][a-zA-Z']{2,14}'s body begins to splurt\.)$`,
+				WornOffPattern:    `^Your body stops splurting\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 96,
+				SpellID:           1620,
+				PackName:          "Necromancer",
+				Actions:           []Action{},
+			},
+			// Ignite Blood (id 6) and Pyrocruor (id 1617) share identical
+			// cast_on_you / cast_on_other / spell_fades anchors, so each
+			// is keyed on cast-start to disambiguate. The shared "Your
+			// blood cools." fade clears whichever is active.
+			{
+				Name:              "Ignite Blood",
+				Enabled:           true,
+				Pattern:           `^You begin casting Ignite Blood\.$`,
+				WornOffPattern:    `^(?:Your blood cools\.|Your target resisted the Ignite Blood spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 126,
+				SpellID:           6,
+				PackName:          "Necromancer",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Pyrocruor",
+				Enabled:           true,
+				Pattern:           `^You begin casting Pyrocruor\.$`,
+				WornOffPattern:    `^(?:Your blood cools\.|Your target resisted the Pyrocruor spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 108,
+				SpellID:           1617,
+				PackName:          "Necromancer",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Bond of Death",
+				Enabled:           true,
+				Pattern:           `^(?:You feel your life force drain away\.|[A-Z][a-zA-Z']{2,14} staggers\.)$`,
+				WornOffPattern:    `^The bond fades\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 54,
+				SpellID:           456,
+				PackName:          "Necromancer",
+				Actions:           []Action{},
+			},
+
+			// ── Defensive (timer) ───────────────────────────────────────
+			{
+				Name:              "Harmshield",
+				Enabled:           true,
+				Pattern:           `^You no longer feel pain\.$`,
+				WornOffPattern:    `^Your invulnerability fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 18,
+				SpellID:           199,
+				PackName:          "Necromancer",
+				Actions:           []Action{},
+			},
+		},
+	}
+}
+
 // GroupAwarenessPack returns the pre-built group awareness trigger pack with
 // alerts for incoming tells, player deaths, and group member deaths.
 func GroupAwarenessPack() TriggerPack {
@@ -1460,6 +1552,7 @@ func AllPacks() []TriggerPack {
 		RangerPack(),
 		BardPack(),
 		MagicianPack(),
+		NecromancerPack(),
 		GroupAwarenessPack(),
 	}
 }
