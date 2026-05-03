@@ -261,17 +261,17 @@ export function PlaySoundFields({
         </button>
       </div>
       <div className="flex items-center gap-1.5">
-        <Volume2 size={12} style={{ color: 'var(--color-muted-foreground)' }} />
-        <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+        <label className="text-[11px] shrink-0 mr-auto" style={{ color: 'var(--color-muted-foreground)' }}>
           Volume
         </label>
+        <Volume2 size={12} style={{ color: 'var(--color-muted-foreground)' }} />
         <input
           type="range"
           min={0}
           max={100}
           value={volume}
           onChange={(e) => onVolumeChange(parseInt(e.target.value) || 0)}
-          className="flex-1"
+          className="w-32"
         />
         <span className="text-[11px] w-8 text-right font-mono" style={{ color: 'var(--color-muted)' }}>
           {volume}%
