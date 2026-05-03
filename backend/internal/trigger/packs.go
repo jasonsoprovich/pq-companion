@@ -15,7 +15,7 @@ import "time"
 func EnchanterPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Enchanter",
-		Description: "CC break + cast-failure alerts plus spell timers for the enchanter buff (VoG, KEI, IS, GRM, Speed of the Shissar/Brood), debuff (Tashanian, Cripple, Asphyxiate), and mez (Mesmerize, Mesmerization, Dazzle, Enthrall, Entrance, Glamour of Kintaz, Rapture / Ancient: Eternal Rapture) lines.",
+		Description: "CC break + cast-failure alerts plus spell timers for the enchanter buff (VoG, KEI, IS, GRM, Speed of the Shissar/Brood), debuff (Tashanian, Cripple, Asphyxiate), root (Root, Fetter, Greater Fetter), mez (Mesmerize, Mesmerization, Dazzle, Enthrall, Entrance, Glamour of Kintaz, Rapture / Ancient: Eternal Rapture), charm (Charm, Beguile, Cajoling Whispers, Allure, Dictate), and pacify (Lull, Calm, Soothe, Pacify, Wake of Tranquility) lines.",
 		Triggers: []Trigger{
 			// ── Crowd-control breaks ─────────────────────────────────────
 			{
@@ -176,6 +176,44 @@ func EnchanterPack() TriggerPack {
 				Actions:           []Action{},
 			},
 
+			// ── Root (timers) ────────────────────────────────────────────
+			// All three enchanter roots share "<name> adheres to the ground."
+			// land text, so each is matched on "You begin casting <SpellName>."
+			// to disambiguate. Resists clear via the spell-specific resist line.
+			{
+				Name:              "Root",
+				Enabled:           true,
+				Pattern:           `^You begin casting Root\.$`,
+				WornOffPattern:    `^(?:Your Root spell has worn off\.|Your target resisted the Root spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 48,
+				SpellID:           230,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Fetter",
+				Enabled:           true,
+				Pattern:           `^You begin casting Fetter\.$`,
+				WornOffPattern:    `^(?:Your Fetter spell has worn off\.|Your target resisted the Fetter spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 180,
+				SpellID:           1633,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Greater Fetter",
+				Enabled:           true,
+				Pattern:           `^You begin casting Greater Fetter\.$`,
+				WornOffPattern:    `^(?:Your Greater Fetter spell has worn off\.|Your target resisted the Greater Fetter spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 180,
+				SpellID:           3194,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+
 			// ── Mez (timers) ─────────────────────────────────────────────
 			// Mesmerize / Mesmerization / Dazzle share the "<name> has been
 			// mesmerized." land text but have three different base durations
@@ -262,6 +300,133 @@ func EnchanterPack() TriggerPack {
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 42,
 				SpellID:           1692,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+
+			// ── Charm (timers) ───────────────────────────────────────────
+			// Every enchanter charm has an empty cast_on_other (the caster
+			// never sees a "<name> has been charmed." line in their log) and
+			// the charm line shares "You have been charmed." / "You are no
+			// longer charmed." across spells with very different durations,
+			// so each trigger matches on "You begin casting <SpellName>."
+			// instead. Resists clear the stale timer via the spell-specific
+			// resist line.
+			{
+				Name:              "Charm",
+				Enabled:           true,
+				Pattern:           `^You begin casting Charm\.$`,
+				WornOffPattern:    `^(?:Your Charm spell has worn off\.|Your target resisted the Charm spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 360,
+				SpellID:           300,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Beguile",
+				Enabled:           true,
+				Pattern:           `^You begin casting Beguile\.$`,
+				WornOffPattern:    `^(?:Your Beguile spell has worn off\.|Your target resisted the Beguile spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 360,
+				SpellID:           182,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Cajoling Whispers",
+				Enabled:           true,
+				Pattern:           `^You begin casting Cajoling Whispers\.$`,
+				WornOffPattern:    `^(?:Your Cajoling Whispers spell has worn off\.|Your target resisted the Cajoling Whispers spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 360,
+				SpellID:           183,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Allure",
+				Enabled:           true,
+				Pattern:           `^You begin casting Allure\.$`,
+				WornOffPattern:    `^(?:Your Allure spell has worn off\.|Your target resisted the Allure spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 360,
+				SpellID:           184,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Dictate",
+				Enabled:           true,
+				Pattern:           `^You begin casting Dictate\.$`,
+				WornOffPattern:    `^(?:Your Dictate spell has worn off\.|Your target resisted the Dictate spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 48,
+				SpellID:           1707,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+
+			// ── Pacify line (timers) ─────────────────────────────────────
+			// Lull / Calm / Soothe / Pacify / Wake of Tranquility share most
+			// of their cast text and have empty spell_fades, so each trigger
+			// matches on "You begin casting <SpellName>." to get the right
+			// per-spell duration. WornOffPattern uses the caster's
+			// "Your <SpellName> spell has worn off." line plus the
+			// spell-specific resist line so the timer clears on resist.
+			{
+				Name:              "Lull",
+				Enabled:           true,
+				Pattern:           `^You begin casting Lull\.$`,
+				WornOffPattern:    `^(?:Your Lull spell has worn off\.|Your target resisted the Lull spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 120,
+				SpellID:           208,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Calm",
+				Enabled:           true,
+				Pattern:           `^You begin casting Calm\.$`,
+				WornOffPattern:    `^(?:Your Calm spell has worn off\.|Your target resisted the Calm spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 126,
+				SpellID:           47,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Soothe",
+				Enabled:           true,
+				Pattern:           `^You begin casting Soothe\.$`,
+				WornOffPattern:    `^(?:Your Soothe spell has worn off\.|Your target resisted the Soothe spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 450,
+				SpellID:           501,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Pacify",
+				Enabled:           true,
+				Pattern:           `^You begin casting Pacify\.$`,
+				WornOffPattern:    `^(?:Your Pacify spell has worn off\.|Your target resisted the Pacify spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 720,
+				SpellID:           45,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Wake of Tranquility",
+				Enabled:           true,
+				Pattern:           `^You begin casting Wake of Tranquility\.$`,
+				WornOffPattern:    `^(?:Your Wake of Tranquility spell has worn off\.|Your target resisted the Wake of Tranquility spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 126,
+				SpellID:           1541,
 				PackName:          "Enchanter",
 				Actions:           []Action{},
 			},
