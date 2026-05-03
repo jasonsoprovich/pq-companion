@@ -546,7 +546,18 @@ function createTriggerOverlay(): void {
     return
   }
 
-  const { x, y, width, height } = getRestoredBounds('trigger', { x: 0, y: 0, width: 340, height: 360 })
+  // The trigger overlay is the canvas alerts are positioned within (via the
+  // Test/Position button on each overlay_text action). Defaulting to the full
+  // primary display area lets users place alerts anywhere on screen — the
+  // window itself is fully transparent and click-through when no test session
+  // is active, so a full-screen default isn't intrusive.
+  const primary = screen.getPrimaryDisplay().workArea
+  const { x, y, width, height } = getRestoredBounds('trigger', {
+    x: primary.x,
+    y: primary.y,
+    width: primary.width,
+    height: primary.height,
+  })
   triggerOverlayWindow = new BrowserWindow({
     x,
     y,
@@ -572,9 +583,13 @@ function createTriggerOverlay(): void {
   triggerOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   triggerOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   windowToOverlayName.set(triggerOverlayWindow, 'trigger')
-  if (getOverlayLocked('trigger')) {
-    triggerOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  // Default the trigger overlay to click-through so the chrome-less canvas
+  // doesn't intercept clicks intended for the game underneath. The header
+  // (only shown while positioning) re-enables interaction on hover.
+  if (!getOverlayLocked('trigger')) {
+    setOverlayLocked('trigger', true)
   }
+  triggerOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
   trackOverlayBounds('trigger', triggerOverlayWindow)
 
   if (isDev) {

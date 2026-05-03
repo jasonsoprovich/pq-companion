@@ -77,7 +77,7 @@ function AlertCard({ entry, bgOpacity }: { entry: AlertEntry; bgOpacity: number 
         transition: 'opacity 0.5s ease',
         opacity,
         pointerEvents: 'none', // individual cards don't capture mouse
-        ...(positioned ? { position: 'absolute', left: position.x, top: position.y, zIndex: 10 } : {}),
+        ...(positioned ? { position: 'fixed', left: position.x, top: position.y, zIndex: 10 } : {}),
       }}
     >
       <div
@@ -163,7 +163,7 @@ function TestAlertCard({ alert, onPositionCommit, onMouseEnter, onMouseLeave }: 
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       style={{
-        position: 'absolute',
+        position: 'fixed',
         left: pos.x,
         top: pos.y,
         padding: '10px 14px',
@@ -276,7 +276,10 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     [testAlert],
   )
 
-  const isEmpty = alerts.length === 0 && !testAlert
+  // The chrome (drag handle, lock, close) only shows during a Test/Position
+  // session. The rest of the time the trigger overlay is invisible — alerts
+  // pop at their pinned positions and disappear.
+  const positioning = testAlert !== null
 
   return (
     <div
@@ -288,63 +291,60 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         flexDirection: 'column',
         overflow: 'hidden',
         fontFamily: 'system-ui, -apple-system, sans-serif',
-        // Fully transparent background when empty so it doesn't block the game
-        backgroundColor: isEmpty ? 'rgba(0,0,0,0.01)' : 'transparent',
+        backgroundColor: 'transparent',
       }}
     >
-      {/* Drag handle — always present so the window can be repositioned */}
-      <div
-        className={locked ? 'no-drag' : 'drag-region'}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '4px 8px',
-          backgroundColor: isEmpty ? `rgba(10,10,12,${overlayOpacity * 0.6})` : `rgba(10,10,12,${overlayOpacity * 0.82})`,
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
-          flexShrink: 0,
-          userSelect: 'none',
-          transition: 'background-color 0.3s',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <Zap size={11} style={{ color: '#a78bfa' }} />
-          <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)' }}>
-            Triggers
-          </span>
-          {alerts.length > 0 && (
-            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginLeft: 2 }}>
-              {alerts.length}
-            </span>
-          )}
-        </div>
+      {/* Drag handle / chrome — only rendered while positioning so a player who
+          isn't actively configuring sees no header in the middle of the game. */}
+      {positioning && (
         <div
-          className="no-drag"
-          onMouseEnter={enableInteraction}
-          onMouseLeave={enableClickThrough}
-          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          className={locked ? 'no-drag' : 'drag-region'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '4px 8px',
+            backgroundColor: `rgba(10,10,12,${overlayOpacity * 0.82})`,
+            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            flexShrink: 0,
+            userSelect: 'none',
+          }}
         >
-          <OverlayLockButton locked={locked} onToggle={toggleLocked} />
-          <button
-            onClick={() => window.electron?.overlay?.closeTrigger()}
-            style={{
-              fontSize: 11,
-              lineHeight: 1,
-              padding: '1px 5px',
-              borderRadius: 3,
-              border: '1px solid rgba(255,255,255,0.1)',
-              backgroundColor: 'transparent',
-              color: 'rgba(255,255,255,0.4)',
-              cursor: 'pointer',
-            }}
-            title="Close overlay"
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Zap size={11} style={{ color: '#a78bfa' }} />
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)' }}>
+              Positioning
+            </span>
+          </div>
+          <div
+            className="no-drag"
+            onMouseEnter={enableInteraction}
+            onMouseLeave={enableClickThrough}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            ×
-          </button>
+            <OverlayLockButton locked={locked} onToggle={toggleLocked} />
+            <button
+              onClick={() => window.electron?.overlay?.closeTrigger()}
+              style={{
+                fontSize: 11,
+                lineHeight: 1,
+                padding: '1px 5px',
+                borderRadius: 3,
+                border: '1px solid rgba(255,255,255,0.1)',
+                backgroundColor: 'transparent',
+                color: 'rgba(255,255,255,0.4)',
+                cursor: 'pointer',
+              }}
+              title="Close overlay"
+            >
+              ×
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Alert stack */}
+      {/* Alert stack — unpinned alerts flow here; pinned alerts and the test
+          card render position:fixed so they ignore the header's presence. */}
       <div
         style={{
           flex: 1,
@@ -353,21 +353,20 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
           gap: 6,
           padding: alerts.length > 0 ? '8px 8px' : 0,
           overflow: 'hidden',
-          position: 'relative',
         }}
       >
         {alerts.map((entry) => (
           <AlertCard key={entry.id} entry={entry} bgOpacity={overlayOpacity} />
         ))}
-        {testAlert && (
-          <TestAlertCard
-            alert={testAlert}
-            onPositionCommit={handleTestPositionCommit}
-            onMouseEnter={enableInteraction}
-            onMouseLeave={enableClickThrough}
-          />
-        )}
       </div>
+      {testAlert && (
+        <TestAlertCard
+          alert={testAlert}
+          onPositionCommit={handleTestPositionCommit}
+          onMouseEnter={enableInteraction}
+          onMouseLeave={enableClickThrough}
+        />
+      )}
     </div>
   )
 }
