@@ -43,9 +43,7 @@ const CATEGORY_LABELS: Record<TimerCategory, string> = {
 function fmtRemaining(secs: number): string {
   if (secs <= 0) return '0s'
   if (secs < 60) return `${Math.ceil(secs)}s`
-  const m = Math.floor(secs / 60)
-  const s = Math.ceil(secs % 60)
-  return s > 0 ? `${m}m ${s}s` : `${m}m`
+  return `${Math.ceil(secs / 60)}m`
 }
 
 function barColor(remaining: number, total: number, category: TimerCategory): string {
