@@ -783,6 +783,18 @@ ipcMain.handle('dialog:select-folder', async () => {
   return result.canceled ? null : result.filePaths[0]
 })
 
+ipcMain.handle('dialog:select-sound-file', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    title: 'Select Sound File',
+    filters: [
+      { name: 'Audio Files', extensions: ['wav', 'mp3', 'ogg', 'flac', 'm4a', 'aac', 'opus'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  })
+  return result.canceled ? null : result.filePaths[0]
+})
+
 // ── IPC handlers — auto-updater ───────────────────────────────────────────────
 
 ipcMain.handle('app:version', () => app.getVersion())

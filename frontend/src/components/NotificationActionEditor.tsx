@@ -14,7 +14,7 @@
  * this initial extraction and wired up in subsequent tasks.
  */
 import React from 'react'
-import { Volume2 } from 'lucide-react'
+import { Volume2, FolderOpen } from 'lucide-react'
 
 export type NotificationActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
 
@@ -113,16 +113,41 @@ export function PlaySoundFields({
   volume,
   onVolumeChange,
 }: PlaySoundFieldsProps): React.ReactElement {
+  const canBrowse = typeof window !== 'undefined' && !!window.electron?.dialog?.selectSoundFile
+
+  async function handleBrowse() {
+    const picked = await window.electron?.dialog?.selectSoundFile()
+    if (picked) onSoundPathChange(picked)
+  }
+
   return (
     <>
-      <input
-        type="text"
-        placeholder="Sound file path (e.g. C:\sounds\alert.wav)"
-        value={soundPath}
-        onChange={(e) => onSoundPathChange(e.target.value)}
-        className="w-full rounded px-2 py-1 text-xs outline-none font-mono"
-        style={inputStyle}
-      />
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text"
+          placeholder="Sound file path (e.g. C:\sounds\alert.wav)"
+          value={soundPath}
+          onChange={(e) => onSoundPathChange(e.target.value)}
+          className="flex-1 min-w-0 rounded px-2 py-1 text-xs outline-none font-mono"
+          style={inputStyle}
+        />
+        {canBrowse && (
+          <button
+            type="button"
+            onClick={handleBrowse}
+            className="shrink-0 flex items-center justify-center rounded px-2 py-1 text-xs"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-muted-foreground)',
+              cursor: 'pointer',
+            }}
+            title="Browse for sound file"
+          >
+            <FolderOpen size={12} />
+          </button>
+        )}
+      </div>
       <div className="flex items-center gap-1.5">
         <Volume2 size={12} style={{ color: 'var(--color-muted-foreground)' }} />
         <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>

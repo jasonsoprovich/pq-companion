@@ -40,6 +40,7 @@ export interface ElectronAPI {
   }
   dialog: {
     selectFolder: () => Promise<string | null>
+    selectSoundFile: () => Promise<string | null>
   }
   updater: {
     check: () => Promise<void>
