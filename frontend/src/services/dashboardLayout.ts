@@ -6,7 +6,7 @@
 
 const STORAGE_KEY = 'pq-overlay-dashboard-layout-v1'
 
-export type DashboardPanelKey = 'buff' | 'detrim' | 'dps' | 'npc'
+export type DashboardPanelKey = 'buff' | 'detrim' | 'dps' | 'npc' | 'hps'
 
 export interface PanelLayout {
   x: number
@@ -23,15 +23,17 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayout = {
   detrim: { x: 344, y: 24,  width: 300, height: 380, visible: true },
   dps:    { x: 24,  y: 424, width: 620, height: 380, visible: true },
   npc:    { x: 664, y: 24,  width: 400, height: 780, visible: true },
+  hps:    { x: 24,  y: 820, width: 620, height: 380, visible: true },
 }
 
-export const DASHBOARD_PANEL_KEYS: DashboardPanelKey[] = ['buff', 'detrim', 'dps', 'npc']
+export const DASHBOARD_PANEL_KEYS: DashboardPanelKey[] = ['buff', 'detrim', 'dps', 'npc', 'hps']
 
 export const DASHBOARD_PANEL_LABELS: Record<DashboardPanelKey, string> = {
   buff: 'Buff Timers',
   detrim: 'Detrimental Timers',
   dps: 'DPS Meter',
   npc: 'NPC Overlay',
+  hps: 'HPS Meter',
 }
 
 function isPanelLayout(v: unknown): v is PanelLayout {

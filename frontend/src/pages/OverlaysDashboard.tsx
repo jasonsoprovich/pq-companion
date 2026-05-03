@@ -12,6 +12,7 @@ import { Eye, EyeOff, MonitorPlay, RotateCcw, Zap, HeartPulse, ExternalLink } fr
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
+import HPSPanel from '../components/overlays/HPSPanel'
 import NPCPanel from '../components/overlays/NPCPanel'
 import {
   DASHBOARD_PANEL_KEYS,
@@ -24,6 +25,15 @@ import {
 } from '../services/dashboardLayout'
 
 const SNAP_GRID = 16
+
+// HPS tracking is wired up end-to-end (panel, dashboard layout, popout window)
+// but no log-parsing pipeline currently produces healer stats, so the UI is
+// hidden. Flip this flag to true once the backend emits real heal data.
+const SHOW_HPS = false
+
+const VISIBLE_PANEL_KEYS: DashboardPanelKey[] = SHOW_HPS
+  ? DASHBOARD_PANEL_KEYS
+  : DASHBOARD_PANEL_KEYS.filter((k) => k !== 'hps')
 
 function PanelToggle({
   label,
@@ -110,7 +120,7 @@ export default function OverlaysDashboard(): React.ReactElement {
 
         {/* Per-panel show/hide */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          {DASHBOARD_PANEL_KEYS.map((key) => (
+          {VISIBLE_PANEL_KEYS.map((key) => (
             <PanelToggle
               key={key}
               label={DASHBOARD_PANEL_LABELS[key]}
@@ -123,20 +133,22 @@ export default function OverlaysDashboard(): React.ReactElement {
         <div className="ml-auto flex items-center gap-2">
           {/* Standalone overlays — these don't have in-dashboard panels but the
               user can pop them out as floating Electron windows. */}
-          <button
-            onClick={() => window.electron?.overlay?.toggleHPS()}
-            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-            style={{
-              backgroundColor: 'var(--color-surface-2)',
-              color: 'var(--color-muted-foreground)',
-              border: '1px solid var(--color-border)',
-            }}
-            title="Toggle the HPS meter overlay window"
-          >
-            <HeartPulse size={11} />
-            HPS Meter
-            <ExternalLink size={9} style={{ opacity: 0.6 }} />
-          </button>
+          {SHOW_HPS && (
+            <button
+              onClick={() => window.electron?.overlay?.toggleHPS()}
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                color: 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+              title="Toggle the HPS meter overlay window"
+            >
+              <HeartPulse size={11} />
+              HPS Meter
+              <ExternalLink size={9} style={{ opacity: 0.6 }} />
+            </button>
+          )}
           <button
             onClick={() => window.electron?.overlay?.toggleTrigger()}
             className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
@@ -227,6 +239,17 @@ export default function OverlaysDashboard(): React.ReactElement {
             defaultHeight={layout.npc.height}
             snapGridSize={SNAP_GRID}
             onLayoutChange={handleLayoutChange('npc')}
+          />
+        )}
+        {SHOW_HPS && layout.hps.visible && (
+          <HPSPanel
+            key={`hps-${layoutVersion}`}
+            defaultX={layout.hps.x}
+            defaultY={layout.hps.y}
+            defaultWidth={layout.hps.width}
+            defaultHeight={layout.hps.height}
+            snapGridSize={SNAP_GRID}
+            onLayoutChange={handleLayoutChange('hps')}
           />
         )}
       </div>
