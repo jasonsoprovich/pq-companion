@@ -8,7 +8,7 @@ import { Zap, X as XIcon } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import type { TriggerFired } from '../types/trigger'
-import { postTriggerTestPosition, endTriggerTestSession } from '../services/api'
+import { postTriggerTestPosition, endTriggerTestSession, getActiveTriggerTest } from '../services/api'
 
 interface TestAlert {
   testId: string
@@ -37,7 +37,7 @@ let nextId = 1
 
 // ── Alert card ─────────────────────────────────────────────────────────────────
 
-function AlertCard({ entry, bgOpacity }: { entry: AlertEntry; bgOpacity: number }): React.ReactElement {
+function AlertCard({ entry }: { entry: AlertEntry }): React.ReactElement {
   const [opacity, setOpacity] = useState(1)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -63,18 +63,19 @@ function AlertCard({ entry, bgOpacity }: { entry: AlertEntry; bgOpacity: number 
   const position = overlayAction?.position
   const positioned = !!position
 
+  // Live trigger alerts render as text-only — no card background or border —
+  // so they don't block the gameplay view. A dark text shadow gives enough
+  // contrast against any background. The dashed border / hint text only
+  // belong to the test card during a positioning session.
   return (
     <div
       style={{
-        padding: '10px 14px',
-        borderRadius: 6,
-        backgroundColor: `rgba(10,10,12,${bgOpacity})`,
-        border: `1px solid ${color}44`,
-        boxShadow: `0 0 12px ${color}22`,
         transition: 'opacity 0.5s ease',
         opacity,
-        pointerEvents: 'none', // individual cards don't capture mouse
-        ...(positioned ? { position: 'fixed', left: position.x, top: position.y, zIndex: 10 } : {}),
+        pointerEvents: 'none',
+        ...(positioned
+          ? { position: 'fixed', left: position.x, top: position.y, zIndex: 10 }
+          : { padding: '4px 8px' }),
       }}
     >
       <div
@@ -83,27 +84,13 @@ function AlertCard({ entry, bgOpacity }: { entry: AlertEntry; bgOpacity: number 
           fontWeight: 800,
           letterSpacing: '0.04em',
           color,
-          textShadow: `0 0 8px ${color}88`,
+          textShadow: `0 0 8px ${color}aa, 0 0 3px rgba(0,0,0,0.95), 0 1px 2px rgba(0,0,0,0.95)`,
           textAlign: 'center',
           userSelect: 'none',
+          whiteSpace: 'nowrap',
         }}
       >
         {text}
-      </div>
-      <div
-        style={{
-          fontSize: 10,
-          color: 'rgba(255,255,255,0.35)',
-          textAlign: 'center',
-          marginTop: 4,
-          fontFamily: 'monospace',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          userSelect: 'none',
-        }}
-      >
-        {entry.event.matched_line}
       </div>
     </div>
   )
@@ -181,8 +168,8 @@ function TestAlertCard({ alert, onPositionCommit }: TestAlertCardProps): React.R
       >
         {text || 'Test Overlay'}
       </div>
-      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', textAlign: 'center', marginTop: 4 }}>
-        Drag to position · auto-dismiss in a moment
+      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginTop: 4, letterSpacing: '0.04em' }}>
+        Drag anywhere to position
       </div>
     </div>
   )
@@ -219,6 +206,32 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
       window.electron?.overlay?.setIgnoreMouseEvents(true)
     }
   }, [testAlert])
+
+  // Hydrate from the backend on first mount so a positioning session that
+  // was started before this overlay window finished loading still shows up.
+  // Otherwise the editor's initial trigger:test broadcast is lost to the
+  // window-startup race and the user has to click Set Position twice.
+  useEffect(() => {
+    let cancelled = false
+    void getActiveTriggerTest()
+      .then((active) => {
+        if (cancelled || !active) return
+        const fontSize = active.font_size && active.font_size > 0 ? active.font_size : 20
+        const defaultPos = {
+          x: Math.max(0, Math.round(window.innerWidth / 2 - 100)),
+          y: Math.max(0, Math.round(window.innerHeight / 2 - 40)),
+        }
+        setTestAlert((prev) => prev ?? {
+          testId: active.test_id,
+          text: active.text || '',
+          color: active.color || '#ffffff',
+          fontSize,
+          position: active.position ?? defaultPos,
+        })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === 'trigger:fired') {
@@ -290,7 +303,11 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         flexDirection: 'column',
         overflow: 'hidden',
         fontFamily: 'system-ui, -apple-system, sans-serif',
-        backgroundColor: 'transparent',
+        // Tint the canvas while positioning so the user can see the area
+        // they're working with. Transparent the rest of the time so the
+        // window doesn't dim the game.
+        backgroundColor: positioning ? 'rgba(10,10,12,0.28)' : 'transparent',
+        transition: 'background-color 0.15s ease',
       }}
     >
       {/* Positioning banner — only rendered during a session. */}
@@ -300,17 +317,21 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '4px 8px',
-            backgroundColor: `rgba(10,10,12,${overlayOpacity * 0.82})`,
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            gap: 12,
+            padding: '8px 14px',
+            backgroundColor: `rgba(10,10,12,${Math.max(0.85, overlayOpacity)})`,
+            borderBottom: '1px solid rgba(167,139,250,0.5)',
             flexShrink: 0,
             userSelect: 'none',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <Zap size={11} style={{ color: '#a78bfa' }} />
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)' }}>
-              Positioning trigger alert — drag the card, then click Done in the editor
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <Zap size={14} style={{ color: '#a78bfa', flexShrink: 0 }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.92)', whiteSpace: 'nowrap' }}>
+              Positioning trigger alert
+            </span>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              · drag the card anywhere on screen, then click Done
             </span>
           </div>
           <button
@@ -318,20 +339,23 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 4,
-              fontSize: 11,
+              gap: 6,
+              fontSize: 12,
+              fontWeight: 700,
               lineHeight: 1,
-              padding: '2px 8px',
-              borderRadius: 3,
-              border: '1px solid rgba(255,255,255,0.18)',
-              backgroundColor: 'rgba(255,255,255,0.06)',
-              color: 'rgba(255,255,255,0.7)',
+              padding: '6px 14px',
+              borderRadius: 4,
+              border: '1px solid rgba(34,197,94,0.6)',
+              backgroundColor: 'rgba(34,197,94,0.85)',
+              color: '#ffffff',
               cursor: 'pointer',
+              boxShadow: '0 0 12px rgba(34,197,94,0.4)',
+              flexShrink: 0,
             }}
             title="End the positioning session and save the current placement"
           >
-            <XIcon size={11} />
-            Done
+            <XIcon size={13} />
+            Done — Save Position
           </button>
         </div>
       )}
@@ -349,7 +373,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         }}
       >
         {alerts.map((entry) => (
-          <AlertCard key={entry.id} entry={entry} bgOpacity={overlayOpacity} />
+          <AlertCard key={entry.id} entry={entry} />
         ))}
       </div>
       {testAlert && (

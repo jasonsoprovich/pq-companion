@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,6 +17,12 @@ type triggerHandler struct {
 	store  *trigger.Store
 	engine *trigger.Engine
 	hub    *ws.Hub
+
+	// Latest active test/positioning session. Held in memory so the trigger
+	// overlay window can hydrate after a fresh mount even if it missed the
+	// initial WS broadcast (window-startup race).
+	testMu     sync.Mutex
+	latestTest *testOverlayRequest
 }
 
 // list returns all triggers.
@@ -265,8 +272,25 @@ func (h *triggerHandler) testOverlay(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "test_id is required")
 		return
 	}
+	h.testMu.Lock()
+	stored := req
+	h.latestTest = &stored
+	h.testMu.Unlock()
 	h.hub.Broadcast(ws.Event{Type: "trigger:test", Data: req})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// testOverlayActive lets a freshly-mounted trigger overlay hydrate without
+// waiting for the next broadcast. Returns the latest in-flight test session,
+// or JSON null when no session is active.
+func (h *triggerHandler) testOverlayActive(w http.ResponseWriter, r *http.Request) {
+	h.testMu.Lock()
+	defer h.testMu.Unlock()
+	if h.latestTest == nil {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.latestTest)
 }
 
 type testOverlayPositionRequest struct {
@@ -284,6 +308,14 @@ func (h *triggerHandler) testOverlayPosition(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "test_id is required")
 		return
 	}
+	// Keep the cached active test in sync with drag updates so an overlay
+	// hydrating mid-session sees the latest position.
+	h.testMu.Lock()
+	if h.latestTest != nil && h.latestTest.TestID == req.TestID {
+		pos := req.Position
+		h.latestTest.Position = &pos
+	}
+	h.testMu.Unlock()
 	h.hub.Broadcast(ws.Event{Type: "trigger:test_position", Data: req})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -302,6 +334,11 @@ func (h *triggerHandler) testOverlayEnd(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "test_id is required")
 		return
 	}
+	h.testMu.Lock()
+	if h.latestTest != nil && h.latestTest.TestID == req.TestID {
+		h.latestTest = nil
+	}
+	h.testMu.Unlock()
 	h.hub.Broadcast(ws.Event{Type: "trigger:test_session_ended", Data: req})
 	w.WriteHeader(http.StatusNoContent)
 }

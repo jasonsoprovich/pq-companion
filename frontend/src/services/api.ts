@@ -679,6 +679,19 @@ export function endTriggerTestSession(testId: string): Promise<void> {
   return post<void>('/api/triggers/test-overlay/end', { test_id: testId })
 }
 
+export interface ActiveTriggerTest {
+  test_id: string
+  text: string
+  color: string
+  duration_secs: number
+  font_size?: number
+  position?: { x: number; y: number } | null
+}
+
+export function getActiveTriggerTest(): Promise<ActiveTriggerTest | null> {
+  return get<ActiveTriggerTest | null>('/api/triggers/test-overlay/active')
+}
+
 export async function importGINAxml(
   xml: string,
   packName: string,
