@@ -312,15 +312,14 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     >
       {/* Positioning banner — only rendered during a session. The whole banner
           is a drag handle (drag-region) so the user can move the entire
-          positioning canvas around the screen; the Done button and label hint
-          opt out of dragging via no-drag so clicks register normally. */}
+          positioning canvas around the screen; the Done button opts out of
+          dragging via no-drag so clicks register normally. */}
       {positioning && (
         <div
           className="drag-region"
           style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
             gap: 12,
             padding: '8px 14px',
             backgroundColor: `rgba(10,10,12,${Math.max(0.85, overlayOpacity)})`,
@@ -330,14 +329,14 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
             cursor: 'grab',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-            <Zap size={14} style={{ color: '#a78bfa', flexShrink: 0 }} />
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.92)', whiteSpace: 'nowrap' }}>
+          <Zap size={16} style={{ color: '#a78bfa', flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.92)' }}>
               Positioning trigger alert
-            </span>
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              · drag this bar to move the canvas, drag the card to place the alert
-            </span>
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', lineHeight: 1.35, marginTop: 2 }}>
+              Drag this bar to move the canvas. Drag the alert card to place the trigger text. Click Done to save.
+            </div>
           </div>
           <button
             className="no-drag"
