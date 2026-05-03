@@ -15,7 +15,7 @@ import "time"
 func EnchanterPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Enchanter",
-		Description: "CC break + cast-failure alerts plus spell timers for the enchanter buff (VoG, KEI, IS, GRM, Speed of the Shissar/Brood), debuff (Tashanian, Cripple, Asphyxiate), and mez (Glamour of Kintaz) lines.",
+		Description: "CC break + cast-failure alerts plus spell timers for the enchanter buff (VoG, KEI, IS, GRM, Speed of the Shissar/Brood), debuff (Tashanian, Cripple, Asphyxiate), and mez (Mesmerize, Mesmerization, Dazzle, Enthrall, Entrance, Glamour of Kintaz, Rapture / Ancient: Eternal Rapture) lines.",
 		Triggers: []Trigger{
 			// ── Crowd-control breaks ─────────────────────────────────────
 			{
@@ -177,20 +177,91 @@ func EnchanterPack() TriggerPack {
 			},
 
 			// ── Mez (timers) ─────────────────────────────────────────────
-			// Only mezzes whose cast_on_other text is unique to a single
-			// spell are added here — the shared "<name> has been mesmerized."
-			// line (Mesmerize / Mesmerization / Dazzle) has three different
-			// base durations and would produce a wrong-duration timer if
-			// matched generically. The spell-landed pipeline disambiguates
-			// those via the most recent cast and is the reliable path.
+			// Mesmerize / Mesmerization / Dazzle share the "<name> has been
+			// mesmerized." land text but have three different base durations
+			// (24 / 24 / 96 s), so they're matched on "You begin casting
+			// <SpellName>." instead — the cast-begin message uniquely names
+			// each spell. The trade-off is that the timer starts ~2-3 s before
+			// the spell actually lands; on a resist the WornOffPattern catches
+			// it via the spell-specific resist line so the stale timer clears.
+			{
+				Name:              "Mesmerize",
+				Enabled:           true,
+				Pattern:           `^You begin casting Mesmerize\.$`,
+				WornOffPattern:    `^(?:Your Mesmerize spell has worn off\.|Your target resisted the Mesmerize spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 24,
+				SpellID:           292,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Mesmerization",
+				Enabled:           true,
+				Pattern:           `^You begin casting Mesmerization\.$`,
+				WornOffPattern:    `^(?:Your Mesmerization spell has worn off\.|Your target resisted the Mesmerization spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 24,
+				SpellID:           307,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Dazzle",
+				Enabled:           true,
+				Pattern:           `^You begin casting Dazzle\.$`,
+				WornOffPattern:    `^(?:Your Dazzle spell has worn off\.|Your target resisted the Dazzle spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 96,
+				SpellID:           190,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Enthrall",
+				Enabled:           true,
+				Pattern:           `^(?:You have been enthralled\.|[A-Z][a-zA-Z']{2,14} has been enthralled\.)$`,
+				WornOffPattern:    `^Your Enthrall spell has worn off\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 144,
+				SpellID:           187,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Entrance",
+				Enabled:           true,
+				Pattern:           `^(?:You have been entranced\.|[A-Z][a-zA-Z']{2,14} has been entranced\.)$`,
+				WornOffPattern:    `^Your Entrance spell has worn off\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 72,
+				SpellID:           188,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
 			{
 				Name:              "Glamour of Kintaz",
 				Enabled:           true,
 				Pattern:           `^(?:You are mesmerized by the Glamour of Kintaz\.|[A-Z][a-zA-Z']{2,14} has been mesmerized by the Glamour of Kintaz\.)$`,
-				WornOffPattern:    `^You are no longer mesmerized\.$`,
+				WornOffPattern:    `^Your Glamour of Kintaz spell has worn off\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 54,
 				SpellID:           1691,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			// Rapture and Ancient: Eternal Rapture share both cast text and
+			// duration (7 ticks / 42 s), so a single trigger covers both.
+			// SpellID is set to the base Rapture; the AA version's duration
+			// modifiers extend the same way.
+			{
+				Name:              "Rapture",
+				Enabled:           true,
+				Pattern:           `^(?:You swoon, overcome by rapture\.|[A-Z][a-zA-Z']{2,14} swoons in raptured bliss\.)$`,
+				WornOffPattern:    `^Your (?:Rapture|Ancient: Eternal Rapture) spell has worn off\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 42,
+				SpellID:           1692,
 				PackName:          "Enchanter",
 				Actions:           []Action{},
 			},
