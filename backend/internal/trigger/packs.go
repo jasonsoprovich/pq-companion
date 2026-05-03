@@ -1499,6 +1499,67 @@ func NecromancerPack() TriggerPack {
 	}
 }
 
+// WizardPack returns the pre-built wizard trigger pack: a Harvest overlay
+// alert and timer-creating triggers for Manaskin and Atol's Spectral
+// Shackles.
+//
+// Evacuate / Exodus and Familiar are intentionally omitted — Evac/Exodus
+// are instant utilities (no duration), and Familiar uses formula 3600
+// in spells_new which the spelltimer engine treats as no-timer
+// (permanent / song-pulse semantics).
+func WizardPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Wizard",
+		Description: "Harvest alert plus spell timers for Manaskin and Atol's Spectral Shackles.",
+		Triggers: []Trigger{
+			// ── Mana tool (overlay alert) ────────────────────────────────
+			// Harvest is instant with a 10-minute recast; the cast message
+			// "You gather mana from your surroundings." only fires when
+			// the wizard uses the spell, making it a clean alert without
+			// timer support.
+			{
+				Name:     "Harvest",
+				Enabled:  true,
+				Pattern:  `^You gather mana from your surroundings\.$`,
+				PackName: "Wizard",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "HARVEST", DurationSecs: 4, Color: "#33ccff"},
+				},
+			},
+
+			// ── Self buff (timer) ───────────────────────────────────────
+			// Manaskin runs ~2 hours at level 60 (1200 ticks formula 3).
+			{
+				Name:              "Manaskin",
+				Enabled:           true,
+				Pattern:           `^(?:Your skin gleams with an incandescent glow\.|[A-Z][a-zA-Z']{2,14}'s skin gleams with an incandescent glow\.)$`,
+				WornOffPattern:    `^Your skin returns to normal\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 7200,
+				SpellID:           1609,
+				PackName:          "Wizard",
+				Actions:           []Action{},
+			},
+
+			// ── Snare/root (timer) ──────────────────────────────────────
+			// Atol's shares "Your feet come free." with the paladin's
+			// Immobilize, but each trigger keys on its own timer so the
+			// shared fade only clears the matching pack's timer.
+			{
+				Name:              "Atol's Spectral Shackles",
+				Enabled:           true,
+				Pattern:           `^(?:Spectral shackles bind your feet to the ground\.|[A-Z][a-zA-Z']{2,14} is shackled to the ground\.)$`,
+				WornOffPattern:    `^(?:Your feet come free\.|Your Atol's Spectral Shackles spell has worn off\.|Your target resisted the Atol's Spectral Shackles spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 150,
+				SpellID:           1631,
+				PackName:          "Wizard",
+				Actions:           []Action{},
+			},
+		},
+	}
+}
+
 // GroupAwarenessPack returns the pre-built group awareness trigger pack with
 // alerts for incoming tells, player deaths, and group member deaths.
 func GroupAwarenessPack() TriggerPack {
@@ -1553,6 +1614,7 @@ func AllPacks() []TriggerPack {
 		BardPack(),
 		MagicianPack(),
 		NecromancerPack(),
+		WizardPack(),
 		GroupAwarenessPack(),
 	}
 }
