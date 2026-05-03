@@ -634,7 +634,7 @@ export default function InventoryTrackerPage(): React.ReactElement {
                   <button
                     key={`eq-${i}`}
                     onClick={() => handleLookup(e.id)}
-                    className="flex items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs"
+                    className="flex items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs"
                     style={{
                       backgroundColor: 'var(--color-surface-2)',
                       border: '1px solid var(--color-border)',
@@ -642,7 +642,8 @@ export default function InventoryTrackerPage(): React.ReactElement {
                     }}
                     title={e.name}
                   >
-                    <span className="truncate">{e.name}</span>
+                    <ItemIcon id={e.icon} name={e.name} size={18} />
+                    <span className="truncate flex-1">{e.name}</span>
                     <span className="shrink-0 text-[10px]" style={{ color: 'var(--color-muted-foreground)' }}>
                       {showCharBadge ? e.character : e.location}
                     </span>
