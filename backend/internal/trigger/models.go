@@ -138,8 +138,38 @@ type TriggerFired struct {
 type TriggerPack struct {
 	PackName    string    `json:"pack_name"`
 	Description string    `json:"description"`
-	Triggers    []Trigger `json:"triggers"`
+	// Class is the EQ class index this pack targets (0=Warrior … 14=Beastlord).
+	// nil means class-agnostic (e.g. GroupAwareness, user-authored packs that
+	// don't specify a class). On import, class-specific packs default their
+	// Characters lists to the matching-class characters only, instead of every
+	// known character. Pointer so missing-in-JSON is distinguishable from
+	// explicit 0 (=Warrior).
+	Class    *int      `json:"class,omitempty"`
+	Triggers []Trigger `json:"triggers"`
 }
+
+// EQ class indices used by TriggerPack.Class and character.Character.Class.
+const (
+	ClassWarrior      = 0
+	ClassCleric       = 1
+	ClassPaladin      = 2
+	ClassRanger       = 3
+	ClassShadowknight = 4
+	ClassDruid        = 5
+	ClassMonk         = 6
+	ClassBard         = 7
+	ClassRogue        = 8
+	ClassShaman       = 9
+	ClassNecromancer  = 10
+	ClassWizard       = 11
+	ClassMagician     = 12
+	ClassEnchanter    = 13
+	ClassBeastlord    = 14
+)
+
+// ClassPtr returns a pointer to the given class index, for setting
+// TriggerPack.Class concisely.
+func ClassPtr(c int) *int { return &c }
 
 // ErrNotFound is returned when a requested trigger does not exist in the store.
 var ErrNotFound = errors.New("trigger not found")

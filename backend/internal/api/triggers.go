@@ -5,11 +5,14 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
@@ -19,6 +22,8 @@ type triggerHandler struct {
 	engine    *trigger.Engine
 	hub       *ws.Hub
 	charStore *character.Store
+	tailer    *logparser.Tailer
+	cfgMgr    *config.Manager
 
 	// Latest active test/positioning session. Held in memory so the trigger
 	// overlay window can hydrate after a fresh mount even if it missed the
@@ -190,10 +195,24 @@ func (h *triggerHandler) history(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, events)
 }
 
-// allCharacterNames returns every recorded character name. Used to populate
-// the Characters list of newly installed/imported pack triggers so they fire
-// for everyone by default.
-func (h *triggerHandler) allCharacterNames() []string {
+// activeCharacterName returns the currently selected character — manual config
+// override if set, otherwise the auto-detected character from the most-recent
+// log file. Empty string when nothing is known.
+func (h *triggerHandler) activeCharacterName() string {
+	if h.cfgMgr != nil {
+		if name := h.cfgMgr.Get().Character; name != "" {
+			return name
+		}
+	}
+	if h.tailer != nil {
+		return h.tailer.ActiveCharacter()
+	}
+	return ""
+}
+
+// listCharacters returns every stored character (with class info), or nil when
+// the store is unavailable or empty.
+func (h *triggerHandler) listCharacters() []character.Character {
 	if h.charStore == nil {
 		return nil
 	}
@@ -201,25 +220,71 @@ func (h *triggerHandler) allCharacterNames() []string {
 	if err != nil {
 		return nil
 	}
-	names := make([]string, 0, len(chars))
-	for _, c := range chars {
-		if c.Name != "" {
-			names = append(names, c.Name)
-		}
-	}
-	return names
+	return chars
 }
 
 // applyDefaultCharacters fills in Characters for any trigger in the pack that
-// doesn't already specify them. Pack triggers default to "all known
-// characters" — universal alerts the user can prune per-character.
-func applyDefaultCharacters(pack *trigger.TriggerPack, names []string) {
-	if len(names) == 0 {
+// doesn't already specify them, using the handler's character store and the
+// currently active character as inputs.
+func (h *triggerHandler) applyDefaultCharacters(pack *trigger.TriggerPack) {
+	defaultPackCharacters(pack, h.listCharacters(), h.activeCharacterName())
+}
+
+// defaultPackCharacters is the pure decision logic for the default Characters
+// list assigned to triggers on pack import. Extracted from the handler so it
+// can be unit-tested without spinning up a config.Manager / tailer.
+//
+// Behavior depends on whether the pack is class-specific (e.g. "Beastlord")
+// or class-agnostic (e.g. "Group Awareness"):
+//
+//   - Class-agnostic pack (pack.Class == nil): default to all known characters.
+//     The pack applies to anyone the user plays.
+//   - Class-specific pack: default only to characters whose class matches the
+//     pack. If the active character matches, prefer it alone (most likely the
+//     character the user is importing the pack for); otherwise use every other
+//     stored character whose class matches; otherwise leave Characters empty
+//     (legacy "applies to any" — rare, the user has no character of that
+//     class yet and can manually opt-in via the per-trigger character chips).
+func defaultPackCharacters(pack *trigger.TriggerPack, chars []character.Character, active string) {
+	if len(chars) == 0 {
+		return
+	}
+
+	var defaults []string
+	if pack.Class == nil {
+		defaults = make([]string, 0, len(chars))
+		for _, c := range chars {
+			if c.Name != "" {
+				defaults = append(defaults, c.Name)
+			}
+		}
+	} else {
+		want := *pack.Class
+		var matches []string
+		var activeMatchName string
+		for _, c := range chars {
+			if c.Name == "" || c.Class != want {
+				continue
+			}
+			if active != "" && strings.EqualFold(c.Name, active) {
+				activeMatchName = c.Name
+			}
+			matches = append(matches, c.Name)
+		}
+		switch {
+		case activeMatchName != "":
+			defaults = []string{activeMatchName}
+		case len(matches) > 0:
+			defaults = matches
+		}
+	}
+
+	if len(defaults) == 0 {
 		return
 	}
 	for i := range pack.Triggers {
 		if len(pack.Triggers[i].Characters) == 0 {
-			pack.Triggers[i].Characters = append([]string(nil), names...)
+			pack.Triggers[i].Characters = append([]string(nil), defaults...)
 		}
 	}
 }
@@ -236,7 +301,7 @@ func (h *triggerHandler) importPack(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "pack_name is required")
 		return
 	}
-	applyDefaultCharacters(&pack, h.allCharacterNames())
+	h.applyDefaultCharacters(&pack)
 	if err := trigger.InstallPack(h.store, pack); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -286,7 +351,7 @@ func (h *triggerHandler) importGINA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "no triggers found in GINA document")
 		return
 	}
-	applyDefaultCharacters(&pack, h.allCharacterNames())
+	h.applyDefaultCharacters(&pack)
 	if err := trigger.InstallPack(h.store, pack); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -418,7 +483,7 @@ func (h *triggerHandler) installBuiltinPack(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "pack not found")
 		return
 	}
-	applyDefaultCharacters(found, h.allCharacterNames())
+	h.applyDefaultCharacters(found)
 	if err := trigger.InstallPack(h.store, *found); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

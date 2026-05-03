@@ -15,6 +15,7 @@ import "time"
 func EnchanterPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Enchanter",
+		Class:       ClassPtr(ClassEnchanter),
 		Description: "CC break + cast-failure alerts plus spell timers for the enchanter buff (VoG, KEI, IS, GRM, Speed of the Shissar/Brood), debuff (Tashanian, Cripple, Asphyxiate), root (Root, Fetter, Greater Fetter), mez (Mesmerize, Mesmerization, Dazzle, Enthrall, Entrance, Glamour of Kintaz, Rapture / Ancient: Eternal Rapture), charm (Charm, Beguile, Cajoling Whispers, Allure, Dictate, Boltran's Agacerie), and pacify (Lull, Calm, Soothe, Pacify, Wake of Tranquility) lines.",
 		Triggers: []Trigger{
 			// ── Crowd-control breaks ─────────────────────────────────────
@@ -455,6 +456,7 @@ func EnchanterPack() TriggerPack {
 func ClericPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Cleric",
+		Class:       ClassPtr(ClassCleric),
 		Description: "Spell timers for Aegolism / Blessing of Aegolism / Ancient: Gift of Aegolism, Naltron's Mark, Divine Intervention, Mark of Karn, and Divine Aura.",
 		Triggers: []Trigger{
 			// ── Raid buffs (timers) ──────────────────────────────────────
@@ -564,6 +566,7 @@ func ClericPack() TriggerPack {
 func DruidPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Druid",
+		Class:       ClassPtr(ClassDruid),
 		Description: "Spell timers for Protection of the Glades, Blessing of Replenishment, Legacy of Thorn, Hand of Ro, Winged Death, Ensnare, and Entrapping Roots.",
 		Triggers: []Trigger{
 			// ── Self / group buffs (timers) ──────────────────────────────
@@ -662,6 +665,7 @@ func DruidPack() TriggerPack {
 func ShamanPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Shaman",
+		Class:       ClassPtr(ClassShaman),
 		Description: "Spell timers for Turgur's Insects, Plague of Insects, Malo, Malosini, Torpor, Avatar, Focus of Spirit, and Regrowth of Dar Khura.",
 		Triggers: []Trigger{
 			// ── Slows (timers) ──────────────────────────────────────────
@@ -787,6 +791,7 @@ func ShamanPack() TriggerPack {
 func PaladinPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Paladin",
+		Class:       ClassPtr(ClassPaladin),
 		Description: "Lay on Hands alert plus spell timers for Immobilize, Holyforge Discipline, and Sanctification Discipline.",
 		Triggers: []Trigger{
 			// ── Emergency burst (overlay alert) ──────────────────────────
@@ -853,6 +858,7 @@ func PaladinPack() TriggerPack {
 func ShadowknightPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Shadowknight",
+		Class:       ClassPtr(ClassShadowknight),
 		Description: "Harm Touch and Feign Death alerts plus spell timers for Engulfing Darkness, Disease Cloud, Voice of Terris, Asystole, and Unholy Aura Discipline.",
 		Triggers: []Trigger{
 			// ── Emergency burst (overlay alert) ──────────────────────────
@@ -958,6 +964,7 @@ func ShadowknightPack() TriggerPack {
 func WarriorPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Warrior",
+		Class:       ClassPtr(ClassWarrior),
 		Description: "Spell timers for Defensive, Evasive, Aggressive, and Furious Disciplines.",
 		Triggers: []Trigger{
 			// ── Disciplines (timers) ────────────────────────────────────
@@ -1024,6 +1031,7 @@ func WarriorPack() TriggerPack {
 func MonkPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Monk",
+		Class:       ClassPtr(ClassMonk),
 		Description: "Feign Death alert plus spell timers for Stonestance, Innerflame, Thunderkick, and Ashenhand Disciplines.",
 		Triggers: []Trigger{
 			// ── Feign Death skill (overlay alert) ────────────────────────
@@ -1099,6 +1107,7 @@ func MonkPack() TriggerPack {
 func RoguePack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Rogue",
+		Class:       ClassPtr(ClassRogue),
 		Description: "Spell timers for Duelist, Deadeye, and Counterattack Disciplines.",
 		Triggers: []Trigger{
 			// ── Disciplines (timers) ────────────────────────────────────
@@ -1147,6 +1156,7 @@ func RoguePack() TriggerPack {
 func RangerPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Ranger",
+		Class:       ClassPtr(ClassRanger),
 		Description: "Spell timers for Trueshot Discipline, Weapon Shield Discipline, Call of Sky, Call of Fire, and Flame Lick.",
 		Triggers: []Trigger{
 			// ── Disciplines (timers) ────────────────────────────────────
@@ -1235,6 +1245,7 @@ func RangerPack() TriggerPack {
 func BardPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Bard",
+		Class:       ClassPtr(ClassBard),
 		Description: "Spell timers for Cantata of Replenishment, Warsong of Zek, Niv's Melody of Preservation, Psalm of Veeshan, Elemental Rhythms, Guardian Rhythms, Kelin's Lucid Lullaby / Lugubrious Lament, Solon's Bewitching Bravura, and Largo's Absonant Binding.",
 		Triggers: []Trigger{
 			// ── Group buff songs (timers, self-only land) ────────────────
@@ -1372,6 +1383,7 @@ func BardPack() TriggerPack {
 func MagicianPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Magician",
+		Class:       ClassPtr(ClassMagician),
 		Description: "Spell timers for Burnout IV (pet haste) and Shield of Lava (damage shield).",
 		Triggers: []Trigger{
 			// ── Pet haste (timer) ───────────────────────────────────────
@@ -1418,6 +1430,7 @@ func MagicianPack() TriggerPack {
 func NecromancerPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Necromancer",
+		Class:       ClassPtr(ClassNecromancer),
 		Description: "Spell timers for Arch Lich, Splurt, Ignite Blood, Pyrocruor, Bond of Death, and Harmshield.",
 		Triggers: []Trigger{
 			// ── Self buff (timer) ───────────────────────────────────────
@@ -1510,6 +1523,7 @@ func NecromancerPack() TriggerPack {
 func WizardPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Wizard",
+		Class:       ClassPtr(ClassWizard),
 		Description: "Harvest alert plus spell timers for Manaskin and Atol's Spectral Shackles.",
 		Triggers: []Trigger{
 			// ── Mana tool (overlay alert) ────────────────────────────────
@@ -1573,6 +1587,7 @@ func WizardPack() TriggerPack {
 func BeastlordPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Beastlord",
+		Class:       ClassPtr(ClassBeastlord),
 		Description: "Spell timers for Spiritual Purity, Spiritual Dominion, Paragon of Spirit, Ferocity, and Sha's Advantage.",
 		Triggers: []Trigger{
 			// ── Group mana/HP buffs (timers) ────────────────────────────
