@@ -6,11 +6,12 @@
  * Changes are saved to localStorage immediately on every edit via
  * saveTimerAlertConfig().
  */
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { X, Plus, Trash2, Volume2 } from 'lucide-react'
-import { getAvailableVoices } from '../services/audio'
 import { loadTimerAlertConfig, saveTimerAlertConfig } from '../services/timerAlertStore'
 import type { TimerAlertConfig, TimerAlertThreshold, TimerAlertType } from '../types/timerAlerts'
+import { useVoices } from '../hooks/useVoices'
+import NotificationActionEditor, { NotificationTypeSelect } from './NotificationActionEditor'
 
 function newThreshold(): TimerAlertThreshold {
   return {
@@ -69,14 +70,12 @@ function ThresholdRow({ threshold, voices, onChange, onRemove }: ThresholdRowPro
     outline: 'none',
   }
 
-  const selectStyle: React.CSSProperties = { ...inputStyle, appearance: 'none' as const }
-
   return (
     <div
       className="rounded p-3 space-y-2"
       style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
     >
-      {/* Row 1: threshold seconds + type */}
+      {/* Row 1: threshold seconds + type + remove */}
       <div className="flex items-center gap-2 flex-wrap">
         <label className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
           Alert at
@@ -91,17 +90,15 @@ function ThresholdRow({ threshold, voices, onChange, onRemove }: ThresholdRowPro
           s remaining
         </label>
 
-        <label className="flex items-center gap-1.5 text-xs ml-auto" style={{ color: 'var(--color-muted-foreground)' }}>
-          Type
-          <select
+        <div className="flex items-center gap-1.5 text-xs ml-auto" style={{ color: 'var(--color-muted-foreground)' }}>
+          <span>Type</span>
+          <NotificationTypeSelect
             value={threshold.type}
-            onChange={(e) => onChange({ ...threshold, type: e.target.value as TimerAlertType })}
-            style={{ ...selectStyle, paddingRight: 24 }}
-          >
-            <option value="text_to_speech">Text to Speech</option>
-            <option value="play_sound">Sound File</option>
-          </select>
-        </label>
+            onChange={(t) => onChange({ ...threshold, type: t as TimerAlertType })}
+            allowedTypes={['text_to_speech', 'play_sound']}
+            className="rounded px-2 py-0.5 text-xs outline-none"
+          />
+        </div>
 
         <button
           type="button"
@@ -121,75 +118,21 @@ function ThresholdRow({ threshold, voices, onChange, onRemove }: ThresholdRowPro
         </button>
       </div>
 
-      {/* Row 2: type-specific fields */}
-      {threshold.type === 'text_to_speech' && (
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            <span className="shrink-0" style={{ minWidth: 48 }}>Message</span>
-            <input
-              type="text"
-              value={threshold.tts_template}
-              onChange={(e) => onChange({ ...threshold, tts_template: e.target.value })}
-              placeholder="{spell} expiring soon"
-              style={{ ...inputStyle, flex: 1 }}
-            />
-          </label>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs flex-1 min-w-0" style={{ color: 'var(--color-muted-foreground)' }}>
-              <span className="shrink-0" style={{ minWidth: 48 }}>Voice</span>
-              <select
-                value={threshold.voice}
-                onChange={(e) => onChange({ ...threshold, voice: e.target.value })}
-                style={{ ...selectStyle, flex: 1, minWidth: 0, paddingRight: 24 }}
-              >
-                <option value="">System default</option>
-                {voices.map((v) => (
-                  <option key={v} value={v}>{v}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex items-center gap-1.5 text-xs shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-              Vol
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={threshold.tts_volume}
-                onChange={(e) => onChange({ ...threshold, tts_volume: Math.min(100, Math.max(0, parseInt(e.target.value) || 0)) })}
-                style={{ ...inputStyle, width: 48 }}
-              />
-              %
-            </label>
-          </div>
-        </div>
-      )}
-
-      {threshold.type === 'play_sound' && (
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            <span className="shrink-0" style={{ minWidth: 48 }}>File</span>
-            <input
-              type="text"
-              value={threshold.sound_path}
-              onChange={(e) => onChange({ ...threshold, sound_path: e.target.value })}
-              placeholder="C:\sounds\alert.wav"
-              style={{ ...inputStyle, flex: 1 }}
-            />
-          </label>
-          <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            <span className="shrink-0" style={{ minWidth: 48 }}>Volume</span>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={threshold.volume}
-              onChange={(e) => onChange({ ...threshold, volume: Math.min(100, Math.max(0, parseInt(e.target.value) || 0)) })}
-              style={{ ...inputStyle, width: 48 }}
-            />
-            %
-          </label>
-        </div>
-      )}
+      <NotificationActionEditor
+        type={threshold.type}
+        voices={voices}
+        ttsText={threshold.tts_template}
+        onTtsTextChange={(v) => onChange({ ...threshold, tts_template: v })}
+        ttsTextPlaceholder="{spell} expiring soon"
+        voice={threshold.voice}
+        onVoiceChange={(v) => onChange({ ...threshold, voice: v })}
+        ttsVolume={threshold.tts_volume}
+        onTtsVolumeChange={(v) => onChange({ ...threshold, tts_volume: v })}
+        soundPath={threshold.sound_path}
+        onSoundPathChange={(v) => onChange({ ...threshold, sound_path: v })}
+        soundVolume={threshold.volume}
+        onSoundVolumeChange={(v) => onChange({ ...threshold, volume: v })}
+      />
     </div>
   )
 }
@@ -202,18 +145,7 @@ interface Props {
 
 export default function TimerAlertsPanel({ inline = false, onClose }: Props): React.ReactElement {
   const [cfg, setCfg] = useState<TimerAlertConfig>(() => loadTimerAlertConfig())
-  const [voices, setVoices] = useState<string[]>([])
-
-  // Voices are populated asynchronously by the browser.
-  useEffect(() => {
-    function loadVoices() {
-      const list = window.speechSynthesis?.getVoices().map((v) => v.name).sort() ?? []
-      if (list.length > 0) setVoices(list)
-    }
-    loadVoices()
-    window.speechSynthesis?.addEventListener('voiceschanged', loadVoices)
-    return () => window.speechSynthesis?.removeEventListener('voiceschanged', loadVoices)
-  }, [])
+  const voices = useVoices()
 
   function update(next: TimerAlertConfig) {
     setCfg(next)

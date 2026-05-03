@@ -9,7 +9,7 @@
  *   - Choose TTS or play_sound
  *   - Configure the message/file and volume
  */
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { X, Volume2 } from 'lucide-react'
 import { loadEventAlertConfig, saveEventAlertConfig } from '../services/eventAlertStore'
 import type {
@@ -18,6 +18,8 @@ import type {
   EventAlertType,
   AlertableEventType,
 } from '../types/eventAlerts'
+import { useVoices } from '../hooks/useVoices'
+import NotificationActionEditor, { NotificationTypeSelect } from './NotificationActionEditor'
 
 // ── Metadata for each supported event type ─────────────────────────────────────
 
@@ -89,18 +91,6 @@ interface RuleRowProps {
 function RuleRow({ rule, voices, onChange }: RuleRowProps): React.ReactElement {
   const meta = EVENT_META[rule.event_type]
 
-  const inputStyle: React.CSSProperties = {
-    backgroundColor: 'var(--color-surface)',
-    border: '1px solid var(--color-border)',
-    color: 'var(--color-foreground)',
-    borderRadius: 4,
-    padding: '3px 7px',
-    fontSize: 12,
-    outline: 'none',
-  }
-
-  const selectStyle: React.CSSProperties = { ...inputStyle, appearance: 'none' as const }
-
   return (
     <div
       className="rounded p-3 space-y-2"
@@ -126,95 +116,35 @@ function RuleRow({ rule, voices, onChange }: RuleRowProps): React.ReactElement {
 
       {/* Alert type selector */}
       <div className="flex items-center gap-2">
-        <label className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-          Type
-          <select
-            value={rule.type}
-            onChange={(e) => onChange({ ...rule, type: e.target.value as EventAlertType })}
-            style={{ ...selectStyle, paddingRight: 24 }}
-          >
-            <option value="text_to_speech">Text to Speech</option>
-            <option value="play_sound">Sound File</option>
-          </select>
-        </label>
+        <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Type</span>
+        <NotificationTypeSelect
+          value={rule.type}
+          onChange={(t) => onChange({ ...rule, type: t as EventAlertType })}
+          allowedTypes={['text_to_speech', 'play_sound']}
+          className="rounded px-2 py-0.5 text-xs outline-none"
+        />
       </div>
 
-      {/* TTS fields */}
-      {rule.type === 'text_to_speech' && (
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            <span className="shrink-0" style={{ minWidth: 48 }}>Message</span>
-            <input
-              type="text"
-              value={rule.tts_template}
-              onChange={(e) => onChange({ ...rule, tts_template: e.target.value })}
-              placeholder={`e.g. ${meta.placeholders}`}
-              style={{ ...inputStyle, flex: 1 }}
-            />
-          </label>
-          <p style={{ fontSize: 10, color: 'var(--color-muted)', margin: 0 }}>
-            Use <code style={{ color: 'var(--color-foreground)' }}>{meta.placeholders}</code> to insert context.
-          </p>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs flex-1 min-w-0" style={{ color: 'var(--color-muted-foreground)' }}>
-              <span className="shrink-0" style={{ minWidth: 48 }}>Voice</span>
-              <select
-                value={rule.voice}
-                onChange={(e) => onChange({ ...rule, voice: e.target.value })}
-                style={{ ...selectStyle, flex: 1, minWidth: 0, paddingRight: 24 }}
-              >
-                <option value="">System default</option>
-                {voices.map((v) => (
-                  <option key={v} value={v}>{v}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex items-center gap-1.5 text-xs shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-              Vol
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={rule.tts_volume}
-                onChange={(e) =>
-                  onChange({ ...rule, tts_volume: Math.min(100, Math.max(0, parseInt(e.target.value) || 0)) })
-                }
-                style={{ ...inputStyle, width: 48 }}
-              />
-              %
-            </label>
-          </div>
-        </div>
-      )}
+      <NotificationActionEditor
+        type={rule.type}
+        voices={voices}
+        ttsText={rule.tts_template}
+        onTtsTextChange={(v) => onChange({ ...rule, tts_template: v })}
+        ttsTextPlaceholder={`e.g. ${meta.placeholders}`}
+        voice={rule.voice}
+        onVoiceChange={(v) => onChange({ ...rule, voice: v })}
+        ttsVolume={rule.tts_volume}
+        onTtsVolumeChange={(v) => onChange({ ...rule, tts_volume: v })}
+        soundPath={rule.sound_path}
+        onSoundPathChange={(v) => onChange({ ...rule, sound_path: v })}
+        soundVolume={rule.volume}
+        onSoundVolumeChange={(v) => onChange({ ...rule, volume: v })}
+      />
 
-      {/* Sound file fields */}
-      {rule.type === 'play_sound' && (
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            <span className="shrink-0" style={{ minWidth: 48 }}>File</span>
-            <input
-              type="text"
-              value={rule.sound_path}
-              onChange={(e) => onChange({ ...rule, sound_path: e.target.value })}
-              placeholder="C:\sounds\alert.wav"
-              style={{ ...inputStyle, flex: 1 }}
-            />
-          </label>
-          <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            <span className="shrink-0" style={{ minWidth: 48 }}>Volume</span>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={rule.volume}
-              onChange={(e) =>
-                onChange({ ...rule, volume: Math.min(100, Math.max(0, parseInt(e.target.value) || 0)) })
-              }
-              style={{ ...inputStyle, width: 48 }}
-            />
-            %
-          </label>
-        </div>
+      {rule.type === 'text_to_speech' && (
+        <p style={{ fontSize: 10, color: 'var(--color-muted)', margin: 0 }}>
+          Use <code style={{ color: 'var(--color-foreground)' }}>{meta.placeholders}</code> to insert context.
+        </p>
       )}
     </div>
   )
@@ -230,18 +160,7 @@ interface Props {
 
 export default function EventAlertsPanel({ inline = false, onClose }: Props): React.ReactElement {
   const [cfg, setCfg] = useState<EventAlertConfig>(() => loadEventAlertConfig())
-  const [voices, setVoices] = useState<string[]>([])
-
-  // Voices load asynchronously.
-  useEffect(() => {
-    function loadVoices() {
-      const list = window.speechSynthesis?.getVoices().map((v) => v.name).sort() ?? []
-      if (list.length > 0) setVoices(list)
-    }
-    loadVoices()
-    window.speechSynthesis?.addEventListener('voiceschanged', loadVoices)
-    return () => window.speechSynthesis?.removeEventListener('voiceschanged', loadVoices)
-  }, [])
+  const voices = useVoices()
 
   function update(next: EventAlertConfig) {
     setCfg(next)
