@@ -80,3 +80,34 @@ export function getAvailableVoices(): string[] {
     .map((v) => v.name)
     .sort()
 }
+
+/**
+ * Play a local sound file once, bypassing the dedup window. Intended for
+ * the "Test" buttons in trigger / alert configuration UIs, where the user
+ * may want to re-trigger the same sound rapidly to compare volumes.
+ */
+export function playSoundForTest(filePath: string, volume = 1.0): void {
+  if (!filePath) return
+  const normalised = filePath.replace(/\\/g, '/')
+  const url = normalised.startsWith('file://') ? normalised : `file:///${normalised}`
+  const audio = new Audio(url)
+  audio.volume = Math.min(1, Math.max(0, volume))
+  audio.play().catch(() => {})
+}
+
+/**
+ * Speak text once via Web Speech, bypassing the dedup window. Intended for
+ * the "Test" buttons in TTS configuration UIs.
+ */
+export function speakTextForTest(text: string, voice = '', volume = 1.0): void {
+  if (!text || !window.speechSynthesis) return
+  window.speechSynthesis.cancel()
+  const utterance = new SpeechSynthesisUtterance(text)
+  utterance.volume = Math.min(1, Math.max(0, volume))
+  if (voice) {
+    const voices = window.speechSynthesis.getVoices()
+    const match = voices.find((v) => v.name === voice)
+    if (match) utterance.voice = match
+  }
+  window.speechSynthesis.speak(utterance)
+}

@@ -14,7 +14,8 @@
  * this initial extraction and wired up in subsequent tasks.
  */
 import React from 'react'
-import { Volume2, FolderOpen } from 'lucide-react'
+import { Volume2, FolderOpen, Play } from 'lucide-react'
+import { playSoundForTest, speakTextForTest } from '../services/audio'
 
 export type NotificationActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
 
@@ -114,10 +115,15 @@ export function PlaySoundFields({
   onVolumeChange,
 }: PlaySoundFieldsProps): React.ReactElement {
   const canBrowse = typeof window !== 'undefined' && !!window.electron?.dialog?.selectSoundFile
+  const canTest = soundPath.trim().length > 0
 
   async function handleBrowse() {
     const picked = await window.electron?.dialog?.selectSoundFile()
     if (picked) onSoundPathChange(picked)
+  }
+
+  function handleTest() {
+    playSoundForTest(soundPath, volume / 100)
   }
 
   return (
@@ -147,6 +153,21 @@ export function PlaySoundFields({
             <FolderOpen size={12} />
           </button>
         )}
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={!canTest}
+          className="shrink-0 flex items-center justify-center rounded px-2 py-1 text-xs"
+          style={{
+            backgroundColor: canTest ? 'var(--color-primary)' : 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            color: canTest ? 'var(--color-background)' : 'var(--color-muted)',
+            cursor: canTest ? 'pointer' : 'not-allowed',
+          }}
+          title={canTest ? 'Play sound at the configured volume' : 'Enter a sound file path to test'}
+        >
+          <Play size={12} />
+        </button>
       </div>
       <div className="flex items-center gap-1.5">
         <Volume2 size={12} style={{ color: 'var(--color-muted-foreground)' }} />
@@ -191,16 +212,42 @@ export function TextToSpeechFields({
   volume,
   onVolumeChange,
 }: TextToSpeechFieldsProps): React.ReactElement {
+  // Strip simple {placeholder} tokens for the test playback so the user
+  // hears something like "Mez broke" instead of literal "{spell} broke".
+  const testText = text.replace(/\{[^}]+\}/g, '').replace(/\s+/g, ' ').trim()
+  const canTest = testText.length > 0
+
+  function handleTest() {
+    speakTextForTest(testText, voice, volume / 100)
+  }
+
   return (
     <>
-      <input
-        type="text"
-        placeholder={textPlaceholder}
-        value={text}
-        onChange={(e) => onTextChange(e.target.value)}
-        className="w-full rounded px-2 py-1 text-xs outline-none font-mono"
-        style={inputStyle}
-      />
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text"
+          placeholder={textPlaceholder}
+          value={text}
+          onChange={(e) => onTextChange(e.target.value)}
+          className="flex-1 min-w-0 rounded px-2 py-1 text-xs outline-none font-mono"
+          style={inputStyle}
+        />
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={!canTest}
+          className="shrink-0 flex items-center justify-center rounded px-2 py-1 text-xs"
+          style={{
+            backgroundColor: canTest ? 'var(--color-primary)' : 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            color: canTest ? 'var(--color-background)' : 'var(--color-muted)',
+            cursor: canTest ? 'pointer' : 'not-allowed',
+          }}
+          title={canTest ? 'Speak text with the configured voice and volume' : 'Enter text to test'}
+        >
+          <Play size={12} />
+        </button>
+      </div>
       <div className="flex gap-2 min-w-0">
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
