@@ -3,15 +3,19 @@ package trigger
 import "time"
 
 // EnchanterPack returns the pre-built enchanter trigger pack: critical
-// crowd-control break alerts (mez/charm/root) and casting-failure alerts
-// (resist, immunities, interrupt). Buff and debuff timers — self-buffs cast
-// on the group, debuffs cast on enemies — are tracked per-target by the
-// spell-landed pipeline (with item/AA duration extensions) and don't need
-// a fade alert; the user reads them off the buff/detrim overlays.
+// crowd-control break alerts (mez/charm/root), casting-failure alerts
+// (resist, immunities, interrupt), and timer-creating triggers for the
+// standard enchanter buff/debuff/mez lines.
+//
+// The timer triggers run alongside the spell-landed pipeline in
+// internal/spelltimer; the engine's same-name dedup window (3s) keeps
+// the two from creating duplicate entries when both fire for the same
+// cast. Triggers carry SpellID so the engine can apply item/AA duration
+// focuses just like the spell-landed path.
 func EnchanterPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Enchanter",
-		Description: "Mez/charm/root break alerts and casting-failure alerts. Buff and debuff durations are tracked per-target on the spell timer overlays automatically — no fade alerts needed.",
+		Description: "CC break + cast-failure alerts plus spell timers for the enchanter buff (VoG, KEI, IS, GRM, Speed of the Shissar/Brood), debuff (Tashanian, Cripple, Asphyxiate), and mez (Glamour of Kintaz) lines.",
 		Triggers: []Trigger{
 			// ── Crowd-control breaks ─────────────────────────────────────
 			{
@@ -78,6 +82,117 @@ func EnchanterPack() TriggerPack {
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "INTERRUPTED!", DurationSecs: 3, Color: "#ffcc00"},
 				},
+			},
+
+			// ── Group buffs (timers) ─────────────────────────────────────
+			{
+				Name:              "Visions of Grandeur",
+				Enabled:           true,
+				Pattern:           `^(?:You experience visions of grandeur\.|[A-Z][a-zA-Z']{2,14} experiences visions of grandeur\.)$`,
+				WornOffPattern:    `^Your visions fade\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 2520,
+				SpellID:           1710,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Koadic's Endless Intellect",
+				Enabled:           true,
+				Pattern:           `^(?:Your mind expands beyond the bounds of space and time\.|[A-Z][a-zA-Z']{2,14}'s mind expands beyond the bounds of space and time\.)$`,
+				WornOffPattern:    `^Your mind returns to normal\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 9000,
+				SpellID:           2570,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Intellectual Superiority",
+				Enabled:           true,
+				Pattern:           `^(?:Your mind sharpens\.|[A-Z][a-zA-Z']{2,14}'s mind sharpens\.)$`,
+				WornOffPattern:    `^The intellectual advancement fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 1620,
+				SpellID:           2562,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Group Resist Magic",
+				Enabled:           true,
+				Pattern:           `^(?:You feel protected from magic\.|[A-Z][a-zA-Z']{2,14} is resistant to magic\.)$`,
+				WornOffPattern:    `^Your protection fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 2160,
+				SpellID:           72,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Speed of the Shissar/Brood",
+				Enabled:           true,
+				Pattern:           `^(?:Your body pulses with the spirit of the Shissar\.|[A-Z][a-zA-Z']{2,14}'s body pulses with the spirit of the Shissar\.)$`,
+				WornOffPattern:    `^Your body slows\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 1800,
+				SpellID:           1939,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+
+			// ── Debuffs (timers) ─────────────────────────────────────────
+			{
+				Name:              "Tashanian",
+				Enabled:           true,
+				Pattern:           `^(?:You hear the barking of Tashania\.|[A-Z][a-zA-Z']{2,14} glances nervously about\.)$`,
+				WornOffPattern:    `^The barking fades\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 720,
+				SpellID:           1702,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Cripple",
+				Enabled:           true,
+				Pattern:           `^(?:You have been crippled\.|[A-Z][a-zA-Z']{2,14} has been crippled\.)$`,
+				WornOffPattern:    `^You feel your strength return\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 810,
+				SpellID:           1592,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Asphyxiate",
+				Enabled:           true,
+				Pattern:           `^(?:You feel a shortness of breath\.|[A-Z][a-zA-Z']{2,14} begins to choke\.)$`,
+				WornOffPattern:    `^You can breathe again\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 120,
+				SpellID:           1703,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+
+			// ── Mez (timers) ─────────────────────────────────────────────
+			// Only mezzes whose cast_on_other text is unique to a single
+			// spell are added here — the shared "<name> has been mesmerized."
+			// line (Mesmerize / Mesmerization / Dazzle) has three different
+			// base durations and would produce a wrong-duration timer if
+			// matched generically. The spell-landed pipeline disambiguates
+			// those via the most recent cast and is the reliable path.
+			{
+				Name:              "Glamour of Kintaz",
+				Enabled:           true,
+				Pattern:           `^(?:You are mesmerized by the Glamour of Kintaz\.|[A-Z][a-zA-Z']{2,14} has been mesmerized by the Glamour of Kintaz\.)$`,
+				WornOffPattern:    `^You are no longer mesmerized\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 54,
+				SpellID:           1691,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
 			},
 		},
 	}
