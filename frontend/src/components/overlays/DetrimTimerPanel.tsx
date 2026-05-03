@@ -11,6 +11,7 @@ import { buildSpellTriggerPrefill } from '../../lib/spellHelpers'
 import type { ActiveTimer, TimerCategory, TimerState } from '../../types/timer'
 import type { LogTailerStatus } from '../../types/logEvent'
 import type { Spell } from '../../types/spell'
+import { SpellIcon } from '../Icon'
 
 interface DetrimTimerPanelProps {
   defaultX?: number
@@ -72,6 +73,7 @@ function DetrimRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: 
       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, backgroundColor: catColor, opacity: 0.6 }} />
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, paddingLeft: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+          <SpellIcon id={timer.icon} name={timer.spell_name} size={18} />
           <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: catColor, flexShrink: 0, opacity: 0.85 }}>
             {CATEGORY_LABELS[timer.category]}
           </span>

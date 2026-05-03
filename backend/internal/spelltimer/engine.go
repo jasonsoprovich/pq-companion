@@ -412,6 +412,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		ID:              key,
 		SpellName:       spellName,
 		SpellID:         spell.ID,
+		Icon:            spell.NewIcon,
 		TargetName:      target,
 		Category:        categorize(spell),
 		CastAt:          landedAt,

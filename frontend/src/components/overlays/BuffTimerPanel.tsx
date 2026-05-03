@@ -11,6 +11,7 @@ import { buildSpellTriggerPrefill } from '../../lib/spellHelpers'
 import type { ActiveTimer, TimerState } from '../../types/timer'
 import type { LogTailerStatus } from '../../types/logEvent'
 import type { Spell } from '../../types/spell'
+import { SpellIcon } from '../Icon'
 
 interface BuffTimerPanelProps {
   defaultX?: number
@@ -54,12 +55,15 @@ function BuffRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: st
         }}
       />
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 12, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
-          {timer.spell_name}
-          {onTarget && (
-            <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{onTarget}</span>
-          )}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
+          <SpellIcon id={timer.icon} name={timer.spell_name} size={18} />
+          <span style={{ fontSize: 12, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
+            {timer.spell_name}
+            {onTarget && (
+              <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{onTarget}</span>
+            )}
+          </span>
+        </div>
         <span style={{ fontSize: 11, color: urgent ? '#f87171' : color, fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: urgent ? 700 : 400 }}>
           {fmtRemaining(timer.remaining_seconds)}
         </span>

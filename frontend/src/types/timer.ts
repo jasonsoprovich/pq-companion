@@ -6,6 +6,7 @@ export interface ActiveTimer {
   id: string
   spell_name: string
   spell_id: number
+  icon?: number
   /**
    * Recipient of the spell. The active player's character name for
    * self-cast buffs and "Your X spell has worn off." entries; the captured

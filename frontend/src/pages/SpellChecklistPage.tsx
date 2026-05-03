@@ -31,6 +31,7 @@ import {
   targetLabel,
   zoneTypeLabel,
 } from '../lib/spellHelpers'
+import { SpellIcon } from '../components/Icon'
 
 // ── Class definitions ──────────────────────────────────────────────────────────
 
@@ -146,25 +147,28 @@ function SpellDetailModal({ spell, onClose, onOpenInExplorer }: SpellDetailModal
           className="shrink-0 flex items-start justify-between px-5 pt-4 pb-3"
           style={{ borderBottom: '1px solid var(--color-border)' }}
         >
-          <div>
-            <h2 className="text-lg font-bold leading-tight" style={{ color: 'var(--color-primary)' }}>
-              {spell.name}
-            </h2>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              {skillLabel(spell.skill) && (
-                <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-                  {skillLabel(spell.skill)}
-                </span>
-              )}
-              {flags.map((f) => (
-                <span
-                  key={f}
-                  className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                  style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-primary)', border: '1px solid var(--color-border)' }}
-                >
-                  {f}
-                </span>
-              ))}
+          <div className="flex items-start gap-3">
+            <SpellIcon id={spell.new_icon} name={spell.name} size={36} />
+            <div>
+              <h2 className="text-lg font-bold leading-tight" style={{ color: 'var(--color-primary)' }}>
+                {spell.name}
+              </h2>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                {skillLabel(spell.skill) && (
+                  <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+                    {skillLabel(spell.skill)}
+                  </span>
+                )}
+                {flags.map((f) => (
+                  <span
+                    key={f}
+                    className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                    style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-primary)', border: '1px solid var(--color-border)' }}
+                  >
+                    {f}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 ml-3">
@@ -295,6 +299,13 @@ function SpellRow({ spell, classIndex, known, onSelect }: SpellRowProps): React.
           />
         )}
       </div>
+
+      <SpellIcon
+        id={spell.new_icon}
+        name={spell.name}
+        size={22}
+        className={known ? '' : 'opacity-60'}
+      />
 
       {/* Spell name */}
       <div className="flex-1 min-w-0">

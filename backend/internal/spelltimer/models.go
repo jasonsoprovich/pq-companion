@@ -36,6 +36,10 @@ type ActiveTimer struct {
 	ID        string `json:"id"`
 	SpellName string `json:"spell_name"`
 	SpellID   int    `json:"spell_id"`
+	// Icon is spells_new.new_icon for the source spell, used by the UI to
+	// render a gembook-style icon next to each timer bar. 0 for
+	// trigger-driven timers that don't have a resolved spell.
+	Icon int `json:"icon,omitempty"`
 
 	// TargetName is the recipient of the spell. For self-cast / buffs on
 	// the active player it's the player's character name (the engine
