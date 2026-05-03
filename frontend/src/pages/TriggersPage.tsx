@@ -793,7 +793,7 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
     if (
       installedPacks.has(packName) &&
       !window.confirm(
-        `"${packName}" is already installed. Reinstalling will replace any customizations you made to its triggers. Continue?`,
+        `"${packName}" is already active. Re-activating will replace any customizations you made to its triggers. Continue?`,
       )
     ) {
       return
@@ -813,7 +813,7 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
   const handleRemove = (packName: string) => {
     if (
       !window.confirm(
-        `Remove the "${packName}" pack? This deletes all triggers belonging to this pack, including any customizations.`,
+        `Deactivate the "${packName}" pack? This deletes all triggers belonging to this pack, including any customizations.`,
       )
     ) {
       return
@@ -958,7 +958,7 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
         {installed && (
           <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-success)' }}>
             <CheckCircle2 size={13} />
-            "{installed}" installed successfully.
+            "{installed}" activated successfully.
           </div>
         )}
         {error && (
@@ -1018,7 +1018,7 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
                             }}
                           >
                             <CheckCircle2 size={10} />
-                            Installed
+                            Active
                           </span>
                         )}
                       </div>
@@ -1063,7 +1063,7 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
                     ) : (
                       <Download size={11} />
                     )}
-                    {isInstalled ? 'Remove' : 'Install'}
+                    {isInstalled ? 'Deactivate' : 'Activate'}
                   </span>
                 </button>
 
@@ -1319,7 +1319,7 @@ export default function TriggersPage(): React.ReactElement {
                         border: '1px solid var(--color-border)',
                       }}
                     >
-                      <Package size={11} /> Install a pack
+                      <Package size={11} /> Activate a pack
                     </button>
                   </div>
                 </div>
