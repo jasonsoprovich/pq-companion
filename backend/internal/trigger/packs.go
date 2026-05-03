@@ -1139,6 +1139,83 @@ func RoguePack() TriggerPack {
 	}
 }
 
+// RangerPack returns the pre-built ranger trigger pack: timer-creating
+// triggers for Trueshot and Weapon Shield disciplines, the Call of
+// Sky / Call of Fire elemental weapon-proc buffs, and the Flame Lick
+// aggro tool. Ensnare and Entrapping Roots are intentionally omitted —
+// they're already covered by the Druid pack with the same SpellIDs.
+func RangerPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Ranger",
+		Description: "Spell timers for Trueshot Discipline, Weapon Shield Discipline, Call of Sky, Call of Fire, and Flame Lick.",
+		Triggers: []Trigger{
+			// ── Disciplines (timers) ────────────────────────────────────
+			{
+				Name:              "Trueshot Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your bow crackles with natural energy\.|[A-Z][a-zA-Z']{2,14}'s bow crackles with natural energy\.)$`,
+				WornOffPattern:    `^The natural energy fades from your bow\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 120,
+				SpellID:           4506,
+				PackName:          "Ranger",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Weapon Shield Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your weapons begin to spin\.|[A-Z][a-zA-Z']{2,14}'s weapons begin to spin\.)$`,
+				WornOffPattern:    `^Your weapons slow down\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 24,
+				SpellID:           4519,
+				PackName:          "Ranger",
+				Actions:           []Action{},
+			},
+
+			// ── Elemental weapon-proc buffs (timers) ────────────────────
+			// Call of Sky and Call of Fire share "'s weapons gleam." as
+			// cast_on_other, so each is keyed on its unique cast_on_you
+			// to disambiguate when the caster sees their own cast.
+			{
+				Name:              "Call of Sky",
+				Enabled:           true,
+				Pattern:           `^The Call of Sky fills your weapons with power\.$`,
+				WornOffPattern:    `^The Call of Sky leaves\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 360,
+				SpellID:           1461,
+				PackName:          "Ranger",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Call of Fire",
+				Enabled:           true,
+				Pattern:           `^The Call of Fire fills your weapons with power\.$`,
+				WornOffPattern:    `^The Call of Fire leaves\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 360,
+				SpellID:           1463,
+				PackName:          "Ranger",
+				Actions:           []Action{},
+			},
+
+			// ── Aggro tool (timer) ───────────────────────────────────────
+			{
+				Name:              "Flame Lick",
+				Enabled:           true,
+				Pattern:           `^(?:You are surrounded by flickering flames\.|[A-Z][a-zA-Z']{2,14} is surrounded by flickering flames\.)$`,
+				WornOffPattern:    `^The flames are extinguished\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 48,
+				SpellID:           239,
+				PackName:          "Ranger",
+				Actions:           []Action{},
+			},
+		},
+	}
+}
+
 // GroupAwarenessPack returns the pre-built group awareness trigger pack with
 // alerts for incoming tells, player deaths, and group member deaths.
 func GroupAwarenessPack() TriggerPack {
@@ -1189,6 +1266,7 @@ func AllPacks() []TriggerPack {
 		WarriorPack(),
 		MonkPack(),
 		RoguePack(),
+		RangerPack(),
 		GroupAwarenessPack(),
 	}
 }
