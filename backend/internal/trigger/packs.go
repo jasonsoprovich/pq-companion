@@ -15,7 +15,7 @@ import "time"
 func EnchanterPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Enchanter",
-		Description: "CC break + cast-failure alerts plus spell timers for the enchanter buff (VoG, KEI, IS, GRM, Speed of the Shissar/Brood), debuff (Tashanian, Cripple, Asphyxiate), root (Root, Fetter, Greater Fetter), mez (Mesmerize, Mesmerization, Dazzle, Enthrall, Entrance, Glamour of Kintaz, Rapture / Ancient: Eternal Rapture), charm (Charm, Beguile, Cajoling Whispers, Allure, Dictate), and pacify (Lull, Calm, Soothe, Pacify, Wake of Tranquility) lines.",
+		Description: "CC break + cast-failure alerts plus spell timers for the enchanter buff (VoG, KEI, IS, GRM, Speed of the Shissar/Brood), debuff (Tashanian, Cripple, Asphyxiate), root (Root, Fetter, Greater Fetter), mez (Mesmerize, Mesmerization, Dazzle, Enthrall, Entrance, Glamour of Kintaz, Rapture / Ancient: Eternal Rapture), charm (Charm, Beguile, Cajoling Whispers, Allure, Dictate, Boltran's Agacerie), and pacify (Lull, Calm, Soothe, Pacify, Wake of Tranquility) lines.",
 		Triggers: []Trigger{
 			// ── Crowd-control breaks ─────────────────────────────────────
 			{
@@ -364,6 +364,17 @@ func EnchanterPack() TriggerPack {
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 48,
 				SpellID:           1707,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Boltran's Agacerie",
+				Enabled:           true,
+				Pattern:           `^You begin casting Boltran's Agacerie\.$`,
+				WornOffPattern:    `^(?:Your Boltran's Agacerie spell has worn off\.|Your target resisted the Boltran's Agacerie spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 360,
+				SpellID:           1706,
 				PackName:          "Enchanter",
 				Actions:           []Action{},
 			},
