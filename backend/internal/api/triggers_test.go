@@ -11,7 +11,7 @@ import (
 func newPack(class *int, count int) trigger.TriggerPack {
 	triggers := make([]trigger.Trigger, count)
 	for i := range triggers {
-		triggers[i] = trigger.Trigger{Name: "t", Pattern: "x"}
+		triggers[i] = trigger.Trigger{Name: "t", Pattern: "x", Enabled: true}
 	}
 	return trigger.TriggerPack{PackName: "Test", Class: class, Triggers: triggers}
 }
@@ -82,15 +82,38 @@ func TestDefaultPackCharacters_ClassPackFallsBackToOtherMatchingChars(t *testing
 	}
 }
 
-func TestDefaultPackCharacters_NoMatchingClassLeavesEmpty(t *testing.T) {
+func TestDefaultPackCharacters_NoMatchingClassDisablesTriggers(t *testing.T) {
 	chars := []character.Character{
 		{Name: "Wizzy", Class: trigger.ClassWizard, Level: 60},
 	}
-	pack := newPack(trigger.ClassPtr(trigger.ClassBeastlord), 1)
+	pack := newPack(trigger.ClassPtr(trigger.ClassBeastlord), 2)
 	defaultPackCharacters(&pack, chars, "Wizzy")
 
-	if len(pack.Triggers[0].Characters) != 0 {
-		t.Errorf("expected empty Characters when no class match, got %v", pack.Triggers[0].Characters)
+	for i, tr := range pack.Triggers {
+		if len(tr.Characters) != 0 {
+			t.Errorf("trigger[%d] expected empty Characters when no class match, got %v", i, tr.Characters)
+		}
+		if tr.Enabled {
+			t.Errorf("trigger[%d] expected Enabled=false when no class match, got true", i)
+		}
+	}
+}
+
+func TestDefaultPackCharacters_EmptyStoreDisablesClassPack(t *testing.T) {
+	pack := newPack(trigger.ClassPtr(trigger.ClassWizard), 1)
+	defaultPackCharacters(&pack, nil, "")
+
+	if pack.Triggers[0].Enabled {
+		t.Errorf("expected Enabled=false when no characters exist at all")
+	}
+}
+
+func TestDefaultPackCharacters_EmptyStoreLeavesClassAgnosticEnabled(t *testing.T) {
+	pack := newPack(nil, 1)
+	defaultPackCharacters(&pack, nil, "")
+
+	if !pack.Triggers[0].Enabled {
+		t.Errorf("class-agnostic triggers should stay enabled even with empty store")
 	}
 }
 

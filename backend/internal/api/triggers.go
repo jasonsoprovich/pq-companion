@@ -242,16 +242,17 @@ func (h *triggerHandler) applyDefaultCharacters(pack *trigger.TriggerPack) {
 //   - Class-specific pack: default only to characters whose class matches the
 //     pack. If the active character matches, prefer it alone (most likely the
 //     character the user is importing the pack for); otherwise use every other
-//     stored character whose class matches; otherwise leave Characters empty
-//     (legacy "applies to any" — rare, the user has no character of that
-//     class yet and can manually opt-in via the per-trigger character chips).
+//     stored character whose class matches; otherwise (no character of this
+//     class exists) leave Characters empty AND disable the triggers — the
+//     user can later enable them and pick characters via the per-trigger chips.
+//
+// Triggers that already specify Characters are left untouched (Enabled is
+// also untouched in that case — the pack author opted in explicitly).
 func defaultPackCharacters(pack *trigger.TriggerPack, chars []character.Character, active string) {
-	if len(chars) == 0 {
-		return
-	}
+	classAgnostic := pack.Class == nil
 
 	var defaults []string
-	if pack.Class == nil {
+	if classAgnostic {
 		defaults = make([]string, 0, len(chars))
 		for _, c := range chars {
 			if c.Name != "" {
@@ -279,12 +280,19 @@ func defaultPackCharacters(pack *trigger.TriggerPack, chars []character.Characte
 		}
 	}
 
-	if len(defaults) == 0 {
-		return
-	}
 	for i := range pack.Triggers {
-		if len(pack.Triggers[i].Characters) == 0 {
+		if len(pack.Triggers[i].Characters) > 0 {
+			continue // pack author scoped this trigger explicitly — respect it
+		}
+		if len(defaults) > 0 {
 			pack.Triggers[i].Characters = append([]string(nil), defaults...)
+			continue
+		}
+		// Class-specific pack with no character of the matching class.
+		// Leave Characters empty and disable the trigger so it doesn't fire
+		// for "any character" via the engine's legacy fallback.
+		if !classAgnostic {
+			pack.Triggers[i].Enabled = false
 		}
 	}
 }
