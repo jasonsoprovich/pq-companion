@@ -554,6 +554,104 @@ func ClericPack() TriggerPack {
 	}
 }
 
+// DruidPack returns the pre-built druid trigger pack: timer-creating
+// triggers for the standard druid self/group buff (Protection of the
+// Glades, Blessing of Replenishment, Legacy of Thorn), target debuff
+// (Hand of Ro), DoT (Winged Death), and snare/root (Ensnare,
+// Entrapping Roots) lines. Generic resist/interrupt overlays are
+// intentionally omitted — they live in the Enchanter pack and would
+// duplicate if both are installed.
+func DruidPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Druid",
+		Description: "Spell timers for Protection of the Glades, Blessing of Replenishment, Legacy of Thorn, Hand of Ro, Winged Death, Ensnare, and Entrapping Roots.",
+		Triggers: []Trigger{
+			// ── Self / group buffs (timers) ──────────────────────────────
+			{
+				Name:              "Protection of the Glades",
+				Enabled:           true,
+				Pattern:           `^(?:Your skin shimmers\.|[A-Z][a-zA-Z']{2,14}'s skin shimmers\.)$`,
+				WornOffPattern:    `^Your skin returns to normal\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 6000,
+				SpellID:           1442,
+				PackName:          "Druid",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Blessing of Replenishment",
+				Enabled:           true,
+				Pattern:           `^(?:You begin to regenerate\.|[A-Z][a-zA-Z']{2,14} begins to regenerate\.)$`,
+				WornOffPattern:    `^You have stopped regenerating\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 360,
+				SpellID:           3441,
+				PackName:          "Druid",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Legacy of Thorn",
+				Enabled:           true,
+				Pattern:           `^(?:You are surrounded by a thorny barrier\.|[A-Z][a-zA-Z']{2,14} is surrounded by a thorny barrier\.)$`,
+				WornOffPattern:    `^The brambles fall away\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 390,
+				SpellID:           1561,
+				PackName:          "Druid",
+				Actions:           []Action{},
+			},
+
+			// ── Target debuff / DoT (timers) ─────────────────────────────
+			{
+				Name:              "Hand of Ro",
+				Enabled:           true,
+				Pattern:           `^(?:You are immolated by blazing flames\.|[A-Z][a-zA-Z']{2,14} is immolated by blazing flames\.)$`,
+				WornOffPattern:    `^The flames die down\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 180,
+				SpellID:           3435,
+				PackName:          "Druid",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Winged Death",
+				Enabled:           true,
+				Pattern:           `^(?:You feel the pain of a million stings\.|[A-Z][a-zA-Z']{2,14} is engulfed by a swarm of deadly insects\.)$`,
+				WornOffPattern:    `^The swarm departs\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 54,
+				SpellID:           1601,
+				PackName:          "Druid",
+				Actions:           []Action{},
+			},
+
+			// ── Snare / root (timers) ────────────────────────────────────
+			{
+				Name:              "Ensnare",
+				Enabled:           true,
+				Pattern:           `^(?:You are ensnared\.|[A-Z][a-zA-Z']{2,14} has been ensnared\.)$`,
+				WornOffPattern:    `^You are no longer ensnared\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 720,
+				SpellID:           512,
+				PackName:          "Druid",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Entrapping Roots",
+				Enabled:           true,
+				Pattern:           `^(?:Your feet become entwined\.|[A-Z][a-zA-Z']{2,14} is entrapped by roots\.)$`,
+				WornOffPattern:    `^(?:The roots fall from your feet\.|Your Entrapping Roots spell has worn off\.|Your target resisted the Entrapping Roots spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 540,
+				SpellID:           1608,
+				PackName:          "Druid",
+				Actions:           []Action{},
+			},
+		},
+	}
+}
+
 // GroupAwarenessPack returns the pre-built group awareness trigger pack with
 // alerts for incoming tells, player deaths, and group member deaths.
 func GroupAwarenessPack() TriggerPack {
@@ -597,6 +695,7 @@ func AllPacks() []TriggerPack {
 	return []TriggerPack{
 		EnchanterPack(),
 		ClericPack(),
+		DruidPack(),
 		GroupAwarenessPack(),
 	}
 }
