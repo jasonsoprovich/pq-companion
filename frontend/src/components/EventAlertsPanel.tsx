@@ -226,6 +226,8 @@ export default function EventAlertsPanel({ inline = false, onClose }: Props): Re
           display: 'flex',
           flexDirection: 'column',
           gap: 10,
+          opacity: cfg.enabled ? 1 : 0.55,
+          transition: 'opacity 0.15s',
         }}
       >
         {displayRules.map((rule, i) => (
