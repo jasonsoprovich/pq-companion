@@ -144,6 +144,7 @@ function HPSRow({ stat, totalHeal, isYou }: { stat: HealerStats; totalHeal: numb
         position: 'relative', padding: '5px 10px',
         display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '0 10px',
         alignItems: 'center', borderBottom: '1px solid var(--color-border)', overflow: 'hidden',
+        flexShrink: 0,
       }}
     >
       <div
@@ -169,7 +170,7 @@ function HPSContent({ fight, showAll }: { fight: FightState; showAll: boolean })
   const rows = showAll ? healers : healers.filter((h) => h.name === 'You')
   const totalHeal = showAll ? fight.total_heal : fight.you_heal
   return (
-    <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
       <ColHeaders />
       {rows.length === 0 ? (
         <div style={{ padding: '16px 10px', fontSize: 12, color: 'var(--color-muted)', textAlign: 'center' }}>No heal data</div>

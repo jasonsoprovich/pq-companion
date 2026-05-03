@@ -176,8 +176,11 @@ function ColHeaders(): React.ReactElement {
 function DPSRow({ stat, totalDamage, isYou, expanded, onToggle }: { stat: RolledUpEntity; totalDamage: number; isYou: boolean; expanded: boolean; onToggle: () => void }): React.ReactElement {
   const barPct = totalDamage > 0 ? (stat.total_damage / totalDamage) * 100 : 0
   const hasPets = stat.pets.length > 0
+  // flexShrink: 0 keeps each row at its natural height when the parent flex
+  // column overflows — without it the column flex algorithm squeezes rows to
+  // fit, making text and bars look tiny in raid-sized fights.
   return (
-    <div>
+    <div style={{ flexShrink: 0 }}>
       <div
         onClick={hasPets ? onToggle : undefined}
         style={{
@@ -232,8 +235,11 @@ function DPSContent({ fight, showAll, combine }: { fight: FightState; showAll: b
   const rolled = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
   const rows = showAll ? rolled : rolled.filter((c) => c.name === 'You')
   const totalDmg = showAll ? fight.total_damage : fight.you_damage
+  // min-height: 0 lets this flex child honor its allocated height instead of
+  // growing to fit all rows (default min-height: auto on flex items), so
+  // overflow: auto actually scrolls when there are many combatants.
   return (
-    <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
       <ColHeaders />
       {rows.length === 0 ? (
         <div style={{ padding: '16px 10px', fontSize: 12, color: 'var(--color-muted)', textAlign: 'center' }}>No damage data</div>

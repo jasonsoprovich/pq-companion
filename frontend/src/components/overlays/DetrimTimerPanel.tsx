@@ -64,7 +64,7 @@ function DetrimRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: 
   const onTarget = targetSuffix(timer.target_name, activePlayer)
 
   return (
-    <div style={{ position: 'relative', padding: '5px 10px', borderBottom: '1px solid var(--color-border)', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', padding: '5px 10px', borderBottom: '1px solid var(--color-border)', overflow: 'hidden', flexShrink: 0 }}>
       <div
         style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
@@ -194,7 +194,7 @@ export default function DetrimTimerPanel({
         onLayoutChange={onLayoutChange}
       >
         <StatusBar status={status} />
-        <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
           {timerState === null ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--color-muted)', padding: 16 }}>
               <Skull size={28} style={{ opacity: 0.2, color: '#ef4444' }} />
