@@ -1362,6 +1362,51 @@ func BardPack() TriggerPack {
 	}
 }
 
+// MagicianPack returns the pre-built magician trigger pack: timer-creating
+// triggers for Burnout IV (pet haste) and Shield of Lava (damage shield).
+//
+// Malo / Malosini are intentionally omitted — already covered by the
+// Shaman pack with the same SpellIDs. Call of the Hero, Modulating Rod,
+// and pet summon/death tracking are skipped: instant utilities or
+// state changes that don't fit the two-purpose timer/alert model.
+func MagicianPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Magician",
+		Description: "Spell timers for Burnout IV (pet haste) and Shield of Lava (damage shield).",
+		Triggers: []Trigger{
+			// ── Pet haste (timer) ───────────────────────────────────────
+			// Burnout IV has empty cast_on_you and "<name> goes berserk."
+			// cast_on_other; the latter could clash with NPC enrage-skill
+			// log lines, so this trigger keys on the unambiguous cast-
+			// start instead. The 900-second timer is the natural max
+			// (formula 11 / base 150 = 150 ticks).
+			{
+				Name:              "Burnout IV",
+				Enabled:           true,
+				Pattern:           `^You begin casting Burnout IV\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 900,
+				SpellID:           1472,
+				PackName:          "Magician",
+				Actions:           []Action{},
+			},
+
+			// ── Damage shield (timer) ───────────────────────────────────
+			{
+				Name:              "Shield of Lava",
+				Enabled:           true,
+				Pattern:           `^(?:You are enveloped by lava\.|[A-Z][a-zA-Z']{2,14} is enveloped by flame\.)$`,
+				WornOffPattern:    `^The flames die down\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 390,
+				SpellID:           412,
+				PackName:          "Magician",
+				Actions:           []Action{},
+			},
+		},
+	}
+}
+
 // GroupAwarenessPack returns the pre-built group awareness trigger pack with
 // alerts for incoming tells, player deaths, and group member deaths.
 func GroupAwarenessPack() TriggerPack {
@@ -1414,6 +1459,7 @@ func AllPacks() []TriggerPack {
 		RoguePack(),
 		RangerPack(),
 		BardPack(),
+		MagicianPack(),
 		GroupAwarenessPack(),
 	}
 }
