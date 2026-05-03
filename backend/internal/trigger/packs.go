@@ -1091,6 +1091,54 @@ func MonkPack() TriggerPack {
 	}
 }
 
+// RoguePack returns the pre-built rogue trigger pack: timer-creating
+// triggers for Duelist, Deadeye, and Counterattack disciplines. Escape
+// (AA) and Evasion (skill) are intentionally omitted — their exact log
+// strings aren't in spells_new and we'd risk false positives without
+// verifying against real Quarm logs.
+func RoguePack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Rogue",
+		Description: "Spell timers for Duelist, Deadeye, and Counterattack Disciplines.",
+		Triggers: []Trigger{
+			// ── Disciplines (timers) ────────────────────────────────────
+			{
+				Name:              "Duelist Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your muscles quiver with power\.|[A-Z][a-zA-Z']{2,14}'s eyes gleam with energy\.)$`,
+				WornOffPattern:    `^Your fury fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 30,
+				SpellID:           4676,
+				PackName:          "Rogue",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Deadeye Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:You feel unstoppable\.|[A-Z][a-zA-Z']{2,14} feels unstoppable\.)$`,
+				WornOffPattern:    `^Your confidence fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 30,
+				SpellID:           4505,
+				PackName:          "Rogue",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Counterattack Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your weapons move with uncanny grace\.|[A-Z][a-zA-Z']{2,14}'s weapons move with uncanny grace\.)$`,
+				WornOffPattern:    `^Your weapons lose their uncanny grace\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 12,
+				SpellID:           4673,
+				PackName:          "Rogue",
+				Actions:           []Action{},
+			},
+		},
+	}
+}
+
 // GroupAwarenessPack returns the pre-built group awareness trigger pack with
 // alerts for incoming tells, player deaths, and group member deaths.
 func GroupAwarenessPack() TriggerPack {
@@ -1140,6 +1188,7 @@ func AllPacks() []TriggerPack {
 		ShadowknightPack(),
 		WarriorPack(),
 		MonkPack(),
+		RoguePack(),
 		GroupAwarenessPack(),
 	}
 }
