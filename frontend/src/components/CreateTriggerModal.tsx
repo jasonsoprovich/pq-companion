@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { X, Zap, RefreshCw, Shield, Skull, Bell as BellIcon } from 'lucide-react'
 import { createTrigger, type CreateTriggerRequest } from '../services/api'
 import type { Action, TimerType, Trigger } from '../types/trigger'
+import NotificationActionEditor, { NotificationTypeSelect } from './NotificationActionEditor'
+import { useVoices } from '../hooks/useVoices'
 
 export interface TriggerPrefill {
   name: string
@@ -34,6 +36,31 @@ export function escapeRegex(s: string): string {
  * entry (spell, NPC ability, buff checklist, etc.). Renders as a centered
  * overlay dialog; call onClose to dismiss.
  */
+function buildInitialAction(prefill: TriggerPrefill): Action {
+  return {
+    type: 'overlay_text',
+    text: prefill.displayText ?? prefill.name,
+    duration_secs: 5,
+    color: prefill.displayColor ?? '#ffffff',
+    sound_path: '',
+    volume: 1,
+    voice: '',
+  }
+}
+
+/**
+ * Returns true if the configured action has the content it needs to fire.
+ * An action with no text (overlay/TTS) or no sound_path (sound) is treated
+ * as "history-only" and dropped on save so the trigger logs without firing
+ * a visible/audible alert.
+ */
+function actionHasContent(a: Action): boolean {
+  if (a.type === 'overlay_text') return a.text.trim().length > 0
+  if (a.type === 'play_sound') return a.sound_path.trim().length > 0
+  if (a.type === 'text_to_speech') return a.text.trim().length > 0
+  return false
+}
+
 export default function CreateTriggerModal({
   prefill,
   onClose,
@@ -45,11 +72,11 @@ export default function CreateTriggerModal({
   const [timerType, setTimerType] = useState<TimerType>(prefill.timerType ?? 'none')
   const [duration, setDuration] = useState(prefill.timerDurationSecs ?? 0)
   const [displayThreshold, setDisplayThreshold] = useState(prefill.displayThresholdSecs ?? 0)
-  const [displayText, setDisplayText] = useState(prefill.displayText ?? prefill.name)
-  const [color, setColor] = useState(prefill.displayColor ?? '#ffffff')
+  const [action, setAction] = useState<Action>(() => buildInitialAction(prefill))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [patternError, setPatternError] = useState<string | null>(null)
+  const voices = useVoices()
 
   // Reset form whenever prefill changes (e.g. user picks a different spell)
   useEffect(() => {
@@ -59,8 +86,7 @@ export default function CreateTriggerModal({
     setTimerType(prefill.timerType ?? 'none')
     setDuration(prefill.timerDurationSecs ?? 0)
     setDisplayThreshold(prefill.displayThresholdSecs ?? 0)
-    setDisplayText(prefill.displayText ?? prefill.name)
-    setColor(prefill.displayColor ?? '#ffffff')
+    setAction(buildInitialAction(prefill))
     setError(null)
     setPatternError(null)
   }, [
@@ -94,18 +120,7 @@ export default function CreateTriggerModal({
       return
     }
 
-    const actions: Action[] = []
-    if (displayText.trim()) {
-      actions.push({
-        type: 'overlay_text',
-        text: displayText.trim(),
-        duration_secs: 5,
-        color,
-        sound_path: '',
-        volume: 0,
-        voice: '',
-      })
-    }
+    const actions: Action[] = actionHasContent(action) ? [action] : []
 
     const req: CreateTriggerRequest = {
       name: name.trim(),
@@ -279,26 +294,45 @@ export default function CreateTriggerModal({
           </>
         )}
 
-        {/* Display text + color for the overlay action */}
+        {/* Notification action — overlay text, sound, or TTS. Leave the
+            type-specific field empty to make this a history-only trigger. */}
         <div className="space-y-1">
-          <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>Overlay text (optional)</label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="leave blank for history-only trigger"
-              value={displayText}
-              onChange={(e) => setDisplayText(e.target.value)}
-              className="flex-1 rounded px-3 py-1.5 text-sm outline-none font-mono"
-              style={inputStyle}
-              disabled={submitting}
+          <div className="flex items-center gap-2">
+            <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+              Action (optional)
+            </label>
+            <NotificationTypeSelect
+              value={action.type}
+              onChange={(t) => setAction((prev) => ({ ...prev, type: t }))}
+              className="rounded px-2 py-0.5 text-xs outline-none"
             />
-            <input
-              type="color"
-              value={color}
-              onChange={(e) => setColor(e.target.value)}
-              className="w-10 h-8 rounded cursor-pointer"
-              style={{ border: '1px solid var(--color-border)' }}
-              disabled={submitting}
+          </div>
+          <div
+            className="rounded p-3 space-y-2"
+            style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+          >
+            <NotificationActionEditor
+              type={action.type}
+              voices={voices}
+              overlayText={action.text}
+              overlayTextPlaceholder="leave blank for history-only trigger"
+              onOverlayTextChange={(v) => setAction((prev) => ({ ...prev, text: v }))}
+              durationSecs={action.duration_secs || 5}
+              onDurationSecsChange={(v) => setAction((prev) => ({ ...prev, duration_secs: v }))}
+              color={action.color || '#ffffff'}
+              onColorChange={(v) => setAction((prev) => ({ ...prev, color: v }))}
+              position={action.position ?? null}
+              onPositionChange={(p) => setAction((prev) => ({ ...prev, position: p }))}
+              soundPath={action.sound_path}
+              onSoundPathChange={(v) => setAction((prev) => ({ ...prev, sound_path: v }))}
+              soundVolume={Math.round((action.volume || 1) * 100)}
+              onSoundVolumeChange={(v) => setAction((prev) => ({ ...prev, volume: v / 100 }))}
+              ttsText={action.text}
+              onTtsTextChange={(v) => setAction((prev) => ({ ...prev, text: v }))}
+              voice={action.voice}
+              onVoiceChange={(v) => setAction((prev) => ({ ...prev, voice: v }))}
+              ttsVolume={Math.round((action.volume || 1) * 100)}
+              onTtsVolumeChange={(v) => setAction((prev) => ({ ...prev, volume: v / 100 }))}
             />
           </div>
         </div>
