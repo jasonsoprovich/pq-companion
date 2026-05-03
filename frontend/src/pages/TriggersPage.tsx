@@ -1549,31 +1549,34 @@ export default function TriggersPage(): React.ReactElement {
         const haystack = `${t.name}\n${t.pattern}\n${t.pack_name}`.toLowerCase()
         if (!haystack.includes(q)) return false
       }
-      // Empty Characters list = fires for any character → passes both
-      // character and class filters (matches the engine's empty-list
-      // semantics, so universal alerts stay visible under any narrowing).
+      // Empty Characters list = fires for any character (engine's legacy
+      // semantic). For the character filter we let universal triggers pass
+      // — global alerts (e.g. Group Awareness death notifications) stay
+      // visible no matter which character you narrow to. For the class
+      // filter we DON'T pass universals: a trigger with no class affinity
+      // shouldn't appear under a specific-class view, otherwise selecting
+      // a class with no installed pack would silently show everything.
       const universal = !t.characters || t.characters.length === 0
       if (charFilter && !universal) {
         if (!t.characters!.includes(charFilter)) return false
       }
       if (classFilter !== null) {
-        // A trigger matches the class filter if either:
-        //   (a) it belongs to a built-in pack tagged with that class, or
-        //   (b) it's assigned to a character of that class (the legacy path,
-        //       which also covers user-authored / GINA-imported triggers
-        //       that don't carry a pack class).
-        // Universal (empty Characters) triggers always pass — same as the
-        // character filter — so global alerts stay visible.
-        if (!universal) {
-          const packMatches = packClassByName.get(t.pack_name) === classFilter
-          let charMatches = false
-          if (!packMatches && charsOfClass) {
-            for (const name of t.characters!) {
-              if (charsOfClass.has(name)) { charMatches = true; break }
-            }
+        // A trigger matches the class filter when either:
+        //   (a) it belongs to a pack tagged with that class (covers both
+        //       installed-but-disabled packs whose Characters are empty
+        //       and active packs assigned to the matching character), or
+        //   (b) it's assigned to a character of that class (covers user-
+        //       authored / GINA-imported triggers without a pack class,
+        //       and triggers the user has manually scoped cross-class).
+        const packMatches =
+          !!t.pack_name && packClassByName.get(t.pack_name) === classFilter
+        let charMatches = false
+        if (!packMatches && !universal && charsOfClass) {
+          for (const name of t.characters!) {
+            if (charsOfClass.has(name)) { charMatches = true; break }
           }
-          if (!packMatches && !charMatches) return false
         }
+        if (!packMatches && !charMatches) return false
       }
       return true
     })
