@@ -45,6 +45,11 @@ export interface Trigger {
    * defers to the user's global setting.
    */
   display_threshold_secs: number
+  /**
+   * Character names this trigger fires for. Empty = fires for any active
+   * character (legacy / safety fallback).
+   */
+  characters: string[]
 }
 
 export interface TriggerFired {

@@ -16,6 +16,8 @@ import {
   ChevronRight,
   ChevronUp,
   Bell,
+  Search,
+  Users,
 } from 'lucide-react'
 import { useVoices } from '../hooks/useVoices'
 import EventAlertsPanel from '../components/EventAlertsPanel'
@@ -33,10 +35,19 @@ import {
   importTriggerPack,
   exportTriggerPack,
   importGINAxml,
+  listCharacters,
   type CreateTriggerRequest,
+  type Character,
 } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useActivePlayerName } from '../hooks/useActivePlayerName'
 import type { Trigger, TriggerFired, TriggerPack, Action, TimerType } from '../types/trigger'
+
+const CLASS_NAMES = [
+  'Warrior', 'Cleric', 'Paladin', 'Ranger', 'Shadow Knight',
+  'Druid', 'Monk', 'Bard', 'Rogue', 'Shaman',
+  'Necromancer', 'Wizard', 'Magician', 'Enchanter', 'Beastlord',
+]
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -170,7 +181,57 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
   const [patternError, setPatternError] = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
 
+  const activePlayer = useActivePlayerName()
+  const [allChars, setAllChars] = useState<Character[]>([])
+  const [selectedChars, setSelectedChars] = useState<Set<string>>(
+    () => new Set(initial?.characters ?? []),
+  )
+
+  // Load known characters once for the chip selector. New triggers default to
+  // the active character only; existing triggers preserve their saved set.
+  useEffect(() => {
+    listCharacters()
+      .then((resp) => {
+        setAllChars(resp.characters)
+        if (!initial) {
+          // First mount on a new trigger: pre-select the active char if known,
+          // otherwise leave empty (the user can pick before saving).
+          const fallback = resp.active || ''
+          setSelectedChars((prev) => {
+            if (prev.size > 0) return prev
+            return fallback ? new Set([fallback]) : prev
+          })
+        }
+      })
+      .catch(() => {})
+  }, [initial])
+
+  // If activePlayer arrives after the chars list and no chars are selected
+  // yet (new trigger, no active at first), pre-select the active player.
+  useEffect(() => {
+    if (initial) return
+    if (!activePlayer) return
+    setSelectedChars((prev) => (prev.size > 0 ? prev : new Set([activePlayer])))
+  }, [activePlayer, initial])
+
   useEffect(() => { nameRef.current?.focus() }, [])
+
+  const toggleChar = (charName: string) => {
+    setSelectedChars((prev) => {
+      const next = new Set(prev)
+      if (next.has(charName)) next.delete(charName)
+      else next.add(charName)
+      return next
+    })
+  }
+
+  const selectAllChars = () => {
+    setSelectedChars(new Set(allChars.map((c) => c.name)))
+  }
+
+  const clearAllChars = () => {
+    setSelectedChars(new Set())
+  }
 
   const validatePattern = (p: string) => {
     try {
@@ -216,6 +277,7 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
       worn_off_pattern: timerType === 'none' ? '' : wornOffPattern.trim(),
       spell_id: initial?.spell_id ?? 0,
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
+      characters: Array.from(selectedChars),
     }
 
     setSubmitting(true)
@@ -299,6 +361,70 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
         <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
           Matched against the log message text (after the timestamp).
         </p>
+      </div>
+
+      {/* Characters */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+            Active for characters
+          </label>
+          {allChars.length > 0 && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={selectAllChars}
+                className="text-[10px]"
+                style={{ color: 'var(--color-muted-foreground)' }}
+              >
+                All
+              </button>
+              <span style={{ color: 'var(--color-border)' }}>·</span>
+              <button
+                type="button"
+                onClick={clearAllChars}
+                className="text-[10px]"
+                style={{ color: 'var(--color-muted-foreground)' }}
+              >
+                None
+              </button>
+            </div>
+          )}
+        </div>
+        {allChars.length === 0 ? (
+          <p className="text-[11px] italic" style={{ color: 'var(--color-muted)' }}>
+            No characters discovered yet — this trigger will fire for any active character.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {allChars.map((c) => {
+              const sel = selectedChars.has(c.name)
+              const className = c.class >= 0 ? CLASS_NAMES[c.class] : null
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => toggleChar(c.name)}
+                  className="text-[11px] px-2 py-0.5 rounded font-medium"
+                  title={className ? `${c.name} — ${className}` : c.name}
+                  style={{
+                    backgroundColor: sel ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                    color: sel ? 'var(--color-primary-foreground)' : 'var(--color-muted-foreground)',
+                    border: `1px solid ${sel ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                    opacity: sel ? 1 : 0.75,
+                  }}
+                >
+                  {c.name}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        {allChars.length > 0 && selectedChars.size === 0 && (
+          <p className="text-[11px] italic" style={{ color: 'var(--color-warning)' }}>
+            No characters selected — trigger will fire for any active character.
+          </p>
+        )}
       </div>
 
       {/* Timer */}
@@ -500,6 +626,12 @@ function TriggerRow({ trigger, onEdit, onDeleted, onToggled }: TriggerRowProps):
       enabled: v,
       pattern: trigger.pattern,
       actions: trigger.actions,
+      timer_type: trigger.timer_type,
+      timer_duration_secs: trigger.timer_duration_secs,
+      worn_off_pattern: trigger.worn_off_pattern,
+      spell_id: trigger.spell_id,
+      display_threshold_secs: trigger.display_threshold_secs,
+      characters: trigger.characters,
     }
     updateTrigger(trigger.id, req)
       .then((updated) => {
@@ -559,6 +691,24 @@ function TriggerRow({ trigger, onEdit, onDeleted, onToggled }: TriggerRowProps):
                 {trigger.pack_name}
               </span>
             )}
+            <span
+              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded shrink-0"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                color: 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+              title={
+                trigger.characters && trigger.characters.length > 0
+                  ? `Active on: ${trigger.characters.join(', ')}`
+                  : 'Active on: any character'
+              }
+            >
+              <Users size={10} />
+              {trigger.characters && trigger.characters.length > 0
+                ? trigger.characters.length
+                : 'all'}
+            </span>
           </div>
           <p className="text-[11px] mt-0.5 truncate font-mono" style={{ color: 'var(--color-muted)' }}>
             {trigger.pattern}

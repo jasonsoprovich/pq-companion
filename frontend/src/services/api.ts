@@ -624,6 +624,7 @@ export interface CreateTriggerRequest {
   worn_off_pattern?: string
   spell_id?: number
   display_threshold_secs?: number
+  characters?: string[]
 }
 
 export function createTrigger(req: CreateTriggerRequest): Promise<Trigger> {
