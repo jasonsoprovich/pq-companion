@@ -20,21 +20,35 @@ function isDuplicate(key: string): boolean {
 }
 
 /**
+ * Build a renderer-loadable URL for a local audio file. Electron's default
+ * webSecurity blocks file:// from non-file:// origins, so we route playback
+ * through the custom pq-audio:// scheme registered in the main process. In
+ * a browser dev preview (no Electron) we fall back to file:// — playback
+ * won't work there but the URL shape is still inspectable.
+ */
+function audioUrl(filePath: string): string {
+  let p = filePath.replace(/\\/g, '/')
+  if (p.startsWith('file://')) p = p.replace(/^file:\/+/, '')
+  if (p.startsWith('pq-audio://')) return filePath
+  // pq-audio uses URL form pq-audio:///<absolute-path>; the empty host means
+  // unix paths keep their leading slash and windows drive letters appear as
+  // /C:/foo, which the main-process handler normalizes back to C:/foo.
+  if (!p.startsWith('/')) p = '/' + p
+  return 'pq-audio://' + p
+}
+
+/**
  * Play a local sound file at the given volume.
  *
- * @param filePath  Absolute path to the audio file. Electron serves local
- *                  files at the file:// scheme without extra configuration.
+ * @param filePath  Absolute path to the audio file. Loaded via the custom
+ *                  pq-audio:// scheme registered in the Electron main process.
  * @param volume    Playback volume in the range 0.0–1.0. Defaults to 1.0.
  */
 export function playSound(filePath: string, volume = 1.0): void {
   if (!filePath) return
   if (isDuplicate(`sound:${filePath}`)) return
 
-  // Normalise Windows back-slashes and ensure the file:// scheme is present.
-  const normalised = filePath.replace(/\\/g, '/')
-  const url = normalised.startsWith('file://') ? normalised : `file:///${normalised}`
-
-  const audio = new Audio(url)
+  const audio = new Audio(audioUrl(filePath))
   audio.volume = Math.min(1, Math.max(0, volume))
   audio.play().catch(() => {
     // Silently ignore playback errors (e.g. file not found) — the trigger
@@ -115,9 +129,7 @@ export function playSoundForTest(filePath: string, volume = 1.0, onEnd?: () => v
     onEnd?.()
     return
   }
-  const normalised = filePath.replace(/\\/g, '/')
-  const url = normalised.startsWith('file://') ? normalised : `file:///${normalised}`
-  const audio = new Audio(url)
+  const audio = new Audio(audioUrl(filePath))
   audio.volume = Math.min(1, Math.max(0, volume))
 
   let done = false

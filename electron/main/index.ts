@@ -1,10 +1,29 @@
-import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol } from 'electron'
 import { join } from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { autoUpdater } from 'electron-updater'
 
 const isDev = !app.isPackaged
+
+// pq-audio:// is a custom protocol used by the renderer's Audio elements to
+// load arbitrary local sound files (trigger sounds, alert sounds, etc.) under
+// the default webSecurity:true sandbox. file:// is blocked from non-file://
+// origins, so we map pq-audio:///<absolute-path> to the file system here.
+// Must be registered as privileged BEFORE app.ready so HTMLMediaElement can
+// stream from it.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'pq-audio',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      bypassCSP: true,
+    },
+  },
+])
 
 // Resolve the app icon for runtime BrowserWindow use.
 // In packaged Windows builds the exe already embeds build/icon.ico via
@@ -818,6 +837,19 @@ ipcMain.handle('updater:quit-and-install', async () => {
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
+  // Map pq-audio:///<absolute-path> to a local file. The leading `/` after the
+  // scheme is the empty host part, so on macOS pq-audio:///Users/x/foo.wav
+  // resolves to /Users/x/foo.wav, and on Windows pq-audio:///C:/x/foo.wav
+  // resolves to C:/x/foo.wav (we strip the host slash before the drive letter).
+  protocol.registerFileProtocol('pq-audio', (request, callback) => {
+    let p = request.url.substring('pq-audio://'.length)
+    p = decodeURIComponent(p)
+    if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(p)) {
+      p = p.substring(1)
+    }
+    callback({ path: p })
+  })
+
   startSidecar()
   createMainWindow()
   setupAutoUpdater()
