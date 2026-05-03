@@ -1216,6 +1216,152 @@ func RangerPack() TriggerPack {
 	}
 }
 
+// BardPack returns the pre-built bard trigger pack: timer-creating
+// triggers for the standard bard mana/HP/melee/resist song line
+// (Cantata of Replenishment, Warsong of Zek, Niv's Melody of
+// Preservation, Psalm of Veeshan, Elemental Rhythms, Guardian Rhythms)
+// plus the mez (Kelin's Lucid Lullaby), lull (Kelin's Lugubrious
+// Lament), charm (Solon's Bewitching Bravura), and slow (Largo's
+// Absonant Binding) target debuffs.
+//
+// Bard songs pulse on every tick while sung; the spelltimer engine's
+// same-name dedup window keeps duplicate timers from forming, and each
+// pulse refreshes the existing timer so the post-singing countdown
+// (typically 54 seconds at level 60) starts when the bard stops.
+//
+// Cassindra's Chorus of Clarity is omitted — it has formula 0 / base 0
+// in spells_new (no buff duration to track) and empty cast_on_other /
+// spell_fades, so there's nothing reliable to time from log alone.
+func BardPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Bard",
+		Description: "Spell timers for Cantata of Replenishment, Warsong of Zek, Niv's Melody of Preservation, Psalm of Veeshan, Elemental Rhythms, Guardian Rhythms, Kelin's Lucid Lullaby / Lugubrious Lament, Solon's Bewitching Bravura, and Largo's Absonant Binding.",
+		Triggers: []Trigger{
+			// ── Group buff songs (timers, self-only land) ────────────────
+			// These songs have empty cast_on_other in spells_new, so only
+			// the song's targets see "You feel ...". Each timer triggers
+			// on the unique cast_on_you and clears on the song's fade
+			// line. Cantata's spell_fades is empty in the DB, so its
+			// timer simply expires after the natural duration.
+			{
+				Name:              "Cantata of Replenishment",
+				Enabled:           true,
+				Pattern:           `^You feel replenished\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 54,
+				SpellID:           1759,
+				PackName:          "Bard",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Warsong of Zek",
+				Enabled:           true,
+				Pattern:           `^You hear the war horns of Zek echo in your mind\.$`,
+				WornOffPattern:    `^The warsong of Zek fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 54,
+				SpellID:           3374,
+				PackName:          "Bard",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Niv's Melody of Preservation",
+				Enabled:           true,
+				Pattern:           `^You feel an aura of protection engulf you\.$`,
+				WornOffPattern:    `^Your protection fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 54,
+				SpellID:           748,
+				PackName:          "Bard",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Psalm of Veeshan",
+				Enabled:           true,
+				Pattern:           `^Crystalline scales gather around you\.$`,
+				WornOffPattern:    `^The crystalline scales fall away\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 54,
+				SpellID:           3368,
+				PackName:          "Bard",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Elemental Rhythms",
+				Enabled:           true,
+				Pattern:           `^You feel an aura of elemental protection surrounding you\.$`,
+				WornOffPattern:    `^The aura of protection fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 54,
+				SpellID:           710,
+				PackName:          "Bard",
+				Actions:           []Action{},
+			},
+			// Guardian Rhythms shares "The aura of protection fades." with
+			// Elemental Rhythms; the trigger engine's same-name dedup keeps
+			// the wrong-song timer from being cleared inadvertently when
+			// both run side-by-side, since each timer keys on its own name.
+			{
+				Name:              "Guardian Rhythms",
+				Enabled:           true,
+				Pattern:           `^You feel an aura of mystic protection surrounding you\.$`,
+				WornOffPattern:    `^The aura of protection fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 54,
+				SpellID:           709,
+				PackName:          "Bard",
+				Actions:           []Action{},
+			},
+
+			// ── Mez / lull / charm / slow songs (timers) ────────────────
+			{
+				Name:              "Kelin's Lucid Lullaby",
+				Enabled:           true,
+				Pattern:           `^(?:You feel quite drowsy\.|[A-Z][a-zA-Z']{2,14}'s head nods\.)$`,
+				WornOffPattern:    `^You no longer feel sleepy\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 18,
+				SpellID:           724,
+				PackName:          "Bard",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Kelin's Lugubrious Lament",
+				Enabled:           true,
+				Pattern:           `^(?:You feel a strong sense of loss\.|[A-Z][a-zA-Z']{2,14} looks sad\.)$`,
+				WornOffPattern:    `^You no longer feel sad\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 54,
+				SpellID:           728,
+				PackName:          "Bard",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Solon's Bewitching Bravura",
+				Enabled:           true,
+				Pattern:           `^(?:You are captivated by the bewitching tune\.|[A-Z][a-zA-Z']{2,14}'s eyes glaze over\.)$`,
+				WornOffPattern:    `^You are no longer captivated\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 60,
+				SpellID:           750,
+				PackName:          "Bard",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Largo's Absonant Binding",
+				Enabled:           true,
+				Pattern:           `^(?:Strands of solid music bind your body\.|[A-Z][a-zA-Z']{2,14} is bound by strands of solid music\.)$`,
+				WornOffPattern:    `^The strands of fade away\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 54,
+				SpellID:           1751,
+				PackName:          "Bard",
+				Actions:           []Action{},
+			},
+		},
+	}
+}
+
 // GroupAwarenessPack returns the pre-built group awareness trigger pack with
 // alerts for incoming tells, player deaths, and group member deaths.
 func GroupAwarenessPack() TriggerPack {
@@ -1267,6 +1413,7 @@ func AllPacks() []TriggerPack {
 		MonkPack(),
 		RoguePack(),
 		RangerPack(),
+		BardPack(),
 		GroupAwarenessPack(),
 	}
 }
