@@ -445,6 +445,115 @@ func EnchanterPack() TriggerPack {
 	}
 }
 
+// ClericPack returns the pre-built cleric trigger pack: timer-creating
+// triggers for the standard cleric raid-buff (Aegolism, Blessing of Aegolism,
+// Ancient: Gift of Aegolism, Naltron's Mark), emergency-buff (Divine
+// Intervention), self-defensive (Divine Aura), and target-debuff (Mark of
+// Karn) lines. Generic resist/interrupt overlays are intentionally omitted
+// — they live in the Enchanter pack and would duplicate if both are
+// installed.
+func ClericPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Cleric",
+		Description: "Spell timers for Aegolism / Blessing of Aegolism / Ancient: Gift of Aegolism, Naltron's Mark, Divine Intervention, Mark of Karn, and Divine Aura.",
+		Triggers: []Trigger{
+			// ── Raid buffs (timers) ──────────────────────────────────────
+			// Aegolism, Blessing of Aegolism, and Ancient: Gift of Aegolism
+			// share the same fade text ("Your aegolism fades.") and the
+			// first two share identical cast_on_you/cast_on_other anchors,
+			// so each timer is keyed on "You begin casting <SpellName>."
+			// to disambiguate. The fade pattern matches the shared line so
+			// any of the three clears the right timer when stacking is not
+			// in play.
+			{
+				Name:              "Aegolism",
+				Enabled:           true,
+				Pattern:           `^You begin casting Aegolism\.$`,
+				WornOffPattern:    `^Your aegolism fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 9000,
+				SpellID:           1447,
+				PackName:          "Cleric",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Blessing of Aegolism",
+				Enabled:           true,
+				Pattern:           `^You begin casting Blessing of Aegolism\.$`,
+				WornOffPattern:    `^Your aegolism fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 9000,
+				SpellID:           2510,
+				PackName:          "Cleric",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Ancient: Gift of Aegolism",
+				Enabled:           true,
+				Pattern:           `^You begin casting Ancient: Gift of Aegolism\.$`,
+				WornOffPattern:    `^Your aegolism fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 9000,
+				SpellID:           2122,
+				PackName:          "Cleric",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Naltron's Mark",
+				Enabled:           true,
+				Pattern:           `^(?:A mystic symbol flashes before your eyes\.|[A-Z][a-zA-Z']{2,14} is cloaked in a shimmer of glowing symbols\.)$`,
+				WornOffPattern:    `^The mystic symbol fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 3240,
+				SpellID:           1774,
+				PackName:          "Cleric",
+				Actions:           []Action{},
+			},
+
+			// ── Emergency self-buff (timer) ──────────────────────────────
+			{
+				Name:              "Divine Intervention",
+				Enabled:           true,
+				Pattern:           `^(?:You feel the watchful eyes of the gods upon you\.|[A-Z][a-zA-Z']{2,14} feels the watchful eyes of the gods upon them\.)$`,
+				WornOffPattern:    `^You are no longer watched\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 360,
+				SpellID:           1546,
+				PackName:          "Cleric",
+				Actions:           []Action{},
+			},
+
+			// ── Self-defensive (timer) ───────────────────────────────────
+			// Divine Aura's empty cast_on_other means only the caster sees
+			// the land message; matching cast_on_you is sufficient.
+			{
+				Name:              "Divine Aura",
+				Enabled:           true,
+				Pattern:           `^The gods have rendered you invulnerable\.$`,
+				WornOffPattern:    `^Your invulnerability fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 18,
+				SpellID:           207,
+				PackName:          "Cleric",
+				Actions:           []Action{},
+			},
+
+			// ── Target debuff (timer) ────────────────────────────────────
+			{
+				Name:              "Mark of Karn",
+				Enabled:           true,
+				Pattern:           `^(?:Your skin gleams with a pure aura\.|[A-Z][a-zA-Z']{2,14}'s skin gleams with a pure aura\.)$`,
+				WornOffPattern:    `^The aura fades\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 570,
+				SpellID:           1548,
+				PackName:          "Cleric",
+				Actions:           []Action{},
+			},
+		},
+	}
+}
+
 // GroupAwarenessPack returns the pre-built group awareness trigger pack with
 // alerts for incoming tells, player deaths, and group member deaths.
 func GroupAwarenessPack() TriggerPack {
@@ -487,6 +596,7 @@ func GroupAwarenessPack() TriggerPack {
 func AllPacks() []TriggerPack {
 	return []TriggerPack{
 		EnchanterPack(),
+		ClericPack(),
 		GroupAwarenessPack(),
 	}
 }
