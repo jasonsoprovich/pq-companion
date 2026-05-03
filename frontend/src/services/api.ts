@@ -675,6 +675,10 @@ export function postTriggerTestPosition(testId: string, position: { x: number; y
   return post<void>('/api/triggers/test-overlay/position', { test_id: testId, position })
 }
 
+export function endTriggerTestSession(testId: string): Promise<void> {
+  return post<void>('/api/triggers/test-overlay/end', { test_id: testId })
+}
+
 export async function importGINAxml(
   xml: string,
   packName: string,

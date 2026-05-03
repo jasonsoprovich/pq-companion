@@ -14,9 +14,9 @@
  * this initial extraction and wired up in subsequent tasks.
  */
 import React, { useEffect, useState } from 'react'
-import { Volume2, FolderOpen, Play, Square, Crosshair, X as XIcon } from 'lucide-react'
+import { Volume2, FolderOpen, Play, Square, Crosshair, Check, X as XIcon } from 'lucide-react'
 import { playSoundForTest, speakTextForTest, stopTestPlayback } from '../services/audio'
-import { fireTriggerTestOverlay } from '../services/api'
+import { fireTriggerTestOverlay, endTriggerTestSession } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 
 export type NotificationActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
@@ -64,25 +64,53 @@ export function OverlayTextFields({
   // A per-editor session id is round-tripped through the test endpoints so
   // simultaneous editors don't clobber each other's position updates.
   const [testId] = useState(() => `test-${Math.random().toString(36).slice(2)}-${Date.now()}`)
+  const [positioning, setPositioning] = useState(false)
 
   useWebSocket((msg) => {
-    if (msg.type !== 'trigger:test_position') return
-    const data = msg.data as { test_id: string; position: { x: number; y: number } }
-    if (data.test_id !== testId) return
-    onPositionChange?.(data.position)
+    if (msg.type === 'trigger:test_position') {
+      const data = msg.data as { test_id: string; position: { x: number; y: number } }
+      if (data.test_id !== testId) return
+      onPositionChange?.(data.position)
+      return
+    }
+    if (msg.type === 'trigger:test_session_ended') {
+      const data = msg.data as { test_id: string }
+      if (data.test_id !== testId) return
+      setPositioning(false)
+      return
+    }
   })
 
-  function handleTestPosition() {
-    // Make sure the overlay window is visible so the user can see the card.
+  // End any open positioning session if this editor unmounts.
+  useEffect(() => {
+    return () => {
+      if (positioning) void endTriggerTestSession(testId).catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function handleTogglePositioning() {
+    if (positioning) {
+      // Second click confirms / saves: drop position is already auto-saved on
+      // each drag-release; this just dismisses the positioning UI.
+      setPositioning(false)
+      void endTriggerTestSession(testId).catch(() => {})
+      return
+    }
+    setPositioning(true)
     void window.electron?.overlay?.openTrigger?.()
     void fireTriggerTestOverlay({
       test_id: testId,
       text: text || 'Test alert',
       color: color || '#ffffff',
-      // Show for at least 8s so the user has time to drag.
+      // duration_secs is informational only — sticky session, no auto-dismiss.
       duration_secs: Math.max(8, durationSecs || 5),
       position: position ?? null,
-    }).catch(() => { /* best-effort preview */ })
+    }).catch(() => {
+      // If we can't open the session, roll the toggle back so the button
+      // doesn't get stuck in the "Done" state.
+      setPositioning(false)
+    })
   }
 
   function handleClearPosition() {
@@ -131,18 +159,22 @@ export function OverlayTextFields({
         </div>
         <button
           type="button"
-          onClick={handleTestPosition}
+          onClick={handleTogglePositioning}
           className="flex items-center gap-1 rounded px-2 py-1 text-[11px] ml-auto"
           style={{
-            backgroundColor: 'var(--color-primary)',
+            backgroundColor: positioning ? 'var(--color-success, #16a34a)' : 'var(--color-primary)',
             color: 'var(--color-background)',
             border: '1px solid transparent',
             cursor: 'pointer',
           }}
-          title="Pop up the alert in the overlay so you can position it"
+          title={
+            positioning
+              ? 'Lock in the current position and dismiss the positioning overlay'
+              : 'Pop up the alert in the overlay so you can drag it into position'
+          }
         >
-          <Crosshair size={11} />
-          Test / Position
+          {positioning ? <Check size={11} /> : <Crosshair size={11} />}
+          {positioning ? 'Done — Save Position' : 'Set Trigger Position'}
         </button>
       </div>
       {position && (

@@ -4,13 +4,11 @@
  * configured duration. Renders in a dedicated frameless Electron window.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Zap } from 'lucide-react'
+import { Zap, X as XIcon } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
-import { useOverlayLock } from '../hooks/useOverlayLock'
-import OverlayLockButton from '../components/OverlayLockButton'
 import type { TriggerFired } from '../types/trigger'
-import { postTriggerTestPosition } from '../services/api'
+import { postTriggerTestPosition, endTriggerTestSession } from '../services/api'
 
 interface TestAlert {
   testId: string
@@ -18,7 +16,6 @@ interface TestAlert {
   color: string
   fontSize: number
   position: { x: number; y: number }
-  expiresAt: number
 }
 
 interface TriggerTestPayload {
@@ -117,11 +114,9 @@ function AlertCard({ entry, bgOpacity }: { entry: AlertEntry; bgOpacity: number 
 interface TestAlertCardProps {
   alert: TestAlert
   onPositionCommit: (position: { x: number; y: number }) => void
-  onMouseEnter?: () => void
-  onMouseLeave?: () => void
 }
 
-function TestAlertCard({ alert, onPositionCommit, onMouseEnter, onMouseLeave }: TestAlertCardProps): React.ReactElement {
+function TestAlertCard({ alert, onPositionCommit }: TestAlertCardProps): React.ReactElement {
   const [pos, setPos] = useState(alert.position)
   const dragOffset = useRef<{ dx: number; dy: number } | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -155,13 +150,10 @@ function TestAlertCard({ alert, onPositionCommit, onMouseEnter, onMouseLeave }: 
 
   return (
     <div
-      className="no-drag"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
       style={{
         position: 'fixed',
         left: pos.x,
@@ -200,13 +192,13 @@ function TestAlertCard({ alert, onPositionCommit, onMouseEnter, onMouseLeave }: 
 
 export default function TriggerOverlayWindowPage(): React.ReactElement {
   const overlayOpacity = useOverlayOpacity()
-  const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
   const [alerts, setAlerts] = useState<AlertEntry[]>([])
   const [testAlert, setTestAlert] = useState<TestAlert | null>(null)
   const gcTimer = useRef<ReturnType<typeof setInterval> | null>(null)
-  const testTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Garbage-collect expired alerts every 250 ms.
+  // Garbage-collect expired alerts every 250 ms. Test alerts are sticky and
+  // only cleared when the editor ends the positioning session, so they're
+  // explicitly excluded from this gc loop.
   useEffect(() => {
     gcTimer.current = setInterval(() => {
       const now = Date.now()
@@ -217,14 +209,14 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     }
   }, [])
 
-  // Clear stale test alert when its timer expires.
+  // Window is fully click-through unless a positioning session is active.
+  // setIgnoreMouseEvents(true) lets the OS pass clicks straight to the game
+  // underneath; flipping it off lets the user drag the test card.
   useEffect(() => {
-    if (!testAlert) return
-    if (testTimerRef.current !== null) clearTimeout(testTimerRef.current)
-    const remaining = testAlert.expiresAt - Date.now()
-    testTimerRef.current = setTimeout(() => setTestAlert(null), Math.max(0, remaining))
-    return () => {
-      if (testTimerRef.current !== null) clearTimeout(testTimerRef.current)
+    if (testAlert) {
+      window.electron?.overlay?.setIgnoreMouseEvents(false)
+    } else {
+      window.electron?.overlay?.setIgnoreMouseEvents(true)
     }
   }, [testAlert])
 
@@ -244,11 +236,10 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     }
     if (msg.type === 'trigger:test') {
       const data = msg.data as TriggerTestPayload
-      const durationMs = Math.max(2, data.duration_secs || 5) * 1000
       const fontSize = data.font_size && data.font_size > 0 ? data.font_size : 20
       const defaultPos = {
         x: Math.max(0, Math.round(window.innerWidth / 2 - 100)),
-        y: 60,
+        y: Math.max(0, Math.round(window.innerHeight / 2 - 40)),
       }
       setTestAlert({
         testId: data.test_id,
@@ -256,8 +247,12 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         color: data.color || '#ffffff',
         fontSize,
         position: data.position ?? defaultPos,
-        expiresAt: Date.now() + durationMs,
       })
+      return
+    }
+    if (msg.type === 'trigger:test_session_ended') {
+      const data = msg.data as { test_id: string }
+      setTestAlert((prev) => (prev && prev.testId === data.test_id ? null : prev))
       return
     }
   }, [])
@@ -276,14 +271,18 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     [testAlert],
   )
 
-  // The chrome (drag handle, lock, close) only shows during a Test/Position
-  // session. The rest of the time the trigger overlay is invisible — alerts
-  // pop at their pinned positions and disappear.
+  const handleEndSession = useCallback(() => {
+    if (!testAlert) return
+    void endTriggerTestSession(testAlert.testId).catch(() => {})
+  }, [testAlert])
+
+  // The chrome (positioning banner + close) only shows during a Test/Position
+  // session. The rest of the time the trigger overlay is invisible and
+  // click-through — real triggers pop at their pinned positions only.
   const positioning = testAlert !== null
 
   return (
     <div
-      onMouseLeave={enableClickThrough}
       style={{
         width: '100vw',
         height: '100vh',
@@ -294,11 +293,9 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         backgroundColor: 'transparent',
       }}
     >
-      {/* Drag handle / chrome — only rendered while positioning so a player who
-          isn't actively configuring sees no header in the middle of the game. */}
+      {/* Positioning banner — only rendered during a session. */}
       {positioning && (
         <div
-          className={locked ? 'no-drag' : 'drag-region'}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -313,33 +310,29 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <Zap size={11} style={{ color: '#a78bfa' }} />
             <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)' }}>
-              Positioning
+              Positioning trigger alert — drag the card, then click Done in the editor
             </span>
           </div>
-          <div
-            className="no-drag"
-            onMouseEnter={enableInteraction}
-            onMouseLeave={enableClickThrough}
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          <button
+            onClick={handleEndSession}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              fontSize: 11,
+              lineHeight: 1,
+              padding: '2px 8px',
+              borderRadius: 3,
+              border: '1px solid rgba(255,255,255,0.18)',
+              backgroundColor: 'rgba(255,255,255,0.06)',
+              color: 'rgba(255,255,255,0.7)',
+              cursor: 'pointer',
+            }}
+            title="End the positioning session and save the current placement"
           >
-            <OverlayLockButton locked={locked} onToggle={toggleLocked} />
-            <button
-              onClick={() => window.electron?.overlay?.closeTrigger()}
-              style={{
-                fontSize: 11,
-                lineHeight: 1,
-                padding: '1px 5px',
-                borderRadius: 3,
-                border: '1px solid rgba(255,255,255,0.1)',
-                backgroundColor: 'transparent',
-                color: 'rgba(255,255,255,0.4)',
-                cursor: 'pointer',
-              }}
-              title="Close overlay"
-            >
-              ×
-            </button>
-          </div>
+            <XIcon size={11} />
+            Done
+          </button>
         </div>
       )}
 
@@ -363,8 +356,6 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         <TestAlertCard
           alert={testAlert}
           onPositionCommit={handleTestPositionCommit}
-          onMouseEnter={enableInteraction}
-          onMouseLeave={enableClickThrough}
         />
       )}
     </div>

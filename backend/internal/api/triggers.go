@@ -288,6 +288,24 @@ func (h *triggerHandler) testOverlayPosition(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type testOverlayEndRequest struct {
+	TestID string `json:"test_id"`
+}
+
+func (h *triggerHandler) testOverlayEnd(w http.ResponseWriter, r *http.Request) {
+	var req testOverlayEndRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.TestID == "" {
+		writeError(w, http.StatusBadRequest, "test_id is required")
+		return
+	}
+	h.hub.Broadcast(ws.Event{Type: "trigger:test_session_ended", Data: req})
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // installBuiltinPack installs the named pre-built pack, replacing any existing
 // triggers for that pack.
 func (h *triggerHandler) installBuiltinPack(w http.ResponseWriter, r *http.Request) {

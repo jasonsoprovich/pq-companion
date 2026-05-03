@@ -155,6 +155,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Post("/packs/{name}", triggerH.installBuiltinPack)
 			r.Post("/test-overlay", triggerH.testOverlay)
 			r.Post("/test-overlay/position", triggerH.testOverlayPosition)
+			r.Post("/test-overlay/end", triggerH.testOverlayEnd)
 		})
 	})
 
