@@ -777,6 +777,73 @@ func ShamanPack() TriggerPack {
 	}
 }
 
+// PaladinPack returns the pre-built paladin trigger pack: a Lay on
+// Hands overlay alert and timer-creating triggers for Immobilize,
+// Holyforge Discipline, and Sanctification Discipline. Pacify (Spell
+// 45) and Divine Aura are intentionally omitted — they live in the
+// Enchanter and Cleric packs respectively. Instant stuns (Stun,
+// Force, Force of Akilae) are also skipped: no duration to track and
+// generic resist alerts already live in the Enchanter pack.
+func PaladinPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Paladin",
+		Description: "Lay on Hands alert plus spell timers for Immobilize, Holyforge Discipline, and Sanctification Discipline.",
+		Triggers: []Trigger{
+			// ── Emergency burst (overlay alert) ──────────────────────────
+			// Lay on Hands is instant with a 72-minute recast; the cast
+			// message ("Your hands shimmer with holy light.") only fires
+			// when the paladin uses the ability, making it a clean alert
+			// without timer support.
+			{
+				Name:     "Lay on Hands",
+				Enabled:  true,
+				Pattern:  `^Your hands shimmer with holy light\.$`,
+				PackName: "Paladin",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "LAY ON HANDS!", DurationSecs: 5, Color: "#ffdd33"},
+				},
+			},
+
+			// ── Root (timer) ────────────────────────────────────────────
+			{
+				Name:              "Immobilize",
+				Enabled:           true,
+				Pattern:           `^(?:Your feet adhere to the ground\.|[A-Z][a-zA-Z']{2,14} adheres to the ground\.)$`,
+				WornOffPattern:    `^(?:Your feet come free\.|Your Immobilize spell has worn off\.|Your target resisted the Immobilize spell\.)$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 180,
+				SpellID:           132,
+				PackName:          "Paladin",
+				Actions:           []Action{},
+			},
+
+			// ── Disciplines (timers) ────────────────────────────────────
+			{
+				Name:              "Holyforge Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your weapon is bathed in a holy light\.|[A-Z][a-zA-Z']{2,14}'s weapon is bathed in a holy light\.)$`,
+				WornOffPattern:    `^The holy light fades from your weapon\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 300,
+				SpellID:           4500,
+				PackName:          "Paladin",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Sanctification Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your body is surrounded in an aura of sanctification\.|[A-Z][a-zA-Z']{2,14} is surrounded in an aura of sanctification\.)$`,
+				WornOffPattern:    `^Your sanctification fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 18,
+				SpellID:           4518,
+				PackName:          "Paladin",
+				Actions:           []Action{},
+			},
+		},
+	}
+}
+
 // GroupAwarenessPack returns the pre-built group awareness trigger pack with
 // alerts for incoming tells, player deaths, and group member deaths.
 func GroupAwarenessPack() TriggerPack {
@@ -822,6 +889,7 @@ func AllPacks() []TriggerPack {
 		ClericPack(),
 		DruidPack(),
 		ShamanPack(),
+		PaladinPack(),
 		GroupAwarenessPack(),
 	}
 }
