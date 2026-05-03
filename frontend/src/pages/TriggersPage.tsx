@@ -1500,6 +1500,7 @@ export default function TriggersPage(): React.ReactElement {
   const [classFilter, setClassFilter] = useState<number | null>(null)
   const [charFilter, setCharFilter] = useState<string>('')
   const [chars, setChars] = useState<Character[]>([])
+  const [packClassByName, setPackClassByName] = useState<Map<string, number>>(new Map())
 
   const load = useCallback(() => {
     setLoading(true)
@@ -1518,6 +1519,21 @@ export default function TriggersPage(): React.ReactElement {
   useEffect(() => {
     listCharacters()
       .then((resp) => setChars(resp.characters))
+      .catch(() => {})
+  }, [])
+
+  // Pack → class map lets the class filter also match triggers by their
+  // pack's class, so e.g. selecting "Cleric" surfaces an installed Cleric
+  // pack even when no Cleric character has been added to the roster yet.
+  useEffect(() => {
+    getBuiltinPacks()
+      .then((all) => {
+        const m = new Map<string, number>()
+        for (const p of all) {
+          if (typeof p.class === 'number' && p.class >= 0) m.set(p.pack_name, p.class)
+        }
+        setPackClassByName(m)
+      })
       .catch(() => {})
   }, [])
 
@@ -1540,29 +1556,33 @@ export default function TriggersPage(): React.ReactElement {
       if (charFilter && !universal) {
         if (!t.characters!.includes(charFilter)) return false
       }
-      if (charsOfClass && !universal) {
-        let any = false
-        for (const name of t.characters!) {
-          if (charsOfClass.has(name)) {
-            any = true
-            break
+      if (classFilter !== null) {
+        // A trigger matches the class filter if either:
+        //   (a) it belongs to a built-in pack tagged with that class, or
+        //   (b) it's assigned to a character of that class (the legacy path,
+        //       which also covers user-authored / GINA-imported triggers
+        //       that don't carry a pack class).
+        // Universal (empty Characters) triggers always pass — same as the
+        // character filter — so global alerts stay visible.
+        if (!universal) {
+          const packMatches = packClassByName.get(t.pack_name) === classFilter
+          let charMatches = false
+          if (!packMatches && charsOfClass) {
+            for (const name of t.characters!) {
+              if (charsOfClass.has(name)) { charMatches = true; break }
+            }
           }
+          if (!packMatches && !charMatches) return false
         }
-        if (!any) return false
       }
       return true
     })
   })()
 
-  // Classes that actually have at least one character — keeps the dropdown
-  // tight rather than showing all 15 EQ classes when only a few are in use.
-  const availableClasses = (() => {
-    const set = new Set<number>()
-    for (const c of chars) {
-      if (c.class >= 0) set.add(c.class)
-    }
-    return [...set].sort((a, b) => a - b)
-  })()
+  // Always offer all 15 EQ classes in the filter so the user can narrow to
+  // any installed class pack, even before they have a character of that
+  // class in the roster.
+  const availableClasses = CLASS_NAMES.map((_, idx) => idx)
 
   const handleSaved = (t: Trigger) => {
     if (editing) {
@@ -1609,7 +1629,7 @@ export default function TriggersPage(): React.ReactElement {
       >
         <Zap size={18} style={{ color: 'var(--color-primary)' }} />
         <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
-          Custom Triggers
+          Triggers / Timers
         </span>
         <div className="ml-auto flex items-center gap-2">
           {tab === 'triggers' && (
