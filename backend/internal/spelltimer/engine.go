@@ -246,7 +246,12 @@ func (e *Engine) GetState() TimerState {
 // detrim display threshold for the timer it creates. > 0 means "only show
 // when remaining time is at or below this value"; 0 means "let the
 // frontend resolve against the global default for my category".
-func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage) {
+//
+// spellID, when > 0, links the timer back to a DB spell so the engine can
+// apply the active character's item/AA duration focuses to durationSecs —
+// matching the spell-landed pipeline. 0 means "use durationSecs as given"
+// (custom triggers without a spell anchor, tests).
+func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int) {
 	if name == "" || durationSecs <= 0 {
 		return
 	}
@@ -255,6 +260,13 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 	case CategoryBuff, CategoryDebuff, CategoryMez, CategoryDot, CategoryStun:
 	default:
 		cat = CategoryDebuff
+	}
+
+	if spellID > 0 {
+		if spell, err := e.db.GetSpell(spellID); err == nil && spell != nil {
+			extended := e.applyDurationModifiers(spell, float64(durationSecs))
+			durationSecs = int(extended)
+		}
 	}
 
 	// Custom triggers don't carry a target. The composite key still

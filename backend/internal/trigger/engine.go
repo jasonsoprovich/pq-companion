@@ -27,8 +27,14 @@ const historyMaxSize = 200
 // alerts is the per-trigger fading-soon configuration (Trigger.TimerAlerts)
 // pre-marshalled to JSON. Sink stores it opaquely on the active timer and
 // re-emits it on the WS payload; the frontend parses and acts on it.
+//
+// spellID is the optional DB spell id this trigger was created from
+// (Trigger.SpellID). When > 0, the sink looks up the spell and applies the
+// active character's item/AA duration focuses to durationSecs so a
+// trigger-driven timer extends to the same length as the spell-landed
+// pipeline would produce. 0 = use durationSecs as given.
 type TimerSink interface {
-	StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage)
+	StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int)
 	StopExternal(name string)
 }
 
@@ -185,7 +191,7 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time) {
 				alertJSON = buf
 			}
 		}
-		e.sink.StartExternal(c.timerKey, timerCategory(t.TimerType), t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON)
+		e.sink.StartExternal(c.timerKey, timerCategory(t.TimerType), t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID)
 	}
 }
 

@@ -190,7 +190,7 @@ func TestStartExternal_DedupsAgainstSpellLandedTimer(t *testing.T) {
 	}
 
 	// User trigger fires with the same spell name moments later.
-	e.StartExternal("Visions of Grandeur", "buff", 1620, 0, now.Add(time.Second), nil)
+	e.StartExternal("Visions of Grandeur", "buff", 1620, 0, now.Add(time.Second), nil, 0)
 
 	// Still only the one entry — the trigger's would-be entry was suppressed.
 	if len(e.timers) != 1 {
@@ -205,7 +205,7 @@ func TestStartExternal_DedupsAgainstSpellLandedTimer(t *testing.T) {
 // spell already in the timer map) should create its entry as before.
 func TestStartExternal_CreatesEntryWhenNoSpellMatch(t *testing.T) {
 	e := newTestEngine()
-	e.StartExternal("AE Incoming", "debuff", 30, 0, time.Now(), nil)
+	e.StartExternal("AE Incoming", "debuff", 30, 0, time.Now(), nil, 0)
 
 	if len(e.timers) != 1 {
 		t.Fatalf("expected 1 timer, got %d", len(e.timers))
@@ -223,7 +223,7 @@ func TestStartExternal_CreatesEntryWhenNoSpellMatch(t *testing.T) {
 // the frontend can apply the override instead of the global default.
 func TestStartExternal_CopiesDisplayThreshold(t *testing.T) {
 	e := newTestEngine()
-	e.StartExternal("Long Buff", "buff", 7200, 600, time.Now(), nil)
+	e.StartExternal("Long Buff", "buff", 7200, 600, time.Now(), nil, 0)
 
 	got, ok := e.timers[timerKey("Long Buff", "")]
 	if !ok {
