@@ -1654,7 +1654,7 @@ export default function TriggersPage(): React.ReactElement {
             {t === 'alerts' && (
               <span className="flex items-center gap-1">
                 <Bell size={10} />
-                Alerts
+                Global Alerts
               </span>
             )}
           </button>
