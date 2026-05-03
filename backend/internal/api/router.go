@@ -153,6 +153,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/export", triggerH.exportPack)
 			r.Get("/packs", triggerH.listBuiltinPacks)
 			r.Post("/packs/{name}", triggerH.installBuiltinPack)
+			r.Delete("/packs/{name}", triggerH.removePack)
 			r.Post("/test-overlay", triggerH.testOverlay)
 			r.Get("/test-overlay/active", triggerH.testOverlayActive)
 			r.Post("/test-overlay/position", triggerH.testOverlayPosition)

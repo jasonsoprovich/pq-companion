@@ -29,6 +29,7 @@ import {
   getTriggerHistory,
   getBuiltinPacks,
   installBuiltinPack,
+  removeTriggerPack,
   importTriggerPack,
   exportTriggerPack,
   importGINAxml,
@@ -759,13 +760,14 @@ function HistoryTab(): React.ReactElement {
 // ── Packs tab ─────────────────────────────────────────────────────────────────
 
 interface PacksTabProps {
+  installedPacks: Set<string>
   onInstalled: () => void
 }
 
-function PacksTab({ onInstalled }: PacksTabProps): React.ReactElement {
+function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactElement {
   const [packs, setPacks] = useState<TriggerPack[]>([])
   const [loading, setLoading] = useState(true)
-  const [installing, setInstalling] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
   const [installed, setInstalled] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -788,7 +790,15 @@ function PacksTab({ onInstalled }: PacksTabProps): React.ReactElement {
   }, [])
 
   const handleInstall = (packName: string) => {
-    setInstalling(packName)
+    if (
+      installedPacks.has(packName) &&
+      !window.confirm(
+        `"${packName}" is already installed. Reinstalling will replace any customizations you made to its triggers. Continue?`,
+      )
+    ) {
+      return
+    }
+    setBusy(packName)
     setError(null)
     installBuiltinPack(packName)
       .then(() => {
@@ -797,7 +807,25 @@ function PacksTab({ onInstalled }: PacksTabProps): React.ReactElement {
         setTimeout(() => setInstalled(null), 3000)
       })
       .catch((err: Error) => setError(err.message))
-      .finally(() => setInstalling(null))
+      .finally(() => setBusy(null))
+  }
+
+  const handleRemove = (packName: string) => {
+    if (
+      !window.confirm(
+        `Remove the "${packName}" pack? This deletes all triggers belonging to this pack, including any customizations.`,
+      )
+    ) {
+      return
+    }
+    setBusy(packName)
+    setError(null)
+    removeTriggerPack(packName)
+      .then(() => {
+        onInstalled()
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setBusy(null))
   }
 
   const handleExport = () => {
@@ -948,6 +976,12 @@ function PacksTab({ onInstalled }: PacksTabProps): React.ReactElement {
         <div className="space-y-3">
           {packs.map((pack) => {
             const isOpen = expanded.has(pack.pack_name)
+            const isInstalled = installedPacks.has(pack.pack_name)
+            const isBusy = busy === pack.pack_name
+            const handleAction = () => {
+              if (isInstalled) handleRemove(pack.pack_name)
+              else handleInstall(pack.pack_name)
+            }
             return (
               <div
                 key={pack.pack_name}
@@ -975,6 +1009,18 @@ function PacksTab({ onInstalled }: PacksTabProps): React.ReactElement {
                         <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
                           {pack.triggers.length} trigger{pack.triggers.length !== 1 ? 's' : ''}
                         </span>
+                        {isInstalled && (
+                          <span
+                            className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded"
+                            style={{
+                              backgroundColor: 'var(--color-surface-2)',
+                              color: 'var(--color-success)',
+                            }}
+                          >
+                            <CheckCircle2 size={10} />
+                            Installed
+                          </span>
+                        )}
                       </div>
                       <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted-foreground)' }}>
                         {pack.description}
@@ -986,36 +1032,38 @@ function PacksTab({ onInstalled }: PacksTabProps): React.ReactElement {
                     tabIndex={0}
                     onClick={(e) => {
                       e.stopPropagation()
-                      handleInstall(pack.pack_name)
+                      handleAction()
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault()
                         e.stopPropagation()
-                        handleInstall(pack.pack_name)
+                        handleAction()
                       }
                     }}
-                    aria-disabled={installing === pack.pack_name}
+                    aria-disabled={isBusy}
                     className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium shrink-0 cursor-pointer"
                     style={{
-                      backgroundColor: installed === pack.pack_name
+                      backgroundColor: isInstalled
                         ? 'var(--color-surface-2)'
                         : 'var(--color-primary)',
-                      color: installed === pack.pack_name
-                        ? 'var(--color-success)'
+                      color: isInstalled
+                        ? 'var(--color-danger)'
                         : 'var(--color-background)',
-                      border: '1px solid transparent',
-                      opacity: installing === pack.pack_name ? 0.6 : 1,
+                      border: isInstalled
+                        ? '1px solid var(--color-border)'
+                        : '1px solid transparent',
+                      opacity: isBusy ? 0.6 : 1,
                     }}
                   >
-                    {installing === pack.pack_name ? (
+                    {isBusy ? (
                       <RefreshCw size={11} className="animate-spin" />
-                    ) : installed === pack.pack_name ? (
-                      <CheckCircle2 size={11} />
+                    ) : isInstalled ? (
+                      <Trash2 size={11} />
                     ) : (
                       <Download size={11} />
                     )}
-                    {installed === pack.pack_name ? 'Installed' : 'Install'}
+                    {isInstalled ? 'Remove' : 'Install'}
                   </span>
                 </button>
 
@@ -1296,7 +1344,12 @@ export default function TriggersPage(): React.ReactElement {
       {tab === 'history' && <HistoryTab />}
 
       {/* Tab: Packs */}
-      {tab === 'packs' && <PacksTab onInstalled={load} />}
+      {tab === 'packs' && (
+        <PacksTab
+          installedPacks={new Set(triggers.map((t) => t.pack_name).filter((n): n is string => !!n))}
+          onInstalled={load}
+        />
+      )}
 
       {/* Tab: Alerts */}
       {tab === 'alerts' && <AlertsTab />}

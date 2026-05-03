@@ -650,6 +650,10 @@ export function installBuiltinPack(packName: string): Promise<{ status: string; 
   return post<{ status: string; pack_name: string }>(`/api/triggers/packs/${encodeURIComponent(packName)}`)
 }
 
+export function removeTriggerPack(packName: string): Promise<void> {
+  return del(`/api/triggers/packs/${encodeURIComponent(packName)}`)
+}
+
 export function importTriggerPack(pack: TriggerPack): Promise<{ status: string; pack_name: string }> {
   return post<{ status: string; pack_name: string }>('/api/triggers/import', pack)
 }
