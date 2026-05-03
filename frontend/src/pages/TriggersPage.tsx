@@ -18,10 +18,13 @@ import {
   Bell,
   Search,
   Users,
+  Sparkles,
 } from 'lucide-react'
 import { useVoices } from '../hooks/useVoices'
 import EventAlertsPanel from '../components/EventAlertsPanel'
 import NotificationActionEditor, { NotificationTypeSelect } from '../components/NotificationActionEditor'
+import SpellSearchPicker from '../components/SpellSearchPicker'
+import { buildSpellTriggerPrefill, type SpellTimerTriggerPrefill } from '../lib/spellHelpers'
 import {
   listTriggers,
   createTrigger,
@@ -267,20 +270,21 @@ function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps):
 
 interface TriggerFormProps {
   initial?: Trigger
+  prefill?: SpellTimerTriggerPrefill
   onSaved: (t: Trigger) => void
   onCancel: () => void
 }
 
-function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.ReactElement {
-  const [name, setName] = useState(initial?.name ?? '')
-  const [pattern, setPattern] = useState(initial?.pattern ?? '')
+function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps): React.ReactElement {
+  const [name, setName] = useState(initial?.name ?? prefill?.name ?? '')
+  const [pattern, setPattern] = useState(initial?.pattern ?? prefill?.pattern ?? '')
   const [enabled, setEnabled] = useState(initial?.enabled ?? true)
   const [actions, setActions] = useState<Action[]>(
-    initial?.actions ?? [{ type: 'overlay_text', text: '', duration_secs: 5, color: '#ffffff', sound_path: '', volume: 0, voice: '' }],
+    initial?.actions ?? [{ type: 'overlay_text', text: prefill?.name ?? '', duration_secs: 5, color: '#ffffff', sound_path: '', volume: 0, voice: '' }],
   )
-  const [timerType, setTimerType] = useState<TimerType>(initial?.timer_type ?? 'none')
-  const [timerDuration, setTimerDuration] = useState(initial?.timer_duration_secs ?? 0)
-  const [wornOffPattern, setWornOffPattern] = useState(initial?.worn_off_pattern ?? '')
+  const [timerType, setTimerType] = useState<TimerType>(initial?.timer_type ?? prefill?.timerType ?? 'none')
+  const [timerDuration, setTimerDuration] = useState(initial?.timer_duration_secs ?? prefill?.timerDurationSecs ?? 0)
+  const [wornOffPattern, setWornOffPattern] = useState(initial?.worn_off_pattern ?? prefill?.wornOffPattern ?? '')
   const [displayThreshold, setDisplayThreshold] = useState(initial?.display_threshold_secs ?? 0)
   const [timerAlerts, setTimerAlerts] = useState<TimerAlertThreshold[]>(
     initial?.timer_alerts ?? [],
@@ -385,7 +389,7 @@ function TriggerForm({ initial, onSaved, onCancel }: TriggerFormProps): React.Re
       timer_type: timerType,
       timer_duration_secs: timerType === 'none' ? 0 : Math.max(0, timerDuration),
       worn_off_pattern: timerType === 'none' ? '' : wornOffPattern.trim(),
-      spell_id: initial?.spell_id ?? 0,
+      spell_id: initial?.spell_id ?? prefill?.spellId ?? 0,
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
       characters: Array.from(selectedChars),
       timer_alerts: timerType === 'none' ? [] : timerAlerts,
@@ -1417,6 +1421,9 @@ export default function TriggersPage(): React.ReactElement {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [createPrefill, setCreatePrefill] = useState<SpellTimerTriggerPrefill | undefined>(undefined)
+  const [showSpellPicker, setShowSpellPicker] = useState(false)
+  const [newMenuOpen, setNewMenuOpen] = useState(false)
   const [editing, setEditing] = useState<Trigger | null>(null)
   const [search, setSearch] = useState('')
   const [classFilter, setClassFilter] = useState<number | null>(null)
@@ -1493,6 +1500,7 @@ export default function TriggersPage(): React.ReactElement {
     } else {
       setTriggers((prev) => [...prev, t])
       setShowCreate(false)
+      setCreatePrefill(undefined)
     }
   }
 
@@ -1512,6 +1520,7 @@ export default function TriggersPage(): React.ReactElement {
   const handleCancelForm = () => {
     setEditing(null)
     setShowCreate(false)
+    setCreatePrefill(undefined)
   }
 
   const tabStyle = (t: Tab) => ({
@@ -1546,18 +1555,82 @@ export default function TriggersPage(): React.ReactElement {
                 <RefreshCw size={11} />
                 Refresh
               </button>
-              <button
-                onClick={() => { setShowCreate((v) => !v); setEditing(null) }}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium"
-                style={{
-                  backgroundColor: showCreate ? 'var(--color-surface-2)' : 'var(--color-primary)',
-                  color: showCreate ? 'var(--color-muted-foreground)' : 'var(--color-background)',
-                  border: `1px solid ${showCreate ? 'var(--color-border)' : 'transparent'}`,
-                }}
-              >
-                <Plus size={11} />
-                New Trigger
-              </button>
+              <div className="relative flex">
+                <button
+                  onClick={() => {
+                    setNewMenuOpen(false)
+                    setShowSpellPicker(true)
+                  }}
+                  className="flex items-center gap-1.5 text-xs pl-3 pr-2.5 py-1.5 rounded-l font-medium"
+                  style={{
+                    backgroundColor: 'var(--color-primary)',
+                    color: 'var(--color-background)',
+                    border: '1px solid transparent',
+                    borderRight: 'none',
+                  }}
+                >
+                  <Sparkles size={11} />
+                  New Trigger
+                </button>
+                <button
+                  onClick={() => setNewMenuOpen((v) => !v)}
+                  aria-label="More create options"
+                  className="flex items-center justify-center px-1.5 py-1.5 rounded-r"
+                  style={{
+                    backgroundColor: 'var(--color-primary)',
+                    color: 'var(--color-background)',
+                    border: '1px solid transparent',
+                    borderLeft: '1px solid rgba(0,0,0,0.2)',
+                  }}
+                >
+                  <ChevronDown size={11} />
+                </button>
+                {newMenuOpen && (
+                  <>
+                    <div
+                      onClick={() => setNewMenuOpen(false)}
+                      style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+                    />
+                    <div
+                      className="absolute right-0 top-full mt-1 rounded shadow-lg overflow-hidden"
+                      style={{
+                        backgroundColor: 'var(--color-surface)',
+                        border: '1px solid var(--color-border)',
+                        zIndex: 50,
+                        minWidth: 200,
+                      }}
+                    >
+                      <button
+                        onClick={() => {
+                          setNewMenuOpen(false)
+                          setShowSpellPicker(true)
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-xs text-left"
+                        style={{ color: 'var(--color-foreground)' }}
+                      >
+                        <Sparkles size={12} style={{ color: 'var(--color-primary)' }} />
+                        From spell…
+                      </button>
+                      <button
+                        onClick={() => {
+                          setNewMenuOpen(false)
+                          setCreatePrefill(undefined)
+                          setEditing(null)
+                          setShowCreate(true)
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-xs text-left border-t"
+                        style={{
+                          color: 'var(--color-foreground)',
+                          borderColor: 'var(--color-border)',
+                        }}
+                      >
+                        <Plus size={12} style={{ color: 'var(--color-muted)' }} />
+                        Custom trigger
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -1617,7 +1690,11 @@ export default function TriggersPage(): React.ReactElement {
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {/* Create form */}
               {showCreate && !editing && (
-                <TriggerForm onSaved={handleSaved} onCancel={handleCancelForm} />
+                <TriggerForm
+                  prefill={createPrefill}
+                  onSaved={handleSaved}
+                  onCancel={handleCancelForm}
+                />
               )}
 
               {/* Edit form */}
@@ -1782,6 +1859,19 @@ export default function TriggersPage(): React.ReactElement {
 
       {/* Tab: Alerts */}
       {tab === 'alerts' && <AlertsTab />}
+
+      {showSpellPicker && (
+        <SpellSearchPicker
+          onClose={() => setShowSpellPicker(false)}
+          onPick={(spell) => {
+            setCreatePrefill(buildSpellTriggerPrefill(spell))
+            setEditing(null)
+            setShowCreate(true)
+            setShowSpellPicker(false)
+            setTab('triggers')
+          }}
+        />
+      )}
     </div>
   )
 }
