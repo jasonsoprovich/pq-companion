@@ -34,6 +34,15 @@ const (
 	TimerTypeDetrimental TimerType = "detrimental"
 )
 
+// ActionPosition is the on-screen placement of an overlay_text alert.
+// Coordinates are in the trigger overlay window's local space (top-left
+// origin), in CSS pixels. Nil means the renderer should use the default
+// stacking layout.
+type ActionPosition struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
 // Action describes a single effect fired when a trigger matches a log line.
 type Action struct {
 	Type         ActionType `json:"type"`
@@ -43,6 +52,13 @@ type Action struct {
 	SoundPath    string     `json:"sound_path"`    // local file path for play_sound action
 	Volume       float64    `json:"volume"`        // playback volume 0.0–1.0 (0 = default 1.0)
 	Voice        string     `json:"voice"`         // TTS voice name (empty = system default)
+
+	// Position pins this overlay_text action to a fixed location instead of
+	// the default stacking layout. Nil = stack with other alerts.
+	Position *ActionPosition `json:"position,omitempty"`
+	// FontSize overrides the default overlay font size in CSS pixels.
+	// 0 = use the renderer default.
+	FontSize int `json:"font_size,omitempty"`
 }
 
 // Trigger is a user-defined log line matcher with associated actions.

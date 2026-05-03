@@ -2,6 +2,16 @@ export type ActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
 
 export type TimerType = 'none' | 'buff' | 'detrimental'
 
+/**
+ * On-screen placement of an overlay_text action in the trigger overlay
+ * window's local space (top-left origin, CSS pixels). Absence on an
+ * Action means the renderer falls back to the default stacking layout.
+ */
+export interface ActionPosition {
+  x: number
+  y: number
+}
+
 export interface Action {
   type: ActionType
   text: string
@@ -10,6 +20,10 @@ export interface Action {
   sound_path: string
   volume: number   // 0.0–1.0; 0 means use default (1.0)
   voice: string    // TTS voice name; empty = system default
+  /** Pins overlay_text alerts to a fixed location; omit/null = stack. */
+  position?: ActionPosition | null
+  /** Overlay font size in CSS pixels; 0/omit = renderer default. */
+  font_size?: number
 }
 
 export interface Trigger {
