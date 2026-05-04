@@ -16,8 +16,15 @@ type Store struct {
 }
 
 // OpenStore opens (or creates) user.db at path and runs schema migrations.
+//
+// Three packages (trigger, character, backup) each open their own *sql.DB
+// against the same user.db file. WAL mode lets readers and a single writer
+// coexist, but concurrent writers still hit SQLITE_BUSY — the busy_timeout
+// is how long SQLite will retry before giving up. 30s comfortably covers
+// startup bursts like zeal.RefreshAllPersonas writing every character's AAs
+// while the user clicks "Install trigger pack".
 func OpenStore(path string) (*Store, error) {
-	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_busy_timeout=5000", path)
+	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_busy_timeout=30000", path)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open user.db: %w", err)
