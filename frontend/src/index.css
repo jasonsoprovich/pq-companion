@@ -46,6 +46,12 @@ body,
   padding: 0;
 }
 
+html {
+  /* Render native form controls (number-input spinners, date pickers,
+     etc.) in dark mode so they don't clash with the dark theme. */
+  color-scheme: dark;
+}
+
 body {
   background-color: var(--color-background);
   color: var(--color-foreground);
