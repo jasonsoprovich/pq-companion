@@ -1495,6 +1495,9 @@ export default function TriggersPage(): React.ReactElement {
   const [createPrefill, setCreatePrefill] = useState<SpellTimerTriggerPrefill | undefined>(undefined)
   const [showSpellPicker, setShowSpellPicker] = useState(false)
   const [newMenuOpen, setNewMenuOpen] = useState(false)
+  const [emptyNewMenuOpen, setEmptyNewMenuOpen] = useState(false)
+  const [showClearAll, setShowClearAll] = useState(false)
+  const [clearingAll, setClearingAll] = useState(false)
   const [editing, setEditing] = useState<Trigger | null>(null)
   const [search, setSearch] = useState('')
   const [classFilter, setClassFilter] = useState<number | null>(null)
@@ -1598,6 +1601,18 @@ export default function TriggersPage(): React.ReactElement {
     setCreatePrefill(undefined)
   }
 
+  const handleClearAll = async () => {
+    setClearingAll(true)
+    try {
+      const ids = triggers.map((t) => t.id)
+      await Promise.all(ids.map((id) => deleteTrigger(id).catch(() => {})))
+      setTriggers([])
+      setShowClearAll(false)
+    } finally {
+      setClearingAll(false)
+    }
+  }
+
   const tabStyle = (t: Tab) => ({
     color: tab === t ? 'var(--color-foreground)' : 'var(--color-muted-foreground)',
     borderBottom: tab === t ? '2px solid var(--color-primary)' : '2px solid transparent',
@@ -1630,6 +1645,21 @@ export default function TriggersPage(): React.ReactElement {
                 <RefreshCw size={11} />
                 Refresh
               </button>
+              {triggers.length > 0 && (
+                <button
+                  onClick={() => setShowClearAll(true)}
+                  className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+                  style={{
+                    backgroundColor: 'var(--color-surface-2)',
+                    color: 'var(--color-destructive)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                  title="Remove all triggers and timers"
+                >
+                  <Trash2 size={11} />
+                  Clear All
+                </button>
+              )}
               <div className="relative flex">
                 <button
                   onClick={() => {
@@ -1880,17 +1910,82 @@ export default function TriggersPage(): React.ReactElement {
                     No triggers yet.
                   </p>
                   <div className="flex gap-2">
-                    <button
-                      onClick={() => setShowCreate(true)}
-                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded"
-                      style={{
-                        backgroundColor: 'var(--color-primary)',
-                        color: 'var(--color-background)',
-                        border: '1px solid transparent',
-                      }}
-                    >
-                      <Plus size={11} /> Create a trigger
-                    </button>
+                    <div className="relative flex">
+                      <button
+                        onClick={() => {
+                          setEmptyNewMenuOpen(false)
+                          setShowSpellPicker(true)
+                        }}
+                        className="flex items-center gap-1.5 text-xs pl-3 pr-2.5 py-1.5 rounded-l font-medium"
+                        style={{
+                          backgroundColor: 'var(--color-primary)',
+                          color: 'var(--color-background)',
+                          border: '1px solid transparent',
+                          borderRight: 'none',
+                        }}
+                      >
+                        <Sparkles size={11} />
+                        New Trigger
+                      </button>
+                      <button
+                        onClick={() => setEmptyNewMenuOpen((v) => !v)}
+                        aria-label="More create options"
+                        className="flex items-center justify-center px-1.5 py-1.5 rounded-r"
+                        style={{
+                          backgroundColor: 'var(--color-primary)',
+                          color: 'var(--color-background)',
+                          border: '1px solid transparent',
+                          borderLeft: '1px solid rgba(0,0,0,0.2)',
+                        }}
+                      >
+                        <ChevronDown size={11} />
+                      </button>
+                      {emptyNewMenuOpen && (
+                        <>
+                          <div
+                            onClick={() => setEmptyNewMenuOpen(false)}
+                            style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+                          />
+                          <div
+                            className="absolute left-0 top-full mt-1 rounded shadow-lg overflow-hidden"
+                            style={{
+                              backgroundColor: 'var(--color-surface)',
+                              border: '1px solid var(--color-border)',
+                              zIndex: 50,
+                              minWidth: 200,
+                            }}
+                          >
+                            <button
+                              onClick={() => {
+                                setEmptyNewMenuOpen(false)
+                                setShowSpellPicker(true)
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-xs text-left"
+                              style={{ color: 'var(--color-foreground)' }}
+                            >
+                              <Sparkles size={12} style={{ color: 'var(--color-primary)' }} />
+                              From spell…
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEmptyNewMenuOpen(false)
+                                setCreatePrefill(undefined)
+                                setEditing(null)
+                                setShowCreate(true)
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-xs text-left border-t"
+                              style={{
+                                color: 'var(--color-foreground)',
+                                borderColor: 'var(--color-border)',
+                              }}
+                            >
+                              <Plus size={12} style={{ color: 'var(--color-muted)' }} />
+                              Custom trigger
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                     <button
                       onClick={() => setTab('packs')}
                       className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded"
@@ -1934,6 +2029,79 @@ export default function TriggersPage(): React.ReactElement {
 
       {/* Tab: Alerts */}
       {tab === 'alerts' && <AlertsTab />}
+
+      {showClearAll && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+          onClick={() => !clearingAll && setShowClearAll(false)}
+        >
+          <div
+            className="flex flex-col rounded-lg shadow-2xl w-full max-w-md"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              border: '1px solid var(--color-border)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="flex items-center gap-2 border-b px-4 py-3"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              <AlertCircle size={16} style={{ color: 'var(--color-destructive)' }} />
+              <span
+                className="text-sm font-semibold"
+                style={{ color: 'var(--color-foreground)' }}
+              >
+                Clear all triggers?
+              </span>
+            </div>
+            <div className="px-4 py-4 space-y-2">
+              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                This will permanently remove all{' '}
+                <span style={{ color: 'var(--color-foreground)' }}>{triggers.length}</span>{' '}
+                trigger{triggers.length === 1 ? '' : 's'} and timer
+                {triggers.length === 1 ? '' : 's'}, including any installed from packs.
+                This cannot be undone.
+              </p>
+            </div>
+            <div
+              className="flex items-center justify-end gap-2 border-t px-4 py-3"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              <button
+                onClick={() => setShowClearAll(false)}
+                disabled={clearingAll}
+                className="text-xs px-3 py-1.5 rounded"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-muted-foreground)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearAll}
+                disabled={clearingAll}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium"
+                style={{
+                  backgroundColor: 'var(--color-destructive)',
+                  color: '#fff',
+                  border: '1px solid transparent',
+                }}
+              >
+                {clearingAll ? (
+                  <RefreshCw size={11} className="animate-spin" />
+                ) : (
+                  <Trash2 size={11} />
+                )}
+                {clearingAll ? 'Clearing…' : 'Clear all'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showSpellPicker && (
         <SpellSearchPicker
