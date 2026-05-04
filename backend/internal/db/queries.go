@@ -1014,39 +1014,20 @@ func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
 
 // ─── Zones ────────────────────────────────────────────────────────────────────
 
-// hiddenZoneShortNames are zones excluded from the zone browser/search.
-// `towerbone` is a Quarm-specific alternate Field of Bone clone; the canonical
-// `fieldofbone` (zoneidnumber 78) is the one PQDI references.
-var hiddenZoneShortNames = []string{"towerbone"}
-
-// hiddenZoneExpansions are expansion IDs whose zones are dev/test stubs that
-// don't ship as playable content on Project Quarm. Expansion 99 covers the
-// EverQuest Tutorial, "Loading", Aviak Village, Marauders Mire, etc.;
-// expansion -1 holds the two engine loading-screen stubs.
-var hiddenZoneExpansions = []int{-1, 99}
-
-func hiddenZoneFilter(prefix string) (string, []any) {
-	args := make([]any, 0, len(hiddenZoneShortNames)+len(hiddenZoneExpansions))
-	clauses := make([]string, 0, 2)
-
-	if n := len(hiddenZoneShortNames); n > 0 {
-		ph := strings.Repeat("?,", n)
-		clauses = append(clauses, fmt.Sprintf("short_name NOT IN (%s)", ph[:len(ph)-1]))
-		for _, name := range hiddenZoneShortNames {
-			args = append(args, name)
-		}
-	}
-	if n := len(hiddenZoneExpansions); n > 0 {
-		ph := strings.Repeat("?,", n)
-		clauses = append(clauses, fmt.Sprintf("expansion NOT IN (%s)", ph[:len(ph)-1]))
-		for _, exp := range hiddenZoneExpansions {
-			args = append(args, exp)
-		}
-	}
-	if len(clauses) == 0 {
+// zoneVisibilityFilter returns a SQL clause restricting `short_name` to the
+// allowlist defined in zone_allowlist.go (sourced from PQDI). Returns the
+// clause prefixed with the given string (e.g. " AND " or " WHERE ") and the
+// matching arg slice; empty if the allowlist is empty.
+func zoneVisibilityFilter(prefix string) (string, []any) {
+	if len(visibleZoneShortNames) == 0 {
 		return "", nil
 	}
-	return prefix + strings.Join(clauses, " AND "), args
+	args := make([]any, 0, len(visibleZoneShortNames))
+	for name := range visibleZoneShortNames {
+		args = append(args, name)
+	}
+	ph := strings.Repeat("?,", len(args))
+	return fmt.Sprintf("%sshort_name IN (%s)", prefix, ph[:len(ph)-1]), args
 }
 
 const zoneColumns = `
@@ -1148,7 +1129,7 @@ type ZoneSearchFilters struct {
 // SearchZones searches zones by long_name (case-insensitive substring match).
 func (db *DB) SearchZones(query string, filters ZoneSearchFilters, limit, offset int) (*SearchResult[Zone], error) {
 	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
-	hiddenFilter, hiddenArgs := hiddenZoneFilter(" AND ")
+	hiddenFilter, hiddenArgs := zoneVisibilityFilter(" AND ")
 
 	extraFilter := ""
 	extraArgs := []any{}
@@ -1190,7 +1171,7 @@ func (db *DB) SearchZones(query string, filters ZoneSearchFilters, limit, offset
 // ZoneExpansions returns the distinct expansion IDs present in the zone
 // browser, after hidden-zone filtering. Sorted ascending.
 func (db *DB) ZoneExpansions() ([]int, error) {
-	hiddenFilter, hiddenArgs := hiddenZoneFilter(" WHERE ")
+	hiddenFilter, hiddenArgs := zoneVisibilityFilter(" WHERE ")
 	rows, err := db.Query(
 		"SELECT DISTINCT expansion FROM zone"+hiddenFilter+" ORDER BY expansion",
 		hiddenArgs...,
