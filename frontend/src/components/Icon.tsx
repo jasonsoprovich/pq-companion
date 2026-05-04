@@ -35,7 +35,7 @@ function EQIcon({ id, kind, size = 24, name, className }: EQIconProps): React.Re
   const alt = name ?? `${kind} icon ${id}`
   return (
     <img
-      src={`/icons/${id}.png`}
+      src={`icons/${id}.png`}
       alt={alt}
       title={name}
       loading="lazy"
