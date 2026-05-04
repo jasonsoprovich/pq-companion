@@ -269,12 +269,103 @@ const EFFECT_LABELS: Record<number, string> = {
   142: 'Limit: Min Level',
   143: 'Limit: Min Cast Time',
   144: 'Limit: Max Cast Time',
+  145: 'Teleport',
+  147: 'Percent Heal',
   148: 'Stacking Block',
   149: 'Stacking Override',
   150: 'Death Save',
+  151: 'Suspend Pet',
+  152: 'Temporary Pet',
+  153: 'Balance Group HP',
+  154: 'Dispel Detrimental',
+  155: 'Spell Crit Damage',
+  156: 'Illusion Copy',
+  157: 'Spell Damage Shield',
+  158: 'Reflect Spell',
+  159: 'All Stats',
+  160: 'Make Drunk',
   161: 'Rune',
   162: 'Magic Rune',
+  163: 'Negate Attacks',
+  167: 'Pet Power',
+  168: 'Melee Mitigation',
+  169: 'Crit Hit Chance',
+  170: 'Spell Crit Chance',
+  171: 'Crippling Blow Chance',
+  172: 'Avoidance',
+  173: 'Riposte Chance',
+  174: 'Dodge Chance',
+  175: 'Parry Chance',
+  176: 'Dual Wield Chance',
+  177: 'Double Attack Chance',
+  178: 'Melee Lifetap',
+  179: 'Instrument Modifier',
+  180: 'Resist Spell Chance',
+  181: 'Resist Fear',
+  182: 'Hundred Hands',
+  183: 'Melee Skill Check',
+  184: 'Hit Chance',
+  185: 'Damage Modifier',
+  186: 'Min Damage Modifier',
+  189: 'Endurance',
+  190: 'Endurance Pool',
+  191: 'Amnesia',
+  192: 'Hate Override',
+  193: 'Skill Attack',
+  194: 'Fading Memories',
+  195: 'Stun Resist',
+  196: 'Strikethrough',
+  197: 'Skill Damage Taken',
+  198: 'Endurance (instant)',
+  199: 'Taunt',
+  200: 'Proc Chance',
+  201: 'Ranged Proc',
+  204: 'Group Fear Immunity',
+  205: 'Rampage',
+  206: 'AE Taunt',
+  208: 'Cure Poison',
+  209: 'Dispel Beneficial',
+  210: 'Pet Shield',
+  211: 'AE Melee',
+  214: 'Max HP %',
+  215: 'Pet Avoidance',
+  216: 'Accuracy',
+  217: 'Headshot',
+  218: 'Pet Crit Chance',
+  219: 'Slay Undead',
+  220: 'Skill Damage',
 }
+
+// SPAs whose base value is a percentage — used in the default-branch
+// formatter so chance modifiers render as "Riposte Chance: +100%" instead
+// of the bare "+100".
+const PERCENT_SPAS = new Set<number>([
+  155, // Spell Crit Damage
+  168, // Melee Mitigation
+  169, // Crit Hit Chance
+  170, // Spell Crit Chance
+  171, // Crippling Blow Chance
+  172, // Avoidance
+  173, // Riposte Chance
+  174, // Dodge Chance
+  175, // Parry Chance
+  176, // Dual Wield Chance
+  177, // Double Attack Chance
+  180, // Resist Spell Chance
+  181, // Resist Fear
+  182, // Hundred Hands
+  184, // Hit Chance
+  185, // Damage Modifier
+  186, // Min Damage Modifier
+  195, // Stun Resist
+  196, // Strikethrough
+  197, // Skill Damage Taken
+  200, // Proc Chance
+  214, // Max HP %
+  215, // Pet Avoidance
+  216, // Accuracy
+  218, // Pet Crit Chance
+])
 
 export function effectLabel(id: number): string {
   if (id === 254 || id === 255 || id === 320) return ''
@@ -534,6 +625,8 @@ export function effectDescription(id: number, base: number, buffduration: number
       const label = effectLabel(id)
       if (!label) return ''
       if (base === 0) return label
+      // Chance/percent-modifier SPAs whose base values are %s.
+      if (PERCENT_SPAS.has(id)) return `${label}: ${sign}${base}%`
       return `${label}: ${sign}${base}`
     }
   }
