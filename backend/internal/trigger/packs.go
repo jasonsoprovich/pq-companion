@@ -1,6 +1,83 @@
 package trigger
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
+
+// Default audio-alert thresholds applied to every built-in class pack timer
+// trigger that doesn't carry its own TimerAlerts. Values mirror what the
+// frontend trigger editor would produce for a "fading soon" / "expiring"
+// TTS preset, with TTS volume at 100% and the system-default voice. Users
+// can override these per-trigger after installing a pack.
+const (
+	// buffFadeShortSecs fires the "fading soon" TTS for buffs whose total
+	// duration is under one hour. 60s is enough warning to reapply during
+	// downtime without interrupting active combat.
+	buffFadeShortSecs = 60
+	// buffFadeLongSecs fires the "fading soon" TTS for buffs an hour or
+	// longer (e.g. KEI, Aegolism). Five minutes gives time to corral the
+	// group for a re-buff before the song line drops.
+	buffFadeLongSecs = 300
+	// detrimentalExpireSecs fires the "expiring" TTS for any detrimental
+	// timer (mez, root, charm, debuff). Ten seconds is the tightest useful
+	// warning before re-cast windows close.
+	detrimentalExpireSecs = 10
+)
+
+// buffFadingAlert returns the standard "fading soon" TimerAlert used by
+// built-in class packs. The threshold (seconds) is picked per-trigger by
+// duration band; see applyDefaultTimerAlerts.
+func buffFadingAlert(seconds int) TimerAlert {
+	return TimerAlert{
+		ID:          fmt.Sprintf("pack-fade-%ds", seconds),
+		Seconds:     seconds,
+		Type:        TimerAlertTypeTextToSpeech,
+		TTSTemplate: "{spell} fading soon",
+		TTSVolume:   100,
+	}
+}
+
+// detrimentalExpiringAlert returns the standard 10-second "expiring"
+// TimerAlert used by built-in class packs for detrimental timers.
+func detrimentalExpiringAlert() TimerAlert {
+	return TimerAlert{
+		ID:          fmt.Sprintf("pack-expire-%ds", detrimentalExpireSecs),
+		Seconds:     detrimentalExpireSecs,
+		Type:        TimerAlertTypeTextToSpeech,
+		TTSTemplate: "{spell} expiring",
+		TTSVolume:   100,
+	}
+}
+
+// applyDefaultTimerAlerts fills in a default TimerAlerts list for every
+// timer-bound trigger in p that doesn't already declare one. Buffs get a
+// fading-soon TTS at 60s (or 300s if the buff runs an hour or longer);
+// detrimentals get an expiring TTS at 10s. Triggers whose duration is too
+// short for the chosen threshold to ever fire (e.g. a 12-second discipline
+// vs. a 60-second buff threshold) are left untouched — the threshold would
+// trip on the first tick and produce a useless alert.
+func applyDefaultTimerAlerts(p TriggerPack) TriggerPack {
+	for i := range p.Triggers {
+		t := &p.Triggers[i]
+		if len(t.TimerAlerts) > 0 || t.TimerDurationSecs <= 0 {
+			continue
+		}
+		switch t.TimerType {
+		case TimerTypeBuff:
+			if t.TimerDurationSecs >= 3600 {
+				t.TimerAlerts = []TimerAlert{buffFadingAlert(buffFadeLongSecs)}
+			} else if t.TimerDurationSecs > buffFadeShortSecs {
+				t.TimerAlerts = []TimerAlert{buffFadingAlert(buffFadeShortSecs)}
+			}
+		case TimerTypeDetrimental:
+			if t.TimerDurationSecs > detrimentalExpireSecs {
+				t.TimerAlerts = []TimerAlert{detrimentalExpiringAlert()}
+			}
+		}
+	}
+	return p
+}
 
 // EnchanterPack returns the pre-built enchanter trigger pack: critical
 // crowd-control break alerts (mez/charm/root), casting-failure alerts
@@ -1701,9 +1778,12 @@ func GroupAwarenessPack() TriggerPack {
 	}
 }
 
-// AllPacks returns all built-in trigger packs.
+// AllPacks returns all built-in trigger packs with default audio alerts
+// applied. Class packs run through applyDefaultTimerAlerts so every timer
+// trigger gets a fading/expiring TTS without each pack having to spell it
+// out per-spell. GroupAwareness has no timers and is returned as-is.
 func AllPacks() []TriggerPack {
-	return []TriggerPack{
+	classPacks := []TriggerPack{
 		EnchanterPack(),
 		ClericPack(),
 		DruidPack(),
@@ -1719,8 +1799,13 @@ func AllPacks() []TriggerPack {
 		NecromancerPack(),
 		WizardPack(),
 		BeastlordPack(),
-		GroupAwarenessPack(),
 	}
+	out := make([]TriggerPack, 0, len(classPacks)+1)
+	for _, p := range classPacks {
+		out = append(out, applyDefaultTimerAlerts(p))
+	}
+	out = append(out, GroupAwarenessPack())
+	return out
 }
 
 // InstallPack replaces any existing triggers for pack.PackName with the pack's
