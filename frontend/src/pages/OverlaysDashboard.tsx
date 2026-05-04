@@ -8,7 +8,7 @@
  * restored on next mount. Drag/resize snaps to a 16px grid.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Eye, EyeOff, MonitorPlay, RotateCcw, Zap, HeartPulse, ExternalLink } from 'lucide-react'
+import { Eye, EyeOff, MonitorPlay, RotateCcw, HeartPulse, ExternalLink } from 'lucide-react'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
@@ -149,20 +149,6 @@ export default function OverlaysDashboard(): React.ReactElement {
               <ExternalLink size={9} style={{ opacity: 0.6 }} />
             </button>
           )}
-          <button
-            onClick={() => window.electron?.overlay?.toggleTrigger()}
-            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-            style={{
-              backgroundColor: 'var(--color-surface-2)',
-              color: 'var(--color-muted-foreground)',
-              border: '1px solid var(--color-border)',
-            }}
-            title="Toggle the trigger alerts overlay window — shows on-screen alert text from custom triggers"
-          >
-            <Zap size={11} />
-            Trigger Alerts
-            <ExternalLink size={9} style={{ opacity: 0.6 }} />
-          </button>
           <button
             onClick={handleReset}
             className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
