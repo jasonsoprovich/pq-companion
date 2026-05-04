@@ -1014,6 +1014,22 @@ func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
 
 // ─── Zones ────────────────────────────────────────────────────────────────────
 
+// hiddenZoneShortNames are zones excluded from the zone browser/search.
+// `tutorial` is the EverQuest tutorial zone, irrelevant to Project Quarm.
+// `towerbone` is a Quarm-specific alternate Field of Bone clone; the canonical
+// `fieldofbone` (zoneidnumber 78) is the one PQDI references.
+var hiddenZoneShortNames = []string{"tutorial", "towerbone"}
+
+func hiddenZoneFilter(prefix string) (string, []any) {
+	placeholders := make([]string, len(hiddenZoneShortNames))
+	args := make([]any, len(hiddenZoneShortNames))
+	for i, name := range hiddenZoneShortNames {
+		placeholders[i] = "?"
+		args[i] = name
+	}
+	return fmt.Sprintf("%sshort_name NOT IN (%s)", prefix, strings.Join(placeholders, ",")), args
+}
+
 const zoneColumns = `
   z.id, COALESCE(z.short_name,''), z.long_name, COALESCE(z.file_name,''),
   z.zoneidnumber, z.safe_x, z.safe_y, z.safe_z,
@@ -1108,20 +1124,24 @@ func (db *DB) GetZoneByShortName(shortName string) (*Zone, error) {
 // SearchZones searches zones by long_name (case-insensitive substring match).
 func (db *DB) SearchZones(query string, limit, offset int) (*SearchResult[Zone], error) {
 	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
+	hiddenFilter, hiddenArgs := hiddenZoneFilter(" AND ")
 
 	var total int
+	countArgs := append([]any{pattern}, hiddenArgs...)
 	if err := db.QueryRow(
-		"SELECT COUNT(*) FROM zone WHERE long_name LIKE ? ESCAPE '\\'",
-		pattern,
+		"SELECT COUNT(*) FROM zone WHERE long_name LIKE ? ESCAPE '\\'"+hiddenFilter,
+		countArgs...,
 	).Scan(&total); err != nil {
 		return nil, fmt.Errorf("count zones: %w", err)
 	}
 
 	q := fmt.Sprintf(
-		"SELECT %s FROM zone z WHERE z.long_name LIKE ? ESCAPE '\\' ORDER BY z.long_name LIMIT ? OFFSET ?",
-		zoneColumns,
+		"SELECT %s FROM zone z WHERE z.long_name LIKE ? ESCAPE '\\'%s ORDER BY z.long_name LIMIT ? OFFSET ?",
+		zoneColumns, hiddenFilter,
 	)
-	rows, err := db.Query(q, pattern, limit, offset)
+	queryArgs := append([]any{pattern}, hiddenArgs...)
+	queryArgs = append(queryArgs, limit, offset)
+	rows, err := db.Query(q, queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("search zones: %w", err)
 	}
