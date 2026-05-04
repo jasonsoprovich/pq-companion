@@ -66,10 +66,30 @@ func (h *zonesHandler) search(w http.ResponseWriter, r *http.Request) {
 	if limit > 100 {
 		limit = 100
 	}
-	result, err := h.db.SearchZones(q, limit, offset)
+
+	var filters db.ZoneSearchFilters
+	if raw := r.URL.Query().Get("expansion"); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil {
+			filters.Expansion = &v
+		}
+	}
+
+	result, err := h.db.SearchZones(q, filters, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *zonesHandler) expansions(w http.ResponseWriter, r *http.Request) {
+	result, err := h.db.ZoneExpansions()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if result == nil {
+		result = []int{}
 	}
 	writeJSON(w, http.StatusOK, result)
 }

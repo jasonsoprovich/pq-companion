@@ -6,6 +6,7 @@ import {
   getZone,
   getZoneConnections,
   getZoneDrops,
+  getZoneExpansions,
   getZoneForage,
   getZoneGroundSpawns,
   searchZones,
@@ -69,16 +70,18 @@ interface SearchPaneProps {
 
 function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactElement {
   const [query, setQuery] = useState('')
+  const [expansion, setExpansion] = useState<number | null>(null)
+  const [expansionOptions, setExpansionOptions] = useState<number[]>([])
   const [zones, setZones] = useState<Zone[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const runSearch = useCallback((q: string) => {
+  const runSearch = useCallback((q: string, exp: number | null) => {
     setLoading(true)
     setError(null)
-    searchZones(q, 50, 0)
+    searchZones(q, exp !== null ? { expansion: exp } : {}, 50, 0)
       .then((res) => {
         setZones(res.items ?? [])
         setTotal(res.total)
@@ -89,15 +92,17 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => runSearch(query), 300)
+    debounceRef.current = setTimeout(() => runSearch(query, expansion), 300)
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [query, runSearch])
+  }, [query, expansion, runSearch])
 
   useEffect(() => {
-    runSearch('')
-  }, [runSearch])
+    getZoneExpansions()
+      .then((opts) => setExpansionOptions(opts ?? []))
+      .catch(() => setExpansionOptions([]))
+  }, [])
 
   return (
     <div
@@ -123,6 +128,36 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
             <X size={12} style={{ color: 'var(--color-muted)' }} />
           </button>
         )}
+      </div>
+
+      <div
+        className="flex items-center gap-2 border-b px-3 py-1.5"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <label
+          className="text-[10px] font-semibold uppercase tracking-widest"
+          style={{ color: 'var(--color-muted)' }}
+        >
+          Expansion
+        </label>
+        <select
+          className="flex-1 rounded border bg-transparent px-1.5 py-0.5 text-xs outline-none"
+          style={{
+            borderColor: 'var(--color-border)',
+            color: 'var(--color-foreground)',
+          }}
+          value={expansion === null ? '' : String(expansion)}
+          onChange={(e) =>
+            setExpansion(e.target.value === '' ? null : Number(e.target.value))
+          }
+        >
+          <option value="">All</option>
+          {expansionOptions.map((id) => (
+            <option key={id} value={id}>
+              {expansionName(id)}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div

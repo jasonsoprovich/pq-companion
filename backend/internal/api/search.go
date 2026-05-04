@@ -78,7 +78,7 @@ func (h *searchHandler) global(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		defer wg.Done()
-		res, err := h.db.SearchZones(q, limit, 0)
+		res, err := h.db.SearchZones(q, db.ZoneSearchFilters{}, limit, 0)
 		if err != nil {
 			setErr(err.Error())
 			return

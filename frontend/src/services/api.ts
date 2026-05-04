@@ -189,13 +189,25 @@ export function getNPCFaction(id: number): Promise<NPCFaction | null> {
 
 // ── Zones ──────────────────────────────────────────────────────────────────────
 
+export interface ZoneSearchFilters {
+  expansion?: number
+}
+
 export function searchZones(
   q: string,
+  filters: ZoneSearchFilters = {},
   limit = 50,
   offset = 0,
 ): Promise<SearchResult<Zone>> {
   const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) })
+  if (filters.expansion !== undefined) {
+    params.set('expansion', String(filters.expansion))
+  }
   return get<SearchResult<Zone>>(`/api/zones?${params}`)
+}
+
+export function getZoneExpansions(): Promise<number[]> {
+  return get<number[]>('/api/zones/expansions')
 }
 
 export function getZone(id: number): Promise<Zone> {

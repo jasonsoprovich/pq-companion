@@ -1015,19 +1015,37 @@ func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
 // ─── Zones ────────────────────────────────────────────────────────────────────
 
 // hiddenZoneShortNames are zones excluded from the zone browser/search.
-// `tutorial` is the EverQuest tutorial zone, irrelevant to Project Quarm.
 // `towerbone` is a Quarm-specific alternate Field of Bone clone; the canonical
 // `fieldofbone` (zoneidnumber 78) is the one PQDI references.
-var hiddenZoneShortNames = []string{"tutorial", "towerbone"}
+var hiddenZoneShortNames = []string{"towerbone"}
+
+// hiddenZoneExpansions are expansion IDs whose zones are dev/test stubs that
+// don't ship as playable content on Project Quarm (e.g. expansion 99 covers
+// the EverQuest Tutorial, "Loading", Aviak Village, Marauders Mire, etc.).
+var hiddenZoneExpansions = []int{99}
 
 func hiddenZoneFilter(prefix string) (string, []any) {
-	placeholders := make([]string, len(hiddenZoneShortNames))
-	args := make([]any, len(hiddenZoneShortNames))
-	for i, name := range hiddenZoneShortNames {
-		placeholders[i] = "?"
-		args[i] = name
+	args := make([]any, 0, len(hiddenZoneShortNames)+len(hiddenZoneExpansions))
+	clauses := make([]string, 0, 2)
+
+	if n := len(hiddenZoneShortNames); n > 0 {
+		ph := strings.Repeat("?,", n)
+		clauses = append(clauses, fmt.Sprintf("short_name NOT IN (%s)", ph[:len(ph)-1]))
+		for _, name := range hiddenZoneShortNames {
+			args = append(args, name)
+		}
 	}
-	return fmt.Sprintf("%sshort_name NOT IN (%s)", prefix, strings.Join(placeholders, ",")), args
+	if n := len(hiddenZoneExpansions); n > 0 {
+		ph := strings.Repeat("?,", n)
+		clauses = append(clauses, fmt.Sprintf("expansion NOT IN (%s)", ph[:len(ph)-1]))
+		for _, exp := range hiddenZoneExpansions {
+			args = append(args, exp)
+		}
+	}
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	return prefix + strings.Join(clauses, " AND "), args
 }
 
 const zoneColumns = `
@@ -1121,25 +1139,39 @@ func (db *DB) GetZoneByShortName(shortName string) (*Zone, error) {
 	return z, nil
 }
 
+// ZoneSearchFilters narrows zone search results. Nil fields mean no filter.
+type ZoneSearchFilters struct {
+	Expansion *int
+}
+
 // SearchZones searches zones by long_name (case-insensitive substring match).
-func (db *DB) SearchZones(query string, limit, offset int) (*SearchResult[Zone], error) {
+func (db *DB) SearchZones(query string, filters ZoneSearchFilters, limit, offset int) (*SearchResult[Zone], error) {
 	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
 	hiddenFilter, hiddenArgs := hiddenZoneFilter(" AND ")
 
+	extraFilter := ""
+	extraArgs := []any{}
+	if filters.Expansion != nil {
+		extraFilter = " AND expansion = ?"
+		extraArgs = append(extraArgs, *filters.Expansion)
+	}
+
 	var total int
 	countArgs := append([]any{pattern}, hiddenArgs...)
+	countArgs = append(countArgs, extraArgs...)
 	if err := db.QueryRow(
-		"SELECT COUNT(*) FROM zone WHERE long_name LIKE ? ESCAPE '\\'"+hiddenFilter,
+		"SELECT COUNT(*) FROM zone WHERE long_name LIKE ? ESCAPE '\\'"+hiddenFilter+extraFilter,
 		countArgs...,
 	).Scan(&total); err != nil {
 		return nil, fmt.Errorf("count zones: %w", err)
 	}
 
 	q := fmt.Sprintf(
-		"SELECT %s FROM zone z WHERE z.long_name LIKE ? ESCAPE '\\'%s ORDER BY z.long_name LIMIT ? OFFSET ?",
-		zoneColumns, hiddenFilter,
+		"SELECT %s FROM zone z WHERE z.long_name LIKE ? ESCAPE '\\'%s%s ORDER BY z.long_name LIMIT ? OFFSET ?",
+		zoneColumns, hiddenFilter, extraFilter,
 	)
 	queryArgs := append([]any{pattern}, hiddenArgs...)
+	queryArgs = append(queryArgs, extraArgs...)
 	queryArgs = append(queryArgs, limit, offset)
 	rows, err := db.Query(q, queryArgs...)
 	if err != nil {
@@ -1152,6 +1184,29 @@ func (db *DB) SearchZones(query string, limit, offset int) (*SearchResult[Zone],
 		return nil, err
 	}
 	return &SearchResult[Zone]{Items: zones, Total: total}, nil
+}
+
+// ZoneExpansions returns the distinct expansion IDs present in the zone
+// browser, after hidden-zone filtering. Sorted ascending.
+func (db *DB) ZoneExpansions() ([]int, error) {
+	hiddenFilter, hiddenArgs := hiddenZoneFilter(" WHERE ")
+	rows, err := db.Query(
+		"SELECT DISTINCT expansion FROM zone"+hiddenFilter+" ORDER BY expansion",
+		hiddenArgs...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query zone expansions: %w", err)
+	}
+	defer rows.Close()
+	var out []int
+	for rows.Next() {
+		var e int
+		if err := rows.Scan(&e); err != nil {
+			return nil, fmt.Errorf("scan zone expansion: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 func collectZones(rows *sql.Rows) ([]Zone, error) {

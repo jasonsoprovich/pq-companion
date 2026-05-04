@@ -269,7 +269,7 @@ func TestSearchZones(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := d.SearchZones(tt.query, 20, 0)
+			res, err := d.SearchZones(tt.query, db.ZoneSearchFilters{}, 20, 0)
 			if err != nil {
 				t.Fatalf("SearchZones(%q): %v", tt.query, err)
 			}
