@@ -103,6 +103,7 @@ func EnchanterPack() TriggerPack {
 				PackName: "Enchanter",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "MEZ BROKE!", DurationSecs: 5, Color: "#ff4444"},
+					{Type: ActionTextToSpeech, Text: "Mez broke", Volume: 1.0},
 				},
 			},
 			{
@@ -112,6 +113,7 @@ func EnchanterPack() TriggerPack {
 				PackName: "Enchanter",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "CHARM BROKE!", DurationSecs: 6, Color: "#ff0000"},
+					{Type: ActionTextToSpeech, Text: "Charm broke", Volume: 1.0},
 				},
 			},
 			{
@@ -121,6 +123,7 @@ func EnchanterPack() TriggerPack {
 				PackName: "Enchanter",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "ROOT BROKE!", DurationSecs: 5, Color: "#ff6633"},
+					{Type: ActionTextToSpeech, Text: "Root broke", Volume: 1.0},
 				},
 			},
 
@@ -644,8 +647,33 @@ func DruidPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Druid",
 		Class:       ClassPtr(ClassDruid),
-		Description: "Spell timers for Protection of the Glades, Blessing of Replenishment, Legacy of Thorn, Hand of Ro, Winged Death, Ensnare, and Entrapping Roots.",
+		Description: "Crowd-control break alerts (root, snare) plus spell timers for Protection of the Glades, Blessing of Replenishment, Legacy of Thorn, Hand of Ro, Winged Death, Ensnare, and Entrapping Roots.",
 		Triggers: []Trigger{
+			// ── Crowd-control breaks ─────────────────────────────────────
+			// Caster's "Your <SpellName> spell has worn off." line fires both
+			// on damage-induced break and on natural expiry — either way the
+			// druid needs to know the mob is loose.
+			{
+				Name:     "Root Broke",
+				Enabled:  true,
+				Pattern:  `Your Entrapping Roots spell has worn off\.`,
+				PackName: "Druid",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "ROOT BROKE!", DurationSecs: 5, Color: "#ff6633"},
+					{Type: ActionTextToSpeech, Text: "Root broke", Volume: 1.0},
+				},
+			},
+			{
+				Name:     "Snare Broke",
+				Enabled:  true,
+				Pattern:  `Your Ensnare spell has worn off\.`,
+				PackName: "Druid",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "SNARE BROKE!", DurationSecs: 5, Color: "#ff8833"},
+					{Type: ActionTextToSpeech, Text: "Snare broke", Volume: 1.0},
+				},
+			},
+
 			// ── Self / group buffs (timers) ──────────────────────────────
 			{
 				Name:              "Protection of the Glades",
@@ -869,7 +897,7 @@ func PaladinPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Paladin",
 		Class:       ClassPtr(ClassPaladin),
-		Description: "Lay on Hands alert plus spell timers for Immobilize, Holyforge Discipline, and Sanctification Discipline.",
+		Description: "Lay on Hands alert, root break alert, and spell timers for Immobilize, Holyforge Discipline, and Sanctification Discipline.",
 		Triggers: []Trigger{
 			// ── Emergency burst (overlay alert) ──────────────────────────
 			// Lay on Hands is instant with a 72-minute recast; the cast
@@ -883,6 +911,18 @@ func PaladinPack() TriggerPack {
 				PackName: "Paladin",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "LAY ON HANDS!", DurationSecs: 5, Color: "#ffdd33"},
+				},
+			},
+
+			// ── Crowd-control break ──────────────────────────────────────
+			{
+				Name:     "Root Broke",
+				Enabled:  true,
+				Pattern:  `Your Immobilize spell has worn off\.`,
+				PackName: "Paladin",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "ROOT BROKE!", DurationSecs: 5, Color: "#ff6633"},
+					{Type: ActionTextToSpeech, Text: "Root broke", Volume: 1.0},
 				},
 			},
 
@@ -1323,8 +1363,33 @@ func BardPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Bard",
 		Class:       ClassPtr(ClassBard),
-		Description: "Spell timers for Cantata of Replenishment, Warsong of Zek, Niv's Melody of Preservation, Psalm of Veeshan, Elemental Rhythms, Guardian Rhythms, Kelin's Lucid Lullaby / Lugubrious Lament, Solon's Bewitching Bravura, and Largo's Absonant Binding.",
+		Description: "Crowd-control break alerts (mez, charm) plus spell timers for Cantata of Replenishment, Warsong of Zek, Niv's Melody of Preservation, Psalm of Veeshan, Elemental Rhythms, Guardian Rhythms, Kelin's Lucid Lullaby / Lugubrious Lament, Solon's Bewitching Bravura, and Largo's Absonant Binding.",
 		Triggers: []Trigger{
+			// ── Crowd-control breaks ─────────────────────────────────────
+			// Bard songs pulse every tick, so the worn-off line only fires
+			// once the bard stops singing (or the song's natural duration
+			// elapses post-stop). Either case means the mez/charm is gone.
+			{
+				Name:     "Mez Broke",
+				Enabled:  true,
+				Pattern:  `Your Kelin's Lucid Lullaby spell has worn off\.`,
+				PackName: "Bard",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "MEZ BROKE!", DurationSecs: 5, Color: "#ff4444"},
+					{Type: ActionTextToSpeech, Text: "Mez broke", Volume: 1.0},
+				},
+			},
+			{
+				Name:     "Charm Broke",
+				Enabled:  true,
+				Pattern:  `Your Solon's Bewitching Bravura spell has worn off\.`,
+				PackName: "Bard",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "CHARM BROKE!", DurationSecs: 6, Color: "#ff0000"},
+					{Type: ActionTextToSpeech, Text: "Charm broke", Volume: 1.0},
+				},
+			},
+
 			// ── Group buff songs (timers, self-only land) ────────────────
 			// These songs have empty cast_on_other in spells_new, so only
 			// the song's targets see "You feel ...". Each timer triggers
@@ -1601,8 +1666,20 @@ func WizardPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Wizard",
 		Class:       ClassPtr(ClassWizard),
-		Description: "Harvest alert plus spell timers for Manaskin and Atol's Spectral Shackles.",
+		Description: "Harvest alert, root break alert, and spell timers for Manaskin and Atol's Spectral Shackles.",
 		Triggers: []Trigger{
+			// ── Crowd-control break ──────────────────────────────────────
+			{
+				Name:     "Root Broke",
+				Enabled:  true,
+				Pattern:  `Your Atol's Spectral Shackles spell has worn off\.`,
+				PackName: "Wizard",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "ROOT BROKE!", DurationSecs: 5, Color: "#ff6633"},
+					{Type: ActionTextToSpeech, Text: "Root broke", Volume: 1.0},
+				},
+			},
+
 			// ── Mana tool (overlay alert) ────────────────────────────────
 			// Harvest is instant with a 10-minute recast; the cast message
 			// "You gather mana from your surroundings." only fires when
