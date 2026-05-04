@@ -81,7 +81,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   const runSearch = useCallback((q: string, exp: number | null) => {
     setLoading(true)
     setError(null)
-    searchZones(q, exp !== null ? { expansion: exp } : {}, 50, 0)
+    searchZones(q, exp !== null ? { expansion: exp } : {}, 1000, 0)
       .then((res) => {
         setZones(res.items ?? [])
         setTotal(res.total)

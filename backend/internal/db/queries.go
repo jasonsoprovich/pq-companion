@@ -1020,9 +1020,10 @@ func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
 var hiddenZoneShortNames = []string{"towerbone"}
 
 // hiddenZoneExpansions are expansion IDs whose zones are dev/test stubs that
-// don't ship as playable content on Project Quarm (e.g. expansion 99 covers
-// the EverQuest Tutorial, "Loading", Aviak Village, Marauders Mire, etc.).
-var hiddenZoneExpansions = []int{99}
+// don't ship as playable content on Project Quarm. Expansion 99 covers the
+// EverQuest Tutorial, "Loading", Aviak Village, Marauders Mire, etc.;
+// expansion -1 holds the two engine loading-screen stubs.
+var hiddenZoneExpansions = []int{-1, 99}
 
 func hiddenZoneFilter(prefix string) (string, []any) {
 	args := make([]any, 0, len(hiddenZoneShortNames)+len(hiddenZoneExpansions))

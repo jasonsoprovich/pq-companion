@@ -61,10 +61,12 @@ func (h *zonesHandler) getNPCsByShortName(w http.ResponseWriter, r *http.Request
 
 func (h *zonesHandler) search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
-	limit := queryInt(r, "limit", 20)
+	// The zone catalog is small and fixed (~190 entries), so the browser
+	// shows the full result set rather than paginating like items/spells/NPCs.
+	limit := queryInt(r, "limit", 1000)
 	offset := queryInt(r, "offset", 0)
-	if limit > 100 {
-		limit = 100
+	if limit > 1000 {
+		limit = 1000
 	}
 
 	var filters db.ZoneSearchFilters
