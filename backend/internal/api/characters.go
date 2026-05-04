@@ -18,10 +18,11 @@ import (
 )
 
 type charactersHandler struct {
-	store  *character.Store
-	mgr    *config.Manager
-	db     *db.DB
-	tailer *logparser.Tailer
+	store   *character.Store
+	mgr     *config.Manager
+	db      *db.DB
+	tailer  *logparser.Tailer
+	watcher *zeal.Watcher
 }
 
 type charactersListResponse struct {
@@ -34,6 +35,12 @@ type charactersListResponse struct {
 // Active is the manually-configured character when set; otherwise the
 // auto-detected character (most-recently-modified EQ log file).
 func (h *charactersHandler) list(w http.ResponseWriter, r *http.Request) {
+	// Re-sync persona/stats/AAs from each character's Quarmy export before
+	// reading the store, so the page reflects what's actually on disk rather
+	// than whatever the active-character watcher last persisted.
+	if h.watcher != nil {
+		h.watcher.RefreshAllPersonas()
+	}
 	chars, err := h.store.List()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

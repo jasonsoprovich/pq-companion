@@ -94,6 +94,54 @@ func (w *Watcher) Quarmy() *QuarmyData {
 	return w.quarmy
 }
 
+// RefreshAllPersonas parses every stored character's Quarmy export (when
+// present on disk) and persists their level/class/race/stats/AAs to user.db.
+// The active-character watcher loop only persists data for whoever is logged
+// in right now; without this sweep, non-active characters keep whatever level
+// they had when first imported (often 1) and the Characters page misreads
+// them. Errors per character are logged and skipped.
+func (w *Watcher) RefreshAllPersonas() {
+	if w.charStore == nil {
+		return
+	}
+	cfg := w.cfgMgr.Get()
+	if cfg.EQPath == "" {
+		return
+	}
+	chars, err := w.charStore.List()
+	if err != nil {
+		slog.Warn("zeal: refresh personas: list characters", "err", err)
+		return
+	}
+	for _, c := range chars {
+		path := QuarmyPath(cfg.EQPath, c.Name)
+		if ModTime(path).IsZero() {
+			continue
+		}
+		data, err := ParseQuarmy(path, c.Name)
+		if err != nil {
+			slog.Warn("zeal: refresh personas: parse quarmy", "character", c.Name, "err", err)
+			continue
+		}
+		s := data.Stats
+		if err := w.charStore.UpdateStats(c.ID, s.BaseSTR, s.BaseSTA, s.BaseCHA, s.BaseDEX, s.BaseINT, s.BaseAGI, s.BaseWIS); err != nil {
+			slog.Warn("zeal: refresh personas: save stats", "character", c.Name, "err", err)
+		}
+		if data.Level > 0 && data.Class > 0 && data.Race > 0 {
+			if err := w.charStore.UpdatePersona(c.ID, data.Class-1, data.Race, data.Level); err != nil {
+				slog.Warn("zeal: refresh personas: save persona", "character", c.Name, "err", err)
+			}
+		}
+		aas := make([]character.AAEntry, len(data.AAs))
+		for i, aa := range data.AAs {
+			aas[i] = character.AAEntry{AAID: aa.ID, Rank: aa.Rank}
+		}
+		if err := w.charStore.ReplaceAAs(c.ID, aas); err != nil {
+			slog.Warn("zeal: refresh personas: save aas", "character", c.Name, "err", err)
+		}
+	}
+}
+
 // AllInventories scans the EQ directory for all character inventory exports and
 // returns a combined response. Returns a non-configured response if EQPath is empty.
 func (w *Watcher) AllInventories() (*AllInventoriesResponse, error) {

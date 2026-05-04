@@ -105,6 +105,11 @@ func main() {
 	}
 
 	zealWatcher := zeal.NewWatcher(cfgMgr, hub, charStore)
+	// Sync every stored character's persona/stats/AAs from their Quarmy export
+	// at startup. The polling loop only refreshes the active character, so
+	// without this initial sweep the Characters page reads stale levels for
+	// anyone not currently logged in.
+	go zealWatcher.RefreshAllPersonas()
 	go zealWatcher.Start(context.Background())
 
 	// NPC overlay tracker: watches log events to infer the current combat target
