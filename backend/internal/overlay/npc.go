@@ -198,9 +198,10 @@ func (t *NPCTracker) lookupNPC(displayName string) (*db.NPC, []db.SpecialAbility
 
 // mergeInvisFlags appends synthetic SpecialAbility entries for the dedicated
 // see_invis / see_invis_undead columns so the overlay surfaces them like any
-// other ability badge. The columns are the authoritative source for these
-// flags — codes 26/28 in the special_abilities string are set on only a
-// handful of NPCs.
+// other ability badge. The columns are the authoritative source — these
+// flags aren't represented in Quarm's special_abilities string at all
+// (codes 26/28 are CastingFromRangeImmunity/TauntImmunity in Quarm).
+// Sentinel codes above SpecialAbility::Max (55) keep them from colliding.
 func mergeInvisFlags(abilities []db.SpecialAbility, npc *db.NPC) []db.SpecialAbility {
 	add := func(code int, name string) {
 		for _, sa := range abilities {
@@ -211,10 +212,10 @@ func mergeInvisFlags(abilities []db.SpecialAbility, npc *db.NPC) []db.SpecialAbi
 		abilities = append(abilities, db.SpecialAbility{Code: code, Value: 1, Name: name})
 	}
 	if npc.SeeInvis != 0 {
-		add(26, "See Through Invis")
+		add(db.SyntheticSeeInvis, "See Invis")
 	}
 	if npc.SeeInvisUndead != 0 {
-		add(28, "See Through Invis vs Undead")
+		add(db.SyntheticSeeInvisUndead, "See Invis vs Undead")
 	}
 	return abilities
 }

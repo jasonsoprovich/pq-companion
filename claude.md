@@ -112,14 +112,22 @@ Capabilities (see `FEATURES.md` for the full implementation log):
 ### NPC Special Abilities
 The `special_abilities` field in `npc_types` is a caret-delimited (`^`) string.
 Format: `code,value^code,value^...` (e.g., `"1,1^18,1^19,1"`).
-Key codes to parse:
-- 1 = Summon, 2 = Enrage, 3 = Rampage, 4 = Flurry
-- 5 = Triple Attack, 6 = Dual Wield
-- 12 = Immune to Melee, 13 = Immune to Magic
-- 17 = Uncharmable, 18 = Unmezzable, 19 = Unfearable
-- 20 = Immune to Slow, 24 = No Target
-- 26 = See Through Invis, 28 = See Through Invis vs Undead
-Parsing logic lives in `internal/db/special_abilities.go`.
+
+Codes match the `SpecialAbility` namespace in Project Quarm's EQMacEmu fork
+(`common/emu_constants.h`) — they differ from modern EQEmu master numbering.
+Common codes:
+- 1 = Summon, 2 = Enrage, 3 = Rampage, 4 = Area Rampage
+- 5 = Flurry, 6 = Triple Attack, 7 = Dual Wield
+- 9 = Bane Attack, 10 = Magical Attack, 11 = Ranged Attack
+- 12 = Immune to Slow, 13 = Mez, 14 = Charm, 15 = Stun
+- 16 = Snare, 17 = Fear, 18 = Dispel, 19 = Melee, 20 = Magic
+- 31 = Immune to Pacify, 35 = Immune to Harm from Client
+- See `SCHEMA.md` for the full code 1–54 table.
+
+See-invis flags are stored on dedicated `npc_types.see_invis` and
+`see_invis_undead` columns, not in this string. The label table lives in
+`internal/db/special_abilities.go` and is mirrored in
+`frontend/src/lib/npcHelpers.ts`.
 
 ### Zeal Integration
 - Zeal exports inventory/spellbook as files in the EQ directory on logout
