@@ -25,6 +25,19 @@ func TestCalcDurationTicks(t *testing.T) {
 		// shows 6 minutes / 60 ticks for spell 45.
 		{name: "f8 pacify 60", formula: 8, base: 60, level: 60, want: 60},
 		{name: "f8 low level", formula: 8, base: 60, level: 5, want: 60},
+		// Formula 9: min(level*2 + 10, base) — anchored on PQDI Min Duration
+		// at each spell's minimum castable level.
+		{name: "f9 lull lvl1", formula: 9, base: 20, level: 1, want: 12},   // PQDI Lull min
+		{name: "f9 lull cap", formula: 9, base: 20, level: 60, want: 20},   // capped by base
+		{name: "f9 tashanian lvl57", formula: 9, base: 140, level: 57, want: 124}, // PQDI Tashanian min
+		{name: "f9 tashanian lvl60", formula: 9, base: 140, level: 60, want: 130},
+		// Formula 10: min(level*3 + 10, base) — anchored on PQDI charm-line
+		// Min Duration at each spell's minimum castable level.
+		{name: "f10 charm lvl12", formula: 10, base: 205, level: 12, want: 46},     // PQDI Charm min
+		{name: "f10 beguile lvl24", formula: 10, base: 205, level: 24, want: 82},   // PQDI Beguile min
+		{name: "f10 cajoling lvl39", formula: 10, base: 205, level: 39, want: 127}, // PQDI Cajoling min
+		{name: "f10 charm lvl60", formula: 10, base: 205, level: 60, want: 190},
+		{name: "f10 cap reached", formula: 10, base: 205, level: 65, want: 205},
 		// Formula 11: fixed base regardless of level
 		{name: "f11 fixed", formula: 11, base: 72, level: 1, want: 72},
 		{name: "f11 fixed high level", formula: 11, base: 72, level: 60, want: 72},

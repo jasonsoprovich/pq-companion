@@ -236,7 +236,11 @@ func EnchanterPack() TriggerPack {
 				Pattern:           `^(?:You hear the barking of Tashania\.|[A-Z][a-zA-Z']{2,14} glances nervously about\.)$`,
 				WornOffPattern:    `^The barking fades\.$`,
 				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 720,
+				// 780s = 130 ticks per the corrected formula 9
+				// (level*2+10, base 140) at level 60. PQDI shows max 140
+				// ticks but that requires level 65+ which Quarm caps out
+				// before. Was 720s (120 ticks) under the old formula 9.
+				TimerDurationSecs: 780,
 				SpellID:           1702,
 				PackName:          "Enchanter",
 				Actions:           []Action{},
@@ -247,7 +251,10 @@ func EnchanterPack() TriggerPack {
 				Pattern:           `^(?:You have been crippled\.|[A-Z][a-zA-Z']{2,14} has been crippled\.)$`,
 				WornOffPattern:    `^You feel your strength return\.$`,
 				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 810,
+				// 450s = 75 ticks per the corrected formula 8 (fixed base)
+				// matching PQDI for spell 1592 (base=75). Was 810s (135
+				// ticks) under the old formula 8.
+				TimerDurationSecs: 450,
 				SpellID:           1592,
 				PackName:          "Enchanter",
 				Actions:           []Action{},
@@ -400,13 +407,19 @@ func EnchanterPack() TriggerPack {
 			// so each trigger matches on "You begin casting <SpellName>."
 			// instead. Resists clear the stale timer via the spell-specific
 			// resist line.
+			// Charm/Beguile/Cajoling Whispers/Allure/Boltran's Agacerie all
+			// share spells_new buffduration=205 / buffdurationformula=10. With
+			// formula 10 = min(level*3 + 10, base), level 60 yields 190 ticks
+			// = 1140s. Old formula 10 (`min(level, base)`) returned 60 ticks
+			// = 360s, which is what these were calibrated against; updated in
+			// lockstep with the duration.go fix.
 			{
 				Name:              "Charm",
 				Enabled:           true,
 				Pattern:           `^You begin casting Charm\.$`,
 				WornOffPattern:    `^(?:Your Charm spell has worn off\.|Your target resisted the Charm spell\.)$`,
 				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 360,
+				TimerDurationSecs: 1140,
 				SpellID:           300,
 				PackName:          "Enchanter",
 				Actions:           []Action{},
@@ -417,7 +430,7 @@ func EnchanterPack() TriggerPack {
 				Pattern:           `^You begin casting Beguile\.$`,
 				WornOffPattern:    `^(?:Your Beguile spell has worn off\.|Your target resisted the Beguile spell\.)$`,
 				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 360,
+				TimerDurationSecs: 1140,
 				SpellID:           182,
 				PackName:          "Enchanter",
 				Actions:           []Action{},
@@ -428,7 +441,7 @@ func EnchanterPack() TriggerPack {
 				Pattern:           `^You begin casting Cajoling Whispers\.$`,
 				WornOffPattern:    `^(?:Your Cajoling Whispers spell has worn off\.|Your target resisted the Cajoling Whispers spell\.)$`,
 				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 360,
+				TimerDurationSecs: 1140,
 				SpellID:           183,
 				PackName:          "Enchanter",
 				Actions:           []Action{},
@@ -439,7 +452,7 @@ func EnchanterPack() TriggerPack {
 				Pattern:           `^You begin casting Allure\.$`,
 				WornOffPattern:    `^(?:Your Allure spell has worn off\.|Your target resisted the Allure spell\.)$`,
 				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 360,
+				TimerDurationSecs: 1140,
 				SpellID:           184,
 				PackName:          "Enchanter",
 				Actions:           []Action{},
@@ -461,7 +474,7 @@ func EnchanterPack() TriggerPack {
 				Pattern:           `^You begin casting Boltran's Agacerie\.$`,
 				WornOffPattern:    `^(?:Your Boltran's Agacerie spell has worn off\.|Your target resisted the Boltran's Agacerie spell\.)$`,
 				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 360,
+				TimerDurationSecs: 1140,
 				SpellID:           1706,
 				PackName:          "Enchanter",
 				Actions:           []Action{},

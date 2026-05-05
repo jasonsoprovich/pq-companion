@@ -78,15 +78,25 @@ func CalcDurationTicks(formula, base, level int) int {
 		// return the base duration.
 		return base
 	case 9:
-		// min(level*2, base)
-		d := level * 2
+		// min(level*2 + 10, base) — verified against PQDI's "Min Duration"
+		// at each spell's minimum castable level: Lull (id 208, base=20,
+		// level 1) → 12, Tashanian (id 1702, base=140, level 57) → 124. Both
+		// equal level*2 + 10 exactly. Was previously level*2 (no +10), which
+		// undershoots every f9 spell by ten ticks at every caster level.
+		d := level*2 + 10
 		if d > base {
 			d = base
 		}
 		return d
 	case 10:
-		// min(level, base)
-		d := level
+		// min(level*3 + 10, base) — verified against PQDI's "Min Duration":
+		// Charm (id 300, base=205, level 12) → 46, Beguile (id 182, base=205,
+		// level 24) → 82, Cajoling Whispers (id 183, base=205, level 39) →
+		// 127. All equal level*3 + 10 exactly. Was previously `level` capped
+		// at base, which dramatically underprices every f10 charm spell —
+		// at level 60 our calc yielded 60 ticks (6 min) instead of the
+		// game's 190 ticks (19 min) for charm.
+		d := level*3 + 10
 		if d > base {
 			d = base
 		}
