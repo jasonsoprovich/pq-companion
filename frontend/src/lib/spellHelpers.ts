@@ -14,7 +14,7 @@ const CLASS_FULL_NAMES = [
 export function castableClasses(classLevels: number[]): Array<{ abbr: string; full: string; level: number }> {
   return classLevels
     .map((lvl, i) => ({ abbr: CLASS_NAMES[i] ?? `C${i}`, full: CLASS_FULL_NAMES[i] ?? `Class ${i}`, level: lvl }))
-    .filter((c) => c.level < 255)
+    .filter((c) => c.level < 254)
     .sort((a, b) => a.level - b.level)
 }
 
