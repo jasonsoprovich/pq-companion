@@ -7,7 +7,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Skull, Eraser } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { useActivePlayerName, targetSuffix } from '../hooks/useActivePlayerName'
+import { useActivePlayerName } from '../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresholds'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -28,15 +28,20 @@ const CATEGORY_COLORS: Record<TimerCategory, string> = {
   stun: '#eab308',
 }
 
-const CATEGORY_LABELS: Record<TimerCategory, string> = {
-  buff: 'Buff',
-  debuff: 'Debuff',
-  dot: 'DoT',
-  mez: 'Mez',
-  stun: 'Stun',
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+/**
+ * The detrim target — almost always an NPC — is the most useful identifier
+ * after the spell name itself, so it's shown inline rather than tucked into
+ * an "on …" suffix. Returns an empty string for self-targeted entries (rare
+ * for detrimentals) and trigger-driven timers with no target.
+ */
+function detrimTarget(targetName: string, activePlayer: string): string {
+  if (!targetName) return ''
+  if (targetName === activePlayer) return ''
+  if (targetName === 'You') return ''
+  return targetName
+}
 
 function fmtRemaining(secs: number): string {
   if (secs <= 0) return '0s'
@@ -61,7 +66,7 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
   const color = barColor(timer.remaining_seconds, timer.duration_seconds, timer.category)
   const urgent = pct < 0.2
   const catColor = CATEGORY_COLORS[timer.category]
-  const onTarget = targetSuffix(timer.target_name, activePlayer)
+  const target = detrimTarget(timer.target_name, activePlayer)
 
   return (
     <div
@@ -110,20 +115,6 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, flex: 1 }}>
           <SpellIcon id={timer.icon} name={timer.spell_name} size={16} loading="eager" />
-          {/* category badge */}
-          <span
-            style={{
-              fontSize: 9,
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              color: catColor,
-              flexShrink: 0,
-              textShadow: '0 1px 2px rgba(0,0,0,0.9)',
-            }}
-          >
-            {CATEGORY_LABELS[timer.category]}
-          </span>
           <span
             style={{
               fontSize: 12,
@@ -136,8 +127,8 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
             }}
           >
             {timer.spell_name}
-            {onTarget && (
-              <span style={{ color: 'rgba(255,255,255,0.7)', fontWeight: 400 }}>{onTarget}</span>
+            {target && (
+              <span style={{ color: 'rgba(255,255,255,0.7)', fontWeight: 400 }}>{` — ${target}`}</span>
             )}
           </span>
         </div>
