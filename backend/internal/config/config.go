@@ -62,14 +62,18 @@ type BackupSettings struct {
 type SpellTimerSettings struct {
 	// TrackingScope controls which spell-landed events become timers.
 	//
-	//	"self"   — only spells where the recipient is the active player; buffs
-	//	           and debuffs landing on other characters are ignored.
-	//	"anyone" — every spell that lands on a recognised target name (default;
-	//	           matches the post-PR1 behaviour and is what raid-buff trackers
-	//	           need).
+	//	"self"       — only spells where the recipient is the active player.
+	//	"cast_by_me" — every land where the active character is the caster
+	//	               (default). Heuristic: a land within lastCastWindow of
+	//	               our most recent EventSpellCast for the same spell name.
+	//	               Filters out the noise of other players buffing each
+	//	               other while still showing buffs we put on group/raid.
+	//	"anyone"     — every spell that lands on a recognised target. Useful
+	//	               when you want to see e.g. another enchanter's Tash on
+	//	               a raid mob.
 	//
-	// An empty string is treated as "anyone" so existing config files don't
-	// need migration.
+	// An empty string is treated as "cast_by_me" so existing config files
+	// without this field migrate to the new default.
 	TrackingScope string `yaml:"tracking_scope" json:"tracking_scope"`
 
 	// BuffDisplayThresholdSecs hides buff overlay rows whose remaining time
@@ -83,12 +87,18 @@ type SpellTimerSettings struct {
 	// Detrimental overlay. 0 (default) means always show. Detrimentals are
 	// usually short-lived so the default of 0 matches existing behaviour.
 	DetrimDisplayThresholdSecs int `yaml:"detrim_display_threshold_secs" json:"detrim_display_threshold_secs"`
+
+	// CastByMeMigrationDone records that the one-time migration from the
+	// old "anyone" default to "cast_by_me" has run for this config file.
+	// Once true, the user's explicit "anyone" choice is preserved on load.
+	CastByMeMigrationDone bool `yaml:"cast_by_me_migration_done,omitempty" json:"cast_by_me_migration_done,omitempty"`
 }
 
 // TrackingScope* are the canonical values for SpellTimerSettings.TrackingScope.
 const (
-	TrackingScopeSelf   = "self"
-	TrackingScopeAnyone = "anyone"
+	TrackingScopeSelf     = "self"
+	TrackingScopeCastByMe = "cast_by_me"
+	TrackingScopeAnyone   = "anyone"
 )
 
 // Preferences holds optional UI and overlay settings.
@@ -127,7 +137,11 @@ func defaults() Config {
 			MaxBackups: 10,
 		},
 		SpellTimer: SpellTimerSettings{
-			TrackingScope: TrackingScopeAnyone,
+			TrackingScope: TrackingScopeCastByMe,
+			// CastByMeMigrationDone is intentionally left false here so that
+			// applyDefaults can detect a config file that predates the
+			// migration. For brand-new files we set it to true in the
+			// not-exist branch of LoadFrom.
 		},
 	}
 }
@@ -159,6 +173,9 @@ func LoadFrom(path string) (*Manager, error) {
 			return nil, err
 		}
 		// File does not exist — write defaults so the user has a template.
+		// New files are born already-migrated; the marker only matters for
+		// pre-existing configs that had "anyone" as the prior default.
+		cfg.SpellTimer.CastByMeMigrationDone = true
 		m := &Manager{cfg: cfg, path: path}
 		if saveErr := m.save(); saveErr != nil {
 			// Non-fatal: we can operate without a file on disk.
@@ -170,18 +187,39 @@ func LoadFrom(path string) (*Manager, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
-	applyDefaults(&cfg)
+	migrated := applyDefaults(&cfg)
 
-	return &Manager{cfg: cfg, path: path}, nil
+	m := &Manager{cfg: cfg, path: path}
+	if migrated {
+		// Persist the migration so it doesn't run again next launch.
+		_ = m.save()
+	}
+	return m, nil
 }
 
 // applyDefaults fills in fields the user's on-disk file may be missing.
 // Older config files predate newly-added settings; setting safe defaults
 // here keeps the engine and UI from having to special-case empty values.
-func applyDefaults(cfg *Config) {
-	if cfg.SpellTimer.TrackingScope == "" {
-		cfg.SpellTimer.TrackingScope = TrackingScopeAnyone
+//
+// Returns true when a value was changed and the file should be re-saved.
+func applyDefaults(cfg *Config) bool {
+	changed := false
+	// One-time migration: the prior default was "anyone", which produced
+	// noisy overlays when other players were buffing each other. New default
+	// is "cast_by_me". Existing configs that haven't been migrated yet are
+	// rewritten exactly once; subsequent explicit choices of "anyone" are
+	// preserved.
+	if !cfg.SpellTimer.CastByMeMigrationDone {
+		if cfg.SpellTimer.TrackingScope == "" || cfg.SpellTimer.TrackingScope == TrackingScopeAnyone {
+			cfg.SpellTimer.TrackingScope = TrackingScopeCastByMe
+		}
+		cfg.SpellTimer.CastByMeMigrationDone = true
+		changed = true
+	} else if cfg.SpellTimer.TrackingScope == "" {
+		cfg.SpellTimer.TrackingScope = TrackingScopeCastByMe
+		changed = true
 	}
+	return changed
 }
 
 // Get returns a copy of the current config.

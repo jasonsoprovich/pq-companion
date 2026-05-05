@@ -12,13 +12,18 @@ export interface BackupSettings {
   max_backups: number
 }
 
-export type TrackingScope = 'self' | 'anyone'
+export type TrackingScope = 'self' | 'cast_by_me' | 'anyone'
 
 export interface SpellTimerSettings {
   /**
    * Whose spell lands the engine tracks as timers.
-   *   "self"   — only buffs/debuffs landing on the active player
-   *   "anyone" — every recognised land (default; required for raid buff tracking)
+   *   "self"       — only buffs/debuffs landing on the active player
+   *   "cast_by_me" — every land where the active character is the caster
+   *                  (default; uses recent-cast correlation since EQ logs
+   *                  don't record the caster on third-party land messages)
+   *   "anyone"     — every recognised land, including others buffing each
+   *                  other (useful for tracking raid mob debuffs cast by
+   *                  another enchanter, etc.)
    */
   tracking_scope: TrackingScope
 

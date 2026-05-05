@@ -19,8 +19,9 @@ func newTestEngine() *Engine {
 		charCtx: func() (string, string) {
 			return "/eq", "Osui"
 		},
-		// Default to "anyone" (post-PR1 behaviour). Tests that need
-		// "self"-only behaviour install a different scopeFn directly.
+		// Default test scope is "anyone" so legacy tests that don't care
+		// about the scope filter exercise the unconditional-track path.
+		// Scope-specific tests install their own scopeFn.
 		scopeFn: func() string { return scopeAnyone },
 	}
 }
@@ -317,19 +318,20 @@ func TestHandle_SpellFadeFrom_RemovesNamedTargetEntryOnly(t *testing.T) {
 	}
 }
 
-// trackingScope falls back to "anyone" for nil providers and unknown values
-// so legacy/empty config files don't unexpectedly silence the engine.
+// trackingScope falls back to "cast_by_me" for nil providers and unknown
+// values so legacy/empty config files match the current default.
 func TestTrackingScope_DefaultsAndFallbacks(t *testing.T) {
 	cases := []struct {
 		name string
 		fn   ScopeProvider
 		want string
 	}{
-		{"nil provider", nil, scopeAnyone},
-		{"empty string", func() string { return "" }, scopeAnyone},
-		{"unknown value", func() string { return "garbage" }, scopeAnyone},
+		{"nil provider", nil, scopeCastByMe},
+		{"empty string", func() string { return "" }, scopeCastByMe},
+		{"unknown value", func() string { return "garbage" }, scopeCastByMe},
 		{"explicit anyone", func() string { return scopeAnyone }, scopeAnyone},
 		{"explicit self", func() string { return scopeSelf }, scopeSelf},
+		{"explicit cast_by_me", func() string { return scopeCastByMe }, scopeCastByMe},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -374,5 +376,100 @@ func TestActivePlayerName_FallsBackToYou(t *testing.T) {
 	e2 := &Engine{charCtx: func() (string, string) { return "", "" }}
 	if got := e2.activePlayerName(); got != "You" {
 		t.Errorf("empty charCtx fallback: got %q", got)
+	}
+}
+
+// Zone changes used to wipe every active timer. Buffs survive zoning in EQ,
+// so the engine must keep them — this regression-tests the persistence fix.
+func TestHandle_Zone_KeepsTimers(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	e.timers[timerKey("Visions of Grandeur", "Tank")] = &ActiveTimer{
+		ID: timerKey("Visions of Grandeur", "Tank"), SpellName: "Visions of Grandeur",
+		TargetName: "Tank", CastAt: now, StartsAt: now, ExpiresAt: now.Add(30 * time.Minute),
+	}
+	e.timers[timerKey("Tashanian", "a gnoll")] = &ActiveTimer{
+		ID: timerKey("Tashanian", "a gnoll"), SpellName: "Tashanian",
+		TargetName: "a gnoll", CastAt: now, StartsAt: now, ExpiresAt: now.Add(2 * time.Minute),
+	}
+
+	e.Handle(logparser.LogEvent{
+		Type: logparser.EventZone,
+		Data: logparser.ZoneData{ZoneName: "The North Karana"},
+	})
+
+	if len(e.timers) != 2 {
+		t.Fatalf("zone change should not clear timers; got %d (want 2)", len(e.timers))
+	}
+}
+
+// Self-death clears only timers targeting the active player. Buffs the
+// player put on group/raid members and debuffs on mobs survive.
+func TestHandle_Death_ClearsSelfTargetsOnly(t *testing.T) {
+	e := newTestEngine() // active player = "Osui"
+	now := time.Now()
+	e.timers[timerKey("Symbol of Marzin", "Osui")] = &ActiveTimer{
+		ID: timerKey("Symbol of Marzin", "Osui"), SpellName: "Symbol of Marzin",
+		TargetName: "Osui", CastAt: now, StartsAt: now, ExpiresAt: now.Add(30 * time.Minute),
+	}
+	e.timers[timerKey("Visions of Grandeur", "Tank")] = &ActiveTimer{
+		ID: timerKey("Visions of Grandeur", "Tank"), SpellName: "Visions of Grandeur",
+		TargetName: "Tank", CastAt: now, StartsAt: now, ExpiresAt: now.Add(30 * time.Minute),
+	}
+
+	e.Handle(logparser.LogEvent{
+		Type: logparser.EventDeath,
+		Data: logparser.DeathData{SlainBy: "a gnoll"},
+	})
+
+	if _, ok := e.timers[timerKey("Symbol of Marzin", "Osui")]; ok {
+		t.Error("self-target buff should have been removed on player death")
+	}
+	if _, ok := e.timers[timerKey("Visions of Grandeur", "Tank")]; !ok {
+		t.Error("buff on Tank should have survived player death")
+	}
+}
+
+// EventKill drops timers targeting the slain entity — typical case is a
+// mob we'd debuffed/mezzed dying mid-fight.
+func TestHandle_Kill_RemovesTimersOnVictim(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	e.timers[timerKey("Tashanian", "a gnoll")] = &ActiveTimer{
+		ID: timerKey("Tashanian", "a gnoll"), SpellName: "Tashanian",
+		TargetName: "a gnoll", CastAt: now, StartsAt: now, ExpiresAt: now.Add(2 * time.Minute),
+	}
+	e.timers[timerKey("Tashanian", "an orc")] = &ActiveTimer{
+		ID: timerKey("Tashanian", "an orc"), SpellName: "Tashanian",
+		TargetName: "an orc", CastAt: now, StartsAt: now, ExpiresAt: now.Add(2 * time.Minute),
+	}
+
+	e.Handle(logparser.LogEvent{
+		Type: logparser.EventKill,
+		Data: logparser.KillData{Killer: "Tank", Target: "a gnoll"},
+	})
+
+	if _, ok := e.timers[timerKey("Tashanian", "a gnoll")]; ok {
+		t.Error("timer on slain mob should have been removed")
+	}
+	if _, ok := e.timers[timerKey("Tashanian", "an orc")]; !ok {
+		t.Error("timer on unrelated mob should have survived")
+	}
+}
+
+// scope=cast_by_me drops other-target lands when there's no recent local
+// cast of the same spell — i.e. another player's buff on a third party.
+func TestOnSpellLanded_ScopeCastByMe_FiltersWithoutRecentCast(t *testing.T) {
+	e := newTestEngine()
+	e.scopeFn = func() string { return scopeCastByMe }
+
+	e.onSpellLanded(time.Now(), logparser.SpellLandedData{
+		Kind:       logparser.SpellLandedKindOther,
+		SpellName:  "Visions of Grandeur",
+		TargetName: "Bob",
+	})
+
+	if len(e.timers) != 0 {
+		t.Errorf("cast_by_me without matching local cast should drop; got %d timers", len(e.timers))
 	}
 }

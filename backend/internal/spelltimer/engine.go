@@ -19,15 +19,17 @@ import (
 // strings disables modifier resolution (timers fall back to base duration).
 type CharacterContext func() (eqPath, charName string)
 
-// ScopeProvider returns the user-configured tracking scope ("self" or
-// "anyone"). The engine calls this on every landed event so a config change
-// takes effect immediately without restarting the engine. Empty / unknown
-// values are treated as "anyone" to match the default behaviour.
+// ScopeProvider returns the user-configured tracking scope ("self",
+// "cast_by_me", or "anyone"). The engine calls this on every landed event so
+// a config change takes effect immediately without restarting the engine.
+// Empty / unknown values are treated as "cast_by_me" to match the current
+// default behaviour.
 type ScopeProvider func() string
 
 const (
-	scopeSelf   = "self"
-	scopeAnyone = "anyone"
+	scopeSelf     = "self"
+	scopeCastByMe = "cast_by_me"
+	scopeAnyone   = "anyone"
 )
 
 // broadcastInterval is how often the engine pushes timer state updates to
@@ -105,16 +107,18 @@ func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn S
 }
 
 // trackingScope returns the user's currently-configured scope, defaulting to
-// "anyone" when the provider is absent or returns an empty/unknown value.
+// "cast_by_me" when the provider is absent or returns an empty/unknown value.
 func (e *Engine) trackingScope() string {
 	if e.scopeFn == nil {
-		return scopeAnyone
+		return scopeCastByMe
 	}
 	switch s := e.scopeFn(); s {
 	case scopeSelf:
 		return scopeSelf
-	default:
+	case scopeAnyone:
 		return scopeAnyone
+	default:
+		return scopeCastByMe
 	}
 }
 
@@ -204,9 +208,26 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		// Tashan line) which still matches the DB spell name we keyed under.
 		e.removeTimer(timerKey(data.SpellName, data.TargetName))
 
-	case logparser.EventZone, logparser.EventDeath:
-		// Zone change or death clears all active timers.
-		e.clearAll()
+	case logparser.EventZone:
+		// Zoning no longer clears timers — buffs survive a zone change in
+		// EQ, and persisting them lets the user keep tracking long-running
+		// raid buffs across zone lines.
+
+	case logparser.EventDeath:
+		// Active player death: clear only timers targeting the active
+		// player. Buffs we put on others (and debuffs we have on mobs)
+		// remain — the user can clear them manually if needed.
+		e.removeByTarget(e.activePlayerName())
+
+	case logparser.EventKill:
+		// Something we (or a group member) just killed. If it had any of
+		// our timers (mez, debuffs, DoTs, or even a buff we put on it),
+		// drop them — they're no longer accurate.
+		data, ok := ev.Data.(logparser.KillData)
+		if !ok || data.Target == "" {
+			return
+		}
+		e.removeByTarget(data.Target)
 	}
 }
 
@@ -384,16 +405,35 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		return
 	}
 
-	// Tracking scope filter: in "self" mode the engine drops every land
-	// whose recipient isn't the active player. The "You" fallback is also
-	// treated as self so users testing before the active character is known
-	// still see their own buffs.
-	if e.trackingScope() == scopeSelf {
+	// Tracking scope filter:
+	//   self        — drop everything not landing on the active player.
+	//   cast_by_me  — keep self lands; otherwise require a recent local cast
+	//                 of this spell name within lastCastWindow. EQ logs don't
+	//                 record the caster of buffs landing on third parties,
+	//                 so this is a heuristic — when another player casts the
+	//                 same spell within our cast window we may briefly show
+	//                 their buff as ours, but for typical raid flow it's the
+	//                 right tradeoff (and the timer can be cleared manually).
+	//   anyone      — no filtering.
+	switch e.trackingScope() {
+	case scopeSelf:
 		active := e.activePlayerName()
 		if target != active && target != "You" {
 			slog.Info("timer-debug: spell-landed skipped (scope=self, non-self target)",
 				"spell", spellName, "target", target, "active", active)
 			return
+		}
+	case scopeCastByMe:
+		active := e.activePlayerName()
+		if target != active && target != "You" {
+			e.mu.Lock()
+			recentMatch := e.lastCastSpell == spellName && time.Since(e.lastCastAt) <= lastCastWindow
+			e.mu.Unlock()
+			if !recentMatch {
+				slog.Info("timer-debug: spell-landed skipped (scope=cast_by_me, no matching local cast)",
+					"spell", spellName, "target", target)
+				return
+			}
 		}
 	}
 
@@ -498,6 +538,30 @@ func (e *Engine) removeTimer(key string) {
 	e.mu.Unlock()
 
 	if had {
+		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+	}
+}
+
+// removeByTarget deletes every timer whose TargetName matches. Used when a
+// target dies (player, ally, or mob killed in our log) — anything we'd
+// applied to them is no longer relevant.
+func (e *Engine) removeByTarget(target string) {
+	if target == "" {
+		return
+	}
+	e.mu.Lock()
+	removed := 0
+	for k, t := range e.timers {
+		if t.TargetName == target {
+			delete(e.timers, k)
+			removed++
+		}
+	}
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	if removed > 0 {
+		slog.Info("timer-debug: removed timers by target", "target", target, "removed", removed)
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 	}
 }

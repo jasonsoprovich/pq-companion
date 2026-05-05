@@ -125,8 +125,11 @@ server_addr: :8080
 	}
 	cfg := m.Get()
 
-	if cfg.SpellTimer.TrackingScope != TrackingScopeAnyone {
-		t.Errorf("TrackingScope: got %q, want %q (default)", cfg.SpellTimer.TrackingScope, TrackingScopeAnyone)
+	if cfg.SpellTimer.TrackingScope != TrackingScopeCastByMe {
+		t.Errorf("TrackingScope: got %q, want %q (default)", cfg.SpellTimer.TrackingScope, TrackingScopeCastByMe)
+	}
+	if !cfg.SpellTimer.CastByMeMigrationDone {
+		t.Error("CastByMeMigrationDone should be true after backfill")
 	}
 	// Threshold defaults are 0 by design (always show); just confirm we
 	// didn't accidentally set them to anything else.
@@ -135,5 +138,52 @@ server_addr: :8080
 	}
 	if cfg.SpellTimer.DetrimDisplayThresholdSecs != 0 {
 		t.Errorf("DetrimDisplayThresholdSecs: got %d, want 0", cfg.SpellTimer.DetrimDisplayThresholdSecs)
+	}
+}
+
+// One-time migration rewrites pre-existing "anyone" configs to "cast_by_me"
+// the first time a post-upgrade load happens, then leaves the user's choice
+// alone forever after.
+func TestLoadFrom_MigratesAnyoneToCastByMe_Once(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	// Pre-migration config: explicitly set to "anyone", no migration flag.
+	const old = `eq_path: /games/EQ
+spell_timer:
+  tracking_scope: anyone
+`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	cfg := m.Get()
+
+	if cfg.SpellTimer.TrackingScope != TrackingScopeCastByMe {
+		t.Errorf("first load: got %q, want migration to %q",
+			cfg.SpellTimer.TrackingScope, TrackingScopeCastByMe)
+	}
+	if !cfg.SpellTimer.CastByMeMigrationDone {
+		t.Error("CastByMeMigrationDone should be true after migration")
+	}
+
+	// User then explicitly chooses "anyone" again.
+	cfg.SpellTimer.TrackingScope = TrackingScopeAnyone
+	if err := m.Update(cfg); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	// Reload — choice must stick because the migration flag is set.
+	m2, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom (reload): %v", err)
+	}
+	if got := m2.Get().SpellTimer.TrackingScope; got != TrackingScopeAnyone {
+		t.Errorf("reload after explicit anyone: got %q, want %q (migration must be one-shot)",
+			got, TrackingScopeAnyone)
 	}
 }

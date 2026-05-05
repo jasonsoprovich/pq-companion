@@ -602,19 +602,23 @@ export default function SettingsPage(): React.ReactElement {
               Tracking scope
             </p>
             <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-              Choose <b>Anyone</b> to track buffs you cast on group / raid members in addition to your own; choose <b>Self only</b> to ignore landings on other players.
+              <b>Self only</b> tracks just buffs landing on you. <b>Cast by me</b> (default) also includes anything you cast on others — without the noise of other players buffing each other. <b>Anyone</b> tracks every recognised land, useful when you want to see e.g. another enchanter's debuff on a raid mob.
             </p>
             <div className="flex gap-2">
-              {(['anyone', 'self'] as const).map((scope) => {
-                const active = (config.spell_timer?.tracking_scope ?? 'anyone') === scope
+              {([
+                { value: 'self' as const, label: 'Self only' },
+                { value: 'cast_by_me' as const, label: 'Cast by me' },
+                { value: 'anyone' as const, label: 'Anyone' },
+              ]).map(({ value, label }) => {
+                const active = (config.spell_timer?.tracking_scope ?? 'cast_by_me') === value
                 return (
                   <button
-                    key={scope}
+                    key={value}
                     type="button"
                     onClick={() =>
                       setConfig({
                         ...config,
-                        spell_timer: { ...config.spell_timer, tracking_scope: scope },
+                        spell_timer: { ...config.spell_timer, tracking_scope: value },
                       })
                     }
                     className="rounded px-3 py-1.5 text-xs font-medium"
@@ -626,7 +630,7 @@ export default function SettingsPage(): React.ReactElement {
                       minWidth: 90,
                     }}
                   >
-                    {scope === 'anyone' ? 'Anyone' : 'Self only'}
+                    {label}
                   </button>
                 )
               })}
