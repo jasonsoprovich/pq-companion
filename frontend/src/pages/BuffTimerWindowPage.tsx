@@ -12,6 +12,7 @@ import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { clearTimers, getTimerState } from '../services/api'
+import { SpellIcon } from '../components/Icon'
 import type { ActiveTimer, TimerState } from '../types/timer'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -45,12 +46,12 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
     <div
       style={{
         position: 'relative',
-        padding: '5px 8px',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        padding: '3px 8px',
+        borderBottom: '1px solid rgba(255,255,255,0.1)',
         overflow: 'hidden',
       }}
     >
-      {/* depleting progress bar */}
+      {/* depleting progress bar — kept at high alpha so it stays readable even when the window opacity is low */}
       <div
         style={{
           position: 'absolute',
@@ -59,7 +60,7 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
           bottom: 0,
           width: `${pct * 100}%`,
           backgroundColor: color,
-          opacity: 0.18,
+          opacity: 0.55,
           pointerEvents: 'none',
           transition: 'width 1s linear',
         }}
@@ -73,28 +74,33 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
           gap: 8,
         }}
       >
-        <span
-          style={{
-            fontSize: 12,
-            color: urgent ? '#f87171' : 'rgba(255,255,255,0.9)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            fontWeight: urgent ? 600 : 400,
-          }}
-        >
-          {timer.spell_name}
-          {onTarget && (
-            <span style={{ color: 'rgba(255,255,255,0.45)', fontWeight: 400 }}>{onTarget}</span>
-          )}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
+          <SpellIcon id={timer.icon} name={timer.spell_name} size={16} loading="eager" />
+          <span
+            style={{
+              fontSize: 12,
+              color: urgent ? '#f87171' : 'rgba(255,255,255,1)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontWeight: urgent ? 600 : 500,
+              textShadow: '0 1px 2px rgba(0,0,0,0.9)',
+            }}
+          >
+            {timer.spell_name}
+            {onTarget && (
+              <span style={{ color: 'rgba(255,255,255,0.7)', fontWeight: 400 }}>{onTarget}</span>
+            )}
+          </span>
+        </div>
         <span
           style={{
             fontSize: 11,
             color: urgent ? '#f87171' : color,
             fontVariantNumeric: 'tabular-nums',
             flexShrink: 0,
-            fontWeight: urgent ? 700 : 400,
+            fontWeight: urgent ? 700 : 600,
+            textShadow: '0 1px 2px rgba(0,0,0,0.9)',
           }}
         >
           {fmtRemaining(timer.remaining_seconds)}

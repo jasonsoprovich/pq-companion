@@ -8,9 +8,15 @@ type EQIconProps = {
   size?: number
   name?: string
   className?: string
+  /**
+   * Image loading strategy. Defaults to 'lazy' for long lists (spell book,
+   * search results). Pass 'eager' for short, always-visible lists like
+   * overlays where lazy loading can drop icons that were briefly off-screen.
+   */
+  loading?: 'lazy' | 'eager'
 }
 
-function EQIcon({ id, kind, size = 24, name, className }: EQIconProps): React.ReactElement {
+function EQIcon({ id, kind, size = 24, name, className, loading = 'lazy' }: EQIconProps): React.ReactElement {
   const [errored, setErrored] = useState(false)
   const hasIcon = typeof id === 'number' && id > 0 && !errored
 
@@ -38,7 +44,7 @@ function EQIcon({ id, kind, size = 24, name, className }: EQIconProps): React.Re
       src={`icons/${id}.png`}
       alt={alt}
       title={name}
-      loading="lazy"
+      loading={loading}
       decoding="async"
       onError={() => setErrored(true)}
       className={merged}
