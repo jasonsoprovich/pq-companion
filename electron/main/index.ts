@@ -554,27 +554,32 @@ function createTriggerOverlay(): void {
     return
   }
 
-  // The trigger overlay is the canvas alerts are positioned within (via the
-  // Test/Position button on each overlay_text action). Default to ~90% of the
-  // primary display so it's a large draggable canvas that doesn't quite hit
-  // the screen edges; the window itself is fully transparent and click-
-  // through outside of a positioning session, so the size isn't intrusive.
+  // The trigger overlay is the invisible click-through canvas that real-fire
+  // alerts and the positioning test card render into. Default to the full
+  // primary work area so trigger text can be pinned anywhere on screen — the
+  // window has no chrome, isn't visible outside a positioning session, and
+  // the renderer toggles per-region click-through over just the test card,
+  // so a screen-spanning size never blocks the underlying app/game.
   const primary = screen.getPrimaryDisplay().workArea
-  const desiredW = Math.round(primary.width * 0.9)
-  const desiredH = Math.round(primary.height * 0.9)
   const triggerDefaults = {
-    x: primary.x + Math.round((primary.width - desiredW) / 2),
-    y: primary.y + Math.round((primary.height - desiredH) / 2),
-    width: desiredW,
-    height: desiredH,
+    x: primary.x,
+    y: primary.y,
+    width: primary.width,
+    height: primary.height,
   }
-  // One-time migration: pre-fullscreen builds saved a 340×360 default that's
-  // too small for the chrome-less positioning model. Clear that so the new
-  // defaults take over. User-resized bounds are preserved.
+  // One-time migration: clear out saved bounds from the old chrome-bearing
+  // positioning model — the centered 90%-of-screen box and the even older
+  // 340×360 popup. The new full-workArea default replaces both.
   const store = loadBoundsStore()
-  if (store.trigger && store.trigger.width === 340 && store.trigger.height === 360) {
-    delete store.trigger
-    saveBoundsStore(store)
+  if (store.trigger) {
+    const old90W = Math.round(primary.width * 0.9)
+    const old90H = Math.round(primary.height * 0.9)
+    const isOld90 = store.trigger.width === old90W && store.trigger.height === old90H
+    const isOldPopup = store.trigger.width === 340 && store.trigger.height === 360
+    if (isOld90 || isOldPopup) {
+      delete store.trigger
+      saveBoundsStore(store)
+    }
   }
   const { x, y, width, height } = getRestoredBounds('trigger', triggerDefaults)
   triggerOverlayWindow = new BrowserWindow({

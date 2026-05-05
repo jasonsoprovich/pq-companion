@@ -4,11 +4,9 @@
  * configured duration. Renders in a dedicated frameless Electron window.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Zap, X as XIcon } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import type { TriggerFired } from '../types/trigger'
-import { postTriggerTestPosition, endTriggerTestSession, getActiveTriggerTest } from '../services/api'
+import { postTriggerTestPosition, getActiveTriggerTest } from '../services/api'
 
 interface TestAlert {
   testId: string
@@ -101,9 +99,10 @@ function AlertCard({ entry }: { entry: AlertEntry }): React.ReactElement {
 interface TestAlertCardProps {
   alert: TestAlert
   onPositionCommit: (position: { x: number; y: number }) => void
+  onInteractiveChange: (interactive: boolean) => void
 }
 
-function TestAlertCard({ alert, onPositionCommit }: TestAlertCardProps): React.ReactElement {
+function TestAlertCard({ alert, onPositionCommit, onInteractiveChange }: TestAlertCardProps): React.ReactElement {
   const [pos, setPos] = useState(alert.position)
   const dragOffset = useRef<{ dx: number; dy: number } | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -116,6 +115,7 @@ function TestAlertCard({ alert, onPositionCommit }: TestAlertCardProps): React.R
     e.currentTarget.setPointerCapture(e.pointerId)
     dragOffset.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y }
     setDragging(true)
+    onInteractiveChange(true)
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
@@ -133,6 +133,17 @@ function TestAlertCard({ alert, onPositionCommit }: TestAlertCardProps): React.R
     onPositionCommit(pos)
   }
 
+  // Hover state drives per-region click-through: outside the card the trigger
+  // overlay is fully click-through so the underlying app/game keeps receiving
+  // input. While dragging, ignore mouseleave — pointer capture means the card
+  // tracks the cursor but the cursor can briefly fall outside the box.
+  function handleMouseEnter() {
+    onInteractiveChange(true)
+  }
+  function handleMouseLeave() {
+    if (dragOffset.current === null) onInteractiveChange(false)
+  }
+
   const { color, fontSize, text } = alert
 
   return (
@@ -141,6 +152,8 @@ function TestAlertCard({ alert, onPositionCommit }: TestAlertCardProps): React.R
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       style={{
         position: 'fixed',
         left: pos.x,
@@ -169,7 +182,7 @@ function TestAlertCard({ alert, onPositionCommit }: TestAlertCardProps): React.R
         {text || 'Test Overlay'}
       </div>
       <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginTop: 4, letterSpacing: '0.04em' }}>
-        Drag anywhere to position
+        Drag to position · click Done in the editor to lock
       </div>
     </div>
   )
@@ -178,9 +191,9 @@ function TestAlertCard({ alert, onPositionCommit }: TestAlertCardProps): React.R
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function TriggerOverlayWindowPage(): React.ReactElement {
-  const overlayOpacity = useOverlayOpacity()
   const [alerts, setAlerts] = useState<AlertEntry[]>([])
   const [testAlert, setTestAlert] = useState<TestAlert | null>(null)
+  const [interactive, setInteractive] = useState(false)
   const gcTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Garbage-collect expired alerts every 250 ms. Test alerts are sticky and
@@ -196,15 +209,22 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     }
   }, [])
 
-  // Window is fully click-through unless a positioning session is active.
-  // setIgnoreMouseEvents(true) lets the OS pass clicks straight to the game
-  // underneath; flipping it off lets the user drag the test card.
+  // Per-region click-through: keep the window click-through everywhere except
+  // when the cursor is over the draggable test card. The main process loaded
+  // the window with setIgnoreMouseEvents(true, { forward: true }) so DOM
+  // mouseenter/leave still fire on elements while click-through is on.
   useEffect(() => {
-    if (testAlert) {
+    if (testAlert && interactive) {
       window.electron?.overlay?.setIgnoreMouseEvents(false)
     } else {
       window.electron?.overlay?.setIgnoreMouseEvents(true)
     }
+  }, [testAlert, interactive])
+
+  // Reset the interactive flag whenever a positioning session ends so the
+  // window snaps back to click-through even if the card unmounted mid-hover.
+  useEffect(() => {
+    if (!testAlert) setInteractive(false)
   }, [testAlert])
 
   // Hydrate from the backend on first mount so a positioning session that
@@ -284,16 +304,11 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     [testAlert],
   )
 
-  const handleEndSession = useCallback(() => {
-    if (!testAlert) return
-    void endTriggerTestSession(testAlert.testId).catch(() => {})
-  }, [testAlert])
-
-  // The chrome (positioning banner + close) only shows during a Test/Position
-  // session. The rest of the time the trigger overlay is invisible and
-  // click-through — real triggers pop at their pinned positions only.
-  const positioning = testAlert !== null
-
+  // The trigger overlay is fully invisible and click-through. The only thing
+  // it ever shows is real-fire alerts (text-only, pointer-events:none) and,
+  // during a positioning session, a single draggable test card. The "Done"
+  // confirmation lives in the editor that opened the session — there's no
+  // outer chrome here.
   return (
     <div
       style={{
@@ -303,70 +318,9 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         flexDirection: 'column',
         overflow: 'hidden',
         fontFamily: 'system-ui, -apple-system, sans-serif',
-        // Tint the canvas while positioning so the user can see the area
-        // they're working with. Transparent the rest of the time so the
-        // window doesn't dim the game.
-        backgroundColor: positioning ? 'rgba(10,10,12,0.28)' : 'transparent',
-        transition: 'background-color 0.15s ease',
+        backgroundColor: 'transparent',
       }}
     >
-      {/* Positioning banner — only rendered during a session. The whole banner
-          is a drag handle (drag-region) so the user can move the entire
-          positioning canvas around the screen; the Done button opts out of
-          dragging via no-drag so clicks register normally. */}
-      {positioning && (
-        <div
-          className="drag-region"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '8px 14px',
-            backgroundColor: `rgba(10,10,12,${Math.max(0.85, overlayOpacity)})`,
-            borderBottom: '1px solid rgba(167,139,250,0.5)',
-            flexShrink: 0,
-            userSelect: 'none',
-            cursor: 'grab',
-          }}
-        >
-          <Zap size={16} style={{ color: '#a78bfa', flexShrink: 0 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.92)' }}>
-              Positioning trigger alert
-            </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', lineHeight: 1.35, marginTop: 2 }}>
-              Drag this bar to move the canvas. Drag the alert card to place the trigger text. Click Done to save.
-            </div>
-          </div>
-          <button
-            className="no-drag"
-            onClick={handleEndSession}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 12,
-              fontWeight: 700,
-              lineHeight: 1,
-              padding: '6px 14px',
-              borderRadius: 4,
-              border: '1px solid rgba(34,197,94,0.6)',
-              backgroundColor: 'rgba(34,197,94,0.85)',
-              color: '#ffffff',
-              cursor: 'pointer',
-              boxShadow: '0 0 12px rgba(34,197,94,0.4)',
-              flexShrink: 0,
-            }}
-            title="End the positioning session and save the current placement"
-          >
-            <XIcon size={13} />
-            Done — Save Position
-          </button>
-        </div>
-      )}
-
-      {/* Alert stack — unpinned alerts flow here; pinned alerts and the test
-          card render position:fixed so they ignore the header's presence. */}
       <div
         style={{
           flex: 1,
@@ -385,6 +339,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         <TestAlertCard
           alert={testAlert}
           onPositionCommit={handleTestPositionCommit}
+          onInteractiveChange={setInteractive}
         />
       )}
     </div>
