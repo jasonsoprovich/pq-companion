@@ -25,6 +25,14 @@ protocol.registerSchemesAsPrivileged([
   },
 ])
 
+// Allow trigger sounds and TTS to play before the user has clicked anywhere
+// in the window. Without this Chromium silently blocks Audio.play() and
+// SpeechSynthesisUtterance for the rest of the session if the very first
+// alert lands before the first user gesture — exactly when audio matters
+// most (combat starts before the user touches the companion app). Must be
+// set before app is ready.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+
 // Resolve the app icon for runtime BrowserWindow use.
 // In packaged Windows builds the exe already embeds build/icon.ico via
 // electron-builder, so the taskbar/title-bar icon comes from there. We only

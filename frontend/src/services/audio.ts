@@ -50,9 +50,12 @@ export function playSound(filePath: string, volume = 1.0): void {
 
   const audio = new Audio(audioUrl(filePath))
   audio.volume = Math.min(1, Math.max(0, volume))
-  audio.play().catch(() => {
-    // Silently ignore playback errors (e.g. file not found) — the trigger
-    // still fires its other actions.
+  audio.play().catch((err: unknown) => {
+    // Surface the failure in DevTools — file-not-found and autoplay-blocked
+    // both look identical to the user (silence) so a console line is the
+    // only signal something's wrong with their trigger.
+    // eslint-disable-next-line no-console
+    console.warn('[audio] playSound failed', { filePath, error: err })
   })
 }
 
@@ -68,11 +71,20 @@ export function speakText(text: string, voice = '', volume = 1.0): void {
   if (!text || !window.speechSynthesis) return
   if (isDuplicate(`tts:${text}`)) return
 
-  // Cancel any queued utterances so a rapid sequence of triggers doesn't pile up.
-  window.speechSynthesis.cancel()
+  // NOTE: do NOT call speechSynthesis.cancel() here. We used to, on the
+  // theory that it kept rapid alerts from piling up, but it cancels the
+  // previous utterance mid-sentence whenever a second trigger fires within
+  // a second of the first — the symptom the user saw as "Mez broke" being
+  // chopped off when "Charm broke" arrived right after. Letting utterances
+  // queue naturally is the correct behaviour; the dedup window above
+  // already keeps a single trigger from spamming the same line.
 
   const utterance = new SpeechSynthesisUtterance(text)
   utterance.volume = Math.min(1, Math.max(0, volume))
+  utterance.onerror = (e) => {
+    // eslint-disable-next-line no-console
+    console.warn('[audio] speakText failed', { text, voice, error: e.error })
+  }
 
   if (voice) {
     const voices = window.speechSynthesis.getVoices()
