@@ -179,18 +179,46 @@ func (t *NPCTracker) clearTarget() {
 	t.broadcast(snap)
 }
 
+// placeholderPrefixes are the leading tokens Project Quarm uses on
+// "placeholder" npc_types rows (templates spawned by quest scripts that
+// share base stats with the named version). The /con line never includes
+// the prefix, so an exact match against the bare display name misses every
+// time. Tried in increasing length so a real "##_" row wins over a "#_"
+// row for the same suffix when both exist.
+var placeholderPrefixes = []string{"#_", "##_", "###_"}
+
 // lookupNPC converts the log display name (spaces) to the DB name format
-// (underscores) and queries the database.
+// (underscores) and queries the database. When the bare name misses, retry
+// with the placeholder prefixes — Project Quarm tags placeholder rows with
+// "## ", "# ", or "### " in the database name (e.g. "## Diabo`Teka`Temariel"
+// stored as "##_Diabo`Teka`Temariel"), which the /con phrase obviously omits.
 func (t *NPCTracker) lookupNPC(displayName string) (*db.NPC, []db.SpecialAbility) {
 	if t.db == nil {
 		return nil, nil
 	}
 	dbName := strings.ReplaceAll(displayName, " ", "_")
+
 	npc, err := t.db.GetNPCByName(dbName)
+	if err != nil {
+		// Try each placeholder-prefix variant. A miss on any single attempt is
+		// silent (sql.ErrNoRows wrapped); only log if every attempt fails.
+		for _, p := range placeholderPrefixes {
+			alt := p + dbName
+			n2, e2 := t.db.GetNPCByName(alt)
+			if e2 == nil {
+				slog.Debug("overlay: npc lookup matched via placeholder prefix",
+					"display_name", displayName, "db_name", alt)
+				npc = n2
+				err = nil
+				break
+			}
+		}
+	}
 	if err != nil {
 		slog.Debug("overlay: npc lookup miss", "display_name", displayName, "db_name", dbName)
 		return nil, nil
 	}
+
 	abilities := db.ParseSpecialAbilities(npc.SpecialAbilities)
 	abilities = mergeInvisFlags(abilities, npc)
 	return npc, abilities
