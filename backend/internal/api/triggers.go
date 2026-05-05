@@ -186,6 +186,18 @@ func (h *triggerHandler) del(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// clearAll removes every trigger in one statement, then runs a single engine
+// reload — replacing the prior per-id fan-out from the frontend's Clear All
+// button.
+func (h *triggerHandler) clearAll(w http.ResponseWriter, r *http.Request) {
+	if err := h.store.DeleteAll(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.engine.Reload()
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // history returns recent trigger firing events (newest last).
 func (h *triggerHandler) history(w http.ResponseWriter, r *http.Request) {
 	events := h.engine.GetHistory()

@@ -268,6 +268,17 @@ func (s *Store) DeleteByPack(packName string) error {
 	return nil
 }
 
+// DeleteAll removes every trigger in one statement. Used by the Clear All
+// flow on the Triggers page so the frontend doesn't have to fan out N
+// per-id deletes (each of which would otherwise trigger its own engine
+// reload on the API side).
+func (s *Store) DeleteAll() error {
+	if _, err := s.db.Exec(`DELETE FROM triggers`); err != nil {
+		return fmt.Errorf("delete all triggers: %w", err)
+	}
+	return nil
+}
+
 type scanner interface {
 	Scan(...any) error
 }

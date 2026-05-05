@@ -30,6 +30,7 @@ import {
   createTrigger,
   updateTrigger,
   deleteTrigger,
+  clearAllTriggers,
   getTriggerHistory,
   getBuiltinPacks,
   installBuiltinPack,
@@ -1604,10 +1605,11 @@ export default function TriggersPage(): React.ReactElement {
   const handleClearAll = async () => {
     setClearingAll(true)
     try {
-      const ids = triggers.map((t) => t.id)
-      await Promise.all(ids.map((id) => deleteTrigger(id).catch(() => {})))
+      await clearAllTriggers()
       setTriggers([])
       setShowClearAll(false)
+    } catch {
+      // Surface failures by leaving the modal open; the user can retry.
     } finally {
       setClearingAll(false)
     }

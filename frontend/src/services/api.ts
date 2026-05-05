@@ -652,6 +652,10 @@ export function deleteTrigger(id: string): Promise<void> {
   return del(`/api/triggers/${encodeURIComponent(id)}`)
 }
 
+export function clearAllTriggers(): Promise<void> {
+  return del('/api/triggers')
+}
+
 export function getTriggerHistory(): Promise<TriggerFired[]> {
   return get<TriggerFired[]>('/api/triggers/history')
 }
