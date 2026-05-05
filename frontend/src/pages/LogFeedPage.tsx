@@ -1,11 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Activity, Trash2, AlertTriangle, CheckCircle2, Circle, Search } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useLogFeed, clearLogFeed, LOG_FEED_MAX } from '../hooks/useLogFeed'
 import { getLogStatus } from '../services/api'
 import type { LogEvent, LogTailerStatus } from '../types/logEvent'
-
-const MAX_EVENTS = 200
 
 // ── Event badge colours ────────────────────────────────────────────────────────
 
@@ -131,7 +130,11 @@ function ConnPill({
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function LogFeedPage(): React.ReactElement {
-  const [events, setEvents] = useState<LogEvent[]>([])
+  // Events live in a module-level store that the top-level
+  // useLogFeedSubscriber keeps populating; navigating tabs no longer clears
+  // them. The page reads via useSyncExternalStore so we still re-render
+  // when new events land.
+  const events = useLogFeed()
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
   const [search, setSearch] = useState('')
   const feedRef = useRef<HTMLDivElement>(null)
@@ -144,17 +147,9 @@ export default function LogFeedPage(): React.ReactElement {
       .catch(() => setStatus(null))
   }, [])
 
-  const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    // Only handle log:* events.
-    if (!msg.type.startsWith('log:')) return
-    const ev = msg.data as LogEvent
-    setEvents((prev) => {
-      const next = [ev, ...prev]
-      return next.length > MAX_EVENTS ? next.slice(0, MAX_EVENTS) : next
-    })
-  }, [])
-
-  const wsState = useWebSocket(handleMessage)
+  // Subscribe to WS only for the connection-state pill — log events themselves
+  // are handled by the top-level subscriber, so we don't need a handler here.
+  const wsState = useWebSocket()
 
   const visibleEvents = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -194,7 +189,7 @@ export default function LogFeedPage(): React.ReactElement {
             className="rounded px-1.5 py-0.5 text-[10px]"
             style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}
           >
-            {search ? `${visibleEvents.length} / ${events.length}` : `${events.length} / ${MAX_EVENTS}`}
+            {search ? `${visibleEvents.length} / ${events.length}` : `${events.length} / ${LOG_FEED_MAX}`}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -233,7 +228,7 @@ export default function LogFeedPage(): React.ReactElement {
           </div>
           <ConnPill state={wsState} status={status} />
           <button
-            onClick={() => { setEvents([]); setSearch('') }}
+            onClick={() => { clearLogFeed(); setSearch('') }}
             className="flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
             style={{ color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}
             title="Clear events"

@@ -6,6 +6,7 @@ import { getConfig } from './services/api'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useTimerAlerts } from './hooks/useTimerAlerts'
 import { useEventAlerts } from './hooks/useEventAlerts'
+import { useLogFeedSubscriber } from './hooks/useLogFeed'
 import ItemsPage from './pages/ItemsPage'
 import SpellsPage from './pages/SpellsPage'
 import NpcsPage from './pages/NpcsPage'
@@ -47,6 +48,9 @@ function MainWindowLayout(): React.ReactElement {
   useAudioEngine()
   useTimerAlerts()
   useEventAlerts()
+  // Keep the Log Feed populating in the background so it persists across tab
+  // navigation. Clearing only happens via the user's Trash button or restart.
+  useLogFeedSubscriber()
 
   // 'unknown' until config has been loaded; then either true (skip wizard)
   // or false (show wizard before mounting the main Layout).
