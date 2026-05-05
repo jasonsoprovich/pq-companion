@@ -23,8 +23,13 @@ type Store struct {
 // is how long SQLite will retry before giving up. 30s comfortably covers
 // startup bursts like zeal.RefreshAllPersonas writing every character's AAs
 // while the user clicks "Install trigger pack".
+//
+// modernc.org/sqlite expects PRAGMAs via the _pragma=NAME(VALUE) URI form;
+// the mattn-style _journal_mode/_busy_timeout query params are silently
+// ignored, which previously left the DB in default (DELETE) journal mode
+// with a 0 busy_timeout — surfacing SQLITE_BUSY at the slightest contention.
 func OpenStore(path string) (*Store, error) {
-	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_busy_timeout=30000", path)
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(30000)", path)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open user.db: %w", err)

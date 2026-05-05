@@ -38,7 +38,7 @@ type Store struct {
 
 // OpenStore opens (or creates) user.db at path and runs schema migrations.
 func OpenStore(path string) (*Store, error) {
-	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_busy_timeout=30000", path)
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(30000)", path)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open user.db: %w", err)
