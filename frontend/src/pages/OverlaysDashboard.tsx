@@ -179,7 +179,7 @@ export default function OverlaysDashboard(): React.ReactElement {
               <ExternalLink size={9} style={{ opacity: 0.6 }} />
             </button>
           )}
-          {window.electron?.overlay?.anyPopoutOpen && (
+          {typeof window.electron?.overlay?.anyPopoutOpen === 'function' && (
             <button
               onClick={handleTogglePopouts}
               className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
