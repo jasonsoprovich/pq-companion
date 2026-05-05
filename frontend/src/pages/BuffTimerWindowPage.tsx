@@ -4,10 +4,11 @@
  * Shows timers with category === 'buff'.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Shield, Eraser } from 'lucide-react'
+import { Shield, Eraser, ArrowDownNarrowWide, Clock } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName, targetSuffix } from '../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresholds'
+import { useBuffSortMode, sortBuffs } from '../hooks/useBuffSortMode'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import OverlayLockButton from '../components/OverlayLockButton'
@@ -118,6 +119,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
   const [state, setState] = useState<TimerState | null>(null)
   const activePlayer = useActivePlayerName()
   const thresholds = useDisplayThresholds()
+  const { mode: sortMode, toggle: toggleSort } = useBuffSortMode()
 
   useEffect(() => {
     getTimerState().then(setState).catch(() => {})
@@ -134,9 +136,12 @@ export default function BuffTimerWindowPage(): React.ReactElement {
 
   useWebSocket(handleMessage)
 
-  const buffs = (state?.timers ?? [])
-    .filter((t) => t.category === 'buff')
-    .filter((t) => passesThreshold(t, thresholds))
+  const buffs = sortBuffs(
+    (state?.timers ?? [])
+      .filter((t) => t.category === 'buff')
+      .filter((t) => passesThreshold(t, thresholds)),
+    sortMode,
+  )
 
   return (
     <div
@@ -185,6 +190,27 @@ export default function BuffTimerWindowPage(): React.ReactElement {
           onMouseLeave={enableClickThrough}
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
+          <button
+            onClick={toggleSort}
+            title={
+              sortMode === 'remaining'
+                ? 'Sort: least time remaining (click to switch to most recently cast)'
+                : 'Sort: most recently cast (click to switch to least time remaining)'
+            }
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '1px 5px',
+              borderRadius: 3,
+              border: '1px solid rgba(255,255,255,0.1)',
+              backgroundColor: 'transparent',
+              color: 'rgba(255,255,255,0.4)',
+              cursor: 'pointer',
+              lineHeight: 1,
+            }}
+          >
+            {sortMode === 'remaining' ? <ArrowDownNarrowWide size={11} /> : <Clock size={11} />}
+          </button>
           <button
             onClick={() => clearTimers('buff').catch(() => {})}
             title="Clear all active buff timers"

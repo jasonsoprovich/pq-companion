@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Shield, ExternalLink, Plus, Eraser, Circle, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Shield, ExternalLink, Plus, Eraser, Circle, CheckCircle2, AlertTriangle, ArrowDownNarrowWide, Clock } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useActivePlayerName, targetSuffix } from '../../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../../hooks/useDisplayThresholds'
+import { useBuffSortMode, sortBuffs } from '../../hooks/useBuffSortMode'
 import { clearTimers, getLogStatus, getTimerState } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import CreateTriggerModal from '../CreateTriggerModal'
@@ -109,6 +110,7 @@ export default function BuffTimerPanel({
   const [pickedSpell, setPickedSpell] = useState<Spell | null>(null)
   const activePlayer = useActivePlayerName()
   const thresholds = useDisplayThresholds()
+  const { mode: sortMode, toggle: toggleSort } = useBuffSortMode()
 
   useEffect(() => {
     getTimerState().then(setTimerState).catch(() => {})
@@ -121,9 +123,12 @@ export default function BuffTimerPanel({
 
   const wsState = useWebSocket(handleMessage)
 
-  const buffs = (timerState?.timers ?? [])
-    .filter((t) => t.category === 'buff')
-    .filter((t) => passesThreshold(t, thresholds))
+  const buffs = sortBuffs(
+    (timerState?.timers ?? [])
+      .filter((t) => t.category === 'buff')
+      .filter((t) => passesThreshold(t, thresholds)),
+    sortMode,
+  )
 
   return (
     <>
@@ -136,6 +141,17 @@ export default function BuffTimerPanel({
         }
         headerRight={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              onClick={toggleSort}
+              title={
+                sortMode === 'remaining'
+                  ? 'Sort: least time remaining (click to switch to most recently cast)'
+                  : 'Sort: most recently cast (click to switch to least time remaining)'
+              }
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}
+            >
+              {sortMode === 'remaining' ? <ArrowDownNarrowWide size={12} /> : <Clock size={12} />}
+            </button>
             <button
               onClick={() => clearTimers('buff').catch(() => {})}
               title="Clear all active buff timers"
