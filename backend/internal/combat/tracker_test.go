@@ -9,11 +9,13 @@ import (
 )
 
 // newTestTracker returns a Tracker wired to a running ws.Hub suitable for tests.
+// playerNameFn is nil so "You" rows render unchanged — the few tests that
+// exercise the relabel path construct their own tracker with a non-nil one.
 func newTestTracker(t *testing.T) *Tracker {
 	t.Helper()
 	hub := ws.NewHub()
 	go hub.Run()
-	return NewTracker(hub)
+	return NewTracker(hub, nil)
 }
 
 func hitEvent(actor, target string, damage int, ts time.Time) logparser.LogEvent {
@@ -518,6 +520,55 @@ func TestPetOwnerStampedFromCharmBind(t *testing.T) {
 	}
 	if owner.OwnerName != "" {
 		t.Errorf("expected Kildrey OwnerName empty (player, not pet), got %q", owner.OwnerName)
+	}
+}
+
+// TestYouRelabeledToCharacterName verifies that when a PlayerNameProvider is
+// wired, the "You" combatant row is renamed to the active character's name on
+// output. This is what lets the frontend rollup merge the player's row with
+// pet rows whose OwnerName already carries the character's canonical name —
+// without it the UI shows "You" and "Osui (+pet)" as two separate rows.
+func TestYouRelabeledToCharacterName(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Osui" })
+	now := time.Now()
+
+	// Charm bind the pet to Osui — so the pet damage rolls under "Osui",
+	// matching the renamed player row.
+	tr.Handle(petOwnerEvent("a shissar revenant", "Osui", now))
+
+	// You deal a tiny amount (Asphyxiate tick) and the charmed pet does most
+	// of the damage. Without the relabel, "You" and "a shissar revenant"
+	// (OwnerName=Osui) end up in two separate frontend rows.
+	tr.Handle(hitEvent("You", "Pli Thall Xakra", 50, now.Add(time.Second)))
+	tr.Handle(hitEvent("a shissar revenant", "Pli Thall Xakra", 800, now.Add(2*time.Second)))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil {
+		t.Fatal("expected an active fight")
+	}
+	if youRow := findCombatant(st.CurrentFight.Combatants, "You"); youRow != nil {
+		t.Errorf("expected no 'You' row when player name is wired; got one with %d damage", youRow.TotalDamage)
+	}
+	osuiRow := findCombatant(st.CurrentFight.Combatants, "Osui")
+	if osuiRow == nil {
+		t.Fatal("expected 'Osui' row (renamed from 'You') in combatants")
+	}
+	if osuiRow.TotalDamage != 50 {
+		t.Errorf("expected Osui personal damage 50, got %d", osuiRow.TotalDamage)
+	}
+	pet := findCombatant(st.CurrentFight.Combatants, "a shissar revenant")
+	if pet == nil {
+		t.Fatal("expected charmed pet row")
+	}
+	if pet.OwnerName != "Osui" {
+		t.Errorf("expected pet OwnerName=Osui, got %q", pet.OwnerName)
+	}
+	// YouDamage internal aggregate should still pivot on the "You" key,
+	// independent of the relabel — the player's own damage is 50.
+	if st.CurrentFight.YouDamage != 50 {
+		t.Errorf("expected YouDamage=50, got %d", st.CurrentFight.YouDamage)
 	}
 }
 

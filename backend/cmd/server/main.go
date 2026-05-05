@@ -116,14 +116,23 @@ func main() {
 	// and broadcasts overlay:npc_target WebSocket events with full NPC data.
 	npcTracker := overlay.NewNPCTracker(hub, database)
 
-	// Combat tracker: watches log events to group hits into fights, track
-	// per-entity damage, and broadcast overlay:combat WebSocket events.
-	combatTracker := combat.NewTracker(hub)
-
 	// Forward declaration so the tailer pointer can be referenced inside the
-	// CharacterContext closure passed to the timer engine. The tailer is
-	// created below after the engine is wired up.
+	// closures passed to the combat tracker and timer engine. The tailer is
+	// created below after both are wired up.
 	var tailer *logparser.Tailer
+
+	// Combat tracker: watches log events to group hits into fights, track
+	// per-entity damage, and broadcast overlay:combat WebSocket events. The
+	// player-name closure lets it relabel "You" rows with the active
+	// character name so they merge with pet rows on the frontend rollup.
+	combatTracker := combat.NewTracker(hub, func() string {
+		if tailer != nil {
+			if name := tailer.ActiveCharacter(); name != "" {
+				return name
+			}
+		}
+		return cfgMgr.Get().Character
+	})
 
 	// Spell timer engine: watches cast/resist/fade events, maintains countdown
 	// timers per active spell, and broadcasts overlay:timers WebSocket events.

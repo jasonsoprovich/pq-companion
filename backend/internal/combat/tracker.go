@@ -76,10 +76,19 @@ type internalFight struct {
 	youTargets map[string]bool
 }
 
+// PlayerNameProvider returns the active character's display name (e.g.
+// "Osui"). The combat tracker uses it to relabel internal "You" rows with
+// the canonical character name on output, so they merge with pet rows whose
+// OwnerName is also the character name (and so copy/exported summaries are
+// readable to other people). Returning "" disables the relabel.
+type PlayerNameProvider func() string
+
 // Tracker watches parsed log events, groups them into fights, and maintains
 // per-entity damage statistics, session-level DPS aggregates, and HPS data.
 type Tracker struct {
 	hub *ws.Hub
+
+	playerNameFn PlayerNameProvider
 
 	mu           sync.Mutex
 	fightCounter int
@@ -113,13 +122,57 @@ type Tracker struct {
 	petOwners map[string]string
 }
 
-// NewTracker returns an initialised combat Tracker.
-func NewTracker(hub *ws.Hub) *Tracker {
+// NewTracker returns an initialised combat Tracker. playerNameFn may be nil
+// (legacy / test callers) — passing it lets the tracker emit "Osui" instead
+// of the literal "You" so pet rows merge correctly with the player row.
+func NewTracker(hub *ws.Hub, playerNameFn PlayerNameProvider) *Tracker {
 	return &Tracker{
 		hub:          hub,
+		playerNameFn: playerNameFn,
 		recentFights: []FightSummary{},
 		deaths:       []DeathRecord{},
 		petOwners:    make(map[string]string),
+	}
+}
+
+// playerName returns the active character name if the provider is wired and
+// returns a non-empty, non-"You" value. Used to relabel the implicit "You"
+// row on output so it merges with pet rows that already carry the
+// character's actual name as their OwnerName.
+func (t *Tracker) playerName() string {
+	if t.playerNameFn == nil {
+		return ""
+	}
+	name := t.playerNameFn()
+	if name == "" || name == "You" {
+		return ""
+	}
+	return name
+}
+
+// relabelYou rewrites every entity in stats whose Name is "You" to playerName.
+// Used after the YouDamage/YouHeal aggregates have been computed against the
+// literal "You" key, so internal accounting remains correct while the wire
+// payload uses the character's canonical name.
+func relabelYou(playerName string, stats []EntityStats) {
+	if playerName == "" {
+		return
+	}
+	for i := range stats {
+		if stats[i].Name == "You" {
+			stats[i].Name = playerName
+		}
+	}
+}
+
+func relabelYouHealers(playerName string, healers []HealerStats) {
+	if playerName == "" {
+		return
+	}
+	for i := range healers {
+		if healers[i].Name == "You" {
+			healers[i].Name = playerName
+		}
 	}
 }
 
@@ -335,7 +388,7 @@ func (t *Tracker) tryReopenLastArchivedLocked(ts time.Time, data logparser.Comba
 		t.lastArchived = nil
 		return false
 	}
-	npcs := confirmedNPCs(t.lastArchived)
+	npcs := confirmedNPCs(t.lastArchived, t.petOwners)
 	if !npcs[data.Actor] && !npcs[data.Target] {
 		// Re-engage is against a different enemy — start a fresh fight and
 		// let the lastArchived slot age out naturally.
@@ -485,7 +538,7 @@ func (t *Tracker) archiveFight(endTime time.Time) *internalFight {
 	// A fight is meaningful only if at least one confirmed NPC was involved.
 	// Without one, the recorded events are usually third-party noise (e.g. a
 	// guildmate's spell on another guildmate) and should not be archived.
-	npcs := confirmedNPCs(f)
+	npcs := confirmedNPCs(f, t.petOwners)
 	if len(npcs) == 0 {
 		return nil
 	}
@@ -522,6 +575,14 @@ func (t *Tracker) archiveFight(endTime time.Time) *internalFight {
 	t.sessionDamage += youDmg
 	t.sessionFightTime += duration
 	t.sessionHeal += youHeal
+
+	// Relabel the literal "You" to the active character's name so the row
+	// merges with pets whose OwnerName carries the same canonical name on
+	// the frontend rollup. Done after the YouDamage/YouHeal aggregates so
+	// internal accounting still pivots on "You".
+	playerName := t.playerName()
+	relabelYou(playerName, combatants)
+	relabelYouHealers(playerName, healers)
 
 	summary := FightSummary{
 		StartTime:     f.startTime,
@@ -575,7 +636,7 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 			duration = 0.001
 		}
 
-		npcs := confirmedNPCs(t.active)
+		npcs := confirmedNPCs(t.active, t.petOwners)
 		combatants := excludeNPCs(buildEntityStats(t.active.outgoing, duration), npcs)
 		stampPetOwners(combatants, t.petOwners)
 		primaryTarget := pickPrimaryTarget(t.active, npcs)
@@ -598,6 +659,12 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 				youHeal = h.TotalHeal
 			}
 		}
+
+		// Relabel literal "You" to the character name (post-aggregate so the
+		// YouDamage / YouHeal computations above still pivot on "You").
+		playerName := t.playerName()
+		relabelYou(playerName, combatants)
+		relabelYouHealers(playerName, healers)
 
 		state.CurrentFight = &FightState{
 			StartTime:     t.active.startTime,
@@ -680,20 +747,35 @@ func safeDivide(numerator, denominator float64) float64 {
 //     is fighting a mob without the player having dealt direct damage yet
 //   - it appears as an attacker in the outgoing map AND its name passes the
 //     heuristic — covers AoE-style mob hits we observed before "You" engaged
-func confirmedNPCs(f *internalFight) map[string]bool {
+//
+// petOwners is consulted to keep charmed-pet names (which look exactly like
+// hostile mobs — "a shissar revenant" charmed by an enchanter — and so trip
+// looksLikeNPC's lowercase-leading rule) out of the NPC set. Without that
+// the pet's row would be excludeNPCs'd off the combatants list and the
+// owner's rollup row would lose all the pet damage.
+func confirmedNPCs(f *internalFight, petOwners map[string]string) map[string]bool {
 	set := make(map[string]bool, len(f.incoming)+len(f.youTargets))
 	for name := range f.incoming {
+		if _, isPet := petOwners[name]; isPet {
+			continue
+		}
 		set[name] = true
 	}
 	for name := range f.youTargets {
 		set[name] = true
 	}
 	for name := range f.targetCounts {
+		if _, isPet := petOwners[name]; isPet {
+			continue
+		}
 		if looksLikeNPC(name) {
 			set[name] = true
 		}
 	}
 	for name := range f.outgoing {
+		if _, isPet := petOwners[name]; isPet {
+			continue
+		}
 		if looksLikeNPC(name) {
 			set[name] = true
 		}
