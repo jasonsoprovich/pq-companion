@@ -109,7 +109,14 @@ func EnchanterPack() TriggerPack {
 			{
 				Name:     "Charm Broke",
 				Enabled:  true,
-				Pattern:  `Your (?:Charm|Beguile|Beguile Animals|Beguile Plants|Cajoling Whispers|Allure|Dictate|Boltran's Agacerie) spell has worn off\.`,
+				// EQ emits the same generic line for every charm spell:
+				// "Your charm spell has worn off." (lowercase 'charm',
+				// regardless of whether the underlying spell was Charm,
+				// Beguile, Cajoling Whispers, Boltran's Agacerie, etc.).
+				// The previous per-name alternation never matched anything
+				// in real logs and was the reason charm-break alerts never
+				// fired for the user.
+				Pattern:  `^Your charm spell has worn off\.$`,
 				PackName: "Enchanter",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "CHARM BROKE!", DurationSecs: 6, Color: "#ff0000"},
@@ -506,7 +513,11 @@ func EnchanterPack() TriggerPack {
 				Pattern:           `^You begin casting Pacify\.$`,
 				WornOffPattern:    `^(?:Your Pacify spell has worn off\.|Your target resisted the Pacify spell\.)$`,
 				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 720,
+				// 360s = 6 minutes per PQDI (spell 45, buffduration=60 ticks).
+				// Was 720 — that came from the EQEmu-canonical formula 8
+				// reading; Quarm uses fixed base, fixed here in lockstep with
+				// the spelltimer.CalcDurationTicks formula-8 fix.
+				TimerDurationSecs: 360,
 				SpellID:           45,
 				PackName:          "Enchanter",
 				Actions:           []Action{},

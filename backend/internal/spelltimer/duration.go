@@ -69,12 +69,14 @@ func CalcDurationTicks(formula, base, level int) int {
 		}
 		return d
 	case 8:
-		// min(level + base, base*3)
-		d := level + base
-		if cap := base * 3; d > cap {
-			d = cap
-		}
-		return d
+		// Quarm/EQMacEmu treats formula 8 as a fixed-duration buff: just
+		// `base` ticks regardless of level. The EQEmu-canonical "level + base
+		// capped at base*3" doubles every formula-8 spell at level 60, which
+		// produced the user-reported 12-minute Pacify (real value is 6m / 60
+		// ticks per PQDI for spell id 45 — buffduration=60, formula=8). Aligns
+		// with the documented formulas 1/5/7 in SCHEMA.md, which also just
+		// return the base duration.
+		return base
 	case 9:
 		// min(level*2, base)
 		d := level * 2

@@ -19,6 +19,12 @@ func TestCalcDurationTicks(t *testing.T) {
 		// Formula 3: min(level*30, base) — used by some long mezzes
 		{name: "f3 capped by base", formula: 3, base: 200, level: 60, want: 200},
 		{name: "f3 low level", formula: 3, base: 1800, level: 5, want: 150},
+		// Formula 8: Quarm-style fixed-base buff (e.g. Pacify, base=60).
+		// EQEmu canonical "level + base capped at base*3" overshoots and
+		// would yield 12-minute Pacify timers — verified against PQDI which
+		// shows 6 minutes / 60 ticks for spell 45.
+		{name: "f8 pacify 60", formula: 8, base: 60, level: 60, want: 60},
+		{name: "f8 low level", formula: 8, base: 60, level: 5, want: 60},
 		// Formula 11: fixed base regardless of level
 		{name: "f11 fixed", formula: 11, base: 72, level: 1, want: 72},
 		{name: "f11 fixed high level", formula: 11, base: 72, level: 60, want: 72},
