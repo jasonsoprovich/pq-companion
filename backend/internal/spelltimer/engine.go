@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -207,6 +208,12 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		// messages use a short form of the name (e.g. "Tashanian" for the
 		// Tashan line) which still matches the DB spell name we keyed under.
 		e.removeTimer(timerKey(data.SpellName, data.TargetName))
+
+	case logparser.EventIllusionFade:
+		// "Your illusion fades." or "You forget Illusion: X." — neither names
+		// the race, and only one illusion can be active at a time per player,
+		// so wipe every "Illusion: …" timer keyed to the active player.
+		e.removeIllusionsForPlayer(e.activePlayerName())
 
 	case logparser.EventZone:
 		// Zoning no longer clears timers — buffs survive a zone change in
@@ -562,6 +569,31 @@ func (e *Engine) removeByTarget(target string) {
 
 	if removed > 0 {
 		slog.Info("timer-debug: removed timers by target", "target", target, "removed", removed)
+		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+	}
+}
+
+// removeIllusionsForPlayer deletes every "Illusion: …" buff timer keyed to
+// the given player. EQ's two illusion-end messages omit the race name, so
+// the engine cannot pinpoint a specific timer — but only one illusion can be
+// active at a time per character, so blanket-clearing them is correct.
+func (e *Engine) removeIllusionsForPlayer(player string) {
+	if player == "" {
+		return
+	}
+	e.mu.Lock()
+	removed := 0
+	for k, t := range e.timers {
+		if t.TargetName == player && strings.HasPrefix(t.SpellName, "Illusion: ") {
+			delete(e.timers, k)
+			removed++
+		}
+	}
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	if removed > 0 {
+		slog.Info("timer-debug: removed illusion timers", "player", player, "removed", removed)
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 	}
 }

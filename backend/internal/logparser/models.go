@@ -66,6 +66,14 @@ const (
 	// says 'My leader is Kildrey.'"). Consumers map the pet name to the owner
 	// so that pet damage can be rolled up under the owning player.
 	EventPetOwner EventType = "log:pet_owner"
+
+	// EventIllusionFade is emitted when the active player's illusion buff
+	// drops, via either of EQ's two end-of-illusion messages:
+	//   "Your illusion fades."         (natural end / dispel)
+	//   "You forget Illusion: <Race>." (buff cleared / removed)
+	// EQ does not name the specific illusion in either message; consumers
+	// remove every active "Illusion: …" timer on the active player.
+	EventIllusionFade EventType = "log:illusion_fade"
 )
 
 // LogEvent is the parsed representation of a single EQ log line.
@@ -206,3 +214,8 @@ type PetOwnerData struct {
 	Pet   string `json:"pet"`
 	Owner string `json:"owner"`
 }
+
+// IllusionFadeData carries no data — both EQ illusion-end messages omit the
+// race, so consumers handle this by removing every illusion timer on the
+// active player.
+type IllusionFadeData struct{}

@@ -125,6 +125,13 @@ var (
 	// Pet name allows possessive backtick (e.g. "Grimrose`s warder") and
 	// other words; owner is a single player name.
 	rePetOwner = regexp.MustCompile(`^(.+?) says '?My leader is (\w+)\.'?$`)
+
+	// Illusion buff dropped — two distinct EQ messages, neither names the
+	// race so we treat both as "all illusions on the active player ended":
+	//   "Your illusion fades."
+	//   "You forget Illusion: <Race>."
+	reIllusionFadeNatural = regexp.MustCompile(`^Your illusion fades\.$`)
+	reIllusionForget      = regexp.MustCompile(`^You forget Illusion: .+\.$`)
 )
 
 // ParseRawLine extracts the timestamp and message from any valid EQ log line
@@ -232,6 +239,16 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		return LogEvent{
 			Type: EventSpellDidNotTakeHold,
 			Data: SpellDidNotTakeHoldData{},
+		}, true
+	}
+
+	// --- Illusion buff fade ---
+	// Matched before generic combat / cast-index patterns so the very short
+	// "Your illusion fades." line can't be misclassified as something else.
+	if reIllusionFadeNatural.MatchString(msg) || reIllusionForget.MatchString(msg) {
+		return LogEvent{
+			Type: EventIllusionFade,
+			Data: IllusionFadeData{},
 		}, true
 	}
 

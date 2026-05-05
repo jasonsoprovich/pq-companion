@@ -58,11 +58,12 @@ type CastMatch struct {
 }
 
 // nameClass is the regex character class used to capture a target name in a
-// cast_on_other line. EQ player and pet names are single tokens starting
-// with an uppercase letter; we allow apostrophes for the rare pet name.
-// 4-15 chars total covers PCs (4-15 chars by character creation rules) and
-// the short canonical NPC names commonly buffed (e.g. charmed pets).
-const nameClass = `[A-Z][a-zA-Z']{2,14}`
+// cast_on_other line. The captured token starts with a capital letter and
+// may include letters, apostrophes (player names), backticks (charmed-pet
+// possessives, e.g. "Gygr`s warder"), and spaces (multi-word named NPCs
+// like "Lord Inquisitor Seru"). The 3–30 char range covers PC names
+// (4–15 by character creation rules) plus typical raid-target named NPCs.
+const nameClass = "[A-Z][a-zA-Z' `]{2,29}"
 
 // CastIndex matches log lines against spell cast text. Built once at startup
 // from the spells_new table. Match() is safe for concurrent calls.
