@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('electron', {
     openNPC: (): Promise<void> => ipcRenderer.invoke('overlay:npc:open'),
     closeNPC: (): Promise<void> => ipcRenderer.invoke('overlay:npc:close'),
     toggleNPC: (): Promise<void> => ipcRenderer.invoke('overlay:npc:toggle'),
+    anyPopoutOpen: (): Promise<boolean> => ipcRenderer.invoke('overlay:popouts:any-open'),
+    openAllPopouts: (): Promise<void> => ipcRenderer.invoke('overlay:popouts:open-all'),
+    closeAllPopouts: (): Promise<void> => ipcRenderer.invoke('overlay:popouts:close-all'),
     setIgnoreMouseEvents: (ignore: boolean): Promise<void> =>
       ipcRenderer.invoke('overlay:set-ignore-mouse-events', ignore),
     getLocked: (): Promise<boolean> => ipcRenderer.invoke('overlay:lock:get'),

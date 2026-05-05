@@ -793,6 +793,34 @@ ipcMain.handle('overlay:npc:toggle', () => {
   }
 })
 
+// ── IPC handlers — bulk popout control ───────────────────────────────────────
+
+function popoutWindows(): BrowserWindow[] {
+  return [
+    dpsOverlayWindow,
+    hpsOverlayWindow,
+    buffTimerWindow,
+    detrimTimerWindow,
+    triggerOverlayWindow,
+    npcOverlayWindow,
+  ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
+}
+
+ipcMain.handle('overlay:popouts:any-open', () => popoutWindows().length > 0)
+
+ipcMain.handle('overlay:popouts:open-all', () => {
+  if (!dpsOverlayWindow || dpsOverlayWindow.isDestroyed()) createDPSOverlay()
+  if (!buffTimerWindow || buffTimerWindow.isDestroyed()) createBuffTimerOverlay()
+  if (!detrimTimerWindow || detrimTimerWindow.isDestroyed()) createDetrimTimerOverlay()
+  if (!npcOverlayWindow || npcOverlayWindow.isDestroyed()) createNPCOverlay()
+  if (!triggerOverlayWindow || triggerOverlayWindow.isDestroyed()) createTriggerOverlay()
+})
+
+ipcMain.handle('overlay:popouts:close-all', () => {
+  // Use close() (not destroy()) so each window's 'close' handler persists its bounds.
+  for (const win of popoutWindows()) win.close()
+})
+
 // ── IPC handlers — click-through ─────────────────────────────────────────────
 
 ipcMain.handle('overlay:set-ignore-mouse-events', (event, ignore: boolean) => {

@@ -8,7 +8,7 @@
  * restored on next mount. Drag/resize snaps to a 16px grid.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Eye, EyeOff, MonitorPlay, RotateCcw, HeartPulse, ExternalLink } from 'lucide-react'
+import { Eye, EyeOff, MonitorPlay, RotateCcw, HeartPulse, ExternalLink, Layers, X } from 'lucide-react'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
@@ -98,6 +98,36 @@ export default function OverlaysDashboard(): React.ReactElement {
     setLayoutVersion((v) => v + 1)
   }, [])
 
+  // Tracks whether any standalone popout window is currently open. Polled
+  // because Electron doesn't push window-state changes to this renderer.
+  const [anyPopoutOpen, setAnyPopoutOpen] = useState(false)
+
+  useEffect(() => {
+    if (!window.electron?.overlay?.anyPopoutOpen) return
+    let cancelled = false
+    const check = (): void => {
+      window.electron.overlay
+        .anyPopoutOpen()
+        .then((v) => { if (!cancelled) setAnyPopoutOpen(v) })
+        .catch(() => {})
+    }
+    check()
+    const id = setInterval(check, 1500)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [])
+
+  const handleTogglePopouts = useCallback(() => {
+    const o = window.electron?.overlay
+    if (!o) return
+    if (anyPopoutOpen) {
+      o.closeAllPopouts().catch(() => {})
+      setAnyPopoutOpen(false)
+    } else {
+      o.openAllPopouts().catch(() => {})
+      setAnyPopoutOpen(true)
+    }
+  }, [anyPopoutOpen])
+
   return (
     <div
       style={{
@@ -147,6 +177,25 @@ export default function OverlaysDashboard(): React.ReactElement {
               <HeartPulse size={11} />
               HPS Meter
               <ExternalLink size={9} style={{ opacity: 0.6 }} />
+            </button>
+          )}
+          {window.electron?.overlay?.anyPopoutOpen && (
+            <button
+              onClick={handleTogglePopouts}
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+              style={{
+                backgroundColor: anyPopoutOpen ? 'var(--color-surface-2)' : 'var(--color-surface)',
+                color: anyPopoutOpen ? 'var(--color-foreground)' : 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+              title={
+                anyPopoutOpen
+                  ? 'Close all standalone overlay windows'
+                  : 'Open every standalone overlay window (buff/detrim/dps/npc/trigger)'
+              }
+            >
+              {anyPopoutOpen ? <X size={11} /> : <Layers size={11} />}
+              {anyPopoutOpen ? 'Close All Popouts' : 'Pop Out All'}
             </button>
           )}
           <button

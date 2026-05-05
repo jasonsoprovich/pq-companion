@@ -34,6 +34,9 @@ export interface ElectronAPI {
     openNPC: () => Promise<void>
     closeNPC: () => Promise<void>
     toggleNPC: () => Promise<void>
+    anyPopoutOpen: () => Promise<boolean>
+    openAllPopouts: () => Promise<void>
+    closeAllPopouts: () => Promise<void>
     setIgnoreMouseEvents: (ignore: boolean) => Promise<void>
     getLocked: () => Promise<boolean>
     setLocked: (locked: boolean) => Promise<void>
