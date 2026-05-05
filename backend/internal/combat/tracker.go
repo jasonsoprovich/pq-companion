@@ -3,12 +3,44 @@ package combat
 import (
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
+
+// looksLikeNPC returns true when an entity name has the shape EQ uses for
+// hostile mobs (or named raid targets) rather than a player or a player's pet.
+//
+// Heuristics, in order:
+//   - "Owner`s warder" / "Owner`s pet" — pet possessive: NOT an NPC, that's a
+//     summoned/charmed minion attached to a player. Caller can then attribute
+//     its damage to the owner.
+//   - Multi-word names ("Lord Inquisitor Seru", "an orc centurion") — every
+//     EQ player name is a single 4–15-char token, so anything with a space is
+//     an NPC by construction.
+//   - Names that start with a lowercase letter ("a wolf", "an orc") — articles
+//     used by EQ for unnamed mobs. Players always start with an uppercase
+//     letter.
+//
+// Anything else (single capitalised token) is treated as a player.
+func looksLikeNPC(name string) bool {
+	if name == "" || name == "You" {
+		return false
+	}
+	if strings.Contains(name, "`s ") {
+		return false
+	}
+	if strings.ContainsAny(name, " `") {
+		return true
+	}
+	if c := name[0]; c >= 'a' && c <= 'z' {
+		return true
+	}
+	return false
+}
 
 // internalEntity accumulates raw hit data for one combatant inside an active fight.
 type internalEntity struct {
@@ -190,13 +222,18 @@ func (t *Tracker) Reset() {
 func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	t.mu.Lock()
 
-	// Start a new fight if none is active. Require "You" to be involved (as
-	// actor or target) before seeding a fight — otherwise third-party damage
-	// (e.g. another player's spells, or NPC AoEs hitting only group members
-	// before they reach us) would create phantom fights that we'd later have
-	// to discard.
+	// Start a new fight if none is active. Either "You" must be involved
+	// directly, or one side of the hit must look like an NPC — the looser
+	// heuristic seeds a fight when the player's pet/group/raid is fighting a
+	// mob even though the player themselves haven't dealt damage yet (e.g.
+	// healers, enchanters mid-mez, pet classes whose pet engages first).
+	// Phantom fights between two players or between two unrelated NPCs are
+	// still rejected; if a "You"-less fight slips in, archiveFight discards
+	// it when its confirmedNPC set ends up empty.
 	if t.active == nil {
-		if data.Actor != "You" && data.Target != "You" {
+		youInvolved := data.Actor == "You" || data.Target == "You"
+		npcInvolved := looksLikeNPC(data.Actor) || looksLikeNPC(data.Target)
+		if !youInvolved && !npcInvolved {
 			t.mu.Unlock()
 			return
 		}
@@ -635,8 +672,14 @@ func safeDivide(numerator, denominator float64) float64 {
 }
 
 // confirmedNPCs returns the set of names that are confirmed hostile NPCs for
-// this fight. An entity is a confirmed NPC if it hit "You" (incoming) or if
-// "You" attacked it (youTargets — the player only attacks NPCs in PvE).
+// this fight. An entity counts as an NPC if any of:
+//   - it hit "You" (incoming map)
+//   - "You" attacked it (youTargets — PvE means the player only attacks NPCs)
+//   - it appears in the outgoing map's targetCounts AND its name passes the
+//     looksLikeNPC heuristic — covers the case where the player's pet/group
+//     is fighting a mob without the player having dealt direct damage yet
+//   - it appears as an attacker in the outgoing map AND its name passes the
+//     heuristic — covers AoE-style mob hits we observed before "You" engaged
 func confirmedNPCs(f *internalFight) map[string]bool {
 	set := make(map[string]bool, len(f.incoming)+len(f.youTargets))
 	for name := range f.incoming {
@@ -644,6 +687,16 @@ func confirmedNPCs(f *internalFight) map[string]bool {
 	}
 	for name := range f.youTargets {
 		set[name] = true
+	}
+	for name := range f.targetCounts {
+		if looksLikeNPC(name) {
+			set[name] = true
+		}
+	}
+	for name := range f.outgoing {
+		if looksLikeNPC(name) {
+			set[name] = true
+		}
 	}
 	return set
 }

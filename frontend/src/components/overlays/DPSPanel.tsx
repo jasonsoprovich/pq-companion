@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Swords, Circle, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users } from 'lucide-react'
+import { Swords, Circle, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users, Trash2 } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
-import { getCombatState, getLogStatus } from '../../services/api'
+import { getCombatState, getLogStatus, resetCombatState } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import type { CombatState, FightState } from '../../types/combat'
 import type { LogTailerStatus } from '../../types/logEvent'
@@ -345,6 +345,17 @@ export default function DPSPanel({
             <Users size={12} />
           </button>
           <CopyFightButton fight={combat?.current_fight ?? null} combine={combine} />
+          <button
+            onClick={() => resetCombatState().catch(() => {})}
+            title="Clear DPS — reset session damage, fight history, and the meter"
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              padding: '1px 3px', color: 'var(--color-muted)',
+              display: 'flex', alignItems: 'center',
+            }}
+          >
+            <Trash2 size={12} />
+          </button>
           {window.electron?.overlay && (
             <button
               onClick={() => window.electron.overlay.toggleDPS()}

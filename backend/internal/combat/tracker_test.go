@@ -383,24 +383,44 @@ func TestActiveFightDurationUsesLogTimestamps(t *testing.T) {
 	}
 }
 
-// TestThirdPartyDamageDoesNotSeedFight verifies that damage events involving
-// neither "You" as actor nor as target (e.g. another player's spells, or NPC
-// AoEs hitting only group members) do not start a fight when no fight is
-// active. This guards against the bug where guild members being healed,
-// buffed, or spell-hit appeared as standalone fights in the combat log.
-func TestThirdPartyDamageDoesNotSeedFight(t *testing.T) {
+// TestPlayerVsPlayerDamageDoesNotSeedFight verifies that pure player-vs-player
+// hits with no NPC involvement (e.g. a duel observed from a third character)
+// do not seed a fight. The looksLikeNPC heuristic admits NPC names so that
+// healers/enchanters/pet classes get a working DPS meter even when they
+// don't deal direct damage; this regression-tests the negative case.
+func TestPlayerVsPlayerDamageDoesNotSeedFight(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()
 
 	tr.Handle(hitEvent("Kildrey", "Hawthor", 60, now))
-	tr.Handle(hitEvent("an undead pirate", "Kildrey", 50, now.Add(time.Second)))
+	tr.Handle(hitEvent("Hawthor", "Kildrey", 50, now.Add(time.Second)))
 
 	st := tr.GetState()
 	if st.InCombat {
-		t.Fatal("expected no fight to be created from third-party damage events")
+		t.Fatal("expected no fight from pure player-vs-player damage")
 	}
 	if st.CurrentFight != nil {
 		t.Fatal("expected CurrentFight to remain nil")
+	}
+}
+
+// TestNPCVsAllyDamageSeedsFight verifies that an NPC attacking a group/raid
+// member (not "You") still seeds a fight, so a cleric or enchanter who
+// hasn't dealt damage themselves still sees the DPS meter populate when
+// their group is in combat.
+func TestNPCVsAllyDamageSeedsFight(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("an undead pirate", "Kildrey", 50, now))
+	tr.Handle(hitEvent("Kildrey", "an undead pirate", 80, now.Add(time.Second)))
+
+	st := tr.GetState()
+	if !st.InCombat {
+		t.Fatal("expected a fight from group-member combat with an NPC")
+	}
+	if st.CurrentFight == nil || st.CurrentFight.PrimaryTarget != "an undead pirate" {
+		t.Fatalf("expected primary target 'an undead pirate'; got fight=%+v", st.CurrentFight)
 	}
 }
 

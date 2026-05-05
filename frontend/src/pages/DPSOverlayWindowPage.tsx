@@ -12,7 +12,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import OverlayLockButton from '../components/OverlayLockButton'
-import { getCombatState } from '../services/api'
+import { getCombatState, resetCombatState } from '../services/api'
 import type { CombatState, FightState } from '../types/combat'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
 
@@ -347,20 +347,23 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           >
             {copied ? <ClipboardCheck size={11} /> : <Clipboard size={11} />}
           </button>
-          {/* clear post-fight summary */}
+          {/* clear — resets the backend tracker (session damage, fight history,
+              death log) and the local frozen-fight cache. Always enabled so the
+              user can wipe the meter mid-fight too. */}
           <button
-            onClick={() => setFrozenFight(null)}
-            disabled={!showingPostFight}
-            title="Clear DPS"
+            onClick={() => {
+              setFrozenFight(null)
+              resetCombatState().catch(() => {})
+            }}
+            title="Clear DPS — reset session damage, fight history, and the meter"
             style={{
               display: 'flex',
               alignItems: 'center',
               background: 'none',
               border: 'none',
               padding: '1px 3px',
-              cursor: showingPostFight ? 'pointer' : 'default',
+              cursor: 'pointer',
               color: 'rgba(255,255,255,0.4)',
-              opacity: showingPostFight ? 1 : 0.3,
             }}
           >
             <Trash2 size={11} />
