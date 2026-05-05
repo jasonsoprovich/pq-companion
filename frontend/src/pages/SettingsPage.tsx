@@ -638,6 +638,30 @@ export default function SettingsPage(): React.ReactElement {
           </div>
 
           <div className="mt-4">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.spell_timer?.class_filter ?? false}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    spell_timer: { ...config.spell_timer, class_filter: e.target.checked },
+                  })
+                }
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  Filter buffs to my class
+                </span>
+                <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Drops buffs your class can't cast (e.g. paladin Spiritual Purity, shaman Talisman, bard songs) so an enchanter's overlay isn't cluttered with raid buffs from other classes. Detrimentals you cast are always tracked. Combine with <b>Anyone</b> scope to see other same-class casters' buffs across the raid.
+                </span>
+              </span>
+            </label>
+          </div>
+
+          <div className="mt-4">
             <p className="mb-1 text-sm" style={{ color: 'var(--color-foreground)' }}>
               Display thresholds
             </p>

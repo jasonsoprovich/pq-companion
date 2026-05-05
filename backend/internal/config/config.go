@@ -92,6 +92,14 @@ type SpellTimerSettings struct {
 	// old "anyone" default to "cast_by_me" has run for this config file.
 	// Once true, the user's explicit "anyone" choice is preserved on load.
 	CastByMeMigrationDone bool `yaml:"cast_by_me_migration_done,omitempty" json:"cast_by_me_migration_done,omitempty"`
+
+	// ClassFilter, when true, drops buff timers whose source spell isn't
+	// castable by the active character's class. Useful for hiding
+	// out-of-class buffs (e.g. paladin Spiritual Purity, shaman Talisman,
+	// bard songs) from a class with a long buff list of its own. Composes
+	// with TrackingScope: detrimentals are always allowed regardless.
+	// Defaults to false to preserve existing behaviour.
+	ClassFilter bool `yaml:"class_filter,omitempty" json:"class_filter,omitempty"`
 }
 
 // TrackingScope* are the canonical values for SpellTimerSettings.TrackingScope.

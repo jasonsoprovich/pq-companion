@@ -140,6 +140,28 @@ func main() {
 		return cfg.EQPath, charName
 	}, func() string {
 		return cfgMgr.Get().SpellTimer.TrackingScope
+	}, func() (bool, int) {
+		// Class filter resolves the active character's class index from the
+		// character store on every cast; an unset / unknown class returns -1
+		// so the engine treats the filter as inactive even when enabled.
+		cfg := cfgMgr.Get()
+		if !cfg.SpellTimer.ClassFilter {
+			return false, -1
+		}
+		var charName string
+		if tailer != nil {
+			charName = tailer.ActiveCharacter()
+		} else {
+			charName = cfg.Character
+		}
+		if charName == "" {
+			return true, -1
+		}
+		c, ok, err := charStore.GetByName(charName)
+		if err != nil || !ok {
+			return true, -1
+		}
+		return true, c.Class
 	})
 	go timerEngine.Start(context.Background())
 

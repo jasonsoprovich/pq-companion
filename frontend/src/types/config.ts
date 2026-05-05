@@ -39,6 +39,14 @@ export interface SpellTimerSettings {
    * overlay (debuffs, DoTs, mez, stuns). 0 (default) means always show.
    */
   detrim_display_threshold_secs: number
+
+  /**
+   * When true, drop buff timers whose source spell isn't castable by the
+   * active character's class. Useful for hiding paladin/shaman/bard buffs
+   * from a class with a long buff list of its own. Detrimentals are always
+   * tracked regardless of this setting.
+   */
+  class_filter: boolean
 }
 
 export interface Config {

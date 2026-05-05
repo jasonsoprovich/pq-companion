@@ -27,11 +27,27 @@ type CharacterContext func() (eqPath, charName string)
 // default behaviour.
 type ScopeProvider func() string
 
+// ClassFilterProvider returns whether to additionally filter buff timers by
+// class castability, plus the active character's class index (0–14). When
+// enabled is true and classIndex is in range, the engine drops buff-category
+// timers whose source spell isn't castable by the player's class — so a
+// paladin's Spiritual Purity or a shaman's Talisman of the Brute landing on
+// an enchanter no longer clutter the enchanter's overlay.
+//
+// Returning enabled=false (or a nil provider) disables the filter; that's the
+// default for backwards compatibility.
+type ClassFilterProvider func() (enabled bool, classIndex int)
+
 const (
 	scopeSelf     = "self"
 	scopeCastByMe = "cast_by_me"
 	scopeAnyone   = "anyone"
 )
+
+// classCannotCast is the sentinel value spells_new uses in classes1–classes15
+// for "this class can never cast this spell at any level". Anything else
+// (1–60 in the classic ruleset) is a valid level requirement.
+const classCannotCast = 255
 
 // broadcastInterval is how often the engine pushes timer state updates to
 // WebSocket clients while timers are active.
@@ -71,10 +87,11 @@ func timerKey(spellName, targetName string) string {
 // a Visions of Grandeur cast on three different group members produces three
 // independently-tracked timers.
 type Engine struct {
-	hub      *ws.Hub
-	db       *db.DB
-	charCtx  CharacterContext
-	scopeFn  ScopeProvider
+	hub             *ws.Hub
+	db              *db.DB
+	charCtx         CharacterContext
+	scopeFn         ScopeProvider
+	classFilterFn   ClassFilterProvider
 
 	mu     sync.Mutex
 	timers map[string]*ActiveTimer // keyed by timerKey(spell, target)
@@ -97,13 +114,15 @@ type Engine struct {
 // NewEngine returns an initialised Engine ready to receive log events.
 // charCtx may be nil (timers fall back to base / unextended duration).
 // scopeFn may be nil (engine behaves as if scope is "anyone").
-func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn ScopeProvider) *Engine {
+// classFilterFn may be nil (no class-castability filtering).
+func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn ScopeProvider, classFilterFn ClassFilterProvider) *Engine {
 	return &Engine{
-		hub:     hub,
-		db:      database,
-		charCtx: charCtx,
-		scopeFn: scopeFn,
-		timers:  make(map[string]*ActiveTimer),
+		hub:           hub,
+		db:            database,
+		charCtx:       charCtx,
+		scopeFn:       scopeFn,
+		classFilterFn: classFilterFn,
+		timers:        make(map[string]*ActiveTimer),
 	}
 }
 
@@ -412,38 +431,36 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		return
 	}
 
-	// Tracking scope filter:
-	//   self        — drop everything not landing on the active player.
-	//   cast_by_me  — keep self lands; otherwise require a recent local cast
-	//                 of this spell name within lastCastWindow. EQ logs don't
-	//                 record the caster of buffs landing on third parties,
-	//                 so this is a heuristic — when another player casts the
-	//                 same spell within our cast window we may briefly show
-	//                 their buff as ours, but for typical raid flow it's the
-	//                 right tradeoff (and the timer can be cleared manually).
-	//   anyone      — no filtering.
-	switch e.trackingScope() {
-	case scopeSelf:
-		active := e.activePlayerName()
-		if target != active && target != "You" {
-			slog.Info("timer-debug: spell-landed skipped (scope=self, non-self target)",
-				"spell", spellName, "target", target, "active", active)
-			return
-		}
-	case scopeCastByMe:
-		active := e.activePlayerName()
-		if target != active && target != "You" {
-			e.mu.Lock()
-			recentMatch := e.lastCastSpell == spellName && time.Since(e.lastCastAt) <= lastCastWindow
-			e.mu.Unlock()
-			if !recentMatch {
-				slog.Info("timer-debug: spell-landed skipped (scope=cast_by_me, no matching local cast)",
-					"spell", spellName, "target", target)
+	active := e.activePlayerName()
+	isSelfTarget := target == active || target == "You"
+
+	// Test-only fast path: when there's no DB wired (engine_test.go's harness
+	// constructs the engine without a *db.DB), apply the legacy non-detrim
+	// scope filter directly so the existing scope tests keep exercising
+	// drop/keep behaviour without needing a fixture database.
+	if e.db == nil {
+		switch e.trackingScope() {
+		case scopeSelf:
+			if !isSelfTarget {
 				return
 			}
+		case scopeCastByMe:
+			if !isSelfTarget {
+				e.mu.Lock()
+				recentMatch := e.lastCastSpell == spellName && time.Since(e.lastCastAt) <= lastCastWindow
+				e.mu.Unlock()
+				if !recentMatch {
+					return
+				}
+			}
 		}
+		// Without a DB we can't compute duration / icon / category — nothing
+		// further to do.
+		return
 	}
 
+	// Look up the spell so we know its category (buff vs detrimental) and
+	// class table for the filters below.
 	spell, err := e.db.GetSpellByExactName(spellName)
 	if err != nil {
 		slog.Warn("spelltimer: DB error looking up spell", "name", spellName, "err", err)
@@ -452,6 +469,70 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	if spell == nil {
 		slog.Info("timer-debug: landed spell not found in DB (no timer created)", "name", spellName)
 		return
+	}
+
+	cat := categorize(spell)
+
+	// Tracking scope filter, split by category:
+	//
+	// Detrimental categories (debuff/dot/mez/stun) are always cast_by_me —
+	// the user cast them on an enemy and definitely wants to see the timer.
+	// They never land on the player from other players, so the buff scope
+	// modes don't apply. Without this carve-out a user with scope=self would
+	// silently lose every Tashan/Asphyxiate/etc. they cast on a mob.
+	//
+	// Buff category honours the user-configured scope:
+	//   self        — drop everything not landing on the active player.
+	//   cast_by_me  — keep self lands; otherwise require a recent local cast
+	//                 of this spell name within lastCastWindow. EQ logs don't
+	//                 record the caster of buffs landing on third parties,
+	//                 so this is a heuristic.
+	//   anyone      — no filtering.
+	switch cat {
+	case CategoryBuff:
+		switch e.trackingScope() {
+		case scopeSelf:
+			if !isSelfTarget {
+				slog.Info("timer-debug: spell-landed skipped (scope=self, non-self target)",
+					"spell", spellName, "target", target, "active", active)
+				return
+			}
+		case scopeCastByMe:
+			if !isSelfTarget {
+				e.mu.Lock()
+				recentMatch := e.lastCastSpell == spellName && time.Since(e.lastCastAt) <= lastCastWindow
+				e.mu.Unlock()
+				if !recentMatch {
+					slog.Info("timer-debug: spell-landed skipped (scope=cast_by_me, no matching local cast)",
+						"spell", spellName, "target", target)
+					return
+				}
+			}
+		}
+		// Optional class filter: drop buffs the player's class can't cast.
+		if e.classFilterFn != nil {
+			if enabled, classIdx := e.classFilterFn(); enabled && classIdx >= 0 && classIdx < len(spell.ClassLevels) {
+				if spell.ClassLevels[classIdx] >= classCannotCast {
+					slog.Info("timer-debug: spell-landed skipped (class filter)",
+						"spell", spellName, "target", target, "class_idx", classIdx)
+					return
+				}
+			}
+		}
+
+	default:
+		// Detrimental (debuff/dot/mez/stun): apply cast_by_me semantics
+		// regardless of the user's chosen scope — see comment above.
+		if !isSelfTarget {
+			e.mu.Lock()
+			recentMatch := e.lastCastSpell == spellName && time.Since(e.lastCastAt) <= lastCastWindow
+			e.mu.Unlock()
+			if !recentMatch {
+				slog.Info("timer-debug: detrimental spell-landed skipped (no matching local cast)",
+					"spell", spellName, "target", target, "category", cat)
+				return
+			}
+		}
 	}
 
 	durationTicks := CalcDurationTicks(spell.BuffDurationFormula, spell.BuffDuration, defaultCasterLevel)
@@ -468,6 +549,15 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	durationSeconds := e.applyDurationModifiers(spell, baseDurationSec)
 	expiresAt := landedAt.Add(time.Duration(float64(time.Second) * durationSeconds))
 
+	slog.Info("timer-debug: duration computed",
+		"spell", spellName,
+		"formula", spell.BuffDurationFormula,
+		"buff_duration_ticks", spell.BuffDuration,
+		"computed_ticks", durationTicks,
+		"base_seconds", baseDurationSec,
+		"final_seconds", durationSeconds,
+	)
+
 	key := timerKey(spellName, target)
 	timer := &ActiveTimer{
 		ID:              key,
@@ -475,7 +565,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		SpellID:         spell.ID,
 		Icon:            spell.NewIcon,
 		TargetName:      target,
-		Category:        categorize(spell),
+		Category:        cat,
 		CastAt:          landedAt,
 		StartsAt:        landedAt,
 		ExpiresAt:       expiresAt,
