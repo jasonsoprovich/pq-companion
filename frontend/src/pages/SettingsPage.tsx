@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles } from 'lucide-react'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog } from '../services/api'
 import type { Config } from '../types/config'
@@ -7,7 +6,7 @@ import type { LogFileInfo } from '../types/logEvent'
 import BackupManagerPage from './BackupManagerPage'
 
 
-type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
 type Tab = 'settings' | 'backups'
 
@@ -43,7 +42,6 @@ function TabBar({ tabs, active, onChange }: TabBarProps): React.ReactElement {
 }
 
 export default function SettingsPage(): React.ReactElement {
-  const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('settings')
   const [config, setConfig] = useState<Config | null>(null)
   const [originalConfig, setOriginalConfig] = useState<Config | null>(null)
@@ -61,6 +59,22 @@ export default function SettingsPage(): React.ReactElement {
   const [cleanupState, setCleanupState] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
   const [cleanupResult, setCleanupResult] = useState<string | null>(null)
   const logPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const saveStateClearRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (saveStateClearRef.current) clearTimeout(saveStateClearRef.current)
+    }
+  }, [])
+
+  function flashSaveState(state: SaveState, ms = 2500): void {
+    if (saveStateClearRef.current) clearTimeout(saveStateClearRef.current)
+    setSaveState(state)
+    saveStateClearRef.current = setTimeout(() => {
+      setSaveState('idle')
+      setSaveError(null)
+    }, ms)
+  }
 
 
   useEffect(() => {
@@ -124,19 +138,19 @@ export default function SettingsPage(): React.ReactElement {
     if (originalConfig) {
       setConfig(originalConfig)
     }
-    navigate(-1)
+    flashSaveState('discarded')
   }
 
   async function handleSave(): Promise<void> {
     if (!config) return
+    if (saveStateClearRef.current) clearTimeout(saveStateClearRef.current)
     setSaveState('saving')
     setSaveError(null)
     try {
       const saved = await updateConfig(config)
       setConfig(saved)
       setOriginalConfig(saved)
-      setSaveState('saved')
-      setTimeout(() => navigate(-1), 800)
+      flashSaveState('saved')
     } catch (err) {
       setSaveError((err as Error).message)
       setSaveState('error')
@@ -893,7 +907,14 @@ export default function SettingsPage(): React.ReactElement {
           {saveState === 'saved' && (
             <span className="flex items-center gap-1.5 text-sm" style={{ color: '#22c55e' }}>
               <CheckCircle2 size={14} />
-              Saved
+              Settings saved
+            </span>
+          )}
+
+          {saveState === 'discarded' && (
+            <span className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              <X size={14} />
+              Changes discarded
             </span>
           )}
 
