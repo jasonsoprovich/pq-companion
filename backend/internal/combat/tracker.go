@@ -47,6 +47,16 @@ type internalEntity struct {
 	totalDamage int64
 	hitCount    int
 	maxHit      int
+
+	// Active-time bookkeeping — see noteActivity. activeAccrued holds the
+	// duration of every CLOSED segment; segOpen + (segLast - segStart) is the
+	// duration of the currently-open segment. Total active time at any
+	// moment is activeAccrued + (segLast - segStart) when segOpen, else
+	// activeAccrued.
+	activeAccrued float64
+	segStart      time.Time
+	segLast       time.Time
+	segOpen       bool
 }
 
 // internalHealer accumulates raw heal data for one healer inside an active fight.
@@ -54,6 +64,75 @@ type internalHealer struct {
 	totalHeal int64
 	healCount int
 	maxHeal   int
+
+	activeAccrued float64
+	segStart      time.Time
+	segLast       time.Time
+	segOpen       bool
+}
+
+// noteActivity advances the active-time bookkeeping on either an
+// internalEntity or internalHealer. Extracted because the segment math is
+// identical for both. ts is the timestamp of a damage or heal event.
+//
+// Each closed segment gets at least activeMinSegment seconds of credit, so
+// three isolated bursts (one hit each, far apart) accrue ~3 seconds rather
+// than collapsing to 0. This matches EQLogParser's "+1 per discrete event"
+// convention and keeps a single-hit fight from dividing by zero.
+func noteActivityEntity(e *internalEntity, ts time.Time) {
+	if !e.segOpen {
+		e.segStart = ts
+		e.segLast = ts
+		e.segOpen = true
+		return
+	}
+	if ts.Sub(e.segLast) > activeGapWindow {
+		e.activeAccrued += creditSegment(e.segStart, e.segLast)
+		e.segStart = ts
+	}
+	e.segLast = ts
+}
+
+func noteActivityHealer(h *internalHealer, ts time.Time) {
+	if !h.segOpen {
+		h.segStart = ts
+		h.segLast = ts
+		h.segOpen = true
+		return
+	}
+	if ts.Sub(h.segLast) > activeGapWindow {
+		h.activeAccrued += creditSegment(h.segStart, h.segLast)
+		h.segStart = ts
+	}
+	h.segLast = ts
+}
+
+// creditSegment returns the active-time credit for one segment, applying
+// the activeMinSegment floor so single-event bursts don't sum to zero.
+func creditSegment(start, last time.Time) float64 {
+	seg := last.Sub(start).Seconds()
+	if seg < activeMinSegment {
+		return activeMinSegment
+	}
+	return seg
+}
+
+// activeSecondsEntity returns the entity's total active time, finalising any
+// currently-open segment. Read-only — does not mutate the entity.
+func activeSecondsEntity(e *internalEntity) float64 {
+	total := e.activeAccrued
+	if e.segOpen {
+		total += creditSegment(e.segStart, e.segLast)
+	}
+	return total
+}
+
+func activeSecondsHealer(h *internalHealer) float64 {
+	total := h.activeAccrued
+	if h.segOpen {
+		total += creditSegment(h.segStart, h.segLast)
+	}
+	return total
 }
 
 // internalFight holds mutable state for the currently active fight.
@@ -340,6 +419,7 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	if data.Damage > ent.maxHit {
 		ent.maxHit = data.Damage
 	}
+	noteActivityEntity(ent, ts)
 
 	t.armEndTimerLocked()
 
@@ -463,6 +543,7 @@ func (t *Tracker) recordHeal(ts time.Time, data logparser.HealData) {
 	if data.Amount > h.maxHeal {
 		h.maxHeal = data.Amount
 	}
+	noteActivityHealer(h, ts)
 
 	// A heal during combat counts as activity — extend the inactivity timer
 	// so a long heal window (e.g. group recovering after a boss spike) does
@@ -707,16 +788,20 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 }
 
 // buildEntityStats converts the raw entity map to a sorted []EntityStats slice.
-// Sorted descending by total damage.
+// Sorted descending by total damage. Both DPS variants (fight-duration and
+// active-time) are emitted so the frontend can switch without re-deriving.
 func buildEntityStats(entities map[string]*internalEntity, duration float64) []EntityStats {
 	stats := make([]EntityStats, 0, len(entities))
 	for name, e := range entities {
+		active := activeSecondsEntity(e)
 		stats = append(stats, EntityStats{
-			Name:        name,
-			TotalDamage: e.totalDamage,
-			HitCount:    e.hitCount,
-			MaxHit:      e.maxHit,
-			DPS:         safeDivide(float64(e.totalDamage), duration),
+			Name:          name,
+			TotalDamage:   e.totalDamage,
+			HitCount:      e.hitCount,
+			MaxHit:        e.maxHit,
+			DPS:           safeDivide(float64(e.totalDamage), duration),
+			ActiveDPS:     safeDivide(float64(e.totalDamage), active),
+			ActiveSeconds: active,
 		})
 	}
 	sort.Slice(stats, func(i, j int) bool {
@@ -730,12 +815,15 @@ func buildEntityStats(entities map[string]*internalEntity, duration float64) []E
 func buildHealerStats(healers map[string]*internalHealer, duration float64) []HealerStats {
 	stats := make([]HealerStats, 0, len(healers))
 	for name, h := range healers {
+		active := activeSecondsHealer(h)
 		stats = append(stats, HealerStats{
-			Name:      name,
-			TotalHeal: h.totalHeal,
-			HealCount: h.healCount,
-			MaxHeal:   h.maxHeal,
-			HPS:       safeDivide(float64(h.totalHeal), duration),
+			Name:          name,
+			TotalHeal:     h.totalHeal,
+			HealCount:     h.healCount,
+			MaxHeal:       h.maxHeal,
+			HPS:           safeDivide(float64(h.totalHeal), duration),
+			ActiveHPS:     safeDivide(float64(h.totalHeal), active),
+			ActiveSeconds: active,
 		})
 	}
 	sort.Slice(stats, func(i, j int) bool {

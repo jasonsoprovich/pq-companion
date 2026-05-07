@@ -918,3 +918,99 @@ func TestZoneTrackedForDeath(t *testing.T) {
 		t.Errorf("expected empty zone before any zone event, got %q", st.Deaths[0].Zone)
 	}
 }
+
+// findCombatantByName returns the combatant entry with the given name from
+// the most recently archived fight, or nil if not found.
+func findArchivedCombatant(st CombatState, name string) *EntityStats {
+	if len(st.RecentFights) == 0 {
+		return nil
+	}
+	for i := range st.RecentFights[0].Combatants {
+		if st.RecentFights[0].Combatants[i].Name == name {
+			return &st.RecentFights[0].Combatants[i]
+		}
+	}
+	return nil
+}
+
+// A constantly-engaged attacker (hits every 2-3 seconds — well within the
+// activeGapWindow) should have ActiveDPS within ~10% of the fight-duration
+// DPS, since their active window roughly equals the fight duration.
+func TestActiveDPS_MatchesDPSForConstantAttacker(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	for i := 0; i < 10; i++ {
+		tr.Handle(hitEvent("You", "a gnoll", 100, now.Add(time.Duration(i*3)*time.Second)))
+	}
+	tr.Handle(killEvent("You", "a gnoll", now.Add(28*time.Second)))
+
+	st := tr.GetState()
+	c := findArchivedCombatant(st, "You")
+	if c == nil {
+		t.Fatalf("missing 'You' combatant; combatants=%+v", st.RecentFights)
+	}
+	if c.DPS == 0 || c.ActiveDPS == 0 {
+		t.Fatalf("dps=%v active=%v expected both nonzero", c.DPS, c.ActiveDPS)
+	}
+	ratio := c.ActiveDPS / c.DPS
+	if ratio < 0.9 || ratio > 1.15 {
+		t.Errorf("constant attacker ActiveDPS/DPS ratio %.2f out of expected range; dps=%v active=%v active_secs=%.2f",
+			ratio, c.DPS, c.ActiveDPS, c.ActiveSeconds)
+	}
+}
+
+// A bursty attacker who fires once per 30 seconds (well above the
+// activeGapWindow) should have a much higher ActiveDPS than fight-duration
+// DPS — each burst becomes its own short segment, so the active denominator
+// is small relative to total fight duration.
+func TestActiveDPS_HigherForBurstyAttacker(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Burst hits 30s apart — well over activeGapWindow (10s) — so each is its
+	// own segment and active time stays low.
+	tr.Handle(hitEvent("You", "a gnoll", 5000, now))
+	tr.Handle(hitEvent("You", "a gnoll", 5000, now.Add(30*time.Second)))
+	tr.Handle(hitEvent("You", "a gnoll", 5000, now.Add(60*time.Second)))
+	// Plus an NPC swing to keep the fight alive between bursts.
+	tr.Handle(hitEvent("a gnoll", "You", 50, now.Add(20*time.Second)))
+	tr.Handle(hitEvent("a gnoll", "You", 50, now.Add(45*time.Second)))
+	tr.Handle(killEvent("You", "a gnoll", now.Add(75*time.Second)))
+
+	st := tr.GetState()
+	c := findArchivedCombatant(st, "You")
+	if c == nil {
+		t.Fatalf("missing 'You' combatant")
+	}
+	if c.ActiveDPS <= c.DPS {
+		t.Errorf("expected ActiveDPS (%v) > DPS (%v) for bursty attacker", c.ActiveDPS, c.DPS)
+	}
+	// Each of three single-hit bursts becomes its own activeMinSegment
+	// segment (~1s each), so active_seconds should be ≈ 3.
+	if c.ActiveSeconds < 2 || c.ActiveSeconds > 5 {
+		t.Errorf("expected ActiveSeconds ≈ 3 for three isolated bursts, got %.2f", c.ActiveSeconds)
+	}
+}
+
+// A combatant with a single hit must not divide by zero — ActiveDPS should
+// reflect the activeMinSegment floor rather than NaN/Inf.
+func TestActiveDPS_SingleHitUsesMinSegment(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("You", "a gnoll", 1000, now))
+	tr.Handle(killEvent("You", "a gnoll", now.Add(2*time.Second)))
+
+	st := tr.GetState()
+	c := findArchivedCombatant(st, "You")
+	if c == nil {
+		t.Fatalf("missing 'You' combatant")
+	}
+	if c.ActiveSeconds != 1.0 {
+		t.Errorf("single-hit ActiveSeconds: got %.2f, want %.2f (min segment)", c.ActiveSeconds, 1.0)
+	}
+	if c.ActiveDPS != 1000 {
+		t.Errorf("single-hit ActiveDPS: got %v, want 1000 (1000 dmg / 1s)", c.ActiveDPS)
+	}
+}
