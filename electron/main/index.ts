@@ -1,5 +1,6 @@
-import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol, net } from 'electron'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { spawn, ChildProcess } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { autoUpdater } from 'electron-updater'
@@ -908,13 +909,13 @@ app.whenReady().then(() => {
   // scheme is the empty host part, so on macOS pq-audio:///Users/x/foo.wav
   // resolves to /Users/x/foo.wav, and on Windows pq-audio:///C:/x/foo.wav
   // resolves to C:/x/foo.wav (we strip the host slash before the drive letter).
-  protocol.registerFileProtocol('pq-audio', (request, callback) => {
+  protocol.handle('pq-audio', (request) => {
     let p = request.url.substring('pq-audio://'.length)
     p = decodeURIComponent(p)
     if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(p)) {
       p = p.substring(1)
     }
-    callback({ path: p })
+    return net.fetch(pathToFileURL(p).toString())
   })
 
   startSidecar()

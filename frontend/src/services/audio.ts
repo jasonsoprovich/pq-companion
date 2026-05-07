@@ -34,7 +34,15 @@ function audioUrl(filePath: string): string {
   // unix paths keep their leading slash and windows drive letters appear as
   // /C:/foo, which the main-process handler normalizes back to C:/foo.
   if (!p.startsWith('/')) p = '/' + p
-  return 'pq-audio://' + p
+  // Encode each path segment so spaces and URL-reserved chars (#, ?, %, etc.)
+  // in filenames don't produce an invalid URL or get reinterpreted as a
+  // query/fragment by Chromium's URL parser. The main-process handler runs
+  // decodeURIComponent before hitting the file system.
+  const encoded = p
+    .split('/')
+    .map((seg) => encodeURIComponent(seg))
+    .join('/')
+  return 'pq-audio://' + encoded
 }
 
 /**
