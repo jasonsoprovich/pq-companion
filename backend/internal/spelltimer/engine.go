@@ -309,10 +309,12 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 		cat = CategoryDebuff
 	}
 
+	var resolvedIcon int
 	if spellID > 0 {
 		if spell, err := e.db.GetSpell(spellID); err == nil && spell != nil {
 			extended := e.applyDurationModifiers(spell, float64(durationSecs))
 			durationSecs = int(extended)
+			resolvedIcon = spell.NewIcon
 		}
 	}
 
@@ -339,6 +341,8 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 	timer := &ActiveTimer{
 		ID:                   key,
 		SpellName:            name,
+		SpellID:              spellID,
+		Icon:                 resolvedIcon,
 		Category:             cat,
 		CastAt:               startedAt,
 		StartsAt:             startedAt,
