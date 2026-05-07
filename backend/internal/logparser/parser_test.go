@@ -267,18 +267,39 @@ func TestParseLine(t *testing.T) {
 			wantType: EventCombatHit,
 			wantData: CombatHitData{Actor: "Guildmate", Skill: "pierces", Target: "a young gnoll", Damage: 30},
 		},
-		// A multi-word NPC acting as the source (e.g. a pet or NPC fighting another NPC)
-		// must NOT be parsed — the regex would capture only "a"/"an"/"the" as the actor,
-		// producing a spurious DPS entry for the bare article.
+		// Multi-word NPC actors must be captured intact. The verb-anchored
+		// regex covers article-prefixed mobs ("an orc warrior") as well as
+		// proper-noun multi-word NPCs ("Sambata Tribal Member", "Enchanted
+		// Golem"). The combat tracker filters these out of the DPS view via
+		// looksLikeNPC downstream — but the parser's job is to record the
+		// actor accurately, not to second-guess.
 		{
-			name:   "combat: multi-word NPC actor not parsed as third-party",
-			line:   "[Mon Apr 13 06:00:00 2026] a fire elemental slashes a gnoll for 80 points of damage.",
-			wantOK: false,
+			name:     "combat: multi-word NPC actor (article-prefixed)",
+			line:     "[Mon Apr 13 06:00:00 2026] a fire elemental slashes a gnoll for 80 points of damage.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "a fire elemental", Skill: "slashes", Target: "a gnoll", Damage: 80},
 		},
 		{
-			name:   "combat: 'an' prefix NPC actor not parsed as third-party",
-			line:   "[Mon Apr 13 06:00:00 2026] an orc warrior bashes a gnoll for 60 points of damage.",
-			wantOK: false,
+			name:     "combat: 'an' prefix multi-word NPC actor",
+			line:     "[Mon Apr 13 06:00:00 2026] an orc warrior bashes a gnoll for 60 points of damage.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "an orc warrior", Skill: "bashes", Target: "a gnoll", Damage: 60},
+		},
+		{
+			name:     "combat: proper-noun multi-word NPC actor",
+			line:     "[Mon Apr 13 06:00:00 2026] Sambata Tribal Member hits Nealuwenya for 24 points of damage.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "Sambata Tribal Member", Skill: "hits", Target: "Nealuwenya", Damage: 24},
+		},
+		{
+			name:     "combat: NPC hits player with YOU all-caps (Project Quarm format)",
+			line:     "[Mon Apr 13 06:00:00 2026] A wolf bites YOU for 10 points of damage.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "A wolf", Skill: "bites", Target: "You", Damage: 10},
 		},
 
 		// --- Combat: misses ---

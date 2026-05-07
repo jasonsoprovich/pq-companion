@@ -55,20 +55,28 @@ var (
 
 	// Combat — NPC hits player:
 	// "A gnoll slashes you for 50 points of damage."
+	// "A wolf bites YOU for 10 points of damage." (Project Quarm / EQMac
+	// emit "YOU" all-caps for incoming hits.)
 	// The verb is conjugated with an -s/-es suffix when an NPC hits you.
-	reNPCHitYou = regexp.MustCompile(`^(.+?) (?:\w+) [Yy]ou for (\d+) points? of damage\.$`)
+	reNPCHitYou = regexp.MustCompile(`^(.+?) (?:\w+) [Yy][Oo][Uu] for (\d+) points? of damage\.$`)
 
 	// Combat — third-party hit: another player (or NPC) hits a target that is
-	// not the player. EQ player names are always single words (no spaces).
-	// "Playerone slashes a gnoll for 75 points of damage."
+	// not the player. The actor can be multi-word ("Enchanted Golem",
+	// "Sambata Tribal Member", "an enchanted golem"), so we anchor on a
+	// known attack verb instead of assuming a single-word actor.
+	// Examples:
+	//   "Playerone slashes a gnoll for 75 points of damage."
+	//   "Enchanted Golem hits Tank for 50 points of damage."
+	//   "an enchanted golem slashes Hakammer for 100 points of damage."
 	// Checked after reYouHit and reNPCHitYou so those take priority.
-	reThirdPartyHit = regexp.MustCompile(`^(\w+) (\w+) (.+?) for (\d+) points? of damage\.$`)
+	reThirdPartyHit = regexp.MustCompile(`^(.+?) (slashes|slices|crushes|pierces|bashes|punches|kicks|slams|bites|mauls|claws|gores|stings|jabs|gouges|smashes|hits|strikes|backstabs|throws|chops|stabs|rends|frenzies on) (.+?) for (\d+) points? of damage\.$`)
 
 	// Combat — player misses NPC: "You try to slash a gnoll, but miss!"
 	reYouMiss = regexp.MustCompile(`^You try to (\w+) (.+?), but miss!$`)
 
 	// Combat — NPC misses player: "A gnoll tries to slash you, but misses!"
-	reNPCMissYou = regexp.MustCompile(`^(.+?) tries to \w+ you, but misses?!$`)
+	// PQ/EQMac uses "YOU" all-caps for the player target.
+	reNPCMissYou = regexp.MustCompile(`^(.+?) tries to \w+ [Yy][Oo][Uu], but misses?!$`)
 
 	// Non-melee damage — player's spell hits target (EQ passive form seen in own log):
 	// "a giant wasp drone was hit by non-melee for 4 points of damage."
@@ -113,7 +121,7 @@ var (
 
 	// Heals — someone heals the player:
 	// "Playerone healed you for 150 hit points."
-	reHealedYou = regexp.MustCompile(`^(.+?) healed [Yy]ou for (\d+) hit points?\.$`)
+	reHealedYou = regexp.MustCompile(`^(.+?) healed [Yy][Oo][Uu] for (\d+) hit points?\.$`)
 
 	// Heals — third-party: another entity heals someone else.
 	// "Playerone healed Playertwo for 150 hit points."
