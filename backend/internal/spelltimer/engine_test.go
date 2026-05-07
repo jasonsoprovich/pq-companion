@@ -1,6 +1,7 @@
 package spelltimer
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -232,6 +233,40 @@ func TestStartExternal_CopiesDisplayThreshold(t *testing.T) {
 	}
 	if got.DisplayThresholdSecs != 600 {
 		t.Errorf("threshold: got %d, want 600", got.DisplayThresholdSecs)
+	}
+}
+
+// When a trigger fires after a spell-landed timer for the same spell has
+// already been created, StartExternal must not add a duplicate row — but it
+// MUST graft the trigger's threshold and alerts onto the existing timer.
+// Spell-landed has no way to know about user-configured thresholds, so the
+// trigger is the user's only channel for "treat this spell specially."
+func TestStartExternal_MergesMetadataOntoExistingTimer(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	key := timerKey("Koadic's Endless Intellect", "Osui")
+	e.timers[key] = &ActiveTimer{
+		ID:         key,
+		SpellName:  "Koadic's Endless Intellect",
+		TargetName: "Osui",
+		Category:   CategoryBuff,
+		CastAt:     now,
+		StartsAt:   now,
+		ExpiresAt:  now.Add(75 * time.Minute),
+	}
+
+	alerts := json.RawMessage(`[{"id":"x","seconds":300,"type":"tts"}]`)
+	e.StartExternal("Koadic's Endless Intellect", "buff", 4500, 300, now.Add(50*time.Millisecond), alerts, 0)
+
+	if len(e.timers) != 1 {
+		t.Fatalf("expected 1 timer (merge, not duplicate), got %d", len(e.timers))
+	}
+	got := e.timers[key]
+	if got.DisplayThresholdSecs != 300 {
+		t.Errorf("threshold: got %d, want 300 (merged from trigger)", got.DisplayThresholdSecs)
+	}
+	if string(got.TimerAlerts) != string(alerts) {
+		t.Errorf("alerts: got %s, want %s", got.TimerAlerts, alerts)
 	}
 }
 

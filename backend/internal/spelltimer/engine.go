@@ -327,14 +327,32 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 	key := timerKey(name, "")
 
 	e.mu.Lock()
+	// If a same-spell-name timer was just created (typically by the
+	// spell-landed pipeline firing on the same log line), don't add a second
+	// row — but DO carry the trigger's per-spell metadata onto the existing
+	// timer. Spell-landed alone has no way to know about user-configured
+	// thresholds or fading-soon TTS; a trigger is the user's declaration of
+	// "treat this spell specially," so the trigger wins on metadata while
+	// the spell-landed timer wins on identity (target, accurate duration via
+	// duration focuses).
 	for _, existing := range e.timers {
 		if existing.SpellName == name && time.Since(existing.CastAt) < dedupGraceWindow {
+			if displayThresholdSecs > 0 {
+				existing.DisplayThresholdSecs = displayThresholdSecs
+			}
+			if len(alerts) > 0 {
+				existing.TimerAlerts = alerts
+			}
+			snap := e.snapshot(time.Now())
 			e.mu.Unlock()
-			slog.Info("timer-debug: duplicate external timer suppressed (within grace window)",
+			slog.Info("timer-debug: trigger metadata merged onto existing timer",
 				"name", name,
 				"existing_target", existing.TargetName,
 				"existing_age_ms", time.Since(existing.CastAt).Milliseconds(),
+				"applied_threshold_secs", displayThresholdSecs,
+				"applied_alerts_bytes", len(alerts),
 			)
+			e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 			return
 		}
 	}
