@@ -354,6 +354,27 @@ func TestParseLine(t *testing.T) {
 			wantType: EventKill,
 			wantData: KillData{Killer: "Osui", Target: "a gnoll"},
 		},
+		{
+			name:     "kill: passive form (PQ/EQMac), single-word target",
+			line:     "[Mon Apr 13 06:00:00 2026] Takkisina has been slain by Eom Va Liako Xakra!",
+			wantOK:   true,
+			wantType: EventKill,
+			wantData: KillData{Killer: "Eom Va Liako Xakra", Target: "Takkisina"},
+		},
+		{
+			name:     "kill: passive form, article-prefixed target",
+			line:     "[Mon Apr 13 06:00:00 2026] a lightcrawler has been slain by Ineka!",
+			wantOK:   true,
+			wantType: EventKill,
+			wantData: KillData{Killer: "Ineka", Target: "a lightcrawler"},
+		},
+		{
+			name:     "kill: passive form, possessive-pet killer",
+			line:     "[Mon Apr 13 06:00:00 2026] a fungi shroom has been slain by Gygr`s warder!",
+			wantOK:   true,
+			wantType: EventKill,
+			wantData: KillData{Killer: "Gygr`s warder", Target: "a fungi shroom"},
+		},
 
 		// --- Death ---
 		{

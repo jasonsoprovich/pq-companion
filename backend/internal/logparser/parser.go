@@ -111,8 +111,22 @@ var (
 	// Kill — player slays mob: "You have slain a gnoll!"
 	reYouKill = regexp.MustCompile(`^You have slain (.+)!$`)
 
-	// Kill — group member slays mob: "Playerone has slain a gnoll!"
+	// Kill — group member slays mob (active form, e.g. some clients):
+	// "Playerone has slain a gnoll!"
 	reSomeoneSlay = regexp.MustCompile(`^(\w+) has slain (.+)!$`)
+
+	// Kill — passive form used by Project Quarm / EQMac and many EMU servers
+	// for third-party kills the player witnesses:
+	// "a lightcrawler has been slain by Ineka!"
+	// "Zun Thall Xakra has been slain by Stonae!"
+	// Target may be multi-word (NPC) or single-word (player); killer can be a
+	// possessive pet name ("Gygr`s warder"), so the killer capture is also
+	// loose.
+	//
+	// Note: the bare "X dies." form looks like a kill but is actually
+	// Feign Death's cast_on_other text — left for the spell-landed pipeline
+	// to classify (and it produces no timer because FD's duration is zero).
+	reSlainByPassive = regexp.MustCompile(`^(.+) has been slain by (.+)!$`)
 
 	// Heals — player heals a target:
 	// "You healed Playerone for 150 hit points."
@@ -426,11 +440,24 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		}, true
 	}
 
-	// --- Group member slays mob ---
+	// --- Group member slays mob (active form) ---
 	if m := reSomeoneSlay.FindStringSubmatch(msg); m != nil {
 		return LogEvent{
 			Type: EventKill,
 			Data: KillData{Killer: m[1], Target: m[2]},
+		}, true
+	}
+
+	// --- Passive-form kill ("X has been slain by Y!") ---
+	// Project Quarm / EQMac use this for every third-party kill the player
+	// witnesses. Without this branch, raid-target deaths never produce
+	// EventKill so the combat tracker's active fight is left alive until
+	// the inactivity timeout — which is rare in practice because heals and
+	// re-engages keep extending it.
+	if m := reSlainByPassive.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventKill,
+			Data: KillData{Killer: m[2], Target: m[1]},
 		}, true
 	}
 
