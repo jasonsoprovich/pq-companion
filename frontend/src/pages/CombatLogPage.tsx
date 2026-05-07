@@ -708,7 +708,7 @@ function applyFilters(fights: FightSummary[], filters: FilterState): FightSummar
   }
 
   if (filters.meOnly) {
-    result = result.filter((f) => f.you_damage > 0)
+    result = result.filter((f) => f.you_damage > 0 || f.you_heal > 0)
   }
 
   const query = filters.search.trim().toLowerCase()

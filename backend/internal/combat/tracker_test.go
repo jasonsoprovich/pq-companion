@@ -664,6 +664,49 @@ func missEvent(actor, target string, ts time.Time) logparser.LogEvent {
 	}
 }
 
+// A pure healer's first action is often an outgoing heal — no incoming
+// damage on themselves yet, no outgoing damage ever. The tracker must seed
+// a fight from that heal (when "You" is involved) so subsequent NPC hits
+// on the group can attach to it and the fight ends up archived. Without
+// this, healers see "no fights" in the combat log even after a long raid.
+func TestHealSeedsFightWhenYouAreHealer(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Player heals an ally before any combat hit lands.
+	tr.Handle(healEvent("You", "Tank", 1000, now))
+
+	tr.mu.Lock()
+	active := tr.active
+	tr.mu.Unlock()
+	if active == nil {
+		t.Fatal("heal from 'You' should seed a fight when no fight is active")
+	}
+
+	// And the heal should be accumulated under the player.
+	st := tr.GetState()
+	if st.CurrentFight == nil || st.CurrentFight.YouHeal != 1000 {
+		t.Fatalf("expected YouHeal=1000, got %+v", st.CurrentFight)
+	}
+}
+
+// Heals between two third-party players (no involvement of "You") still
+// must NOT seed a fight — that's noise from raid chatter and would archive
+// empty fights endlessly.
+func TestHealBetweenThirdPartiesDoesNotSeedFight(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(healEvent("Cleric1", "Tank", 500, now))
+
+	tr.mu.Lock()
+	active := tr.active
+	tr.mu.Unlock()
+	if active != nil {
+		t.Fatal("heal between unrelated parties should not seed a fight")
+	}
+}
+
 // TestHealDuringFightExtendsActivity verifies that recording a heal during an
 // active fight bumps the fight's last-activity timestamp so a quiet recovery
 // window does not split the fight when the inactivity timer subsequently

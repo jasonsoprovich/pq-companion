@@ -427,10 +427,30 @@ func (t *Tracker) recordPetOwner(pet, owner string) {
 func (t *Tracker) recordHeal(ts time.Time, data logparser.HealData) {
 	t.mu.Lock()
 
-	// Only track heals during an active fight; heals outside combat are ignored.
+	// If no fight is active, seed one only when "You" is the healer or the
+	// target — otherwise random raid heals on third parties (where the
+	// player isn't involved at all) would each spawn a fresh fight that
+	// archives empty. This is what makes pure-healer / pure-buffer characters
+	// produce saved fights even when they never deal damage: their first
+	// outgoing heal seeds the fight, and every NPC hit on the group then
+	// rolls into it.
 	if t.active == nil {
-		t.mu.Unlock()
-		return
+		youInvolved := data.Actor == "You" || data.Target == "You"
+		if !youInvolved {
+			t.mu.Unlock()
+			return
+		}
+		t.fightCounter++
+		t.active = &internalFight{
+			id:           t.fightCounter,
+			startTime:    ts,
+			lastHit:      ts,
+			outgoing:     make(map[string]*internalEntity),
+			incoming:     make(map[string]*internalEntity),
+			healers:      make(map[string]*internalHealer),
+			targetCounts: make(map[string]int),
+			youTargets:   make(map[string]bool),
+		}
 	}
 
 	h := t.active.healers[data.Actor]
