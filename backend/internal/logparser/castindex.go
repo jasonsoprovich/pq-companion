@@ -58,12 +58,22 @@ type CastMatch struct {
 }
 
 // nameClass is the regex character class used to capture a target name in a
-// cast_on_other line. The captured token starts with a capital letter and
-// may include letters, apostrophes (player names), backticks (charmed-pet
+// cast_on_other line. The captured token starts with a letter (either case)
+// and may include letters, apostrophes (player names), backticks (charmed-pet
 // possessives, e.g. "Gygr`s warder"), and spaces (multi-word named NPCs
-// like "Lord Inquisitor Seru"). The 3–30 char range covers PC names
-// (4–15 by character creation rules) plus typical raid-target named NPCs.
-const nameClass = "[A-Z][a-zA-Z' `]{2,29}"
+// like "Lord Inquisitor Seru" or article-prefixed mobs like "a sand giant").
+// The 3–30 char range covers PC names (4–15 by character creation rules)
+// plus typical NPC names.
+//
+// Lowercase-leading names are common in EQ — every indefinite-articled mob
+// ("a gnoll", "an iksar warrior", "the cyclops") starts lowercase in log
+// messages, so requiring uppercase silently dropped detrimental landings on
+// the bulk of trash mobs (especially noticeable for non-raiding classes).
+// False positives from emote-style lines ("a fungi shroom yawns.") are
+// gated downstream by the engine's scope filter — those lines only create
+// timers when there's a recent matching local cast, so accidental matches
+// against unrelated spell flavor text don't reach the overlay.
+const nameClass = "[a-zA-Z][a-zA-Z' `]{2,29}"
 
 // CastIndex matches log lines against spell cast text. Built once at startup
 // from the spells_new table. Match() is safe for concurrent calls.

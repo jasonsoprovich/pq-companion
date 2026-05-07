@@ -175,14 +175,22 @@ func TestCastIndex_NoMatch(t *testing.T) {
 	}
 }
 
-// Multi-word NPC names ("a stone golem") and lower-case openings should not
-// be captured as targets — the nameClass regex requires a capitalized leading
-// token. Buffs are practically never cast on these targets, and accepting
-// them would cause false positives on combat lines.
-func TestCastIndex_RejectsLowercaseTarget(t *testing.T) {
+// Indefinite-articled NPCs ("a stone golem", "an iksar warrior", "the
+// cyclops") are lowercase in EQ logs and are the bulk of trash-mob targets
+// for detrimental casts (root, snare, mez, debuffs). The cast index must
+// match them. False positives from emote-style flavor text are gated
+// downstream by the engine's scope filter, not at the index level.
+func TestCastIndex_MatchesLowercaseNPCTarget(t *testing.T) {
 	idx := NewCastIndex(indexFixtures)
-	if got := idx.Match("a stone golem has been mesmerized."); got != nil {
-		t.Errorf("lowercase target should not match: got %+v", got)
+	got := idx.Match("a stone golem has been mesmerized.")
+	if got == nil {
+		t.Fatalf("lowercase NPC target should match")
+	}
+	if got.Kind != MatchOther {
+		t.Errorf("kind: got %v, want MatchOther", got.Kind)
+	}
+	if got.TargetName != "a stone golem" {
+		t.Errorf("target: got %q, want %q", got.TargetName, "a stone golem")
 	}
 }
 
