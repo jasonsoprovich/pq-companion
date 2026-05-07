@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Sword, Sparkles, Skull, Map } from 'lucide-react'
+import { Search, Sword, Sparkles, Skull, Map, X } from 'lucide-react'
 import { globalSearch, type GlobalSearchResult } from '../services/api'
 import type { Item } from '../types/item'
 import type { Spell } from '../types/spell'
@@ -195,14 +195,15 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
     [navigate, onClose],
   )
 
-  // Keyboard handler inside the modal
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
+  // Document-level keyboard handler so Escape/arrows/Enter work regardless of
+  // which element inside the modal currently has focus.
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault()
         onClose()
-        return
-      }
-      if (e.key === 'ArrowDown') {
+      } else if (e.key === 'ArrowDown') {
         e.preventDefault()
         setActiveIndex((i) => Math.min(i + 1, flatEntries.length - 1))
       } else if (e.key === 'ArrowUp') {
@@ -212,9 +213,10 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
         const entry = flatEntries[activeIndex]
         if (entry) navigateTo(entry)
       }
-    },
-    [flatEntries, activeIndex, navigateTo, onClose],
-  )
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [open, flatEntries, activeIndex, navigateTo, onClose])
 
   if (!open) return null
 
@@ -235,7 +237,6 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
           border: '1px solid var(--color-border)',
         }}
         onClick={(e) => e.stopPropagation()}
-        onKeyDown={handleKeyDown}
       >
         {/* Input row */}
         <div
@@ -253,16 +254,15 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
             onChange={(e) => setQuery(e.target.value)}
             spellCheck={false}
           />
-          <kbd
-            className="shrink-0 rounded px-1.5 py-0.5 text-[10px]"
-            style={{
-              backgroundColor: 'var(--color-surface-2)',
-              color: 'var(--color-muted)',
-              border: '1px solid var(--color-border)',
-            }}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close search"
+            className="flex shrink-0 items-center justify-center rounded p-1 transition-colors hover:bg-(--color-surface-2)"
+            style={{ color: 'var(--color-muted)' }}
           >
-            esc
-          </kbd>
+            <X size={16} />
+          </button>
         </div>
 
         {/* Results */}
