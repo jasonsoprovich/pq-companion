@@ -4,12 +4,14 @@ import type { EntityStats, HealerStats } from '../types/combat'
 /**
  * Which DPS / HPS metric the meter shows.
  *
+ * 'duration' — total damage divided by the fight's wall-clock duration.
+ *              Same denominator for everyone. Contribution rate. Default —
+ *              what raid leaders mean by "DPS" and what the tracker has
+ *              always emitted.
  * 'active'   — total damage divided by the union of intervals during which
  *              this combatant was actually engaging. Throughput rate while
- *              engaged. Default — fairer for DoT casters and mez-duty
- *              enchanters who shouldn't be punished for legitimate downtime.
- * 'duration' — total damage divided by the fight's wall-clock duration.
- *              Same denominator for everyone. Contribution rate.
+ *              engaged. Better for DoT casters or anyone with legitimate
+ *              downtime; users opt in.
  */
 export type DPSMode = 'active' | 'duration'
 
@@ -18,9 +20,9 @@ const STORAGE_KEY = 'pq-dps-mode'
 function readStored(): DPSMode {
   try {
     const v = localStorage.getItem(STORAGE_KEY)
-    return v === 'duration' ? 'duration' : 'active'
+    return v === 'active' ? 'active' : 'duration'
   } catch {
-    return 'active'
+    return 'duration'
   }
 }
 
