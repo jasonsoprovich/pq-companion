@@ -100,6 +100,23 @@ type SpellTimerSettings struct {
 	// with TrackingScope: detrimentals are always allowed regardless.
 	// Defaults to false to preserve existing behaviour.
 	ClassFilter bool `yaml:"class_filter,omitempty" json:"class_filter,omitempty"`
+
+	// TrackingMode controls whether the spell-landed pipeline creates timer
+	// rows automatically or only triggers/packs do.
+	//
+	//	"auto"          — default. Every recognised spell-landed event creates
+	//	                  a timer; triggers/packs may attach metadata
+	//	                  (thresholds, fading-soon TTS) by firing on the same
+	//	                  cast.
+	//	"triggers_only" — the spell-landed pipeline still parses log lines
+	//	                  for cast disambiguation but does NOT create timers.
+	//	                  Only triggers (custom or pack-installed) produce
+	//	                  rows. Best for users who want a curated overlay
+	//	                  rather than full auto-coverage.
+	//
+	// Empty string is treated as "auto" so existing config files migrate
+	// cleanly without an explicit value.
+	TrackingMode string `yaml:"tracking_mode,omitempty" json:"tracking_mode,omitempty"`
 }
 
 // TrackingScope* are the canonical values for SpellTimerSettings.TrackingScope.
@@ -107,6 +124,12 @@ const (
 	TrackingScopeSelf     = "self"
 	TrackingScopeCastByMe = "cast_by_me"
 	TrackingScopeAnyone   = "anyone"
+)
+
+// TrackingMode* are the canonical values for SpellTimerSettings.TrackingMode.
+const (
+	TrackingModeAuto         = "auto"
+	TrackingModeTriggersOnly = "triggers_only"
 )
 
 // Preferences holds optional UI and overlay settings.

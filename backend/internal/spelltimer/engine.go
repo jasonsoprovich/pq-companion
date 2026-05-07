@@ -38,10 +38,22 @@ type ScopeProvider func() string
 // default for backwards compatibility.
 type ClassFilterProvider func() (enabled bool, classIndex int)
 
+// ModeProvider returns the user-configured tracking mode ("auto" or
+// "triggers_only"). In "triggers_only" the spell-landed pipeline still
+// parses log lines (so cast disambiguation keeps working for any triggers
+// that key off SpellID) but does NOT create timer rows itself — only
+// triggers/packs do. nil provider or empty/unknown string means "auto".
+type ModeProvider func() string
+
 const (
 	scopeSelf     = "self"
 	scopeCastByMe = "cast_by_me"
 	scopeAnyone   = "anyone"
+)
+
+const (
+	modeAuto         = "auto"
+	modeTriggersOnly = "triggers_only"
 )
 
 // classCannotCast is the sentinel value spells_new uses in classes1–classes15
@@ -92,6 +104,7 @@ type Engine struct {
 	charCtx         CharacterContext
 	scopeFn         ScopeProvider
 	classFilterFn   ClassFilterProvider
+	modeFn          ModeProvider
 
 	mu     sync.Mutex
 	timers map[string]*ActiveTimer // keyed by timerKey(spell, target)
@@ -115,14 +128,30 @@ type Engine struct {
 // charCtx may be nil (timers fall back to base / unextended duration).
 // scopeFn may be nil (engine behaves as if scope is "anyone").
 // classFilterFn may be nil (no class-castability filtering).
-func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn ScopeProvider, classFilterFn ClassFilterProvider) *Engine {
+// modeFn may be nil (engine behaves as if mode is "auto").
+func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn ScopeProvider, classFilterFn ClassFilterProvider, modeFn ModeProvider) *Engine {
 	return &Engine{
 		hub:           hub,
 		db:            database,
 		charCtx:       charCtx,
 		scopeFn:       scopeFn,
 		classFilterFn: classFilterFn,
+		modeFn:        modeFn,
 		timers:        make(map[string]*ActiveTimer),
+	}
+}
+
+// trackingMode returns the user's currently-configured mode, defaulting to
+// "auto" when the provider is absent or returns an unknown value.
+func (e *Engine) trackingMode() string {
+	if e.modeFn == nil {
+		return modeAuto
+	}
+	switch e.modeFn() {
+	case modeTriggersOnly:
+		return modeTriggersOnly
+	default:
+		return modeAuto
 	}
 }
 
@@ -450,6 +479,15 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	if target == "" {
 		// Defensive — should be unreachable now activePlayerName falls back
 		// to "You". Skip rather than create a key like "Spell@".
+		return
+	}
+
+	// In triggers-only mode, the spell-landed pipeline still runs (so cast
+	// disambiguation keeps populating lastCastSpell for any trigger that
+	// keys off it) but does NOT create timer rows — only triggers/packs do.
+	if e.trackingMode() == modeTriggersOnly {
+		slog.Info("timer-debug: spell-landed skipped (mode=triggers_only)",
+			"spell", spellName, "target", target)
 		return
 	}
 

@@ -14,6 +14,8 @@ export interface BackupSettings {
 
 export type TrackingScope = 'self' | 'cast_by_me' | 'anyone'
 
+export type TrackingMode = 'auto' | 'triggers_only'
+
 export interface SpellTimerSettings {
   /**
    * Whose spell lands the engine tracks as timers.
@@ -47,6 +49,17 @@ export interface SpellTimerSettings {
    * tracked regardless of this setting.
    */
   class_filter: boolean
+
+  /**
+   * Controls whether the spell-landed pipeline auto-creates timer rows.
+   *   "auto"          — every recognised landing creates a timer; triggers
+   *                     can attach metadata (thresholds, fading-soon TTS)
+   *                     by firing on the same cast. The default.
+   *   "triggers_only" — only triggers/packs create timers; the spell-landed
+   *                     pipeline still parses log lines for cast
+   *                     disambiguation but stops producing rows.
+   */
+  tracking_mode?: TrackingMode
 }
 
 export interface Config {

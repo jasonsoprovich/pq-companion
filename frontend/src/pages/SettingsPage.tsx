@@ -613,10 +613,47 @@ export default function SettingsPage(): React.ReactElement {
 
           <div>
             <p className="mb-1 text-sm" style={{ color: 'var(--color-foreground)' }}>
+              Tracking mode
+            </p>
+            <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              <b>Auto</b> (default) creates a timer for every recognised spell landing; triggers/packs add alerts and thresholds on top. <b>Triggers only</b> shows just the spells you've curated through trigger packs or custom triggers — useful if you want a focused overlay instead of full auto-coverage.
+            </p>
+            <div className="mb-4 flex gap-2">
+              {([
+                { value: 'auto' as const, label: 'Auto' },
+                { value: 'triggers_only' as const, label: 'Triggers only' },
+              ]).map(({ value, label }) => {
+                const active = (config.spell_timer?.tracking_mode ?? 'auto') === value
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() =>
+                      setConfig({
+                        ...config,
+                        spell_timer: { ...config.spell_timer, tracking_mode: value },
+                      })
+                    }
+                    className="rounded px-3 py-1.5 text-xs font-medium"
+                    style={{
+                      backgroundColor: active ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                      color: active ? '#000' : 'var(--color-foreground)',
+                      border: '1px solid var(--color-border)',
+                      cursor: 'pointer',
+                      minWidth: 110,
+                    }}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+
+            <p className="mb-1 text-sm" style={{ color: 'var(--color-foreground)' }}>
               Tracking scope
             </p>
             <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-              <b>Self only</b> tracks just buffs landing on you. <b>Cast by me</b> (default) also includes anything you cast on others — without the noise of other players buffing each other. <b>Anyone</b> tracks every recognised land, useful when you want to see e.g. another enchanter's debuff on a raid mob.
+              <b>Self only</b> tracks just buffs landing on you. <b>Cast by me</b> (default) also includes anything you cast on others — without the noise of other players buffing each other. <b>Anyone</b> tracks every recognised land, useful when you want to see e.g. another enchanter's debuff on a raid mob. (Ignored in <b>Triggers only</b> mode.)
             </p>
             <div className="flex gap-2">
               {([

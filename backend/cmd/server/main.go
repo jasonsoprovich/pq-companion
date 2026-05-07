@@ -171,6 +171,8 @@ func main() {
 			return true, -1
 		}
 		return true, c.Class
+	}, func() string {
+		return cfgMgr.Get().SpellTimer.TrackingMode
 	})
 	go timerEngine.Start(context.Background())
 

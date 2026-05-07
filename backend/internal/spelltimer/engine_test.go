@@ -236,6 +236,30 @@ func TestStartExternal_CopiesDisplayThreshold(t *testing.T) {
 	}
 }
 
+// In triggers-only mode, the spell-landed pipeline must not create timer
+// rows. Triggers (StartExternal) are unaffected.
+func TestOnSpellLanded_TriggersOnlyModeSuppressesAutoTimers(t *testing.T) {
+	e := newTestEngine()
+	e.modeFn = func() string { return modeTriggersOnly }
+
+	e.onSpellLanded(time.Now(), logparser.SpellLandedData{
+		SpellID:    2570,
+		SpellName:  "Koadic's Endless Intellect",
+		TargetName: "Osui",
+		Kind:       logparser.SpellLandedKindOther,
+	})
+
+	if len(e.timers) != 0 {
+		t.Errorf("expected 0 auto-timers in triggers_only mode, got %d", len(e.timers))
+	}
+
+	// Triggers still create timers in this mode — that's the whole point.
+	e.StartExternal("Manual VoG", "buff", 1620, 0, time.Now(), nil, 0)
+	if len(e.timers) != 1 {
+		t.Errorf("triggers should still create timers in triggers_only mode, got %d", len(e.timers))
+	}
+}
+
 // When a trigger fires after a spell-landed timer for the same spell has
 // already been created, StartExternal must not add a duplicate row — but it
 // MUST graft the trigger's threshold and alerts onto the existing timer.
