@@ -3,7 +3,12 @@ export interface EntityStats {
   total_damage: number
   hit_count: number
   max_hit: number
+  // dps          — total / fight wall-clock duration (contribution rate).
+  // active_dps   — total / sum of intervals this combatant was engaging.
+  // active_seconds is the denominator used for active_dps, in seconds.
   dps: number
+  active_dps: number
+  active_seconds: number
   // Controlling player's name when this entity is a pet (charmed NPC or
   // summoned pet). Empty/undefined for player damage dealers and for pets
   // whose owner could not be identified.
@@ -16,6 +21,8 @@ export interface HealerStats {
   heal_count: number
   max_heal: number
   hps: number
+  active_hps: number
+  active_seconds: number
 }
 
 export interface FightState {

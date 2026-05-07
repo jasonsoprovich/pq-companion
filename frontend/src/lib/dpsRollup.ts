@@ -88,12 +88,20 @@ export function rollupCombatants(
     const totalDamage = owner.total_damage + sumDamage(pets)
     const hitCount = owner.hit_count + sumHits(pets)
     const maxHit = Math.max(owner.max_hit, ...pets.map((p) => p.max_hit))
+    // Owner and pet are typically engaged in the same fight window, so the
+    // union of their active intervals is closer to max(individual active
+    // times) than to a sum. Approximating the union here keeps the combined
+    // active DPS comparable to a non-pet class's active DPS instead of
+    // double-crediting overlapping engagement.
+    const activeSecs = Math.max(owner.active_seconds, ...pets.map((p) => p.active_seconds))
     rolled.push({
       ...owner,
       total_damage: totalDamage,
       hit_count: hitCount,
       max_hit: maxHit,
       dps: fightDuration > 0 ? totalDamage / fightDuration : 0,
+      active_dps: activeSecs > 0 ? totalDamage / activeSecs : 0,
+      active_seconds: activeSecs,
       pets,
     })
   }
@@ -105,12 +113,15 @@ export function rollupCombatants(
     const totalDamage = sumDamage(pets)
     const hitCount = sumHits(pets)
     const maxHit = Math.max(...pets.map((p) => p.max_hit))
+    const activeSecs = Math.max(...pets.map((p) => p.active_seconds))
     rolled.push({
       name: ownerName,
       total_damage: totalDamage,
       hit_count: hitCount,
       max_hit: maxHit,
       dps: fightDuration > 0 ? totalDamage / fightDuration : 0,
+      active_dps: activeSecs > 0 ? totalDamage / activeSecs : 0,
+      active_seconds: activeSecs,
       pets,
     })
   }

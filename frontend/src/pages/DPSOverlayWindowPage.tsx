@@ -7,7 +7,7 @@
  * buttons remain clickable via mouseenter/mouseleave forwarding.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Swords, Clipboard, ClipboardCheck, Trash2, Users } from 'lucide-react'
+import { Swords, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -15,6 +15,7 @@ import OverlayLockButton from '../components/OverlayLockButton'
 import { getCombatState, resetCombatState } from '../services/api'
 import type { CombatState, FightState } from '../types/combat'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
+import { useDPSMode, dpsForMode, type DPSMode } from '../hooks/useDPSMode'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -43,17 +44,18 @@ function truncateName(name: string, max = 24): string {
 
 // ── Clipboard ──────────────────────────────────────────────────────────────────
 
-function buildFightText(fight: FightState, combine: boolean): string {
+function buildFightText(fight: FightState, combine: boolean, mode: DPSMode): string {
   const rolled = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
+  const label = mode === 'active' ? 'adps' : 'dps'
   return rolled
     .slice(0, 10)
-    .map((c, i) => `#${i + 1} ${c.name}${petBadge(c.pets)} ${Math.round(c.dps)}dps ${c.total_damage.toLocaleString()}dmg`)
+    .map((c, i) => `#${i + 1} ${c.name}${petBadge(c.pets)} ${Math.round(dpsForMode(c, mode))}${label} ${c.total_damage.toLocaleString()}dmg`)
     .join(' | ')
 }
 
 // ── Row ────────────────────────────────────────────────────────────────────────
 
-function Row({ stat, totalDmg, expanded, onToggle }: { stat: RolledUpEntity; totalDmg: number; expanded: boolean; onToggle: () => void }): React.ReactElement {
+function Row({ stat, totalDmg, expanded, onToggle, mode }: { stat: RolledUpEntity; totalDmg: number; expanded: boolean; onToggle: () => void; mode: DPSMode }): React.ReactElement {
   const isYou = stat.name === 'You'
   const barPct = totalDmg > 0 ? (stat.total_damage / totalDmg) * 100 : 0
   const hasPets = stat.pets.length > 0
@@ -107,7 +109,7 @@ function Row({ stat, totalDmg, expanded, onToggle }: { stat: RolledUpEntity; tot
           {fmt(stat.total_damage)}
         </span>
         <span style={{ fontSize: 11, color: '#fb923c', fontVariantNumeric: 'tabular-nums', position: 'relative', minWidth: 44, textAlign: 'right' }}>
-          {fmtDPS(stat.dps)}
+          {fmtDPS(dpsForMode(stat, mode))}
         </span>
       </div>
       {hasPets && expanded && stat.pets.map((p) => (
@@ -126,7 +128,7 @@ function Row({ stat, totalDmg, expanded, onToggle }: { stat: RolledUpEntity; tot
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>↳ {p.name}</span>
           <span style={{ color: 'rgba(255,255,255,0.35)', fontVariantNumeric: 'tabular-nums' }}>{pct(p.total_damage, totalDmg)}</span>
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(p.total_damage)}</span>
-          <span style={{ color: '#fb923c', fontVariantNumeric: 'tabular-nums', minWidth: 44, textAlign: 'right' }}>{fmtDPS(p.dps)}</span>
+          <span style={{ color: '#fb923c', fontVariantNumeric: 'tabular-nums', minWidth: 44, textAlign: 'right' }}>{fmtDPS(dpsForMode(p, mode))}</span>
         </div>
       ))}
     </div>
@@ -135,7 +137,7 @@ function Row({ stat, totalDmg, expanded, onToggle }: { stat: RolledUpEntity; tot
 
 // ── Fight table ────────────────────────────────────────────────────────────────
 
-function FightTable({ fight, showAll, combine }: { fight: FightState; showAll: boolean; combine: boolean }): React.ReactElement {
+function FightTable({ fight, showAll, combine, mode }: { fight: FightState; showAll: boolean; combine: boolean; mode: DPSMode }): React.ReactElement {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const rolled = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
   const rows = showAll ? rolled : rolled.filter((c) => c.name === 'You')
@@ -172,6 +174,7 @@ function FightTable({ fight, showAll, combine }: { fight: FightState; showAll: b
             key={s.name}
             stat={s}
             totalDmg={totalDmg}
+            mode={mode}
             expanded={expanded.has(s.name)}
             onToggle={() => setExpanded((prev) => {
               const next = new Set(prev)
@@ -194,6 +197,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
   const [combine, setCombine] = useCombinePetWithOwner()
+  const { mode: dpsMode, toggle: toggleDPSMode } = useDPSMode()
   const [now, setNow] = useState(() => Date.now())
   const [copied, setCopied] = useState(false)
 
@@ -324,11 +328,29 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           >
             <Users size={11} />
           </button>
+          {/* DPS mode toggle: active-time vs fight-duration */}
+          <button
+            onClick={toggleDPSMode}
+            title={dpsMode === 'active'
+              ? 'Active-time DPS — click for fight-duration DPS'
+              : 'Fight-duration DPS — click for active-time DPS'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'none',
+              border: 'none',
+              padding: '1px 3px',
+              cursor: 'pointer',
+              color: dpsMode === 'active' ? '#818cf8' : 'rgba(255,255,255,0.4)',
+            }}
+          >
+            {dpsMode === 'active' ? <Activity size={11} /> : <Hourglass size={11} />}
+          </button>
           {/* copy fight summary */}
           <button
             onClick={() => {
               if (!fight) return
-              navigator.clipboard.writeText(buildFightText(fight, combine)).then(() => {
+              navigator.clipboard.writeText(buildFightText(fight, combine, dpsMode)).then(() => {
                 setCopied(true)
                 setTimeout(() => setCopied(false), 1500)
               }).catch(() => {})
@@ -439,7 +461,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           Connecting…
         </p>
       ) : fight ? (
-        <FightTable fight={fight} showAll={showAll} combine={combine} />
+        <FightTable fight={fight} showAll={showAll} combine={combine} mode={dpsMode} />
       ) : (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
           <Swords size={24} style={{ opacity: 0.15 }} />

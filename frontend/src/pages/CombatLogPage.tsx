@@ -13,12 +13,15 @@ import {
   Clipboard,
   ClipboardCheck,
   Users,
+  Activity,
+  Hourglass,
 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getCombatState, getLogStatus, resetCombatState } from '../services/api'
 import type { CombatState, DeathRecord, EntityStats, FightSummary } from '../types/combat'
 import type { LogTailerStatus } from '../types/logEvent'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
+import { useDPSMode, dpsForMode, type DPSMode } from '../hooks/useDPSMode'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -95,11 +98,13 @@ function CombatantTable({
   totalDamage,
   combine,
   fightDuration,
+  mode,
 }: {
   combatants: EntityStats[]
   totalDamage: number
   combine: boolean
   fightDuration: number
+  mode: DPSMode
 }): React.ReactElement {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const rolled = rollupCombatants(combatants, combine, fightDuration)
@@ -131,11 +136,11 @@ function CombatantTable({
         <span>Name</span>
         <span style={{ textAlign: 'right' }}>%</span>
         <span style={{ textAlign: 'right' }}>Damage</span>
-        <span style={{ textAlign: 'right' }}>DPS</span>
+        <span style={{ textAlign: 'right' }}>{mode === 'active' ? 'aDPS' : 'DPS'}</span>
         <span style={{ textAlign: 'right' }}>Max</span>
       </div>
 
-      {rolled.map((c) => renderRolledRow(c, totalDamage, expanded, setExpanded))}
+      {rolled.map((c) => renderRolledRow(c, totalDamage, expanded, setExpanded, mode))}
     </div>
   )
 }
@@ -145,6 +150,7 @@ function renderRolledRow(
   totalDamage: number,
   expanded: Set<string>,
   setExpanded: React.Dispatch<React.SetStateAction<Set<string>>>,
+  mode: DPSMode,
 ): React.ReactNode {
   const isYou = c.name === 'You'
   const hasPets = c.pets.length > 0
@@ -187,7 +193,7 @@ function renderRolledRow(
           {fmt(c.total_damage)}
         </span>
         <span style={{ textAlign: 'right', color: '#f97316', fontVariantNumeric: 'tabular-nums' }}>
-          {fmtDPS(c.dps)}
+          {fmtDPS(dpsForMode(c, mode))}
         </span>
         <span style={{ textAlign: 'right', color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>
           {fmt(c.max_hit)}
@@ -208,7 +214,7 @@ function renderRolledRow(
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>↳ {p.name}</span>
           <span style={{ textAlign: 'right', color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>{pct(p.total_damage, totalDamage)}</span>
           <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(p.total_damage)}</span>
-          <span style={{ textAlign: 'right', color: '#f97316', fontVariantNumeric: 'tabular-nums' }}>{fmtDPS(p.dps)}</span>
+          <span style={{ textAlign: 'right', color: '#f97316', fontVariantNumeric: 'tabular-nums' }}>{fmtDPS(dpsForMode(p, mode))}</span>
           <span style={{ textAlign: 'right', color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>{fmt(p.max_hit)}</span>
         </div>
       ))}
@@ -223,11 +229,13 @@ function FightRow({
   index,
   total,
   combine,
+  mode,
 }: {
   fight: FightSummary
   index: number
   total: number
   combine: boolean
+  mode: DPSMode
 }): React.ReactElement {
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -235,7 +243,7 @@ function FightRow({
 
   function handleCopy(e: React.MouseEvent): void {
     e.stopPropagation()
-    navigator.clipboard.writeText(buildFightText(fight, combine)).then(() => {
+    navigator.clipboard.writeText(buildFightText(fight, combine, mode)).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     }).catch(() => {})
@@ -346,6 +354,7 @@ function FightRow({
             totalDamage={fight.total_damage}
             combine={combine}
             fightDuration={fight.duration_seconds}
+            mode={mode}
           />
         </div>
       )}
@@ -515,6 +524,8 @@ function FilterBar({
   sessionCopied,
   combine,
   onToggleCombine,
+  dpsMode,
+  onToggleDPSMode,
 }: {
   filters: FilterState
   onChange: (f: FilterState) => void
@@ -524,6 +535,8 @@ function FilterBar({
   sessionCopied: boolean
   combine: boolean
   onToggleCombine: () => void
+  dpsMode: DPSMode
+  onToggleDPSMode: () => void
 }): React.ReactElement {
   return (
     <div
@@ -612,6 +625,30 @@ function FilterBar({
         }}
       >
         <Users size={11} /> Pets
+      </button>
+
+      {/* DPS mode toggle: active vs fight-duration */}
+      <button
+        onClick={onToggleDPSMode}
+        title={dpsMode === 'active'
+          ? 'Active-time DPS — divides by each combatant’s engaged time. Click for fight-duration DPS.'
+          : 'Fight-duration DPS — divides by total fight time. Click for active-time DPS.'}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '4px 8px',
+          fontSize: 11,
+          background: dpsMode === 'active' ? 'var(--color-primary)' : 'var(--color-background)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 4,
+          color: dpsMode === 'active' ? '#000' : 'var(--color-foreground)',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {dpsMode === 'active' ? <Activity size={11} /> : <Hourglass size={11} />}
+        {dpsMode === 'active' ? 'Active' : 'Duration'}
       </button>
 
       {/* Me only toggle */}
@@ -723,13 +760,14 @@ function applyFilters(fights: FightSummary[], filters: FilterState): FightSummar
 
 // ── Clipboard helpers ──────────────────────────────────────────────────────────
 
-function buildFightText(fight: FightSummary, combine: boolean): string {
+function buildFightText(fight: FightSummary, combine: boolean, mode: DPSMode): string {
   const target = fight.primary_target ?? 'Unknown'
   const dur = fmtDuration(fight.duration_seconds)
+  const label = mode === 'active' ? 'aDPS' : 'DPS'
   const lines: string[] = [`[PQ Companion] Fight: ${target} (${dur})`]
   const rows = rollupCombatants(fight.combatants, combine, fight.duration_seconds)
   for (const c of rows) {
-    lines.push(`${c.name}${petBadge(c.pets)}: ${fmtDPS(c.dps)} DPS (${fmt(c.total_damage)} total)`)
+    lines.push(`${c.name}${petBadge(c.pets)}: ${fmtDPS(dpsForMode(c, mode))} ${label} (${fmt(c.total_damage)} total)`)
   }
   return lines.join('\n')
 }
@@ -783,6 +821,7 @@ export default function CombatLogPage(): React.ReactElement {
   const [filters, setFilters] = useState<FilterState>({ search: '', timeRange: 'all', meOnly: false })
   const [sessionCopied, setSessionCopied] = useState(false)
   const [combine, setCombine] = useCombinePetWithOwner()
+  const { mode: dpsMode, toggle: toggleDPSMode } = useDPSMode()
 
   useEffect(() => {
     getCombatState().then(setCombat).catch(() => {})
@@ -858,6 +897,8 @@ export default function CombatLogPage(): React.ReactElement {
         sessionCopied={sessionCopied}
         combine={combine}
         onToggleCombine={() => setCombine(!combine)}
+        dpsMode={dpsMode}
+        onToggleDPSMode={toggleDPSMode}
       />
 
       {combat === null ? (
@@ -908,6 +949,7 @@ export default function CombatLogPage(): React.ReactElement {
                 index={i}
                 total={visibleFights.length}
                 combine={combine}
+                mode={dpsMode}
               />
             ))}
           </div>
