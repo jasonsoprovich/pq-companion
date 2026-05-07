@@ -30,19 +30,21 @@ function audioUrl(filePath: string): string {
   let p = filePath.replace(/\\/g, '/')
   if (p.startsWith('file://')) p = p.replace(/^file:\/+/, '')
   if (p.startsWith('pq-audio://')) return filePath
-  // pq-audio uses URL form pq-audio:///<absolute-path>; the empty host means
-  // unix paths keep their leading slash and windows drive letters appear as
-  // /C:/foo, which the main-process handler normalizes back to C:/foo.
+  // pq-audio is registered as a standard scheme. Chromium does NOT allow an
+  // empty host on a standard URL — pq-audio:///Users/foo gets normalized to
+  // pq-audio://users/foo (the first path segment is promoted to host and
+  // lowercased), which loses both case and a path component. Use a fixed
+  // sentinel host ("local") so the absolute path lands in URL.pathname intact.
   if (!p.startsWith('/')) p = '/' + p
   // Encode each path segment so spaces and URL-reserved chars (#, ?, %, etc.)
   // in filenames don't produce an invalid URL or get reinterpreted as a
-  // query/fragment by Chromium's URL parser. The main-process handler runs
-  // decodeURIComponent before hitting the file system.
+  // query/fragment. The main-process handler runs decodeURIComponent before
+  // hitting the file system.
   const encoded = p
     .split('/')
     .map((seg) => encodeURIComponent(seg))
     .join('/')
-  return 'pq-audio://' + encoded
+  return 'pq-audio://local' + encoded
 }
 
 /**

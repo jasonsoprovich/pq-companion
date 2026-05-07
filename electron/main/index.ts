@@ -938,8 +938,17 @@ app.whenReady().then(() => {
   // resolves to /Users/x/foo.wav, and on Windows pq-audio:///C:/x/foo.wav
   // resolves to C:/x/foo.wav (we strip the host slash before the drive letter).
   protocol.handle('pq-audio', async (request) => {
-    let p = request.url.substring('pq-audio://'.length)
-    p = decodeURIComponent(p)
+    // The renderer formats URLs as pq-audio://local/<absolute-path>. We pull
+    // the path back out via URL.pathname (which keeps it percent-encoded and
+    // case-preserved) and decode it once.
+    let p: string
+    try {
+      p = decodeURIComponent(new URL(request.url).pathname)
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[pq-audio] bad url', { url: request.url, err: String(err) })
+      return new Response('bad url', { status: 400 })
+    }
     if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(p)) {
       p = p.substring(1)
     }
