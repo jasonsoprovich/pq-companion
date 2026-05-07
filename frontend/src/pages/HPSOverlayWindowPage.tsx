@@ -152,6 +152,7 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
 
   return (
     <div
+      onMouseEnter={enableInteraction}
       onMouseLeave={enableClickThrough}
       style={{
         width: '100vw',

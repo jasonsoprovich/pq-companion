@@ -7,10 +7,11 @@ import { useCallback, useEffect, useState } from 'react'
  * move, drag edges to resize, all controls clickable.
  *
  * Locked: the window passes mouse events through to the game underneath via
- * Electron's setIgnoreMouseEvents. Header buttons remain clickable because
- * forward:true still delivers mouseenter/mouseleave events to the renderer —
- * callers should wire enableInteraction/enableClickThrough to the buttons
- * cluster so hovering temporarily disables passthrough.
+ * Electron's setIgnoreMouseEvents. Hover anywhere in the window to
+ * temporarily disable passthrough (so the user can scroll the timer list,
+ * click the per-row X, or grab a button); leave the window and passthrough
+ * resumes. forward:true keeps mouseenter/mouseleave flowing to the renderer
+ * even while passthrough is on, which is what makes the auto-toggle work.
  *
  * Lock state is persisted per overlay in the main process.
  */
