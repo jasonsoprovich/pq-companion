@@ -183,9 +183,9 @@ func (t *NPCTracker) clearTarget() {
 // "placeholder" npc_types rows (templates spawned by quest scripts that
 // share base stats with the named version). The /con line never includes
 // the prefix, so an exact match against the bare display name misses every
-// time. Tried in increasing length so a real "##_" row wins over a "#_"
-// row for the same suffix when both exist.
-var placeholderPrefixes = []string{"#_", "##_", "###_"}
+// time. Both spaced ("## Foo" → "##_Foo") and unspaced ("#Foo") forms exist
+// in the DB — try the longest variants first so the most-specific match wins.
+var placeholderPrefixes = []string{"###_", "###", "##_", "##", "#_", "#"}
 
 // lookupNPC converts the log display name (spaces) to the DB name format
 // (underscores) and queries the database. When the bare name misses, retry
