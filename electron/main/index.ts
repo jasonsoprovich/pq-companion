@@ -1,8 +1,8 @@
-import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol, net } from 'electron'
-import { join } from 'path'
-import { pathToFileURL } from 'url'
+import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol } from 'electron'
+import { join, extname } from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { readFile } from 'fs/promises'
 import { autoUpdater } from 'electron-updater'
 
 const isDev = !app.isPackaged
@@ -42,6 +42,34 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 const appIconPath = isDev
   ? join(__dirname, '../../build/icon.png')
   : join(process.resourcesPath, 'icon.png')
+
+// MIME type for the pq-audio:// handler. Chromium needs a Content-Type that
+// matches a media type it can decode; without this it silently rejects the
+// response and Audio.play() never starts.
+function audioMimeType(ext: string): string {
+  switch (ext) {
+    case '.mp3':
+      return 'audio/mpeg'
+    case '.wav':
+      return 'audio/wav'
+    case '.ogg':
+    case '.oga':
+      return 'audio/ogg'
+    case '.m4a':
+    case '.mp4':
+      return 'audio/mp4'
+    case '.aac':
+      return 'audio/aac'
+    case '.flac':
+      return 'audio/flac'
+    case '.opus':
+      return 'audio/opus'
+    case '.webm':
+      return 'audio/webm'
+    default:
+      return 'application/octet-stream'
+  }
+}
 
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
@@ -909,13 +937,23 @@ app.whenReady().then(() => {
   // scheme is the empty host part, so on macOS pq-audio:///Users/x/foo.wav
   // resolves to /Users/x/foo.wav, and on Windows pq-audio:///C:/x/foo.wav
   // resolves to C:/x/foo.wav (we strip the host slash before the drive letter).
-  protocol.handle('pq-audio', (request) => {
+  protocol.handle('pq-audio', async (request) => {
     let p = request.url.substring('pq-audio://'.length)
     p = decodeURIComponent(p)
     if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(p)) {
       p = p.substring(1)
     }
-    return net.fetch(pathToFileURL(p).toString())
+    try {
+      const data = await readFile(p)
+      const mime = audioMimeType(extname(p).toLowerCase())
+      // eslint-disable-next-line no-console
+      console.log('[pq-audio] served', { path: p, mime, bytes: data.byteLength })
+      return new Response(data, { headers: { 'Content-Type': mime } })
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[pq-audio] failed to read', { path: p, err: String(err) })
+      return new Response('not found', { status: 404 })
+    }
   })
 
   startSidecar()
