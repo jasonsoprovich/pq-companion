@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Skull, ExternalLink, Plus, Eraser, Circle, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Skull, ExternalLink, Plus, Eraser, Circle, CheckCircle2, AlertTriangle, X } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useActivePlayerName } from '../../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../../hooks/useDisplayThresholds'
-import { clearTimers, getLogStatus, getTimerState } from '../../services/api'
+import { clearTimers, getLogStatus, getTimerState, removeTimer } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import CreateTriggerModal from '../CreateTriggerModal'
 import SpellSearchPicker from '../SpellSearchPicker'
@@ -83,6 +83,13 @@ function DetrimRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: 
         <span style={{ fontSize: 11, color: urgent ? '#f87171' : color, fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: urgent ? 700 : 400 }}>
           {fmtRemaining(timer.remaining_seconds)}
         </span>
+        <button
+          onClick={() => removeTimer(timer.id).catch(() => {})}
+          title="Remove this timer"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--color-muted)', display: 'flex', alignItems: 'center', flexShrink: 0, lineHeight: 0 }}
+        >
+          <X size={11} />
+        </button>
       </div>
     </div>
   )

@@ -629,6 +629,27 @@ func (e *Engine) resolveLandedSpellName(data logparser.SpellLandedData) string {
 	return ""
 }
 
+// RemoveByID removes a single timer by its composite key (the ID field
+// the frontend sees on each timer row). Used by the per-row dismiss
+// button. Returns true if a timer was removed.
+func (e *Engine) RemoveByID(id string) bool {
+	if id == "" {
+		return false
+	}
+	e.mu.Lock()
+	_, had := e.timers[id]
+	if had {
+		delete(e.timers, id)
+	}
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	if had {
+		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+	}
+	return had
+}
+
 // removeTimer deletes a single timer by its composite key and broadcasts.
 // No-op if the key isn't present.
 func (e *Engine) removeTimer(key string) {

@@ -348,6 +348,10 @@ export function clearTimers(category: 'buff' | 'detrimental' | 'all'): Promise<v
   return post<void>(`/api/overlay/timers/clear?category=${category}`)
 }
 
+export function removeTimer(id: string): Promise<void> {
+  return del(`/api/overlay/timers/${encodeURIComponent(id)}`)
+}
+
 // ── Config ─────────────────────────────────────────────────────────────────────
 
 export function getConfig(): Promise<Config> {

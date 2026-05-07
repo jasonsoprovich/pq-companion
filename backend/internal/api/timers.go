@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 )
 
@@ -30,5 +31,20 @@ func (h *timerHandler) clear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.engine.ClearCategory(group)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// remove handles DELETE /api/overlay/timers/{id} — removes a single active
+// timer by its composite ID. Returns 404 if the ID isn't currently active.
+func (h *timerHandler) remove(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
+		return
+	}
+	if !h.engine.RemoveByID(id) {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
