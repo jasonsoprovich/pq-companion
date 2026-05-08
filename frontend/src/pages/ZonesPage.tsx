@@ -98,6 +98,13 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
     }
   }, [query, expansion, runSearch])
 
+  // Fire the initial empty-query search immediately so the list populates
+  // on mount without waiting for the 300ms debounce. Matches the pattern
+  // used by ItemsPage / SpellsPage / NpcsPage.
+  useEffect(() => {
+    runSearch('', null)
+  }, [runSearch])
+
   useEffect(() => {
     getZoneExpansions()
       .then((opts) => setExpansionOptions(opts ?? []))
