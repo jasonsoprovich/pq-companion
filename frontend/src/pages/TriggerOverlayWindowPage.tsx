@@ -326,6 +326,8 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
           gap: 6,
           padding: alerts.length > 0 ? '8px 8px' : 0,
           overflow: 'hidden',
