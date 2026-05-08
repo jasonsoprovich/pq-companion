@@ -870,6 +870,9 @@ func confirmedNPCs(f *internalFight, petOwners map[string]string) map[string]boo
 		set[name] = true
 	}
 	for name := range f.youTargets {
+		if _, isPet := petOwners[name]; isPet {
+			continue
+		}
 		set[name] = true
 	}
 	for name := range f.targetCounts {

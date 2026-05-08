@@ -619,6 +619,43 @@ func TestPetWithUnknownOwnerHasNoStamp(t *testing.T) {
 	}
 }
 
+// TestCharmedPetSurvivesPriorPlayerDamage verifies that charming a mob you
+// previously damaged still attributes its post-charm damage to the player.
+// Regression: confirmedNPCs's youTargets loop was missing the petOwners skip
+// the other three loops have, so any mob you tagged before charming ended up
+// in the NPC set and excludeNPCs stripped its row — the charmed pet's damage
+// vanished from the meter regardless of the rollup toggle.
+func TestCharmedPetSurvivesPriorPlayerDamage(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// You tag the mob with a DD before charming (Asphyxiate, melee, etc.) —
+	// this puts it in youTargets.
+	tr.Handle(hitEvent("You", "a temple guard", 30, now))
+
+	// Charm lands.
+	tr.Handle(petOwnerEvent("a temple guard", "Kildrey", now.Add(time.Second)))
+
+	// Charmed pet attacks a different mob in the room.
+	tr.Handle(hitEvent("a temple guard", "another temple guard", 400, now.Add(2*time.Second)))
+	tr.Handle(hitEvent("You", "another temple guard", 50, now.Add(3*time.Second)))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil {
+		t.Fatal("expected an active fight")
+	}
+	pet := findCombatant(st.CurrentFight.Combatants, "a temple guard")
+	if pet == nil {
+		t.Fatal("expected charmed pet 'a temple guard' in combatants — youTargets gap dropped it")
+	}
+	if pet.OwnerName != "Kildrey" {
+		t.Errorf("expected pet OwnerName=Kildrey, got %q", pet.OwnerName)
+	}
+	if pet.TotalDamage != 400 {
+		t.Errorf("expected pet damage=400, got %d", pet.TotalDamage)
+	}
+}
+
 // TestCharmBreakClearsPetOwnerMapping verifies that once a former pet starts
 // hitting the player, the owner mapping is dropped — subsequent damage by
 // that entity should not roll up under the old owner.
