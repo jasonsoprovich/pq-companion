@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
@@ -41,6 +42,12 @@ func (h *timerHandler) remove(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
 		return
+	}
+	// chi prefers r.URL.RawPath when the URL is percent-encoded, so the id
+	// arrives still encoded (timer ids contain '@' and spaces). Decode before
+	// looking up against the engine's unescaped map keys.
+	if decoded, err := url.PathUnescape(id); err == nil {
+		id = decoded
 	}
 	if !h.engine.RemoveByID(id) {
 		w.WriteHeader(http.StatusNotFound)

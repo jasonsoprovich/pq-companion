@@ -4,7 +4,7 @@
  * Shows timers with category === 'buff'.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Shield, Eraser, ArrowDownNarrowWide, Clock } from 'lucide-react'
+import { Shield, Eraser, ArrowDownNarrowWide, Clock, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName, targetSuffix } from '../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresholds'
@@ -12,7 +12,7 @@ import { useBuffSortMode, sortBuffs } from '../hooks/useBuffSortMode'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import OverlayLockButton from '../components/OverlayLockButton'
-import { clearTimers, getTimerState } from '../services/api'
+import { clearTimers, getTimerState, removeTimer } from '../services/api'
 import { SpellIcon } from '../components/Icon'
 import type { ActiveTimer, TimerState } from '../types/timer'
 
@@ -106,6 +106,23 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
         >
           {fmtRemaining(timer.remaining_seconds)}
         </span>
+        <button
+          onClick={() => removeTimer(timer.id).catch(() => {})}
+          title="Remove this timer"
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+            color: 'rgba(255,255,255,0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            flexShrink: 0,
+            lineHeight: 0,
+          }}
+        >
+          <X size={11} />
+        </button>
       </div>
     </div>
   )
