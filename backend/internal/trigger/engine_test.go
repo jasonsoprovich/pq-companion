@@ -296,6 +296,124 @@ func TestStore_ErrNotFound(t *testing.T) {
 	}
 }
 
+// ApplyDefaultUpdates appends new exclude patterns to an installed pack
+// trigger without touching customizations. Re-running the same key is a
+// no-op (idempotent). The user-modified pattern field stays as-is.
+func TestApplyDefaultUpdates_AppendsAndIsIdempotent(t *testing.T) {
+	s := openTestStore(t)
+
+	// Simulate a user with the pack installed and a customized "Incoming
+	// Tell" trigger: they've changed the pattern and added a personal
+	// exclude. Both must survive the migration.
+	tr := &Trigger{
+		ID:              "ut1",
+		Name:            "Incoming Tell",
+		PackName:        "Group Awareness",
+		Enabled:         true,
+		Pattern:         `\w+ tells you, '\['`, // user-customized: only fire on item-link tells
+		ExcludePatterns: []string{`^IDLEBOT \w+ tells you,`}, // user's personal entry
+		Actions:         []Action{},
+		CreatedAt:       time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+
+	updates := []DefaultUpdate{
+		{
+			Key:                   "test:incoming-tell:v1",
+			PackName:              "Group Awareness",
+			TriggerName:           "Incoming Tell",
+			AppendExcludePatterns: []string{`\b[Mm]aster[.!]`, `tells you, '[Tt]hat'll be `},
+		},
+	}
+
+	mutated, err := ApplyDefaultUpdates(s, updates)
+	if err != nil {
+		t.Fatalf("ApplyDefaultUpdates: %v", err)
+	}
+	if mutated != 1 {
+		t.Errorf("mutated: got %d, want 1", mutated)
+	}
+
+	got, err := s.Get(tr.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Pattern != `\w+ tells you, '\['` {
+		t.Errorf("user pattern was overwritten: %q", got.Pattern)
+	}
+	wantExcludes := map[string]bool{
+		`^IDLEBOT \w+ tells you,`:    true,
+		`\b[Mm]aster[.!]`:            true,
+		`tells you, '[Tt]hat'll be `: true,
+	}
+	if len(got.ExcludePatterns) != len(wantExcludes) {
+		t.Errorf("excludes count: got %d, want %d (%v)", len(got.ExcludePatterns), len(wantExcludes), got.ExcludePatterns)
+	}
+	for _, p := range got.ExcludePatterns {
+		if !wantExcludes[p] {
+			t.Errorf("unexpected exclude after merge: %q", p)
+		}
+	}
+
+	// Second run: nothing should change (key already applied).
+	mutated2, err := ApplyDefaultUpdates(s, updates)
+	if err != nil {
+		t.Fatalf("ApplyDefaultUpdates 2: %v", err)
+	}
+	if mutated2 != 0 {
+		t.Errorf("second run mutated %d triggers; expected 0", mutated2)
+	}
+
+	// User removes one of our defaults — it must NOT come back. The key is
+	// recorded as applied, so the migration is skipped entirely.
+	got.ExcludePatterns = []string{`^IDLEBOT \w+ tells you,`, `\b[Mm]aster[.!]`}
+	if err := s.Update(got); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if _, err := ApplyDefaultUpdates(s, updates); err != nil {
+		t.Fatalf("ApplyDefaultUpdates 3: %v", err)
+	}
+	got2, _ := s.Get(tr.ID)
+	for _, p := range got2.ExcludePatterns {
+		if p == `tells you, '[Tt]hat'll be ` {
+			t.Errorf("removed default came back: user opt-out wasn't respected")
+		}
+	}
+}
+
+// When the target trigger doesn't exist (user uninstalled the pack), the
+// update is silently skipped but still marked applied so we don't keep
+// retrying on every startup.
+func TestApplyDefaultUpdates_MissingTriggerSkipsAndMarks(t *testing.T) {
+	s := openTestStore(t)
+
+	updates := []DefaultUpdate{
+		{
+			Key:                   "test:missing:v1",
+			PackName:              "Group Awareness",
+			TriggerName:           "Incoming Tell",
+			AppendExcludePatterns: []string{`anything`},
+		},
+	}
+
+	mutated, err := ApplyDefaultUpdates(s, updates)
+	if err != nil {
+		t.Fatalf("ApplyDefaultUpdates: %v", err)
+	}
+	if mutated != 0 {
+		t.Errorf("mutated: got %d, want 0", mutated)
+	}
+	applied, err := s.IsDefaultUpdateApplied("test:missing:v1")
+	if err != nil {
+		t.Fatalf("IsDefaultUpdateApplied: %v", err)
+	}
+	if !applied {
+		t.Errorf("update should be marked applied even when target trigger is absent")
+	}
+}
+
 func TestInstallPack(t *testing.T) {
 	s := openTestStore(t)
 

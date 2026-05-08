@@ -198,6 +198,17 @@ func main() {
 		}
 	}
 
+	// One-time additive default updates for built-in packs. Each is keyed
+	// and runs at most once, only ever appending to list-typed fields on
+	// installed pack triggers — preserves user customizations while still
+	// letting hotfixes (e.g. new exclude patterns for "Incoming Tell")
+	// reach existing installs without a destructive reinstall.
+	if mutated, err := trigger.ApplyDefaultUpdates(triggerStore, trigger.DefaultUpdates()); err != nil {
+		slog.Warn("trigger default updates failed", "err", err)
+	} else if mutated > 0 {
+		slog.Info("trigger default updates applied", "mutated_triggers", mutated)
+	}
+
 	triggerEngine := trigger.NewEngine(triggerStore, hub, timerEngine, func() string {
 		if tailer != nil {
 			return tailer.ActiveCharacter()

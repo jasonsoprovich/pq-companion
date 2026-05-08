@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -1927,6 +1928,129 @@ func AllPacks() []TriggerPack {
 	}
 	out = append(out, GroupAwarenessPack())
 	return out
+}
+
+// DefaultUpdate is a one-time additive change to an installed built-in
+// pack. It runs at most once per Key (recorded in pack_default_updates)
+// and only ever appends entries to list-typed fields on an existing
+// trigger — nothing scalar gets overwritten. Lets us ship hotfixes (e.g.
+// "the Incoming Tell trigger should also exclude pet/merchant lines")
+// without forcing users to reinstall the pack and lose customizations.
+//
+// If the target trigger doesn't exist (the user removed it or never
+// installed the pack), the update is silently skipped but still recorded
+// as applied — we don't want to retry forever.
+type DefaultUpdate struct {
+	Key                   string   // unique migration id
+	PackName              string   // built-in pack the trigger belongs to
+	TriggerName           string   // trigger within the pack
+	AppendExcludePatterns []string // appended if not already present
+}
+
+// DefaultUpdates is the list of one-time additive pack updates to apply on
+// startup. Append new entries here when shipping a fix that should land
+// for users who already have the pack installed. Keys are immutable —
+// rename = re-run the migration on every install.
+func DefaultUpdates() []DefaultUpdate {
+	return []DefaultUpdate{
+		{
+			// 2026-05-07: filter pet command responses + NPC merchant
+			// canned phrases out of the broad "Incoming Tell" pattern.
+			// Existing installs don't get this from a fresh InstallPack
+			// (they'd lose customizations); this migration adds them
+			// additively to whatever the user has now.
+			Key:         "GroupAwareness:IncomingTell:pet-merchant-excludes-v1",
+			PackName:    "Group Awareness",
+			TriggerName: "Incoming Tell",
+			AppendExcludePatterns: []string{
+				`\b[Mm]aster[.!]`,
+				`tells you, '[Tt]hat'll be `,
+				`tells you, '[Ii]'ll give you `,
+				`tells you, 'I'?m not interested in buying`,
+				`tells you, 'Welcome to my bank`,
+				`tells you, 'Come back soon`,
+				`tells you, 'You cannot afford `,
+				`tells you, '?Hold your horses`,
+				`tells you, 'I'?m busy`,
+				`tells you, 'You have learned the basics`,
+				`tells you, 'You have increased your `,
+				`tells you, 'You are already browsing`,
+				`tells you, 'I charge `,
+				`tells you, 'I am unable to wake `,
+			},
+		},
+	}
+}
+
+// ApplyDefaultUpdates runs every DefaultUpdate that hasn't already been
+// applied. Idempotent — each Key runs at most once. Reports the number of
+// updates that mutated a trigger so the caller knows whether to broadcast
+// or reload. Errors on any individual update are logged and skipped so a
+// single bad migration doesn't block the rest.
+func ApplyDefaultUpdates(store *Store, updates []DefaultUpdate) (int, error) {
+	mutated := 0
+	for _, u := range updates {
+		applied, err := store.IsDefaultUpdateApplied(u.Key)
+		if err != nil {
+			return mutated, err
+		}
+		if applied {
+			continue
+		}
+		changed, err := applyDefaultUpdate(store, u)
+		if err != nil {
+			// Don't bail — record as applied so we don't loop on a bad
+			// migration. The slog warning is the breadcrumb.
+			slog.Warn("trigger: default update failed", "key", u.Key, "err", err)
+		}
+		if err := store.MarkDefaultUpdateApplied(u.Key); err != nil {
+			return mutated, err
+		}
+		if changed {
+			mutated++
+		}
+	}
+	return mutated, nil
+}
+
+// applyDefaultUpdate looks up the named trigger and appends any missing
+// AppendExcludePatterns. Returns whether the trigger was actually mutated
+// (false if the trigger doesn't exist, or all entries were already present).
+func applyDefaultUpdate(store *Store, u DefaultUpdate) (bool, error) {
+	if u.TriggerName == "" || u.PackName == "" {
+		return false, nil
+	}
+	t, err := store.FindByPackAndName(u.PackName, u.TriggerName)
+	if err != nil {
+		return false, err
+	}
+	if t == nil {
+		// User uninstalled the pack or removed the trigger; nothing to do.
+		// Marked applied by the caller so we don't re-check forever.
+		slog.Info("trigger: default update target missing, skipping", "key", u.Key, "pack", u.PackName, "trigger", u.TriggerName)
+		return false, nil
+	}
+	existing := make(map[string]struct{}, len(t.ExcludePatterns))
+	for _, p := range t.ExcludePatterns {
+		existing[p] = struct{}{}
+	}
+	added := 0
+	for _, p := range u.AppendExcludePatterns {
+		if _, ok := existing[p]; ok {
+			continue
+		}
+		t.ExcludePatterns = append(t.ExcludePatterns, p)
+		existing[p] = struct{}{}
+		added++
+	}
+	if added == 0 {
+		return false, nil
+	}
+	if err := store.Update(t); err != nil {
+		return false, err
+	}
+	slog.Info("trigger: default update applied", "key", u.Key, "pack", u.PackName, "trigger", u.TriggerName, "added_excludes", added)
+	return true, nil
 }
 
 // InstallPack replaces any existing triggers for pack.PackName with the pack's

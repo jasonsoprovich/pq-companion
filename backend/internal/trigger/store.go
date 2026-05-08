@@ -74,6 +74,17 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Tracks one-time additive pack default updates so each runs at most
+	// once. See ApplyDefaultUpdates / DefaultUpdates for the migration list.
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS pack_default_updates (
+			key        TEXT    NOT NULL PRIMARY KEY,
+			applied_at INTEGER NOT NULL
+		)
+	`); err != nil {
+		return err
+	}
+
 	// Idempotently add columns for databases created before each feature.
 	addColumns := []string{
 		`ALTER TABLE triggers ADD COLUMN timer_type TEXT NOT NULL DEFAULT 'none'`,
@@ -271,6 +282,55 @@ func (s *Store) Delete(id string) error {
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// FindByPackAndName returns the (single) trigger with the given pack name
+// and trigger name, or (nil, nil) if no match exists. Used by the default-
+// updates pipeline to locate built-in pack triggers without iterating the
+// whole list at the call site. Returns the first match if duplicates somehow
+// exist; the trigger UI prevents duplicate names within a pack.
+func (s *Store) FindByPackAndName(packName, name string) (*Trigger, error) {
+	row := s.db.QueryRow(
+		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
+		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
+		        display_threshold_secs, characters, timer_alerts, exclude_patterns
+		 FROM triggers WHERE pack_name = ? AND name = ? LIMIT 1`,
+		packName, name,
+	)
+	t, err := scanTrigger(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find trigger %s/%s: %w", packName, name, err)
+	}
+	return t, nil
+}
+
+// IsDefaultUpdateApplied reports whether the named default-update key has
+// already run. ApplyDefaultUpdates uses this to keep one-time additive
+// migrations idempotent across restarts.
+func (s *Store) IsDefaultUpdateApplied(key string) (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM pack_default_updates WHERE key = ?`, key).Scan(&n)
+	if err != nil {
+		return false, fmt.Errorf("check default update %s: %w", key, err)
+	}
+	return n > 0, nil
+}
+
+// MarkDefaultUpdateApplied records that the named default-update key has
+// run. Idempotent (INSERT OR IGNORE) so a duplicate call from a parallel
+// startup path doesn't error.
+func (s *Store) MarkDefaultUpdateApplied(key string) error {
+	_, err := s.db.Exec(
+		`INSERT OR IGNORE INTO pack_default_updates (key, applied_at) VALUES (?, ?)`,
+		key, time.Now().UTC().Unix(),
+	)
+	if err != nil {
+		return fmt.Errorf("mark default update %s: %w", key, err)
 	}
 	return nil
 }
