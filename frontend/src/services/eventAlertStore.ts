@@ -27,7 +27,7 @@ function rule(
 }
 
 const DEFAULT_CONFIG: EventAlertConfig = {
-  enabled: true,
+  enabled: false,
   rules: [
     rule('default-death',     'log:death',          'You have died'),
     rule('default-zone',      'log:zone',            'Entering {zone}'),
