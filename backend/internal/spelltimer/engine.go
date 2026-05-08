@@ -633,6 +633,32 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	}
 
 	e.mu.Lock()
+	// Triggers fire BEFORE spell-landed in the tailer dispatch (raw lines
+	// first, parsed events second), so a same-spell-name trigger may have
+	// already created a target-less entry with user-configured threshold and
+	// alerts. Graft that metadata onto the new (more specific, target-keyed)
+	// timer and drop the old entry — otherwise the spell-landed timer ends
+	// up with DisplayThresholdSecs=0 and the per-trigger override is lost.
+	// This is the symmetric counterpart to the dedup in StartExternal.
+	for existingKey, existing := range e.timers {
+		if existingKey == key {
+			continue
+		}
+		if existing.SpellName != spellName {
+			continue
+		}
+		if time.Since(existing.CastAt) >= dedupGraceWindow {
+			continue
+		}
+		if existing.DisplayThresholdSecs > 0 {
+			timer.DisplayThresholdSecs = existing.DisplayThresholdSecs
+		}
+		if len(existing.TimerAlerts) > 0 {
+			timer.TimerAlerts = existing.TimerAlerts
+		}
+		delete(e.timers, existingKey)
+		break
+	}
 	// Recasting on the same target replaces the timer (refresh). No dedup
 	// against the same key is needed; with composite keys, recasts on the
 	// SAME target replace cleanly and casts on DIFFERENT targets coexist.
