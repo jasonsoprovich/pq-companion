@@ -790,18 +790,18 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
 
 interface TriggerRowProps {
   trigger: Trigger
-  onEdit: (t: Trigger) => void
   onDeleted: (id: string) => void
-  onToggled: (t: Trigger) => void
+  onUpdated: (t: Trigger) => void
 }
 
-function TriggerRow({ trigger, onEdit, onDeleted, onToggled }: TriggerRowProps): React.ReactElement {
+function TriggerRow({ trigger, onDeleted, onUpdated }: TriggerRowProps): React.ReactElement {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [toggling, setToggling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [shared, setShared] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
 
   const handleShare = () => {
     const pack: TriggerPack = {
@@ -847,13 +847,26 @@ function TriggerRow({ trigger, onEdit, onDeleted, onToggled }: TriggerRowProps):
     }
     updateTrigger(trigger.id, req)
       .then((updated) => {
-        onToggled(updated)
+        onUpdated(updated)
         setToggling(false)
       })
       .catch((err: Error) => {
         setError(err.message)
         setToggling(false)
       })
+  }
+
+  if (isEditing) {
+    return (
+      <TriggerForm
+        initial={trigger}
+        onSaved={(t) => {
+          onUpdated(t)
+          setIsEditing(false)
+        }}
+        onCancel={() => setIsEditing(false)}
+      />
+    )
   }
 
   return (
@@ -951,7 +964,7 @@ function TriggerRow({ trigger, onEdit, onDeleted, onToggled }: TriggerRowProps):
             {shared ? <CheckCircle2 size={13} /> : <Upload size={13} />}
           </button>
           <button
-            onClick={() => onEdit(trigger)}
+            onClick={() => setIsEditing(true)}
             className="p-1 rounded"
             style={{ color: 'var(--color-muted-foreground)' }}
             title="Edit"
@@ -1551,7 +1564,6 @@ export default function TriggersPage(): React.ReactElement {
   const [emptyNewMenuOpen, setEmptyNewMenuOpen] = useState(false)
   const [showClearAll, setShowClearAll] = useState(false)
   const [clearingAll, setClearingAll] = useState(false)
-  const [editing, setEditing] = useState<Trigger | null>(null)
   const [search, setSearch] = useState('')
   const [classFilter, setClassFilter] = useState<number | null>(null)
   const [charFilter, setCharFilter] = useState<string>('')
@@ -1624,32 +1636,21 @@ export default function TriggersPage(): React.ReactElement {
   // class in the roster.
   const availableClasses = CLASS_NAMES.map((_, idx) => idx)
 
-  const handleSaved = (t: Trigger) => {
-    if (editing) {
-      setTriggers((prev) => prev.map((x) => (x.id === t.id ? t : x)))
-      setEditing(null)
-    } else {
-      setTriggers((prev) => [...prev, t])
-      setShowCreate(false)
-      setCreatePrefill(undefined)
-    }
+  const handleCreated = (t: Trigger) => {
+    setTriggers((prev) => [...prev, t])
+    setShowCreate(false)
+    setCreatePrefill(undefined)
   }
 
   const handleDeleted = (id: string) => {
     setTriggers((prev) => prev.filter((t) => t.id !== id))
   }
 
-  const handleToggled = (updated: Trigger) => {
+  const handleUpdated = (updated: Trigger) => {
     setTriggers((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
   }
 
-  const handleEdit = (t: Trigger) => {
-    setEditing(t)
-    setShowCreate(false)
-  }
-
-  const handleCancelForm = () => {
-    setEditing(null)
+  const handleCancelCreate = () => {
     setShowCreate(false)
     setCreatePrefill(undefined)
   }
@@ -1774,7 +1775,6 @@ export default function TriggersPage(): React.ReactElement {
                         onClick={() => {
                           setNewMenuOpen(false)
                           setCreatePrefill(undefined)
-                          setEditing(null)
                           setShowCreate(true)
                         }}
                         className="flex w-full items-center gap-2 px-3 py-2 text-xs text-left border-t"
@@ -1848,17 +1848,12 @@ export default function TriggersPage(): React.ReactElement {
           ) : (
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {/* Create form */}
-              {showCreate && !editing && (
+              {showCreate && (
                 <TriggerForm
                   prefill={createPrefill}
-                  onSaved={handleSaved}
-                  onCancel={handleCancelForm}
+                  onSaved={handleCreated}
+                  onCancel={handleCancelCreate}
                 />
-              )}
-
-              {/* Edit form */}
-              {editing && (
-                <TriggerForm initial={editing} onSaved={handleSaved} onCancel={handleCancelForm} />
               )}
 
               {/* Search + class filter */}
@@ -2024,7 +2019,6 @@ export default function TriggersPage(): React.ReactElement {
                               onClick={() => {
                                 setEmptyNewMenuOpen(false)
                                 setCreatePrefill(undefined)
-                                setEditing(null)
                                 setShowCreate(true)
                               }}
                               className="flex w-full items-center gap-2 px-3 py-2 text-xs text-left border-t"
@@ -2060,9 +2054,8 @@ export default function TriggersPage(): React.ReactElement {
                 <TriggerRow
                   key={t.id}
                   trigger={t}
-                  onEdit={handleEdit}
                   onDeleted={handleDeleted}
-                  onToggled={handleToggled}
+                  onUpdated={handleUpdated}
                 />
               ))}
             </div>
@@ -2162,7 +2155,6 @@ export default function TriggersPage(): React.ReactElement {
           onClose={() => setShowSpellPicker(false)}
           onPick={(spell) => {
             setCreatePrefill(buildSpellTriggerPrefill(spell))
-            setEditing(null)
             setShowCreate(true)
             setShowSpellPicker(false)
             setTab('triggers')
