@@ -487,7 +487,12 @@ func (db *DB) GetNPCByName(name string) (*NPC, error) {
 // NPCs with empty names or a name of just "#" are always excluded — those
 // rows do not reference real in-game NPCs.
 func (db *DB) SearchNPCs(query string, limit, offset int, hidePlaceholders bool) (*SearchResult[NPC], error) {
-	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
+	// EQEmu stores NPC names with underscores; the UI displays spaces. Map
+	// query whitespace to underscores so what the user sees matches what
+	// the user can type (e.g. "#Lord_Inquisitor_Seru" surfaces for both
+	// "lord" and "lord inquisitor").
+	normalized := strings.ReplaceAll(query, " ", "_")
+	pattern := "%" + strings.ReplaceAll(normalized, "%", "\\%") + "%"
 
 	baseClause := " AND n.name != '' AND n.name != '#'"
 	placeholderClause := ""

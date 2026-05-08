@@ -150,6 +150,7 @@ func TestSearchNPCs(t *testing.T) {
 		wantMin int
 	}{
 		{"gnoll", "gnoll", 1},
+		{"space matches underscore", "a gnoll", 1},
 		{"no results", "xyzzy_notnpc_zyx", 0},
 	}
 	for _, tt := range tests {
