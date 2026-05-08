@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX } from 'lucide-react'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog } from '../services/api'
 import type { Config } from '../types/config'
 import type { LogFileInfo } from '../types/logEvent'
@@ -484,7 +484,47 @@ export default function SettingsPage(): React.ReactElement {
             </div>
           </label>
 
-          <label className="flex cursor-pointer items-center justify-between py-1 mt-2">
+          <div className="mt-4">
+            <div className="mb-1 flex items-center justify-between">
+              <div>
+                <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  Master Volume
+                </p>
+                <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Scales all trigger sounds and TTS alerts. Each trigger keeps its own volume — this dampens everything together.
+                </p>
+              </div>
+              <span className="text-xs font-mono shrink-0 ml-3" style={{ color: 'var(--color-muted-foreground)' }}>
+                {config.preferences.master_volume ?? 100}%
+              </span>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              {(config.preferences.master_volume ?? 100) === 0 ? (
+                <VolumeX size={14} style={{ color: 'var(--color-muted)' }} />
+              ) : (
+                <Volume2 size={14} style={{ color: 'var(--color-muted)' }} />
+              )}
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={config.preferences.master_volume ?? 100}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    preferences: {
+                      ...config.preferences,
+                      master_volume: Number(e.target.value),
+                    },
+                  })
+                }
+                style={{ flex: 1, accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+              />
+            </div>
+          </div>
+
+          <label className="flex cursor-pointer items-center justify-between py-1 mt-4">
             <div>
               <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
                 Minimize to Tray

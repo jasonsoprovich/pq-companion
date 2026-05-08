@@ -27,6 +27,34 @@ func TestLoadFrom_createsDefaultFile(t *testing.T) {
 	if cfg.Preferences.OverlayOpacity != 0.25 {
 		t.Errorf("default OverlayOpacity = %v, want 0.25", cfg.Preferences.OverlayOpacity)
 	}
+	if cfg.Preferences.MasterVolume != 100 {
+		t.Errorf("default MasterVolume = %d, want 100", cfg.Preferences.MasterVolume)
+	}
+}
+
+// Existing configs predating MasterVolume should be backfilled to 100 (no
+// dampening) on next load — otherwise the missing field would unmarshal to 0
+// and silently mute every alert.
+func TestLoadFrom_BackfillsMasterVolumeDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	const old = `eq_path: /games/EQ
+preferences:
+  overlay_opacity: 0.5
+  minimize_to_tray: true
+`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if got := m.Get().Preferences.MasterVolume; got != 100 {
+		t.Errorf("MasterVolume: got %d, want 100 (backfilled default)", got)
+	}
 }
 
 func TestLoadFrom_roundTrip(t *testing.T) {

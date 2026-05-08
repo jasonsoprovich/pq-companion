@@ -4,6 +4,7 @@ export interface Preferences {
   parse_combat_log: boolean
   overlay_dps_enabled: boolean
   overlay_hps_enabled: boolean
+  master_volume: number
 }
 
 export interface BackupSettings {

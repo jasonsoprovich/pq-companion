@@ -11,6 +11,29 @@
 const lastFiredAt = new Map<string, number>()
 const AUDIO_DEDUP_MS = 400
 
+// Master volume scales every playback (sound + TTS, including test previews)
+// on top of the per-action volume. Stored as 0.0–1.0; updated from
+// Preferences.master_volume by useMasterVolume(). Default 1.0 = no dampening.
+let masterVolume = 1.0
+
+/**
+ * Set the master volume multiplier applied to every subsequent playback.
+ * Accepts 0.0–1.0; values outside the range are clamped.
+ */
+export function setMasterVolume(value: number): void {
+  if (!Number.isFinite(value)) return
+  masterVolume = Math.min(1, Math.max(0, value))
+}
+
+/** Returns the current master volume multiplier (0.0–1.0). */
+export function getMasterVolume(): number {
+  return masterVolume
+}
+
+function effectiveVolume(volume: number): number {
+  return Math.min(1, Math.max(0, volume)) * masterVolume
+}
+
 function isDuplicate(key: string): boolean {
   const now = Date.now()
   const last = lastFiredAt.get(key) ?? 0
@@ -59,7 +82,7 @@ export function playSound(filePath: string, volume = 1.0): void {
   if (isDuplicate(`sound:${filePath}`)) return
 
   const audio = new Audio(audioUrl(filePath))
-  audio.volume = Math.min(1, Math.max(0, volume))
+  audio.volume = effectiveVolume(volume)
   audio.play().catch((err: unknown) => {
     // Surface the failure in DevTools — file-not-found and autoplay-blocked
     // both look identical to the user (silence) so a console line is the
@@ -90,7 +113,7 @@ export function speakText(text: string, voice = '', volume = 1.0): void {
   // already keeps a single trigger from spamming the same line.
 
   const utterance = new SpeechSynthesisUtterance(text)
-  utterance.volume = Math.min(1, Math.max(0, volume))
+  utterance.volume = effectiveVolume(volume)
   utterance.onerror = (e) => {
     // eslint-disable-next-line no-console
     console.warn('[audio] speakText failed', { text, voice, error: e.error })
@@ -152,7 +175,7 @@ export function playSoundForTest(filePath: string, volume = 1.0, onEnd?: () => v
     return
   }
   const audio = new Audio(audioUrl(filePath))
-  audio.volume = Math.min(1, Math.max(0, volume))
+  audio.volume = effectiveVolume(volume)
 
   let done = false
   const finish = () => {
@@ -190,7 +213,7 @@ export function speakTextForTest(
     return
   }
   const utterance = new SpeechSynthesisUtterance(text)
-  utterance.volume = Math.min(1, Math.max(0, volume))
+  utterance.volume = effectiveVolume(volume)
   if (voice) {
     const voices = window.speechSynthesis.getVoices()
     const match = voices.find((v) => v.name === voice)

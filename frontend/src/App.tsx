@@ -6,6 +6,7 @@ import { getConfig } from './services/api'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useTimerAlerts } from './hooks/useTimerAlerts'
 import { useEventAlerts } from './hooks/useEventAlerts'
+import { useMasterVolume } from './hooks/useMasterVolume'
 import { useLogFeedSubscriber } from './hooks/useLogFeed'
 import ItemsPage from './pages/ItemsPage'
 import SpellsPage from './pages/SpellsPage'
@@ -45,6 +46,7 @@ function OverlayPage({ children }: { children: React.ReactNode }): React.ReactEl
 // It is only rendered for the "/" route so overlay windows never run these hooks
 // and never fire duplicate TTS or sound alerts.
 function MainWindowLayout(): React.ReactElement {
+  useMasterVolume()
   useAudioEngine()
   useTimerAlerts()
   useEventAlerts()

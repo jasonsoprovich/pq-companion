@@ -148,6 +148,12 @@ type Preferences struct {
 
 	// OverlayHPSEnabled controls whether the HPS floating overlay is shown.
 	OverlayHPSEnabled bool `yaml:"overlay_hps_enabled" json:"overlay_hps_enabled"`
+
+	// MasterVolume scales every trigger / event / timer alert sound and TTS
+	// utterance multiplicatively on top of its per-action volume. Stored as
+	// 0–100 (percent); the frontend converts to 0.0–1.0 at playback time.
+	// 100 = no dampening (default), 0 = mute everything.
+	MasterVolume int `yaml:"master_volume" json:"master_volume"`
 }
 
 // defaults returns a Config populated with sensible default values.
@@ -161,6 +167,7 @@ func defaults() Config {
 			ParseCombatLog:    true,
 			OverlayDPSEnabled: true,
 			OverlayHPSEnabled: false,
+			MasterVolume:      100,
 		},
 		Backup: BackupSettings{
 			AutoBackup: false,
