@@ -74,6 +74,13 @@ export interface Trigger {
    * seconds. Empty = no fading alert (timer counts down silently).
    */
   timer_alerts: TimerAlertThreshold[]
+  /**
+   * Regexes that suppress this trigger when any of them also match the
+   * same log line. Lets a broad primary pattern (e.g. `\w+ tells you,`)
+   * filter out pet/merchant lines without RE2 lookbehind. Each entry is
+   * tested independently — empty list = no exclusions.
+   */
+  exclude_patterns: string[]
 }
 
 export interface TriggerFired {

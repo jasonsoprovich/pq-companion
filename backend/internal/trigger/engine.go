@@ -44,6 +44,10 @@ type compiled struct {
 	re       *regexp.Regexp
 	wornOff  *regexp.Regexp // non-nil only when the trigger has a worn-off pattern
 	timerKey string         // cached spelltimer key when timer_type != none
+	// excludes are precompiled ExcludePatterns; if any match the same line
+	// the primary match is suppressed. Lets a broad pattern (e.g. "incoming
+	// tell") filter pet/merchant lines without needing RE2 lookbehind.
+	excludes []*regexp.Regexp
 }
 
 // Engine loads triggers from the store and tests every incoming log line
@@ -99,6 +103,17 @@ func (e *Engine) Reload() {
 		if t.TimerType == TimerTypeBuff || t.TimerType == TimerTypeDetrimental {
 			c.timerKey = timerKeyFor(t)
 		}
+		for _, p := range t.ExcludePatterns {
+			if p == "" {
+				continue
+			}
+			ex, err := regexp.Compile(p)
+			if err != nil {
+				slog.Warn("trigger: invalid exclude pattern, skipping", "id", t.ID, "name", t.Name, "pattern", p, "err", err)
+				continue
+			}
+			c.excludes = append(c.excludes, ex)
+		}
 		cs = append(cs, c)
 	}
 
@@ -126,7 +141,7 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 		if !triggerAppliesTo(c.trigger, active) {
 			continue
 		}
-		if c.re.MatchString(message) {
+		if c.re.MatchString(message) && !matchesAny(c.excludes, message) {
 			e.fire(c, message, timestamp)
 		}
 		if c.wornOff != nil && c.wornOff.MatchString(message) {
@@ -135,6 +150,18 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 			}
 		}
 	}
+}
+
+// matchesAny returns true if any of the regexes match s. Used to suppress a
+// primary trigger match when one of its ExcludePatterns also matches the
+// same line.
+func matchesAny(res []*regexp.Regexp, s string) bool {
+	for _, re := range res {
+		if re.MatchString(s) {
+			return true
+		}
+	}
+	return false
 }
 
 // triggerAppliesTo reports whether the trigger should fire for the given

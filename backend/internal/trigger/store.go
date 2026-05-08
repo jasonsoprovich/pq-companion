@@ -67,7 +67,8 @@ func (s *Store) migrate() error {
 			spell_id               INTEGER NOT NULL DEFAULT 0,
 			display_threshold_secs INTEGER NOT NULL DEFAULT 0,
 			characters             TEXT    NOT NULL DEFAULT '[]',
-			timer_alerts           TEXT    NOT NULL DEFAULT '[]'
+			timer_alerts           TEXT    NOT NULL DEFAULT '[]',
+			exclude_patterns       TEXT    NOT NULL DEFAULT '[]'
 		)
 	`); err != nil {
 		return err
@@ -82,6 +83,7 @@ func (s *Store) migrate() error {
 		`ALTER TABLE triggers ADD COLUMN display_threshold_secs INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE triggers ADD COLUMN characters TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE triggers ADD COLUMN timer_alerts TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE triggers ADD COLUMN exclude_patterns TEXT NOT NULL DEFAULT '[]'`,
 	}
 	for _, stmt := range addColumns {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
@@ -143,17 +145,24 @@ func (s *Store) Insert(t *Trigger) error {
 	if err != nil {
 		return fmt.Errorf("marshal timer_alerts: %w", err)
 	}
+	if t.ExcludePatterns == nil {
+		t.ExcludePatterns = []string{}
+	}
+	excludeJSON, err := json.Marshal(t.ExcludePatterns)
+	if err != nil {
+		return fmt.Errorf("marshal exclude_patterns: %w", err)
+	}
 	if t.TimerType == "" {
 		t.TimerType = TimerTypeNone
 	}
 	_, err = s.db.Exec(
 		`INSERT INTO triggers (id, name, enabled, pattern, actions, pack_name, created_at,
 		                       timer_type, timer_duration_secs, worn_off_pattern, spell_id,
-		                       display_threshold_secs, characters, timer_alerts)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       display_threshold_secs, characters, timer_alerts, exclude_patterns)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName, t.CreatedAt.Unix(),
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
-		t.DisplayThresholdSecs, string(charJSON), string(alertJSON),
+		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
 	)
 	if err != nil {
 		return fmt.Errorf("insert trigger: %w", err)
@@ -166,7 +175,7 @@ func (s *Store) List() ([]*Trigger, error) {
 	rows, err := s.db.Query(
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
-		        display_threshold_secs, characters, timer_alerts
+		        display_threshold_secs, characters, timer_alerts, exclude_patterns
 		 FROM triggers ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -190,7 +199,7 @@ func (s *Store) Get(id string) (*Trigger, error) {
 	row := s.db.QueryRow(
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
-		        display_threshold_secs, characters, timer_alerts
+		        display_threshold_secs, characters, timer_alerts, exclude_patterns
 		 FROM triggers WHERE id = ?`, id,
 	)
 	t, err := scanTrigger(row)
@@ -223,17 +232,24 @@ func (s *Store) Update(t *Trigger) error {
 	if err != nil {
 		return fmt.Errorf("marshal timer_alerts: %w", err)
 	}
+	if t.ExcludePatterns == nil {
+		t.ExcludePatterns = []string{}
+	}
+	excludeJSON, err := json.Marshal(t.ExcludePatterns)
+	if err != nil {
+		return fmt.Errorf("marshal exclude_patterns: %w", err)
+	}
 	if t.TimerType == "" {
 		t.TimerType = TimerTypeNone
 	}
 	res, err := s.db.Exec(
 		`UPDATE triggers SET name=?, enabled=?, pattern=?, actions=?, pack_name=?,
 		                     timer_type=?, timer_duration_secs=?, worn_off_pattern=?, spell_id=?,
-		                     display_threshold_secs=?, characters=?, timer_alerts=?
+		                     display_threshold_secs=?, characters=?, timer_alerts=?, exclude_patterns=?
 		 WHERE id=?`,
 		t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName,
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
-		t.DisplayThresholdSecs, string(charJSON), string(alertJSON),
+		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
 		t.ID,
 	)
 	if err != nil {
@@ -286,13 +302,13 @@ type scanner interface {
 func scanTrigger(row scanner) (*Trigger, error) {
 	var t Trigger
 	var enabledInt int
-	var actJSON, charJSON, alertJSON string
+	var actJSON, charJSON, alertJSON, excludeJSON string
 	var unixSec int64
 	var timerType string
 	if err := row.Scan(
 		&t.ID, &t.Name, &enabledInt, &t.Pattern, &actJSON, &t.PackName, &unixSec,
 		&timerType, &t.TimerDurationSecs, &t.WornOffPattern, &t.SpellID,
-		&t.DisplayThresholdSecs, &charJSON, &alertJSON,
+		&t.DisplayThresholdSecs, &charJSON, &alertJSON, &excludeJSON,
 	); err != nil {
 		return nil, err
 	}
@@ -323,6 +339,14 @@ func scanTrigger(row scanner) (*Trigger, error) {
 	}
 	if t.TimerAlerts == nil {
 		t.TimerAlerts = []TimerAlert{}
+	}
+	if excludeJSON != "" {
+		if err := json.Unmarshal([]byte(excludeJSON), &t.ExcludePatterns); err != nil {
+			t.ExcludePatterns = []string{}
+		}
+	}
+	if t.ExcludePatterns == nil {
+		t.ExcludePatterns = []string{}
 	}
 	return &t, nil
 }

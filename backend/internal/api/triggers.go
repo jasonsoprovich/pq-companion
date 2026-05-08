@@ -58,6 +58,7 @@ type triggerRequest struct {
 	DisplayThresholdSecs int                  `json:"display_threshold_secs"`
 	Characters           []string             `json:"characters"`
 	TimerAlerts          []trigger.TimerAlert `json:"timer_alerts"`
+	ExcludePatterns      []string             `json:"exclude_patterns"`
 }
 
 // normalizeTimerType coerces an incoming timer_type into one of the valid
@@ -101,6 +102,7 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 		DisplayThresholdSecs: req.DisplayThresholdSecs,
 		Characters:           req.Characters,
 		TimerAlerts:          req.TimerAlerts,
+		ExcludePatterns:      req.ExcludePatterns,
 	}
 	if t.Actions == nil {
 		t.Actions = []trigger.Action{}
@@ -110,6 +112,9 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	if t.TimerAlerts == nil {
 		t.TimerAlerts = []trigger.TimerAlert{}
+	}
+	if t.ExcludePatterns == nil {
+		t.ExcludePatterns = []string{}
 	}
 	if err := h.store.Insert(t); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -153,6 +158,7 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	existing.DisplayThresholdSecs = req.DisplayThresholdSecs
 	existing.Characters = req.Characters
 	existing.TimerAlerts = req.TimerAlerts
+	existing.ExcludePatterns = req.ExcludePatterns
 	if existing.Actions == nil {
 		existing.Actions = []trigger.Action{}
 	}
@@ -161,6 +167,9 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing.TimerAlerts == nil {
 		existing.TimerAlerts = []trigger.TimerAlert{}
+	}
+	if existing.ExcludePatterns == nil {
+		existing.ExcludePatterns = []string{}
 	}
 
 	if err := h.store.Update(existing); err != nil {

@@ -121,6 +121,14 @@ type Trigger struct {
 	// creates crosses the configured remaining-seconds value. Empty = no
 	// fading notification (the timer still counts down silently).
 	TimerAlerts []TimerAlert `json:"timer_alerts"`
+
+	// ExcludePatterns are regexes that suppress the trigger when any of them
+	// also match the same log line. The intended use is filtering a broad
+	// primary pattern: e.g. an "incoming tell" trigger whose pattern is
+	// `\w+ tells you,` excludes pet responses (, Master.') and NPC merchant
+	// canned phrases (That'll be, I'll give you, etc.) so genuine player
+	// tells are the only matches that fire actions.
+	ExcludePatterns []string `json:"exclude_patterns"`
 }
 
 // TriggerFired is the payload of a WSEventTriggerFired WebSocket event and a

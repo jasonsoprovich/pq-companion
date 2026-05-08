@@ -290,6 +290,13 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
   const [timerAlerts, setTimerAlerts] = useState<TimerAlertThreshold[]>(
     initial?.timer_alerts ?? [],
   )
+  // Exclude patterns are stored as one regex per line in the textarea so the
+  // user can paste a curated list without juggling per-row controls. Empty
+  // lines are dropped on save.
+  const [excludePatternsText, setExcludePatternsText] = useState<string>(
+    (initial?.exclude_patterns ?? []).join('\n'),
+  )
+  const [excludeErrors, setExcludeErrors] = useState<string[]>([])
   const voices = useVoices()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -382,6 +389,20 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
     if (!name.trim() || !pattern.trim()) return
     if (!validatePattern(pattern)) return
 
+    const excludeList = excludePatternsText
+      .split('\n')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+    const errs: string[] = []
+    for (const ex of excludeList) {
+      try { new RegExp(ex) } catch (e) { errs.push(`${ex} — ${(e as Error).message}`) }
+    }
+    if (errs.length > 0) {
+      setExcludeErrors(errs)
+      return
+    }
+    setExcludeErrors([])
+
     const req: CreateTriggerRequest = {
       name: name.trim(),
       enabled,
@@ -394,6 +415,7 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
       characters: Array.from(selectedChars),
       timer_alerts: timerType === 'none' ? [] : timerAlerts,
+      exclude_patterns: excludeList,
     }
 
     setSubmitting(true)
@@ -477,6 +499,36 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
         <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
           Matched against the log message text (after the timestamp).
         </p>
+      </div>
+
+      {/* Exclude patterns */}
+      <div className="space-y-1">
+        <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+          Exclude patterns (one regex per line, optional)
+        </label>
+        <textarea
+          value={excludePatternsText}
+          onChange={(e) => { setExcludePatternsText(e.target.value); if (excludeErrors.length > 0) setExcludeErrors([]) }}
+          rows={Math.min(8, Math.max(2, excludePatternsText.split('\n').length))}
+          className="w-full rounded px-3 py-1.5 text-xs outline-none font-mono"
+          style={{
+            ...inputStyle,
+            border: `1px solid ${excludeErrors.length > 0 ? 'var(--color-danger)' : 'var(--color-border)'}`,
+            resize: 'vertical',
+          }}
+          disabled={submitting}
+          placeholder={`\\b[Mm]aster[.!]\ntells you, '[Tt]hat'll be `}
+        />
+        {excludeErrors.length > 0 ? (
+          <ul className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
+            {excludeErrors.map((m, i) => (<li key={i}>{m}</li>))}
+          </ul>
+        ) : (
+          <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+            Suppresses this trigger when any of these regexes also matches the same line — useful for filtering
+            pet/merchant tells out of a broad pattern, or silencing specific bazaar-trader names.
+          </p>
+        )}
       </div>
 
       {/* Characters */}

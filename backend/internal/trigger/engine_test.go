@@ -123,6 +123,82 @@ func TestEngine_ReloadUpdatesPatterns(t *testing.T) {
 	}
 }
 
+// ExcludePatterns suppress firing when any exclude regex matches the same
+// line. The intended use is filtering pet/merchant lines out of a broad
+// "incoming tell" pattern.
+func TestEngine_ExcludePatternsSuppressMatch(t *testing.T) {
+	s, e := openTestEngine(t)
+
+	tr := &Trigger{
+		ID:      "ex1",
+		Name:    "Incoming Tell",
+		Enabled: true,
+		Pattern: `\w+ tells you,`,
+		Actions: []Action{},
+		ExcludePatterns: []string{
+			`\b[Mm]aster[.!]`,
+			`tells you, '[Tt]hat'll be `,
+			`tells you, '[Ii]'ll give you `,
+		},
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	cases := []struct {
+		line     string
+		wantFire bool
+	}{
+		{"Somedude tells you, 'hello'", true},
+		{"Pyrtaark tells you, 'Attacking Soandso Master.'", false},
+		{"Sandsplinter tells you, 'Following you, Master.'", false},
+		{"Somepet tells you, 'By your command, master.'", false},
+		{"Tarki tells you, 'That'll be 5 gold pieces for the Cloth Cap.'", false},
+		{"Tarki tells you, 'I'll give you 5 silver pieces for the Cloth Cap.'", false},
+		{"Friend tells you, 'group inv?'", true},
+	}
+	wantTotal := 0
+	for _, c := range cases {
+		e.Handle(time.Now(), c.line)
+		if c.wantFire {
+			wantTotal++
+		}
+	}
+	got := len(e.GetHistory())
+	if got != wantTotal {
+		t.Fatalf("history: got %d entries, want %d", got, wantTotal)
+	}
+}
+
+// Invalid exclude regex is logged and skipped — the trigger still fires on
+// matching lines, the bad pattern is just ignored. Mirrors the lenient
+// behaviour for invalid worn-off patterns.
+func TestEngine_InvalidExcludePatternIsSkipped(t *testing.T) {
+	s, e := openTestEngine(t)
+
+	tr := &Trigger{
+		ID:              "ex2",
+		Name:            "Tell",
+		Enabled:         true,
+		Pattern:         `\w+ tells you,`,
+		Actions:         []Action{},
+		ExcludePatterns: []string{`[invalid(regex`, `\bMaster`},
+		CreatedAt:       time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	e.Handle(time.Now(), "Somedude tells you, 'hi'")
+	e.Handle(time.Now(), "Pet tells you, 'Following you, Master.'")
+	if got := len(e.GetHistory()); got != 1 {
+		t.Errorf("expected the valid exclude (', Master') to suppress pet line; got %d firings", got)
+	}
+}
+
 func TestEngine_HistoryRingBuffer(t *testing.T) {
 	s, e := openTestEngine(t)
 

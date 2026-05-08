@@ -642,6 +642,7 @@ export interface CreateTriggerRequest {
   display_threshold_secs?: number
   characters?: string[]
   timer_alerts?: TimerAlertThreshold[]
+  exclude_patterns?: string[]
 }
 
 export function createTrigger(req: CreateTriggerRequest): Promise<Trigger> {

@@ -1856,6 +1856,26 @@ func GroupAwarenessPack() TriggerPack {
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "INCOMING TELL!", DurationSecs: 5, Color: "#44aaff"},
 				},
+				// Suppress tells from pets and NPC merchants/bankers/trainers
+				// so only real player tells fire the alert. Bazaar trader
+				// PCs are indistinguishable from regular players in the log;
+				// add their character names here to silence them too.
+				ExcludePatterns: []string{
+					`\b[Mm]aster[.!]`,                  // pet command responses (Attacking ... Master., By your command, master., Following you, Master.)
+					`tells you, '[Tt]hat'll be `,       // NPC merchant: selling price
+					`tells you, '[Ii]'ll give you `,    // NPC merchant: buying offer
+					`tells you, 'I'?m not interested in buying`,
+					`tells you, 'Welcome to my bank`,
+					`tells you, 'Come back soon`,
+					`tells you, 'You cannot afford `,
+					`tells you, '?Hold your horses`,
+					`tells you, 'I'?m busy`,
+					`tells you, 'You have learned the basics`,
+					`tells you, 'You have increased your `,
+					`tells you, 'You are already browsing`,
+					`tells you, 'I charge `,
+					`tells you, 'I am unable to wake `,
+				},
 			},
 			{
 				Name:     "You Died",
