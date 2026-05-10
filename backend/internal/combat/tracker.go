@@ -137,24 +137,39 @@ func activeSecondsHealer(h *internalHealer) float64 {
 	return total
 }
 
-// internalFight holds mutable state for the currently active fight.
-type internalFight struct {
-	// id is a monotonic counter used to guard against stale timer callbacks.
-	id        int
-	startTime time.Time
-	lastHit   time.Time
+// Fight holds mutable state for one currently-active combat encounter,
+// scoped to a single hostile NPC. Multiple Fights run in parallel during a
+// multi-mob pull; each carries its own expiry timer and damage rolls.
+//
+// Routing rules (see recordHit / recordHeal):
+//   - Damage is added to the Fight whose npcName matches the non-"You" side
+//     of the hit. Player-vs-player hits are dropped.
+//   - Heals attach to the most-recently-touched active Fight (heals do not
+//     name an NPC; ties to the freshest fight to keep healer numbers paired
+//     with the mob the group is currently fighting).
+type Fight struct {
+	npcName     string
+	id          int
+	startTime   time.Time
+	lastTouched time.Time
+	hasDamage   bool
 
-	// outgoing tracks actors dealing damage to non-"You" targets (players, etc.).
+	// outgoing tracks attackers (players, pets, AoE-crossfire NPCs) hitting
+	// THIS NPC. Keyed by attacker name.
 	outgoing map[string]*internalEntity
-	// incoming tracks actors dealing damage to "You" (NPCs hitting the player).
-	incoming map[string]*internalEntity
-	// healers tracks entities that cast heals during this fight.
+	// incoming holds THIS NPC's damage to "You". Single entity since the
+	// attacker is always npcName. Nil until the first incoming hit lands.
+	incoming *internalEntity
+	// healers tracks heals attributed to this fight, keyed by healer name.
 	healers map[string]*internalHealer
-	// targetCounts tracks how many times each NPC target was hit (outgoing only).
-	targetCounts map[string]int
-	// youTargets holds the names of every entity attacked by "You". Because the
-	// player can only attack NPCs in PvE, every entry here is a confirmed NPC.
-	youTargets map[string]bool
+
+	// youAttacked is true once "You" has dealt damage to this NPC at least
+	// once. PvE-only assumption: any NPC the player attacks is a confirmed
+	// NPC for stats purposes.
+	youAttacked bool
+
+	// timer fires when the fight has been idle long enough to archive.
+	timer *time.Timer
 }
 
 // PlayerNameProvider returns the active character's display name (e.g.
@@ -164,8 +179,9 @@ type internalFight struct {
 // readable to other people). Returning "" disables the relabel.
 type PlayerNameProvider func() string
 
-// Tracker watches parsed log events, groups them into fights, and maintains
-// per-entity damage statistics, session-level DPS aggregates, and HPS data.
+// Tracker watches parsed log events, groups them into per-NPC fights, and
+// maintains per-entity damage statistics, session-level DPS aggregates, and
+// HPS data.
 type Tracker struct {
 	hub *ws.Hub
 
@@ -173,17 +189,13 @@ type Tracker struct {
 
 	mu           sync.Mutex
 	fightCounter int
-	active       *internalFight
-	endTimer     *time.Timer
+
+	// activeFights holds every Fight currently in flight, keyed by NPC name.
+	// A multi-mob pull populates one entry per mob; each expires
+	// independently when its own activity timer elapses.
+	activeFights map[string]*Fight
 
 	recentFights []FightSummary
-
-	// lastArchived holds the raw internal state of the most recently archived
-	// fight so a quick re-engage against the same enemy (within mergeWindow)
-	// can reopen it instead of starting a new fight. Cleared once the merge
-	// window passes or another fight is archived.
-	lastArchived    *internalFight
-	lastArchivedEnd time.Time
 
 	// session aggregates (player personal outgoing damage only)
 	sessionDamage    int64
@@ -209,6 +221,15 @@ type Tracker struct {
 	// Bounded to maxPendingCritsPerActor so a stream of unmatched crits (e.g.
 	// against a target that never gets a fight seeded) can't grow unboundedly.
 	pendingCrits map[string][]int
+
+	// confirmedHostiles records every entity name that has dealt damage to
+	// "You" at least once this session. Combined with looksLikeNPC, this
+	// catches single-word-named hostiles (e.g. a charmed pet that turned and
+	// is now an NPC) so they're filtered out of player-DPS combatant lists in
+	// subsequent fights too. Cleared by Reset; never shrinks otherwise (the
+	// rare false positive — a friendly spell hitting "You" — would just hide
+	// that entity from the DPS list, which is a reasonable default).
+	confirmedHostiles map[string]bool
 }
 
 // maxPendingCritsPerActor caps the per-actor crit queue. In practice the
@@ -222,12 +243,14 @@ const maxPendingCritsPerActor = 8
 // of the literal "You" so pet rows merge correctly with the player row.
 func NewTracker(hub *ws.Hub, playerNameFn PlayerNameProvider) *Tracker {
 	return &Tracker{
-		hub:          hub,
-		playerNameFn: playerNameFn,
-		recentFights: []FightSummary{},
-		deaths:       []DeathRecord{},
-		petOwners:    make(map[string]string),
-		pendingCrits: make(map[string][]int),
+		hub:               hub,
+		playerNameFn:      playerNameFn,
+		activeFights:      make(map[string]*Fight),
+		recentFights:      []FightSummary{},
+		deaths:            []DeathRecord{},
+		petOwners:         make(map[string]string),
+		pendingCrits:      make(map[string][]int),
+		confirmedHostiles: make(map[string]bool),
 	}
 }
 
@@ -290,20 +313,25 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 		t.recordHeal(ev.Timestamp, data)
 
 	case logparser.EventCombatMiss:
-		// Misses, dodges, parries, ripostes, and blocks are combat activity
-		// even though no damage lands. Push the inactivity timer so a long
-		// string of misses (or a tank tanking only via avoidance) doesn't
-		// drop the fight.
-		t.extendActivity(ev.Timestamp)
+		data, ok := ev.Data.(logparser.CombatMissData)
+		if !ok {
+			return
+		}
+		t.recordMiss(ev.Timestamp, data)
 
 	case logparser.EventSpellLanded:
 		// A spell landing during combat (heals, debuffs, mez, DoT applications)
-		// proves combat is still live. Push the inactivity timer; never seed a
-		// fresh fight from a spell-land alone (buffs land outside combat too).
-		t.extendActivity(ev.Timestamp)
+		// proves combat is still live. Push the most-recently-touched active
+		// fight's timer; never seed a fresh fight from a spell-land alone
+		// (buffs land outside combat too).
+		t.extendMostRecentActivity(ev.Timestamp)
 
 	case logparser.EventKill:
-		t.endFightAt(ev.Timestamp)
+		data, ok := ev.Data.(logparser.KillData)
+		if !ok {
+			return
+		}
+		t.endFightByNPC(data.Target, ev.Timestamp)
 
 	case logparser.EventZone:
 		if data, ok := ev.Data.(logparser.ZoneData); ok {
@@ -311,7 +339,7 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 			t.currentZone = data.ZoneName
 			t.mu.Unlock()
 		}
-		t.endFight(true)
+		t.endAllFights(ev.Timestamp, true)
 
 	case logparser.EventPetOwner:
 		data, ok := ev.Data.(logparser.PetOwnerData)
@@ -339,7 +367,7 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 			SlainBy:   slainBy,
 		})
 		t.mu.Unlock()
-		t.endFight(true)
+		t.endAllFights(ev.Timestamp, true)
 	}
 }
 
@@ -354,11 +382,12 @@ func (t *Tracker) GetState() CombatState {
 // returning the tracker to a clean state without restarting the process.
 func (t *Tracker) Reset() {
 	t.mu.Lock()
-	if t.endTimer != nil {
-		t.endTimer.Stop()
-		t.endTimer = nil
+	for _, f := range t.activeFights {
+		if f.timer != nil {
+			f.timer.Stop()
+		}
 	}
-	t.active = nil
+	t.activeFights = make(map[string]*Fight)
 	t.recentFights = []FightSummary{}
 	t.sessionDamage = 0
 	t.sessionFightTime = 0
@@ -366,91 +395,176 @@ func (t *Tracker) Reset() {
 	t.deaths = []DeathRecord{}
 	t.petOwners = make(map[string]string)
 	t.pendingCrits = make(map[string][]int)
-	t.lastArchived = nil
-	t.lastArchivedEnd = time.Time{}
+	t.confirmedHostiles = make(map[string]bool)
 	snap := t.snapshot(time.Now())
 	t.mu.Unlock()
 
 	t.broadcast(snap)
 }
 
-// ── internal helpers ──────────────────────────────────────────────────────────
+// ── routing helpers ────────────────────────────────────────────────────────
+
+// resolveNPC determines which side of a hit/miss is the hostile NPC for the
+// purpose of fight routing. Returns "" when neither side is an NPC (e.g. a
+// player-vs-player hit) — the caller drops such events. Pet attackers are
+// allowed: a pet's hit on an NPC routes to that NPC's fight, not the pet's.
+//
+// Routing precedence:
+//   - "You" on either side identifies the NPC as the other side directly.
+//   - Otherwise, prefer whichever side passes looksLikeNPC and is NOT in
+//     petOwners. Ties (both sides look like NPCs) go to Target — the side
+//     receiving the damage.
+func (t *Tracker) resolveNPC(actor, target string) string {
+	if target == "You" {
+		// Defender is the player; the NPC must be the actor.
+		if _, isPet := t.petOwners[actor]; isPet {
+			// A "pet hits You" line means charm broke; caller handles.
+			return actor
+		}
+		return actor
+	}
+	if actor == "You" {
+		return target
+	}
+	// Third-party hit. Prefer Target if it looks like an NPC, then Actor.
+	targetIsNPC := looksLikeNPC(target)
+	if _, isPet := t.petOwners[target]; isPet {
+		targetIsNPC = false
+	}
+	actorIsNPC := looksLikeNPC(actor)
+	if _, isPet := t.petOwners[actor]; isPet {
+		actorIsNPC = false
+	}
+	switch {
+	case targetIsNPC:
+		return target
+	case actorIsNPC:
+		return actor
+	default:
+		return ""
+	}
+}
+
+// findOrCreateFightLocked returns the Fight for npcName, creating it if not
+// already active. Caller must hold t.mu.
+func (t *Tracker) findOrCreateFightLocked(npcName string, ts time.Time) *Fight {
+	if f, ok := t.activeFights[npcName]; ok {
+		return f
+	}
+	t.fightCounter++
+	f := &Fight{
+		npcName:     npcName,
+		id:          t.fightCounter,
+		startTime:   ts,
+		lastTouched: ts,
+		outgoing:    make(map[string]*internalEntity),
+		healers:     make(map[string]*internalHealer),
+	}
+	t.activeFights[npcName] = f
+	return f
+}
+
+// armFightTimerLocked (re)starts the per-fight inactivity timer. Uses a
+// shorter timeout once the fight has any damage activity, matching
+// EQLogParser's FightTimeout / MaxTimeout split. Caller must hold t.mu.
+func (t *Tracker) armFightTimerLocked(f *Fight) {
+	if f.timer != nil {
+		f.timer.Stop()
+	}
+	d := fightExpiryNoDamage
+	if f.hasDamage {
+		d = fightExpiryWithDamage
+	}
+	npcName := f.npcName
+	fightID := f.id
+	f.timer = time.AfterFunc(d, func() {
+		t.fightTimerExpired(npcName, fightID)
+	})
+}
+
+// fightTimerExpired archives one fight when its inactivity timer fires.
+// fightID guards against archiving a recreated-same-name fight.
+func (t *Tracker) fightTimerExpired(npcName string, fightID int) {
+	t.mu.Lock()
+	f, ok := t.activeFights[npcName]
+	if !ok || f.id != fightID {
+		t.mu.Unlock()
+		return
+	}
+	endTime := f.lastTouched
+	t.archiveFightLocked(f, endTime)
+	snap := t.snapshot(endTime)
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
+// ── ingest paths ───────────────────────────────────────────────────────────
 
 func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	t.mu.Lock()
 
-	// Start a new fight if none is active. Either "You" must be involved
-	// directly, or one side of the hit must look like an NPC — the looser
-	// heuristic seeds a fight when the player's pet/group/raid is fighting a
-	// mob even though the player themselves haven't dealt damage yet (e.g.
-	// healers, enchanters mid-mez, pet classes whose pet engages first).
-	// Phantom fights between two players or between two unrelated NPCs are
-	// still rejected; if a "You"-less fight slips in, archiveFight discards
-	// it when its confirmedNPC set ends up empty.
-	if t.active == nil {
-		youInvolved := data.Actor == "You" || data.Target == "You"
-		npcInvolved := looksLikeNPC(data.Actor) || looksLikeNPC(data.Target)
-		if !youInvolved && !npcInvolved {
-			t.mu.Unlock()
-			return
-		}
-		// If the most recent archived fight ended within mergeWindow against
-		// this same enemy, reopen it. Heal phases / brief pauses where the
-		// inactivity timer fires before combat resumes no longer split a
-		// single boss fight into pieces.
-		if !t.tryReopenLastArchivedLocked(ts, data) {
-			t.fightCounter++
-			t.active = &internalFight{
-				id:           t.fightCounter,
-				startTime:    ts,
-				lastHit:      ts,
-				outgoing:     make(map[string]*internalEntity),
-				incoming:     make(map[string]*internalEntity),
-				healers:      make(map[string]*internalHealer),
-				targetCounts: make(map[string]int),
-				youTargets:   make(map[string]bool),
-			}
-		}
-	} else {
-		t.active.lastHit = ts
-	}
-
-	// Route to outgoing or incoming based on target.
-	var entityMap map[string]*internalEntity
+	// Charm-break detection: if a known pet starts attacking the player,
+	// it is no longer ours — drop the stale owner mapping so the row stops
+	// rolling up under that player. Done before resolveNPC so the actor is
+	// re-classified as a real NPC for routing.
 	if data.Target == "You" {
-		entityMap = t.active.incoming
-		// Charm-break detection: if a known pet starts attacking the player,
-		// it is no longer ours — drop the stale owner mapping so the row
-		// stops rolling up under that player.
 		if _, ok := t.petOwners[data.Actor]; ok {
 			delete(t.petOwners, data.Actor)
 		}
-	} else {
-		entityMap = t.active.outgoing
-		t.active.targetCounts[data.Target]++
-		if data.Actor == "You" {
-			// Every entity attacked by "You" is a confirmed NPC (PvE only).
-			t.active.youTargets[data.Target] = true
+	}
+
+	npcName := t.resolveNPC(data.Actor, data.Target)
+	if npcName == "" {
+		t.mu.Unlock()
+		return
+	}
+
+	f := t.findOrCreateFightLocked(npcName, ts)
+	f.lastTouched = ts
+	f.hasDamage = true
+
+	if data.Target == "You" {
+		// Incoming damage: this NPC is hitting the player. Tracked separately
+		// from outgoing because it isn't part of any combatant's DPS row.
+		// Also record the actor as a confirmed hostile so a single-word-named
+		// charm-broken pet is filtered from future fights' player-DPS lists.
+		t.confirmedHostiles[data.Actor] = true
+		if f.incoming == nil {
+			f.incoming = &internalEntity{}
 		}
+		ent := f.incoming
+		ent.totalDamage += int64(data.Damage)
+		ent.hitCount++
+		if data.Damage > ent.maxHit {
+			ent.maxHit = data.Damage
+		}
+		noteActivityEntity(ent, ts)
+	} else {
+		// Outgoing damage: data.Actor is hitting this NPC. Track per-attacker
+		// in the outgoing map so the DPS row can credit pets, group members,
+		// and the player separately. NPC-vs-NPC AoE will end up here too —
+		// excludeNPCs filters those out at render time.
+		if data.Actor == "You" {
+			f.youAttacked = true
+		}
+		ent := f.outgoing[data.Actor]
+		if ent == nil {
+			ent = &internalEntity{}
+			f.outgoing[data.Actor] = ent
+		}
+		ent.totalDamage += int64(data.Damage)
+		ent.hitCount++
+		if data.Damage > ent.maxHit {
+			ent.maxHit = data.Damage
+		}
+		if t.popPendingCritLocked(data.Actor, data.Damage) {
+			ent.critCount++
+			ent.critDamage += int64(data.Damage)
+		}
+		noteActivityEntity(ent, ts)
 	}
 
-	ent := entityMap[data.Actor]
-	if ent == nil {
-		ent = &internalEntity{}
-		entityMap[data.Actor] = ent
-	}
-	ent.totalDamage += int64(data.Damage)
-	ent.hitCount++
-	if data.Damage > ent.maxHit {
-		ent.maxHit = data.Damage
-	}
-	if t.popPendingCritLocked(data.Actor, data.Damage) {
-		ent.critCount++
-		ent.critDamage += int64(data.Damage)
-	}
-	noteActivityEntity(ent, ts)
-
-	t.armEndTimerLocked()
+	t.armFightTimerLocked(f)
 
 	snap := t.snapshot(ts)
 	t.mu.Unlock()
@@ -458,65 +572,91 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	t.broadcast(snap)
 }
 
-// armEndTimerLocked (re)starts the inactivity timer against the current
-// active fight. Caller must hold t.mu and t.active must not be nil.
-func (t *Tracker) armEndTimerLocked() {
-	fightID := t.active.id
-	if t.endTimer != nil {
-		t.endTimer.Stop()
+// recordHeal attributes a heal event to the most-recently-touched active
+// fight. Heal log lines do not name an NPC, so per-fight attribution is
+// inherently approximate; pinning to the freshest fight keeps healer numbers
+// paired with whatever the group is currently engaged with.
+//
+// If no fight is active, the heal is dropped — combat tracking requires
+// at least one damage line touching an NPC to have started a fight first.
+func (t *Tracker) recordHeal(ts time.Time, data logparser.HealData) {
+	t.mu.Lock()
+	f := t.mostRecentActiveFightLocked()
+	if f == nil {
+		t.mu.Unlock()
+		return
 	}
-	t.endTimer = time.AfterFunc(combatGap, func() {
-		t.timerExpired(fightID)
-	})
+
+	h := f.healers[data.Actor]
+	if h == nil {
+		h = &internalHealer{}
+		f.healers[data.Actor] = h
+	}
+	h.totalHeal += int64(data.Amount)
+	h.healCount++
+	if data.Amount > h.maxHeal {
+		h.maxHeal = data.Amount
+	}
+	noteActivityHealer(h, ts)
+
+	// A heal during combat counts as activity — extend the fight's timer.
+	f.lastTouched = ts
+	t.armFightTimerLocked(f)
+
+	snap := t.snapshot(ts)
+	t.mu.Unlock()
+
+	t.broadcast(snap)
 }
 
-// extendActivity pushes the inactivity timer for the currently active fight,
-// without recording any damage or healing. Used by misses, dodges, parries,
-// ripostes, and spell-land events — combat activity that proves the fight is
-// still alive even when no damage lands. No-op when no fight is active.
-func (t *Tracker) extendActivity(ts time.Time) {
+// recordMiss extends the activity timer of the fight that the miss touches.
+// Misses do not seed fights — a string of misses with no actual damage is
+// noise. If neither side is a known NPC fight, the miss is dropped.
+func (t *Tracker) recordMiss(ts time.Time, data logparser.CombatMissData) {
+	npcName := t.resolveNPCForMiss(data.Actor, data.Target)
+	if npcName == "" {
+		return
+	}
 	t.mu.Lock()
-	if t.active != nil {
-		t.active.lastHit = ts
-		t.armEndTimerLocked()
+	if f, ok := t.activeFights[npcName]; ok {
+		f.lastTouched = ts
+		t.armFightTimerLocked(f)
 	}
 	t.mu.Unlock()
 }
 
-// tryReopenLastArchivedLocked returns true when the just-arrived hit can be
-// merged into the most recently archived fight (same primary enemy, ended
-// within mergeWindow). On success it pops the matching FightSummary from
-// recentFights and restores t.active to the saved internalFight, rolls back
-// the session aggregates that were applied at archive time, and clears the
-// lastArchived slot. Caller must hold t.mu.
-func (t *Tracker) tryReopenLastArchivedLocked(ts time.Time, data logparser.CombatHitData) bool {
-	if t.lastArchived == nil {
-		return false
+// resolveNPCForMiss is a thin wrapper around resolveNPC that takes the
+// CombatMissData field names (Actor / Target). Kept separate so the callsite
+// reads naturally.
+func (t *Tracker) resolveNPCForMiss(actor, target string) string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.resolveNPC(actor, target)
+}
+
+// extendMostRecentActivity pushes the most-recently-touched active fight's
+// timer without recording any damage. Used by spell-landed events where the
+// log line proves combat is live but doesn't name a specific NPC.
+func (t *Tracker) extendMostRecentActivity(ts time.Time) {
+	t.mu.Lock()
+	if f := t.mostRecentActiveFightLocked(); f != nil {
+		f.lastTouched = ts
+		t.armFightTimerLocked(f)
 	}
-	if ts.Sub(t.lastArchivedEnd) > mergeWindow {
-		t.lastArchived = nil
-		return false
+	t.mu.Unlock()
+}
+
+// mostRecentActiveFightLocked returns the active Fight with the latest
+// lastTouched timestamp. Returns nil if no fights are active. Caller must
+// hold t.mu.
+func (t *Tracker) mostRecentActiveFightLocked() *Fight {
+	var latest *Fight
+	for _, f := range t.activeFights {
+		if latest == nil || f.lastTouched.After(latest.lastTouched) {
+			latest = f
+		}
 	}
-	npcs := confirmedNPCs(t.lastArchived, t.petOwners)
-	if !npcs[data.Actor] && !npcs[data.Target] {
-		// Re-engage is against a different enemy — start a fresh fight and
-		// let the lastArchived slot age out naturally.
-		return false
-	}
-	// Pop the matching summary from the front of recentFights (archiveFight
-	// prepends, so the most recent fight is index 0). Roll back the session
-	// aggregates so they don't double-count once the merged fight re-archives.
-	if len(t.recentFights) > 0 {
-		popped := t.recentFights[0]
-		t.recentFights = t.recentFights[1:]
-		t.sessionDamage -= popped.YouDamage
-		t.sessionHeal -= popped.YouHeal
-		t.sessionFightTime -= popped.Duration
-	}
-	t.active = t.lastArchived
-	t.active.lastHit = ts
-	t.lastArchived = nil
-	return true
+	return latest
 }
 
 // recordPetOwner stores a pet→owner binding announced by EQ's "My leader is X"
@@ -566,155 +706,75 @@ func (t *Tracker) popPendingCritLocked(actor string, dmg int) bool {
 	return false
 }
 
-// recordHeal processes a heal event and accumulates per-healer stats.
-func (t *Tracker) recordHeal(ts time.Time, data logparser.HealData) {
+// ── fight lifecycle ───────────────────────────────────────────────────────
+
+// endFightByNPC archives the fight against the named NPC at ts. Used on
+// EventKill, where the slain mob explicitly identifies the fight to close.
+// If no fight is active for that NPC the call is a no-op (e.g. we missed
+// the engage).
+func (t *Tracker) endFightByNPC(npcName string, ts time.Time) {
+	if npcName == "" {
+		return
+	}
 	t.mu.Lock()
-
-	// If no fight is active, seed one only when "You" is the healer or the
-	// target — otherwise random raid heals on third parties (where the
-	// player isn't involved at all) would each spawn a fresh fight that
-	// archives empty. This is what makes pure-healer / pure-buffer characters
-	// produce saved fights even when they never deal damage: their first
-	// outgoing heal seeds the fight, and every NPC hit on the group then
-	// rolls into it.
-	if t.active == nil {
-		youInvolved := data.Actor == "You" || data.Target == "You"
-		if !youInvolved {
-			t.mu.Unlock()
-			return
-		}
-		t.fightCounter++
-		t.active = &internalFight{
-			id:           t.fightCounter,
-			startTime:    ts,
-			lastHit:      ts,
-			outgoing:     make(map[string]*internalEntity),
-			incoming:     make(map[string]*internalEntity),
-			healers:      make(map[string]*internalHealer),
-			targetCounts: make(map[string]int),
-			youTargets:   make(map[string]bool),
-		}
+	f, ok := t.activeFights[npcName]
+	if !ok {
+		t.mu.Unlock()
+		return
 	}
-
-	h := t.active.healers[data.Actor]
-	if h == nil {
-		h = &internalHealer{}
-		t.active.healers[data.Actor] = h
+	if f.timer != nil {
+		f.timer.Stop()
 	}
-	h.totalHeal += int64(data.Amount)
-	h.healCount++
-	if data.Amount > h.maxHeal {
-		h.maxHeal = data.Amount
-	}
-	noteActivityHealer(h, ts)
-
-	// A heal during combat counts as activity — extend the inactivity timer
-	// so a long heal window (e.g. group recovering after a boss spike) does
-	// not end the fight prematurely.
-	t.active.lastHit = ts
-	t.armEndTimerLocked()
-
+	t.archiveFightLocked(f, ts)
 	snap := t.snapshot(ts)
 	t.mu.Unlock()
-
 	t.broadcast(snap)
 }
 
-// timerExpired is called by time.AfterFunc when no hit has landed for combatGap.
-// fightID guards against ending a fight that was already replaced by a new one.
-func (t *Tracker) timerExpired(fightID int) {
+// endAllFights archives every currently-active fight at ts. Used on zone
+// changes and player deaths, where every in-flight fight is invalidated.
+// forced is accepted for API symmetry with the prior implementation; both
+// trigger paths stop timers, so it is currently a no-op flag.
+func (t *Tracker) endAllFights(ts time.Time, forced bool) {
+	_ = forced
 	t.mu.Lock()
-	if t.active == nil || t.active.id != fightID {
+	if len(t.activeFights) == 0 {
 		t.mu.Unlock()
 		return
 	}
-	// Use the log-file timestamp of the last hit, not wall-clock time, so that
-	// duration reflects in-game elapsed time rather than real time (which diverges
-	// wildly when parsing historical log files).
-	endTime := t.active.lastHit
-	archived := t.archiveFight(endTime)
-	// Retain the archived fight so a quick re-engage against the same enemy
-	// can pop it back out and merge into one fight.
-	if archived != nil {
-		t.lastArchived = archived
-		t.lastArchivedEnd = endTime
+	for _, f := range t.activeFights {
+		if f.timer != nil {
+			f.timer.Stop()
+		}
+		t.archiveFightLocked(f, ts)
 	}
-	snap := t.snapshot(endTime)
-	t.mu.Unlock()
-
-	t.broadcast(snap)
-}
-
-// endFight ends the current fight immediately (zone change, death, or test).
-// If forced is true, the inactivity timer is also stopped.
-func (t *Tracker) endFight(forced bool) {
-	t.mu.Lock()
-	if t.active == nil {
-		t.mu.Unlock()
-		return
-	}
-	if forced && t.endTimer != nil {
-		t.endTimer.Stop()
-		t.endTimer = nil
-	}
-	endTime := t.active.lastHit
-	t.archiveFight(endTime)
-	// Forced ends (zone change, death) close the chapter — no merge possible
-	// because the next fight is in a different context.
-	t.lastArchived = nil
-	snap := t.snapshot(endTime)
-	t.mu.Unlock()
-
-	t.broadcast(snap)
-}
-
-// endFightAt ends the active fight at the given log-event timestamp (e.g. on a
-// kill event), so the archived duration reflects first-hit to kill rather than
-// first-hit to inactivity-timer expiry.
-func (t *Tracker) endFightAt(ts time.Time) {
-	t.mu.Lock()
-	if t.active == nil {
-		t.mu.Unlock()
-		return
-	}
-	if t.endTimer != nil {
-		t.endTimer.Stop()
-		t.endTimer = nil
-	}
-	t.archiveFight(ts)
-	// A kill event is a definitive end — the mob is dead, so there is no
-	// same-enemy re-engage to merge into.
-	t.lastArchived = nil
 	snap := t.snapshot(ts)
 	t.mu.Unlock()
-
 	t.broadcast(snap)
 }
 
-// archiveFight finalises the active fight and prepends it to recentFights.
-// Returns the internalFight that was archived (so callers can retain it as
-// lastArchived for the merge window) or nil if the fight was discarded as
-// noise. Must be called with t.mu held.
-func (t *Tracker) archiveFight(endTime time.Time) *internalFight {
-	f := t.active
-	t.active = nil
-
-	// A fight is meaningful only if at least one confirmed NPC was involved.
-	// Without one, the recorded events are usually third-party noise (e.g. a
-	// guildmate's spell on another guildmate) and should not be archived.
-	npcs := confirmedNPCs(f, t.petOwners)
-	if len(npcs) == 0 {
-		return nil
-	}
+// archiveFightLocked finalises a single fight, removes it from activeFights,
+// and prepends a FightSummary to recentFights. Discards the fight as noise
+// if it never accrued any outgoing combatants the player cares about.
+// Caller must hold t.mu.
+func (t *Tracker) archiveFightLocked(f *Fight, endTime time.Time) {
+	delete(t.activeFights, f.npcName)
 
 	duration := endTime.Sub(f.startTime).Seconds()
 	if duration < 0.001 {
-		duration = 0.001 // guard against zero-division
+		duration = 0.001
 	}
 
-	combatants := excludeNPCs(buildEntityStats(f.outgoing, duration), npcs)
+	combatants := excludeNPCsByName(buildEntityStats(f.outgoing, duration), f.npcName, t.petOwners, t.confirmedHostiles)
 	stampPetOwners(combatants, t.petOwners)
-	primaryTarget := pickPrimaryTarget(f, npcs)
+
+	// Drop fights that didn't produce a meaningful player-facing combatant
+	// list AND didn't produce any incoming damage we'd want recorded — these
+	// are typically NPC-vs-NPC noise (e.g. two mobs AoE-trading) we picked up
+	// before "You" or any group member engaged.
+	if len(combatants) == 0 && (f.incoming == nil || f.incoming.totalDamage == 0) {
+		return
+	}
 
 	totalDmg := int64(0)
 	youDmg := int64(0)
@@ -740,10 +800,6 @@ func (t *Tracker) archiveFight(endTime time.Time) *internalFight {
 	t.sessionFightTime += duration
 	t.sessionHeal += youHeal
 
-	// Relabel the literal "You" to the active character's name so the row
-	// merges with pets whose OwnerName carries the same canonical name on
-	// the frontend rollup. Done after the YouDamage/YouHeal aggregates so
-	// internal accounting still pivots on "You".
 	playerName := t.playerName()
 	relabelYou(playerName, combatants)
 	relabelYouHealers(playerName, healers)
@@ -752,7 +808,7 @@ func (t *Tracker) archiveFight(endTime time.Time) *internalFight {
 		StartTime:     f.startTime,
 		EndTime:       endTime,
 		Duration:      duration,
-		PrimaryTarget: primaryTarget,
+		PrimaryTarget: f.npcName,
 		Combatants:    combatants,
 		TotalDamage:   totalDmg,
 		TotalDPS:      safeDivide(float64(totalDmg), duration),
@@ -765,15 +821,18 @@ func (t *Tracker) archiveFight(endTime time.Time) *internalFight {
 		YouHPS:        safeDivide(float64(youHeal), duration),
 	}
 
-	// Prepend and cap at maxRecentFights.
 	t.recentFights = append([]FightSummary{summary}, t.recentFights...)
 	if len(t.recentFights) > maxRecentFights {
 		t.recentFights = t.recentFights[:maxRecentFights]
 	}
-	return f
 }
 
+// ── snapshot / broadcast ───────────────────────────────────────────────────
+
 // snapshot builds an immutable CombatState from current mutable state.
+// Picks the most-recently-touched active fight as CurrentFight to preserve
+// the legacy single-fight panel; multi-fight UIs can be layered on later via
+// an additional ActiveFights field without breaking this view.
 // Must be called with t.mu held.
 func (t *Tracker) snapshot(now time.Time) CombatState {
 	state := CombatState{
@@ -790,61 +849,61 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 		state.SessionHPS = safeDivide(float64(t.sessionHeal), t.sessionFightTime)
 	}
 
-	if t.active != nil {
-		state.InCombat = true
-		// Use log-file timestamps exclusively so that GetState() called long after
-		// the last hit (e.g. during historical log replay) doesn't inflate duration
-		// by comparing a past startTime against the current wall clock.
-		duration := t.active.lastHit.Sub(t.active.startTime).Seconds()
-		if duration < 0.001 {
-			duration = 0.001
+	state.InCombat = len(t.activeFights) > 0
+	if !state.InCombat {
+		return state
+	}
+
+	f := t.mostRecentActiveFightLocked()
+	if f == nil {
+		return state
+	}
+
+	duration := f.lastTouched.Sub(f.startTime).Seconds()
+	if duration < 0.001 {
+		duration = 0.001
+	}
+
+	combatants := excludeNPCsByName(buildEntityStats(f.outgoing, duration), f.npcName, t.petOwners, t.confirmedHostiles)
+	stampPetOwners(combatants, t.petOwners)
+
+	totalDmg := int64(0)
+	youDmg := int64(0)
+	for _, e := range combatants {
+		totalDmg += e.TotalDamage
+		if e.Name == "You" {
+			youDmg = e.TotalDamage
 		}
+	}
 
-		npcs := confirmedNPCs(t.active, t.petOwners)
-		combatants := excludeNPCs(buildEntityStats(t.active.outgoing, duration), npcs)
-		stampPetOwners(combatants, t.petOwners)
-		primaryTarget := pickPrimaryTarget(t.active, npcs)
-
-		totalDmg := int64(0)
-		youDmg := int64(0)
-		for _, e := range combatants {
-			totalDmg += e.TotalDamage
-			if e.Name == "You" {
-				youDmg = e.TotalDamage
-			}
+	healers := buildHealerStats(f.healers, duration)
+	totalHeal := int64(0)
+	youHeal := int64(0)
+	for _, h := range healers {
+		totalHeal += h.TotalHeal
+		if h.Name == "You" {
+			youHeal = h.TotalHeal
 		}
+	}
 
-		healers := buildHealerStats(t.active.healers, duration)
-		totalHeal := int64(0)
-		youHeal := int64(0)
-		for _, h := range healers {
-			totalHeal += h.TotalHeal
-			if h.Name == "You" {
-				youHeal = h.TotalHeal
-			}
-		}
+	playerName := t.playerName()
+	relabelYou(playerName, combatants)
+	relabelYouHealers(playerName, healers)
 
-		// Relabel literal "You" to the character name (post-aggregate so the
-		// YouDamage / YouHeal computations above still pivot on "You").
-		playerName := t.playerName()
-		relabelYou(playerName, combatants)
-		relabelYouHealers(playerName, healers)
-
-		state.CurrentFight = &FightState{
-			StartTime:     t.active.startTime,
-			Duration:      duration,
-			PrimaryTarget: primaryTarget,
-			Combatants:    combatants,
-			TotalDamage:   totalDmg,
-			TotalDPS:      safeDivide(float64(totalDmg), duration),
-			YouDamage:     youDmg,
-			YouDPS:        safeDivide(float64(youDmg), duration),
-			Healers:       healers,
-			TotalHeal:     totalHeal,
-			TotalHPS:      safeDivide(float64(totalHeal), duration),
-			YouHeal:       youHeal,
-			YouHPS:        safeDivide(float64(youHeal), duration),
-		}
+	state.CurrentFight = &FightState{
+		StartTime:     f.startTime,
+		Duration:      duration,
+		PrimaryTarget: f.npcName,
+		Combatants:    combatants,
+		TotalDamage:   totalDmg,
+		TotalDPS:      safeDivide(float64(totalDmg), duration),
+		YouDamage:     youDmg,
+		YouDPS:        safeDivide(float64(youDmg), duration),
+		Healers:       healers,
+		TotalHeal:     totalHeal,
+		TotalHPS:      safeDivide(float64(totalHeal), duration),
+		YouHeal:       youHeal,
+		YouHPS:        safeDivide(float64(youHeal), duration),
 	}
 
 	return state
@@ -911,74 +970,31 @@ func safeDivide(numerator, denominator float64) float64 {
 	return numerator / denominator
 }
 
-// confirmedNPCs returns the set of names that are confirmed hostile NPCs for
-// this fight. An entity counts as an NPC if any of:
-//   - it hit "You" (incoming map)
-//   - "You" attacked it (youTargets — PvE means the player only attacks NPCs)
-//   - it appears in the outgoing map's targetCounts AND its name passes the
-//     looksLikeNPC heuristic — covers the case where the player's pet/group
-//     is fighting a mob without the player having dealt direct damage yet
-//   - it appears as an attacker in the outgoing map AND its name passes the
-//     heuristic — covers AoE-style mob hits we observed before "You" engaged
+// excludeNPCsByName returns combatants minus the fight's own NPC and any
+// other entity that looks like an NPC (and isn't a known pet). The DPS list
+// is for player damage dealers only; NPC-vs-NPC AoE crossfire would otherwise
+// pollute the row list.
 //
-// petOwners is consulted to keep charmed-pet names (which look exactly like
-// hostile mobs — "a shissar revenant" charmed by an enchanter — and so trip
-// looksLikeNPC's lowercase-leading rule) out of the NPC set. Without that
-// the pet's row would be excludeNPCs'd off the combatants list and the
-// owner's rollup row would lose all the pet damage.
-func confirmedNPCs(f *internalFight, petOwners map[string]string) map[string]bool {
-	set := make(map[string]bool, len(f.incoming)+len(f.youTargets))
-	for name := range f.incoming {
-		if _, isPet := petOwners[name]; isPet {
+// confirmedHostiles catches single-word-named hostiles that looksLikeNPC
+// can't recognise on its own — e.g. a charm-broken pet whose name still has
+// the shape of a player. Once it has hit "You" it stays filtered for the
+// rest of the session.
+func excludeNPCsByName(combatants []EntityStats, fightNPC string, petOwners map[string]string, confirmedHostiles map[string]bool) []EntityStats {
+	filtered := combatants[:0]
+	for _, c := range combatants {
+		if c.Name == fightNPC {
 			continue
 		}
-		set[name] = true
-	}
-	for name := range f.youTargets {
-		if _, isPet := petOwners[name]; isPet {
+		if _, isPet := petOwners[c.Name]; isPet {
+			filtered = append(filtered, c)
 			continue
 		}
-		set[name] = true
-	}
-	for name := range f.targetCounts {
-		if _, isPet := petOwners[name]; isPet {
+		if looksLikeNPC(c.Name) || confirmedHostiles[c.Name] {
 			continue
 		}
-		if looksLikeNPC(name) {
-			set[name] = true
-		}
+		filtered = append(filtered, c)
 	}
-	for name := range f.outgoing {
-		if _, isPet := petOwners[name]; isPet {
-			continue
-		}
-		if looksLikeNPC(name) {
-			set[name] = true
-		}
-	}
-	return set
-}
-
-// pickPrimaryTarget chooses the NPC name that best represents this fight,
-// scored by combined activity: hits dealt to it by anyone (targetCounts) plus
-// hits it dealt to "You" (incoming). Ranking by combined activity rather than
-// targetCounts alone ensures NPCs that mainly AoE the player still win when
-// they're not directly attacked, and excludes player names that may have been
-// hit by NPC spells. Returns "" if npcs is empty.
-func pickPrimaryTarget(f *internalFight, npcs map[string]bool) string {
-	primary := ""
-	best := -1
-	for name := range npcs {
-		score := f.targetCounts[name]
-		if ent := f.incoming[name]; ent != nil {
-			score += ent.hitCount
-		}
-		if score > best {
-			best = score
-			primary = name
-		}
-	}
-	return primary
+	return filtered
 }
 
 // rePossessivePet matches the canonical EQ summoned-pet name format:
@@ -1018,18 +1034,3 @@ func deriveOwnerFromName(name string) string {
 	return ""
 }
 
-// excludeNPCs returns combatants minus any name in the npcs set, preserving
-// the original ordering. The DPS list is for player damage dealers only;
-// hostile NPCs that landed outgoing damage on group members must be filtered.
-func excludeNPCs(combatants []EntityStats, npcs map[string]bool) []EntityStats {
-	if len(npcs) == 0 {
-		return combatants
-	}
-	filtered := combatants[:0]
-	for _, c := range combatants {
-		if !npcs[c.Name] {
-			filtered = append(filtered, c)
-		}
-	}
-	return filtered
-}

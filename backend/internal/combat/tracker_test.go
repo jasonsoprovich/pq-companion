@@ -100,6 +100,22 @@ func requireCombatant(t *testing.T, st CombatState, name string) *EntityStats {
 	return c
 }
 
+// activeFightCount returns the number of currently-active per-NPC fights —
+// a small accessor so tests don't reach into Tracker internals.
+func activeFightCount(tr *Tracker) int {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return len(tr.activeFights)
+}
+
+// activeFightFor returns the active Fight for npcName (or nil), used by
+// tests to inspect per-fight state without exporting internals package-wide.
+func activeFightFor(tr *Tracker, npcName string) *Fight {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return tr.activeFights[npcName]
+}
+
 func TestNoFightInitially(t *testing.T) {
 	tr := newTestTracker(t)
 	st := tr.GetState()
@@ -269,7 +285,7 @@ func TestKillEventEndsFightAtKillTime(t *testing.T) {
 	if f.TotalDamage != 500 {
 		t.Fatalf("expected TotalDamage=500, got %d", f.TotalDamage)
 	}
-	// Duration should be ~3s (start to killTS), well under combatGap (6s).
+	// Duration should be ~3s (start to killTS), well under fightExpiryWithDamage (30s).
 	if f.Duration < 2.9 || f.Duration > 3.1 {
 		t.Fatalf("expected fight duration ~3s, got %.3f", f.Duration)
 	}
@@ -741,43 +757,45 @@ func missEvent(actor, target string, ts time.Time) logparser.LogEvent {
 // A pure healer's first action is often an outgoing heal — no incoming
 // damage on themselves yet, no outgoing damage ever. The tracker must seed
 // a fight from that heal (when "You" is involved) so subsequent NPC hits
-// on the group can attach to it and the fight ends up archived. Without
-// this, healers see "no fights" in the combat log even after a long raid.
-func TestHealSeedsFightWhenYouAreHealer(t *testing.T) {
+// Under the per-NPC fight model heals no longer seed a fight on their own —
+// a damage line touching an NPC has to start the fight first. This test
+// captures the new behavior: a heal that arrives before any damage event is
+// dropped, and a heal that arrives after a damage line attributes to the
+// most-recently-touched fight.
+func TestHealAttributesToMostRecentActiveFight(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()
 
-	// Player heals an ally before any combat hit lands.
-	tr.Handle(healEvent("You", "Tank", 1000, now))
-
-	tr.mu.Lock()
-	active := tr.active
-	tr.mu.Unlock()
-	if active == nil {
-		t.Fatal("heal from 'You' should seed a fight when no fight is active")
+	// Heal-before-engage is dropped (no NPC fight to attach to).
+	tr.Handle(healEvent("You", "Tank", 200, now))
+	if got := activeFightCount(tr); got != 0 {
+		t.Fatalf("heal before any damage should not seed a fight, got %d active", got)
 	}
 
-	// And the heal should be accumulated under the player.
+	// A damage line seeds the fight; the next heal lands inside it.
+	tr.Handle(hitEvent("You", "Aten Ha Ra", 100, now.Add(time.Second)))
+	tr.Handle(healEvent("You", "Tank", 1000, now.Add(2*time.Second)))
+
 	st := tr.GetState()
-	if st.CurrentFight == nil || st.CurrentFight.YouHeal != 1000 {
-		t.Fatalf("expected YouHeal=1000, got %+v", st.CurrentFight)
+	if st.CurrentFight == nil {
+		t.Fatal("expected a current fight after the seeding hit")
+	}
+	if st.CurrentFight.YouHeal != 1000 {
+		t.Errorf("YouHeal = %d, want 1000", st.CurrentFight.YouHeal)
 	}
 }
 
 // Heals between two third-party players (no involvement of "You") still
-// must NOT seed a fight — that's noise from raid chatter and would archive
-// empty fights endlessly.
+// must NOT seed a fight — under the per-NPC model nothing can seed from a
+// heal at all, so this is the trivial case.
 func TestHealBetweenThirdPartiesDoesNotSeedFight(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()
 
 	tr.Handle(healEvent("Cleric1", "Tank", 500, now))
 
-	tr.mu.Lock()
-	active := tr.active
-	tr.mu.Unlock()
-	if active != nil {
-		t.Fatal("heal between unrelated parties should not seed a fight")
+	if got := activeFightCount(tr); got != 0 {
+		t.Fatalf("heal between unrelated parties should not seed a fight, got %d active", got)
 	}
 }
 
@@ -792,16 +810,13 @@ func TestHealDuringFightExtendsActivity(t *testing.T) {
 	tr.Handle(hitEvent("You", "Aten Ha Ra", 100, now))
 	tr.Handle(healEvent("Cleric1", "You", 500, now.Add(10*time.Second)))
 
-	tr.mu.Lock()
-	if tr.active == nil {
-		tr.mu.Unlock()
-		t.Fatal("expected active fight after heal")
+	f := activeFightFor(tr, "Aten Ha Ra")
+	if f == nil {
+		t.Fatal("expected active fight on Aten Ha Ra after heal")
 	}
-	if got := tr.active.lastHit; !got.Equal(now.Add(10 * time.Second)) {
-		tr.mu.Unlock()
-		t.Errorf("lastHit = %v, want %v", got, now.Add(10*time.Second))
+	if got := f.lastTouched; !got.Equal(now.Add(10 * time.Second)) {
+		t.Errorf("lastTouched = %v, want %v", got, now.Add(10*time.Second))
 	}
-	tr.mu.Unlock()
 }
 
 // TestMissExtendsActivity verifies that EventCombatMiss pushes the inactivity
@@ -814,169 +829,128 @@ func TestMissExtendsActivity(t *testing.T) {
 	tr.Handle(hitEvent("You", "a gnoll", 100, now))
 	tr.Handle(missEvent("a gnoll", "You", now.Add(8*time.Second)))
 
-	tr.mu.Lock()
-	defer tr.mu.Unlock()
-	if tr.active == nil {
-		t.Fatal("expected active fight")
+	f := activeFightFor(tr, "a gnoll")
+	if f == nil {
+		t.Fatal("expected active fight on a gnoll")
 	}
-	if got := tr.active.lastHit; !got.Equal(now.Add(8 * time.Second)) {
-		t.Errorf("lastHit = %v, want %v", got, now.Add(8*time.Second))
+	if got := f.lastTouched; !got.Equal(now.Add(8 * time.Second)) {
+		t.Errorf("lastTouched = %v, want %v", got, now.Add(8*time.Second))
 	}
 }
 
-// TestSameEnemyReopenWithinMergeWindow verifies the inactivity-timer-fires-
-// then-combat-resumes case (e.g. raid boss heal phase). After timerExpired
-// archives the fight, a new hit on the same enemy within mergeWindow should
-// reopen the fight rather than start a fresh one — recentFights stays at
-// one entry, and combatant totals accumulate.
-func TestSameEnemyReopenWithinMergeWindow(t *testing.T) {
+// TestMultiMobPullProducesPerNPCFights verifies the core Phase 2 behavior:
+// hitting two different NPCs within the same time window produces two
+// independent fights, each archivable on its own kill. Under the previous
+// pooled-encounter model both mobs would have collapsed into one summary.
+func TestMultiMobPullProducesPerNPCFights(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()
 
-	tr.Handle(hitEvent("You", "Aten Ha Ra", 100, now))
-	tr.mu.Lock()
-	fightID := tr.active.id
-	tr.mu.Unlock()
+	tr.Handle(hitEvent("You", "a gnoll", 100, now))
+	tr.Handle(hitEvent("You", "a wolf", 80, now.Add(time.Second)))
 
-	// Inactivity timer fires (simulated directly).
-	tr.timerExpired(fightID)
-
-	st := tr.GetState()
-	if len(st.RecentFights) != 1 {
-		t.Fatalf("expected 1 archived fight after timer expiry, got %d", len(st.RecentFights))
+	if got := activeFightCount(tr); got != 2 {
+		t.Fatalf("expected 2 active fights for 2 distinct NPCs, got %d", got)
 	}
 
-	// Re-engage the same boss within the merge window.
-	tr.Handle(hitEvent("You", "Aten Ha Ra", 200, now.Add(20*time.Second)))
+	tr.Handle(killEvent("You", "a gnoll", now.Add(2*time.Second)))
+	if got := activeFightCount(tr); got != 1 {
+		t.Fatalf("after killing gnoll, expected 1 active fight, got %d", got)
+	}
+	tr.Handle(killEvent("You", "a wolf", now.Add(3*time.Second)))
 
+	st := tr.GetState()
+	if len(st.RecentFights) != 2 {
+		t.Errorf("expected 2 archived fights, got %d", len(st.RecentFights))
+	}
+	// Each fight's PrimaryTarget should be its own NPC (no heuristic guess).
+	targets := map[string]bool{}
+	for _, f := range st.RecentFights {
+		targets[f.PrimaryTarget] = true
+	}
+	if !targets["a gnoll"] || !targets["a wolf"] {
+		t.Errorf("expected both NPCs as PrimaryTarget across summaries, got %v", targets)
+	}
+}
+
+// TestSameNameRepullProducesSeparateFights captures that two distinct pulls
+// of an identically-named mob (engaged after the previous fight is closed)
+// archive as separate fights. The previous mergeWindow could collapse these;
+// per-NPC fights cannot, because the second engage hits a fresh map slot
+// after the first's kill removes it.
+func TestSameNameRepullProducesSeparateFights(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("You", "a temple skirmisher", 100, now))
+	tr.Handle(killEvent("You", "a temple skirmisher", now.Add(time.Second)))
+	tr.Handle(hitEvent("You", "a temple skirmisher", 80, now.Add(10*time.Second)))
+	tr.Handle(killEvent("You", "a temple skirmisher", now.Add(11*time.Second)))
+
+	st := tr.GetState()
+	if len(st.RecentFights) != 2 {
+		t.Errorf("expected 2 archived fights for two distinct pulls, got %d", len(st.RecentFights))
+	}
+}
+
+// TestKillEndsOnlyTheNamedFight ensures killing one NPC in a multi-mob pull
+// doesn't tear down the other in-flight fight. The previous global-active
+// model would archive the entire encounter; per-NPC fights only close the
+// named one.
+func TestKillEndsOnlyTheNamedFight(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("You", "a gnoll", 100, now))
+	tr.Handle(hitEvent("You", "Aten Ha Ra", 500, now.Add(time.Second)))
+	tr.Handle(killEvent("You", "a gnoll", now.Add(2*time.Second)))
+
+	if activeFightFor(tr, "Aten Ha Ra") == nil {
+		t.Fatal("boss fight should still be active after killing trash")
+	}
+	if activeFightFor(tr, "a gnoll") != nil {
+		t.Fatal("gnoll fight should be archived after kill")
+	}
+}
+
+// TestZoneEndsAllActiveFights confirms that a zone change archives every
+// in-flight fight, not just the most-recent one.
+func TestZoneEndsAllActiveFights(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("You", "a gnoll", 100, now))
+	tr.Handle(hitEvent("You", "a wolf", 80, now.Add(time.Second)))
+	tr.Handle(zoneEvent(now.Add(2 * time.Second)))
+
+	if got := activeFightCount(tr); got != 0 {
+		t.Fatalf("expected 0 active fights after zone, got %d", got)
+	}
+	if got := len(tr.GetState().RecentFights); got != 2 {
+		t.Errorf("expected 2 archived fights after zone, got %d", got)
+	}
+}
+
+// TestCurrentFightTracksMostRecentlyTouched verifies the snapshot picks the
+// fight whose lastTouched is most recent — it should switch as the player
+// (or a hostile mob) targets a new NPC mid-pull.
+func TestCurrentFightTracksMostRecentlyTouched(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("You", "a gnoll", 100, now))
+	tr.Handle(hitEvent("You", "a wolf", 80, now.Add(2*time.Second)))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil || st.CurrentFight.PrimaryTarget != "a wolf" {
+		t.Fatalf("expected CurrentFight to track 'a wolf', got %+v", st.CurrentFight)
+	}
+
+	// Swap back to the gnoll — CurrentFight should follow.
+	tr.Handle(hitEvent("You", "a gnoll", 50, now.Add(3*time.Second)))
 	st = tr.GetState()
-	if len(st.RecentFights) != 0 {
-		t.Errorf("expected merged fight to be popped from recentFights, got %d", len(st.RecentFights))
-	}
-	if st.CurrentFight == nil {
-		t.Fatal("expected a reopened active fight")
-	}
-	if st.CurrentFight.TotalDamage != 300 {
-		t.Errorf("expected merged TotalDamage=300, got %d", st.CurrentFight.TotalDamage)
-	}
-	// Session damage should reflect both halves combined (no double count).
-	if st.SessionDamage != 0 {
-		// Note: lastArchived's session contribution is rolled back on reopen,
-		// and the merged fight has not re-archived yet, so SessionDamage
-		// should be 0 until the merged fight ends.
-		t.Errorf("expected session_damage to be rolled back to 0 pending re-archive, got %d", st.SessionDamage)
-	}
-}
-
-// TestSameEnemyDoesNotReopenAfterMergeWindow verifies that an identical mob
-// name engaged after the merge window starts a fresh fight — distinct pulls
-// of the same trash mob should stay separate.
-func TestSameEnemyDoesNotReopenAfterMergeWindow(t *testing.T) {
-	tr := newTestTracker(t)
-	now := time.Now()
-
-	tr.Handle(hitEvent("You", "a temple skirmisher", 100, now))
-	tr.mu.Lock()
-	fightID := tr.active.id
-	tr.mu.Unlock()
-	tr.timerExpired(fightID)
-
-	// Re-engage a same-named mob well after mergeWindow elapsed.
-	tr.Handle(hitEvent("You", "a temple skirmisher", 80, now.Add(2*time.Minute)))
-
-	st := tr.GetState()
-	if len(st.RecentFights) != 1 {
-		t.Errorf("expected first fight to remain archived, got %d recent fights", len(st.RecentFights))
-	}
-	if st.CurrentFight == nil {
-		t.Fatal("expected a fresh active fight")
-	}
-	if st.CurrentFight.TotalDamage != 80 {
-		t.Errorf("expected fresh fight TotalDamage=80, got %d", st.CurrentFight.TotalDamage)
-	}
-}
-
-// TestDifferentEnemyDoesNotReopen verifies that engaging a different mob
-// within the merge window starts a fresh fight rather than merging with the
-// previous archived fight — trash → boss → trash stays as three fights.
-func TestDifferentEnemyDoesNotReopen(t *testing.T) {
-	tr := newTestTracker(t)
-	now := time.Now()
-
-	tr.Handle(hitEvent("You", "a gnoll", 100, now))
-	tr.mu.Lock()
-	fightID := tr.active.id
-	tr.mu.Unlock()
-	tr.timerExpired(fightID)
-
-	tr.Handle(hitEvent("You", "Aten Ha Ra", 200, now.Add(5*time.Second)))
-
-	st := tr.GetState()
-	if len(st.RecentFights) != 1 {
-		t.Errorf("expected gnoll fight to stay archived, got %d recent fights", len(st.RecentFights))
-	}
-	if st.CurrentFight == nil || st.CurrentFight.PrimaryTarget != "Aten Ha Ra" {
-		t.Fatalf("expected fresh boss fight, got %+v", st.CurrentFight)
-	}
-}
-
-// TestKillBlocksReopen verifies that a kill event closes the fight definitively
-// — even if a same-named mob is engaged within mergeWindow (re-pop of a trash
-// mob), the dead mob's fight must not be merged into.
-func TestKillBlocksReopen(t *testing.T) {
-	tr := newTestTracker(t)
-	now := time.Now()
-
-	tr.Handle(hitEvent("You", "a gnoll", 100, now))
-	tr.Handle(killEvent("You", "a gnoll", now.Add(time.Second)))
-
-	if len(tr.GetState().RecentFights) != 1 {
-		t.Fatalf("expected 1 archived fight after kill")
-	}
-
-	// Same-name re-pop within mergeWindow.
-	tr.Handle(hitEvent("You", "a gnoll", 80, now.Add(10*time.Second)))
-
-	st := tr.GetState()
-	if len(st.RecentFights) != 1 {
-		t.Errorf("expected the killed-gnoll fight to stay archived, got %d recent fights", len(st.RecentFights))
-	}
-	if st.CurrentFight == nil || st.CurrentFight.TotalDamage != 80 {
-		t.Fatalf("expected a fresh fight on the new gnoll, got %+v", st.CurrentFight)
-	}
-}
-
-// TestTrashBossTrashStaysSeparate is the regression case from the chunk-4
-// motivation: pulling trash, then a boss, then more trash must produce three
-// fights — none of the inactivity-timer expiries should merge unrelated mobs.
-func TestTrashBossTrashStaysSeparate(t *testing.T) {
-	tr := newTestTracker(t)
-	now := time.Now()
-
-	// Trash 1
-	tr.Handle(hitEvent("You", "a temple skirmisher", 100, now))
-	tr.mu.Lock()
-	id1 := tr.active.id
-	tr.mu.Unlock()
-	tr.timerExpired(id1)
-
-	// Boss
-	tr.Handle(hitEvent("You", "Aten Ha Ra", 500, now.Add(20*time.Second)))
-	tr.mu.Lock()
-	id2 := tr.active.id
-	tr.mu.Unlock()
-	tr.timerExpired(id2)
-
-	// Trash 2 — different name, well after the boss fight's mergeWindow
-	tr.Handle(hitEvent("You", "a Shissar Arch Arcanist", 80, now.Add(2*time.Minute)))
-	tr.mu.Lock()
-	id3 := tr.active.id
-	tr.mu.Unlock()
-	tr.timerExpired(id3)
-
-	st := tr.GetState()
-	if len(st.RecentFights) != 3 {
-		t.Errorf("expected 3 fights, got %d", len(st.RecentFights))
+	if st.CurrentFight == nil || st.CurrentFight.PrimaryTarget != "a gnoll" {
+		t.Fatalf("expected CurrentFight to track 'a gnoll' after re-engage, got %+v", st.CurrentFight)
 	}
 }
 

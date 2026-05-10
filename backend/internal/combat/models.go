@@ -8,17 +8,15 @@ import "time"
 // WSEventCombat is the WebSocket event type broadcast when combat state changes.
 const WSEventCombat = "overlay:combat"
 
-// combatGap is how long with no combat activity before a fight is considered
-// over. Bumped from 6s to 15s so raid-boss heal phases and similar lulls
-// (where damage briefly stops while mechanics resolve) no longer fragment a
-// single boss fight into multiple log entries.
-const combatGap = 15 * time.Second
+// fightExpiryWithDamage is the per-NPC inactivity window once a fight has
+// recorded any damage. Matches EQLogParser's FightTimeout (30 s) so a brief
+// lull within an encounter doesn't archive the fight prematurely.
+const fightExpiryWithDamage = 30 * time.Second
 
-// mergeWindow is how long after a fight ends the tracker will reopen it if
-// combat resumes against the same enemy. Together with combatGap, this gives
-// boss mechanics generous slack while still cleanly separating distinct pulls
-// of the same trash mob name (which typically happen >30s apart).
-const mergeWindow = 30 * time.Second
+// fightExpiryNoDamage is the per-NPC inactivity window before the fight
+// records any damage (e.g. an NPC begins targeting a player without yet
+// landing a hit). Matches EQLogParser's MaxTimeout (60 s).
+const fightExpiryNoDamage = 60 * time.Second
 
 // maxRecentFights is the number of completed fights retained in memory.
 const maxRecentFights = 20
