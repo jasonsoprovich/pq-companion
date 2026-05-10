@@ -20,7 +20,9 @@ import (
 )
 
 // NewRouter builds and returns the chi router wired to all backend components.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, timerEngine *spelltimer.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store) http.Handler {
+// combatHistory may be nil when persistence is disabled (e.g. user.db open
+// failed); in that case the history endpoints respond 503.
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -50,7 +52,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	backupH := &backupHandler{mgr: backupMgr}
 	logH := &logHandler{tailer: tailer}
 	overlayH := &overlayHandler{npcTracker: npcTracker}
-	combatH := &combatHandler{tracker: combatTracker}
+	combatH := &combatHandler{tracker: combatTracker, historyStore: combatHistory}
 	timerH := &timerHandler{engine: timerEngine}
 	triggerH := &triggerHandler{store: triggerStore, engine: triggerEngine, hub: hub, charStore: charStore, tailer: tailer, cfgMgr: cfgMgr}
 	tasksH := &tasksHandler{store: charStore}
@@ -143,6 +145,12 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		})
 		r.Route("/combat", func(r chi.Router) {
 			r.Post("/reset", combatH.reset)
+			r.Route("/history", func(r chi.Router) {
+				r.Get("/", combatH.historyList)
+				r.Delete("/", combatH.historyClear)
+				r.Get("/{id}", combatH.historyGet)
+				r.Delete("/{id}", combatH.historyDelete)
+			})
 		})
 		r.Route("/triggers", func(r chi.Router) {
 			r.Get("/", triggerH.list)

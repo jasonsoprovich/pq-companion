@@ -250,7 +250,7 @@ func main() {
 	})
 	go tailer.Start(context.Background())
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, timerEngine, triggerStore, triggerEngine, charStore)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore)
 
 	slog.Info("server starting", "addr", listenAddr, "db", *dbPath)
 	if err := http.ListenAndServe(listenAddr, router); err != nil {
