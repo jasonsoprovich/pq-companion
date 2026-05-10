@@ -40,6 +40,9 @@ type Config struct {
 	// SpellTimer holds spell timer engine settings.
 	SpellTimer SpellTimerSettings `yaml:"spell_timer" json:"spell_timer"`
 
+	// Combat holds combat tracker / history settings.
+	Combat CombatSettings `yaml:"combat" json:"combat"`
+
 	// OnboardingCompleted is true once the user has finished the first-launch
 	// setup wizard. When false (default), the wizard is shown on app launch.
 	OnboardingCompleted bool `yaml:"onboarding_completed" json:"onboarding_completed"`
@@ -119,6 +122,16 @@ type SpellTimerSettings struct {
 	TrackingMode string `yaml:"tracking_mode,omitempty" json:"tracking_mode,omitempty"`
 }
 
+// CombatSettings configures the combat tracker and persisted fight history.
+type CombatSettings struct {
+	// RetentionDays is the number of days of combat history to keep in
+	// user.db. Fights older than this are pruned on startup and once per
+	// hour. 0 (or negative) disables pruning entirely. Default 30 — covers
+	// the common "let me see last week's raid" case without growing the DB
+	// beyond a few MB for normal use.
+	RetentionDays int `yaml:"retention_days" json:"retention_days"`
+}
+
 // TrackingScope* are the canonical values for SpellTimerSettings.TrackingScope.
 const (
 	TrackingScopeSelf     = "self"
@@ -180,6 +193,9 @@ func defaults() Config {
 			// applyDefaults can detect a config file that predates the
 			// migration. For brand-new files we set it to true in the
 			// not-exist branch of LoadFrom.
+		},
+		Combat: CombatSettings{
+			RetentionDays: 30,
 		},
 	}
 }
@@ -255,6 +271,16 @@ func applyDefaults(cfg *Config) bool {
 		changed = true
 	} else if cfg.SpellTimer.TrackingScope == "" {
 		cfg.SpellTimer.TrackingScope = TrackingScopeCastByMe
+		changed = true
+	}
+	// Combat history retention default — applies to configs that predate
+	// the combat history feature. The YAML decoder leaves missing numeric
+	// fields at zero, so a missing value and an explicit "0" are
+	// indistinguishable. Treat both as "use the default"; users who really
+	// want pruning disabled can write a negative value (e.g. -1), which
+	// pruneCombatHistory honours as "skip".
+	if cfg.Combat.RetentionDays == 0 {
+		cfg.Combat.RetentionDays = 30
 		changed = true
 	}
 	return changed

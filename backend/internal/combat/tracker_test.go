@@ -1165,6 +1165,34 @@ func TestPendingCritsBounded(t *testing.T) {
 	}
 }
 
+// TestArchivedFightsPersistedWhenStoreWired verifies the SetHistoryStore
+// integration: every archived fight ends up in user.db, with the same
+// PrimaryTarget and totals as the in-memory FightSummary.
+func TestArchivedFightsPersistedWhenStoreWired(t *testing.T) {
+	tr := newTestTracker(t)
+	store := newTestStore(t)
+	tr.SetHistoryStore(store)
+
+	now := time.Now()
+	tr.Handle(hitEvent("You", "a gnoll", 100, now))
+	tr.Handle(hitEvent("You", "a gnoll", 50, now.Add(time.Second)))
+	tr.Handle(killEvent("You", "a gnoll", now.Add(2*time.Second)))
+
+	saved, err := store.ListFights(FightFilter{})
+	if err != nil {
+		t.Fatalf("ListFights: %v", err)
+	}
+	if len(saved) != 1 {
+		t.Fatalf("expected 1 persisted fight, got %d", len(saved))
+	}
+	if saved[0].NPCName != "a gnoll" {
+		t.Errorf("persisted NPCName = %q, want %q", saved[0].NPCName, "a gnoll")
+	}
+	if saved[0].YouDamage != 150 {
+		t.Errorf("persisted YouDamage = %d, want 150", saved[0].YouDamage)
+	}
+}
+
 // TestDoTTickAttributedToYou verifies the new DoT tick event flows through
 // the tracker as outgoing damage credited to "You", same as other player
 // damage. The spell name on the event is informational and shouldn't affect

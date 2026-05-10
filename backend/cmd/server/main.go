@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/api"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
@@ -134,6 +135,21 @@ func main() {
 		return cfgMgr.Get().Character
 	})
 
+	// Combat history store: persists every archived fight to user.db so the
+	// in-memory ring buffer is no longer the only record. Failure here is
+	// non-fatal — the tracker still works in memory-only mode without it.
+	historyStore, err := combat.OpenHistoryStore(filepath.Join(home, ".pq-companion", "user.db"))
+	if err != nil {
+		slog.Warn("open combat history (persistence disabled)", "err", err)
+	} else {
+		defer historyStore.Close()
+		combatTracker.SetHistoryStore(historyStore)
+		// Prune anything older than the configured retention window on
+		// startup, then once per hour while the server runs. Running on a
+		// goroutine so a slow / contended user.db can't delay startup.
+		go pruneCombatHistory(context.Background(), historyStore, cfgMgr)
+	}
+
 	// Spell timer engine: watches cast/resist/fade events, maintains countdown
 	// timers per active spell, and broadcasts overlay:timers WebSocket events.
 	// The CharacterContext closure feeds buffmod the active char + EQ path so
@@ -240,6 +256,40 @@ func main() {
 	if err := http.ListenAndServe(listenAddr, router); err != nil {
 		slog.Error("server error", "err", err)
 		os.Exit(1)
+	}
+}
+
+// pruneCombatHistory runs an immediate retention sweep, then loops once an
+// hour to keep the combat_fights table within the configured window. The
+// retention setting is read on each tick so config changes take effect
+// without restarting. Logs failures via slog but never aborts — a flapping
+// disk shouldn't take down the server.
+func pruneCombatHistory(ctx context.Context, store *combat.HistoryStore, cfgMgr *config.Manager) {
+	prune := func() {
+		days := cfgMgr.Get().Combat.RetentionDays
+		if days <= 0 {
+			return
+		}
+		cutoff := time.Now().AddDate(0, 0, -days)
+		removed, err := store.PruneOlderThan(cutoff)
+		if err != nil {
+			slog.Warn("prune combat history", "err", err)
+			return
+		}
+		if removed > 0 {
+			slog.Info("pruned combat history", "removed", removed, "older_than_days", days)
+		}
+	}
+	prune()
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			prune()
+		}
 	}
 }
 

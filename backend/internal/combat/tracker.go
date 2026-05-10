@@ -1,6 +1,7 @@
 package combat
 
 import (
+	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -230,6 +231,20 @@ type Tracker struct {
 	// rare false positive — a friendly spell hitting "You" — would just hide
 	// that entity from the DPS list, which is a reasonable default).
 	confirmedHostiles map[string]bool
+
+	// historyStore, when non-nil, receives every archived fight via SaveFight.
+	// Optional: tests that don't care about persistence leave it nil and the
+	// archive path no-ops on the store call.
+	historyStore *HistoryStore
+}
+
+// SetHistoryStore wires the persistent fight history store. Called once at
+// startup from main; tests typically leave it unset. Safe to call before or
+// after combat events start flowing.
+func (t *Tracker) SetHistoryStore(s *HistoryStore) {
+	t.mu.Lock()
+	t.historyStore = s
+	t.mu.Unlock()
 }
 
 // maxPendingCritsPerActor caps the per-actor crit queue. In practice the
@@ -824,6 +839,20 @@ func (t *Tracker) archiveFightLocked(f *Fight, endTime time.Time) {
 	t.recentFights = append([]FightSummary{summary}, t.recentFights...)
 	if len(t.recentFights) > maxRecentFights {
 		t.recentFights = t.recentFights[:maxRecentFights]
+	}
+
+	// Persist to user.db when wired. Performed inside the tracker mutex so
+	// the in-memory ring and the on-disk record stay consistent. The store
+	// uses a single open conn with a 30s busy_timeout, so a write should
+	// never block long enough to be visible at this granularity (a fight
+	// archive is a rare event compared to per-hit broadcasts).
+	if t.historyStore != nil {
+		if _, err := t.historyStore.SaveFight(summary, t.currentZone, t.playerName()); err != nil {
+			// Persistence failure should not crash the live tracker — the
+			// in-memory recent-fights view still works. Surface via slog so
+			// disk-full / permission issues are visible in support logs.
+			slog.Warn("save fight to history", "npc", summary.PrimaryTarget, "err", err)
+		}
 	}
 }
 
