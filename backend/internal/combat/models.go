@@ -21,37 +21,33 @@ const fightExpiryNoDamage = 60 * time.Second
 // maxRecentFights is the number of completed fights retained in memory.
 const maxRecentFights = 20
 
-// activeGapWindow is the inactivity threshold used by per-combatant
-// active-time accounting. A new damage event extends the current segment
-// when it falls within this window of the previous event; otherwise it
-// closes the current segment and starts a new one. 10s comfortably covers
-// EQ's 3-second melee swing timer (with some misses) but still creates
-// separate segments for a wizard nuking once every 20–30s, so the
-// resulting "active DPS" reflects actual engagement rather than the full
-// fight duration. Calibrated to feel like the typical raid-parser default.
-const activeGapWindow = 10 * time.Second
-
-// activeMinSegment is the minimum active duration credited to any
-// combatant with at least one hit, in seconds. Without this floor a fight
-// containing a single hit would divide damage by ~0 and produce absurd
-// active DPS. EQLogParser uses the same +1 convention.
-const activeMinSegment = 1.0
+// minPersonalSeconds is the floor applied to per-player active spans before
+// dividing damage by them. A single-hit fight would otherwise divide by 0
+// and produce Inf. EQLogParser uses the same "+1 per discrete event"
+// convention to handle this.
+const minPersonalSeconds = 1.0
 
 // EntityStats holds damage statistics for one combatant within a fight.
 // Only outgoing damage dealers (actors whose target is not "You") appear here.
 //
-// Two DPS variants are emitted so the frontend can present whichever the
-// user prefers without re-deriving from raw events:
+// Three DPS variants are emitted so the frontend can present whichever the
+// user prefers without re-deriving from raw events. They mirror the
+// metrics EQLogParser surfaces:
 //
-//	DPS         — total damage divided by the fight's wall-clock duration.
-//	              Same denominator for every combatant. "Contribution rate."
-//	ActiveDPS   — total damage divided by the union of intervals during
-//	              which this specific combatant was actually dealing damage,
-//	              floored at activeMinSegment. Different denominator per
-//	              combatant. "Throughput rate while engaged."
+//	DPS         — Encounter DPS. Total damage / fight wall-clock duration.
+//	              Same denominator for every combatant in the fight.
+//	              Useful for comparing whole fights to each other.
+//	ActiveDPS   — Personal DPS. Total damage / this player's first-to-last
+//	              span (no gap removal). EQLogParser's headline metric.
+//	              Fair to the individual: a late-joiner or OOM caster
+//	              isn't punished for time they weren't engaged.
+//	RaidDPS     — Raid-relative DPS. Total damage / the raid's first-to-
+//	              last span across every combatant in the fight (the same
+//	              denominator for every player). EQLogParser's "Sdps".
+//	              The right metric for ranking players within one fight.
 //
-// ActiveSeconds is the denominator used for ActiveDPS, exposed for
-// transparency so a UI column can show "engaged 42s / 90s" if desired.
+// ActiveSeconds and RaidSeconds expose the denominators for the latter
+// two so a UI column can show e.g. "engaged 42s / 90s".
 type EntityStats struct {
 	Name          string  `json:"name"`
 	TotalDamage   int64   `json:"total_damage"`
@@ -60,6 +56,8 @@ type EntityStats struct {
 	DPS           float64 `json:"dps"`
 	ActiveDPS     float64 `json:"active_dps"`
 	ActiveSeconds float64 `json:"active_seconds"`
+	RaidDPS       float64 `json:"raid_dps"`
+	RaidSeconds   float64 `json:"raid_seconds"`
 	// CritCount is the number of "Scores a critical hit!" announcements
 	// matched to a damage event from this actor in the fight.
 	CritCount int `json:"crit_count"`
@@ -73,7 +71,7 @@ type EntityStats struct {
 }
 
 // HealerStats holds healing statistics for one healer within a fight.
-// Mirrors EntityStats's two-flavour DPS exposure for HPS.
+// Mirrors EntityStats's three-flavour DPS exposure for HPS.
 type HealerStats struct {
 	Name          string  `json:"name"`
 	TotalHeal     int64   `json:"total_heal"`
@@ -82,6 +80,8 @@ type HealerStats struct {
 	HPS           float64 `json:"hps"`
 	ActiveHPS     float64 `json:"active_hps"`
 	ActiveSeconds float64 `json:"active_seconds"`
+	RaidHPS       float64 `json:"raid_hps"`
+	RaidSeconds   float64 `json:"raid_seconds"`
 }
 
 // FightState describes the currently active fight.

@@ -94,6 +94,9 @@ export function rollupCombatants(
     // active DPS comparable to a non-pet class's active DPS instead of
     // double-crediting overlapping engagement.
     const activeSecs = Math.max(owner.active_seconds, ...pets.map((p) => p.active_seconds))
+    // raid_seconds is constant across the fight; the owner row carries the
+    // canonical value (every pet shares it). Inherit via the spread.
+    const raidSecs = owner.raid_seconds
     rolled.push({
       ...owner,
       total_damage: totalDamage,
@@ -102,6 +105,8 @@ export function rollupCombatants(
       dps: fightDuration > 0 ? totalDamage / fightDuration : 0,
       active_dps: activeSecs > 0 ? totalDamage / activeSecs : 0,
       active_seconds: activeSecs,
+      raid_dps: raidSecs > 0 ? totalDamage / raidSecs : 0,
+      raid_seconds: raidSecs,
       crit_count: owner.crit_count + sumCrits(pets),
       crit_damage: owner.crit_damage + sumCritDamage(pets),
       pets,
@@ -116,6 +121,8 @@ export function rollupCombatants(
     const hitCount = sumHits(pets)
     const maxHit = Math.max(...pets.map((p) => p.max_hit))
     const activeSecs = Math.max(...pets.map((p) => p.active_seconds))
+    // Pull raid_seconds from any pet — it's constant across the fight.
+    const raidSecs = pets[0]?.raid_seconds ?? 0
     rolled.push({
       name: ownerName,
       total_damage: totalDamage,
@@ -124,6 +131,8 @@ export function rollupCombatants(
       dps: fightDuration > 0 ? totalDamage / fightDuration : 0,
       active_dps: activeSecs > 0 ? totalDamage / activeSecs : 0,
       active_seconds: activeSecs,
+      raid_dps: raidSecs > 0 ? totalDamage / raidSecs : 0,
+      raid_seconds: raidSecs,
       crit_count: sumCrits(pets),
       crit_damage: sumCritDamage(pets),
       pets,

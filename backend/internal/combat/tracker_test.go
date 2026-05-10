@@ -1008,36 +1008,75 @@ func TestActiveDPS_MatchesDPSForConstantAttacker(t *testing.T) {
 	}
 }
 
-// A bursty attacker who fires once per 30 seconds (well above the
-// activeGapWindow) should have a much higher ActiveDPS than fight-duration
-// DPS — each burst becomes its own short segment, so the active denominator
-// is small relative to total fight duration.
-func TestActiveDPS_HigherForBurstyAttacker(t *testing.T) {
+// TestPersonalDPS_LateJoinerIsHigherThanEncounter captures the EQLP
+// "Personal DPS" intuition: a player who engaged late should be judged on
+// the time they were actually swinging, not on the full fight wall-clock.
+// Their ActiveDPS (Personal) > Encounter DPS, while a constant attacker's
+// numbers are roughly equal.
+func TestPersonalDPS_LateJoinerIsHigherThanEncounter(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()
 
-	// Burst hits 30s apart — well over activeGapWindow (10s) — so each is its
-	// own segment and active time stays low.
-	tr.Handle(hitEvent("You", "a gnoll", 5000, now))
-	tr.Handle(hitEvent("You", "a gnoll", 5000, now.Add(30*time.Second)))
-	tr.Handle(hitEvent("You", "a gnoll", 5000, now.Add(60*time.Second)))
-	// Plus an NPC swing to keep the fight alive between bursts.
-	tr.Handle(hitEvent("a gnoll", "You", 50, now.Add(20*time.Second)))
-	tr.Handle(hitEvent("a gnoll", "You", 50, now.Add(45*time.Second)))
-	tr.Handle(killEvent("You", "a gnoll", now.Add(75*time.Second)))
+	// Tank engages at t=0 and swings to t=60. Wizard arrives at t=30 and
+	// nukes through t=60. Both deal 6000 damage total; Wizard's personal
+	// span is half the fight wall-clock so ActiveDPS should be ~2× DPS.
+	for i := 0; i < 6; i++ {
+		tr.Handle(hitEvent("Tank", "a gnoll", 1000, now.Add(time.Duration(i*10)*time.Second)))
+	}
+	for i := 0; i < 6; i++ {
+		tr.Handle(hitEvent("Wizard", "a gnoll", 1000, now.Add(time.Duration(30+i*5)*time.Second)))
+	}
+	tr.Handle(killEvent("You", "a gnoll", now.Add(60*time.Second)))
 
 	st := tr.GetState()
-	c := findArchivedCombatant(st, "You")
-	if c == nil {
-		t.Fatalf("missing 'You' combatant")
+	wiz := findArchivedCombatant(st, "Wizard")
+	if wiz == nil {
+		t.Fatalf("missing Wizard combatant")
 	}
-	if c.ActiveDPS <= c.DPS {
-		t.Errorf("expected ActiveDPS (%v) > DPS (%v) for bursty attacker", c.ActiveDPS, c.DPS)
+	if wiz.ActiveDPS < wiz.DPS*1.5 {
+		t.Errorf("late-joiner ActiveDPS (%.0f) should be ~2× DPS (%.0f)", wiz.ActiveDPS, wiz.DPS)
 	}
-	// Each of three single-hit bursts becomes its own activeMinSegment
-	// segment (~1s each), so active_seconds should be ≈ 3.
-	if c.ActiveSeconds < 2 || c.ActiveSeconds > 5 {
-		t.Errorf("expected ActiveSeconds ≈ 3 for three isolated bursts, got %.2f", c.ActiveSeconds)
+	// Personal span is exactly 30s (5 nukes 5s apart starting at t=30, ending
+	// at t=55) — give or take a beat for floor handling.
+	if wiz.ActiveSeconds < 24 || wiz.ActiveSeconds > 32 {
+		t.Errorf("Wizard ActiveSeconds = %.1f, want ~25–30 (their first-to-last span)", wiz.ActiveSeconds)
+	}
+}
+
+// TestRaidDPS_UsesRaidWideSpanAcrossPlayers verifies the new raid-relative
+// metric: every combatant's raid_seconds is the same value (raid first
+// activity → raid last activity), so a late-joining player's RaidDPS is
+// strictly less than their ActiveDPS (personal). This is the metric that
+// makes cross-player rankings fair within one fight.
+func TestRaidDPS_UsesRaidWideSpanAcrossPlayers(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Tank engages at t=0; Wizard at t=30. Both kill the mob at t=60.
+	tr.Handle(hitEvent("Tank", "a gnoll", 1000, now))
+	tr.Handle(hitEvent("Tank", "a gnoll", 1000, now.Add(60*time.Second)))
+	tr.Handle(hitEvent("Wizard", "a gnoll", 5000, now.Add(30*time.Second)))
+	tr.Handle(hitEvent("Wizard", "a gnoll", 5000, now.Add(60*time.Second)))
+	tr.Handle(killEvent("You", "a gnoll", now.Add(60*time.Second)))
+
+	st := tr.GetState()
+	tank := findArchivedCombatant(st, "Tank")
+	wiz := findArchivedCombatant(st, "Wizard")
+	if tank == nil || wiz == nil {
+		t.Fatalf("missing Tank or Wizard combatant")
+	}
+	// raid_seconds should be ~60 (raid first hit at t=0 to last hit at t=60)
+	// and identical for both players.
+	if tank.RaidSeconds != wiz.RaidSeconds {
+		t.Errorf("RaidSeconds mismatch: tank=%v wiz=%v (must be the same)", tank.RaidSeconds, wiz.RaidSeconds)
+	}
+	if tank.RaidSeconds < 55 || tank.RaidSeconds > 65 {
+		t.Errorf("RaidSeconds = %.1f, want ~60", tank.RaidSeconds)
+	}
+	// Wizard's RaidDPS uses the full raid span; their ActiveDPS uses just
+	// their 30s personal span. So ActiveDPS > RaidDPS.
+	if wiz.ActiveDPS <= wiz.RaidDPS {
+		t.Errorf("late-joiner ActiveDPS (%.0f) should exceed RaidDPS (%.0f)", wiz.ActiveDPS, wiz.RaidDPS)
 	}
 }
 

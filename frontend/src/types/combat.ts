@@ -3,12 +3,18 @@ export interface EntityStats {
   total_damage: number
   hit_count: number
   max_hit: number
-  // dps          — total / fight wall-clock duration (contribution rate).
-  // active_dps   — total / sum of intervals this combatant was engaging.
-  // active_seconds is the denominator used for active_dps, in seconds.
+  // Three DPS variants — see backend combat.EntityStats for the full
+  // explanation. Short form:
+  //   dps          — Encounter:  total / fight wall-clock duration
+  //   active_dps   — Personal:   total / per-player first-to-last span
+  //   raid_dps     — Raid-wide:  total / raid first-to-last span
+  // active_seconds and raid_seconds expose the latter two denominators
+  // for tooltips ("engaged 30s of 60s").
   dps: number
   active_dps: number
   active_seconds: number
+  raid_dps: number
+  raid_seconds: number
   // crit_count   — number of "Scores a critical hit!" lines matched to a
   //                damage event from this actor in the fight.
   // crit_damage  — sum of damage from those matched crit hits.
@@ -28,6 +34,8 @@ export interface HealerStats {
   hps: number
   active_hps: number
   active_seconds: number
+  raid_hps: number
+  raid_seconds: number
 }
 
 export interface FightState {

@@ -7,7 +7,7 @@
  * buttons remain clickable via mouseenter/mouseleave forwarding.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Swords, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass } from 'lucide-react'
+import { Swords, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass, User } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -15,7 +15,19 @@ import OverlayLockButton from '../components/OverlayLockButton'
 import { getCombatState, resetCombatState } from '../services/api'
 import type { CombatState, FightState } from '../types/combat'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
-import { useDPSMode, dpsForMode, type DPSMode } from '../hooks/useDPSMode'
+import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, type DPSMode } from '../hooks/useDPSMode'
+
+// dpsModeIcon picks an icon matching the metric's intuition.
+function dpsModeIcon(mode: DPSMode, size = 11): React.ReactElement {
+  switch (mode) {
+    case 'personal':
+      return <User size={size} />
+    case 'raid':
+      return <Activity size={size} />
+    case 'encounter':
+      return <Hourglass size={size} />
+  }
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -46,7 +58,7 @@ function truncateName(name: string, max = 24): string {
 
 function buildFightText(fight: FightState, combine: boolean, mode: DPSMode): string {
   const rolled = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
-  const label = mode === 'active' ? 'adps' : 'dps'
+  const label = dpsModeAbbrev(mode).toLowerCase()
   return rolled
     .slice(0, 10)
     .map((c, i) => `#${i + 1} ${c.name}${petBadge(c.pets)} ${Math.round(dpsForMode(c, mode))}${label} ${c.total_damage.toLocaleString()}dmg`)
@@ -328,23 +340,27 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           >
             <Users size={11} />
           </button>
-          {/* DPS mode toggle: active-time vs fight-duration */}
+          {/* DPS mode toggle: cycles Personal → Raid → Encounter. */}
           <button
             onClick={toggleDPSMode}
-            title={dpsMode === 'active'
-              ? 'Active-time DPS — click for fight-duration DPS'
-              : 'Fight-duration DPS — click for active-time DPS'}
+            title={`${dpsModeLabel(dpsMode)} DPS — click to cycle (Personal → Raid → Encounter)`}
             style={{
               display: 'flex',
               alignItems: 'center',
+              gap: 3,
               background: 'none',
               border: 'none',
-              padding: '1px 3px',
+              padding: '1px 4px',
               cursor: 'pointer',
-              color: dpsMode === 'active' ? '#818cf8' : 'rgba(255,255,255,0.4)',
+              color: '#818cf8',
+              fontSize: 9,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              fontWeight: 600,
             }}
           >
-            {dpsMode === 'active' ? <Activity size={11} /> : <Hourglass size={11} />}
+            {dpsModeIcon(dpsMode)}
+            {dpsModeLabel(dpsMode)}
           </button>
           {/* copy fight summary */}
           <button

@@ -1,12 +1,36 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Swords, Circle, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users, Trash2, Activity, Hourglass } from 'lucide-react'
+import { Swords, Circle, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users, Trash2, Activity, Hourglass, User } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { getCombatState, getLogStatus, resetCombatState } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import type { CombatState, FightState } from '../../types/combat'
 import type { LogTailerStatus } from '../../types/logEvent'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../../lib/dpsRollup'
-import { useDPSMode, dpsForMode, type DPSMode } from '../../hooks/useDPSMode'
+import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, type DPSMode } from '../../hooks/useDPSMode'
+
+// dpsModeIcon picks an icon for the current DPS mode that matches the
+// metric's intuition: a single User for Personal, Users for Raid, an
+// Hourglass for Encounter (wall-clock).
+function dpsModeIcon(mode: DPSMode, size = 12): React.ReactElement {
+  switch (mode) {
+    case 'personal':
+      return <User size={size} />
+    case 'raid':
+      return <Activity size={size} />
+    case 'encounter':
+      return <Hourglass size={size} />
+  }
+}
+
+// dpsModeTooltip explains the current metric and that clicking cycles.
+function dpsModeTooltip(mode: DPSMode): string {
+  const meaning: Record<DPSMode, string> = {
+    personal: 'Personal DPS — total damage / your first-to-last span. Fair to the individual; matches EQLogParser.',
+    raid: 'Raid-relative DPS — total damage / the raid\'s active span. The right metric for ranking players within one fight.',
+    encounter: 'Encounter DPS — total damage / fight wall-clock. Compare whole fights to each other.',
+  }
+  return `${meaning[mode]} Click to cycle (Personal → Raid → Encounter).`
+}
 
 interface DPSPanelProps {
   defaultX?: number
@@ -35,8 +59,8 @@ function truncateName(name: string, max = 28): string {
 function buildFightText(fight: FightState, combine: boolean, mode: DPSMode): string {
   const target = fight.primary_target ?? 'Unknown'
   const dur = fmtDuration(fight.duration_seconds)
-  const label = mode === 'active' ? 'aDPS' : 'DPS'
-  const lines: string[] = [`[PQ Companion] Fight: ${target} (${dur})`]
+  const label = dpsModeAbbrev(mode)
+  const lines: string[] = [`[PQ Companion] Fight: ${target} (${dur}) — ${dpsModeLabel(mode)} DPS`]
   const rows = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
   for (const c of rows) {
     const crit = c.crit_count > 0
@@ -362,16 +386,16 @@ export default function DPSPanel({
           </button>
           <button
             onClick={toggleDPSMode}
-            title={dpsMode === 'active'
-              ? 'Active-time DPS — divides by each combatant’s engaged time. Click for fight-duration DPS.'
-              : 'Fight-duration DPS — divides by total fight time. Click for active-time DPS.'}
+            title={dpsModeTooltip(dpsMode)}
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
-              padding: '1px 3px', display: 'flex', alignItems: 'center',
-              color: dpsMode === 'active' ? 'var(--color-primary)' : 'var(--color-muted)',
+              padding: '1px 4px', display: 'flex', alignItems: 'center', gap: 3,
+              color: 'var(--color-primary)',
+              fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600,
             }}
           >
-            {dpsMode === 'active' ? <Activity size={12} /> : <Hourglass size={12} />}
+            {dpsModeIcon(dpsMode)}
+            {dpsModeLabel(dpsMode)}
           </button>
           <CopyFightButton fight={combat?.current_fight ?? null} combine={combine} mode={dpsMode} />
           <button

@@ -15,13 +15,37 @@ import {
   Users,
   Activity,
   Hourglass,
+  User,
 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getCombatState, getLogStatus, resetCombatState } from '../services/api'
 import type { CombatState, DeathRecord, EntityStats, FightSummary } from '../types/combat'
 import type { LogTailerStatus } from '../types/logEvent'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
-import { useDPSMode, dpsForMode, type DPSMode } from '../hooks/useDPSMode'
+import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, type DPSMode } from '../hooks/useDPSMode'
+
+// dpsModeIcon picks an icon for the current DPS mode that matches the
+// metric's intuition: a single User for Personal, group Activity for Raid,
+// an Hourglass for Encounter (wall-clock).
+function dpsModeIcon(mode: DPSMode, size = 11): React.ReactElement {
+  switch (mode) {
+    case 'personal':
+      return <User size={size} />
+    case 'raid':
+      return <Activity size={size} />
+    case 'encounter':
+      return <Hourglass size={size} />
+  }
+}
+
+function dpsModeTooltip(mode: DPSMode): string {
+  const meaning: Record<DPSMode, string> = {
+    personal: 'Personal DPS — total damage / your first-to-last span. Fair to the individual; matches EQLogParser.',
+    raid: 'Raid-relative DPS — total damage / the raid\'s active span. The right metric for ranking players within one fight.',
+    encounter: 'Encounter DPS — total damage / fight wall-clock. Compare whole fights to each other.',
+  }
+  return `${meaning[mode]} Click to cycle (Personal → Raid → Encounter).`
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -136,7 +160,7 @@ function CombatantTable({
         <span>Name</span>
         <span style={{ textAlign: 'right' }}>%</span>
         <span style={{ textAlign: 'right' }}>Damage</span>
-        <span style={{ textAlign: 'right' }}>{mode === 'active' ? 'aDPS' : 'DPS'}</span>
+        <span style={{ textAlign: 'right' }}>{dpsModeAbbrev(mode)}</span>
         <span style={{ textAlign: 'right' }}>Max</span>
       </div>
 
@@ -627,28 +651,27 @@ function FilterBar({
         <Users size={11} /> Pets
       </button>
 
-      {/* DPS mode toggle: active vs fight-duration */}
+      {/* DPS mode toggle: cycles Personal → Raid → Encounter. */}
       <button
         onClick={onToggleDPSMode}
-        title={dpsMode === 'active'
-          ? 'Active-time DPS — divides by each combatant’s engaged time. Click for fight-duration DPS.'
-          : 'Fight-duration DPS — divides by total fight time. Click for active-time DPS.'}
+        title={dpsModeTooltip(dpsMode)}
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 4,
           padding: '4px 8px',
           fontSize: 11,
-          background: dpsMode === 'active' ? 'var(--color-primary)' : 'var(--color-background)',
+          background: 'var(--color-primary)',
           border: '1px solid var(--color-border)',
           borderRadius: 4,
-          color: dpsMode === 'active' ? '#000' : 'var(--color-foreground)',
+          color: '#000',
           cursor: 'pointer',
           whiteSpace: 'nowrap',
+          fontWeight: 600,
         }}
       >
-        {dpsMode === 'active' ? <Activity size={11} /> : <Hourglass size={11} />}
-        {dpsMode === 'active' ? 'Active' : 'Duration'}
+        {dpsModeIcon(dpsMode)}
+        {dpsModeLabel(dpsMode)}
       </button>
 
       {/* Me only toggle */}
@@ -763,8 +786,8 @@ function applyFilters(fights: FightSummary[], filters: FilterState): FightSummar
 function buildFightText(fight: FightSummary, combine: boolean, mode: DPSMode): string {
   const target = fight.primary_target ?? 'Unknown'
   const dur = fmtDuration(fight.duration_seconds)
-  const label = mode === 'active' ? 'aDPS' : 'DPS'
-  const lines: string[] = [`[PQ Companion] Fight: ${target} (${dur})`]
+  const label = dpsModeAbbrev(mode)
+  const lines: string[] = [`[PQ Companion] Fight: ${target} (${dur}) — ${dpsModeLabel(mode)} DPS`]
   const rows = rollupCombatants(fight.combatants, combine, fight.duration_seconds)
   for (const c of rows) {
     lines.push(`${c.name}${petBadge(c.pets)}: ${fmtDPS(dpsForMode(c, mode))} ${label} (${fmt(c.total_damage)} total)`)
