@@ -23,6 +23,7 @@ import type { CombatState, DeathRecord, EntityStats, FightSummary } from '../typ
 import type { LogTailerStatus } from '../types/logEvent'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
 import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, type DPSMode } from '../hooks/useDPSMode'
+import { groupBySession, fmtSessionGap } from '../lib/sessionGrouping'
 
 // dpsModeIcon picks an icon for the current DPS mode that matches the
 // metric's intuition: a single User for Personal, group Activity for Raid,
@@ -393,6 +394,35 @@ function FightRow({
           No combatant data
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Session break divider ─────────────────────────────────────────────────────
+
+// Inline divider rendered between two fights with a >= SESSION_GAP_SECONDS
+// gap. Visual cue only — does not change DPS calculations or the underlying
+// fight order. Same shape as the divider on the Combat History page.
+function SessionBreakRow({ gapSeconds }: { gapSeconds: number }): React.ReactElement {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '6px 14px',
+        backgroundColor: 'var(--color-surface-2)',
+        borderTop: '1px solid var(--color-border)',
+        borderBottom: '1px solid var(--color-border)',
+        fontSize: 10,
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+        color: 'var(--color-muted)',
+      }}
+    >
+      <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
+      <span style={{ whiteSpace: 'nowrap' }}>Session break · {fmtSessionGap(gapSeconds)}</span>
+      <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
     </div>
   )
 }
@@ -965,16 +995,28 @@ export default function CombatLogPage(): React.ReactElement {
           <TableHeader />
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {visibleFights.map((fight, i) => (
-              <FightRow
-                key={fight.start_time}
-                fight={fight}
-                index={i}
-                total={visibleFights.length}
-                combine={combine}
-                mode={dpsMode}
-              />
-            ))}
+            {/* Walk the (newest-first) fight list and intersperse session-
+                break dividers wherever consecutive fights are >= 120s
+                apart. The fight numbering passed to FightRow stays based
+                on the original fights index so dividers don't shift the
+                "Fight #N" labels users see. */}
+            {(() => {
+              const total = visibleFights.length
+              return groupBySession(visibleFights, (f) => f.start_time).map((row) =>
+                row.kind === 'gap' ? (
+                  <SessionBreakRow key={row.key} gapSeconds={row.gapSeconds} />
+                ) : (
+                  <FightRow
+                    key={row.fight.start_time}
+                    fight={row.fight}
+                    index={visibleFights.indexOf(row.fight)}
+                    total={total}
+                    combine={combine}
+                    mode={dpsMode}
+                  />
+                ),
+              )
+            })()}
           </div>
 
           <SessionFooter combat={combat} />

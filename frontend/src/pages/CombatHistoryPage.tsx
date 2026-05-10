@@ -16,11 +16,13 @@ import {
   getCombatHistoryFacets,
 } from '../services/api'
 import type { EntityStats, HealerStats, HistoryFacets, HistoryListResponse, StoredFight } from '../types/combat'
+import { groupBySession, fmtSessionGap } from '../lib/sessionGrouping'
 
 // Page-level pagination size — matches the backend default; chosen so a
 // raid night (~50–200 fights) fits in 1–2 pages without scrolling becoming
 // the only way to navigate.
 const PAGE_SIZE = 50
+
 
 // ── small helpers ─────────────────────────────────────────────────────────────
 
@@ -548,6 +550,35 @@ function FightRow({
   )
 }
 
+// ── session break divider ─────────────────────────────────────────────────────
+
+// SessionBreak renders between two fights separated by more than
+// SESSION_GAP_SECONDS of inactivity. Visual cue only — it does not change
+// any DPS calculations or the ordering of the list.
+function SessionBreak({ gapSeconds }: { gapSeconds: number }): React.ReactElement {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '6px 14px',
+        backgroundColor: 'var(--color-surface-2)',
+        borderTop: '1px solid var(--color-border)',
+        borderBottom: '1px solid var(--color-border)',
+        fontSize: 10,
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+        color: 'var(--color-muted)',
+      }}
+    >
+      <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
+      <span style={{ whiteSpace: 'nowrap' }}>Session break · {fmtSessionGap(gapSeconds)}</span>
+      <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
+    </div>
+  )
+}
+
 // ── pagination ────────────────────────────────────────────────────────────────
 
 function Pagination({
@@ -910,19 +941,23 @@ export default function CombatHistoryPage(): React.ReactElement {
             {empty}
           </div>
         ) : (
-          fights.map((f) => (
-            <FightRow
-              key={f.id}
-              fight={f}
-              onDelete={() =>
-                setConfirm({
-                  kind: 'deleteRow',
-                  id: f.id,
-                  label: `${f.npc_name}${f.zone ? ` in ${f.zone}` : ''}`,
-                })
-              }
-            />
-          ))
+          groupBySession(fights, (f) => String(f.id)).map((row) =>
+            row.kind === 'gap' ? (
+              <SessionBreak key={row.key} gapSeconds={row.gapSeconds} />
+            ) : (
+              <FightRow
+                key={row.fight.id}
+                fight={row.fight}
+                onDelete={() =>
+                  setConfirm({
+                    kind: 'deleteRow',
+                    id: row.fight.id,
+                    label: `${row.fight.npc_name}${row.fight.zone ? ` in ${row.fight.zone}` : ''}`,
+                  })
+                }
+              />
+            ),
+          )
         )}
       </div>
 
