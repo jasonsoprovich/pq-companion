@@ -62,6 +62,12 @@ type EntityStats struct {
 	DPS           float64 `json:"dps"`
 	ActiveDPS     float64 `json:"active_dps"`
 	ActiveSeconds float64 `json:"active_seconds"`
+	// CritCount is the number of "Scores a critical hit!" announcements
+	// matched to a damage event from this actor in the fight.
+	CritCount int `json:"crit_count"`
+	// CritDamage is the sum of damage from those matched crits — useful for
+	// "X% of your damage was from crits" displays.
+	CritDamage int64 `json:"crit_damage"`
 	// OwnerName is the controlling player's name when this entity is a pet
 	// (charmed NPC or summoned pet). Empty for player damage dealers and for
 	// pets whose owner could not be identified.

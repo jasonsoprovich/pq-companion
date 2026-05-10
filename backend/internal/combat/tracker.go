@@ -47,6 +47,8 @@ type internalEntity struct {
 	totalDamage int64
 	hitCount    int
 	maxHit      int
+	critCount   int
+	critDamage  int64
 
 	// Active-time bookkeeping — see noteActivity. activeAccrued holds the
 	// duration of every CLOSED segment; segOpen + (segLast - segStart) is the
@@ -199,7 +201,21 @@ type Tracker struct {
 	// the session — charm rebinds overwrite the entry, and a charm break
 	// clears it lazily when the former pet is seen attacking the player.
 	petOwners map[string]string
+
+	// pendingCrits queues crit-announcement amounts per actor. Project Quarm
+	// emits a "<Actor> Scores a critical hit!(N)" line immediately before the
+	// matching damage line, so we stash the amount keyed by actor and pop it
+	// when the next CombatHit from that actor with the same damage arrives.
+	// Bounded to maxPendingCritsPerActor so a stream of unmatched crits (e.g.
+	// against a target that never gets a fight seeded) can't grow unboundedly.
+	pendingCrits map[string][]int
 }
+
+// maxPendingCritsPerActor caps the per-actor crit queue. In practice the
+// queue should never exceed 1 — the matching damage line lands within
+// microseconds — but a noisy log or a missed correlation shouldn't be able
+// to grow this map without bound.
+const maxPendingCritsPerActor = 8
 
 // NewTracker returns an initialised combat Tracker. playerNameFn may be nil
 // (legacy / test callers) — passing it lets the tracker emit "Osui" instead
@@ -211,6 +227,7 @@ func NewTracker(hub *ws.Hub, playerNameFn PlayerNameProvider) *Tracker {
 		recentFights: []FightSummary{},
 		deaths:       []DeathRecord{},
 		petOwners:    make(map[string]string),
+		pendingCrits: make(map[string][]int),
 	}
 }
 
@@ -303,6 +320,13 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 		}
 		t.recordPetOwner(data.Pet, data.Owner)
 
+	case logparser.EventCritHit:
+		data, ok := ev.Data.(logparser.CritHitData)
+		if !ok {
+			return
+		}
+		t.queuePendingCrit(data.Actor, data.Damage)
+
 	case logparser.EventDeath:
 		slainBy := ""
 		if data, ok := ev.Data.(logparser.DeathData); ok {
@@ -341,6 +365,7 @@ func (t *Tracker) Reset() {
 	t.sessionHeal = 0
 	t.deaths = []DeathRecord{}
 	t.petOwners = make(map[string]string)
+	t.pendingCrits = make(map[string][]int)
 	t.lastArchived = nil
 	t.lastArchivedEnd = time.Time{}
 	snap := t.snapshot(time.Now())
@@ -418,6 +443,10 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	ent.hitCount++
 	if data.Damage > ent.maxHit {
 		ent.maxHit = data.Damage
+	}
+	if t.popPendingCritLocked(data.Actor, data.Damage) {
+		ent.critCount++
+		ent.critDamage += int64(data.Damage)
 	}
 	noteActivityEntity(ent, ts)
 
@@ -501,6 +530,40 @@ func (t *Tracker) recordPetOwner(pet, owner string) {
 	t.mu.Lock()
 	t.petOwners[pet] = owner
 	t.mu.Unlock()
+}
+
+// queuePendingCrit stashes a "Scores a critical hit!(N)" announcement so the
+// next CombatHit from the same actor with damage == N can be marked as a crit.
+// Bounded per-actor to defend against unmatched-crit accumulation.
+func (t *Tracker) queuePendingCrit(actor string, dmg int) {
+	if actor == "" {
+		return
+	}
+	t.mu.Lock()
+	q := t.pendingCrits[actor]
+	if len(q) >= maxPendingCritsPerActor {
+		// Drop the oldest entry to make room for the new one.
+		q = q[1:]
+	}
+	t.pendingCrits[actor] = append(q, dmg)
+	t.mu.Unlock()
+}
+
+// popPendingCritLocked removes the first queued crit amount for actor that
+// matches dmg and returns true. Returns false if no matching pending crit
+// exists. Caller must hold t.mu.
+func (t *Tracker) popPendingCritLocked(actor string, dmg int) bool {
+	q := t.pendingCrits[actor]
+	for i, amt := range q {
+		if amt == dmg {
+			t.pendingCrits[actor] = append(q[:i], q[i+1:]...)
+			if len(t.pendingCrits[actor]) == 0 {
+				delete(t.pendingCrits, actor)
+			}
+			return true
+		}
+	}
+	return false
 }
 
 // recordHeal processes a heal event and accumulates per-healer stats.
@@ -802,6 +865,8 @@ func buildEntityStats(entities map[string]*internalEntity, duration float64) []E
 			DPS:           safeDivide(float64(e.totalDamage), duration),
 			ActiveDPS:     safeDivide(float64(e.totalDamage), active),
 			ActiveSeconds: active,
+			CritCount:     e.critCount,
+			CritDamage:    e.critDamage,
 		})
 	}
 	sort.Slice(stats, func(i, j int) bool {

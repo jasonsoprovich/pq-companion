@@ -63,6 +63,43 @@ func killEvent(killer, target string, ts time.Time) logparser.LogEvent {
 	}
 }
 
+func critEvent(actor string, dmg int, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventCritHit,
+		Timestamp: ts,
+		Data:      logparser.CritHitData{Actor: actor, Damage: dmg},
+	}
+}
+
+func dotTickEvent(target string, dmg int, spell string, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventCombatHit,
+		Timestamp: ts,
+		Data: logparser.CombatHitData{
+			Actor:     "You",
+			Skill:     "dot",
+			Target:    target,
+			Damage:    dmg,
+			SpellName: spell,
+		},
+	}
+}
+
+// requireCombatant locates a named entity in the current fight's combatant
+// list, failing the test when missing. Wrapper around the existing
+// findCombatant helper that asserts the current fight exists.
+func requireCombatant(t *testing.T, st CombatState, name string) *EntityStats {
+	t.Helper()
+	if st.CurrentFight == nil {
+		t.Fatalf("expected CurrentFight to be set when looking up %q", name)
+	}
+	c := findCombatant(st.CurrentFight.Combatants, name)
+	if c == nil {
+		t.Fatalf("combatant %q not found in %d combatants", name, len(st.CurrentFight.Combatants))
+	}
+	return c
+}
+
 func TestNoFightInitially(t *testing.T) {
 	tr := newTestTracker(t)
 	st := tr.GetState()
@@ -1049,5 +1086,130 @@ func TestActiveDPS_SingleHitUsesMinSegment(t *testing.T) {
 	}
 	if c.ActiveDPS != 1000 {
 		t.Errorf("single-hit ActiveDPS: got %v, want 1000 (1000 dmg / 1s)", c.ActiveDPS)
+	}
+}
+
+// TestCritCorrelationMatchesNextDamage exercises the PQ-format crit flow:
+// a "Scores a critical hit!(N)" event is emitted, followed by the matching
+// damage event from the same actor. The crit count and crit damage on the
+// matching combatant should be incremented by exactly one matching hit.
+func TestCritCorrelationMatchesNextDamage(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Crit announcement, then matching damage line — same actor, same amount.
+	tr.Handle(critEvent("You", 201, now))
+	tr.Handle(hitEvent("You", "a gnoll", 201, now))
+	// A second non-crit hit shouldn't bump crit counts.
+	tr.Handle(hitEvent("You", "a gnoll", 50, now.Add(time.Second)))
+
+	st := tr.GetState()
+	c := requireCombatant(t, st, "You")
+	if c.HitCount != 2 {
+		t.Fatalf("HitCount = %d, want 2", c.HitCount)
+	}
+	if c.TotalDamage != 251 {
+		t.Fatalf("TotalDamage = %d, want 251", c.TotalDamage)
+	}
+	if c.CritCount != 1 {
+		t.Fatalf("CritCount = %d, want 1", c.CritCount)
+	}
+	if c.CritDamage != 201 {
+		t.Fatalf("CritDamage = %d, want 201", c.CritDamage)
+	}
+}
+
+// TestCritWithoutMatchingHitNotCounted ensures a crit announcement that
+// never finds a matching damage line doesn't bleed into the next hit and
+// doesn't crash. (PQ doesn't normally produce orphan crit lines, but log
+// truncation or out-of-order events shouldn't corrupt accounting.)
+func TestCritWithoutMatchingHitNotCounted(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Crit announces 100, but the next hit is for a different amount —
+	// the crit stays queued and is never matched.
+	tr.Handle(critEvent("You", 100, now))
+	tr.Handle(hitEvent("You", "a gnoll", 75, now))
+
+	st := tr.GetState()
+	c := requireCombatant(t, st, "You")
+	if c.CritCount != 0 {
+		t.Fatalf("CritCount = %d, want 0 (amount mismatch must not match)", c.CritCount)
+	}
+}
+
+// TestCritMatchesPerActor verifies pending crits don't leak across actors —
+// a crit announcement for one player must not flag the next damage event from
+// a different player.
+func TestCritMatchesPerActor(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Seed a fight so both actors have entities.
+	tr.Handle(hitEvent("Sandrian", "a gnoll", 10, now))
+	tr.Handle(hitEvent("You", "a gnoll", 10, now))
+
+	// Crit announcement for Sandrian, then a same-amount hit by "You" —
+	// should NOT be marked as a crit on "You".
+	tr.Handle(critEvent("Sandrian", 50, now.Add(time.Second)))
+	tr.Handle(hitEvent("You", "a gnoll", 50, now.Add(time.Second)))
+
+	st := tr.GetState()
+	you := requireCombatant(t, st, "You")
+	if you.CritCount != 0 {
+		t.Fatalf("You.CritCount = %d, want 0 (crit was queued for Sandrian)", you.CritCount)
+	}
+
+	// Sandrian's matching hit lands later — that one should be a crit.
+	tr.Handle(hitEvent("Sandrian", "a gnoll", 50, now.Add(2*time.Second)))
+	st = tr.GetState()
+	sandrian := requireCombatant(t, st, "Sandrian")
+	if sandrian.CritCount != 1 {
+		t.Fatalf("Sandrian.CritCount = %d, want 1", sandrian.CritCount)
+	}
+	if sandrian.CritDamage != 50 {
+		t.Fatalf("Sandrian.CritDamage = %d, want 50", sandrian.CritDamage)
+	}
+}
+
+// TestPendingCritsBounded confirms the per-actor pending-crit queue is capped
+// so a stream of unmatched crits can't grow without bound.
+func TestPendingCritsBounded(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Push more than the cap; ensure the queue length stays bounded.
+	for i := 0; i < maxPendingCritsPerActor*3; i++ {
+		tr.Handle(critEvent("Spammer", i+1, now))
+	}
+	tr.mu.Lock()
+	got := len(tr.pendingCrits["Spammer"])
+	tr.mu.Unlock()
+	if got != maxPendingCritsPerActor {
+		t.Fatalf("pendingCrits[Spammer] length = %d, want %d", got, maxPendingCritsPerActor)
+	}
+}
+
+// TestDoTTickAttributedToYou verifies the new DoT tick event flows through
+// the tracker as outgoing damage credited to "You", same as other player
+// damage. The spell name on the event is informational and shouldn't affect
+// accounting.
+func TestDoTTickAttributedToYou(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Seed the fight with a direct hit so a fight exists, then add DoT ticks.
+	tr.Handle(hitEvent("You", "a goblin", 50, now))
+	tr.Handle(dotTickEvent("a goblin", 48, "Asphyxiate", now.Add(6*time.Second)))
+	tr.Handle(dotTickEvent("a goblin", 48, "Asphyxiate", now.Add(12*time.Second)))
+
+	st := tr.GetState()
+	you := requireCombatant(t, st, "You")
+	if you.TotalDamage != 50+48+48 {
+		t.Fatalf("TotalDamage = %d, want %d", you.TotalDamage, 50+48+48)
+	}
+	if you.HitCount != 3 {
+		t.Fatalf("HitCount = %d, want 3 (1 melee + 2 dot ticks)", you.HitCount)
 	}
 }

@@ -102,6 +102,8 @@ export function rollupCombatants(
       dps: fightDuration > 0 ? totalDamage / fightDuration : 0,
       active_dps: activeSecs > 0 ? totalDamage / activeSecs : 0,
       active_seconds: activeSecs,
+      crit_count: owner.crit_count + sumCrits(pets),
+      crit_damage: owner.crit_damage + sumCritDamage(pets),
       pets,
     })
   }
@@ -122,6 +124,8 @@ export function rollupCombatants(
       dps: fightDuration > 0 ? totalDamage / fightDuration : 0,
       active_dps: activeSecs > 0 ? totalDamage / activeSecs : 0,
       active_seconds: activeSecs,
+      crit_count: sumCrits(pets),
+      crit_damage: sumCritDamage(pets),
       pets,
     })
   }
@@ -139,6 +143,18 @@ function sumDamage(pets: EntityStats[]): number {
 function sumHits(pets: EntityStats[]): number {
   let s = 0
   for (const p of pets) s += p.hit_count
+  return s
+}
+
+function sumCrits(pets: EntityStats[]): number {
+  let s = 0
+  for (const p of pets) s += p.crit_count
+  return s
+}
+
+function sumCritDamage(pets: EntityStats[]): number {
+  let s = 0
+  for (const p of pets) s += p.crit_damage
   return s
 }
 

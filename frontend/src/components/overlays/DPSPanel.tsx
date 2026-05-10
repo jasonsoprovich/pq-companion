@@ -39,9 +39,20 @@ function buildFightText(fight: FightState, combine: boolean, mode: DPSMode): str
   const lines: string[] = [`[PQ Companion] Fight: ${target} (${dur})`]
   const rows = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
   for (const c of rows) {
-    lines.push(`${c.name}${petBadge(c.pets)}: ${fmtRate(dpsForMode(c, mode))} ${label} (${fmt(c.total_damage)} total)`)
+    const crit = c.crit_count > 0
+      ? `, ${c.crit_count} crit${c.crit_count !== 1 ? 's' : ''} for ${fmt(c.crit_damage)}`
+      : ''
+    lines.push(`${c.name}${petBadge(c.pets)}: ${fmtRate(dpsForMode(c, mode))} ${label} (${fmt(c.total_damage)} total${crit})`)
   }
   return lines.join('\n')
+}
+
+function rowTooltip(stat: RolledUpEntity): string {
+  const parts = [`${stat.hit_count} hit${stat.hit_count !== 1 ? 's' : ''}`, `max ${fmt(stat.max_hit)}`]
+  if (stat.crit_count > 0) {
+    parts.push(`${stat.crit_count} crit${stat.crit_count !== 1 ? 's' : ''} (${fmt(stat.crit_damage)} dmg)`)
+  }
+  return parts.join(' · ')
 }
 
 function CopyFightButton({ fight, combine, mode }: { fight: FightState | null; combine: boolean; mode: DPSMode }): React.ReactElement {
@@ -185,6 +196,7 @@ function DPSRow({ stat, totalDamage, isYou, expanded, onToggle, mode }: { stat: 
     <div style={{ flexShrink: 0 }}>
       <div
         onClick={hasPets ? onToggle : undefined}
+        title={rowTooltip(stat)}
         style={{
           position: 'relative', padding: '5px 10px',
           display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '0 10px',

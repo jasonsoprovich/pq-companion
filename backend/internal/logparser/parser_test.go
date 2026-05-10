@@ -1,6 +1,9 @@
 package logparser
 
 import (
+	"bufio"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -241,6 +244,43 @@ func TestParseLine(t *testing.T) {
 			wantOK:   true,
 			wantType: EventCombatHit,
 			wantData: CombatHitData{Actor: "Gormak", Skill: "spell", Target: "Gormak", Damage: 50},
+		},
+
+		// --- Combat: DoT tick (PQ "from your" form) ---
+		// Project Quarm only logs the local player's own DoT ticks; ticks
+		// from other casters are server-side and never appear in this log.
+		// The spell name is always present, so attribution is unambiguous.
+		{
+			name:     "combat: DoT tick from your spell",
+			line:     "[Mon Apr 13 06:00:00 2026] Pli Thall Xakra has taken 48 damage from your Asphyxiate.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "You", Skill: "dot", Target: "Pli Thall Xakra", Damage: 48, SpellName: "Asphyxiate"},
+		},
+		{
+			name:     "combat: DoT tick multi-word spell",
+			line:     "[Mon Apr 13 06:00:00 2026] a goblin has taken 12 damage from your Disease Cloud.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "You", Skill: "dot", Target: "a goblin", Damage: 12, SpellName: "Disease Cloud"},
+		},
+
+		// --- Combat: critical hit announcement (PQ standalone form) ---
+		// Emitted on its own line immediately before the matching damage
+		// line. Surfaced as a distinct event so the tracker can correlate.
+		{
+			name:     "combat: PQ-format critical hit",
+			line:     "[Mon Apr 13 06:00:00 2026] Sandrian Scores a critical hit!(62)",
+			wantOK:   true,
+			wantType: EventCritHit,
+			wantData: CritHitData{Actor: "Sandrian", Damage: 62},
+		},
+		{
+			name:     "combat: PQ-format critical hit large damage",
+			line:     "[Mon Apr 13 06:00:00 2026] Muadib Scores a critical hit!(2014)",
+			wantOK:   true,
+			wantType: EventCritHit,
+			wantData: CritHitData{Actor: "Muadib", Damage: 2014},
 		},
 
 		// --- Combat: NPC hits player ---
@@ -628,7 +668,70 @@ func compareData(t *testing.T, got, want interface{}) {
 		if g != w {
 			t.Errorf("PetOwnerData = %+v, want %+v", g, w)
 		}
+	case CritHitData:
+		g, ok := got.(CritHitData)
+		if !ok {
+			t.Fatalf("Data type = %T, want CritHitData", got)
+		}
+		if g != w {
+			t.Errorf("CritHitData = %+v, want %+v", g, w)
+		}
 	default:
 		t.Fatalf("compareData: unhandled want type %T", want)
+	}
+}
+
+// TestRealOsuiLogPhase1Coverage streams the real Osui (Enchanter) log file
+// through ParseLine and asserts the Phase 1 patterns are picked up at the
+// counts a manual grep produced. Skipped when the gitignored testdata
+// fixture is not present (e.g. CI). Counts are intentionally exact so a
+// regression in the regexes (e.g. an over-eager guard rejecting valid
+// lines) fails loudly.
+func TestRealOsuiLogPhase1Coverage(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "testdata", "eqlog_Osui_pq.proj.txt")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skipf("testdata fixture %s not present", path)
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open log: %v", err)
+	}
+	defer f.Close()
+
+	const (
+		// Counts established by `grep -c ... testdata/eqlog_Osui_pq.proj.txt`
+		// at the time the Phase 1 patterns were added.
+		wantDoTTicks    = 68
+		wantCritEvents  = 4374
+	)
+
+	dotCount, critCount := 0, 0
+	scanner := bufio.NewScanner(f)
+	// Some log lines (long /tells, raid messages) exceed bufio's default
+	// 64 KiB buffer; bump to 1 MiB so they don't truncate.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		ev, ok := ParseLine(scanner.Text())
+		if !ok {
+			continue
+		}
+		switch ev.Type {
+		case EventCombatHit:
+			if d, ok := ev.Data.(CombatHitData); ok && d.Skill == "dot" {
+				dotCount++
+			}
+		case EventCritHit:
+			critCount++
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if dotCount != wantDoTTicks {
+		t.Errorf("DoT tick events: got %d, want %d", dotCount, wantDoTTicks)
+	}
+	if critCount != wantCritEvents {
+		t.Errorf("EventCritHit events: got %d, want %d", critCount, wantCritEvents)
 	}
 }

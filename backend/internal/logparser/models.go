@@ -74,6 +74,14 @@ const (
 	// EQ does not name the specific illusion in either message; consumers
 	// remove every active "Illusion: …" timer on the active player.
 	EventIllusionFade EventType = "log:illusion_fade"
+
+	// EventCritHit is emitted when an actor scores a critical hit. Project
+	// Quarm / EQMac log this on a separate line preceding the actual damage
+	// line ("Sandrian Scores a critical hit!(62)" → "Sandrian slashes Zun
+	// Thall for 62 points of damage."). Consumers correlate by actor + amount
+	// to flag the matching CombatHit as a crit; a standalone count of crits
+	// per actor is also useful for Phase 1 stats.
+	EventCritHit EventType = "log:crit_hit"
 )
 
 // LogEvent is the parsed representation of a single EQ log line.
@@ -93,12 +101,17 @@ type ZoneData struct {
 type CombatHitData struct {
 	// Actor is "You" for player-initiated hits, or the NPC display name.
 	Actor string `json:"actor"`
-	// Skill is the attack verb (slash, pierce, bash, hit, etc.).
+	// Skill is the attack verb (slash, pierce, bash, hit, etc.) or a generic
+	// damage-source label ("spell", "dot") when the line is a non-melee form.
 	Skill string `json:"skill"`
 	// Target is the entity that was hit.
 	Target string `json:"target"`
 	// Damage is the number of hit points dealt.
 	Damage int `json:"damage"`
+	// SpellName is the originating spell for spell- or DoT-tick damage. Empty
+	// for melee hits and for non-melee lines that omit the spell name (e.g.
+	// the bare "X was hit by non-melee for N" form).
+	SpellName string `json:"spell_name,omitempty"`
 }
 
 // CombatMissData is the structured payload for EventCombatMiss.
@@ -219,3 +232,12 @@ type PetOwnerData struct {
 // race, so consumers handle this by removing every illusion timer on the
 // active player.
 type IllusionFadeData struct{}
+
+// CritHitData is the structured payload for EventCritHit. PQ's "Scores a
+// critical hit!(N)" line names only the actor and the crit damage amount —
+// the target and skill are inferred from the immediately-following CombatHit
+// from the same actor whose damage matches.
+type CritHitData struct {
+	Actor  string `json:"actor"`
+	Damage int    `json:"damage"`
+}

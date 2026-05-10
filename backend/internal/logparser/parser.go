@@ -87,6 +87,20 @@ var (
 	// "A Shissar Arch Arcanist hit Takkisina for 640 points of non-melee damage."
 	reNonMeleeHit = regexp.MustCompile(`^(.+?) hit (.+) for (\d+) points? of non-melee damage\.$`)
 
+	// DoT tick — Project Quarm / EQMac log only the local player's own DoTs
+	// in this format; ticks from other casters are server-side and never
+	// appear in this log file. The spell name is always present, so no
+	// "recently cast" cache lookup is needed.
+	//   "Pli Thall Xakra has taken 48 damage from your Asphyxiate."
+	reDoTTickFromYou = regexp.MustCompile(`^(.+?) has taken (\d+) damage from your (.+)\.$`)
+
+	// Critical hit announcement — emitted on its own line immediately before
+	// the matching damage line, e.g.:
+	//   "Sandrian Scores a critical hit!(62)"
+	//   "Sandrian slashes Zun Thall for 62 points of damage."
+	// Consumers correlate by actor name and amount.
+	reCritHit = regexp.MustCompile(`^(\w+) Scores a critical hit!\((\d+)\)$`)
+
 	// /con output — EQ's consider system. The NPC name precedes a fixed set of
 	// disposition phrases. Ordered longest-first so "warmly regards you" and
 	// "kindly regards you" are tried before the shorter "regards you".
@@ -305,6 +319,34 @@ func classifyMessage(msg string) (LogEvent, bool) {
 				Target: m[1],
 				Damage: dmg,
 			},
+		}, true
+	}
+
+	// --- DoT tick (player's own DoT) ---
+	// Tried before reNonMeleeHit so the "from your <Spell>" form isn't
+	// considered as a candidate for that pattern.
+	if m := reDoTTickFromYou.FindStringSubmatch(msg); m != nil {
+		dmg, _ := strconv.Atoi(m[2])
+		return LogEvent{
+			Type: EventCombatHit,
+			Data: CombatHitData{
+				Actor:     "You",
+				Skill:     "dot",
+				Target:    m[1],
+				Damage:    dmg,
+				SpellName: m[3],
+			},
+		}, true
+	}
+
+	// --- Critical hit announcement (PQ / EQMac standalone form) ---
+	// Emitted before the matching damage line; we surface it as its own event
+	// so the tracker can correlate with the next CombatHit from this actor.
+	if m := reCritHit.FindStringSubmatch(msg); m != nil {
+		dmg, _ := strconv.Atoi(m[2])
+		return LogEvent{
+			Type: EventCritHit,
+			Data: CritHitData{Actor: m[1], Damage: dmg},
 		}, true
 	}
 

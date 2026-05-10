@@ -9,6 +9,11 @@ export interface EntityStats {
   dps: number
   active_dps: number
   active_seconds: number
+  // crit_count   — number of "Scores a critical hit!" lines matched to a
+  //                damage event from this actor in the fight.
+  // crit_damage  — sum of damage from those matched crit hits.
+  crit_count: number
+  crit_damage: number
   // Controlling player's name when this entity is a pet (charmed NPC or
   // summoned pet). Empty/undefined for player damage dealers and for pets
   // whose owner could not be identified.
