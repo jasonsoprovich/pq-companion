@@ -230,6 +230,50 @@ func TestDeleteFightAndDeleteAll(t *testing.T) {
 	}
 }
 
+func TestFacetsReturnsDistinctSortedNonEmpty(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now()
+
+	// Three characters, two zones; an empty-zone row to verify the WHERE
+	// filter drops blanks rather than surfacing them as empty options.
+	for _, row := range []struct {
+		npc, zone, char string
+	}{
+		{"a gnoll", "East Karana", "Osui"},
+		{"a wolf", "East Karana", "Osui"},
+		{"Aten Ha Ra", "The Hole", "Nariana"},
+		{"a kobold", "", "Osui"},  // empty zone: should not appear in zones
+		{"a goblin", "Mistmoore", ""}, // empty character: not in characters
+	} {
+		if _, err := s.SaveFight(sampleFight(row.npc, now), row.zone, row.char); err != nil {
+			t.Fatalf("SaveFight: %v", err)
+		}
+	}
+
+	f, err := s.Facets()
+	if err != nil {
+		t.Fatalf("Facets: %v", err)
+	}
+	wantChars := []string{"Nariana", "Osui"} // sorted, no empty
+	if len(f.Characters) != len(wantChars) {
+		t.Fatalf("Characters = %v, want %v", f.Characters, wantChars)
+	}
+	for i := range wantChars {
+		if f.Characters[i] != wantChars[i] {
+			t.Errorf("Characters[%d] = %q, want %q", i, f.Characters[i], wantChars[i])
+		}
+	}
+	wantZones := []string{"East Karana", "Mistmoore", "The Hole"}
+	if len(f.Zones) != len(wantZones) {
+		t.Fatalf("Zones = %v, want %v", f.Zones, wantZones)
+	}
+	for i := range wantZones {
+		if f.Zones[i] != wantZones[i] {
+			t.Errorf("Zones[%d] = %q, want %q", i, f.Zones[i], wantZones[i])
+		}
+	}
+}
+
 func TestCount(t *testing.T) {
 	s := newTestStore(t)
 	now := time.Now()

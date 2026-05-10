@@ -277,6 +277,53 @@ func (s *HistoryStore) PruneOlderThan(cutoff time.Time) (int64, error) {
 	return res.RowsAffected()
 }
 
+// HistoryFacets is the set of distinct values currently in the combat
+// history table, used to populate filter dropdowns in the UI. Both lists
+// are sorted alphabetically for stable rendering.
+type HistoryFacets struct {
+	Characters []string `json:"characters"`
+	Zones      []string `json:"zones"`
+}
+
+// Facets returns the distinct character_name and zone values present in
+// combat_fights. Empty strings are dropped so old rows that predate the
+// per-row character/zone columns don't surface as blank dropdown entries.
+func (s *HistoryStore) Facets() (HistoryFacets, error) {
+	out := HistoryFacets{Characters: []string{}, Zones: []string{}}
+
+	rows, err := s.db.Query(`SELECT DISTINCT character_name FROM combat_fights WHERE character_name != '' ORDER BY character_name COLLATE NOCASE`)
+	if err != nil {
+		return out, fmt.Errorf("query characters: %w", err)
+	}
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			rows.Close()
+			return out, err
+		}
+		out.Characters = append(out.Characters, v)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return out, err
+	}
+	rows.Close()
+
+	rows, err = s.db.Query(`SELECT DISTINCT zone FROM combat_fights WHERE zone != '' ORDER BY zone COLLATE NOCASE`)
+	if err != nil {
+		return out, fmt.Errorf("query zones: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return out, err
+		}
+		out.Zones = append(out.Zones, v)
+	}
+	return out, rows.Err()
+}
+
 // Count returns the total number of fights currently stored. Used by the
 // list endpoint when the caller asks for a total (so the UI can render
 // pagination controls).

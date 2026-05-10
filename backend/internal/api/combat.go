@@ -100,6 +100,23 @@ func (h *combatHandler) historyDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// historyFacets handles GET /api/combat/history/facets.
+// Returns distinct character and zone values present in the saved fights so
+// the UI can populate filter dropdowns without the user having to remember
+// exact spellings.
+func (h *combatHandler) historyFacets(w http.ResponseWriter, r *http.Request) {
+	if h.historyStore == nil {
+		writeError(w, http.StatusServiceUnavailable, "combat history disabled")
+		return
+	}
+	f, err := h.historyStore.Facets()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, f)
+}
+
 // historyClear handles DELETE /api/combat/history.
 // Wipes the entire saved fight history. Intended for the "Clear History"
 // button on the history page; the tracker's in-memory state is unaffected.

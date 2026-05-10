@@ -109,6 +109,14 @@ export interface HistoryListResponse {
   offset: number
 }
 
+// HistoryFacets is the shape returned by GET /api/combat/history/facets —
+// distinct character names and zones present in the saved fights, used to
+// populate filter dropdowns instead of free-text inputs.
+export interface HistoryFacets {
+  characters: string[]
+  zones: string[]
+}
+
 // HistoryFilter mirrors the backend's FightFilter; every field is optional
 // and zero-values mean "no filter" for that field.
 export interface HistoryFilter {

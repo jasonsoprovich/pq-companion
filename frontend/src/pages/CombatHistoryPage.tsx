@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  AlertCircle,
   Archive,
   ChevronDown,
   ChevronRight,
@@ -12,8 +13,9 @@ import {
   listCombatHistory,
   deleteCombatHistoryFight,
   clearCombatHistory,
+  getCombatHistoryFacets,
 } from '../services/api'
-import type { EntityStats, HealerStats, HistoryListResponse, StoredFight } from '../types/combat'
+import type { EntityStats, HealerStats, HistoryFacets, HistoryListResponse, StoredFight } from '../types/combat'
 
 // Page-level pagination size — matches the backend default; chosen so a
 // raid night (~50–200 fights) fits in 1–2 pages without scrolling becoming
@@ -53,19 +55,74 @@ function pct(part: number, total: number): string {
 
 // ── filter form ───────────────────────────────────────────────────────────────
 
+// DatePreset drives the date-range filter. The named windows compute their
+// bounds at query time relative to "now"; "custom" reads the date pickers;
+// "all" sends no date bound. Default is "7d" — covers a typical week of
+// raiding without hammering the user with thousands of trash fights, and
+// fits inside the 30-day retention default without surprises.
+type DatePreset = '24h' | '7d' | '30d' | 'custom' | 'all'
+
 interface UIFilter {
   npc: string
   character: string
   zone: string
-  // YYYY-MM-DD strings from <input type=date>; converted to RFC3339 at fetch.
+  preset: DatePreset
+  // Only consulted when preset === 'custom'.
   startDate: string
   endDate: string
 }
 
-const EMPTY_FILTER: UIFilter = { npc: '', character: '', zone: '', startDate: '', endDate: '' }
+const EMPTY_FILTER: UIFilter = {
+  npc: '',
+  character: '',
+  zone: '',
+  preset: '7d',
+  startDate: '',
+  endDate: '',
+}
+
+// resolveDateRange converts a UIFilter into the start/end RFC3339 strings
+// the backend expects. Returns undefined for missing bounds. For named
+// presets, the start is "now minus N" and the end is left open so freshly-
+// archived fights show up immediately.
+function resolveDateRange(f: UIFilter): { start?: string; end?: string } {
+  if (f.preset === 'all') return {}
+  if (f.preset === 'custom') {
+    return {
+      start: f.startDate ? new Date(f.startDate + 'T00:00:00').toISOString() : undefined,
+      end: f.endDate ? new Date(f.endDate + 'T23:59:59').toISOString() : undefined,
+    }
+  }
+  const now = new Date()
+  const back = new Date(now)
+  switch (f.preset) {
+    case '24h':
+      back.setHours(back.getHours() - 24)
+      break
+    case '7d':
+      back.setDate(back.getDate() - 7)
+      break
+    case '30d':
+      back.setDate(back.getDate() - 30)
+      break
+  }
+  return { start: back.toISOString() }
+}
+
+// PRESETS drives the date-range pill row. Order matters — narrowest to
+// widest, with "all" as the escape hatch and "custom" enabling manual
+// date pickers below.
+const PRESETS: { value: DatePreset; label: string }[] = [
+  { value: '24h', label: 'Last 24h' },
+  { value: '7d', label: 'Last 7d' },
+  { value: '30d', label: 'Last 30d' },
+  { value: 'all', label: 'All' },
+  { value: 'custom', label: 'Custom' },
+]
 
 function FilterBar({
   filter,
+  facets,
   onChange,
   onApply,
   onClear,
@@ -73,162 +130,113 @@ function FilterBar({
   onDeleteAll,
 }: {
   filter: UIFilter
+  facets: HistoryFacets
   onChange: (f: UIFilter) => void
   onApply: () => void
   onClear: () => void
   onRefresh: () => void
   onDeleteAll: () => void
 }): React.ReactElement {
+  const inputStyle: React.CSSProperties = {
+    padding: '4px 8px',
+    fontSize: 11,
+    background: 'var(--color-background)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 4,
+    color: 'var(--color-foreground)',
+    cursor: 'pointer',
+  }
   return (
     <div
       style={{
         display: 'flex',
-        alignItems: 'center',
+        flexDirection: 'column',
         gap: 8,
         padding: '8px 14px',
         borderBottom: '1px solid var(--color-border)',
         backgroundColor: 'var(--color-surface-2)',
         flexShrink: 0,
-        flexWrap: 'wrap',
       }}
     >
-      {/* NPC search */}
-      <div style={{ position: 'relative', flex: '1 1 180px', minWidth: 140, maxWidth: 240 }}>
-        <Search
-          size={11}
-          style={{ position: 'absolute', left: 7, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-muted)', pointerEvents: 'none' }}
-        />
-        <input
-          type="text"
-          placeholder="NPC name…"
-          value={filter.npc}
-          onChange={(e) => onChange({ ...filter, npc: e.target.value })}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') onApply()
-          }}
+      {/* Row 1 — search + identity dropdowns + actions */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '1 1 180px', minWidth: 140, maxWidth: 240 }}>
+          <Search
+            size={11}
+            style={{ position: 'absolute', left: 7, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-muted)', pointerEvents: 'none' }}
+          />
+          <input
+            type="text"
+            placeholder="NPC name…"
+            value={filter.npc}
+            onChange={(e) => onChange({ ...filter, npc: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onApply()
+            }}
+            style={{
+              width: '100%',
+              paddingLeft: 22,
+              paddingRight: 8,
+              paddingTop: 4,
+              paddingBottom: 4,
+              fontSize: 11,
+              background: 'var(--color-background)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 4,
+              color: 'var(--color-foreground)',
+              outline: 'none',
+              boxSizing: 'border-box',
+            }}
+          />
+        </div>
+
+        <select
+          value={filter.character}
+          onChange={(e) => onChange({ ...filter, character: e.target.value })}
+          title="Character"
+          style={{ ...inputStyle, minWidth: 130 }}
+        >
+          <option value="">All characters</option>
+          {facets.characters.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={filter.zone}
+          onChange={(e) => onChange({ ...filter, zone: e.target.value })}
+          title="Zone"
+          style={{ ...inputStyle, minWidth: 150 }}
+        >
+          <option value="">All zones</option>
+          {facets.zones.map((z) => (
+            <option key={z} value={z}>
+              {z}
+            </option>
+          ))}
+        </select>
+
+        <button
+          onClick={onApply}
           style={{
-            width: '100%',
-            paddingLeft: 22,
-            paddingRight: 8,
-            paddingTop: 4,
-            paddingBottom: 4,
+            padding: '4px 10px',
             fontSize: 11,
-            background: 'var(--color-background)',
+            background: 'var(--color-primary)',
             border: '1px solid var(--color-border)',
             borderRadius: 4,
-            color: 'var(--color-foreground)',
-            outline: 'none',
-            boxSizing: 'border-box',
+            color: '#000',
+            cursor: 'pointer',
+            fontWeight: 600,
           }}
-        />
-      </div>
+        >
+          Apply
+        </button>
 
-      <input
-        type="text"
-        placeholder="Character"
-        value={filter.character}
-        onChange={(e) => onChange({ ...filter, character: e.target.value })}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') onApply()
-        }}
-        style={{
-          width: 110,
-          padding: '4px 8px',
-          fontSize: 11,
-          background: 'var(--color-background)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 4,
-          color: 'var(--color-foreground)',
-        }}
-      />
-
-      <input
-        type="text"
-        placeholder="Zone"
-        value={filter.zone}
-        onChange={(e) => onChange({ ...filter, zone: e.target.value })}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') onApply()
-        }}
-        style={{
-          width: 110,
-          padding: '4px 8px',
-          fontSize: 11,
-          background: 'var(--color-background)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 4,
-          color: 'var(--color-foreground)',
-        }}
-      />
-
-      <input
-        type="date"
-        value={filter.startDate}
-        onChange={(e) => onChange({ ...filter, startDate: e.target.value })}
-        title="Start date"
-        style={{
-          padding: '3px 6px',
-          fontSize: 11,
-          background: 'var(--color-background)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 4,
-          color: 'var(--color-foreground)',
-        }}
-      />
-      <input
-        type="date"
-        value={filter.endDate}
-        onChange={(e) => onChange({ ...filter, endDate: e.target.value })}
-        title="End date"
-        style={{
-          padding: '3px 6px',
-          fontSize: 11,
-          background: 'var(--color-background)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 4,
-          color: 'var(--color-foreground)',
-        }}
-      />
-
-      <button
-        onClick={onApply}
-        style={{
-          padding: '4px 10px',
-          fontSize: 11,
-          background: 'var(--color-primary)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 4,
-          color: '#000',
-          cursor: 'pointer',
-          fontWeight: 600,
-        }}
-      >
-        Apply
-      </button>
-
-      <button
-        onClick={onClear}
-        title="Clear filters"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          padding: '4px 8px',
-          fontSize: 11,
-          background: 'var(--color-background)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 4,
-          color: 'var(--color-muted)',
-          cursor: 'pointer',
-        }}
-      >
-        <X size={11} /> Reset
-      </button>
-
-      <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
         <button
-          onClick={onRefresh}
-          title="Refresh from server"
+          onClick={onClear}
+          title="Reset all filters"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -242,27 +250,108 @@ function FilterBar({
             cursor: 'pointer',
           }}
         >
-          <RefreshCw size={11} /> Refresh
+          <X size={11} /> Reset
         </button>
 
-        <button
-          onClick={onDeleteAll}
-          title="Delete ALL saved fights"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '4px 8px',
-            fontSize: 11,
-            background: 'var(--color-background)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 4,
-            color: '#ef4444',
-            cursor: 'pointer',
-          }}
-        >
-          <Trash2 size={11} /> Clear all
-        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <button
+            onClick={onRefresh}
+            title="Refresh from server"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 8px',
+              fontSize: 11,
+              background: 'var(--color-background)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 4,
+              color: 'var(--color-muted)',
+              cursor: 'pointer',
+            }}
+          >
+            <RefreshCw size={11} /> Refresh
+          </button>
+
+          <button
+            onClick={onDeleteAll}
+            title="Delete ALL saved fights"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 8px',
+              fontSize: 11,
+              background: 'var(--color-background)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 4,
+              color: '#ef4444',
+              cursor: 'pointer',
+            }}
+          >
+            <Trash2 size={11} /> Clear all
+          </button>
+        </div>
+      </div>
+
+      {/* Row 2 — date-range presets + custom date pickers */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, color: 'var(--color-muted)', marginRight: 4 }}>Range:</span>
+        {PRESETS.map((p) => {
+          const active = filter.preset === p.value
+          return (
+            <button
+              key={p.value}
+              onClick={() => onChange({ ...filter, preset: p.value })}
+              style={{
+                padding: '3px 10px',
+                fontSize: 11,
+                background: active ? 'var(--color-primary)' : 'var(--color-background)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 4,
+                color: active ? '#000' : 'var(--color-foreground)',
+                cursor: 'pointer',
+                fontWeight: active ? 600 : 400,
+              }}
+            >
+              {p.label}
+            </button>
+          )
+        })}
+        {filter.preset === 'custom' && (
+          <>
+            <input
+              type="date"
+              value={filter.startDate}
+              onChange={(e) => onChange({ ...filter, startDate: e.target.value })}
+              title="Start date"
+              style={{
+                padding: '3px 6px',
+                fontSize: 11,
+                background: 'var(--color-background)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 4,
+                color: 'var(--color-foreground)',
+                marginLeft: 6,
+              }}
+            />
+            <span style={{ fontSize: 11, color: 'var(--color-muted)' }}>→</span>
+            <input
+              type="date"
+              value={filter.endDate}
+              onChange={(e) => onChange({ ...filter, endDate: e.target.value })}
+              title="End date"
+              style={{
+                padding: '3px 6px',
+                fontSize: 11,
+                background: 'var(--color-background)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 4,
+                color: 'var(--color-foreground)',
+              }}
+            />
+          </>
+        )}
       </div>
     </div>
   )
@@ -527,28 +616,132 @@ function Pagination({
   )
 }
 
+// ── confirm modal ─────────────────────────────────────────────────────────────
+
+// ConfirmModal mirrors the themed confirmation pattern used elsewhere in
+// the app (see TriggersPage). Backdrop closes; Escape isn't bound because
+// React's modal patterns here don't use it consistently and adding only
+// here would be inconsistent.
+function ConfirmModal({
+  title,
+  body,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+}: {
+  title: string
+  body: string
+  confirmLabel: string
+  onCancel: () => void
+  onConfirm: () => void
+}): React.ReactElement {
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="rounded-lg p-4 space-y-3"
+        style={{
+          backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+          width: '100%',
+          maxWidth: 420,
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <AlertCircle size={16} style={{ color: 'var(--color-danger)' }} />
+          <p className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+            {title}
+          </p>
+        </div>
+        <p className="text-xs leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>
+          {body}
+        </p>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            onClick={onCancel}
+            className="text-xs px-3 py-1.5 rounded font-medium"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="text-xs px-3 py-1.5 rounded font-medium"
+            style={{
+              backgroundColor: 'var(--color-danger)',
+              color: '#fff',
+              border: '1px solid transparent',
+            }}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ConfirmAction discriminates the two destructive actions on this page —
+// per-row delete (carries the target id and a label for the body) and
+// clear-all (no payload). null means no modal showing.
+type ConfirmAction =
+  | { kind: 'deleteRow'; id: number; label: string }
+  | { kind: 'clearAll' }
+  | null
+
 // ── page ──────────────────────────────────────────────────────────────────────
 
 export default function CombatHistoryPage(): React.ReactElement {
   const [filter, setFilter] = useState<UIFilter>(EMPTY_FILTER)
   // appliedFilter is what's in flight to the backend; filter tracks the form
-  // so typing doesn't refetch on every keystroke.
+  // so typing doesn't refetch on every keystroke. Date-preset changes apply
+  // immediately though — see the effect below.
   const [appliedFilter, setAppliedFilter] = useState<UIFilter>(EMPTY_FILTER)
   const [offset, setOffset] = useState(0)
   const [data, setData] = useState<HistoryListResponse | null>(null)
+  const [facets, setFacets] = useState<HistoryFacets>({ characters: [], zones: [] })
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [confirm, setConfirm] = useState<ConfirmAction>(null)
+
+  // Fetch the dropdown facets once on mount. They refresh after a destructive
+  // action below so a now-empty character no longer shows up as an option.
+  const refreshFacets = useCallback(() => {
+    getCombatHistoryFacets()
+      .then(setFacets)
+      .catch(() => {
+        // Non-fatal — dropdowns just stay empty.
+      })
+  }, [])
+  useEffect(() => {
+    refreshFacets()
+  }, [refreshFacets])
 
   const fetchPage = useCallback(() => {
     setLoading(true)
+    const range = resolveDateRange(appliedFilter)
     listCombatHistory({
       npc: appliedFilter.npc || undefined,
       character: appliedFilter.character || undefined,
       zone: appliedFilter.zone || undefined,
-      // <input type=date> gives YYYY-MM-DD; treat as the user's local
-      // midnight and convert to RFC3339. End date is inclusive of the day.
-      start: appliedFilter.startDate ? new Date(appliedFilter.startDate + 'T00:00:00').toISOString() : undefined,
-      end: appliedFilter.endDate ? new Date(appliedFilter.endDate + 'T23:59:59').toISOString() : undefined,
+      start: range.start,
+      end: range.end,
       limit: PAGE_SIZE,
       offset,
     })
@@ -564,6 +757,17 @@ export default function CombatHistoryPage(): React.ReactElement {
     fetchPage()
   }, [fetchPage])
 
+  // Pill clicks on the date-preset row apply immediately — they're a single
+  // tap, no Apply button needed. Other fields still wait for Apply / Enter.
+  useEffect(() => {
+    if (filter.preset !== appliedFilter.preset) {
+      setOffset(0)
+      setAppliedFilter((prev) => ({ ...prev, preset: filter.preset, startDate: filter.startDate, endDate: filter.endDate }))
+    }
+    // Custom-mode date edits apply on Apply, not on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter.preset])
+
   const handleApply = useCallback(() => {
     setOffset(0)
     setAppliedFilter(filter)
@@ -575,18 +779,20 @@ export default function CombatHistoryPage(): React.ReactElement {
     setAppliedFilter(EMPTY_FILTER)
   }, [])
 
-  const handleDeleteRow = useCallback(
-    (id: number) => {
-      if (!window.confirm('Delete this fight from history?')) return
-      deleteCombatHistoryFight(id).then(fetchPage).catch((e) => setError(e.message ?? String(e)))
-    },
-    [fetchPage],
-  )
-
-  const handleDeleteAll = useCallback(() => {
-    if (!window.confirm('Delete ALL saved fights? This cannot be undone.')) return
-    clearCombatHistory().then(fetchPage).catch((e) => setError(e.message ?? String(e)))
-  }, [fetchPage])
+  const handleConfirm = useCallback(() => {
+    if (!confirm) return
+    const action = confirm
+    setConfirm(null)
+    const after = (): void => {
+      fetchPage()
+      refreshFacets()
+    }
+    if (action.kind === 'deleteRow') {
+      deleteCombatHistoryFight(action.id).then(after).catch((e) => setError(e.message ?? String(e)))
+    } else {
+      clearCombatHistory().then(after).catch((e) => setError(e.message ?? String(e)))
+    }
+  }, [confirm, fetchPage, refreshFacets])
 
   const fights = data?.fights ?? []
   const total = data?.total ?? 0
@@ -595,7 +801,10 @@ export default function CombatHistoryPage(): React.ReactElement {
     if (loading || error) return null
     if (fights.length > 0) return null
     const filtered =
-      appliedFilter.npc || appliedFilter.character || appliedFilter.zone || appliedFilter.startDate || appliedFilter.endDate
+      appliedFilter.npc ||
+      appliedFilter.character ||
+      appliedFilter.zone ||
+      appliedFilter.preset !== 'all'
     return filtered ? 'No fights match your filters' : 'No saved fights yet — fight an NPC and they will appear here.'
   }, [loading, error, fights, appliedFilter])
 
@@ -621,11 +830,15 @@ export default function CombatHistoryPage(): React.ReactElement {
 
       <FilterBar
         filter={filter}
+        facets={facets}
         onChange={setFilter}
         onApply={handleApply}
         onClear={handleClearFilters}
-        onRefresh={fetchPage}
-        onDeleteAll={handleDeleteAll}
+        onRefresh={() => {
+          fetchPage()
+          refreshFacets()
+        }}
+        onDeleteAll={() => setConfirm({ kind: 'clearAll' })}
       />
 
       {error && (
@@ -697,12 +910,38 @@ export default function CombatHistoryPage(): React.ReactElement {
             {empty}
           </div>
         ) : (
-          fights.map((f) => <FightRow key={f.id} fight={f} onDelete={() => handleDeleteRow(f.id)} />)
+          fights.map((f) => (
+            <FightRow
+              key={f.id}
+              fight={f}
+              onDelete={() =>
+                setConfirm({
+                  kind: 'deleteRow',
+                  id: f.id,
+                  label: `${f.npc_name}${f.zone ? ` in ${f.zone}` : ''}`,
+                })
+              }
+            />
+          ))
         )}
       </div>
 
       {total > 0 && (
         <Pagination total={total} offset={offset} pageSize={PAGE_SIZE} onPage={setOffset} />
+      )}
+
+      {confirm && (
+        <ConfirmModal
+          title={confirm.kind === 'clearAll' ? 'Clear all combat history?' : 'Delete this fight?'}
+          body={
+            confirm.kind === 'clearAll'
+              ? 'This permanently removes every saved fight from your local database. This cannot be undone.'
+              : `Delete the saved fight against ${confirm.label}? This cannot be undone.`
+          }
+          confirmLabel={confirm.kind === 'clearAll' ? 'Clear all' : 'Delete'}
+          onCancel={() => setConfirm(null)}
+          onConfirm={handleConfirm}
+        />
       )}
     </div>
   )

@@ -8,7 +8,7 @@ import type { KeysResponse, KeysProgressResponse } from '../types/keys'
 import type { Backup, BackupsResponse } from '../types/backup'
 import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { TargetState } from '../types/overlay'
-import type { CombatState, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
+import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold } from '../types/trigger'
 
@@ -357,6 +357,10 @@ export function listCombatHistory(filter: HistoryFilter = {}): Promise<HistoryLi
 
 export function getCombatHistoryFight(id: number): Promise<StoredFight> {
   return get<StoredFight>(`/api/combat/history/${id}`)
+}
+
+export function getCombatHistoryFacets(): Promise<HistoryFacets> {
+  return get<HistoryFacets>('/api/combat/history/facets')
 }
 
 export function deleteCombatHistoryFight(id: number): Promise<void> {
