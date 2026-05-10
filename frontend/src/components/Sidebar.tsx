@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Sword, Sparkles, Skull, Map, Settings, Search, Activity, Layers, ScrollText, Zap, Users, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Sword, Sparkles, Skull, Map, Settings, Search, Activity, Layers, ScrollText, Archive, Zap, Users, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import CharacterSwitcher from './CharacterSwitcher'
 import { useHistoryNav } from '../hooks/useHistoryNav'
@@ -26,6 +26,7 @@ const PARSING_NAV: NavItem[] = [
   { to: '/log-feed', label: 'Log Feed', icon: <Activity size={16} /> },
   { to: '/overlays', label: 'Overlays', icon: <Layers size={16} /> },
   { to: '/combat-log', label: 'Combat Log', icon: <ScrollText size={16} /> },
+  { to: '/combat-history', label: 'Combat History', icon: <Archive size={16} /> },
   { to: '/triggers', label: 'Triggers', icon: <Zap size={16} /> },
 ]
 

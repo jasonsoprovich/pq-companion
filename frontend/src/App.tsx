@@ -25,6 +25,7 @@ import BuffTimerWindowPage from './pages/BuffTimerWindowPage'
 import DetrimTimerWindowPage from './pages/DetrimTimerWindowPage'
 import OverlaysDashboard from './pages/OverlaysDashboard'
 import CombatLogPage from './pages/CombatLogPage'
+import CombatHistoryPage from './pages/CombatHistoryPage'
 import TriggersPage from './pages/TriggersPage'
 import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
 import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
@@ -118,6 +119,7 @@ export default function App(): React.ReactElement {
           <Route path="dps-overlay" element={<Navigate to="/overlays" replace />} />
           <Route path="spell-timers" element={<Navigate to="/overlays" replace />} />
           <Route path="combat-log" element={<CombatLogPage />} />
+          <Route path="combat-history" element={<CombatHistoryPage />} />
           <Route path="triggers" element={<TriggersPage />} />
           <Route path="characters" element={<CharactersLayout />}>
             <Route index element={<Navigate to="/characters/overview" replace />} />

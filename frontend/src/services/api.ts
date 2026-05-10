@@ -8,7 +8,7 @@ import type { KeysResponse, KeysProgressResponse } from '../types/keys'
 import type { Backup, BackupsResponse } from '../types/backup'
 import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { TargetState } from '../types/overlay'
-import type { CombatState } from '../types/combat'
+import type { CombatState, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold } from '../types/trigger'
 
@@ -338,6 +338,37 @@ export function getCombatState(): Promise<CombatState> {
 
 export function resetCombatState(): Promise<void> {
   return post<void>('/api/combat/reset')
+}
+
+// ── Combat history (persisted) ─────────────────────────────────────────────
+
+export function listCombatHistory(filter: HistoryFilter = {}): Promise<HistoryListResponse> {
+  const params = new URLSearchParams()
+  if (filter.start) params.set('start', filter.start)
+  if (filter.end) params.set('end', filter.end)
+  if (filter.npc) params.set('npc', filter.npc)
+  if (filter.character) params.set('character', filter.character)
+  if (filter.zone) params.set('zone', filter.zone)
+  if (filter.limit !== undefined) params.set('limit', String(filter.limit))
+  if (filter.offset !== undefined) params.set('offset', String(filter.offset))
+  const qs = params.toString()
+  return get<HistoryListResponse>(`/api/combat/history${qs ? `?${qs}` : ''}`)
+}
+
+export function getCombatHistoryFight(id: number): Promise<StoredFight> {
+  return get<StoredFight>(`/api/combat/history/${id}`)
+}
+
+export function deleteCombatHistoryFight(id: number): Promise<void> {
+  return del(`/api/combat/history/${id}`)
+}
+
+export function clearCombatHistory(): Promise<{ removed: number }> {
+  // del() returns void; use a raw fetch here so we can read the body.
+  return fetch(`/api/combat/history`, { method: 'DELETE' }).then(async (r) => {
+    if (!r.ok) throw new Error(`clear history: ${r.status}`)
+    return r.json() as Promise<{ removed: number }>
+  })
 }
 
 export function getTimerState(): Promise<TimerState> {

@@ -81,3 +81,42 @@ export interface CombatState {
   death_count: number
   last_updated: string
 }
+
+// StoredFight is one fight as it lives in user.db. Mirrors the backend's
+// combat.StoredFight — a FightSummary plus identity / context fields the
+// history page needs for filtering and detail rendering.
+export interface StoredFight {
+  id: number
+  npc_name: string
+  zone: string
+  character_name: string
+  start_time: string
+  end_time: string
+  duration_seconds: number
+  total_damage: number
+  you_damage: number
+  total_heal: number
+  you_heal: number
+  combatants: EntityStats[]
+  healers: HealerStats[]
+}
+
+// HistoryListResponse is the shape returned by GET /api/combat/history.
+export interface HistoryListResponse {
+  fights: StoredFight[]
+  total: number
+  limit: number
+  offset: number
+}
+
+// HistoryFilter mirrors the backend's FightFilter; every field is optional
+// and zero-values mean "no filter" for that field.
+export interface HistoryFilter {
+  start?: string  // RFC3339 lower bound on fight start_time
+  end?: string    // RFC3339 upper bound on fight start_time
+  npc?: string    // case-insensitive substring on NPC name
+  character?: string
+  zone?: string
+  limit?: number
+  offset?: number
+}
