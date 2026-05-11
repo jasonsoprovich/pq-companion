@@ -235,8 +235,6 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
 
   return (
     <div
-      onMouseEnter={enableInteraction}
-      onMouseLeave={enableClickThrough}
       style={{
         width: '100vw',
         height: '100vh',
@@ -253,6 +251,8 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
       {/* Drag region header */}
       <div
         className={locked ? 'no-drag' : 'drag-region'}
+        onMouseEnter={enableInteraction}
+        onMouseLeave={enableClickThrough}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -268,8 +268,6 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
         </div>
         <div
           className="no-drag"
-          onMouseEnter={enableInteraction}
-          onMouseLeave={enableClickThrough}
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
           <OverlayLockButton locked={locked} onToggle={toggleLocked} size={12} />

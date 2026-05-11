@@ -3,8 +3,9 @@
  * window. No sidebar, no title bar, transparent background.
  *
  * Unlocked: the window is movable (OS drag region on the header) and resizable.
- * Locked: setIgnoreMouseEvents passes clicks through to the game; header
- * buttons remain clickable via mouseenter/mouseleave forwarding.
+ * Locked: the entire window passes clicks through to the game except the
+ * header strip — hovering the header temporarily disables passthrough so its
+ * buttons (clear, lock, close, etc.) stay clickable.
  */
 import React, { useCallback, useEffect, useState } from 'react'
 import { Swords, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass, User } from 'lucide-react'
@@ -271,8 +272,6 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
 
   return (
     <div
-      onMouseEnter={enableInteraction}
-      onMouseLeave={enableClickThrough}
       style={{
         width: '100vw',
         height: '100vh',
@@ -289,6 +288,8 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
         className={locked ? 'no-drag' : 'drag-region'}
+        onMouseEnter={enableInteraction}
+        onMouseLeave={enableClickThrough}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -310,12 +311,10 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           )}
         </div>
 
-        {/* Controls — no-drag zone. When locked, hover here re-enables clicks
-            so the buttons remain interactive. */}
+        {/* Controls — no-drag zone. Hover handling lives on the header strip
+            (parent), so the controls inherit interactive mode while hovered. */}
         <div
           className="no-drag"
-          onMouseEnter={enableInteraction}
-          onMouseLeave={enableClickThrough}
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
           {/* filter toggle */}

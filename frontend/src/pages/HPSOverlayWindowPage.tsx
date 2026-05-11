@@ -152,8 +152,6 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
 
   return (
     <div
-      onMouseEnter={enableInteraction}
-      onMouseLeave={enableClickThrough}
       style={{
         width: '100vw',
         height: '100vh',
@@ -170,6 +168,8 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
         className={locked ? 'no-drag' : 'drag-region'}
+        onMouseEnter={enableInteraction}
+        onMouseLeave={enableClickThrough}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -191,12 +191,10 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
           )}
         </div>
 
-        {/* Controls — no-drag zone. When locked, hover here re-enables clicks
-            so the buttons remain interactive. */}
+        {/* Controls — no-drag zone. Hover handling lives on the header strip
+            (parent), so the controls inherit interactive mode while hovered. */}
         <div
           className="no-drag"
-          onMouseEnter={enableInteraction}
-          onMouseLeave={enableClickThrough}
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
           {/* filter toggle */}
