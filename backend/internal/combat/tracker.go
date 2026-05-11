@@ -205,6 +205,20 @@ type Tracker struct {
 	// that entity from the DPS list, which is a reasonable default).
 	confirmedHostiles map[string]bool
 
+	// verifiedPlayers names that we've seen chatting on a player-only
+	// channel (guild / raid / group / tell). Lets the third-party damage
+	// router disambiguate single-word boss names from player names: when
+	// "Sandrian hit Zlandicar for 29", Sandrian ∈ verifiedPlayers and
+	// Zlandicar ∉, so Zlandicar is the NPC. Populated by
+	// EventVerifiedPlayer; cleared by Reset.
+	verifiedPlayers map[string]bool
+
+	// charmedPets is the subset of petOwners that came from a charmed-pet
+	// tell ("X tells you, 'Attacking … Master.'"). Tracked separately so
+	// "Your charm spell has worn off." can clear charm bindings without
+	// also clearing genuine summoned-pet bindings.
+	charmedPets map[string]bool
+
 	// historyStore, when non-nil, receives every archived fight via SaveFight.
 	// Optional: tests that don't care about persistence leave it nil and the
 	// archive path no-ops on the store call.
@@ -239,6 +253,8 @@ func NewTracker(hub *ws.Hub, playerNameFn PlayerNameProvider) *Tracker {
 		petOwners:         make(map[string]string),
 		pendingCrits:      make(map[string][]int),
 		confirmedHostiles: make(map[string]bool),
+		verifiedPlayers:   make(map[string]bool),
+		charmedPets:       make(map[string]bool),
 	}
 }
 
@@ -343,6 +359,23 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 		}
 		t.queuePendingCrit(data.Actor, data.Damage)
 
+	case logparser.EventCharmedPet:
+		data, ok := ev.Data.(logparser.CharmedPetData)
+		if !ok {
+			return
+		}
+		t.recordCharmedPet(data.Pet)
+
+	case logparser.EventCharmBroken:
+		t.releaseCharmedPets()
+
+	case logparser.EventVerifiedPlayer:
+		data, ok := ev.Data.(logparser.VerifiedPlayerData)
+		if !ok {
+			return
+		}
+		t.recordVerifiedPlayer(data.Name)
+
 	case logparser.EventDeath:
 		slainBy := ""
 		if data, ok := ev.Data.(logparser.DeathData); ok {
@@ -384,6 +417,8 @@ func (t *Tracker) Reset() {
 	t.petOwners = make(map[string]string)
 	t.pendingCrits = make(map[string][]int)
 	t.confirmedHostiles = make(map[string]bool)
+	t.verifiedPlayers = make(map[string]bool)
+	t.charmedPets = make(map[string]bool)
 	snap := t.snapshot(time.Now())
 	t.mu.Unlock()
 
@@ -397,40 +432,105 @@ func (t *Tracker) Reset() {
 // player-vs-player hit) — the caller drops such events. Pet attackers are
 // allowed: a pet's hit on an NPC routes to that NPC's fight, not the pet's.
 //
-// Routing precedence:
-//   - "You" on either side identifies the NPC as the other side directly.
-//   - Otherwise, prefer whichever side passes looksLikeNPC and is NOT in
-//     petOwners. Ties (both sides look like NPCs) go to Target — the side
-//     receiving the damage.
+// Routing precedence (most-confident signal wins):
+//  1. "You" on either side — the NPC is the other side.
+//  2. Pet attackers (anyone in petOwners) — never an NPC fight target;
+//     route to the other side. Critical for charm pets: if you damaged
+//     a mob before charming it, an active fight may still exist on its
+//     name, but the now-charmed pet's outgoing damage must route to the
+//     mob it's hitting, not its own stale fight.
+//  3. Already-active fight — once an NPC is recognised once, every
+//     subsequent hit involving it routes to that fight, so an early
+//     ambiguous-name boss like Zlandicar keeps accumulating damage even
+//     when later hits would otherwise resolve ambiguously.
+//  4. verifiedPlayer asymmetry — when one side is a known player and the
+//     other isn't, the other is the NPC. This is how Zlandicar (single
+//     capitalised word, fails looksLikeNPC) gets identified the first
+//     time: Sandrian / Takkisina have chatted in raid before, so they're
+//     verified; Zlandicar isn't, so Zlandicar is the NPC.
+//  5. looksLikeNPC asymmetry — same idea using the structural heuristic
+//     for multi-word / article-prefixed mob names.
+//  6. confirmedHostile fallback — if neither rule fired but one side has
+//     hit "You" earlier this session, use it.
+//
+// Caller must hold t.mu.
 func (t *Tracker) resolveNPC(actor, target string) string {
 	if target == "You" {
 		// Defender is the player; the NPC must be the actor.
-		if _, isPet := t.petOwners[actor]; isPet {
-			// A "pet hits You" line means charm broke; caller handles.
-			return actor
-		}
 		return actor
 	}
 	if actor == "You" {
 		return target
 	}
-	// Third-party hit. Prefer Target if it looks like an NPC, then Actor.
-	targetIsNPC := looksLikeNPC(target)
-	if _, isPet := t.petOwners[target]; isPet {
-		targetIsNPC = false
-	}
-	actorIsNPC := looksLikeNPC(actor)
-	if _, isPet := t.petOwners[actor]; isPet {
-		actorIsNPC = false
-	}
-	switch {
-	case targetIsNPC:
+
+	// Rule 2 — pet attackers route to the OTHER side. Done before any
+	// activeFights check because a stale prior fight on the pet's own
+	// name (e.g. damaged-then-charmed mob) would otherwise capture the
+	// pet's new outgoing damage in the wrong row.
+	_, targetIsPet := t.petOwners[target]
+	_, actorIsPet := t.petOwners[actor]
+	if actorIsPet && !targetIsPet {
 		return target
-	case actorIsNPC:
+	}
+	if targetIsPet && !actorIsPet {
 		return actor
-	default:
+	}
+
+	// Rule 3 — an already-active fight wins outright.
+	if _, ok := t.activeFights[target]; ok {
+		return target
+	}
+	if _, ok := t.activeFights[actor]; ok {
+		return actor
+	}
+
+	// Rules 4–6 — disambiguate via positive and negative classifications.
+	// A name is "definitely a player" when verified; "definitely an NPC"
+	// when looksLikeNPC matches or it's already been seen hitting "You".
+	targetPlayer := t.verifiedPlayers[target]
+	actorPlayer := t.verifiedPlayers[actor]
+	targetNPCish := looksLikeNPC(target) || t.confirmedHostiles[target]
+	actorNPCish := looksLikeNPC(actor) || t.confirmedHostiles[actor]
+
+	// Rule 4: verifiedPlayer asymmetry.
+	if targetPlayer && !actorPlayer {
+		return actor
+	}
+	if actorPlayer && !targetPlayer {
+		return target
+	}
+
+	// Rule 5: looksLikeNPC / confirmedHostile asymmetry. Prefer target on
+	// ties (the side receiving damage when both look hostile).
+	if targetNPCish && !actorNPCish {
+		return target
+	}
+	if actorNPCish && !targetNPCish {
+		return actor
+	}
+	if targetNPCish && actorNPCish {
+		return target
+	}
+
+	// Both ambiguous — neither verified-player nor any NPC signal. Drop
+	// the event rather than guess.
+	return ""
+}
+
+// isEyeOfXPet recognises EQ's magician scout-pet naming pattern
+// ("Eye of <PlayerName>") so the player attacking their own Eye to
+// dismiss it doesn't get recorded as a fight. Returns the owner name
+// when the pattern matches, "" otherwise.
+func isEyeOfXPet(name string) string {
+	const prefix = "Eye of "
+	if !strings.HasPrefix(name, prefix) {
 		return ""
 	}
+	owner := name[len(prefix):]
+	if owner == "" || strings.ContainsAny(owner, " `") {
+		return ""
+	}
+	return owner
 }
 
 // findOrCreateFightLocked returns the Fight for npcName, creating it if not
@@ -498,11 +598,43 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	if data.Target == "You" {
 		if _, ok := t.petOwners[data.Actor]; ok {
 			delete(t.petOwners, data.Actor)
+			delete(t.charmedPets, data.Actor)
+		}
+	}
+
+	// Magician scout-pet dismiss: a player attacking their own "Eye of X"
+	// to free the pet slot. The name unambiguously identifies the owner,
+	// so this can never be a real fight — drop it before any routing
+	// kicks in so we don't accidentally create a fight on the player.
+	if owner := isEyeOfXPet(data.Target); owner != "" && (owner == data.Actor || data.Actor == "You") {
+		t.mu.Unlock()
+		return
+	}
+
+	// Auto-bind Eye scout pets so any damage they do (rare but possible)
+	// rolls up under the named owner without waiting for a "My leader is"
+	// announce that magician scout pets don't emit.
+	if owner := isEyeOfXPet(data.Actor); owner != "" {
+		if _, already := t.petOwners[data.Actor]; !already {
+			t.petOwners[data.Actor] = owner
+		}
+	}
+	if owner := isEyeOfXPet(data.Target); owner != "" {
+		if _, already := t.petOwners[data.Target]; !already {
+			t.petOwners[data.Target] = owner
 		}
 	}
 
 	npcName := t.resolveNPC(data.Actor, data.Target)
 	if npcName == "" {
+		t.mu.Unlock()
+		return
+	}
+
+	// Defensive: routing should never have returned an Eye-of-X name now
+	// that the self-dismiss case is filtered above, but if some future
+	// path slips one through, drop it before seeding a fight.
+	if isEyeOfXPet(npcName) != "" {
 		t.mu.Unlock()
 		return
 	}
@@ -657,6 +789,55 @@ func (t *Tracker) recordPetOwner(pet, owner string) {
 	}
 	t.mu.Lock()
 	t.petOwners[pet] = owner
+	// "My leader is X" came from a summoned pet; if this name was previously
+	// charmed, drop the charm flag so a subsequent "Your charm spell has
+	// worn off" doesn't free the new (legitimate) binding.
+	delete(t.charmedPets, pet)
+	t.mu.Unlock()
+}
+
+// recordCharmedPet binds a charmed pet to the active character. Charmed
+// pets never name their owner in plain text — the binding signal is the
+// "X tells you, 'Attacking … Master.'" line that only the charmer
+// receives. Owner is always the playerName(), or the literal "You" when
+// no player name is configured (tests).
+func (t *Tracker) recordCharmedPet(pet string) {
+	if pet == "" {
+		return
+	}
+	owner := t.playerName()
+	if owner == "" {
+		owner = "You"
+	}
+	t.mu.Lock()
+	t.petOwners[pet] = owner
+	t.charmedPets[pet] = true
+	t.mu.Unlock()
+}
+
+// releaseCharmedPets clears every currently-charmed-pet binding. Triggered
+// by "Your charm spell has worn off." Summoned-pet bindings (added via
+// recordPetOwner) are preserved — only charm-sourced entries get dropped.
+func (t *Tracker) releaseCharmedPets() {
+	t.mu.Lock()
+	for pet := range t.charmedPets {
+		delete(t.petOwners, pet)
+	}
+	t.charmedPets = make(map[string]bool)
+	t.mu.Unlock()
+}
+
+// recordVerifiedPlayer marks a name as a confirmed player. Populated from
+// chat-channel lines (EventVerifiedPlayer); used by resolveNPC to
+// disambiguate single-word boss names from player names when routing
+// third-party damage. Once verified, a name stays verified for the
+// session — NPCs don't suddenly start using player channels.
+func (t *Tracker) recordVerifiedPlayer(name string) {
+	if name == "" || name == "You" {
+		return
+	}
+	t.mu.Lock()
+	t.verifiedPlayers[name] = true
 	t.mu.Unlock()
 }
 
@@ -757,14 +938,6 @@ func (t *Tracker) archiveFightLocked(f *Fight, endTime time.Time) {
 	combatants := excludeNPCsByName(buildEntityStats(f.outgoing, duration, raidSecs), f.npcName, t.petOwners, t.confirmedHostiles)
 	stampPetOwners(combatants, t.petOwners)
 
-	// Drop fights that didn't produce a meaningful player-facing combatant
-	// list AND didn't produce any incoming damage we'd want recorded — these
-	// are typically NPC-vs-NPC noise (e.g. two mobs AoE-trading) we picked up
-	// before "You" or any group member engaged.
-	if len(combatants) == 0 && (f.incoming == nil || f.incoming.totalDamage == 0) {
-		return
-	}
-
 	totalDmg := int64(0)
 	youDmg := int64(0)
 	for _, e := range combatants {
@@ -772,6 +945,16 @@ func (t *Tracker) archiveFightLocked(f *Fight, endTime time.Time) {
 		if e.Name == "You" {
 			youDmg = e.TotalDamage
 		}
+	}
+
+	// Drop fights with no outgoing damage at all — there's nothing useful
+	// to show on a DPS meter. Covers two common noise patterns: NPC-vs-NPC
+	// AoE crossfire we picked up before the player engaged, and "got
+	// hit a few times running past" events where the player never fought
+	// back. Genuine tank-took-damage fights still have outgoing damage
+	// (from the tank or other group members) so they survive this filter.
+	if totalDmg == 0 {
+		return
 	}
 
 	healers := buildHealerStats(f.healers, duration, raidSecs)

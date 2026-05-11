@@ -82,6 +82,30 @@ const (
 	// to flag the matching CombatHit as a crit; a standalone count of crits
 	// per actor is also useful for Phase 1 stats.
 	EventCritHit EventType = "log:crit_hit"
+
+	// EventCharmedPet is emitted when a charmed NPC sends a tell to its
+	// owner naming itself as the pet — the canonical "Attacking X Master."
+	// line that charmed pets produce when given an attack order. Unlike
+	// summoned pets (which announce "X says 'My leader is Y.'"), charmed
+	// pets never name their owner in plain text, but the "tells you …
+	// Master." phrasing is unambiguous: that pet belongs to the active
+	// character. Consumers bind the pet to the active character's name.
+	EventCharmedPet EventType = "log:charmed_pet"
+
+	// EventCharmBroken is emitted on the active character's "Your charm
+	// spell has worn off." line — releases every currently-charmed pet
+	// from the owner mapping so its post-break attacks don't keep rolling
+	// up under the player.
+	EventCharmBroken EventType = "log:charm_broken"
+
+	// EventVerifiedPlayer is emitted when a chat line proves an entity is
+	// another player (`X tells the guild/raid/group/you, '…'`). Used by
+	// the combat tracker to disambiguate single-word boss names from
+	// player names when routing third-party damage events: if one side of
+	// a hit is a verified player and the other isn't, the other is the
+	// NPC. EQ NPCs never use guild/raid/group/tell channels, so this
+	// signal is unambiguous.
+	EventVerifiedPlayer EventType = "log:verified_player"
 )
 
 // LogEvent is the parsed representation of a single EQ log line.
@@ -240,4 +264,19 @@ type IllusionFadeData struct{}
 type CritHitData struct {
 	Actor  string `json:"actor"`
 	Damage int    `json:"damage"`
+}
+
+// CharmedPetData is the structured payload for EventCharmedPet. The pet
+// name is what the log line names as the speaker of "Attacking X Master.";
+// the owner is always the active character (charmed-pet tells are sent to
+// the charmer, who is the player).
+type CharmedPetData struct {
+	Pet string `json:"pet"`
+}
+
+// VerifiedPlayerData is the structured payload for EventVerifiedPlayer.
+// Carries the speaker name from a chat-channel line so the tracker can
+// add it to its verified-player set.
+type VerifiedPlayerData struct {
+	Name string `json:"name"`
 }

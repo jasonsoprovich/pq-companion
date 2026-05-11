@@ -275,6 +275,71 @@ func TestParseLine(t *testing.T) {
 			wantType: EventCritHit,
 			wantData: CritHitData{Actor: "Sandrian", Damage: 62},
 		},
+
+		// --- Charmed pet: "tells you, 'Attacking X Master.'" ---
+		// The canonical EQ charmed-pet attack tell, sent only to the
+		// charmer. We extract the pet name; the owner is always the active
+		// character (consumers fill that in).
+		{
+			name:     "charmed pet tell: simple NPC pet",
+			line:     "[Mon Apr 13 06:00:00 2026] a fetid fiend tells you, 'Attacking a spinechiller spider Master.'",
+			wantOK:   true,
+			wantType: EventCharmedPet,
+			wantData: CharmedPetData{Pet: "a fetid fiend"},
+		},
+		{
+			name:     "charmed pet tell: proper-noun BST warder",
+			line:     "[Mon Apr 13 06:00:00 2026] Rygan Anisher tells you, 'Attacking A Centi Dator Master.'",
+			wantOK:   true,
+			wantType: EventCharmedPet,
+			wantData: CharmedPetData{Pet: "Rygan Anisher"},
+		},
+
+		// --- Charm-broken ---
+		{
+			name:     "charm: your charm spell wore off",
+			line:     "[Mon Apr 13 06:00:00 2026] Your charm spell has worn off.",
+			wantOK:   true,
+			wantType: EventCharmBroken,
+			wantData: nil,
+		},
+
+		// --- Verified-player chat lines ---
+		// Single-capitalised-word speaker + tell channel. Used by the
+		// combat tracker to learn which names are players so single-word
+		// boss names like "Zlandicar" can be correctly identified as NPCs
+		// during third-party damage routing.
+		{
+			name:     "verified player: tells the guild",
+			line:     "[Mon Apr 13 06:00:00 2026] Sandrian tells the guild, 'I have the invite going'",
+			wantOK:   true,
+			wantType: EventVerifiedPlayer,
+			wantData: VerifiedPlayerData{Name: "Sandrian"},
+		},
+		{
+			name:     "verified player: tells the raid",
+			line:     "[Mon Apr 13 06:00:00 2026] Takkisina tells the raid,  'ASSIST ME | Zlandicar  |'",
+			wantOK:   true,
+			wantType: EventVerifiedPlayer,
+			wantData: VerifiedPlayerData{Name: "Takkisina"},
+		},
+		{
+			name:     "verified player: plain tells you (must beat spell-landed)",
+			line:     "[Mon Apr 13 06:00:00 2026] Maykill tells you, 'May I get kei and vog wmp'",
+			wantOK:   true,
+			wantType: EventVerifiedPlayer,
+			wantData: VerifiedPlayerData{Name: "Maykill"},
+		},
+		// Multi-word "tells you" should NOT be a verified player — it's a
+		// charmed pet's "Attacking X Master." or a similar non-player
+		// utterance, already caught earlier in the dispatcher.
+		{
+			name:     "verified player: charm tell does not classify as player",
+			line:     "[Mon Apr 13 06:00:00 2026] a fetid fiend tells you, 'Attacking a goblin Master.'",
+			wantOK:   true,
+			wantType: EventCharmedPet,
+			wantData: CharmedPetData{Pet: "a fetid fiend"},
+		},
 		{
 			name:     "combat: PQ-format critical hit large damage",
 			line:     "[Mon Apr 13 06:00:00 2026] Muadib Scores a critical hit!(2014)",
@@ -676,6 +741,22 @@ func compareData(t *testing.T, got, want interface{}) {
 		if g != w {
 			t.Errorf("CritHitData = %+v, want %+v", g, w)
 		}
+	case CharmedPetData:
+		g, ok := got.(CharmedPetData)
+		if !ok {
+			t.Fatalf("Data type = %T, want CharmedPetData", got)
+		}
+		if g != w {
+			t.Errorf("CharmedPetData = %+v, want %+v", g, w)
+		}
+	case VerifiedPlayerData:
+		g, ok := got.(VerifiedPlayerData)
+		if !ok {
+			t.Fatalf("Data type = %T, want VerifiedPlayerData", got)
+		}
+		if g != w {
+			t.Errorf("VerifiedPlayerData = %+v, want %+v", g, w)
+		}
 	default:
 		t.Fatalf("compareData: unhandled want type %T", want)
 	}
@@ -700,10 +781,11 @@ func TestRealOsuiLogPhase1Coverage(t *testing.T) {
 	defer f.Close()
 
 	const (
-		// Counts established by `grep -c ... testdata/eqlog_Osui_pq.proj.txt`
-		// at the time the Phase 1 patterns were added.
-		wantDoTTicks    = 68
-		wantCritEvents  = 4374
+		// Counts established by `grep -c ... testdata/eqlog_Osui_pq.proj.txt`.
+		// Updated 2026-05-11 after the testdata fixture was extended with
+		// the Sun May 10 raid session (Zlandicar, Plane of Fear, etc.).
+		wantDoTTicks   = 138
+		wantCritEvents = 6546
 	)
 
 	dotCount, critCount := 0, 0

@@ -101,6 +101,31 @@ var (
 	// Consumers correlate by actor name and amount.
 	reCritHit = regexp.MustCompile(`^(\w+) Scores a critical hit!\((\d+)\)$`)
 
+	// Charmed pet tell — the canonical EQ pattern where a charmed pet
+	// reports its current attack target back to its charmer. Universal
+	// phrasing on Project Quarm: "<pet> tells you, 'Attacking <target>
+	// Master.'". Unlike summoned pets (which announce "My leader is X."),
+	// charmed pets never name their owner — the "tells you" channel is
+	// itself the binding signal (only the charmer receives the tell).
+	reCharmedPetTell = regexp.MustCompile(`^(.+?) tells you, 'Attacking .+ Master\.?'$`)
+
+	// Charm-broken announcement — the active character's charm spell wore
+	// off. Triggers cleanup of every currently-charmed-pet binding so a
+	// hostile re-aggro from the former pet isn't mis-credited to the
+	// player.
+	reCharmBroken = regexp.MustCompile(`^Your charm spell has worn off\.$`)
+
+	// Player-verification chat patterns. Anything matching one of these
+	// proves the speaker is another player: NPCs in EQ never use the
+	// guild/raid/group channels or send tells. Used by the combat
+	// tracker to disambiguate single-word boss names (Zlandicar, Naggy,
+	// Vox) from player names when routing third-party damage.
+	//
+	// Captures the single-word player name before "tells …"; multi-word
+	// "tells" (e.g. a charmed pet's "Attacking X Master.") naturally
+	// fails the single-word anchor.
+	reVerifiedPlayerTell = regexp.MustCompile(`^(\w+) tells (?:the guild|the raid|the group|you|fellowship|out of character|auction|shout),`)
+
 	// /con output — EQ's consider system. The NPC name precedes a fixed set of
 	// disposition phrases. Ordered longest-first so "warmly regards you" and
 	// "kindly regards you" are tried before the shorter "regards you".
@@ -254,6 +279,17 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		}, true
 	}
 
+	// --- Charm-broken (must beat generic spell fade) ---
+	// "Your charm spell has worn off." would otherwise classify as a
+	// generic spell-fade event with SpellName="charm", which is wrong:
+	// charm has special tracker semantics (clears the pet binding).
+	if reCharmBroken.MatchString(msg) {
+		return LogEvent{
+			Type: EventCharmBroken,
+			Data: nil,
+		}, true
+	}
+
 	// --- Spell fade ---
 	if m := reSpellFade.FindStringSubmatch(msg); m != nil {
 		return LogEvent{
@@ -347,6 +383,28 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		return LogEvent{
 			Type: EventCritHit,
 			Data: CritHitData{Actor: m[1], Damage: dmg},
+		}, true
+	}
+
+	// --- Charmed pet attack tell ---
+	// Tried before the generic "X tells you, '…'" verified-player pattern so
+	// the more specific charmed-pet form wins on overlapping matches.
+	if m := reCharmedPetTell.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventCharmedPet,
+			Data: CharmedPetData{Pet: m[1]},
+		}, true
+	}
+
+	// --- Verified-player chat line ---
+	// Comes before the generic spell-landed fallback so chat lines never get
+	// mis-classified as spell text. Captures only the speaker name; the
+	// channel and message body are intentionally discarded — we only need to
+	// learn that this name is a player.
+	if m := reVerifiedPlayerTell.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventVerifiedPlayer,
+			Data: VerifiedPlayerData{Name: m[1]},
 		}, true
 	}
 

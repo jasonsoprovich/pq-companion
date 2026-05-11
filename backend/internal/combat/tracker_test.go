@@ -1,6 +1,10 @@
 package combat
 
 import (
+	"bufio"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -1232,6 +1236,209 @@ func TestArchivedFightsPersistedWhenStoreWired(t *testing.T) {
 	}
 }
 
+// verifiedPlayerEvent / charmedPetEvent / charmBrokenEvent — test helpers
+// for the new disambiguation events. Mirror the existing helper style.
+
+func verifiedPlayerEvent(name string, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventVerifiedPlayer,
+		Timestamp: ts,
+		Data:      logparser.VerifiedPlayerData{Name: name},
+	}
+}
+
+func charmedPetEvent(pet string, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventCharmedPet,
+		Timestamp: ts,
+		Data:      logparser.CharmedPetData{Pet: pet},
+	}
+}
+
+func charmBrokenEvent(ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventCharmBroken,
+		Timestamp: ts,
+		Data:      nil,
+	}
+}
+
+// TestVerifiedPlayerRoutesSingleWordBossAsNPC is the Zlandicar regression
+// case: a single-word capitalised boss name (fails looksLikeNPC) and a
+// single-word player attacker should still get routed correctly as long
+// as the player has been verified via a prior chat-channel line.
+func TestVerifiedPlayerRoutesSingleWordBossAsNPC(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Sandrian chats earlier; that's all it takes to verify her as a player.
+	tr.Handle(verifiedPlayerEvent("Sandrian", now))
+
+	// First hit on the boss: third-party form, both single-capitalised.
+	// Under the old routing both failed looksLikeNPC and the hit was
+	// dropped. The verifiedPlayers asymmetry now identifies Zlandicar.
+	tr.Handle(hitEvent("Sandrian", "Zlandicar", 1000, now.Add(time.Second)))
+
+	if got := activeFightCount(tr); got != 1 {
+		t.Fatalf("expected 1 active fight on Zlandicar, got %d", got)
+	}
+	if activeFightFor(tr, "Zlandicar") == nil {
+		t.Fatal("expected fight keyed on 'Zlandicar'")
+	}
+
+	// Subsequent third-party hits — including hits FROM Zlandicar back
+	// onto players — should route to the same fight thanks to the
+	// activeFights lookup, not require re-verification.
+	tr.Handle(hitEvent("Takkisina", "Zlandicar", 500, now.Add(2*time.Second)))
+	tr.Handle(hitEvent("Zlandicar", "Sandrian", 200, now.Add(3*time.Second)))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil || st.CurrentFight.PrimaryTarget != "Zlandicar" {
+		t.Fatalf("expected current fight on Zlandicar, got %+v", st.CurrentFight)
+	}
+	// Sandrian and Takkisina appear; Zlandicar itself is filtered (it's
+	// the fight's own NPC). Total damage = 1000 + 500 from the players.
+	if st.CurrentFight.TotalDamage != 1500 {
+		t.Errorf("TotalDamage = %d, want 1500", st.CurrentFight.TotalDamage)
+	}
+}
+
+// TestUnverifiedPlayerVsPlayerNoFight ensures we don't over-correct: when
+// neither side is a verified player and neither structurally looks like
+// an NPC, the hit is still dropped (player-vs-player or unknown).
+func TestUnverifiedPlayerVsPlayerNoFight(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("Stranger", "Friend", 100, now))
+
+	if got := activeFightCount(tr); got != 0 {
+		t.Fatalf("expected no fight from unverified-vs-unverified hit, got %d active", got)
+	}
+}
+
+// TestCharmedPetTellBindsOwner verifies the charmed-pet "tells you" path.
+// The pet's subsequent damage to a third-party mob should appear in that
+// mob's fight with the active character as OwnerName.
+func TestCharmedPetTellBindsOwner(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Osui" })
+	now := time.Now()
+
+	// Charm-tell binds "a fetid fiend" to Osui without any "My leader is" line.
+	tr.Handle(charmedPetEvent("a fetid fiend", now))
+	tr.Handle(hitEvent("a fetid fiend", "a spinechiller spider", 400, now.Add(time.Second)))
+	tr.Handle(hitEvent("You", "a spinechiller spider", 100, now.Add(2*time.Second)))
+
+	st := tr.GetState()
+	pet := findCombatant(st.CurrentFight.Combatants, "a fetid fiend")
+	if pet == nil {
+		t.Fatal("expected 'a fetid fiend' in combatants")
+	}
+	if pet.OwnerName != "Osui" {
+		t.Errorf("OwnerName = %q, want %q", pet.OwnerName, "Osui")
+	}
+	if pet.TotalDamage != 400 {
+		t.Errorf("pet TotalDamage = %d, want 400", pet.TotalDamage)
+	}
+}
+
+// TestCharmBrokenReleasesCharmedPet exercises the cleanup half of charm
+// binding: after "Your charm spell has worn off", the petOwners entry the
+// charm tell installed is gone, so subsequent damage by that name is not
+// attributed to the player. (How prior damage is displayed is a separate
+// concern — the binding is what matters here.)
+func TestCharmBrokenReleasesCharmedPet(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Osui" })
+	now := time.Now()
+
+	tr.Handle(charmedPetEvent("a fetid fiend", now))
+
+	// Binding present.
+	tr.mu.Lock()
+	_, beforeBound := tr.petOwners["a fetid fiend"]
+	_, beforeCharm := tr.charmedPets["a fetid fiend"]
+	tr.mu.Unlock()
+	if !beforeBound || !beforeCharm {
+		t.Fatalf("pre-break: petOwners=%v charmedPets=%v, want both bound", beforeBound, beforeCharm)
+	}
+
+	tr.Handle(charmBrokenEvent(now.Add(3 * time.Second)))
+
+	// Binding gone.
+	tr.mu.Lock()
+	_, afterBound := tr.petOwners["a fetid fiend"]
+	_, afterCharm := tr.charmedPets["a fetid fiend"]
+	tr.mu.Unlock()
+	if afterBound || afterCharm {
+		t.Errorf("post-break: petOwners=%v charmedPets=%v, want both cleared", afterBound, afterCharm)
+	}
+}
+
+// TestCharmBrokenDoesNotClearSummonedPet protects the summon binding from
+// charm-break cleanup. Magician/necro summon pets ("X says 'My leader is
+// Y'") must persist across charm-break events from a different pet.
+func TestCharmBrokenDoesNotClearSummonedPet(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Osui" })
+	now := time.Now()
+
+	// Summoned pet bound via "My leader is" — must not be flagged charmed.
+	tr.Handle(petOwnerEvent("Vebekab", "Kildrey", now))
+	// Charm a different mob.
+	tr.Handle(charmedPetEvent("a fetid fiend", now.Add(time.Second)))
+	// Charm wears off.
+	tr.Handle(charmBrokenEvent(now.Add(2 * time.Second)))
+
+	tr.mu.Lock()
+	_, sumBound := tr.petOwners["Vebekab"]
+	_, charmBound := tr.petOwners["a fetid fiend"]
+	tr.mu.Unlock()
+	if !sumBound {
+		t.Error("summoned pet Vebekab should remain bound after charm break")
+	}
+	if charmBound {
+		t.Error("charmed pet 'a fetid fiend' should be released")
+	}
+}
+
+// TestEyeOfPlayerSkippedAsFight verifies that the magician scout-pet
+// dismiss pattern doesn't pollute the meter with 0-second 60K-DPS rows.
+func TestEyeOfPlayerSkippedAsFight(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Mage attacks her own Eye to dismiss it — same pattern that produced
+	// "Eye of Rora · 0s · 60000 DPS" rows in the user's history.
+	tr.Handle(hitEvent("Rora", "Eye of Rora", 60, now))
+
+	if got := activeFightCount(tr); got != 0 {
+		t.Fatalf("expected no fight for 'Eye of Rora' dismiss, got %d active", got)
+	}
+}
+
+// TestZeroOutgoingFightDiscarded confirms a fight that only logged
+// incoming player damage (got-hit-running-past) doesn't archive as a
+// 0-DPS row. Required against a backdrop where the inactivity timer
+// eventually expires.
+func TestZeroOutgoingFightDiscarded(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// NPC hits You; You never hit back; fight ends via zone change.
+	tr.Handle(hitEvent("a scareling", "You", 100, now))
+	tr.Handle(zoneEvent(now.Add(time.Second)))
+
+	st := tr.GetState()
+	if got := len(st.RecentFights); got != 0 {
+		t.Errorf("expected 0-outgoing fight to be discarded, got %d archived", got)
+	}
+}
+
 // TestDoTTickAttributedToYou verifies the new DoT tick event flows through
 // the tracker as outgoing damage credited to "You", same as other player
 // damage. The spell name on the event is informational and shouldn't affect
@@ -1252,5 +1459,93 @@ func TestDoTTickAttributedToYou(t *testing.T) {
 	}
 	if you.HitCount != 3 {
 		t.Fatalf("HitCount = %d, want 3 (1 melee + 2 dot ticks)", you.HitCount)
+	}
+}
+
+// TestRealOsuiLogTrackerIntegration streams the real Osui (Enchanter) log
+// file through the parser AND the tracker end-to-end. Verifies the
+// regressions reported from the Sun May 10 raid session are fixed:
+//
+//   - The Zlandicar fight (raid boss with a single-word capitalised
+//     name, where the player only debuffed and never directly damaged
+//     the mob) is now archived instead of being silently dropped.
+//   - No "Eye of <PlayerName>" fights appear in archived history — the
+//     magician scout-pet dismiss flood is filtered out.
+//   - The 0-outgoing-damage filter is doing its job — archived fights
+//     all have outgoing total > 0.
+//
+// Uses a HistoryStore (unbounded) rather than the in-memory ring buffer
+// because the fixture covers a full raid night and the 20-fight ring
+// cycles past the Zlandicar entry well before the stream ends.
+//
+// Skipped when the gitignored testdata fixture is not present (CI).
+func TestRealOsuiLogTrackerIntegration(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "testdata", "eqlog_Osui_pq.proj.txt")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skipf("testdata fixture %s not present", path)
+	}
+
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Osui" })
+
+	storePath := filepath.Join(t.TempDir(), "user.db")
+	store, err := OpenHistoryStore(storePath)
+	if err != nil {
+		t.Fatalf("OpenHistoryStore: %v", err)
+	}
+	defer store.Close()
+	tr.SetHistoryStore(store)
+
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open log: %v", err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		ev, ok := logparser.ParseLine(scanner.Text())
+		if !ok {
+			continue
+		}
+		tr.Handle(ev)
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	fights, err := store.ListFights(FightFilter{Limit: 1000})
+	if err != nil {
+		t.Fatalf("ListFights: %v", err)
+	}
+
+	zlandicarSeen := false
+	eyeSeen := 0
+	zeroSeen := 0
+	for _, sf := range fights {
+		if sf.NPCName == "Zlandicar" {
+			zlandicarSeen = true
+			if sf.TotalDamage == 0 {
+				t.Errorf("Zlandicar fight archived with zero damage — routing did half the job")
+			}
+		}
+		if strings.HasPrefix(sf.NPCName, "Eye of ") {
+			eyeSeen++
+		}
+		if sf.TotalDamage == 0 {
+			zeroSeen++
+		}
+	}
+
+	if !zlandicarSeen {
+		t.Error("Zlandicar fight missing from persisted history — verifiedPlayers routing fix didn't take")
+	}
+	if eyeSeen > 0 {
+		t.Errorf("expected 0 'Eye of …' archived fights, got %d", eyeSeen)
+	}
+	if zeroSeen > 0 {
+		t.Errorf("expected 0 zero-damage archived fights, got %d", zeroSeen)
 	}
 }
