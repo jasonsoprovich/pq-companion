@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Shield, ExternalLink, Plus, Eraser, Circle, CheckCircle2, AlertTriangle, ArrowDownNarrowWide, Clock, X } from 'lucide-react'
+import { Shield, ExternalLink, Plus, Trash2, Circle, CheckCircle2, AlertTriangle, ArrowDownNarrowWide, Clock, X } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useActivePlayerName, targetSuffix } from '../../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../../hooks/useDisplayThresholds'
@@ -164,7 +164,7 @@ export default function BuffTimerPanel({
               title="Clear all active buff timers"
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}
             >
-              <Eraser size={12} />
+              <Trash2 size={12} />
             </button>
             <button
               onClick={() => setPickerOpen(true)}

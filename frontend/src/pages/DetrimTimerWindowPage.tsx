@@ -5,7 +5,7 @@
  * Shows timers with category in: 'debuff' | 'dot' | 'mez' | 'stun'.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Skull, Eraser, X } from 'lucide-react'
+import { Skull, Trash2, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName } from '../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresholds'
@@ -254,7 +254,7 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
               lineHeight: 1,
             }}
           >
-            <Eraser size={11} />
+            <Trash2 size={11} />
           </button>
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
