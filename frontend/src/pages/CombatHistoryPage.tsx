@@ -10,6 +10,7 @@ import {
   Trash2,
   RefreshCw,
   User,
+  Users,
   X,
 } from 'lucide-react'
 import {
@@ -20,6 +21,7 @@ import {
 } from '../services/api'
 import type { EntityStats, HealerStats, HistoryFacets, HistoryListResponse, StoredFight } from '../types/combat'
 import { groupBySession, fmtSessionGap } from '../lib/sessionGrouping'
+import { rollupCombatants, useCombinePetWithOwner, petBadge } from '../lib/dpsRollup'
 import {
   useDPSMode,
   dpsForMode,
@@ -162,6 +164,12 @@ function FilterBar({
   onClear,
   onRefresh,
   onDeleteAll,
+  combine,
+  onToggleCombine,
+  meOnly,
+  onToggleMeOnly,
+  dpsMode,
+  onToggleDPSMode,
 }: {
   filter: UIFilter
   facets: HistoryFacets
@@ -170,6 +178,12 @@ function FilterBar({
   onClear: () => void
   onRefresh: () => void
   onDeleteAll: () => void
+  combine: boolean
+  onToggleCombine: () => void
+  meOnly: boolean
+  onToggleMeOnly: () => void
+  dpsMode: DPSMode
+  onToggleDPSMode: () => void
 }): React.ReactElement {
   const inputStyle: React.CSSProperties = {
     padding: '4px 8px',
@@ -387,6 +401,68 @@ function FilterBar({
           </>
         )}
       </div>
+
+      {/* Row 3 — view options: pet rollup, DPS mode, me-only. Mirrors the
+          live Combat Log filter bar so user preferences carry between pages. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, color: 'var(--color-muted)', marginRight: 4 }}>View:</span>
+        <button
+          onClick={onToggleCombine}
+          title={combine ? 'Pet damage rolled up under owner — click to split' : 'Pets shown separately — click to combine'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 8px',
+            fontSize: 11,
+            background: combine ? 'var(--color-primary)' : 'var(--color-background)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4,
+            color: combine ? '#000' : 'var(--color-foreground)',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <Users size={11} /> Pets
+        </button>
+        <button
+          onClick={onToggleDPSMode}
+          title={dpsModeTooltip(dpsMode)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 8px',
+            fontSize: 11,
+            background: 'var(--color-primary)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4,
+            color: '#000',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            fontWeight: 600,
+          }}
+        >
+          {dpsModeIcon(dpsMode)}
+          {dpsModeLabel(dpsMode)}
+        </button>
+        <button
+          onClick={onToggleMeOnly}
+          title="Show only fights you participated in (damage or healing)"
+          style={{
+            padding: '4px 8px',
+            fontSize: 11,
+            background: meOnly ? 'var(--color-primary)' : 'var(--color-background)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4,
+            color: meOnly ? '#000' : 'var(--color-foreground)',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Me only
+        </button>
+      </div>
     </div>
   )
 }
@@ -397,10 +473,14 @@ function CombatantTable({
   combatants,
   totalDamage,
   mode,
+  combine,
+  fightDuration,
 }: {
   combatants: EntityStats[]
   totalDamage: number
   mode: DPSMode
+  combine: boolean
+  fightDuration: number
 }): React.ReactElement {
   if (combatants.length === 0) {
     return (
@@ -409,6 +489,7 @@ function CombatantTable({
       </div>
     )
   }
+  const rolled = rollupCombatants(combatants, combine, fightDuration)
   return (
     <div>
       <div
@@ -431,7 +512,7 @@ function CombatantTable({
         <span style={{ textAlign: 'right' }}>{dpsModeAbbrev(mode)}</span>
         <span style={{ textAlign: 'right' }}>Crits</span>
       </div>
-      {combatants.map((c) => (
+      {rolled.map((c) => (
         <div
           key={c.name}
           style={{
@@ -443,7 +524,12 @@ function CombatantTable({
             borderBottom: '1px solid rgba(255,255,255,0.03)',
           }}
         >
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {c.name}
+            {c.pets.length > 0 && (
+              <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{petBadge(c.pets)}</span>
+            )}
+          </span>
           <span style={{ textAlign: 'right', color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>
             {pct(c.total_damage, totalDamage)}
           </span>
@@ -500,10 +586,12 @@ function HealerTable({ healers }: { healers: HealerStats[] }): React.ReactElemen
 function FightRow({
   fight,
   mode,
+  combine,
   onDelete,
 }: {
   fight: StoredFight
   mode: DPSMode
+  combine: boolean
   onDelete: () => void
 }): React.ReactElement {
   const [expanded, setExpanded] = useState(false)
@@ -578,7 +666,13 @@ function FightRow({
       </div>
       {expanded && (
         <div style={{ padding: '4px 14px 12px', backgroundColor: 'var(--color-surface-2)' }}>
-          <CombatantTable combatants={fight.combatants} totalDamage={fight.total_damage} mode={mode} />
+          <CombatantTable
+            combatants={fight.combatants}
+            totalDamage={fight.total_damage}
+            mode={mode}
+            combine={combine}
+            fightDuration={fight.duration_seconds}
+          />
           <HealerTable healers={fight.healers} />
         </div>
       )}
@@ -787,6 +881,8 @@ export default function CombatHistoryPage(): React.ReactElement {
   const [loading, setLoading] = useState(true)
   const [confirm, setConfirm] = useState<ConfirmAction>(null)
   const { mode: dpsMode, toggle: toggleDPSMode } = useDPSMode()
+  const [combine, setCombine] = useCombinePetWithOwner()
+  const [meOnly, setMeOnly] = useState(false)
 
   // Fetch the dropdown facets once on mount. They refresh after a destructive
   // action below so a now-empty character no longer shows up as an option.
@@ -862,8 +958,15 @@ export default function CombatHistoryPage(): React.ReactElement {
     }
   }, [confirm, fetchPage, refreshFacets])
 
-  const fights = data?.fights ?? []
+  const rawFights = data?.fights ?? []
   const total = data?.total ?? 0
+  // meOnly is a client-side filter — applied after fetch so the backend
+  // pagination still works against the full unfiltered set. The {total}
+  // count above reflects what's saved, not what's visible.
+  const fights = useMemo(
+    () => (meOnly ? rawFights.filter((f) => f.you_damage > 0 || f.you_heal > 0) : rawFights),
+    [rawFights, meOnly],
+  )
 
   const empty = useMemo(() => {
     if (loading || error) return null
@@ -872,9 +975,10 @@ export default function CombatHistoryPage(): React.ReactElement {
       appliedFilter.npc ||
       appliedFilter.character ||
       appliedFilter.zone ||
-      appliedFilter.preset !== 'all'
+      appliedFilter.preset !== 'all' ||
+      meOnly
     return filtered ? 'No fights match your filters' : 'No saved fights yet — fight an NPC and they will appear here.'
-  }, [loading, error, fights, appliedFilter])
+  }, [loading, error, fights, appliedFilter, meOnly])
 
   return (
     <div className="flex h-full flex-col overflow-hidden" style={{ backgroundColor: 'var(--color-background)' }}>
@@ -894,28 +998,6 @@ export default function CombatHistoryPage(): React.ReactElement {
             {total} saved
           </span>
         </div>
-        {/* DPS mode toggle — same control as the Combat Log page so a
-            user's preferred mode follows them between pages. */}
-        <button
-          onClick={toggleDPSMode}
-          title={dpsModeTooltip(dpsMode)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '4px 10px',
-            fontSize: 11,
-            background: 'var(--color-primary)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 4,
-            color: '#000',
-            cursor: 'pointer',
-            fontWeight: 600,
-          }}
-        >
-          {dpsModeIcon(dpsMode)}
-          {dpsModeLabel(dpsMode)}
-        </button>
       </div>
 
       <FilterBar
@@ -929,6 +1011,12 @@ export default function CombatHistoryPage(): React.ReactElement {
           refreshFacets()
         }}
         onDeleteAll={() => setConfirm({ kind: 'clearAll' })}
+        combine={combine}
+        onToggleCombine={() => setCombine(!combine)}
+        meOnly={meOnly}
+        onToggleMeOnly={() => setMeOnly((v) => !v)}
+        dpsMode={dpsMode}
+        onToggleDPSMode={toggleDPSMode}
       />
 
       {error && (
@@ -1008,6 +1096,7 @@ export default function CombatHistoryPage(): React.ReactElement {
                 key={row.fight.id}
                 fight={row.fight}
                 mode={dpsMode}
+                combine={combine}
                 onDelete={() =>
                   setConfirm({
                     kind: 'deleteRow',
