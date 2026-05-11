@@ -20,7 +20,7 @@ import {
   getCombatHistoryFacets,
 } from '../services/api'
 import type { EntityStats, HealerStats, HistoryFacets, HistoryListResponse, StoredFight } from '../types/combat'
-import { groupBySession, fmtSessionGap } from '../lib/sessionGrouping'
+import { groupByEventSession, fmtSessionGap, type SessionBreakReason } from '../lib/sessionGrouping'
 import { rollupCombatants, useCombinePetWithOwner, petBadge } from '../lib/dpsRollup'
 import {
   useDPSMode,
@@ -56,6 +56,29 @@ function dpsModeTooltip(mode: DPSMode): string {
 // raid night (~50–200 fights) fits in 1–2 pages without scrolling becoming
 // the only way to navigate.
 const PAGE_SIZE = 50
+
+// Session-grouping toggle, persisted across reloads. Default ON since
+// dividers are usually helpful, but users who want a flat scroll can
+// turn it off and the helper short-circuits.
+const SESSION_GROUPING_STORAGE_KEY = 'pq-companion.history.session_grouping'
+
+function getSessionGroupingEnabled(): boolean {
+  try {
+    const raw = window.localStorage.getItem(SESSION_GROUPING_STORAGE_KEY)
+    if (raw === null) return true
+    return raw === 'true'
+  } catch {
+    return true
+  }
+}
+
+function setSessionGroupingEnabled(value: boolean): void {
+  try {
+    window.localStorage.setItem(SESSION_GROUPING_STORAGE_KEY, value ? 'true' : 'false')
+  } catch {
+    // ignore: best-effort persistence
+  }
+}
 
 
 // ── small helpers ─────────────────────────────────────────────────────────────
@@ -184,6 +207,8 @@ function FilterBar({
   onToggleMeOnly: () => void
   dpsMode: DPSMode
   onToggleDPSMode: () => void
+  sessionGrouping: boolean
+  onToggleSessionGrouping: () => void
 }): React.ReactElement {
   const inputStyle: React.CSSProperties = {
     padding: '4px 8px',
@@ -462,6 +487,26 @@ function FilterBar({
         >
           Me only
         </button>
+        <button
+          onClick={onToggleSessionGrouping}
+          title={
+            sessionGrouping
+              ? 'Session dividers shown for zone / character / long-gap boundaries — click to hide'
+              : 'Session dividers hidden — click to group fights by session boundaries'
+          }
+          style={{
+            padding: '4px 8px',
+            fontSize: 11,
+            background: sessionGrouping ? 'var(--color-primary)' : 'var(--color-background)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4,
+            color: sessionGrouping ? '#000' : 'var(--color-foreground)',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Sessions
+        </button>
       </div>
     </div>
   )
@@ -682,10 +727,32 @@ function FightRow({
 
 // ── session break divider ─────────────────────────────────────────────────────
 
-// SessionBreak renders between two fights separated by more than
-// SESSION_GAP_SECONDS of inactivity. Visual cue only — it does not change
-// any DPS calculations or the ordering of the list.
-function SessionBreak({ gapSeconds }: { gapSeconds: number }): React.ReactElement {
+// SessionBreak renders between two fights that crossed a session boundary
+// — zone change, character switch, or a long idle gap. Visual cue only;
+// it does not change any DPS calculations or the ordering of the list.
+function SessionBreak({
+  gapSeconds,
+  reason,
+  from,
+  to,
+}: {
+  gapSeconds: number
+  reason: SessionBreakReason
+  from?: string
+  to?: string
+}): React.ReactElement {
+  let label: string
+  switch (reason) {
+    case 'zone':
+      label = `Zone change · ${from} → ${to}`
+      break
+    case 'character':
+      label = `Character change · ${from} → ${to}`
+      break
+    case 'gap':
+    default:
+      label = `Session break · ${fmtSessionGap(gapSeconds)}`
+  }
   return (
     <div
       style={{
@@ -703,7 +770,7 @@ function SessionBreak({ gapSeconds }: { gapSeconds: number }): React.ReactElemen
       }}
     >
       <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
-      <span style={{ whiteSpace: 'nowrap' }}>Session break · {fmtSessionGap(gapSeconds)}</span>
+      <span style={{ whiteSpace: 'nowrap' }}>{label}</span>
       <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
     </div>
   )
@@ -883,6 +950,14 @@ export default function CombatHistoryPage(): React.ReactElement {
   const { mode: dpsMode, toggle: toggleDPSMode } = useDPSMode()
   const [combine, setCombine] = useCombinePetWithOwner()
   const [meOnly, setMeOnly] = useState(false)
+  const [sessionGrouping, setSessionGroupingState] = useState<boolean>(() => getSessionGroupingEnabled())
+  const toggleSessionGrouping = useCallback(() => {
+    setSessionGroupingState((prev) => {
+      const next = !prev
+      setSessionGroupingEnabled(next)
+      return next
+    })
+  }, [])
 
   // Fetch the dropdown facets once on mount. They refresh after a destructive
   // action below so a now-empty character no longer shows up as an option.
@@ -1017,6 +1092,8 @@ export default function CombatHistoryPage(): React.ReactElement {
         onToggleMeOnly={() => setMeOnly((v) => !v)}
         dpsMode={dpsMode}
         onToggleDPSMode={toggleDPSMode}
+        sessionGrouping={sessionGrouping}
+        onToggleSessionGrouping={toggleSessionGrouping}
       />
 
       {error && (
@@ -1088,9 +1165,20 @@ export default function CombatHistoryPage(): React.ReactElement {
             {empty}
           </div>
         ) : (
-          groupBySession(fights, (f) => String(f.id)).map((row) =>
+          groupByEventSession(
+            fights,
+            (f) => String(f.id),
+            (f) => ({ zone: f.zone, character: f.character_name }),
+            { enabled: sessionGrouping },
+          ).map((row) =>
             row.kind === 'gap' ? (
-              <SessionBreak key={row.key} gapSeconds={row.gapSeconds} />
+              <SessionBreak
+                key={row.key}
+                gapSeconds={row.gapSeconds}
+                reason={row.reason}
+                from={row.from}
+                to={row.to}
+              />
             ) : (
               <FightRow
                 key={row.fight.id}
