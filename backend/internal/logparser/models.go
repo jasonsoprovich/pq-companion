@@ -98,6 +98,19 @@ const (
 	// up under the player.
 	EventCharmBroken EventType = "log:charm_broken"
 
+	// EventRollAnnounce is emitted when EQ logs the first line of a /random
+	// result: "**A Magic Die is rolled by <Name>." It carries only the
+	// roller's name — the range and value arrive on the next line as
+	// EventRollResult.
+	EventRollAnnounce EventType = "log:roll_announce"
+
+	// EventRollResult is emitted when EQ logs the second line of a /random
+	// result: "**It could have been any number from N to M, but this time
+	// it turned up a V." Consumers correlate this with the immediately
+	// preceding EventRollAnnounce (same timestamp, no other log lines
+	// interleave between them).
+	EventRollResult EventType = "log:roll_result"
+
 	// EventVerifiedPlayer is emitted when a chat line proves an entity is
 	// another player (`X tells the guild/raid/group/you, '…'`). Used by
 	// the combat tracker to disambiguate single-word boss names from
@@ -272,6 +285,21 @@ type CritHitData struct {
 // the charmer, who is the player).
 type CharmedPetData struct {
 	Pet string `json:"pet"`
+}
+
+// RollAnnounceData is the structured payload for EventRollAnnounce — the
+// name of the player who triggered a /random.
+type RollAnnounceData struct {
+	Roller string `json:"roller"`
+}
+
+// RollResultData is the structured payload for EventRollResult — the range
+// and outcome of a /random. The roller is named on the preceding
+// EventRollAnnounce; consumers pair the two by adjacency.
+type RollResultData struct {
+	Min   int `json:"min"`
+	Max   int `json:"max"`
+	Value int `json:"value"`
 }
 
 // VerifiedPlayerData is the structured payload for EventVerifiedPlayer.

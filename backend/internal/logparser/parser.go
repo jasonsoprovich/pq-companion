@@ -193,6 +193,17 @@ var (
 	//   "You forget Illusion: <Race>."
 	reIllusionFadeNatural = regexp.MustCompile(`^Your illusion fades\.$`)
 	reIllusionForget      = regexp.MustCompile(`^You forget Illusion: .+\.$`)
+
+	// /random dice roll — EQ logs the result as two consecutive lines, each
+	// prefixed with `**`:
+	//   "**A Magic Die is rolled by Tabbie."
+	//   "**It could have been any number from 0 to 222, but this time it
+	//    turned up a 69."
+	// The first line names the roller; the second carries the range and the
+	// resulting value. Consumers pair them by timestamp ordering — see
+	// rolltracker for the correlation.
+	reRollAnnounce = regexp.MustCompile(`^\*\*A Magic Die is rolled by (.+?)\.$`)
+	reRollResult   = regexp.MustCompile(`^\*\*It could have been any number from (\d+) to (\d+), but this time it turned up a (\d+)\.$`)
 )
 
 // ParseRawLine extracts the timestamp and message from any valid EQ log line
@@ -311,6 +322,25 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		return LogEvent{
 			Type: EventSpellDidNotTakeHold,
 			Data: SpellDidNotTakeHoldData{},
+		}, true
+	}
+
+	// --- /random dice roll (two-line pair) ---
+	// Match before generic combat / cast-index patterns so the "**" prefixed
+	// lines can't be misclassified.
+	if m := reRollAnnounce.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventRollAnnounce,
+			Data: RollAnnounceData{Roller: m[1]},
+		}, true
+	}
+	if m := reRollResult.FindStringSubmatch(msg); m != nil {
+		min, _ := strconv.Atoi(m[1])
+		max, _ := strconv.Atoi(m[2])
+		val, _ := strconv.Atoi(m[3])
+		return LogEvent{
+			Type: EventRollResult,
+			Data: RollResultData{Min: min, Max: max, Value: val},
 		}, true
 	}
 

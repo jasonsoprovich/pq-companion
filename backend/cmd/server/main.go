@@ -18,6 +18,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
@@ -233,6 +234,10 @@ func main() {
 	})
 	triggerEngine.Reload()
 
+	// Roll tracker: groups /random results into per-range sessions and
+	// broadcasts overlay:rolls WebSocket events. Stateless across restarts.
+	rollTracker := rolltracker.New(hub)
+
 	// Log tailer: reads new lines from the EQ log file and broadcasts parsed
 	// events to all connected WebSocket clients. Also feeds overlay trackers
 	// and the trigger engine.
@@ -241,6 +246,7 @@ func main() {
 		npcTracker.Handle(ev)
 		combatTracker.Handle(ev)
 		timerEngine.Handle(ev)
+		rollTracker.Handle(ev)
 	}, triggerEngine.Handle, func(character string) {
 		slog.Info("logparser: auto-detected active character", "character", character)
 		hub.Broadcast(ws.Event{Type: "config:character_detected", Data: map[string]string{"character": character}})
@@ -250,7 +256,7 @@ func main() {
 	})
 	go tailer.Start(context.Background())
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker)
 
 	slog.Info("server starting", "addr", listenAddr, "db", *dbPath)
 	if err := http.ListenAndServe(listenAddr, router); err != nil {

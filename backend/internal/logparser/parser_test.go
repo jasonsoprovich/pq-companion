@@ -588,6 +588,22 @@ func TestParseLine(t *testing.T) {
 			wantData: PetOwnerData{Pet: "Grimrose`s warder", Owner: "Grimrose"},
 		},
 
+		// --- /random dice rolls ---
+		{
+			name:     "roll: announce line names the roller",
+			line:     "[Mon Apr 13 06:00:00 2026] **A Magic Die is rolled by Tabbie.",
+			wantOK:   true,
+			wantType: EventRollAnnounce,
+			wantData: RollAnnounceData{Roller: "Tabbie"},
+		},
+		{
+			name:     "roll: result line carries range and value",
+			line:     "[Mon Apr 13 06:00:00 2026] **It could have been any number from 0 to 222, but this time it turned up a 69.",
+			wantOK:   true,
+			wantType: EventRollResult,
+			wantData: RollResultData{Min: 0, Max: 222, Value: 69},
+		},
+
 		// --- Unrecognised messages ---
 		{
 			name:   "unrecognised: chat message",
@@ -756,6 +772,22 @@ func compareData(t *testing.T, got, want interface{}) {
 		}
 		if g != w {
 			t.Errorf("VerifiedPlayerData = %+v, want %+v", g, w)
+		}
+	case RollAnnounceData:
+		g, ok := got.(RollAnnounceData)
+		if !ok {
+			t.Fatalf("Data type = %T, want RollAnnounceData", got)
+		}
+		if g != w {
+			t.Errorf("RollAnnounceData = %+v, want %+v", g, w)
+		}
+	case RollResultData:
+		g, ok := got.(RollResultData)
+		if !ok {
+			t.Fatalf("Data type = %T, want RollResultData", got)
+		}
+		if g != w {
+			t.Errorf("RollResultData = %+v, want %+v", g, w)
 		}
 	default:
 		t.Fatalf("compareData: unhandled want type %T", want)

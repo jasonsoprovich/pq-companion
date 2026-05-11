@@ -11,6 +11,7 @@ import type { TargetState } from '../types/overlay'
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold } from '../types/trigger'
+import type { RollsState, WinnerRule } from '../types/rolls'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -769,4 +770,22 @@ export async function importGINAxml(
     throw new Error(err.error ?? res.statusText)
   }
   return res.json()
+}
+
+// ── Roll Tracker ───────────────────────────────────────────────────────────────
+
+export function getRolls(): Promise<RollsState> {
+  return get<RollsState>('/api/rolls')
+}
+
+export function stopRollSession(max: number): Promise<RollsState> {
+  return post<RollsState>(`/api/rolls/stop/${max}`)
+}
+
+export function clearRolls(): Promise<void> {
+  return del('/api/rolls')
+}
+
+export function setRollWinnerRule(rule: WinnerRule): Promise<RollsState> {
+  return put<RollsState>('/api/rolls/settings', { winner_rule: rule })
 }
