@@ -22,7 +22,7 @@ import { getCombatState, getLogStatus, resetCombatState } from '../services/api'
 import type { CombatState, DeathRecord, EntityStats, FightSummary } from '../types/combat'
 import type { LogTailerStatus } from '../types/logEvent'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
-import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, type DPSMode } from '../hooks/useDPSMode'
+import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, playerAggregateDPS, type DPSMode } from '../hooks/useDPSMode'
 import { groupBySession, fmtSessionGap } from '../lib/sessionGrouping'
 
 // dpsModeIcon picks an icon for the current DPS mode that matches the
@@ -329,7 +329,8 @@ function FightRow({
           {fmt(fight.total_damage)}
         </span>
 
-        {/* Total DPS */}
+        {/* Total DPS — recomputed per mode so the toggle updates the
+            fight-level number too, not just the expanded combatant rows. */}
         <span
           style={{
             textAlign: 'right',
@@ -337,10 +338,11 @@ function FightRow({
             color: '#f97316',
           }}
         >
-          {fmtDPS(fight.total_dps)} DPS
+          {fmtDPS(fightAggregateDPS(fight.total_damage, fight.duration_seconds, fight.combatants, mode))} {dpsModeAbbrev(mode)}
         </span>
 
-        {/* Your DPS */}
+        {/* Your DPS — Personal mode shows YOUR active-window DPS;
+            Raid/Encounter use the same denominator as Total. */}
         <span
           style={{
             textAlign: 'right',
@@ -349,7 +351,9 @@ function FightRow({
             fontSize: 11,
           }}
         >
-          {fight.you_damage > 0 ? `${fmtDPS(fight.you_dps)} me` : '—'}
+          {fight.you_damage > 0
+            ? `${fmtDPS(playerAggregateDPS(fight.you_damage, fight.duration_seconds, fight.combatants, 'You', mode))} me`
+            : '—'}
         </span>
 
         {/* Copy fight summary */}

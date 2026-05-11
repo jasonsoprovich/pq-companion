@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  Activity,
   AlertCircle,
   Archive,
   ChevronDown,
   ChevronRight,
+  Hourglass,
   Search,
   Trash2,
   RefreshCw,
+  User,
   X,
 } from 'lucide-react'
 import {
@@ -17,6 +20,35 @@ import {
 } from '../services/api'
 import type { EntityStats, HealerStats, HistoryFacets, HistoryListResponse, StoredFight } from '../types/combat'
 import { groupBySession, fmtSessionGap } from '../lib/sessionGrouping'
+import {
+  useDPSMode,
+  dpsForMode,
+  dpsModeAbbrev,
+  dpsModeLabel,
+  fightAggregateDPS,
+  type DPSMode,
+} from '../hooks/useDPSMode'
+
+// dpsModeIcon — matching helper used elsewhere in the app.
+function dpsModeIcon(mode: DPSMode, size = 11): React.ReactElement {
+  switch (mode) {
+    case 'personal':
+      return <User size={size} />
+    case 'raid':
+      return <Activity size={size} />
+    case 'encounter':
+      return <Hourglass size={size} />
+  }
+}
+
+function dpsModeTooltip(mode: DPSMode): string {
+  const meaning: Record<DPSMode, string> = {
+    personal: 'Personal DPS — each player divided by their first-to-last span.',
+    raid: 'Raid-relative DPS — divided by the raid\'s active span.',
+    encounter: 'Encounter DPS — divided by total fight time.',
+  }
+  return `${meaning[mode]} Click to cycle (Personal → Raid → Encounter).`
+}
 
 // Page-level pagination size — matches the backend default; chosen so a
 // raid night (~50–200 fights) fits in 1–2 pages without scrolling becoming
@@ -364,9 +396,11 @@ function FilterBar({
 function CombatantTable({
   combatants,
   totalDamage,
+  mode,
 }: {
   combatants: EntityStats[]
   totalDamage: number
+  mode: DPSMode
 }): React.ReactElement {
   if (combatants.length === 0) {
     return (
@@ -394,7 +428,7 @@ function CombatantTable({
         <span>Name</span>
         <span style={{ textAlign: 'right' }}>%</span>
         <span style={{ textAlign: 'right' }}>Damage</span>
-        <span style={{ textAlign: 'right' }}>DPS</span>
+        <span style={{ textAlign: 'right' }}>{dpsModeAbbrev(mode)}</span>
         <span style={{ textAlign: 'right' }}>Crits</span>
       </div>
       {combatants.map((c) => (
@@ -414,7 +448,7 @@ function CombatantTable({
             {pct(c.total_damage, totalDamage)}
           </span>
           <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(c.total_damage)}</span>
-          <span style={{ textAlign: 'right', color: '#f97316', fontVariantNumeric: 'tabular-nums' }}>{fmtDPS(c.dps)}</span>
+          <span style={{ textAlign: 'right', color: '#f97316', fontVariantNumeric: 'tabular-nums' }}>{fmtDPS(dpsForMode(c, mode))}</span>
           <span style={{ textAlign: 'right', color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>
             {c.crit_count > 0 ? c.crit_count : '—'}
           </span>
@@ -465,9 +499,11 @@ function HealerTable({ healers }: { healers: HealerStats[] }): React.ReactElemen
 
 function FightRow({
   fight,
+  mode,
   onDelete,
 }: {
   fight: StoredFight
+  mode: DPSMode
   onDelete: () => void
 }): React.ReactElement {
   const [expanded, setExpanded] = useState(false)
@@ -518,7 +554,7 @@ function FightRow({
         </span>
         <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(fight.total_damage)}</span>
         <span style={{ textAlign: 'right', color: '#f97316', fontVariantNumeric: 'tabular-nums' }}>
-          {fmtDPS(fight.total_damage / Math.max(fight.duration_seconds, 0.001))} DPS
+          {fmtDPS(fightAggregateDPS(fight.total_damage, fight.duration_seconds, fight.combatants, mode))} {dpsModeAbbrev(mode)}
         </span>
         <button
           onClick={(e) => {
@@ -542,7 +578,7 @@ function FightRow({
       </div>
       {expanded && (
         <div style={{ padding: '4px 14px 12px', backgroundColor: 'var(--color-surface-2)' }}>
-          <CombatantTable combatants={fight.combatants} totalDamage={fight.total_damage} />
+          <CombatantTable combatants={fight.combatants} totalDamage={fight.total_damage} mode={mode} />
           <HealerTable healers={fight.healers} />
         </div>
       )}
@@ -750,6 +786,7 @@ export default function CombatHistoryPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [confirm, setConfirm] = useState<ConfirmAction>(null)
+  const { mode: dpsMode, toggle: toggleDPSMode } = useDPSMode()
 
   // Fetch the dropdown facets once on mount. They refresh after a destructive
   // action below so a now-empty character no longer shows up as an option.
@@ -857,6 +894,28 @@ export default function CombatHistoryPage(): React.ReactElement {
             {total} saved
           </span>
         </div>
+        {/* DPS mode toggle — same control as the Combat Log page so a
+            user's preferred mode follows them between pages. */}
+        <button
+          onClick={toggleDPSMode}
+          title={dpsModeTooltip(dpsMode)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 10px',
+            fontSize: 11,
+            background: 'var(--color-primary)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4,
+            color: '#000',
+            cursor: 'pointer',
+            fontWeight: 600,
+          }}
+        >
+          {dpsModeIcon(dpsMode)}
+          {dpsModeLabel(dpsMode)}
+        </button>
       </div>
 
       <FilterBar
@@ -948,6 +1007,7 @@ export default function CombatHistoryPage(): React.ReactElement {
               <FightRow
                 key={row.fight.id}
                 fight={row.fight}
+                mode={dpsMode}
                 onDelete={() =>
                   setConfirm({
                     kind: 'deleteRow',

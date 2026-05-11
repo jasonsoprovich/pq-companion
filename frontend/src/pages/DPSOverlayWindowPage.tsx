@@ -15,7 +15,7 @@ import OverlayLockButton from '../components/OverlayLockButton'
 import { getCombatState, resetCombatState } from '../services/api'
 import type { CombatState, FightState } from '../types/combat'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
-import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, type DPSMode } from '../hooks/useDPSMode'
+import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, playerAggregateDPS, type DPSMode } from '../hooks/useDPSMode'
 
 // dpsModeIcon picks an icon matching the metric's intuition.
 function dpsModeIcon(mode: DPSMode, size = 11): React.ReactElement {
@@ -175,7 +175,7 @@ function FightTable({ fight, showAll, combine, mode }: { fight: FightState; show
         <span>Name</span>
         <span>%</span>
         <span>Dmg</span>
-        <span style={{ textAlign: 'right' }}>DPS</span>
+        <span style={{ textAlign: 'right' }}>{dpsModeAbbrev(mode)}</span>
       </div>
 
       {rows.length === 0 ? (
@@ -254,8 +254,19 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
       ? Math.max((now - new Date(fight.start_time).getTime()) / 1000, fight.duration_seconds)
       : fight.duration_seconds
     : 0
-  const liveTotalDPS = fight && liveSecs > 0 ? fight.total_damage / liveSecs : 0
-  const liveYouDPS = fight && liveSecs > 0 ? fight.you_damage / liveSecs : 0
+  // Aggregate DPS respects the current mode. Encounter uses the wall-
+  // clock liveSecs; Personal and Raid use the fight-level helpers.
+  let liveTotalDPS = 0
+  let liveYouDPS = 0
+  if (fight) {
+    if (dpsMode === 'encounter') {
+      liveTotalDPS = liveSecs > 0 ? fight.total_damage / liveSecs : 0
+      liveYouDPS = liveSecs > 0 ? fight.you_damage / liveSecs : 0
+    } else {
+      liveTotalDPS = fightAggregateDPS(fight.total_damage, fight.duration_seconds, fight.combatants ?? [], dpsMode)
+      liveYouDPS = playerAggregateDPS(fight.you_damage, fight.duration_seconds, fight.combatants ?? [], 'You', dpsMode)
+    }
+  }
 
   return (
     <div
@@ -290,7 +301,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <Swords size={11} style={{ color: '#818cf8' }} />
-          <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>DPS</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>{dpsModeAbbrev(dpsMode)}</span>
           {fight && (
             <span style={{ fontSize: 10, color: '#fb923c', marginLeft: 4 }}>
               {fmtDPS(showAll ? liveTotalDPS : liveYouDPS)}

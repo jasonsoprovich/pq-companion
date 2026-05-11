@@ -6,7 +6,7 @@ import OverlayWindow from '../OverlayWindow'
 import type { CombatState, FightState } from '../../types/combat'
 import type { LogTailerStatus } from '../../types/logEvent'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../../lib/dpsRollup'
-import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, type DPSMode } from '../../hooks/useDPSMode'
+import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, type DPSMode } from '../../hooks/useDPSMode'
 
 // dpsModeIcon picks an icon for the current DPS mode that matches the
 // metric's intuition: a single User for Personal, Users for Raid, an
@@ -158,12 +158,23 @@ function FilterButton({ showAll, onToggle }: { showAll: boolean; onToggle: () =>
   )
 }
 
-function CombatStrip({ combat, now }: { combat: CombatState; now: number }): React.ReactElement {
+function CombatStrip({ combat, now, mode }: { combat: CombatState; now: number; mode: DPSMode }): React.ReactElement {
   const fight = combat.current_fight
   const liveSecs = fight
     ? Math.max((now - new Date(fight.start_time).getTime()) / 1000, fight.duration_seconds)
     : 0
-  const liveTotalDPS = fight && liveSecs > 0 ? fight.total_damage / liveSecs : 0
+  // For the live strip, Encounter uses live wall-clock; Raid/Personal use
+  // the same fight-aggregate denominator (raid_seconds from combatants).
+  // Personal at the strip level collapses to Raid (a multi-player total
+  // has no per-player "personal" interpretation).
+  let liveTotalDPS = 0
+  if (fight) {
+    if (mode === 'encounter') {
+      liveTotalDPS = liveSecs > 0 ? fight.total_damage / liveSecs : 0
+    } else {
+      liveTotalDPS = fightAggregateDPS(fight.total_damage, fight.duration_seconds, fight.combatants ?? [], mode)
+    }
+  }
 
   return (
     <div
@@ -183,7 +194,7 @@ function CombatStrip({ combat, now }: { combat: CombatState; now: number }): Rea
           <span style={{ color: 'var(--color-muted)' }}>·</span>
           <span>{fmtDuration(liveSecs)}</span>
           <span style={{ color: 'var(--color-muted)' }}>·</span>
-          <span style={{ color: '#f97316' }}>{fmtRate(liveTotalDPS)} DPS</span>
+          <span style={{ color: '#f97316' }}>{fmtRate(liveTotalDPS)} {dpsModeAbbrev(mode)}</span>
         </>
       ) : (
         <span>Not in combat</span>
@@ -438,7 +449,7 @@ export default function DPSPanel({
         </div>
       ) : (
         <>
-          <CombatStrip combat={combat} now={now} />
+          <CombatStrip combat={combat} now={now} mode={dpsMode} />
           {combat.in_combat && combat.current_fight ? (
             <DPSContent fight={combat.current_fight} showAll={showAll} combine={combine} mode={dpsMode} />
           ) : (

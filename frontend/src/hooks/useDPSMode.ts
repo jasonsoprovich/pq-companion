@@ -103,6 +103,56 @@ export function hpsForMode(
   }
 }
 
+// fightAggregateDPS returns the fight-level total DPS appropriate for the
+// current mode. Combatants is needed because raid_seconds lives per-row
+// (it's constant across the fight) and Personal at the fight level falls
+// back to Raid (Personal is a per-player concept; there's no "personal"
+// for a multi-player total).
+//
+//   personal  → total / raid_seconds (same as raid; per-player makes
+//                no sense at the aggregate level)
+//   raid      → total / raid_seconds
+//   encounter → total / fight_duration
+//
+// Callers that want the active player's Personal DPS specifically should
+// use playerAggregateDPS instead.
+export function fightAggregateDPS(
+  totalDamage: number,
+  fightDuration: number,
+  combatants: Pick<EntityStats, 'raid_seconds'>[],
+  mode: DPSMode,
+): number {
+  if (mode === 'encounter') {
+    return fightDuration > 0 ? totalDamage / fightDuration : 0
+  }
+  const raidSecs = combatants[0]?.raid_seconds ?? 0
+  return raidSecs > 0 ? totalDamage / raidSecs : 0
+}
+
+// playerAggregateDPS returns the active player's fight-level DPS in the
+// current mode. Personal mode reads the "You" combatant's active_dps
+// (which is total / per-player-span). Raid and Encounter use the same
+// fightAggregateDPS denominator since they don't differentiate per-
+// player; the player-vs-raid distinction shows up at the row level.
+export function playerAggregateDPS(
+  youDamage: number,
+  fightDuration: number,
+  combatants: Pick<EntityStats, 'name' | 'active_dps' | 'raid_seconds'>[],
+  playerLabel: string,
+  mode: DPSMode,
+): number {
+  if (mode === 'personal') {
+    for (const c of combatants) {
+      if (c.name === playerLabel || c.name === 'You') {
+        return c.active_dps
+      }
+    }
+    // Fall through to the encounter denominator when "You" isn't in the
+    // combatant list (rare — fight where the player only healed).
+  }
+  return fightAggregateDPS(youDamage, fightDuration, combatants, mode === 'personal' ? 'encounter' : mode)
+}
+
 /** Short label shown in the meter header / tooltips. */
 export function dpsModeLabel(mode: DPSMode): string {
   switch (mode) {
