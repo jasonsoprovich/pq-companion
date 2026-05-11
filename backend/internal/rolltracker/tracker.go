@@ -33,6 +33,7 @@ type Tracker struct {
 	mu       sync.Mutex
 	sessions []*Session // newest-first
 	rule     WinnerRule
+	nextID   uint64
 
 	// pendingRoller holds the name from the most recent EventRollAnnounce
 	// while we wait for its matching EventRollResult.
@@ -116,7 +117,9 @@ func (t *Tracker) sessionForLocked(max int, ts time.Time) *Session {
 			return s
 		}
 	}
+	t.nextID++
 	s := &Session{
+		ID:         t.nextID,
 		Max:        max,
 		StartedAt:  ts,
 		LastRollAt: ts,
@@ -142,14 +145,34 @@ func (t *Tracker) evictOldestStoppedLocked() {
 	}
 }
 
-// Stop marks the session with the given Max inactive. Returns true if a
+// Stop marks the session with the given ID inactive. Returns true if a
 // matching active session was found.
-func (t *Tracker) Stop(max int) bool {
+func (t *Tracker) Stop(id uint64) bool {
 	t.mu.Lock()
 	var found bool
 	for _, s := range t.sessions {
-		if s.Max == max && s.Active {
+		if s.ID == id && s.Active {
 			s.Active = false
+			found = true
+			break
+		}
+	}
+	state := t.stateLocked()
+	t.mu.Unlock()
+	if found {
+		t.broadcast(state)
+	}
+	return found
+}
+
+// Remove deletes the session with the given ID outright. Returns true if a
+// matching session was found.
+func (t *Tracker) Remove(id uint64) bool {
+	t.mu.Lock()
+	var found bool
+	for i, s := range t.sessions {
+		if s.ID == id {
+			t.sessions = append(t.sessions[:i], t.sessions[i+1:]...)
 			found = true
 			break
 		}
@@ -203,6 +226,7 @@ func (t *Tracker) stateLocked() State {
 		rolls := make([]Roll, len(s.Rolls))
 		copy(rolls, s.Rolls)
 		out.Sessions = append(out.Sessions, Session{
+			ID:         s.ID,
 			Max:        s.Max,
 			StartedAt:  s.StartedAt,
 			LastRollAt: s.LastRollAt,

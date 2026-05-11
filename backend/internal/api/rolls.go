@@ -18,13 +18,26 @@ func (h *rollsHandler) state(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *rollsHandler) stop(w http.ResponseWriter, r *http.Request) {
-	max, err := strconv.Atoi(chi.URLParam(r, "max"))
-	if err != nil || max <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid max")
+	id, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id == 0 {
+		writeError(w, http.StatusBadRequest, "invalid session id")
 		return
 	}
-	if !h.tracker.Stop(max) {
+	if !h.tracker.Stop(id) {
 		writeError(w, http.StatusNotFound, "no active session")
+		return
+	}
+	writeJSON(w, http.StatusOK, h.tracker.State())
+}
+
+func (h *rollsHandler) remove(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id == 0 {
+		writeError(w, http.StatusBadRequest, "invalid session id")
+		return
+	}
+	if !h.tracker.Remove(id) {
+		writeError(w, http.StatusNotFound, "session not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, h.tracker.State())

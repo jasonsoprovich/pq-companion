@@ -8,6 +8,7 @@ export interface Roll {
 }
 
 export interface RollSession {
+  id: number
   max: number
   started_at: string
   last_roll_at: string

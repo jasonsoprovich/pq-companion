@@ -159,7 +159,10 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/", rollsH.state)
 			r.Delete("/", rollsH.clear)
 			r.Put("/settings", rollsH.updateSettings)
-			r.Post("/stop/{max}", rollsH.stop)
+			r.Route("/sessions/{id}", func(r chi.Router) {
+				r.Post("/stop", rollsH.stop)
+				r.Delete("/", rollsH.remove)
+			})
 		})
 		r.Route("/triggers", func(r chi.Router) {
 			r.Get("/", triggerH.list)

@@ -69,15 +69,60 @@ func TestStopSession(t *testing.T) {
 	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)
 	feedRoll(t, tr, "A", 333, 50, base)
 
-	if !tr.Stop(333) {
-		t.Fatalf("Stop(333) should return true for active session")
+	id := tr.State().Sessions[0].ID
+	if !tr.Stop(id) {
+		t.Fatalf("Stop should return true for active session")
 	}
 	st := tr.State()
 	if st.Sessions[0].Active {
 		t.Fatalf("session should be inactive after Stop")
 	}
-	if tr.Stop(333) {
-		t.Fatalf("Stop(333) should return false when session already stopped")
+	if tr.Stop(id) {
+		t.Fatalf("Stop should return false when session already stopped")
+	}
+}
+
+func TestRemoveSession(t *testing.T) {
+	tr := newTrackerForTest()
+	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)
+	feedRoll(t, tr, "A", 333, 50, base)
+	feedRoll(t, tr, "B", 444, 60, base.Add(time.Second))
+
+	id := tr.State().Sessions[1].ID // older (333) session
+	if !tr.Remove(id) {
+		t.Fatalf("Remove should return true for known session")
+	}
+	st := tr.State()
+	if len(st.Sessions) != 1 || st.Sessions[0].Max != 444 {
+		t.Fatalf("Remove should leave only 444 session, got %+v", st.Sessions)
+	}
+	if tr.Remove(id) {
+		t.Fatalf("Remove should return false for unknown session")
+	}
+}
+
+func TestStopAndRemoveIndependentBuckets(t *testing.T) {
+	tr := newTrackerForTest()
+	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)
+	feedRoll(t, tr, "A", 333, 50, base)
+	feedRoll(t, tr, "B", 444, 60, base.Add(time.Second))
+
+	// Stop just the 333 session; the 444 session must remain Live so a
+	// later roll on 444 still lands in it instead of opening a new one.
+	st := tr.State()
+	var id333 uint64
+	for _, s := range st.Sessions {
+		if s.Max == 333 {
+			id333 = s.ID
+		}
+	}
+	if !tr.Stop(id333) {
+		t.Fatalf("Stop on 333 should succeed")
+	}
+	for _, s := range tr.State().Sessions {
+		if s.Max == 444 && !s.Active {
+			t.Fatalf("Stopping 333 should not affect 444 session")
+		}
 	}
 }
 

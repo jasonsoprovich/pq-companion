@@ -48,8 +48,13 @@ type Roll struct {
 
 // Session is the set of rolls collected for a single dice range (Max).
 type Session struct {
+	// ID is a process-local monotonic identifier. Lets the UI target a
+	// specific session for Stop/Remove even when multiple sessions share
+	// the same Max (e.g. two rolls on identical-bound drops in one raid).
+	ID uint64 `json:"id"`
 	// Max is the upper bound of the dice range — the "333" in "any
-	// number from 0 to 333". Used as the session key.
+	// number from 0 to 333". Used to bucket new rolls into the right
+	// active session.
 	Max int `json:"max"`
 	// StartedAt is when the first roll for this session arrived.
 	StartedAt time.Time `json:"started_at"`

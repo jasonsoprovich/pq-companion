@@ -778,8 +778,12 @@ export function getRolls(): Promise<RollsState> {
   return get<RollsState>('/api/rolls')
 }
 
-export function stopRollSession(max: number): Promise<RollsState> {
-  return post<RollsState>(`/api/rolls/stop/${max}`)
+export function stopRollSession(id: number): Promise<RollsState> {
+  return post<RollsState>(`/api/rolls/sessions/${id}/stop`)
+}
+
+export async function removeRollSession(id: number): Promise<void> {
+  await del(`/api/rolls/sessions/${id}`)
 }
 
 export function clearRolls(): Promise<void> {

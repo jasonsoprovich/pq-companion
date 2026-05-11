@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Dice5, Trash2, Square, Trophy, ArrowDownAZ, ArrowUpAZ, Circle } from 'lucide-react'
+import { Dice5, Trash2, Square, Trophy, ArrowDownAZ, ArrowUpAZ, Circle, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { getRolls, stopRollSession, clearRolls, setRollWinnerRule } from '../services/api'
+import { getRolls, stopRollSession, removeRollSession, clearRolls, setRollWinnerRule } from '../services/api'
 import type { RollsState, RollSession, WinnerRule, Roll } from '../types/rolls'
 
 const WS_ROLLS = 'overlay:rolls'
@@ -37,10 +37,12 @@ function SessionCard({
   session,
   rule,
   onStop,
+  onRemove,
 }: {
   session: RollSession
   rule: WinnerRule
-  onStop: (max: number) => void
+  onStop: (id: number) => void
+  onRemove: (id: number) => void
 }): React.ReactElement {
   const winners = useMemo(() => winnersFor(session, rule), [session, rule])
 
@@ -91,7 +93,7 @@ function SessionCard({
           )}
           {session.active && (
             <button
-              onClick={() => onStop(session.max)}
+              onClick={() => onStop(session.id)}
               className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-(--color-surface-3)"
               style={{ border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
               title="Stop accepting new rolls for this range"
@@ -99,6 +101,14 @@ function SessionCard({
               <Square size={11} /> Stop
             </button>
           )}
+          <button
+            onClick={() => onRemove(session.id)}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-(--color-surface-3)"
+            style={{ border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+            title="Remove this roll session"
+          >
+            <X size={11} /> Remove
+          </button>
         </div>
       </div>
 
@@ -181,8 +191,15 @@ export default function RollTrackerPage(): React.ReactElement {
     }
   })
 
-  const handleStop = (max: number): void => {
-    stopRollSession(max).then(setState).catch((e) => setError(String(e)))
+  const handleStop = (id: number): void => {
+    stopRollSession(id).then(setState).catch((e) => setError(String(e)))
+  }
+
+  const handleRemove = (id: number): void => {
+    // No confirm prompt — the WebSocket broadcast will refresh state, and
+    // removing a single mis-tracked roll set should feel snappy. Users can
+    // always re-create a session by rolling again on the same range.
+    removeRollSession(id).catch((e) => setError(String(e)))
   }
 
   const handleClear = (): void => {
@@ -269,7 +286,13 @@ export default function RollTrackerPage(): React.ReactElement {
       ) : (
         <div className="flex flex-col gap-3 overflow-y-auto">
           {state.sessions.map((s) => (
-            <SessionCard key={`${s.max}-${s.started_at}`} session={s} rule={state.winner_rule} onStop={handleStop} />
+            <SessionCard
+              key={s.id}
+              session={s}
+              rule={state.winner_rule}
+              onStop={handleStop}
+              onRemove={handleRemove}
+            />
           ))}
         </div>
       )}
