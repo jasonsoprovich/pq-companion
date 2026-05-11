@@ -307,7 +307,17 @@ function ErrorState({ message }: { message: string }): React.ReactElement {
 // ── Tab: Overview ──────────────────────────────────────────────────────────────
 
 function OverviewTab({ zone }: { zone: Zone }): React.ReactElement {
+  const navigate = useNavigate()
   const coordStr = `Y: ${zone.safe_y.toFixed(1)}, X: ${zone.safe_x.toFixed(1)}, Z: ${zone.safe_z.toFixed(1)}`
+  const gy = zone.graveyard
+  const gyCoordStr = gy
+    ? `Y: ${gy.y.toFixed(1)}, X: ${gy.x.toFixed(1)}, Z: ${gy.z.toFixed(1)}`
+    : ''
+  const gyTimerStr = gy
+    ? gy.timer_minutes === 1
+      ? '1 minute'
+      : `${gy.timer_minutes} minutes`
+    : ''
   return (
     <div className="flex flex-col gap-3">
       <Section title="Quick Facts">
@@ -333,6 +343,22 @@ function OverviewTab({ zone }: { zone: Zone }): React.ReactElement {
         <StatRow label="Succor Point" value={coordStr} />
         {zone.note && <StatRow label="Note" value={zone.note} />}
       </Section>
+      {gy && (
+        <Section title="Graveyard">
+          <div className="flex justify-between py-0.5 text-sm">
+            <span style={{ color: 'var(--color-muted-foreground)' }}>Pops out to</span>
+            <button
+              onClick={() => navigate(`/zones?select=${gy.zone_id}`)}
+              className="cursor-pointer text-right hover:underline"
+              style={{ color: 'var(--color-primary)' }}
+            >
+              {gy.long_name || gy.short_name}
+            </button>
+          </div>
+          <StatRow label="Location" value={gyCoordStr} />
+          <StatRow label="Corpse Timer" value={gyTimerStr} />
+        </Section>
+      )}
     </div>
   )
 }

@@ -249,24 +249,38 @@ type SpellCrossRefs struct {
 
 // Zone represents a row from the zone table.
 type Zone struct {
-	ID           int     `json:"id"`
-	ShortName    string  `json:"short_name"`
-	LongName     string  `json:"long_name"`
-	FileName     string  `json:"file_name"`
-	ZoneIDNumber int     `json:"zone_id_number"`
-	SafeX        float64 `json:"safe_x"`
-	SafeY        float64 `json:"safe_y"`
-	SafeZ        float64 `json:"safe_z"`
-	MinLevel     int     `json:"min_level"`
-	Note         string  `json:"note"`
-	Outdoor      int     `json:"outdoor"`
-	Hotzone      int     `json:"hotzone"`
-	CanLevitate  int     `json:"can_levitate"`
-	CanBind      int     `json:"can_bind"`
-	ExpMod       float64 `json:"exp_mod"`
-	Expansion    int     `json:"expansion"`
-	NPCLevelMin  int     `json:"npc_level_min"`
-	NPCLevelMax  int     `json:"npc_level_max"`
+	ID           int             `json:"id"`
+	ShortName    string          `json:"short_name"`
+	LongName     string          `json:"long_name"`
+	FileName     string          `json:"file_name"`
+	ZoneIDNumber int             `json:"zone_id_number"`
+	SafeX        float64         `json:"safe_x"`
+	SafeY        float64         `json:"safe_y"`
+	SafeZ        float64         `json:"safe_z"`
+	MinLevel     int             `json:"min_level"`
+	Note         string          `json:"note"`
+	Outdoor      int             `json:"outdoor"`
+	Hotzone      int             `json:"hotzone"`
+	CanLevitate  int             `json:"can_levitate"`
+	CanBind      int             `json:"can_bind"`
+	ExpMod       float64         `json:"exp_mod"`
+	Expansion    int             `json:"expansion"`
+	NPCLevelMin  int             `json:"npc_level_min"`
+	NPCLevelMax  int             `json:"npc_level_max"`
+	Graveyard    *ZoneGraveyard  `json:"graveyard,omitempty"`
+}
+
+// ZoneGraveyard describes where a player's corpse pops out when the
+// graveyard timer expires. Only set on zones that have a graveyard
+// configured (zone.graveyard_id > 0).
+type ZoneGraveyard struct {
+	ZoneID       int     `json:"zone_id"`     // destination zone DB id (for navigation)
+	ShortName    string  `json:"short_name"`  // destination short_name
+	LongName     string  `json:"long_name"`   // destination long_name
+	X            float64 `json:"x"`
+	Y            float64 `json:"y"`
+	Z            float64 `json:"z"`
+	TimerMinutes int     `json:"timer_minutes"`
 }
 
 // LootDropItem is one item within a loot drop entry.

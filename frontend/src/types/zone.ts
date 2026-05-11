@@ -17,6 +17,17 @@ export interface Zone {
   expansion: number
   npc_level_min: number
   npc_level_max: number
+  graveyard?: ZoneGraveyard
+}
+
+export interface ZoneGraveyard {
+  zone_id: number
+  short_name: string
+  long_name: string
+  x: number
+  y: number
+  z: number
+  timer_minutes: number
 }
 
 export interface ZoneConnection {

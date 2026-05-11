@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -1024,15 +1025,24 @@ func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
 // clause prefixed with the given string (e.g. " AND " or " WHERE ") and the
 // matching arg slice; empty if the allowlist is empty.
 func zoneVisibilityFilter(prefix string) (string, []any) {
-	if len(visibleZoneShortNames) == 0 {
+	if len(zoneCatalog) == 0 {
 		return "", nil
 	}
-	args := make([]any, 0, len(visibleZoneShortNames))
-	for name := range visibleZoneShortNames {
+	args := make([]any, 0, len(zoneCatalog))
+	for name := range zoneCatalog {
 		args = append(args, name)
 	}
 	ph := strings.Repeat("?,", len(args))
-	return fmt.Sprintf("%sshort_name IN (%s)", prefix, ph[:len(ph)-1]), args
+	return fmt.Sprintf("%sz.short_name IN (%s)", prefix, ph[:len(ph)-1]), args
+}
+
+// applyExpansionOverride replaces the raw zone.expansion column with the
+// canonical bucket from zoneCatalog. See the comment on zoneCatalog for why.
+func applyExpansionOverride(shortName string, raw int) int {
+	if exp, ok := zoneCatalog[shortName]; ok {
+		return exp
+	}
+	return raw
 }
 
 const zoneColumns = `
@@ -1042,12 +1052,32 @@ const zoneColumns = `
   z.castoutdoor, z.hotzone, z.canlevitate, z.canbind,
   COALESCE(z.zone_exp_multiplier, 1.0), z.expansion,
   COALESCE((SELECT MIN(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name), 0),
-  COALESCE((SELECT MAX(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name), 0)`
+  COALESCE((SELECT MAX(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name), 0),
+  COALESCE(z.graveyard_id, 0),
+  COALESCE(z.graveyard_time, 0),
+  COALESCE(gz.id, 0),
+  COALESCE(gz.short_name, ''),
+  COALESCE(gz.long_name, ''),
+  COALESCE(g.x, 0),
+  COALESCE(g.y, 0),
+  COALESCE(g.z, 0)`
+
+// zoneFrom is the FROM clause that pairs with zoneColumns. It LEFT JOINs
+// the graveyard table and the destination zone so a single SELECT returns
+// graveyard pop-out info when configured.
+const zoneFrom = `
+  FROM zone z
+  LEFT JOIN graveyard g ON g.id = z.graveyard_id AND z.graveyard_id > 0
+  LEFT JOIN zone gz ON gz.zoneidnumber = g.zone_id`
 
 func scanZone(row interface {
 	Scan(...any) error
 }) (*Zone, error) {
 	var z Zone
+	var graveyardID, graveyardTime int
+	var gyDestID int
+	var gyShort, gyLong string
+	var gyX, gyY, gyZ float64
 	err := row.Scan(
 		&z.ID, &z.ShortName, &z.LongName, &z.FileName,
 		&z.ZoneIDNumber, &z.SafeX, &z.SafeY, &z.SafeZ,
@@ -1055,9 +1085,24 @@ func scanZone(row interface {
 		&z.Outdoor, &z.Hotzone, &z.CanLevitate, &z.CanBind,
 		&z.ExpMod, &z.Expansion,
 		&z.NPCLevelMin, &z.NPCLevelMax,
+		&graveyardID, &graveyardTime,
+		&gyDestID, &gyShort, &gyLong,
+		&gyX, &gyY, &gyZ,
 	)
 	if err != nil {
 		return nil, err
+	}
+	z.Expansion = applyExpansionOverride(z.ShortName, z.Expansion)
+	if graveyardID > 0 && gyDestID > 0 {
+		z.Graveyard = &ZoneGraveyard{
+			ZoneID:       gyDestID,
+			ShortName:    gyShort,
+			LongName:     gyLong,
+			X:            gyX,
+			Y:            gyY,
+			Z:            gyZ,
+			TimerMinutes: graveyardTime,
+		}
 	}
 	return &z, nil
 }
@@ -1106,7 +1151,7 @@ func (db *DB) GetNPCsByZone(shortName string, limit, offset int) (*SearchResult[
 
 // GetZone returns the zone with the given ID, or sql.ErrNoRows if not found.
 func (db *DB) GetZone(id int) (*Zone, error) {
-	q := fmt.Sprintf("SELECT %s FROM zone z WHERE z.id = ?", zoneColumns)
+	q := fmt.Sprintf("SELECT %s %s WHERE z.id = ?", zoneColumns, zoneFrom)
 	row := db.QueryRow(q, id)
 	z, err := scanZone(row)
 	if err != nil {
@@ -1117,7 +1162,7 @@ func (db *DB) GetZone(id int) (*Zone, error) {
 
 // GetZoneByShortName returns the zone matching the given short_name.
 func (db *DB) GetZoneByShortName(shortName string) (*Zone, error) {
-	q := fmt.Sprintf("SELECT %s FROM zone z WHERE z.short_name = ?", zoneColumns)
+	q := fmt.Sprintf("SELECT %s %s WHERE z.short_name = ?", zoneColumns, zoneFrom)
 	row := db.QueryRow(q, shortName)
 	z, err := scanZone(row)
 	if err != nil {
@@ -1132,34 +1177,18 @@ type ZoneSearchFilters struct {
 }
 
 // SearchZones searches zones by long_name (case-insensitive substring match).
+// Expansion filtering is applied in Go against the curated zoneCatalog
+// (see applyExpansionOverride) because the raw zone.expansion column doesn't
+// match player-visible buckets for several Classic/Kunark dungeons.
 func (db *DB) SearchZones(query string, filters ZoneSearchFilters, limit, offset int) (*SearchResult[Zone], error) {
 	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
 	hiddenFilter, hiddenArgs := zoneVisibilityFilter(" AND ")
 
-	extraFilter := ""
-	extraArgs := []any{}
-	if filters.Expansion != nil {
-		extraFilter = " AND expansion = ?"
-		extraArgs = append(extraArgs, *filters.Expansion)
-	}
-
-	var total int
-	countArgs := append([]any{pattern}, hiddenArgs...)
-	countArgs = append(countArgs, extraArgs...)
-	if err := db.QueryRow(
-		"SELECT COUNT(*) FROM zone WHERE long_name LIKE ? ESCAPE '\\'"+hiddenFilter+extraFilter,
-		countArgs...,
-	).Scan(&total); err != nil {
-		return nil, fmt.Errorf("count zones: %w", err)
-	}
-
 	q := fmt.Sprintf(
-		"SELECT %s FROM zone z WHERE z.long_name LIKE ? ESCAPE '\\'%s%s ORDER BY z.long_name LIMIT ? OFFSET ?",
-		zoneColumns, hiddenFilter, extraFilter,
+		"SELECT %s %s WHERE z.long_name LIKE ? ESCAPE '\\'%s ORDER BY z.long_name",
+		zoneColumns, zoneFrom, hiddenFilter,
 	)
 	queryArgs := append([]any{pattern}, hiddenArgs...)
-	queryArgs = append(queryArgs, extraArgs...)
-	queryArgs = append(queryArgs, limit, offset)
 	rows, err := db.Query(q, queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("search zones: %w", err)
@@ -1170,30 +1199,41 @@ func (db *DB) SearchZones(query string, filters ZoneSearchFilters, limit, offset
 	if err != nil {
 		return nil, err
 	}
-	return &SearchResult[Zone]{Items: zones, Total: total}, nil
+
+	if filters.Expansion != nil {
+		filtered := zones[:0]
+		for _, z := range zones {
+			if z.Expansion == *filters.Expansion {
+				filtered = append(filtered, z)
+			}
+		}
+		zones = filtered
+	}
+
+	total := len(zones)
+	if offset > total {
+		offset = total
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return &SearchResult[Zone]{Items: zones[offset:end], Total: total}, nil
 }
 
-// ZoneExpansions returns the distinct expansion IDs present in the zone
-// browser, after hidden-zone filtering. Sorted ascending.
+// ZoneExpansions returns the distinct expansion IDs surfaced in the zone
+// browser, derived from the curated zoneCatalog. Sorted ascending.
 func (db *DB) ZoneExpansions() ([]int, error) {
-	hiddenFilter, hiddenArgs := zoneVisibilityFilter(" WHERE ")
-	rows, err := db.Query(
-		"SELECT DISTINCT expansion FROM zone"+hiddenFilter+" ORDER BY expansion",
-		hiddenArgs...,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("query zone expansions: %w", err)
+	seen := make(map[int]struct{}, 5)
+	for _, exp := range zoneCatalog {
+		seen[exp] = struct{}{}
 	}
-	defer rows.Close()
-	var out []int
-	for rows.Next() {
-		var e int
-		if err := rows.Scan(&e); err != nil {
-			return nil, fmt.Errorf("scan zone expansion: %w", err)
-		}
-		out = append(out, e)
+	out := make([]int, 0, len(seen))
+	for exp := range seen {
+		out = append(out, exp)
 	}
-	return out, rows.Err()
+	sort.Ints(out)
+	return out, nil
 }
 
 func collectZones(rows *sql.Rows) ([]Zone, error) {
@@ -1227,6 +1267,7 @@ func (db *DB) GetZoneConnections(shortName string) ([]ZoneConnection, error) {
 		if err := rows.Scan(&c.ZoneID, &c.ShortName, &c.LongName, &c.Expansion); err != nil {
 			return nil, fmt.Errorf("scan zone connection: %w", err)
 		}
+		c.Expansion = applyExpansionOverride(c.ShortName, c.Expansion)
 		result = append(result, c)
 	}
 	return result, rows.Err()
