@@ -193,6 +193,8 @@ function FilterBar({
   onToggleMeOnly,
   dpsMode,
   onToggleDPSMode,
+  sessionGrouping,
+  onToggleSessionGrouping,
 }: {
   filter: UIFilter
   facets: HistoryFacets
