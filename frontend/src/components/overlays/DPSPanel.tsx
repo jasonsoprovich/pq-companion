@@ -6,6 +6,7 @@ import OverlayWindow from '../OverlayWindow'
 import type { CombatState, FightState } from '../../types/combat'
 import type { LogTailerStatus } from '../../types/logEvent'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../../lib/dpsRollup'
+import { combatantBarColor } from '../../lib/combatantColor'
 import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, type DPSMode } from '../../hooks/useDPSMode'
 
 // dpsModeIcon picks an icon for the current DPS mode that matches the
@@ -243,7 +244,7 @@ function DPSRow({ stat, totalDamage, isYou, expanded, onToggle, mode }: { stat: 
           style={{
             position: 'absolute', left: 0, top: 0, bottom: 0,
             width: `${barPct}%`,
-            backgroundColor: isYou ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.05)',
+            backgroundColor: combatantBarColor(stat.name),
             pointerEvents: 'none',
           }}
         />

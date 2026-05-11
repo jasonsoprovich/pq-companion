@@ -15,6 +15,7 @@ import OverlayLockButton from '../components/OverlayLockButton'
 import { getCombatState, resetCombatState } from '../services/api'
 import type { CombatState, FightState } from '../types/combat'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
+import { combatantBarColor } from '../lib/combatantColor'
 import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, playerAggregateDPS, type DPSMode } from '../hooks/useDPSMode'
 
 // dpsModeIcon picks an icon matching the metric's intuition.
@@ -96,7 +97,7 @@ function Row({ stat, totalDmg, expanded, onToggle, mode }: { stat: RolledUpEntit
             top: 0,
             bottom: 0,
             width: `${barPct}%`,
-            backgroundColor: isYou ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)',
+            backgroundColor: combatantBarColor(stat.name, 0.28),
             pointerEvents: 'none',
           }}
         />
