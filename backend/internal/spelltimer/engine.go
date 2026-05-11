@@ -282,7 +282,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		if !ok || data.Target == "" {
 			return
 		}
-		e.removeByTarget(data.Target)
+		e.removeOnKill(data.Target)
 	}
 }
 
@@ -768,6 +768,57 @@ func (e *Engine) removeByTarget(target string) {
 		slog.Info("timer-debug: removed timers by target", "target", target, "removed", removed)
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 	}
+}
+
+// removeOnKill is the EventKill cleanup path: drop timers bound to the
+// killed mob (exact TargetName match) AND drop any orphan target-less
+// detrimental timers.
+//
+// Triggers (StartExternal) create detrimental timers without a target —
+// the regex match line carries the target text, but the trigger engine
+// hasn't been wired to capture and forward it. When the spell-landed
+// pipeline doesn't ALSO fire on the same line (because the spell's
+// cast_on_other DB text doesn't match, or the cast-by-me gate filters
+// it), only the target-less trigger timer exists. removeByTarget alone
+// would never clear it because TargetName is empty.
+//
+// In practice the active player almost always debuffs the mob they're
+// killing, so wiping orphan detrimentals on any kill matches user
+// expectations ("I killed it, the debuff is gone"). Buffs are left
+// alone — a target-less buff is usually a self-buff or a raid-wide
+// effect that survives a single mob's death.
+func (e *Engine) removeOnKill(target string) {
+	if target == "" {
+		return
+	}
+	e.mu.Lock()
+	removed := 0
+	for k, t := range e.timers {
+		match := t.TargetName == target
+		orphan := t.TargetName == "" && isDetrimentalCategory(t.Category)
+		if match || orphan {
+			delete(e.timers, k)
+			removed++
+		}
+	}
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	if removed > 0 {
+		slog.Info("timer-debug: removed timers on kill", "target", target, "removed", removed)
+		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+	}
+}
+
+// isDetrimentalCategory reports whether a timer category represents a
+// hostile effect cast on an enemy. Mirrors the categories the cast index
+// routes through the detrimental scope path.
+func isDetrimentalCategory(c Category) bool {
+	switch c {
+	case CategoryDebuff, CategoryDot, CategoryMez, CategoryStun:
+		return true
+	}
+	return false
 }
 
 // removeIllusionsForPlayer deletes every "Illusion: …" buff timer keyed to

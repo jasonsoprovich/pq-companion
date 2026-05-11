@@ -516,6 +516,75 @@ func TestHandle_Kill_RemovesTimersOnVictim(t *testing.T) {
 	}
 }
 
+// EventKill also clears trigger-driven detrimental timers that have no
+// target binding. Triggers fire on a regex match but don't currently
+// extract the target from capture groups, so StartExternal records the
+// timer with TargetName="". Without this orphan-cleanup the timer would
+// run for its full nominal duration even after the mob died.
+func TestHandle_Kill_RemovesOrphanDetrimentalTimers(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	// Trigger-driven Tashanian timer — no target.
+	e.timers[timerKey("Tashanian", "")] = &ActiveTimer{
+		ID: timerKey("Tashanian", ""), SpellName: "Tashanian", Category: CategoryDebuff,
+		TargetName: "", CastAt: now, StartsAt: now, ExpiresAt: now.Add(13 * time.Minute),
+	}
+	// Trigger-driven Mez timer — no target, different category, still detrimental.
+	e.timers[timerKey("Mesmerize", "")] = &ActiveTimer{
+		ID: timerKey("Mesmerize", ""), SpellName: "Mesmerize", Category: CategoryMez,
+		TargetName: "", CastAt: now, StartsAt: now, ExpiresAt: now.Add(60 * time.Second),
+	}
+	// Orphan buff — should NOT be cleared by a kill event.
+	e.timers[timerKey("Visions of Grandeur", "")] = &ActiveTimer{
+		ID: timerKey("Visions of Grandeur", ""), SpellName: "Visions of Grandeur", Category: CategoryBuff,
+		TargetName: "", CastAt: now, StartsAt: now, ExpiresAt: now.Add(27 * time.Minute),
+	}
+	// Bound timer on an unrelated mob — should also survive.
+	e.timers[timerKey("Tashanian", "an orc")] = &ActiveTimer{
+		ID: timerKey("Tashanian", "an orc"), SpellName: "Tashanian", Category: CategoryDebuff,
+		TargetName: "an orc", CastAt: now, StartsAt: now, ExpiresAt: now.Add(13 * time.Minute),
+	}
+
+	e.Handle(logparser.LogEvent{
+		Type: logparser.EventKill,
+		Data: logparser.KillData{Killer: "Stonae", Target: "Zun Thall Xakra"},
+	})
+
+	if _, ok := e.timers[timerKey("Tashanian", "")]; ok {
+		t.Error("orphan detrimental should have been cleared on kill")
+	}
+	if _, ok := e.timers[timerKey("Mesmerize", "")]; ok {
+		t.Error("orphan mez should have been cleared on kill")
+	}
+	if _, ok := e.timers[timerKey("Visions of Grandeur", "")]; !ok {
+		t.Error("orphan buff should have survived the kill")
+	}
+	if _, ok := e.timers[timerKey("Tashanian", "an orc")]; !ok {
+		t.Error("target-bound timer on unrelated mob should have survived")
+	}
+}
+
+// Multi-word boss names — verify the existing target-match path handles
+// names with spaces (e.g. "Zun Thall Xakra") since these are the typical
+// raid targets where users notice debuffs lingering.
+func TestHandle_Kill_RemovesMultiWordBossTimer(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	e.timers[timerKey("Tashanian", "Zun Thall Xakra")] = &ActiveTimer{
+		ID: timerKey("Tashanian", "Zun Thall Xakra"), SpellName: "Tashanian", Category: CategoryDebuff,
+		TargetName: "Zun Thall Xakra", CastAt: now, StartsAt: now, ExpiresAt: now.Add(13 * time.Minute),
+	}
+
+	e.Handle(logparser.LogEvent{
+		Type: logparser.EventKill,
+		Data: logparser.KillData{Killer: "Stonae", Target: "Zun Thall Xakra"},
+	})
+
+	if _, ok := e.timers[timerKey("Tashanian", "Zun Thall Xakra")]; ok {
+		t.Error("timer on slain multi-word boss should have been removed")
+	}
+}
+
 // scope=cast_by_me drops other-target lands when there's no recent local
 // cast of the same spell — i.e. another player's buff on a third party.
 func TestOnSpellLanded_ScopeCastByMe_FiltersWithoutRecentCast(t *testing.T) {
