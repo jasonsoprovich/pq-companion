@@ -31,6 +31,24 @@ const (
 	WinnerLowest WinnerRule = "lowest"
 )
 
+// Mode selects how sessions get closed.
+type Mode string
+
+const (
+	// ModeManual leaves sessions open until the user clicks Stop or the
+	// session goes stale (no rolls for staleAfter).
+	ModeManual Mode = "manual"
+	// ModeTimer auto-stops every new session AutoStopSeconds after its
+	// first roll. Officers use this when they want a fixed bidding
+	// window per drop ("/random 45s window").
+	ModeTimer Mode = "timer"
+)
+
+// DefaultAutoStopSeconds is the timer-mode window length applied to new
+// sessions when the client hasn't supplied one. 45s matches the common
+// guild "you have N seconds to roll" call-out.
+const DefaultAutoStopSeconds = 45
+
 // Roll is one logged dice roll within a session.
 type Roll struct {
 	// Roller is the player name as EQ logged it.
@@ -65,6 +83,10 @@ type Session struct {
 	// player rolling on a different drop that happens to share a Max)
 	// open a fresh session at the same Max.
 	Active bool `json:"active"`
+	// AutoStopAt is the wall-clock time the session will auto-close in
+	// timer mode. Zero when in manual mode or after the timer has
+	// already fired. The UI uses this to render a countdown badge.
+	AutoStopAt time.Time `json:"auto_stop_at,omitempty"`
 	// Rolls is every roll received for this session in arrival order.
 	Rolls []Roll `json:"rolls"`
 }
@@ -80,4 +102,9 @@ type State struct {
 	// frozen winner per session because flipping the rule should
 	// re-rank all sessions instantly.
 	WinnerRule WinnerRule `json:"winner_rule"`
+	// Mode is how sessions get closed (manual vs. timer).
+	Mode Mode `json:"mode"`
+	// AutoStopSeconds is the timer-mode session length applied to every
+	// new session. Ignored when Mode == ModeManual.
+	AutoStopSeconds int `json:"auto_stop_seconds"`
 }

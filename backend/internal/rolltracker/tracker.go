@@ -30,10 +30,13 @@ const staleAfter = 5 * time.Minute
 type Tracker struct {
 	hub *ws.Hub
 
-	mu       sync.Mutex
-	sessions []*Session // newest-first
-	rule     WinnerRule
-	nextID   uint64
+	mu              sync.Mutex
+	sessions        []*Session // newest-first
+	rule            WinnerRule
+	mode            Mode
+	autoStopSeconds int
+	autoStops       map[uint64]*time.Timer // session ID → pending auto-stop
+	nextID          uint64
 
 	// pendingRoller holds the name from the most recent EventRollAnnounce
 	// while we wait for its matching EventRollResult.
@@ -44,8 +47,11 @@ type Tracker struct {
 // New returns an initialised Tracker with the default WinnerHighest rule.
 func New(hub *ws.Hub) *Tracker {
 	return &Tracker{
-		hub:  hub,
-		rule: WinnerHighest,
+		hub:             hub,
+		rule:            WinnerHighest,
+		mode:            ModeManual,
+		autoStopSeconds: DefaultAutoStopSeconds,
+		autoStops:       make(map[uint64]*time.Timer),
 	}
 }
 
@@ -125,10 +131,54 @@ func (t *Tracker) sessionForLocked(max int, ts time.Time) *Session {
 		LastRollAt: ts,
 		Active:     true,
 	}
+	if t.mode == ModeTimer && t.autoStopSeconds > 0 {
+		dur := time.Duration(t.autoStopSeconds) * time.Second
+		// AutoStopAt is anchored to wall-clock time.Now() rather than the
+		// log timestamp ts: the user sees the countdown ticking against
+		// the clock on their wall, so a log timestamp pulled from
+		// minutes-old backlog would otherwise show as "expired" the
+		// instant it appeared. time.AfterFunc is also wall-clock by
+		// nature, so both halves agree.
+		s.AutoStopAt = time.Now().Add(dur)
+		id := s.ID
+		t.autoStops[id] = time.AfterFunc(dur, func() { t.fireAutoStop(id) })
+	}
 	// Prepend so newest sessions appear first in the broadcast payload.
 	t.sessions = append([]*Session{s}, t.sessions...)
 	t.evictOldestStoppedLocked()
 	return s
+}
+
+// fireAutoStop is the callback time.AfterFunc invokes when a timer-mode
+// session's window expires. It mirrors Stop without requiring the caller
+// to know whether the session still exists or has been manually stopped
+// in the interim.
+func (t *Tracker) fireAutoStop(id uint64) {
+	t.mu.Lock()
+	delete(t.autoStops, id)
+	var found bool
+	for _, s := range t.sessions {
+		if s.ID == id && s.Active {
+			s.Active = false
+			s.AutoStopAt = time.Time{}
+			found = true
+			break
+		}
+	}
+	state := t.stateLocked()
+	t.mu.Unlock()
+	if found {
+		t.broadcast(state)
+	}
+}
+
+// cancelAutoStopLocked stops a pending auto-stop timer for the given
+// session ID if one is registered. mu must be held.
+func (t *Tracker) cancelAutoStopLocked(id uint64) {
+	if timer, ok := t.autoStops[id]; ok {
+		timer.Stop()
+		delete(t.autoStops, id)
+	}
 }
 
 // evictOldestStoppedLocked drops the oldest stopped session if we're over
@@ -153,9 +203,13 @@ func (t *Tracker) Stop(id uint64) bool {
 	for _, s := range t.sessions {
 		if s.ID == id && s.Active {
 			s.Active = false
+			s.AutoStopAt = time.Time{}
 			found = true
 			break
 		}
+	}
+	if found {
+		t.cancelAutoStopLocked(id)
 	}
 	state := t.stateLocked()
 	t.mu.Unlock()
@@ -177,6 +231,9 @@ func (t *Tracker) Remove(id uint64) bool {
 			break
 		}
 	}
+	if found {
+		t.cancelAutoStopLocked(id)
+	}
 	state := t.stateLocked()
 	t.mu.Unlock()
 	if found {
@@ -189,6 +246,10 @@ func (t *Tracker) Remove(id uint64) bool {
 func (t *Tracker) Clear() {
 	t.mu.Lock()
 	t.sessions = nil
+	for id, timer := range t.autoStops {
+		timer.Stop()
+		delete(t.autoStops, id)
+	}
 	state := t.stateLocked()
 	t.mu.Unlock()
 	t.broadcast(state)
@@ -210,6 +271,35 @@ func (t *Tracker) SetWinnerRule(rule WinnerRule) {
 	t.broadcast(state)
 }
 
+// SetMode swaps the session-closing mode. Switching modes affects only
+// future sessions — currently-active sessions keep their existing
+// behavior (a Live session with a timer stays scheduled; a Live manual
+// session does not gain a timer). Callers can also pass autoStopSeconds
+// to update the timer-mode window in the same call. Pass 0 to leave the
+// existing value untouched.
+func (t *Tracker) SetMode(mode Mode, autoStopSeconds int) {
+	if mode != ModeManual && mode != ModeTimer {
+		return
+	}
+	t.mu.Lock()
+	changed := false
+	if t.mode != mode {
+		t.mode = mode
+		changed = true
+	}
+	if autoStopSeconds > 0 && t.autoStopSeconds != autoStopSeconds {
+		t.autoStopSeconds = autoStopSeconds
+		changed = true
+	}
+	if !changed {
+		t.mu.Unlock()
+		return
+	}
+	state := t.stateLocked()
+	t.mu.Unlock()
+	t.broadcast(state)
+}
+
 // State returns a snapshot of the current tracker state, safe to marshal.
 func (t *Tracker) State() State {
 	t.mu.Lock()
@@ -219,8 +309,10 @@ func (t *Tracker) State() State {
 
 func (t *Tracker) stateLocked() State {
 	out := State{
-		WinnerRule: t.rule,
-		Sessions:   make([]Session, 0, len(t.sessions)),
+		WinnerRule:      t.rule,
+		Mode:            t.mode,
+		AutoStopSeconds: t.autoStopSeconds,
+		Sessions:        make([]Session, 0, len(t.sessions)),
 	}
 	for _, s := range t.sessions {
 		rolls := make([]Roll, len(s.Rolls))
@@ -231,6 +323,7 @@ func (t *Tracker) stateLocked() State {
 			StartedAt:  s.StartedAt,
 			LastRollAt: s.LastRollAt,
 			Active:     s.Active,
+			AutoStopAt: s.AutoStopAt,
 			Rolls:      rolls,
 		})
 	}

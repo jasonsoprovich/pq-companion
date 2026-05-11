@@ -34,6 +34,9 @@ export interface ElectronAPI {
     openNPC: () => Promise<void>
     closeNPC: () => Promise<void>
     toggleNPC: () => Promise<void>
+    openRollTracker: () => Promise<void>
+    closeRollTracker: () => Promise<void>
+    toggleRollTracker: () => Promise<void>
     anyPopoutOpen: () => Promise<boolean>
     openAllPopouts: () => Promise<void>
     closeAllPopouts: () => Promise<void>

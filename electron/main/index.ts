@@ -73,7 +73,7 @@ function audioMimeType(ext: string): string {
 
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
-type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'trigger' | 'npc'
+type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'trigger' | 'npc' | 'rollTracker'
 type Bounds = { x: number; y: number; width: number; height: number }
 
 type BoundsStore = Partial<Record<OverlayName, Bounds>>
@@ -186,6 +186,7 @@ let buffTimerWindow: BrowserWindow | null = null
 let detrimTimerWindow: BrowserWindow | null = null
 let triggerOverlayWindow: BrowserWindow | null = null
 let npcOverlayWindow: BrowserWindow | null = null
+let rollTrackerWindow: BrowserWindow | null = null
 let sidecarProcess: ChildProcess | null = null
 
 // ── Sidecar (Go backend) lifecycle ────────────────────────────────────────────
@@ -313,7 +314,7 @@ function setupAutoUpdater(): void {
 // ── Window management ─────────────────────────────────────────────────────────
 
 function closeAllOverlays(): void {
-  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, triggerOverlayWindow, npcOverlayWindow]) {
+  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, triggerOverlayWindow, npcOverlayWindow, rollTrackerWindow]) {
     if (win && !win.isDestroyed()) win.destroy()
   }
 }
@@ -712,6 +713,59 @@ function createNPCOverlay(): void {
   })
 }
 
+// ── Roll Tracker overlay window ──────────────────────────────────────────────
+
+function createRollTrackerOverlay(): void {
+  if (rollTrackerWindow && !rollTrackerWindow.isDestroyed()) {
+    rollTrackerWindow.focus()
+    return
+  }
+
+  const { x, y, width, height } = getRestoredBounds('rollTracker', { x: 0, y: 0, width: 320, height: 360 })
+  rollTrackerWindow = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    minWidth: 240,
+    minHeight: 160,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    },
+  })
+
+  rollTrackerWindow.setAlwaysOnTop(true, 'screen-saver')
+  rollTrackerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  windowToOverlayName.set(rollTrackerWindow, 'rollTracker')
+  if (getOverlayLocked('rollTracker')) {
+    rollTrackerWindow.setIgnoreMouseEvents(true, { forward: true })
+  }
+  trackOverlayBounds('rollTracker', rollTrackerWindow)
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    rollTrackerWindow.loadURL(`${rendererUrl}/#/roll-tracker-window`)
+  } else {
+    rollTrackerWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/roll-tracker-window',
+    })
+  }
+
+  rollTrackerWindow.on('closed', () => {
+    rollTrackerWindow = null
+  })
+}
+
 // ── IPC handlers — window controls ───────────────────────────────────────────
 
 ipcMain.handle('window:minimize', () => mainWindow?.minimize())
@@ -835,6 +889,24 @@ ipcMain.handle('overlay:npc:toggle', () => {
   }
 })
 
+ipcMain.handle('overlay:rolltracker:open', () => {
+  createRollTrackerOverlay()
+})
+
+ipcMain.handle('overlay:rolltracker:close', () => {
+  if (rollTrackerWindow && !rollTrackerWindow.isDestroyed()) {
+    rollTrackerWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:rolltracker:toggle', () => {
+  if (rollTrackerWindow && !rollTrackerWindow.isDestroyed()) {
+    rollTrackerWindow.close()
+  } else {
+    createRollTrackerOverlay()
+  }
+})
+
 // ── IPC handlers — bulk popout control ───────────────────────────────────────
 
 function popoutWindows(): BrowserWindow[] {
@@ -845,6 +917,7 @@ function popoutWindows(): BrowserWindow[] {
     detrimTimerWindow,
     triggerOverlayWindow,
     npcOverlayWindow,
+    rollTrackerWindow,
   ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
 }
 
@@ -856,6 +929,7 @@ ipcMain.handle('overlay:popouts:open-all', () => {
   if (!detrimTimerWindow || detrimTimerWindow.isDestroyed()) createDetrimTimerOverlay()
   if (!npcOverlayWindow || npcOverlayWindow.isDestroyed()) createNPCOverlay()
   if (!triggerOverlayWindow || triggerOverlayWindow.isDestroyed()) createTriggerOverlay()
+  if (!rollTrackerWindow || rollTrackerWindow.isDestroyed()) createRollTrackerOverlay()
 })
 
 ipcMain.handle('overlay:popouts:close-all', () => {

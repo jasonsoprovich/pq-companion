@@ -11,7 +11,7 @@ import type { TargetState } from '../types/overlay'
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold } from '../types/trigger'
-import type { RollsState, WinnerRule } from '../types/rolls'
+import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -792,4 +792,8 @@ export function clearRolls(): Promise<void> {
 
 export function setRollWinnerRule(rule: WinnerRule): Promise<RollsState> {
   return put<RollsState>('/api/rolls/settings', { winner_rule: rule })
+}
+
+export function updateRollsSettings(patch: RollsSettingsPatch): Promise<RollsState> {
+  return put<RollsState>('/api/rolls/settings', patch)
 }

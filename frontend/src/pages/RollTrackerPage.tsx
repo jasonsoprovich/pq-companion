@@ -1,58 +1,34 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Dice5, Trash2, Square, Trophy, ArrowDownAZ, ArrowUpAZ, Circle, X } from 'lucide-react'
+import { Dice5, Trash2, Square, Trophy, ArrowDownAZ, ArrowUpAZ, Circle, X, Timer, Hand } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { getRolls, stopRollSession, removeRollSession, clearRolls, setRollWinnerRule } from '../services/api'
-import type { RollsState, RollSession, WinnerRule, Roll } from '../types/rolls'
+import {
+  getRolls,
+  stopRollSession,
+  removeRollSession,
+  clearRolls,
+  updateRollsSettings,
+} from '../services/api'
+import type { RollsState, RollSession, WinnerRule } from '../types/rolls'
+import { winnersFor, sortRolls, fmtRollTime, countdownSeconds } from '../lib/rollHelpers'
 
 const WS_ROLLS = 'overlay:rolls'
-
-function fmtTime(iso: string): string {
-  if (!iso) return ''
-  try {
-    return new Date(iso).toLocaleTimeString()
-  } catch {
-    return iso
-  }
-}
-
-function winnersFor(session: RollSession, rule: WinnerRule): Set<string> {
-  // Pick the winning value among each player's first roll (duplicates are
-  // ignored). Multiple players tied on the winning value all return as
-  // co-winners so the user can resolve the tie however they like.
-  const firstByPlayer = new Map<string, Roll>()
-  for (const r of session.rolls) {
-    if (!firstByPlayer.has(r.roller)) firstByPlayer.set(r.roller, r)
-  }
-  if (firstByPlayer.size === 0) return new Set()
-  const values = [...firstByPlayer.values()].map((r) => r.value)
-  const target = rule === 'highest' ? Math.max(...values) : Math.min(...values)
-  const winners = new Set<string>()
-  for (const r of firstByPlayer.values()) {
-    if (r.value === target) winners.add(r.roller)
-  }
-  return winners
-}
 
 function SessionCard({
   session,
   rule,
+  now,
   onStop,
   onRemove,
 }: {
   session: RollSession
   rule: WinnerRule
+  now: number
   onStop: (id: number) => void
   onRemove: (id: number) => void
 }): React.ReactElement {
   const winners = useMemo(() => winnersFor(session, rule), [session, rule])
-
-  // Display in winner-first order while the session is being watched —
-  // makes the leader pop without forcing the user to scan a long list.
-  const orderedRolls = useMemo(() => {
-    const rolls = [...session.rolls]
-    rolls.sort((a, b) => (rule === 'highest' ? b.value - a.value : a.value - b.value))
-    return rolls
-  }, [session.rolls, rule])
+  const orderedRolls = useMemo(() => sortRolls(session.rolls, rule), [session.rolls, rule])
+  const remaining = session.active ? countdownSeconds(session, now) : null
 
   return (
     <div
@@ -71,11 +47,23 @@ function SessionCard({
             </div>
             <div className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
               {session.rolls.length} roll{session.rolls.length === 1 ? '' : 's'} ·
-              {' '}started {fmtTime(session.started_at)}
+              {' '}started {fmtRollTime(session.started_at)}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {remaining !== null && (
+            <span
+              className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-mono tabular-nums"
+              style={{
+                backgroundColor: remaining <= 5 ? '#b45309' : 'var(--color-surface-3)',
+                color: remaining <= 5 ? 'white' : 'var(--color-foreground)',
+              }}
+              title="Time remaining until this session auto-stops"
+            >
+              <Timer size={11} /> {remaining}s
+            </span>
+          )}
           {session.active ? (
             <span
               className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-semibold uppercase"
@@ -150,7 +138,7 @@ function SessionCard({
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                    {fmtTime(r.timestamp)}
+                    {fmtRollTime(r.timestamp)}
                   </span>
                   <span
                     className="tabular-nums font-mono"
@@ -169,11 +157,18 @@ function SessionCard({
 }
 
 export default function RollTrackerPage(): React.ReactElement {
-  const [state, setState] = useState<RollsState>({ sessions: [], winner_rule: 'highest' })
+  const [state, setState] = useState<RollsState>({
+    sessions: [],
+    winner_rule: 'highest',
+    mode: 'manual',
+    auto_stop_seconds: 45,
+  })
   const [error, setError] = useState<string | null>(null)
-  // Re-render every 30s so the "started Xs ago" text and Live/Stopped
-  // ordering by recency stays accurate while no new events arrive.
-  const [, setTick] = useState(0)
+  // 1s tick so countdown badges, "Live" indicators, and the "started Xs
+  // ago" copy stay current between WS broadcasts. Cheap — only one
+  // setState per second.
+  const [now, setNow] = useState(() => Date.now())
+  const [durationDraft, setDurationDraft] = useState<string>('')
   const stateRef = useRef(state)
   stateRef.current = state
 
@@ -181,14 +176,19 @@ export default function RollTrackerPage(): React.ReactElement {
     getRolls()
       .then(setState)
       .catch((e) => setError(String(e)))
-    const id = setInterval(() => setTick((t) => t + 1), 30000)
+    const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
 
+  // Keep the duration input in sync with backend state when the user
+  // isn't actively editing it (empty draft).
+  useEffect(() => {
+    if (durationDraft === '') setDurationDraft(String(state.auto_stop_seconds))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.auto_stop_seconds])
+
   useWebSocket((msg) => {
-    if (msg.type === WS_ROLLS) {
-      setState(msg.data as RollsState)
-    }
+    if (msg.type === WS_ROLLS) setState(msg.data as RollsState)
   })
 
   const handleStop = (id: number): void => {
@@ -196,34 +196,105 @@ export default function RollTrackerPage(): React.ReactElement {
   }
 
   const handleRemove = (id: number): void => {
-    // No confirm prompt — the WebSocket broadcast will refresh state, and
-    // removing a single mis-tracked roll set should feel snappy. Users can
-    // always re-create a session by rolling again on the same range.
     removeRollSession(id).catch((e) => setError(String(e)))
   }
 
   const handleClear = (): void => {
     if (!window.confirm('Clear every roll session?')) return
-    clearRolls()
-      .then(() => setState({ sessions: [], winner_rule: stateRef.current.winner_rule }))
-      .catch((e) => setError(String(e)))
+    clearRolls().catch((e) => setError(String(e)))
   }
 
   const handleRule = (rule: WinnerRule): void => {
     if (rule === state.winner_rule) return
-    setRollWinnerRule(rule).then(setState).catch((e) => setError(String(e)))
+    updateRollsSettings({ winner_rule: rule }).then(setState).catch((e) => setError(String(e)))
+  }
+
+  const handleMode = (mode: 'manual' | 'timer'): void => {
+    if (mode === state.mode) return
+    updateRollsSettings({ mode }).then(setState).catch((e) => setError(String(e)))
+  }
+
+  const commitDuration = (): void => {
+    const parsed = parseInt(durationDraft, 10)
+    if (Number.isNaN(parsed) || parsed < 5 || parsed > 600) {
+      setDurationDraft(String(state.auto_stop_seconds))
+      return
+    }
+    if (parsed === state.auto_stop_seconds) return
+    updateRollsSettings({ auto_stop_seconds: parsed })
+      .then(setState)
+      .catch((e) => setError(String(e)))
   }
 
   return (
     <div className="flex h-full flex-col gap-3 p-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <Dice5 size={18} style={{ color: 'var(--color-primary)' }} />
           <h1 className="text-lg font-semibold" style={{ color: 'var(--color-foreground)' }}>
             Roll Tracker
           </h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Mode toggle */}
+          <div
+            className="flex items-center overflow-hidden rounded"
+            style={{ border: '1px solid var(--color-border)' }}
+          >
+            <button
+              onClick={() => handleMode('manual')}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs transition-colors"
+              style={{
+                backgroundColor: state.mode === 'manual' ? 'var(--color-primary)' : 'transparent',
+                color: state.mode === 'manual' ? 'white' : 'var(--color-foreground)',
+              }}
+              title="Sessions stay open until you stop them manually"
+            >
+              <Hand size={11} /> Manual
+            </button>
+            <button
+              onClick={() => handleMode('timer')}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs transition-colors"
+              style={{
+                backgroundColor: state.mode === 'timer' ? 'var(--color-primary)' : 'transparent',
+                color: state.mode === 'timer' ? 'white' : 'var(--color-foreground)',
+              }}
+              title="Auto-stop each session after the configured number of seconds"
+            >
+              <Timer size={11} /> Timer
+            </button>
+          </div>
+
+          {/* Duration input — only meaningful when mode=timer, but always
+              shown so the user sees the value they'll get when they toggle. */}
+          <label
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs"
+            style={{
+              border: '1px solid var(--color-border)',
+              opacity: state.mode === 'timer' ? 1 : 0.6,
+            }}
+            title="Auto-stop window in seconds (5 – 600)"
+          >
+            <span style={{ color: 'var(--color-muted)' }}>Window</span>
+            <input
+              type="number"
+              min={5}
+              max={600}
+              value={durationDraft}
+              onChange={(e) => setDurationDraft(e.target.value)}
+              onBlur={commitDuration}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  ;(e.target as HTMLInputElement).blur()
+                }
+              }}
+              className="w-12 bg-transparent text-right tabular-nums font-mono outline-none"
+              style={{ color: 'var(--color-foreground)' }}
+            />
+            <span style={{ color: 'var(--color-muted)' }}>s</span>
+          </label>
+
+          {/* Winner rule */}
           <div
             className="flex items-center overflow-hidden rounded"
             style={{ border: '1px solid var(--color-border)' }}
@@ -251,6 +322,7 @@ export default function RollTrackerPage(): React.ReactElement {
               <ArrowDownAZ size={11} /> Lowest
             </button>
           </div>
+
           <button
             onClick={handleClear}
             disabled={state.sessions.length === 0}
@@ -290,6 +362,7 @@ export default function RollTrackerPage(): React.ReactElement {
               key={s.id}
               session={s}
               rule={state.winner_rule}
+              now={now}
               onStop={handleStop}
               onRemove={handleRemove}
             />

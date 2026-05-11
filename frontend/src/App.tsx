@@ -28,6 +28,7 @@ import CombatLogPage from './pages/CombatLogPage'
 import CombatHistoryPage from './pages/CombatHistoryPage'
 import TriggersPage from './pages/TriggersPage'
 import RollTrackerPage from './pages/RollTrackerPage'
+import RollTrackerWindowPage from './pages/RollTrackerWindowPage'
 import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
 import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
 import CharactersPage from './pages/CharactersPage'
@@ -101,6 +102,7 @@ export default function App(): React.ReactElement {
         <Route path="detrim-timer-window" element={<OverlayPage><DetrimTimerWindowPage /></OverlayPage>} />
         <Route path="trigger-overlay-window" element={<OverlayPage><TriggerOverlayWindowPage /></OverlayPage>} />
         <Route path="npc-overlay-window" element={<OverlayPage><NPCOverlayWindowPage /></OverlayPage>} />
+        <Route path="roll-tracker-window" element={<OverlayPage><RollTrackerWindowPage /></OverlayPage>} />
 
         {/* Main app routes — wrapped in full Layout with audio/alert hooks */}
         <Route path="/" element={<MainWindowLayout />}>

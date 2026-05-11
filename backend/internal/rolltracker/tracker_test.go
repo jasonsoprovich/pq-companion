@@ -175,3 +175,65 @@ func TestSetWinnerRule(t *testing.T) {
 		t.Fatalf("invalid winner rule should be ignored")
 	}
 }
+
+func TestTimerModeAutoStops(t *testing.T) {
+	tr := newTrackerForTest()
+	tr.SetMode(ModeTimer, 1) // SetMode accepts >0 even though the API enforces ≥5
+	base := time.Now()
+	feedRoll(t, tr, "A", 333, 50, base)
+
+	if tr.State().Sessions[0].AutoStopAt.IsZero() {
+		t.Fatalf("timer-mode session should publish AutoStopAt")
+	}
+	// SetMode used a 1-second window above. Wait long enough for the
+	// AfterFunc to fire, then verify the session is no longer Active.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !tr.State().Sessions[0].Active {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	st := tr.State()
+	if st.Sessions[0].Active {
+		t.Fatalf("session should have auto-stopped within 2s")
+	}
+	if !st.Sessions[0].AutoStopAt.IsZero() {
+		t.Fatalf("AutoStopAt should clear once timer fires")
+	}
+}
+
+func TestSetModePersistsAndSwitches(t *testing.T) {
+	tr := newTrackerForTest()
+	tr.SetMode(ModeTimer, 30)
+	st := tr.State()
+	if st.Mode != ModeTimer || st.AutoStopSeconds != 30 {
+		t.Fatalf("SetMode did not persist: %+v", st)
+	}
+	tr.SetMode(ModeManual, 0)
+	if tr.State().Mode != ModeManual {
+		t.Fatalf("SetMode back to manual did not stick")
+	}
+	if tr.State().AutoStopSeconds != 30 {
+		t.Fatalf("AutoStopSeconds should be preserved across mode switches")
+	}
+}
+
+func TestManualStopCancelsTimer(t *testing.T) {
+	tr := newTrackerForTest()
+	tr.SetMode(ModeTimer, 60)
+	feedRoll(t, tr, "A", 333, 50, time.Now())
+	id := tr.State().Sessions[0].ID
+	if !tr.Stop(id) {
+		t.Fatalf("Stop should succeed")
+	}
+	// Internally we expect the auto-stop timer to have been cancelled
+	// so the inactive session is not re-broadcast a second time when
+	// the AfterFunc would have fired.
+	tr.mu.Lock()
+	_, stillScheduled := tr.autoStops[id]
+	tr.mu.Unlock()
+	if stillScheduled {
+		t.Fatalf("manual Stop must cancel the pending auto-stop timer")
+	}
+}

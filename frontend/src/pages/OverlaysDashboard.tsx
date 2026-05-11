@@ -14,6 +14,7 @@ import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
 import HPSPanel from '../components/overlays/HPSPanel'
 import NPCPanel from '../components/overlays/NPCPanel'
+import RollTrackerPanel from '../components/overlays/RollTrackerPanel'
 import {
   DASHBOARD_PANEL_KEYS,
   DASHBOARD_PANEL_LABELS,
@@ -285,6 +286,17 @@ export default function OverlaysDashboard(): React.ReactElement {
             defaultHeight={layout.hps.height}
             snapGridSize={SNAP_GRID}
             onLayoutChange={handleLayoutChange('hps')}
+          />
+        )}
+        {layout.rolls.visible && (
+          <RollTrackerPanel
+            key={`rolls-${layoutVersion}`}
+            defaultX={layout.rolls.x}
+            defaultY={layout.rolls.y}
+            defaultWidth={layout.rolls.width}
+            defaultHeight={layout.rolls.height}
+            snapGridSize={SNAP_GRID}
+            onLayoutChange={handleLayoutChange('rolls')}
           />
         )}
       </div>
