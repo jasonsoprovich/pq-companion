@@ -18,6 +18,7 @@ import type { CombatState, FightState } from '../types/combat'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
 import { combatantBarColor } from '../lib/combatantColor'
 import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, playerAggregateDPS, type DPSMode } from '../hooks/useDPSMode'
+import { WSEvent } from '../lib/wsEvents'
 
 // dpsModeIcon picks an icon matching the metric's intuition.
 function dpsModeIcon(mode: DPSMode, size = 11): React.ReactElement {
@@ -241,7 +242,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   }, [inCombat])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === 'overlay:combat') {
+    if (msg.type === WSEvent.OverlayCombat) {
       setCombat(msg.data as CombatState)
     }
   }, [])

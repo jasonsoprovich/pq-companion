@@ -8,6 +8,7 @@ import { Shield, Trash2, ArrowDownNarrowWide, Clock, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName, targetSuffix } from '../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresholds'
+import { WSEvent } from '../lib/wsEvents'
 import { useBuffSortMode, sortBuffs } from '../hooks/useBuffSortMode'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -143,7 +144,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
   }, [])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === 'overlay:timers') {
+    if (msg.type === WSEvent.OverlayTimers) {
       setState(msg.data as TimerState)
     }
   }, [])

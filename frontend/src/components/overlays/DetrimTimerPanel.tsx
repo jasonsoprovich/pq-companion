@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Skull, ExternalLink, Plus, Trash2, Circle, CheckCircle2, AlertTriangle, X } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { WSEvent } from '../../lib/wsEvents'
 import { useActivePlayerName } from '../../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../../hooks/useDisplayThresholds'
 import { clearTimers, getLogStatus, getTimerState, removeTimer } from '../../services/api'
@@ -139,7 +140,7 @@ export default function DetrimTimerPanel({
   }, [])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === 'overlay:timers') setTimerState(msg.data as TimerState)
+    if (msg.type === WSEvent.OverlayTimers) setTimerState(msg.data as TimerState)
   }, [])
 
   const wsState = useWebSocket(handleMessage)

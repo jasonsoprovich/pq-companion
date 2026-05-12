@@ -17,6 +17,7 @@
  */
 import { useCallback, useRef } from 'react'
 import { useWebSocket } from './useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 import { playSound, speakText } from '../services/audio'
 import type { TimerState } from '../types/timer'
 
@@ -24,7 +25,7 @@ export function useTimerAlerts(): void {
   const prevRemaining = useRef<Map<string, number>>(new Map())
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type !== 'overlay:timers') return
+    if (msg.type !== WSEvent.OverlayTimers) return
 
     const state = msg.data as TimerState
     if (!state?.timers) return

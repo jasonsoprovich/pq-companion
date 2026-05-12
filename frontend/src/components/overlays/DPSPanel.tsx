@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Swords, Circle, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users, Trash2, Activity, Hourglass, User } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { WSEvent } from '../../lib/wsEvents'
 import { getCombatState, getLogStatus, resetCombatState } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import type { CombatState, FightState } from '../../types/combat'
@@ -369,7 +370,7 @@ export default function DPSPanel({
   }, [combat?.in_combat])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === 'overlay:combat') setCombat(msg.data as CombatState)
+    if (msg.type === WSEvent.OverlayCombat) setCombat(msg.data as CombatState)
   }, [])
 
   const wsState = useWebSocket(handleMessage)

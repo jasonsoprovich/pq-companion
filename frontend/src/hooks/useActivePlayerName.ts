@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { listCharacters } from '../services/api'
 import { useWebSocket, type WsMessage } from './useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 
 /**
  * Returns the active EQ character's display name, used by spell timer rows
@@ -23,7 +24,7 @@ export function useActivePlayerName(): string {
   }, [])
 
   const handle = useCallback((msg: WsMessage) => {
-    if (msg.type !== 'config:character_detected') return
+    if (msg.type !== WSEvent.ConfigCharacterDetected) return
     const payload = msg.data as { character?: string } | null
     if (payload?.character) setName(payload.character)
   }, [])

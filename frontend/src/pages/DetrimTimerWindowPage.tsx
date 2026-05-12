@@ -10,6 +10,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName } from '../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresholds'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { WSEvent } from '../lib/wsEvents'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { clearTimers, getTimerState, removeTimer } from '../services/api'
@@ -180,7 +181,7 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
   }, [])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === 'overlay:timers') {
+    if (msg.type === WSEvent.OverlayTimers) {
       setState(msg.data as TimerState)
     }
   }, [])

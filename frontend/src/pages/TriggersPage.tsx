@@ -44,6 +44,7 @@ import {
 } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName } from '../hooks/useActivePlayerName'
+import { WSEvent } from '../lib/wsEvents'
 import type {
   Trigger,
   TriggerFired,
@@ -1055,7 +1056,7 @@ function HistoryTab(): React.ReactElement {
   }, [])
 
   useWebSocket((msg) => {
-    if (msg.type === 'trigger:fired') {
+    if (msg.type === WSEvent.TriggerFired) {
       const event = msg.data as TriggerFired
       setHistory((prev) => [event, ...prev].slice(0, 200))
     }

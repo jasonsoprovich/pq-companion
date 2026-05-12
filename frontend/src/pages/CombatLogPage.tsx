@@ -24,6 +24,7 @@ import type { LogTailerStatus } from '../types/logEvent'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
 import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, playerAggregateDPS, type DPSMode } from '../hooks/useDPSMode'
 import { groupBySession, fmtSessionGap } from '../lib/sessionGrouping'
+import { WSEvent } from '../lib/wsEvents'
 
 // dpsModeIcon picks an icon for the current DPS mode that matches the
 // metric's intuition: a single User for Personal, group Activity for Raid,
@@ -886,7 +887,7 @@ export default function CombatLogPage(): React.ReactElement {
   }, [])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === 'overlay:combat') {
+    if (msg.type === WSEvent.OverlayCombat) {
       setCombat(msg.data as CombatState)
     }
   }, [])

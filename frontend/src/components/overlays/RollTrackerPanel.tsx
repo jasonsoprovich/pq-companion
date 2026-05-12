@@ -13,6 +13,7 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { WSEvent } from '../../lib/wsEvents'
 import {
   getRolls,
   stopRollSession,
@@ -205,7 +206,7 @@ export default function RollTrackerPanel({
 
   const wsState = useWebSocket(
     useCallback((msg: { type: string; data: unknown }) => {
-      if (msg.type === 'overlay:rolls') setState(msg.data as RollsState)
+      if (msg.type === WSEvent.OverlayRolls) setState(msg.data as RollsState)
     }, []),
   )
 

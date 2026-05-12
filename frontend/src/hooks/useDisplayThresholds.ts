@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getConfig } from '../services/api'
 import { useWebSocket, type WsMessage } from './useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 import type { ActiveTimer, TimerCategory } from '../types/timer'
 
 export interface DisplayThresholds {
@@ -40,7 +41,7 @@ export function useDisplayThresholds(): DisplayThresholds {
   // "config:updated" event after a successful PUT /api/config so
   // overlays in any window stay in sync.
   const handle = useCallback((msg: WsMessage) => {
-    if (msg.type !== 'config:updated') return
+    if (msg.type !== WSEvent.ConfigUpdated) return
     getConfig()
       .then((c) =>
         setT({

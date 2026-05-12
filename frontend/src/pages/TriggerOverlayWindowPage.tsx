@@ -5,6 +5,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 import type { TriggerFired } from '../types/trigger'
 import { postTriggerTestPosition, getActiveTriggerTest } from '../services/api'
 
@@ -254,7 +255,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
   }, [])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === 'trigger:fired') {
+    if (msg.type === WSEvent.TriggerFired) {
       const event = msg.data as TriggerFired
       const overlayAction = event.actions.find((a) => a.type === 'overlay_text')
       if (!overlayAction) return
@@ -267,7 +268,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
       setAlerts((prev) => [entry, ...prev].slice(0, 8))
       return
     }
-    if (msg.type === 'trigger:test') {
+    if (msg.type === WSEvent.TriggerTest) {
       const data = msg.data as TriggerTestPayload
       const fontSize = data.font_size && data.font_size > 0 ? data.font_size : 20
       const defaultPos = {
@@ -283,7 +284,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
       })
       return
     }
-    if (msg.type === 'trigger:test_session_ended') {
+    if (msg.type === WSEvent.TriggerTestSessionEnded) {
       const data = msg.data as { test_id: string }
       setTestAlert((prev) => (prev && prev.testId === data.test_id ? null : prev))
       return

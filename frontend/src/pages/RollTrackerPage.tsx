@@ -10,8 +10,7 @@ import {
 } from '../services/api'
 import type { RollsState, RollSession, WinnerRule } from '../types/rolls'
 import { winnersFor, sortRolls, fmtRollTime, countdownSeconds } from '../lib/rollHelpers'
-
-const WS_ROLLS = 'overlay:rolls'
+import { WSEvent } from '../lib/wsEvents'
 
 function SessionCard({
   session,
@@ -188,7 +187,7 @@ export default function RollTrackerPage(): React.ReactElement {
   }, [state.auto_stop_seconds])
 
   useWebSocket((msg) => {
-    if (msg.type === WS_ROLLS) setState(msg.data as RollsState)
+    if (msg.type === WSEvent.OverlayRolls) setState(msg.data as RollsState)
   })
 
   const handleStop = (id: number): void => {

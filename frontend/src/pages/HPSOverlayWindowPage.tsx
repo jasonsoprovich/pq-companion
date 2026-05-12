@@ -5,6 +5,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { HeartPulse } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import OverlayLockButton from '../components/OverlayLockButton'
@@ -141,7 +142,7 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
   }, [])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === 'overlay:combat') {
+    if (msg.type === WSEvent.OverlayCombat) {
       setCombat(msg.data as CombatState)
     }
   }, [])

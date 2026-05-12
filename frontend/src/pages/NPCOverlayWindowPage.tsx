@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Crosshair, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import OverlayLockButton from '../components/OverlayLockButton'
@@ -227,7 +228,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
   }, [])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type !== 'overlay:npc_target') return
+    if (msg.type !== WSEvent.OverlayNPCTarget) return
     setTarget(msg.data as TargetState)
   }, [])
 

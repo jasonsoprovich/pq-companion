@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { HeartPulse, Circle, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { WSEvent } from '../../lib/wsEvents'
 import { getCombatState, getLogStatus } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import type { CombatState, FightState, HealerStats } from '../../types/combat'
@@ -225,7 +226,7 @@ export default function HPSPanel({
   }, [combat?.in_combat])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === 'overlay:combat') setCombat(msg.data as CombatState)
+    if (msg.type === WSEvent.OverlayCombat) setCombat(msg.data as CombatState)
   }, [])
 
   const wsState = useWebSocket(handleMessage)

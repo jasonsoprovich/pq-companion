@@ -1,9 +1,8 @@
 import { useCallback } from 'react'
 import { useWebSocket } from './useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 import { playSound, speakText } from '../services/audio'
 import type { TriggerFired } from '../types/trigger'
-
-const TRIGGER_FIRED_EVENT = 'trigger:fired'
 
 /**
  * useAudioEngine subscribes to WebSocket trigger:fired events and dispatches
@@ -14,7 +13,7 @@ const TRIGGER_FIRED_EVENT = 'trigger:fired'
  */
 export function useAudioEngine(): void {
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type !== TRIGGER_FIRED_EVENT) return
+    if (msg.type !== WSEvent.TriggerFired) return
 
     const fired = msg.data as TriggerFired
     if (!fired?.actions) return

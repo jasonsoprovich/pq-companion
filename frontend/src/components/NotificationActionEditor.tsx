@@ -18,6 +18,7 @@ import { Volume2, FolderOpen, Play, Square, Crosshair, Check, X as XIcon } from 
 import { playSoundForTest, speakTextForTest, stopTestPlayback } from '../services/audio'
 import { fireTriggerTestOverlay, endTriggerTestSession } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 
 export type NotificationActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
 
@@ -67,13 +68,13 @@ export function OverlayTextFields({
   const [positioning, setPositioning] = useState(false)
 
   useWebSocket((msg) => {
-    if (msg.type === 'trigger:test_position') {
+    if (msg.type === WSEvent.TriggerTestPosition) {
       const data = msg.data as { test_id: string; position: { x: number; y: number } }
       if (data.test_id !== testId) return
       onPositionChange?.(data.position)
       return
     }
-    if (msg.type === 'trigger:test_session_ended') {
+    if (msg.type === WSEvent.TriggerTestSessionEnded) {
       const data = msg.data as { test_id: string }
       if (data.test_id !== testId) return
       setPositioning(false)

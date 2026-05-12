@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Crosshair, AlertTriangle, CheckCircle2, Circle, ExternalLink } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { WSEvent } from '../../lib/wsEvents'
 import { getOverlayNPCTarget, getLogStatus } from '../../services/api'
 import { className, bodyTypeName } from '../../lib/npcHelpers'
 import OverlayWindow from '../OverlayWindow'
@@ -239,7 +240,7 @@ export default function NPCPanel({
   }, [])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type !== 'overlay:npc_target') return
+    if (msg.type !== WSEvent.OverlayNPCTarget) return
     setTarget(msg.data as TargetState)
   }, [])
 

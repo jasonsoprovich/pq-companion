@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Shield, ExternalLink, Plus, Trash2, Circle, CheckCircle2, AlertTriangle, ArrowDownNarrowWide, Clock, X } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { WSEvent } from '../../lib/wsEvents'
 import { useActivePlayerName, targetSuffix } from '../../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../../hooks/useDisplayThresholds'
 import { useBuffSortMode, sortBuffs } from '../../hooks/useBuffSortMode'
@@ -125,7 +126,7 @@ export default function BuffTimerPanel({
   }, [])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === 'overlay:timers') setTimerState(msg.data as TimerState)
+    if (msg.type === WSEvent.OverlayTimers) setTimerState(msg.data as TimerState)
   }, [])
 
   const wsState = useWebSocket(handleMessage)

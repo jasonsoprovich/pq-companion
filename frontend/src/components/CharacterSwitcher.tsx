@@ -8,6 +8,7 @@ import {
 } from '../services/api'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 
 const POLL_MS = 30_000
 
@@ -38,7 +39,7 @@ export default function CharacterSwitcher(): React.ReactElement | null {
   // active, without waiting for the 30s poll.
   const handleWsMessage = useCallback(
     (msg: WsMessage) => {
-      if (msg.type !== 'config:character_detected') return
+      if (msg.type !== WSEvent.ConfigCharacterDetected) return
       const payload = msg.data as { character?: string } | null
       const name = payload?.character ?? ''
       if (!name) return
