@@ -3,6 +3,7 @@ import { join, extname, dirname } from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { readFile } from 'fs/promises'
+import { homedir } from 'os'
 import { autoUpdater } from 'electron-updater'
 
 const isDev = !app.isPackaged
@@ -275,14 +276,41 @@ async function showDbMissingDialog(expectedPath: string): Promise<void> {
   }
 }
 
+// resolveDevBackendPort polls ~/.pq-companion/server-port (written by the Go
+// server on bind) so the dev renderer learns whichever port the standalone
+// `go run` chose — which is whatever the user's config.yaml says, not the
+// hardcoded fallback. Polls for up to 8 s so we tolerate the user starting
+// Electron before `go run` is fully up. Falls back to DEV_FALLBACK_PORT only
+// if the file genuinely never appears, with a loud console warning.
+async function resolveDevBackendPort(): Promise<void> {
+  const portFile = join(homedir(), '.pq-companion', 'server-port')
+  const deadline = Date.now() + 8000
+  while (Date.now() < deadline) {
+    try {
+      const text = await readFile(portFile, 'utf8')
+      const port = Number(text.trim())
+      if (Number.isFinite(port) && port > 0 && port < 65536) {
+        console.log(`[main] Dev backend port discovered from ${portFile}: ${port}`)
+        setBackendPort(port)
+        return
+      }
+    } catch {
+      // file not written yet — keep polling
+    }
+    await new Promise((r) => setTimeout(r, 200))
+  }
+  console.warn(
+    `[main] Dev port discovery timed out (${portFile} not found / unreadable). ` +
+      `Falling back to ${DEV_FALLBACK_PORT}. Make sure the Go backend is running.`,
+  )
+  setBackendPort(DEV_FALLBACK_PORT)
+}
+
 function startSidecar(): void {
   const sidecarPath = getSidecarPath()
   if (!sidecarPath) {
-    console.log('[main] Sidecar not found — assuming backend is running separately in dev mode')
-    // In dev the developer's `go run` instance binds its configured port
-    // independently of this main process. Resolve to the documented dev
-    // default so renderer fetches still find it.
-    setBackendPort(DEV_FALLBACK_PORT)
+    console.log('[main] Sidecar not found — dev mode; discovering backend port from file')
+    void resolveDevBackendPort()
     return
   }
 

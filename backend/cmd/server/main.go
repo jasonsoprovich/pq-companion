@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -294,6 +295,18 @@ func main() {
 	}
 	actualPort := listener.Addr().(*net.TCPAddr).Port
 	fmt.Fprintf(os.Stdout, "BACKEND_PORT=%d\n", actualPort)
+
+	// Also write the port to ~/.pq-companion/server-port so consumers that
+	// aren't this process's parent — chiefly `npm run dev`, where Electron
+	// did not spawn the backend and has no stdout to parse — can discover
+	// the actual bound port. Best-effort: a failure here doesn't impact
+	// the production sidecar flow, which uses BACKEND_PORT=N over stdout.
+	if home, err := os.UserHomeDir(); err == nil {
+		portFile := filepath.Join(home, ".pq-companion", "server-port")
+		if err := os.WriteFile(portFile, []byte(strconv.Itoa(actualPort)), 0o644); err != nil {
+			slog.Warn("could not write port discovery file", "path", portFile, "err", err)
+		}
+	}
 
 	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, actualPort)
 
