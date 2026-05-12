@@ -485,6 +485,9 @@ export interface CharactersResponse {
   characters: Character[]
   active: string
   manual: boolean
+  // detected is what auto-mode would resolve to right now (most-recently
+  // modified eqlog). Populated regardless of manual mode.
+  detected: string
 }
 
 export interface CharacterRequest {

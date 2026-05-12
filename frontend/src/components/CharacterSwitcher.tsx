@@ -44,7 +44,7 @@ export default function CharacterSwitcher(): React.ReactElement | null {
       const name = payload?.character ?? ''
       if (!name) return
       setData((prev) =>
-        prev ? { ...prev, active: name, manual: false } : prev,
+        prev ? { ...prev, active: name, manual: false, detected: name } : prev,
       )
       setActive(name, false)
     },
@@ -89,6 +89,8 @@ export default function CharacterSwitcher(): React.ReactElement | null {
   if (!data) return null
 
   const activeLabel = active || 'No character'
+  const detected = data.detected
+  const autoLabel = detected ? `Auto · ${detected}` : 'Auto (no character active)'
 
   return (
     <div ref={containerRef} className="no-drag relative px-2 pt-1 pb-2">
@@ -99,24 +101,20 @@ export default function CharacterSwitcher(): React.ReactElement | null {
           backgroundColor: 'var(--color-surface-2)',
           border: '1px solid var(--color-border)',
         }}
-        title={manual ? 'Character override (click to change)' : 'Auto-detected character (click to change)'}
+        title={manual ? 'Manual character override (click to change)' : 'Auto-detected character (click to change)'}
       >
         <div className="flex min-w-0 items-center gap-2">
-          <User size={12} style={{ color: 'var(--color-muted)', flexShrink: 0 }} />
+          {manual ? (
+            <User size={12} style={{ color: 'var(--color-muted)', flexShrink: 0 }} />
+          ) : (
+            <Wand2 size={12} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+          )}
           <span
             className="truncate text-[11px]"
             style={{ color: 'var(--color-foreground)' }}
           >
             {activeLabel}
           </span>
-          {!manual && (
-            <span
-              className="shrink-0 rounded px-1 py-px text-[9px] uppercase tracking-wider"
-              style={{ color: 'var(--color-muted)', backgroundColor: 'var(--color-surface-3)' }}
-            >
-              auto
-            </span>
-          )}
         </div>
         <ChevronDown
           size={11}
@@ -140,10 +138,13 @@ export default function CharacterSwitcher(): React.ReactElement | null {
             onClick={() => selectCharacter('')}
             disabled={busy}
             className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-(--color-surface-2)"
-            style={{ color: 'var(--color-foreground)' }}
+            style={{
+              color: 'var(--color-foreground)',
+              backgroundColor: !manual ? 'var(--color-surface-2)' : undefined,
+            }}
           >
-            <Wand2 size={11} style={{ color: 'var(--color-muted)' }} />
-            <span className="flex-1">Auto (most recent)</span>
+            <Wand2 size={11} style={{ color: !manual ? 'var(--color-primary)' : 'var(--color-muted)' }} />
+            <span className="flex-1 truncate">{autoLabel}</span>
             {!manual && <Check size={11} style={{ color: 'var(--color-primary)' }} />}
           </button>
           {data.characters.length > 0 && (
@@ -157,9 +158,12 @@ export default function CharacterSwitcher(): React.ReactElement | null {
                 onClick={() => selectCharacter(c.name)}
                 disabled={busy}
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-(--color-surface-2)"
-                style={{ color: 'var(--color-foreground)' }}
+                style={{
+                  color: 'var(--color-foreground)',
+                  backgroundColor: selected ? 'var(--color-surface-2)' : undefined,
+                }}
               >
-                <User size={11} style={{ color: 'var(--color-muted)' }} />
+                <User size={11} style={{ color: selected ? 'var(--color-primary)' : 'var(--color-muted)' }} />
                 <span className="flex-1 truncate">{c.name}</span>
                 {selected && <Check size={11} style={{ color: 'var(--color-primary)' }} />}
               </button>

@@ -21,7 +21,6 @@ type charactersHandler struct {
 	store   *character.Store
 	mgr     *config.Manager
 	db      *db.DB
-	tailer  *logparser.Tailer
 	watcher *zeal.Watcher
 }
 
@@ -29,6 +28,11 @@ type charactersListResponse struct {
 	Characters []character.Character `json:"characters"`
 	Active     string                `json:"active"`
 	Manual     bool                  `json:"manual"`
+	// Detected is the name auto-detection would currently pick (the most
+	// recently modified eqlog file). Reported even in manual mode so the
+	// switcher UI can show what "Auto" would resolve to without first
+	// clearing the manual override.
+	Detected string `json:"detected"`
 }
 
 // list returns all stored characters and the currently active selection.
@@ -51,14 +55,16 @@ func (h *charactersHandler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := h.mgr.Get()
 	manual := cfg.Character != ""
+	detected := logparser.ResolveActiveCharacter(cfg.EQPath)
 	active := cfg.Character
-	if !manual && h.tailer != nil {
-		active = h.tailer.ActiveCharacter()
+	if !manual {
+		active = detected
 	}
 	resp := charactersListResponse{
 		Characters: chars,
 		Manual:     manual,
 		Active:     active,
+		Detected:   detected,
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
