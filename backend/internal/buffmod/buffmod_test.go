@@ -264,6 +264,50 @@ func TestSpellHasteCap(t *testing.T) {
 	}
 }
 
+// TestBardExemptOnInClassSpell confirms the bard exemption is unconditional:
+// even when the clicked / cast spell IS in the bard's spell line (so the
+// off-class gate would not fire on its own), bards still receive no SPA 128
+// duration extensions. Bards are the lone class exempted from focus/AA
+// duration boosts — until further user-confirmed testing, this is enforced
+// regardless of in-class vs off-class.
+func TestBardExemptOnInClassSpell(t *testing.T) {
+	contributors := []buffmod.Modifier{
+		{
+			Source:         "item",
+			SourceItemID:   9100,
+			SourceItemName: "Blessed Coldain Prayer Shawl (synthetic)",
+			FocusSpellID:   1,
+			FocusSpellName: "Synthetic SPA 128 Focus",
+			SPA:            buffmod.SPADuration,
+			Percent:        20,
+			Limits:         buffmod.Limits{SpellType: buffmod.SpellTypeBeneficial},
+		},
+	}
+	// Bard-castable spell: ClassLevels[7] populated, off-class gate would
+	// NOT fire on its own (since bard can cast it). The bard exemption
+	// must still zero out the extension.
+	var bardInClass [15]int
+	for i := range bardInClass {
+		bardInClass[i] = 255
+	}
+	bardInClass[buffmod.BardClassIdx] = 50 // bard learns at L50
+	r := buffmod.Resolve(
+		1, "Resonance (synthetic)",
+		50, 60, 720, // 12 min base
+		buffmod.SpellTypeBeneficial,
+		[]int{},
+		contributors,
+		buffmod.BardClassIdx,
+		bardInClass,
+	)
+	if r.DurationItemPercent != 0 {
+		t.Errorf("bard on in-class spell item duration %% = %d, want 0 (bard exempt regardless of class match)", r.DurationItemPercent)
+	}
+	if r.ExtendedDurationSec != 720 {
+		t.Errorf("bard on in-class spell extended duration = %ds, want 720 (unchanged)", r.ExtendedDurationSec)
+	}
+}
+
 // TestOffClassClickyDurationGate confirms that when the caster's class cannot
 // normally cast a spell (e.g. an Enchanter clicking a wizard-only Wand of
 // Deflection), AA/item duration extensions do NOT apply — the click effect
