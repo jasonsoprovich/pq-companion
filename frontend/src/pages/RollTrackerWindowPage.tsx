@@ -350,7 +350,10 @@ export default function RollTrackerWindowPage(): React.ReactElement {
         </div>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      {/* display:flex + column so the empty-state child's flex:1 can stretch
+          to fill — without this the icon/label clings to the top edge instead
+          of centering. */}
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
         {state.sessions.length === 0 ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 16 }}>
             <Dice5 size={22} style={{ opacity: 0.15, color: '#a5b4fc' }} />

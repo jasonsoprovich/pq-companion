@@ -265,7 +265,10 @@ export default function BuffTimerWindowPage(): React.ReactElement {
       </div>
 
       {/* ── Timer list ───────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      {/* display:flex + column so the empty-state child's flex:1 can stretch
+          to fill — without this the icon/label clings to the top edge instead
+          of centering. */}
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
         {state === null ? (
           <p
             style={{
