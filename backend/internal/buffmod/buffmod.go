@@ -61,6 +61,11 @@ const CasterClassUnknown = -1
 // uncapped and tracked separately.
 const SpellHasteCapPercent = 50
 
+// classCannotCast is the spells_new classes1..classes15 sentinel meaning
+// "this class can never cast this spell at any level". Mirrors the
+// spelltimer package constant to avoid a circular import.
+const classCannotCast = 255
+
 // Limits is the parsed set of constraints attached to a focus modifier.
 // Zero/empty fields mean "no limit on this dimension".
 type Limits struct {
@@ -353,9 +358,19 @@ func SpellLevel(classLevels [15]int) int {
 // casterClass is the 0-indexed EQ class of the player casting / receiving the
 // buff (matches character.Character.Class). Pass CasterClassUnknown when no
 // character context is available — class-conditional rules are then skipped.
-// Currently used to enforce the bard SPA-128 exemption: bards never receive
-// AA/item duration extensions on any buff they cast or click.
-func Resolve(spellID int, spellName string, spellLevel, casterLevel, baseDurationSec, spellType int, effectIDs []int, contributors []Modifier, casterClass int) Resolution {
+// Used to enforce two EQ rules:
+//   - Bard exemption: bards never receive AA/item duration extensions on
+//     any buff they cast or click.
+//   - Off-class clicky gate: when spellClassLevels[casterClass] == 255
+//     (i.e. the caster's class cannot normally cast this spell), AA/item
+//     duration extensions are not applied. This matters for clicky items
+//     whose spell is outside the player's class spell line (e.g. Wand of
+//     Deflection on an Enchanter). Player-cast spells always pass the
+//     class check by definition.
+//
+// spellClassLevels is the spell's classes1..classes15 array (0-indexed in our
+// Spell struct). All zeroes means "no data" — the off-class gate is skipped.
+func Resolve(spellID int, spellName string, spellLevel, casterLevel, baseDurationSec, spellType int, effectIDs []int, contributors []Modifier, casterClass int, spellClassLevels [15]int) Resolution {
 	r := Resolution{
 		SpellID:         spellID,
 		SpellName:       spellName,
@@ -409,6 +424,15 @@ func Resolve(spellID int, spellName string, spellLevel, casterLevel, baseDuratio
 				// Bard songs ignore SPA 128 extensions from AAs and item
 				// focus effects — discard the matched contributors so the
 				// breakdown UI shows no extension applied.
+				r.DurationAAPercent = 0
+				r.DurationItemPercent = 0
+				break
+			}
+			if casterClass >= 0 && casterClass < len(spellClassLevels) &&
+				spellClassLevels[casterClass] >= classCannotCast {
+				// Off-class clicky: the spell isn't in this character's
+				// class spell line, so focus / AA duration extensions do
+				// not apply. Returns the base duration unchanged.
 				r.DurationAAPercent = 0
 				r.DurationItemPercent = 0
 				break

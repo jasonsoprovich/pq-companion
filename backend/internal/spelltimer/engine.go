@@ -954,6 +954,7 @@ func (e *Engine) applyDurationModifiers(spell *db.Spell, baseDurationSec float64
 		spell.EffectIDs[:],
 		contribs,
 		casterClass,
+		spell.ClassLevels,
 	)
 	if res.ExtendedDurationSec <= 0 || res.ExtendedDurationSec == int(baseDurationSec) {
 		return baseDurationSec

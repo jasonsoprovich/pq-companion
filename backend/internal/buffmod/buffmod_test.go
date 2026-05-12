@@ -92,7 +92,7 @@ func TestComputeOsui(t *testing.T) {
 		aegolism.BuffDuration*6,
 		buffmod.SpellTypeBeneficial, aegolism.EffectIDs[:],
 		res.Contributors,
-		buffmod.CasterClassUnknown,
+		buffmod.CasterClassUnknown, [15]int{},
 	)
 	// 50% AAs (SCR3=30 + SCRM1=20) × 15% item (Dragon Mask) → 1.50 × 1.15 - 1
 	// = 0.725 → 72%. Stored as integer % for display.
@@ -127,7 +127,7 @@ func TestKEIOsuiExtendedDuration(t *testing.T) {
 		9000,
 		buffmod.SpellTypeBeneficial, kei.EffectIDs[:],
 		res.Contributors,
-		buffmod.CasterClassUnknown,
+		buffmod.CasterClassUnknown, [15]int{},
 	)
 	if r.DurationAAPercent != 50 {
 		t.Errorf("KEI AA duration %% = %d, want 50", r.DurationAAPercent)
@@ -163,7 +163,7 @@ func TestKEIRejectsEH1(t *testing.T) {
 		kei.BuffDuration*6,
 		buffmod.SpellTypeBeneficial, kei.EffectIDs[:],
 		res.Contributors,
-		buffmod.CasterClassUnknown,
+		buffmod.CasterClassUnknown, [15]int{},
 	)
 	if r.DurationAAPercent != 50 || r.DurationItemPercent != 15 {
 		t.Errorf("KEI duration: AA=%d item=%d, want AA=50 item=15", r.DurationAAPercent, r.DurationItemPercent)
@@ -211,7 +211,7 @@ func TestKEIBlocksEH1(t *testing.T) {
 		kei.BuffDuration*6,
 		buffmod.SpellTypeBeneficial, kei.EffectIDs[:],
 		contributors,
-		buffmod.CasterClassUnknown,
+		buffmod.CasterClassUnknown, [15]int{},
 	)
 	if r.CastTimePercent != 0 {
 		t.Errorf("KEI + only-EH1 cast time %% = %d, want 0 (max_level filter)", r.CastTimePercent)
@@ -254,13 +254,86 @@ func TestSpellHasteCap(t *testing.T) {
 		buffmod.SpellTypeBeneficial,
 		[]int{},
 		contributors,
-		buffmod.CasterClassUnknown,
+		buffmod.CasterClassUnknown, [15]int{},
 	)
 	if r.CastTimePercent != buffmod.SpellHasteCapPercent {
 		t.Errorf("CastTimePercent = %d, want %d (capped)", r.CastTimePercent, buffmod.SpellHasteCapPercent)
 	}
 	if got := buffmod.SpellHasteSummary(contributors); got != buffmod.SpellHasteCapPercent {
 		t.Errorf("SpellHasteSummary = %d, want %d (capped)", got, buffmod.SpellHasteCapPercent)
+	}
+}
+
+// TestOffClassClickyDurationGate confirms that when the caster's class cannot
+// normally cast a spell (e.g. an Enchanter clicking a wizard-only Wand of
+// Deflection), AA/item duration extensions do NOT apply — the click effect
+// falls back to its base duration. Player-cast spells always pass the gate
+// because the player by definition can cast their own class's spells.
+func TestOffClassClickyDurationGate(t *testing.T) {
+	contributors := []buffmod.Modifier{
+		{
+			Source:         "item",
+			SourceItemID:   9001,
+			SourceItemName: "Synthetic Duration Item",
+			FocusSpellID:   1,
+			FocusSpellName: "Synthetic SPA 128 Focus",
+			SPA:            buffmod.SPADuration,
+			Percent:        15,
+			Limits:         buffmod.Limits{SpellType: buffmod.SpellTypeBeneficial},
+		},
+		{
+			Source:       "aa",
+			SourceAAID:   1,
+			SourceAAName: "Synthetic Duration AA",
+			SourceAARank: 1,
+			SPA:          buffmod.SPADuration,
+			Percent:      30,
+			Limits:       buffmod.Limits{SpellType: buffmod.SpellTypeBeneficial},
+		},
+	}
+	// Wizard-only spell: every class except Wizard (index 11) marked as
+	// cannot-cast (255). Wizard sits at level 60.
+	var wizOnly [15]int
+	for i := range wizOnly {
+		wizOnly[i] = 255
+	}
+	wizOnly[11] = 60
+
+	// Caster = Enchanter (13) clicking a wizard-only spell → no extensions.
+	off := buffmod.Resolve(
+		1, "Wand of Deflection (synthetic)",
+		60, 60, 600,
+		buffmod.SpellTypeBeneficial,
+		[]int{},
+		contributors,
+		13, // Enchanter
+		wizOnly,
+	)
+	if off.DurationAAPercent != 0 || off.DurationItemPercent != 0 {
+		t.Errorf("off-class duration: AA=%d item=%d, want 0/0", off.DurationAAPercent, off.DurationItemPercent)
+	}
+	if off.ExtendedDurationSec != 600 {
+		t.Errorf("off-class extended = %ds, want 600 (base)", off.ExtendedDurationSec)
+	}
+
+	// Control: same caster class casting their own in-class spell. Build a
+	// spell ClassLevels with Enchanter (13) able to cast → extensions apply.
+	var encInClass [15]int
+	encInClass[13] = 60
+	in := buffmod.Resolve(
+		1, "Synthetic Enchanter Buff",
+		60, 60, 600,
+		buffmod.SpellTypeBeneficial,
+		[]int{},
+		contributors,
+		13, // Enchanter
+		encInClass,
+	)
+	if in.DurationAAPercent != 30 {
+		t.Errorf("in-class AA duration = %d, want 30", in.DurationAAPercent)
+	}
+	if in.DurationItemPercent != 15 {
+		t.Errorf("in-class item duration = %d, want 15", in.DurationItemPercent)
 	}
 }
 
@@ -289,6 +362,7 @@ func TestBardDurationExempt(t *testing.T) {
 		buffmod.SpellTypeBeneficial, kei.EffectIDs[:],
 		res.Contributors,
 		buffmod.BardClassIdx,
+		kei.ClassLevels,
 	)
 	if r.DurationAAPercent != 0 {
 		t.Errorf("bard AA duration %% = %d, want 0 (bard exempt)", r.DurationAAPercent)
@@ -322,7 +396,7 @@ func TestExclusionFilter(t *testing.T) {
 		buffmod.SpellTypeBeneficial,
 		completeHeal.EffectIDs[:],
 		res.Contributors,
-		buffmod.CasterClassUnknown,
+		buffmod.CasterClassUnknown, [15]int{},
 	)
 	if r.DurationAAPercent != 50 {
 		t.Errorf("Complete Heal AA duration %% = %d, want 50 (AAs apply)", r.DurationAAPercent)

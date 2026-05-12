@@ -17,8 +17,8 @@ func newTestEngine() *Engine {
 	return &Engine{
 		hub:    hub,
 		timers: make(map[string]*ActiveTimer),
-		charCtx: func() (string, string) {
-			return "/eq", "Osui"
+		charCtx: func() (string, string, int) {
+			return "/eq", "Osui", -1
 		},
 		// Default test scope is "anyone" so legacy tests that don't care
 		// about the scope filter exercise the unconditional-track path.
@@ -432,7 +432,7 @@ func TestActivePlayerName_FallsBackToYou(t *testing.T) {
 		t.Errorf("nil charCtx fallback: got %q", got)
 	}
 
-	e2 := &Engine{charCtx: func() (string, string) { return "", "" }}
+	e2 := &Engine{charCtx: func() (string, string, int) { return "", "", -1 }}
 	if got := e2.activePlayerName(); got != "You" {
 		t.Errorf("empty charCtx fallback: got %q", got)
 	}
