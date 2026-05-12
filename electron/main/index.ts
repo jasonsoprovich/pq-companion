@@ -1,5 +1,5 @@
 import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol } from 'electron'
-import { join, extname } from 'path'
+import { join, extname, dirname } from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { readFile } from 'fs/promises'
@@ -199,6 +199,54 @@ function getSidecarPath(): string | null {
   const ext = process.platform === 'win32' ? '.exe' : ''
   const candidate = join(process.resourcesPath, 'bin', `pq-companion-server${ext}`)
   return existsSync(candidate) ? candidate : null
+}
+
+// Resolve where the bundled EQ database should live in a packaged build.
+// Mirrors the `extraResources` mapping in electron-builder.yml (bin/data/quarm.db).
+// Returns null in dev — the Go server is run separately and points at backend/data/.
+function getQuarmDbPath(): string | null {
+  if (isDev) return null
+  return join(process.resourcesPath, 'bin', 'data', 'quarm.db')
+}
+
+// Show a blocking error dialog when quarm.db is missing from the install.
+// The most common cause is Windows Defender (or another AV) quarantining the
+// ~84 MB SQLite file post-install. We guide the user through the manual fix
+// rather than auto-downloading — see CLAUDE.md context, only one user has hit
+// this so far. Returns when the user chooses "Quit".
+async function showDbMissingDialog(expectedPath: string): Promise<void> {
+  const downloadUrl =
+    'https://github.com/jasonsoprovich/pq-companion/releases/tag/data-latest'
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { response } = await dialog.showMessageBox({
+      type: 'error',
+      title: 'Game database missing',
+      message: "PQ Companion can't find the game database (quarm.db).",
+      detail:
+        `The database file should be located at:\n${expectedPath}\n\n` +
+        'This is usually caused by Windows Defender or another antivirus ' +
+        'quarantining the file after install. To fix:\n\n' +
+        '1. Open Windows Security → Virus & threat protection → Protection ' +
+        'history. If "quarm.db" is listed as quarantined, restore it and add ' +
+        'an exclusion so it does not happen again.\n\n' +
+        '2. If it was not quarantined, download quarm.db from the ' +
+        '"data-latest" release on GitHub and drop it into the folder shown ' +
+        'above (create the data folder if it does not exist).\n\n' +
+        'Relaunch PQ Companion once the file is in place.',
+      buttons: ['Quit', 'Open install folder', 'Open download page'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    })
+    if (response === 1) {
+      await shell.openPath(dirname(expectedPath))
+    } else if (response === 2) {
+      await shell.openExternal(downloadUrl)
+    } else {
+      return
+    }
+  }
 }
 
 function startSidecar(): void {
@@ -1006,7 +1054,18 @@ ipcMain.handle('updater:quit-and-install', async () => {
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Bail early if the bundled EQ database is missing — without it the Go
+  // sidecar exits immediately and the app silently loses items/spells/npcs/
+  // zones. Showing a dialog up front gives the user a clear path to recovery.
+  const dbPath = getQuarmDbPath()
+  if (dbPath && !existsSync(dbPath)) {
+    console.error(`[main] quarm.db not found at ${dbPath}`)
+    await showDbMissingDialog(dbPath)
+    app.quit()
+    return
+  }
+
   // Map pq-audio:///<absolute-path> to a local file. The leading `/` after the
   // scheme is the empty host part, so on macOS pq-audio:///Users/x/foo.wav
   // resolves to /Users/x/foo.wav, and on Windows pq-audio:///C:/x/foo.wav
