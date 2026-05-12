@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX } from 'lucide-react'
-import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog } from '../services/api'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi } from 'lucide-react'
+import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config } from '../types/config'
 import type { LogFileInfo } from '../types/logEvent'
 import BackupManagerPage from './BackupManagerPage'
@@ -53,6 +53,11 @@ export default function SettingsPage(): React.ReactElement {
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const [updateError, setUpdateError] = useState<string | null>(null)
 
+  const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
+  const [portTestState, setPortTestState] = useState<'idle' | 'testing'>('idle')
+  const [portTestResult, setPortTestResult] = useState<TestPortResult | null>(null)
+  const [portTestPort, setPortTestPort] = useState<number | null>(null)
+
   const [logLargeFile, setLogLargeFile] = useState(false)
   const [logFileInfo, setLogFileInfo] = useState<LogFileInfo | null>(null)
   const [logInfoLoading, setLogInfoLoading] = useState(false)
@@ -88,6 +93,8 @@ export default function SettingsPage(): React.ReactElement {
     if (window.electron?.app) {
       window.electron.app.getVersion().then(setAppVersion).catch(() => null)
     }
+
+    getServerInfo().then(setServerInfo).catch(() => null)
 
     const pollLogSize = () => {
       getLogStatus()
@@ -125,6 +132,38 @@ export default function SettingsPage(): React.ReactElement {
       offError()
     }
   }, [])
+
+  // Parses a configured listen address (e.g. ":17654", "127.0.0.1:17654") into
+  // a port number. Returns 0 when the addr is the auto-assign sentinel ":0".
+  function parsePortFromAddr(addr: string): number {
+    const m = addr.match(/:(\d+)$/)
+    if (m) return Number(m[1])
+    const n = Number(addr)
+    return Number.isFinite(n) ? n : 0
+  }
+
+  async function handlePortTest(): Promise<void> {
+    if (!config) return
+    const port = parsePortFromAddr(config.server_addr)
+    if (port === 0) {
+      // No specific port to test — auto-assign will always succeed.
+      setPortTestResult({ available: true })
+      setPortTestPort(0)
+      return
+    }
+    setPortTestState('testing')
+    setPortTestResult(null)
+    try {
+      const result = await testPortAvailability(port)
+      setPortTestResult(result)
+      setPortTestPort(port)
+    } catch (err) {
+      setPortTestResult({ available: false, error: (err as Error).message })
+      setPortTestPort(port)
+    } finally {
+      setPortTestState('idle')
+    }
+  }
 
   async function handleBrowse(): Promise<void> {
     if (!window.electron?.dialog) return
@@ -348,6 +387,22 @@ export default function SettingsPage(): React.ReactElement {
             </p>
           )}
         </section>
+
+        {/* ── Backend Network ────────────────────────────────────────────── */}
+        <BackendNetworkSection
+          config={config}
+          setConfig={setConfig}
+          serverInfo={serverInfo}
+          parsePortFromAddr={parsePortFromAddr}
+          portTestState={portTestState}
+          portTestResult={portTestResult}
+          portTestPort={portTestPort}
+          onTest={handlePortTest}
+          onReset={() => {
+            setConfig({ ...config, server_addr: ':0' })
+            setPortTestResult(null)
+          }}
+        />
 
         {/* ── EverQuest Path ─────────────────────────────────────────────── */}
         <section
@@ -1012,5 +1067,169 @@ export default function SettingsPage(): React.ReactElement {
       </div>
       </div>
     </div>
+  )
+}
+
+// ── Backend Network section ──────────────────────────────────────────────────
+// Shows the port the local API server is actually listening on, lets the user
+// override the preferred port (used at next launch), and probes availability
+// before they commit a change. `actual_port` reflects the running server;
+// `preferred_addr` is whatever's saved in config — they only differ when the
+// last startup fell back from a busy port to an OS-assigned one.
+
+interface BackendNetworkSectionProps {
+  config: Config
+  setConfig: (c: Config) => void
+  serverInfo: ServerInfo | null
+  parsePortFromAddr: (addr: string) => number
+  portTestState: 'idle' | 'testing'
+  portTestResult: TestPortResult | null
+  portTestPort: number | null
+  onTest: () => void
+  onReset: () => void
+}
+
+function BackendNetworkSection(props: BackendNetworkSectionProps): React.ReactElement {
+  const {
+    config, setConfig, serverInfo, parsePortFromAddr,
+    portTestState, portTestResult, portTestPort, onTest, onReset,
+  } = props
+
+  const preferredPort = parsePortFromAddr(config.server_addr)
+  const isAuto = preferredPort === 0
+  const actualPort = serverInfo?.actual_port ?? null
+  const fellBack = serverInfo !== null
+    && !isAuto
+    && actualPort !== null
+    && preferredPort !== actualPort
+
+  return (
+    <section
+      className="rounded-lg p-4"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+    >
+      <h2
+        className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide"
+        style={{ color: 'var(--color-muted)' }}
+      >
+        <Wifi size={13} />
+        Backend Network
+      </h2>
+      <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+        The companion app talks to its own local backend over a loopback port.
+        The default is fine for most users — only change this if another local
+        service is taking the port and the app can&rsquo;t start.
+      </p>
+
+      <div className="mb-3 grid grid-cols-2 gap-2 rounded p-3 text-xs"
+        style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+      >
+        <span style={{ color: 'var(--color-muted-foreground)' }}>Current port</span>
+        <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>
+          {actualPort ?? '—'}
+        </span>
+        <span style={{ color: 'var(--color-muted-foreground)' }}>Preferred</span>
+        <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>
+          {isAuto ? 'auto-assign' : preferredPort}
+        </span>
+      </div>
+
+      {fellBack && (
+        <p className="mb-3 flex items-start gap-1.5 text-xs" style={{ color: '#f97316' }}>
+          <AlertTriangle size={12} style={{ marginTop: 2, flexShrink: 0 }} />
+          <span>
+            Preferred port <b>{preferredPort}</b> was unavailable at startup —
+            another process on your machine is using it. The app fell back to
+            port {actualPort}. To make this stable, either stop the conflicting
+            service or pick a different preferred port below.
+          </span>
+        </p>
+      )}
+
+      <div className="mb-2">
+        <label className="mb-1 block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          Preferred port (used at next app launch)
+        </label>
+        <div className="flex gap-2">
+          <input
+            type="number"
+            min={0}
+            max={65535}
+            step={1}
+            value={preferredPort}
+            onChange={(e) => {
+              const n = Math.max(0, Math.min(65535, Number(e.target.value) || 0))
+              setConfig({ ...config, server_addr: `:${n}` })
+            }}
+            placeholder="0 = auto"
+            className="w-28 rounded px-2 py-1 text-sm font-mono"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-foreground)',
+              border: '1px solid var(--color-border)',
+              outline: 'none',
+            }}
+          />
+          <button
+            onClick={onTest}
+            disabled={portTestState === 'testing'}
+            className="flex items-center gap-1.5 rounded px-3 py-1 text-xs font-medium"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-foreground)',
+              cursor: portTestState === 'testing' ? 'not-allowed' : 'pointer',
+              opacity: portTestState === 'testing' ? 0.7 : 1,
+            }}
+          >
+            {portTestState === 'testing' ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            {portTestState === 'testing' ? 'Testing…' : 'Test availability'}
+          </button>
+          {!isAuto && (
+            <button
+              onClick={onReset}
+              className="flex items-center gap-1.5 rounded px-3 py-1 text-xs font-medium"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                cursor: 'pointer',
+              }}
+            >
+              Reset to auto
+            </button>
+          )}
+        </div>
+        <p className="mt-1 text-xs" style={{ color: 'var(--color-muted)' }}>
+          Set to <code>0</code> (or click Reset to auto) to let the OS pick any
+          free port at startup. Changes take effect the next time the app
+          launches.
+        </p>
+      </div>
+
+      {portTestResult && (
+        <p
+          className="mt-2 flex items-start gap-1.5 text-xs"
+          style={{ color: portTestResult.available ? '#22c55e' : '#f87171' }}
+        >
+          {portTestResult.available ? (
+            <CheckCircle2 size={12} style={{ marginTop: 2, flexShrink: 0 }} />
+          ) : (
+            <AlertTriangle size={12} style={{ marginTop: 2, flexShrink: 0 }} />
+          )}
+          <span>
+            {portTestPort === 0 ? (
+              <>Auto-assign always succeeds — the OS picks any free port.</>
+            ) : portTestResult.available ? (
+              portTestResult.in_use_by === 'pq-companion'
+                ? <>Port {portTestPort} is currently used by this app — that&rsquo;s expected and fine.</>
+                : <>Port {portTestPort} is available.</>
+            ) : (
+              <>Port {portTestPort} is unavailable{portTestResult.error ? <>: {portTestResult.error}</> : null}. Pick a different port or use auto-assign.</>
+            )}
+          </span>
+        </p>
+      )}
+    </section>
   )
 }

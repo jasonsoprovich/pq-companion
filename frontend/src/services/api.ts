@@ -762,6 +762,27 @@ export function getActiveTriggerTest(): Promise<ActiveTriggerTest | null> {
   return get<ActiveTriggerTest | null>('/api/triggers/test-overlay/active')
 }
 
+// ── Backend server info / port testing ───────────────────────────────────────
+
+export interface ServerInfo {
+  actual_port: number
+  preferred_addr: string
+}
+
+export function getServerInfo(): Promise<ServerInfo> {
+  return get<ServerInfo>('/api/config/server-info')
+}
+
+export interface TestPortResult {
+  available: boolean
+  error?: string
+  in_use_by?: string
+}
+
+export function testPortAvailability(port: number): Promise<TestPortResult> {
+  return get<TestPortResult>(`/api/config/test-port?port=${port}`)
+}
+
 export async function importGINAxml(
   xml: string,
   packName: string,
