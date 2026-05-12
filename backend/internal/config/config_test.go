@@ -21,8 +21,8 @@ func TestLoadFrom_createsDefaultFile(t *testing.T) {
 	}
 
 	cfg := m.Get()
-	if cfg.ServerAddr != ":8080" {
-		t.Errorf("default ServerAddr = %q, want :8080", cfg.ServerAddr)
+	if cfg.ServerAddr != ":17654" {
+		t.Errorf("default ServerAddr = %q, want :17654", cfg.ServerAddr)
 	}
 	if cfg.Preferences.OverlayOpacity != 0.25 {
 		t.Errorf("default OverlayOpacity = %v, want 0.25", cfg.Preferences.OverlayOpacity)

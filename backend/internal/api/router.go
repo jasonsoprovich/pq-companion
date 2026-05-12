@@ -23,7 +23,7 @@ import (
 // NewRouter builds and returns the chi router wired to all backend components.
 // combatHistory may be nil when persistence is disabled (e.g. user.db open
 // failed); in that case the history endpoints respond 503.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker) http.Handler {
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, actualPort int) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -45,7 +45,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	spells := &spellsHandler{db: database}
 	npcs := &npcsHandler{db: database}
 	zones := &zonesHandler{db: database}
-	cfg := &configHandler{mgr: cfgMgr, hub: hub}
+	cfg := &configHandler{mgr: cfgMgr, hub: hub, actualPort: actualPort}
 	charactersH := &charactersHandler{store: charStore, mgr: cfgMgr, db: database, watcher: zealWatcher}
 	search := &searchHandler{db: database}
 	zealH := &zealHandler{watcher: zealWatcher, cfgMgr: cfgMgr, db: database}
@@ -95,6 +95,8 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/", cfg.get)
 			r.Put("/", cfg.update)
 			r.Post("/validate-eq-path", cfg.validateEQPath)
+			r.Get("/server-info", cfg.serverInfo)
+			r.Get("/test-port", cfg.testPort)
 		})
 		r.Route("/characters", func(r chi.Router) {
 			r.Get("/", charactersH.list)

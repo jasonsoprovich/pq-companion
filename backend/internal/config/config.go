@@ -172,7 +172,12 @@ type Preferences struct {
 // defaults returns a Config populated with sensible default values.
 func defaults() Config {
 	return Config{
-		ServerAddr:     ":8080",
+		// 17654 is in the IANA registered range (1024-49151) but not used by
+		// any well-known service — picked specifically to avoid collisions
+		// with the more commonly squatted ports (8080, 3000, 5000, etc.).
+		// If this port is still occupied on a particular user's machine the
+		// server falls back to an OS-assigned port at startup.
+		ServerAddr:     ":17654",
 		CharacterClass: -1,
 		Preferences: Preferences{
 			OverlayOpacity:    0.25,

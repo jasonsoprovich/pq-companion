@@ -4,7 +4,9 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -262,10 +264,29 @@ func main() {
 	})
 	go tailer.Start(context.Background())
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker)
+	// Bind to the preferred address first. If it's already in use (e.g. some
+	// other app on the user's machine has the port), fall back to an OS-
+	// assigned port on loopback so the app still works end-to-end.
+	// The chosen port is written to stdout as a single `BACKEND_PORT=N` line
+	// so the Electron main process can read it back and tell the renderer
+	// where to send API requests.
+	listener, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		slog.Warn("preferred port unavailable, falling back to auto-assigned localhost port",
+			"preferred", listenAddr, "err", err)
+		listener, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			slog.Error("could not bind any TCP port", "err", err)
+			os.Exit(1)
+		}
+	}
+	actualPort := listener.Addr().(*net.TCPAddr).Port
+	fmt.Fprintf(os.Stdout, "BACKEND_PORT=%d\n", actualPort)
 
-	slog.Info("server starting", "addr", listenAddr, "db", *dbPath)
-	if err := http.ListenAndServe(listenAddr, router); err != nil {
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, actualPort)
+
+	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
+	if err := http.Serve(listener, router); err != nil {
 		slog.Error("server error", "err", err)
 		os.Exit(1)
 	}
