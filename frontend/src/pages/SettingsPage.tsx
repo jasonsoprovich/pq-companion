@@ -392,6 +392,7 @@ export default function SettingsPage(): React.ReactElement {
         <BackendNetworkSection
           config={config}
           setConfig={setConfig}
+          originalServerAddr={originalConfig?.server_addr ?? config.server_addr}
           serverInfo={serverInfo}
           parsePortFromAddr={parsePortFromAddr}
           portTestState={portTestState}
@@ -402,6 +403,8 @@ export default function SettingsPage(): React.ReactElement {
             setConfig({ ...config, server_addr: ':0' })
             setPortTestResult(null)
           }}
+          onSave={handleSave}
+          saving={saveState === 'saving'}
         />
 
         {/* ── EverQuest Path ─────────────────────────────────────────────── */}
@@ -1080,6 +1083,7 @@ export default function SettingsPage(): React.ReactElement {
 interface BackendNetworkSectionProps {
   config: Config
   setConfig: (c: Config) => void
+  originalServerAddr: string
   serverInfo: ServerInfo | null
   parsePortFromAddr: (addr: string) => number
   portTestState: 'idle' | 'testing'
@@ -1087,12 +1091,14 @@ interface BackendNetworkSectionProps {
   portTestPort: number | null
   onTest: () => void
   onReset: () => void
+  onSave: () => void
+  saving: boolean
 }
 
 function BackendNetworkSection(props: BackendNetworkSectionProps): React.ReactElement {
   const {
-    config, setConfig, serverInfo, parsePortFromAddr,
-    portTestState, portTestResult, portTestPort, onTest, onReset,
+    config, setConfig, originalServerAddr, serverInfo, parsePortFromAddr,
+    portTestState, portTestResult, portTestPort, onTest, onReset, onSave, saving,
   } = props
 
   const preferredPort = parsePortFromAddr(config.server_addr)
@@ -1102,6 +1108,7 @@ function BackendNetworkSection(props: BackendNetworkSectionProps): React.ReactEl
     && !isAuto
     && actualPort !== null
     && preferredPort !== actualPort
+  const dirty = config.server_addr !== originalServerAddr
 
   return (
     <section
@@ -1229,6 +1236,37 @@ function BackendNetworkSection(props: BackendNetworkSectionProps): React.ReactEl
             )}
           </span>
         </p>
+      )}
+
+      {dirty && (
+        <div
+          className="mt-3 rounded p-3"
+          style={{ backgroundColor: 'color-mix(in srgb, #f59e0b 18%, transparent)', border: '1px solid #f59e0b' }}
+        >
+          <p className="mb-2 flex items-start gap-1.5 text-xs" style={{ color: '#f59e0b' }}>
+            <AlertTriangle size={12} style={{ marginTop: 2, flexShrink: 0 }} />
+            <span>
+              <b>Unsaved port change.</b> Testing alone does not save the change — click
+              the button below (or <b>Save Settings</b> at the bottom of the page) to
+              persist it, then restart the app for the new port to take effect.
+            </span>
+          </p>
+          <button
+            onClick={onSave}
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold"
+            style={{
+              backgroundColor: 'var(--color-primary)',
+              color: '#fff',
+              border: 'none',
+              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.7 : 1,
+            }}
+          >
+            {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+            {saving ? 'Saving…' : 'Save port change'}
+          </button>
+        </div>
       )}
     </section>
   )
