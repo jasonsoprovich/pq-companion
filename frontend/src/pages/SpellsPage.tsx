@@ -44,6 +44,8 @@ interface SearchPaneProps {
   onSelect: (spell: Spell) => void
 }
 
+const SPELL_PAGE_SIZE = 50
+
 function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactElement {
   const [query, setQuery] = useState('')
   const [classIndex, setClassIndex] = useState(-1)
@@ -52,15 +54,19 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   const [spells, setSpells] = useState<Spell[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // When a class is selected, fetch all spells for that class so the user can
+  // scroll the full list. Otherwise paginate via "Show more".
   const runSearch = useCallback((q: string, cls: number, min: string, max: string) => {
     setLoading(true)
     setError(null)
     const minLvl = parseInt(min) || 0
     const maxLvl = parseInt(max) || 0
-    searchSpells(q, 50, 0, cls, minLvl, maxLvl)
+    const limit = cls >= 0 ? 1000 : SPELL_PAGE_SIZE
+    searchSpells(q, limit, 0, cls, minLvl, maxLvl)
       .then((res) => {
         setSpells(res.items ?? [])
         setTotal(res.total)
@@ -68,6 +74,19 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
   }, [])
+
+  const loadMore = useCallback(() => {
+    setLoadingMore(true)
+    const minLvl = parseInt(minLevel) || 0
+    const maxLvl = parseInt(maxLevel) || 0
+    searchSpells(query, SPELL_PAGE_SIZE, spells.length, classIndex, minLvl, maxLvl)
+      .then((res) => {
+        setSpells((prev) => [...prev, ...(res.items ?? [])])
+        setTotal(res.total)
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoadingMore(false))
+  }, [query, classIndex, minLevel, maxLevel, spells.length])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -80,6 +99,8 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   useEffect(() => {
     runSearch('', -1, '', '')
   }, [runSearch])
+
+  const hasMore = !loading && classIndex < 0 && spells.length < total
 
   const selectStyle = {
     backgroundColor: 'var(--color-surface-2)',
@@ -182,7 +203,13 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
         className="border-b px-3 py-1.5 text-[11px]"
         style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
       >
-        {loading ? 'Searching…' : error ? 'Error' : `${total.toLocaleString()} spells`}
+        {loading
+          ? 'Searching…'
+          : error
+            ? 'Error'
+            : spells.length < total
+              ? `${spells.length.toLocaleString()} of ${total.toLocaleString()} spells`
+              : `${total.toLocaleString()} spells`}
       </div>
 
       {/* Results list */}
@@ -227,6 +254,22 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
               </div>
             </button>
           ))}
+        {hasMore && (
+          <div className="px-3 py-2">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="w-full rounded border py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-muted-foreground)',
+              }}
+            >
+              {loadingMore ? 'Loading…' : `Show more (${(total - spells.length).toLocaleString()} remaining)`}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -38,11 +38,14 @@ interface SearchPaneProps {
   onSelect: (npc: NPC) => void
 }
 
+const NPC_PAGE_SIZE = 50
+
 function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactElement {
   const [query, setQuery] = useState('')
   const [npcs, setNpcs] = useState<NPC[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showPlaceholders, setShowPlaceholders] = useState(true)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -50,7 +53,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   const runSearch = useCallback((q: string, placeholders: boolean) => {
     setLoading(true)
     setError(null)
-    searchNPCs(q, 50, 0, placeholders)
+    searchNPCs(q, NPC_PAGE_SIZE, 0, placeholders)
       .then((res) => {
         setNpcs(res.items ?? [])
         setTotal(res.total)
@@ -58,6 +61,17 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
   }, [])
+
+  const loadMore = useCallback(() => {
+    setLoadingMore(true)
+    searchNPCs(query, NPC_PAGE_SIZE, npcs.length, showPlaceholders)
+      .then((res) => {
+        setNpcs((prev) => [...prev, ...(res.items ?? [])])
+        setTotal(res.total)
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoadingMore(false))
+  }, [query, showPlaceholders, npcs.length])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -70,6 +84,8 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   useEffect(() => {
     runSearch('', showPlaceholders)
   }, [runSearch])
+
+  const hasMore = !loading && npcs.length < total
 
   return (
     <div
@@ -103,7 +119,15 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
         className="flex items-center justify-between border-b px-3 py-1.5 text-[11px]"
         style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
       >
-        <span>{loading ? 'Searching…' : error ? 'Error' : `${total.toLocaleString()} NPCs`}</span>
+        <span>
+          {loading
+            ? 'Searching…'
+            : error
+              ? 'Error'
+              : npcs.length < total
+                ? `${npcs.length.toLocaleString()} of ${total.toLocaleString()} NPCs`
+                : `${total.toLocaleString()} NPCs`}
+        </span>
         <button
           onClick={() => setShowPlaceholders((v) => !v)}
           title={showPlaceholders ? 'Hide placeholder NPCs' : 'Show placeholder NPCs'}
@@ -156,6 +180,22 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
               </div>
             </button>
           ))}
+        {hasMore && (
+          <div className="px-3 py-2">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="w-full rounded border py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-muted-foreground)',
+              }}
+            >
+              {loadingMore ? 'Loading…' : `Show more (${(total - npcs.length).toLocaleString()} remaining)`}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

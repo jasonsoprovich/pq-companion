@@ -71,8 +71,8 @@ func (h *spellsHandler) search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	limit := queryInt(r, "limit", 20)
 	offset := queryInt(r, "offset", 0)
-	if limit > 100 {
-		limit = 100
+	if limit > 1000 {
+		limit = 1000
 	}
 	classIndex := queryInt(r, "class", -1)
 	minLevel := queryInt(r, "minLevel", 0)

@@ -395,6 +395,8 @@ interface SearchPaneProps {
   onSelect: (item: Item) => void
 }
 
+const ITEM_PAGE_SIZE = 50
+
 function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactElement {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<FilterState>(EMPTY_FILTER)
@@ -402,6 +404,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   const [items, setItems] = useState<Item[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -411,7 +414,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   const runSearch = useCallback((q: string, f: FilterState) => {
     setLoading(true)
     setError(null)
-    searchItems(q, 50, 0, filterToApiParams(f))
+    searchItems(q, ITEM_PAGE_SIZE, 0, filterToApiParams(f))
       .then((res) => {
         setItems(res.items ?? [])
         setTotal(res.total)
@@ -419,6 +422,17 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
   }, [])
+
+  const loadMore = useCallback(() => {
+    setLoadingMore(true)
+    searchItems(query, ITEM_PAGE_SIZE, items.length, filterToApiParams(filter))
+      .then((res) => {
+        setItems((prev) => [...prev, ...(res.items ?? [])])
+        setTotal(res.total)
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoadingMore(false))
+  }, [query, filter, items.length])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -431,6 +445,8 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   useEffect(() => {
     runSearch('', EMPTY_FILTER)
   }, [runSearch])
+
+  const hasMore = !loading && items.length < total
 
   function dismissChip(key: keyof FilterState) {
     setFilter((prev) => ({ ...prev, [key]: EMPTY_FILTER[key] }))
@@ -511,7 +527,13 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
         className="border-b px-3 py-1.5 text-[11px]"
         style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
       >
-        {loading ? 'Searching…' : error ? 'Error' : `${total.toLocaleString()} items`}
+        {loading
+          ? 'Searching…'
+          : error
+            ? 'Error'
+            : items.length < total
+              ? `${items.length.toLocaleString()} of ${total.toLocaleString()} items`
+              : `${total.toLocaleString()} items`}
       </div>
 
       {/* Results list */}
@@ -556,6 +578,22 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
               </div>
             </button>
           ))}
+        {hasMore && (
+          <div className="px-3 py-2">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="w-full rounded border py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-muted-foreground)',
+              }}
+            >
+              {loadingMore ? 'Loading…' : `Show more (${(total - items.length).toLocaleString()} remaining)`}
+            </button>
+          </div>
+        )}
       </div>
 
       {showModal && (
