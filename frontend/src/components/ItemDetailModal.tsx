@@ -8,6 +8,7 @@ import {
   baneRaceLabel,
   classesLabel,
   effectiveItemTypeLabel,
+  inGameItemLink,
   isLoreItem,
   priceLabel,
   racesLabel,
@@ -366,8 +367,7 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
 
   function copyIngameLink() {
     if (!item) return
-    const link = `\\aITEM ${item.id} 0 0 0 0 0:${item.name}\\a/`
-    navigator.clipboard.writeText(link).then(() => {
+    navigator.clipboard.writeText(inGameItemLink(item.id, item.name)).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })

@@ -11,6 +11,7 @@ import {
   specialAbilityAlertPattern,
   type SpecialAbility,
 } from '../lib/npcHelpers'
+import { inGameItemLink } from '../lib/itemHelpers'
 import CreateTriggerModal, { type TriggerPrefill } from '../components/CreateTriggerModal'
 import { ItemIcon } from '../components/Icon'
 
@@ -311,7 +312,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
   }, [npc?.id])
 
   function copyBulkLinks(dropId: number, items: { item_id: number; item_name: string }[]) {
-    const links = items.map((it) => `\\aITEM ${it.item_id} 0 0 0 0 0:${it.item_name}\\a/`).join('\n')
+    const links = items.map((it) => inGameItemLink(it.item_id, it.item_name)).join('\n')
     navigator.clipboard.writeText(links).then(() => {
       setBulkCopied(dropId)
       setTimeout(() => setBulkCopied(null), 2000)

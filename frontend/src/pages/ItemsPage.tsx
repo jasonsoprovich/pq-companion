@@ -9,6 +9,7 @@ import {
   baneRaceLabel,
   classesLabel,
   effectiveItemTypeLabel,
+  inGameItemLink,
   isLoreItem,
   itemTypeLabel,
   priceLabel,
@@ -1016,8 +1017,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
 
   function copyIngameLink() {
     if (!item) return
-    const link = `\\aITEM ${item.id} 0 0 0 0 0:${item.name}\\a/`
-    navigator.clipboard.writeText(link).then(() => {
+    navigator.clipboard.writeText(inGameItemLink(item.id, item.name)).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })

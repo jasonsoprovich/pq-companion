@@ -1,3 +1,18 @@
+// ── In-game item link ─────────────────────────────────────────────────────────
+
+// Project Quarm runs on EQMacEmu, which uses the classic Mac-era link format
+// rather than the modern live-EQ `\aITEM 0 0 0…:Name\a/` form. The link is
+// wrapped in DC2 (CTRL-R, 0x12) control characters with the item ID padded to
+// 6 decimal digits ahead of the name, e.g. PQDI produces:
+//   \x12025208 War Bow of Rallos Zek\x12
+// EQ strips the DC2 chars and renders the name as a clickable link in chat.
+const DC2 = '\x12'
+
+export function inGameItemLink(itemId: number, itemName: string): string {
+  const paddedId = String(itemId).padStart(6, '0')
+  return `${DC2}${paddedId} ${itemName}${DC2}`
+}
+
 // ── Slot bitmask ───────────────────────────────────────────────────────────────
 
 const SLOT_MAP: [number, string][] = [
