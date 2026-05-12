@@ -221,6 +221,49 @@ func TestKEIBlocksEH1(t *testing.T) {
 	}
 }
 
+// TestSpellHasteCap confirms that SPA 127 contributions are clamped to 50%
+// even when items + AAs would otherwise stack higher. Uses synthetic
+// contributors: a 35% item focus + a 25% AA on a generic L60 beneficial
+// buff would normally resolve to 60% cast-time reduction; the cap reins
+// it back to 50.
+func TestSpellHasteCap(t *testing.T) {
+	contributors := []buffmod.Modifier{
+		{
+			Source:         "item",
+			SourceItemID:   9999,
+			SourceItemName: "Synthetic Focus 35",
+			FocusSpellID:   1,
+			FocusSpellName: "Synthetic SPA 127 Focus",
+			SPA:            buffmod.SPACastTime,
+			Percent:        35,
+			Limits:         buffmod.Limits{SpellType: buffmod.SpellTypeBeneficial},
+		},
+		{
+			Source:       "aa",
+			SourceAAID:   1,
+			SourceAAName: "Synthetic Spell Haste AA",
+			SourceAARank: 1,
+			SPA:          buffmod.SPACastTime,
+			Percent:      25,
+			Limits:       buffmod.Limits{SpellType: buffmod.SpellTypeBeneficial},
+		},
+	}
+	r := buffmod.Resolve(
+		1, "Synthetic Buff",
+		60, 60, 600,
+		buffmod.SpellTypeBeneficial,
+		[]int{},
+		contributors,
+		buffmod.CasterClassUnknown,
+	)
+	if r.CastTimePercent != buffmod.SpellHasteCapPercent {
+		t.Errorf("CastTimePercent = %d, want %d (capped)", r.CastTimePercent, buffmod.SpellHasteCapPercent)
+	}
+	if got := buffmod.SpellHasteSummary(contributors); got != buffmod.SpellHasteCapPercent {
+		t.Errorf("SpellHasteSummary = %d, want %d (capped)", got, buffmod.SpellHasteCapPercent)
+	}
+}
+
 // TestBardDurationExempt confirms that bard casters (class index 7) never
 // receive SPA 128 duration extensions, even when AA + item focuses would
 // otherwise apply. Reuses Osui's contributors (which produce +50% AA / +15%

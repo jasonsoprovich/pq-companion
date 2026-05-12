@@ -55,6 +55,12 @@ const BardClassIdx = 7
 // class-conditional rules (bard exemption) are skipped.
 const CasterClassUnknown = -1
 
+// SpellHasteCapPercent is the in-game hard cap on SPA 127 (Increase Spell
+// Haste, i.e. cast-time reduction). Items + AAs can sum to more, but the
+// effective value is clamped at this limit. Melee haste (SPA 11 / 119) is
+// uncapped and tracked separately.
+const SpellHasteCapPercent = 50
+
 // Limits is the parsed set of constraints attached to a focus modifier.
 // Zero/empty fields mean "no limit on this dimension".
 type Limits struct {
@@ -285,6 +291,35 @@ type Resolution struct {
 	Applied             []Modifier `json:"applied"`               // contributors that hit
 }
 
+// SpellHasteSummary returns the character's theoretical maximum spell haste
+// (SPA 127) across all their contributors, clamped to SpellHasteCapPercent.
+// Used for the Character stat panel — unlike Resolve, this does not apply
+// per-spell limit filters because the panel reports a "best case" character-
+// wide stat, not a value tied to a specific spell. Item foci use best-only
+// stacking (max of item percents); AA foci sum additively on top.
+func SpellHasteSummary(contributors []Modifier) int {
+	bestItem := 0
+	aaSum := 0
+	for _, c := range contributors {
+		if c.SPA != SPACastTime {
+			continue
+		}
+		switch c.Source {
+		case "item":
+			if c.Percent > bestItem {
+				bestItem = c.Percent
+			}
+		case "aa":
+			aaSum += c.Percent
+		}
+	}
+	total := bestItem + aaSum
+	if total > SpellHasteCapPercent {
+		return SpellHasteCapPercent
+	}
+	return total
+}
+
 // SpellLevel returns the lowest non-255 class level from a spell's classes
 // array — the level at which the lowest-level class first learns the spell.
 // This is what EQEmu compares against SPA 134 (Limit: Max Level) and SPA 139
@@ -382,6 +417,9 @@ func Resolve(spellID int, spellName string, spellLevel, casterLevel, baseDuratio
 			r.DurationItemPercent = itemPct
 			r.Applied = append(r.Applied, applied...)
 		case SPACastTime:
+			if pct > SpellHasteCapPercent {
+				pct = SpellHasteCapPercent
+			}
 			r.CastTimePercent = pct
 			r.Applied = append(r.Applied, applied...)
 		}

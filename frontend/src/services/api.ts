@@ -583,7 +583,7 @@ export interface StatBlock {
   str: number; sta: number; agi: number; dex: number
   wis: number; int: number; cha: number
   pr: number; mr: number; dr: number; fr: number; cr: number
-  attack: number; haste: number; regen: number
+  attack: number; haste: number; spell_haste: number; regen: number
   mana_regen: number; ft: number; dmg_shield: number
 }
 

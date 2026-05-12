@@ -333,7 +333,7 @@ interface StatDelta {
   str?: number; sta?: number; agi?: number; dex?: number
   wis?: number; int?: number; cha?: number
   pr?: number; mr?: number; dr?: number; fr?: number; cr?: number
-  attack?: number; haste?: number; regen?: number
+  attack?: number; haste?: number; spell_haste?: number; regen?: number
   mana_regen?: number; ft?: number; dmg_shield?: number
 }
 
@@ -371,7 +371,7 @@ function emptyDelta(): Required<StatDelta> {
     hp: 0, mana: 0, ac: 0,
     str: 0, sta: 0, agi: 0, dex: 0, wis: 0, int: 0, cha: 0,
     pr: 0, mr: 0, dr: 0, fr: 0, cr: 0,
-    attack: 0, haste: 0, regen: 0, mana_regen: 0, ft: 0, dmg_shield: 0,
+    attack: 0, haste: 0, spell_haste: 0, regen: 0, mana_regen: 0, ft: 0, dmg_shield: 0,
   }
 }
 
@@ -393,6 +393,7 @@ function addDelta(into: Required<StatDelta>, d: StatDelta): void {
   into.cr += d.cr ?? 0
   into.attack += d.attack ?? 0
   into.haste += d.haste ?? 0
+  into.spell_haste += d.spell_haste ?? 0
   into.regen += d.regen ?? 0
   into.mana_regen += d.mana_regen ?? 0
   into.ft += d.ft ?? 0
@@ -567,6 +568,7 @@ function StatsPanel({ stats, hasStats, gear }: StatsPanelProps): React.ReactElem
           >
             <div className="grid grid-cols-2 gap-y-1">
               <span>Haste</span>           <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{total.haste}%</span>
+              <span>Spell Haste</span>     <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }} title="Hard-capped at 50% per Project Quarm rules">{total.spell_haste}%</span>
               <span>Worn ATK</span>        <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{total.attack}</span>
               <span>HP Regen</span>        <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{total.regen}/tick</span>
               <span>Flowing Thought</span> <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{total.ft}/15</span>

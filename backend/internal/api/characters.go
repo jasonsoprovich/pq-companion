@@ -317,27 +317,28 @@ var equipSlots = map[string]bool{
 // populated by walking each equipped item's worneffect spell and parsing
 // its SPA effect slots — see parseWornEffect.
 type statBlock struct {
-	HP        int `json:"hp"`
-	Mana      int `json:"mana"`
-	AC        int `json:"ac"`
-	STR       int `json:"str"`
-	STA       int `json:"sta"`
-	AGI       int `json:"agi"`
-	DEX       int `json:"dex"`
-	WIS       int `json:"wis"`
-	INT       int `json:"int"`
-	CHA       int `json:"cha"`
-	PR        int `json:"pr"`
-	MR        int `json:"mr"`
-	DR        int `json:"dr"`
-	FR        int `json:"fr"`
-	CR        int `json:"cr"`
-	Attack    int `json:"attack"`
-	Haste     int `json:"haste"`
-	Regen     int `json:"regen"`
-	ManaRegen int `json:"mana_regen"`
-	FT        int `json:"ft"`
-	DmgShield int `json:"dmg_shield"`
+	HP         int `json:"hp"`
+	Mana       int `json:"mana"`
+	AC         int `json:"ac"`
+	STR        int `json:"str"`
+	STA        int `json:"sta"`
+	AGI        int `json:"agi"`
+	DEX        int `json:"dex"`
+	WIS        int `json:"wis"`
+	INT        int `json:"int"`
+	CHA        int `json:"cha"`
+	PR         int `json:"pr"`
+	MR         int `json:"mr"`
+	DR         int `json:"dr"`
+	FR         int `json:"fr"`
+	CR         int `json:"cr"`
+	Attack     int `json:"attack"`
+	Haste      int `json:"haste"`
+	SpellHaste int `json:"spell_haste"`
+	Regen      int `json:"regen"`
+	ManaRegen  int `json:"mana_regen"`
+	FT         int `json:"ft"`
+	DmgShield  int `json:"dmg_shield"`
 }
 
 // equippedStatsResponse is the per-source breakdown the Stats panel renders.
@@ -567,6 +568,13 @@ func (h *charactersHandler) equippedStats(w http.ResponseWriter, r *http.Request
 		if resp.Equipment.FT > itemFTCap {
 			resp.Equipment.FT = itemFTCap
 		}
+	}
+
+	// Spell haste (SPA 127) summary across equipped item focuses + trained
+	// AAs, hard-capped at SpellHasteCapPercent (50%). Distinct from melee
+	// haste above. Best-effort: a missing Quarmy export just leaves it at 0.
+	if mods, err := buffmod.Compute(cfg.EQPath, char.Name, h.db); err == nil && mods != nil {
+		resp.Equipment.SpellHaste = buffmod.SpellHasteSummary(mods.Contributors)
 	}
 
 	writeJSON(w, http.StatusOK, resp)
