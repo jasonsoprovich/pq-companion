@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/api"
@@ -264,16 +265,27 @@ func main() {
 	})
 	go tailer.Start(context.Background())
 
-	// Bind to the preferred address first. If it's already in use (e.g. some
-	// other app on the user's machine has the port), fall back to an OS-
-	// assigned port on loopback so the app still works end-to-end.
-	// The chosen port is written to stdout as a single `BACKEND_PORT=N` line
-	// so the Electron main process can read it back and tell the renderer
-	// where to send API requests.
-	listener, err := net.Listen("tcp", listenAddr)
+	// Always bind to 127.0.0.1 explicitly — the API is consumed by the
+	// local renderer only, so there's no reason to listen on every
+	// interface, and a single-stack loopback bind is the only reliable
+	// way to detect a port conflict with another local app across
+	// macOS / Linux / Windows (Go's default :port = dual-stack IPv6 with
+	// v6only=false, which can silently coexist with an IPv4-only listener
+	// on the same port).
+	_, portStr, splitErr := net.SplitHostPort(listenAddr)
+	if splitErr != nil {
+		portStr = strings.TrimPrefix(listenAddr, ":")
+	}
+	bindAddr := "127.0.0.1:" + portStr
+	// If the preferred port is busy (e.g. Calibre on 8080), fall back to
+	// an OS-assigned free port on loopback so the app still launches.
+	// The chosen port is written to stdout as a single `BACKEND_PORT=N`
+	// line so the Electron main process can read it back and tell the
+	// renderer where to send API requests.
+	listener, err := net.Listen("tcp", bindAddr)
 	if err != nil {
 		slog.Warn("preferred port unavailable, falling back to auto-assigned localhost port",
-			"preferred", listenAddr, "err", err)
+			"preferred", bindAddr, "err", err)
 		listener, err = net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			slog.Error("could not bind any TCP port", "err", err)
