@@ -319,16 +319,6 @@ func TestParseSpecialAbilities(t *testing.T) {
 	}
 }
 
-func TestHasSpecialAbility(t *testing.T) {
-	raw := "1,1^18,1^19,1"
-	if !db.HasSpecialAbility(raw, 1) {
-		t.Error("expected Summon (1) to be present")
-	}
-	if db.HasSpecialAbility(raw, 2) {
-		t.Error("expected Enrage (2) to be absent")
-	}
-}
-
 func TestItemIcons(t *testing.T) {
 	d := openTestDB(t)
 	// Empty input → empty result, no error.

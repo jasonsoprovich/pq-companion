@@ -48,11 +48,6 @@ function connect(): void {
       if (!trimmed) continue
       try {
         const msg = JSON.parse(trimmed) as WsMessage
-        if (msg.type === 'overlay:timers') {
-          const t = (msg.data as { timers?: unknown[] } | null)?.timers
-          // eslint-disable-next-line no-console
-          console.log('[timer-debug] ws received overlay:timers, count=', t?.length ?? 'unknown')
-        }
         messageHandlers.forEach((h) => h(msg))
       } catch {
         // ignore non-JSON frames

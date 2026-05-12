@@ -3,6 +3,7 @@ package backup
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -52,14 +53,15 @@ func (s *Store) migrate() error {
 	`); err != nil {
 		return err
 	}
-	// Idempotent column additions for existing databases.
+	// Idempotent column additions for existing databases. The
+	// "duplicate column name" error is the expected path on every run
+	// after the first; any other error should surface.
 	for _, col := range []string{
 		`ALTER TABLE backups ADD COLUMN locked         INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE backups ADD COLUMN trigger_reason TEXT    NOT NULL DEFAULT 'manual'`,
 	} {
-		if _, err := s.db.Exec(col); err != nil {
-			// SQLite returns an error if the column already exists; ignore it.
-			_ = err
+		if _, err := s.db.Exec(col); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("add column: %w", err)
 		}
 	}
 	return nil

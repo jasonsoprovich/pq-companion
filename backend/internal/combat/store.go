@@ -290,36 +290,35 @@ type HistoryFacets struct {
 // per-row character/zone columns don't surface as blank dropdown entries.
 func (s *HistoryStore) Facets() (HistoryFacets, error) {
 	out := HistoryFacets{Characters: []string{}, Zones: []string{}}
-
-	rows, err := s.db.Query(`SELECT DISTINCT character_name FROM combat_fights WHERE character_name != '' ORDER BY character_name COLLATE NOCASE`)
+	chars, err := s.distinctNonEmpty(`SELECT DISTINCT character_name FROM combat_fights WHERE character_name != '' ORDER BY character_name COLLATE NOCASE`)
 	if err != nil {
 		return out, fmt.Errorf("query characters: %w", err)
 	}
-	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
-			rows.Close()
-			return out, err
-		}
-		out.Characters = append(out.Characters, v)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return out, err
-	}
-	rows.Close()
-
-	rows, err = s.db.Query(`SELECT DISTINCT zone FROM combat_fights WHERE zone != '' ORDER BY zone COLLATE NOCASE`)
+	out.Characters = chars
+	zones, err := s.distinctNonEmpty(`SELECT DISTINCT zone FROM combat_fights WHERE zone != '' ORDER BY zone COLLATE NOCASE`)
 	if err != nil {
 		return out, fmt.Errorf("query zones: %w", err)
 	}
+	out.Zones = zones
+	return out, nil
+}
+
+// distinctNonEmpty runs a single-column query and returns the scanned strings.
+// Always returns a non-nil slice (possibly empty) so callers can assign
+// directly without a nil-check.
+func (s *HistoryStore) distinctNonEmpty(query string) ([]string, error) {
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
+	out := []string{}
 	for rows.Next() {
 		var v string
 		if err := rows.Scan(&v); err != nil {
-			return out, err
+			return nil, err
 		}
-		out.Zones = append(out.Zones, v)
+		out = append(out, v)
 	}
 	return out, rows.Err()
 }

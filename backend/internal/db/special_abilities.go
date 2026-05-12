@@ -125,12 +125,3 @@ func ParseSpecialAbilities(raw string) []SpecialAbility {
 	return result
 }
 
-// HasSpecialAbility returns true if the raw abilities string contains the given code.
-func HasSpecialAbility(raw string, code int) bool {
-	for _, sa := range ParseSpecialAbilities(raw) {
-		if sa.Code == code {
-			return sa.Value != 0
-		}
-	}
-	return false
-}

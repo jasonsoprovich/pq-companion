@@ -4,6 +4,7 @@ package character
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -72,15 +73,25 @@ func (s *Store) migrate() error {
 	`); err != nil {
 		return err
 	}
-	// Additive migrations for columns added after initial release.
-	_, _ = s.db.Exec(`ALTER TABLE characters ADD COLUMN race    INTEGER NOT NULL DEFAULT -1`)
-	_, _ = s.db.Exec(`ALTER TABLE characters ADD COLUMN base_str INTEGER NOT NULL DEFAULT 0`)
-	_, _ = s.db.Exec(`ALTER TABLE characters ADD COLUMN base_sta INTEGER NOT NULL DEFAULT 0`)
-	_, _ = s.db.Exec(`ALTER TABLE characters ADD COLUMN base_cha INTEGER NOT NULL DEFAULT 0`)
-	_, _ = s.db.Exec(`ALTER TABLE characters ADD COLUMN base_dex INTEGER NOT NULL DEFAULT 0`)
-	_, _ = s.db.Exec(`ALTER TABLE characters ADD COLUMN base_int INTEGER NOT NULL DEFAULT 0`)
-	_, _ = s.db.Exec(`ALTER TABLE characters ADD COLUMN base_agi INTEGER NOT NULL DEFAULT 0`)
-	_, _ = s.db.Exec(`ALTER TABLE characters ADD COLUMN base_wis INTEGER NOT NULL DEFAULT 0`)
+	// Additive migrations for columns added after initial release. SQLite
+	// reports a "duplicate column name" error when the column already
+	// exists, which is the expected path for any database that's already
+	// been migrated; any other error should surface so we don't silently
+	// proceed with a half-migrated schema.
+	addColumns := []string{
+		`ALTER TABLE characters ADD COLUMN base_str INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE characters ADD COLUMN base_sta INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE characters ADD COLUMN base_cha INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE characters ADD COLUMN base_dex INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE characters ADD COLUMN base_int INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE characters ADD COLUMN base_agi INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE characters ADD COLUMN base_wis INTEGER NOT NULL DEFAULT 0`,
+	}
+	for _, stmt := range addColumns {
+		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("add column: %w", err)
+		}
+	}
 
 	if _, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS character_aas (

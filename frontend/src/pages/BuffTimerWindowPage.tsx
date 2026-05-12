@@ -144,10 +144,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === 'overlay:timers') {
-      const data = msg.data as TimerState
-      // eslint-disable-next-line no-console
-      console.log('[timer-debug] BuffTimerWindowPage state update, total=', data?.timers?.length ?? 0)
-      setState(data)
+      setState(msg.data as TimerState)
     }
   }, [])
 
