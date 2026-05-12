@@ -291,6 +291,7 @@ func (h *charactersHandler) spellModifiers(w http.ResponseWriter, r *http.Reques
 			baseTicks*6, // ticks → seconds
 			spellType, sp.EffectIDs[:],
 			res.Contributors,
+			char.Class,
 		)
 		resp["resolution"] = resolution
 	}

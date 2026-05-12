@@ -155,7 +155,7 @@ func main() {
 	// timers per active spell, and broadcasts overlay:timers WebSocket events.
 	// The CharacterContext closure feeds buffmod the active char + EQ path so
 	// AA/item duration focuses extend the displayed timer.
-	timerEngine := spelltimer.NewEngine(hub, database, func() (string, string) {
+	timerEngine := spelltimer.NewEngine(hub, database, func() (string, string, int) {
 		cfg := cfgMgr.Get()
 		var charName string
 		if tailer != nil {
@@ -163,7 +163,13 @@ func main() {
 		} else {
 			charName = cfg.Character
 		}
-		return cfg.EQPath, charName
+		class := -1
+		if charName != "" {
+			if c, ok, err := charStore.GetByName(charName); err == nil && ok {
+				class = c.Class
+			}
+		}
+		return cfg.EQPath, charName, class
 	}, func() string {
 		return cfgMgr.Get().SpellTimer.TrackingScope
 	}, func() (bool, int) {

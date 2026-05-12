@@ -44,6 +44,17 @@ const (
 // it can't be confused with a real DB value.
 const SpellTypeUnset = -1
 
+// BardClassIdx is the 0-indexed EQ class index for Bards. Bard songs are
+// excluded from SPA 128 (duration) extensions from both AAs and item focus
+// effects — see project_eq_bard_duration_exempt memory. Cast-time (SPA 127)
+// reductions are unaffected.
+const BardClassIdx = 7
+
+// CasterClassUnknown is the sentinel passed to Resolve when the caller does
+// not have character class context (legacy call sites, tests). When set,
+// class-conditional rules (bard exemption) are skipped.
+const CasterClassUnknown = -1
+
 // Limits is the parsed set of constraints attached to a focus modifier.
 // Zero/empty fields mean "no limit on this dimension".
 type Limits struct {
@@ -303,7 +314,13 @@ func SpellLevel(classLevels [15]int) int {
 // Resolution so the UI can show what level was used for the duration formula.
 // effectIDs are the SPA codes 0–11 of the buff itself (used for SPA-137
 // exclusion checks against e.g. Complete Heal).
-func Resolve(spellID int, spellName string, spellLevel, casterLevel, baseDurationSec, spellType int, effectIDs []int, contributors []Modifier) Resolution {
+//
+// casterClass is the 0-indexed EQ class of the player casting / receiving the
+// buff (matches character.Character.Class). Pass CasterClassUnknown when no
+// character context is available — class-conditional rules are then skipped.
+// Currently used to enforce the bard SPA-128 exemption: bards never receive
+// AA/item duration extensions on any buff they cast or click.
+func Resolve(spellID int, spellName string, spellLevel, casterLevel, baseDurationSec, spellType int, effectIDs []int, contributors []Modifier, casterClass int) Resolution {
 	r := Resolution{
 		SpellID:         spellID,
 		SpellName:       spellName,
@@ -352,6 +369,14 @@ func Resolve(spellID int, spellName string, spellLevel, casterLevel, baseDuratio
 			itemPct := 0
 			if bestItem != nil {
 				itemPct = bestItem.Percent
+			}
+			if casterClass == BardClassIdx {
+				// Bard songs ignore SPA 128 extensions from AAs and item
+				// focus effects — discard the matched contributors so the
+				// breakdown UI shows no extension applied.
+				r.DurationAAPercent = 0
+				r.DurationItemPercent = 0
+				break
 			}
 			r.DurationAAPercent = aaPct
 			r.DurationItemPercent = itemPct

@@ -92,6 +92,7 @@ func TestComputeOsui(t *testing.T) {
 		aegolism.BuffDuration*6,
 		buffmod.SpellTypeBeneficial, aegolism.EffectIDs[:],
 		res.Contributors,
+		buffmod.CasterClassUnknown,
 	)
 	// 50% AAs (SCR3=30 + SCRM1=20) × 15% item (Dragon Mask) → 1.50 × 1.15 - 1
 	// = 0.725 → 72%. Stored as integer % for display.
@@ -126,6 +127,7 @@ func TestKEIOsuiExtendedDuration(t *testing.T) {
 		9000,
 		buffmod.SpellTypeBeneficial, kei.EffectIDs[:],
 		res.Contributors,
+		buffmod.CasterClassUnknown,
 	)
 	if r.DurationAAPercent != 50 {
 		t.Errorf("KEI AA duration %% = %d, want 50", r.DurationAAPercent)
@@ -161,6 +163,7 @@ func TestKEIRejectsEH1(t *testing.T) {
 		kei.BuffDuration*6,
 		buffmod.SpellTypeBeneficial, kei.EffectIDs[:],
 		res.Contributors,
+		buffmod.CasterClassUnknown,
 	)
 	if r.DurationAAPercent != 50 || r.DurationItemPercent != 15 {
 		t.Errorf("KEI duration: AA=%d item=%d, want AA=50 item=15", r.DurationAAPercent, r.DurationItemPercent)
@@ -208,12 +211,50 @@ func TestKEIBlocksEH1(t *testing.T) {
 		kei.BuffDuration*6,
 		buffmod.SpellTypeBeneficial, kei.EffectIDs[:],
 		contributors,
+		buffmod.CasterClassUnknown,
 	)
 	if r.CastTimePercent != 0 {
 		t.Errorf("KEI + only-EH1 cast time %% = %d, want 0 (max_level filter)", r.CastTimePercent)
 	}
 	if len(r.Applied) != 0 {
 		t.Errorf("KEI + only-EH1 applied count = %d, want 0", len(r.Applied))
+	}
+}
+
+// TestBardDurationExempt confirms that bard casters (class index 7) never
+// receive SPA 128 duration extensions, even when AA + item focuses would
+// otherwise apply. Reuses Osui's contributors (which produce +50% AA / +15%
+// item on a generic beneficial buff) and resolves with casterClass=Bard —
+// the resulting Resolution should be a no-op on duration. Cast-time (SPA 127)
+// behaviour is independent of this rule.
+func TestBardDurationExempt(t *testing.T) {
+	requireTestdata(t, "Osui-Quarmy.txt")
+	gameDB := openDB(t)
+	eqPath := filepath.Join(repoRoot(t), "testdata")
+	res, err := buffmod.Compute(eqPath, "Osui", gameDB)
+	if err != nil {
+		t.Fatalf("Compute: %v", err)
+	}
+	kei, err := gameDB.GetSpell(2570)
+	if err != nil {
+		t.Fatalf("GetSpell(KEI): %v", err)
+	}
+	r := buffmod.Resolve(
+		kei.ID, kei.Name,
+		buffmod.SpellLevel(kei.ClassLevels), 60,
+		9000,
+		buffmod.SpellTypeBeneficial, kei.EffectIDs[:],
+		res.Contributors,
+		buffmod.BardClassIdx,
+	)
+	if r.DurationAAPercent != 0 {
+		t.Errorf("bard AA duration %% = %d, want 0 (bard exempt)", r.DurationAAPercent)
+	}
+	if r.DurationItemPercent != 0 {
+		t.Errorf("bard item duration %% = %d, want 0 (bard exempt)", r.DurationItemPercent)
+	}
+	if r.ExtendedDurationSec != 9000 {
+		t.Errorf("bard extended duration = %ds, want 9000 (unchanged)", r.ExtendedDurationSec)
 	}
 }
 
@@ -238,6 +279,7 @@ func TestExclusionFilter(t *testing.T) {
 		buffmod.SpellTypeBeneficial,
 		completeHeal.EffectIDs[:],
 		res.Contributors,
+		buffmod.CasterClassUnknown,
 	)
 	if r.DurationAAPercent != 50 {
 		t.Errorf("Complete Heal AA duration %% = %d, want 50 (AAs apply)", r.DurationAAPercent)

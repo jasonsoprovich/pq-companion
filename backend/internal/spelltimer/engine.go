@@ -15,10 +15,12 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
-// CharacterContext supplies the active character + EQ install path so the
-// engine can resolve item/AA duration focuses for a cast. Returning empty
-// strings disables modifier resolution (timers fall back to base duration).
-type CharacterContext func() (eqPath, charName string)
+// CharacterContext supplies the active character + EQ install path + 0-indexed
+// EQ class so the engine can resolve item/AA duration focuses for a cast.
+// Returning empty strings disables modifier resolution (timers fall back to
+// base duration). Returning a class of -1 means "class unknown" — bard-specific
+// rules in buffmod.Resolve are then skipped.
+type CharacterContext func() (eqPath, charName string, class int)
 
 // ScopeProvider returns the user-configured tracking scope ("self",
 // "cast_by_me", or "anyone"). The engine calls this on every landed event so
@@ -294,7 +296,7 @@ func (e *Engine) activePlayerName() string {
 	if e.charCtx == nil {
 		return "You"
 	}
-	_, name := e.charCtx()
+	_, name, _ := e.charCtx()
 	if name == "" {
 		return "You"
 	}
@@ -929,7 +931,7 @@ func (e *Engine) applyDurationModifiers(spell *db.Spell, baseDurationSec float64
 	if e.charCtx == nil {
 		return baseDurationSec
 	}
-	eqPath, charName := e.charCtx()
+	eqPath, charName, casterClass := e.charCtx()
 	if eqPath == "" || charName == "" {
 		return baseDurationSec
 	}
@@ -951,6 +953,7 @@ func (e *Engine) applyDurationModifiers(spell *db.Spell, baseDurationSec float64
 		spellType,
 		spell.EffectIDs[:],
 		contribs,
+		casterClass,
 	)
 	if res.ExtendedDurationSec <= 0 || res.ExtendedDurationSec == int(baseDurationSec) {
 		return baseDurationSec
