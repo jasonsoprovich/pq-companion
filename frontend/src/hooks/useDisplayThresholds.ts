@@ -64,7 +64,7 @@ export function useDisplayThresholds(): DisplayThresholds {
  *
  * Returns 0 when nothing should be hidden.
  */
-export function resolveThreshold(timer: ActiveTimer, defaults: DisplayThresholds): number {
+function resolveThreshold(timer: ActiveTimer, defaults: DisplayThresholds): number {
   if (timer.display_threshold_secs > 0) return timer.display_threshold_secs
   return categoryDefault(timer.category, defaults)
 }

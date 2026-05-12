@@ -506,12 +506,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 			}
 		case scopeCastByMe:
 			if !isSelfTarget {
-				e.mu.Lock()
-				recentMatch := e.lastCastSpell == spellName && time.Since(e.lastCastAt) <= lastCastWindow
-				e.mu.Unlock()
-				if !recentMatch {
-					return
-				}
+				return
 			}
 		}
 		// Without a DB we can't compute duration / icon / category — nothing

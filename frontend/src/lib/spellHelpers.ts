@@ -109,16 +109,6 @@ export function msLabel(ms: number): string {
   return s === Math.floor(s) ? `${s}s` : `${s.toFixed(1)}s`
 }
 
-/** Convert ticks to a human-readable duration string (1 tick = 6 seconds). */
-export function ticksToTime(ticks: number): string {
-  if (ticks <= 0) return 'Instant'
-  if (ticks >= 50000) return 'Permanent'
-  const seconds = ticks * 6
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return mins > 0 ? (secs > 0 ? `${mins}m ${secs}s` : `${mins}m`) : `${secs}s`
-}
-
 /** Returns true if the spell duration scales with caster level. */
 export function durationScales(formula: number, ticks: number): boolean {
   return formula !== 0 && ticks > 0 && ticks < 50000
