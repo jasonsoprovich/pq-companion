@@ -20,10 +20,11 @@ export interface GlobalSearchResult {
   zones: Zone[]
 }
 
-const BASE_URL = 'http://localhost:8080'
+import { getBackendBaseUrl } from './backendUrl'
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`)
+  const baseUrl = await getBackendBaseUrl()
+  const res = await fetch(`${baseUrl}${path}`)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error ?? res.statusText)
@@ -32,7 +33,8 @@ async function get<T>(path: string): Promise<T> {
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const baseUrl = await getBackendBaseUrl()
+  const res = await fetch(`${baseUrl}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -46,7 +48,8 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 async function put<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const baseUrl = await getBackendBaseUrl()
+  const res = await fetch(`${baseUrl}${path}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -60,7 +63,8 @@ async function put<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function del(path: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}${path}`, { method: 'DELETE' })
+  const baseUrl = await getBackendBaseUrl()
+  const res = await fetch(`${baseUrl}${path}`, { method: 'DELETE' })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error ?? res.statusText)
@@ -368,12 +372,12 @@ export function deleteCombatHistoryFight(id: number): Promise<void> {
   return del(`/api/combat/history/${id}`)
 }
 
-export function clearCombatHistory(): Promise<{ removed: number }> {
+export async function clearCombatHistory(): Promise<{ removed: number }> {
   // del() returns void; use a raw fetch here so we can read the body.
-  return fetch(`/api/combat/history`, { method: 'DELETE' }).then(async (r) => {
-    if (!r.ok) throw new Error(`clear history: ${r.status}`)
-    return r.json() as Promise<{ removed: number }>
-  })
+  const baseUrl = await getBackendBaseUrl()
+  const r = await fetch(`${baseUrl}/api/combat/history`, { method: 'DELETE' })
+  if (!r.ok) throw new Error(`clear history: ${r.status}`)
+  return r.json() as Promise<{ removed: number }>
 }
 
 export function getTimerState(): Promise<TimerState> {
@@ -762,7 +766,8 @@ export async function importGINAxml(
   xml: string,
   packName: string,
 ): Promise<{ status: string; pack_name: string; imported: number }> {
-  const url = `${BASE_URL}/api/triggers/import-gina?pack_name=${encodeURIComponent(packName)}`
+  const baseUrl = await getBackendBaseUrl()
+  const url = `${baseUrl}/api/triggers/import-gina?pack_name=${encodeURIComponent(packName)}`
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/xml' },

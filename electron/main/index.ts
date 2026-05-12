@@ -189,6 +189,32 @@ let npcOverlayWindow: BrowserWindow | null = null
 let rollTrackerWindow: BrowserWindow | null = null
 let sidecarProcess: ChildProcess | null = null
 
+// Backend port is discovered at runtime: the Go sidecar tries its preferred
+// port first, falls back to an OS-assigned port if busy, then prints
+// `BACKEND_PORT=N` to stdout. We capture it here and resolve any pending
+// renderer IPC calls. In dev (`npm run dev`) there's no sidecar — the
+// developer runs the backend on its default port — so resolve to 17654
+// after a short grace period if no BACKEND_PORT line arrives.
+let backendPort: number | null = null
+let backendPortResolvers: Array<(port: number) => void> = []
+const DEV_FALLBACK_PORT = 17654
+
+function setBackendPort(port: number): void {
+  if (backendPort === port) return
+  backendPort = port
+  console.log(`[main] Backend port resolved: ${port}`)
+  const pending = backendPortResolvers
+  backendPortResolvers = []
+  pending.forEach((r) => r(port))
+}
+
+function getBackendPort(): Promise<number> {
+  if (backendPort !== null) return Promise.resolve(backendPort)
+  return new Promise<number>((resolve) => {
+    backendPortResolvers.push(resolve)
+  })
+}
+
 // ── Sidecar (Go backend) lifecycle ────────────────────────────────────────────
 
 function getSidecarPath(): string | null {
@@ -253,13 +279,35 @@ function startSidecar(): void {
   const sidecarPath = getSidecarPath()
   if (!sidecarPath) {
     console.log('[main] Sidecar not found — assuming backend is running separately in dev mode')
+    // In dev the developer's `go run` instance binds its configured port
+    // independently of this main process. Resolve to the documented dev
+    // default so renderer fetches still find it.
+    setBackendPort(DEV_FALLBACK_PORT)
     return
   }
 
   sidecarProcess = spawn(sidecarPath, [], { stdio: 'pipe' })
 
+  // Buffer for parsing the BACKEND_PORT=N line. The line may arrive in the
+  // middle of a chunk so we accumulate until we see a newline.
+  let stdoutBuf = ''
   sidecarProcess.stdout?.on('data', (data: Buffer) => {
-    process.stdout.write(`[backend] ${data.toString()}`)
+    const chunk = data.toString()
+    process.stdout.write(`[backend] ${chunk}`)
+    if (backendPort === null) {
+      stdoutBuf += chunk
+      const match = stdoutBuf.match(/BACKEND_PORT=(\d+)/)
+      if (match) {
+        const port = Number(match[1])
+        if (Number.isFinite(port) && port > 0 && port < 65536) {
+          setBackendPort(port)
+        }
+        stdoutBuf = '' // line consumed
+      } else if (stdoutBuf.length > 4096) {
+        // Don't grow unbounded if something is wrong upstream.
+        stdoutBuf = stdoutBuf.slice(-1024)
+      }
+    }
   })
 
   sidecarProcess.stderr?.on('data', (data: Buffer) => {
@@ -1035,6 +1083,7 @@ ipcMain.handle('dialog:select-sound-file', async () => {
 // ── IPC handlers — auto-updater ───────────────────────────────────────────────
 
 ipcMain.handle('app:version', () => app.getVersion())
+ipcMain.handle('backend:port', () => getBackendPort())
 
 ipcMain.handle('updater:check', () => {
   if (!isDev) autoUpdater.checkForUpdates()

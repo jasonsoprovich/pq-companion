@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { getBackendWsUrl } from '../services/backendUrl'
 
-const WS_URL = 'ws://localhost:8080/ws'
 const RECONNECT_DELAY_MS = 2000
 
 export type WsReadyState = 'connecting' | 'open' | 'closed'
@@ -22,7 +22,7 @@ function setState(state: WsReadyState): void {
   stateHandlers.forEach((h) => h(state))
 }
 
-function connect(): void {
+async function connect(): Promise<void> {
   if (
     socket?.readyState === WebSocket.OPEN ||
     socket?.readyState === WebSocket.CONNECTING
@@ -35,7 +35,16 @@ function connect(): void {
   }
 
   setState('connecting')
-  const ws = new WebSocket(WS_URL)
+  // Resolve the backend port lazily — it's discovered at app startup via IPC
+  // from the Electron main process (and may differ between launches if the
+  // preferred port was busy and the server fell back to an OS-assigned port).
+  const wsUrl = await getBackendWsUrl()
+  // If consumers unmounted before the port resolved, abort the connect.
+  if (stateHandlers.size === 0) {
+    setState('closed')
+    return
+  }
+  const ws = new WebSocket(wsUrl)
   socket = ws
 
   ws.onopen = () => setState('open')
@@ -60,7 +69,9 @@ function connect(): void {
     setState('closed')
     // Reconnect automatically as long as consumers are mounted.
     if (stateHandlers.size > 0) {
-      reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS)
+      reconnectTimer = setTimeout(() => {
+        void connect()
+      }, RECONNECT_DELAY_MS)
     }
   }
 
@@ -89,7 +100,7 @@ export function useWebSocket(
     const msgHandler = (msg: WsMessage): void => callbackRef.current?.(msg)
     messageHandlers.add(msgHandler)
 
-    connect()
+    void connect()
 
     return () => {
       stateHandlers.delete(stateHandler)

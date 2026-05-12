@@ -4,6 +4,9 @@ export interface ElectronAPI {
   app: {
     getVersion: () => Promise<string>
   }
+  backend: {
+    getPort: () => Promise<number>
+  }
   versions: {
     node: string
     chrome: string

@@ -5,6 +5,9 @@ contextBridge.exposeInMainWorld('electron', {
   app: {
     getVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
   },
+  backend: {
+    getPort: (): Promise<number> => ipcRenderer.invoke('backend:port'),
+  },
   versions: {
     node: process.versions.node,
     chrome: process.versions.chrome,
