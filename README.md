@@ -12,7 +12,8 @@ A desktop companion app for [Project Quarm](https://www.projectquarm.com/) — t
 - **Global Search** — Press `Cmd+K` / `Ctrl+K` to search items, spells, NPCs, and zones simultaneously from anywhere in the app.
 - **NPC Info Overlay** — See your current target's level, class, HP, resists, and special abilities (Summon, Unmezzable, Uncharmable, etc.) the moment you engage — pulled from the database automatically via your combat log.
 - **DPS Meter** — A transparent overlay showing live damage output for you and your group, with fight duration and session totals. Floats above the game as a standalone window.
-- **Combat Log** — Full fight history with expandable per-combatant breakdowns.
+- **Combat Log** — Persistent fight history with Personal / Raid / Encounter DPS metrics, expandable per-combatant breakdowns, date-range filters, and event-based session grouping.
+- **Roll Tracker** — Parses `/random` rolls into sessions, with an optional timer that auto-stops collection, a dashboard panel, and a pop-out overlay window.
 - **Spell Timer Engine** — Countdown bars for every buff, debuff, mez, stun, and DoT. Tick-accurate durations. Separate overlay windows for buffs and detrimentals.
 - **Log Feed** — Real-time feed of every parsed combat, spell, and zone event from your EQ log.
 - **Spell Checklist** — See every spell your class can learn, cross-referenced against your Zeal spellbook, so you always know what you're missing.

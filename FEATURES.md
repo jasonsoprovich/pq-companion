@@ -1031,6 +1031,46 @@ Design notes:
 - **Backup location**: Backups now saved to `<eq_path>/backups/` (inside the game folder) instead of `~/.pq-companion/backups/`
 - **Version bump**: 0.1.0-beta.1 → 0.1.1
 
+## v0.6.0 — Combat History, Roll Tracker, Combat Polish
+
+### Combat tracking
+- DoT-tick and PQ-format crit hits captured by the combat parser
+- Per-NPC fight tracking — each engaged NPC is its own fight record rather than one rolling encounter
+- Three DPS metrics surfaced side-by-side: **Personal** (you), **Raid** (group/raid total), and **Encounter** (everything including NPCs)
+- Per-combatant bar colors in the DPS overlay
+- Session-break dividers in the combat strip (120-second gap rule)
+- Fixes: single-word boss names (e.g. `Dracoliche`), charmed-pet attribution, Eye-of-Zomm scout naming, 0-damage rows preserved, DPS-mode toggle now updates every aggregate display
+
+### Combat history (persistent)
+- SQLite-backed history store for archived fights (`internal/combat`), pruned by retention window
+- REST endpoints under `/api/combat/history` for paginated browsing and per-fight detail
+- Full-page Combat History view with facet dropdowns (zone, killed-by, target), date presets, themed confirm modal
+- Event-based session grouping with a per-page toggle
+- FilterBar additions: pets, me-only, and DPS-mode toggles
+
+### Roll tracker (new)
+- `/random` parser feeds a roll session store with per-session IDs and remove-from-session support
+- Dedicated page under **Parsing** with a session table and dashboard panel on the main view
+- Timer-mode auto-stop — start a countdown and the session locks when the timer expires
+- Pop-out overlay window with centered empty state
+
+### Spell timers
+- Detrimental timers for a target NPC are cleared automatically when that NPC dies (no more orphan debuff bars)
+
+### Zones
+- Curated expansion grouping in the zone list
+- Graveyard pop-out information surfaced inline on zone detail
+
+### Overlays & UI polish
+- Overlay toggles flip the window to click-through; only the header stays clickable for dragging/close
+- Buff, detrimental, and roll pop-out windows now center their empty states
+- Unified `Trash2` clear icon across overlay windows
+- Character switcher: Auto-mode behavior clarified in the picker
+
+### Internals
+- WebSocket event-type strings centralized as frontend constants
+- Migration definitions tightened; dead helpers and debug logs removed in two cleanup passes
+
 ## Phase 11 — Project Website
 _Planned_
 
