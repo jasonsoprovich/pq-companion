@@ -2,15 +2,19 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Library,
   RefreshCw,
+  Save,
   Search,
+  Undo2,
   X,
   AlertTriangle,
 } from 'lucide-react'
 import {
   getAllSpellsets,
+  getSpell,
   getSpellsByClass,
   getZealSpellbook,
   listCharacters,
+  updateSpellsets,
   type Character,
 } from '../services/api'
 import type { Spell } from '../types/spell'
@@ -25,13 +29,36 @@ const CLASS_NAMES = [
 
 const EMPTY_SLOT = -1
 
+function deepCloneFiles(files: SpellsetFile[]): SpellsetFile[] {
+  return files.map((f) => ({
+    ...f,
+    spellsets: f.spellsets.map((s) => ({ ...s, spell_ids: s.spell_ids.slice() })),
+  }))
+}
+
+function fileIsDirty(current: SpellsetFile | null, original: SpellsetFile | null): boolean {
+  if (!current || !original) return false
+  if (current.spellsets.length !== original.spellsets.length) return true
+  for (let i = 0; i < current.spellsets.length; i++) {
+    const a = current.spellsets[i]
+    const b = original.spellsets[i]
+    if (a.name !== b.name) return true
+    if (a.spell_ids.length !== b.spell_ids.length) return true
+    for (let j = 0; j < a.spell_ids.length; j++) {
+      if (a.spell_ids[j] !== b.spell_ids[j]) return true
+    }
+  }
+  return false
+}
+
 // ── Picker modal ───────────────────────────────────────────────────────────────
 
 interface SlotPickerProps {
-  classIndex: number
-  characterLevel: number
+  classIndex: number  // -1 when character's class is unknown
+  characterLevel: number  // 0 when unknown
   knownIds: Set<number>
-  allSpells: Spell[]
+  allSpells: Spell[]  // class-castable spells; empty when classIndex < 0
+  referencedSpells: Map<number, Spell>  // off-class spells we've already resolved
   currentSpellId: number
   spellsetName: string
   slotIndex: number
@@ -44,6 +71,7 @@ function SlotPicker({
   characterLevel,
   knownIds,
   allSpells,
+  referencedSpells,
   currentSpellId,
   spellsetName,
   slotIndex,
@@ -54,11 +82,29 @@ function SlotPicker({
 
   const eligible = useMemo(() => {
     const q = query.trim().toLowerCase()
+    // When the character's class is unknown, fall back to listing whatever
+    // spells we've already resolved that are in the spellbook — without class
+    // info we can't enforce the level cap, so we just trust the spellbook list.
+    if (classIndex < 0) {
+      const seen = new Set<number>()
+      const pool: Spell[] = []
+      const consider = (s: Spell) => {
+        if (seen.has(s.id)) return
+        if (!knownIds.has(s.id)) return
+        seen.add(s.id)
+        pool.push(s)
+      }
+      for (const s of allSpells) consider(s)
+      for (const s of referencedSpells.values()) consider(s)
+      return pool
+        .filter((s) => !q || s.name.toLowerCase().includes(q))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    }
     return allSpells
       .filter((s) => {
         const reqLevel = s.class_levels?.[classIndex] ?? 255
         if (reqLevel >= 254) return false
-        if (reqLevel > characterLevel) return false
+        if (characterLevel > 0 && reqLevel > characterLevel) return false
         if (!knownIds.has(s.id)) return false
         if (q && !s.name.toLowerCase().includes(q)) return false
         return true
@@ -69,7 +115,7 @@ function SlotPicker({
         if (al !== bl) return al - bl
         return a.name.localeCompare(b.name)
       })
-  }, [allSpells, classIndex, characterLevel, knownIds, query])
+  }, [allSpells, referencedSpells, classIndex, characterLevel, knownIds, query])
 
   return (
     <div
@@ -126,12 +172,13 @@ function SlotPicker({
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {eligible.length === 0 && (
             <p className="px-4 py-6 text-sm text-center" style={{ color: 'var(--color-muted)' }}>
-              No eligible spells. Spells must be in the character's spellbook export
-              and within their level cap for this class.
+              {classIndex < 0
+                ? 'No eligible spells. The character\'s class is unknown — log in once with Zeal so a Quarmy export is created, then return here.'
+                : "No eligible spells. Spells must be in the character's spellbook export and within their level cap for this class."}
             </p>
           )}
           {eligible.map((s) => {
-            const lvl = s.class_levels[classIndex] ?? 0
+            const lvl = classIndex >= 0 ? (s.class_levels[classIndex] ?? 0) : 0
             const isCurrent = s.id === currentSpellId
             return (
               <button
@@ -147,7 +194,7 @@ function SlotPicker({
                     {s.name}
                   </div>
                   <div className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                    Level {lvl}
+                    {lvl > 0 ? `Level ${lvl}` : 'Known'}
                     {isCurrent && ' · current gem'}
                   </div>
                 </div>
@@ -373,9 +420,11 @@ function FilteredSubTabs({
 export default function CharacterSpellsetsPage(): React.ReactElement {
   const { active } = useActiveCharacter()
   const [files, setFiles] = useState<SpellsetFile[]>([])
+  const [originalFiles, setOriginalFiles] = useState<SpellsetFile[]>([])
   const [characters, setCharacters] = useState<Character[]>([])
   const [viewed, setViewed] = useState('')
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const [classSpells, setClassSpells] = useState<Spell[]>([])
@@ -384,13 +433,16 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
 
   const [picker, setPicker] = useState<{ slot: number; setIndex: number } | null>(null)
   const [pendingPick, setPendingPick] = useState<{ slot: number; setIndex: number; spell: Spell } | null>(null)
+  const [confirmAction, setConfirmAction] = useState<'save' | 'cancel' | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
     setError(null)
     Promise.all([getAllSpellsets(), listCharacters()])
       .then(([sets, chars]) => {
-        setFiles(sets.characters ?? [])
+        const fresh = sets.characters ?? []
+        setFiles(fresh)
+        setOriginalFiles(deepCloneFiles(fresh))
         setCharacters(chars.characters ?? [])
       })
       .catch((err: Error) => setError(err.message))
@@ -416,19 +468,25 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
   const classIndex = viewedChar?.class ?? -1
   const characterLevel = viewedChar?.level ?? 0
 
-  // Load the class spell catalog + the character's spellbook for filtering.
+  // Load the class spell catalog (when class is known) + the character's
+  // spellbook export. The spellbook load is independent of class so we still
+  // have something useful when class is unset (e.g. a character imported only
+  // from a spellbook export, before any Quarmy import).
   useEffect(() => {
-    if (!viewed || classIndex < 0) {
+    if (!viewed) {
       setClassSpells([])
       setKnownIds(new Set())
       return
     }
     let cancelled = false
-    getSpellsByClass(classIndex, 1000, 0)
-      .then((res) => {
-        if (!cancelled) setClassSpells(res.items ?? [])
-      })
-      .catch(() => { if (!cancelled) setClassSpells([]) })
+
+    if (classIndex >= 0) {
+      getSpellsByClass(classIndex, 1000, 0)
+        .then((res) => { if (!cancelled) setClassSpells(res.items ?? []) })
+        .catch(() => { if (!cancelled) setClassSpells([]) })
+    } else {
+      setClassSpells([])
+    }
 
     const isActive = active && viewed.toLowerCase() === active.toLowerCase()
     getZealSpellbook(isActive ? undefined : viewed)
@@ -468,17 +526,14 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
     }
     if (missing.length === 0) return
     let cancelled = false
-    // Lightweight per-ID fetch via the existing /api/spells/{id} endpoint.
     Promise.all(
-      missing.map((id) =>
-        fetch(`/api/spells/${id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      ),
+      missing.map((id) => getSpell(id).catch(() => null)),
     ).then((arr) => {
       if (cancelled) return
       setReferenced((prev) => {
         const next = new Map(prev)
         for (const s of arr) {
-          if (s && typeof s.id === 'number') next.set(s.id, s as Spell)
+          if (s && typeof s.id === 'number') next.set(s.id, s)
         }
         return next
       })
@@ -489,7 +544,7 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
   const filenames = files.map((f) => f.character)
 
   function handleSlotClick(setIndex: number, slot: number) {
-    if (!viewedFile || classIndex < 0) return
+    if (!viewedFile) return
     setPicker({ setIndex, slot })
   }
 
@@ -501,9 +556,7 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
 
   function handleConfirmReplace() {
     if (!pendingPick || !viewedFile) return
-    // TODO(spellset-write): persist this change back to the .ini file once the
-    // write path lands. For now this is a no-op so the UI flow is testable.
-    // Optimistically update local view so the user sees the new gem.
+    // Local edit only — gets persisted when the user clicks Save.
     const { setIndex, slot, spell } = pendingPick
     setFiles((prev) =>
       prev.map((f) => {
@@ -520,12 +573,52 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
     setPendingPick(null)
   }
 
+  function handleSave() {
+    if (!viewedFile) return
+    setSaving(true)
+    setError(null)
+    updateSpellsets(viewedFile.character, viewedFile.spellsets)
+      .then((res) => {
+        if (!res.spellsets) return
+        const saved = res.spellsets
+        setFiles((prev) => prev.map((f) => (f.character === saved.character ? saved : f)))
+        setOriginalFiles((prev) => {
+          const next = deepCloneFiles(prev)
+          const idx = next.findIndex((f) => f.character === saved.character)
+          if (idx >= 0) next[idx] = deepCloneFiles([saved])[0]
+          else next.push(deepCloneFiles([saved])[0])
+          return next
+        })
+      })
+      .catch((err: Error) => setError(`Save failed: ${err.message}`))
+      .finally(() => {
+        setSaving(false)
+        setConfirmAction(null)
+      })
+  }
+
+  function handleCancel() {
+    if (!viewedFile) return
+    const original = originalFiles.find((f) => f.character === viewedFile.character)
+    if (!original) {
+      setConfirmAction(null)
+      return
+    }
+    setFiles((prev) =>
+      prev.map((f) => (f.character === viewedFile.character ? deepCloneFiles([original])[0] : f)),
+    )
+    setConfirmAction(null)
+  }
+
   const currentSpellId = picker && viewedFile
     ? viewedFile.spellsets[picker.setIndex]?.spell_ids[picker.slot] ?? -1
     : -1
   const pickerSetName = picker && viewedFile
     ? viewedFile.spellsets[picker.setIndex]?.name ?? ''
     : ''
+
+  const originalViewedFile = originalFiles.find((f) => f.character === viewed) ?? null
+  const dirty = fileIsDirty(viewedFile, originalViewedFile)
 
   return (
     <div className="flex h-full flex-col" style={{ backgroundColor: 'var(--color-background)' }}>
@@ -553,11 +646,48 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
             </div>
           )}
         </div>
+        {dirty && (
+          <span
+            className="text-[11px] px-2 py-0.5 rounded"
+            style={{
+              backgroundColor: 'var(--color-warning, #f59e0b)',
+              color: '#000',
+            }}
+            title="Unsaved changes to this character's spellsets"
+          >
+            Unsaved
+          </span>
+        )}
+        <button
+          onClick={() => setConfirmAction('cancel')}
+          disabled={!dirty || saving}
+          className="flex items-center gap-1 text-xs px-2 py-1 rounded disabled:opacity-40"
+          style={{
+            color: 'var(--color-muted-foreground)',
+            border: '1px solid var(--color-border)',
+          }}
+          title="Discard unsaved changes"
+        >
+          <Undo2 size={12} /> Cancel
+        </button>
+        <button
+          onClick={() => setConfirmAction('save')}
+          disabled={!dirty || saving}
+          className="flex items-center gap-1 text-xs px-2 py-1 rounded font-medium disabled:opacity-40"
+          style={{
+            backgroundColor: 'var(--color-primary)',
+            color: 'var(--color-primary-foreground, #fff)',
+          }}
+          title="Write changes to the .ini file"
+        >
+          <Save size={12} className={saving ? 'animate-pulse' : ''} /> Save
+        </button>
         <button
           onClick={load}
-          className="flex items-center gap-1 text-xs px-2 py-1 rounded"
+          disabled={saving}
+          className="flex items-center gap-1 text-xs px-2 py-1 rounded disabled:opacity-40"
           style={{ color: 'var(--color-muted-foreground)' }}
-          title="Reload spellset files"
+          title="Reload spellset files from disk"
         >
           <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
@@ -600,6 +730,7 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
           characterLevel={characterLevel}
           knownIds={knownIds}
           allSpells={classSpells}
+          referencedSpells={referenced}
           currentSpellId={currentSpellId}
           spellsetName={pickerSetName}
           slotIndex={picker.slot}
@@ -624,10 +755,43 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
                 with <strong>{pendingPick.spell.name}</strong>?
               </p>
               <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
-                Writing back to <code>{viewedFile.character}_spellsets.ini</code> is not yet
-                implemented — this preview updates the on-screen view only.
+                The change stays local until you click <strong>Save</strong> — until then
+                nothing is written to <code>{viewedFile.character}_spellsets.ini</code>.
               </p>
             </div>
+          }
+        />
+      )}
+
+      {confirmAction === 'save' && viewedFile && (
+        <ConfirmModal
+          title="Save spellsets to disk?"
+          confirmLabel="Save"
+          onConfirm={handleSave}
+          onCancel={() => setConfirmAction(null)}
+          message={
+            <div className="space-y-2">
+              <p>
+                Overwrite <code>{viewedFile.character}_spellsets.ini</code> with the current
+                changes? This file controls the in-game spell-set dropdown, so {viewedFile.character} should
+                be camped out of the game before saving.
+              </p>
+            </div>
+          }
+        />
+      )}
+
+      {confirmAction === 'cancel' && viewedFile && (
+        <ConfirmModal
+          title="Discard changes?"
+          confirmLabel="Discard"
+          onConfirm={handleCancel}
+          onCancel={() => setConfirmAction(null)}
+          message={
+            <p>
+              Revert unsaved changes to <code>{viewedFile.character}</code>'s spellsets? The .ini
+              file on disk is unaffected.
+            </p>
           }
         />
       )}

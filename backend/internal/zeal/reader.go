@@ -257,6 +257,50 @@ func ParseSpellsets(path, character string) (*SpellsetFile, error) {
 	return out, scanner.Err()
 }
 
+// WriteSpellsets serializes a SpellsetFile back to its INI format and writes it
+// to path atomically (temp file + rename). Each spellset becomes a [section]
+// followed by keys 0..7 = <spell_id>; missing slots are written as -1.
+func WriteSpellsets(path string, sf *SpellsetFile) error {
+	if sf == nil {
+		return fmt.Errorf("nil spellset file")
+	}
+	var buf strings.Builder
+	for _, s := range sf.Spellsets {
+		buf.WriteByte('[')
+		buf.WriteString(s.Name)
+		buf.WriteString("]\n")
+		for i := 0; i < SpellsetSlotCount; i++ {
+			id := -1
+			if i < len(s.SpellIDs) {
+				id = s.SpellIDs[i]
+			}
+			fmt.Fprintf(&buf, "%d=%d\n", i, id)
+		}
+	}
+
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".spellsets-*.ini")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+	cleanup := func() { _ = os.Remove(tmpPath) }
+	if _, err := tmp.WriteString(buf.String()); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return fmt.Errorf("write temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return fmt.Errorf("close temp: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		cleanup()
+		return fmt.Errorf("rename: %w", err)
+	}
+	return nil
+}
+
 // QuarmyPath returns the expected Zeal quarmy export path for a character.
 // Zeal writes: <eq_path>/<CharName>-Quarmy.txt
 func QuarmyPath(eqPath, character string) string {

@@ -309,6 +309,13 @@ export function getAllSpellsets(): Promise<AllSpellsetsResponse> {
   return get<AllSpellsetsResponse>('/api/zeal/spellsets/all')
 }
 
+export function updateSpellsets(
+  character: string,
+  spellsets: { name: string; spell_ids: number[] }[],
+): Promise<ZealSpellsetsResponse> {
+  return put<ZealSpellsetsResponse>('/api/zeal/spellsets', { character, spellsets })
+}
+
 // ── Spell Checklist ────────────────────────────────────────────────────────────
 
 export function getSpellsByClass(

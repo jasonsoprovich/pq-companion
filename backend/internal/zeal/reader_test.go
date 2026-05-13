@@ -95,6 +95,39 @@ func TestParseSpellsetsFixture(t *testing.T) {
 	}
 }
 
+func TestWriteSpellsetsRoundTrip(t *testing.T) {
+	original := &SpellsetFile{
+		Character: "Tester",
+		Spellsets: []Spellset{
+			{Name: "58group", SpellIDs: []int{-1, -1, -1, -1, 2609, 712, 1760, 2610}},
+			{Name: "15base", SpellIDs: []int{1100, 750, 728, 2605, 1196, -1, -1, -1}},
+		},
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Tester_spellsets.ini")
+	if err := WriteSpellsets(path, original); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	reloaded, err := ParseSpellsets(path, "Tester")
+	if err != nil {
+		t.Fatalf("reparse: %v", err)
+	}
+	if len(reloaded.Spellsets) != len(original.Spellsets) {
+		t.Fatalf("len = %d, want %d", len(reloaded.Spellsets), len(original.Spellsets))
+	}
+	for i, want := range original.Spellsets {
+		got := reloaded.Spellsets[i]
+		if got.Name != want.Name {
+			t.Errorf("set %d name = %q, want %q", i, got.Name, want.Name)
+		}
+		for j, id := range want.SpellIDs {
+			if got.SpellIDs[j] != id {
+				t.Errorf("set %d slot %d = %d, want %d", i, j, got.SpellIDs[j], id)
+			}
+		}
+	}
+}
+
 func TestParseInventory(t *testing.T) {
 	content := "Location\tName\tID\tCount\tSlots\n" +
 		"Head\tIron Cap\t1001\t1\t0\n" +
