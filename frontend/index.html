@@ -3,9 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      connect-src must allow whatever port the Go backend ends up bound to,
+      which is dynamic: user-configurable, with auto-fallback to an
+      OS-assigned port when the preferred one is busy. Wildcard ports on
+      both localhost and 127.0.0.1 are the only correct shape — pinning a
+      specific port here is what broke every non-8080 user from 0.6.2
+      onward, because the renderer would fetch the right URL but the
+      browser would refuse to connect.
+
+      Both hostnames are listed because the backend binds 127.0.0.1
+      explicitly (v4-only) and the renderer targets 127.0.0.1 by URL, but
+      the Vite dev server HMR socket runs on localhost — so we keep both
+      to avoid coupling this to either choice.
+    -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:8080 http://localhost:8080 ws://localhost:5173 http://localhost:5173; media-src 'self' pq-audio:"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; media-src 'self' pq-audio:"
     />
     <title>PQ Companion</title>
   </head>
