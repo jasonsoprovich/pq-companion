@@ -299,22 +299,24 @@ interface SpellsetCardProps {
 function SpellsetCard({ spellset, spellsById, onSlotClick }: SpellsetCardProps): React.ReactElement {
   return (
     <div
-      className="rounded-lg border"
+      className="rounded-lg border shrink-0"
       style={{
         backgroundColor: 'var(--color-surface)',
         borderColor: 'var(--color-border)',
+        width: 280,
       }}
     >
       <div
-        className="px-3 py-2 border-b text-sm font-medium"
+        className="px-3 py-2 border-b text-sm font-medium truncate"
         style={{
           color: 'var(--color-foreground)',
           borderColor: 'var(--color-border)',
         }}
+        title={spellset.name}
       >
         {spellset.name}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 p-2">
+      <div className="flex flex-col gap-1 p-2">
         {spellset.spell_ids.map((id, idx) => {
           const spell = id > 0 ? spellsById.get(id) : null
           const isEmpty = id === EMPTY_SLOT || id <= 0
@@ -337,7 +339,7 @@ function SpellsetCard({ spellset, spellsById, onSlotClick }: SpellsetCardProps):
                 <>
                   <SpellIcon id={spell.new_icon} name={spell.name} size={20} />
                   <span
-                    className="text-xs truncate"
+                    className="text-xs"
                     style={{ color: 'var(--color-foreground)' }}
                   >
                     {spell.name}
@@ -711,7 +713,7 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
           </div>
         )}
         {!loading && !error && viewedFile && (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 max-w-6xl">
+          <div className="flex flex-wrap gap-3">
             {viewedFile.spellsets.map((s, i) => (
               <SpellsetCard
                 key={`${s.name}-${i}`}
