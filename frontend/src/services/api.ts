@@ -3,7 +3,13 @@ import type { Item, ItemSources, SearchResult } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction } from '../types/npc'
 import type { Spell, SpellCrossRefs } from '../types/spell'
 import type { Zone, ZoneConnection, ZoneGroundSpawn, ZoneForageItem, ZoneDropItem } from '../types/zone'
-import type { ZealInventoryResponse, ZealSpellbookResponse, AllInventoriesResponse } from '../types/zeal'
+import type {
+  ZealInventoryResponse,
+  ZealSpellbookResponse,
+  AllInventoriesResponse,
+  ZealSpellsetsResponse,
+  AllSpellsetsResponse,
+} from '../types/zeal'
 import type { KeysResponse, KeysProgressResponse } from '../types/keys'
 import type { Backup, BackupsResponse } from '../types/backup'
 import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
@@ -292,6 +298,15 @@ export function getZealSpellbook(character?: string): Promise<ZealSpellbookRespo
 
 export function getAllInventories(): Promise<AllInventoriesResponse> {
   return get<AllInventoriesResponse>('/api/zeal/all-inventories')
+}
+
+export function getZealSpellsets(character?: string): Promise<ZealSpellsetsResponse> {
+  const qs = character ? `?character=${encodeURIComponent(character)}` : ''
+  return get<ZealSpellsetsResponse>(`/api/zeal/spellsets${qs}`)
+}
+
+export function getAllSpellsets(): Promise<AllSpellsetsResponse> {
+  return get<AllSpellsetsResponse>('/api/zeal/spellsets/all')
 }
 
 // ── Spell Checklist ────────────────────────────────────────────────────────────

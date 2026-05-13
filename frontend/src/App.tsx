@@ -34,6 +34,7 @@ import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
 import CharactersPage from './pages/CharactersPage'
 import CharacterProgressPage from './pages/CharacterProgressPage'
 import CharacterTasksPage from './pages/CharacterTasksPage'
+import CharacterSpellsetsPage from './pages/CharacterSpellsetsPage'
 import CharactersLayout from './components/CharactersLayout'
 import { ActiveCharacterProvider } from './contexts/ActiveCharacterContext'
 
@@ -131,6 +132,7 @@ export default function App(): React.ReactElement {
             <Route path="progress" element={<CharacterProgressPage />} />
             <Route path="inventory" element={<InventoryTrackerPage />} />
             <Route path="spells" element={<SpellChecklistPage />} />
+            <Route path="spellsets" element={<CharacterSpellsetsPage />} />
             <Route path="keys" element={<KeyTrackerPage />} />
             <Route path="tasks" element={<CharacterTasksPage />} />
           </Route>

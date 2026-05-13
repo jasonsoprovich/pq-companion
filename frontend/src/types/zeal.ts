@@ -32,3 +32,23 @@ export interface AllInventoriesResponse {
   characters: Inventory[]
   shared_bank: InventoryEntry[]
 }
+
+export interface Spellset {
+  name: string
+  spell_ids: number[] // length 8, -1 = empty gem
+}
+
+export interface SpellsetFile {
+  character: string
+  exported_at: string // ISO datetime
+  spellsets: Spellset[]
+}
+
+export interface ZealSpellsetsResponse {
+  spellsets: SpellsetFile | null
+}
+
+export interface AllSpellsetsResponse {
+  configured: boolean
+  characters: SpellsetFile[]
+}
