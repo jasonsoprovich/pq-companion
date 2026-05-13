@@ -57,6 +57,7 @@ export default function SettingsPage(): React.ReactElement {
   const [portTestState, setPortTestState] = useState<'idle' | 'testing'>('idle')
   const [portTestResult, setPortTestResult] = useState<TestPortResult | null>(null)
   const [portTestPort, setPortTestPort] = useState<number | null>(null)
+  const [configFolder, setConfigFolder] = useState<string | null>(null)
 
   const [logLargeFile, setLogLargeFile] = useState(false)
   const [logFileInfo, setLogFileInfo] = useState<LogFileInfo | null>(null)
@@ -92,6 +93,12 @@ export default function SettingsPage(): React.ReactElement {
 
     if (window.electron?.app) {
       window.electron.app.getVersion().then(setAppVersion).catch(() => null)
+    }
+
+    // Pre-fetch the config folder path so the error fallback can show it
+    // immediately if the backend fetch above fails.
+    if (window.electron?.shell) {
+      window.electron.shell.getConfigFolderPath().then(setConfigFolder).catch(() => null)
     }
 
     getServerInfo().then(setServerInfo).catch(() => null)
@@ -244,14 +251,86 @@ export default function SettingsPage(): React.ReactElement {
   ]
 
   if (loadError && tab === 'settings') {
+    const configPath = configFolder ? `${configFolder}\\config.yaml` : null
     return (
       <div className="flex h-full flex-col">
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
-        <div className="flex flex-1 flex-col items-center justify-center gap-3">
-          <AlertTriangle size={28} style={{ color: '#f97316' }} />
-          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-            Failed to load settings: {loadError}
-          </p>
+        <div className="flex flex-1 items-start justify-center overflow-y-auto p-6">
+          <div className="flex w-full max-w-xl flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle size={22} style={{ color: '#f97316' }} />
+              <h2 className="text-base font-semibold" style={{ color: 'var(--color-foreground)' }}>
+                Can't reach the backend
+              </h2>
+            </div>
+
+            <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              Settings failed to load: <span className="font-mono">{loadError}</span>.
+              The PQ Companion backend service isn't responding on its local port.
+            </p>
+
+            <div
+              className="rounded border p-3 text-xs"
+              style={{
+                borderColor: 'var(--color-border)',
+                backgroundColor: 'var(--color-muted-background, rgba(255,255,255,0.02))',
+                color: 'var(--color-muted-foreground)',
+              }}
+            >
+              <p className="mb-2 font-semibold" style={{ color: 'var(--color-foreground)' }}>
+                Most common cause: antivirus
+              </p>
+              <p className="mb-2">
+                Windows Defender or another antivirus may have quarantined
+                <span className="font-mono"> pq-companion-server.exe</span>.
+                Check Windows Security → Virus &amp; threat protection →
+                Protection history. If the file is listed, restore it and add
+                an exclusion, then relaunch PQ Companion.
+              </p>
+              <p className="mb-2">
+                Other possibilities: a stuck listener on the configured port,
+                or a firewall blocking loopback traffic. As a workaround you
+                can change the port manually in <span className="font-mono">config.yaml</span>:
+              </p>
+              {configPath && (
+                <p className="font-mono break-all" style={{ color: 'var(--color-foreground)' }}>
+                  {configPath}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.electron?.shell) {
+                    window.electron.shell.openConfigFolder().catch(() => null)
+                  }
+                }}
+                disabled={!window.electron?.shell}
+                className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  color: 'var(--color-primary-foreground, #000)',
+                }}
+              >
+                <FolderOpen size={13} />
+                Open config folder
+              </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-medium transition-colors"
+                style={{
+                  borderColor: 'var(--color-border)',
+                  color: 'var(--color-foreground)',
+                }}
+              >
+                <RefreshCw size={13} />
+                Retry
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     )

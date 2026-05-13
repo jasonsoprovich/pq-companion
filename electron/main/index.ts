@@ -1113,6 +1113,20 @@ ipcMain.handle('dialog:select-sound-file', async () => {
 ipcMain.handle('app:version', () => app.getVersion())
 ipcMain.handle('backend:port', () => getBackendPort())
 
+// Opens ~/.pq-companion in the OS file manager. Used by the Settings page
+// error screen so a user whose backend never came up (AV quarantine, port
+// stuck, etc.) can still reach their config.yaml manually. We open the
+// folder rather than the file so a missing config.yaml — e.g. brand-new
+// install where the sidecar died before writing one — still lands somewhere
+// useful.
+ipcMain.handle('shell:open-config-folder', async () => {
+  const dir = join(homedir(), '.pq-companion')
+  await shell.openPath(dir)
+  return dir
+})
+
+ipcMain.handle('config:folder-path', () => join(homedir(), '.pq-companion'))
+
 ipcMain.handle('updater:check', () => {
   if (!isDev) autoUpdater.checkForUpdates()
 })

@@ -51,6 +51,10 @@ export interface ElectronAPI {
     selectFolder: () => Promise<string | null>
     selectSoundFile: () => Promise<string | null>
   }
+  shell: {
+    openConfigFolder: () => Promise<string>
+    getConfigFolderPath: () => Promise<string>
+  }
   updater: {
     check: () => Promise<void>
     download: () => Promise<void>

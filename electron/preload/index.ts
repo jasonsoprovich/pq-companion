@@ -54,6 +54,10 @@ contextBridge.exposeInMainWorld('electron', {
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-folder'),
     selectSoundFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-sound-file'),
   },
+  shell: {
+    openConfigFolder: (): Promise<string> => ipcRenderer.invoke('shell:open-config-folder'),
+    getConfigFolderPath: (): Promise<string> => ipcRenderer.invoke('config:folder-path'),
+  },
   updater: {
     check: (): Promise<void> => ipcRenderer.invoke('updater:check'),
     download: (): Promise<void> => ipcRenderer.invoke('updater:download'),
