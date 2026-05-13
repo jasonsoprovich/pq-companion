@@ -129,6 +129,7 @@ const ITEM_TYPES: Record<number, string> = {
   38: 'Key (Alt)',
   39: 'Compass',
   40: 'Poison',
+  45: 'Hand to Hand',
   52: 'Martial',
   54: 'Container',
 }

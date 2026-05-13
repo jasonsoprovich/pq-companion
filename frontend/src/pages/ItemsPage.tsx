@@ -102,6 +102,7 @@ const ITEM_TYPES: { value: number; label: string }[] = [
   { value: 32, label: 'Key' },
   { value: 34, label: '2H Piercing' },
   { value: 40, label: 'Poison' },
+  { value: 45, label: 'Hand to Hand' },
   { value: 52, label: 'Martial' },
 ]
 
