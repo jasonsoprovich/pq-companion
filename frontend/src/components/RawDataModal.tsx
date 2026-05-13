@@ -130,11 +130,17 @@ export default function RawDataModal({
           )}
           {!error && row && visible.length > 0 && (
             <div
-              className="grid gap-x-6 gap-y-1"
-              style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}
+              style={{
+                columnWidth: '220px',
+                columnGap: '1.5rem',
+              }}
             >
               {visible.map((f) => (
-                <div key={f.name} className="flex gap-1.5 leading-snug">
+                <div
+                  key={f.name}
+                  className="flex gap-1.5 leading-snug py-0.5"
+                  style={{ breakInside: 'avoid' }}
+                >
                   <span
                     className="font-semibold shrink-0"
                     style={{ color: 'var(--color-text)' }}
