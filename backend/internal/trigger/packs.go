@@ -1374,7 +1374,8 @@ func RangerPack() TriggerPack {
 // Preservation, Psalm of Veeshan, Elemental Rhythms, Guardian Rhythms)
 // plus the mez (Kelin's Lucid Lullaby), lull (Kelin's Lugubrious
 // Lament), charm (Solon's Bewitching Bravura), and slow (Largo's
-// Absonant Binding) target debuffs.
+// Absonant Binding) target debuffs. Also tracks the Tiny Cloak of
+// Darkest Night clicky (Shroud of Stealth), a common bard utility.
 //
 // Bard songs pulse on every tick while sung; the spelltimer engine's
 // same-name dedup window keeps duplicate timers from forming, and each
@@ -1388,7 +1389,7 @@ func BardPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Bard",
 		Class:       ClassPtr(ClassBard),
-		Description: "Crowd-control break alerts (mez, charm) plus spell timers for Cantata of Replenishment, Warsong of Zek, Niv's Melody of Preservation, Psalm of Veeshan, Elemental Rhythms, Guardian Rhythms, Kelin's Lucid Lullaby / Lugubrious Lament, Solon's Bewitching Bravura, and Largo's Absonant Binding.",
+		Description: "Crowd-control break alerts (mez, charm) plus spell timers for Cantata of Replenishment, Warsong of Zek, Niv's Melody of Preservation, Psalm of Veeshan, Elemental Rhythms, Guardian Rhythms, Kelin's Lucid Lullaby / Lugubrious Lament, Solon's Bewitching Bravura, Largo's Absonant Binding, and the Tiny Cloak of Darkest Night clicky (Shroud of Stealth).",
 		Triggers: []Trigger{
 			// ── Crowd-control breaks ─────────────────────────────────────
 			// Bard songs pulse every tick, so the worn-off line only fires
@@ -1533,6 +1534,28 @@ func BardPack() TriggerPack {
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 54,
 				SpellID:           1751,
+				PackName:          "Bard",
+				Actions:           []Action{},
+			},
+
+			// ── Item clicky (timer) ─────────────────────────────────────
+			// Tiny Cloak of Darkest Night (item 28766) clicks Shroud of
+			// Stealth (spell 2039) at clicklevel 55. Formula 4 base 20:
+			// 55*2 + 20 = 130, capped at base*3 = 60 ticks → 360s.
+			//
+			// Shroud of Stealth has classes1..15 = 255 (no class can cast
+			// it as a spell), so the clicky-class-match guard in buffmod
+			// already skips item/AA duration extensions; bards are also
+			// universally exempt from duration extensions. Either guard
+			// alone keeps the timer at the base 360s.
+			{
+				Name:              "Shroud of Stealth",
+				Enabled:           true,
+				Pattern:           `^(?:You hide yourself from view\.|[A-Z][a-zA-Z']{2,14} disappears into the shadows\.)$`,
+				WornOffPattern:    `^You are no longer hidden from view\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 360,
+				SpellID:           2039,
 				PackName:          "Bard",
 				Actions:           []Action{},
 			},
