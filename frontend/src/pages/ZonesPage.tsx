@@ -9,8 +9,10 @@ import {
   getZoneExpansions,
   getZoneForage,
   getZoneGroundSpawns,
+  getZoneRaw,
   searchZones,
 } from '../services/api'
+import RawDataModal from '../components/RawDataModal'
 import type { NPC } from '../types/npc'
 import type { Zone, ZoneConnection, ZoneDropItem, ZoneForageItem, ZoneGroundSpawn } from '../types/zone'
 import { className, npcDisplayName } from '../lib/npcHelpers'
@@ -724,6 +726,8 @@ interface DetailPanelProps {
 
 function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
+  const [rawOpen, setRawOpen] = useState(false)
+  const rawFetcher = useCallback(() => getZoneRaw(zone!.id), [zone?.id])
 
   useEffect(() => {
     setActiveTab('overview')
@@ -746,12 +750,26 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
         className="shrink-0 border-b px-5 pt-4 pb-0"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <h2
-          className="text-xl font-bold leading-tight"
-          style={{ color: 'var(--color-primary)' }}
-        >
-          {zone.long_name || zone.short_name}
-        </h2>
+        <div className="flex items-start justify-between gap-3">
+          <h2
+            className="text-xl font-bold leading-tight"
+            style={{ color: 'var(--color-primary)' }}
+          >
+            {zone.long_name || zone.short_name}
+          </h2>
+          <button
+            onClick={() => setRawOpen(true)}
+            className="shrink-0 rounded px-2 py-1 text-xs"
+            style={{
+              backgroundColor: 'var(--color-surface-1)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-muted)',
+            }}
+            title="View raw database row"
+          >
+            Raw Data
+          </button>
+        </div>
         <div
           className="mt-1 mb-3 flex flex-wrap items-center gap-2 text-sm"
           style={{ color: 'var(--color-muted-foreground)' }}
@@ -815,6 +833,13 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
         {activeTab === 'ground-spawns' && <GroundSpawnsTab shortName={zone.short_name} />}
         {activeTab === 'forage' && <ForageTab shortName={zone.short_name} />}
       </div>
+
+      <RawDataModal
+        open={rawOpen}
+        title={zone.long_name || zone.short_name}
+        fetcher={rawFetcher}
+        onClose={() => setRawOpen(false)}
+      />
     </div>
   )
 }

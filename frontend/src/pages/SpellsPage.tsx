@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, X, Clock } from 'lucide-react'
-import { searchSpells, getSpell, getSpellCrossRefs } from '../services/api'
+import { searchSpells, getSpell, getSpellCrossRefs, getSpellRaw } from '../services/api'
 import type { Spell, SpellCrossRefs } from '../types/spell'
 import {
   buildSpellTriggerPrefill,
@@ -18,6 +18,7 @@ import {
 } from '../lib/spellHelpers'
 import CreateTriggerModal from '../components/CreateTriggerModal'
 import { ItemIcon, SpellIcon } from '../components/Icon'
+import RawDataModal from '../components/RawDataModal'
 
 const SPELL_CLASSES: { index: number; abbr: string; full: string }[] = [
   { index: 0,  abbr: 'WAR', full: 'Warrior' },
@@ -328,6 +329,8 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
   const navigate = useNavigate()
   const [crossRefs, setCrossRefs] = useState<SpellCrossRefs | null>(null)
   const [showTriggerModal, setShowTriggerModal] = useState(false)
+  const [rawOpen, setRawOpen] = useState(false)
+  const rawFetcher = useCallback(() => getSpellRaw(spell!.id), [spell?.id])
 
   useEffect(() => {
     if (!spell) { setCrossRefs(null); return }
@@ -400,6 +403,19 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
             </div>
           </div>
         </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setRawOpen(true)}
+            className="rounded px-2 py-1 text-xs"
+            style={{
+              backgroundColor: 'var(--color-surface-1)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-muted)',
+            }}
+            title="View raw database row"
+          >
+            Raw Data
+          </button>
         {hasDuration && (
           <button
             onClick={() => setShowTriggerModal(true)}
@@ -415,7 +431,15 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
             Create Timer Trigger
           </button>
         )}
+        </div>
       </div>
+
+      <RawDataModal
+        open={rawOpen}
+        title={spell.name}
+        fetcher={rawFetcher}
+        onClose={() => setRawOpen(false)}
+      />
 
       {showTriggerModal && (
         <CreateTriggerModal

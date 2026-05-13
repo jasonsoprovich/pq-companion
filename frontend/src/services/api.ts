@@ -219,6 +219,34 @@ export function getZone(id: number): Promise<Zone> {
   return get<Zone>(`/api/zones/${id}`)
 }
 
+// ── Raw row (experimental) ─────────────────────────────────────────────────────
+
+export interface RawField {
+  name: string
+  value: unknown
+}
+
+export interface RawRow {
+  table: string
+  fields: RawField[]
+}
+
+export function getItemRaw(id: number): Promise<RawRow> {
+  return get<RawRow>(`/api/items/${id}/raw`)
+}
+
+export function getSpellRaw(id: number): Promise<RawRow> {
+  return get<RawRow>(`/api/spells/${id}/raw`)
+}
+
+export function getNPCRaw(id: number): Promise<RawRow> {
+  return get<RawRow>(`/api/npcs/${id}/raw`)
+}
+
+export function getZoneRaw(id: number): Promise<RawRow> {
+  return get<RawRow>(`/api/zones/${id}/raw`)
+}
+
 // ── Global Search ──────────────────────────────────────────────────────────────
 
 export function globalSearch(q: string, limit = 5): Promise<GlobalSearchResult> {

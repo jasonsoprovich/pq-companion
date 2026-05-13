@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Search, X, Bell } from 'lucide-react'
-import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot, getNPCFaction } from '../services/api'
+import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot, getNPCFaction, getNPCRaw } from '../services/api'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction } from '../types/npc'
 import {
   bodyTypeName,
@@ -14,6 +14,7 @@ import {
 import { inGameItemLink } from '../lib/itemHelpers'
 import CreateTriggerModal, { type TriggerPrefill } from '../components/CreateTriggerModal'
 import { ItemIcon } from '../components/Icon'
+import RawDataModal from './../components/RawDataModal'
 
 function formatRespawnTime(seconds: number): string {
   if (seconds <= 0) return '—'
@@ -333,6 +334,8 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
   const [loot, setLoot] = useState<NPCLootTable | null>(null)
   const [faction, setFaction] = useState<NPCFaction | null>(null)
   const [bulkCopied, setBulkCopied] = useState<number | null>(null)
+  const [rawOpen, setRawOpen] = useState(false)
+  const rawFetcher = useCallback(() => getNPCRaw(npc!.id), [npc?.id])
 
   useEffect(() => {
     if (!npc) { setSpawns(null); setLoot(null); setFaction(null); return }
@@ -382,12 +385,26 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
     <div className="flex-1 overflow-y-auto px-5 py-4">
       {/* Header */}
       <div className="mb-4">
-        <h2
-          className="text-xl font-bold leading-tight"
-          style={{ color: 'var(--color-primary)' }}
-        >
-          {npcDisplayName(npc)}
-        </h2>
+        <div className="flex items-start justify-between gap-3">
+          <h2
+            className="text-xl font-bold leading-tight"
+            style={{ color: 'var(--color-primary)' }}
+          >
+            {npcDisplayName(npc)}
+          </h2>
+          <button
+            onClick={() => setRawOpen(true)}
+            className="shrink-0 rounded px-2 py-1 text-xs"
+            style={{
+              backgroundColor: 'var(--color-surface-1)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-muted)',
+            }}
+            title="View raw database row"
+          >
+            Raw Data
+          </button>
+        </div>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
             {`Level ${npc.level} ${className(npc.class)} · ${npc.race_name}`}
@@ -656,6 +673,13 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
           </Section>
         )}
       </div>
+
+      <RawDataModal
+        open={rawOpen}
+        title={npcDisplayName(npc)}
+        fetcher={rawFetcher}
+        onClose={() => setRawOpen(false)}
+      />
     </div>
   )
 }

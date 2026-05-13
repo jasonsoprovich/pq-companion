@@ -58,6 +58,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	triggerH := &triggerHandler{store: triggerStore, engine: triggerEngine, hub: hub, charStore: charStore, tailer: tailer, cfgMgr: cfgMgr}
 	tasksH := &tasksHandler{store: charStore}
 	rollsH := &rollsHandler{tracker: rollTracker}
+	raw := &rawHandler{db: database}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
@@ -66,12 +67,14 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/", items.search)
 			r.Get("/{id}", items.get)
 			r.Get("/{id}/sources", items.sources)
+			r.Get("/{id}/raw", raw.rowFromTable("items", "id"))
 		})
 		r.Route("/spells", func(r chi.Router) {
 			r.Get("/", spells.search)
 			r.Get("/class/{classIndex}", spells.byClass)
 			r.Get("/{id}", spells.get)
 			r.Get("/{id}/items", spells.crossRefs)
+			r.Get("/{id}/raw", raw.rowFromTable("spells_new", "id"))
 		})
 		r.Route("/npcs", func(r chi.Router) {
 			r.Get("/", npcs.search)
@@ -79,6 +82,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/{id}/spawns", npcs.spawns)
 			r.Get("/{id}/loot", npcs.loot)
 			r.Get("/{id}/faction", npcs.faction)
+			r.Get("/{id}/raw", raw.rowFromTable("npc_types", "id"))
 		})
 		r.Route("/zones", func(r chi.Router) {
 			r.Get("/", zones.search)
@@ -90,6 +94,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/short/{name}/forage", zones.getForage)
 			r.Get("/short/{name}/drops", zones.getDrops)
 			r.Get("/{id}", zones.get)
+			r.Get("/{id}/raw", raw.rowFromTable("zone", "id"))
 		})
 		r.Route("/config", func(r chi.Router) {
 			r.Get("/", cfg.get)

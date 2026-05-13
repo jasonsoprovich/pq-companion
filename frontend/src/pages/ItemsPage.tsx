@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Filter, Search, X } from 'lucide-react'
-import { searchItems, getItem, getItemSources } from '../services/api'
+import { searchItems, getItem, getItemSources, getItemRaw } from '../services/api'
 import type { ItemSearchFilter } from '../services/api'
 import type { Item, ItemSourceNPC, ItemSources, ItemForageZone, ItemGroundSpawnZone, ItemTradeskillEntry } from '../types/item'
 import {
@@ -19,6 +19,7 @@ import {
   weightLabel,
 } from '../lib/itemHelpers'
 import { ItemIcon } from '../components/Icon'
+import RawDataModal from '../components/RawDataModal'
 
 // ── Filter definitions ─────────────────────────────────────────────────────────
 
@@ -1044,6 +1045,8 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
   const [sources, setSources] = useState<ItemSources | null>(null)
   const [activeTab, setActiveTab] = useState<ItemTabKey>('overview')
   const [copied, setCopied] = useState(false)
+  const [rawOpen, setRawOpen] = useState(false)
+  const rawFetcher = useCallback(() => getItemRaw(item!.id), [item?.id])
 
   useEffect(() => {
     setActiveTab('overview')
@@ -1083,6 +1086,18 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
           <h2 className="text-xl font-bold leading-tight" style={{ color: 'var(--color-primary)' }}>
             {item.name}
           </h2>
+          <button
+            onClick={() => setRawOpen(true)}
+            className="ml-auto rounded px-2 py-1 text-xs"
+            style={{
+              backgroundColor: 'var(--color-surface-1)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-muted)',
+            }}
+            title="View raw database row"
+          >
+            Raw Data
+          </button>
         </div>
 
         {/* Tabs */}
@@ -1127,6 +1142,13 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
           <TradeskillsTab entries={sources?.tradeskills ?? []} />
         )}
       </div>
+
+      <RawDataModal
+        open={rawOpen}
+        title={item.name}
+        fetcher={rawFetcher}
+        onClose={() => setRawOpen(false)}
+      />
     </div>
   )
 }
