@@ -15,7 +15,11 @@ export function npcDisplayName(npc: NPC): string {
 
 // ── Class ───────────────────────────────────────────────────────────────────────
 
+// Class IDs 1–16 are the PC classes. 20–34 are the corresponding "GM"
+// trainer variants (offset of +19). 40+ cover the NPC service roles
+// (banker, merchant, etc.) using the standard EQEmu class.h numbering.
 const CLASS_NAMES: Record<number, string> = {
+  0: 'Unknown',
   1: 'Warrior',
   2: 'Cleric',
   3: 'Paladin',
@@ -32,6 +36,24 @@ const CLASS_NAMES: Record<number, string> = {
   14: 'Enchanter',
   15: 'Beastlord',
   16: 'Berserker',
+  20: 'Warrior GM',
+  21: 'Cleric GM',
+  22: 'Paladin GM',
+  23: 'Ranger GM',
+  24: 'Shadow Knight GM',
+  25: 'Druid GM',
+  26: 'Monk GM',
+  27: 'Bard GM',
+  28: 'Rogue GM',
+  29: 'Shaman GM',
+  30: 'Necromancer GM',
+  31: 'Wizard GM',
+  32: 'Magician GM',
+  33: 'Enchanter GM',
+  34: 'Beastlord GM',
+  35: 'Berserker GM',
+  40: 'Banker',
+  41: 'Merchant',
 }
 
 export function className(classId: number): string {
