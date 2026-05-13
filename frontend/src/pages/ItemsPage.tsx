@@ -80,30 +80,32 @@ const ITEM_SLOTS: { value: number; label: string }[] = [
   { value: 0x800000, label: 'Ammo' },
 ]
 
+// Values match the EQMacEmu ItemType enum used by Quarm (see itemHelpers).
 const ITEM_TYPES: { value: number; label: string }[] = [
   { value: 0, label: '1H Slashing' },
   { value: 1, label: '2H Slashing' },
   { value: 2, label: '1H Piercing' },
   { value: 3, label: '1H Blunt' },
   { value: 4, label: '2H Blunt' },
-  { value: 5, label: 'Archery' },
-  { value: 7, label: 'Throwing' },
+  { value: 5, label: 'Bow' },
+  { value: 7, label: 'Large Throwing' },
   { value: 8, label: 'Shield' },
   { value: 10, label: 'Armor' },
   { value: 11, label: 'Miscellaneous' },
   { value: 14, label: 'Food' },
   { value: 15, label: 'Drink' },
   { value: 17, label: 'Combinable' },
-  { value: 20, label: 'Spell Scroll' },
+  { value: 19, label: 'Small Throwing' },
+  { value: 20, label: 'Spell' },
   { value: 21, label: 'Potion' },
-  { value: 22, label: 'Tradeskill' },
-  { value: 28, label: 'Jewelry' },
-  { value: 30, label: 'Book' },
-  { value: 32, label: 'Key' },
-  { value: 34, label: '2H Piercing' },
-  { value: 40, label: 'Poison' },
+  { value: 27, label: 'Arrow' },
+  { value: 29, label: 'Jewelry' },
+  { value: 31, label: 'Book' },
+  { value: 33, label: 'Key' },
+  { value: 35, label: '2H Piercing' },
+  { value: 36, label: 'Fishing Pole' },
+  { value: 42, label: 'Poison' },
   { value: 45, label: 'Hand to Hand' },
-  { value: 52, label: 'Martial' },
 ]
 
 interface FilterState {
