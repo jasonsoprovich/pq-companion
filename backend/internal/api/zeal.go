@@ -135,3 +135,43 @@ func (h *zealHandler) quarmy(w http.ResponseWriter, r *http.Request) {
 	resp.Quarmy = q
 	json.NewEncoder(w).Encode(resp)
 }
+
+// GET /api/zeal/spellsets
+// Returns Zeal-exported spellsets. With no query, returns the active character's
+// cached spellsets (or null if none). With ?character=Name, parses that character's
+// <Name>_spellsets.ini directly.
+func (h *zealHandler) spellsets(w http.ResponseWriter, r *http.Request) {
+	resp := struct {
+		Spellsets *zeal.SpellsetFile `json:"spellsets"`
+	}{}
+	name := r.URL.Query().Get("character")
+	if name == "" {
+		resp.Spellsets = h.watcher.Spellsets()
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	cfg := h.cfgMgr.Get()
+	if cfg.EQPath == "" {
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	sf, err := zeal.ParseSpellsets(zeal.SpellsetPath(cfg.EQPath, name), name)
+	if err != nil {
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	resp.Spellsets = sf
+	json.NewEncoder(w).Encode(resp)
+}
+
+// GET /api/zeal/spellsets/all
+// Scans the configured EQ directory for every <CharName>_spellsets.ini and
+// returns one parsed file per character.
+func (h *zealHandler) allSpellsets(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.watcher.AllSpellsets()
+	if err != nil {
+		http.Error(w, `{"error":"failed to scan spellsets"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(resp)
+}

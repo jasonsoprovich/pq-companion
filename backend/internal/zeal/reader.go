@@ -172,6 +172,91 @@ func parseSpellbookLine(line string) (int, bool) {
 	return 0, false
 }
 
+// SpellsetPath returns the expected Zeal spellsets export path for a character.
+// Zeal writes: <eq_path>/<CharName>_spellsets.ini
+func SpellsetPath(eqPath, character string) string {
+	return filepath.Join(eqPath, fmt.Sprintf("%s_spellsets.ini", character))
+}
+
+// ParseSpellsets reads and parses a Zeal spellsets INI file.
+//
+// Format:
+//
+//	[set name]
+//	0=<spell_id>
+//	...
+//	7=<spell_id>
+//
+// Spell IDs of -1 indicate an empty gem. Slots not present in a section default to -1.
+// Sections are returned in the order they appear in the file (matches the in-game dropdown).
+func ParseSpellsets(path, character string) (*SpellsetFile, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	out := &SpellsetFile{
+		Character:  character,
+		ExportedAt: info.ModTime(),
+		Spellsets:  []Spellset{},
+	}
+
+	var cur *Spellset
+	flush := func() {
+		if cur == nil {
+			return
+		}
+		out.Spellsets = append(out.Spellsets, *cur)
+		cur = nil
+	}
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ";") || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			flush()
+			name := strings.TrimSpace(line[1 : len(line)-1])
+			ids := make([]int, SpellsetSlotCount)
+			for i := range ids {
+				ids[i] = -1
+			}
+			cur = &Spellset{Name: name, SpellIDs: ids}
+			continue
+		}
+
+		if cur == nil {
+			continue
+		}
+
+		eq := strings.IndexByte(line, '=')
+		if eq < 0 {
+			continue
+		}
+		slot, err := strconv.Atoi(strings.TrimSpace(line[:eq]))
+		if err != nil || slot < 0 || slot >= SpellsetSlotCount {
+			continue
+		}
+		id, err := strconv.Atoi(strings.TrimSpace(line[eq+1:]))
+		if err != nil {
+			continue
+		}
+		cur.SpellIDs[slot] = id
+	}
+	flush()
+
+	return out, scanner.Err()
+}
+
 // QuarmyPath returns the expected Zeal quarmy export path for a character.
 // Zeal writes: <eq_path>/<CharName>-Quarmy.txt
 func QuarmyPath(eqPath, character string) string {

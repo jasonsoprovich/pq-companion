@@ -27,13 +27,15 @@ type Watcher struct {
 	// nil-safe.
 	onQuarmyChanged func(charName string)
 
-	mu             sync.RWMutex
-	inventory      *Inventory
-	spellbook      *Spellbook
-	quarmy         *QuarmyData
-	invModTime     time.Time
-	spellModTime   time.Time
-	quarmyModTime  time.Time
+	mu               sync.RWMutex
+	inventory        *Inventory
+	spellbook        *Spellbook
+	quarmy           *QuarmyData
+	spellsets        *SpellsetFile
+	invModTime       time.Time
+	spellModTime     time.Time
+	quarmyModTime    time.Time
+	spellsetsModTime time.Time
 }
 
 // NewWatcher creates a Watcher. Call Start to begin polling.
@@ -92,6 +94,34 @@ func (w *Watcher) Quarmy() *QuarmyData {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.quarmy
+}
+
+// Spellsets returns the most recently parsed spellsets for the active character, or nil if none.
+func (w *Watcher) Spellsets() *SpellsetFile {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.spellsets
+}
+
+// AllSpellsets scans the EQ directory for every character's spellsets export.
+// Returns a non-configured response when the EQ path is empty.
+func (w *Watcher) AllSpellsets() (*AllSpellsetsResponse, error) {
+	cfg := w.cfgMgr.Get()
+	resp := &AllSpellsetsResponse{
+		Configured: cfg.EQPath != "",
+		Characters: []*SpellsetFile{},
+	}
+	if cfg.EQPath == "" {
+		return resp, nil
+	}
+	chars, err := ScanAllSpellsets(cfg.EQPath)
+	if err != nil {
+		return nil, err
+	}
+	if chars != nil {
+		resp.Characters = chars
+	}
+	return resp, nil
 }
 
 // RefreshAllPersonas parses every stored character's Quarmy export (when
@@ -186,10 +216,41 @@ func (w *Watcher) check() {
 	invPath := InventoryPath(cfg.EQPath, character)
 	spellPath := SpellbookPath(cfg.EQPath, character)
 	quarmyPath := QuarmyPath(cfg.EQPath, character)
+	spellsetsPath := SpellsetPath(cfg.EQPath, character)
 
 	w.checkInventory(invPath, character)
 	w.checkSpellbook(spellPath, character)
 	w.checkQuarmy(quarmyPath, character)
+	w.checkSpellsets(spellsetsPath, character)
+}
+
+func (w *Watcher) checkSpellsets(path, character string) {
+	mt := ModTime(path)
+	if mt.IsZero() {
+		return
+	}
+
+	w.mu.RLock()
+	unchanged := mt.Equal(w.spellsetsModTime)
+	w.mu.RUnlock()
+
+	if unchanged {
+		return
+	}
+
+	sf, err := ParseSpellsets(path, character)
+	if err != nil {
+		slog.Warn("zeal: parse spellsets", "path", path, "err", err)
+		return
+	}
+
+	w.mu.Lock()
+	w.spellsets = sf
+	w.spellsetsModTime = mt
+	w.mu.Unlock()
+
+	slog.Info("zeal: spellsets updated", "character", character, "sets", len(sf.Spellsets))
+	w.hub.Broadcast(ws.Event{Type: "zeal:spellsets", Data: sf})
 }
 
 func (w *Watcher) checkInventory(path, character string) {

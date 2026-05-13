@@ -17,6 +17,84 @@ func writeTemp(t *testing.T, name, content string) string {
 	return path
 }
 
+func TestParseSpellsets(t *testing.T) {
+	content := "[58group]\n" +
+		"0=-1\n1=-1\n2=-1\n3=-1\n" +
+		"4=2609\n5=712\n6=1760\n7=2610\n" +
+		"[15base]\n" +
+		"0=1100\n1=750\n2=728\n3=2605\n" +
+		"4=1196\n5=-1\n6=-1\n7=-1\n"
+
+	path := writeTemp(t, "Tester_spellsets.ini", content)
+	sf, err := ParseSpellsets(path, "Tester")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sf.Character != "Tester" {
+		t.Errorf("character = %q, want Tester", sf.Character)
+	}
+	if len(sf.Spellsets) != 2 {
+		t.Fatalf("spellsets count = %d, want 2", len(sf.Spellsets))
+	}
+
+	first := sf.Spellsets[0]
+	if first.Name != "58group" {
+		t.Errorf("first name = %q, want 58group", first.Name)
+	}
+	wantFirst := []int{-1, -1, -1, -1, 2609, 712, 1760, 2610}
+	if len(first.SpellIDs) != 8 {
+		t.Fatalf("first slots = %d, want 8", len(first.SpellIDs))
+	}
+	for i, id := range wantFirst {
+		if first.SpellIDs[i] != id {
+			t.Errorf("first slot %d = %d, want %d", i, first.SpellIDs[i], id)
+		}
+	}
+
+	second := sf.Spellsets[1]
+	if second.Name != "15base" {
+		t.Errorf("second name = %q, want 15base", second.Name)
+	}
+	if second.SpellIDs[0] != 1100 || second.SpellIDs[4] != 1196 || second.SpellIDs[7] != -1 {
+		t.Errorf("second slots unexpected: %v", second.SpellIDs)
+	}
+}
+
+func TestParseSpellsetsFixture(t *testing.T) {
+	// testdata path is relative to the package directory.
+	path := filepath.Join("..", "..", "..", "testdata", "Grokenspiel_spellsets.ini")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("fixture not found: %v", err)
+	}
+	sf, err := ParseSpellsets(path, "Grokenspiel")
+	if err != nil {
+		t.Fatalf("parse fixture: %v", err)
+	}
+	// Fixture has 13 sections (see testdata/Grokenspiel_spellsets.ini).
+	if len(sf.Spellsets) != 13 {
+		t.Fatalf("spellsets = %d, want 13", len(sf.Spellsets))
+	}
+	if sf.Spellsets[0].Name != "58group" {
+		t.Errorf("first name = %q, want 58group", sf.Spellsets[0].Name)
+	}
+	// zzEmp section has all 8 slots populated.
+	var zzEmp *Spellset
+	for i := range sf.Spellsets {
+		if sf.Spellsets[i].Name == "zzEmp" {
+			zzEmp = &sf.Spellsets[i]
+			break
+		}
+	}
+	if zzEmp == nil {
+		t.Fatal("zzEmp section missing")
+	}
+	for i, id := range zzEmp.SpellIDs {
+		if id <= 0 {
+			t.Errorf("zzEmp slot %d = %d, expected populated", i, id)
+		}
+	}
+}
+
 func TestParseInventory(t *testing.T) {
 	content := "Location\tName\tID\tCount\tSlots\n" +
 		"Head\tIron Cap\t1001\t1\t0\n" +

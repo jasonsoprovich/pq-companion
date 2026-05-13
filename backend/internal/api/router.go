@@ -125,6 +125,8 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/spells", zealH.spellbook)
 			r.Get("/all-inventories", zealH.allInventories)
 			r.Get("/quarmy", zealH.quarmy)
+			r.Get("/spellsets", zealH.spellsets)
+			r.Get("/spellsets/all", zealH.allSpellsets)
 		})
 		r.Route("/keys", func(r chi.Router) {
 			r.Get("/", keysH.list)

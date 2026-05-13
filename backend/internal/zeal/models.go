@@ -42,6 +42,30 @@ type State struct {
 	Spellbook *Spellbook `json:"spellbook"`
 }
 
+// SpellsetSlotCount is the number of memorized-spell gem slots per spellset.
+// Zeal writes keys 0..7 inside each [section] of <CharName>_spellsets.ini.
+const SpellsetSlotCount = 8
+
+// Spellset is one named in-game spell loadout (a section in the .ini).
+// SpellIDs is always exactly SpellsetSlotCount entries; -1 indicates an empty gem.
+type Spellset struct {
+	Name     string `json:"name"`
+	SpellIDs []int  `json:"spell_ids"`
+}
+
+// SpellsetFile is the full parsed contents of a <CharName>_spellsets.ini file.
+type SpellsetFile struct {
+	Character  string     `json:"character"`
+	ExportedAt time.Time  `json:"exported_at"`
+	Spellsets  []Spellset `json:"spellsets"`
+}
+
+// AllSpellsetsResponse is returned by GET /api/zeal/spellsets/all.
+type AllSpellsetsResponse struct {
+	Configured bool            `json:"configured"`
+	Characters []*SpellsetFile `json:"characters"`
+}
+
 // AllInventoriesResponse is returned by GET /api/zeal/all-inventories.
 // Configured is false when the EQ path has not been set in config.
 // SharedBank contains deduplicated entries from the most-recently-modified export file.
