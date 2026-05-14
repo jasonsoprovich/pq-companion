@@ -129,10 +129,14 @@ var (
 	// /con output — EQ's consider system. The NPC name precedes a fixed set of
 	// disposition phrases. Ordered longest-first so "warmly regards you" and
 	// "kindly regards you" are tried before the shorter "regards you".
+	// "looks at you" covers dubious faction ("...looks at you dubiously --
+	// what would you like your tombstone to say?"), which is the message
+	// shown once an NPC's faction softens from KOS but is still hostile.
 	// Examples:
 	//   "a grimling cadaverist regards you as an ally."
 	//   "a gnoll scowls at you, ready to attack -- what would you like your tombstone to say?"
-	reConsider = regexp.MustCompile(`^(.+?) (?:scowls at you|glares at you|looks your way|looks upon you|judges you|warmly regards you|kindly regards you|regards you|considers you)`)
+	//   "an Icepaw cleric looks at you dubiously -- what would you like your tombstone to say?"
+	reConsider = regexp.MustCompile(`^(.+?) (?:scowls at you|glares at you|looks at you|looks your way|looks upon you|judges you|warmly regards you|kindly regards you|regards you|considers you)`)
 
 	// Combat — dodge/parry/riposte/block by player:
 	// "You dodge a gnoll's attack!"

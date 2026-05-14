@@ -561,6 +561,13 @@ func TestParseLine(t *testing.T) {
 			wantType: EventConsidered,
 			wantData: ConsideredData{TargetName: "a lizardman"},
 		},
+		{
+			name:     "con: looks at you (dubious)",
+			line:     "[Mon Apr 13 06:00:00 2026] an Icepaw cleric looks at you dubiously -- what would you like your tombstone to say?",
+			wantOK:   true,
+			wantType: EventConsidered,
+			wantData: ConsideredData{TargetName: "an Icepaw cleric"},
+		},
 
 		// --- /con false-positive guard ---
 		// Lines starting with "You " must never be classified as EventConsidered.
