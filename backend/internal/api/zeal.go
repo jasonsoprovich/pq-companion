@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
@@ -188,12 +189,27 @@ func (h *zealHandler) updateSpellsets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate slot counts up-front so a malformed request can't truncate the file.
+	// Validate slot counts and names up-front so a malformed request can't
+	// truncate or corrupt the file.
+	seenNames := make(map[string]bool, len(body.Spellsets))
 	for i, s := range body.Spellsets {
 		if len(s.SpellIDs) != zeal.SpellsetSlotCount {
 			http.Error(w, fmt.Sprintf(`{"error":"spellset %d (%q) must have %d slots"}`, i, s.Name, zeal.SpellsetSlotCount), http.StatusBadRequest)
 			return
 		}
+		if s.Name == "" {
+			http.Error(w, fmt.Sprintf(`{"error":"spellset %d has empty name"}`, i), http.StatusBadRequest)
+			return
+		}
+		if strings.ContainsAny(s.Name, "[]\r\n") {
+			http.Error(w, fmt.Sprintf(`{"error":"spellset %d (%q) contains illegal characters"}`, i, s.Name), http.StatusBadRequest)
+			return
+		}
+		if seenNames[s.Name] {
+			http.Error(w, fmt.Sprintf(`{"error":"duplicate spellset name %q"}`, s.Name), http.StatusBadRequest)
+			return
+		}
+		seenNames[s.Name] = true
 	}
 
 	path := zeal.SpellsetPath(cfg.EQPath, body.Character)

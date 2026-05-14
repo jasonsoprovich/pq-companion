@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  Check,
   Library,
+  Pencil,
   RefreshCw,
   Save,
   Search,
@@ -293,28 +295,117 @@ function ConfirmModal({
 interface SpellsetCardProps {
   spellset: Spellset
   spellsById: Map<number, Spell>
+  siblingNames: string[]  // other spellset names in this file, for dup detection
   onSlotClick: (slotIndex: number) => void
+  onRename: (next: string) => void
 }
 
-function SpellsetCard({ spellset, spellsById, onSlotClick }: SpellsetCardProps): React.ReactElement {
+function SpellsetCard({ spellset, spellsById, siblingNames, onSlotClick, onRename }: SpellsetCardProps): React.ReactElement {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(spellset.name)
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editing) {
+      setDraft(spellset.name)
+      // Focus after the input renders.
+      requestAnimationFrame(() => {
+        inputRef.current?.focus()
+        inputRef.current?.select()
+      })
+    }
+  }, [editing, spellset.name])
+
+  const trimmed = draft.trim()
+  const isDuplicate = trimmed !== spellset.name && siblingNames.includes(trimmed)
+  const hasBracket = trimmed.includes(']') || trimmed.includes('[')
+  const isInvalid = trimmed === '' || isDuplicate || hasBracket
+  const validationMsg = trimmed === ''
+    ? 'Name required'
+    : hasBracket
+      ? 'Brackets not allowed'
+      : isDuplicate
+        ? 'Duplicate name'
+        : ''
+
+  function commit() {
+    if (isInvalid) return
+    if (trimmed !== spellset.name) onRename(trimmed)
+    setEditing(false)
+  }
+
+  function cancel() {
+    setDraft(spellset.name)
+    setEditing(false)
+  }
+
   return (
     <div
-      className="rounded-lg border shrink-0"
+      className="rounded-lg border"
       style={{
         backgroundColor: 'var(--color-surface)',
         borderColor: 'var(--color-border)',
-        width: 280,
       }}
     >
       <div
-        className="px-3 py-2 border-b text-sm font-medium truncate"
-        style={{
-          color: 'var(--color-foreground)',
-          borderColor: 'var(--color-border)',
-        }}
-        title={spellset.name}
+        className="flex items-center gap-2 px-3 py-2 border-b"
+        style={{ borderColor: 'var(--color-border)' }}
       >
-        {spellset.name}
+        {editing ? (
+          <>
+            <input
+              ref={inputRef}
+              type="text"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commit()
+                else if (e.key === 'Escape') cancel()
+              }}
+              className="flex-1 min-w-0 bg-transparent text-sm font-medium outline-none border-b"
+              style={{
+                color: 'var(--color-foreground)',
+                borderColor: isInvalid ? 'var(--color-danger, #ef4444)' : 'var(--color-primary)',
+              }}
+              maxLength={64}
+            />
+            <button
+              onClick={commit}
+              disabled={isInvalid}
+              className="shrink-0 disabled:opacity-30"
+              style={{ color: 'var(--color-primary)' }}
+              title={isInvalid ? validationMsg : 'Save name'}
+            >
+              <Check size={14} />
+            </button>
+            <button
+              onClick={cancel}
+              className="shrink-0"
+              style={{ color: 'var(--color-muted-foreground)' }}
+              title="Cancel rename"
+            >
+              <X size={14} />
+            </button>
+          </>
+        ) : (
+          <>
+            <div
+              className="flex-1 min-w-0 text-sm font-medium truncate"
+              style={{ color: 'var(--color-foreground)' }}
+              title={spellset.name}
+            >
+              {spellset.name}
+            </div>
+            <button
+              onClick={() => setEditing(true)}
+              className="shrink-0 opacity-60 hover:opacity-100"
+              style={{ color: 'var(--color-muted-foreground)' }}
+              title="Rename spellset"
+            >
+              <Pencil size={12} />
+            </button>
+          </>
+        )}
       </div>
       <div className="flex flex-col gap-1 p-2">
         {spellset.spell_ids.map((id, idx) => {
@@ -550,6 +641,19 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
     setPicker({ setIndex, slot })
   }
 
+  function handleRename(setIndex: number, nextName: string) {
+    if (!viewedFile) return
+    setFiles((prev) =>
+      prev.map((f) => {
+        if (f.character !== viewedFile.character) return f
+        const sets = f.spellsets.map((s, i) =>
+          i === setIndex ? { ...s, name: nextName } : s,
+        )
+        return { ...f, spellsets: sets }
+      }),
+    )
+  }
+
   function handlePick(spell: Spell) {
     if (!picker) return
     setPendingPick({ ...picker, spell })
@@ -713,15 +817,28 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
           </div>
         )}
         {!loading && !error && viewedFile && (
-          <div className="flex flex-wrap gap-3">
-            {viewedFile.spellsets.map((s, i) => (
-              <SpellsetCard
-                key={`${s.name}-${i}`}
-                spellset={s}
-                spellsById={spellsById}
-                onSlotClick={(slot) => handleSlotClick(i, slot)}
-              />
-            ))}
+          <div
+            style={{
+              display: 'grid',
+              gap: 12,
+              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            }}
+          >
+            {viewedFile.spellsets.map((s, i) => {
+              const siblingNames = viewedFile.spellsets
+                .filter((_, j) => j !== i)
+                .map((other) => other.name)
+              return (
+                <SpellsetCard
+                  key={i}
+                  spellset={s}
+                  spellsById={spellsById}
+                  siblingNames={siblingNames}
+                  onSlotClick={(slot) => handleSlotClick(i, slot)}
+                  onRename={(next) => handleRename(i, next)}
+                />
+              )
+            })}
           </div>
         )}
       </div>
