@@ -89,7 +89,7 @@ function abilityBadgeColor(code: number): string {
 function AbilityBadge({ ability }: { ability: SpecialAbility }): React.ReactElement {
   return (
     <span
-      className="rounded px-2 py-0.5 text-[11px] font-semibold text-white"
+      className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-white"
       style={{ backgroundColor: abilityBadgeColor(ability.code) }}
     >
       {ability.name || `Ability ${ability.code}`}
@@ -99,9 +99,9 @@ function AbilityBadge({ ability }: { ability: SpecialAbility }): React.ReactElem
 
 function Stat({ label, value, color }: { label: string; value: string | number; color?: string }): React.ReactElement {
   return (
-    <div className="flex flex-col items-center rounded px-2 py-1.5" style={{ backgroundColor: 'var(--color-surface-2)', minWidth: '4rem' }}>
-      <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>{label}</span>
-      <span className="mt-0.5 text-sm font-semibold tabular-nums" style={{ color: color ?? 'var(--color-foreground)' }}>{value}</span>
+    <div className="flex flex-col items-center rounded px-2 py-1" style={{ backgroundColor: 'var(--color-surface-2)', minWidth: '3.25rem' }}>
+      <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>{label}</span>
+      <span className="text-xs font-semibold tabular-nums" style={{ color: color ?? 'var(--color-foreground)' }}>{value}</span>
     </div>
   )
 }
@@ -130,27 +130,27 @@ function NPCCard({ state }: { state: TargetState }): React.ReactElement {
   })
 
   return (
-    <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
-      <div className="rounded-lg p-4" style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+    <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-3">
+      <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h2 className="text-lg font-bold leading-tight" style={{ color: 'var(--color-foreground)' }}>
+            <h2 className="text-base font-bold leading-tight" style={{ color: 'var(--color-foreground)' }}>
               {state.target_name ?? 'Unknown'}
             </h2>
             {state.current_zone && (
-              <p className="mt-0.5 text-xs" style={{ color: 'var(--color-muted)' }}>{state.current_zone}</p>
+              <p className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>{state.current_zone}</p>
             )}
           </div>
           <span className="shrink-0 text-[10px] tabular-nums" style={{ color: 'var(--color-muted)' }}>{lastUpdated}</span>
         </div>
 
         {npc && (npc.raid_target === 1 || npc.rare_spawn === 1) && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
             {npc.raid_target === 1 && (
-              <span className="rounded px-2 py-0.5 text-[11px] font-semibold text-white" style={{ backgroundColor: '#7c3aed' }}>RAID TARGET</span>
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundColor: '#7c3aed' }}>RAID TARGET</span>
             )}
             {npc.rare_spawn === 1 && (
-              <span className="rounded px-2 py-0.5 text-[11px] font-semibold text-white" style={{ backgroundColor: '#b45309' }}>RARE SPAWN</span>
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundColor: '#b45309' }}>RARE SPAWN</span>
             )}
           </div>
         )}
@@ -159,8 +159,8 @@ function NPCCard({ state }: { state: TargetState }): React.ReactElement {
       {npc ? (
         <>
           <div>
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Identity</p>
-            <div className="flex flex-wrap gap-2">
+            <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Identity</p>
+            <div className="flex flex-wrap gap-1.5">
               <Stat label="Level" value={npc.level} color="var(--color-primary)" />
               <Stat label="Class" value={className(npc.class)} />
               <Stat label="Race" value={npc.race_name} />
@@ -169,8 +169,8 @@ function NPCCard({ state }: { state: TargetState }): React.ReactElement {
           </div>
 
           <div>
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Combat</p>
-            <div className="flex flex-wrap gap-2">
+            <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Combat</p>
+            <div className="flex flex-wrap gap-1.5">
               <Stat label="HP" value={npc.hp.toLocaleString()} color="#22c55e" />
               <Stat label="AC" value={npc.ac} />
               <Stat label="Min DMG" value={npc.min_dmg} color="#ef4444" />
@@ -180,8 +180,8 @@ function NPCCard({ state }: { state: TargetState }): React.ReactElement {
           </div>
 
           <div>
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Resists</p>
-            <div className="flex flex-wrap gap-2">
+            <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Resists</p>
+            <div className="flex flex-wrap gap-1.5">
               <Stat label="Magic" value={npc.mr} />
               <Stat label="Cold" value={npc.cr} />
               <Stat label="Disease" value={npc.dr} />
@@ -191,8 +191,8 @@ function NPCCard({ state }: { state: TargetState }): React.ReactElement {
           </div>
 
           <div>
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Attributes</p>
-            <div className="flex flex-wrap gap-2">
+            <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Attributes</p>
+            <div className="flex flex-wrap gap-1.5">
               <Stat label="STR" value={npc.str} />
               <Stat label="STA" value={npc.sta} />
               <Stat label="DEX" value={npc.dex} />
@@ -205,8 +205,8 @@ function NPCCard({ state }: { state: TargetState }): React.ReactElement {
 
           {abilities.length > 0 && (
             <div>
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Special Abilities</p>
-              <div className="flex flex-wrap gap-1.5">
+              <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Special Abilities</p>
+              <div className="flex flex-wrap gap-1">
                 {abilities.filter((a) => a.value !== 0).map((a) => (
                   <AbilityBadge key={a.code} ability={a} />
                 ))}
