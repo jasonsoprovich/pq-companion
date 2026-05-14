@@ -3,9 +3,11 @@ import {
   Check,
   Library,
   Pencil,
+  Plus,
   RefreshCw,
   Save,
   Search,
+  Trash2,
   Undo2,
   X,
   AlertTriangle,
@@ -30,6 +32,7 @@ const CLASS_NAMES = [
 ]
 
 const EMPTY_SLOT = -1
+const SPELLSET_SLOT_COUNT = 8  // mirrors backend zeal.SpellsetSlotCount
 
 function deepCloneFiles(files: SpellsetFile[]): SpellsetFile[] {
   return files.map((f) => ({
@@ -296,12 +299,22 @@ interface SpellsetCardProps {
   spellset: Spellset
   spellsById: Map<number, Spell>
   siblingNames: string[]  // other spellset names in this file, for dup detection
+  defaultEditing?: boolean
   onSlotClick: (slotIndex: number) => void
   onRename: (next: string) => void
+  onRemove: () => void
 }
 
-function SpellsetCard({ spellset, spellsById, siblingNames, onSlotClick, onRename }: SpellsetCardProps): React.ReactElement {
-  const [editing, setEditing] = useState(false)
+function SpellsetCard({
+  spellset,
+  spellsById,
+  siblingNames,
+  defaultEditing = false,
+  onSlotClick,
+  onRename,
+  onRemove,
+}: SpellsetCardProps): React.ReactElement {
+  const [editing, setEditing] = useState(defaultEditing)
   const [draft, setDraft] = useState(spellset.name)
   const inputRef = React.useRef<HTMLInputElement>(null)
 
@@ -403,6 +416,14 @@ function SpellsetCard({ spellset, spellsById, siblingNames, onSlotClick, onRenam
               title="Rename spellset"
             >
               <Pencil size={12} />
+            </button>
+            <button
+              onClick={onRemove}
+              className="shrink-0 opacity-60 hover:opacity-100"
+              style={{ color: 'var(--color-danger, #ef4444)' }}
+              title="Delete spellset"
+            >
+              <Trash2 size={12} />
             </button>
           </>
         )}
@@ -508,6 +529,26 @@ function FilteredSubTabs({
   )
 }
 
+// ── Add-tile ───────────────────────────────────────────────────────────────────
+
+function AddSpellsetTile({ onClick }: { onClick: () => void }): React.ReactElement {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-lg flex items-center justify-center gap-2 text-sm"
+      style={{
+        border: '2px dashed var(--color-border)',
+        backgroundColor: 'transparent',
+        color: 'var(--color-muted-foreground)',
+        minHeight: 80,
+      }}
+      title="Add a new spellset"
+    >
+      <Plus size={16} /> Add Spellset
+    </button>
+  )
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function CharacterSpellsetsPage(): React.ReactElement {
@@ -526,7 +567,13 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
 
   const [picker, setPicker] = useState<{ slot: number; setIndex: number } | null>(null)
   const [pendingPick, setPendingPick] = useState<{ slot: number; setIndex: number; spell: Spell } | null>(null)
-  const [confirmAction, setConfirmAction] = useState<'save' | 'cancel' | null>(null)
+  const [confirmAction, setConfirmAction] = useState<
+    | { type: 'save' }
+    | { type: 'cancel' }
+    | { type: 'remove'; setIndex: number; setName: string }
+    | null
+  >(null)
+  const [justAddedIdx, setJustAddedIdx] = useState<number | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -543,6 +590,15 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Clear the "just-added" flag on the next render after the card mounts in
+  // edit mode — otherwise switching characters or saving would leave the flag
+  // pointing at an index that may have been claimed by a different spellset.
+  useEffect(() => {
+    if (justAddedIdx === null) return
+    const t = setTimeout(() => setJustAddedIdx(null), 0)
+    return () => clearTimeout(t)
+  }, [justAddedIdx])
 
   // Pick initial viewed character: prefer active, else first with a file.
   useEffect(() => {
@@ -652,6 +708,50 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
         return { ...f, spellsets: sets }
       }),
     )
+  }
+
+  function handleAddSpellset() {
+    if (!viewedFile) return
+    const used = new Set(viewedFile.spellsets.map((s) => s.name))
+    let name = 'New Spellset'
+    let n = 1
+    while (used.has(name)) {
+      n++
+      name = `New Spellset ${n}`
+    }
+    const newIdx = viewedFile.spellsets.length
+    setFiles((prev) =>
+      prev.map((f) => {
+        if (f.character !== viewedFile.character) return f
+        return {
+          ...f,
+          spellsets: [
+            ...f.spellsets,
+            { name, spell_ids: new Array(SPELLSET_SLOT_COUNT).fill(EMPTY_SLOT) },
+          ],
+        }
+      }),
+    )
+    setJustAddedIdx(newIdx)
+  }
+
+  function handleRequestRemove(setIndex: number) {
+    if (!viewedFile) return
+    const target = viewedFile.spellsets[setIndex]
+    if (!target) return
+    setConfirmAction({ type: 'remove', setIndex, setName: target.name })
+  }
+
+  function handleConfirmRemove() {
+    if (!confirmAction || confirmAction.type !== 'remove' || !viewedFile) return
+    const { setIndex } = confirmAction
+    setFiles((prev) =>
+      prev.map((f) => {
+        if (f.character !== viewedFile.character) return f
+        return { ...f, spellsets: f.spellsets.filter((_, i) => i !== setIndex) }
+      }),
+    )
+    setConfirmAction(null)
   }
 
   function handlePick(spell: Spell) {
@@ -765,7 +865,7 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
           </span>
         )}
         <button
-          onClick={() => setConfirmAction('cancel')}
+          onClick={() => setConfirmAction({ type: 'cancel' })}
           disabled={!dirty || saving}
           className="flex items-center gap-1 text-xs px-2 py-1 rounded disabled:opacity-40"
           style={{
@@ -777,7 +877,7 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
           <Undo2 size={12} /> Cancel
         </button>
         <button
-          onClick={() => setConfirmAction('save')}
+          onClick={() => setConfirmAction({ type: 'save' })}
           disabled={!dirty || saving}
           className="flex items-center gap-1 text-xs px-2 py-1 rounded font-medium disabled:opacity-40"
           style={{
@@ -834,11 +934,14 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
                   spellset={s}
                   spellsById={spellsById}
                   siblingNames={siblingNames}
+                  defaultEditing={i === justAddedIdx}
                   onSlotClick={(slot) => handleSlotClick(i, slot)}
                   onRename={(next) => handleRename(i, next)}
+                  onRemove={() => handleRequestRemove(i)}
                 />
               )
             })}
+            <AddSpellsetTile onClick={handleAddSpellset} />
           </div>
         )}
       </div>
@@ -882,7 +985,7 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
         />
       )}
 
-      {confirmAction === 'save' && viewedFile && (
+      {confirmAction?.type === 'save' && viewedFile && (
         <ConfirmModal
           title="Save spellsets to disk?"
           confirmLabel="Save"
@@ -900,7 +1003,7 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
         />
       )}
 
-      {confirmAction === 'cancel' && viewedFile && (
+      {confirmAction?.type === 'cancel' && viewedFile && (
         <ConfirmModal
           title="Discard changes?"
           confirmLabel="Discard"
@@ -911,6 +1014,23 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
               Revert unsaved changes to <code>{viewedFile.character}</code>'s spellsets? The .ini
               file on disk is unaffected.
             </p>
+          }
+        />
+      )}
+
+      {confirmAction?.type === 'remove' && viewedFile && (
+        <ConfirmModal
+          title="Delete spellset?"
+          confirmLabel="Delete"
+          onConfirm={handleConfirmRemove}
+          onCancel={() => setConfirmAction(null)}
+          message={
+            <div className="space-y-2">
+              <p>
+                Remove <strong>{confirmAction.setName}</strong> from {viewedFile.character}'s
+                spellsets? The change stays local until you click Save.
+              </p>
+            </div>
           }
         />
       )}
