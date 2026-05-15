@@ -326,7 +326,7 @@ export default function RollTrackerWindowPage(): React.ReactElement {
             </button>
           </div>
           <button
-            onClick={() => { if (window.confirm('Clear every roll session?')) clearRolls().catch(() => {}) }}
+            onClick={() => { clearRolls().catch(() => {}) }}
             title="Clear all sessions"
             style={{
               display: 'flex', alignItems: 'center', padding: '1px 5px', borderRadius: 3,

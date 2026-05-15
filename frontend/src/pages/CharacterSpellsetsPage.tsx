@@ -754,16 +754,9 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
     setConfirmAction(null)
   }
 
-  function handlePick(spell: Spell) {
-    if (!picker) return
-    setPendingPick({ ...picker, spell })
-    setPicker(null)
-  }
-
-  function handleConfirmReplace() {
-    if (!pendingPick || !viewedFile) return
+  function applySpellPick(setIndex: number, slot: number, spell: Spell) {
+    if (!viewedFile) return
     // Local edit only — gets persisted when the user clicks Save.
-    const { setIndex, slot, spell } = pendingPick
     setFiles((prev) =>
       prev.map((f) => {
         if (f.character !== viewedFile.character) return f
@@ -776,6 +769,25 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
         return { ...f, spellsets: sets }
       }),
     )
+  }
+
+  function handlePick(spell: Spell) {
+    if (!picker || !viewedFile) return
+    const currentId = viewedFile.spellsets[picker.setIndex]?.spell_ids[picker.slot]
+    const slotEmpty = currentId === undefined || currentId === EMPTY_SLOT || currentId <= 0
+    if (slotEmpty) {
+      applySpellPick(picker.setIndex, picker.slot, spell)
+      setPicker(null)
+      return
+    }
+    setPendingPick({ ...picker, spell })
+    setPicker(null)
+  }
+
+  function handleConfirmReplace() {
+    if (!pendingPick) return
+    const { setIndex, slot, spell } = pendingPick
+    applySpellPick(setIndex, slot, spell)
     setPendingPick(null)
   }
 

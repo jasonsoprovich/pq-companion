@@ -320,7 +320,7 @@ export default function RollTrackerPanel({
           </div>
 
           <button
-            onClick={() => { if (window.confirm('Clear every roll session?')) clearRolls().catch(() => {}) }}
+            onClick={() => { clearRolls().catch(() => {}) }}
             title="Clear all sessions"
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}
           >
