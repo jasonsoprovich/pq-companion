@@ -5,9 +5,12 @@ import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import OverlayLockButton from '../components/OverlayLockButton'
-import { getOverlayNPCTarget } from '../services/api'
+import { ItemIcon } from '../components/Icon'
+import { getOverlayNPCTarget, getNPCLoot } from '../services/api'
 import { className, bodyTypeName } from '../lib/npcHelpers'
+import { effectiveDropPct, rarityColor } from '../lib/lootHelpers'
 import type { TargetState, SpecialAbility } from '../types/overlay'
+import type { NPCLootTable } from '../types/npc'
 
 // ── Ability badge colours ──────────────────────────────────────────────────────
 // Yellow  = special attacks (direct combat threat to the player)
@@ -38,10 +41,11 @@ function AbilityBadge({ ability }: { ability: SpecialAbility }): React.ReactElem
       style={{
         backgroundColor: abilityBadgeColor(ability.code),
         color: '#fff',
-        fontSize: 10,
+        fontSize: 9,
         fontWeight: 600,
         borderRadius: 3,
-        padding: '1px 6px',
+        padding: '1px 5px',
+        lineHeight: 1.4,
       }}
     >
       {ability.name || `Ability ${ability.code}`}
@@ -49,38 +53,55 @@ function AbilityBadge({ ability }: { ability: SpecialAbility }): React.ReactElem
   )
 }
 
-// ── Stat cell ──────────────────────────────────────────────────────────────────
+// ── Inline chip (label + value) ────────────────────────────────────────────────
 
-function Stat({ label, value, color }: { label: string; value: string | number; color?: string }): React.ReactElement {
+function Chip({ label, value, color }: { label?: string; value: string | number; color?: string }): React.ReactElement {
   return (
-    <div
+    <span
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
+        display: 'inline-flex',
+        alignItems: 'baseline',
+        gap: 4,
         backgroundColor: 'rgba(255,255,255,0.06)',
-        borderRadius: 4,
-        padding: '4px 8px',
-        minWidth: '3.5rem',
+        borderRadius: 3,
+        padding: '2px 6px',
+        fontSize: 10,
+        lineHeight: 1.3,
       }}
     >
-      <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(255,255,255,0.35)' }}>
-        {label}
-      </span>
-      <span style={{ fontSize: 12, fontWeight: 600, color: color ?? 'rgba(255,255,255,0.85)', fontVariantNumeric: 'tabular-nums', marginTop: 1 }}>
+      {label && (
+        <span style={{ color: 'rgba(255,255,255,0.4)', fontWeight: 600, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          {label}
+        </span>
+      )}
+      <span style={{ color: color ?? 'rgba(255,255,255,0.9)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
         {value}
       </span>
-    </div>
+    </span>
   )
 }
 
-// ── Section label ──────────────────────────────────────────────────────────────
+// ── View toggle (Stats ↔ Loot) ────────────────────────────────────────────────
 
-function SectionLabel({ children }: { children: React.ReactNode }): React.ReactElement {
+type View = 'stats' | 'loot'
+
+function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => void }): React.ReactElement {
+  const btn = (active: boolean): React.CSSProperties => ({
+    background: active ? 'rgba(255,255,255,0.12)' : 'transparent',
+    color: active ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.4)',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: 10,
+    fontWeight: 600,
+    padding: '2px 8px',
+    borderRadius: 3,
+    lineHeight: 1.4,
+  })
   return (
-    <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.3)', marginBottom: 4 }}>
-      {children}
-    </p>
+    <div className="no-drag" style={{ display: 'inline-flex', gap: 2, backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: 4, padding: 1 }}>
+      <button style={btn(view === 'stats')} onClick={() => onChange('stats')}>Stats</button>
+      <button style={btn(view === 'loot')} onClick={() => onChange('loot')}>Loot</button>
+    </div>
   )
 }
 
@@ -88,123 +109,175 @@ function SectionLabel({ children }: { children: React.ReactNode }): React.ReactE
 
 function NoTarget({ zone }: { zone?: string }): React.ReactElement {
   return (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16 }}>
-      <Crosshair size={32} style={{ color: 'rgba(255,255,255,0.2)' }} />
-      <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', margin: 0 }}>No target</p>
-      {zone && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: 0 }}>{zone}</p>}
+    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12 }}>
+      <Crosshair size={24} style={{ color: 'rgba(255,255,255,0.2)' }} />
+      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0 }}>No target</p>
+      {zone && <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', margin: 0 }}>{zone}</p>}
     </div>
   )
 }
 
 // ── NPC content ────────────────────────────────────────────────────────────────
 
-function NPCContent({ state }: { state: TargetState }): React.ReactElement {
+// ── Loot content ───────────────────────────────────────────────────────────────
+
+function LootContent({ npcId }: { npcId: number }): React.ReactElement {
+  const [loot, setLoot] = useState<NPCLootTable | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(false)
+    setLoot(null)
+    getNPCLoot(npcId)
+      .then((data) => setLoot(data))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false))
+  }, [npcId])
+
+  if (loading) {
+    return <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: 0, padding: '4px 2px' }}>Loading loot…</p>
+  }
+  if (error) {
+    return <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: 0, padding: '4px 2px' }}>Failed to load loot.</p>
+  }
+  if (!loot || loot.drops.length === 0) {
+    return <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: 0, padding: '4px 2px' }}>No loot table for this NPC.</p>
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {loot.drops.map((drop) => (
+        <div key={drop.id}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 2 }}>
+            <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              {drop.multiplier > 1 ? `×${drop.multiplier} · ` : ''}
+              {drop.probability < 100 ? `${drop.probability}% chance` : 'Always drops'}
+            </span>
+          </div>
+          {drop.items.map((item) => {
+            const eff = effectiveDropPct(drop, item)
+            return (
+              <div
+                key={`${drop.id}-${item.item_id}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '1px 0',
+                  borderTop: '1px solid rgba(255,255,255,0.05)',
+                }}
+              >
+                <ItemIcon id={item.item_icon} name={item.item_name} size={18} />
+                <span
+                  style={{
+                    flex: 1,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    fontSize: 11,
+                    color: rarityColor(eff),
+                    fontWeight: 500,
+                  }}
+                >
+                  {item.item_name}
+                </span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+                  {item.chance.toFixed(1)}%
+                  {item.multiplier > 1 && ` ×${item.multiplier}`}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function NPCContent({ state, view }: { state: TargetState; view: View }): React.ReactElement {
   const npc = state.npc_data
   const abilities = (state.special_abilities ?? []).filter((a) => a.value !== 0)
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {/* Target name */}
-      <div
-        style={{
-          backgroundColor: 'rgba(255,255,255,0.06)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: 6,
-          padding: '8px 12px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-          <div>
-            <p style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.9)', margin: 0, lineHeight: 1.2 }}>
-              {state.target_name ?? 'Unknown'}
-            </p>
-            {state.current_zone && (
-              <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', margin: '2px 0 0' }}>{state.current_zone}</p>
-            )}
-          </div>
+    <div style={{ flex: 1, overflowY: 'auto', padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+      {/* Target name + zone + timestamp */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.92)', margin: 0, lineHeight: 1.2 }}>
+            {state.target_name ?? 'Unknown'}
+          </p>
           <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
             {new Date(state.last_updated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </span>
         </div>
+        {state.current_zone && (
+          <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', margin: '1px 0 0' }}>{state.current_zone}</p>
+        )}
         {npc && (npc.raid_target === 1 || npc.rare_spawn === 1) && (
-          <div style={{ marginTop: 6, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          <div style={{ marginTop: 3, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             {npc.raid_target === 1 && (
-              <span style={{ backgroundColor: '#7c3aed', color: '#fff', fontSize: 10, fontWeight: 600, borderRadius: 3, padding: '1px 6px' }}>
-                RAID TARGET
-              </span>
+              <span style={{ backgroundColor: '#7c3aed', color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 3, padding: '1px 5px' }}>RAID</span>
             )}
             {npc.rare_spawn === 1 && (
-              <span style={{ backgroundColor: '#b45309', color: '#fff', fontSize: 10, fontWeight: 600, borderRadius: 3, padding: '1px 6px' }}>
-                RARE SPAWN
-              </span>
+              <span style={{ backgroundColor: '#b45309', color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 3, padding: '1px 5px' }}>RARE</span>
             )}
           </div>
         )}
       </div>
 
       {npc ? (
-        <>
-          {/* Identity */}
-          <div>
-            <SectionLabel>Identity</SectionLabel>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              <Stat label="Level" value={npc.level} color="#c9a84c" />
-              <Stat label="Class" value={className(npc.class)} />
-              <Stat label="Race" value={npc.race_name} />
-              <Stat label="Body" value={bodyTypeName(npc.body_type)} />
+        view === 'loot' ? (
+          <LootContent npcId={npc.id} />
+        ) : (
+          <>
+            {/* Identity */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+              <Chip label="Lv" value={npc.level} color="#c9a84c" />
+              <Chip value={className(npc.class)} />
+              <Chip value={npc.race_name} />
+              <Chip value={bodyTypeName(npc.body_type)} />
             </div>
-          </div>
 
-          {/* Combat */}
-          <div>
-            <SectionLabel>Combat</SectionLabel>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              <Stat label="HP" value={npc.hp.toLocaleString()} color="#22c55e" />
-              <Stat label="AC" value={npc.ac} />
-              <Stat label="Min DMG" value={npc.min_dmg} color="#ef4444" />
-              <Stat label="Max DMG" value={npc.max_dmg} color="#ef4444" />
-              <Stat label="Attacks" value={npc.attack_count < 0 ? '—' : npc.attack_count} />
+            {/* Combat */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+              <Chip label="HP" value={npc.hp.toLocaleString()} color="#22c55e" />
+              <Chip label="AC" value={npc.ac} />
+              <Chip label="DMG" value={`${npc.min_dmg}-${npc.max_dmg}`} color="#ef4444" />
+              <Chip label="Atk" value={npc.attack_count < 0 ? '—' : npc.attack_count} />
             </div>
-          </div>
 
-          {/* Resists */}
-          <div>
-            <SectionLabel>Resists</SectionLabel>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              <Stat label="Magic" value={npc.mr} />
-              <Stat label="Cold" value={npc.cr} />
-              <Stat label="Disease" value={npc.dr} />
-              <Stat label="Fire" value={npc.fr} />
-              <Stat label="Poison" value={npc.pr} />
+            {/* Resists */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+              <Chip label="MR" value={npc.mr} />
+              <Chip label="CR" value={npc.cr} />
+              <Chip label="DR" value={npc.dr} />
+              <Chip label="FR" value={npc.fr} />
+              <Chip label="PR" value={npc.pr} />
             </div>
-          </div>
 
-          {/* Attributes */}
-          <div>
-            <SectionLabel>Attributes</SectionLabel>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              <Stat label="STR" value={npc.str} />
-              <Stat label="STA" value={npc.sta} />
-              <Stat label="DEX" value={npc.dex} />
-              <Stat label="AGI" value={npc.agi} />
-              <Stat label="INT" value={npc.int} />
-              <Stat label="WIS" value={npc.wis} />
-              <Stat label="CHA" value={npc.cha} />
+            {/* Attributes */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+              <Chip label="STR" value={npc.str} />
+              <Chip label="STA" value={npc.sta} />
+              <Chip label="DEX" value={npc.dex} />
+              <Chip label="AGI" value={npc.agi} />
+              <Chip label="INT" value={npc.int} />
+              <Chip label="WIS" value={npc.wis} />
+              <Chip label="CHA" value={npc.cha} />
             </div>
-          </div>
 
-          {/* Special Abilities */}
-          {abilities.length > 0 && (
-            <div>
-              <SectionLabel>Special Abilities</SectionLabel>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {/* Special Abilities */}
+            {abilities.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
                 {abilities.map((a) => (
                   <AbilityBadge key={a.code} ability={a} />
                 ))}
               </div>
-            </div>
-          )}
-        </>
+            )}
+          </>
+        )
       ) : (
         <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: 0, padding: '4px 0' }}>
           No database record found for this NPC.
@@ -220,6 +293,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
   const [target, setTarget] = useState<TargetState | null>(null)
+  const [view, setView] = useState<View>('stats')
 
   useEffect(() => {
     getOverlayNPCTarget()
@@ -263,9 +337,9 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
           flexShrink: 0,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Crosshair size={13} style={{ color: '#c9a84c' }} />
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>NPC Target</span>
+          <ViewToggle view={view} onChange={setView} />
         </div>
         <div
           className="no-drag"
@@ -298,7 +372,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
           <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: 0 }}>Loading…</p>
         </div>
       ) : target.has_target ? (
-        <NPCContent state={target} />
+        <NPCContent state={target} view={view} />
       ) : (
         <NoTarget zone={target.current_zone} />
       )}
