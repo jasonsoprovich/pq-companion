@@ -20,12 +20,13 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/zealpipe"
 )
 
 // NewRouter builds and returns the chi router wired to all backend components.
 // combatHistory may be nil when persistence is disabled (e.g. user.db open
 // failed); in that case the history endpoints respond 503.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, actualPort int) http.Handler {
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, actualPort int) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -50,7 +51,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	cfg := &configHandler{mgr: cfgMgr, hub: hub, actualPort: actualPort}
 	charactersH := &charactersHandler{store: charStore, mgr: cfgMgr, db: database, watcher: zealWatcher}
 	search := &searchHandler{db: database}
-	zealH := &zealHandler{watcher: zealWatcher, cfgMgr: cfgMgr, db: database}
+	zealH := &zealHandler{watcher: zealWatcher, cfgMgr: cfgMgr, db: database, pipe: pipeSupervisor}
 	keysH := &keysHandler{watcher: zealWatcher}
 	backupH := &backupHandler{mgr: backupMgr}
 	appBackupH := &appBackupHandler{mgr: appBackupMgr}
@@ -126,6 +127,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		})
 		r.Route("/zeal", func(r chi.Router) {
 			r.Get("/detect", zealH.detect)
+			r.Get("/pipe-status", zealH.pipeStatus)
 			r.Get("/inventory", zealH.inventory)
 			r.Get("/spells", zealH.spellbook)
 			r.Get("/all-inventories", zealH.allInventories)

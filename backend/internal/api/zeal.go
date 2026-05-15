@@ -11,6 +11,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/zealpipe"
 )
 
 var spellsetFilenameRe = regexp.MustCompile(`(?i)^(.+?)_spellsets\.ini$`)
@@ -19,6 +20,7 @@ type zealHandler struct {
 	watcher *zeal.Watcher
 	cfgMgr  *config.Manager
 	db      *db.DB
+	pipe    *zealpipe.Supervisor
 }
 
 // enrichEntries fills in the Icon field on each entry by looking up
@@ -273,6 +275,19 @@ func (h *zealHandler) parseSpellsetsFile(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(struct {
 		Spellsets *zeal.SpellsetFile `json:"spellsets"`
 	}{Spellsets: sf})
+}
+
+// GET /api/zeal/pipe-status
+// Reports the runtime connection state of the Zeal named-pipe supervisor.
+// Used by the Settings UI to show whether we're actively receiving live game
+// state from Zeal, distinct from /detect which only reports filesystem
+// presence of Zeal.asi.
+func (h *zealHandler) pipeStatus(w http.ResponseWriter, r *http.Request) {
+	if h.pipe == nil {
+		writeJSON(w, http.StatusOK, zealpipe.Status{State: zealpipe.StateUnsupported})
+		return
+	}
+	writeJSON(w, http.StatusOK, h.pipe.Status())
 }
 
 // GET /api/zeal/detect

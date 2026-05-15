@@ -29,6 +29,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/zealpipe"
 )
 
 func main() {
@@ -149,6 +150,12 @@ func main() {
 	// anyone not currently logged in.
 	go zealWatcher.RefreshAllPersonas()
 	go zealWatcher.Start(context.Background())
+
+	// Zeal IPC supervisor: discovers the eqgame.exe Zeal pipe and reads live
+	// game-state events. Stage A integration is scaffolding only — the event
+	// handler is a no-op until target/HP integration lands in a follow-up.
+	pipeSupervisor := zealpipe.NewSupervisor(nil)
+	go pipeSupervisor.Start(context.Background())
 
 	// NPC overlay tracker: watches log events to infer the current combat target
 	// and broadcasts overlay:npc_target WebSocket events with full NPC data.
@@ -351,7 +358,7 @@ func main() {
 		runtimeAppVersion(),
 	)
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {
