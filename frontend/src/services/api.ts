@@ -377,6 +377,43 @@ export function pruneBackups(maxBackups: number): Promise<{ deleted: number }> {
   return post<{ deleted: number }>('/api/backups/prune', { max_backups: maxBackups })
 }
 
+// ── Players (/who sightings DB) ────────────────────────────────────────────────
+
+export interface PlayerSearchFilters {
+  search?: string
+  class?: string
+  zone?: string
+  limit?: number
+  offset?: number
+}
+
+export function listPlayers(filters: PlayerSearchFilters = {}): Promise<import('../types/player').PlayerListResponse> {
+  const params = new URLSearchParams()
+  if (filters.search) params.set('search', filters.search)
+  if (filters.class) params.set('class', filters.class)
+  if (filters.zone) params.set('zone', filters.zone)
+  if (filters.limit) params.set('limit', String(filters.limit))
+  if (filters.offset) params.set('offset', String(filters.offset))
+  const qs = params.toString()
+  return get<import('../types/player').PlayerListResponse>(`/api/players${qs ? '?' + qs : ''}`)
+}
+
+export function getPlayer(name: string): Promise<import('../types/player').PlayerSighting> {
+  return get<import('../types/player').PlayerSighting>(`/api/players/${encodeURIComponent(name)}`)
+}
+
+export function getPlayerHistory(name: string): Promise<import('../types/player').PlayerHistoryResponse> {
+  return get<import('../types/player').PlayerHistoryResponse>(`/api/players/${encodeURIComponent(name)}/history`)
+}
+
+export function deletePlayer(name: string): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>(`/api/players/${encodeURIComponent(name)}`)
+}
+
+export function clearPlayers(): Promise<{ deleted: number }> {
+  return post<{ deleted: number }>(`/api/players/clear`)
+}
+
 // ── App Backup (export/import full app state) ──────────────────────────────────
 
 export interface AppBackupManifest {
