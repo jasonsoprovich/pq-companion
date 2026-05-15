@@ -125,6 +125,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Delete("/{id}/tasks/{taskID}/subtasks/{subtaskID}", tasksH.deleteSubtask)
 		})
 		r.Route("/zeal", func(r chi.Router) {
+			r.Get("/detect", zealH.detect)
 			r.Get("/inventory", zealH.inventory)
 			r.Get("/spells", zealH.spellbook)
 			r.Get("/all-inventories", zealH.allInventories)
