@@ -52,3 +52,10 @@ export interface AllSpellsetsResponse {
   configured: boolean
   characters: SpellsetFile[]
 }
+
+export interface ZealInstallStatus {
+  eq_path: string
+  installed: boolean
+  eqgame_present: boolean
+  asi_path?: string
+}

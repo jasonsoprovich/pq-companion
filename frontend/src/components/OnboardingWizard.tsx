@@ -12,12 +12,16 @@ import {
   X,
 } from 'lucide-react'
 import {
+  detectZeal,
   getConfig,
   updateConfig,
   validateEQPath,
   type DiscoveredCharacter,
 } from '../services/api'
 import type { Config } from '../types/config'
+import type { ZealInstallStatus } from '../types/zeal'
+
+const ZEAL_RELEASE_URL = 'https://github.com/CoastalRedwood/Zeal/releases/latest'
 
 const CLASS_LABELS: Record<number, string> = {
   [-1]: 'Not set / unknown',
@@ -77,6 +81,10 @@ export default function OnboardingWizard({
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
+  const [zealStatus, setZealStatus] = useState<ZealInstallStatus | null>(null)
+  const [zealChecking, setZealChecking] = useState(false)
+  const [zealError, setZealError] = useState<string | null>(null)
+
   useEffect(() => {
     getConfig()
       .then((c) => {
@@ -87,6 +95,30 @@ export default function OnboardingWizard({
       })
       .catch((err: Error) => setLoadError(err.message))
   }, [])
+
+  async function checkZeal(path: string): Promise<void> {
+    if (!path.trim()) {
+      setZealStatus(null)
+      return
+    }
+    setZealChecking(true)
+    setZealError(null)
+    try {
+      setZealStatus(await detectZeal(path.trim()))
+    } catch (err) {
+      setZealError((err as Error).message)
+      setZealStatus(null)
+    } finally {
+      setZealChecking(false)
+    }
+  }
+
+  useEffect(() => {
+    if (step === 'zeal') {
+      void checkZeal(eqPath)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step])
 
   const stepIndex = STEPS.indexOf(step)
   const hasElectronDialog = Boolean(window.electron?.dialog)
@@ -456,19 +488,111 @@ export default function OnboardingWizard({
                 <Info size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--color-primary)' }} />
                 <div>
                   <p>
-                    <strong>Zeal</strong> is a third-party EverQuest add-on that exports
-                    inventory and spellbook data on logout. PQ Companion automatically
-                    reads those files from your EQ folder if you have Zeal installed.
-                  </p>
-                  <p className="mt-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                    No additional setup is required — if Zeal is installed and exporting
-                    files, PQ Companion will pick them up.
+                    <strong>Zeal</strong> is a community EverQuest add-on that exports
+                    inventory and spellbook data and exposes live game state (target,
+                    HP, buffs, group) over a local pipe. PQ Companion uses Zeal for
+                    real-time target detection and richer overlays when it&apos;s
+                    installed — and falls back to log-file parsing when it&apos;s not.
                   </p>
                 </div>
               </div>
-              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                You can skip this step if you&apos;re not using Zeal.
-              </p>
+
+              <div
+                className="rounded p-3 text-sm"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-foreground)',
+                }}
+              >
+                <div className="mb-2 flex items-center justify-between">
+                  <span
+                    className="text-xs font-semibold uppercase tracking-wide"
+                    style={{ color: 'var(--color-muted)' }}
+                  >
+                    Detection
+                  </span>
+                  <button
+                    onClick={() => void checkZeal(eqPath)}
+                    disabled={zealChecking || !eqPath.trim()}
+                    className="flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium"
+                    style={{
+                      backgroundColor: 'var(--color-surface)',
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-foreground)',
+                      cursor: zealChecking || !eqPath.trim() ? 'not-allowed' : 'pointer',
+                      opacity: zealChecking || !eqPath.trim() ? 0.5 : 1,
+                    }}
+                  >
+                    {zealChecking ? <Loader2 size={12} className="animate-spin" /> : null}
+                    {zealChecking ? 'Checking…' : 'Re-check'}
+                  </button>
+                </div>
+
+                {zealChecking && !zealStatus && (
+                  <p style={{ color: 'var(--color-muted-foreground)' }}>
+                    Looking for Zeal.asi in your EverQuest folder…
+                  </p>
+                )}
+
+                {!zealChecking && zealStatus?.installed && (
+                  <div className="flex items-start gap-2" style={{ color: '#22c55e' }}>
+                    <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+                    <div>
+                      <p>Zeal is installed.</p>
+                      {zealStatus.asi_path && (
+                        <p
+                          className="mt-1 text-xs"
+                          style={{ color: 'var(--color-muted-foreground)' }}
+                        >
+                          Found <code>{zealStatus.asi_path}</code>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {!zealChecking && zealStatus && !zealStatus.installed && (
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-2" style={{ color: 'var(--color-muted-foreground)' }}>
+                      <Info size={14} className="mt-0.5 shrink-0" />
+                      <div>
+                        <p>
+                          Zeal is not installed in this folder
+                          {zealStatus.eqgame_present ? '' : ' (eqgame.exe also not found here — double-check the path on the previous step)'}.
+                        </p>
+                        <p className="mt-1 text-xs">
+                          You can skip this step and install Zeal later — every Zeal
+                          feature in PQ Companion is optional.
+                        </p>
+                      </div>
+                    </div>
+                    <a
+                      href={ZEAL_RELEASE_URL}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
+                      style={{
+                        backgroundColor: 'var(--color-primary)',
+                        color: '#fff',
+                        textDecoration: 'none',
+                      }}
+                    >
+                      Get Zeal (GitHub releases)
+                    </a>
+                  </div>
+                )}
+
+                {zealError && (
+                  <div
+                    className="flex items-start gap-2 text-xs"
+                    style={{ color: '#f87171' }}
+                  >
+                    <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                    <p>Couldn&apos;t check for Zeal: {zealError}</p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

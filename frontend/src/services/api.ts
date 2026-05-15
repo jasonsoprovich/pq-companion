@@ -9,6 +9,7 @@ import type {
   AllInventoriesResponse,
   ZealSpellsetsResponse,
   AllSpellsetsResponse,
+  ZealInstallStatus,
 } from '../types/zeal'
 import type { KeysResponse, KeysProgressResponse } from '../types/keys'
 import type { Backup, BackupsResponse } from '../types/backup'
@@ -296,6 +297,11 @@ export function getZoneDrops(shortName: string): Promise<ZoneDropItem[]> {
 }
 
 // ── Zeal ───────────────────────────────────────────────────────────────────────
+
+export function detectZeal(path?: string): Promise<ZealInstallStatus> {
+  const qs = path ? `?path=${encodeURIComponent(path)}` : ''
+  return get<ZealInstallStatus>(`/api/zeal/detect${qs}`)
+}
 
 export function getZealInventory(): Promise<ZealInventoryResponse> {
   return get<ZealInventoryResponse>('/api/zeal/inventory')

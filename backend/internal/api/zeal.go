@@ -276,13 +276,16 @@ func (h *zealHandler) parseSpellsetsFile(w http.ResponseWriter, r *http.Request)
 }
 
 // GET /api/zeal/detect
-// Probes the configured EverQuest folder for the Zeal mod (Zeal.asi next to
-// eqgame.exe). Powers the onboarding wizard's Zeal step and the Settings
-// integration card. Runtime pipe connectivity is a separate check handled by
-// the zealpipe supervisor.
+// Probes an EverQuest folder for the Zeal mod (Zeal.asi next to eqgame.exe).
+// Defaults to the configured EQ path; an explicit ?path= override lets the
+// onboarding wizard check before the user has saved their config. Runtime
+// pipe connectivity is a separate check handled by the zealpipe supervisor.
 func (h *zealHandler) detect(w http.ResponseWriter, r *http.Request) {
-	cfg := h.cfgMgr.Get()
-	writeJSON(w, http.StatusOK, zeal.DetectInstall(cfg.EQPath))
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		path = h.cfgMgr.Get().EQPath
+	}
+	writeJSON(w, http.StatusOK, zeal.DetectInstall(path))
 }
 
 // GET /api/zeal/spellsets/all
