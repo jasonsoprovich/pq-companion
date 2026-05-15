@@ -119,6 +119,12 @@ const (
 	// NPC. EQ NPCs never use guild/raid/group/tell channels, so this
 	// signal is unambiguous.
 	EventVerifiedPlayer EventType = "log:verified_player"
+
+	// EventWhoEntry is emitted for each player row that appears in a
+	// `/who` or `/who all` response. The active zone at the time of the
+	// log line is stamped on the data so consumers can persist
+	// last-seen-in-zone for each sighted player.
+	EventWhoEntry EventType = "log:who_entry"
 )
 
 // LogEvent is the parsed representation of a single EQ log line.
@@ -307,4 +313,23 @@ type RollResultData struct {
 // add it to its verified-player set.
 type VerifiedPlayerData struct {
 	Name string `json:"name"`
+}
+
+// WhoEntryData is the structured payload for EventWhoEntry. Captures one
+// row from a `/who` listing. Anonymous players have Anonymous=true and
+// Level=0, Class/Race="" — consumers retain previously-seen non-anonymous
+// values rather than overwriting them with empty data.
+type WhoEntryData struct {
+	Name      string `json:"name"`
+	Level     int    `json:"level"`     // 0 when anonymous
+	Class     string `json:"class"`     // empty when anonymous
+	Race      string `json:"race"`      // empty when not present
+	Guild     string `json:"guild"`     // empty when not present / hidden
+	Anonymous bool   `json:"anonymous"`
+	LFG       bool   `json:"lfg"`
+	AFK       bool   `json:"afk"`
+	// Zone is the active zone at the time of the line, stamped by the
+	// parser from the most recent EventZone. Empty if no zone change has
+	// been observed yet this session.
+	Zone string `json:"zone"`
 }

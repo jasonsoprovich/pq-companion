@@ -14,6 +14,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
@@ -24,7 +25,7 @@ import (
 // NewRouter builds and returns the chi router wired to all backend components.
 // combatHistory may be nil when persistence is disabled (e.g. user.db open
 // failed); in that case the history endpoints respond 503.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, actualPort int) http.Handler {
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, actualPort int) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -53,6 +54,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	keysH := &keysHandler{watcher: zealWatcher}
 	backupH := &backupHandler{mgr: backupMgr}
 	appBackupH := &appBackupHandler{mgr: appBackupMgr}
+	playersH := &playersHandler{store: playerStore}
 	logH := &logHandler{tailer: tailer}
 	overlayH := &overlayHandler{npcTracker: npcTracker}
 	combatH := &combatHandler{tracker: combatTracker, historyStore: combatHistory}
@@ -144,6 +146,13 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Post("/{id}/restore", backupH.restore)
 			r.Put("/{id}/lock", backupH.lock)
 			r.Put("/{id}/unlock", backupH.unlock)
+		})
+		r.Route("/players", func(r chi.Router) {
+			r.Get("/", playersH.list)
+			r.Post("/clear", playersH.clear)
+			r.Get("/{name}", playersH.get)
+			r.Get("/{name}/history", playersH.history)
+			r.Delete("/{name}", playersH.delete)
 		})
 		r.Route("/app", func(r chi.Router) {
 			r.Post("/export", appBackupH.export)

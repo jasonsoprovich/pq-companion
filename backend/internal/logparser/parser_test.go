@@ -569,6 +569,48 @@ func TestParseLine(t *testing.T) {
 			wantData: ConsideredData{TargetName: "an Icepaw cleric"},
 		},
 
+		// --- /who entries ---
+		{
+			name:     "who: named with race and guild",
+			line:     "[Mon Apr 13 06:00:00 2026] [60 Necromancer] Foo (Iksar) <Drowsy Disciples>",
+			wantOK:   true,
+			wantType: EventWhoEntry,
+			wantData: WhoEntryData{Name: "Foo", Level: 60, Class: "Necromancer", Race: "Iksar", Guild: "Drowsy Disciples"},
+		},
+		{
+			name:     "who: named with multi-word class and LFG flag",
+			line:     "[Mon Apr 13 06:00:00 2026] [55 Shadow Knight] Bar LFG",
+			wantOK:   true,
+			wantType: EventWhoEntry,
+			wantData: WhoEntryData{Name: "Bar", Level: 55, Class: "Shadow Knight", LFG: true},
+		},
+		{
+			name:     "who: anonymous",
+			line:     "[Mon Apr 13 06:00:00 2026] [ANONYMOUS] Baz",
+			wantOK:   true,
+			wantType: EventWhoEntry,
+			wantData: WhoEntryData{Name: "Baz", Anonymous: true},
+		},
+		{
+			name:     "who: anon shorthand with AFK",
+			line:     "[Mon Apr 13 06:00:00 2026] [ANON] Qux AFK",
+			wantOK:   true,
+			wantType: EventWhoEntry,
+			wantData: WhoEntryData{Name: "Qux", Anonymous: true, AFK: true},
+		},
+		{
+			name:     "who: race only, no guild",
+			line:     "[Mon Apr 13 06:00:00 2026] [42 Druid] Zee (Wood Elf)",
+			wantOK:   true,
+			wantType: EventWhoEntry,
+			wantData: WhoEntryData{Name: "Zee", Level: 42, Class: "Druid", Race: "Wood Elf"},
+		},
+		{
+			name:   "who: not actually a who line — bracket without level",
+			line:   "[Mon Apr 13 06:00:00 2026] [Some bracket text] Foo says hello",
+			wantOK: false,
+		},
+
 		// --- /con false-positive guard ---
 		// Lines starting with "You " must never be classified as EventConsidered.
 		// Zone-entry lines reach reZone first, but the regex guard provides
@@ -795,6 +837,14 @@ func compareData(t *testing.T, got, want interface{}) {
 		}
 		if g != w {
 			t.Errorf("RollResultData = %+v, want %+v", g, w)
+		}
+	case WhoEntryData:
+		g, ok := got.(WhoEntryData)
+		if !ok {
+			t.Fatalf("Data type = %T, want WhoEntryData", got)
+		}
+		if g != w {
+			t.Errorf("WhoEntryData = %+v, want %+v", g, w)
 		}
 	default:
 		t.Fatalf("compareData: unhandled want type %T", want)

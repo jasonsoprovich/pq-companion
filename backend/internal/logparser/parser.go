@@ -208,6 +208,24 @@ var (
 	// rolltracker for the correlation.
 	reRollAnnounce = regexp.MustCompile(`^\*\*A Magic Die is rolled by (.+?)\.$`)
 	reRollResult   = regexp.MustCompile(`^\*\*It could have been any number from (\d+) to (\d+), but this time it turned up a (\d+)\.$`)
+
+	// /who rows — EQ writes one per row, two main shapes:
+	//
+	//   "[60 Necromancer] Foo (Iksar) <Some Guild>"   (named, has race + guild)
+	//   "[60 Druid] Bar LFG"                          (named, no race/guild, has flag)
+	//   "[ANONYMOUS] Baz"                             (fully anonymous)
+	//   "[ANON] Qux"                                  (older client shorthand)
+	//
+	// Race appears in parentheses, guild in angle brackets. AFK / LFG / LFM
+	// flags can appear before or after the race/guild — we collect them by
+	// substring match on the trailing text rather than nailing exact order.
+	//
+	// The class string can contain a single space (e.g. "Shadow Knight"), so
+	// the class group is greedy up to the closing bracket.
+	reWhoNamed = regexp.MustCompile(`^\[(\d+)\s+([A-Za-z][A-Za-z ]*?)\]\s+(\w+)(.*)$`)
+	reWhoAnon  = regexp.MustCompile(`^\[ANON(?:YMOUS)?\]\s+(\w+)(.*)$`)
+	reWhoRace  = regexp.MustCompile(`\(([^)]+)\)`)
+	reWhoGuild = regexp.MustCompile(`<([^>]+)>`)
 )
 
 // ParseRawLine extracts the timestamp and message from any valid EQ log line
@@ -631,6 +649,17 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		}
 	}
 
+	// --- /who row ---
+	// Tried before spell-landed because some spell cast_on_other strings
+	// could conceivably collide with our generic name-capturing patterns.
+	// Both forms emit EventWhoEntry — anonymous and named.
+	if data, ok := parseWhoLine(msg); ok {
+		return LogEvent{
+			Type: EventWhoEntry,
+			Data: data,
+		}, true
+	}
+
 	// --- Spell landed (cast_on_you / cast_on_other) ---
 	// Tried last so structured event patterns take priority; this avoids
 	// misclassifying combat/heal/zone lines whose phrasing might happen to
@@ -645,6 +674,47 @@ func classifyMessage(msg string) (LogEvent, bool) {
 	}
 
 	return LogEvent{}, false
+}
+
+// parseWhoLine matches a /who output row in either anonymous or named form.
+// Returns the populated WhoEntryData (without Zone — the caller supplies that
+// from out-of-band state) and true on success, zero value and false otherwise.
+func parseWhoLine(msg string) (WhoEntryData, bool) {
+	if m := reWhoAnon.FindStringSubmatch(msg); m != nil {
+		name := m[1]
+		trailing := m[2]
+		return WhoEntryData{
+			Name:      name,
+			Anonymous: true,
+			LFG:       strings.Contains(trailing, " LFG"),
+			AFK:       strings.Contains(trailing, " AFK"),
+		}, true
+	}
+	if m := reWhoNamed.FindStringSubmatch(msg); m != nil {
+		levelStr := m[1]
+		class := strings.TrimSpace(m[2])
+		name := m[3]
+		trailing := m[4]
+		level, err := strconv.Atoi(levelStr)
+		if err != nil {
+			return WhoEntryData{}, false
+		}
+		data := WhoEntryData{
+			Name:  name,
+			Level: level,
+			Class: class,
+			LFG:   strings.Contains(trailing, " LFG"),
+			AFK:   strings.Contains(trailing, " AFK"),
+		}
+		if rm := reWhoRace.FindStringSubmatch(trailing); rm != nil {
+			data.Race = strings.TrimSpace(rm[1])
+		}
+		if gm := reWhoGuild.FindStringSubmatch(trailing); gm != nil {
+			data.Guild = strings.TrimSpace(gm[1])
+		}
+		return data, true
+	}
+	return WhoEntryData{}, false
 }
 
 // spellLandedData converts a CastMatch into the JSON payload emitted on the

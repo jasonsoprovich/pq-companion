@@ -23,6 +23,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
@@ -108,6 +109,18 @@ func main() {
 		os.Exit(1)
 	}
 	defer charStore.Close()
+
+	// Player tracker: persists every /who row to user.db so the user can
+	// build a history of players they've encountered. Non-fatal — failing
+	// here only disables the Players page; the rest of the app runs fine.
+	playerStore, err := players.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	var playersConsumer *players.Consumer
+	if err != nil {
+		slog.Warn("open player tracker (disabled)", "err", err)
+	} else {
+		defer playerStore.Close()
+		playersConsumer = players.NewConsumer(playerStore)
+	}
 
 	// Build the spell-landed detection index from the read-only spells_new
 	// table. Failure here is non-fatal — without the index, ParseLine simply
@@ -276,6 +289,9 @@ func main() {
 		combatTracker.Handle(ev)
 		timerEngine.Handle(ev)
 		rollTracker.Handle(ev)
+		if playersConsumer != nil {
+			playersConsumer.Handle(ev)
+		}
 	}, triggerEngine.Handle, func(character string) {
 		slog.Info("logparser: auto-detected active character", "character", character)
 		hub.Broadcast(ws.Event{Type: "config:character_detected", Data: map[string]string{"character": character}})
@@ -335,7 +351,7 @@ func main() {
 		runtimeAppVersion(),
 	)
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {
