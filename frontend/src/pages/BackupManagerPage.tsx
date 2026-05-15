@@ -601,7 +601,7 @@ function SettingsPanel({ onClose, onPruned }: SettingsPanelProps): React.ReactEl
 // schedules a restart — the actual file swap happens at next backend startup
 // before any user.db connections open.
 
-function AppTransferPanel({ onClose }: { onClose: () => void }): React.ReactElement {
+function AppTransferPanel(): React.ReactElement {
   const [busy, setBusy] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -677,24 +677,23 @@ function AppTransferPanel({ onClose }: { onClose: () => void }): React.ReactElem
 
   return (
     <div
-      className="rounded-lg border p-4"
-      style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+      className="rounded-lg border-2 p-4"
+      style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-primary)' }}
     >
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center gap-2 mb-1">
+        <Download size={16} style={{ color: 'var(--color-primary)' }} />
         <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
-          Transfer setup to another device
+          App Backup &amp; Restore
         </span>
-        <button
-          onClick={onClose}
-          className="rounded p-1"
-          style={{ color: 'var(--color-muted-foreground)' }}
-          title="Close"
+        <span
+          className="text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider"
+          style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-background)' }}
         >
-          <X size={14} />
-        </button>
+          Move to new device
+        </span>
       </div>
       <p className="text-[11px] mb-3" style={{ color: 'var(--color-muted-foreground)' }}>
-        Export bundles your entire app setup — characters, triggers, combat history, AAs, tasks, and every EQ-config backup zip — into a single <code className="font-mono">.pqcb</code> file. Import it on another device after installing the app to restore everything.
+        Export bundles your entire PQ Companion setup — characters, triggers, combat history, AAs, tasks, key tracker, plus every EQ config backup below — into a single <code className="font-mono">.pqcb</code> file. Import that file on a different device after installing the app to restore everything in place. Different from the EQ config backups list below, which only protects your in-game <code className="font-mono">.ini</code> files.
       </p>
 
       {/* Export */}
@@ -807,7 +806,6 @@ export default function BackupManagerPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showTransfer, setShowTransfer] = useState(false)
   const navigate = useNavigate()
 
   const load = useCallback(() => {
@@ -893,19 +891,7 @@ export default function BackupManagerPage(): React.ReactElement {
             Refresh
           </button>
           <button
-            onClick={() => { setShowTransfer((v) => !v); setShowCreate(false); setShowSettings(false) }}
-            title="Export / Import full app data"
-            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-            style={{
-              backgroundColor: showTransfer ? 'var(--color-primary)' : 'var(--color-surface-2)',
-              color: showTransfer ? 'var(--color-background)' : 'var(--color-muted-foreground)',
-              border: `1px solid ${showTransfer ? 'transparent' : 'var(--color-border)'}`,
-            }}
-          >
-            <Download size={11} />
-          </button>
-          <button
-            onClick={() => { setShowSettings((v) => !v); setShowCreate(false); setShowTransfer(false) }}
+            onClick={() => { setShowSettings((v) => !v); setShowCreate(false) }}
             className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
             style={{
               backgroundColor: showSettings ? 'var(--color-primary)' : 'var(--color-surface-2)',
@@ -916,7 +902,7 @@ export default function BackupManagerPage(): React.ReactElement {
             <Settings size={11} />
           </button>
           <button
-            onClick={() => { setShowCreate((v) => !v); setShowSettings(false); setShowTransfer(false) }}
+            onClick={() => { setShowCreate((v) => !v); setShowSettings(false) }}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium"
             style={{
               backgroundColor: showCreate ? 'var(--color-surface-2)' : 'var(--color-primary)',
@@ -947,10 +933,10 @@ export default function BackupManagerPage(): React.ReactElement {
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
 
-        {/* App transfer panel (inline) */}
-        {showTransfer && (
-          <AppTransferPanel onClose={() => setShowTransfer(false)} />
-        )}
+        {/* App backup & restore — always visible at the top because it's a
+            distinct top-level capability (moves the entire app to another
+            device), not a knob within the EQ-config-backup workflow below. */}
+        <AppTransferPanel />
 
         {/* Settings panel (inline) */}
         {showSettings && (
