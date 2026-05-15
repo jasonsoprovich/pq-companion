@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText } from 'lucide-react'
-import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, type ServerInfo, type TestPortResult } from '../services/api'
+import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config } from '../types/config'
 import type { LogFileInfo } from '../types/logEvent'
+import type { ZealInstallStatus } from '../types/zeal'
+
+const ZEAL_RELEASE_URL = 'https://github.com/CoastalRedwood/Zeal/releases/latest'
 import BackupManagerPage from './BackupManagerPage'
 
 
@@ -59,6 +62,10 @@ export default function SettingsPage(): React.ReactElement {
   const [portTestPort, setPortTestPort] = useState<number | null>(null)
   const [configFolder, setConfigFolder] = useState<string | null>(null)
 
+  const [zealStatus, setZealStatus] = useState<ZealInstallStatus | null>(null)
+  const [zealChecking, setZealChecking] = useState(false)
+  const [zealError, setZealError] = useState<string | null>(null)
+
   const [logLargeFile, setLogLargeFile] = useState(false)
   const [logFileInfo, setLogFileInfo] = useState<LogFileInfo | null>(null)
   const [logInfoLoading, setLogInfoLoading] = useState(false)
@@ -72,6 +79,19 @@ export default function SettingsPage(): React.ReactElement {
       if (saveStateClearRef.current) clearTimeout(saveStateClearRef.current)
     }
   }, [])
+
+  async function checkZeal(): Promise<void> {
+    setZealChecking(true)
+    setZealError(null)
+    try {
+      setZealStatus(await detectZeal())
+    } catch (err) {
+      setZealError((err as Error).message)
+      setZealStatus(null)
+    } finally {
+      setZealChecking(false)
+    }
+  }
 
   function flashSaveState(state: SaveState, ms = 2500): void {
     if (saveStateClearRef.current) clearTimeout(saveStateClearRef.current)
@@ -102,6 +122,8 @@ export default function SettingsPage(): React.ReactElement {
     }
 
     getServerInfo().then(setServerInfo).catch(() => null)
+
+    void checkZeal()
 
     const pollLogSize = () => {
       getLogStatus()
@@ -568,6 +590,92 @@ export default function SettingsPage(): React.ReactElement {
               Run Setup Wizard
             </button>
           </div>
+        </section>
+        )}
+
+        {/* ── Zeal integration ───────────────────────────────────────────── */}
+        {tab === 'general' && (
+        <section
+          className="rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <div className="mb-1 flex items-center justify-between">
+            <h2
+              className="text-sm font-semibold uppercase tracking-wide"
+              style={{ color: 'var(--color-muted)' }}
+            >
+              Zeal Integration
+            </h2>
+            <button
+              onClick={() => void checkZeal()}
+              disabled={zealChecking}
+              className="flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                cursor: zealChecking ? 'not-allowed' : 'pointer',
+                opacity: zealChecking ? 0.5 : 1,
+              }}
+            >
+              {zealChecking ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              {zealChecking ? 'Checking…' : 'Re-check'}
+            </button>
+          </div>
+          <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Zeal is a community EverQuest add-on that exposes live target, HP,
+            buff, and group state. PQ Companion uses it for real-time overlays
+            when installed and falls back to log parsing when not.
+          </p>
+
+          {zealStatus?.installed && (
+            <div className="flex items-start gap-2 text-sm" style={{ color: '#22c55e' }}>
+              <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+              <div>
+                <p>Zeal is installed.</p>
+                {zealStatus.asi_path && (
+                  <p className="mt-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                    Found <code>{zealStatus.asi_path}</code>
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {zealStatus && !zealStatus.installed && !zealError && (
+            <div className="space-y-2">
+              <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+                Zeal is not installed in your configured EverQuest folder
+                {zealStatus.eqgame_present ? '' : ' (eqgame.exe also not found — verify the path above)'}.
+              </p>
+              <a
+                href={ZEAL_RELEASE_URL}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  color: '#fff',
+                  textDecoration: 'none',
+                }}
+              >
+                Get Zeal (GitHub releases)
+              </a>
+            </div>
+          )}
+
+          {zealError && (
+            <div className="flex items-start gap-2 text-xs" style={{ color: '#f87171' }}>
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+              <p>Couldn&apos;t check for Zeal: {zealError}</p>
+            </div>
+          )}
+
+          {!zealStatus && !zealError && !zealChecking && (
+            <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              Set your EverQuest folder above, then click Re-check.
+            </p>
+          )}
         </section>
         )}
 
