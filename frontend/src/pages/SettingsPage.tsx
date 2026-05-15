@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText } from 'lucide-react'
-import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, type ServerInfo, type TestPortResult } from '../services/api'
+import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config } from '../types/config'
 import type { LogFileInfo } from '../types/logEvent'
-import type { ZealInstallStatus } from '../types/zeal'
+import type { ZealInstallStatus, ZealPipeStatus } from '../types/zeal'
 
 const ZEAL_RELEASE_URL = 'https://github.com/CoastalRedwood/Zeal/releases/latest'
 import BackupManagerPage from './BackupManagerPage'
@@ -65,6 +65,7 @@ export default function SettingsPage(): React.ReactElement {
   const [zealStatus, setZealStatus] = useState<ZealInstallStatus | null>(null)
   const [zealChecking, setZealChecking] = useState(false)
   const [zealError, setZealError] = useState<string | null>(null)
+  const [pipeStatus, setPipeStatus] = useState<ZealPipeStatus | null>(null)
 
   const [logLargeFile, setLogLargeFile] = useState(false)
   const [logFileInfo, setLogFileInfo] = useState<LogFileInfo | null>(null)
@@ -84,7 +85,12 @@ export default function SettingsPage(): React.ReactElement {
     setZealChecking(true)
     setZealError(null)
     try {
-      setZealStatus(await detectZeal())
+      const [install, pipe] = await Promise.all([
+        detectZeal(),
+        getZealPipeStatus().catch(() => null),
+      ])
+      setZealStatus(install)
+      setPipeStatus(pipe)
     } catch (err) {
       setZealError((err as Error).message)
       setZealStatus(null)
@@ -675,6 +681,51 @@ export default function SettingsPage(): React.ReactElement {
             <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
               Set your EverQuest folder above, then click Re-check.
             </p>
+          )}
+
+          {pipeStatus && pipeStatus.state !== 'unsupported' && (
+            <div
+              className="mt-3 flex items-center justify-between rounded px-3 py-2 text-xs"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{
+                    backgroundColor:
+                      pipeStatus.state === 'connected'
+                        ? '#22c55e'
+                        : pipeStatus.state === 'disconnected'
+                          ? '#f87171'
+                          : 'var(--color-muted)',
+                  }}
+                />
+                <span style={{ color: 'var(--color-foreground)' }}>
+                  Live pipe:{' '}
+                  {pipeStatus.state === 'connected'
+                    ? `connected${pipeStatus.character ? ` (${pipeStatus.character})` : ''}`
+                    : pipeStatus.state === 'disconnected'
+                      ? 'disconnected'
+                      : 'waiting for EverQuest'}
+                </span>
+              </div>
+              {pipeStatus.state === 'connected' && pipeStatus.pid ? (
+                <span style={{ color: 'var(--color-muted-foreground)' }}>
+                  PID {pipeStatus.pid}
+                </span>
+              ) : pipeStatus.last_error ? (
+                <span
+                  style={{ color: 'var(--color-muted-foreground)' }}
+                  title={pipeStatus.last_error}
+                >
+                  last error: {pipeStatus.last_error.slice(0, 60)}
+                  {pipeStatus.last_error.length > 60 ? '…' : ''}
+                </span>
+              ) : null}
+            </div>
           )}
         </section>
         )}

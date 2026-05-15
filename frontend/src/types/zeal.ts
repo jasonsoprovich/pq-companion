@@ -59,3 +59,14 @@ export interface ZealInstallStatus {
   eqgame_present: boolean
   asi_path?: string
 }
+
+export type ZealPipeState = 'idle' | 'connected' | 'disconnected' | 'unsupported'
+
+export interface ZealPipeStatus {
+  state: ZealPipeState
+  pipe_name?: string
+  pid?: number
+  character?: string
+  last_error?: string
+  connected_at?: string // RFC3339 timestamp
+}
