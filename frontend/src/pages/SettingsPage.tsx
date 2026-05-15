@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText } from 'lucide-react'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config } from '../types/config'
 import type { LogFileInfo } from '../types/logEvent'
@@ -8,7 +8,7 @@ import BackupManagerPage from './BackupManagerPage'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'settings' | 'backups'
+type Tab = 'general' | 'overlays' | 'spelltimers' | 'logs' | 'backups' | 'advanced'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -42,7 +42,7 @@ function TabBar({ tabs, active, onChange }: TabBarProps): React.ReactElement {
 }
 
 export default function SettingsPage(): React.ReactElement {
-  const [tab, setTab] = useState<Tab>('settings')
+  const [tab, setTab] = useState<Tab>('general')
   const [config, setConfig] = useState<Config | null>(null)
   const [originalConfig, setOriginalConfig] = useState<Config | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -246,11 +246,15 @@ export default function SettingsPage(): React.ReactElement {
   }
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'settings', label: 'Settings', icon: <Settings size={13} /> },
-    { id: 'backups', label: 'Backup Manager', icon: <HardDrive size={13} /> },
+    { id: 'general', label: 'General', icon: <Settings size={13} /> },
+    { id: 'overlays', label: 'Overlays', icon: <Layers size={13} /> },
+    { id: 'spelltimers', label: 'Spell Timers', icon: <Sparkles size={13} /> },
+    { id: 'logs', label: 'Logs', icon: <FileText size={13} /> },
+    { id: 'backups', label: 'EQ Config Backups', icon: <HardDrive size={13} /> },
+    { id: 'advanced', label: 'Advanced', icon: <Wifi size={13} /> },
   ]
 
-  if (loadError && tab === 'settings') {
+  if (loadError && tab !== 'backups') {
     const configPath = configFolder ? `${configFolder}\\config.yaml` : null
     return (
       <div className="flex h-full flex-col">
@@ -336,7 +340,7 @@ export default function SettingsPage(): React.ReactElement {
     )
   }
 
-  if (!config && tab === 'settings') {
+  if (!config && tab !== 'backups') {
     return (
       <div className="flex h-full flex-col">
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
@@ -382,6 +386,7 @@ export default function SettingsPage(): React.ReactElement {
 
       <div className="flex flex-col gap-6">
         {/* ── App ──────────────────────────────────────────────────────────── */}
+        {tab === 'general' && (
         <section
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
@@ -466,8 +471,10 @@ export default function SettingsPage(): React.ReactElement {
             </p>
           )}
         </section>
+        )}
 
         {/* ── Backend Network ────────────────────────────────────────────── */}
+        {tab === 'advanced' && (
         <BackendNetworkSection
           config={config}
           setConfig={setConfig}
@@ -485,8 +492,10 @@ export default function SettingsPage(): React.ReactElement {
           onSave={handleSave}
           saving={saveState === 'saving'}
         />
+        )}
 
         {/* ── EverQuest Path ─────────────────────────────────────────────── */}
+        {tab === 'general' && (
         <section
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
@@ -560,8 +569,10 @@ export default function SettingsPage(): React.ReactElement {
             </button>
           </div>
         </section>
+        )}
 
         {/* ── Preferences ────────────────────────────────────────────────── */}
+        {tab === 'general' && (
         <section
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
@@ -709,8 +720,10 @@ export default function SettingsPage(): React.ReactElement {
             </div>
           </label>
         </section>
+        )}
 
         {/* ── Overlays ───────────────────────────────────────────────────── */}
+        {tab === 'overlays' && (
         <section
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
@@ -772,8 +785,10 @@ export default function SettingsPage(): React.ReactElement {
             />
           </div>
         </section>
+        )}
 
         {/* ── Spell Timers ───────────────────────────────────────────────── */}
+        {tab === 'spelltimers' && (
         <section
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
@@ -929,8 +944,10 @@ export default function SettingsPage(): React.ReactElement {
             </div>
           </div>
         </section>
+        )}
 
         {/* ── Log Files ──────────────────────────────────────────────────── */}
+        {tab === 'logs' && (
         <section
           className="rounded-lg p-4"
           style={{
@@ -955,7 +972,7 @@ export default function SettingsPage(): React.ReactElement {
             )}
           </h2>
           <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Back up and purge your EverQuest log file, keeping only the most recent 7 days of entries. Files over 75 MB are flagged for cleanup.
+            Archives the current EverQuest log file to a <code className="font-mono">.bak.txt</code> next to it, then trims the live log to the last 7 days of entries. Files over 75 MB are flagged for cleanup. Unrelated to the EQ Config Backups tab — that one protects your <code className="font-mono">.ini</code> files.
           </p>
 
           {/* Load file info */}
@@ -1005,7 +1022,7 @@ export default function SettingsPage(): React.ReactElement {
                   }}
                 >
                   <Trash2 size={12} />
-                  Backup &amp; Purge
+                  Archive &amp; Trim
                 </button>
                 <button
                   onClick={() => setLogFileInfo(null)}
@@ -1036,7 +1053,7 @@ export default function SettingsPage(): React.ReactElement {
             <div className="space-y-1">
               <p className="flex items-center gap-1.5 text-xs" style={{ color: '#22c55e' }}>
                 <CheckCircle2 size={12} />
-                Purge complete. Backup saved to:
+                Archive complete. Saved to:
               </p>
               <p className="text-xs font-mono break-all" style={{ color: 'var(--color-muted-foreground)' }}>
                 {cleanupResult}
@@ -1079,6 +1096,7 @@ export default function SettingsPage(): React.ReactElement {
             </div>
           )}
         </section>
+        )}
 
         {/* ── Save / Discard buttons ─────────────────────────────────────── */}
         <div className="flex items-center gap-3">

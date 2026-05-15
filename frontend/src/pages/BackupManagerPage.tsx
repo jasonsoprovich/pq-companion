@@ -877,7 +877,7 @@ export default function BackupManagerPage(): React.ReactElement {
       >
         <HardDrive size={18} style={{ color: 'var(--color-primary)' }} />
         <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
-          Config Backup Manager
+          EQ Config Backups
         </span>
         <div className="ml-auto flex items-center gap-2">
           <button
@@ -940,8 +940,7 @@ export default function BackupManagerPage(): React.ReactElement {
       >
         <Archive size={12} className="shrink-0 mt-0.5" style={{ color: 'var(--color-muted)' }} />
         <p className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
-          Backs up all <code className="font-mono">*.ini</code> files from your EverQuest directory.
-          Lock a backup to protect it from automatic cleanup.
+          Protects your EverQuest <code className="font-mono">*.ini</code> configuration files (UI layout, hotkeys, social macros, etc.). Lock a backup to keep it from automatic cleanup. Unrelated to the Logs tab — that one archives the EQ log file.
         </p>
       </div>
 
