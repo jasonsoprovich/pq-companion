@@ -53,6 +53,7 @@ export interface ElectronAPI {
     selectSoundFile: () => Promise<string | null>
     saveExportBundle: (suggestedName?: string) => Promise<string | null>
     openImportBundle: () => Promise<string | null>
+    openSpellsetsFile: () => Promise<string | null>
   }
   shell: {
     openConfigFolder: () => Promise<string>

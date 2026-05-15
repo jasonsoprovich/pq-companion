@@ -326,6 +326,10 @@ export function updateSpellsets(
   return put<ZealSpellsetsResponse>('/api/zeal/spellsets', { character, spellsets })
 }
 
+export function parseSpellsetsFile(path: string): Promise<ZealSpellsetsResponse> {
+  return post<ZealSpellsetsResponse>('/api/zeal/spellsets/parse-file', { path })
+}
+
 // ── Spell Checklist ────────────────────────────────────────────────────────────
 
 export function getSpellsByClass(

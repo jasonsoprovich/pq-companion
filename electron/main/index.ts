@@ -1139,6 +1139,17 @@ ipcMain.handle('dialog:open-import-bundle', async () => {
   return result.canceled ? null : result.filePaths[0]
 })
 
+ipcMain.handle('dialog:open-spellsets-file', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    title: 'Import Spellsets from .ini',
+    filters: [
+      { name: 'EverQuest Spellsets', extensions: ['ini'] },
+    ],
+  })
+  return result.canceled ? null : result.filePaths[0]
+})
+
 // ── IPC handlers — restart for import application ────────────────────────────
 
 ipcMain.handle('app:relaunch', async () => {

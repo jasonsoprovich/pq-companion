@@ -4,12 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
+
+var spellsetFilenameRe = regexp.MustCompile(`(?i)^(.+?)_spellsets\.ini$`)
 
 type zealHandler struct {
 	watcher *zeal.Watcher
@@ -231,6 +235,44 @@ func (h *zealHandler) updateSpellsets(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(struct {
 		Spellsets *zeal.SpellsetFile `json:"spellsets"`
 	}{Spellsets: reloaded})
+}
+
+// POST /api/zeal/spellsets/parse-file
+// Parses an arbitrary spellsets .ini file path (typically chosen via the
+// Electron file dialog when importing another player's spellsets) without
+// reading it into the EQ-directory cache. The character name is inferred
+// from the filename when possible.
+// Body: {"path": "..."}
+func (h *zealHandler) parseSpellsetsFile(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if body.Path == "" {
+		http.Error(w, `{"error":"path is required"}`, http.StatusBadRequest)
+		return
+	}
+	if !strings.EqualFold(filepath.Ext(body.Path), ".ini") {
+		http.Error(w, `{"error":"file must have .ini extension"}`, http.StatusBadRequest)
+		return
+	}
+
+	character := ""
+	if m := spellsetFilenameRe.FindStringSubmatch(filepath.Base(body.Path)); m != nil {
+		character = m[1]
+	}
+
+	sf, err := zeal.ParseSpellsets(body.Path, character)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"failed to parse: %s"}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+	json.NewEncoder(w).Encode(struct {
+		Spellsets *zeal.SpellsetFile `json:"spellsets"`
+	}{Spellsets: sf})
 }
 
 // GET /api/zeal/spellsets/all

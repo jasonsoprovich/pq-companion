@@ -58,6 +58,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('dialog:save-export-bundle', suggestedName),
     openImportBundle: (): Promise<string | null> =>
       ipcRenderer.invoke('dialog:open-import-bundle'),
+    openSpellsetsFile: (): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:open-spellsets-file'),
   },
   shell: {
     openConfigFolder: (): Promise<string> => ipcRenderer.invoke('shell:open-config-folder'),

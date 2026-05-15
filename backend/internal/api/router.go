@@ -132,6 +132,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/spellsets", zealH.spellsets)
 			r.Put("/spellsets", zealH.updateSpellsets)
 			r.Get("/spellsets/all", zealH.allSpellsets)
+			r.Post("/spellsets/parse-file", zealH.parseSpellsetsFile)
 		})
 		r.Route("/keys", func(r chi.Router) {
 			r.Get("/", keysH.list)
