@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/api"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/appbackup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
@@ -40,6 +41,24 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("config loaded", "path", cfgMgr.Path())
+
+	// Apply any pending app-state import BEFORE opening user.db connections.
+	// Sentinel + staging files live under ~/.pq-companion. A pending import
+	// is the result of the user choosing "Import" in the Backup Manager and
+	// then restarting — the actual file swap happens here so it can run
+	// without DB connections in flight.
+	homeForImport, hErr := os.UserHomeDir()
+	if hErr == nil {
+		appHome := filepath.Join(homeForImport, ".pq-companion")
+		userDBPath := filepath.Join(appHome, "user.db")
+		appBackup := appbackup.New(userDBPath, exeBackupsDir(), appHome, runtimeAppVersion())
+		applied, err := appBackup.ApplyPendingImport()
+		if err != nil {
+			slog.Error("apply pending app import", "err", err)
+		} else if applied {
+			slog.Info("applied pending app-state import; swapped user.db and backups dir")
+		}
+	}
 
 	// CLI flag overrides config file address when explicitly provided.
 	listenAddr := cfgMgr.Get().ServerAddr
@@ -308,7 +327,15 @@ func main() {
 		}
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, actualPort)
+	// Live app-backup manager for export / import endpoints.
+	appBackupMgr := appbackup.New(
+		filepath.Join(home, ".pq-companion", "user.db"),
+		exeBackupsDir(),
+		filepath.Join(home, ".pq-companion"),
+		runtimeAppVersion(),
+	)
+
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {
@@ -349,6 +376,28 @@ func pruneCombatHistory(ctx context.Context, store *combat.HistoryStore, cfgMgr 
 			prune()
 		}
 	}
+}
+
+// exeBackupsDir matches backup.exeBackupDir's logic — the EQ-config backups
+// dir is under the running executable. Kept locally rather than exported
+// from the backup package to avoid creating a public surface for a single
+// caller.
+func exeBackupsDir() string {
+	exe, err := os.Executable()
+	if err == nil {
+		return filepath.Join(filepath.Dir(exe), "backups")
+	}
+	return "backups"
+}
+
+// runtimeAppVersion returns the app version Electron passed via the
+// PQ_APP_VERSION env var when spawning the sidecar. Falls back to "dev"
+// when running standalone (typical during `go run ./cmd/server`).
+func runtimeAppVersion() string {
+	if v := os.Getenv("PQ_APP_VERSION"); v != "" {
+		return v
+	}
+	return "dev"
 }
 
 // defaultDBPath returns the path to quarm.db relative to the executable's
