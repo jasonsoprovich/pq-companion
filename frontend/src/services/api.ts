@@ -68,12 +68,22 @@ async function put<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>
 }
 
-async function del(path: string): Promise<void> {
+async function del<T = void>(path: string): Promise<T> {
   const baseUrl = await getBackendBaseUrl()
   const res = await fetch(`${baseUrl}${path}`, { method: 'DELETE' })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error ?? res.statusText)
+  }
+  // Some endpoints (DELETE /api/app/import) return a small JSON body;
+  // others (DELETE /api/backups/{id}) return 204 with no body. Try to parse,
+  // fall back to undefined for the void case.
+  const text = await res.text()
+  if (!text) return undefined as T
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    return undefined as T
   }
 }
 
@@ -365,6 +375,36 @@ export function unlockBackup(id: string): Promise<void> {
 
 export function pruneBackups(maxBackups: number): Promise<{ deleted: number }> {
   return post<{ deleted: number }>('/api/backups/prune', { max_backups: maxBackups })
+}
+
+// ── App Backup (export/import full app state) ──────────────────────────────────
+
+export interface AppBackupManifest {
+  format_version: number
+  app_version: string
+  exported_at: string
+  files: Array<{ name: string; size_bytes: number; sha256: string }>
+  stats: { backup_count: number; total_size_bytes: number }
+}
+
+export function exportAppBackup(destinationPath: string): Promise<{ bundle_path: string; manifest: AppBackupManifest }> {
+  return post<{ bundle_path: string; manifest: AppBackupManifest }>('/api/app/export', { destination_path: destinationPath })
+}
+
+export function previewAppImport(bundlePath: string): Promise<{ manifest: AppBackupManifest }> {
+  return post<{ manifest: AppBackupManifest }>('/api/app/import/preview', { bundle_path: bundlePath })
+}
+
+export function stageAppImport(bundlePath: string): Promise<{ manifest: AppBackupManifest; restart_required: boolean }> {
+  return post<{ manifest: AppBackupManifest; restart_required: boolean }>('/api/app/import', { bundle_path: bundlePath })
+}
+
+export function getAppImportPending(): Promise<{ pending: boolean }> {
+  return get<{ pending: boolean }>('/api/app/import/pending')
+}
+
+export function cancelAppImport(): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>('/api/app/import')
 }
 
 // ── Log Parser ─────────────────────────────────────────────────────────────────

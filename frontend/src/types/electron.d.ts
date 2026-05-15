@@ -3,6 +3,7 @@
 export interface ElectronAPI {
   app: {
     getVersion: () => Promise<string>
+    relaunch: () => Promise<void>
   }
   backend: {
     getPort: () => Promise<number>
@@ -50,6 +51,8 @@ export interface ElectronAPI {
   dialog: {
     selectFolder: () => Promise<string | null>
     selectSoundFile: () => Promise<string | null>
+    saveExportBundle: (suggestedName?: string) => Promise<string | null>
+    openImportBundle: () => Promise<string | null>
   }
   shell: {
     openConfigFolder: () => Promise<string>

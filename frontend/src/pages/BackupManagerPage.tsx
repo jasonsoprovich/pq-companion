@@ -15,6 +15,8 @@ import {
   Clock,
   Settings,
   Zap,
+  Download,
+  Upload,
 } from 'lucide-react'
 import {
   listBackups,
@@ -26,6 +28,10 @@ import {
   pruneBackups,
   getConfig,
   updateConfig,
+  exportAppBackup,
+  previewAppImport,
+  stageAppImport,
+  type AppBackupManifest,
 } from '../services/api'
 import type { Backup } from '../types/backup'
 import type { Config, BackupSettings } from '../types/config'
@@ -588,6 +594,211 @@ function SettingsPanel({ onClose, onPruned }: SettingsPanelProps): React.ReactEl
   )
 }
 
+// ── App Data Transfer panel ────────────────────────────────────────────────────
+//
+// Exports user.db + every backup zip into a single .pqcb bundle for moving
+// the entire app setup to another device. Import stages the bundle and
+// schedules a restart — the actual file swap happens at next backend startup
+// before any user.db connections open.
+
+function AppTransferPanel({ onClose }: { onClose: () => void }): React.ReactElement {
+  const [busy, setBusy] = useState(false)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [importPreview, setImportPreview] = useState<{ path: string; manifest: AppBackupManifest } | null>(null)
+  const [importStaged, setImportStaged] = useState(false)
+
+  function reset() {
+    setStatusMessage(null)
+    setErrorMessage(null)
+    setImportPreview(null)
+    setImportStaged(false)
+  }
+
+  async function handleExport() {
+    reset()
+    if (!window.electron?.dialog?.saveExportBundle) {
+      setErrorMessage('Export requires the desktop app — not available in browser preview.')
+      return
+    }
+    const dest = await window.electron.dialog.saveExportBundle()
+    if (!dest) return
+    setBusy(true)
+    try {
+      const res = await exportAppBackup(dest)
+      setStatusMessage(`Exported to ${res.bundle_path} (${formatBytes(res.manifest.stats.total_size_bytes)}, ${res.manifest.stats.backup_count} EQ-config backup(s) included).`)
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleChooseImport() {
+    reset()
+    if (!window.electron?.dialog?.openImportBundle) {
+      setErrorMessage('Import requires the desktop app — not available in browser preview.')
+      return
+    }
+    const path = await window.electron.dialog.openImportBundle()
+    if (!path) return
+    setBusy(true)
+    try {
+      const res = await previewAppImport(path)
+      setImportPreview({ path, manifest: res.manifest })
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleConfirmImport() {
+    if (!importPreview) return
+    setBusy(true)
+    setErrorMessage(null)
+    try {
+      await stageAppImport(importPreview.path)
+      setImportStaged(true)
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRestart() {
+    if (!window.electron?.app?.relaunch) {
+      setErrorMessage('Restart requires the desktop app.')
+      return
+    }
+    await window.electron.app.relaunch()
+  }
+
+  return (
+    <div
+      className="rounded-lg border p-4"
+      style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+          Transfer setup to another device
+        </span>
+        <button
+          onClick={onClose}
+          className="rounded p-1"
+          style={{ color: 'var(--color-muted-foreground)' }}
+          title="Close"
+        >
+          <X size={14} />
+        </button>
+      </div>
+      <p className="text-[11px] mb-3" style={{ color: 'var(--color-muted-foreground)' }}>
+        Export bundles your entire app setup — characters, triggers, combat history, AAs, tasks, and every EQ-config backup zip — into a single <code className="font-mono">.pqcb</code> file. Import it on another device after installing the app to restore everything.
+      </p>
+
+      {/* Export */}
+      <div className="flex items-center gap-2 mb-3">
+        <button
+          onClick={handleExport}
+          disabled={busy || importStaged}
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium disabled:opacity-50"
+          style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-background)' }}
+        >
+          <Download size={11} />
+          Export app data
+        </button>
+        <button
+          onClick={handleChooseImport}
+          disabled={busy || importStaged}
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded disabled:opacity-50"
+          style={{
+            backgroundColor: 'var(--color-surface-2)',
+            color: 'var(--color-foreground)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          <Upload size={11} />
+          Import from bundle…
+        </button>
+      </div>
+
+      {/* Preview / confirm */}
+      {importPreview && !importStaged && (
+        <div
+          className="rounded border p-3 mb-2 text-[11px]"
+          style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)' }}
+        >
+          <p className="font-semibold mb-1" style={{ color: 'var(--color-foreground)' }}>
+            Confirm import
+          </p>
+          <p>
+            Bundle exported {importPreview.manifest.exported_at} by app version {importPreview.manifest.app_version}.
+          </p>
+          <p>
+            Contains {importPreview.manifest.stats.backup_count} EQ-config backup(s), {formatBytes(importPreview.manifest.stats.total_size_bytes)} total.
+          </p>
+          <p className="mt-2" style={{ color: 'var(--color-danger)' }}>
+            This will replace your current app data on next restart. The current user.db and backups folder will be renamed aside (with a <code className="font-mono">.preimport</code> suffix) for recovery, not deleted.
+          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              onClick={handleConfirmImport}
+              disabled={busy}
+              className="text-xs px-2 py-1 rounded disabled:opacity-50"
+              style={{ backgroundColor: 'var(--color-danger)', color: 'var(--color-background)' }}
+            >
+              Stage import
+            </button>
+            <button
+              onClick={() => setImportPreview(null)}
+              disabled={busy}
+              className="text-xs px-2 py-1 rounded"
+              style={{ backgroundColor: 'transparent', color: 'var(--color-muted-foreground)' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Staged — needs restart */}
+      {importStaged && (
+        <div
+          className="rounded border p-3 text-[11px]"
+          style={{ borderColor: 'var(--color-primary)', backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)' }}
+        >
+          <p className="font-semibold mb-1" style={{ color: 'var(--color-foreground)' }}>
+            Import staged — restart required
+          </p>
+          <p className="mb-2">
+            The bundle's files are ready. Restart the app now to apply them. The swap happens before any database connection opens, so it's safe.
+          </p>
+          <button
+            onClick={handleRestart}
+            className="text-xs px-3 py-1.5 rounded font-medium"
+            style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-background)' }}
+          >
+            Restart now
+          </button>
+        </div>
+      )}
+
+      {/* Status / error */}
+      {statusMessage && (
+        <p className="text-[11px] mt-2" style={{ color: 'var(--color-success)' }}>
+          {statusMessage}
+        </p>
+      )}
+      {errorMessage && (
+        <p className="text-[11px] mt-2" style={{ color: 'var(--color-danger)' }}>
+          {errorMessage}
+        </p>
+      )}
+    </div>
+  )
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function BackupManagerPage(): React.ReactElement {
@@ -596,6 +807,7 @@ export default function BackupManagerPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showTransfer, setShowTransfer] = useState(false)
   const navigate = useNavigate()
 
   const load = useCallback(() => {
@@ -681,7 +893,19 @@ export default function BackupManagerPage(): React.ReactElement {
             Refresh
           </button>
           <button
-            onClick={() => { setShowSettings((v) => !v); setShowCreate(false) }}
+            onClick={() => { setShowTransfer((v) => !v); setShowCreate(false); setShowSettings(false) }}
+            title="Export / Import full app data"
+            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+            style={{
+              backgroundColor: showTransfer ? 'var(--color-primary)' : 'var(--color-surface-2)',
+              color: showTransfer ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              border: `1px solid ${showTransfer ? 'transparent' : 'var(--color-border)'}`,
+            }}
+          >
+            <Download size={11} />
+          </button>
+          <button
+            onClick={() => { setShowSettings((v) => !v); setShowCreate(false); setShowTransfer(false) }}
             className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
             style={{
               backgroundColor: showSettings ? 'var(--color-primary)' : 'var(--color-surface-2)',
@@ -692,7 +916,7 @@ export default function BackupManagerPage(): React.ReactElement {
             <Settings size={11} />
           </button>
           <button
-            onClick={() => { setShowCreate((v) => !v); setShowSettings(false) }}
+            onClick={() => { setShowCreate((v) => !v); setShowSettings(false); setShowTransfer(false) }}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium"
             style={{
               backgroundColor: showCreate ? 'var(--color-surface-2)' : 'var(--color-primary)',
@@ -723,6 +947,11 @@ export default function BackupManagerPage(): React.ReactElement {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
+
+        {/* App transfer panel (inline) */}
+        {showTransfer && (
+          <AppTransferPanel onClose={() => setShowTransfer(false)} />
+        )}
 
         {/* Settings panel (inline) */}
         {showSettings && (
