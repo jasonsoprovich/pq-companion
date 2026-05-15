@@ -315,17 +315,64 @@ function uniqueName(base: string, taken: Set<string>): string {
 
 type ImportAction = 'import' | 'overwrite' | 'rename' | 'skip'
 
+interface IneligibleGem {
+  slot: number  // 0-based
+  spellId: number
+  spellName: string  // best-effort; falls back to "#<id>" when unresolved
+  reason: 'unknown_spell' | 'wrong_class' | 'level_too_low' | 'not_in_spellbook'
+  requiredLevel?: number  // populated for level_too_low
+}
+
 interface ImportRow {
   source: Spellset
   // Pre-computed conflicts against the target file at modal-open time.
   contentDupOf: string | null  // existing spellset name with same gem layout
   nameConflict: boolean
+  // Gems the target character cannot cast. If non-empty the whole row is
+  // locked to 'skip' since activating an ineligible spellset in-game errors.
+  ineligible: IneligibleGem[]
   // User's chosen action. Defaults set by buildImportRows().
   action: ImportAction
   renameTo: string  // used when action === 'rename' or no name conflict and user edits
 }
 
-function buildImportRows(incoming: Spellset[], existing: Spellset[]): ImportRow[] {
+interface EligibilityContext {
+  classIndex: number  // -1 when unknown — skips class/level checks (mirrors SlotPicker)
+  characterLevel: number  // 0 when unknown — skips level cap check
+  knownIds: Set<number>
+  spellsById: Map<number, Spell>
+}
+
+function checkSpellEligibility(
+  spellId: number,
+  ctx: EligibilityContext,
+): Omit<IneligibleGem, 'slot'> | null {
+  const spell = ctx.spellsById.get(spellId)
+  if (!spell) {
+    return { spellId, spellName: `#${spellId}`, reason: 'unknown_spell' }
+  }
+  // When class is unknown we can't enforce class/level — fall through to
+  // the spellbook check, matching the SlotPicker fallback.
+  if (ctx.classIndex >= 0) {
+    const reqLevel = spell.class_levels?.[ctx.classIndex] ?? 255
+    if (reqLevel >= 254) {
+      return { spellId, spellName: spell.name, reason: 'wrong_class' }
+    }
+    if (ctx.characterLevel > 0 && reqLevel > ctx.characterLevel) {
+      return { spellId, spellName: spell.name, reason: 'level_too_low', requiredLevel: reqLevel }
+    }
+  }
+  if (!ctx.knownIds.has(spellId)) {
+    return { spellId, spellName: spell.name, reason: 'not_in_spellbook' }
+  }
+  return null
+}
+
+function buildImportRows(
+  incoming: Spellset[],
+  existing: Spellset[],
+  ctx: EligibilityContext,
+): ImportRow[] {
   const existingByName = new Map(existing.map((s) => [s.name, s]))
   const existingBySig = new Map<string, string>()
   for (const s of existing) existingBySig.set(spellsetSignature(s), s.name)
@@ -334,18 +381,42 @@ function buildImportRows(incoming: Spellset[], existing: Spellset[]): ImportRow[
     const sig = spellsetSignature(s)
     const dupOf = existingBySig.get(sig) ?? null
     const nameConflict = existingByName.has(s.name)
+
+    const ineligible: IneligibleGem[] = []
+    s.spell_ids.forEach((id, slot) => {
+      if (id <= 0) return  // -1 / empty gem is fine
+      const result = checkSpellEligibility(id, ctx)
+      if (result) ineligible.push({ slot, ...result })
+    })
+
     let action: ImportAction
-    if (dupOf) action = 'skip'
+    if (ineligible.length > 0) action = 'skip'
+    else if (dupOf) action = 'skip'
     else if (nameConflict) action = 'rename'
     else action = 'import'
+
     return {
       source: s,
       contentDupOf: dupOf,
       nameConflict,
+      ineligible,
       action,
       renameTo: s.name,
     }
   })
+}
+
+function ineligibleReasonText(g: IneligibleGem): string {
+  switch (g.reason) {
+    case 'unknown_spell':
+      return 'unknown spell'
+    case 'wrong_class':
+      return 'not castable by this class'
+    case 'level_too_low':
+      return `requires level ${g.requiredLevel}`
+    case 'not_in_spellbook':
+      return 'not in spellbook'
+  }
 }
 
 interface ImportReviewModalProps {
@@ -470,23 +541,51 @@ function ImportReviewModal({
                     <select
                       value={r.action}
                       onChange={(e) => setRow(i, { action: e.target.value as ImportAction })}
-                      className="text-xs rounded px-2 py-1"
+                      disabled={r.ineligible.length > 0}
+                      className="text-xs rounded px-2 py-1 disabled:opacity-60 disabled:cursor-not-allowed"
                       style={{
                         backgroundColor: 'var(--color-surface)',
                         color: 'var(--color-foreground)',
                         border: '1px solid var(--color-border)',
                       }}
+                      title={r.ineligible.length > 0 ? 'Cannot import: contains ineligible spells' : undefined}
                     >
-                      {!r.contentDupOf && !r.nameConflict && (
+                      {r.ineligible.length === 0 && !r.contentDupOf && !r.nameConflict && (
                         <option value="import">Import</option>
                       )}
-                      {r.nameConflict && <option value="overwrite">Overwrite existing</option>}
-                      <option value="rename">Import as new name</option>
+                      {r.ineligible.length === 0 && r.nameConflict && (
+                        <option value="overwrite">Overwrite existing</option>
+                      )}
+                      {r.ineligible.length === 0 && (
+                        <option value="rename">Import as new name</option>
+                      )}
                       <option value="skip">Skip</option>
                     </select>
                   </div>
 
-                  {r.contentDupOf && (
+                  {r.ineligible.length > 0 && (
+                    <div
+                      className="mt-2 text-[11px]"
+                      style={{ color: 'var(--color-danger, #ef4444)' }}
+                    >
+                      <div className="flex items-start gap-1">
+                        <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                        <span>
+                          Cannot import — {r.ineligible.length} gem
+                          {r.ineligible.length === 1 ? '' : 's'} ineligible for {targetCharacter}:
+                        </span>
+                      </div>
+                      <ul className="mt-1 ml-4 list-disc">
+                        {r.ineligible.map((g) => (
+                          <li key={g.slot}>
+                            Gem {g.slot + 1}: <strong>{g.spellName}</strong> — {ineligibleReasonText(g)}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {r.ineligible.length === 0 && r.contentDupOf && (
                     <div
                       className="mt-2 text-[11px] flex items-start gap-1"
                       style={{ color: 'var(--color-warning, #f59e0b)' }}
@@ -497,7 +596,7 @@ function ImportReviewModal({
                       </span>
                     </div>
                   )}
-                  {!r.contentDupOf && r.nameConflict && (
+                  {r.ineligible.length === 0 && !r.contentDupOf && r.nameConflict && (
                     <div
                       className="mt-2 text-[11px] flex items-start gap-1"
                       style={{ color: 'var(--color-warning, #f59e0b)' }}
@@ -1149,10 +1248,39 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
         setError(`That file is ${viewedFile.character}'s own spellsets — use Refresh to reload from disk.`)
         return
       }
+
+      // The eligibility check needs each incoming spell's class_levels. The
+      // class catalog + already-resolved off-class spells cover most cases,
+      // but anything else (typically spells the target character can't cast)
+      // must be fetched so we can label them properly instead of marking
+      // them all "unknown spell".
+      const importedIds = new Set<number>()
+      for (const set of sourceFile.spellsets) {
+        for (const id of set.spell_ids) {
+          if (id > 0 && !spellsById.has(id)) importedIds.add(id)
+        }
+      }
+      let lookup = spellsById
+      if (importedIds.size > 0) {
+        const fetched = await Promise.all(
+          [...importedIds].map((id) => getSpell(id).catch(() => null)),
+        )
+        lookup = new Map(spellsById)
+        for (const s of fetched) {
+          if (s && typeof s.id === 'number') lookup.set(s.id, s)
+        }
+      }
+
+      const ctx: EligibilityContext = {
+        classIndex,
+        characterLevel,
+        knownIds,
+        spellsById: lookup,
+      }
       setImportState({
         sourceCharacter: sourceFile.character || '',
         targetCharacter: viewedFile.character,
-        rows: buildImportRows(sourceFile.spellsets, viewedFile.spellsets),
+        rows: buildImportRows(sourceFile.spellsets, viewedFile.spellsets, ctx),
       })
     } catch (err) {
       setError(`Failed to parse spellsets file: ${(err as Error).message}`)
@@ -1175,6 +1303,7 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
 
         for (const r of rows) {
           if (r.action === 'skip') continue
+          if (r.ineligible.length > 0) continue
           if (r.action === 'overwrite') {
             const idx = next.findIndex((s) => s.name === r.source.name)
             if (idx >= 0) next[idx] = { ...r.source, spell_ids: r.source.spell_ids.slice() }
