@@ -151,15 +151,35 @@ func main() {
 	go zealWatcher.RefreshAllPersonas()
 	go zealWatcher.Start(context.Background())
 
-	// Zeal IPC supervisor: discovers the eqgame.exe Zeal pipe and reads live
-	// game-state events. Stage A integration is scaffolding only — the event
-	// handler is a no-op until target/HP integration lands in a follow-up.
-	pipeSupervisor := zealpipe.NewSupervisor(nil)
-	go pipeSupervisor.Start(context.Background())
-
 	// NPC overlay tracker: watches log events to infer the current combat target
 	// and broadcasts overlay:npc_target WebSocket events with full NPC data.
 	npcTracker := overlay.NewNPCTracker(hub, database)
+
+	// Zeal IPC supervisor: discovers the eqgame.exe Zeal pipe and forwards live
+	// target labels into the NPC overlay tracker so the overlay updates in real
+	// time (~100 ms) instead of waiting on log-derived combat or /con events.
+	// All other label/gauge events are dropped here for now — Stages B–E will
+	// hook in additional consumers (target HP bar, group panel, triggers).
+	pipeSupervisor := zealpipe.NewSupervisor(func(env zealpipe.Envelope) {
+		if env.Type != zealpipe.MsgLabel {
+			return
+		}
+		labels, err := zealpipe.DecodeLabels(env.Data)
+		if err != nil {
+			return
+		}
+		for _, l := range labels {
+			if l.Type != zealpipe.LabelTargetName {
+				continue
+			}
+			if l.Value == "" {
+				npcTracker.ClearPipeTarget()
+			} else {
+				npcTracker.SetPipeTarget(l.Value)
+			}
+		}
+	})
+	go pipeSupervisor.Start(context.Background())
 
 	// Forward declaration so the tailer pointer can be referenced inside the
 	// closures passed to the combat tracker and timer engine. The tailer is

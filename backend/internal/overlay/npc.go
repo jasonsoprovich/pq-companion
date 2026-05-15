@@ -114,6 +114,27 @@ func (t *NPCTracker) Handle(ev logparser.LogEvent) {
 	}
 }
 
+// SetPipeTarget pushes a target name from the ZealPipe IPC into the same
+// downstream path that /con-driven and combat-driven updates use. Identical
+// names back-to-back are de-duped by setTarget, so the pipe's ~10 Hz cadence
+// doesn't cause repeated DB lookups or broadcasts. An empty name is a no-op
+// (clearing is handled separately via ClearPipeTarget so the pipe stream's
+// transient empties don't fight log-driven state).
+func (t *NPCTracker) SetPipeTarget(displayName string) {
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return
+	}
+	t.setTarget(displayName)
+}
+
+// ClearPipeTarget clears the current target. Called when the pipe reports an
+// explicit empty target (player deselected) — faster than waiting for a log
+// signal.
+func (t *NPCTracker) ClearPipeTarget() {
+	t.clearTarget()
+}
+
 // GetState returns a point-in-time snapshot of the current target state.
 func (t *NPCTracker) GetState() TargetState {
 	t.mu.RLock()
