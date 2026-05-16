@@ -23,7 +23,12 @@ func dialPlatform(ctx context.Context, pipeName string) (io.ReadCloser, error) {
 	}
 	dialCtx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
-	conn, err := winio.DialPipeContext(dialCtx, pipeName)
+	// Zeal creates its pipe with PIPE_ACCESS_OUTBOUND (server writes, client
+	// reads) — see Zeal/named_pipe.cpp:486. winio.DialPipe / DialPipeContext
+	// default to GENERIC_READ|GENERIC_WRITE, which the kernel rejects on an
+	// outbound-only pipe with ERROR_ACCESS_DENIED. Request read-only access
+	// explicitly so the dial succeeds.
+	conn, err := winio.DialPipeAccess(dialCtx, pipeName, windows.GENERIC_READ)
 	if err != nil {
 		return nil, fmt.Errorf("zealpipe: dial %s: %w", pipeName, err)
 	}
