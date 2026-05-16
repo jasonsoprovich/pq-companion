@@ -155,43 +155,6 @@ func main() {
 	// and broadcasts overlay:npc_target WebSocket events with full NPC data.
 	npcTracker := overlay.NewNPCTracker(hub, database)
 
-	// Zeal IPC supervisor: discovers the eqgame.exe Zeal pipe and forwards live
-	// target labels into the NPC overlay tracker so the overlay updates in real
-	// time (~100 ms) instead of waiting on log-derived combat or /con events.
-	// Stage B: also forward target HP% and pet owner. Other label/gauge events
-	// are dropped here for now — Stages C–E will hook in additional consumers.
-	pipeSupervisor := zealpipe.NewSupervisor(func(env zealpipe.Envelope) {
-		if env.Type != zealpipe.MsgLabel {
-			return
-		}
-		labels, err := zealpipe.DecodeLabels(env.Data)
-		if err != nil {
-			return
-		}
-		for _, l := range labels {
-			switch l.Type {
-			case zealpipe.LabelTargetName:
-				if l.Value == "" {
-					npcTracker.ClearPipeTarget()
-				} else {
-					npcTracker.SetPipeTarget(l.Value)
-				}
-			case zealpipe.LabelTargetHPPerc:
-				if n, err := strconv.Atoi(strings.TrimSpace(l.Value)); err == nil {
-					npcTracker.SetPipeHPPercent(n)
-				}
-			case zealpipe.LabelTargetPetOwner:
-				npcTracker.SetPipePetOwner(l.Value)
-			}
-		}
-	})
-	pipeSupervisor.OnDisconnect(func() {
-		// Drop pipe-only target state (HP%, pet owner) so the overlay HP bar
-		// disappears when Zeal goes away; log-driven targeting stays active.
-		npcTracker.ResetPipeFields()
-	})
-	go pipeSupervisor.Start(context.Background())
-
 	// Forward declaration so the tailer pointer can be referenced inside the
 	// closures passed to the combat tracker and timer engine. The tailer is
 	// created below after both are wired up.
@@ -209,6 +172,49 @@ func main() {
 		}
 		return cfgMgr.Get().Character
 	})
+
+	// Zeal IPC supervisor: discovers the eqgame.exe Zeal pipe and forwards live
+	// state into the NPC overlay tracker AND the combat tracker so both
+	// downstream consumers benefit from real-time, authoritative game data
+	// instead of log inference. Stage A: target name. Stage B: target HP%,
+	// pet owner. Stage C: feed target + player pet name into combat tracker
+	// for authoritative damage attribution.
+	pipeSupervisor := zealpipe.NewSupervisor(func(env zealpipe.Envelope) {
+		if env.Type != zealpipe.MsgLabel {
+			return
+		}
+		labels, err := zealpipe.DecodeLabels(env.Data)
+		if err != nil {
+			return
+		}
+		for _, l := range labels {
+			switch l.Type {
+			case zealpipe.LabelTargetName:
+				if l.Value == "" {
+					npcTracker.ClearPipeTarget()
+				} else {
+					npcTracker.SetPipeTarget(l.Value)
+				}
+				combatTracker.SetPipeTarget(l.Value)
+			case zealpipe.LabelTargetHPPerc:
+				if n, err := strconv.Atoi(strings.TrimSpace(l.Value)); err == nil {
+					npcTracker.SetPipeHPPercent(n)
+				}
+			case zealpipe.LabelTargetPetOwner:
+				npcTracker.SetPipePetOwner(l.Value)
+			case zealpipe.LabelPlayerPetName:
+				combatTracker.SetPipePetName(l.Value)
+			}
+		}
+	})
+	pipeSupervisor.OnDisconnect(func() {
+		// Drop pipe-only state from both trackers so stale values don't
+		// linger after Zeal goes away. Log-driven targeting and pet binding
+		// continue to work via the normal Handle() path.
+		npcTracker.ResetPipeFields()
+		combatTracker.ResetPipeState()
+	})
+	go pipeSupervisor.Start(context.Background())
 
 	// Combat history store: persists every archived fight to user.db so the
 	// in-memory ring buffer is no longer the only record. Failure here is

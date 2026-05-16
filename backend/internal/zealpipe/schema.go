@@ -69,6 +69,8 @@ const (
 	LabelBuff14           LabelType = 59
 	LabelSpellSlot0       LabelType = 60
 	LabelSpellSlot7       LabelType = 67
+	LabelPlayerPetName    LabelType = 68
+	LabelPlayerPetHPPerc  LabelType = 69
 	LabelTargetPetOwner   LabelType = 82
 	LabelMana             LabelType = 124
 	LabelMaxMana          LabelType = 125

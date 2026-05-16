@@ -1549,3 +1549,108 @@ func TestRealOsuiLogTrackerIntegration(t *testing.T) {
 		t.Errorf("expected 0 zero-damage archived fights, got %d", zeroSeen)
 	}
 }
+
+// TestPipeTargetDisambiguatesAmbiguousHit confirms that the Zeal pipe target
+// breaks ties when neither verifiedPlayer asymmetry nor looksLikeNPC can
+// decide which side of a hit is the NPC. Both names look like single-word
+// player-style names with no prior history; without the pipe hint, the
+// hit would be dropped by the "both ambiguous" rule at the end of
+// resolveNPC.
+func TestPipeTargetDisambiguatesAmbiguousHit(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	// Set the pipe target to disambiguate. The player is targeting "Sandrian"
+	// so any hit involving Sandrian as one side should attribute to Sandrian.
+	tr.SetPipeTarget("Sandrian")
+
+	// Both names are single capitalised words — neither matches looksLikeNPC
+	// and neither is a verifiedPlayer. Without the pipe hint, resolveNPC
+	// returns "" and the event is dropped.
+	tr.Handle(hitEvent("Sandrian", "Bloog", 100, now))
+
+	if f := activeFightFor(tr, "Sandrian"); f == nil {
+		t.Fatal("expected an active fight against Sandrian (pipe target), got none")
+	}
+	if c := activeFightCount(tr); c != 1 {
+		t.Errorf("expected exactly 1 active fight, got %d", c)
+	}
+}
+
+// TestPipeTargetClearedAllowsHeuristicsAgain confirms that ResetPipeState
+// removes the pipe hint so subsequent ambiguous hits revert to the dropped-
+// event behaviour they had before pipe data was available.
+func TestPipeTargetClearedAllowsHeuristicsAgain(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.SetPipeTarget("Sandrian")
+	tr.ResetPipeState()
+
+	tr.Handle(hitEvent("Sandrian", "Bloog", 100, now))
+	if f := activeFightFor(tr, "Sandrian"); f != nil {
+		t.Errorf("expected no Sandrian fight after pipe reset; heuristic claimed one")
+	}
+}
+
+// TestPipePetNameRegistersOwner confirms that the pipe's authoritative pet
+// name is recorded in petOwners under the active character, so the pet's
+// outgoing damage routes to the correct fight.
+func TestPipePetNameRegistersOwner(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Osui" })
+
+	tr.SetPipePetName("Wisp Watcher")
+
+	tr.mu.Lock()
+	owner, ok := tr.petOwners["Wisp Watcher"]
+	tr.mu.Unlock()
+	if !ok {
+		t.Fatal("expected petOwners to contain Wisp Watcher")
+	}
+	if owner != "Osui" {
+		t.Errorf("expected owner=Osui, got %q", owner)
+	}
+
+	// Switching to a new pet name should drop the old binding (since we own it).
+	tr.SetPipePetName("Aery Familiar")
+	tr.mu.Lock()
+	_, oldStillThere := tr.petOwners["Wisp Watcher"]
+	_, newPresent := tr.petOwners["Aery Familiar"]
+	tr.mu.Unlock()
+	if oldStillThere {
+		t.Error("old pet binding should have been revoked on rename")
+	}
+	if !newPresent {
+		t.Error("new pet binding should be present after rename")
+	}
+}
+
+// TestPipePetNameRespectsLogBindings confirms that ResetPipeState only
+// revokes pipe-set bindings — log-driven bindings (e.g. from "My leader is X"
+// announcements) survive a pipe disconnect.
+func TestPipePetNameRespectsLogBindings(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Osui" })
+
+	// Simulate a log-driven binding under a different owner.
+	tr.mu.Lock()
+	tr.petOwners["Guard Dog"] = "AnotherPlayer"
+	tr.mu.Unlock()
+
+	tr.SetPipePetName("Wisp Watcher")
+	tr.ResetPipeState()
+
+	tr.mu.Lock()
+	_, pipeGone := tr.petOwners["Wisp Watcher"]
+	other, otherStill := tr.petOwners["Guard Dog"]
+	tr.mu.Unlock()
+	if pipeGone {
+		t.Error("pipe pet binding should be cleared on reset")
+	}
+	if !otherStill || other != "AnotherPlayer" {
+		t.Error("log-driven pet binding should survive pipe reset")
+	}
+}

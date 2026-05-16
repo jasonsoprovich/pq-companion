@@ -223,6 +223,19 @@ type Tracker struct {
 	// Optional: tests that don't care about persistence leave it nil and the
 	// archive path no-ops on the store call.
 	historyStore *HistoryStore
+
+	// pipeTarget is the live target name reported by the Zeal IPC pipe. Used
+	// by resolveNPC as a tiebreaker when the verifiedPlayer / looksLikeNPC
+	// heuristics can't decide which side of a hit is the hostile NPC.
+	// Empty when no pipe data is available or no target is selected.
+	pipeTarget string
+
+	// pipePetName is the player's authoritative pet name as last reported by
+	// LabelPlayerPetName. When non-empty, an entry exists in petOwners keyed
+	// by this name with the active character as owner. Tracked separately so
+	// pipe-driven changes can revoke the prior binding without disturbing
+	// log-driven entries.
+	pipePetName string
 }
 
 // SetHistoryStore wires the persistent fight history store. Called once at
@@ -232,6 +245,63 @@ func (t *Tracker) SetHistoryStore(s *HistoryStore) {
 	t.mu.Lock()
 	t.historyStore = s
 	t.mu.Unlock()
+}
+
+// SetPipeTarget records the live target name from Zeal LabelTargetName.
+// resolveNPC consults this value as a tiebreaker before falling back to the
+// structural looksLikeNPC heuristic. Empty clears the binding (called on
+// pipe disconnect or when the player has no target).
+func (t *Tracker) SetPipeTarget(name string) {
+	name = strings.TrimSpace(name)
+	t.mu.Lock()
+	t.pipeTarget = name
+	t.mu.Unlock()
+}
+
+// SetPipePetName records the player's authoritative pet name from Zeal
+// LabelPlayerPetName. When non-empty, a petOwners entry is created so any
+// outgoing damage from that pet routes to the correct fight (rather than
+// being mis-classified as third-party combat). When the pet name changes,
+// the prior pipe-registered entry is revoked — but only if WE set it,
+// preserving log-driven bindings already in place.
+func (t *Tracker) SetPipePetName(name string) {
+	name = strings.TrimSpace(name)
+	owner := t.playerName()
+	if owner == "" {
+		owner = "You"
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pipePetName != "" && t.pipePetName != name {
+		// Revoke the previous pipe binding only if it still points at us —
+		// avoids clobbering an entry that a log event has since changed.
+		if existing, ok := t.petOwners[t.pipePetName]; ok && existing == owner {
+			delete(t.petOwners, t.pipePetName)
+		}
+	}
+	t.pipePetName = name
+	if name != "" {
+		t.petOwners[name] = owner
+	}
+}
+
+// ResetPipeState clears all pipe-driven tracker state. Called from the
+// supervisor's OnDisconnect hook so a stale pipe target or pet binding
+// doesn't continue to influence attribution after Zeal goes away.
+func (t *Tracker) ResetPipeState() {
+	owner := t.playerName()
+	if owner == "" {
+		owner = "You"
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pipePetName != "" {
+		if existing, ok := t.petOwners[t.pipePetName]; ok && existing == owner {
+			delete(t.petOwners, t.pipePetName)
+		}
+	}
+	t.pipeTarget = ""
+	t.pipePetName = ""
 }
 
 // maxPendingCritsPerActor caps the per-actor crit queue. In practice the
@@ -498,6 +568,21 @@ func (t *Tracker) resolveNPC(actor, target string) string {
 	}
 	if actorPlayer && !targetPlayer {
 		return target
+	}
+
+	// Rule 4.5: Zeal pipe target asymmetry. When one side of the hit exactly
+	// matches the player's currently-selected target as reported by the
+	// pipe, treat that side as the NPC. This is more authoritative than the
+	// structural looksLikeNPC heuristic — the pipe reflects real-time game
+	// state — and reliably disambiguates AoE/multi-mob pulls where the log
+	// alone can't tell which mob a given hit "belongs to".
+	if t.pipeTarget != "" {
+		if target == t.pipeTarget {
+			return target
+		}
+		if actor == t.pipeTarget {
+			return actor
+		}
 	}
 
 	// Rule 5: looksLikeNPC / confirmedHostile asymmetry. Prefer target on
