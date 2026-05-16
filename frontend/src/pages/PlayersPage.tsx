@@ -292,11 +292,26 @@ export default function PlayersPage(): React.ReactElement {
       {/* Detail panel */}
       <div className="flex-1 overflow-y-auto p-4">
         {selected && (
-          <PlayerDetail
-            player={selected}
-            onClose={() => setSelected(null)}
-            onDeleted={() => load()}
-          />
+          <div
+            style={{
+              position: 'sticky',
+              top: -16, // counter the parent's p-4 padding so the panel sits flush with the top edge while sticky
+              zIndex: 10,
+              marginTop: -16,
+              marginLeft: -16,
+              marginRight: -16,
+              padding: 16,
+              backgroundColor: 'var(--color-background)',
+              borderBottom: '1px solid var(--color-border)',
+              marginBottom: 16,
+            }}
+          >
+            <PlayerDetail
+              player={selected}
+              onClose={() => setSelected(null)}
+              onDeleted={() => load()}
+            />
+          </div>
         )}
 
         {/* Body states */}
