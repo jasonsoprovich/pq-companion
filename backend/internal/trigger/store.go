@@ -68,7 +68,9 @@ func (s *Store) migrate() error {
 			display_threshold_secs INTEGER NOT NULL DEFAULT 0,
 			characters             TEXT    NOT NULL DEFAULT '[]',
 			timer_alerts           TEXT    NOT NULL DEFAULT '[]',
-			exclude_patterns       TEXT    NOT NULL DEFAULT '[]'
+			exclude_patterns       TEXT    NOT NULL DEFAULT '[]',
+			source                 TEXT    NOT NULL DEFAULT 'log',
+			pipe_condition         TEXT    NOT NULL DEFAULT ''
 		)
 	`); err != nil {
 		return err
@@ -95,6 +97,8 @@ func (s *Store) migrate() error {
 		`ALTER TABLE triggers ADD COLUMN characters TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE triggers ADD COLUMN timer_alerts TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE triggers ADD COLUMN exclude_patterns TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE triggers ADD COLUMN source TEXT NOT NULL DEFAULT 'log'`,
+		`ALTER TABLE triggers ADD COLUMN pipe_condition TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range addColumns {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
@@ -166,14 +170,17 @@ func (s *Store) Insert(t *Trigger) error {
 	if t.TimerType == "" {
 		t.TimerType = TimerTypeNone
 	}
+	source, pipeJSON := normalizeSourceAndCondition(t)
 	_, err = s.db.Exec(
 		`INSERT INTO triggers (id, name, enabled, pattern, actions, pack_name, created_at,
 		                       timer_type, timer_duration_secs, worn_off_pattern, spell_id,
-		                       display_threshold_secs, characters, timer_alerts, exclude_patterns)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       display_threshold_secs, characters, timer_alerts, exclude_patterns,
+		                       source, pipe_condition)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName, t.CreatedAt.Unix(),
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
+		source, pipeJSON,
 	)
 	if err != nil {
 		return fmt.Errorf("insert trigger: %w", err)
@@ -181,12 +188,33 @@ func (s *Store) Insert(t *Trigger) error {
 	return nil
 }
 
+// normalizeSourceAndCondition resolves the persisted Source value (defaults
+// to "log" when empty) and marshals the optional PipeCondition to JSON. A
+// nil PipeCondition serializes as the empty string so the column reads back
+// cleanly. Pipe-source triggers must have a non-nil PipeCondition; the
+// engine ignores any whose JSON fails to parse.
+func normalizeSourceAndCondition(t *Trigger) (string, string) {
+	src := t.Source
+	if src == "" {
+		src = SourceLog
+	}
+	if t.PipeCondition == nil {
+		return src, ""
+	}
+	b, err := json.Marshal(t.PipeCondition)
+	if err != nil {
+		return src, ""
+	}
+	return src, string(b)
+}
+
 // List returns all triggers ordered by creation time ascending.
 func (s *Store) List() ([]*Trigger, error) {
 	rows, err := s.db.Query(
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
-		        display_threshold_secs, characters, timer_alerts, exclude_patterns
+		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
+		        source, pipe_condition
 		 FROM triggers ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -210,7 +238,8 @@ func (s *Store) Get(id string) (*Trigger, error) {
 	row := s.db.QueryRow(
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
-		        display_threshold_secs, characters, timer_alerts, exclude_patterns
+		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
+		        source, pipe_condition
 		 FROM triggers WHERE id = ?`, id,
 	)
 	t, err := scanTrigger(row)
@@ -253,14 +282,17 @@ func (s *Store) Update(t *Trigger) error {
 	if t.TimerType == "" {
 		t.TimerType = TimerTypeNone
 	}
+	source, pipeJSON := normalizeSourceAndCondition(t)
 	res, err := s.db.Exec(
 		`UPDATE triggers SET name=?, enabled=?, pattern=?, actions=?, pack_name=?,
 		                     timer_type=?, timer_duration_secs=?, worn_off_pattern=?, spell_id=?,
-		                     display_threshold_secs=?, characters=?, timer_alerts=?, exclude_patterns=?
+		                     display_threshold_secs=?, characters=?, timer_alerts=?, exclude_patterns=?,
+		                     source=?, pipe_condition=?
 		 WHERE id=?`,
 		t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName,
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
+		source, pipeJSON,
 		t.ID,
 	)
 	if err != nil {
@@ -295,7 +327,8 @@ func (s *Store) FindByPackAndName(packName, name string) (*Trigger, error) {
 	row := s.db.QueryRow(
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
-		        display_threshold_secs, characters, timer_alerts, exclude_patterns
+		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
+		        source, pipe_condition
 		 FROM triggers WHERE pack_name = ? AND name = ? LIMIT 1`,
 		packName, name,
 	)
@@ -362,15 +395,26 @@ type scanner interface {
 func scanTrigger(row scanner) (*Trigger, error) {
 	var t Trigger
 	var enabledInt int
-	var actJSON, charJSON, alertJSON, excludeJSON string
+	var actJSON, charJSON, alertJSON, excludeJSON, source, pipeJSON string
 	var unixSec int64
 	var timerType string
 	if err := row.Scan(
 		&t.ID, &t.Name, &enabledInt, &t.Pattern, &actJSON, &t.PackName, &unixSec,
 		&timerType, &t.TimerDurationSecs, &t.WornOffPattern, &t.SpellID,
 		&t.DisplayThresholdSecs, &charJSON, &alertJSON, &excludeJSON,
+		&source, &pipeJSON,
 	); err != nil {
 		return nil, err
+	}
+	t.Source = source
+	if t.Source == "" {
+		t.Source = SourceLog
+	}
+	if pipeJSON != "" {
+		var pc PipeCondition
+		if err := json.Unmarshal([]byte(pipeJSON), &pc); err == nil && pc.Kind != "" {
+			t.PipeCondition = &pc
+		}
 	}
 	t.Enabled = enabledInt != 0
 	t.CreatedAt = time.Unix(unixSec, 0).UTC()

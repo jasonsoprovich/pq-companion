@@ -440,3 +440,181 @@ func TestInstallPack(t *testing.T) {
 	}
 }
 
+// ── Stage E: pipe-source triggers ────────────────────────────────────────────
+
+// insertPipeTrigger persists a pipe-source trigger and reloads the engine.
+// Returns the trigger so callers can assert on history matches by ID.
+func insertPipeTrigger(t *testing.T, s *Store, e *Engine, name string, cond PipeCondition) *Trigger {
+	t.Helper()
+	tr := &Trigger{
+		ID:            "pipe-" + name,
+		Name:          name,
+		Enabled:       true,
+		Source:        SourcePipe,
+		PipeCondition: &cond,
+		Actions:       []Action{{Type: ActionOverlayText, Text: name + " fired"}},
+		CreatedAt:     time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert pipe trigger %s: %v", name, err)
+	}
+	e.Reload()
+	return tr
+}
+
+func TestPipe_TargetHPBelowFiresOnceOnTransition(t *testing.T) {
+	s, e := openTestEngine(t)
+	insertPipeTrigger(t, s, e, "low-hp", PipeCondition{
+		Kind: PipeKindTargetHPBelow, HPThreshold: 20,
+	})
+
+	now := time.Now()
+	// Healthy target — no fire.
+	e.HandlePipeTarget("Sandrian", 80, "", now)
+	if got := len(e.GetHistory()); got != 0 {
+		t.Errorf("healthy HP fired: %d", got)
+	}
+	// HP drops below threshold — fire once.
+	e.HandlePipeTarget("Sandrian", 15, "", now.Add(time.Second))
+	if got := len(e.GetHistory()); got != 1 {
+		t.Fatalf("expected 1 fire on transition, got %d", got)
+	}
+	// Stays low — no refire.
+	e.HandlePipeTarget("Sandrian", 10, "", now.Add(2*time.Second))
+	e.HandlePipeTarget("Sandrian", 5, "", now.Add(3*time.Second))
+	if got := len(e.GetHistory()); got != 1 {
+		t.Errorf("refired while staying below threshold: %d", got)
+	}
+	// HP rises above and falls again — fires again.
+	e.HandlePipeTarget("Sandrian", 90, "", now.Add(4*time.Second))
+	e.HandlePipeTarget("Sandrian", 15, "", now.Add(5*time.Second))
+	if got := len(e.GetHistory()); got != 2 {
+		t.Errorf("expected 2 fires after re-arm + drop, got %d", got)
+	}
+}
+
+func TestPipe_TargetNameFiresOnceOnMatch(t *testing.T) {
+	s, e := openTestEngine(t)
+	insertPipeTrigger(t, s, e, "spotted", PipeCondition{
+		Kind: PipeKindTargetName, TargetName: "Vulak`Aerr",
+	})
+
+	now := time.Now()
+	e.HandlePipeTarget("a goblin pup", 100, "", now)
+	if got := len(e.GetHistory()); got != 0 {
+		t.Errorf("non-matching name fired: %d", got)
+	}
+	e.HandlePipeTarget("Vulak`Aerr", 100, "", now.Add(time.Second))
+	if got := len(e.GetHistory()); got != 1 {
+		t.Fatalf("expected 1 fire on name match, got %d", got)
+	}
+	// Same target on next tick — no refire (dedupe).
+	e.HandlePipeTarget("Vulak`Aerr", 99, "", now.Add(2*time.Second))
+	if got := len(e.GetHistory()); got != 1 {
+		t.Errorf("refired on identical target name: %d", got)
+	}
+}
+
+func TestPipe_BuffLandedAndFaded(t *testing.T) {
+	s, e := openTestEngine(t)
+	insertPipeTrigger(t, s, e, "shield-on", PipeCondition{
+		Kind: PipeKindBuffLanded, SpellName: "Shield of Words",
+	})
+	insertPipeTrigger(t, s, e, "shield-off", PipeCondition{
+		Kind: PipeKindBuffFaded, SpellName: "Shield of Words",
+	})
+
+	now := time.Now()
+	// Initial empty slots — nothing fires.
+	e.HandlePipeBuffSlots(nil, "", now)
+	if got := len(e.GetHistory()); got != 0 {
+		t.Fatalf("empty slots fired: %d", got)
+	}
+	// Buff lands.
+	e.HandlePipeBuffSlots([]string{"Shield of Words", "Clarity"}, "", now.Add(time.Second))
+	hist := e.GetHistory()
+	if len(hist) != 1 || hist[0].TriggerName != "shield-on" {
+		t.Fatalf("expected shield-on, got %+v", hist)
+	}
+	// Same slots — no refire.
+	e.HandlePipeBuffSlots([]string{"Shield of Words", "Clarity"}, "", now.Add(2*time.Second))
+	if got := len(e.GetHistory()); got != 1 {
+		t.Errorf("buff_landed refired on stable slots: %d", got)
+	}
+	// Buff fades.
+	e.HandlePipeBuffSlots([]string{"Clarity"}, "", now.Add(3*time.Second))
+	hist = e.GetHistory()
+	if len(hist) != 2 || hist[1].TriggerName != "shield-off" {
+		t.Fatalf("expected shield-off, got %+v", hist)
+	}
+}
+
+func TestPipe_PipeCommandExactMatch(t *testing.T) {
+	s, e := openTestEngine(t)
+	insertPipeTrigger(t, s, e, "pull-cmd", PipeCondition{
+		Kind: PipeKindPipeCommand, Text: "pull",
+	})
+
+	now := time.Now()
+	e.HandlePipeCommand("nope", "", now)
+	if got := len(e.GetHistory()); got != 0 {
+		t.Errorf("non-matching text fired: %d", got)
+	}
+	e.HandlePipeCommand("pull", "", now.Add(time.Second))
+	if got := len(e.GetHistory()); got != 1 {
+		t.Fatalf("expected 1 fire on exact pipe-command match, got %d", got)
+	}
+	// Repeat — fires again (one-shot per call, no edge dedupe).
+	e.HandlePipeCommand("pull", "", now.Add(2*time.Second))
+	if got := len(e.GetHistory()); got != 2 {
+		t.Errorf("expected pipe_command to refire on repeat, got %d", got)
+	}
+}
+
+func TestPipe_DisconnectResetsEdgeState(t *testing.T) {
+	s, e := openTestEngine(t)
+	insertPipeTrigger(t, s, e, "low-hp", PipeCondition{
+		Kind: PipeKindTargetHPBelow, HPThreshold: 20,
+	})
+
+	now := time.Now()
+	e.HandlePipeTarget("Sandrian", 80, "", now)
+	e.HandlePipeTarget("Sandrian", 15, "", now.Add(time.Second))
+	if got := len(e.GetHistory()); got != 1 {
+		t.Fatalf("setup: expected 1 fire, got %d", got)
+	}
+	// Disconnect (e.g. Zeal exits) drops the prev state.
+	e.HandlePipeReset()
+	// Reconnect with a still-low value. The reset means "no prior reading",
+	// which we treat as 100%, so this counts as a fresh transition and fires.
+	e.HandlePipeTarget("Sandrian", 15, "", now.Add(2*time.Second))
+	if got := len(e.GetHistory()); got != 2 {
+		t.Errorf("expected refire after reset, got %d", got)
+	}
+}
+
+// TestPipe_LogTriggersUntouchedByReload confirms that the addition of
+// pipe-source segregation doesn't break the existing log-source path.
+func TestPipe_LogTriggersUntouchedByReload(t *testing.T) {
+	s, e := openTestEngine(t)
+	logTrig := &Trigger{
+		ID: "log-1", Name: "Log Trigger", Enabled: true,
+		Pattern:   `You have entered`,
+		Actions:   []Action{{Type: ActionOverlayText, Text: "x"}},
+		CreatedAt: time.Now(),
+	}
+	if err := s.Insert(logTrig); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	insertPipeTrigger(t, s, e, "pipe-1", PipeCondition{
+		Kind: PipeKindPipeCommand, Text: "ignored",
+	})
+
+	// Log trigger still fires via Handle.
+	e.Handle(time.Now(), "You have entered The North Karana.")
+	hist := e.GetHistory()
+	if len(hist) != 1 || hist[0].TriggerName != "Log Trigger" {
+		t.Errorf("log trigger didn't fire after pipe segregation; history=%+v", hist)
+	}
+}
+

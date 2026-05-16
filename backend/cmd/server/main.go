@@ -236,69 +236,6 @@ func main() {
 	})
 	go timerEngine.Start(context.Background())
 
-	// Zeal IPC supervisor: discovers the eqgame.exe Zeal pipe and forwards
-	// live state into every downstream consumer that benefits from real-time,
-	// authoritative game data instead of log inference.
-	//   Stage A: target name -> npcTracker
-	//   Stage B: target HP%, pet owner -> npcTracker
-	//   Stage C: target + player pet name -> combatTracker
-	//   Stage D: casting name + buff slots -> timerEngine (observability)
-	pipeSupervisor := zealpipe.NewSupervisor(func(env zealpipe.Envelope) {
-		if env.Type != zealpipe.MsgLabel {
-			return
-		}
-		labels, err := zealpipe.DecodeLabels(env.Data)
-		if err != nil {
-			return
-		}
-		// Aggregate per-envelope state. Zeal omits labels with empty values
-		// (Zeal/named_pipe.cpp:280), so absence of a label means the slot is
-		// empty — we still need to push that as a snapshot so the engine
-		// learns the prior value is gone.
-		var castingName string
-		var buffSlots []string
-		for _, l := range labels {
-			switch l.Type {
-			case zealpipe.LabelTargetName:
-				if l.Value == "" {
-					npcTracker.ClearPipeTarget()
-				} else {
-					npcTracker.SetPipeTarget(l.Value)
-				}
-				combatTracker.SetPipeTarget(l.Value)
-			case zealpipe.LabelTargetHPPerc:
-				if n, err := strconv.Atoi(strings.TrimSpace(l.Value)); err == nil {
-					npcTracker.SetPipeHPPercent(n)
-				}
-			case zealpipe.LabelTargetPetOwner:
-				npcTracker.SetPipePetOwner(l.Value)
-			case zealpipe.LabelPlayerPetName:
-				combatTracker.SetPipePetName(l.Value)
-			case zealpipe.LabelCastingName:
-				castingName = l.Value
-			default:
-				// Buff slots: 45-59 (Buff0-14) and 135-140 (Buff15-20).
-				id := int(l.Type)
-				if (id >= int(zealpipe.LabelBuff0) && id <= int(zealpipe.LabelBuff14)) ||
-					(id >= int(zealpipe.LabelBuff15) && id <= int(zealpipe.LabelBuff20)) {
-					buffSlots = append(buffSlots, l.Value)
-				}
-			}
-		}
-		timerEngine.SetPipeCasting(castingName)
-		timerEngine.SetPipeBuffSlots(buffSlots)
-	})
-	pipeSupervisor.OnDisconnect(func() {
-		// Drop pipe-only state from all consumers so stale values don't
-		// linger after Zeal goes away. Log-driven paths continue to work via
-		// the normal Handle() flow.
-		npcTracker.ResetPipeFields()
-		combatTracker.ResetPipeState()
-		timerEngine.SetPipeCasting("")
-		timerEngine.SetPipeBuffSlots(nil)
-	})
-	go pipeSupervisor.Start(context.Background())
-
 	// Invalidate the engine's modifier cache whenever the Quarmy export is
 	// refreshed (new inventory or AAs). Without this, equipping/unequipping a
 	// focus item wouldn't take effect until the app restarts.
@@ -339,6 +276,87 @@ func main() {
 		return cfgMgr.Get().Character
 	})
 	triggerEngine.Reload()
+
+	// Zeal IPC supervisor: discovers the eqgame.exe Zeal pipe and forwards
+	// live state into every downstream consumer that benefits from real-time,
+	// authoritative game data instead of log inference.
+	//   Stage A: target name -> npcTracker
+	//   Stage B: target HP%, pet owner -> npcTracker
+	//   Stage C: target + player pet name -> combatTracker
+	//   Stage D: casting name + buff slots -> timerEngine (observability)
+	//   Stage E: target + buff transitions + /pipe -> triggerEngine
+	pipeSupervisor := zealpipe.NewSupervisor(func(env zealpipe.Envelope) {
+		switch env.Type {
+		case zealpipe.MsgCmd:
+			// In-game /pipe <text> command — feed to the trigger engine.
+			cmd, err := zealpipe.DecodePipeCmd(env.Data)
+			if err != nil || cmd.Text == "" {
+				return
+			}
+			triggerEngine.HandlePipeCommand(cmd.Text, env.Character, time.Now())
+			return
+		case zealpipe.MsgLabel:
+			// Fall through to the label aggregator below.
+		default:
+			return
+		}
+		labels, err := zealpipe.DecodeLabels(env.Data)
+		if err != nil {
+			return
+		}
+		// Aggregate per-envelope state. Zeal omits labels with empty values
+		// (Zeal/named_pipe.cpp:280), so absence of a label means the slot is
+		// empty — we still need to push that as a snapshot so consumers
+		// learn the prior value is gone.
+		var castingName, targetName string
+		targetHP := -1
+		var buffSlots []string
+		for _, l := range labels {
+			switch l.Type {
+			case zealpipe.LabelTargetName:
+				targetName = l.Value
+				if l.Value == "" {
+					npcTracker.ClearPipeTarget()
+				} else {
+					npcTracker.SetPipeTarget(l.Value)
+				}
+				combatTracker.SetPipeTarget(l.Value)
+			case zealpipe.LabelTargetHPPerc:
+				if n, err := strconv.Atoi(strings.TrimSpace(l.Value)); err == nil {
+					targetHP = n
+					npcTracker.SetPipeHPPercent(n)
+				}
+			case zealpipe.LabelTargetPetOwner:
+				npcTracker.SetPipePetOwner(l.Value)
+			case zealpipe.LabelPlayerPetName:
+				combatTracker.SetPipePetName(l.Value)
+			case zealpipe.LabelCastingName:
+				castingName = l.Value
+			default:
+				// Buff slots: 45-59 (Buff0-14) and 135-140 (Buff15-20).
+				id := int(l.Type)
+				if (id >= int(zealpipe.LabelBuff0) && id <= int(zealpipe.LabelBuff14)) ||
+					(id >= int(zealpipe.LabelBuff15) && id <= int(zealpipe.LabelBuff20)) {
+					buffSlots = append(buffSlots, l.Value)
+				}
+			}
+		}
+		timerEngine.SetPipeCasting(castingName)
+		timerEngine.SetPipeBuffSlots(buffSlots)
+		triggerEngine.HandlePipeTarget(targetName, targetHP, env.Character, time.Now())
+		triggerEngine.HandlePipeBuffSlots(buffSlots, env.Character, time.Now())
+	})
+	pipeSupervisor.OnDisconnect(func() {
+		// Drop pipe-only state from all consumers so stale values don't
+		// linger after Zeal goes away. Log-driven paths continue to work via
+		// the normal Handle() flow.
+		npcTracker.ResetPipeFields()
+		combatTracker.ResetPipeState()
+		timerEngine.SetPipeCasting("")
+		timerEngine.SetPipeBuffSlots(nil)
+		triggerEngine.HandlePipeReset()
+	})
+	go pipeSupervisor.Start(context.Background())
 
 	// Roll tracker: groups /random results into per-range sessions and
 	// broadcasts overlay:rolls WebSocket events. Stateless across restarts.
