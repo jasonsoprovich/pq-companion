@@ -125,6 +125,20 @@ const (
 	// log line is stamped on the data so consumers can persist
 	// last-seen-in-zone for each sighted player.
 	EventWhoEntry EventType = "log:who_entry"
+
+	// EventWhoSummary is emitted on the trailing summary line of a /who
+	// block ("There are N players in <Zone>.") so consumers can apply the
+	// definitive zone name to every entry from the preceding block. This
+	// is more reliable than tracking zone state from EventZone alone —
+	// the summary fires on every /who whether or not we've seen the
+	// player zone yet (e.g. backend started mid-session).
+	EventWhoSummary EventType = "log:who_summary"
+
+	// EventGuildStat is emitted by the `/guildstat` chat reply line
+	// ("Osui is a member of Seekers of Souls."). Lets the player tracker
+	// fill in guild membership for the targeted player without waiting
+	// for a /who with guild visible.
+	EventGuildStat EventType = "log:guild_stat"
 )
 
 // LogEvent is the parsed representation of a single EQ log line.
@@ -332,4 +346,18 @@ type WhoEntryData struct {
 	// parser from the most recent EventZone. Empty if no zone change has
 	// been observed yet this session.
 	Zone string `json:"zone"`
+}
+
+// WhoSummaryData is the structured payload for EventWhoSummary. The Zone
+// field is the authoritative zone name from the /who block's trailing
+// "There are N players in <Zone>." line.
+type WhoSummaryData struct {
+	Zone string `json:"zone"`
+}
+
+// GuildStatData is the structured payload for EventGuildStat. Captures the
+// reply line from /guildstat: "<Player> is a member of <Guild>."
+type GuildStatData struct {
+	Player string `json:"player"`
+	Guild  string `json:"guild"`
 }

@@ -198,3 +198,42 @@ func TestDeleteAndClear(t *testing.T) {
 		t.Errorf("after clear = %d rows, want 0", len(all2))
 	}
 }
+
+func TestUpdateGuild_PreservesOtherFields(t *testing.T) {
+	s := openTest(t)
+	// First, a full /who sighting.
+	if err := s.Upsert(SightingInput{
+		Name: "Osui", Level: 60, Class: "Enchanter", Race: "Halfling",
+		Zone: "Plane of Knowledge", ObservedAt: time.Unix(1_700_000_000, 0),
+	}); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	// Then /guildstat sets the guild without touching anything else.
+	if err := s.UpdateGuild("Osui", "Seekers of Souls", "Plane of Knowledge", time.Unix(1_700_000_100, 0)); err != nil {
+		t.Fatalf("UpdateGuild: %v", err)
+	}
+	got, _ := s.Get("Osui")
+	if got == nil {
+		t.Fatal("expected row")
+	}
+	if got.Guild != "Seekers of Souls" {
+		t.Errorf("guild = %q, want Seekers of Souls", got.Guild)
+	}
+	if got.LastSeenLevel != 60 || got.Class != "Enchanter" || got.Race != "Halfling" {
+		t.Errorf("UpdateGuild clobbered other fields: %+v", got)
+	}
+}
+
+func TestUpdateGuild_NewPlayer(t *testing.T) {
+	s := openTest(t)
+	if err := s.UpdateGuild("Stranger", "Outsiders", "Plane of Knowledge", time.Unix(1_700_000_000, 0)); err != nil {
+		t.Fatalf("UpdateGuild: %v", err)
+	}
+	got, _ := s.Get("Stranger")
+	if got == nil {
+		t.Fatal("expected row")
+	}
+	if got.Guild != "Outsiders" || got.LastSeenLevel != 0 || got.Class != "" {
+		t.Errorf("new row from UpdateGuild = %+v", got)
+	}
+}

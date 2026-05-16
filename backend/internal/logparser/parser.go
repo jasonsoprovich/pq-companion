@@ -222,10 +222,12 @@ var (
 	//
 	// The class string can contain a single space (e.g. "Shadow Knight"), so
 	// the class group is greedy up to the closing bracket.
-	reWhoNamed = regexp.MustCompile(`^\[(\d+)\s+([A-Za-z][A-Za-z ]*?)\]\s+(\w+)(.*)$`)
-	reWhoAnon  = regexp.MustCompile(`^\[ANON(?:YMOUS)?\]\s+(\w+)(.*)$`)
-	reWhoRace  = regexp.MustCompile(`\(([^)]+)\)`)
-	reWhoGuild = regexp.MustCompile(`<([^>]+)>`)
+	reWhoNamed   = regexp.MustCompile(`^\[(\d+)\s+([A-Za-z][A-Za-z ]*?)\]\s+(\w+)(.*)$`)
+	reWhoAnon    = regexp.MustCompile(`^\[ANON(?:YMOUS)?\]\s+(\w+)(.*)$`)
+	reWhoRace    = regexp.MustCompile(`\(([^)]+)\)`)
+	reWhoGuild   = regexp.MustCompile(`<([^>]+)>`)
+	reWhoSummary = regexp.MustCompile(`^There (?:are|is) \d+ players? in (.+)\.$`)
+	reGuildStat  = regexp.MustCompile(`^(\w+) is a member of (.+)\.$`)
 )
 
 // ParseRawLine extracts the timestamp and message from any valid EQ log line
@@ -657,6 +659,31 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		return LogEvent{
 			Type: EventWhoEntry,
 			Data: data,
+		}, true
+	}
+
+	// --- /who summary ---
+	// Trailing line of every /who block: "There are N players in <Zone>."
+	// Authoritative zone source for the entries that just came through;
+	// consumers buffer EventWhoEntry rows and flush on EventWhoSummary.
+	if m := reWhoSummary.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventWhoSummary,
+			Data: WhoSummaryData{Zone: strings.TrimSpace(m[1])},
+		}, true
+	}
+
+	// --- /guildstat reply ---
+	// Single chat-line reply when the player runs /guildstat on a target:
+	// "<Player> is a member of <Guild>." Feeds the player tracker so
+	// guild affiliation can be captured without a /who that shows it.
+	if m := reGuildStat.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventGuildStat,
+			Data: GuildStatData{
+				Player: m[1],
+				Guild:  strings.TrimSpace(m[2]),
+			},
 		}, true
 	}
 

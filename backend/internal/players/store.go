@@ -241,6 +241,61 @@ func (s *Store) Upsert(in SightingInput) error {
 	return tx.Commit()
 }
 
+// UpdateGuild applies a guild-affiliation update for a known player without
+// touching class/race/level. Used by the /guildstat handler — that command
+// reports only the player's guild membership, not their other stats, so a
+// full Upsert would clobber known data. Creates the row when the player is
+// otherwise unseen.
+func (s *Store) UpdateGuild(name, guild, zone string, observedAt time.Time) error {
+	if name == "" || guild == "" {
+		return fmt.Errorf("name and guild required")
+	}
+	now := observedAt
+	if now.IsZero() {
+		now = time.Now()
+	}
+	nowUnix := now.Unix()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var exists bool
+	row := tx.QueryRow(`SELECT 1 FROM player_sightings WHERE name = ?`, name)
+	var sentinel int
+	if err := row.Scan(&sentinel); err != nil {
+		if err != sql.ErrNoRows {
+			return err
+		}
+	} else {
+		exists = true
+	}
+
+	if exists {
+		if _, err := tx.Exec(`
+			UPDATE player_sightings
+			SET guild = ?,
+			    last_seen_zone = COALESCE(NULLIF(?, ''), last_seen_zone),
+			    last_seen_at = ?,
+			    sightings_count = sightings_count + 1
+			WHERE name = ?
+		`, guild, zone, nowUnix, name); err != nil {
+			return err
+		}
+	} else {
+		if _, err := tx.Exec(`
+			INSERT INTO player_sightings
+				(name, guild, last_seen_zone, last_seen_at, first_seen_at, last_anonymous, sightings_count)
+			VALUES (?, ?, ?, ?, ?, 0, 1)
+		`, name, guild, zone, nowUnix, nowUnix); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // SearchFilters narrows the list of returned sightings.
 type SearchFilters struct {
 	NameContains string
