@@ -41,10 +41,10 @@ function AbilityBadge({ ability }: { ability: SpecialAbility }): React.ReactElem
       style={{
         backgroundColor: abilityBadgeColor(ability.code),
         color: '#fff',
-        fontSize: 9,
+        fontSize: 11,
         fontWeight: 600,
         borderRadius: 3,
-        padding: '1px 5px',
+        padding: '2px 6px',
         lineHeight: 1.4,
       }}
     >
@@ -64,13 +64,13 @@ function Chip({ label, value, color }: { label?: string; value: string | number;
         gap: 4,
         backgroundColor: 'rgba(255,255,255,0.06)',
         borderRadius: 3,
-        padding: '2px 6px',
-        fontSize: 10,
-        lineHeight: 1.3,
+        padding: '3px 7px',
+        fontSize: 12,
+        lineHeight: 1.4,
       }}
     >
       {label && (
-        <span style={{ color: 'rgba(255,255,255,0.4)', fontWeight: 600, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        <span style={{ color: 'rgba(255,255,255,0.4)', fontWeight: 600, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
           {label}
         </span>
       )}
@@ -201,31 +201,31 @@ function NPCContent({ state, view }: { state: TargetState; view: View }): React.
   const abilities = (state.special_abilities ?? []).filter((a) => a.value !== 0)
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+    <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
       {/* Target name + zone + timestamp */}
       <div>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.92)', margin: 0, lineHeight: 1.2 }}>
+          <p style={{ fontSize: 15, fontWeight: 700, color: 'rgba(255,255,255,0.92)', margin: 0, lineHeight: 1.2 }}>
             {state.target_name ?? 'Unknown'}
           </p>
-          <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
             {new Date(state.last_updated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </span>
         </div>
         {state.pet_owner && (
-          <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', fontStyle: 'italic', margin: '1px 0 0' }}>
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', fontStyle: 'italic', margin: '2px 0 0' }}>
             Pet of {state.pet_owner}
           </p>
         )}
         {state.current_zone && (
-          <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', margin: '1px 0 0' }}>{state.current_zone}</p>
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '2px 0 0' }}>{state.current_zone}</p>
         )}
         {state.hp_percent >= 0 && (
-          <div style={{ marginTop: 4 }}>
+          <div style={{ marginTop: 5 }}>
             <div
               style={{
                 position: 'relative',
-                height: 6,
+                height: 7,
                 width: '100%',
                 backgroundColor: 'rgba(255,255,255,0.1)',
                 borderRadius: 3,
@@ -246,8 +246,8 @@ function NPCContent({ state, view }: { state: TargetState; view: View }): React.
             </div>
             <div
               style={{
-                marginTop: 1,
-                fontSize: 9,
+                marginTop: 2,
+                fontSize: 10,
                 color: 'rgba(255,255,255,0.45)',
                 textAlign: 'right',
                 fontVariantNumeric: 'tabular-nums',
@@ -258,12 +258,12 @@ function NPCContent({ state, view }: { state: TargetState; view: View }): React.
           </div>
         )}
         {npc && (npc.raid_target === 1 || npc.rare_spawn === 1) && (
-          <div style={{ marginTop: 3, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             {npc.raid_target === 1 && (
-              <span style={{ backgroundColor: '#7c3aed', color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 3, padding: '1px 5px' }}>RAID</span>
+              <span style={{ backgroundColor: '#7c3aed', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 3, padding: '2px 6px' }}>RAID</span>
             )}
             {npc.rare_spawn === 1 && (
-              <span style={{ backgroundColor: '#b45309', color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 3, padding: '1px 5px' }}>RARE</span>
+              <span style={{ backgroundColor: '#b45309', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 3, padding: '2px 6px' }}>RARE</span>
             )}
           </div>
         )}
@@ -275,7 +275,7 @@ function NPCContent({ state, view }: { state: TargetState; view: View }): React.
         ) : (
           <>
             {/* Identity */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               <Chip label="Lv" value={npc.level} color="#c9a84c" />
               <Chip value={className(npc.class)} />
               <Chip value={npc.race_name} />
@@ -283,7 +283,7 @@ function NPCContent({ state, view }: { state: TargetState; view: View }): React.
             </div>
 
             {/* Combat */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               <Chip label="HP" value={npc.hp.toLocaleString()} color="#22c55e" />
               <Chip label="AC" value={npc.ac} />
               <Chip label="DMG" value={`${npc.min_dmg}-${npc.max_dmg}`} color="#ef4444" />
@@ -291,7 +291,7 @@ function NPCContent({ state, view }: { state: TargetState; view: View }): React.
             </div>
 
             {/* Resists */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               <Chip label="MR" value={npc.mr} />
               <Chip label="CR" value={npc.cr} />
               <Chip label="DR" value={npc.dr} />
@@ -300,7 +300,7 @@ function NPCContent({ state, view }: { state: TargetState; view: View }): React.
             </div>
 
             {/* Attributes */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               <Chip label="STR" value={npc.str} />
               <Chip label="STA" value={npc.sta} />
               <Chip label="DEX" value={npc.dex} />
@@ -312,7 +312,7 @@ function NPCContent({ state, view }: { state: TargetState; view: View }): React.
 
             {/* Special Abilities */}
             {abilities.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                 {abilities.map((a) => (
                   <AbilityBadge key={a.code} ability={a} />
                 ))}
