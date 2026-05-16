@@ -212,8 +212,50 @@ function NPCContent({ state, view }: { state: TargetState; view: View }): React.
             {new Date(state.last_updated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </span>
         </div>
+        {state.pet_owner && (
+          <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', fontStyle: 'italic', margin: '1px 0 0' }}>
+            Pet of {state.pet_owner}
+          </p>
+        )}
         {state.current_zone && (
           <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', margin: '1px 0 0' }}>{state.current_zone}</p>
+        )}
+        {state.hp_percent >= 0 && (
+          <div style={{ marginTop: 4 }}>
+            <div
+              style={{
+                position: 'relative',
+                height: 6,
+                width: '100%',
+                backgroundColor: 'rgba(255,255,255,0.1)',
+                borderRadius: 3,
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  right: 'auto',
+                  width: `${state.hp_percent}%`,
+                  backgroundColor:
+                    state.hp_percent > 50 ? '#22c55e' : state.hp_percent >= 20 ? '#eab308' : '#ef4444',
+                  transition: 'width 150ms, background-color 150ms',
+                }}
+              />
+            </div>
+            <div
+              style={{
+                marginTop: 1,
+                fontSize: 9,
+                color: 'rgba(255,255,255,0.45)',
+                textAlign: 'right',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {state.hp_percent}% HP
+            </div>
+          </div>
         )}
         {npc && (npc.raid_target === 1 || npc.rare_spawn === 1) && (
           <div style={{ marginTop: 3, display: 'flex', gap: 4, flexWrap: 'wrap' }}>

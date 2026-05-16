@@ -35,11 +35,18 @@ type Status struct {
 // non-blocking — the supervisor's reader goroutine calls it inline.
 type EventHandler func(Envelope)
 
+// DisconnectHandler runs once every time the supervisor transitions out of
+// StateConnected — i.e. after the read loop ends for any reason (EOF, error,
+// context cancellation). Used to clear pipe-derived UI state (HP bar, etc.)
+// so a stale value doesn't linger on the overlay after Zeal goes away.
+type DisconnectHandler func()
+
 // Supervisor manages the discover → dial → read → reconnect lifecycle for a
 // single Zeal pipe. Multibox support is intentionally deferred: the
 // supervisor binds to the first pipe it finds (see plan Stage A risks).
 type Supervisor struct {
-	onEvent EventHandler
+	onEvent      EventHandler
+	onDisconnect DisconnectHandler
 
 	mu     sync.RWMutex
 	status Status
@@ -52,8 +59,7 @@ const (
 	backoffMax       = 30 * time.Second
 )
 
-// NewSupervisor builds a supervisor. onEvent may be nil during early dev; the
-// supervisor still tracks status either way.
+// NewSupervisor builds a supervisor. Either callback may be nil.
 func NewSupervisor(onEvent EventHandler) *Supervisor {
 	s := &Supervisor{onEvent: onEvent}
 	if runtime.GOOS != "windows" {
@@ -62,6 +68,14 @@ func NewSupervisor(onEvent EventHandler) *Supervisor {
 		s.set(Status{State: StateIdle})
 	}
 	return s
+}
+
+// OnDisconnect registers a callback fired each time the supervisor transitions
+// out of StateConnected. Replaces any previously-registered handler.
+func (s *Supervisor) OnDisconnect(fn DisconnectHandler) {
+	s.mu.Lock()
+	s.onDisconnect = fn
+	s.mu.Unlock()
 }
 
 // Status returns a snapshot of the current connection state.
@@ -172,6 +186,12 @@ func (s *Supervisor) Start(ctx context.Context) {
 			st.ConnectedAt = time.Time{}
 		})
 		slog.Info("zealpipe: disconnected; will reconnect")
+		s.mu.RLock()
+		cb := s.onDisconnect
+		s.mu.RUnlock()
+		if cb != nil {
+			cb()
+		}
 	}
 }
 
