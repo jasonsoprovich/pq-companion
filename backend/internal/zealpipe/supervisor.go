@@ -115,8 +115,17 @@ func (s *Supervisor) Start(ctx context.Context) {
 		}
 		if ref == nil {
 			// No pipe yet — wait and retry. Reset backoff so the first dial
-			// after a Zeal launch is fast.
+			// after a Zeal launch is fast. Also clear any stale error so the
+			// Settings UI doesn't keep showing a failure from a previous EQ
+			// session — "no Zeal running" is an expected idle state, not an
+			// error worth surfacing to the user.
 			backoff = backoffInitial
+			s.update(func(st *Status) {
+				st.State = StateIdle
+				st.LastError = ""
+				st.PipeName = ""
+				st.PID = 0
+			})
 			if sleepCtx(ctx, discoverInterval) {
 				return
 			}
@@ -125,7 +134,10 @@ func (s *Supervisor) Start(ctx context.Context) {
 
 		conn, err := Dial(ctx, ref.Name)
 		if err != nil {
-			slog.Debug("zealpipe: dial failed", "pipe", ref.Name, "err", err)
+			// Logged at Info (not Debug) because this is the most useful
+			// signal when diagnosing a non-working integration on a user's
+			// machine — backoff means it would otherwise scroll by silently.
+			slog.Info("zealpipe: dial failed", "pipe", ref.Name, "err", err)
 			s.update(func(st *Status) {
 				st.State = StateDisconnected
 				st.PipeName = ref.Name

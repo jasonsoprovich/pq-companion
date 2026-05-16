@@ -42,8 +42,11 @@ func discoverPlatform() ([]PipeRef, error) {
 	var data windows.Win32finddata
 	handle, err := windows.FindFirstFile(globPtr, &data)
 	if err != nil {
-		// ERROR_FILE_NOT_FOUND just means no Zeal pipes are listening.
-		if err == windows.ERROR_FILE_NOT_FOUND {
+		// An empty pipe namespace match returns ERROR_FILE_NOT_FOUND on a
+		// regular filesystem path but ERROR_NO_MORE_FILES inside the named-pipe
+		// namespace (\\.\pipe\). Both mean "Zeal isn't currently publishing" —
+		// not an error condition.
+		if err == windows.ERROR_FILE_NOT_FOUND || err == windows.ERROR_NO_MORE_FILES {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("zealpipe: FindFirstFile: %w", err)

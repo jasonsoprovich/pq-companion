@@ -685,46 +685,48 @@ export default function SettingsPage(): React.ReactElement {
 
           {pipeStatus && pipeStatus.state !== 'unsupported' && (
             <div
-              className="mt-3 flex items-center justify-between rounded px-3 py-2 text-xs"
+              className="mt-3 space-y-2 rounded px-3 py-2 text-xs"
               style={{
                 backgroundColor: 'var(--color-surface-2)',
                 border: '1px solid var(--color-border)',
               }}
             >
-              <div className="flex items-center gap-2">
-                <span
-                  className="inline-block h-2 w-2 rounded-full"
-                  style={{
-                    backgroundColor:
-                      pipeStatus.state === 'connected'
-                        ? '#22c55e'
-                        : pipeStatus.state === 'disconnected'
-                          ? '#f87171'
-                          : 'var(--color-muted)',
-                  }}
-                />
-                <span style={{ color: 'var(--color-foreground)' }}>
-                  Live pipe:{' '}
-                  {pipeStatus.state === 'connected'
-                    ? `connected${pipeStatus.character ? ` (${pipeStatus.character})` : ''}`
-                    : pipeStatus.state === 'disconnected'
-                      ? 'disconnected'
-                      : 'waiting for EverQuest'}
-                </span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="inline-block h-2 w-2 rounded-full"
+                    style={{
+                      backgroundColor:
+                        pipeStatus.state === 'connected'
+                          ? '#22c55e'
+                          : pipeStatus.state === 'disconnected'
+                            ? '#f87171'
+                            : 'var(--color-muted)',
+                    }}
+                  />
+                  <span style={{ color: 'var(--color-foreground)' }}>
+                    Live pipe:{' '}
+                    {pipeStatus.state === 'connected'
+                      ? `connected${pipeStatus.character ? ` (${pipeStatus.character})` : ''}`
+                      : pipeStatus.state === 'disconnected'
+                        ? 'disconnected'
+                        : 'waiting for EverQuest'}
+                  </span>
+                </div>
+                {pipeStatus.state === 'connected' && pipeStatus.pid ? (
+                  <span style={{ color: 'var(--color-muted-foreground)' }}>
+                    PID {pipeStatus.pid}
+                  </span>
+                ) : null}
               </div>
-              {pipeStatus.state === 'connected' && pipeStatus.pid ? (
-                <span style={{ color: 'var(--color-muted-foreground)' }}>
-                  PID {pipeStatus.pid}
-                </span>
-              ) : pipeStatus.last_error ? (
-                <span
-                  style={{ color: 'var(--color-muted-foreground)' }}
-                  title={pipeStatus.last_error}
+              {pipeStatus.state !== 'connected' && pipeStatus.last_error && (
+                <pre
+                  className="whitespace-pre-wrap break-words font-mono"
+                  style={{ color: 'var(--color-muted-foreground)', fontSize: '11px' }}
                 >
-                  last error: {pipeStatus.last_error.slice(0, 60)}
-                  {pipeStatus.last_error.length > 60 ? '…' : ''}
-                </span>
-              ) : null}
+                  {pipeStatus.last_error}
+                </pre>
+              )}
             </div>
           )}
         </section>
