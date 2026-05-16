@@ -654,6 +654,21 @@ export default function SettingsPage(): React.ReactElement {
                 Zeal is not installed in your configured EverQuest folder
                 {zealStatus.eqgame_present ? '' : ' (eqgame.exe also not found — verify the path above)'}.
               </p>
+              <p
+                className="text-xs font-semibold uppercase tracking-wide"
+                style={{ color: 'var(--color-muted)' }}
+              >
+                Installing Zeal unlocks
+              </p>
+              <ul
+                className="ml-4 list-disc space-y-0.5 text-xs"
+                style={{ color: 'var(--color-muted-foreground)' }}
+              >
+                <li>Real-time target detection without <code>/con</code></li>
+                <li>Live target HP bar + pet-owner attribution</li>
+                <li>Authoritative damage attribution in the DPS meter</li>
+                <li>Trigger conditions on target HP, buff slots, and <code>/pipe</code> alerts</li>
+              </ul>
               <a
                 href={ZEAL_RELEASE_URL}
                 target="_blank"

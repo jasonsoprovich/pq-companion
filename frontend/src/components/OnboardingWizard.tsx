@@ -486,14 +486,26 @@ export default function OnboardingWizard({
                 style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-foreground)' }}
               >
                 <Info size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--color-primary)' }} />
-                <div>
+                <div className="space-y-2">
                   <p>
                     <strong>Zeal</strong> is a community EverQuest add-on that exports
-                    inventory and spellbook data and exposes live game state (target,
-                    HP, buffs, group) over a local pipe. PQ Companion uses Zeal for
-                    real-time target detection and richer overlays when it&apos;s
-                    installed — and falls back to log-file parsing when it&apos;s not.
+                    inventory and spellbook data and exposes live game state over a
+                    local pipe. PQ Companion uses it as an optional enhancement — the
+                    app works fully without it and falls back to log-file parsing.
                   </p>
+                  <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                    With Zeal installed and running, you also get:
+                  </p>
+                  <ul
+                    className="ml-4 list-disc space-y-0.5 text-xs"
+                    style={{ color: 'var(--color-muted-foreground)' }}
+                  >
+                    <li>Real-time target detection (no <code>/con</code> needed)</li>
+                    <li>Live target HP bar in the NPC overlay</li>
+                    <li>&quot;Pet of X&quot; attribution for charmed/summoned pets</li>
+                    <li>Authoritative DPS attribution for ambiguous fights</li>
+                    <li>Trigger conditions like &quot;target HP &lt; 20%&quot; and <code>/pipe</code> alerts</li>
+                  </ul>
                 </div>
               </div>
 

@@ -41,11 +41,17 @@ type EventHandler func(Envelope)
 // so a stale value doesn't linger on the overlay after Zeal goes away.
 type DisconnectHandler func()
 
+// ConnectHandler runs once every time the supervisor successfully dials a
+// Zeal pipe and transitions into StateConnected. Receives the connection
+// metadata so a notification can include character / PID context.
+type ConnectHandler func(pipeName string, pid uint32)
+
 // Supervisor manages the discover → dial → read → reconnect lifecycle for a
 // single Zeal pipe. Multibox support is intentionally deferred: the
 // supervisor binds to the first pipe it finds (see plan Stage A risks).
 type Supervisor struct {
 	onEvent      EventHandler
+	onConnect    ConnectHandler
 	onDisconnect DisconnectHandler
 
 	mu     sync.RWMutex
@@ -68,6 +74,14 @@ func NewSupervisor(onEvent EventHandler) *Supervisor {
 		s.set(Status{State: StateIdle})
 	}
 	return s
+}
+
+// OnConnect registers a callback fired each time the supervisor successfully
+// dials a Zeal pipe. Replaces any previously-registered handler.
+func (s *Supervisor) OnConnect(fn ConnectHandler) {
+	s.mu.Lock()
+	s.onConnect = fn
+	s.mu.Unlock()
 }
 
 // OnDisconnect registers a callback fired each time the supervisor transitions
@@ -172,6 +186,13 @@ func (s *Supervisor) Start(ctx context.Context) {
 			ConnectedAt: time.Now(),
 		})
 		backoff = backoffInitial
+
+		s.mu.RLock()
+		onConn := s.onConnect
+		s.mu.RUnlock()
+		if onConn != nil {
+			onConn(ref.Name, ref.PID)
+		}
 
 		s.readLoop(ctx, conn)
 		_ = conn.Close()
