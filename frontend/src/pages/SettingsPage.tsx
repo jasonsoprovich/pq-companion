@@ -4,6 +4,8 @@ import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getS
 import type { Config } from '../types/config'
 import type { LogFileInfo } from '../types/logEvent'
 import type { ZealInstallStatus, ZealPipeStatus } from '../types/zeal'
+import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 
 const ZEAL_RELEASE_URL = 'https://github.com/CoastalRedwood/Zeal/releases/latest'
 import BackupManagerPage from './BackupManagerPage'
@@ -98,6 +100,15 @@ export default function SettingsPage(): React.ReactElement {
       setZealChecking(false)
     }
   }
+
+  // Subscribe to backend pipe state changes so the status row reflects
+  // connect/disconnect without the user having to click Re-check. The Re-check
+  // button is still useful for re-running the filesystem detection when the
+  // user has just installed Zeal — that signal doesn't come over the wire.
+  useWebSocket((msg: WsMessage) => {
+    if (msg.type !== WSEvent.ZealConnected && msg.type !== WSEvent.ZealDisconnected) return
+    getZealPipeStatus().then(setPipeStatus).catch(() => null)
+  })
 
   function flashSaveState(state: SaveState, ms = 2500): void {
     if (saveStateClearRef.current) clearTimeout(saveStateClearRef.current)
