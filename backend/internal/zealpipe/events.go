@@ -5,12 +5,20 @@ import (
 	"fmt"
 )
 
-// Envelope is the outer JSON shape on every pipe message line. The Data field
-// is left as a raw payload so callers decode only the variants they care about.
+// Envelope is the outer JSON shape on every pipe message line.
+//
+// Zeal's serializer (Zeal/named_pipe.h:21) wraps each payload as a
+// JSON-encoded *string*, not embedded JSON — i.e. the wire format is
+//
+//	{"type":1,"data_len":42,"data":"[{\"type\":28,\"value\":\"a gnoll\"}]","character":"Osui"}
+//
+// so callers must do a second json.Unmarshal on Data to get the typed payload.
+// The Decode* helpers in this file encapsulate that pattern.
 type Envelope struct {
 	Type      PipeMessageType `json:"type"`
 	Character string          `json:"character"`
-	Data      json.RawMessage `json:"data"`
+	DataLen   int             `json:"data_len,omitempty"`
+	Data      string          `json:"data"`
 }
 
 // Label is one entry inside a MsgLabel payload. Zeal sends label data as an
@@ -61,42 +69,42 @@ func DecodeEnvelope(line []byte) (Envelope, error) {
 // DecodeLabels parses a MsgLabel payload into the Label array. Returns nil
 // on empty payloads rather than an error — Zeal occasionally emits messages
 // with zero entries.
-func DecodeLabels(payload json.RawMessage) ([]Label, error) {
-	if len(payload) == 0 || string(payload) == "null" {
+func DecodeLabels(payload string) ([]Label, error) {
+	if payload == "" || payload == "null" {
 		return nil, nil
 	}
 	var labels []Label
-	if err := json.Unmarshal(payload, &labels); err != nil {
+	if err := json.Unmarshal([]byte(payload), &labels); err != nil {
 		return nil, fmt.Errorf("zealpipe: decode labels: %w", err)
 	}
 	return labels, nil
 }
 
 // DecodeGauges parses a MsgGauge payload.
-func DecodeGauges(payload json.RawMessage) ([]Gauge, error) {
-	if len(payload) == 0 || string(payload) == "null" {
+func DecodeGauges(payload string) ([]Gauge, error) {
+	if payload == "" || payload == "null" {
 		return nil, nil
 	}
 	var gauges []Gauge
-	if err := json.Unmarshal(payload, &gauges); err != nil {
+	if err := json.Unmarshal([]byte(payload), &gauges); err != nil {
 		return nil, fmt.Errorf("zealpipe: decode gauges: %w", err)
 	}
 	return gauges, nil
 }
 
 // DecodePlayer parses a MsgPlayer payload.
-func DecodePlayer(payload json.RawMessage) (Player, error) {
+func DecodePlayer(payload string) (Player, error) {
 	var p Player
-	if err := json.Unmarshal(payload, &p); err != nil {
+	if err := json.Unmarshal([]byte(payload), &p); err != nil {
 		return p, fmt.Errorf("zealpipe: decode player: %w", err)
 	}
 	return p, nil
 }
 
 // DecodePipeCmd parses a MsgCmd payload.
-func DecodePipeCmd(payload json.RawMessage) (PipeCmd, error) {
+func DecodePipeCmd(payload string) (PipeCmd, error) {
 	var c PipeCmd
-	if err := json.Unmarshal(payload, &c); err != nil {
+	if err := json.Unmarshal([]byte(payload), &c); err != nil {
 		return c, fmt.Errorf("zealpipe: decode cmd: %w", err)
 	}
 	return c, nil

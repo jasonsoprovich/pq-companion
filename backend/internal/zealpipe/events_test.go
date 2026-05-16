@@ -4,8 +4,12 @@ import (
 	"testing"
 )
 
+// The real wire format has `data` as a JSON-encoded string of JSON — see
+// Zeal/named_pipe.h:21. Fixtures below use the literal double-encoded form
+// that Zeal actually writes.
+
 func TestDecodeEnvelopeLabel(t *testing.T) {
-	line := []byte(`{"type":1,"character":"Osui","data":[{"type":28,"value":"a gnoll pup"},{"type":29,"value":"73"}]}`)
+	line := []byte(`{"type":1,"data_len":58,"data":"[{\"type\":28,\"value\":\"a gnoll pup\"},{\"type\":29,\"value\":\"73\"}]","character":"Osui"}`)
 	env, err := DecodeEnvelope(line)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
@@ -32,7 +36,7 @@ func TestDecodeEnvelopeLabel(t *testing.T) {
 }
 
 func TestDecodeEnvelopePlayer(t *testing.T) {
-	line := []byte(`{"type":3,"character":"Nariana","data":{"zone":24,"location":{"x":1.5,"y":-200,"z":3.0},"heading":128,"autoattack":true}}`)
+	line := []byte(`{"type":3,"data":"{\"zone\":24,\"location\":{\"x\":1.5,\"y\":-200,\"z\":3.0},\"heading\":128,\"autoattack\":true}","character":"Nariana"}`)
 	env, err := DecodeEnvelope(line)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
@@ -50,7 +54,7 @@ func TestDecodeEnvelopePlayer(t *testing.T) {
 }
 
 func TestDecodeEnvelopePipeCmd(t *testing.T) {
-	line := []byte(`{"type":4,"character":"Osui","data":{"text":"pull"}}`)
+	line := []byte(`{"type":4,"data":"{\"text\":\"pull\"}","character":"Osui"}`)
 	env, err := DecodeEnvelope(line)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
@@ -68,11 +72,11 @@ func TestDecodeEnvelopePipeCmd(t *testing.T) {
 }
 
 func TestDecodeLabelsEmpty(t *testing.T) {
-	labels, err := DecodeLabels(nil)
+	labels, err := DecodeLabels("")
 	if err != nil || labels != nil {
-		t.Errorf("nil payload: labels=%v err=%v", labels, err)
+		t.Errorf("empty payload: labels=%v err=%v", labels, err)
 	}
-	labels, err = DecodeLabels([]byte("null"))
+	labels, err = DecodeLabels("null")
 	if err != nil || labels != nil {
 		t.Errorf("null payload: labels=%v err=%v", labels, err)
 	}
@@ -87,7 +91,7 @@ func TestDecodeEnvelopeInvalid(t *testing.T) {
 func TestUnknownLabelTypeAccepted(t *testing.T) {
 	// Schema is best-effort — unknown IDs decode as their numeric value rather
 	// than fail. Consumers ignore via a switch default.
-	line := []byte(`{"type":1,"character":"X","data":[{"type":9999,"value":"x"}]}`)
+	line := []byte(`{"type":1,"data":"[{\"type\":9999,\"value\":\"x\"}]","character":"X"}`)
 	env, err := DecodeEnvelope(line)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
