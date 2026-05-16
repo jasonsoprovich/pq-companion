@@ -1,8 +1,8 @@
 package zealpipe
 
 import (
-	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -47,10 +47,9 @@ type Supervisor struct {
 
 // Tuning knobs. Tuned for snappy local IPC — Zeal's default cadence is ~100ms.
 const (
-	discoverInterval   = 2 * time.Second
-	backoffInitial     = 1 * time.Second
-	backoffMax         = 30 * time.Second
-	readBufferMaxBytes = 1 << 20 // 1 MiB — guards against runaway lines without truncating large group/raid payloads
+	discoverInterval = 2 * time.Second
+	backoffInitial   = 1 * time.Second
+	backoffMax       = 30 * time.Second
 )
 
 // NewSupervisor builds a supervisor. onEvent may be nil during early dev; the
@@ -176,25 +175,26 @@ func (s *Supervisor) Start(ctx context.Context) {
 	}
 }
 
-// readLoop scans line-delimited JSON from conn until EOF, error, or ctx
-// cancellation. Each decoded envelope fires the onEvent callback.
+// readLoop stream-decodes JSON envelopes from conn until EOF, error, or ctx
+// cancellation. Zeal writes envelopes back-to-back into a PIPE_TYPE_BYTE pipe
+// with no delimiter or framing (see Zeal/named_pipe.cpp WriteDataWithRetry —
+// it just hands data.c_str() + data.length() to WriteFileEx), so we can't
+// scan-by-line. json.Decoder reads one balanced JSON value at a time from the
+// byte stream, which is exactly the shape we get.
 func (s *Supervisor) readLoop(ctx context.Context, conn io.Reader) {
-	scanner := bufio.NewScanner(conn)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, readBufferMaxBytes)
-
-	for scanner.Scan() {
+	dec := json.NewDecoder(conn)
+	for {
 		if ctx.Err() != nil {
 			return
 		}
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-		env, err := DecodeEnvelope(line)
-		if err != nil {
-			slog.Debug("zealpipe: decode failed", "err", err, "line_size", len(line))
-			continue
+		var env Envelope
+		if err := dec.Decode(&env); err != nil {
+			if errors.Is(err, io.EOF) {
+				return
+			}
+			slog.Info("zealpipe: read ended", "err", err)
+			s.update(func(st *Status) { st.LastError = err.Error() })
+			return
 		}
 		if env.Character != "" {
 			s.update(func(st *Status) { st.Character = env.Character })
@@ -202,10 +202,6 @@ func (s *Supervisor) readLoop(ctx context.Context, conn io.Reader) {
 		if s.onEvent != nil {
 			s.onEvent(env)
 		}
-	}
-	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
-		slog.Debug("zealpipe: scanner ended with error", "err", err)
-		s.update(func(st *Status) { st.LastError = err.Error() })
 	}
 }
 
