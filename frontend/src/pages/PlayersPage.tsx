@@ -325,11 +325,12 @@ export default function PlayersPage(): React.ReactElement {
         {!loading && !error && players.length > 0 && (
           <div
             className="grid gap-x-3 text-xs"
-            style={{ gridTemplateColumns: 'auto auto 1fr 1fr auto auto', color: 'var(--color-muted-foreground)' }}
+            style={{ gridTemplateColumns: 'auto auto 1fr 1fr 1fr auto auto', color: 'var(--color-muted-foreground)' }}
           >
             <span className="font-semibold border-b pb-1" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>Name</span>
             <span className="font-semibold border-b pb-1" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>Lv</span>
             <span className="font-semibold border-b pb-1" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>Class</span>
+            <span className="font-semibold border-b pb-1" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>Guild</span>
             <span className="font-semibold border-b pb-1" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>Last zone</span>
             <span className="font-semibold border-b pb-1 text-right" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>Sightings</span>
             <span className="font-semibold border-b pb-1 text-right" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>Seen</span>
@@ -347,6 +348,7 @@ export default function PlayersPage(): React.ReactElement {
                 </button>
                 <span className="py-1 tabular-nums">{p.last_seen_level > 0 ? p.last_seen_level : '—'}</span>
                 <span className="py-1 truncate">{p.class || '—'}</span>
+                <span className="py-1 truncate" title={p.guild || ''}>{p.guild || '—'}</span>
                 <span className="py-1 truncate">{p.last_seen_zone || '—'}</span>
                 <span className="py-1 text-right tabular-nums">{p.sightings_count}</span>
                 <span className="py-1 text-right tabular-nums">{formatRelative(p.last_seen_at)}</span>
