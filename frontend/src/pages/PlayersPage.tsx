@@ -183,8 +183,10 @@ export default function PlayersPage(): React.ReactElement {
     return Array.from(zones).sort()
   }, [players])
 
-  async function handleClearAll() {
-    if (!confirm('Wipe the entire player tracker database? This cannot be undone.')) return
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false)
+
+  async function doClearAll() {
+    setConfirmClearOpen(false)
     try {
       await clearPlayers()
       load()
@@ -222,7 +224,7 @@ export default function PlayersPage(): React.ReactElement {
             Refresh
           </button>
           <button
-            onClick={handleClearAll}
+            onClick={() => setConfirmClearOpen(true)}
             disabled={players.length === 0}
             className="flex items-center gap-1.5 text-xs px-2 py-1 rounded disabled:opacity-50"
             style={{
@@ -356,6 +358,95 @@ export default function PlayersPage(): React.ReactElement {
             ))}
           </div>
         )}
+      </div>
+
+      {confirmClearOpen && (
+        <ConfirmModal
+          title="Clear player tracker?"
+          body="Wipe every tracked player and their sighting history. This cannot be undone."
+          confirmLabel="Clear all"
+          onCancel={() => setConfirmClearOpen(false)}
+          onConfirm={doClearAll}
+        />
+      )}
+    </div>
+  )
+}
+
+// ConfirmModal mirrors the themed confirmation pattern used elsewhere in
+// the app (CombatHistoryPage, CharacterSpellsetsPage). Click the backdrop
+// to cancel; the destructive button uses the danger color so it reads as
+// "are you really sure?" at a glance.
+function ConfirmModal({
+  title,
+  body,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+}: {
+  title: string
+  body: string
+  confirmLabel: string
+  onCancel: () => void
+  onConfirm: () => void
+}): React.ReactElement {
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="rounded-lg p-4 space-y-3"
+        style={{
+          backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+          width: '100%',
+          maxWidth: 420,
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <AlertCircle size={16} style={{ color: 'var(--color-danger)' }} />
+          <p className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+            {title}
+          </p>
+        </div>
+        <p className="text-xs leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>
+          {body}
+        </p>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            onClick={onCancel}
+            className="text-xs px-3 py-1.5 rounded font-medium"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="text-xs px-3 py-1.5 rounded font-medium"
+            style={{
+              backgroundColor: 'var(--color-danger)',
+              color: '#fff',
+              border: '1px solid transparent',
+            }}
+          >
+            {confirmLabel}
+          </button>
+        </div>
       </div>
     </div>
   )
