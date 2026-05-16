@@ -74,6 +74,9 @@ const (
 	LabelTargetPetOwner   LabelType = 82
 	LabelMana             LabelType = 124
 	LabelMaxMana          LabelType = 125
+	LabelCastingName      LabelType = 134
+	LabelBuff15           LabelType = 135
+	LabelBuff20           LabelType = 140
 )
 
 // GaugeType identifies a numeric/timer gauge value. Same partial-coverage
