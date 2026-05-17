@@ -53,6 +53,9 @@ import type {
   TimerType,
   TimerAlertThreshold,
   TimerAlertType,
+  TriggerSource,
+  PipeConditionKind,
+  PipeCondition,
 } from '../types/trigger'
 
 const CLASS_NAMES = [
@@ -281,6 +284,13 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
   const [name, setName] = useState(initial?.name ?? prefill?.name ?? '')
   const [pattern, setPattern] = useState(initial?.pattern ?? prefill?.pattern ?? '')
   const [enabled, setEnabled] = useState(initial?.enabled ?? true)
+  const [source, setSource] = useState<TriggerSource>(initial?.source === 'pipe' ? 'pipe' : 'log')
+  const [pipeKind, setPipeKind] = useState<PipeConditionKind>(initial?.pipe_condition?.kind ?? 'target_hp_below')
+  const [pipeHPThreshold, setPipeHPThreshold] = useState<number>(initial?.pipe_condition?.hp_threshold ?? 20)
+  const [pipeTargetName, setPipeTargetName] = useState<string>(initial?.pipe_condition?.target_name ?? '')
+  const [pipeSpellName, setPipeSpellName] = useState<string>(initial?.pipe_condition?.spell_name ?? '')
+  const [pipeCommandText, setPipeCommandText] = useState<string>(initial?.pipe_condition?.text ?? '')
+  const [pipeError, setPipeError] = useState<string | null>(null)
   const [actions, setActions] = useState<Action[]>(
     initial?.actions ?? [{ type: 'overlay_text', text: prefill?.name ?? '', duration_secs: 5, color: '#ffffff', sound_path: '', volume: 0, voice: '' }],
   )
@@ -385,38 +395,77 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
     setActions((prev) => [...prev, { type: 'overlay_text', text: '', duration_secs: 5, color: '#ffffff', sound_path: '', volume: 0, voice: '' }])
   }
 
+  const buildPipeCondition = (): PipeCondition | null => {
+    switch (pipeKind) {
+      case 'target_hp_below': {
+        const t = Math.max(1, Math.min(99, Math.round(pipeHPThreshold)))
+        return { kind: 'target_hp_below', hp_threshold: t }
+      }
+      case 'target_name':
+        if (!pipeTargetName.trim()) return null
+        return { kind: 'target_name', target_name: pipeTargetName.trim() }
+      case 'buff_landed':
+        if (!pipeSpellName.trim()) return null
+        return { kind: 'buff_landed', spell_name: pipeSpellName.trim() }
+      case 'buff_faded':
+        if (!pipeSpellName.trim()) return null
+        return { kind: 'buff_faded', spell_name: pipeSpellName.trim() }
+      case 'pipe_command':
+        if (!pipeCommandText.trim()) return null
+        return { kind: 'pipe_command', text: pipeCommandText.trim() }
+    }
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim() || !pattern.trim()) return
-    if (!validatePattern(pattern)) return
+    if (!name.trim()) return
 
-    const excludeList = excludePatternsText
-      .split('\n')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0)
-    const errs: string[] = []
-    for (const ex of excludeList) {
-      try { new RegExp(ex) } catch (e) { errs.push(`${ex} — ${(e as Error).message}`) }
+    let pipeCondition: PipeCondition | undefined
+    let excludeList: string[] = []
+    if (source === 'pipe') {
+      const pc = buildPipeCondition()
+      if (!pc) {
+        setPipeError('Fill in the field for this pipe condition kind.')
+        return
+      }
+      setPipeError(null)
+      pipeCondition = pc
+    } else {
+      if (!pattern.trim()) return
+      if (!validatePattern(pattern)) return
+
+      excludeList = excludePatternsText
+        .split('\n')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+      const errs: string[] = []
+      for (const ex of excludeList) {
+        try { new RegExp(ex) } catch (e) { errs.push(`${ex} — ${(e as Error).message}`) }
+      }
+      if (errs.length > 0) {
+        setExcludeErrors(errs)
+        return
+      }
+      setExcludeErrors([])
     }
-    if (errs.length > 0) {
-      setExcludeErrors(errs)
-      return
-    }
-    setExcludeErrors([])
 
     const req: CreateTriggerRequest = {
       name: name.trim(),
       enabled,
-      pattern: pattern.trim(),
+      // Pipe triggers don't use the regex pattern; send empty so the
+      // backend doesn't try to compile one.
+      pattern: source === 'pipe' ? '' : pattern.trim(),
       actions,
       timer_type: timerType,
       timer_duration_secs: timerType === 'none' ? 0 : Math.max(0, timerDuration),
-      worn_off_pattern: timerType === 'none' ? '' : wornOffPattern.trim(),
+      worn_off_pattern: source === 'pipe' || timerType === 'none' ? '' : wornOffPattern.trim(),
       spell_id: initial?.spell_id ?? prefill?.spellId ?? 0,
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
       characters: Array.from(selectedChars),
       timer_alerts: timerType === 'none' ? [] : timerAlerts,
-      exclude_patterns: excludeList,
+      exclude_patterns: source === 'pipe' ? [] : excludeList,
+      source,
+      pipe_condition: pipeCondition,
     }
 
     setSubmitting(true)
@@ -475,34 +524,161 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
         />
       </div>
 
-      {/* Pattern */}
+      {/* Source toggle */}
       <div className="space-y-1">
         <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-          Pattern (regex)
+          Match source
         </label>
-        <input
-          type="text"
-          placeholder="e.g. Your .+ spell has worn off\."
-          value={pattern}
-          onChange={(e) => handlePatternChange(e.target.value)}
-          className="w-full rounded px-3 py-1.5 text-sm outline-none font-mono"
-          style={{
-            ...inputStyle,
-            border: `1px solid ${patternError ? 'var(--color-danger)' : 'var(--color-border)'}`,
-          }}
-          disabled={submitting}
-        />
-        {patternError && (
-          <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
-            {patternError}
-          </p>
-        )}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setSource('log')}
+            className="flex-1 rounded px-3 py-1.5 text-xs font-semibold"
+            style={{
+              backgroundColor: source === 'log' ? 'var(--color-primary)' : 'var(--color-surface-2)',
+              color: source === 'log' ? '#fff' : 'var(--color-foreground)',
+              border: '1px solid var(--color-border)',
+              cursor: 'pointer',
+            }}
+          >
+            Log line (regex)
+          </button>
+          <button
+            type="button"
+            onClick={() => setSource('pipe')}
+            className="flex-1 rounded px-3 py-1.5 text-xs font-semibold"
+            style={{
+              backgroundColor: source === 'pipe' ? 'var(--color-primary)' : 'var(--color-surface-2)',
+              color: source === 'pipe' ? '#fff' : 'var(--color-foreground)',
+              border: '1px solid var(--color-border)',
+              cursor: 'pointer',
+            }}
+          >
+            Zeal pipe event
+          </button>
+        </div>
         <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-          Matched against the log message text (after the timestamp).
+          Pipe triggers fire on live game state (target HP, buff changes, /pipe commands) and require Zeal running.
         </p>
       </div>
 
-      {/* Exclude patterns */}
+      {/* Pattern — log source only */}
+      {source === 'log' && (
+        <div className="space-y-1">
+          <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+            Pattern (regex)
+          </label>
+          <input
+            type="text"
+            placeholder="e.g. Your .+ spell has worn off\."
+            value={pattern}
+            onChange={(e) => handlePatternChange(e.target.value)}
+            className="w-full rounded px-3 py-1.5 text-sm outline-none font-mono"
+            style={{
+              ...inputStyle,
+              border: `1px solid ${patternError ? 'var(--color-danger)' : 'var(--color-border)'}`,
+            }}
+            disabled={submitting}
+          />
+          {patternError && (
+            <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
+              {patternError}
+            </p>
+          )}
+          <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+            Matched against the log message text (after the timestamp).
+          </p>
+        </div>
+      )}
+
+      {/* Pipe condition — pipe source only */}
+      {source === 'pipe' && (
+        <div className="space-y-2 rounded p-3" style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+          <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+            Pipe condition
+          </label>
+          <select
+            value={pipeKind}
+            onChange={(e) => { setPipeKind(e.target.value as PipeConditionKind); setPipeError(null) }}
+            className="w-full rounded px-3 py-1.5 text-sm outline-none"
+            style={inputStyle}
+            disabled={submitting}
+          >
+            <option value="target_hp_below">Target HP drops below…</option>
+            <option value="target_name">Target name becomes…</option>
+            <option value="buff_landed">Buff lands on me</option>
+            <option value="buff_faded">Buff fades from me</option>
+            <option value="pipe_command">In-game /pipe text</option>
+          </select>
+
+          {pipeKind === 'target_hp_below' && (
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={1}
+                max={99}
+                value={pipeHPThreshold}
+                onChange={(e) => setPipeHPThreshold(Number(e.target.value))}
+                style={{ flex: 1 }}
+                disabled={submitting}
+              />
+              <span
+                className="tabular-nums text-xs"
+                style={{ color: 'var(--color-foreground)', minWidth: '3.5rem' }}
+              >
+                {pipeHPThreshold}% HP
+              </span>
+            </div>
+          )}
+          {pipeKind === 'target_name' && (
+            <input
+              type="text"
+              placeholder="e.g. Vulak`Aerr"
+              value={pipeTargetName}
+              onChange={(e) => setPipeTargetName(e.target.value)}
+              className="w-full rounded px-3 py-1.5 text-sm outline-none"
+              style={inputStyle}
+              disabled={submitting}
+            />
+          )}
+          {(pipeKind === 'buff_landed' || pipeKind === 'buff_faded') && (
+            <input
+              type="text"
+              placeholder="e.g. Shield of Words"
+              value={pipeSpellName}
+              onChange={(e) => setPipeSpellName(e.target.value)}
+              className="w-full rounded px-3 py-1.5 text-sm outline-none"
+              style={inputStyle}
+              disabled={submitting}
+            />
+          )}
+          {pipeKind === 'pipe_command' && (
+            <div className="space-y-1">
+              <input
+                type="text"
+                placeholder="e.g. pull"
+                value={pipeCommandText}
+                onChange={(e) => setPipeCommandText(e.target.value)}
+                className="w-full rounded px-3 py-1.5 text-sm outline-none"
+                style={inputStyle}
+                disabled={submitting}
+              />
+              <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                Triggers when you type <code>/pipe {pipeCommandText || '<text>'}</code> in-game (exact, case-sensitive).
+              </p>
+            </div>
+          )}
+
+          {pipeError && (
+            <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
+              {pipeError}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Exclude patterns — log source only (pipe matches are typed, not regex) */}
+      {source === 'log' && (
       <div className="space-y-1">
         <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
           Exclude patterns (one regex per line, optional)
@@ -531,6 +707,7 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
           </p>
         )}
       </div>
+      )}
 
       {/* Characters */}
       <div className="space-y-1.5">
@@ -638,15 +815,17 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
                   disabled={submitting}
                 />
               </div>
-              <input
-                type="text"
-                placeholder="worn-off regex (optional)"
-                value={wornOffPattern}
-                onChange={(e) => setWornOffPattern(e.target.value)}
-                className="flex-1 rounded px-2 py-0.5 text-xs outline-none font-mono"
-                style={inputStyle}
-                disabled={submitting}
-              />
+              {source === 'log' && (
+                <input
+                  type="text"
+                  placeholder="worn-off regex (optional)"
+                  value={wornOffPattern}
+                  onChange={(e) => setWornOffPattern(e.target.value)}
+                  className="flex-1 rounded px-2 py-0.5 text-xs outline-none font-mono"
+                  style={inputStyle}
+                  disabled={submitting}
+                />
+              )}
             </div>
             <div className="flex items-center gap-1.5">
               <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
@@ -903,6 +1082,19 @@ function TriggerRow({ trigger, onDeleted, onUpdated }: TriggerRowProps): React.R
                 }}
               >
                 {trigger.timer_type} · {trigger.timer_duration_secs}s
+              </span>
+            )}
+            {trigger.source === 'pipe' && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded shrink-0 font-medium"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-primary)',
+                  border: '1px solid var(--color-primary)',
+                }}
+                title="Zeal pipe event trigger"
+              >
+                pipe
               </span>
             )}
             {trigger.pack_name && (

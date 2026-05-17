@@ -18,7 +18,7 @@ import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { TargetState } from '../types/overlay'
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
-import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold } from '../types/trigger'
+import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 
 export interface GlobalSearchResult {
@@ -830,6 +830,10 @@ export interface CreateTriggerRequest {
   characters?: string[]
   timer_alerts?: TimerAlertThreshold[]
   exclude_patterns?: string[]
+  /** Match source. Omitted = 'log' (backwards-compatible). */
+  source?: TriggerSource
+  /** Typed match definition for pipe-source triggers. */
+  pipe_condition?: PipeCondition
 }
 
 export function createTrigger(req: CreateTriggerRequest): Promise<Trigger> {
