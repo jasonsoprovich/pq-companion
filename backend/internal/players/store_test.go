@@ -237,3 +237,53 @@ func TestUpdateGuild_NewPlayer(t *testing.T) {
 		t.Errorf("new row from UpdateGuild = %+v", got)
 	}
 }
+
+func TestSearch_ClassFilterExpandsToTitleAliases(t *testing.T) {
+	s := openTest(t)
+	ts := time.Unix(1_700_000_000, 0)
+
+	// Three enchanters at different level brackets — each shows up under a
+	// different title in /who. The filter should pull all three when the
+	// user picks "Enchanter".
+	for _, r := range []struct{ name, class string }{
+		{"Lowlvl", "Enchanter"},
+		{"Mid", "Illusionist"},
+		{"High", "Phantasmist"},
+		// Unrelated class — should not appear.
+		{"Healer", "Cleric"},
+	} {
+		if err := s.Upsert(SightingInput{Name: r.name, Class: r.class, ObservedAt: ts}); err != nil {
+			t.Fatalf("upsert %s: %v", r.name, err)
+		}
+	}
+
+	got, err := s.Search(SearchFilters{Class: "Enchanter"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	names := map[string]bool{}
+	for _, p := range got {
+		names[p.Name] = true
+	}
+	for _, want := range []string{"Lowlvl", "Mid", "High"} {
+		if !names[want] {
+			t.Errorf("expected %s in results, got %v", want, names)
+		}
+	}
+	if names["Healer"] {
+		t.Errorf("Cleric leaked into Enchanter filter")
+	}
+}
+
+func TestSearch_ClassFilterDirectTitleStillExactMatches(t *testing.T) {
+	s := openTest(t)
+	ts := time.Unix(1_700_000_000, 0)
+	s.Upsert(SightingInput{Name: "Lowlvl", Class: "Enchanter", ObservedAt: ts})
+	s.Upsert(SightingInput{Name: "High", Class: "Phantasmist", ObservedAt: ts})
+
+	// Specific title — should only match that one title, not expand.
+	got, _ := s.Search(SearchFilters{Class: "Phantasmist"})
+	if len(got) != 1 || got[0].Name != "High" {
+		t.Errorf("specific-title filter should match exactly; got %+v", got)
+	}
+}

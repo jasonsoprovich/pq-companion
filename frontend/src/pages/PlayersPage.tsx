@@ -359,6 +359,29 @@ export default function PlayersPage(): React.ReactElement {
             <option key={g} value={g}>{g}</option>
           ))}
         </select>
+        {(search || classFilter || zoneFilter || guildFilter || sortField !== 'none') && (
+          <button
+            onClick={() => {
+              setSearch('')
+              setClassFilter('')
+              setZoneFilter('')
+              setGuildFilter('')
+              setSortField('none')
+              setSortDir('desc')
+            }}
+            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+              cursor: 'pointer',
+            }}
+            title="Reset all filters and sort"
+          >
+            <X size={11} />
+            Clear filters
+          </button>
+        )}
       </div>
 
       {/* Detail panel */}

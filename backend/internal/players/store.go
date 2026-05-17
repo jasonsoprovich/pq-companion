@@ -8,6 +8,7 @@ package players
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -318,8 +319,23 @@ func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
 		args = append(args, "%"+f.NameContains+"%")
 	}
 	if f.Class != "" {
-		q += ` AND class = ? COLLATE NOCASE`
-		args = append(args, f.Class)
+		// Expand the filter against the class-title alias table so picking
+		// "Enchanter" in the dropdown also matches Illusionists, Beguilers
+		// and Phantasmists. expandClassFilter falls back to a single-element
+		// slice for unknown / specific-title queries so direct matches still
+		// work.
+		titles := expandClassFilter(f.Class)
+		if len(titles) == 1 {
+			q += ` AND class = ? COLLATE NOCASE`
+			args = append(args, titles[0])
+		} else {
+			placeholders := strings.Repeat("?,", len(titles))
+			placeholders = placeholders[:len(placeholders)-1]
+			q += ` AND class IN (` + placeholders + `) COLLATE NOCASE`
+			for _, t := range titles {
+				args = append(args, t)
+			}
+		}
 	}
 	if f.Zone != "" {
 		q += ` AND last_seen_zone = ? COLLATE NOCASE`
