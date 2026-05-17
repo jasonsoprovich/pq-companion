@@ -301,6 +301,7 @@ type SearchFilters struct {
 	NameContains string
 	Class        string
 	Zone         string
+	Guild        string
 	Limit        int
 	Offset       int
 }
@@ -323,6 +324,10 @@ func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
 	if f.Zone != "" {
 		q += ` AND last_seen_zone = ? COLLATE NOCASE`
 		args = append(args, f.Zone)
+	}
+	if f.Guild != "" {
+		q += ` AND guild = ? COLLATE NOCASE`
+		args = append(args, f.Guild)
 	}
 	q += ` ORDER BY last_seen_at DESC`
 	if f.Limit > 0 {

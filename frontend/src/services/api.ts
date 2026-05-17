@@ -398,6 +398,7 @@ export interface PlayerSearchFilters {
   search?: string
   class?: string
   zone?: string
+  guild?: string
   limit?: number
   offset?: number
 }
@@ -407,6 +408,7 @@ export function listPlayers(filters: PlayerSearchFilters = {}): Promise<import('
   if (filters.search) params.set('search', filters.search)
   if (filters.class) params.set('class', filters.class)
   if (filters.zone) params.set('zone', filters.zone)
+  if (filters.guild) params.set('guild', filters.guild)
   if (filters.limit) params.set('limit', String(filters.limit))
   if (filters.offset) params.set('offset', String(filters.offset))
   const qs = params.toString()

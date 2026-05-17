@@ -21,6 +21,7 @@ func (h *playersHandler) list(w http.ResponseWriter, r *http.Request) {
 		NameContains: r.URL.Query().Get("search"),
 		Class:        r.URL.Query().Get("class"),
 		Zone:         r.URL.Query().Get("zone"),
+		Guild:        r.URL.Query().Get("guild"),
 		Limit:        limit,
 		Offset:       queryInt(r, "offset", 0),
 	}

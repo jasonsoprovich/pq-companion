@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { UserSearch, RefreshCw, Trash2, AlertCircle, EyeOff, X } from 'lucide-react'
+import { UserSearch, RefreshCw, Trash2, AlertCircle, EyeOff, X, ArrowUp, ArrowDown } from 'lucide-react'
 import { listPlayers, deletePlayer, clearPlayers, getPlayerHistory } from '../services/api'
 import type { PlayerSighting, PlayerLevelHistoryEntry } from '../types/player'
 
@@ -153,6 +153,11 @@ function PlayerDetail({
   )
 }
 
+// SortField names a sortable column. 'none' means "use the API's default
+// order" (last_seen_at DESC) — i.e. nothing the user has actively chosen.
+type SortField = 'none' | 'name' | 'level' | 'class' | 'guild' | 'zone' | 'sightings' | 'seen'
+type SortDir = 'asc' | 'desc'
+
 export default function PlayersPage(): React.ReactElement {
   const [players, setPlayers] = useState<PlayerSighting[]>([])
   const [loading, setLoading] = useState(true)
@@ -160,28 +165,80 @@ export default function PlayersPage(): React.ReactElement {
   const [search, setSearch] = useState('')
   const [classFilter, setClassFilter] = useState<string>('')
   const [zoneFilter, setZoneFilter] = useState<string>('')
+  const [guildFilter, setGuildFilter] = useState<string>('')
   const [selected, setSelected] = useState<PlayerSighting | null>(null)
+  const [sortField, setSortField] = useState<SortField>('none')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
 
   const load = useCallback(() => {
     setLoading(true)
     setError(null)
-    listPlayers({ search, class: classFilter, zone: zoneFilter, limit: 500 })
+    listPlayers({ search, class: classFilter, zone: zoneFilter, guild: guildFilter, limit: 500 })
       .then((r) => setPlayers(r.players))
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [search, classFilter, zoneFilter])
+  }, [search, classFilter, zoneFilter, guildFilter])
 
   useEffect(() => {
     load()
   }, [load])
 
-  // Derive a unique zone list from the loaded set so the zone filter is a real
-  // dropdown of zones actually present in the data.
+  // Derive unique zone/guild lists from the loaded set so each filter is a
+  // real dropdown of values actually present.
   const zoneOptions = useMemo(() => {
     const zones = new Set<string>()
     players.forEach((p) => { if (p.last_seen_zone) zones.add(p.last_seen_zone) })
     return Array.from(zones).sort()
   }, [players])
+  const guildOptions = useMemo(() => {
+    const guilds = new Set<string>()
+    players.forEach((p) => { if (p.guild) guilds.add(p.guild) })
+    return Array.from(guilds).sort()
+  }, [players])
+
+  // Apply client-side sort on top of the filtered list. When sortField is
+  // 'none' the API's default last-seen ordering wins.
+  const sortedPlayers = useMemo(() => {
+    if (sortField === 'none') return players
+    const direction = sortDir === 'asc' ? 1 : -1
+    const cmp = (a: PlayerSighting, b: PlayerSighting): number => {
+      switch (sortField) {
+        case 'name':
+          return a.name.localeCompare(b.name) * direction
+        case 'level':
+          return (a.last_seen_level - b.last_seen_level) * direction
+        case 'class':
+          return (a.class || '').localeCompare(b.class || '') * direction
+        case 'guild':
+          return (a.guild || '').localeCompare(b.guild || '') * direction
+        case 'zone':
+          return (a.last_seen_zone || '').localeCompare(b.last_seen_zone || '') * direction
+        case 'sightings':
+          return (a.sightings_count - b.sightings_count) * direction
+        case 'seen':
+          return (a.last_seen_at - b.last_seen_at) * direction
+        default:
+          return 0
+      }
+    }
+    return [...players].sort(cmp)
+  }, [players, sortField, sortDir])
+
+  function handleSort(field: SortField): void {
+    if (sortField === field) {
+      // Same column — flip direction. A third click on the same column
+      // resets to the API default order so the user can recover the
+      // last-seen-first behaviour without picking a different column.
+      if (sortDir === 'desc') {
+        setSortDir('asc')
+      } else {
+        setSortField('none')
+      }
+    } else {
+      setSortField(field)
+      setSortDir('desc')
+    }
+  }
 
   const [confirmClearOpen, setConfirmClearOpen] = useState(false)
 
@@ -287,6 +344,21 @@ export default function PlayersPage(): React.ReactElement {
             <option key={z} value={z}>{z}</option>
           ))}
         </select>
+        <select
+          value={guildFilter}
+          onChange={(e) => setGuildFilter(e.target.value)}
+          className="text-xs rounded px-2 py-1 outline-none"
+          style={{
+            backgroundColor: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-foreground)',
+          }}
+        >
+          <option value="">All guilds</option>
+          {guildOptions.map((g) => (
+            <option key={g} value={g}>{g}</option>
+          ))}
+        </select>
       </div>
 
       {/* Detail panel */}
@@ -344,14 +416,14 @@ export default function PlayersPage(): React.ReactElement {
             className="grid gap-x-3 text-xs"
             style={{ gridTemplateColumns: 'auto auto 1fr 1fr 1fr auto auto', color: 'var(--color-muted-foreground)' }}
           >
-            <span className="font-semibold border-b pb-1" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>Name</span>
-            <span className="font-semibold border-b pb-1" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>Lv</span>
-            <span className="font-semibold border-b pb-1" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>Class</span>
-            <span className="font-semibold border-b pb-1" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>Guild</span>
-            <span className="font-semibold border-b pb-1" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>Last zone</span>
-            <span className="font-semibold border-b pb-1 text-right" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>Sightings</span>
-            <span className="font-semibold border-b pb-1 text-right" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>Seen</span>
-            {players.map((p) => (
+            <SortHeader label="Name" field="name" activeField={sortField} dir={sortDir} onClick={handleSort} />
+            <SortHeader label="Lv" field="level" activeField={sortField} dir={sortDir} onClick={handleSort} />
+            <SortHeader label="Class" field="class" activeField={sortField} dir={sortDir} onClick={handleSort} />
+            <SortHeader label="Guild" field="guild" activeField={sortField} dir={sortDir} onClick={handleSort} />
+            <SortHeader label="Last zone" field="zone" activeField={sortField} dir={sortDir} onClick={handleSort} />
+            <SortHeader label="Sightings" field="sightings" activeField={sortField} dir={sortDir} onClick={handleSort} align="right" />
+            <SortHeader label="Seen" field="seen" activeField={sortField} dir={sortDir} onClick={handleSort} align="right" />
+            {sortedPlayers.map((p) => (
               <React.Fragment key={p.name}>
                 <button
                   onClick={() => setSelected(p)}
@@ -385,6 +457,46 @@ export default function PlayersPage(): React.ReactElement {
         />
       )}
     </div>
+  )
+}
+
+// SortHeader is a clickable table-column header. Renders an arrow icon on
+// the active column to indicate sort direction; a third click on the same
+// column resets to the API default order (handled by the parent's
+// onClick logic).
+function SortHeader({
+  label,
+  field,
+  activeField,
+  dir,
+  onClick,
+  align = 'left',
+}: {
+  label: string
+  field: SortField
+  activeField: SortField
+  dir: SortDir
+  onClick: (field: SortField) => void
+  align?: 'left' | 'right'
+}): React.ReactElement {
+  const active = activeField === field
+  return (
+    <button
+      onClick={() => onClick(field)}
+      className="font-semibold border-b pb-1 flex items-center gap-1"
+      style={{
+        color: active ? 'var(--color-foreground)' : 'var(--color-muted)',
+        borderColor: 'var(--color-border)',
+        backgroundColor: 'transparent',
+        cursor: 'pointer',
+        justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
+        textAlign: align,
+      }}
+      title="Click to sort. Click the active column again to flip direction; once more to clear."
+    >
+      <span>{label}</span>
+      {active && (dir === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />)}
+    </button>
   )
 }
 
