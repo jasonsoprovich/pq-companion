@@ -1344,6 +1344,38 @@ func TestCharmedPetTellBindsOwner(t *testing.T) {
 	}
 }
 
+// TestCharmedPetSameNameAsTarget covers the case where the charmed mob and
+// its target share an NPC name (e.g. charmed "a netherbian drone" attacking
+// another "a netherbian drone" in the Netherbian Lair). Before the fix,
+// excludeNPCsByName dropped the pet row because its Name collided with the
+// fight's primary NPC — leaving the pet's damage invisible while spell
+// damage on the same target still showed up.
+func TestCharmedPetSameNameAsTarget(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Osui" })
+	now := time.Now()
+
+	tr.Handle(charmedPetEvent("a netherbian drone", now))
+	tr.Handle(hitEvent("a netherbian drone", "a netherbian drone", 400, now.Add(time.Second)))
+	tr.Handle(hitEvent("You", "a netherbian drone", 100, now.Add(2*time.Second)))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil {
+		t.Fatal("expected an active fight on 'a netherbian drone'")
+	}
+	pet := findCombatant(st.CurrentFight.Combatants, "a netherbian drone")
+	if pet == nil {
+		t.Fatal("expected charmed pet 'a netherbian drone' in combatants; row was filtered as fightNPC")
+	}
+	if pet.OwnerName != "Osui" {
+		t.Errorf("OwnerName = %q, want %q", pet.OwnerName, "Osui")
+	}
+	if pet.TotalDamage != 400 {
+		t.Errorf("pet TotalDamage = %d, want 400", pet.TotalDamage)
+	}
+}
+
 // TestCharmBrokenReleasesCharmedPet exercises the cleanup half of charm
 // binding: after "Your charm spell has worn off", the petOwners entry the
 // charm tell installed is gone, so subsequent damage by that name is not

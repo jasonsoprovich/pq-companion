@@ -1295,6 +1295,13 @@ func safeDivide(numerator, denominator float64) float64 {
 // is for player damage dealers only; NPC-vs-NPC AoE crossfire would otherwise
 // pollute the row list.
 //
+// The petOwners check runs before the fightNPC equality filter: when a charm
+// pet shares its name with the mob it's attacking (e.g. charmed "a netherbian
+// drone" hitting another "a netherbian drone"), the pet row's Name collides
+// with fightNPC and would otherwise be dropped — leaving the pet's damage
+// invisible. A name in petOwners is authoritative evidence the row is a pet,
+// not the boss attacking itself.
+//
 // confirmedHostiles catches single-word-named hostiles that looksLikeNPC
 // can't recognise on its own — e.g. a charm-broken pet whose name still has
 // the shape of a player. Once it has hit "You" it stays filtered for the
@@ -1302,11 +1309,11 @@ func safeDivide(numerator, denominator float64) float64 {
 func excludeNPCsByName(combatants []EntityStats, fightNPC string, petOwners map[string]string, confirmedHostiles map[string]bool) []EntityStats {
 	filtered := combatants[:0]
 	for _, c := range combatants {
-		if c.Name == fightNPC {
-			continue
-		}
 		if _, isPet := petOwners[c.Name]; isPet {
 			filtered = append(filtered, c)
+			continue
+		}
+		if c.Name == fightNPC {
 			continue
 		}
 		if looksLikeNPC(c.Name) || confirmedHostiles[c.Name] {
