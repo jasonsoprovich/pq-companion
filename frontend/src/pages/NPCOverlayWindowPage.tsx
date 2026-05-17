@@ -287,7 +287,7 @@ function NPCContent({ state, view }: { state: TargetState; view: View }): React.
               <Chip label="HP" value={npc.hp.toLocaleString()} color="#22c55e" />
               <Chip label="AC" value={npc.ac} />
               <Chip label="DMG" value={`${npc.min_dmg}-${npc.max_dmg}`} color="#ef4444" />
-              <Chip label="Atk" value={npc.attack_count < 0 ? '—' : npc.attack_count} />
+              <Chip label="Atk/Rd" value={npc.attack_count < 0 ? 1 : npc.attack_count} />
             </div>
 
             {/* Resists */}
