@@ -104,6 +104,32 @@ function AbilityBadge({ ability }: { ability: SpecialAbility }): React.ReactElem
   )
 }
 
+function hpBarColor(percent: number): string {
+  if (percent > 50) return '#22c55e'
+  if (percent >= 20) return '#eab308'
+  return '#ef4444'
+}
+
+function TargetHPBar({ percent }: { percent: number }): React.ReactElement {
+  const color = hpBarColor(percent)
+  return (
+    <div className="mt-2">
+      <div
+        className="relative h-2 w-full overflow-hidden rounded"
+        style={{ backgroundColor: 'var(--color-surface)' }}
+      >
+        <div
+          className="absolute inset-y-0 left-0 transition-all"
+          style={{ width: `${percent}%`, backgroundColor: color, transitionDuration: '150ms' }}
+        />
+      </div>
+      <div className="mt-0.5 text-right text-[10px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
+        {percent}% HP
+      </div>
+    </div>
+  )
+}
+
 function Stat({ label, value, color }: { label: string; value: string | number; color?: string }): React.ReactElement {
   return (
     <div className="flex flex-col items-center rounded px-2 py-1" style={{ backgroundColor: 'var(--color-surface-2)', minWidth: '3.25rem' }}>
@@ -241,16 +267,23 @@ function NPCCard({
     <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-3">
       <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
         <div className="flex items-start justify-between gap-2">
-          <div>
+          <div className="min-w-0 flex-1">
             <h2 className="text-base font-bold leading-tight" style={{ color: 'var(--color-foreground)' }}>
               {state.target_name ?? 'Unknown'}
             </h2>
+            {state.pet_owner && (
+              <p className="mt-0.5 text-[11px] italic" style={{ color: 'var(--color-muted-foreground)' }}>
+                Pet of {state.pet_owner}
+              </p>
+            )}
             {state.current_zone && (
               <p className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>{state.current_zone}</p>
             )}
           </div>
           <span className="shrink-0 text-[10px] tabular-nums" style={{ color: 'var(--color-muted)' }}>{lastUpdated}</span>
         </div>
+
+        {state.hp_percent >= 0 && <TargetHPBar percent={state.hp_percent} />}
 
         {npc && (npc.raid_target === 1 || npc.rare_spawn === 1) && (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -286,7 +319,7 @@ function NPCCard({
               <Stat label="AC" value={npc.ac} />
               <Stat label="Min DMG" value={npc.min_dmg} color="#ef4444" />
               <Stat label="Max DMG" value={npc.max_dmg} color="#ef4444" />
-              <Stat label="Attacks" value={npc.attack_count} />
+              <Stat label="Atk/Rd" value={npc.attack_count < 0 ? 1 : npc.attack_count} />
             </div>
           </div>
 

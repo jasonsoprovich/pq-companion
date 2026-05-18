@@ -85,15 +85,69 @@ type TimerAlert struct {
 	TTSVolume   int            `json:"tts_volume"` // 0–100
 }
 
-// Trigger is a user-defined log line matcher with associated actions.
+// SourceLog and SourcePipe are the legal values for Trigger.Source.
+const (
+	SourceLog  = "log"
+	SourcePipe = "pipe"
+)
+
+// PipeConditionKind identifies which kind of ZealPipe event a pipe-source
+// trigger matches.
+type PipeConditionKind string
+
+const (
+	// PipeKindTargetHPBelow fires when the target's HP percentage transitions
+	// from above HPThreshold to at-or-below. Refires only after HP rises back
+	// above threshold and drops again — no spam at every pipe tick.
+	PipeKindTargetHPBelow PipeConditionKind = "target_hp_below"
+	// PipeKindTargetName fires when the player's target name becomes the
+	// configured TargetName (case-sensitive). Dedupes on consecutive identical
+	// matches.
+	PipeKindTargetName PipeConditionKind = "target_name"
+	// PipeKindBuffLanded fires when SpellName appears in the player's buff
+	// slots (transition from absent to present).
+	PipeKindBuffLanded PipeConditionKind = "buff_landed"
+	// PipeKindBuffFaded fires when SpellName disappears from the player's
+	// buff slots (transition from present to absent).
+	PipeKindBuffFaded PipeConditionKind = "buff_faded"
+	// PipeKindPipeCommand fires when the player types `/pipe <Text>` in-game
+	// and the text matches (case-sensitive, exact). One-shot per /pipe entry.
+	PipeKindPipeCommand PipeConditionKind = "pipe_command"
+)
+
+// PipeCondition is the typed match definition for a pipe-source trigger.
+// Fields are populated based on Kind — see the PipeKind* constants. JSON
+// shape: { "kind": "...", "hp_threshold": 20, "spell_name": "...", ... }
+type PipeCondition struct {
+	Kind        PipeConditionKind `json:"kind"`
+	HPThreshold int               `json:"hp_threshold,omitempty"` // PipeKindTargetHPBelow: 0–100
+	SpellName   string            `json:"spell_name,omitempty"`   // PipeKindBuffLanded / PipeKindBuffFaded
+	TargetName  string            `json:"target_name,omitempty"`  // PipeKindTargetName
+	Text        string            `json:"text,omitempty"`         // PipeKindPipeCommand
+}
+
+// Trigger is a user-defined matcher with associated actions. Today it matches
+// either log lines (Source=="log", regex on Pattern) or ZealPipe events
+// (Source=="pipe", typed match on PipeCondition).
 type Trigger struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Enabled   bool      `json:"enabled"`
-	Pattern   string    `json:"pattern"` // regexp matched against the message portion of log lines
+	Pattern   string    `json:"pattern"` // regexp matched against the message portion of log lines (Source=="log" only)
 	Actions   []Action  `json:"actions"`
 	PackName  string    `json:"pack_name"` // empty for user-created triggers; pack name for built-in packs
 	CreatedAt time.Time `json:"created_at"`
+
+	// Source selects which input stream the trigger matches against:
+	//   "log"  (default, omitted in JSON) — Pattern regex on log lines.
+	//   "pipe" — PipeCondition kind/fields matched against ZealPipe events.
+	// Existing rows with no `source` column default to "log".
+	Source string `json:"source,omitempty"`
+
+	// PipeCondition is the typed match definition for Source=="pipe" triggers.
+	// Kind discriminates between target_hp_below / target_name / buff_landed /
+	// buff_faded / pipe_command. Empty for log-source triggers.
+	PipeCondition *PipeCondition `json:"pipe_condition,omitempty"`
 
 	// Timer integration — when TimerType is buff or detrimental, a match starts
 	// a countdown timer on the corresponding overlay. WornOffPattern optionally
@@ -102,6 +156,14 @@ type Trigger struct {
 	TimerDurationSecs int       `json:"timer_duration_secs"`
 	WornOffPattern    string    `json:"worn_off_pattern"`
 	SpellID           int       `json:"spell_id"` // optional — 0 means not linked to a specific DB spell
+
+	// CooldownSecs spawns a second timer alongside the buff/duration timer to
+	// track the spell or discipline's reuse cooldown (recast_time in
+	// spells_new). Counts down on the buff overlay with a " CD" suffix in the
+	// label and a "ready" TTS at 1s remaining. 0 = no cooldown timer.
+	// Independent of TimerType — works even when the primary trigger is an
+	// overlay-only alert (Lay on Hands, Harvest, etc.).
+	CooldownSecs int `json:"cooldown_secs,omitempty"`
 
 	// DisplayThresholdSecs is a per-trigger override for the global buff /
 	// detrimental display threshold. When > 0, the timer this trigger

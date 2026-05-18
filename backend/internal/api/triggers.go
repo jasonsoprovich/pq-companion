@@ -47,18 +47,47 @@ func (h *triggerHandler) list(w http.ResponseWriter, r *http.Request) {
 
 // triggerRequest is the shared JSON payload accepted by create and update.
 type triggerRequest struct {
-	Name                 string               `json:"name"`
-	Enabled              bool                 `json:"enabled"`
-	Pattern              string               `json:"pattern"`
-	Actions              []trigger.Action     `json:"actions"`
-	TimerType            trigger.TimerType    `json:"timer_type"`
-	TimerDurationSecs    int                  `json:"timer_duration_secs"`
-	WornOffPattern       string               `json:"worn_off_pattern"`
-	SpellID              int                  `json:"spell_id"`
-	DisplayThresholdSecs int                  `json:"display_threshold_secs"`
-	Characters           []string             `json:"characters"`
-	TimerAlerts          []trigger.TimerAlert `json:"timer_alerts"`
-	ExcludePatterns      []string             `json:"exclude_patterns"`
+	Name                 string                 `json:"name"`
+	Enabled              bool                   `json:"enabled"`
+	Pattern              string                 `json:"pattern"`
+	Actions              []trigger.Action       `json:"actions"`
+	TimerType            trigger.TimerType      `json:"timer_type"`
+	TimerDurationSecs    int                    `json:"timer_duration_secs"`
+	WornOffPattern       string                 `json:"worn_off_pattern"`
+	SpellID              int                    `json:"spell_id"`
+	DisplayThresholdSecs int                    `json:"display_threshold_secs"`
+	Characters           []string               `json:"characters"`
+	TimerAlerts          []trigger.TimerAlert   `json:"timer_alerts"`
+	ExcludePatterns      []string               `json:"exclude_patterns"`
+	Source               string                 `json:"source,omitempty"`
+	PipeCondition        *trigger.PipeCondition `json:"pipe_condition,omitempty"`
+}
+
+// validateTriggerRequest enforces the per-source field rules: log triggers
+// require a regex pattern; pipe triggers require a non-empty PipeCondition.
+// Returns an error message suitable for writeError when validation fails,
+// or "" when the request is acceptable.
+func validateTriggerRequest(req *triggerRequest) string {
+	if req.Name == "" {
+		return "name is required"
+	}
+	src := req.Source
+	if src == "" {
+		src = trigger.SourceLog
+	}
+	switch src {
+	case trigger.SourceLog:
+		if req.Pattern == "" {
+			return "pattern is required for log-source triggers"
+		}
+	case trigger.SourcePipe:
+		if req.PipeCondition == nil || req.PipeCondition.Kind == "" {
+			return "pipe_condition.kind is required for pipe-source triggers"
+		}
+	default:
+		return "source must be 'log' or 'pipe'"
+	}
+	return ""
 }
 
 // normalizeTimerType coerces an incoming timer_type into one of the valid
@@ -78,8 +107,8 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	if req.Name == "" || req.Pattern == "" {
-		writeError(w, http.StatusBadRequest, "name and pattern are required")
+	if msg := validateTriggerRequest(&req); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 
@@ -87,6 +116,10 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	src := req.Source
+	if src == "" {
+		src = trigger.SourceLog
 	}
 	t := &trigger.Trigger{
 		ID:                   id,
@@ -103,6 +136,8 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 		Characters:           req.Characters,
 		TimerAlerts:          req.TimerAlerts,
 		ExcludePatterns:      req.ExcludePatterns,
+		Source:               src,
+		PipeCondition:        req.PipeCondition,
 	}
 	if t.Actions == nil {
 		t.Actions = []trigger.Action{}
@@ -142,9 +177,14 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	if req.Name == "" || req.Pattern == "" {
-		writeError(w, http.StatusBadRequest, "name and pattern are required")
+	if msg := validateTriggerRequest(&req); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
+	}
+
+	src := req.Source
+	if src == "" {
+		src = trigger.SourceLog
 	}
 
 	existing.Name = req.Name
@@ -159,6 +199,8 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	existing.Characters = req.Characters
 	existing.TimerAlerts = req.TimerAlerts
 	existing.ExcludePatterns = req.ExcludePatterns
+	existing.Source = src
+	existing.PipeCondition = req.PipeCondition
 	if existing.Actions == nil {
 		existing.Actions = []trigger.Action{}
 	}

@@ -58,8 +58,18 @@ type Engine struct {
 	sink       TimerSink
 	activeChar func() string // returns active character name, "" if unknown
 
-	mu       sync.RWMutex
-	compiled []compiled
+	mu           sync.RWMutex
+	compiled     []compiled // Source=="log" triggers, indexed by regex
+	pipeCompiled []*Trigger // Source=="pipe" triggers, evaluated by PipeCondition
+
+	// Pipe edge state. The engine compares each new pipe update against
+	// these values so "drops below 20%" and "buff X falls off" don't refire
+	// at every ~100 ms pipe tick. Reset to zero values on disconnect (via
+	// HandlePipeReset) so a fresh session starts clean.
+	pipeMu         sync.Mutex
+	prevTargetName string
+	prevTargetHP   int // 0 means "no prior value seen"; we treat that as 100% for threshold purposes
+	prevBuffSet    map[string]bool
 
 	histMu  sync.Mutex
 	history []TriggerFired // ring buffer, newest appended last
@@ -83,8 +93,19 @@ func (e *Engine) Reload() {
 	}
 
 	var cs []compiled
+	var pipeCs []*Trigger
 	for _, t := range triggers {
 		if !t.Enabled {
+			continue
+		}
+		// Pipe-source triggers don't use a regex pattern. Validate that
+		// they have a usable condition and queue them separately.
+		if t.Source == SourcePipe {
+			if t.PipeCondition == nil || t.PipeCondition.Kind == "" {
+				slog.Warn("trigger: pipe trigger missing condition, skipping", "id", t.ID, "name", t.Name)
+				continue
+			}
+			pipeCs = append(pipeCs, t)
 			continue
 		}
 		re, err := regexp.Compile(t.Pattern)
@@ -119,9 +140,10 @@ func (e *Engine) Reload() {
 
 	e.mu.Lock()
 	e.compiled = cs
+	e.pipeCompiled = pipeCs
 	e.mu.Unlock()
 
-	slog.Info("trigger: reloaded", "active", len(cs))
+	slog.Info("trigger: reloaded", "log_active", len(cs), "pipe_active", len(pipeCs))
 }
 
 // Handle tests a raw log line message against all enabled triggers.
@@ -150,6 +172,193 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 			}
 		}
 	}
+}
+
+// HandlePipeTarget evaluates target_hp_below + target_name pipe triggers
+// against a new target snapshot. hp == -1 means "no HP reading available"
+// (e.g. no target selected); we skip HP-below evaluation in that case but
+// still treat the name change as a transition. character is the Zeal
+// envelope's character field, used for the same per-character filtering
+// log triggers respect.
+func (e *Engine) HandlePipeTarget(name string, hp int, character string, ts time.Time) {
+	e.pipeMu.Lock()
+	prevName := e.prevTargetName
+	prevHP := e.prevTargetHP
+	e.prevTargetName = name
+	if hp >= 0 {
+		e.prevTargetHP = hp
+	} else {
+		e.prevTargetHP = 0
+	}
+	e.pipeMu.Unlock()
+
+	e.mu.RLock()
+	pipeCs := e.pipeCompiled
+	e.mu.RUnlock()
+	if len(pipeCs) == 0 {
+		return
+	}
+	active := ""
+	if e.activeChar != nil {
+		active = e.activeChar()
+	}
+	for _, t := range pipeCs {
+		if !triggerAppliesTo(t, active) {
+			continue
+		}
+		cond := t.PipeCondition
+		if cond == nil {
+			continue
+		}
+		switch cond.Kind {
+		case PipeKindTargetName:
+			if name != "" && name == cond.TargetName && prevName != name {
+				e.firePipe(t, fmt.Sprintf("target: %s", name), ts)
+			}
+		case PipeKindTargetHPBelow:
+			if hp < 0 {
+				continue
+			}
+			// Edge: prev > threshold, now <= threshold. prev==0 with no prior
+			// read counts as "100%" so the first reading below threshold
+			// after selecting a low-HP target fires once.
+			prev := prevHP
+			if prev == 0 {
+				prev = 101
+			}
+			if prev > cond.HPThreshold && hp <= cond.HPThreshold {
+				e.firePipe(t, fmt.Sprintf("target hp %d%%", hp), ts)
+			}
+		}
+	}
+}
+
+// HandlePipeBuffSlots evaluates buff_landed + buff_faded triggers against
+// the current self-buff slot snapshot from the pipe. names contains the
+// spell names in occupied slots (empty slots are simply absent from the
+// pipe payload).
+func (e *Engine) HandlePipeBuffSlots(names []string, character string, ts time.Time) {
+	curr := make(map[string]bool, len(names))
+	for _, n := range names {
+		if n != "" {
+			curr[n] = true
+		}
+	}
+	e.pipeMu.Lock()
+	prev := e.prevBuffSet
+	e.prevBuffSet = curr
+	e.pipeMu.Unlock()
+
+	e.mu.RLock()
+	pipeCs := e.pipeCompiled
+	e.mu.RUnlock()
+	if len(pipeCs) == 0 {
+		return
+	}
+	active := ""
+	if e.activeChar != nil {
+		active = e.activeChar()
+	}
+	for _, t := range pipeCs {
+		if !triggerAppliesTo(t, active) {
+			continue
+		}
+		cond := t.PipeCondition
+		if cond == nil {
+			continue
+		}
+		switch cond.Kind {
+		case PipeKindBuffLanded:
+			if cond.SpellName == "" {
+				continue
+			}
+			if curr[cond.SpellName] && !prev[cond.SpellName] {
+				e.firePipe(t, fmt.Sprintf("buff landed: %s", cond.SpellName), ts)
+			}
+		case PipeKindBuffFaded:
+			if cond.SpellName == "" {
+				continue
+			}
+			if prev[cond.SpellName] && !curr[cond.SpellName] {
+				e.firePipe(t, fmt.Sprintf("buff faded: %s", cond.SpellName), ts)
+			}
+		}
+	}
+}
+
+// HandlePipeCommand evaluates pipe_command triggers against a /pipe <text>
+// envelope. One-shot — no edge state; fires whenever a matching command
+// text is seen.
+func (e *Engine) HandlePipeCommand(text, character string, ts time.Time) {
+	e.mu.RLock()
+	pipeCs := e.pipeCompiled
+	e.mu.RUnlock()
+	if len(pipeCs) == 0 {
+		return
+	}
+	active := ""
+	if e.activeChar != nil {
+		active = e.activeChar()
+	}
+	for _, t := range pipeCs {
+		if !triggerAppliesTo(t, active) {
+			continue
+		}
+		cond := t.PipeCondition
+		if cond == nil || cond.Kind != PipeKindPipeCommand {
+			continue
+		}
+		if cond.Text != "" && cond.Text == text {
+			e.firePipe(t, fmt.Sprintf("/pipe %s", text), ts)
+		}
+	}
+}
+
+// HandlePipeReset clears edge-detection state. Called when the supervisor
+// disconnects so the next session doesn't see spurious "transition" matches
+// against stale values from a previous Zeal run.
+func (e *Engine) HandlePipeReset() {
+	e.pipeMu.Lock()
+	e.prevTargetName = ""
+	e.prevTargetHP = 0
+	e.prevBuffSet = nil
+	e.pipeMu.Unlock()
+}
+
+// firePipe records a pipe-driven match the same way fire() does for log
+// triggers, including timer-sink dispatch when the trigger has a timer
+// type. matchedLine is a synthetic human-readable description of the
+// trigger condition for the history pane.
+func (e *Engine) firePipe(t *Trigger, matchedLine string, firedAt time.Time) {
+	event := TriggerFired{
+		TriggerID:   t.ID,
+		TriggerName: t.Name,
+		MatchedLine: matchedLine,
+		Actions:     t.Actions,
+		FiredAt:     firedAt,
+	}
+	e.histMu.Lock()
+	e.history = append(e.history, event)
+	if len(e.history) > historyMaxSize {
+		e.history = e.history[len(e.history)-historyMaxSize:]
+	}
+	e.histMu.Unlock()
+
+	e.hub.Broadcast(ws.Event{Type: WSEventTriggerFired, Data: event})
+	slog.Debug("trigger fired (pipe)", "trigger", t.Name, "match", matchedLine)
+
+	if e.sink != nil && t.TimerDurationSecs > 0 &&
+		(t.TimerType == TimerTypeBuff || t.TimerType == TimerTypeDetrimental) {
+		var alertJSON json.RawMessage
+		if len(t.TimerAlerts) > 0 {
+			if buf, err := json.Marshal(t.TimerAlerts); err == nil {
+				alertJSON = buf
+			}
+		}
+		e.sink.StartExternal(timerKeyFor(t), timerCategory(t.TimerType),
+			t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID)
+	}
+	e.startCooldownTimer(t, firedAt)
 }
 
 // matchesAny returns true if any of the regexes match s. Used to suppress a
@@ -220,6 +429,7 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time) {
 		}
 		e.sink.StartExternal(c.timerKey, timerCategory(t.TimerType), t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID)
 	}
+	e.startCooldownTimer(t, firedAt)
 }
 
 // timerKeyFor returns the spelltimer key for a trigger. Prefers the trigger
@@ -229,6 +439,40 @@ func timerKeyFor(t *Trigger) string {
 		return t.Name
 	}
 	return t.ID
+}
+
+// cooldownKeyFor returns the spelltimer key used for a trigger's cooldown
+// timer — same root as the primary timer with a " CD" suffix so the buff
+// overlay shows e.g. "Furious Discipline" and "Furious Discipline CD" side
+// by side without colliding.
+func cooldownKeyFor(t *Trigger) string {
+	return timerKeyFor(t) + " CD"
+}
+
+// startCooldownTimer spawns a second timer on the buff overlay tracking the
+// trigger's CooldownSecs (recast_time from spells_new). Fires a TTS "ready"
+// alert at 1s remaining. No-op when CooldownSecs is 0 or no sink is wired.
+// SpellID is intentionally passed as 0 — duration focuses don't apply to
+// recast time, so we want the raw CooldownSecs value, not a focused one.
+func (e *Engine) startCooldownTimer(t *Trigger, firedAt time.Time) {
+	if e.sink == nil || t.CooldownSecs <= 0 {
+		return
+	}
+	// TTS template uses the trigger's own name as a literal (not {spell})
+	// because the cooldown timer's spell_name is the suffixed "<Name> CD"
+	// key — substituting would say "Furious Discipline CD ready".
+	readyAlert := TimerAlert{
+		ID:          "cooldown-ready-1s",
+		Seconds:     1,
+		Type:        TimerAlertTypeTextToSpeech,
+		TTSTemplate: t.Name + " ready",
+		TTSVolume:   100,
+	}
+	var alertJSON json.RawMessage
+	if buf, err := json.Marshal([]TimerAlert{readyAlert}); err == nil {
+		alertJSON = buf
+	}
+	e.sink.StartExternal(cooldownKeyFor(t), "buff", t.CooldownSecs, 0, firedAt, alertJSON, 0)
 }
 
 // timerCategory maps a trigger's TimerType onto a spelltimer category string.

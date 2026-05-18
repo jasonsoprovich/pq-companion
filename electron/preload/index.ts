@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('electron', {
   app: {
     getVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
+    relaunch: (): Promise<void> => ipcRenderer.invoke('app:relaunch'),
   },
   backend: {
     getPort: (): Promise<number> => ipcRenderer.invoke('backend:port'),
@@ -53,6 +54,12 @@ contextBridge.exposeInMainWorld('electron', {
   dialog: {
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-folder'),
     selectSoundFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-sound-file'),
+    saveExportBundle: (suggestedName?: string): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:save-export-bundle', suggestedName),
+    openImportBundle: (): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:open-import-bundle'),
+    openSpellsetsFile: (): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:open-spellsets-file'),
   },
   shell: {
     openConfigFolder: (): Promise<string> => ipcRenderer.invoke('shell:open-config-folder'),

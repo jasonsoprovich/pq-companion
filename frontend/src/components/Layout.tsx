@@ -4,6 +4,7 @@ import TitleBar from './TitleBar'
 import Sidebar from './Sidebar'
 import GlobalSearch from './GlobalSearch'
 import UpdateNotification from './UpdateNotification'
+import ZealNotification from './ZealNotification'
 
 export default function Layout(): React.ReactElement {
   const [searchOpen, setSearchOpen] = useState(false)
@@ -36,6 +37,7 @@ export default function Layout(): React.ReactElement {
       </div>
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
       <UpdateNotification />
+      <ZealNotification />
     </div>
   )
 }

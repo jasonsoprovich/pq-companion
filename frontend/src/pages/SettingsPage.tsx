@@ -1,14 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi } from 'lucide-react'
-import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, type ServerInfo, type TestPortResult } from '../services/api'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText } from 'lucide-react'
+import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config } from '../types/config'
 import type { LogFileInfo } from '../types/logEvent'
+import type { ZealInstallStatus, ZealPipeStatus } from '../types/zeal'
+import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
+
+const ZEAL_RELEASE_URL = 'https://github.com/CoastalRedwood/Zeal/releases/latest'
 import BackupManagerPage from './BackupManagerPage'
 
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'settings' | 'backups'
+type Tab = 'general' | 'overlays' | 'spelltimers' | 'logs' | 'backups' | 'advanced'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -42,7 +47,7 @@ function TabBar({ tabs, active, onChange }: TabBarProps): React.ReactElement {
 }
 
 export default function SettingsPage(): React.ReactElement {
-  const [tab, setTab] = useState<Tab>('settings')
+  const [tab, setTab] = useState<Tab>('general')
   const [config, setConfig] = useState<Config | null>(null)
   const [originalConfig, setOriginalConfig] = useState<Config | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -59,6 +64,11 @@ export default function SettingsPage(): React.ReactElement {
   const [portTestPort, setPortTestPort] = useState<number | null>(null)
   const [configFolder, setConfigFolder] = useState<string | null>(null)
 
+  const [zealStatus, setZealStatus] = useState<ZealInstallStatus | null>(null)
+  const [zealChecking, setZealChecking] = useState(false)
+  const [zealError, setZealError] = useState<string | null>(null)
+  const [pipeStatus, setPipeStatus] = useState<ZealPipeStatus | null>(null)
+
   const [logLargeFile, setLogLargeFile] = useState(false)
   const [logFileInfo, setLogFileInfo] = useState<LogFileInfo | null>(null)
   const [logInfoLoading, setLogInfoLoading] = useState(false)
@@ -72,6 +82,33 @@ export default function SettingsPage(): React.ReactElement {
       if (saveStateClearRef.current) clearTimeout(saveStateClearRef.current)
     }
   }, [])
+
+  async function checkZeal(): Promise<void> {
+    setZealChecking(true)
+    setZealError(null)
+    try {
+      const [install, pipe] = await Promise.all([
+        detectZeal(),
+        getZealPipeStatus().catch(() => null),
+      ])
+      setZealStatus(install)
+      setPipeStatus(pipe)
+    } catch (err) {
+      setZealError((err as Error).message)
+      setZealStatus(null)
+    } finally {
+      setZealChecking(false)
+    }
+  }
+
+  // Subscribe to backend pipe state changes so the status row reflects
+  // connect/disconnect without the user having to click Re-check. The Re-check
+  // button is still useful for re-running the filesystem detection when the
+  // user has just installed Zeal — that signal doesn't come over the wire.
+  useWebSocket((msg: WsMessage) => {
+    if (msg.type !== WSEvent.ZealConnected && msg.type !== WSEvent.ZealDisconnected) return
+    getZealPipeStatus().then(setPipeStatus).catch(() => null)
+  })
 
   function flashSaveState(state: SaveState, ms = 2500): void {
     if (saveStateClearRef.current) clearTimeout(saveStateClearRef.current)
@@ -102,6 +139,8 @@ export default function SettingsPage(): React.ReactElement {
     }
 
     getServerInfo().then(setServerInfo).catch(() => null)
+
+    void checkZeal()
 
     const pollLogSize = () => {
       getLogStatus()
@@ -246,11 +285,15 @@ export default function SettingsPage(): React.ReactElement {
   }
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'settings', label: 'Settings', icon: <Settings size={13} /> },
-    { id: 'backups', label: 'Backup Manager', icon: <HardDrive size={13} /> },
+    { id: 'general', label: 'General', icon: <Settings size={13} /> },
+    { id: 'overlays', label: 'Overlays', icon: <Layers size={13} /> },
+    { id: 'spelltimers', label: 'Spell Timers', icon: <Sparkles size={13} /> },
+    { id: 'logs', label: 'Logs', icon: <FileText size={13} /> },
+    { id: 'backups', label: 'EQ Config Backups', icon: <HardDrive size={13} /> },
+    { id: 'advanced', label: 'Advanced', icon: <Wifi size={13} /> },
   ]
 
-  if (loadError && tab === 'settings') {
+  if (loadError && tab !== 'backups') {
     const configPath = configFolder ? `${configFolder}\\config.yaml` : null
     return (
       <div className="flex h-full flex-col">
@@ -336,7 +379,7 @@ export default function SettingsPage(): React.ReactElement {
     )
   }
 
-  if (!config && tab === 'settings') {
+  if (!config && tab !== 'backups') {
     return (
       <div className="flex h-full flex-col">
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
@@ -382,6 +425,7 @@ export default function SettingsPage(): React.ReactElement {
 
       <div className="flex flex-col gap-6">
         {/* ── App ──────────────────────────────────────────────────────────── */}
+        {tab === 'general' && (
         <section
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
@@ -466,8 +510,10 @@ export default function SettingsPage(): React.ReactElement {
             </p>
           )}
         </section>
+        )}
 
         {/* ── Backend Network ────────────────────────────────────────────── */}
+        {tab === 'advanced' && (
         <BackendNetworkSection
           config={config}
           setConfig={setConfig}
@@ -485,8 +531,10 @@ export default function SettingsPage(): React.ReactElement {
           onSave={handleSave}
           saving={saveState === 'saving'}
         />
+        )}
 
         {/* ── EverQuest Path ─────────────────────────────────────────────── */}
+        {tab === 'general' && (
         <section
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
@@ -560,8 +608,158 @@ export default function SettingsPage(): React.ReactElement {
             </button>
           </div>
         </section>
+        )}
+
+        {/* ── Zeal integration ───────────────────────────────────────────── */}
+        {tab === 'general' && (
+        <section
+          className="rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <div className="mb-1 flex items-center justify-between">
+            <h2
+              className="text-sm font-semibold uppercase tracking-wide"
+              style={{ color: 'var(--color-muted)' }}
+            >
+              Zeal Integration
+            </h2>
+            <button
+              onClick={() => void checkZeal()}
+              disabled={zealChecking}
+              className="flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                cursor: zealChecking ? 'not-allowed' : 'pointer',
+                opacity: zealChecking ? 0.5 : 1,
+              }}
+            >
+              {zealChecking ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              {zealChecking ? 'Checking…' : 'Re-check'}
+            </button>
+          </div>
+          <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Zeal is a community EverQuest add-on that exposes live target, HP,
+            buff, and group state. PQ Companion uses it for real-time overlays
+            when installed and falls back to log parsing when not.
+          </p>
+
+          {zealStatus?.installed && (
+            <div className="flex items-start gap-2 text-sm" style={{ color: '#22c55e' }}>
+              <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+              <div>
+                <p>Zeal is installed.</p>
+                {zealStatus.asi_path && (
+                  <p className="mt-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                    Found <code>{zealStatus.asi_path}</code>
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {zealStatus && !zealStatus.installed && !zealError && (
+            <div className="space-y-2">
+              <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+                Zeal is not installed in your configured EverQuest folder
+                {zealStatus.eqgame_present ? '' : ' (eqgame.exe also not found — verify the path above)'}.
+              </p>
+              <p
+                className="text-xs font-semibold uppercase tracking-wide"
+                style={{ color: 'var(--color-muted)' }}
+              >
+                Installing Zeal unlocks
+              </p>
+              <ul
+                className="ml-4 list-disc space-y-0.5 text-xs"
+                style={{ color: 'var(--color-muted-foreground)' }}
+              >
+                <li>Real-time target detection without <code>/con</code></li>
+                <li>Live target HP bar + pet-owner attribution</li>
+                <li>Authoritative damage attribution in the DPS meter</li>
+                <li>Trigger conditions on target HP, buff slots, and <code>/pipe</code> alerts</li>
+              </ul>
+              <a
+                href={ZEAL_RELEASE_URL}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  color: '#fff',
+                  textDecoration: 'none',
+                }}
+              >
+                Get Zeal (GitHub releases)
+              </a>
+            </div>
+          )}
+
+          {zealError && (
+            <div className="flex items-start gap-2 text-xs" style={{ color: '#f87171' }}>
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+              <p>Couldn&apos;t check for Zeal: {zealError}</p>
+            </div>
+          )}
+
+          {!zealStatus && !zealError && !zealChecking && (
+            <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              Set your EverQuest folder above, then click Re-check.
+            </p>
+          )}
+
+          {pipeStatus && pipeStatus.state !== 'unsupported' && (
+            <div
+              className="mt-3 space-y-2 rounded px-3 py-2 text-xs"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="inline-block h-2 w-2 rounded-full"
+                    style={{
+                      backgroundColor:
+                        pipeStatus.state === 'connected'
+                          ? '#22c55e'
+                          : pipeStatus.state === 'disconnected'
+                            ? '#f87171'
+                            : 'var(--color-muted)',
+                    }}
+                  />
+                  <span style={{ color: 'var(--color-foreground)' }}>
+                    Live pipe:{' '}
+                    {pipeStatus.state === 'connected'
+                      ? `connected${pipeStatus.character ? ` (${pipeStatus.character})` : ''}`
+                      : pipeStatus.state === 'disconnected'
+                        ? 'disconnected'
+                        : 'waiting for EverQuest'}
+                  </span>
+                </div>
+                {pipeStatus.state === 'connected' && pipeStatus.pid ? (
+                  <span style={{ color: 'var(--color-muted-foreground)' }}>
+                    PID {pipeStatus.pid}
+                  </span>
+                ) : null}
+              </div>
+              {pipeStatus.state !== 'connected' && pipeStatus.last_error && (
+                <pre
+                  className="whitespace-pre-wrap break-words font-mono"
+                  style={{ color: 'var(--color-muted-foreground)', fontSize: '11px' }}
+                >
+                  {pipeStatus.last_error}
+                </pre>
+              )}
+            </div>
+          )}
+        </section>
+        )}
 
         {/* ── Preferences ────────────────────────────────────────────────── */}
+        {tab === 'general' && (
         <section
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
@@ -709,8 +907,10 @@ export default function SettingsPage(): React.ReactElement {
             </div>
           </label>
         </section>
+        )}
 
         {/* ── Overlays ───────────────────────────────────────────────────── */}
+        {tab === 'overlays' && (
         <section
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
@@ -772,8 +972,10 @@ export default function SettingsPage(): React.ReactElement {
             />
           </div>
         </section>
+        )}
 
         {/* ── Spell Timers ───────────────────────────────────────────────── */}
+        {tab === 'spelltimers' && (
         <section
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
@@ -929,8 +1131,10 @@ export default function SettingsPage(): React.ReactElement {
             </div>
           </div>
         </section>
+        )}
 
         {/* ── Log Files ──────────────────────────────────────────────────── */}
+        {tab === 'logs' && (
         <section
           className="rounded-lg p-4"
           style={{
@@ -955,7 +1159,7 @@ export default function SettingsPage(): React.ReactElement {
             )}
           </h2>
           <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Back up and purge your EverQuest log file, keeping only the most recent 7 days of entries. Files over 75 MB are flagged for cleanup.
+            Archives the current EverQuest log file to a <code className="font-mono">.bak.txt</code> next to it, then trims the live log to the last 7 days of entries. Files over 75 MB are flagged for cleanup. Unrelated to the EQ Config Backups tab — that one protects your <code className="font-mono">.ini</code> files.
           </p>
 
           {/* Load file info */}
@@ -1005,7 +1209,7 @@ export default function SettingsPage(): React.ReactElement {
                   }}
                 >
                   <Trash2 size={12} />
-                  Backup &amp; Purge
+                  Archive &amp; Trim
                 </button>
                 <button
                   onClick={() => setLogFileInfo(null)}
@@ -1036,7 +1240,7 @@ export default function SettingsPage(): React.ReactElement {
             <div className="space-y-1">
               <p className="flex items-center gap-1.5 text-xs" style={{ color: '#22c55e' }}>
                 <CheckCircle2 size={12} />
-                Purge complete. Backup saved to:
+                Archive complete. Saved to:
               </p>
               <p className="text-xs font-mono break-all" style={{ color: 'var(--color-muted-foreground)' }}>
                 {cleanupResult}
@@ -1079,6 +1283,7 @@ export default function SettingsPage(): React.ReactElement {
             </div>
           )}
         </section>
+        )}
 
         {/* ── Save / Discard buttons ─────────────────────────────────────── */}
         <div className="flex items-center gap-3">

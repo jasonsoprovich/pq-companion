@@ -9,6 +9,8 @@ import type {
   AllInventoriesResponse,
   ZealSpellsetsResponse,
   AllSpellsetsResponse,
+  ZealInstallStatus,
+  ZealPipeStatus,
 } from '../types/zeal'
 import type { KeysResponse, KeysProgressResponse } from '../types/keys'
 import type { Backup, BackupsResponse } from '../types/backup'
@@ -16,7 +18,7 @@ import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { TargetState } from '../types/overlay'
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
-import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold } from '../types/trigger'
+import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 
 export interface GlobalSearchResult {
@@ -68,12 +70,22 @@ async function put<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>
 }
 
-async function del(path: string): Promise<void> {
+async function del<T = void>(path: string): Promise<T> {
   const baseUrl = await getBackendBaseUrl()
   const res = await fetch(`${baseUrl}${path}`, { method: 'DELETE' })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error ?? res.statusText)
+  }
+  // Some endpoints (DELETE /api/app/import) return a small JSON body;
+  // others (DELETE /api/backups/{id}) return 204 with no body. Try to parse,
+  // fall back to undefined for the void case.
+  const text = await res.text()
+  if (!text) return undefined as T
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    return undefined as T
   }
 }
 
@@ -287,6 +299,15 @@ export function getZoneDrops(shortName: string): Promise<ZoneDropItem[]> {
 
 // ── Zeal ───────────────────────────────────────────────────────────────────────
 
+export function detectZeal(path?: string): Promise<ZealInstallStatus> {
+  const qs = path ? `?path=${encodeURIComponent(path)}` : ''
+  return get<ZealInstallStatus>(`/api/zeal/detect${qs}`)
+}
+
+export function getZealPipeStatus(): Promise<ZealPipeStatus> {
+  return get<ZealPipeStatus>('/api/zeal/pipe-status')
+}
+
 export function getZealInventory(): Promise<ZealInventoryResponse> {
   return get<ZealInventoryResponse>('/api/zeal/inventory')
 }
@@ -314,6 +335,10 @@ export function updateSpellsets(
   spellsets: { name: string; spell_ids: number[] }[],
 ): Promise<ZealSpellsetsResponse> {
   return put<ZealSpellsetsResponse>('/api/zeal/spellsets', { character, spellsets })
+}
+
+export function parseSpellsetsFile(path: string): Promise<ZealSpellsetsResponse> {
+  return post<ZealSpellsetsResponse>('/api/zeal/spellsets/parse-file', { path })
 }
 
 // ── Spell Checklist ────────────────────────────────────────────────────────────
@@ -365,6 +390,75 @@ export function unlockBackup(id: string): Promise<void> {
 
 export function pruneBackups(maxBackups: number): Promise<{ deleted: number }> {
   return post<{ deleted: number }>('/api/backups/prune', { max_backups: maxBackups })
+}
+
+// ── Players (/who sightings DB) ────────────────────────────────────────────────
+
+export interface PlayerSearchFilters {
+  search?: string
+  class?: string
+  zone?: string
+  guild?: string
+  limit?: number
+  offset?: number
+}
+
+export function listPlayers(filters: PlayerSearchFilters = {}): Promise<import('../types/player').PlayerListResponse> {
+  const params = new URLSearchParams()
+  if (filters.search) params.set('search', filters.search)
+  if (filters.class) params.set('class', filters.class)
+  if (filters.zone) params.set('zone', filters.zone)
+  if (filters.guild) params.set('guild', filters.guild)
+  if (filters.limit) params.set('limit', String(filters.limit))
+  if (filters.offset) params.set('offset', String(filters.offset))
+  const qs = params.toString()
+  return get<import('../types/player').PlayerListResponse>(`/api/players${qs ? '?' + qs : ''}`)
+}
+
+export function getPlayer(name: string): Promise<import('../types/player').PlayerSighting> {
+  return get<import('../types/player').PlayerSighting>(`/api/players/${encodeURIComponent(name)}`)
+}
+
+export function getPlayerHistory(name: string): Promise<import('../types/player').PlayerHistoryResponse> {
+  return get<import('../types/player').PlayerHistoryResponse>(`/api/players/${encodeURIComponent(name)}/history`)
+}
+
+export function deletePlayer(name: string): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>(`/api/players/${encodeURIComponent(name)}`)
+}
+
+export function clearPlayers(): Promise<{ deleted: number }> {
+  return post<{ deleted: number }>(`/api/players/clear`)
+}
+
+// ── App Backup (export/import full app state) ──────────────────────────────────
+
+export interface AppBackupManifest {
+  format_version: number
+  app_version: string
+  exported_at: string
+  files: Array<{ name: string; size_bytes: number; sha256: string }>
+  stats: { backup_count: number; total_size_bytes: number }
+}
+
+export function exportAppBackup(destinationPath: string): Promise<{ bundle_path: string; manifest: AppBackupManifest }> {
+  return post<{ bundle_path: string; manifest: AppBackupManifest }>('/api/app/export', { destination_path: destinationPath })
+}
+
+export function previewAppImport(bundlePath: string): Promise<{ manifest: AppBackupManifest }> {
+  return post<{ manifest: AppBackupManifest }>('/api/app/import/preview', { bundle_path: bundlePath })
+}
+
+export function stageAppImport(bundlePath: string): Promise<{ manifest: AppBackupManifest; restart_required: boolean }> {
+  return post<{ manifest: AppBackupManifest; restart_required: boolean }>('/api/app/import', { bundle_path: bundlePath })
+}
+
+export function getAppImportPending(): Promise<{ pending: boolean }> {
+  return get<{ pending: boolean }>('/api/app/import/pending')
+}
+
+export function cancelAppImport(): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>('/api/app/import')
 }
 
 // ── Log Parser ─────────────────────────────────────────────────────────────────
@@ -736,6 +830,10 @@ export interface CreateTriggerRequest {
   characters?: string[]
   timer_alerts?: TimerAlertThreshold[]
   exclude_patterns?: string[]
+  /** Match source. Omitted = 'log' (backwards-compatible). */
+  source?: TriggerSource
+  /** Typed match definition for pipe-source triggers. */
+  pipe_condition?: PipeCondition
 }
 
 export function createTrigger(req: CreateTriggerRequest): Promise<Trigger> {

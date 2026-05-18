@@ -314,7 +314,16 @@ function startSidecar(): void {
     return
   }
 
-  sidecarProcess = spawn(sidecarPath, [], { stdio: 'pipe' })
+  sidecarProcess = spawn(sidecarPath, [], {
+    stdio: 'pipe',
+    env: {
+      ...process.env,
+      // Pass the app version through so manifest.json in exported .pqcb
+      // bundles is stamped with the producing version. Read at startup by
+      // runtimeAppVersion() in cmd/server/main.go.
+      PQ_APP_VERSION: app.getVersion(),
+    },
+  })
 
   // Buffer for parsing the BACKEND_PORT=N line. The line may arrive in the
   // middle of a chunk so we accumulate until we see a newline.
@@ -1106,6 +1115,50 @@ ipcMain.handle('dialog:select-sound-file', async () => {
     ],
   })
   return result.canceled ? null : result.filePaths[0]
+})
+
+ipcMain.handle('dialog:save-export-bundle', async (_event, suggestedName?: string) => {
+  const result = await dialog.showSaveDialog({
+    title: 'Export App Data',
+    defaultPath: suggestedName ?? `pq-companion-export-${new Date().toISOString().slice(0, 10)}.pqcb`,
+    filters: [
+      { name: 'PQ Companion Backup', extensions: ['pqcb'] },
+    ],
+  })
+  return result.canceled ? null : result.filePath
+})
+
+ipcMain.handle('dialog:open-import-bundle', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    title: 'Import App Data',
+    filters: [
+      { name: 'PQ Companion Backup', extensions: ['pqcb'] },
+    ],
+  })
+  return result.canceled ? null : result.filePaths[0]
+})
+
+ipcMain.handle('dialog:open-spellsets-file', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    title: 'Import Spellsets from .ini',
+    filters: [
+      { name: 'EverQuest Spellsets', extensions: ['ini'] },
+    ],
+  })
+  return result.canceled ? null : result.filePaths[0]
+})
+
+// ── IPC handlers — restart for import application ────────────────────────────
+
+ipcMain.handle('app:relaunch', async () => {
+  // Stop sidecar cleanly, then relaunch the Electron app. On next startup
+  // the Go server's ApplyPendingImport runs before user.db opens, swaps the
+  // staged files into place, and the renderer reconnects.
+  await stopSidecar()
+  app.relaunch()
+  app.exit(0)
 })
 
 // ── IPC handlers — auto-updater ───────────────────────────────────────────────

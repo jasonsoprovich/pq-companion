@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Check,
+  Download,
   Library,
   Pencil,
   Plus,
@@ -18,6 +19,7 @@ import {
   getSpellsByClass,
   getZealSpellbook,
   listCharacters,
+  parseSpellsetsFile,
   updateSpellsets,
   type Character,
 } from '../services/api'
@@ -287,6 +289,385 @@ function ConfirmModal({
           >
             {confirmLabel}
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Import-review modal ───────────────────────────────────────────────────────
+
+// Stable signature of a spellset's gem layout — used to detect content
+// duplicates across spellsets that may have different names. Order matters
+// (gem 1 vs gem 2 is meaningful in-game).
+function spellsetSignature(s: Spellset): string {
+  return s.spell_ids.join(',')
+}
+
+function uniqueName(base: string, taken: Set<string>): string {
+  if (!taken.has(base)) return base
+  for (let n = 2; n < 1000; n++) {
+    const candidate = `${base} (${n})`
+    if (!taken.has(candidate)) return candidate
+  }
+  return `${base} (${Date.now()})`
+}
+
+type ImportAction = 'import' | 'overwrite' | 'rename' | 'skip'
+
+interface IneligibleGem {
+  slot: number  // 0-based
+  spellId: number
+  spellName: string  // best-effort; falls back to "#<id>" when unresolved
+  reason: 'unknown_spell' | 'wrong_class' | 'level_too_low' | 'not_in_spellbook'
+  requiredLevel?: number  // populated for level_too_low
+}
+
+interface ImportRow {
+  source: Spellset
+  // Pre-computed conflicts against the target file at modal-open time.
+  contentDupOf: string | null  // existing spellset name with same gem layout
+  nameConflict: boolean
+  // Gems the target character cannot cast. If non-empty the whole row is
+  // locked to 'skip' since activating an ineligible spellset in-game errors.
+  ineligible: IneligibleGem[]
+  // User's chosen action. Defaults set by buildImportRows().
+  action: ImportAction
+  renameTo: string  // used when action === 'rename' or no name conflict and user edits
+}
+
+interface EligibilityContext {
+  classIndex: number  // -1 when unknown — skips class/level checks (mirrors SlotPicker)
+  characterLevel: number  // 0 when unknown — skips level cap check
+  knownIds: Set<number>
+  spellsById: Map<number, Spell>
+}
+
+function checkSpellEligibility(
+  spellId: number,
+  ctx: EligibilityContext,
+): Omit<IneligibleGem, 'slot'> | null {
+  const spell = ctx.spellsById.get(spellId)
+  if (!spell) {
+    return { spellId, spellName: `#${spellId}`, reason: 'unknown_spell' }
+  }
+  // When class is unknown we can't enforce class/level — fall through to
+  // the spellbook check, matching the SlotPicker fallback.
+  if (ctx.classIndex >= 0) {
+    const reqLevel = spell.class_levels?.[ctx.classIndex] ?? 255
+    if (reqLevel >= 254) {
+      return { spellId, spellName: spell.name, reason: 'wrong_class' }
+    }
+    if (ctx.characterLevel > 0 && reqLevel > ctx.characterLevel) {
+      return { spellId, spellName: spell.name, reason: 'level_too_low', requiredLevel: reqLevel }
+    }
+  }
+  if (!ctx.knownIds.has(spellId)) {
+    return { spellId, spellName: spell.name, reason: 'not_in_spellbook' }
+  }
+  return null
+}
+
+function buildImportRows(
+  incoming: Spellset[],
+  existing: Spellset[],
+  ctx: EligibilityContext,
+): ImportRow[] {
+  const existingByName = new Map(existing.map((s) => [s.name, s]))
+  const existingBySig = new Map<string, string>()
+  for (const s of existing) existingBySig.set(spellsetSignature(s), s.name)
+
+  return incoming.map((s) => {
+    const sig = spellsetSignature(s)
+    const dupOf = existingBySig.get(sig) ?? null
+    const nameConflict = existingByName.has(s.name)
+
+    const ineligible: IneligibleGem[] = []
+    s.spell_ids.forEach((id, slot) => {
+      if (id <= 0) return  // -1 / empty gem is fine
+      const result = checkSpellEligibility(id, ctx)
+      if (result) ineligible.push({ slot, ...result })
+    })
+
+    let action: ImportAction
+    if (ineligible.length > 0) action = 'skip'
+    else if (dupOf) action = 'skip'
+    else if (nameConflict) action = 'rename'
+    else action = 'import'
+
+    return {
+      source: s,
+      contentDupOf: dupOf,
+      nameConflict,
+      ineligible,
+      action,
+      renameTo: s.name,
+    }
+  })
+}
+
+function ineligibleReasonText(g: IneligibleGem): string {
+  switch (g.reason) {
+    case 'unknown_spell':
+      return 'unknown spell'
+    case 'wrong_class':
+      return 'not castable by this class'
+    case 'level_too_low':
+      return `requires level ${g.requiredLevel}`
+    case 'not_in_spellbook':
+      return 'not in spellbook'
+  }
+}
+
+interface ImportReviewModalProps {
+  sourceCharacter: string
+  targetCharacter: string
+  rows: ImportRow[]
+  onChange: (rows: ImportRow[]) => void
+  onConfirm: () => void
+  onCancel: () => void
+}
+
+function ImportReviewModal({
+  sourceCharacter,
+  targetCharacter,
+  rows,
+  onChange,
+  onConfirm,
+  onCancel,
+}: ImportReviewModalProps): React.ReactElement {
+  const setRow = (idx: number, patch: Partial<ImportRow>) => {
+    onChange(rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
+  }
+
+  // Validate names that will end up in the target file: every imported row
+  // (action !== 'skip' and !== 'overwrite') contributes its renameTo to the
+  // post-merge name set; overwrites consume the existing slot, no new name.
+  const plannedNames = new Set<string>()
+  const nameErrors = new Map<number, string>()
+  rows.forEach((r, i) => {
+    if (r.action === 'skip' || r.action === 'overwrite') return
+    const name = r.renameTo.trim()
+    if (!name) {
+      nameErrors.set(i, 'Name required')
+      return
+    }
+    if (name.includes('[') || name.includes(']')) {
+      nameErrors.set(i, 'Brackets not allowed')
+      return
+    }
+    if (plannedNames.has(name)) {
+      nameErrors.set(i, 'Duplicate within import')
+      return
+    }
+    plannedNames.add(name)
+  })
+
+  const importableCount = rows.filter((r) => r.action !== 'skip').length
+  const canConfirm = nameErrors.size === 0 && importableCount > 0
+
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        zIndex: 1100,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="rounded-lg"
+        style={{
+          backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-primary)',
+          width: '100%',
+          maxWidth: 640,
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          className="flex items-center gap-2 px-4 py-3 border-b"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          <Download size={16} style={{ color: 'var(--color-primary)' }} />
+          <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+            Import spellsets {sourceCharacter && `from ${sourceCharacter} `}into {targetCharacter}
+          </span>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-3">
+          <p className="text-xs mb-3" style={{ color: 'var(--color-muted)' }}>
+            Review each spellset below. Changes are staged locally — you'll need
+            to click <strong>Save</strong> on the spellsets page to write them
+            to <code>{targetCharacter}_spellsets.ini</code>.
+          </p>
+
+          {rows.length === 0 && (
+            <p className="text-sm text-center py-6" style={{ color: 'var(--color-muted)' }}>
+              The selected file contains no spellsets.
+            </p>
+          )}
+
+          <div className="flex flex-col gap-2">
+            {rows.map((r, i) => {
+              const err = nameErrors.get(i)
+              return (
+                <div
+                  key={i}
+                  className="rounded border px-3 py-2"
+                  style={{
+                    borderColor: 'var(--color-border)',
+                    backgroundColor: 'var(--color-surface-2, var(--color-surface))',
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+                        {r.source.name}
+                      </div>
+                      <div className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                        {r.source.spell_ids.filter((id) => id > 0).length} of {SPELLSET_SLOT_COUNT} gems filled
+                      </div>
+                    </div>
+                    <select
+                      value={r.action}
+                      onChange={(e) => setRow(i, { action: e.target.value as ImportAction })}
+                      disabled={r.ineligible.length > 0}
+                      className="text-xs rounded px-2 py-1 disabled:opacity-60 disabled:cursor-not-allowed"
+                      style={{
+                        backgroundColor: 'var(--color-surface)',
+                        color: 'var(--color-foreground)',
+                        border: '1px solid var(--color-border)',
+                      }}
+                      title={r.ineligible.length > 0 ? 'Cannot import: contains ineligible spells' : undefined}
+                    >
+                      {r.ineligible.length === 0 && !r.contentDupOf && !r.nameConflict && (
+                        <option value="import">Import</option>
+                      )}
+                      {r.ineligible.length === 0 && r.nameConflict && (
+                        <option value="overwrite">Overwrite existing</option>
+                      )}
+                      {r.ineligible.length === 0 && (
+                        <option value="rename">Import as new name</option>
+                      )}
+                      <option value="skip">Skip</option>
+                    </select>
+                  </div>
+
+                  {r.ineligible.length > 0 && (
+                    <div
+                      className="mt-2 text-[11px]"
+                      style={{ color: 'var(--color-danger, #ef4444)' }}
+                    >
+                      <div className="flex items-start gap-1">
+                        <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                        <span>
+                          Cannot import — {r.ineligible.length} gem
+                          {r.ineligible.length === 1 ? '' : 's'} ineligible for {targetCharacter}:
+                        </span>
+                      </div>
+                      <ul className="mt-1 ml-4 list-disc">
+                        {r.ineligible.map((g) => (
+                          <li key={g.slot}>
+                            Gem {g.slot + 1}: <strong>{g.spellName}</strong> — {ineligibleReasonText(g)}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {r.ineligible.length === 0 && r.contentDupOf && (
+                    <div
+                      className="mt-2 text-[11px] flex items-start gap-1"
+                      style={{ color: 'var(--color-warning, #f59e0b)' }}
+                    >
+                      <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                      <span>
+                        Already exists as <strong>{r.contentDupOf}</strong> (identical gem layout).
+                      </span>
+                    </div>
+                  )}
+                  {r.ineligible.length === 0 && !r.contentDupOf && r.nameConflict && (
+                    <div
+                      className="mt-2 text-[11px] flex items-start gap-1"
+                      style={{ color: 'var(--color-warning, #f59e0b)' }}
+                    >
+                      <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                      <span>
+                        A spellset named <strong>{r.source.name}</strong> already exists with different spells.
+                      </span>
+                    </div>
+                  )}
+
+                  {r.action === 'rename' && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-[11px] shrink-0" style={{ color: 'var(--color-muted)' }}>
+                        New name:
+                      </span>
+                      <input
+                        type="text"
+                        value={r.renameTo}
+                        onChange={(e) => setRow(i, { renameTo: e.target.value })}
+                        className="flex-1 bg-transparent text-xs outline-none border-b"
+                        style={{
+                          color: 'var(--color-foreground)',
+                          borderColor: err ? 'var(--color-danger, #ef4444)' : 'var(--color-border)',
+                        }}
+                        maxLength={64}
+                      />
+                    </div>
+                  )}
+                  {err && (
+                    <div className="mt-1 text-[11px]" style={{ color: 'var(--color-danger, #ef4444)' }}>
+                      {err}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div
+          className="flex justify-between items-center gap-2 px-4 py-3 border-t"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+            {importableCount} of {rows.length} will be imported
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={onCancel}
+              className="px-3 py-1.5 text-sm rounded"
+              style={{
+                backgroundColor: 'transparent',
+                color: 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={!canConfirm}
+              className="px-3 py-1.5 text-sm font-medium rounded disabled:opacity-40"
+              style={{
+                backgroundColor: 'var(--color-primary)',
+                color: 'var(--color-primary-foreground, #fff)',
+              }}
+            >
+              Import {importableCount > 0 ? importableCount : ''}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -574,6 +955,12 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
     | null
   >(null)
   const [justAddedIdx, setJustAddedIdx] = useState<number | null>(null)
+  const [importState, setImportState] = useState<{
+    sourceCharacter: string
+    targetCharacter: string
+    rows: ImportRow[]
+  } | null>(null)
+  const [importing, setImporting] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -828,6 +1215,112 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
     setConfirmAction(null)
   }
 
+  async function handleImportClick() {
+    if (!viewedFile) return
+    setError(null)
+    if (!window.electron?.dialog?.openSpellsetsFile) {
+      setError('Import requires the desktop app — not available in browser preview.')
+      return
+    }
+    let path: string | null
+    try {
+      path = await window.electron.dialog.openSpellsetsFile()
+    } catch (err) {
+      setError(`File picker failed: ${(err as Error).message}`)
+      return
+    }
+    if (!path) return
+
+    setImporting(true)
+    try {
+      const res = await parseSpellsetsFile(path)
+      const sourceFile = res.spellsets
+      if (!sourceFile || sourceFile.spellsets.length === 0) {
+        setError('Selected file contained no spellsets.')
+        return
+      }
+      // Don't allow importing a file from the same character — that's just a
+      // reload, which the Refresh button already handles.
+      if (
+        sourceFile.character &&
+        sourceFile.character.toLowerCase() === viewedFile.character.toLowerCase()
+      ) {
+        setError(`That file is ${viewedFile.character}'s own spellsets — use Refresh to reload from disk.`)
+        return
+      }
+
+      // The eligibility check needs each incoming spell's class_levels. The
+      // class catalog + already-resolved off-class spells cover most cases,
+      // but anything else (typically spells the target character can't cast)
+      // must be fetched so we can label them properly instead of marking
+      // them all "unknown spell".
+      const importedIds = new Set<number>()
+      for (const set of sourceFile.spellsets) {
+        for (const id of set.spell_ids) {
+          if (id > 0 && !spellsById.has(id)) importedIds.add(id)
+        }
+      }
+      let lookup = spellsById
+      if (importedIds.size > 0) {
+        const fetched = await Promise.all(
+          [...importedIds].map((id) => getSpell(id).catch(() => null)),
+        )
+        lookup = new Map(spellsById)
+        for (const s of fetched) {
+          if (s && typeof s.id === 'number') lookup.set(s.id, s)
+        }
+      }
+
+      const ctx: EligibilityContext = {
+        classIndex,
+        characterLevel,
+        knownIds,
+        spellsById: lookup,
+      }
+      setImportState({
+        sourceCharacter: sourceFile.character || '',
+        targetCharacter: viewedFile.character,
+        rows: buildImportRows(sourceFile.spellsets, viewedFile.spellsets, ctx),
+      })
+    } catch (err) {
+      setError(`Failed to parse spellsets file: ${(err as Error).message}`)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  function handleConfirmImport() {
+    if (!importState || !viewedFile) return
+    const { rows } = importState
+
+    setFiles((prev) =>
+      prev.map((f) => {
+        if (f.character !== viewedFile.character) return f
+        // Start from existing spellsets; apply overwrites in place, then
+        // append imports/renames. Skips contribute nothing.
+        const next = f.spellsets.map((s) => ({ ...s, spell_ids: s.spell_ids.slice() }))
+        const taken = new Set(next.map((s) => s.name))
+
+        for (const r of rows) {
+          if (r.action === 'skip') continue
+          if (r.ineligible.length > 0) continue
+          if (r.action === 'overwrite') {
+            const idx = next.findIndex((s) => s.name === r.source.name)
+            if (idx >= 0) next[idx] = { ...r.source, spell_ids: r.source.spell_ids.slice() }
+            continue
+          }
+          // 'import' or 'rename' — append with a guaranteed-unique name.
+          const desired = r.action === 'rename' ? r.renameTo.trim() : r.source.name
+          const finalName = uniqueName(desired, taken)
+          taken.add(finalName)
+          next.push({ name: finalName, spell_ids: r.source.spell_ids.slice() })
+        }
+        return { ...f, spellsets: next }
+      }),
+    )
+    setImportState(null)
+  }
+
   const currentSpellId = picker && viewedFile
     ? viewedFile.spellsets[picker.setIndex]?.spell_ids[picker.slot] ?? -1
     : -1
@@ -899,6 +1392,18 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
           title="Write changes to the .ini file"
         >
           <Save size={12} className={saving ? 'animate-pulse' : ''} /> Save
+        </button>
+        <button
+          onClick={handleImportClick}
+          disabled={!viewedFile || saving || importing}
+          className="flex items-center gap-1 text-xs px-2 py-1 rounded disabled:opacity-40"
+          style={{
+            color: 'var(--color-muted-foreground)',
+            border: '1px solid var(--color-border)',
+          }}
+          title="Import spellsets from another character's .ini file"
+        >
+          <Download size={12} className={importing ? 'animate-pulse' : ''} /> Import
         </button>
         <button
           onClick={load}
@@ -1027,6 +1532,17 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
               file on disk is unaffected.
             </p>
           }
+        />
+      )}
+
+      {importState && (
+        <ImportReviewModal
+          sourceCharacter={importState.sourceCharacter}
+          targetCharacter={importState.targetCharacter}
+          rows={importState.rows}
+          onChange={(rows) => setImportState((prev) => (prev ? { ...prev, rows } : prev))}
+          onConfirm={handleConfirmImport}
+          onCancel={() => setImportState(null)}
         />
       )}
 

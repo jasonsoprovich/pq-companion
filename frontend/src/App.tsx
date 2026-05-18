@@ -29,6 +29,7 @@ import CombatHistoryPage from './pages/CombatHistoryPage'
 import TriggersPage from './pages/TriggersPage'
 import RollTrackerPage from './pages/RollTrackerPage'
 import RollTrackerWindowPage from './pages/RollTrackerWindowPage'
+import PlayersPage from './pages/PlayersPage'
 import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
 import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
 import CharactersPage from './pages/CharactersPage'
@@ -126,6 +127,7 @@ export default function App(): React.ReactElement {
           <Route path="combat-history" element={<CombatHistoryPage />} />
           <Route path="triggers" element={<TriggersPage />} />
           <Route path="rolls" element={<RollTrackerPage />} />
+          <Route path="players" element={<PlayersPage />} />
           <Route path="characters" element={<CharactersLayout />}>
             <Route index element={<Navigate to="/characters/overview" replace />} />
             <Route path="overview" element={<CharactersPage />} />

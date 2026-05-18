@@ -175,7 +175,7 @@ func All() []KeyDef {
 				{ItemID: 22186, ItemName: "A Lucid Shard (Dawnshroud Peaks)", Notes: "Drops in Dawnshroud Peaks."},
 				{ItemID: 22187, ItemName: "A Lucid Shard (Echo Caverns)", Notes: "Drops in Echo Caverns."},
 				{ItemID: 22188, ItemName: "A Lucid Shard (Fungus Grove)", Notes: "Drops in Fungus Grove."},
-				{ItemID: 22189, ItemName: "A Lucid Shard (Grieg's End)", Notes: "Drops in Grieg's End."},
+				{ItemID: 22189, ItemName: "A Lucid Shard (Ssraeshza Temple)", Notes: "Drops in Ssraeshza Temple."},
 				{ItemID: 22190, ItemName: "A Lucid Shard (Grimling Forest)", Notes: "Drops in Grimling Forest."},
 				{ItemID: 22191, ItemName: "A Lucid Shard (Hollowshade Moor)", Notes: "Drops in Hollowshade Moor."},
 				{ItemID: 22192, ItemName: "A Lucid Shard (Maiden's Eye)", Notes: "Drops in Maiden's Eye."},

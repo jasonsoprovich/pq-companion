@@ -44,6 +44,41 @@ export interface Action {
   font_size?: number
 }
 
+/**
+ * Match source for a trigger:
+ *   'log'  — Pattern regex against log lines (default).
+ *   'pipe' — typed match on PipeCondition against ZealPipe events.
+ * Existing triggers persisted without this field deserialise as 'log'.
+ */
+export type TriggerSource = 'log' | 'pipe'
+
+/**
+ * Kind discriminator for pipe-source trigger conditions. Each kind reads
+ * a different subset of PipeCondition fields — see the field comments.
+ */
+export type PipeConditionKind =
+  | 'target_hp_below'
+  | 'target_name'
+  | 'buff_landed'
+  | 'buff_faded'
+  | 'pipe_command'
+
+/**
+ * Typed match definition for Source='pipe' triggers. Only the fields
+ * relevant to the chosen kind are populated; the backend ignores the rest.
+ */
+export interface PipeCondition {
+  kind: PipeConditionKind
+  /** target_hp_below: fires when target HP crosses below this percentage (0-100). */
+  hp_threshold?: number
+  /** target_name: fires when the player's target becomes this name (exact match). */
+  target_name?: string
+  /** buff_landed / buff_faded: spell name to watch in the player's buff slots. */
+  spell_name?: string
+  /** pipe_command: matches `/pipe <text>` typed in-game (exact match). */
+  text?: string
+}
+
 export interface Trigger {
   id: string
   name: string
@@ -56,6 +91,16 @@ export interface Trigger {
   timer_duration_secs: number
   worn_off_pattern: string
   spell_id: number
+  /**
+   * Cooldown timer (seconds) spawned alongside the duration timer to track
+   * reuse cooldown. Counts down on the buff overlay with a " CD" suffix.
+   * 0 = no cooldown timer.
+   */
+  cooldown_secs?: number
+  /** Match source — defaults to 'log' when absent on the wire. */
+  source?: TriggerSource
+  /** Typed match definition; only present (and required) when source='pipe'. */
+  pipe_condition?: PipeCondition
   /**
    * Per-trigger override for the global buff / detrim display threshold
    * (in seconds). > 0 means the timer this trigger creates is hidden

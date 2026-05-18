@@ -14,6 +14,8 @@ export const WSEvent = {
   TriggerTestSessionEnded: 'trigger:test_session_ended',
   ConfigUpdated: 'config:updated',
   ConfigCharacterDetected: 'config:character_detected',
+  ZealConnected: 'zeal:connected',
+  ZealDisconnected: 'zeal:disconnected',
 } as const
 
 export type WSEventType = (typeof WSEvent)[keyof typeof WSEvent]

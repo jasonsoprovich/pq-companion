@@ -31,6 +31,13 @@ type TargetState struct {
 	SpecialAbilities []db.SpecialAbility `json:"special_abilities,omitempty"`
 	// CurrentZone is the most recently seen zone name from the log.
 	CurrentZone string `json:"current_zone,omitempty"`
+	// HPPercent is the target's current HP as a 0-100 percentage when fed by
+	// the Zeal pipe. -1 means "unknown" (no pipe available or no value yet);
+	// the overlay hides the bar when this is negative.
+	HPPercent int `json:"hp_percent"`
+	// PetOwner is the target's owner name when the target is a summoned pet.
+	// Empty for non-pet targets. Populated from the Zeal pipe.
+	PetOwner string `json:"pet_owner,omitempty"`
 	// LastUpdated is the wall-clock time the state last changed.
 	LastUpdated time.Time `json:"last_updated"`
 }
@@ -48,7 +55,7 @@ type NPCTracker struct {
 // NewNPCTracker returns an initialised NPCTracker. Inject the WebSocket hub
 // and database so the tracker can broadcast and look up NPC data.
 func NewNPCTracker(hub *ws.Hub, database *db.DB) *NPCTracker {
-	return &NPCTracker{hub: hub, db: database}
+	return &NPCTracker{hub: hub, db: database, st: TargetState{HPPercent: -1}}
 }
 
 // Handle processes a single parsed log event.  Call this from the log-tailer
@@ -114,6 +121,85 @@ func (t *NPCTracker) Handle(ev logparser.LogEvent) {
 	}
 }
 
+// SetPipeTarget pushes a target name from the ZealPipe IPC into the same
+// downstream path that /con-driven and combat-driven updates use. Identical
+// names back-to-back are de-duped by setTarget, so the pipe's ~10 Hz cadence
+// doesn't cause repeated DB lookups or broadcasts. An empty name is a no-op
+// (clearing is handled separately via ClearPipeTarget so the pipe stream's
+// transient empties don't fight log-driven state).
+func (t *NPCTracker) SetPipeTarget(displayName string) {
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return
+	}
+	t.setTarget(displayName)
+}
+
+// ClearPipeTarget clears the current target. Called when the pipe reports an
+// explicit empty target (player deselected) — faster than waiting for a log
+// signal.
+func (t *NPCTracker) ClearPipeTarget() {
+	t.clearTarget()
+}
+
+// SetPipeHPPercent updates the current target's HP percentage from a Zeal
+// LabelTargetHPPerc payload. Values outside 0-100 are clamped; identical
+// repeats are de-duped (the pipe resends at ~10 Hz). A no-op when no target
+// is set so transient HP labels can't resurrect a cleared overlay.
+func (t *NPCTracker) SetPipeHPPercent(percent int) {
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	t.mu.Lock()
+	if !t.st.HasTarget || t.st.HPPercent == percent {
+		t.mu.Unlock()
+		return
+	}
+	t.st.HPPercent = percent
+	t.st.LastUpdated = time.Now()
+	snap := t.st
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
+// ResetPipeFields drops pipe-only state (HP%, pet owner) from the current
+// target without changing the target itself. Called when the Zeal pipe
+// disconnects so the overlay HP bar disappears rather than freezing at a
+// stale value — log-driven targeting continues regardless.
+func (t *NPCTracker) ResetPipeFields() {
+	t.mu.Lock()
+	if t.st.HPPercent == -1 && t.st.PetOwner == "" {
+		t.mu.Unlock()
+		return
+	}
+	t.st.HPPercent = -1
+	t.st.PetOwner = ""
+	t.st.LastUpdated = time.Now()
+	snap := t.st
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
+// SetPipePetOwner records the owner name when the current target is a pet.
+// An empty value clears any previously-set owner (e.g. when the player
+// switches from a pet to a non-pet target before the next TargetName fires).
+func (t *NPCTracker) SetPipePetOwner(owner string) {
+	owner = strings.TrimSpace(owner)
+	t.mu.Lock()
+	if !t.st.HasTarget || t.st.PetOwner == owner {
+		t.mu.Unlock()
+		return
+	}
+	t.st.PetOwner = owner
+	t.st.LastUpdated = time.Now()
+	snap := t.st
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
 // GetState returns a point-in-time snapshot of the current target state.
 func (t *NPCTracker) GetState() TargetState {
 	t.mu.RLock()
@@ -154,6 +240,7 @@ func (t *NPCTracker) setTarget(displayName string) {
 		NPCData:          npcData,
 		SpecialAbilities: abilities,
 		CurrentZone:      t.st.CurrentZone,
+		HPPercent:        -1, // unknown until pipe reports it
 		LastUpdated:      time.Now(),
 	}
 	snap := t.st
@@ -171,6 +258,7 @@ func (t *NPCTracker) clearTarget() {
 	t.st = TargetState{
 		HasTarget:   false,
 		CurrentZone: t.st.CurrentZone,
+		HPPercent:   -1,
 		LastUpdated: time.Now(),
 	}
 	snap := t.st

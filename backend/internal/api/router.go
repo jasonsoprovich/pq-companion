@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/appbackup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
@@ -13,17 +14,19 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/zealpipe"
 )
 
 // NewRouter builds and returns the chi router wired to all backend components.
 // combatHistory may be nil when persistence is disabled (e.g. user.db open
 // failed); in that case the history endpoints respond 503.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, actualPort int) http.Handler {
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, actualPort int) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -48,9 +51,11 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	cfg := &configHandler{mgr: cfgMgr, hub: hub, actualPort: actualPort}
 	charactersH := &charactersHandler{store: charStore, mgr: cfgMgr, db: database, watcher: zealWatcher}
 	search := &searchHandler{db: database}
-	zealH := &zealHandler{watcher: zealWatcher, cfgMgr: cfgMgr, db: database}
+	zealH := &zealHandler{watcher: zealWatcher, cfgMgr: cfgMgr, db: database, pipe: pipeSupervisor}
 	keysH := &keysHandler{watcher: zealWatcher}
 	backupH := &backupHandler{mgr: backupMgr}
+	appBackupH := &appBackupHandler{mgr: appBackupMgr}
+	playersH := &playersHandler{store: playerStore}
 	logH := &logHandler{tailer: tailer}
 	overlayH := &overlayHandler{npcTracker: npcTracker}
 	combatH := &combatHandler{tracker: combatTracker, historyStore: combatHistory}
@@ -121,6 +126,8 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Delete("/{id}/tasks/{taskID}/subtasks/{subtaskID}", tasksH.deleteSubtask)
 		})
 		r.Route("/zeal", func(r chi.Router) {
+			r.Get("/detect", zealH.detect)
+			r.Get("/pipe-status", zealH.pipeStatus)
 			r.Get("/inventory", zealH.inventory)
 			r.Get("/spells", zealH.spellbook)
 			r.Get("/all-inventories", zealH.allInventories)
@@ -128,6 +135,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/spellsets", zealH.spellsets)
 			r.Put("/spellsets", zealH.updateSpellsets)
 			r.Get("/spellsets/all", zealH.allSpellsets)
+			r.Post("/spellsets/parse-file", zealH.parseSpellsetsFile)
 		})
 		r.Route("/keys", func(r chi.Router) {
 			r.Get("/", keysH.list)
@@ -142,6 +150,20 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Post("/{id}/restore", backupH.restore)
 			r.Put("/{id}/lock", backupH.lock)
 			r.Put("/{id}/unlock", backupH.unlock)
+		})
+		r.Route("/players", func(r chi.Router) {
+			r.Get("/", playersH.list)
+			r.Post("/clear", playersH.clear)
+			r.Get("/{name}", playersH.get)
+			r.Get("/{name}/history", playersH.history)
+			r.Delete("/{name}", playersH.delete)
+		})
+		r.Route("/app", func(r chi.Router) {
+			r.Post("/export", appBackupH.export)
+			r.Post("/import/preview", appBackupH.importPreview)
+			r.Post("/import", appBackupH.stageImport)
+			r.Get("/import/pending", appBackupH.pendingStatus)
+			r.Delete("/import", appBackupH.cancelImport)
 		})
 		r.Route("/log", func(r chi.Router) {
 			r.Get("/status", logH.status)

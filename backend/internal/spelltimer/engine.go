@@ -124,6 +124,21 @@ type Engine struct {
 	modMu        sync.Mutex
 	modCharName  string
 	modContribs  []buffmod.Modifier
+
+	// pipeCasting is the spell name most recently reported by the Zeal pipe
+	// (LabelCastingName, id 134). Empty when the player isn't casting. Used
+	// purely for observability — when EventSpellCast fires from the log we
+	// cross-check this value and log divergences so the log-side parser can
+	// be tightened over time.
+	pipeCasting string
+
+	// pipeBuffSlots is the most recent self-buff slot snapshot from the pipe
+	// (Buff0..14, plus 15..20 from game.dll). Stored as a set keyed by spell
+	// name. Used for divergence logging against the engine's active self-buff
+	// timers; behaviour (i.e. whether to prune timers the pipe disagrees
+	// with) is intentionally deferred until we have a sense of how often the
+	// two sources disagree in real play.
+	pipeBuffSlots map[string]bool
 }
 
 // NewEngine returns an initialised Engine ready to receive log events.
@@ -218,7 +233,15 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		e.mu.Lock()
 		e.lastCastSpell = data.SpellName
 		e.lastCastAt = time.Now()
+		// Cross-check: if Zeal is reporting a different in-flight cast than
+		// the log, that's a parser miss worth investigating. Logged once per
+		// cast event so this can't spam during fast cast chains.
+		pipeName := e.pipeCasting
 		e.mu.Unlock()
+		if pipeName != "" && pipeName != data.SpellName {
+			slog.Info("zealpipe-divergence: log cast != pipe cast",
+				"log_spell", data.SpellName, "pipe_spell", pipeName, "ts", ev.Timestamp)
+		}
 		slog.Info("timer-debug: spell-cast recorded (awaiting land)", "spell", data.SpellName, "ts", ev.Timestamp)
 
 	case logparser.EventSpellLanded:
@@ -308,6 +331,76 @@ func (e *Engine) GetState() TimerState {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.snapshot(time.Now())
+}
+
+// SetPipeCasting records the current in-flight cast as reported by the Zeal
+// pipe (LabelCastingName, id 134). Empty value means "not casting." The
+// engine consults this value during EventSpellCast to detect parser
+// divergence; it has no other side effects in this stage.
+func (e *Engine) SetPipeCasting(name string) {
+	e.mu.Lock()
+	e.pipeCasting = strings.TrimSpace(name)
+	e.mu.Unlock()
+}
+
+// SetPipeBuffSlots records the current self-buff slot snapshot from the pipe
+// (Buff0..14 and 15..20 labels). Each slot's value is the spell name in that
+// slot, or empty if the slot is unoccupied. The engine compares this set
+// against its active self-buff timers and logs divergences at info level —
+// data feed for tightening the log parser. No timers are pruned in this
+// pass; that's a deliberate behaviour change to defer until we know how
+// frequently the two sources disagree under real play.
+func (e *Engine) SetPipeBuffSlots(slots []string) {
+	set := make(map[string]bool, len(slots))
+	for _, s := range slots {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			set[s] = true
+		}
+	}
+	active := e.activePlayerName()
+	e.mu.Lock()
+	e.pipeBuffSlots = set
+	// Compare engine self-buff timers vs the pipe set. We only consider
+	// timers that *should* appear in the player's buff window — Category=Buff
+	// targeted at the active char or "You". Detrimentals on enemies are out
+	// of scope.
+	var missingFromPipe []string
+	for _, t := range e.timers {
+		if t.Category != CategoryBuff {
+			continue
+		}
+		if t.TargetName != "You" && t.TargetName != active {
+			continue
+		}
+		if !set[t.SpellName] {
+			missingFromPipe = append(missingFromPipe, t.SpellName)
+		}
+	}
+	var missingFromTimers []string
+	for name := range set {
+		found := false
+		for _, t := range e.timers {
+			if t.Category == CategoryBuff &&
+				(t.TargetName == "You" || t.TargetName == active) &&
+				t.SpellName == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missingFromTimers = append(missingFromTimers, name)
+		}
+	}
+	e.mu.Unlock()
+	if len(missingFromPipe) > 0 {
+		slog.Info("zealpipe-divergence: timers think buff is active, pipe does not",
+			"spells", missingFromPipe)
+	}
+	if len(missingFromTimers) > 0 {
+		slog.Info("zealpipe-divergence: pipe has buff slot, timers don't",
+			"spells", missingFromTimers)
+	}
 }
 
 // StartExternal adds a timer not driven by a log cast event. Used by the
