@@ -91,6 +91,12 @@ export interface Trigger {
   timer_duration_secs: number
   worn_off_pattern: string
   spell_id: number
+  /**
+   * Cooldown timer (seconds) spawned alongside the duration timer to track
+   * reuse cooldown. Counts down on the buff overlay with a " CD" suffix.
+   * 0 = no cooldown timer.
+   */
+  cooldown_secs?: number
   /** Match source — defaults to 'log' when absent on the wire. */
   source?: TriggerSource
   /** Typed match definition; only present (and required) when source='pipe'. */

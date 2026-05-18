@@ -157,6 +157,14 @@ type Trigger struct {
 	WornOffPattern    string    `json:"worn_off_pattern"`
 	SpellID           int       `json:"spell_id"` // optional — 0 means not linked to a specific DB spell
 
+	// CooldownSecs spawns a second timer alongside the buff/duration timer to
+	// track the spell or discipline's reuse cooldown (recast_time in
+	// spells_new). Counts down on the buff overlay with a " CD" suffix in the
+	// label and a "ready" TTS at 1s remaining. 0 = no cooldown timer.
+	// Independent of TimerType — works even when the primary trigger is an
+	// overlay-only alert (Lay on Hands, Harvest, etc.).
+	CooldownSecs int `json:"cooldown_secs,omitempty"`
+
 	// DisplayThresholdSecs is a per-trigger override for the global buff /
 	// detrimental display threshold. When > 0, the timer this trigger
 	// creates is only shown in the overlay once its remaining time falls

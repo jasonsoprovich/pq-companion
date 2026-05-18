@@ -358,6 +358,7 @@ func (e *Engine) firePipe(t *Trigger, matchedLine string, firedAt time.Time) {
 		e.sink.StartExternal(timerKeyFor(t), timerCategory(t.TimerType),
 			t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID)
 	}
+	e.startCooldownTimer(t, firedAt)
 }
 
 // matchesAny returns true if any of the regexes match s. Used to suppress a
@@ -428,6 +429,7 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time) {
 		}
 		e.sink.StartExternal(c.timerKey, timerCategory(t.TimerType), t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID)
 	}
+	e.startCooldownTimer(t, firedAt)
 }
 
 // timerKeyFor returns the spelltimer key for a trigger. Prefers the trigger
@@ -437,6 +439,40 @@ func timerKeyFor(t *Trigger) string {
 		return t.Name
 	}
 	return t.ID
+}
+
+// cooldownKeyFor returns the spelltimer key used for a trigger's cooldown
+// timer — same root as the primary timer with a " CD" suffix so the buff
+// overlay shows e.g. "Furious Discipline" and "Furious Discipline CD" side
+// by side without colliding.
+func cooldownKeyFor(t *Trigger) string {
+	return timerKeyFor(t) + " CD"
+}
+
+// startCooldownTimer spawns a second timer on the buff overlay tracking the
+// trigger's CooldownSecs (recast_time from spells_new). Fires a TTS "ready"
+// alert at 1s remaining. No-op when CooldownSecs is 0 or no sink is wired.
+// SpellID is intentionally passed as 0 — duration focuses don't apply to
+// recast time, so we want the raw CooldownSecs value, not a focused one.
+func (e *Engine) startCooldownTimer(t *Trigger, firedAt time.Time) {
+	if e.sink == nil || t.CooldownSecs <= 0 {
+		return
+	}
+	// TTS template uses the trigger's own name as a literal (not {spell})
+	// because the cooldown timer's spell_name is the suffixed "<Name> CD"
+	// key — substituting would say "Furious Discipline CD ready".
+	readyAlert := TimerAlert{
+		ID:          "cooldown-ready-1s",
+		Seconds:     1,
+		Type:        TimerAlertTypeTextToSpeech,
+		TTSTemplate: t.Name + " ready",
+		TTSVolume:   100,
+	}
+	var alertJSON json.RawMessage
+	if buf, err := json.Marshal([]TimerAlert{readyAlert}); err == nil {
+		alertJSON = buf
+	}
+	e.sink.StartExternal(cooldownKeyFor(t), "buff", t.CooldownSecs, 0, firedAt, alertJSON, 0)
 }
 
 // timerCategory maps a trigger's TimerType onto a spelltimer category string.
