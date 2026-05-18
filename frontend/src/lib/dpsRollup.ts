@@ -135,6 +135,10 @@ export function rollupCombatants(
       raid_seconds: raidSecs,
       crit_count: sumCrits(pets),
       crit_damage: sumCritDamage(pets),
+      // Inherit class from any pet (the backend stamps each pet with its
+      // owner's class) so the synthesised owner row still colours correctly
+      // when the owner never appeared as a damage dealer themselves.
+      class: pets[0]?.class,
       pets,
     })
   }

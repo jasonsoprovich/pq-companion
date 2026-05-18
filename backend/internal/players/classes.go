@@ -33,6 +33,54 @@ var ClassTitles = map[string][]string{
 	"Wizard":       {"Wizard", "Channeler", "Evoker", "Sorcerer", "Arcanist"},
 }
 
+// classIndexNames maps the 0-indexed EQ class id (0=WAR … 14=BST) to its
+// canonical base name as used elsewhere in this package and in the /who
+// parser. Matches the index scheme described in config.Config.CharacterClass
+// and zeal/watcher.go.
+var classIndexNames = [...]string{
+	"Warrior",       // 0
+	"Cleric",        // 1
+	"Paladin",       // 2
+	"Ranger",        // 3
+	"Shadow Knight", // 4
+	"Druid",         // 5
+	"Monk",          // 6
+	"Bard",          // 7
+	"Rogue",         // 8
+	"Shaman",        // 9
+	"Necromancer",   // 10
+	"Wizard",        // 11
+	"Magician",      // 12
+	"Enchanter",     // 13
+	"Beastlord",     // 14
+}
+
+// ClassNameByIndex returns the canonical base class name for an EQ class
+// index, or "" when the index is out of range.
+func ClassNameByIndex(idx int) string {
+	if idx < 0 || idx >= len(classIndexNames) {
+		return ""
+	}
+	return classIndexNames[idx]
+}
+
+// BaseClassOf returns the canonical base class name for any /who-style title
+// string (e.g. "Illusionist" → "Enchanter", "Warlord" → "Warrior"). Empty
+// input or an unknown title returns "".
+func BaseClassOf(title string) string {
+	if title == "" {
+		return ""
+	}
+	for base, titles := range ClassTitles {
+		for _, t := range titles {
+			if strings.EqualFold(t, title) {
+				return base
+			}
+		}
+	}
+	return ""
+}
+
 // expandClassFilter returns the list of class names a filter value should
 // match. When the filter is a known base class, the result is every
 // progression title for that class. When it's a single non-base value

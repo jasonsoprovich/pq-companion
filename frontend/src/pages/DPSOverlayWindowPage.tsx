@@ -17,6 +17,8 @@ import { getCombatState, resetCombatState } from '../services/api'
 import type { CombatState, FightState } from '../types/combat'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
 import { combatantBarColor } from '../lib/combatantColor'
+import { useDPSClassColors } from '../hooks/useDPSClassColors'
+import type { DPSClassColors } from '../types/config'
 import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, playerAggregateDPS, type DPSMode } from '../hooks/useDPSMode'
 import { WSEvent } from '../lib/wsEvents'
 
@@ -70,7 +72,7 @@ function buildFightText(fight: FightState, combine: boolean, mode: DPSMode): str
 
 // ── Row ────────────────────────────────────────────────────────────────────────
 
-function Row({ stat, totalDmg, expanded, onToggle, mode }: { stat: RolledUpEntity; totalDmg: number; expanded: boolean; onToggle: () => void; mode: DPSMode }): React.ReactElement {
+function Row({ stat, totalDmg, expanded, onToggle, mode, palette }: { stat: RolledUpEntity; totalDmg: number; expanded: boolean; onToggle: () => void; mode: DPSMode; palette: DPSClassColors }): React.ReactElement {
   const isYou = stat.name === 'You'
   const barPct = totalDmg > 0 ? (stat.total_damage / totalDmg) * 100 : 0
   const hasPets = stat.pets.length > 0
@@ -99,7 +101,7 @@ function Row({ stat, totalDmg, expanded, onToggle, mode }: { stat: RolledUpEntit
             top: 0,
             bottom: 0,
             width: `${barPct}%`,
-            backgroundColor: combatantBarColor(stat.name, 0.28),
+            backgroundColor: combatantBarColor(stat.class, palette, 0.28),
             pointerEvents: 'none',
           }}
         />
@@ -152,7 +154,7 @@ function Row({ stat, totalDmg, expanded, onToggle, mode }: { stat: RolledUpEntit
 
 // ── Fight table ────────────────────────────────────────────────────────────────
 
-function FightTable({ fight, showAll, combine, mode }: { fight: FightState; showAll: boolean; combine: boolean; mode: DPSMode }): React.ReactElement {
+function FightTable({ fight, showAll, combine, mode, palette }: { fight: FightState; showAll: boolean; combine: boolean; mode: DPSMode; palette: DPSClassColors }): React.ReactElement {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const rolled = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
   const rows = showAll ? rolled : rolled.filter((c) => c.name === 'You')
@@ -190,6 +192,7 @@ function FightTable({ fight, showAll, combine, mode }: { fight: FightState; show
             stat={s}
             totalDmg={totalDmg}
             mode={mode}
+            palette={palette}
             expanded={expanded.has(s.name)}
             onToggle={() => setExpanded((prev) => {
               const next = new Set(prev)
@@ -208,6 +211,7 @@ function FightTable({ fight, showAll, combine, mode }: { fight: FightState; show
 
 export default function DPSOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
+  const palette = useDPSClassColors()
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
@@ -489,7 +493,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           Connecting…
         </p>
       ) : fight ? (
-        <FightTable fight={fight} showAll={showAll} combine={combine} mode={dpsMode} />
+        <FightTable fight={fight} showAll={showAll} combine={combine} mode={dpsMode} palette={palette} />
       ) : (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
           <Swords size={24} style={{ opacity: 0.15 }} />

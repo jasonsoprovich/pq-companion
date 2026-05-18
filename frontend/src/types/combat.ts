@@ -24,6 +24,12 @@ export interface EntityStats {
   // summoned pet). Empty/undefined for player damage dealers and for pets
   // whose owner could not be identified.
   owner_name?: string
+  // Canonical base class name (e.g. "Warrior", "Shadow Knight") used to
+  // pick the row's DPS bar colour from the user's per-class palette. For
+  // pets, this is the controlling player's class so the bar matches the
+  // owner. Empty/undefined when the class can't be resolved — the
+  // frontend falls back to the Unknown palette colour.
+  class?: string
 }
 
 export interface HealerStats {

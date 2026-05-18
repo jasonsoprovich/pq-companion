@@ -43,6 +43,12 @@ type Config struct {
 	// Combat holds combat tracker / history settings.
 	Combat CombatSettings `yaml:"combat" json:"combat"`
 
+	// DPSClassColors maps each EQ class to the bar colour the DPS meter and
+	// combat-history rows render for combatants of that class. Stored as
+	// CSS-style #RRGGBB hex strings so the frontend can apply them
+	// verbatim. Unknown / unclassified combatants fall back to Unknown.
+	DPSClassColors DPSClassColors `yaml:"dps_class_colors" json:"dps_class_colors"`
+
 	// OnboardingCompleted is true once the user has finished the first-launch
 	// setup wizard. When false (default), the wizard is shown on app launch.
 	OnboardingCompleted bool `yaml:"onboarding_completed" json:"onboarding_completed"`
@@ -120,6 +126,51 @@ type SpellTimerSettings struct {
 	// Empty string is treated as "auto" so existing config files migrate
 	// cleanly without an explicit value.
 	TrackingMode string `yaml:"tracking_mode,omitempty" json:"tracking_mode,omitempty"`
+}
+
+// DPSClassColors holds the user-customisable bar colours for the DPS meter
+// and combat history rows. One hex value per EQ class plus an Unknown
+// fallback for combatants whose class can't be resolved.
+type DPSClassColors struct {
+	Warrior      string `yaml:"warrior" json:"warrior"`
+	Cleric       string `yaml:"cleric" json:"cleric"`
+	Paladin      string `yaml:"paladin" json:"paladin"`
+	Ranger       string `yaml:"ranger" json:"ranger"`
+	ShadowKnight string `yaml:"shadow_knight" json:"shadow_knight"`
+	Druid        string `yaml:"druid" json:"druid"`
+	Monk         string `yaml:"monk" json:"monk"`
+	Bard         string `yaml:"bard" json:"bard"`
+	Rogue        string `yaml:"rogue" json:"rogue"`
+	Shaman       string `yaml:"shaman" json:"shaman"`
+	Necromancer  string `yaml:"necromancer" json:"necromancer"`
+	Wizard       string `yaml:"wizard" json:"wizard"`
+	Magician     string `yaml:"magician" json:"magician"`
+	Enchanter    string `yaml:"enchanter" json:"enchanter"`
+	Beastlord    string `yaml:"beastlord" json:"beastlord"`
+	Unknown      string `yaml:"unknown" json:"unknown"`
+}
+
+// DefaultDPSClassColors is the seeded palette new installs (and any field
+// that's been left blank on an existing config) fall back to.
+func DefaultDPSClassColors() DPSClassColors {
+	return DPSClassColors{
+		Warrior:      "#C79C6E",
+		Cleric:       "#FFFFFF",
+		Paladin:      "#F58CBA",
+		Ranger:       "#ABD473",
+		ShadowKnight: "#C41F3B",
+		Druid:        "#FF7D0A",
+		Monk:         "#00FF96",
+		Bard:         "#8A47E8",
+		Rogue:        "#FFF569",
+		Shaman:       "#0070DE",
+		Necromancer:  "#9482C9",
+		Wizard:       "#40ED57",
+		Magician:     "#69CCF0",
+		Enchanter:    "#ED5CE5",
+		Beastlord:    "#03B78A",
+		Unknown:      "#B2B2B2",
+	}
 }
 
 // CombatSettings configures the combat tracker and persisted fight history.
@@ -202,6 +253,7 @@ func defaults() Config {
 		Combat: CombatSettings{
 			RetentionDays: 30,
 		},
+		DPSClassColors: DefaultDPSClassColors(),
 	}
 }
 
@@ -287,6 +339,47 @@ func applyDefaults(cfg *Config) bool {
 	if cfg.Combat.RetentionDays == 0 {
 		cfg.Combat.RetentionDays = 30
 		changed = true
+	}
+	// DPS class colour palette: fill in any blank entries from the defaults so
+	// upgrading users get the palette without losing per-class overrides
+	// they may have set previously.
+	if fillDPSColorDefaults(&cfg.DPSClassColors) {
+		changed = true
+	}
+	return changed
+}
+
+// fillDPSColorDefaults populates any empty hex fields with the corresponding
+// default. Returns true when at least one field was changed.
+func fillDPSColorDefaults(c *DPSClassColors) bool {
+	d := DefaultDPSClassColors()
+	changed := false
+	pairs := []struct {
+		dst *string
+		def string
+	}{
+		{&c.Warrior, d.Warrior},
+		{&c.Cleric, d.Cleric},
+		{&c.Paladin, d.Paladin},
+		{&c.Ranger, d.Ranger},
+		{&c.ShadowKnight, d.ShadowKnight},
+		{&c.Druid, d.Druid},
+		{&c.Monk, d.Monk},
+		{&c.Bard, d.Bard},
+		{&c.Rogue, d.Rogue},
+		{&c.Shaman, d.Shaman},
+		{&c.Necromancer, d.Necromancer},
+		{&c.Wizard, d.Wizard},
+		{&c.Magician, d.Magician},
+		{&c.Enchanter, d.Enchanter},
+		{&c.Beastlord, d.Beastlord},
+		{&c.Unknown, d.Unknown},
+	}
+	for _, p := range pairs {
+		if *p.dst == "" {
+			*p.dst = p.def
+			changed = true
+		}
 	}
 	return changed
 }

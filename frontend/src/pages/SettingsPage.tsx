@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette } from 'lucide-react'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, type ServerInfo, type TestPortResult } from '../services/api'
-import type { Config } from '../types/config'
+import type { Config, DPSClassColors } from '../types/config'
+import { DEFAULT_DPS_CLASS_COLORS } from '../types/config'
 import type { LogFileInfo } from '../types/logEvent'
 import type { ZealInstallStatus, ZealPipeStatus } from '../types/zeal'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
@@ -13,7 +14,7 @@ import BackupManagerPage from './BackupManagerPage'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'overlays' | 'spelltimers' | 'logs' | 'backups' | 'advanced'
+type Tab = 'general' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backups' | 'advanced'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -288,6 +289,7 @@ export default function SettingsPage(): React.ReactElement {
     { id: 'general', label: 'General', icon: <Settings size={13} /> },
     { id: 'overlays', label: 'Overlays', icon: <Layers size={13} /> },
     { id: 'spelltimers', label: 'Spell Timers', icon: <Sparkles size={13} /> },
+    { id: 'dpscolors', label: 'DPS Class Colors', icon: <Palette size={13} /> },
     { id: 'logs', label: 'Logs', icon: <FileText size={13} /> },
     { id: 'backups', label: 'EQ Config Backups', icon: <HardDrive size={13} /> },
     { id: 'advanced', label: 'Advanced', icon: <Wifi size={13} /> },
@@ -1133,6 +1135,14 @@ export default function SettingsPage(): React.ReactElement {
         </section>
         )}
 
+        {/* ── DPS Class Colors ───────────────────────────────────────────── */}
+        {tab === 'dpscolors' && (
+        <DPSClassColorsSection
+          value={config.dps_class_colors ?? DEFAULT_DPS_CLASS_COLORS}
+          onChange={(next) => setConfig({ ...config, dps_class_colors: next })}
+        />
+        )}
+
         {/* ── Log Files ──────────────────────────────────────────────────── */}
         {tab === 'logs' && (
         <section
@@ -1552,6 +1562,218 @@ function BackendNetworkSection(props: BackendNetworkSectionProps): React.ReactEl
           </button>
         </div>
       )}
+    </section>
+  )
+}
+
+const DPS_CLASS_ROWS: { key: keyof DPSClassColors; label: string }[] = [
+  { key: 'warrior', label: 'Warrior' },
+  { key: 'cleric', label: 'Cleric' },
+  { key: 'paladin', label: 'Paladin' },
+  { key: 'ranger', label: 'Ranger' },
+  { key: 'shadow_knight', label: 'Shadow Knight' },
+  { key: 'druid', label: 'Druid' },
+  { key: 'monk', label: 'Monk' },
+  { key: 'bard', label: 'Bard' },
+  { key: 'rogue', label: 'Rogue' },
+  { key: 'shaman', label: 'Shaman' },
+  { key: 'necromancer', label: 'Necromancer' },
+  { key: 'wizard', label: 'Wizard' },
+  { key: 'magician', label: 'Magician' },
+  { key: 'enchanter', label: 'Enchanter' },
+  { key: 'beastlord', label: 'Beastlord' },
+  { key: 'unknown', label: 'Unknown / Default' },
+]
+
+function normalizeHex(input: string): string {
+  let v = input.trim()
+  if (!v.startsWith('#')) v = '#' + v
+  return v.toUpperCase()
+}
+
+function isValidHex(input: string): boolean {
+  return /^#([0-9A-Fa-f]{6})$/.test(input.trim())
+}
+
+function DPSClassColorsSection({
+  value,
+  onChange,
+}: {
+  value: DPSClassColors
+  onChange: (next: DPSClassColors) => void
+}): React.ReactElement {
+  // Local mirror of the typed hex string per class so users can type freely
+  // (e.g. while halfway through "#69CC") without the upper-case normaliser
+  // jumping in mid-keystroke. We push to the parent config on blur or when
+  // the value parses as a valid hex; the color picker writes through
+  // immediately because it always produces a valid colour.
+  const [drafts, setDrafts] = React.useState<Record<string, string>>(() => {
+    const out: Record<string, string> = {}
+    for (const r of DPS_CLASS_ROWS) out[r.key] = value[r.key] ?? ''
+    return out
+  })
+
+  // Re-sync when the parent value changes (e.g. after Reset to defaults or a
+  // load from the API). Without this, the local draft state would shadow
+  // resets.
+  useEffect(() => {
+    const next: Record<string, string> = {}
+    for (const r of DPS_CLASS_ROWS) next[r.key] = value[r.key] ?? ''
+    setDrafts(next)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+
+  function setOne(key: keyof DPSClassColors, hex: string): void {
+    onChange({ ...value, [key]: hex })
+  }
+
+  function handleTextChange(key: keyof DPSClassColors, raw: string): void {
+    setDrafts((d) => ({ ...d, [key]: raw }))
+    const norm = normalizeHex(raw)
+    if (isValidHex(norm)) setOne(key, norm)
+  }
+
+  function handleTextBlur(key: keyof DPSClassColors): void {
+    const norm = normalizeHex(drafts[key] ?? '')
+    if (isValidHex(norm)) {
+      setDrafts((d) => ({ ...d, [key]: norm }))
+      setOne(key, norm)
+    } else {
+      // Revert to the last valid persisted value if the user typed garbage.
+      setDrafts((d) => ({ ...d, [key]: value[key] }))
+    }
+  }
+
+  function resetOne(key: keyof DPSClassColors): void {
+    const def = DEFAULT_DPS_CLASS_COLORS[key]
+    setDrafts((d) => ({ ...d, [key]: def }))
+    setOne(key, def)
+  }
+
+  function resetAll(): void {
+    setDrafts(() => {
+      const out: Record<string, string> = {}
+      for (const r of DPS_CLASS_ROWS) out[r.key] = DEFAULT_DPS_CLASS_COLORS[r.key]
+      return out
+    })
+    onChange({ ...DEFAULT_DPS_CLASS_COLORS })
+  }
+
+  return (
+    <section
+      className="rounded-lg p-4"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+    >
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h2
+            className="mb-1 text-sm font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            DPS Class Colors
+          </h2>
+          <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Per-class bar colour for the DPS meter and combat history. Pets
+            inherit their owner's colour. Combatants whose class can't be
+            resolved fall back to the Unknown / Default colour.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={resetAll}
+          className="flex shrink-0 items-center gap-1.5 rounded border px-2.5 py-1 text-xs"
+          style={{
+            borderColor: 'var(--color-border)',
+            color: 'var(--color-foreground)',
+            backgroundColor: 'var(--color-surface-2)',
+            cursor: 'pointer',
+          }}
+        >
+          <RefreshCw size={11} />
+          Reset all to defaults
+        </button>
+      </div>
+
+      <div
+        className="grid gap-2"
+        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}
+      >
+        {DPS_CLASS_ROWS.map((row) => {
+          const draft = drafts[row.key] ?? ''
+          const persisted = value[row.key] ?? ''
+          const invalid = !isValidHex(normalizeHex(draft))
+          const isDefault = persisted.toUpperCase() === DEFAULT_DPS_CLASS_COLORS[row.key].toUpperCase()
+          return (
+            <div
+              key={row.key}
+              className="flex items-center gap-2 rounded border p-2"
+              style={{
+                borderColor: 'var(--color-border)',
+                backgroundColor: 'var(--color-surface-2)',
+              }}
+            >
+              <input
+                type="color"
+                value={isValidHex(persisted) ? persisted : DEFAULT_DPS_CLASS_COLORS[row.key]}
+                onChange={(e) => {
+                  const hex = normalizeHex(e.target.value)
+                  setDrafts((d) => ({ ...d, [row.key]: hex }))
+                  setOne(row.key, hex)
+                }}
+                title={`Pick ${row.label} colour`}
+                style={{
+                  width: 32,
+                  height: 24,
+                  padding: 0,
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  backgroundColor: 'transparent',
+                }}
+              />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span
+                  className="truncate text-xs font-medium"
+                  style={{ color: 'var(--color-foreground)' }}
+                >
+                  {row.label}
+                </span>
+                <input
+                  type="text"
+                  value={draft}
+                  onChange={(e) => handleTextChange(row.key, e.target.value)}
+                  onBlur={() => handleTextBlur(row.key)}
+                  spellCheck={false}
+                  maxLength={7}
+                  className="mt-0.5 rounded border px-1.5 py-0.5 text-xs font-mono"
+                  style={{
+                    borderColor: invalid ? '#f97316' : 'var(--color-border)',
+                    backgroundColor: 'var(--color-surface)',
+                    color: 'var(--color-foreground)',
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => resetOne(row.key)}
+                disabled={isDefault}
+                title={isDefault ? 'Already at default' : 'Reset to default'}
+                className="flex shrink-0 items-center justify-center rounded p-1"
+                style={{
+                  border: '1px solid var(--color-border)',
+                  backgroundColor: 'transparent',
+                  color: isDefault ? 'var(--color-muted)' : 'var(--color-muted-foreground)',
+                  cursor: isDefault ? 'not-allowed' : 'pointer',
+                  opacity: isDefault ? 0.4 : 1,
+                }}
+              >
+                <RefreshCw size={11} />
+              </button>
+            </div>
+          )
+        })}
+      </div>
     </section>
   )
 }

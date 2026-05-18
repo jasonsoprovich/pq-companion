@@ -63,6 +63,48 @@ export interface SpellTimerSettings {
   tracking_mode?: TrackingMode
 }
 
+// DPSClassColors stores the user's per-class bar colour for the DPS meter
+// and combat history rows. Each field is a CSS-style "#RRGGBB" hex string;
+// the frontend renders the value directly. Unknown / unresolved
+// combatants fall back to the `unknown` colour.
+export interface DPSClassColors {
+  warrior: string
+  cleric: string
+  paladin: string
+  ranger: string
+  shadow_knight: string
+  druid: string
+  monk: string
+  bard: string
+  rogue: string
+  shaman: string
+  necromancer: string
+  wizard: string
+  magician: string
+  enchanter: string
+  beastlord: string
+  unknown: string
+}
+
+export const DEFAULT_DPS_CLASS_COLORS: DPSClassColors = {
+  warrior: '#C79C6E',
+  cleric: '#FFFFFF',
+  paladin: '#F58CBA',
+  ranger: '#ABD473',
+  shadow_knight: '#C41F3B',
+  druid: '#FF7D0A',
+  monk: '#00FF96',
+  bard: '#8A47E8',
+  rogue: '#FFF569',
+  shaman: '#0070DE',
+  necromancer: '#9482C9',
+  wizard: '#40ED57',
+  magician: '#69CCF0',
+  enchanter: '#ED5CE5',
+  beastlord: '#03B78A',
+  unknown: '#B2B2B2',
+}
+
 export interface Config {
   eq_path: string
   character: string
@@ -71,5 +113,6 @@ export interface Config {
   preferences: Preferences
   backup: BackupSettings
   spell_timer: SpellTimerSettings
+  dps_class_colors: DPSClassColors
   onboarding_completed: boolean
 }

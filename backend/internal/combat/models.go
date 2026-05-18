@@ -68,6 +68,12 @@ type EntityStats struct {
 	// (charmed NPC or summoned pet). Empty for player damage dealers and for
 	// pets whose owner could not be identified.
 	OwnerName string `json:"owner_name,omitempty"`
+	// Class is the canonical base class name for this combatant (e.g.
+	// "Warrior", "Shadow Knight"). For pets, this is the controlling
+	// player's class so DPS bars colour-match the owner. Empty when the
+	// class is unknown — the frontend falls back to the user's "Unknown"
+	// palette colour.
+	Class string `json:"class,omitempty"`
 }
 
 // HealerStats holds healing statistics for one healer within a fight.

@@ -236,6 +236,17 @@ type Tracker struct {
 	// pipe-driven changes can revoke the prior binding without disturbing
 	// log-driven entries.
 	pipePetName string
+
+	// selfClassFn resolves the canonical base class name (e.g. "Warrior")
+	// of the active character. May be nil — the tracker degrades to leaving
+	// Class empty on the player row when unset.
+	selfClassFn func() string
+
+	// classResolverFn resolves the canonical base class name for any other
+	// combatant by character name. Backed by the /who player tracker
+	// (players.Store) in production. May be nil — unresolved combatants
+	// fall through to the frontend's Unknown palette colour.
+	classResolverFn func(name string) string
 }
 
 // SetHistoryStore wires the persistent fight history store. Called once at
@@ -244,6 +255,20 @@ type Tracker struct {
 func (t *Tracker) SetHistoryStore(s *HistoryStore) {
 	t.mu.Lock()
 	t.historyStore = s
+	t.mu.Unlock()
+}
+
+// SetClassResolvers wires the two class lookups used to stamp the Class
+// field on every EntityStats row before broadcast. selfClassFn returns the
+// active character's canonical base class; classResolverFn returns the
+// class for any other named combatant (backed by the /who tracker).
+// Either may be nil — combatants whose class can't be resolved are stamped
+// with an empty Class and the frontend renders them in the Unknown
+// palette colour.
+func (t *Tracker) SetClassResolvers(selfClassFn func() string, classResolverFn func(name string) string) {
+	t.mu.Lock()
+	t.selfClassFn = selfClassFn
+	t.classResolverFn = classResolverFn
 	t.mu.Unlock()
 }
 
@@ -341,6 +366,15 @@ func (t *Tracker) playerName() string {
 		return ""
 	}
 	return name
+}
+
+// selfClass returns the active character's canonical base class name, or ""
+// when no resolver is wired or the resolver returns empty.
+func (t *Tracker) selfClass() string {
+	if t.selfClassFn == nil {
+		return ""
+	}
+	return t.selfClassFn()
 }
 
 // relabelYou rewrites every entity in stats whose Name is "You" to playerName.
@@ -1022,6 +1056,7 @@ func (t *Tracker) archiveFightLocked(f *Fight, endTime time.Time) {
 
 	combatants := excludeNPCsByName(buildEntityStats(f.outgoing, duration, raidSecs), f.npcName, t.petOwners, t.confirmedHostiles)
 	stampPetOwners(combatants, t.petOwners)
+	stampClasses(combatants, t.selfClass(), t.classResolverFn)
 
 	totalDmg := int64(0)
 	youDmg := int64(0)
@@ -1138,6 +1173,7 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 
 	combatants := excludeNPCsByName(buildEntityStats(f.outgoing, duration, raidSecs), f.npcName, t.petOwners, t.confirmedHostiles)
 	stampPetOwners(combatants, t.petOwners)
+	stampClasses(combatants, t.selfClass(), t.classResolverFn)
 
 	totalDmg := int64(0)
 	youDmg := int64(0)
@@ -1348,6 +1384,48 @@ func stampPetOwners(combatants []EntityStats, petOwners map[string]string) {
 		if owner := deriveOwnerFromName(name); owner != "" && owner != name {
 			combatants[i].OwnerName = owner
 		}
+	}
+}
+
+// stampClasses fills in each combatant's Class string for DPS bar colour
+// rendering. Resolution order per row:
+//
+//   - The player's own row ("You") uses selfClass.
+//   - A pet row inherits its owner's class — owner found in combatants is
+//     resolved first, otherwise resolveClass(owner) is called directly so
+//     summoner-only fights still colour the pet correctly.
+//   - Any other player row resolves via resolveClass(name).
+//
+// resolveClass may be nil; selfClass may be empty. Names that don't resolve
+// keep an empty Class field and the frontend draws them in the Unknown
+// palette colour.
+func stampClasses(combatants []EntityStats, selfClass string, resolveClass func(name string) string) {
+	classByName := make(map[string]string, len(combatants))
+	for _, c := range combatants {
+		if c.OwnerName != "" {
+			continue
+		}
+		if c.Name == "You" {
+			classByName[c.Name] = selfClass
+		} else if resolveClass != nil {
+			classByName[c.Name] = resolveClass(c.Name)
+		}
+	}
+	for i := range combatants {
+		if combatants[i].OwnerName != "" {
+			owner := combatants[i].OwnerName
+			if cls, ok := classByName[owner]; ok && cls != "" {
+				combatants[i].Class = cls
+				continue
+			}
+			if owner == "You" {
+				combatants[i].Class = selfClass
+			} else if resolveClass != nil {
+				combatants[i].Class = resolveClass(owner)
+			}
+			continue
+		}
+		combatants[i].Class = classByName[combatants[i].Name]
 	}
 }
 

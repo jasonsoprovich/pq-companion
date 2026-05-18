@@ -188,6 +188,40 @@ func main() {
 		go pruneCombatHistory(context.Background(), historyStore, cfgMgr)
 	}
 
+	// Class resolvers stamp the canonical base class onto every EntityStats
+	// row so the DPS meter can render each combatant's bar in the user's
+	// per-class colour. selfClassFn covers the active character; the
+	// resolver falls back to the /who tracker for other players.
+	combatTracker.SetClassResolvers(
+		func() string {
+			cfg := cfgMgr.Get()
+			var charName string
+			if tailer != nil {
+				charName = tailer.ActiveCharacter()
+			}
+			if charName == "" {
+				charName = cfg.Character
+			}
+			if charName == "" {
+				return ""
+			}
+			if c, ok, err := charStore.GetByName(charName); err == nil && ok {
+				return players.ClassNameByIndex(c.Class)
+			}
+			return ""
+		},
+		func(name string) string {
+			if playerStore == nil || name == "" {
+				return ""
+			}
+			s, err := playerStore.Get(name)
+			if err != nil || s == nil {
+				return ""
+			}
+			return players.BaseClassOf(s.Class)
+		},
+	)
+
 	// Spell timer engine: watches cast/resist/fade events, maintains countdown
 	// timers per active spell, and broadcasts overlay:timers WebSocket events.
 	// The CharacterContext closure feeds buffmod the active char + EQ path so
