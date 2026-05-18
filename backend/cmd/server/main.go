@@ -420,6 +420,19 @@ func main() {
 		}
 	}, triggerEngine.Handle, func(character string) {
 		slog.Info("logparser: auto-detected active character", "character", character)
+		// If the player switched to a character that doesn't match the
+		// configured manual override, drop the override so the new in-game
+		// character becomes the active selection across the app. Without
+		// this, the dropdown and character pages would keep showing the
+		// previously-pinned character after a camp/login cycle.
+		cfg := cfgMgr.Get()
+		if cfg.Character != "" && !strings.EqualFold(cfg.Character, character) {
+			cfg.Character = ""
+			cfg.CharacterClass = -1
+			if err := cfgMgr.Update(cfg); err != nil {
+				slog.Warn("logparser: could not clear manual character override", "err", err)
+			}
+		}
 		hub.Broadcast(ws.Event{Type: "config:character_detected", Data: map[string]string{"character": character}})
 		// Active character changed — drop cached buffmod contributors so the
 		// next cast recomputes against the new character's inventory + AAs.

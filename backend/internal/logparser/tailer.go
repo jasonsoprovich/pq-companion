@@ -45,7 +45,7 @@ type Tailer struct {
 	cfgMgr            *config.Manager
 	handler           func(LogEvent)
 	lineHandler       func(time.Time, string) // called for every valid EQ log line (parsed or not)
-	onCharacterChange func(string)            // called when auto-detected character changes; nil = disabled
+	onCharacterChange func(string)            // called when the in-game (auto-detected) character changes; nil = disabled
 
 	mu                sync.Mutex
 	file              *os.File
@@ -59,10 +59,12 @@ type Tailer struct {
 // lineHandler, if non-nil, is called for every line that has a valid EQ
 // timestamp — regardless of whether it matches a known event pattern. This
 // allows the trigger engine to match arbitrary log text.
-// onCharacterChange, if non-nil, is called whenever the auto-detected active
-// character changes (i.e. when config.Character is blank and a different log
-// file becomes most-recently-modified). It is not called when the character
-// is set manually in the config.
+// onCharacterChange, if non-nil, is called whenever the in-game active
+// character changes — i.e. a different eqlog file becomes most-recently-
+// modified, which signals the player camped one character and logged in
+// as another. Fires regardless of whether the configured character is
+// manually set or auto-detected; the callback is expected to decide
+// whether to drop a stale manual override.
 func NewTailer(cfgMgr *config.Manager, handler func(LogEvent), lineHandler func(time.Time, string), onCharacterChange func(string)) *Tailer {
 	return &Tailer{
 		cfgMgr:            cfgMgr,
@@ -144,10 +146,19 @@ func (t *Tailer) tick() {
 		return
 	}
 
-	character := cfg.Character
-	autoDetected := character == ""
+	// Always resolve the in-game character from the most-recent eqlog
+	// mtime, regardless of manual override. We need this to detect the
+	// camp-then-login case: the user manually picked Osui at some point,
+	// then in-game camped Osui and logged in as Nariana. The companion
+	// should follow the in-game character, not stay pinned to the stale
+	// manual selection.
+	autoDetectedChar := ResolveActiveCharacter(cfg.EQPath)
+	manualChar := cfg.Character
+	autoDetected := manualChar == ""
+
+	character := manualChar
 	if autoDetected {
-		character = ResolveActiveCharacter(cfg.EQPath)
+		character = autoDetectedChar
 		if character == "" {
 			return
 		}
@@ -161,12 +172,23 @@ func (t *Tailer) tick() {
 	var changedCharacter string
 
 	t.mu.Lock()
-	if autoDetected && character != t.detectedCharacter {
-		t.detectedCharacter = character
-		changedCharacter = character
-	} else if !autoDetected && t.detectedCharacter != "" {
-		// Manual character set — clear the auto-detected state.
-		t.detectedCharacter = ""
+	prevDetected := t.detectedCharacter
+	t.detectedCharacter = autoDetectedChar
+	// Fire onCharacterChange when the auto-detected character changes:
+	//   - Auto mode: fire on any change including the initial transition
+	//     from empty — the UI needs to learn the active character on
+	//     startup.
+	//   - Manual mode: fire only on a transition between two distinct
+	//     non-empty characters, i.e. the user clearly switched characters
+	//     in-game during this session. The initial "from empty" detection
+	//     is suppressed so opening the app with a stale manual selection
+	//     doesn't immediately clobber it just because some other
+	//     character's log happens to have the most recent historical
+	//     mtime.
+	if autoDetectedChar != "" && autoDetectedChar != prevDetected {
+		if autoDetected || prevDetected != "" {
+			changedCharacter = autoDetectedChar
+		}
 	}
 	events, rawLines = t.readLines(logPath)
 	t.mu.Unlock()
