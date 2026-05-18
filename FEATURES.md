@@ -1071,6 +1071,111 @@ Design notes:
 - WebSocket event-type strings centralized as frontend constants
 - Migration definitions tightened; dead helpers and debug logs removed in two cleanup passes
 
+## v0.6.1 — Backend Port Resilience
+
+- Backend server tries the preferred port first and falls back to an OS-assigned port if it's taken (`internal/server`), so the app survives a stale sidecar or unrelated process on 8080
+- Sidecar lifecycle plumbs the chosen port from the Go process to the Electron main process and on to the renderer — no hardcoded port in the React client
+- Settings gains a **Backend Network** section: shows the live port, a "Test connection" action, and a reset control
+
+## v0.6.2 — Build & Settings Polish
+
+- `dist:win` now rebuilds the Go backend as part of the Windows packaging pipeline so installers can never ship a stale sidecar binary
+- Server binds explicitly to `127.0.0.1` (instead of `0.0.0.0`) so port-conflict detection is reliable on Windows
+- Settings unsaved-change banner with inline Save for port edits — no more silent reverts when the user navigates away mid-edit
+
+## v0.6.3 — Dev-Mode Robustness
+
+- Dev mode writes the backend port to a small handshake file so the Vite-served renderer can discover it on first paint (no race against the WebSocket handshake)
+- Frontend targets `127.0.0.1` explicitly instead of `localhost` to dodge IPv6/IPv4 resolution drift on Windows
+- Settings page recovers gracefully from a backend-unreachable error instead of locking the UI
+
+## v0.6.4 — Buff Math, Item Links, Search Pagination
+
+### Character & buff math
+- **Bard exemption**: bards skip AA + item duration extensions on songs (matches Quarm/EQMacEmu behavior). Unit-tested with both in-class and off-class spells
+- **Spell haste cap**: SPA 127 effective value clamped to 50% even when raw items+AAs sum higher; surfaced on the character stats page
+- **Clicky duration gating**: item click effects only get AA/item duration boosts when the wielder can actually cast the spell on-class (`ClassLevels[class] < 255`); off-class clickies use base duration
+
+### Item & search UX
+- Item detail pages generate Mac-era `itemlink:` URLs (Project Quarm format) instead of modern EQ ones
+- Item, spell, and NPC search lists paginate with a "Show more" button instead of dumping unbounded results
+- Bard trigger pack ships with a Shroud of Stealth clicky trigger out of the box
+
+### Startup
+- App detects a missing or unreadable `quarm.db` at launch and walks the user through manual repair (download from `data-latest`) instead of failing silently
+- CSP allows dynamic backend ports on both `localhost` and `127.0.0.1` so the renderer can talk to whichever fallback port the sidecar landed on
+
+## v0.7.0 — ZealPipes Integration, Players Page, Spellsets, App Backup
+
+This is the largest release since v0.6.0 — it pulls in real-time Zeal data over Windows named pipes, adds three brand-new top-level features (Players, Spellsets, App Backup), and substantially polishes the database explorer and NPC overlay.
+
+### ZealPipes integration (live IPC with Zeal)
+Real-time data from Zeal over Windows named pipes — replaces the file-export-only model where it can, without removing the file-based fallback.
+
+- **Schema & envelope decoder** (`internal/zealpipe`): typed envelope decoder with stream-decoding via `json.Decoder` (Zeal writes have no inter-envelope delimiter), correct handling of the double-encoded `data` field, and Windows `winio` dialer using `GENERIC_READ` only
+- **Discovery & supervisor**: pipe-namespace auto-discovery, supervisor loop with reconnect, `/api/zeal/status` endpoint surfacing live runtime state
+- **Detection & onboarding**: `/api/zeal/detect` detects Zeal install; setup wizard shows live detection; first-connect toast guides users into the flow
+- **Settings**: dedicated **Zeal integration** section with live pipe status (WebSocket-driven, updates without reload)
+- **Stage A — target labels**: forward Zeal target labels to the NPC overlay
+- **Stage B — overlay polish**: live target HP bar driven by pipe; pet-owner badge on NPC overlay
+- **Stage C — combat attribution**: pipe-driven target and pet attribution for the combat parser (no more guessing pet owners from name conventions)
+- **Stage D — spell observability**: pipe-driven cast and buff events for the spell timer engine, including divergence logging when pipe and log disagree
+- **Stage E — pipe-source triggers**: triggers can fire on pipe events, not just log lines; editor UI exposes pipe sources
+- **Stage F — first-connect polish**: toast notifications, setup-wizard wiring, settings live status
+
+### Players (new)
+A `/who`-driven sightings database. Every `/who` you run captures who you saw, when, where, and at what level — and the dataset is searchable across all your characters.
+
+- `/who` and `/guildstat` parsers feed a `players` table in user.db
+- Capture: name, level, class (with title alias mapping), guild, race, zone (from `/who` summary), first-seen / last-seen timestamps
+- Players page with search, sortable column headers (level, last seen, etc.), guild filter, class title alias filter, "Clear filters" reset
+- Selected-player info panel pins on scroll; level history tracked over time
+- Themed Clear-All confirmation dialog
+
+### Spellsets (new)
+Parse and edit Zeal `_spellsets.ini` exports.
+
+- Backend parser exposes spellsets via API; off-class spell resolution
+- Spellsets tab with a read-only viewer, then writer with save/cancel
+- Fluid card grid (280px cards), vertically stacked gem slots, inline rename
+- Add and remove spellset cards
+- Import another character's spellsets from their `.ini` file
+- Import blocks ineligible spells (wrong class, too high a level, or not in this character's spellbook)
+
+### App Backup & Restore (new)
+- Export the entire app state (settings, triggers, custom trigger packs, etc.) as a single bundle file; restore on another machine or after a reinstall
+- Always-visible **App Backup & Restore** section in Settings (separate from the EQ `.ini` config backup manager)
+- IPC wiring between renderer and main for export/import file dialogs
+
+### Database explorer
+- **Raw Data modal** on item, spell, NPC, and zone detail views — exposes every column for power users; flow fields render column-major to match the pqdi.cc layout
+- Item-type labels realigned to the EQMacEmu enum (Quarm's item-type numbering diverges from modern EQEmu starting at 34); type 45 correctly labeled "Hand to Hand"
+- Class labels for trainer GMs, bankers, and merchants in NPC detail
+- VT Lucid Shard correctly assigned to Ssraeshza Temple (was Grieg's End)
+
+### NPC info overlay
+- Loot table toggle with drop rates baked in
+- Tightened padding and layout in the popped-out window
+- `Atk` field renamed to `Atk/Rd` with a sensible default (1) when unknown
+- Dubious-faction con message ("looks at you") now parsed
+
+### Combat & triggers
+- Charm pet damage now attributed to the player when the pet name matches the current target (fixes missing damage on enchanter charm pets)
+- Cooldown timers for disciplines and long-recast spells in the trigger system
+
+### Settings refactor
+- Settings reorganized into 6 category tabs with clearer backup naming
+- Confirmation modals trimmed across overlays and spellsets where they were redundant
+
+## v0.7.1 — DPS Bar Theming
+
+- Per-class bar colors in the DPS overlay (sourced from the Settings palette) — at-a-glance class identification across your group/raid
+
+## v0.7.2 — Spell Timer & Log Parser Stability
+
+- **Logparser camp/login follow**: the parser now follows the in-game character across `/camp` → character-select → re-login without losing state, so spell timers and combat tracking survive a swap
+- **Spell timer dedup**: zealpipe-divergence log lines are deduped across pulses — no more log-spam when the pipe and log disagree on a long buff
+
 ## Phase 11 — Project Website
 _Planned_
 
