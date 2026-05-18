@@ -231,9 +231,25 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
 
   // Capture the current fight while in combat; once combat ends we keep the
   // last frozenFight in state until a new fight begins or the user clears it.
+  //
+  // The out-of-combat branch adopts recent_fights[0] (the just-archived
+  // fight) rather than relying on having seen an earlier in_combat=true
+  // snapshot. The backend coalesces queued WS sends into one frame
+  // (ws/client.go writePump drain loop), so the killing-hit broadcast and
+  // the kill broadcast often arrive in the same onmessage callback. React
+  // 18 batches the two setCombat calls into a single render, and the
+  // in_combat=true intermediate state never reaches this effect — without
+  // this fallback the panel would clear the moment the mob died.
   useEffect(() => {
-    if (combat?.in_combat && combat.current_fight) {
+    if (!combat) return
+    if (combat.in_combat && combat.current_fight) {
       setFrozenFight(combat.current_fight)
+      return
+    }
+    const last = combat.recent_fights?.[0]
+    if (last) {
+      const { end_time: _endTime, ...state } = last
+      setFrozenFight(state)
     }
   }, [combat])
 
