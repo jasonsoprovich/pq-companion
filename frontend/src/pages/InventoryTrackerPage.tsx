@@ -368,6 +368,7 @@ export default function InventoryTrackerPage(): React.ReactElement {
   // Empty string = "All"; a name = single-character view. Matches CharacterSubTabs.
   const [selectedChar, setSelectedChar] = useState<string>('')
   const [query, setQuery] = useState('')
+  const [hideEmptyBags, setHideEmptyBags] = useState(false)
   const [modalItem, setModalItem] = useState<Item | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -441,6 +442,30 @@ export default function InventoryTrackerPage(): React.ReactElement {
   // For the "All" view, fall back to a flat equipped list since the paper-doll
   // can only display one character at a time.
   const equippedFiltered = useMemo(() => filterByQuery(equipped, query), [equipped, query])
+
+  const hasEmptyBag = useMemo(
+    () =>
+      bagGroups.some((g) => g.slots.every(isEmptyEntry)) ||
+      bankGroups.some((g) => g.slots.every(isEmptyEntry)) ||
+      sharedBankGroups.some((g) => g.slots.every(isEmptyEntry)),
+    [bagGroups, bankGroups, sharedBankGroups],
+  )
+
+  const visibleBagGroups = useMemo(
+    () => (hideEmptyBags ? bagGroups.filter((g) => g.slots.some((s) => !isEmptyEntry(s))) : bagGroups),
+    [bagGroups, hideEmptyBags],
+  )
+  const visibleBankGroups = useMemo(
+    () => (hideEmptyBags ? bankGroups.filter((g) => g.slots.some((s) => !isEmptyEntry(s))) : bankGroups),
+    [bankGroups, hideEmptyBags],
+  )
+  const visibleSharedBankGroups = useMemo(
+    () =>
+      hideEmptyBags
+        ? sharedBankGroups.filter((g) => g.slots.some((s) => !isEmptyEntry(s)))
+        : sharedBankGroups,
+    [sharedBankGroups, hideEmptyBags],
+  )
 
   // ── Loading / error states ───────────────────────────────────────────────────
 
@@ -588,6 +613,25 @@ export default function InventoryTrackerPage(): React.ReactElement {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          {hasEmptyBag && (
+            <label
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded cursor-pointer select-none"
+              style={{
+                backgroundColor: hideEmptyBags ? 'var(--color-surface-3)' : 'var(--color-surface-2)',
+                color: 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+              title="Hide bags whose slots are all empty"
+            >
+              <input
+                type="checkbox"
+                checked={hideEmptyBags}
+                onChange={(e) => setHideEmptyBags(e.target.checked)}
+                className="h-3 w-3"
+              />
+              Hide empty bags
+            </label>
+          )}
           <button
             onClick={load}
             className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
@@ -655,11 +699,11 @@ export default function InventoryTrackerPage(): React.ReactElement {
         )}
 
         {/* Bags */}
-        {bagGroups.length > 0 && (
+        {visibleBagGroups.length > 0 && (
           <>
             <SectionTitle label="Bags" count={totalBagItems} />
             <div className="flex flex-col gap-2">
-              {bagGroups.map((g) => (
+              {visibleBagGroups.map((g) => (
                 <BagCard
                   key={`bag-${g.character}-${g.num}`}
                   group={g}
@@ -673,11 +717,11 @@ export default function InventoryTrackerPage(): React.ReactElement {
         )}
 
         {/* Bank */}
-        {bankGroups.length > 0 && (
+        {visibleBankGroups.length > 0 && (
           <>
             <SectionTitle label="Bank" count={totalBankItems} />
             <div className="flex flex-col gap-2">
-              {bankGroups.map((g) => (
+              {visibleBankGroups.map((g) => (
                 <BagCard
                   key={`bank-${g.character}-${g.num}`}
                   group={g}
@@ -691,11 +735,11 @@ export default function InventoryTrackerPage(): React.ReactElement {
         )}
 
         {/* Shared Bank */}
-        {sharedBankGroups.length > 0 && (
+        {visibleSharedBankGroups.length > 0 && (
           <>
             <SectionTitle label="Shared Bank" count={totalSharedBankItems} />
             <div className="flex flex-col gap-2">
-              {sharedBankGroups.map((g) => (
+              {visibleSharedBankGroups.map((g) => (
                 <BagCard
                   key={`sb-${g.num}`}
                   group={g}
