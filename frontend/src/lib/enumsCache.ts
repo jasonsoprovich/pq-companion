@@ -40,3 +40,7 @@ export function specialAbilityName(code: number): string {
 export function itemTypeLabel(id: number): string {
   return catalog?.item_types[String(id)] ?? `Type ${id}`
 }
+
+export function npcClassName(id: number): string {
+  return catalog?.npc_classes[String(id)] ?? `Class ${id}`
+}
