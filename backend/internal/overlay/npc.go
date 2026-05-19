@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db/enums"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
@@ -328,10 +329,10 @@ func mergeInvisFlags(abilities []db.SpecialAbility, npc *db.NPC) []db.SpecialAbi
 		abilities = append(abilities, db.SpecialAbility{Code: code, Value: 1, Name: name})
 	}
 	if npc.SeeInvis != 0 {
-		add(db.SyntheticSeeInvis, "See Invis")
+		add(enums.SyntheticSeeInvis, "See Invis")
 	}
 	if npc.SeeInvisUndead != 0 {
-		add(db.SyntheticSeeInvisUndead, "See Invis vs Undead")
+		add(enums.SyntheticSeeInvisUndead, "See Invis vs Undead")
 	}
 	return abilities
 }
