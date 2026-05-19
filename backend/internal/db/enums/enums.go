@@ -28,6 +28,7 @@ type Catalog struct {
 	Tradeskills      map[int]string             `json:"tradeskills"`
 	ItemTypes        map[int]string             `json:"item_types"`
 	NPCClasses       map[int]string             `json:"npc_classes"`
+	NPCRaces         map[int]string             `json:"npc_races"`
 }
 
 // Snapshot returns the current Catalog for serialization.
@@ -37,5 +38,6 @@ func Snapshot() Catalog {
 		Tradeskills:      tradeskills,
 		ItemTypes:        itemTypes,
 		NPCClasses:       npcClasses,
+		NPCRaces:         npcRaces,
 	}
 }

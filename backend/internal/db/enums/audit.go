@@ -35,6 +35,7 @@ func Defs() []AuditDef {
 		SpecialAbilitiesAudit,
 		ItemTypesAudit,
 		NPCClassesAudit,
+		NPCRacesAudit,
 	}
 }
 

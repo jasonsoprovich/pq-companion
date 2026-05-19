@@ -8,4 +8,5 @@ export interface EnumsCatalog {
   tradeskills: Record<string, string>
   item_types: Record<string, string>
   npc_classes: Record<string, string>
+  npc_races: Record<string, string>
 }

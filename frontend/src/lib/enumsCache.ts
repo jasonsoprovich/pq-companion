@@ -44,3 +44,7 @@ export function itemTypeLabel(id: number): string {
 export function npcClassName(id: number): string {
   return catalog?.npc_classes[String(id)] ?? `Class ${id}`
 }
+
+export function npcRaceName(id: number): string {
+  return catalog?.npc_races[String(id)] ?? `Race ${id}`
+}
