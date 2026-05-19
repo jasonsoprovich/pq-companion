@@ -80,6 +80,40 @@ func TestScanAllInventories_BagSlotDetection(t *testing.T) {
 	}
 }
 
+func TestScanAllInventories_DropsOutOfRangeSharedBank(t *testing.T) {
+	dir := t.TempDir()
+
+	// SharedBank1–10 are real on Project Quarm; 11–30 are Zeal-only artefacts
+	// of the modern-EQ inventory layout and must be dropped.
+	content := "Location\tName\tID\tCount\tSlots\n" +
+		"SharedBank1\tValid Item\t1001\t1\t0\n" +
+		"SharedBank10\tEdge Of Range\t1010\t1\t0\n" +
+		"SharedBank10-Slot3\tInsideBag\t1011\t1\t0\n" +
+		"SharedBank11\tOut Of Range\t1099\t1\t0\n" +
+		"SharedBank15-Slot2\tOut Of Range Slot\t1098\t1\t0\n" +
+		"SharedBank30\tOut Of Range Far\t1097\t1\t0\n"
+
+	path := filepath.Join(dir, "TestChar-Inventory.txt")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, sharedBank, err := ScanAllInventories(dir)
+	if err != nil {
+		t.Fatalf("ScanAllInventories: %v", err)
+	}
+
+	if len(sharedBank) != 3 {
+		t.Fatalf("expected 3 in-range SharedBank entries, got %d: %+v", len(sharedBank), sharedBank)
+	}
+
+	for _, e := range sharedBank {
+		if e.ID == 1099 || e.ID == 1098 || e.ID == 1097 {
+			t.Errorf("out-of-range SharedBank entry leaked: %+v", e)
+		}
+	}
+}
+
 func TestScanAllInventories_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	chars, sharedBank, err := ScanAllInventories(dir)

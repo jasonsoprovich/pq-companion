@@ -3,9 +3,30 @@ package zeal
 import (
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// Project Quarm exposes 10 shared bank slots. Zeal exports 30 (modern-EQ
+// inventory layout), so drop the empties that the server can never populate.
+const maxSharedBankSlot = 10
+
+// sharedBankLocRe captures the slot number from "SharedBank<N>" or
+// "SharedBank<N>-Slot<X>" / "SharedBank<N>:Slot<X>".
+var sharedBankLocRe = regexp.MustCompile(`^SharedBank(\d+)(?:[:\-]Slot\d+)?$`)
+
+func sharedBankSlotInRange(location string) bool {
+	m := sharedBankLocRe.FindStringSubmatch(location)
+	if m == nil {
+		return false
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		return false
+	}
+	return n >= 1 && n <= maxSharedBankSlot
+}
 
 // inventoryFileRe matches "<CharName>-Inventory.txt" and captures the character name.
 var inventoryFileRe = regexp.MustCompile(`(?i)^(.+?)-Inventory\.txt$`)
@@ -42,11 +63,15 @@ func ScanAllInventories(eqPath string) ([]*Inventory, []InventoryEntry, error) {
 			continue
 		}
 
-		// Split SharedBank entries from character-specific entries.
+		// Split SharedBank entries from character-specific entries. Zeal exports
+		// modern-EQ shared bank slots 1–30, but Project Quarm only uses 1–10;
+		// drop the rest so the UI doesn't render 20 empty containers.
 		var charEnt, sbEnt []InventoryEntry
 		for _, e := range inv.Entries {
 			if strings.HasPrefix(e.Location, "SharedBank") {
-				sbEnt = append(sbEnt, e)
+				if sharedBankSlotInRange(e.Location) {
+					sbEnt = append(sbEnt, e)
+				}
 			} else {
 				charEnt = append(charEnt, e)
 			}
