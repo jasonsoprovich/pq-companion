@@ -26,6 +26,7 @@ package enums
 type Catalog struct {
 	SpecialAbilities map[int]SpecialAbilityMeta `json:"special_abilities"`
 	Tradeskills      map[int]string             `json:"tradeskills"`
+	ItemTypes        map[int]string             `json:"item_types"`
 }
 
 // Snapshot returns the current Catalog for serialization.
@@ -33,5 +34,6 @@ func Snapshot() Catalog {
 	return Catalog{
 		SpecialAbilities: specialAbilities,
 		Tradeskills:      tradeskills,
+		ItemTypes:        itemTypes,
 	}
 }

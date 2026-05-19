@@ -1,3 +1,5 @@
+import { itemTypeLabel as enumItemTypeLabel } from './enumsCache'
+
 // ── In-game item link ─────────────────────────────────────────────────────────
 
 // Project Quarm runs on EQMacEmu, which uses the classic Mac-era link format
@@ -90,56 +92,13 @@ export function racesLabel(mask: number): string {
 
 // ── Item type ──────────────────────────────────────────────────────────────────
 
-// Item types follow the EQMacEmu enum (common/item_data.h). Values past
-// 33 are offset compared to modern EQEmu master, so map labels are sourced
-// from the EQMacEmu definitions and verified by sampling actual items in
-// the Quarm DB per type.
-const ITEM_TYPES: Record<number, string> = {
-  0: '1H Slashing',
-  1: '2H Slashing',
-  2: '1H Piercing',
-  3: '1H Blunt',
-  4: '2H Blunt',
-  5: 'Bow',
-  7: 'Large Throwing',
-  8: 'Shield',
-  9: 'Scroll',
-  10: 'Armor',
-  11: 'Miscellaneous',
-  12: 'Lock Picks',
-  14: 'Food',
-  15: 'Drink',
-  16: 'Light',
-  17: 'Combinable',
-  18: 'Bandages',
-  19: 'Small Throwing',
-  20: 'Spell',
-  21: 'Potion',
-  22: 'Fletched Arrows',
-  23: 'Wind Instrument',
-  24: 'Stringed Instrument',
-  25: 'Brass Instrument',
-  26: 'Percussion Instrument',
-  27: 'Arrow',
-  29: 'Jewelry',
-  30: 'Skull',
-  31: 'Book',
-  32: 'Note',
-  33: 'Key',
-  34: 'Coin',
-  35: '2H Piercing',
-  36: 'Fishing Pole',
-  37: 'Fishing Bait',
-  38: 'Alcohol',
-  39: 'Key (Alt)',
-  40: 'Compass',
-  42: 'Poison',
-  45: 'Hand to Hand',
-  52: 'Container Token',
-}
+// Item type labels live in the canonical Go catalog
+// (backend/internal/db/enums/item_type.go). itemTypeLabel re-exports the
+// cache-backed helper so existing call sites still import from this
+// module.
 
 export function itemTypeLabel(itemType: number): string {
-  return ITEM_TYPES[itemType] ?? `Type ${itemType}`
+  return enumItemTypeLabel(itemType)
 }
 
 /** Returns the display label accounting for item_class (container/book) overrides. */

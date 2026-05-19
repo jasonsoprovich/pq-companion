@@ -21,6 +21,7 @@ func makeTestDB(t *testing.T) *sql.DB {
 	for _, stmt := range []string{
 		`CREATE TABLE tradeskill_recipe (id INTEGER PRIMARY KEY, tradeskill INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1)`,
 		`CREATE TABLE npc_types (id INTEGER PRIMARY KEY, special_abilities TEXT)`,
+		`CREATE TABLE items (id INTEGER PRIMARY KEY, itemtype INTEGER NOT NULL DEFAULT 0)`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("exec %q: %v", stmt, err)
@@ -38,8 +39,8 @@ func TestRunAudit_CleanDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAudit: %v", err)
 	}
-	if len(findings) != 2 {
-		t.Fatalf("got %d findings, want 2", len(findings))
+	if len(findings) != len(Defs()) {
+		t.Fatalf("got %d findings, want %d", len(findings), len(Defs()))
 	}
 	for _, f := range findings {
 		if len(f.Unknown) != 0 {

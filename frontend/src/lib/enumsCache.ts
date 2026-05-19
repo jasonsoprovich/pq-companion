@@ -36,3 +36,7 @@ export function specialAbilityMeta(code: number): SpecialAbilityMeta {
 export function specialAbilityName(code: number): string {
   return specialAbilityMeta(code).name
 }
+
+export function itemTypeLabel(id: number): string {
+  return catalog?.item_types[String(id)] ?? `Type ${id}`
+}

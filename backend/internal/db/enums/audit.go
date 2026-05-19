@@ -33,6 +33,7 @@ func Defs() []AuditDef {
 	return []AuditDef{
 		TradeskillsAudit,
 		SpecialAbilitiesAudit,
+		ItemTypesAudit,
 	}
 }
 
