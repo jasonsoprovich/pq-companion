@@ -8,6 +8,7 @@
 # whole directory and make `!` exceptions unreachable, so ignore contents instead.
 /docs/*
 !/docs/db-pipeline.md
+!/docs/enum-audit.md
 
 # ── Environment & secrets ─────────────────────────────────────────────────────
 .env
