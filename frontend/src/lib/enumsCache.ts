@@ -94,3 +94,7 @@ export function decodeItemRaces(mask: number): string[] {
 export function baneBodyLabel(id: number): string {
   return catalog?.bane_bodies[String(id)] ?? `Body Type ${id}`
 }
+
+export function baneRaceLabel(id: number): string {
+  return catalog?.bane_races[String(id)] ?? `Race ${id}`
+}

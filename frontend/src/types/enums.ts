@@ -13,4 +13,5 @@ export interface EnumsCatalog {
   item_class_bits: Record<string, string>
   item_race_bits: Record<string, string>
   bane_bodies: Record<string, string>
+  bane_races: Record<string, string>
 }
