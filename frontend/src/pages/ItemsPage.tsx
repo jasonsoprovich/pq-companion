@@ -18,6 +18,7 @@ import {
   slotsLabel,
   weightLabel,
 } from '../lib/itemHelpers'
+import { tradeskillLabel } from '../lib/enumsCache'
 import { ItemIcon } from '../components/Icon'
 import RawDataModal from '../components/RawDataModal'
 
@@ -721,29 +722,6 @@ function EmptyTabMessage({ message }: { message: string }): React.ReactElement {
   return (
     <p className="py-4 text-sm" style={{ color: 'var(--color-muted)' }}>{message}</p>
   )
-}
-
-function tradeskillLabel(id: number): string {
-  const labels: Record<number, string> = {
-    0: 'Common Combine',
-    55: 'Fishing',
-    56: 'Make Poison',
-    57: 'Tinkering',
-    58: 'Research',
-    59: 'Alchemy',
-    60: 'Baking',
-    61: 'Tailoring',
-    62: 'Sense Traps',
-    63: 'Blacksmithing',
-    64: 'Fletching',
-    65: 'Brewing',
-    66: 'Alcohol Tolerance',
-    67: 'Begging',
-    68: 'Jewelry Making',
-    69: 'Pottery',
-    75: 'Common Combine',
-  }
-  return labels[id] ?? `Tradeskill ${id}`
 }
 
 // ── Tab: Overview ──────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import OnboardingWizard from './components/OnboardingWizard'
 import { getConfig } from './services/api'
+import { loadEnums } from './lib/enumsCache'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useTimerAlerts } from './hooks/useTimerAlerts'
 import { useEventAlerts } from './hooks/useEventAlerts'
@@ -94,6 +95,25 @@ function MainWindowLayout(): React.ReactElement {
 }
 
 export default function App(): React.ReactElement {
+  // Load the backend enums catalog (raw-code → label maps) once at app
+  // boot so synchronous label helpers like tradeskillLabel() have data
+  // available before any consumer renders. On fetch failure we still
+  // proceed — helpers fall back to "Tradeskill 75"-style stubs.
+  const [enumsReady, setEnumsReady] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    loadEnums()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setEnumsReady(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (!enumsReady) return <></>
+
   return (
     <HashRouter>
       <Routes>

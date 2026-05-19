@@ -20,6 +20,7 @@ import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, St
 import type { TimerState } from '../types/timer'
 import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
+import type { EnumsCatalog } from '../types/enums'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -154,6 +155,12 @@ export function getItem(id: number): Promise<Item> {
 
 export function getItemSources(id: number): Promise<ItemSources> {
   return get<ItemSources>(`/api/items/${id}/sources`)
+}
+
+// ── Enums catalog ──────────────────────────────────────────────────────────────
+
+export function getEnums(): Promise<EnumsCatalog> {
+  return get<EnumsCatalog>('/api/enums')
 }
 
 // ── Spells ─────────────────────────────────────────────────────────────────────
