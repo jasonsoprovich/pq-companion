@@ -16,27 +16,10 @@ import RawDataModal from '../components/RawDataModal'
 import type { NPC } from '../types/npc'
 import type { Zone, ZoneConnection, ZoneDropItem, ZoneForageItem, ZoneGroundSpawn } from '../types/zone'
 import { className, npcDisplayName } from '../lib/npcHelpers'
-
-const EQ_EXPANSIONS: Record<number, string> = {
-  0: 'Classic',
-  1: 'Ruins of Kunark',
-  2: 'Scars of Velious',
-  3: 'Shadows of Luclin',
-  4: 'Planes of Power',
-  5: 'Legacy of Ykesha',
-  6: 'Lost Dungeons of Norrath',
-  7: 'Gates of Discord',
-  8: 'Omens of War',
-  9: 'Dragons of Norrath',
-  10: 'Depths of Darkhollow',
-  11: 'Prophecy of Ro',
-  12: "The Serpent's Spine",
-  13: 'The Buried Sea',
-  14: 'Secrets of Faydwer',
-}
+import { zoneExpansionName } from '../lib/enumsCache'
 
 function expansionName(id: number): string {
-  return EQ_EXPANSIONS[id] ?? `Expansion ${id}`
+  return zoneExpansionName(id)
 }
 
 function bindLabel(canbind: number): string {

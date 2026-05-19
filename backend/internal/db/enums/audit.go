@@ -41,6 +41,8 @@ func Defs() []AuditDef {
 		ItemRaceBitsAudit,
 		BaneBodiesAudit,
 		BaneRacesAudit,
+		ZoneExpansionsAudit,
+		ZoneTypesAudit,
 	}
 }
 

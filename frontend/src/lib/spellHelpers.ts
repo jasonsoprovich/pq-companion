@@ -363,18 +363,10 @@ export function effectLabel(id: number): string {
 }
 
 // ── Zone type ──────────────────────────────────────────────────────────────────
-
-const ZONE_TYPE_LABELS: Record<number, string> = {
-  1: 'Outdoor',
-  2: 'Indoor',
-  3: 'Outdoor & Underground',
-  4: 'City',
-}
-
-/** Returns zone restriction label, or empty string for unrestricted (0). */
-export function zoneTypeLabel(z: number): string {
-  return ZONE_TYPE_LABELS[z] ?? ''
-}
+//
+// Zone type labels live in the canonical Go catalog
+// (backend/internal/db/enums/zone.go).
+export { zoneTypeLabel } from './enumsCache'
 
 // ── Timer trigger helpers ──────────────────────────────────────────────────────
 

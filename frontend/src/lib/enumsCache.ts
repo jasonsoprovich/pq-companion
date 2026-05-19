@@ -98,3 +98,11 @@ export function baneBodyLabel(id: number): string {
 export function baneRaceLabel(id: number): string {
   return catalog?.bane_races[String(id)] ?? `Race ${id}`
 }
+
+export function zoneExpansionName(id: number): string {
+  return catalog?.zone_expansions[String(id)] ?? `Expansion ${id}`
+}
+
+export function zoneTypeLabel(id: number): string {
+  return catalog?.zone_types[String(id)] ?? ''
+}
