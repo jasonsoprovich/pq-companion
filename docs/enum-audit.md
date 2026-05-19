@@ -128,14 +128,18 @@ Worth checking whether these matter for any in-app feature:
 
 ---
 
-## Next steps (not yet started)
-
-Per the database project plan:
+## Project status
 
 1. ~~Discovery pass~~ — this doc.
-2. Centralize into `backend/internal/db/enums/` with one file per enum,
-   each citing its source. Add Quarm-override markers.
-3. Build `backend/cmd/enum-audit/` to scan `quarm.db` for unknown values
-   against the centralized catalog. Run on every dump refresh.
-4. Triage findings above — start with **uncited** + **partial** + **duplicated**
-   rows; defer empirically-derived rows until they cause a bug.
+2. ~~Centralize into `backend/internal/db/enums/`~~ — pattern proven on
+   the two duplicated maps (tradeskill, special abilities). All other
+   enums still live as TS in `frontend/src/`; migrate them as bugs
+   surface or after a new dump triggers a validator hit.
+3. ~~Validator: `backend/cmd/enum-audit/`~~ — `cd backend && go run
+   ./cmd/enum-audit`. Exit 0 = clean, 1 = unknown codes found, 2 = DB
+   open failed. Run after every Quarm DB refresh.
+4. Triage remaining rows — start with **uncited** + **partial** +
+   **duplicated**; defer empirically-derived rows until they cause a
+   bug. The validator only protects enums already in
+   `backend/internal/db/enums/`, so migrating the rest is what
+   actually expands its coverage.

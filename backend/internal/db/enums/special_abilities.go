@@ -1,5 +1,11 @@
 package enums
 
+import (
+	"database/sql"
+	"strconv"
+	"strings"
+)
+
 // SpecialAbilityMeta carries the display name and a one-line description
 // for a single NPC special-ability code, used by the overlay and item
 // detail tooltips. The Description is omitted from JSON when empty so
@@ -97,4 +103,66 @@ var specialAbilities = map[int]SpecialAbilityMeta{
 // matches the legacy behavior of the previous db package map.
 func SpecialAbilityName(code int) string {
 	return specialAbilities[code].Name
+}
+
+// SpecialAbilitiesAudit drives the enum-audit CLI against a live
+// quarm.db: parses every non-empty npc_types.special_abilities row and
+// reports any caret-delimited code not present in the canonical map.
+//
+// Synthetics (1001+) are excluded from the known set: they exist only
+// in app-internal overlay logic and should never appear in the DB
+// column — if one does, that's a finding we want flagged.
+var SpecialAbilitiesAudit = AuditDef{
+	Name:       "Special Ability",
+	KnownCodes: dbRelevantSpecialAbilityCodes(),
+	Extract:    extractSpecialAbilityCodes,
+}
+
+func dbRelevantSpecialAbilityCodes() map[int]struct{} {
+	out := make(map[int]struct{}, len(specialAbilities))
+	for k := range specialAbilities {
+		if k >= 1000 {
+			continue // synthetic — not expected in DB
+		}
+		out[k] = struct{}{}
+	}
+	return out
+}
+
+func extractSpecialAbilityCodes(db *sql.DB) ([]int, error) {
+	rows, err := db.Query(`SELECT special_abilities FROM npc_types WHERE special_abilities != '' AND special_abilities IS NOT NULL`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	seen := make(map[int]struct{})
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		for _, part := range strings.Split(raw, "^") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			kv := strings.SplitN(part, ",", 2)
+			if len(kv) == 0 {
+				continue
+			}
+			code, err := strconv.Atoi(strings.TrimSpace(kv[0]))
+			if err != nil {
+				continue
+			}
+			seen[code] = struct{}{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]int, 0, len(seen))
+	for code := range seen {
+		out = append(out, code)
+	}
+	return out, nil
 }

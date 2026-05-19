@@ -1,5 +1,7 @@
 package enums
 
+import "database/sql"
+
 // tradeskills maps the tradeskill_recipe.tradeskill column value to a
 // display name.
 //
@@ -38,4 +40,28 @@ var tradeskills = map[int]string{
 // fallback and a numeric-id stub.
 func TradeskillName(id int) string {
 	return tradeskills[id]
+}
+
+// TradeskillsAudit drives the enum-audit CLI against a live quarm.db:
+// every distinct tradeskill_recipe.tradeskill value (enabled recipes
+// only) should be present in the canonical map above.
+var TradeskillsAudit = AuditDef{
+	Name:       "Tradeskill",
+	KnownCodes: keysAsSet(tradeskills),
+	Extract: func(db *sql.DB) ([]int, error) {
+		rows, err := db.Query(`SELECT DISTINCT tradeskill FROM tradeskill_recipe WHERE enabled = 1`)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var ids []int
+		for rows.Next() {
+			var id int
+			if err := rows.Scan(&id); err != nil {
+				return nil, err
+			}
+			ids = append(ids, id)
+		}
+		return ids, rows.Err()
+	},
 }
