@@ -39,6 +39,7 @@ func Defs() []AuditDef {
 		ItemSlotBitsAudit,
 		ItemClassBitsAudit,
 		ItemRaceBitsAudit,
+		BaneBodiesAudit,
 	}
 }
 

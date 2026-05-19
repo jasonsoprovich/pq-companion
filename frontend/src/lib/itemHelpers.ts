@@ -1,4 +1,5 @@
 import {
+  baneBodyLabel as enumBaneBodyLabel,
   decodeItemClasses,
   decodeItemRaces,
   decodeItemSlots,
@@ -100,39 +101,13 @@ export function priceLabel(copper: number): string {
 }
 
 // ── Bane damage body type ──────────────────────────────────────────────────────
-
-const BANE_BODY_TYPES: Record<number, string> = {
-  1: 'Humanoid',
-  2: 'Lycanthrope',
-  3: 'Undead',
-  4: 'Giant',
-  5: 'Construct',
-  6: 'Extraplanar',
-  7: 'Magical',
-  8: 'Summoned Undead',
-  10: 'Vampire',
-  12: 'Dragon',
-  13: 'Summoned',
-  14: 'Humanoid (alt)',
-  16: 'Plant',
-  17: 'Animal',
-  18: 'Insect',
-  19: 'Muramite',
-  25: 'Chest',
-  26: 'Amphibian',
-  28: 'Summoned (alt)',
-}
+//
+// Bane body labels live in the canonical Go catalog
+// (backend/internal/db/enums/bane_body.go).
 
 export function baneBodyLabel(bodyType: number): string {
-  return BANE_BODY_TYPES[bodyType] ?? `Body Type ${bodyType}`
+  return enumBaneBodyLabel(bodyType)
 }
-
-export const BANE_BODY_OPTIONS: { value: number; label: string }[] = [
-  { value: 0, label: 'Any' },
-  ...Object.entries(BANE_BODY_TYPES)
-    .map(([k, v]) => ({ value: Number(k), label: v }))
-    .sort((a, b) => a.label.localeCompare(b.label)),
-]
 
 // ── Bane damage race ──────────────────────────────────────────────────────────
 

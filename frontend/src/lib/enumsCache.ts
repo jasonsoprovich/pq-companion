@@ -90,3 +90,7 @@ export function decodeItemRaces(mask: number): string[] {
   if (mask === 0 || mask >= ALL) return ['All']
   return decomposeBits(catalog?.item_race_bits, mask)
 }
+
+export function baneBodyLabel(id: number): string {
+  return catalog?.bane_bodies[String(id)] ?? `Body Type ${id}`
+}
