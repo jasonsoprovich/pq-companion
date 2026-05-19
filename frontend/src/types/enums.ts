@@ -9,4 +9,7 @@ export interface EnumsCatalog {
   item_types: Record<string, string>
   npc_classes: Record<string, string>
   npc_races: Record<string, string>
+  item_slot_bits: Record<string, string>
+  item_class_bits: Record<string, string>
+  item_race_bits: Record<string, string>
 }

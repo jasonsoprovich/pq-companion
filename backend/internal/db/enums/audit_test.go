@@ -21,7 +21,7 @@ func makeTestDB(t *testing.T) *sql.DB {
 	for _, stmt := range []string{
 		`CREATE TABLE tradeskill_recipe (id INTEGER PRIMARY KEY, tradeskill INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1)`,
 		`CREATE TABLE npc_types (id INTEGER PRIMARY KEY, special_abilities TEXT, class INTEGER NOT NULL DEFAULT 0, race INTEGER NOT NULL DEFAULT 1)`,
-		`CREATE TABLE items (id INTEGER PRIMARY KEY, itemtype INTEGER NOT NULL DEFAULT 0)`,
+		`CREATE TABLE items (id INTEGER PRIMARY KEY, itemtype INTEGER NOT NULL DEFAULT 0, slots INTEGER NOT NULL DEFAULT 0, classes INTEGER NOT NULL DEFAULT 0, races INTEGER NOT NULL DEFAULT 0)`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("exec %q: %v", stmt, err)

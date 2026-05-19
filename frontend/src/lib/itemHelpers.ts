@@ -1,4 +1,9 @@
-import { itemTypeLabel as enumItemTypeLabel } from './enumsCache'
+import {
+  decodeItemClasses,
+  decodeItemRaces,
+  decodeItemSlots,
+  itemTypeLabel as enumItemTypeLabel,
+} from './enumsCache'
 
 // ── In-game item link ─────────────────────────────────────────────────────────
 
@@ -15,75 +20,32 @@ export function inGameItemLink(itemId: number, itemName: string): string {
   return `${DC2}${paddedId} ${itemName}${DC2}`
 }
 
-// ── Slot bitmask ───────────────────────────────────────────────────────────────
-
-const SLOT_MAP: [number, string][] = [
-  [0x000001, 'Charm'],
-  [0x000002, 'Ear'],
-  [0x000004, 'Head'],
-  [0x000008, 'Face'],
-  [0x000010, 'Ear'],
-  [0x000020, 'Neck'],
-  [0x000040, 'Shoulder'],
-  [0x000080, 'Arms'],
-  [0x000100, 'Back'],
-  [0x000200, 'Wrist'],
-  [0x000400, 'Wrist'],
-  [0x000800, 'Range'],
-  [0x001000, 'Hands'],
-  [0x002000, 'Primary'],
-  [0x004000, 'Secondary'],
-  [0x008000, 'Finger'],
-  [0x010000, 'Finger'],
-  [0x020000, 'Chest'],
-  [0x040000, 'Legs'],
-  [0x080000, 'Feet'],
-  [0x100000, 'Waist'],
-  [0x800000, 'Ammo'],
-]
+// ── Slot / Class / Race bitmasks ───────────────────────────────────────────────
+//
+// Bit → label maps live in the canonical Go catalog
+// (backend/internal/db/enums/item_bitmasks.go). Decomposition lives on
+// the client via the cache helpers so the API stays a thin static
+// payload.
 
 export function decodeSlots(mask: number): string[] {
-  return SLOT_MAP.filter(([bit]) => (mask & bit) !== 0).map(([, name]) => name)
+  return decodeItemSlots(mask)
 }
 
 export function slotsLabel(mask: number): string {
   if (mask === 0) return 'None'
-  const names = decodeSlots(mask)
-  return names.join(', ')
+  return decodeSlots(mask).join(', ')
 }
 
-// ── Class bitmask ──────────────────────────────────────────────────────────────
-
-const CLASS_NAMES = [
-  'Warrior', 'Cleric', 'Paladin', 'Ranger', 'Shadow Knight',
-  'Druid', 'Monk', 'Bard', 'Rogue', 'Shaman',
-  'Necromancer', 'Wizard', 'Magician', 'Enchanter', 'Beastlord',
-]
-
-const ALL_CLASSES_MASK = (1 << 15) - 1 // 0x7FFF
-
 export function decodeClasses(mask: number): string[] {
-  if (mask === 0 || mask >= ALL_CLASSES_MASK) return ['All']
-  return CLASS_NAMES.filter((_, i) => (mask & (1 << i)) !== 0)
+  return decodeItemClasses(mask)
 }
 
 export function classesLabel(mask: number): string {
   return decodeClasses(mask).join(', ')
 }
 
-// ── Race bitmask ───────────────────────────────────────────────────────────────
-
-const RACE_NAMES = [
-  'Human', 'Barbarian', 'Erudite', 'Wood Elf', 'High Elf',
-  'Dark Elf', 'Half Elf', 'Dwarf', 'Troll', 'Ogre',
-  'Halfling', 'Gnome', 'Iksar', 'Vah Shir',
-]
-
-const ALL_RACES_MASK = 65535
-
 export function decodeRaces(mask: number): string[] {
-  if (mask === 0 || mask >= ALL_RACES_MASK) return ['All']
-  return RACE_NAMES.filter((_, i) => (mask & (1 << i)) !== 0)
+  return decodeItemRaces(mask)
 }
 
 export function racesLabel(mask: number): string {

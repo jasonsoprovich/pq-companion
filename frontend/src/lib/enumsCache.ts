@@ -48,3 +48,45 @@ export function npcClassName(id: number): string {
 export function npcRaceName(id: number): string {
   return catalog?.npc_races[String(id)] ?? `Race ${id}`
 }
+
+// Decompose a bitmask using one of the *_bits maps in the catalog. The
+// catalog stores integer bit values as the (stringified) map key — so a
+// slot/class/race bit map looks like { "1": "Charm", "2": "Ear", ... }.
+// Returns the labels for every bit set in the mask, in ascending bit
+// order. Duplicate labels (e.g. left/right Wrist) collapse to a single
+// entry.
+function decomposeBits(map: Record<string, string> | undefined, mask: number): string[] {
+  if (!map) return []
+  const labels: string[] = []
+  const seen = new Set<string>()
+  for (let i = 0; i < 24; i++) {
+    const bit = 1 << i
+    if ((mask & bit) === 0) continue
+    const label = map[String(bit)]
+    if (!label || seen.has(label)) continue
+    seen.add(label)
+    labels.push(label)
+  }
+  return labels
+}
+
+export function decodeItemSlots(mask: number): string[] {
+  return decomposeBits(catalog?.item_slot_bits, mask)
+}
+
+export function decodeItemClasses(mask: number): string[] {
+  // All-15-classes mask renders as "All". The exact "all" value depends
+  // on whether Beastlord is the highest set bit (0x7FFF = 32767); we
+  // also accept anything ≥ that to match legacy frontend behavior.
+  const ALL = (1 << 15) - 1
+  if (mask === 0 || mask >= ALL) return ['All']
+  return decomposeBits(catalog?.item_class_bits, mask)
+}
+
+export function decodeItemRaces(mask: number): string[] {
+  // The "all races" sentinel has appeared as both 16383 and 65535 in
+  // Quarm data. Mirror the legacy behavior.
+  const ALL = 65535
+  if (mask === 0 || mask >= ALL) return ['All']
+  return decomposeBits(catalog?.item_race_bits, mask)
+}

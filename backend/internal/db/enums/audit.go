@@ -36,6 +36,9 @@ func Defs() []AuditDef {
 		ItemTypesAudit,
 		NPCClassesAudit,
 		NPCRacesAudit,
+		ItemSlotBitsAudit,
+		ItemClassBitsAudit,
+		ItemRaceBitsAudit,
 	}
 }
 

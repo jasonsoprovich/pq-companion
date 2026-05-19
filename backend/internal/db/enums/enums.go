@@ -29,6 +29,9 @@ type Catalog struct {
 	ItemTypes        map[int]string             `json:"item_types"`
 	NPCClasses       map[int]string             `json:"npc_classes"`
 	NPCRaces         map[int]string             `json:"npc_races"`
+	ItemSlotBits     map[int]string             `json:"item_slot_bits"`
+	ItemClassBits    map[int]string             `json:"item_class_bits"`
+	ItemRaceBits     map[int]string             `json:"item_race_bits"`
 }
 
 // Snapshot returns the current Catalog for serialization.
@@ -39,5 +42,8 @@ func Snapshot() Catalog {
 		ItemTypes:        itemTypes,
 		NPCClasses:       npcClasses,
 		NPCRaces:         npcRaces,
+		ItemSlotBits:     itemSlotBits,
+		ItemClassBits:    itemClassBits,
+		ItemRaceBits:     itemRaceBits,
 	}
 }
