@@ -64,10 +64,12 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	tasksH := &tasksHandler{store: charStore}
 	rollsH := &rollsHandler{tracker: rollTracker}
 	raw := &rawHandler{db: database}
+	enumsH := &enumsHandler{}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
 		r.Get("/search", search.global)
+		r.Get("/enums", enumsH.get)
 		r.Route("/items", func(r chi.Router) {
 			r.Get("/", items.search)
 			r.Get("/{id}", items.get)
