@@ -106,3 +106,41 @@ export function zoneExpansionName(id: number): string {
 export function zoneTypeLabel(id: number): string {
   return catalog?.zone_types[String(id)] ?? ''
 }
+
+// charClassLabel returns the "ABBR — Full Name" label for the 0-based
+// PC class index used by character-creation dropdowns. id < 0 is the
+// "Not set" sentinel used by CharactersPage and OnboardingWizard.
+export function charClassLabel(id: number): string {
+  if (id < 0) return 'Not set'
+  return catalog?.char_classes[String(id)] ?? `Class ${id}`
+}
+
+// charClassOptions returns dropdown options including the "Not set"
+// sentinel, in canonical class order.
+export function charClassOptions(includeNotSet: boolean = true): { value: number; label: string }[] {
+  return optionsFromMap(catalog?.char_classes, includeNotSet)
+}
+
+// charRaceLabel returns the display name for a 1-based PC race index.
+// id < 0 is the "Not set" sentinel used by character creation UIs.
+export function charRaceLabel(id: number): string {
+  if (id < 0) return 'Not set'
+  return catalog?.char_races[String(id)] ?? `Race ${id}`
+}
+
+export function charRaceOptions(includeNotSet: boolean = true): { value: number; label: string }[] {
+  return optionsFromMap(catalog?.char_races, includeNotSet)
+}
+
+function optionsFromMap(
+  map: Record<string, string> | undefined,
+  includeNotSet: boolean,
+): { value: number; label: string }[] {
+  const m = map ?? {}
+  const ids = Object.keys(m)
+    .map(Number)
+    .sort((a, b) => a - b)
+  const opts = ids.map((id) => ({ value: id, label: m[String(id)] ?? `${id}` }))
+  if (includeNotSet) opts.unshift({ value: -1, label: 'Not set' })
+  return opts
+}

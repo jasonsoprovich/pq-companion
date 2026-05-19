@@ -10,46 +10,15 @@ import {
   type Character,
 } from '../services/api'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
+import {
+  charClassLabel,
+  charClassOptions,
+  charRaceLabel,
+  charRaceOptions,
+} from '../lib/enumsCache'
 
-const CLASS_LABELS: Record<number, string> = {
-  [-1]: 'Not set',
-  0: 'WAR — Warrior',
-  1: 'CLR — Cleric',
-  2: 'PAL — Paladin',
-  3: 'RNG — Ranger',
-  4: 'SHD — Shadow Knight',
-  5: 'DRU — Druid',
-  6: 'MNK — Monk',
-  7: 'BRD — Bard',
-  8: 'ROG — Rogue',
-  9: 'SHM — Shaman',
-  10: 'NEC — Necromancer',
-  11: 'WIZ — Wizard',
-  12: 'MAG — Magician',
-  13: 'ENC — Enchanter',
-  14: 'BST — Beastlord',
-}
-
-const RACE_LABELS: Record<number, string> = {
-  [-1]: 'Not set',
-  1: 'Human',
-  2: 'Barbarian',
-  3: 'Erudite',
-  4: 'Wood Elf',
-  5: 'High Elf',
-  6: 'Dark Elf',
-  7: 'Half Elf',
-  8: 'Dwarf',
-  9: 'Troll',
-  10: 'Ogre',
-  11: 'Halfling',
-  12: 'Gnome',
-  13: 'Iksar',
-  14: 'Vah Shir',
-}
-
-const CLASS_OPTIONS = Object.entries(CLASS_LABELS).map(([v, label]) => ({ value: Number(v), label }))
-const RACE_OPTIONS = Object.entries(RACE_LABELS).map(([v, label]) => ({ value: Number(v), label }))
+// PC class + race labels live in the canonical Go catalog
+// (backend/internal/db/enums/char_class.go, char_race.go).
 
 interface FormState {
   name: string
@@ -68,8 +37,8 @@ interface CharacterRowProps {
 }
 
 function CharacterRow({ char, active, onSelect, onDelete }: CharacterRowProps): React.ReactElement {
-  const raceLabel = RACE_LABELS[char.race] ?? 'Unknown'
-  const classLabel = CLASS_LABELS[char.class] ?? 'Unknown'
+  const raceLabel = charRaceLabel(char.race)
+  const classLabel = charClassLabel(char.class)
   const details = [
     char.race >= 0 ? raceLabel : null,
     char.class >= 0 ? classLabel.split(' — ')[0] : null,
@@ -187,7 +156,7 @@ function CharacterForm({ initial, onSave, onCancel, saving, error }: CharacterFo
             outline: 'none',
           }}
         >
-          {CLASS_OPTIONS.map(({ value, label }) => (
+          {charClassOptions().map(({ value, label }) => (
             <option key={value} value={value}>{label}</option>
           ))}
         </select>
@@ -202,7 +171,7 @@ function CharacterForm({ initial, onSave, onCancel, saving, error }: CharacterFo
             outline: 'none',
           }}
         >
-          {RACE_OPTIONS.map(({ value, label }) => (
+          {charRaceOptions().map(({ value, label }) => (
             <option key={value} value={value}>{label}</option>
           ))}
         </select>

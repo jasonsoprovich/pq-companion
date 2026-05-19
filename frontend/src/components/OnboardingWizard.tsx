@@ -20,27 +20,9 @@ import {
 } from '../services/api'
 import type { Config } from '../types/config'
 import type { ZealInstallStatus } from '../types/zeal'
+import { charClassLabel, charClassOptions } from '../lib/enumsCache'
 
 const ZEAL_RELEASE_URL = 'https://github.com/CoastalRedwood/Zeal/releases/latest'
-
-const CLASS_LABELS: Record<number, string> = {
-  [-1]: 'Not set / unknown',
-  0: 'WAR — Warrior',
-  1: 'CLR — Cleric',
-  2: 'PAL — Paladin',
-  3: 'RNG — Ranger',
-  4: 'SHD — Shadow Knight',
-  5: 'DRU — Druid',
-  6: 'MNK — Monk',
-  7: 'BRD — Bard',
-  8: 'ROG — Rogue',
-  9: 'SHM — Shaman',
-  10: 'NEC — Necromancer',
-  11: 'WIZ — Wizard',
-  12: 'MAG — Magician',
-  13: 'ENC — Enchanter',
-  14: 'BST — Beastlord',
-}
 
 type Step = 'welcome' | 'eq-path' | 'character' | 'zeal' | 'confirm'
 
@@ -469,7 +451,7 @@ export default function OnboardingWizard({
                     outline: 'none',
                   }}
                 >
-                  {Object.entries(CLASS_LABELS).map(([v, label]) => (
+                  {charClassOptions().map(({ value: v, label }) => (
                     <option key={v} value={v}>
                       {label}
                     </option>
@@ -628,7 +610,7 @@ export default function OnboardingWizard({
                 <div className="flex justify-between text-sm">
                   <span style={{ color: 'var(--color-muted-foreground)' }}>Class</span>
                   <span style={{ color: 'var(--color-foreground)' }}>
-                    {CLASS_LABELS[characterClass] ?? 'Not set'}
+                    {charClassLabel(characterClass)}
                   </span>
                 </div>
               </div>

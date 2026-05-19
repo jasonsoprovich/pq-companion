@@ -16,4 +16,6 @@ export interface EnumsCatalog {
   bane_races: Record<string, string>
   zone_expansions: Record<string, string>
   zone_types: Record<string, string>
+  char_classes: Record<string, string>
+  char_races: Record<string, string>
 }

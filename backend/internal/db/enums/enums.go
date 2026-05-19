@@ -36,6 +36,8 @@ type Catalog struct {
 	BaneRaces        map[int]string             `json:"bane_races"`
 	ZoneExpansions   map[int]string             `json:"zone_expansions"`
 	ZoneTypes        map[int]string             `json:"zone_types"`
+	CharClasses      map[int]string             `json:"char_classes"`
+	CharRaces        map[int]string             `json:"char_races"`
 }
 
 // Snapshot returns the current Catalog for serialization.
@@ -53,5 +55,7 @@ func Snapshot() Catalog {
 		BaneRaces:        baneRaces,
 		ZoneExpansions:   zoneExpansions,
 		ZoneTypes:        zoneTypes,
+		CharClasses:      charClasses,
+		CharRaces:        charRaces,
 	}
 }
