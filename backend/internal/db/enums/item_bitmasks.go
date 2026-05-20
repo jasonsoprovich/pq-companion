@@ -39,13 +39,17 @@ var itemSlotBits = map[int]string{
 }
 
 // itemClassBits maps each set bit in items.classes to the corresponding
-// player class. Bit i (1<<i) belongs to the (i+1)-th class in classic
-// EQ order. The all-classes sentinel 0xFFFF is treated as "All" by the
-// frontend decomposer (legacy data sometimes uses 0x7FFF or larger).
+// player class — but only for classes that exist on Project Quarm
+// (frozen at Planes of Power, with custom PoP-era content). The all-
+// classes sentinel 0xFFFF is treated as "All" by the frontend
+// decomposer (legacy data sometimes uses 0x7FFF or larger).
 //
-// Source: EQMacEmu/Server common/classes.h ClassesBitmask namespace,
-// plus bit 15 = Berserker which Quarm carries from newer EQ data
-// despite Berserker being post-PoP content.
+// Source: EQMacEmu/Server common/classes.h ClassesBitmask namespace.
+//
+// Quarm-era filter: bit 15 (Berserker, added in Gates of Discord
+// 2003) appears in some imported item data but Berserker isn't a
+// playable class on Quarm, so it's not exposed here. The validator's
+// known set below covers it so audit runs stay clean.
 var itemClassBits = map[int]string{
 	0x0001: "Warrior",
 	0x0002: "Cleric",
@@ -62,19 +66,28 @@ var itemClassBits = map[int]string{
 	0x1000: "Magician",
 	0x2000: "Enchanter",
 	0x4000: "Beastlord",
-	0x8000: "Berserker", // Quarm-imported from post-Mac EQ data
+}
+
+// itemClassBitsOutOfEra are post-PoP bits the validator should accept
+// without flagging, but that the catalog deliberately doesn't surface
+// to the UI since those classes aren't playable on Quarm.
+var itemClassBitsOutOfEra = map[int]string{
+	0x8000: "Berserker (post-PoP)", // GoD, 2003
 }
 
 // itemRaceBits maps each set bit in items.races to the corresponding
-// player race. Bit i (1<<i) is the (i+1)-th race in classic EQ order.
-// The all-races sentinel is treated as "All" by the frontend
-// decomposer (Quarm legacy data variously uses 16383, 32767, 65535, or
-// even 131071).
+// player race — but only for races playable on Project Quarm (frozen
+// at Planes of Power, with custom PoP-era content). The all-races
+// sentinel is treated as "All" by the frontend decomposer (Quarm
+// legacy data variously uses 16383, 32767, 65535, or even 131071).
 //
 // Source: EQMacEmu/Server common/races.h RaceBitmask namespace (bits
-// 0–13 = the 14 EQMacEmu canonical playable races) plus bits 14 / 15
-// for Froglok / Drakkin which Quarm carries from later EQ data even
-// though those races aren't in the Mac client's PC pool.
+// 0–13 = the 14 EQMacEmu canonical playable races).
+//
+// Quarm-era filter: bits 14 (Froglok PC, LoY) and 15 (Drakkin, SoF)
+// appear in some imported item data but neither race is playable on
+// Quarm, so they're not exposed here. The validator's known set below
+// covers them so audit runs stay clean.
 var itemRaceBits = map[int]string{
 	0x0001: "Human",
 	0x0002: "Barbarian",
@@ -90,8 +103,14 @@ var itemRaceBits = map[int]string{
 	0x0800: "Gnome",
 	0x1000: "Iksar",
 	0x2000: "Vah Shir",
-	0x4000: "Froglok", // Quarm-imported from LoY+ data
-	0x8000: "Drakkin", // Quarm-imported from SoF+ data
+}
+
+// itemRaceBitsOutOfEra are post-PoP bits the validator should accept
+// without flagging, but that the catalog deliberately doesn't surface
+// to the UI since those races aren't playable on Quarm.
+var itemRaceBitsOutOfEra = map[int]string{
+	0x4000: "Froglok PC (post-PoP)", // LoY, 2003
+	0x8000: "Drakkin (post-PoP)",    // SoF, 2008
 }
 
 // extractBitmaskCodes runs a SELECT DISTINCT against the given column,
@@ -145,12 +164,24 @@ var ItemSlotBitsAudit = AuditDef{
 
 var ItemClassBitsAudit = AuditDef{
 	Name:       "Item Class Bit",
-	KnownCodes: keysAsSet(itemClassBits),
+	KnownCodes: mergeSets(keysAsSet(itemClassBits), keysAsSet(itemClassBitsOutOfEra)),
 	Extract:    func(db *sql.DB) ([]int, error) { return extractBitmaskCodes(db, `SELECT DISTINCT classes FROM items`, 16) },
 }
 
 var ItemRaceBitsAudit = AuditDef{
 	Name:       "Item Race Bit",
-	KnownCodes: keysAsSet(itemRaceBits),
+	KnownCodes: mergeSets(keysAsSet(itemRaceBits), keysAsSet(itemRaceBitsOutOfEra)),
 	Extract:    func(db *sql.DB) ([]int, error) { return extractBitmaskCodes(db, `SELECT DISTINCT races FROM items`, 16) },
+}
+
+// mergeSets returns the union of two int sets.
+func mergeSets(a, b map[int]struct{}) map[int]struct{} {
+	out := make(map[int]struct{}, len(a)+len(b))
+	for k := range a {
+		out[k] = struct{}{}
+	}
+	for k := range b {
+		out[k] = struct{}{}
+	}
+	return out
 }
