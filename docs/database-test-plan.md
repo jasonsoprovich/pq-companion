@@ -380,13 +380,15 @@ expand the Effects section):**
 | Magical Monologue | 117 | Crit Direct Damage | **Magic Weapon** |
 | Amplification / Syncopation | 118 | Crippling Blow | **Amplification** |
 | Trueshot Discipline | 184 + 301 | Hit Chance, Effect 301 | **Hit Chance, Archery Damage Modifier** |
+| Swiftness / Fleetness / Nimbleness | 160 | Make Drunk | **Increase Movement by N%** (5/10/15) |
+| Maelin's Magical Concoction | 500 / 501 / 503 / 504 | Effect 500–504 | **Kill XP / Quest XP / Skillup / Tradeskill Skillup Multipliers** |
 | Power Kick / Savage Kick | 164 | Effect 164 | **Kick Damage Bonus** ‡ |
 | Power Bash / Savage Bash | 165 | Effect 165 | **Bash Damage Bonus** ‡ |
-| Maelin's Magical Concoction | 500 / 501 / 503 / 504 | Effect 500–504 | **Quarm SPA 500/501/503/504** ‡ |
-| Swiftness / Fleetness / Nimbleness | 160 | Make Drunk | Make Drunk ‡ (carried over; needs in-game verify) |
 
-‡ = Quarm-specific or undocumented in EQMacEmu source — best-effort
-label that may need refinement once you check the in-game tooltip.
+‡ = Best-effort label. pqdi.cc also renders these as "Unknown Effect
+by N" — even the public reference has no canonical name for SPAs 164
+and 165. If you know the real names from in-game tooltips, capture
+them and we'll update the catalog.
 
 **Also changed (label-only swaps from EQMac canonical):**
 

@@ -301,6 +301,26 @@ export function effectDescription(id: number, base: number, buffduration: number
       if (base === 0) return ''
       return `Increase HP by ${base} per tick`
 
+    // ── Quarm-specific SPAs (codes 160, 500-504) ────────────────────────────
+    // pqdi.cc renders these with descriptive per-base templates rather than
+    // the static catalog labels; mirror that so the spell detail panel
+    // matches the public reference.
+    case 160: // Movement Speed (Stackable) — Swiftness/Fleetness/Nimbleness
+      if (base === 0) return ''
+      return `Increase Movement by ${base}%`
+    case 500:
+      if (base === 0) return ''
+      return `Increase Kill XP by ${base}%`
+    case 501:
+      if (base === 0) return ''
+      return `Increase Quest XP by ${base}%`
+    case 503:
+      if (base === 0) return ''
+      return `Increase Skillup Rate by ${base}%`
+    case 504:
+      if (base === 0) return ''
+      return `Increase Tradeskill Skillup Rate by ${base}%`
+
     // ── Focus effects (% modifiers on other spells) ─────────────────────────
     case 124: // Spell Damage % bonus
       return `Increase Spell Damage by ${base}%`

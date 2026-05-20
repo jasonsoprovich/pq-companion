@@ -173,12 +173,12 @@ var spellEffects = map[int]string{
 	157: "Spell Damage Shield",
 	158: "Reflect Spell", // SE_Reflect
 	159: "All Stats",
-	160: "Make Drunk", // Modern EQEmu SE_MakeDrunk; EQMacEmu spdat.h omits this code but Quarm uses it on Swiftness/Fleetness/Nimbleness — label may need refinement
+	160: "Movement Speed (Stackable)", // Quarm reuses this code (modern EQEmu = SE_MakeDrunk) for a stackable run-speed buff on Swiftness/Fleetness/Nimbleness. Confirmed via pqdi.cc/spell/3891 etc. — rendered as "Increase Movement by N%".
 	161: "Magic Rune",         // SE_MitigateSpellDamage — previously labeled "Rune" (swapped with 162)
 	162: "Rune",               // SE_MitigateMeleeDamage — previously labeled "Magic Rune" (swapped with 161)
 	163: "Negate Attacks",
-	164: "Kick Damage Bonus",  // Quarm-specific; powers Power Kick / Savage Kick
-	165: "Bash Damage Bonus",  // Quarm-specific; powers Power Bash / Savage Bash
+	164: "Kick Damage Bonus", // Quarm-specific; powers Power Kick / Savage Kick. pqdi.cc has no label either ("Unknown Effect by N") — this is a best-guess from spell context
+	165: "Bash Damage Bonus", // Quarm-specific; powers Power Bash / Savage Bash. pqdi.cc has no label either — best-guess from spell context
 	167: "Pet Power",
 	168: "Melee Mitigation",
 	169: "Crit Hit Chance",
@@ -226,11 +226,11 @@ var spellEffects = map[int]string{
 	218: "Pet Crit Chance",
 	219: "Slay Undead",
 	220: "Skill Damage",
-	301: "Archery Damage Modifier", // SE_ArcheryDamageModifier — powers Trueshot Discipline
-	500: "Quarm SPA 500",           // Quarm-specific; needs verification — appears on Maelin's Magical Concoction
-	501: "Quarm SPA 501",           // Quarm-specific; needs verification
-	503: "Quarm SPA 503",           // Quarm-specific; needs verification
-	504: "Quarm SPA 504",           // Quarm-specific; needs verification
+	301: "Archery Damage Modifier",        // SE_ArcheryDamageModifier — powers Trueshot Discipline
+	500: "Kill XP Multiplier",             // Quarm-specific; verified via pqdi.cc/spell/3999 (Maelin's Magical Concoction)
+	501: "Quest XP Multiplier",            // Quarm-specific; verified via pqdi
+	503: "Skillup Rate Multiplier",        // Quarm-specific; verified via pqdi
+	504: "Tradeskill Skillup Multiplier",  // Quarm-specific; verified via pqdi
 }
 
 // SpellEffectName returns the label for a SPA code, or empty for the
