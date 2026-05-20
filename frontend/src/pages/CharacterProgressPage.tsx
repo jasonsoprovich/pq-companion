@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { TrendingUp, RefreshCw, AlertCircle, Check, Search } from 'lucide-react'
+import { TrendingUp, RefreshCw, AlertCircle, Check, Search, Trash2 } from 'lucide-react'
 import {
   getZealQuarmy, getCharacterAAs, listCharacters, getItem,
   getCharacterSpellModifiers, searchSpells, getCharacterEquippedStats,
@@ -21,6 +21,7 @@ import type { Item } from '../types/item'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import ItemDetailModal from '../components/ItemDetailModal'
 import { BuffPicker } from '../components/BuffPicker'
+import { ConfirmModal } from '../components/ConfirmModal'
 import { SpellIcon } from '../components/Icon'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 
@@ -407,6 +408,57 @@ function statBlockToDelta(b: StatBlock): StatDelta {
   return { ...b }
 }
 
+// ── Haste stacking + level cap ────────────────────────────────────────────────
+//
+// EQ classic / Project Quarm haste stacks across three tiers:
+//   v1 — worn equipment haste. Only the highest item applies; we receive it
+//        pre-maxed as gear.equipment.haste from the backend.
+//   v2 — spell / song / proc / clicky haste. Only the HIGHEST v2 source
+//        applies — multiple v2 hastes don't stack with each other.
+//   v3 — overhaste. The single way to push past the level-based cap; on
+//        Quarm only Warsong of the Vah Shir (spell 2610) provides this.
+//
+// Total haste shown = min(v1 + max(v2), levelCap(level)) + sum(v3).
+//
+// Level-based cap on (v1+v2), per Quarm patch notes / community reference:
+//   1-30 → 50%, 31-50 → 74%, 51-54 → 84%, 55-59 → 94%, 60 → 100%.
+
+const OVERHASTE_SPELL_IDS = new Set<number>([
+  2610, // Warsong of the Vah Shir — only v3 source on Quarm at present
+])
+
+function hasteCapForLevel(level: number): number {
+  if (level <= 0) return 100  // unknown level — fall back to the level-60 cap
+  if (level <= 30) return 50
+  if (level <= 50) return 74
+  if (level <= 54) return 84
+  if (level <= 59) return 94
+  return 100
+}
+
+// computeStackedHaste applies the v1/v2/v3 stacking rules and level cap. The
+// caller supplies whichever buff list is active for the current mode (raid
+// preset, live buffs, or empty for non-buffed modes).
+function computeStackedHaste(
+  wornHaste: number,
+  buffs: Array<{ id: number; meta: SpellStatDeltaEntry }>,
+  level: number,
+): number {
+  let v2Max = 0
+  let v3Sum = 0
+  for (const b of buffs) {
+    const h = b.meta.delta.haste ?? 0
+    if (h <= 0) continue
+    if (OVERHASTE_SPELL_IDS.has(b.id)) {
+      v3Sum += h
+    } else if (h > v2Max) {
+      v2Max = h
+    }
+  }
+  const cap = hasteCapForLevel(level)
+  return Math.min(wornHaste + v2Max, cap) + v3Sum
+}
+
 // EQ class indices (0-indexed; 0 = Warrior).
 const INT_CASTER_CLASSES = new Set([10, 11, 12, 13]) // Necro, Wiz, Mag, Enchanter
 const WIS_CASTER_CLASSES = new Set([1, 2, 3, 4, 5, 9, 14]) // Cleric, Pal, Rng, SK, Druid, Shm, Bst
@@ -482,6 +534,11 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
   const [pickerSlot, setPickerSlot] = useState<number | null>(null)
   // null = "Add new buff" picker (appends a slot rather than replacing one)
   const [pickerMode, setPickerMode] = useState<'replace' | 'append'>('replace')
+  // Confirmation state — gates persistent edits behind a themed prompt so an
+  // accidental click doesn't mutate the preset. swap targets a slot index +
+  // the picked spell; remove targets a slot index.
+  const [pendingSwap, setPendingSwap] = useState<{ slot: number; spell: Spell; mode: 'replace' | 'append' } | null>(null)
+  const [pendingRemove, setPendingRemove] = useState<number | null>(null)
 
   // Live buff state — populated from the spell timer engine via REST seed
   // + overlay:timers WebSocket stream. The timer engine only tracks buffs
@@ -618,26 +675,39 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
 
   const handlePickerPick = useCallback((spell: Spell) => {
     if (pickerSlot == null) return
-    let next: number[]
     if (pickerMode === 'append') {
-      next = [...presetIds, spell.id]
-    } else {
-      next = presetIds.map((id, i) => i === pickerSlot ? spell.id : id)
-    }
-    setPickerSlot(null)
-    void persistPreset(next)
-  }, [pickerSlot, pickerMode, presetIds, persistPreset])
-
-  const handlePickerClear = useCallback(() => {
-    if (pickerSlot == null) return
-    if (pickerMode === 'append') {
+      // No replacement happening — append doesn't need confirmation.
+      const next = [...presetIds, spell.id]
       setPickerSlot(null)
+      void persistPreset(next)
       return
     }
-    const next = presetIds.filter((_, i) => i !== pickerSlot)
+    // Replace: gate on confirmation so an accidental click can't blow away
+    // a slot. Close the picker first so the confirm modal isn't stacked.
+    setPendingSwap({ slot: pickerSlot, spell, mode: 'replace' })
     setPickerSlot(null)
-    void persistPreset(next)
   }, [pickerSlot, pickerMode, presetIds, persistPreset])
+
+  const handleConfirmSwap = useCallback(() => {
+    if (!pendingSwap) return
+    const next = pendingSwap.mode === 'append'
+      ? [...presetIds, pendingSwap.spell.id]
+      : presetIds.map((id, i) => i === pendingSwap.slot ? pendingSwap.spell.id : id)
+    setPendingSwap(null)
+    void persistPreset(next)
+  }, [pendingSwap, presetIds, persistPreset])
+
+  // Remove flow: trash icon → pendingRemove → ConfirmModal → persist.
+  const handleRequestRemove = useCallback((slot: number) => {
+    setPendingRemove(slot)
+  }, [])
+
+  const handleConfirmRemove = useCallback(() => {
+    if (pendingRemove == null) return
+    const next = presetIds.filter((_, i) => i !== pendingRemove)
+    setPendingRemove(null)
+    void persistPreset(next)
+  }, [pendingRemove, presetIds, persistPreset])
 
   if (!hasStats || !stats) {
     return (
@@ -697,6 +767,20 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
   }
   if (includesLive) {
     for (const b of liveBuffEntries) addDelta(total, b.meta.delta)
+  }
+
+  // Override the haste field with the proper v1/v2/v3 stacking + level cap.
+  // The addDelta loop above sums haste contributions additively, which is
+  // wrong for haste — only the highest v2 source applies, and the (v1+v2)
+  // sum is capped per level. v3 (overhaste) is added on top of the cap.
+  {
+    const wornHaste = includesGear ? (gear?.equipment?.haste ?? 0) : 0
+    const activeBuffs = includesBuffs
+      ? buffEntries
+      : includesLive
+      ? liveBuffEntries.map((e) => ({ id: e.id, meta: e.meta }))
+      : []
+    total.haste = computeStackedHaste(wornHaste, activeBuffs, gear?.level ?? 0)
   }
 
   // Apply EQ's stat-driven Mana bonus and softcapped AC once the cumulative
@@ -782,6 +866,7 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
           totalSlots={presetIds.length}
           loading={presetLoading}
           onSlotClick={handlePickerOpen}
+          onSlotRemove={handleRequestRemove}
           onAddBuff={handlePickerAdd}
           onSwapAegolism={handleSwapAegolism}
           aegolismOrGlades={
@@ -805,10 +890,51 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
           currentSpellId={pickerMode === 'replace' ? (presetIds[pickerSlot] ?? 0) : 0}
           existingSpellIDs={presetIds}
           onPick={handlePickerPick}
-          onClear={pickerMode === 'replace' ? handlePickerClear : undefined}
           onClose={() => setPickerSlot(null)}
         />
       )}
+
+      {pendingSwap && (() => {
+        const fromId = presetIds[pendingSwap.slot]
+        const fromName = fromId ? (presetMeta[String(fromId)]?.name ?? `Spell #${fromId}`) : 'Empty slot'
+        return (
+          <ConfirmModal
+            title="Swap raid buff?"
+            confirmLabel="Swap"
+            onConfirm={handleConfirmSwap}
+            onCancel={() => setPendingSwap(null)}
+            message={
+              <div className="space-y-2">
+                <p>
+                  Replace <strong>{fromName}</strong> with <strong>{pendingSwap.spell.name}</strong>?
+                </p>
+                <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  The change will be saved to this character&rsquo;s raid-buff preset.
+                </p>
+              </div>
+            }
+          />
+        )
+      })()}
+
+      {pendingRemove != null && (() => {
+        const removeId = presetIds[pendingRemove]
+        const removeName = removeId ? (presetMeta[String(removeId)]?.name ?? `Spell #${removeId}`) : 'this buff'
+        return (
+          <ConfirmModal
+            title="Remove raid buff?"
+            confirmLabel="Remove"
+            tone="danger"
+            onConfirm={handleConfirmRemove}
+            onCancel={() => setPendingRemove(null)}
+            message={
+              <p>
+                Remove <strong>{removeName}</strong> from this character&rsquo;s raid-buff preset?
+              </p>
+            }
+          />
+        )
+      })()}
     </div>
   )
 }
@@ -880,13 +1006,14 @@ interface RaidBuffsPanelProps {
   totalSlots: number
   loading: boolean
   onSlotClick: (slot: number) => void
+  onSlotRemove: (slot: number) => void
   onAddBuff: () => void
   onSwapAegolism: () => void
   aegolismOrGlades: 'aegolism' | 'glades' | null
 }
 
 function RaidBuffsPanel({
-  entries, totalSlots, loading, onSlotClick, onAddBuff,
+  entries, totalSlots, loading, onSlotClick, onSlotRemove, onAddBuff,
   onSwapAegolism, aegolismOrGlades,
 }: RaidBuffsPanelProps): React.ReactElement {
   const total = emptyDelta()
@@ -941,23 +1068,33 @@ function RaidBuffsPanel({
 
       <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
         {entries.map((e) => (
-          <button
-            key={`${e.slot}:${e.id}`}
-            onClick={() => onSlotClick(e.slot)}
-            className="flex w-full items-start gap-2 py-2 text-left hover:opacity-80"
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
-            title="Click to swap this buff"
-          >
-            <SpellIcon id={e.meta.icon} name={e.meta.name} size={24} />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
-                {e.meta.name}
-              </p>
-              <p className="font-mono text-xs" style={{ color: 'var(--color-primary)' }}>
-                {formatBuffEffects(e.meta.delta) || <span style={{ color: 'var(--color-muted)' }}>—</span>}
-              </p>
-            </div>
-          </button>
+          <div key={`${e.slot}:${e.id}`} className="flex items-start gap-2 py-2 group">
+            <button
+              onClick={() => onSlotClick(e.slot)}
+              className="flex min-w-0 flex-1 items-start gap-2 text-left hover:opacity-80"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+              title="Click to swap this buff"
+            >
+              <SpellIcon id={e.meta.icon} name={e.meta.name} size={24} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
+                  {e.meta.name}
+                </p>
+                <p className="font-mono text-xs" style={{ color: 'var(--color-primary)' }}>
+                  {formatBuffEffects(e.meta.delta) || <span style={{ color: 'var(--color-muted)' }}>—</span>}
+                </p>
+              </div>
+            </button>
+            <button
+              onClick={() => onSlotRemove(e.slot)}
+              className="shrink-0 opacity-60 hover:opacity-100"
+              style={{ color: 'var(--color-danger, #ef4444)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }}
+              title="Remove this buff"
+              aria-label={`Remove ${e.meta.name}`}
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
         ))}
       </div>
 
