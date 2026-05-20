@@ -1,7 +1,7 @@
 import type { Config } from '../types/config'
 import type { Item, ItemSources, SearchResult } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction } from '../types/npc'
-import type { Spell, SpellCrossRefs } from '../types/spell'
+import type { BuffStatDelta, Spell, SpellCrossRefs } from '../types/spell'
 import type { Zone, ZoneConnection, ZoneGroundSpawn, ZoneForageItem, ZoneDropItem } from '../types/zone'
 import type {
   ZealInventoryResponse,
@@ -186,6 +186,14 @@ export function getSpell(id: number): Promise<Spell> {
 
 export function getSpellCrossRefs(id: number): Promise<SpellCrossRefs> {
   return get<SpellCrossRefs>(`/api/spells/${id}/items`)
+}
+
+// Batch-resolve buff stat deltas for a list of spell IDs. Returns a map
+// keyed by stringified spell ID. IDs that don't resolve to a spell are
+// silently omitted. Used by the character stats page to compute aggregate
+// buff contributions from active or preset buff lists.
+export function getSpellStatDeltas(ids: number[]): Promise<Record<string, BuffStatDelta>> {
+  return post<Record<string, BuffStatDelta>>(`/api/spells/stat-deltas`, { ids })
 }
 
 // ── NPCs ───────────────────────────────────────────────────────────────────────

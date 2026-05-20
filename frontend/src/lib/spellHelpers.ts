@@ -268,10 +268,8 @@ export function effectDescription(id: number, base: number, buffduration: number
     case 3: // Movement Speed (% modifier)
       if (base === 0) return ''
       return `Movement Speed ${sign}${base}%`
-    case 11:   // Melee Haste v1 (worn items)
-    case 119: { // Melee Haste v2 (spells / songs / procs / clickies)
+    case 11: { // Melee Haste v1 — "+100" encoded (base 122 → +22%)
       if (base === 0) return ''
-      // EQEmu encodes haste as +100: base 122 → +22%.
       const pct = base - 100
       // For formula 102 (linear scale by level) with a larger max, pqdi
       // renders the range — e.g. spell 998 (base 101, max 150) shows
@@ -282,6 +280,11 @@ export function effectDescription(id: number, base: number, buffduration: number
       }
       const psign = pct >= 0 ? '+' : ''
       return `Attack Speed ${psign}${pct}%`
+    }
+    case 119: { // Melee Haste v2 — raw % (base 25 → +25%), no +100 shift
+      if (base === 0) return ''
+      const sign = base > 0 ? '+' : ''
+      return `Attack Speed ${sign}${base}%`
     }
     case 15: { // Mana — instant or per-tick depending on buff duration
       if (base === 0) return ''

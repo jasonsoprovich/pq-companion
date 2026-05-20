@@ -2,6 +2,7 @@ package api
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -9,6 +10,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 )
+
+// maxStatDeltaIDs caps a single batch request — covers a full active-buff
+// list (13 slots) plus headroom for raid-buff preset queries.
+const maxStatDeltaIDs = 200
 
 // GET /api/spells/class/{classIndex}
 // Returns all spells castable by the given class (0=Warrior … 14=Beastlord),
@@ -65,6 +70,40 @@ func (h *spellsHandler) crossRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, refs)
+}
+
+// POST /api/spells/stat-deltas
+// Body: { "ids": [123, 456, ...] }
+// Returns: { "123": BuffStatDelta, "456": BuffStatDelta, ... }
+//
+// IDs that don't resolve to a spell are silently omitted from the response.
+// Used by the character stats page to compute aggregate buff contributions
+// from active or preset buff lists.
+func (h *spellsHandler) statDeltas(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		IDs []int `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(body.IDs) == 0 {
+		writeJSON(w, http.StatusOK, map[string]db.BuffStatDelta{})
+		return
+	}
+	if len(body.IDs) > maxStatDeltaIDs {
+		writeError(w, http.StatusBadRequest, "too many ids")
+		return
+	}
+	out := make(map[string]db.BuffStatDelta, len(body.IDs))
+	for _, id := range body.IDs {
+		sp, err := h.db.GetSpell(id)
+		if err != nil || sp == nil {
+			continue
+		}
+		out[strconv.Itoa(id)] = db.ComputeBuffStatDelta(sp)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (h *spellsHandler) search(w http.ResponseWriter, r *http.Request) {

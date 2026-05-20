@@ -44,6 +44,41 @@ export interface Spell {
   zone_type: number
 }
 
+// BuffStatDelta mirrors backend/internal/db/buffeffect.go. Returned by the
+// /api/spells/stat-deltas batch endpoint — one entry per requested spell ID.
+//
+// `haste` is the raw melee haste % from SPA 11 (after subtracting the +100
+// encoding) or SPA 119 (raw). The caller buckets v1/v2/v3 by source:
+//   - worn equipment haste → v1
+//   - cast buff/song/proc/clicky → v2 (or v3 for overhaste, e.g. Warsong
+//     of the Vah Shir)
+//
+// `spell_haste` is SPA 127 raw % (cast-time reduction); the caller sums
+// across spells and applies the 50% Quarm hardcap.
+export interface BuffStatDelta {
+  hp: number
+  mana: number
+  ac: number
+  str: number
+  sta: number
+  agi: number
+  dex: number
+  wis: number
+  int: number
+  cha: number
+  pr: number
+  mr: number
+  dr: number
+  fr: number
+  cr: number
+  attack: number
+  haste: number
+  spell_haste: number
+  regen: number
+  mana_regen: number
+  dmg_shield: number
+}
+
 export interface SpellItemRef {
   id: number
   name: string
