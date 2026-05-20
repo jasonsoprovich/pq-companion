@@ -72,9 +72,19 @@ func (h *spellsHandler) crossRefs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, refs)
 }
 
+// spellStatDeltaEntry is one row of the /api/spells/stat-deltas response —
+// the spell's name and icon plus its computed buff stat contribution. Name
+// and icon are bundled so the raid-buff / live-buff UIs don't need a second
+// round-trip to render labels.
+type spellStatDeltaEntry struct {
+	Name  string           `json:"name"`
+	Icon  int              `json:"icon"`
+	Delta db.BuffStatDelta `json:"delta"`
+}
+
 // POST /api/spells/stat-deltas
 // Body: { "ids": [123, 456, ...] }
-// Returns: { "123": BuffStatDelta, "456": BuffStatDelta, ... }
+// Returns: { "123": { name, icon, delta }, ... }
 //
 // IDs that don't resolve to a spell are silently omitted from the response.
 // Used by the character stats page to compute aggregate buff contributions
@@ -88,20 +98,28 @@ func (h *spellsHandler) statDeltas(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(body.IDs) == 0 {
-		writeJSON(w, http.StatusOK, map[string]db.BuffStatDelta{})
+		writeJSON(w, http.StatusOK, map[string]spellStatDeltaEntry{})
 		return
 	}
 	if len(body.IDs) > maxStatDeltaIDs {
 		writeError(w, http.StatusBadRequest, "too many ids")
 		return
 	}
-	out := make(map[string]db.BuffStatDelta, len(body.IDs))
+	out := make(map[string]spellStatDeltaEntry, len(body.IDs))
 	for _, id := range body.IDs {
 		sp, err := h.db.GetSpell(id)
 		if err != nil || sp == nil {
 			continue
 		}
-		out[strconv.Itoa(id)] = db.ComputeBuffStatDelta(sp)
+		icon := sp.NewIcon
+		if icon == 0 {
+			icon = sp.Icon
+		}
+		out[strconv.Itoa(id)] = spellStatDeltaEntry{
+			Name:  sp.Name,
+			Icon:  icon,
+			Delta: db.ComputeBuffStatDelta(sp),
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -116,7 +134,8 @@ func (h *spellsHandler) search(w http.ResponseWriter, r *http.Request) {
 	classIndex := queryInt(r, "class", -1)
 	minLevel := queryInt(r, "minLevel", 0)
 	maxLevel := queryInt(r, "maxLevel", 0)
-	result, err := h.db.SearchSpells(q, classIndex, minLevel, maxLevel, limit, offset)
+	goodEffectOnly := r.URL.Query().Get("goodEffect") == "1"
+	result, err := h.db.SearchSpells(q, classIndex, minLevel, maxLevel, limit, offset, goodEffectOnly)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

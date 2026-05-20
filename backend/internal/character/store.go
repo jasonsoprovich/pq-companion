@@ -104,11 +104,28 @@ func (s *Store) migrate() error {
 	`); err != nil {
 		return err
 	}
+	// Per-character raid buff preset. Up to MaxRaidBuffSlots ordered entries
+	// per character; empty table for a character means "use frontend default."
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS character_raid_buffs (
+			character_id INTEGER NOT NULL,
+			slot_index   INTEGER NOT NULL,
+			spell_id     INTEGER NOT NULL,
+			PRIMARY KEY (character_id, slot_index),
+			FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+		)
+	`); err != nil {
+		return err
+	}
 	if err := s.migrateTasks(); err != nil {
 		return err
 	}
 	return nil
 }
+
+// MaxRaidBuffSlots is the in-game limit on simultaneous beneficial buffs
+// (EQ Classic / Project Quarm: 13 buff slots).
+const MaxRaidBuffSlots = 13
 
 // List returns all stored characters ordered by name.
 func (s *Store) List() ([]Character, error) {
@@ -248,6 +265,55 @@ func (s *Store) ListAAs(characterID int) ([]AAEntry, error) {
 		out = append(out, aa)
 	}
 	return out, rows.Err()
+}
+
+// ListRaidBuffs returns the saved raid-buff spell IDs for a character in
+// slot order. Returns an empty slice (not an error) when nothing is saved —
+// the frontend treats that as "use the default preset."
+func (s *Store) ListRaidBuffs(characterID int) ([]int, error) {
+	rows, err := s.db.Query(
+		`SELECT spell_id FROM character_raid_buffs WHERE character_id=? ORDER BY slot_index`,
+		characterID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]int, 0, MaxRaidBuffSlots)
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// ReplaceRaidBuffs atomically replaces the saved raid-buff preset for a
+// character. Caller must ensure len(spellIDs) <= MaxRaidBuffSlots; the
+// method enforces this with an error rather than silently truncating.
+func (s *Store) ReplaceRaidBuffs(characterID int, spellIDs []int) error {
+	if len(spellIDs) > MaxRaidBuffSlots {
+		return fmt.Errorf("too many raid buffs: %d (max %d)", len(spellIDs), MaxRaidBuffSlots)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.Exec(`DELETE FROM character_raid_buffs WHERE character_id=?`, characterID); err != nil {
+		return err
+	}
+	for i, id := range spellIDs {
+		if _, err := tx.Exec(
+			`INSERT INTO character_raid_buffs (character_id, slot_index, spell_id) VALUES (?, ?, ?)`,
+			characterID, i, id,
+		); err != nil {
+			return fmt.Errorf("insert raid buff slot %d: %w", i, err)
+		}
+	}
+	return tx.Commit()
 }
 
 // Names returns the set of stored character names (case-preserved).

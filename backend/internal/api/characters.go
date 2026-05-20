@@ -218,6 +218,67 @@ func (h *charactersHandler) aas(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// raidBuffs returns the saved raid-buff preset for the character as an
+// ordered list of spell IDs. An empty list means the user hasn't customized
+// theirs yet — the frontend falls back to its default preset in that case.
+func (h *charactersHandler) raidBuffs(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if _, ok, err := h.store.Get(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	} else if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+	ids, err := h.store.ListRaidBuffs(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if ids == nil {
+		ids = []int{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"spell_ids": ids})
+}
+
+// updateRaidBuffs atomically replaces the saved raid-buff preset for the
+// character. Body shape: { "spell_ids": [int, ...] }. Enforces the in-game
+// 13-slot cap via character.MaxRaidBuffSlots.
+func (h *charactersHandler) updateRaidBuffs(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if _, ok, err := h.store.Get(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	} else if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+	var body struct {
+		SpellIDs []int `json:"spell_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(body.SpellIDs) > character.MaxRaidBuffSlots {
+		writeError(w, http.StatusBadRequest, "too many raid buffs (max 13)")
+		return
+	}
+	if err := h.store.ReplaceRaidBuffs(id, body.SpellIDs); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"spell_ids": body.SpellIDs})
+}
+
 // spellModifiers returns the focus contributions (item focuses + AA focuses)
 // available to the character from their most recent Quarmy export.
 //

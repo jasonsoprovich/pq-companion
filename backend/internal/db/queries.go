@@ -875,7 +875,9 @@ func (db *DB) GetSpellByExactName(name string) (*Spell, error) {
 // classIndex: -1 = all classes (excludes NPC-only spells), 0–14 = filter to
 // that player class, 15 = NPC-only (every classes1–classes15 column is 255).
 // minLevel/maxLevel: 0 = no bound; only applied when classIndex is 0–14.
-func (db *DB) SearchSpells(query string, classIndex, minLevel, maxLevel, limit, offset int) (*SearchResult[Spell], error) {
+// goodEffectOnly: when true, only beneficial spells (spells_new.goodEffect=1)
+// are returned — used by the raid-buff picker so debuffs/nukes don't appear.
+func (db *DB) SearchSpells(query string, classIndex, minLevel, maxLevel, limit, offset int, goodEffectOnly bool) (*SearchResult[Spell], error) {
 	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
 
 	conditions := []string{"s.name LIKE ? ESCAPE '\\'", "s.name != ''"}
@@ -904,6 +906,10 @@ func (db *DB) SearchSpells(query string, classIndex, minLevel, maxLevel, limit, 
 		conditions = append(conditions, npcOnlyExpr)
 	default:
 		conditions = append(conditions, "NOT "+npcOnlyExpr)
+	}
+
+	if goodEffectOnly {
+		conditions = append(conditions, "COALESCE(s.goodEffect, 0) = 1")
 	}
 
 	where := strings.Join(conditions, " AND ")

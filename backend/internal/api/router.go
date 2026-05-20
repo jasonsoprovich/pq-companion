@@ -119,6 +119,8 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/{id}/aas", charactersH.aas)
 			r.Get("/{id}/spell-modifiers", charactersH.spellModifiers)
 			r.Get("/{id}/equipped-stats", charactersH.equippedStats)
+			r.Get("/{id}/raid-buffs", charactersH.raidBuffs)
+			r.Put("/{id}/raid-buffs", charactersH.updateRaidBuffs)
 			r.Get("/{id}/tasks", tasksH.list)
 			r.Post("/{id}/tasks", tasksH.create)
 			r.Put("/{id}/tasks/reorder", tasksH.reorder)

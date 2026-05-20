@@ -172,11 +172,13 @@ export function searchSpells(
   classIndex = -1,
   minLevel = 0,
   maxLevel = 0,
+  goodEffectOnly = false,
 ): Promise<SearchResult<Spell>> {
   const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) })
   if (classIndex >= 0) params.set('class', String(classIndex))
   if (minLevel > 0) params.set('minLevel', String(minLevel))
   if (maxLevel > 0) params.set('maxLevel', String(maxLevel))
+  if (goodEffectOnly) params.set('goodEffect', '1')
   return get<SearchResult<Spell>>(`/api/spells?${params}`)
 }
 
@@ -188,12 +190,18 @@ export function getSpellCrossRefs(id: number): Promise<SpellCrossRefs> {
   return get<SpellCrossRefs>(`/api/spells/${id}/items`)
 }
 
+export interface SpellStatDeltaEntry {
+  name: string
+  icon: number
+  delta: BuffStatDelta
+}
+
 // Batch-resolve buff stat deltas for a list of spell IDs. Returns a map
 // keyed by stringified spell ID. IDs that don't resolve to a spell are
-// silently omitted. Used by the character stats page to compute aggregate
-// buff contributions from active or preset buff lists.
-export function getSpellStatDeltas(ids: number[]): Promise<Record<string, BuffStatDelta>> {
-  return post<Record<string, BuffStatDelta>>(`/api/spells/stat-deltas`, { ids })
+// silently omitted. Each entry also includes the spell's name and icon so
+// the raid-buff / live-buff UIs can render labels without a second fetch.
+export function getSpellStatDeltas(ids: number[]): Promise<Record<string, SpellStatDeltaEntry>> {
+  return post<Record<string, SpellStatDeltaEntry>>(`/api/spells/stat-deltas`, { ids })
 }
 
 // ── NPCs ───────────────────────────────────────────────────────────────────────
@@ -760,6 +768,22 @@ export interface EquippedStats {
 
 export function getCharacterEquippedStats(id: number): Promise<EquippedStats> {
   return get<EquippedStats>(`/api/characters/${id}/equipped-stats`)
+}
+
+// ── Character Raid-Buff Preset ────────────────────────────────────────────────
+
+// MAX_RAID_BUFF_SLOTS mirrors backend character.MaxRaidBuffSlots — EQ's 13
+// simultaneous beneficial-buff cap.
+export const MAX_RAID_BUFF_SLOTS = 13
+
+// An empty list means the character hasn't customized their preset; the UI
+// substitutes the default preset in that case.
+export function getCharacterRaidBuffs(id: number): Promise<{ spell_ids: number[] }> {
+  return get<{ spell_ids: number[] }>(`/api/characters/${id}/raid-buffs`)
+}
+
+export function setCharacterRaidBuffs(id: number, spellIDs: number[]): Promise<{ spell_ids: number[] }> {
+  return put<{ spell_ids: number[] }>(`/api/characters/${id}/raid-buffs`, { spell_ids: spellIDs })
 }
 
 // ── Character Tasks ────────────────────────────────────────────────────────────

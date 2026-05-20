@@ -4,15 +4,20 @@ import { TrendingUp, RefreshCw, AlertCircle, Check, Search } from 'lucide-react'
 import {
   getZealQuarmy, getCharacterAAs, listCharacters, getItem,
   getCharacterSpellModifiers, searchSpells, getCharacterEquippedStats,
+  getCharacterRaidBuffs, setCharacterRaidBuffs, getSpellStatDeltas,
+  MAX_RAID_BUFF_SLOTS,
 } from '../services/api'
 import type {
   QuarmyData, CharacterAA, AAInfo, Character,
   SpellModifier, SpellModifierResolution, EquippedStats, StatBlock,
+  SpellStatDeltaEntry,
 } from '../services/api'
 import type { Spell } from '../types/spell'
 import type { Item } from '../types/item'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import ItemDetailModal from '../components/ItemDetailModal'
+import { BuffPicker } from '../components/BuffPicker'
+import { SpellIcon } from '../components/Icon'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 
 // ── Equipment slot ordering ────────────────────────────────────────────────────
@@ -295,7 +300,7 @@ export default function CharacterProgressPage(): React.ReactElement {
           ) : (
             <>
               {tab === 'stats' && (
-                <StatsPanel stats={statsSource} hasStats={!!hasStats} gear={equippedStats} />
+                <StatsPanel stats={statsSource} hasStats={!!hasStats} gear={equippedStats} characterID={activeChar?.id ?? null} />
               )}
               {tab === 'gear' && (
                 <GearPanel gear={equippedGear} hasQuarmy={!!quarmy} onLookup={handleLookup} />
@@ -321,7 +326,30 @@ export default function CharacterProgressPage(): React.ReactElement {
 // ── Stats Panel ───────────────────────────────────────────────────────────────
 
 type StatMode = 'base' | 'equipped' | 'buffed'
-type AegolismChoice = 'aegolism' | 'glades'
+
+// EQ classic Cleric Aegolism and Druid Protection of the Glades are
+// mutually-exclusive group buffs (the same stacking slot). The toggle on
+// the Raid Buffs panel swaps one for the other; we only ever store one in
+// the preset at a time.
+const AEGOLISM_SPELL_ID = 2122 // Ancient: Gift of Aegolism
+const GLADES_SPELL_ID = 1442   // Protection of the Glades
+
+// DEFAULT_PRESET_IDS is the seeded raid-buff list used when a character
+// hasn't customized theirs yet — mirrors the quarmy.com defaults that the
+// old hardcoded `RAID_BUFFS` const used. Spell IDs verified against
+// backend/data/quarm.db. Aego/PotG occupies one slot; user can swap any
+// of the 13 slots via the BuffPicker modal.
+const DEFAULT_PRESET_IDS: number[] = [
+  AEGOLISM_SPELL_ID,         // Ancient: Gift of Aegolism (toggleable with PotG)
+  2530,                      // Khura's Focusing
+  1580,                      // Talisman of the Brute
+  1579,                      // Talisman of the Cat
+  2590,                      // Brell's Mountainous Barrier
+  1710,                      // Visions of Grandeur
+  2570,                      // Koadic's Endless Intellect
+  2519,                      // Circle of Seasons
+  72,                        // Group Resist Magic
+]
 
 // EQ caps individual attribute stats at 255. Anything above the cap is wasted.
 const STAT_CAP = 255
@@ -336,35 +364,6 @@ interface StatDelta {
   attack?: number; haste?: number; spell_haste?: number; regen?: number
   mana_regen?: number; ft?: number; dmg_shield?: number
 }
-
-interface BuffDef {
-  name: string
-  delta: StatDelta
-}
-
-// Raid-buff preset matching quarmy.com's defaults. Aegolism / Protection of
-// the Glades are mutually exclusive (different druid/cleric tiers); the rest
-// stack additively. mana_regen is per-tick mana from buff sources — not
-// counted against the 15-FT item cap.
-const AEGOLISM_BUFF: BuffDef = {
-  name: 'Ancient: Gift of Aegolism',
-  delta: { hp: 1300, ac: 89 },
-}
-const GLADES_BUFF: BuffDef = {
-  name: 'Protection of the Glades',
-  delta: { hp: 250, ac: 39, mana_regen: 4 },
-}
-
-const RAID_BUFFS: BuffDef[] = [
-  { name: "Khura's Focusing",            delta: { hp: 430, str: 67, dex: 60 } },
-  { name: 'Talisman of the Brute',       delta: { sta: 50 } },
-  { name: 'Talisman of the Cat',         delta: { agi: 52 } },
-  { name: "Brell's Mountainous Barrier", delta: { hp: 225 } },
-  { name: 'Visions of Grandeur',         delta: { agi: 40, dex: 25, haste: 58, attack: 26 } },
-  { name: "Koadic's Endless Intellect",  delta: { mana: 250, wis: 25, int: 25, mana_regen: 14 } },
-  { name: 'Circle of the Seasons',       delta: { pr: 15, mr: 15, dr: 15, fr: 15, cr: 15 } },
-  { name: 'Group Resist Magic',          delta: { mr: 10, fr: 10, cr: 10 } },
-]
 
 function emptyDelta(): Required<StatDelta> {
   return {
@@ -464,11 +463,112 @@ interface StatsPanelProps {
   stats: { base_str: number; base_sta: number; base_cha: number; base_dex: number; base_int: number; base_agi: number; base_wis: number } | null
   hasStats: boolean
   gear: EquippedStats | null
+  characterID: number | null
 }
 
-function StatsPanel({ stats, hasStats, gear }: StatsPanelProps): React.ReactElement {
+function StatsPanel({ stats, hasStats, gear, characterID }: StatsPanelProps): React.ReactElement {
   const [mode, setMode] = useState<StatMode>('equipped')
-  const [aegolism, setAegolism] = useState<AegolismChoice>('aegolism')
+  // Saved raid-buff preset (ordered list of spell IDs) plus the resolved
+  // name/icon/delta metadata for each. Both are loaded together — when the
+  // saved preset is empty the UI substitutes DEFAULT_PRESET_IDS.
+  const [presetIds, setPresetIds] = useState<number[]>(DEFAULT_PRESET_IDS)
+  const [presetMeta, setPresetMeta] = useState<Record<string, SpellStatDeltaEntry>>({})
+  const [presetLoading, setPresetLoading] = useState(false)
+  const [pickerSlot, setPickerSlot] = useState<number | null>(null)
+  // null = "Add new buff" picker (appends a slot rather than replacing one)
+  const [pickerMode, setPickerMode] = useState<'replace' | 'append'>('replace')
+
+  // Fetch the saved preset whenever the character changes. Falls back to
+  // DEFAULT_PRESET_IDS when the backend returns an empty list (new character
+  // or never customized). Then batch-fetches spell metadata + stat deltas.
+  useEffect(() => {
+    let cancelled = false
+    if (characterID == null) {
+      setPresetIds(DEFAULT_PRESET_IDS)
+      setPresetMeta({})
+      return
+    }
+    setPresetLoading(true)
+    ;(async () => {
+      try {
+        const resp = await getCharacterRaidBuffs(characterID)
+        const ids = resp.spell_ids.length > 0 ? resp.spell_ids : DEFAULT_PRESET_IDS
+        const meta = ids.length > 0 ? await getSpellStatDeltas(ids) : {}
+        if (!cancelled) {
+          setPresetIds(ids)
+          setPresetMeta(meta)
+        }
+      } catch {
+        // Loading failure leaves whatever was there before — better than
+        // a confusing empty panel.
+      } finally {
+        if (!cancelled) setPresetLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [characterID])
+
+  const persistPreset = useCallback(async (next: number[]) => {
+    setPresetIds(next)
+    if (characterID == null) return
+    try {
+      await setCharacterRaidBuffs(characterID, next)
+      const meta = next.length > 0 ? await getSpellStatDeltas(next) : {}
+      setPresetMeta(meta)
+    } catch {
+      // Persist failure — the local state still reflects the user's intent
+      // for this session. They'll see it again next time they reopen.
+    }
+  }, [characterID])
+
+  const handleSwapAegolism = useCallback(() => {
+    const hasAego = presetIds.includes(AEGOLISM_SPELL_ID)
+    const hasGlades = presetIds.includes(GLADES_SPELL_ID)
+    let next: number[]
+    if (hasAego) {
+      next = presetIds.map(id => id === AEGOLISM_SPELL_ID ? GLADES_SPELL_ID : id)
+    } else if (hasGlades) {
+      next = presetIds.map(id => id === GLADES_SPELL_ID ? AEGOLISM_SPELL_ID : id)
+    } else {
+      // Neither in the preset — add Aego if there's room.
+      if (presetIds.length >= MAX_RAID_BUFF_SLOTS) return
+      next = [AEGOLISM_SPELL_ID, ...presetIds]
+    }
+    void persistPreset(next)
+  }, [presetIds, persistPreset])
+
+  const handlePickerOpen = useCallback((slot: number) => {
+    setPickerSlot(slot)
+    setPickerMode('replace')
+  }, [])
+
+  const handlePickerAdd = useCallback(() => {
+    setPickerSlot(presetIds.length)
+    setPickerMode('append')
+  }, [presetIds.length])
+
+  const handlePickerPick = useCallback((spell: Spell) => {
+    if (pickerSlot == null) return
+    let next: number[]
+    if (pickerMode === 'append') {
+      next = [...presetIds, spell.id]
+    } else {
+      next = presetIds.map((id, i) => i === pickerSlot ? spell.id : id)
+    }
+    setPickerSlot(null)
+    void persistPreset(next)
+  }, [pickerSlot, pickerMode, presetIds, persistPreset])
+
+  const handlePickerClear = useCallback(() => {
+    if (pickerSlot == null) return
+    if (pickerMode === 'append') {
+      setPickerSlot(null)
+      return
+    }
+    const next = presetIds.filter((_, i) => i !== pickerSlot)
+    setPickerSlot(null)
+    void persistPreset(next)
+  }, [pickerSlot, pickerMode, presetIds, persistPreset])
 
   if (!hasStats || !stats) {
     return (
@@ -482,9 +582,14 @@ function StatsPanel({ stats, hasStats, gear }: StatsPanelProps): React.ReactElem
   const includesGear = mode !== 'base'
   const includesBuffs = mode === 'buffed'
 
-  const buffs: BuffDef[] = includesBuffs
-    ? [aegolism === 'aegolism' ? AEGOLISM_BUFF : GLADES_BUFF, ...RAID_BUFFS]
-    : []
+  // Resolve preset IDs to their metadata entries. Missing entries (e.g.
+  // mid-load) are skipped silently — the panel just renders fewer rows
+  // until the batch fetch completes.
+  const buffEntries: Array<{ id: number; slot: number; meta: SpellStatDeltaEntry }> = []
+  for (let i = 0; i < presetIds.length; i++) {
+    const m = presetMeta[String(presetIds[i])]
+    if (m) buffEntries.push({ id: presetIds[i], slot: i, meta: m })
+  }
 
   // Sum every active source into one delta. Base attribs come from quarmy on
   // the character row; the backend's `base` block fills in HP/Mana from
@@ -501,7 +606,9 @@ function StatsPanel({ stats, hasStats, gear }: StatsPanelProps): React.ReactElem
     })
   }
   if (includesGear && gear?.equipment) addDelta(total, statBlockToDelta(gear.equipment))
-  for (const b of buffs) addDelta(total, b.delta)
+  if (includesBuffs) {
+    for (const b of buffEntries) addDelta(total, b.meta.delta)
+  }
 
   // Apply EQ's stat-driven Mana bonus and softcapped AC once the cumulative
   // attributes are known. Quarmy.com does the same (with the full EQEmu
@@ -582,9 +689,26 @@ function StatsPanel({ stats, hasStats, gear }: StatsPanelProps): React.ReactElem
       {/* Raid Buffs side panel */}
       {includesBuffs && (
         <RaidBuffsPanel
-          aegolism={aegolism}
-          onSwap={() => setAegolism(aegolism === 'aegolism' ? 'glades' : 'aegolism')}
-          buffs={buffs}
+          entries={buffEntries}
+          totalSlots={presetIds.length}
+          loading={presetLoading}
+          onSlotClick={handlePickerOpen}
+          onAddBuff={handlePickerAdd}
+          onSwapAegolism={handleSwapAegolism}
+          aegolismOrGlades={
+            presetIds.includes(AEGOLISM_SPELL_ID) ? 'aegolism'
+            : presetIds.includes(GLADES_SPELL_ID) ? 'glades' : null
+          }
+        />
+      )}
+
+      {pickerSlot != null && (
+        <BuffPicker
+          currentSpellId={pickerMode === 'replace' ? (presetIds[pickerSlot] ?? 0) : 0}
+          existingSpellIDs={presetIds}
+          onPick={handlePickerPick}
+          onClear={pickerMode === 'replace' ? handlePickerClear : undefined}
+          onClose={() => setPickerSlot(null)}
         />
       )}
     </div>
@@ -653,21 +777,34 @@ function ResistRow({ label, value }: { label: string; value: number }): React.Re
 // ── Raid Buffs side panel ─────────────────────────────────────────────────────
 
 interface RaidBuffsPanelProps {
-  aegolism: AegolismChoice
-  onSwap: () => void
-  buffs: BuffDef[]
+  entries: Array<{ id: number; slot: number; meta: SpellStatDeltaEntry }>
+  totalSlots: number
+  loading: boolean
+  onSlotClick: (slot: number) => void
+  onAddBuff: () => void
+  onSwapAegolism: () => void
+  aegolismOrGlades: 'aegolism' | 'glades' | null
 }
 
-function RaidBuffsPanel({ aegolism, onSwap, buffs }: RaidBuffsPanelProps): React.ReactElement {
+function RaidBuffsPanel({
+  entries, totalSlots, loading, onSlotClick, onAddBuff,
+  onSwapAegolism, aegolismOrGlades,
+}: RaidBuffsPanelProps): React.ReactElement {
   const total = emptyDelta()
-  for (const b of buffs) addDelta(total, b.delta)
+  for (const e of entries) addDelta(total, e.meta.delta)
+  const canAdd = totalSlots < MAX_RAID_BUFF_SLOTS
+  const swapTitle = aegolismOrGlades === 'aegolism'
+    ? 'Swap to Protection of the Glades'
+    : aegolismOrGlades === 'glades'
+    ? 'Swap to Ancient: Gift of Aegolism'
+    : 'Add Ancient: Gift of Aegolism'
 
   return (
     <div
       className="rounded-lg p-4"
       style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', flex: '1 1 auto', minWidth: '320px' }}
     >
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between gap-2">
         <span
           className="rounded-full px-3 py-1 text-xs font-semibold"
           style={{
@@ -675,38 +812,70 @@ function RaidBuffsPanel({ aegolism, onSwap, buffs }: RaidBuffsPanelProps): React
             color: 'var(--color-primary)',
           }}
         >
-          Raid Buffs
+          Raid Buffs ({totalSlots}/{MAX_RAID_BUFF_SLOTS})
         </span>
         <button
-          onClick={onSwap}
-          className="rounded px-2 py-1 text-xs font-medium"
+          onClick={onSwapAegolism}
+          disabled={!aegolismOrGlades && !canAdd}
+          className="rounded px-2 py-1 text-xs font-medium disabled:opacity-40"
           style={{
             backgroundColor: 'var(--color-surface-2)',
             border: '1px solid var(--color-border)',
             color: 'var(--color-foreground)',
             cursor: 'pointer',
           }}
-          title={`Swap to ${aegolism === 'aegolism' ? 'Protection of the Glades' : 'Ancient: Gift of Aegolism'}`}
+          title={swapTitle}
         >
-          ⇄ Swap Aegolism / PotG
+          ⇄ Aegolism / PotG
         </button>
       </div>
 
       <p className="mb-3 text-xs italic" style={{ color: 'var(--color-muted-foreground)' }}>
-        Preset baseline — values match quarmy.com defaults. Aegolism and Protection of the Glades don&rsquo;t stack;
-        the rest are additive.
+        Click any buff to swap it from the spell explorer. Aegolism and PotG share a slot — use the toggle above. Max {MAX_RAID_BUFF_SLOTS} simultaneous buffs (in-game limit).
       </p>
 
+      {loading && entries.length === 0 && (
+        <p className="py-4 text-center text-xs" style={{ color: 'var(--color-muted)' }}>
+          Loading preset…
+        </p>
+      )}
+
       <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
-        {buffs.map((b) => (
-          <div key={b.name} className="py-2">
-            <p className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>{b.name}</p>
-            <p className="font-mono text-xs" style={{ color: 'var(--color-primary)' }}>
-              {formatBuffEffects(b.delta) || <span style={{ color: 'var(--color-muted)' }}>—</span>}
-            </p>
-          </div>
+        {entries.map((e) => (
+          <button
+            key={`${e.slot}:${e.id}`}
+            onClick={() => onSlotClick(e.slot)}
+            className="flex w-full items-start gap-2 py-2 text-left hover:opacity-80"
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+            title="Click to swap this buff"
+          >
+            <SpellIcon id={e.meta.icon} name={e.meta.name} size={24} />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
+                {e.meta.name}
+              </p>
+              <p className="font-mono text-xs" style={{ color: 'var(--color-primary)' }}>
+                {formatBuffEffects(e.meta.delta) || <span style={{ color: 'var(--color-muted)' }}>—</span>}
+              </p>
+            </div>
+          </button>
         ))}
       </div>
+
+      {canAdd && (
+        <button
+          onClick={onAddBuff}
+          className="mt-2 w-full rounded border border-dashed py-2 text-xs"
+          style={{
+            borderColor: 'var(--color-border)',
+            color: 'var(--color-muted-foreground)',
+            backgroundColor: 'transparent',
+            cursor: 'pointer',
+          }}
+        >
+          + Add buff
+        </button>
+      )}
 
       <div
         className="mt-3 border-t pt-3 text-xs"
@@ -716,7 +885,7 @@ function RaidBuffsPanel({ aegolism, onSwap, buffs }: RaidBuffsPanelProps): React
           Total
         </p>
         <p className="font-mono leading-relaxed" style={{ color: 'var(--color-primary)' }}>
-          {formatBuffEffects(total)}
+          {formatBuffEffects(total) || <span style={{ color: 'var(--color-muted)' }}>—</span>}
         </p>
       </div>
     </div>
