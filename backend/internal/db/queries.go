@@ -25,6 +25,7 @@ const itemColumns = `
   COALESCE(NULLIF(i.procname, ''), (SELECT s.name FROM spells_new s WHERE s.id = i.proceffect), '') AS procname,
   i.worneffect,
   COALESCE(NULLIF(i.wornname, ''), (SELECT s.name FROM spells_new s WHERE s.id = i.worneffect), '') AS wornname,
+  i.wornlevel,
   i.focuseffect,
   COALESCE(NULLIF(i.focusname, ''), (SELECT s.name FROM spells_new s WHERE s.id = i.focuseffect), '') AS focusname,
   i.bagsize, i.bagslots, i.bagtype,
@@ -46,7 +47,7 @@ func scanItem(row interface {
 		&it.Slots, &it.Classes, &it.Races, &it.Weight, &it.Size,
 		&it.RecLevel, &it.ReqLevel,
 		&it.ClickEffect, &it.ClickName, &it.ProcEffect, &it.ProcName,
-		&it.WornEffect, &it.WornName, &it.FocusEffect, &it.FocusName,
+		&it.WornEffect, &it.WornName, &it.WornLevel, &it.FocusEffect, &it.FocusName,
 		&it.BagSize, &it.BagSlots, &it.BagType,
 		&it.Stackable, &it.StackSize,
 		&it.Price, &it.Icon, &it.MinStatus,
@@ -68,6 +69,13 @@ func (db *DB) GetItem(id int) (*Item, error) {
 	it, err := scanItem(row)
 	if err != nil {
 		return nil, fmt.Errorf("get item %d: %w", id, err)
+	}
+	// Derive WornHastePct from the worn spell when applicable. Best-effort:
+	// a missing or malformed spell just leaves the field at 0.
+	if it.WornEffect > 0 {
+		if sp, sperr := db.GetSpell(it.WornEffect); sperr == nil && sp != nil {
+			it.WornHastePct = ComputeWornHastePct(sp, it.WornLevel)
+		}
 	}
 	return it, nil
 }
@@ -784,6 +792,8 @@ const spellColumns = `
   s.effect_limit_value10, s.effect_limit_value11, s.effect_limit_value12,
   s.max1,  s.max2,  s.max3,  s.max4,  s.max5,  s.max6,
   s.max7,  s.max8,  s.max9,  s.max10, s.max11, s.max12,
+  s.formula1,  s.formula2,  s.formula3,  s.formula4,  s.formula5,  s.formula6,
+  s.formula7,  s.formula8,  s.formula9,  s.formula10, s.formula11, s.formula12,
   s.classes1,  s.classes2,  s.classes3,  s.classes4,  s.classes5,
   s.classes6,  s.classes7,  s.classes8,  s.classes9,  s.classes10,
   s.classes11, s.classes12, s.classes13, s.classes14, s.classes15,
@@ -816,6 +826,10 @@ func scanSpell(row interface {
 		&sp.EffectMaxValues[3], &sp.EffectMaxValues[4], &sp.EffectMaxValues[5],
 		&sp.EffectMaxValues[6], &sp.EffectMaxValues[7], &sp.EffectMaxValues[8],
 		&sp.EffectMaxValues[9], &sp.EffectMaxValues[10], &sp.EffectMaxValues[11],
+		&sp.EffectFormulas[0], &sp.EffectFormulas[1], &sp.EffectFormulas[2],
+		&sp.EffectFormulas[3], &sp.EffectFormulas[4], &sp.EffectFormulas[5],
+		&sp.EffectFormulas[6], &sp.EffectFormulas[7], &sp.EffectFormulas[8],
+		&sp.EffectFormulas[9], &sp.EffectFormulas[10], &sp.EffectFormulas[11],
 		&sp.ClassLevels[0], &sp.ClassLevels[1], &sp.ClassLevels[2],
 		&sp.ClassLevels[3], &sp.ClassLevels[4], &sp.ClassLevels[5],
 		&sp.ClassLevels[6], &sp.ClassLevels[7], &sp.ClassLevels[8],

@@ -360,7 +360,13 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
     .map((id, i) => ({
       id,
       base: spell.effect_base_values[i] ?? 0,
-      description: effectDescription(id, spell.effect_base_values[i] ?? 0, spell.buff_duration),
+      description: effectDescription(
+        id,
+        spell.effect_base_values[i] ?? 0,
+        spell.buff_duration,
+        spell.effect_max_values[i] ?? 0,
+        spell.effect_formulas?.[i] ?? 0,
+      ),
     }))
     .filter((e) => e.description !== '')
 

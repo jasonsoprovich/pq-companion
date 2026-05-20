@@ -61,8 +61,15 @@ type Item struct {
 	ProcName    string `json:"proc_name"`
 	WornEffect  int    `json:"worn_effect"`
 	WornName    string `json:"worn_name"`
+	WornLevel   int    `json:"worn_level"` // raw scaling input for the worn spell effect
 	FocusEffect int    `json:"focus_effect"`
 	FocusName   string `json:"focus_name"`
+
+	// Derived (set by GetItem when applicable, omitted otherwise): effective worn
+	// haste % for items whose worn effect is a SPA 11/119 haste spell. Computed
+	// by applying the spell's formula to WornLevel, then subtracting the +100
+	// encoding. See ComputeWornHastePct.
+	WornHastePct int `json:"worn_haste_pct,omitempty"`
 
 	// Container
 	BagSize  int `json:"bag_size"`
@@ -215,6 +222,7 @@ type Spell struct {
 	EffectBaseValues [12]int `json:"effect_base_values"`
 	EffectLimitValues [12]int `json:"effect_limit_values"`
 	EffectMaxValues  [12]int `json:"effect_max_values"`
+	EffectFormulas   [12]int `json:"effect_formulas"`
 
 	// Class levels (15 classes; 255 = cannot cast)
 	ClassLevels [15]int `json:"class_levels"`

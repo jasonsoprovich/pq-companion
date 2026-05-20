@@ -53,19 +53,24 @@ function formatNPCName(name: string): string {
 
 // ── Tab content ────────────────────────────────────────────────────────────────
 
-function SpellEffectRow({ label, spellId, name }: { label: string; spellId: number; name: string }): React.ReactElement {
+function SpellEffectRow({ label, spellId, name, detail }: { label: string; spellId: number; name: string; detail?: string }): React.ReactElement {
   const navigate = useNavigate()
   return (
     <div className="flex justify-between gap-3 py-0.5 text-sm">
       <span className="shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>
-      <button
-        onClick={() => navigate(`/spells?select=${spellId}`)}
-        className="min-w-0 truncate text-right underline decoration-dotted"
-        style={{ color: 'var(--color-primary)' }}
-        title="View spell details"
-      >
-        {name}
-      </button>
+      <div className="flex min-w-0 items-baseline justify-end gap-2">
+        {detail && (
+          <span className="shrink-0 text-xs" style={{ color: 'var(--color-foreground)' }}>{detail}</span>
+        )}
+        <button
+          onClick={() => navigate(`/spells?select=${spellId}`)}
+          className="min-w-0 truncate text-right underline decoration-dotted"
+          style={{ color: 'var(--color-primary)' }}
+          title="View spell details"
+        >
+          {name}
+        </button>
+      </div>
     </div>
   )
 }
@@ -193,7 +198,14 @@ function OverviewTab({ item, copied, onCopy }: { item: Item; copied: boolean; on
         <Section title="Effects">
           {item.click_effect > 0 && item.click_name && <SpellEffectRow label="Click" spellId={item.click_effect} name={item.click_name} />}
           {item.proc_effect > 0 && item.proc_name && <SpellEffectRow label="Proc" spellId={item.proc_effect} name={item.proc_name} />}
-          {item.worn_effect > 0 && item.worn_name && <SpellEffectRow label="Worn" spellId={item.worn_effect} name={item.worn_name} />}
+          {item.worn_effect > 0 && item.worn_name && (
+            <SpellEffectRow
+              label="Worn"
+              spellId={item.worn_effect}
+              name={item.worn_name}
+              detail={item.worn_haste_pct && item.worn_haste_pct > 0 ? `+${item.worn_haste_pct}% Haste` : undefined}
+            />
+          )}
           {item.focus_effect > 0 && item.focus_name && <SpellEffectRow label="Focus" spellId={item.focus_effect} name={item.focus_name} />}
         </Section>
       )}

@@ -57,6 +57,10 @@ export interface Item {
   proc_name: string
   worn_effect: number
   worn_name: string
+  worn_level: number
+  // Derived: effective worn haste % for SPA 11/119 worn effects (e.g. spell
+  // 998 "Haste"). 0 / undefined when the worn effect is not a haste spell.
+  worn_haste_pct?: number
   focus_effect: number
   focus_name: string
 

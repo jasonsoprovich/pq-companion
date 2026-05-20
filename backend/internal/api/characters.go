@@ -394,7 +394,11 @@ const (
 // every recognized SPA contribution into `out`. SPA 11 (Melee Haste) is
 // returned separately so the caller can take the max across all items rather
 // than summing — worn haste doesn't stack.
-func parseWornEffect(s *db.Spell, out *statBlock) (haste int) {
+//
+// wornLevel is the item's wornlevel column, used to apply the spell's effect
+// formula for haste (formula 102 = base + level). Stat SPAs (STR/AC/HP/etc.)
+// ignore wornLevel because items use them as static values.
+func parseWornEffect(s *db.Spell, wornLevel int, out *statBlock) (haste int) {
 	for i := 0; i < 12; i++ {
 		spa := s.EffectIDs[i]
 		base := s.EffectBaseValues[i]
@@ -438,10 +442,14 @@ func parseWornEffect(s *db.Spell, out *statBlock) (haste int) {
 				}
 			}
 		case spaMeleeHaste, spaMeleeHaste2:
-			// Convert from EQEmu's "100 + percent" encoding back to a raw
-			// percent. Reported separately so the caller can max-stack.
-			if base > 100 {
-				h := base - 100
+			// Apply the spell's effect formula to wornLevel (formula 102 =
+			// linear scaling for spell 998 "Haste"; formula 100 = static for
+			// the rare fixed-value haste templates), then convert from
+			// EQEmu's "100 + percent" encoding. Reported separately so the
+			// caller can max-stack — worn haste doesn't stack.
+			v := db.ComputeEffectValue(s.EffectFormulas[i], base, s.EffectMaxValues[i], wornLevel)
+			if v > 100 {
+				h := v - 100
 				if h > haste {
 					haste = h
 				}
@@ -557,7 +565,7 @@ func (h *charactersHandler) equippedStats(w http.ResponseWriter, r *http.Request
 			if item.WornEffect > 0 {
 				worn, err := h.db.GetSpell(item.WornEffect)
 				if err == nil && worn != nil {
-					if h := parseWornEffect(worn, &resp.Equipment); h > bestHaste {
+					if h := parseWornEffect(worn, item.WornLevel, &resp.Equipment); h > bestHaste {
 						bestHaste = h
 					}
 				}

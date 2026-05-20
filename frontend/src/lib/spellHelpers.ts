@@ -223,10 +223,14 @@ const RESIST_NAMES: Record<number, string> = {
  * scaling is not modelled — this matches how pqdi.cc displays focus and limit
  * effects.
  *
+ * `max` and `formula` are optional; when supplied for SPA 11/119 (melee haste)
+ * with formula 102 (linear scaling by level), the description renders a range
+ * `+1% to +50%` matching pqdi rather than the raw base value.
+ *
  * Returns empty string for sentinel/blank slots and for ID/base combinations
  * that should not render.
  */
-export function effectDescription(id: number, base: number, buffduration: number): string {
+export function effectDescription(id: number, base: number, buffduration: number, max?: number, formula?: number): string {
   if (id === 254 || id === 255 || id === 320) return ''
 
   const sign = base > 0 ? '+' : ''
@@ -264,9 +268,21 @@ export function effectDescription(id: number, base: number, buffduration: number
     case 3: // Movement Speed (% modifier)
       if (base === 0) return ''
       return `Movement Speed ${sign}${base}%`
-    case 11: // Melee Haste / Attack Speed (% modifier)
+    case 11:   // Melee Haste v1 (worn items)
+    case 119: { // Melee Haste v2 (spells / songs / procs / clickies)
       if (base === 0) return ''
-      return `Attack Speed ${sign}${base}%`
+      // EQEmu encodes haste as +100: base 122 → +22%.
+      const pct = base - 100
+      // For formula 102 (linear scale by level) with a larger max, pqdi
+      // renders the range — e.g. spell 998 (base 101, max 150) shows
+      // "+1% to +50%". Otherwise show the single converted value.
+      if (formula === 102 && max !== undefined && max > base) {
+        const maxPct = max - 100
+        return `Attack Speed +${pct}% to +${maxPct}%`
+      }
+      const psign = pct >= 0 ? '+' : ''
+      return `Attack Speed ${psign}${pct}%`
+    }
     case 15: { // Mana — instant or per-tick depending on buff duration
       if (base === 0) return ''
       if (buffduration > 0) {

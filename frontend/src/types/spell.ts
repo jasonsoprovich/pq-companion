@@ -30,6 +30,7 @@ export interface Spell {
   effect_base_values: number[]
   effect_limit_values: number[]
   effect_max_values: number[]
+  effect_formulas: number[]
 
   // 15 classes; 255 = cannot cast
   class_levels: number[]
