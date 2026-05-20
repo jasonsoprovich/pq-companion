@@ -2101,15 +2101,44 @@ func applyDefaultUpdate(store *Store, u DefaultUpdate) (bool, error) {
 	return true, nil
 }
 
-// InstallPack replaces any existing triggers for pack.PackName with the pack's
-// triggers, assigning fresh IDs and creation timestamps.
+// InstallPack replaces any existing triggers for pack.PackName with the
+// pack's triggers, assigning fresh IDs and creation timestamps.
+//
+// Triggers carrying a non-empty DedupKey are skipped when another already-
+// installed trigger (from any other pack) owns that key, so shared
+// spells/disciplines (Root, Mez, Resistant Discipline, etc.) appear only
+// once in the Triggers page regardless of how many class packs reference
+// them. The "owning" pack is whichever installed first; UninstallPack
+// promotes a replacement on removal.
 func InstallPack(store *Store, pack TriggerPack) error {
 	if err := store.DeleteByPack(pack.PackName); err != nil {
 		return err
 	}
+	return insertPackTriggers(store, pack)
+}
+
+// insertPackTriggers writes a pack's triggers, honoring DedupKey collisions
+// against already-installed triggers from other packs. Factored out so both
+// InstallPack (first-time install) and the promote-on-uninstall path can
+// share the skip logic.
+func insertPackTriggers(store *Store, pack TriggerPack) error {
 	now := time.Now().UTC()
 	for i := range pack.Triggers {
 		t := &pack.Triggers[i]
+		if t.DedupKey != "" {
+			existing, err := store.FindByDedupKey(t.DedupKey)
+			if err != nil {
+				return err
+			}
+			if existing != nil && existing.PackName != pack.PackName {
+				slog.Info("trigger: skipped duplicate",
+					"pack", pack.PackName,
+					"trigger", t.Name,
+					"dedup_key", t.DedupKey,
+					"owned_by", existing.PackName)
+				continue
+			}
+		}
 		id, err := NewID()
 		if err != nil {
 			return err
@@ -2119,6 +2148,70 @@ func InstallPack(store *Store, pack TriggerPack) error {
 		if err := store.Insert(t); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// UninstallPack removes every trigger for pack.PackName and then re-installs
+// any DedupKey-owning triggers that other still-installed packs would
+// provide. This keeps shared triggers (Root, Resistant Discipline, etc.)
+// available when the originating pack is uninstalled, as long as some other
+// pack ships the same dedup_key.
+//
+// installedPackNames is the set of pack names currently considered
+// installed *excluding* the one being uninstalled. Pass the result of the
+// caller's bookkeeping; this function does not infer installation state
+// from the DB because a pack with all its triggers skipped at install time
+// would otherwise look uninstalled.
+func UninstallPack(store *Store, packName string, installedPackNames map[string]bool) error {
+	if err := store.DeleteByPack(packName); err != nil {
+		return err
+	}
+	for _, candidate := range AllPacks() {
+		if candidate.PackName == packName {
+			continue
+		}
+		if !installedPackNames[candidate.PackName] {
+			continue
+		}
+		if err := promoteOrphanedTriggers(store, candidate); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// promoteOrphanedTriggers walks a still-installed pack's definition and
+// re-inserts any triggers whose DedupKey is currently unclaimed in the DB.
+// Idempotent — triggers already present (either under their own pack or as
+// a previous promotion) are left alone.
+func promoteOrphanedTriggers(store *Store, pack TriggerPack) error {
+	now := time.Now().UTC()
+	for i := range pack.Triggers {
+		t := pack.Triggers[i]
+		if t.DedupKey == "" {
+			continue
+		}
+		existing, err := store.FindByDedupKey(t.DedupKey)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			continue
+		}
+		id, err := NewID()
+		if err != nil {
+			return err
+		}
+		t.ID = id
+		t.CreatedAt = now
+		if err := store.Insert(&t); err != nil {
+			return err
+		}
+		slog.Info("trigger: promoted on uninstall",
+			"pack", pack.PackName,
+			"trigger", t.Name,
+			"dedup_key", t.DedupKey)
 	}
 	return nil
 }

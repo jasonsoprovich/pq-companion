@@ -191,6 +191,15 @@ type Trigger struct {
 	// canned phrases (That'll be, I'll give you, etc.) so genuine player
 	// tells are the only matches that fire actions.
 	ExcludePatterns []string `json:"exclude_patterns"`
+
+	// DedupKey identifies the conceptual spell/discipline/skill this trigger
+	// represents, independent of which class pack ships it. When two packs
+	// both define a trigger with the same DedupKey (e.g. "root_landed" shared
+	// by Wizard + Enchanter, or "disc_resistant_activated" shared by every
+	// melee class), InstallPack skips the second one and DeleteByPack
+	// re-installs from a surviving pack on uninstall. Empty = no dedup;
+	// each trigger lives independently. Convention: "<slug>_<event>".
+	DedupKey string `json:"dedup_key,omitempty"`
 }
 
 // TriggerFired is the payload of a WSEventTriggerFired WebSocket event and a

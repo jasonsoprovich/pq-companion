@@ -70,7 +70,8 @@ func (s *Store) migrate() error {
 			timer_alerts           TEXT    NOT NULL DEFAULT '[]',
 			exclude_patterns       TEXT    NOT NULL DEFAULT '[]',
 			source                 TEXT    NOT NULL DEFAULT 'log',
-			pipe_condition         TEXT    NOT NULL DEFAULT ''
+			pipe_condition         TEXT    NOT NULL DEFAULT '',
+			dedup_key              TEXT    NOT NULL DEFAULT ''
 		)
 	`); err != nil {
 		return err
@@ -99,6 +100,7 @@ func (s *Store) migrate() error {
 		`ALTER TABLE triggers ADD COLUMN exclude_patterns TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE triggers ADD COLUMN source TEXT NOT NULL DEFAULT 'log'`,
 		`ALTER TABLE triggers ADD COLUMN pipe_condition TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE triggers ADD COLUMN dedup_key TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range addColumns {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
@@ -175,12 +177,12 @@ func (s *Store) Insert(t *Trigger) error {
 		`INSERT INTO triggers (id, name, enabled, pattern, actions, pack_name, created_at,
 		                       timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		                       display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		                       source, pipe_condition)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       source, pipe_condition, dedup_key)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName, t.CreatedAt.Unix(),
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
-		source, pipeJSON,
+		source, pipeJSON, t.DedupKey,
 	)
 	if err != nil {
 		return fmt.Errorf("insert trigger: %w", err)
@@ -214,7 +216,7 @@ func (s *Store) List() ([]*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition
+		        source, pipe_condition, dedup_key
 		 FROM triggers ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -239,7 +241,7 @@ func (s *Store) Get(id string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition
+		        source, pipe_condition, dedup_key
 		 FROM triggers WHERE id = ?`, id,
 	)
 	t, err := scanTrigger(row)
@@ -287,12 +289,12 @@ func (s *Store) Update(t *Trigger) error {
 		`UPDATE triggers SET name=?, enabled=?, pattern=?, actions=?, pack_name=?,
 		                     timer_type=?, timer_duration_secs=?, worn_off_pattern=?, spell_id=?,
 		                     display_threshold_secs=?, characters=?, timer_alerts=?, exclude_patterns=?,
-		                     source=?, pipe_condition=?
+		                     source=?, pipe_condition=?, dedup_key=?
 		 WHERE id=?`,
 		t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName,
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
-		source, pipeJSON,
+		source, pipeJSON, t.DedupKey,
 		t.ID,
 	)
 	if err != nil {
@@ -328,7 +330,7 @@ func (s *Store) FindByPackAndName(packName, name string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition
+		        source, pipe_condition, dedup_key
 		 FROM triggers WHERE pack_name = ? AND name = ? LIMIT 1`,
 		packName, name,
 	)
@@ -338,6 +340,33 @@ func (s *Store) FindByPackAndName(packName, name string) (*Trigger, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("find trigger %s/%s: %w", packName, name, err)
+	}
+	return t, nil
+}
+
+// FindByDedupKey returns the trigger that currently owns the given
+// dedup_key, or (nil, nil) when no trigger has claimed it. Used by
+// InstallPack to decide whether to skip a pack trigger because another
+// pack already provides the same conceptual entry (e.g. Root shared by
+// Wizard and Enchanter packs), and by DeleteByPack's promote-on-uninstall
+// path to detect orphaned keys.
+func (s *Store) FindByDedupKey(key string) (*Trigger, error) {
+	if key == "" {
+		return nil, nil
+	}
+	row := s.db.QueryRow(
+		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
+		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
+		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
+		        source, pipe_condition, dedup_key
+		 FROM triggers WHERE dedup_key = ? LIMIT 1`, key,
+	)
+	t, err := scanTrigger(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find trigger by dedup_key %s: %w", key, err)
 	}
 	return t, nil
 }
@@ -366,6 +395,27 @@ func (s *Store) MarkDefaultUpdateApplied(key string) error {
 		return fmt.Errorf("mark default update %s: %w", key, err)
 	}
 	return nil
+}
+
+// InstalledPackNames returns the set of distinct pack_name values that
+// currently have at least one trigger in the store. Empty pack_name
+// (user-authored triggers) is excluded. Used by UninstallPack to know
+// which other packs are candidates for promoting orphaned dedup_keys.
+func (s *Store) InstalledPackNames() (map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT pack_name FROM triggers WHERE pack_name <> ''`)
+	if err != nil {
+		return nil, fmt.Errorf("list installed packs: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out[name] = true
+	}
+	return out, rows.Err()
 }
 
 // DeleteByPack removes all triggers belonging to the named pack.
@@ -402,7 +452,7 @@ func scanTrigger(row scanner) (*Trigger, error) {
 		&t.ID, &t.Name, &enabledInt, &t.Pattern, &actJSON, &t.PackName, &unixSec,
 		&timerType, &t.TimerDurationSecs, &t.WornOffPattern, &t.SpellID,
 		&t.DisplayThresholdSecs, &charJSON, &alertJSON, &excludeJSON,
-		&source, &pipeJSON,
+		&source, &pipeJSON, &t.DedupKey,
 	); err != nil {
 		return nil, err
 	}

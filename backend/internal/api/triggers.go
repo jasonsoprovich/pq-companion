@@ -563,16 +563,23 @@ func (h *triggerHandler) installBuiltinPack(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "pack_name": found.PackName})
 }
 
-// removePack removes all triggers belonging to the named pack. Used by both
-// built-in packs and user-imported packs — anything stored with a pack_name
-// can be removed in one shot.
+// removePack removes all triggers belonging to the named pack and then
+// re-installs any shared dedup_key triggers that another still-installed
+// pack would have provided. Used by both built-in packs and user-imported
+// packs — anything stored with a pack_name can be removed in one shot.
 func (h *triggerHandler) removePack(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
 		writeError(w, http.StatusBadRequest, "pack name is required")
 		return
 	}
-	if err := h.store.DeleteByPack(name); err != nil {
+	installed, err := h.store.InstalledPackNames()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	delete(installed, name)
+	if err := trigger.UninstallPack(h.store, name, installed); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
