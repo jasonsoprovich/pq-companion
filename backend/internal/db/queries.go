@@ -693,28 +693,27 @@ func (db *DB) GetNPCSpawns(npcID int) (*NPCSpawns, error) {
 	}, nil
 }
 
-// Quarm-specific zone-wide loot overlays. The Quarm DB models a zone's
-// shared trash-loot table by hanging it off a single representative NPC; that
-// table needs to appear on every NPC in the zone, in addition to the NPC's
-// own loot. Keyed by (zone-id × 1000) range start; value is the source NPC
-// whose loottable supplies the overlay.
+// Quarm-specific zone-wide loot overlays. The Quarm DB stores zone-wide
+// shared drops as standalone lootdrops that aren't actually attached to any
+// NPC's loottable — they need to be surfaced manually on every NPC in the
+// zone, in addition to whatever loot the NPC's own table provides.
 type zoneLootOverlay struct {
 	npcIDMin   int
 	npcIDMax   int
-	sourceNPC  int
+	lootdropID int
 	label      string
 }
 
 var zoneLootOverlays = []zoneLootOverlay{
-	// Vex Thal (zone id 158). NPC 158051 carries the zone-wide drop table
-	// that applies to every Vex Thal mob, trash and boss alike.
-	{npcIDMin: 158000, npcIDMax: 158999, sourceNPC: 158051, label: "Vex Thal zone-wide loot"},
+	// Vex Thal (zone id 158). Lootdrop 6150532 ("VT LegacyLoot") holds the
+	// 19-item zone-wide drop pool that applies to every Vex Thal mob.
+	{npcIDMin: 158000, npcIDMax: 158999, lootdropID: 6150532, label: "Vex Thal zone-wide loot"},
 }
 
 func zoneOverlayFor(npcID int) *zoneLootOverlay {
 	for i := range zoneLootOverlays {
 		o := &zoneLootOverlays[i]
-		if npcID >= o.npcIDMin && npcID <= o.npcIDMax && npcID != o.sourceNPC {
+		if npcID >= o.npcIDMin && npcID <= o.npcIDMax {
 			return o
 		}
 	}
@@ -732,11 +731,12 @@ func (db *DB) GetNPCLoot(npcID int) (*NPCLootTable, error) {
 	var zoneDrops []LootDrop
 	var zoneLabel string
 	if overlay := zoneOverlayFor(npcID); overlay != nil {
-		_, _, zoneDrops, err = db.loadNPCLoot(overlay.sourceNPC)
+		drop, err := db.loadLootdrop(overlay.lootdropID)
 		if err != nil {
-			return nil, fmt.Errorf("load zone overlay loot for npc %d: %w", npcID, err)
+			return nil, fmt.Errorf("load zone overlay lootdrop %d for npc %d: %w", overlay.lootdropID, npcID, err)
 		}
-		if len(zoneDrops) > 0 {
+		if drop != nil && len(drop.Items) > 0 {
+			zoneDrops = []LootDrop{*drop}
 			zoneLabel = overlay.label
 		}
 	}
@@ -746,12 +746,67 @@ func (db *DB) GetNPCLoot(npcID int) (*NPCLootTable, error) {
 	}
 
 	return &NPCLootTable{
-		ID:             ltID,
-		Name:           ltName,
-		Drops:          drops,
-		ZoneWideDrops:  zoneDrops,
-		ZoneWideLabel:  zoneLabel,
+		ID:            ltID,
+		Name:          ltName,
+		Drops:         drops,
+		ZoneWideDrops: zoneDrops,
+		ZoneWideLabel: zoneLabel,
 	}, nil
+}
+
+// loadLootdrop loads a single lootdrop pool and its items by lootdrop_id,
+// independent of any NPC's loottable. Used to surface zone-wide loot pools
+// (e.g. Vex Thal's "VT LegacyLoot") that aren't attached to any NPC's
+// loottable in the Quarm DB. Returns nil if the lootdrop doesn't exist.
+func (db *DB) loadLootdrop(ldID int) (*LootDrop, error) {
+	var name string
+	err := db.QueryRow(`SELECT name FROM lootdrop WHERE id = ?`, ldID).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get lootdrop %d: %w", ldID, err)
+	}
+
+	rows, err := db.Query(`
+		SELECT lde.item_id, i.Name, i.icon, lde.chance, lde.multiplier
+		FROM lootdrop_entries lde
+		JOIN items i ON i.id = lde.item_id
+		WHERE lde.lootdrop_id = ?
+		ORDER BY lde.chance DESC
+		LIMIT 500`, ldID)
+	if err != nil {
+		return nil, fmt.Errorf("get lootdrop entries %d: %w", ldID, err)
+	}
+	defer rows.Close()
+
+	drop := &LootDrop{
+		ID:          ldID,
+		Name:        name,
+		Multiplier:  1,
+		Probability: 100,
+	}
+	for rows.Next() {
+		var (
+			itemID, itemIcon, mult int
+			itemName               string
+			chance                 float64
+		)
+		if err := rows.Scan(&itemID, &itemName, &itemIcon, &chance, &mult); err != nil {
+			return nil, fmt.Errorf("scan lootdrop row: %w", err)
+		}
+		drop.Items = append(drop.Items, LootDropItem{
+			ItemID:     itemID,
+			ItemName:   itemName,
+			ItemIcon:   itemIcon,
+			Chance:     chance,
+			Multiplier: mult,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return drop, nil
 }
 
 // loadNPCLoot resolves the loottable for a single NPC and returns its

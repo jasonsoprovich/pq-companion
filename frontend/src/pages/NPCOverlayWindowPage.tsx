@@ -152,6 +152,7 @@ function LootContent({ npcId }: { npcId: number }): React.ReactElement {
     <div key={drop.id}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 2 }}>
         <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          {drop.name ? `${drop.name} · ` : ''}
           {drop.multiplier > 1 ? `×${drop.multiplier} · ` : ''}
           {drop.probability < 100 ? `${drop.probability}% chance` : 'Always drops'}
         </span>

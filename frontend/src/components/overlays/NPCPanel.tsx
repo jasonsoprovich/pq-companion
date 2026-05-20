@@ -200,6 +200,7 @@ function LootSection({
   const renderDropList = (drops: LootDrop[]) => drops.map((drop) => (
     <div key={drop.id}>
       <p className="pb-0.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
+        {drop.name ? `${drop.name} · ` : ''}
         {drop.multiplier > 1 ? `×${drop.multiplier} · ` : ''}
         {drop.probability < 100 ? `${drop.probability}% chance` : 'Always drops'}
       </p>

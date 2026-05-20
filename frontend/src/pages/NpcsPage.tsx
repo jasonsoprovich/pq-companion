@@ -367,6 +367,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
       <div key={drop.id} className="mb-2 last:mb-0">
         <div className="flex items-center justify-between pt-1 pb-0.5">
           <span className="text-[11px] font-medium" style={{ color: 'var(--color-muted)' }}>
+            {drop.name ? `${drop.name} · ` : ''}
             {drop.multiplier > 1 ? `×${drop.multiplier} · ` : ''}
             {drop.probability < 100 ? `${drop.probability}% chance` : 'Always drops'}
           </span>
