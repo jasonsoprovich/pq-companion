@@ -138,12 +138,14 @@ function escapeRegex(s: string): string {
 }
 
 /**
- * Decide whether a spell is a buff (beneficial) or detrimental based on its
- * target type. Mirrors the Go backend's spelltimer.categorize() heuristic.
- * Target types 3 (Group v1), 6 (Self), 10 (Group v2), 41 (All of group) → buff.
+ * Coarse default for the trigger prefill: treat self/group/pet target types
+ * as buffs. Uses EQMacEmu numbering (see backend/internal/db/enums/spell.go):
+ * 6 (Self), 14 (Pet), 41 (Group). The backend's spelltimer.categorize() is
+ * authoritative at runtime — it keys off effect IDs + goodEffect, not just
+ * target type.
  */
 export function spellIsBuff(targetType: number): boolean {
-  return targetType === 3 || targetType === 6 || targetType === 10 || targetType === 41
+  return targetType === 6 || targetType === 14 || targetType === 41
 }
 
 /**

@@ -326,37 +326,36 @@ var SpellResistsAudit = AuditDef{
 
 // spellTargetTypes maps spells_new.targettype to its targeting-mode label.
 //
-// Source: EQEmu `common/spdat.h` `ST_*` enum. Covers every value
-// observed in the live Quarm dump plus several upstream-only codes
-// for forward compatibility.
+// Source: EQMacEmu `common/spdat.h` `ST_*` enum
+// (https://github.com/EQMacEmu/Server/blob/master/common/spdat.h). The
+// Quarm fork's numbering diverges from modern EQEmu master starting at
+// code 0x02 — e.g. 4 is PB AE around caster (ST_AECaster), not
+// "Single (Pet)" as in upstream master. Verified against pqdi for
+// representative spells in every populated bucket.
 var spellTargetTypes = map[int]string{
 	0:  "No Target",
-	1:  "Line of Sight",
-	2:  "Caster Group",
-	3:  "Directional AE",
-	4:  "Single (Pet)",
-	5:  "Single",
-	6:  "Self",
-	8:  "Targeted AE",
-	9:  "Animal",
-	10: "Corpse",
-	11: "Plant",
-	12: "Undead",
-	13: "Summoned",
-	14: "Tap (Single)",
-	15: "PB AE",
-	16: "AE Line of Sight",
-	17: "Hate List",
-	18: "AE Undead",
-	20: "Targeted AE Tap",
-	24: "Full Zone",
-	25: "Group v2",
-	36: "Directional AE v2",
-	40: "Group Mercenary",
-	41: "AE Pet",
-	42: "Group (Target)",
-	43: "Group with Pets",
-	50: "AE (No PC)",
+	1:  "Single Target",   // ST_TargetOptional — single target, falls back to caster
+	2:  "PB AE (PCs)",     // ST_AEClientV1 — older PB-AE variant, players only
+	3:  "Group Teleport",  // ST_GroupTeleport — Circle of <zone> ports
+	4:  "PB AE",           // ST_AECaster — area of effect around the caster
+	5:  "Single",          // ST_Target
+	6:  "Self",            // ST_Self
+	8:  "Targeted AE",     // ST_AETarget — AE centered on the target
+	9:  "Animal",          // ST_Animal
+	10: "Undead",          // ST_Undead
+	11: "Summoned",        // ST_Summoned
+	13: "Lifetap",         // ST_Tap
+	14: "Pet",             // ST_Pet — single target, caster's pet
+	15: "Corpse",          // ST_Corpse — rez / soulbind etc.
+	16: "Plant",           // ST_Plant
+	17: "Uber Giant",      // ST_UberGiant
+	18: "Uber Dragon",     // ST_UberDragon
+	20: "Targeted AE Tap", // ST_TargetAETap
+	24: "AE Undead",       // ST_UndeadAE
+	25: "AE Summoned",     // ST_SummonedAE
+	40: "Bard AE",         // ST_AEBard — PB AE on bard pulse
+	41: "Group",           // ST_Group — whole group buff
+	43: "Project Illusion",// ST_ProjectIllusion
 }
 
 // SpellTargetName returns the target-type label, or "" for unknown.
