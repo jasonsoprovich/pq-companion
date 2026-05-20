@@ -39,7 +39,7 @@ that exist in it; for label/shape questions, EQMacEmu first, then EQEmu.**
 | --- | --- | --- | --- | --- |
 | **Spell SPA (Effect ID)** | `frontend/src/lib/spellHelpers.ts:141` | Complete (0–220+) | EQEmu `spdat.h` `SE_*` — **cited in file** | No |
 | **Spell Resist Type** | `frontend/src/lib/spellHelpers.ts:31` | Complete (0–9) | EQEmu — uncited | No |
-| **Spell Target Type** | `frontend/src/lib/spellHelpers.ts:50` | Partial — gaps at 0, 7, 9, 17, 19, 21–23, 26–35, 37–39, 44–49 | EQEmu — uncited | No |
+| **Spell Target Type** | `frontend/src/lib/spellHelpers.ts:50` | Covers every code observed in the live Quarm dump; gaps remain at 7, 19, 21–23, 26–35, 37–39, 44–49 (unused) | EQEmu `common/spdat.h` `ST_*` — **cited in file** | No |
 | **Spell Skill / School** | `frontend/src/lib/spellHelpers.ts:83` | Partial (13 entries: 4, 5, 12, 14, 15, 18, 24, 33, 41, 49, 52, 54, 70) | EQEmu — uncited | No |
 | **Spell Duration Formula** | `backend/internal/spelltimer/duration.go:12` | Complete (0–11, 50, 3600) | EQEmu `CalcBuffDuration_formula` — **cited with per-formula comments** | Partial — formula 8 noted as Quarm override |
 | **Spell SPA Category (mez/stun/DoT)** | `backend/internal/spelltimer/engine.go:1137` | Limited (18, 23, 0) | EQEmu — uncited | No |

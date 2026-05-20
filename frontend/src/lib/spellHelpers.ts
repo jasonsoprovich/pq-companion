@@ -47,7 +47,10 @@ export function resistLabel(r: number): string {
 
 // ── Target type ────────────────────────────────────────────────────────────────
 
+// Source: EQEmu `common/spdat.h` `ST_*` enum. Quarm copies these values
+// verbatim from the dump.
 const TARGET_LABELS: Record<number, string> = {
+  0: 'No Target',
   1: 'Line of Sight',
   2: 'Caster Group',
   3: 'Directional AE',
@@ -55,6 +58,7 @@ const TARGET_LABELS: Record<number, string> = {
   5: 'Single',
   6: 'Self',
   8: 'Targeted AE',
+  9: 'Animal',
   10: 'Corpse',
   11: 'Plant',
   12: 'Undead',
@@ -62,6 +66,7 @@ const TARGET_LABELS: Record<number, string> = {
   14: 'Tap (Single)',
   15: 'PB AE',
   16: 'AE Line of Sight',
+  17: 'Hate List',
   18: 'AE Undead',
   20: 'Targeted AE Tap',
   24: 'Full Zone',
