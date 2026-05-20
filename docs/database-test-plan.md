@@ -25,19 +25,22 @@ on the same branch.
 header, Global search results, Inventory tracker per-item type pill,
 NPC loot tables.
 
+**Note:** `effectiveItemTypeLabel(item_class, item_type)` checks
+`item_class` first — items with `item_class = 2` show "Book"
+regardless of itemtype (e.g. `a tattered note` has itemtype 0 but
+item_class 2, so it renders as "Book"). This was already the prior
+behavior and isn't a migration change.
+
 **Samples (search by item name on the Items page):**
 
-| Item | itemtype | Before | After |
-|------|----------|--------|-------|
-| a tattered note | 0 | 1H Slashing | 1H Slashing |
-| Hunters Bow | 5 | Bow | Bow |
-| Cloth Tunic of Truth* | 10 | Armor | Armor |
-| Tundrabear Sandwich | 14 | Food | Food |
-| Withered Manisi Leaf | 18 | Bandages | Bandages |
-| Forlorn Arrow | 27 | Arrow | Arrow |
-
-**What to confirm:** every item type pill across these pages still
-renders identically.
+| Item | itemtype | item_class | Before | After |
+|------|----------|------------|--------|-------|
+| a tattered note | 0 | 2 (book override) | Book | Book |
+| Hunters Bow | 5 | 0 | Bow | Bow |
+| Cloth Tunic of Truth* | 10 | 0 | Armor | Armor |
+| Tundrabear Sandwich | 14 | 0 | Food | Food |
+| Withered Manisi Leaf | 18 | 0 | Bandages | Bandages |
+| Forlorn Arrow | 27 | 0 | Arrow | Arrow |
 
 ---
 
@@ -109,7 +112,7 @@ populated.
 
 ---
 
-## 5. Item Class Bitmask — `CHANGED` (Berserker bit added)
+## 5. Item Class Bitmask — `SAME` after Quarm-era filter (see also §6b)
 
 **Where:** Item detail modal "Classes:" row.
 
@@ -117,16 +120,15 @@ populated.
 
 | Item | classes mask | Before | After |
 |------|-------------|--------|-------|
-| The Skull of Torture | 56167 | (bit 15 silently dropped, listed classes excluded Berserker) | Berserker present in the comma-separated list |
+| The Skull of Torture | 32768 (bit 15 only) | (bit silently dropped, list was empty) | bit 15 still hidden — Berserker is not playable on Quarm |
 | any all-class item | 32767 or 65535 | All | All |
 
-**To verify:** any item whose `classes` mask sets bit 0x8000 used to
-silently drop Berserker from the rendered list. Search "Skull of
-Torture" and confirm Berserker is included.
+**To verify:** post-PoP class bit (Berserker) is omitted from class
+lists; pre-PoP classes are unchanged.
 
 ---
 
-## 6. Item Race Bitmask — `CHANGED` (Froglok + Drakkin bits)
+## 6. Item Race Bitmask — `SAME` after Quarm-era filter
 
 **Where:** Item detail modal "Races:" row.
 
@@ -134,12 +136,25 @@ Torture" and confirm Berserker is included.
 
 | Item | races mask | Before | After |
 |------|------------|--------|-------|
-| The Skull of Torture | 56167 | races list dropped bits 14/15 | now includes **Froglok** and **Drakkin** |
+| The Skull of Torture | 56167 | Human, Barbarian, Erudite, Dark Elf, Half Elf, Troll, Ogre, Gnome, Iksar | Human, Barbarian, Erudite, Dark Elf, Half Elf, Troll, Ogre, Gnome, Iksar |
 | Spell: Force of Akera | 65535 | All | All |
 | Denon's Horn of Disaster | 131071 | All | All |
 
-**To verify:** any item with `races` mask that has bits 14 or 15 set
-(but isn't the "all" sentinel ≥ 65535) now lists Froglok / Drakkin.
+**To verify:** Skull of Torture races list has **no** Froglok / Drakkin
+entries (Quarm is era-frozen at PoP; those races are post-PoP). The
+underlying bits exist in the data but the catalog deliberately omits
+them from display while the validator still accepts them as known.
+
+**Note:** an earlier commit on this branch *did* add Froglok / Drakkin
+to the display; that was rolled back per testing feedback that Quarm's
+era doesn't include those PC races.
+
+## 6b. Item Class Bitmask — `SAME` after Quarm-era filter
+
+The Berserker bit (0x8000, GoD-era class) is also hidden from class
+lists for the same reason — Berserker isn't playable on Quarm. Class
+masks that set bit 15 won't show Berserker in the comma-separated
+classes list.
 
 ---
 
@@ -272,6 +287,69 @@ wizard race selector (if applicable).
 
 PC race IDs **stay 1–14** (this is the `RaceIndex` enum, deliberately
 distinct from the corrected NPC race enum where 13 = Aviak).
+
+---
+
+## 15. NPC Body Type — `CHANGED` (every previous label was wrong)
+
+**Where:** NPC detail page "Body Type:" row, NPC overlay panel, Zones
+page NPC list secondary info.
+
+The previous TS body-type map had every label off by one or more
+slots vs. the EQMacEmu canonical `BodyType` enum. After migration
+the labels follow EQMacEmu source verbatim, with two Quarm-display
+cleanups (numbered "Summoned 2/3" / "Dragon 2/3" collapse to plain
+"Summoned" / "Dragon").
+
+**Samples (search NPCs by name and open the detail page):**
+
+| NPC | bodytype | Before (wrong) | After (correct) |
+|-----|----------|----------------|-----------------|
+| any Warrior NPC | 1 | Biped | **Humanoid** |
+| any wolf / bear / tiger | 21 | Untargetable | **Animal** |
+| any spider / beetle | 22 | (none, was unmapped) | **Insect** |
+| any treant / plant | 25 | Swarmcreature | **Plant** |
+| any dragon | 26 | (none, was unmapped) | **Dragon** |
+| #Lord Inquisitor Seru | 16 | Type 16 | **Seru** |
+| a flame lordling | 28 | Humanoid 2 | **Summoned** |
+| #Draz Nurakk | 18 | (none, was unmapped) | **Draz Nurakk** |
+| Rizlona | 32 | (none, was unmapped) | **Dragon** |
+| #Lord Yelinak | 30 | (none, was unmapped) | **Velious Dragon** |
+| any Plane of War creature | 19 | (none, was unmapped) | **Zek** |
+| #Khati Sha NPCs | 15 | (none, was unmapped) | **Khati Sha** |
+| Muramite NPCs | 34 | No Corpse | **Muramite** |
+
+**Critical to verify:** the most common body type (1 = Humanoid)
+covers ~10,600 NPCs that previously rendered as "Biped". Spot-check
+any group of humanoid NPCs in any city or dungeon and confirm the
+body type pill now reads "Humanoid".
+
+## 16. Hidden placeholder NPCs — new filter (not an enum, related cleanup)
+
+The NPC search and zone NPC list now exclude `npc_types` rows that
+EQEmu uses for invisible game objects rather than real NPCs:
+
+- name is empty, just `#`, or just `_`
+- race = 127 (Invisible Man)
+
+**Samples that should no longer appear:**
+
+| Before-filter NPC (id) | name | race | What it actually is |
+|-----------|--------|---------------------|-----|
+| 2173 | `_` | 127 (Invisible Man) | dev placeholder |
+| 129098 | `_` | 127 (Invisible Man) | dev placeholder |
+
+**Where this changes the UI:**
+
+- NPCs page search results no longer return unnamed/placeholder NPCs.
+- Zone NPC lists exclude these rows.
+- Zone min/max level summaries are now accurate. Example: Freeport
+  East was previously showing `Level 1-99` because of a placeholder
+  level-99 invisible-man row; it now correctly shows `Level 1-61`.
+
+**To verify:** load a few zones (Freeport East, Plane of Hate, anything
+city-scoped) and confirm the level range matches the highest *visible*
+NPC, not a hidden trigger.
 
 ---
 
