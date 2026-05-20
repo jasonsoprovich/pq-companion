@@ -5,8 +5,12 @@ import {
   getZealQuarmy, getCharacterAAs, listCharacters, getItem,
   getCharacterSpellModifiers, searchSpells, getCharacterEquippedStats,
   getCharacterRaidBuffs, setCharacterRaidBuffs, getSpellStatDeltas,
-  MAX_RAID_BUFF_SLOTS,
+  getTimerState, MAX_RAID_BUFF_SLOTS,
 } from '../services/api'
+import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
+import { useActivePlayerName } from '../hooks/useActivePlayerName'
+import type { ActiveTimer, TimerState } from '../types/timer'
 import type {
   QuarmyData, CharacterAA, AAInfo, Character,
   SpellModifier, SpellModifierResolution, EquippedStats, StatBlock,
@@ -300,7 +304,7 @@ export default function CharacterProgressPage(): React.ReactElement {
           ) : (
             <>
               {tab === 'stats' && (
-                <StatsPanel stats={statsSource} hasStats={!!hasStats} gear={equippedStats} characterID={activeChar?.id ?? null} />
+                <StatsPanel stats={statsSource} hasStats={!!hasStats} gear={equippedStats} characterID={activeChar?.id ?? null} characterName={viewedCharacter} />
               )}
               {tab === 'gear' && (
                 <GearPanel gear={equippedGear} hasQuarmy={!!quarmy} onLookup={handleLookup} />
@@ -325,7 +329,7 @@ export default function CharacterProgressPage(): React.ReactElement {
 
 // ── Stats Panel ───────────────────────────────────────────────────────────────
 
-type StatMode = 'base' | 'equipped' | 'buffed'
+type StatMode = 'base' | 'equipped' | 'buffed' | 'live'
 
 // EQ classic Cleric Aegolism and Druid Protection of the Glades are
 // mutually-exclusive group buffs (the same stacking slot). The toggle on
@@ -464,9 +468,10 @@ interface StatsPanelProps {
   hasStats: boolean
   gear: EquippedStats | null
   characterID: number | null
+  characterName: string
 }
 
-function StatsPanel({ stats, hasStats, gear, characterID }: StatsPanelProps): React.ReactElement {
+function StatsPanel({ stats, hasStats, gear, characterID, characterName }: StatsPanelProps): React.ReactElement {
   const [mode, setMode] = useState<StatMode>('equipped')
   // Saved raid-buff preset (ordered list of spell IDs) plus the resolved
   // name/icon/delta metadata for each. Both are loaded together — when the
@@ -477,6 +482,14 @@ function StatsPanel({ stats, hasStats, gear, characterID }: StatsPanelProps): Re
   const [pickerSlot, setPickerSlot] = useState<number | null>(null)
   // null = "Add new buff" picker (appends a slot rather than replacing one)
   const [pickerMode, setPickerMode] = useState<'replace' | 'append'>('replace')
+
+  // Live buff state — populated from the spell timer engine via REST seed
+  // + overlay:timers WebSocket stream. The timer engine only tracks buffs
+  // for the active log character, so Live mode only renders meaningful
+  // data when the viewed character matches the active log character.
+  const activePlayerName = useActivePlayerName()
+  const [timerState, setTimerState] = useState<TimerState | null>(null)
+  const [liveBuffMeta, setLiveBuffMeta] = useState<Record<string, SpellStatDeltaEntry>>({})
 
   // Fetch the saved preset whenever the character changes. Falls back to
   // DEFAULT_PRESET_IDS when the backend returns an empty list (new character
@@ -520,6 +533,62 @@ function StatsPanel({ stats, hasStats, gear, characterID }: StatsPanelProps): Re
       // for this session. They'll see it again next time they reopen.
     }
   }, [characterID])
+
+  // Seed the timer state on mount and subscribe to WS updates. The backend
+  // broadcasts the full TimerState on every change, so we just replace.
+  useEffect(() => {
+    getTimerState().then(setTimerState).catch(() => {})
+  }, [])
+  const handleTimersMsg = useCallback((msg: WsMessage) => {
+    if (msg.type === WSEvent.OverlayTimers) {
+      setTimerState(msg.data as TimerState)
+    }
+  }, [])
+  useWebSocket(handleTimersMsg)
+
+  // Filter the timer state to "buffs active on the viewed character." The
+  // timer engine attaches a target_name to each row — self-cast buffs use
+  // the active player's name (or "You" before character detection lands).
+  // We only treat the timer state as belonging to `characterName` when the
+  // viewed character matches the active log character; otherwise Live mode
+  // has no data source and shows an empty explainer.
+  const viewedIsActive =
+    characterName.length > 0 &&
+    activePlayerName.length > 0 &&
+    characterName.toLowerCase() === activePlayerName.toLowerCase()
+
+  const liveBuffs: ActiveTimer[] = useMemo(() => {
+    if (!viewedIsActive || !timerState) return []
+    return timerState.timers.filter((t) => {
+      if (t.category !== 'buff') return false
+      const target = t.target_name
+      // Self-targeted buffs: target matches the active player, or is empty,
+      // or is the literal "You" (pre-detection fallback the engine uses).
+      if (!target || target === 'You') return true
+      return target.toLowerCase() === activePlayerName.toLowerCase()
+    })
+  }, [timerState, viewedIsActive, activePlayerName])
+
+  // Stable signature of the unique active buff spell IDs so we only refetch
+  // deltas when the set actually changes — not on every WS frame.
+  const liveSpellIDsKey = useMemo(() => {
+    const seen = new Set<number>()
+    for (const b of liveBuffs) if (b.spell_id > 0) seen.add(b.spell_id)
+    return Array.from(seen).sort((a, b) => a - b).join(',')
+  }, [liveBuffs])
+
+  useEffect(() => {
+    const ids = liveSpellIDsKey.length > 0 ? liveSpellIDsKey.split(',').map(Number) : []
+    if (ids.length === 0) {
+      setLiveBuffMeta({})
+      return
+    }
+    let cancelled = false
+    getSpellStatDeltas(ids)
+      .then((m) => { if (!cancelled) setLiveBuffMeta(m) })
+      .catch(() => { /* keep prior cache rather than blanking */ })
+    return () => { cancelled = true }
+  }, [liveSpellIDsKey])
 
   const handleSwapAegolism = useCallback(() => {
     const hasAego = presetIds.includes(AEGOLISM_SPELL_ID)
@@ -581,6 +650,7 @@ function StatsPanel({ stats, hasStats, gear, characterID }: StatsPanelProps): Re
 
   const includesGear = mode !== 'base'
   const includesBuffs = mode === 'buffed'
+  const includesLive = mode === 'live'
 
   // Resolve preset IDs to their metadata entries. Missing entries (e.g.
   // mid-load) are skipped silently — the panel just renders fewer rows
@@ -589,6 +659,22 @@ function StatsPanel({ stats, hasStats, gear, characterID }: StatsPanelProps): Re
   for (let i = 0; i < presetIds.length; i++) {
     const m = presetMeta[String(presetIds[i])]
     if (m) buffEntries.push({ id: presetIds[i], slot: i, meta: m })
+  }
+
+  // Resolve active live buffs to their delta metadata, deduped by spell ID
+  // so a buff that reapplied mid-tick doesn't get counted twice. Each entry
+  // also carries the live timer so the sidebar can show remaining time.
+  const liveBuffEntries: Array<{ id: number; timer: ActiveTimer; meta: SpellStatDeltaEntry }> = []
+  {
+    const seen = new Set<number>()
+    for (const t of liveBuffs) {
+      if (seen.has(t.spell_id)) continue
+      const m = liveBuffMeta[String(t.spell_id)]
+      if (m) {
+        liveBuffEntries.push({ id: t.spell_id, timer: t, meta: m })
+        seen.add(t.spell_id)
+      }
+    }
   }
 
   // Sum every active source into one delta. Base attribs come from quarmy on
@@ -608,6 +694,9 @@ function StatsPanel({ stats, hasStats, gear, characterID }: StatsPanelProps): Re
   if (includesGear && gear?.equipment) addDelta(total, statBlockToDelta(gear.equipment))
   if (includesBuffs) {
     for (const b of buffEntries) addDelta(total, b.meta.delta)
+  }
+  if (includesLive) {
+    for (const b of liveBuffEntries) addDelta(total, b.meta.delta)
   }
 
   // Apply EQ's stat-driven Mana bonus and softcapped AC once the cumulative
@@ -702,6 +791,15 @@ function StatsPanel({ stats, hasStats, gear, characterID }: StatsPanelProps): Re
         />
       )}
 
+      {/* Live Buffs side panel */}
+      {includesLive && (
+        <LiveBuffsPanel
+          entries={liveBuffEntries}
+          viewedIsActive={viewedIsActive}
+          activePlayerName={activePlayerName}
+        />
+      )}
+
       {pickerSlot != null && (
         <BuffPicker
           currentSpellId={pickerMode === 'replace' ? (presetIds[pickerSlot] ?? 0) : 0}
@@ -725,6 +823,7 @@ function StatModeToggle({ mode, onChange }: StatModeToggleProps): React.ReactEle
     { value: 'base',     label: 'Base' },
     { value: 'equipped', label: '+Equipment' },
     { value: 'buffed',   label: '+Raid Buffs' },
+    { value: 'live',     label: 'Live Buffs' },
   ]
   return (
     <div
@@ -888,6 +987,84 @@ function RaidBuffsPanel({
           {formatBuffEffects(total) || <span style={{ color: 'var(--color-muted)' }}>—</span>}
         </p>
       </div>
+    </div>
+  )
+}
+
+// ── Live Buffs side panel ─────────────────────────────────────────────────────
+
+interface LiveBuffsPanelProps {
+  entries: Array<{ id: number; timer: ActiveTimer; meta: SpellStatDeltaEntry }>
+  viewedIsActive: boolean
+  activePlayerName: string
+}
+
+function LiveBuffsPanel({ entries, viewedIsActive, activePlayerName }: LiveBuffsPanelProps): React.ReactElement {
+  const total = emptyDelta()
+  for (const e of entries) addDelta(total, e.meta.delta)
+
+  return (
+    <div
+      className="rounded-lg p-4"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', flex: '1 1 auto', minWidth: '320px' }}
+    >
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <span
+          className="rounded-full px-3 py-1 text-xs font-semibold"
+          style={{
+            border: '1px solid color-mix(in srgb, var(--color-primary) 60%, transparent)',
+            color: 'var(--color-primary)',
+          }}
+        >
+          Live Buffs ({entries.length})
+        </span>
+      </div>
+
+      {!viewedIsActive ? (
+        <p className="py-4 text-xs italic" style={{ color: 'var(--color-muted-foreground)' }}>
+          Live buffs are tracked only for the active EQ character (
+          {activePlayerName || 'none detected'}). Switch the active character or view this character while logged in to see live buff stats.
+        </p>
+      ) : entries.length === 0 ? (
+        <p className="py-4 text-xs italic" style={{ color: 'var(--color-muted-foreground)' }}>
+          No active buffs detected. Buffs land in this list as they&rsquo;re parsed from the EverQuest log — make sure log tailing is on.
+        </p>
+      ) : (
+        <>
+          <p className="mb-3 text-xs italic" style={{ color: 'var(--color-muted-foreground)' }}>
+            Buffs currently active on {activePlayerName}, parsed live from the EQ log. Updates as buffs land or wear off.
+          </p>
+          <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+            {entries.map((e) => (
+              <div key={e.id} className="flex items-start gap-2 py-2">
+                <SpellIcon id={e.meta.icon} name={e.meta.name} size={24} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
+                    {e.meta.name}
+                  </p>
+                  <p className="font-mono text-xs" style={{ color: 'var(--color-primary)' }}>
+                    {formatBuffEffects(e.meta.delta) || <span style={{ color: 'var(--color-muted)' }}>—</span>}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {viewedIsActive && entries.length > 0 && (
+        <div
+          className="mt-3 border-t pt-3 text-xs"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            Total
+          </p>
+          <p className="font-mono leading-relaxed" style={{ color: 'var(--color-primary)' }}>
+            {formatBuffEffects(total) || <span style={{ color: 'var(--color-muted)' }}>—</span>}
+          </p>
+        </div>
+      )}
     </div>
   )
 }
