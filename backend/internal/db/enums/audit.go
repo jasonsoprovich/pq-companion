@@ -43,6 +43,7 @@ func Defs() []AuditDef {
 		BaneRacesAudit,
 		ZoneExpansionsAudit,
 		ZoneTypesAudit,
+		NPCBodyTypesAudit,
 	}
 }
 

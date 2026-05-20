@@ -18,4 +18,5 @@ export interface EnumsCatalog {
   zone_types: Record<string, string>
   char_classes: Record<string, string>
   char_races: Record<string, string>
+  npc_body_types: Record<string, string>
 }

@@ -38,6 +38,7 @@ type Catalog struct {
 	ZoneTypes        map[int]string             `json:"zone_types"`
 	CharClasses      map[int]string             `json:"char_classes"`
 	CharRaces        map[int]string             `json:"char_races"`
+	NPCBodyTypes     map[int]string             `json:"npc_body_types"`
 }
 
 // Snapshot returns the current Catalog for serialization.
@@ -57,5 +58,6 @@ func Snapshot() Catalog {
 		ZoneTypes:        zoneTypes,
 		CharClasses:      charClasses,
 		CharRaces:        charRaces,
+		NPCBodyTypes:     npcBodyTypes,
 	}
 }

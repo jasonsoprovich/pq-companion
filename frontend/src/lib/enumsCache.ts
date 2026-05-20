@@ -49,6 +49,10 @@ export function npcRaceName(id: number): string {
   return catalog?.npc_races[String(id)] ?? `Race ${id}`
 }
 
+export function npcBodyTypeName(id: number): string {
+  return catalog?.npc_body_types[String(id)] ?? `Body Type ${id}`
+}
+
 // Decompose a bitmask using one of the *_bits maps in the catalog. The
 // catalog stores integer bit values as the (stringified) map key — so a
 // slot/class/race bit map looks like { "1": "Charm", "2": "Ear", ... }.

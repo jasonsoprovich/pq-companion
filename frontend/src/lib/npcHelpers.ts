@@ -1,5 +1,5 @@
 import type { NPC } from '../types/npc'
-import { npcClassName, npcRaceName, specialAbilityMeta } from './enumsCache'
+import { npcBodyTypeName, npcClassName, npcRaceName, specialAbilityMeta } from './enumsCache'
 
 // ── Name formatting ─────────────────────────────────────────────────────────────
 
@@ -31,35 +31,13 @@ export function raceName(raceId: number): string {
 }
 
 // ── Body Type ───────────────────────────────────────────────────────────────────
-
-const BODY_TYPES: Record<number, string> = {
-  0: 'Humanoid',
-  1: 'Biped',
-  2: 'Giant',
-  3: 'Animal',
-  4: 'Insect',
-  5: 'Undead',
-  6: 'Construct',
-  7: 'Extraplanar',
-  8: 'Magical',
-  9: 'Summoned Undead',
-  10: 'Slime',
-  11: 'Plant',
-  12: 'Dragon',
-  14: 'Akheva',
-  21: 'Untargetable',
-  23: 'Muramite',
-  25: 'Swarmcreature',
-  28: 'Humanoid 2',
-  33: 'Invulnerable',
-  34: 'No Corpse',
-  66: 'Regenerating',
-  67: 'Trap',
-  100: 'Invisible Man',
-}
-
+//
+// NPC body type labels live in the canonical Go catalog
+// (backend/internal/db/enums/npc_body_type.go). The previous local map
+// here had nearly every label mis-assigned; importers see corrected
+// labels automatically after this swap.
 export function bodyTypeName(bodyType: number): string {
-  return BODY_TYPES[bodyType] ?? `Type ${bodyType}`
+  return npcBodyTypeName(bodyType)
 }
 
 // ── Special Abilities ───────────────────────────────────────────────────────────
