@@ -482,11 +482,22 @@ func (db *DB) GetNPCByName(name string) (*NPC, error) {
 	return n, nil
 }
 
+// nonPlayerNPCClause filters out rows in npc_types that do not reference
+// real in-game NPCs: empty/placeholder names ("", "#", "_") and the
+// Invisible Man race (127), which EQEmu uses exclusively for invisible
+// dev/trigger objects (spawners, animation puppets, environment effects,
+// "You_hear_..." emitters, etc.). All NPC list/summary queries should
+// chain this clause so a placeholder doesn't surface in the UI as
+// "level 99 warrior" with no name.
+//
+// Use as `WHERE ... ` + nonPlayerNPCClause — the leading " AND " is
+// included. The alias `n` must be the npc_types row.
+const nonPlayerNPCClause = " AND n.name != '' AND n.name != '#' AND n.name != '_' AND n.race != 127"
+
 // SearchNPCs searches NPCs by name (case-insensitive substring match).
 // When hidePlaceholders is true, entries with level 0, class 0, or names
-// starting with "#" are excluded.
-// NPCs with empty names or a name of just "#" are always excluded — those
-// rows do not reference real in-game NPCs.
+// starting with "#" are also excluded on top of the always-on
+// nonPlayerNPCClause filter.
 func (db *DB) SearchNPCs(query string, limit, offset int, hidePlaceholders bool) (*SearchResult[NPC], error) {
 	// EQEmu stores NPC names with underscores; the UI displays spaces. Map
 	// query whitespace to underscores so what the user sees matches what
@@ -495,12 +506,11 @@ func (db *DB) SearchNPCs(query string, limit, offset int, hidePlaceholders bool)
 	normalized := strings.ReplaceAll(query, " ", "_")
 	pattern := "%" + strings.ReplaceAll(normalized, "%", "\\%") + "%"
 
-	baseClause := " AND n.name != '' AND n.name != '#'"
 	placeholderClause := ""
 	if hidePlaceholders {
 		placeholderClause = " AND n.name NOT LIKE '#%' AND n.level > 0 AND n.class > 0"
 	}
-	filterClause := baseClause + placeholderClause
+	filterClause := nonPlayerNPCClause + placeholderClause
 
 	var total int
 	if err := db.QueryRow(
@@ -1051,8 +1061,8 @@ const zoneColumns = `
   z.min_level, COALESCE(z.note,''),
   z.castoutdoor, z.hotzone, z.canlevitate, z.canbind,
   COALESCE(z.zone_exp_multiplier, 1.0), z.expansion,
-  COALESCE((SELECT MIN(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name), 0),
-  COALESCE((SELECT MAX(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name), 0),
+  COALESCE((SELECT MIN(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name AND n.name != '' AND n.name != '#' AND n.name != '_' AND n.race != 127), 0),
+  COALESCE((SELECT MAX(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name AND n.name != '' AND n.name != '#' AND n.name != '_' AND n.race != 127), 0),
   COALESCE(z.graveyard_id, 0),
   COALESCE(z.graveyard_time, 0),
   COALESCE(gz.id, 0),
@@ -1125,16 +1135,16 @@ func (db *DB) GetNPCsByZone(shortName string, limit, offset int) (*SearchResult[
 
 	var total int
 	countQ := fmt.Sprintf(
-		"SELECT COUNT(*) FROM (SELECT DISTINCT id FROM npc_types WHERE id IN (%s))",
-		idSubquery,
+		"SELECT COUNT(*) FROM (SELECT DISTINCT n.id FROM npc_types n WHERE n.id IN (%s)%s)",
+		idSubquery, nonPlayerNPCClause,
 	)
 	if err := db.QueryRow(countQ, shortName, shortName).Scan(&total); err != nil {
 		return nil, fmt.Errorf("count zone npcs: %w", err)
 	}
 
 	q := fmt.Sprintf(
-		"SELECT %s FROM npc_types n %s WHERE n.id IN (%s) ORDER BY n.name LIMIT ? OFFSET ?",
-		npcColumns, npcJoin, idSubquery,
+		"SELECT %s FROM npc_types n %s WHERE n.id IN (%s)%s ORDER BY n.name LIMIT ? OFFSET ?",
+		npcColumns, npcJoin, idSubquery, nonPlayerNPCClause,
 	)
 	rows, err := db.Query(q, shortName, shortName, limit, offset)
 	if err != nil {
