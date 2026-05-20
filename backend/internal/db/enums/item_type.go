@@ -63,11 +63,21 @@ func ItemTypeName(id int) string {
 	return itemTypes[id]
 }
 
+func init() {
+	registerLabels("Item Type", ItemTypeName)
+	registerSource("Item Type", "EQMacEmu/Server common/item_data.h ItemType enum — DIVERGES from modern EQEmu master starting at value 34")
+}
+
 // ItemTypesAudit validates that every distinct items.itemtype seen in
 // the DB is mapped above.
 var ItemTypesAudit = AuditDef{
 	Name:       "Item Type",
 	KnownCodes: keysAsSet(itemTypes),
+	Sample: func(db *sql.DB, code, limit int) ([]SampleRow, error) {
+		// items.Name is the canonical name column (capital N in the dump,
+		// but SQLite identifiers are case-insensitive so "name" works).
+		return sampleRows(db, "items", "itemtype", code, limit)
+	},
 	Extract: func(db *sql.DB) ([]int, error) {
 		rows, err := db.Query(`SELECT DISTINCT itemtype FROM items`)
 		if err != nil {

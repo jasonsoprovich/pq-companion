@@ -249,6 +249,7 @@ func SpellEffectName(id int) string {
 var SpellEffectsAudit = AuditDef{
 	Name:       "Spell Effect (SPA)",
 	KnownCodes: keysAsSet(spellEffects),
+	Sample:     sampleSpellEffect,
 	Extract: func(db *sql.DB) ([]int, error) {
 		rows, err := db.Query(`
 			SELECT DISTINCT n FROM (
@@ -306,6 +307,9 @@ func SpellResistName(id int) string {
 var SpellResistsAudit = AuditDef{
 	Name:       "Spell Resist",
 	KnownCodes: keysAsSet(spellResistTypes),
+	Sample: func(db *sql.DB, code, limit int) ([]SampleRow, error) {
+		return sampleRows(db, "spells_new", "resisttype", code, limit)
+	},
 	Extract: func(db *sql.DB) ([]int, error) {
 		rows, err := db.Query(`SELECT DISTINCT resisttype FROM spells_new`)
 		if err != nil {
@@ -367,6 +371,9 @@ func SpellTargetName(id int) string {
 var SpellTargetsAudit = AuditDef{
 	Name:       "Spell Target",
 	KnownCodes: keysAsSet(spellTargetTypes),
+	Sample: func(db *sql.DB, code, limit int) ([]SampleRow, error) {
+		return sampleRows(db, "spells_new", "targettype", code, limit)
+	},
 	Extract: func(db *sql.DB) ([]int, error) {
 		rows, err := db.Query(`SELECT DISTINCT targettype FROM spells_new`)
 		if err != nil {
@@ -417,6 +424,9 @@ func SpellSkillName(id int) string {
 var SpellSkillsAudit = AuditDef{
 	Name:       "Spell Skill",
 	KnownCodes: keysAsSet(spellSkills),
+	Sample: func(db *sql.DB, code, limit int) ([]SampleRow, error) {
+		return sampleRows(db, "spells_new", "skill", code, limit)
+	},
 	Extract: func(db *sql.DB) ([]int, error) {
 		rows, err := db.Query(`SELECT DISTINCT skill FROM spells_new`)
 		if err != nil {
@@ -450,4 +460,15 @@ var spellTypeFilter = map[int]string{
 // SpellTypeFilterName returns the filter label, or "" for unknown.
 func SpellTypeFilterName(id int) string {
 	return spellTypeFilter[id]
+}
+
+func init() {
+	registerLabels("Spell Effect (SPA)", SpellEffectName)
+	registerLabels("Spell Resist", SpellResistName)
+	registerLabels("Spell Target", SpellTargetName)
+	registerLabels("Spell Skill", func(id int) string { return spellSkills[id] })
+	registerSource("Spell Effect (SPA)", "EQEmu common/spdat.h SPA_* enum (stable across EQEmu / EQMacEmu)")
+	registerSource("Spell Resist", "EQEmu common/spdat.h RESIST_* enum")
+	registerSource("Spell Target", "EQMacEmu/Server common/spdat.h ST_* enum — DIVERGES from modern EQEmu master")
+	registerSource("Spell Skill", "EQEmu common/skills.h EQ::skills::*Skill* enum")
 }

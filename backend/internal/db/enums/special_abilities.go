@@ -116,6 +116,12 @@ var SpecialAbilitiesAudit = AuditDef{
 	Name:       "Special Ability",
 	KnownCodes: dbRelevantSpecialAbilityCodes(),
 	Extract:    extractSpecialAbilityCodes,
+	Sample:     sampleSpecialAbility,
+}
+
+func init() {
+	registerLabels("Special Ability", SpecialAbilityName)
+	registerSource("Special Ability", "EQMacEmu/Server common/emu_constants.h SpecialAbility namespace — DIVERGES from modern EQEmu master")
 }
 
 func dbRelevantSpecialAbilityCodes() map[int]struct{} {

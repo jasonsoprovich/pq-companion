@@ -174,6 +174,25 @@ var ItemRaceBitsAudit = AuditDef{
 	Extract:    func(db *sql.DB) ([]int, error) { return extractBitmaskCodes(db, `SELECT DISTINCT races FROM items`, 16) },
 }
 
+func init() {
+	registerLabels("Item Slot Bit", func(bit int) string { return itemSlotBits[bit] })
+	registerLabels("Item Class Bit", func(bit int) string {
+		if v := itemClassBits[bit]; v != "" {
+			return v
+		}
+		return itemClassBitsOutOfEra[bit]
+	})
+	registerLabels("Item Race Bit", func(bit int) string {
+		if v := itemRaceBits[bit]; v != "" {
+			return v
+		}
+		return itemRaceBitsOutOfEra[bit]
+	})
+	registerSource("Item Slot Bit", "EQEmu schema docs items.slots — bitmask, each bit position = one equip slot")
+	registerSource("Item Class Bit", "EQEmu items.classes — bitmask, bit 0 = WAR … bit 15 = BST (Mac-era classes); 16+ flagged out-of-era")
+	registerSource("Item Race Bit", "EQEmu items.races — bitmask of allowed races; out-of-era bits flagged")
+}
+
 // mergeSets returns the union of two int sets.
 func mergeSets(a, b map[int]struct{}) map[int]struct{} {
 	out := make(map[int]struct{}, len(a)+len(b))

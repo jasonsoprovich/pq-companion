@@ -367,11 +367,19 @@ func NPCRaceName(id int) string {
 	return npcRaces[id]
 }
 
+func init() {
+	registerLabels("NPC Race", NPCRaceName)
+	registerSource("NPC Race", "EQMacEmu/Server common/races.h Race namespace (1–453 canonical; 353/354/355/357 Quarm-empirical)")
+}
+
 // NPCRacesAudit validates that every distinct npc_types.race seen in
 // the DB is mapped above.
 var NPCRacesAudit = AuditDef{
 	Name:       "NPC Race",
 	KnownCodes: keysAsSet(npcRaces),
+	Sample: func(db *sql.DB, code, limit int) ([]SampleRow, error) {
+		return sampleRows(db, "npc_types", "race", code, limit)
+	},
 	Extract: func(db *sql.DB) ([]int, error) {
 		rows, err := db.Query(`SELECT DISTINCT race FROM npc_types`)
 		if err != nil {

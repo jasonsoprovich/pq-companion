@@ -24,11 +24,19 @@ func BaneRaceName(id int) string {
 	return baneRaces[id]
 }
 
+func init() {
+	registerLabels("Bane Race", BaneRaceName)
+	registerSource("Bane Race", "EQMacEmu/Server common/races.h Race namespace (mirrors NPC Race)")
+}
+
 // BaneRacesAudit validates that every distinct items.banedmgrace (other
 // than 0 = no bane) seen in the DB is mapped above.
 var BaneRacesAudit = AuditDef{
 	Name:       "Bane Race",
 	KnownCodes: keysAsSet(baneRaces),
+	Sample: func(db *sql.DB, code, limit int) ([]SampleRow, error) {
+		return sampleRows(db, "items", "banedmgrace", code, limit)
+	},
 	Extract: func(db *sql.DB) ([]int, error) {
 		rows, err := db.Query(`SELECT DISTINCT banedmgrace FROM items WHERE banedmgrace != 0`)
 		if err != nil {

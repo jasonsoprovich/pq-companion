@@ -27,9 +27,17 @@ that exist in it; for label/shape questions, EQMacEmu first, then EQEmu.**
 - **New bug surfaces?** Find the relevant enum row below — if the
   "Source/citation" column says "uncited" or "guessed," the bug is likely
   there and the fix is to cite an authoritative source.
-- **New `quarm.db` dump drops?** Once we have the planned validator
-  (`backend/cmd/enum-audit/`), run it; any unknown values it reports map
-  directly back to rows in this table.
+- **New `quarm.db` dump drops?** Run `go run ./cmd/enum-audit` from
+  `backend/`. Any unknown values it reports map directly back to rows in
+  this table. Exit code 0 means every observed value is mapped.
+- **Suspect a label is *wrong* (vs. just missing — the kind of bug the
+  unknown-code audit can't catch)?** Run
+  `go run ./cmd/enum-audit -samples -out /tmp/enum-samples.md` for a
+  markdown report: every observed code, its current label, and 2–3 example
+  rows (spell/item/NPC names). Scan it against pqdi.cc; mismatches are
+  label drift. This was added after the targettype=4 "Single (Pet)" vs
+  "PB AE" mix-up — that bug would have been obvious in the report
+  because all 325 spells under that code were AE spells like Earthquake.
 
 ---
 

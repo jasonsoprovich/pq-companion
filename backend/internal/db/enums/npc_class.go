@@ -53,11 +53,19 @@ func NPCClassName(id int) string {
 	return npcClasses[id]
 }
 
+func init() {
+	registerLabels("NPC Class", NPCClassName)
+	registerSource("NPC Class", "EQMacEmu/Server common/classes.h Class enum (1-based, distinct from CharClasses 0-based spell-API index)")
+}
+
 // NPCClassesAudit validates that every distinct npc_types.class seen in
 // the DB is mapped above.
 var NPCClassesAudit = AuditDef{
 	Name:       "NPC Class",
 	KnownCodes: keysAsSet(npcClasses),
+	Sample: func(db *sql.DB, code, limit int) ([]SampleRow, error) {
+		return sampleRows(db, "npc_types", "class", code, limit)
+	},
 	Extract: func(db *sql.DB) ([]int, error) {
 		rows, err := db.Query(`SELECT DISTINCT class FROM npc_types`)
 		if err != nil {

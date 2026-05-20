@@ -48,6 +48,9 @@ func TradeskillName(id int) string {
 var TradeskillsAudit = AuditDef{
 	Name:       "Tradeskill",
 	KnownCodes: keysAsSet(tradeskills),
+	Sample: func(db *sql.DB, code, limit int) ([]SampleRow, error) {
+		return sampleRows(db, "tradeskill_recipe", "tradeskill", code, limit)
+	},
 	Extract: func(db *sql.DB) ([]int, error) {
 		rows, err := db.Query(`SELECT DISTINCT tradeskill FROM tradeskill_recipe WHERE enabled = 1`)
 		if err != nil {
@@ -64,4 +67,9 @@ var TradeskillsAudit = AuditDef{
 		}
 		return ids, rows.Err()
 	},
+}
+
+func init() {
+	registerLabels("Tradeskill", TradeskillName)
+	registerSource("Tradeskill", "EQMacEmu/Server common/skills.h SkillType enum (Quarm-only ID 75 → Common Combine)")
 }

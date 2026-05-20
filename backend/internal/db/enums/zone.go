@@ -38,6 +38,9 @@ func ZoneExpansionName(id int) string {
 var ZoneExpansionsAudit = AuditDef{
 	Name:       "Zone Expansion",
 	KnownCodes: keysAsSet(zoneExpansions),
+	Sample: func(db *sql.DB, code, limit int) ([]SampleRow, error) {
+		return sampleRowsNamed(db, "zone", "expansion", "short_name", code, limit)
+	},
 	Extract: func(db *sql.DB) ([]int, error) {
 		rows, err := db.Query(`SELECT DISTINCT expansion FROM zone`)
 		if err != nil {
@@ -75,12 +78,22 @@ func ZoneTypeName(id int) string {
 	return zoneTypes[id]
 }
 
+func init() {
+	registerLabels("Zone Expansion", ZoneExpansionName)
+	registerLabels("Zone Type", ZoneTypeName)
+	registerSource("Zone Expansion", "EQ release timeline (99 = Quarm-custom content; -1 = hidden/dev zones)")
+	registerSource("Zone Type", "EQEmu schema docs — outdoor/indoor/city scenery restriction on spells_new.zonetype")
+}
+
 // ZoneTypesAudit validates that every distinct spells_new.zonetype seen
 // in the DB is mapped above. 0 (no restriction) is excluded since it
 // has no label and isn't meant to be displayed.
 var ZoneTypesAudit = AuditDef{
 	Name:       "Zone Type",
 	KnownCodes: keysAsSet(zoneTypes),
+	Sample: func(db *sql.DB, code, limit int) ([]SampleRow, error) {
+		return sampleRows(db, "spells_new", "zonetype", code, limit)
+	},
 	Extract: func(db *sql.DB) ([]int, error) {
 		// -1 is treated as "no restriction" same as 0; only audit the
 		// positive zone-type values that actually need labels.

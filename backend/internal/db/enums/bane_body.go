@@ -39,11 +39,19 @@ func BaneBodyName(id int) string {
 	return baneBodyTypes[id]
 }
 
+func init() {
+	registerLabels("Bane Body", BaneBodyName)
+	registerSource("Bane Body", "EQMacEmu/Server common/eq_constants.h BodyType enum (shares value space with NPC Body Type)")
+}
+
 // BaneBodiesAudit validates that every distinct items.banedmgbody (other
 // than 0 = no bane) seen in the DB is mapped above.
 var BaneBodiesAudit = AuditDef{
 	Name:       "Bane Body",
 	KnownCodes: keysAsSet(baneBodyTypes),
+	Sample: func(db *sql.DB, code, limit int) ([]SampleRow, error) {
+		return sampleRows(db, "items", "banedmgbody", code, limit)
+	},
 	Extract: func(db *sql.DB) ([]int, error) {
 		rows, err := db.Query(`SELECT DISTINCT banedmgbody FROM items WHERE banedmgbody != 0`)
 		if err != nil {

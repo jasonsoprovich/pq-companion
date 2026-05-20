@@ -71,11 +71,19 @@ func NPCBodyTypeName(id int) string {
 	return npcBodyTypes[id]
 }
 
+func init() {
+	registerLabels("NPC Body Type", NPCBodyTypeName)
+	registerSource("NPC Body Type", "EQMacEmu/Server common/bodytypes.h BodyType namespace (65 is Quarm-empirical environment-trigger)")
+}
+
 // NPCBodyTypesAudit validates that every distinct npc_types.bodytype
 // seen in the DB is mapped above.
 var NPCBodyTypesAudit = AuditDef{
 	Name:       "NPC Body Type",
 	KnownCodes: keysAsSet(npcBodyTypes),
+	Sample: func(db *sql.DB, code, limit int) ([]SampleRow, error) {
+		return sampleRows(db, "npc_types", "bodytype", code, limit)
+	},
 	Extract: func(db *sql.DB) ([]int, error) {
 		rows, err := db.Query(`SELECT DISTINCT bodytype FROM npc_types`)
 		if err != nil {
