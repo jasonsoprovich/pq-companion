@@ -859,9 +859,9 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
         )}
       </div>
 
-      {/* Raid Buffs side panel */}
+      {/* Buffs side panel */}
       {includesBuffs && (
-        <RaidBuffsPanel
+        <BuffsPanel
           entries={buffEntries}
           totalSlots={presetIds.length}
           loading={presetLoading}
@@ -899,7 +899,7 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
         const fromName = fromId ? (presetMeta[String(fromId)]?.name ?? `Spell #${fromId}`) : 'Empty slot'
         return (
           <ConfirmModal
-            title="Swap raid buff?"
+            title="Swap buff?"
             confirmLabel="Swap"
             onConfirm={handleConfirmSwap}
             onCancel={() => setPendingSwap(null)}
@@ -909,7 +909,7 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
                   Replace <strong>{fromName}</strong> with <strong>{pendingSwap.spell.name}</strong>?
                 </p>
                 <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                  The change will be saved to this character&rsquo;s raid-buff preset.
+                  The change will be saved to this character&rsquo;s buff preset.
                 </p>
               </div>
             }
@@ -922,14 +922,14 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
         const removeName = removeId ? (presetMeta[String(removeId)]?.name ?? `Spell #${removeId}`) : 'this buff'
         return (
           <ConfirmModal
-            title="Remove raid buff?"
+            title="Remove buff?"
             confirmLabel="Remove"
             tone="danger"
             onConfirm={handleConfirmRemove}
             onCancel={() => setPendingRemove(null)}
             message={
               <p>
-                Remove <strong>{removeName}</strong> from this character&rsquo;s raid-buff preset?
+                Remove <strong>{removeName}</strong> from this character&rsquo;s buff preset?
               </p>
             }
           />
@@ -948,7 +948,7 @@ function StatModeToggle({ mode, onChange }: StatModeToggleProps): React.ReactEle
   const options: Array<{ value: StatMode; label: string }> = [
     { value: 'base',     label: 'Base' },
     { value: 'equipped', label: '+Equipment' },
-    { value: 'buffed',   label: '+Raid Buffs' },
+    { value: 'buffed',   label: '+Buffs' },
     { value: 'live',     label: 'Live Buffs' },
   ]
   return (
@@ -999,9 +999,9 @@ function ResistRow({ label, value }: { label: string; value: number }): React.Re
   )
 }
 
-// ── Raid Buffs side panel ─────────────────────────────────────────────────────
+// ── Buffs side panel ──────────────────────────────────────────────────────────
 
-interface RaidBuffsPanelProps {
+interface BuffsPanelProps {
   entries: Array<{ id: number; slot: number; meta: SpellStatDeltaEntry }>
   totalSlots: number
   loading: boolean
@@ -1012,10 +1012,10 @@ interface RaidBuffsPanelProps {
   aegolismOrGlades: 'aegolism' | 'glades' | null
 }
 
-function RaidBuffsPanel({
+function BuffsPanel({
   entries, totalSlots, loading, onSlotClick, onSlotRemove, onAddBuff,
   onSwapAegolism, aegolismOrGlades,
-}: RaidBuffsPanelProps): React.ReactElement {
+}: BuffsPanelProps): React.ReactElement {
   const total = emptyDelta()
   for (const e of entries) addDelta(total, e.meta.delta)
   const canAdd = totalSlots < MAX_RAID_BUFF_SLOTS
@@ -1030,16 +1030,13 @@ function RaidBuffsPanel({
       className="rounded-lg p-4"
       style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', flex: '1 1 auto', minWidth: '320px' }}
     >
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <span
-          className="rounded-full px-3 py-1 text-xs font-semibold"
-          style={{
-            border: '1px solid color-mix(in srgb, var(--color-primary) 60%, transparent)',
-            color: 'var(--color-primary)',
-          }}
-        >
-          Raid Buffs ({totalSlots}/{MAX_RAID_BUFF_SLOTS})
-        </span>
+      <div
+        className="flex items-center gap-2 px-3 py-2 mb-2 -mx-4 -mt-4 border-b"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <div className="flex-1 min-w-0 text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+          Buffs ({totalSlots}/{MAX_RAID_BUFF_SLOTS})
+        </div>
         <button
           onClick={onSwapAegolism}
           disabled={!aegolismOrGlades && !canAdd}
@@ -1056,31 +1053,33 @@ function RaidBuffsPanel({
         </button>
       </div>
 
-      <p className="mb-3 text-xs italic" style={{ color: 'var(--color-muted-foreground)' }}>
-        Click any buff to swap it from the spell explorer. Aegolism and PotG share a slot — use the toggle above. Max {MAX_RAID_BUFF_SLOTS} simultaneous buffs (in-game limit).
-      </p>
-
       {loading && entries.length === 0 && (
         <p className="py-4 text-center text-xs" style={{ color: 'var(--color-muted)' }}>
           Loading preset…
         </p>
       )}
 
-      <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+      <div className="flex flex-col gap-1">
         {entries.map((e) => (
-          <div key={`${e.slot}:${e.id}`} className="flex items-start gap-2 py-2 group">
+          <div key={`${e.slot}:${e.id}`} className="flex items-center gap-1">
             <button
               onClick={() => onSlotClick(e.slot)}
-              className="flex min-w-0 flex-1 items-start gap-2 text-left hover:opacity-80"
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+              className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 rounded text-left transition-colors hover:bg-(--color-surface-2)"
+              style={{ border: '1px solid var(--color-border)' }}
               title="Click to swap this buff"
             >
-              <SpellIcon id={e.meta.icon} name={e.meta.name} size={24} />
+              <span
+                className="text-[10px] font-mono shrink-0"
+                style={{ color: 'var(--color-muted)', width: 18 }}
+              >
+                {e.slot + 1}
+              </span>
+              <SpellIcon id={e.meta.icon} name={e.meta.name} size={20} />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
+                <p className="text-xs font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
                   {e.meta.name}
                 </p>
-                <p className="font-mono text-xs" style={{ color: 'var(--color-primary)' }}>
+                <p className="font-mono text-[10px] truncate" style={{ color: 'var(--color-primary)' }}>
                   {formatBuffEffects(e.meta.delta) || <span style={{ color: 'var(--color-muted)' }}>—</span>}
                 </p>
               </div>
@@ -1096,22 +1095,26 @@ function RaidBuffsPanel({
             </button>
           </div>
         ))}
-      </div>
 
-      {canAdd && (
-        <button
-          onClick={onAddBuff}
-          className="mt-2 w-full rounded border border-dashed py-2 text-xs"
-          style={{
-            borderColor: 'var(--color-border)',
-            color: 'var(--color-muted-foreground)',
-            backgroundColor: 'transparent',
-            cursor: 'pointer',
-          }}
-        >
-          + Add buff
-        </button>
-      )}
+        {canAdd && (
+          <button
+            onClick={onAddBuff}
+            className="flex items-center gap-2 px-2 py-1.5 rounded text-left transition-colors hover:bg-(--color-surface-2)"
+            style={{ border: '1px dashed var(--color-border)' }}
+            title="Add another buff"
+          >
+            <span
+              className="text-[10px] font-mono shrink-0"
+              style={{ color: 'var(--color-muted)', width: 18 }}
+            >
+              {totalSlots + 1}
+            </span>
+            <span className="text-xs italic" style={{ color: 'var(--color-muted)' }}>
+              Empty — click to add a buff
+            </span>
+          </button>
+        )}
+      </div>
 
       <div
         className="mt-3 border-t pt-3 text-xs"
@@ -1145,16 +1148,13 @@ function LiveBuffsPanel({ entries, viewedIsActive, activePlayerName }: LiveBuffs
       className="rounded-lg p-4"
       style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', flex: '1 1 auto', minWidth: '320px' }}
     >
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <span
-          className="rounded-full px-3 py-1 text-xs font-semibold"
-          style={{
-            border: '1px solid color-mix(in srgb, var(--color-primary) 60%, transparent)',
-            color: 'var(--color-primary)',
-          }}
-        >
+      <div
+        className="flex items-center gap-2 px-3 py-2 mb-2 -mx-4 -mt-4 border-b"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <div className="flex-1 min-w-0 text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
           Live Buffs ({entries.length})
-        </span>
+        </div>
       </div>
 
       {!viewedIsActive ? (
@@ -1167,26 +1167,31 @@ function LiveBuffsPanel({ entries, viewedIsActive, activePlayerName }: LiveBuffs
           No active buffs detected. Buffs land in this list as they&rsquo;re parsed from the EverQuest log — make sure log tailing is on.
         </p>
       ) : (
-        <>
-          <p className="mb-3 text-xs italic" style={{ color: 'var(--color-muted-foreground)' }}>
-            Buffs currently active on {activePlayerName}, parsed live from the EQ log. Updates as buffs land or wear off.
-          </p>
-          <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
-            {entries.map((e) => (
-              <div key={e.id} className="flex items-start gap-2 py-2">
-                <SpellIcon id={e.meta.icon} name={e.meta.name} size={24} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
-                    {e.meta.name}
-                  </p>
-                  <p className="font-mono text-xs" style={{ color: 'var(--color-primary)' }}>
-                    {formatBuffEffects(e.meta.delta) || <span style={{ color: 'var(--color-muted)' }}>—</span>}
-                  </p>
-                </div>
+        <div className="flex flex-col gap-1">
+          {entries.map((e, idx) => (
+            <div
+              key={e.id}
+              className="flex items-center gap-2 px-2 py-1.5 rounded"
+              style={{ border: '1px solid var(--color-border)' }}
+            >
+              <span
+                className="text-[10px] font-mono shrink-0"
+                style={{ color: 'var(--color-muted)', width: 18 }}
+              >
+                {idx + 1}
+              </span>
+              <SpellIcon id={e.meta.icon} name={e.meta.name} size={20} />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
+                  {e.meta.name}
+                </p>
+                <p className="font-mono text-[10px] truncate" style={{ color: 'var(--color-primary)' }}>
+                  {formatBuffEffects(e.meta.delta) || <span style={{ color: 'var(--color-muted)' }}>—</span>}
+                </p>
               </div>
-            ))}
-          </div>
-        </>
+            </div>
+          ))}
+        </div>
       )}
 
       {viewedIsActive && entries.length > 0 && (
