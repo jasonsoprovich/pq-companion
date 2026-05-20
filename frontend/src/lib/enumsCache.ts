@@ -136,6 +136,33 @@ export function charRaceOptions(includeNotSet: boolean = true): { value: number;
   return optionsFromMap(catalog?.char_races, includeNotSet)
 }
 
+// ── Spell-side enums ──────────────────────────────────────────────────
+//
+// Sentinel codes 254, 255, and 320 are EQEmu's "blank slot" markers used
+// to terminate the 12-slot effect array on spells_new — they must never
+// render.
+
+export function spellEffectLabel(id: number): string {
+  if (id === 254 || id === 255 || id === 320) return ''
+  return catalog?.spell_effects[String(id)] ?? ''
+}
+
+export function spellResistLabel(id: number): string {
+  return catalog?.spell_resists[String(id)] ?? `Unknown (${id})`
+}
+
+export function spellTargetLabel(id: number): string {
+  return catalog?.spell_targets[String(id)] ?? `Unknown (${id})`
+}
+
+export function spellSkillLabel(id: number): string {
+  return catalog?.spell_skills[String(id)] ?? ''
+}
+
+export function spellTypeFilterLabel(id: number): string {
+  return catalog?.spell_type_filter[String(id)] ?? `code ${id}`
+}
+
 function optionsFromMap(
   map: Record<string, string> | undefined,
   includeNotSet: boolean,

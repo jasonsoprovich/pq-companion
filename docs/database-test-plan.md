@@ -353,6 +353,75 @@ NPC, not a hidden trigger.
 
 ---
 
+## 17. Spell Effect (SPA) labels — `CHANGED` (many previous labels wrong)
+
+**Where:** Spell detail panel — the "Effects:" block (one row per spell
+slot) and the focus/limit descriptions on items with click effects.
+
+The prior frontend SPA map was modern-EQEmu-flavored, while the Quarm
+dump uses EQMacEmu numbering. Several common SPA codes shift between
+the two enums, so spells that use those codes rendered with the wrong
+label (and a few common codes silently rendered as "Effect N").
+
+**Sample spells to spot-check (search by name in the Spells page,
+expand the Effects section):**
+
+| Spell | SPA in use | Before (wrong) | After (correct) |
+|-------|-----------|----------------|-----------------|
+| Shadow Step | 42 | Berserker Strength | **Shadow Step** |
+| True North | 56 | Effect 56 | **True North** |
+| Levitate | 57 | True North | **Levitate** |
+| Pacify | 30 | Effect 30 | **Pacify** |
+| Animate Dead | 71 | Effect 71 | **Animate Dead** |
+| Wake of Karana | 93 | Effect 93 | **Stop Rain** |
+| Scale of Wolf / Spirit of Scale | 94 | Stop Rain | **Negate if Combat** |
+| Song of Sustenance | 115 | Cannibalize | **Hunger** |
+| Flame Wind / Solar Storm | 116 | Crit Melee | **Curse Counter** |
+| Magical Monologue | 117 | Crit Direct Damage | **Magic Weapon** |
+| Amplification / Syncopation | 118 | Crippling Blow | **Amplification** |
+| Trueshot Discipline | 184 + 301 | Hit Chance, Effect 301 | **Hit Chance, Archery Damage Modifier** |
+| Power Kick / Savage Kick | 164 | Effect 164 | **Kick Damage Bonus** ‡ |
+| Power Bash / Savage Bash | 165 | Effect 165 | **Bash Damage Bonus** ‡ |
+| Maelin's Magical Concoction | 500 / 501 / 503 / 504 | Effect 500–504 | **Quarm SPA 500/501/503/504** ‡ |
+| Swiftness / Fleetness / Nimbleness | 160 | Make Drunk | Make Drunk ‡ (carried over; needs in-game verify) |
+
+‡ = Quarm-specific or undocumented in EQMacEmu source — best-effort
+label that may need refinement once you check the in-game tooltip.
+
+**Also changed (label-only swaps from EQMac canonical):**
+
+- 41 SE_Destroy ("Destroy") — was labeled "Shadow Step"
+- 58 SE_Illusion ("Illusion") — was labeled "Levitate"
+- 95 SE_Sacrifice ("Sacrifice") — was missing
+- 110 SE_IncreaseArchery ("Increase Archery") — was missing
+- 123 SE_Screech ("Screech") — was labeled "Reflect Spell"
+- 161 ↔ 162 — "Magic Rune" and "Rune" labels were swapped
+- Various focus/limit cite name tweaks (e.g. SE_Hunger 115)
+
+**Critical to verify:** Open spell detail on at least one spell from
+each row of the "wrong label" table above and confirm the new label
+matches in-game expectation. For Quarm-specific codes (164, 165,
+500–504), open the in-game spell tooltip and report back if the
+listed best-effort label is wrong.
+
+## 18. Spell Target / Resist / Skill — `SAME` (centralized, no label change)
+
+**Where:** Spell detail panel header — "Target:", "Resist:", "Skill:" rows.
+
+Labels for these three columns moved from `frontend/src/lib/spellHelpers.ts`
+into the canonical Go catalog. The text itself is unchanged from the
+last fix (target type 9 = "Animal" etc.).
+
+**Quick check:**
+- A Druid charm-animal spell (`Beguile Animals`, id 141) → Target: **Animal**
+- Any fire DD → Resist: **Fire**
+- Any wizard nuke → Skill: **Evocation**
+
+No visual changes expected. If you see "Unknown (n)" anywhere in
+Target/Resist/Skill rows, capture the spell id.
+
+---
+
 ## End-to-end smoke
 
 After spot-checking the rows above, also do this lap:

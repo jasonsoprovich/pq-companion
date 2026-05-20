@@ -44,6 +44,10 @@ func Defs() []AuditDef {
 		ZoneExpansionsAudit,
 		ZoneTypesAudit,
 		NPCBodyTypesAudit,
+		SpellEffectsAudit,
+		SpellResistsAudit,
+		SpellTargetsAudit,
+		SpellSkillsAudit,
 	}
 }
 

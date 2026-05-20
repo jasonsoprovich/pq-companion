@@ -39,6 +39,11 @@ type Catalog struct {
 	CharClasses      map[int]string             `json:"char_classes"`
 	CharRaces        map[int]string             `json:"char_races"`
 	NPCBodyTypes     map[int]string             `json:"npc_body_types"`
+	SpellEffects     map[int]string             `json:"spell_effects"`
+	SpellResists     map[int]string             `json:"spell_resists"`
+	SpellTargets     map[int]string             `json:"spell_targets"`
+	SpellSkills      map[int]string             `json:"spell_skills"`
+	SpellTypeFilter  map[int]string             `json:"spell_type_filter"`
 }
 
 // Snapshot returns the current Catalog for serialization.
@@ -59,5 +64,10 @@ func Snapshot() Catalog {
 		CharClasses:      charClasses,
 		CharRaces:        charRaces,
 		NPCBodyTypes:     npcBodyTypes,
+		SpellEffects:     spellEffects,
+		SpellResists:     spellResistTypes,
+		SpellTargets:     spellTargetTypes,
+		SpellSkills:      spellSkills,
+		SpellTypeFilter:  spellTypeFilter,
 	}
 }

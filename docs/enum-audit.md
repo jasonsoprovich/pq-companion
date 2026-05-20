@@ -37,14 +37,14 @@ that exist in it; for label/shape questions, EQMacEmu first, then EQEmu.**
 
 | Enum | File:line | Coverage | Source/citation | Quarm-specific |
 | --- | --- | --- | --- | --- |
-| **Spell SPA (Effect ID)** | `frontend/src/lib/spellHelpers.ts:141` | Complete (0–220+) | EQEmu `spdat.h` `SE_*` — **cited in file** | No |
-| **Spell Resist Type** | `frontend/src/lib/spellHelpers.ts:31` | Complete (0–9) | EQEmu — uncited | No |
-| **Spell Target Type** | `frontend/src/lib/spellHelpers.ts:50` | Covers every code observed in the live Quarm dump; gaps remain at 7, 19, 21–23, 26–35, 37–39, 44–49 (unused) | EQEmu `common/spdat.h` `ST_*` — **cited in file** | No |
-| **Spell Skill / School** | `frontend/src/lib/spellHelpers.ts:83` | Partial (13 entries: 4, 5, 12, 14, 15, 18, 24, 33, 41, 49, 52, 54, 70) | EQEmu — uncited | No |
+| **Spell SPA (Effect ID)** | `backend/internal/db/enums/spell.go` | Complete vs. live dump (204 entries); audit-validated. Previously held in TS with several mislabeled codes (41 / 42 / 57 / 58 / 94 / 115–118 / 123 / 161–162) inherited from a modern-EQEmu map applied to an EQMacEmu dump. | EQMacEmu `common/spdat.h` `SE_*` — **cited in file** | Quarm-specific labels for 164, 165, 301, 500–504 marked empirically |
+| **Spell Resist Type** | `backend/internal/db/enums/spell.go` | Complete (0–9); audit-validated | EQMacEmu `common/spdat.h` `RESIST_*` — **cited in file** | No |
+| **Spell Target Type** | `backend/internal/db/enums/spell.go` | Covers every code observed in the live Quarm dump; audit-validated | EQMacEmu `common/spdat.h` `ST_*` — **cited in file** | No |
+| **Spell Skill / School** | `backend/internal/db/enums/spell.go` | Complete vs. live dump (13 entries); audit-validated. Upstream defines ~70 codes but the dump uses only these. | EQMacEmu `common/skills.h` — **cited in file** | No |
 | **Spell Duration Formula** | `backend/internal/spelltimer/duration.go:12` | Complete (0–11, 50, 3600) | EQEmu `CalcBuffDuration_formula` — **cited with per-formula comments** | Partial — formula 8 noted as Quarm override |
 | **Spell SPA Category (mez/stun/DoT)** | `backend/internal/spelltimer/engine.go:1137` | Limited (18, 23, 0) | EQEmu — uncited | No |
 | **Spell Limit SPA Codes (focus)** | `backend/internal/buffmod/buffmod.go:24` | Limited (127 cast-time, 128 duration, 134–141 limits) | EQEmu — uncited | No |
-| **Spell Type Filter (beneficial/detrimental)** | `frontend/src/lib/spellHelpers.ts:473`, `backend/internal/buffmod/buffmod.go:35` | Complete (0, 1, 2) | EQEmu — uncited | No |
+| **Spell Type Filter (beneficial/detrimental)** | `backend/internal/db/enums/spell.go` (labels); `backend/internal/buffmod/buffmod.go:35` (runtime constants) | Complete (0, 1, 2). Labels centralized; backend constants kept locally for behavior. | EQMacEmu `common/spdat.h` — **cited in file** | No |
 | **Item Type** | `frontend/src/lib/itemHelpers.ts:97` | Complete (0–45, 52) | EQMacEmu `common/item_data.h` — **cited in file** | No (EQMacEmu baseline, with documented offset vs. modern EQEmu) |
 | **Item Slot Bitmask** | `frontend/src/lib/itemHelpers.ts:18` | Complete (21 slots, 0x000001–0x800000) | EQMacEmu — uncited | No |
 | **Item Class Bitmask** | `frontend/src/lib/itemHelpers.ts:55` | Complete (15 classes, array-indexed) | EQMacEmu — uncited | No |

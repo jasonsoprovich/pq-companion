@@ -19,4 +19,9 @@ export interface EnumsCatalog {
   char_classes: Record<string, string>
   char_races: Record<string, string>
   npc_body_types: Record<string, string>
+  spell_effects: Record<string, string>
+  spell_resists: Record<string, string>
+  spell_targets: Record<string, string>
+  spell_skills: Record<string, string>
+  spell_type_filter: Record<string, string>
 }
