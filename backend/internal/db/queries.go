@@ -693,10 +693,71 @@ func (db *DB) GetNPCSpawns(npcID int) (*NPCSpawns, error) {
 	}, nil
 }
 
+// Quarm-specific zone-wide loot overlays. The Quarm DB models a zone's
+// shared trash-loot table by hanging it off a single representative NPC; that
+// table needs to appear on every NPC in the zone, in addition to the NPC's
+// own loot. Keyed by (zone-id × 1000) range start; value is the source NPC
+// whose loottable supplies the overlay.
+type zoneLootOverlay struct {
+	npcIDMin   int
+	npcIDMax   int
+	sourceNPC  int
+	label      string
+}
+
+var zoneLootOverlays = []zoneLootOverlay{
+	// Vex Thal (zone id 158). NPC 158051 carries the zone-wide drop table
+	// that applies to every Vex Thal mob, trash and boss alike.
+	{npcIDMin: 158000, npcIDMax: 158999, sourceNPC: 158051, label: "Vex Thal zone-wide loot"},
+}
+
+func zoneOverlayFor(npcID int) *zoneLootOverlay {
+	for i := range zoneLootOverlays {
+		o := &zoneLootOverlays[i]
+		if npcID >= o.npcIDMin && npcID <= o.npcIDMax && npcID != o.sourceNPC {
+			return o
+		}
+	}
+	return nil
+}
+
 // GetNPCLoot returns the resolved loot table for the NPC with the given ID.
-// Returns nil when the NPC has no loottable_id set.
+// Returns nil when the NPC has neither its own loot nor a zone-wide overlay.
 func (db *DB) GetNPCLoot(npcID int) (*NPCLootTable, error) {
-	// Resolve the loottable_id for this NPC.
+	ltID, ltName, drops, err := db.loadNPCLoot(npcID)
+	if err != nil {
+		return nil, err
+	}
+
+	var zoneDrops []LootDrop
+	var zoneLabel string
+	if overlay := zoneOverlayFor(npcID); overlay != nil {
+		_, _, zoneDrops, err = db.loadNPCLoot(overlay.sourceNPC)
+		if err != nil {
+			return nil, fmt.Errorf("load zone overlay loot for npc %d: %w", npcID, err)
+		}
+		if len(zoneDrops) > 0 {
+			zoneLabel = overlay.label
+		}
+	}
+
+	if ltID == 0 && len(zoneDrops) == 0 {
+		return nil, nil
+	}
+
+	return &NPCLootTable{
+		ID:             ltID,
+		Name:           ltName,
+		Drops:          drops,
+		ZoneWideDrops:  zoneDrops,
+		ZoneWideLabel:  zoneLabel,
+	}, nil
+}
+
+// loadNPCLoot resolves the loottable for a single NPC and returns its
+// loottable id, name, and drop groups. ltID is 0 when the NPC has no
+// loottable_id set.
+func (db *DB) loadNPCLoot(npcID int) (int, string, []LootDrop, error) {
 	var ltID int
 	var ltName string
 	err := db.QueryRow(`
@@ -705,10 +766,10 @@ func (db *DB) GetNPCLoot(npcID int) (*NPCLootTable, error) {
 		JOIN loottable lt ON lt.id = n.loottable_id
 		WHERE n.id = ? AND n.loottable_id > 0`, npcID).Scan(&ltID, &ltName)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
+		return 0, "", nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("get npc loottable %d: %w", npcID, err)
+		return 0, "", nil, fmt.Errorf("get npc loottable %d: %w", npcID, err)
 	}
 
 	rows, err := db.Query(`
@@ -722,7 +783,7 @@ func (db *DB) GetNPCLoot(npcID int) (*NPCLootTable, error) {
 		ORDER BY lte.lootdrop_id, lde.chance DESC
 		LIMIT 500`, ltID)
 	if err != nil {
-		return nil, fmt.Errorf("get npc loot entries %d: %w", npcID, err)
+		return 0, "", nil, fmt.Errorf("get npc loot entries %d: %w", npcID, err)
 	}
 	defer rows.Close()
 
@@ -731,13 +792,13 @@ func (db *DB) GetNPCLoot(npcID int) (*NPCLootTable, error) {
 	for rows.Next() {
 		var (
 			dropID, lteMultiplier, lteProbability int
-			dropName                               string
+			dropName                              string
 			itemID, itemIcon, ldeMultiplier       int
-			itemName                               string
-			chance                                 float64
+			itemName                              string
+			chance                                float64
 		)
 		if err := rows.Scan(&dropID, &dropName, &lteMultiplier, &lteProbability, &itemID, &itemName, &itemIcon, &chance, &ldeMultiplier); err != nil {
-			return nil, fmt.Errorf("scan loot row: %w", err)
+			return 0, "", nil, fmt.Errorf("scan loot row: %w", err)
 		}
 		d, exists := dropMap[dropID]
 		if !exists {
@@ -759,14 +820,14 @@ func (db *DB) GetNPCLoot(npcID int) (*NPCLootTable, error) {
 		})
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return 0, "", nil, err
 	}
 
 	drops := make([]LootDrop, 0, len(dropOrder))
 	for _, id := range dropOrder {
 		drops = append(drops, *dropMap[id])
 	}
-	return &NPCLootTable{ID: ltID, Name: ltName, Drops: drops}, nil
+	return ltID, ltName, drops, nil
 }
 
 // ─── Spells ───────────────────────────────────────────────────────────────────

@@ -11,7 +11,7 @@ import ItemDetailModal from '../ItemDetailModal'
 import { ItemIcon } from '../Icon'
 import type { TargetState, SpecialAbility } from '../../types/overlay'
 import type { LogTailerStatus } from '../../types/logEvent'
-import type { NPCLootTable } from '../../types/npc'
+import type { NPCLootTable, LootDrop } from '../../types/npc'
 import type { Item } from '../../types/item'
 
 type View = 'stats' | 'loot'
@@ -191,43 +191,55 @@ function LootSection({
   if (error) {
     return <p className="px-1 py-1 text-xs" style={{ color: 'var(--color-muted)' }}>Failed to load loot.</p>
   }
-  if (!loot || loot.drops.length === 0) {
+  const ownDrops = loot?.drops ?? []
+  const zoneDrops = loot?.zone_wide_drops ?? []
+  if (ownDrops.length === 0 && zoneDrops.length === 0) {
     return <p className="px-1 py-1 text-xs" style={{ color: 'var(--color-muted)' }}>No loot table for this NPC.</p>
   }
 
+  const renderDropList = (drops: LootDrop[]) => drops.map((drop) => (
+    <div key={drop.id}>
+      <p className="pb-0.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
+        {drop.multiplier > 1 ? `×${drop.multiplier} · ` : ''}
+        {drop.probability < 100 ? `${drop.probability}% chance` : 'Always drops'}
+      </p>
+      {drop.items.map((item) => {
+        const eff = effectiveDropPct(drop, item)
+        return (
+          <button
+            key={`${drop.id}-${item.item_id}`}
+            onClick={() => onItemClick(item.item_id)}
+            className="flex w-full items-center gap-2 border-t py-0.5 text-left"
+            style={{ borderColor: 'var(--color-border)' }}
+          >
+            <ItemIcon id={item.item_icon} name={item.item_name} size={20} />
+            <span
+              className="flex-1 truncate text-xs underline decoration-dotted"
+              style={{ color: rarityColor(eff) }}
+            >
+              {item.item_name}
+            </span>
+            <span className="shrink-0 text-[11px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
+              {item.chance.toFixed(1)}%
+              {item.multiplier > 1 && ` ×${item.multiplier}`}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  ))
+
   return (
     <div className="flex flex-col gap-2">
-      {loot.drops.map((drop) => (
-        <div key={drop.id}>
-          <p className="pb-0.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
-            {drop.multiplier > 1 ? `×${drop.multiplier} · ` : ''}
-            {drop.probability < 100 ? `${drop.probability}% chance` : 'Always drops'}
+      {renderDropList(ownDrops)}
+      {zoneDrops.length > 0 && (
+        <>
+          <p className="pt-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-primary)' }}>
+            {loot?.zone_wide_label || 'Zone-wide loot'}
           </p>
-          {drop.items.map((item) => {
-            const eff = effectiveDropPct(drop, item)
-            return (
-              <button
-                key={`${drop.id}-${item.item_id}`}
-                onClick={() => onItemClick(item.item_id)}
-                className="flex w-full items-center gap-2 border-t py-0.5 text-left"
-                style={{ borderColor: 'var(--color-border)' }}
-              >
-                <ItemIcon id={item.item_icon} name={item.item_name} size={20} />
-                <span
-                  className="flex-1 truncate text-xs underline decoration-dotted"
-                  style={{ color: rarityColor(eff) }}
-                >
-                  {item.item_name}
-                </span>
-                <span className="shrink-0 text-[11px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
-                  {item.chance.toFixed(1)}%
-                  {item.multiplier > 1 && ` ×${item.multiplier}`}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      ))}
+          {renderDropList(zoneDrops)}
+        </>
+      )}
     </div>
   )
 }

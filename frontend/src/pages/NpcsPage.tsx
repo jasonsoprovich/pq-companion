@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Search, X, Bell } from 'lucide-react'
 import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot, getNPCFaction, getNPCRaw } from '../services/api'
-import type { NPC, NPCSpawns, NPCLootTable, NPCFaction } from '../types/npc'
+import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, LootDrop } from '../types/npc'
 import {
   bodyTypeName,
   className,
@@ -362,6 +362,52 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
     })
   }
 
+  function renderDrops(drops: LootDrop[]): React.ReactElement[] {
+    return drops.map((drop) => (
+      <div key={drop.id} className="mb-2 last:mb-0">
+        <div className="flex items-center justify-between pt-1 pb-0.5">
+          <span className="text-[11px] font-medium" style={{ color: 'var(--color-muted)' }}>
+            {drop.multiplier > 1 ? `×${drop.multiplier} · ` : ''}
+            {drop.probability < 100 ? `${drop.probability}% chance` : 'Always drops'}
+          </span>
+          <button
+            onClick={() => copyBulkLinks(drop.id, drop.items)}
+            title="Bulk copy in-game links"
+            className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              borderColor: 'var(--color-border)',
+              color: bulkCopied === drop.id ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
+            }}
+          >
+            {bulkCopied === drop.id ? <Check size={10} /> : <Copy size={10} />}
+            {bulkCopied === drop.id ? 'Copied!' : 'Copy links'}
+          </button>
+        </div>
+        {drop.items.map((item) => (
+          <button
+            key={item.item_id}
+            onClick={() => navigate(`/items?select=${item.item_id}`)}
+            className="flex w-full items-center gap-2 border-t py-0.5 text-left text-sm"
+            style={{ borderColor: 'var(--color-border)' }}
+          >
+            <ItemIcon id={item.item_icon} name={item.item_name} size={20} />
+            <span
+              className="truncate underline decoration-dotted flex-1"
+              style={{ color: 'var(--color-primary)' }}
+            >
+              {item.item_name}
+            </span>
+            <span className="ml-3 shrink-0 text-xs" style={{ color: 'var(--color-muted)' }}>
+              {item.chance.toFixed(1)}%
+              {item.multiplier > 1 && ` ×${item.multiplier}`}
+            </span>
+          </button>
+        ))}
+      </div>
+    ))
+  }
+
   if (!npc) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -535,50 +581,13 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
 
         {/* Loot Table */}
         {loot && loot.drops.length > 0 && (
-          <Section title="Loot Table">
-            {loot.drops.map((drop) => (
-              <div key={drop.id} className="mb-2 last:mb-0">
-                <div className="flex items-center justify-between pt-1 pb-0.5">
-                  <span className="text-[11px] font-medium" style={{ color: 'var(--color-muted)' }}>
-                    {drop.multiplier > 1 ? `×${drop.multiplier} · ` : ''}
-                    {drop.probability < 100 ? `${drop.probability}% chance` : 'Always drops'}
-                  </span>
-                  <button
-                    onClick={() => copyBulkLinks(drop.id, drop.items)}
-                    title="Bulk copy in-game links"
-                    className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors"
-                    style={{
-                      backgroundColor: 'var(--color-surface)',
-                      borderColor: 'var(--color-border)',
-                      color: bulkCopied === drop.id ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
-                    }}
-                  >
-                    {bulkCopied === drop.id ? <Check size={10} /> : <Copy size={10} />}
-                    {bulkCopied === drop.id ? 'Copied!' : 'Copy links'}
-                  </button>
-                </div>
-                {drop.items.map((item) => (
-                  <button
-                    key={item.item_id}
-                    onClick={() => navigate(`/items?select=${item.item_id}`)}
-                    className="flex w-full items-center gap-2 border-t py-0.5 text-left text-sm"
-                    style={{ borderColor: 'var(--color-border)' }}
-                  >
-                    <ItemIcon id={item.item_icon} name={item.item_name} size={20} />
-                    <span
-                      className="truncate underline decoration-dotted flex-1"
-                      style={{ color: 'var(--color-primary)' }}
-                    >
-                      {item.item_name}
-                    </span>
-                    <span className="ml-3 shrink-0 text-xs" style={{ color: 'var(--color-muted)' }}>
-                      {item.chance.toFixed(1)}%
-                      {item.multiplier > 1 && ` ×${item.multiplier}`}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ))}
+          <Section title="Loot Table">{renderDrops(loot.drops)}</Section>
+        )}
+
+        {/* Zone-wide loot overlay (e.g., Vex Thal shared drops) */}
+        {loot && loot.zone_wide_drops && loot.zone_wide_drops.length > 0 && (
+          <Section title={loot.zone_wide_label || 'Zone-wide loot'}>
+            {renderDrops(loot.zone_wide_drops)}
           </Section>
         )}
 

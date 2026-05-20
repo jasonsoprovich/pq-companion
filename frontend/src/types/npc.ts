@@ -76,6 +76,8 @@ export interface NPCLootTable {
   id: number
   name: string
   drops: LootDrop[]
+  zone_wide_drops?: LootDrop[]
+  zone_wide_label?: string
 }
 
 export interface NPCSpawnPoint {

@@ -10,7 +10,7 @@ import { getOverlayNPCTarget, getNPCLoot } from '../services/api'
 import { className, bodyTypeName } from '../lib/npcHelpers'
 import { effectiveDropPct, rarityColor } from '../lib/lootHelpers'
 import type { TargetState, SpecialAbility } from '../types/overlay'
-import type { NPCLootTable } from '../types/npc'
+import type { NPCLootTable, LootDrop } from '../types/npc'
 
 // ── Ability badge colours ──────────────────────────────────────────────────────
 // Yellow  = special attacks (direct combat threat to the player)
@@ -142,56 +142,70 @@ function LootContent({ npcId }: { npcId: number }): React.ReactElement {
   if (error) {
     return <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: 0, padding: '4px 2px' }}>Failed to load loot.</p>
   }
-  if (!loot || loot.drops.length === 0) {
+  const ownDrops = loot?.drops ?? []
+  const zoneDrops = loot?.zone_wide_drops ?? []
+  if (ownDrops.length === 0 && zoneDrops.length === 0) {
     return <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: 0, padding: '4px 2px' }}>No loot table for this NPC.</p>
   }
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {loot.drops.map((drop) => (
-        <div key={drop.id}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 2 }}>
-            <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              {drop.multiplier > 1 ? `×${drop.multiplier} · ` : ''}
-              {drop.probability < 100 ? `${drop.probability}% chance` : 'Always drops'}
+  const renderDropList = (drops: LootDrop[]) => drops.map((drop) => (
+    <div key={drop.id}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 2 }}>
+        <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          {drop.multiplier > 1 ? `×${drop.multiplier} · ` : ''}
+          {drop.probability < 100 ? `${drop.probability}% chance` : 'Always drops'}
+        </span>
+      </div>
+      {drop.items.map((item) => {
+        const eff = effectiveDropPct(drop, item)
+        return (
+          <div
+            key={`${drop.id}-${item.item_id}`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '1px 0',
+              borderTop: '1px solid rgba(255,255,255,0.05)',
+            }}
+          >
+            <ItemIcon id={item.item_icon} name={item.item_name} size={18} />
+            <span
+              style={{
+                flex: 1,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontSize: 11,
+                color: rarityColor(eff),
+                fontWeight: 500,
+              }}
+            >
+              {item.item_name}
+            </span>
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+              {item.chance.toFixed(1)}%
+              {item.multiplier > 1 && ` ×${item.multiplier}`}
             </span>
           </div>
-          {drop.items.map((item) => {
-            const eff = effectiveDropPct(drop, item)
-            return (
-              <div
-                key={`${drop.id}-${item.item_id}`}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '1px 0',
-                  borderTop: '1px solid rgba(255,255,255,0.05)',
-                }}
-              >
-                <ItemIcon id={item.item_icon} name={item.item_name} size={18} />
-                <span
-                  style={{
-                    flex: 1,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    fontSize: 11,
-                    color: rarityColor(eff),
-                    fontWeight: 500,
-                  }}
-                >
-                  {item.item_name}
-                </span>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
-                  {item.chance.toFixed(1)}%
-                  {item.multiplier > 1 && ` ×${item.multiplier}`}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      ))}
+        )
+      })}
+    </div>
+  ))
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {renderDropList(ownDrops)}
+      {zoneDrops.length > 0 && (
+        <>
+          <div style={{ paddingTop: 4 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(180, 200, 255, 0.85)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              {loot?.zone_wide_label || 'Zone-wide loot'}
+            </span>
+          </div>
+          {renderDropList(zoneDrops)}
+        </>
+      )}
     </div>
   )
 }

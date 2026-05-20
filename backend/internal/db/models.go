@@ -311,9 +311,11 @@ type LootDrop struct {
 
 // NPCLootTable holds the resolved loot table for an NPC.
 type NPCLootTable struct {
-	ID    int        `json:"id"`
-	Name  string     `json:"name"`
-	Drops []LootDrop `json:"drops"`
+	ID            int        `json:"id"`
+	Name          string     `json:"name"`
+	Drops         []LootDrop `json:"drops"`
+	ZoneWideDrops []LootDrop `json:"zone_wide_drops,omitempty"`
+	ZoneWideLabel string     `json:"zone_wide_label,omitempty"`
 }
 
 // ItemSourceNPC is a minimal NPC record used in item source listings.
