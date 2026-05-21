@@ -25,7 +25,11 @@ export default function ItemSearchModal({
   onClose,
 }: ItemSearchModalProps): React.ReactElement | null {
   const [q, setQ] = useState('')
+  // Kept lenient (Item[] | null/undefined-tolerant) and normalised on read.
+  // Some upstream paths historically set this to null when the backend
+  // returned an empty result set, which would crash the render.
   const [results, setResults] = useState<Item[]>([])
+  const safeResults: Item[] = results ?? []
   const [loading, setLoading] = useState(false)
   const [activeIdx, setActiveIdx] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -65,20 +69,20 @@ export default function ItemSearchModal({
       if (e.key === 'Escape') onClose()
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        setActiveIdx((i) => Math.min(results.length - 1, i + 1))
+        setActiveIdx((i) => Math.min(safeResults.length - 1, i + 1))
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault()
         setActiveIdx((i) => Math.max(0, i - 1))
       }
-      if (e.key === 'Enter' && results[activeIdx]) {
+      if (e.key === 'Enter' && safeResults[activeIdx]) {
         e.preventDefault()
-        onSelect(results[activeIdx])
+        onSelect(safeResults[activeIdx])
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, results, activeIdx, onClose, onSelect])
+  }, [open, safeResults, activeIdx, onClose, onSelect])
 
   if (!open) return null
 
@@ -118,7 +122,7 @@ export default function ItemSearchModal({
               Searching…
             </div>
           )}
-          {!loading && q.trim().length >= 2 && results.length === 0 && (
+          {!loading && q.trim().length >= 2 && safeResults.length === 0 && (
             <div className="px-4 py-3 text-xs" style={{ color: 'var(--color-muted)' }}>
               No items match.
             </div>
@@ -128,7 +132,7 @@ export default function ItemSearchModal({
               Type at least two characters to search.
             </div>
           )}
-          {results.map((item, i) => {
+          {safeResults.map((item, i) => {
             const active = i === activeIdx
             return (
               <button
