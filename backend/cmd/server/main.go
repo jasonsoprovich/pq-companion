@@ -16,6 +16,7 @@ import (
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/api"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/appbackup"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/applog"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
@@ -36,6 +37,16 @@ func main() {
 	addr := flag.String("addr", "", "HTTP listen address (overrides config server_addr)")
 	dbPath := flag.String("db", defaultDBPath(), "path to quarm.db")
 	flag.Parse()
+
+	logPath, logCloser, logErr := applog.Init(runtimeAppVersion())
+	if logCloser != nil {
+		defer logCloser.Close()
+	}
+	if logErr != nil {
+		slog.Warn("file logging unavailable; stderr only", "err", logErr)
+	} else {
+		slog.Info("file logging enabled", "path", logPath)
+	}
 
 	cfgMgr, err := config.Load()
 	if err != nil {
@@ -68,9 +79,30 @@ func main() {
 		listenAddr = *addr
 	}
 
+	if st, statErr := os.Stat(*dbPath); statErr != nil {
+		slog.Error("quarm.db stat failed",
+			"path", *dbPath,
+			"err", statErr,
+		)
+	} else {
+		slog.Info("quarm.db located",
+			"path", *dbPath,
+			"size_bytes", st.Size(),
+			"mode", st.Mode().String(),
+			"mod_time", st.ModTime().Format(time.RFC3339),
+		)
+	}
+
 	database, err := db.Open(*dbPath)
 	if err != nil {
-		slog.Error("open database", "err", err)
+		slog.Error("open database",
+			"err", err,
+			"path", *dbPath,
+			"hint", "If error is 'unable to open database file' the file exists "+
+				"but the process cannot open it. Common causes: AV ACL on the "+
+				"file, OneDrive Files-on-Demand placeholder, stale -journal/-wal "+
+				"sibling, or install on a read-only / unusual filesystem.",
+		)
 		os.Exit(1)
 	}
 	defer database.Close()
