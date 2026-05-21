@@ -148,10 +148,18 @@ export function spellIsBuff(targetType: number): boolean {
   return targetType === 6 || targetType === 14 || targetType === 41
 }
 
+// Matches an EQ-valid character name: capitalised, 3–15 chars, letters or
+// apostrophe. Used to splice into cast_on_other patterns so a trigger fires
+// regardless of who the spell landed on. Mirrors the convention used in the
+// hand-rolled pack triggers (backend/internal/trigger/packs.go).
+const NAME_REGEX = `[A-Z][a-zA-Z']{2,14}`
+
 /**
- * Build a trigger prefill from a spell DB record. Chooses the best available
- * landed-message (cast_on_you → cast_on_other → spell name) and the
- * spell_fades message as the worn-off pattern.
+ * Build a trigger prefill from a spell DB record. Generates an alternation
+ * regex covering both the self landed text (cast_on_you) and the third-party
+ * landed text (cast_on_other prefixed with a name placeholder) so the trigger
+ * fires whether the buff/debuff lands on the caster, a group member, or an
+ * enemy. spell_fades is used for the worn-off pattern.
  */
 export function buildSpellTriggerPrefill(spell: {
   id: number
@@ -163,9 +171,14 @@ export function buildSpellTriggerPrefill(spell: {
   buff_duration: number
   buff_duration_formula: number
 }): SpellTimerTriggerPrefill {
-  const landed = spell.cast_on_you || spell.cast_on_other || spell.name
-  const pattern = escapeRegex(landed)
-  const wornOff = spell.spell_fades ? escapeRegex(spell.spell_fades) : ''
+  const branches: string[] = []
+  if (spell.cast_on_you) branches.push(escapeRegex(spell.cast_on_you))
+  if (spell.cast_on_other) branches.push(NAME_REGEX + escapeRegex(spell.cast_on_other))
+  const pattern =
+    branches.length > 0
+      ? `^(?:${branches.join('|')})$`
+      : `^${escapeRegex(spell.name)}$`
+  const wornOff = spell.spell_fades ? `^${escapeRegex(spell.spell_fades)}$` : ''
 
   // Approximate duration at the level cap; scaling formulas generally hit
   // their cap by 60, so this is a useful default the user can tweak.
