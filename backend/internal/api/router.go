@@ -62,6 +62,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	timerH := &timerHandler{engine: timerEngine}
 	triggerH := &triggerHandler{store: triggerStore, engine: triggerEngine, hub: hub, charStore: charStore, tailer: tailer, cfgMgr: cfgMgr}
 	tasksH := &tasksHandler{store: charStore}
+	wishlistH := &wishlistHandler{store: charStore, db: database}
 	rollsH := &rollsHandler{tracker: rollTracker}
 	raw := &rawHandler{db: database}
 	enumsH := &enumsHandler{}
@@ -129,6 +130,10 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Post("/{id}/tasks/{taskID}/subtasks", tasksH.createSubtask)
 			r.Put("/{id}/tasks/{taskID}/subtasks/{subtaskID}", tasksH.updateSubtask)
 			r.Delete("/{id}/tasks/{taskID}/subtasks/{subtaskID}", tasksH.deleteSubtask)
+			r.Get("/{id}/wishlist", wishlistH.list)
+			r.Post("/{id}/wishlist", wishlistH.add)
+			r.Put("/{id}/wishlist/reorder", wishlistH.reorder)
+			r.Delete("/{id}/wishlist/{entryID}", wishlistH.del)
 		})
 		r.Route("/zeal", func(r chi.Router) {
 			r.Get("/detect", zealH.detect)
