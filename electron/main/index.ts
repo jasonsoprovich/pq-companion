@@ -1,12 +1,26 @@
 import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol } from 'electron'
 import { join, extname, dirname } from 'path'
 import { spawn, ChildProcess } from 'child_process'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
-import { readFile } from 'fs/promises'
+import { existsSync, readFileSync, writeFileSync, statSync } from 'fs'
+import { readFile, access, open as fsOpen } from 'fs/promises'
+import { constants as fsConstants } from 'fs'
 import { homedir } from 'os'
 import { autoUpdater } from 'electron-updater'
+import { appendLine, closeLogger, initLogger } from './logger'
 
 const isDev = !app.isPackaged
+
+// Initialize file logging as early as possible so any errors during the
+// rest of main-process bootstrap are captured. Packaged Windows builds
+// have no attached console — without this we lose every console.* call,
+// every [backend] line piped from the sidecar, and every unhandledRejection.
+const loggerInit = initLogger(app.getVersion())
+if (loggerInit.error) {
+  console.warn(`[main] file logging disabled: ${loggerInit.error.message}`)
+} else if (loggerInit.logPath) {
+  console.log(`[main] electron log: ${loggerInit.logPath}`)
+}
+app.on('before-quit', () => closeLogger())
 
 // pq-audio:// is a custom protocol used by the renderer's Audio elements to
 // load arbitrary local sound files (trigger sounds, alert sounds, etc.) under
@@ -236,11 +250,45 @@ function getQuarmDbPath(): string | null {
   return join(process.resourcesPath, 'bin', 'data', 'quarm.db')
 }
 
-// Show a blocking error dialog when quarm.db is missing from the install.
-// The most common cause is Windows Defender (or another AV) quarantining the
-// ~84 MB SQLite file post-install. We guide the user through the manual fix
-// rather than auto-downloading — see CLAUDE.md context, only one user has hit
-// this so far. Returns when the user chooses "Quit".
+// probeDbReadable checks that quarm.db exists AND is openable for read.
+// Returns ok:true with stats on success, or ok:false with a one-line reason
+// suitable for logging. We open and read a tiny prefix because some failure
+// modes (OneDrive Files-on-Demand placeholders, AV ACL holds) pass stat()
+// but fail at first read.
+async function probeDbReadable(
+  path: string,
+): Promise<{ ok: true; reason: string } | { ok: false; reason: string }> {
+  try {
+    const st = statSync(path)
+    if (!st.isFile()) return { ok: false, reason: 'path is not a regular file' }
+    if (st.size === 0) return { ok: false, reason: 'file is 0 bytes (truncated)' }
+    await access(path, fsConstants.R_OK)
+    const fh = await fsOpen(path, 'r')
+    try {
+      const buf = Buffer.alloc(16)
+      await fh.read(buf, 0, 16, 0)
+      // SQLite files start with "SQLite format 3\0". A non-matching header
+      // means the file was clobbered (partial AV scrub, bad download, etc.).
+      const header = buf.toString('utf8', 0, 15)
+      if (header !== 'SQLite format 3') {
+        return { ok: false, reason: `bad SQLite header: ${JSON.stringify(header)}` }
+      }
+    } finally {
+      await fh.close()
+    }
+    return { ok: true, reason: `${st.size} bytes, mtime ${st.mtime.toISOString()}` }
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException
+    return { ok: false, reason: `${e.code || 'ERR'}: ${e.message}` }
+  }
+}
+
+// Show a blocking error dialog when quarm.db is missing OR unreadable.
+// The file is bundled in resources/bin/data/, so the most common causes are
+// (1) an AV silently quarantining or ACL-locking it post-install, (2) a
+// OneDrive Files-on-Demand placeholder that hasn't been hydrated, or (3) a
+// partial download leaving a 0-byte stub. We guide the user through manual
+// recovery rather than auto-downloading. Returns when the user picks "Quit".
 async function showDbMissingDialog(expectedPath: string): Promise<void> {
   const downloadUrl =
     'https://github.com/jasonsoprovich/pq-companion/releases/tag/data-latest'
@@ -248,19 +296,25 @@ async function showDbMissingDialog(expectedPath: string): Promise<void> {
   while (true) {
     const { response } = await dialog.showMessageBox({
       type: 'error',
-      title: 'Game database missing',
-      message: "PQ Companion can't find the game database (quarm.db).",
+      title: 'Game database missing or unreadable',
+      message: "PQ Companion can't read the game database (quarm.db).",
       detail:
         `The database file should be located at:\n${expectedPath}\n\n` +
-        'This is usually caused by Windows Defender or another antivirus ' +
-        'quarantining the file after install. To fix:\n\n' +
-        '1. Open Windows Security → Virus & threat protection → Protection ' +
-        'history. If "quarm.db" is listed as quarantined, restore it and add ' +
-        'an exclusion so it does not happen again.\n\n' +
-        '2. If it was not quarantined, download quarm.db from the ' +
-        '"data-latest" release on GitHub and drop it into the folder shown ' +
-        'above (create the data folder if it does not exist).\n\n' +
-        'Relaunch PQ Companion once the file is in place.',
+        'The file is either missing, empty, or your system is blocking ' +
+        'this app from opening it. Common causes:\n\n' +
+        '1. Antivirus quarantine or ACL hold. Open Windows Security → ' +
+        'Virus & threat protection → Protection history and look for ' +
+        '"quarm.db" or "pq-companion-server.exe". Restore the file and ' +
+        'add an exclusion for the install folder, then relaunch.\n\n' +
+        '2. OneDrive Files-on-Demand. If the install folder lives under ' +
+        'OneDrive, right-click the install folder and choose "Always ' +
+        'keep on this device" so the .db file is actually downloaded.\n\n' +
+        '3. Manual restore. Download quarm.db from the "data-latest" ' +
+        'GitHub release and drop it into the folder shown above (create ' +
+        'the data folder if it does not exist). The file should be ' +
+        'around 84 MB — anything noticeably smaller is incomplete.\n\n' +
+        'Relaunch PQ Companion once the file is in place. See ' +
+        '~/.pq-companion/logs/electron.log for the exact failure reason.',
       buttons: ['Quit', 'Open install folder', 'Open download page'],
       defaultId: 0,
       cancelId: 0,
@@ -331,6 +385,10 @@ function startSidecar(): void {
   sidecarProcess.stdout?.on('data', (data: Buffer) => {
     const chunk = data.toString()
     process.stdout.write(`[backend] ${chunk}`)
+    // Tee directly via appendLine instead of console.log so the file
+    // keeps the sidecar's own ISO timestamps and level markers intact
+    // (rather than wrapping every line in another [main] prefix).
+    appendLine('BACKEND', chunk)
     if (backendPort === null) {
       stdoutBuf += chunk
       const match = stdoutBuf.match(/BACKEND_PORT=(\d+)/)
@@ -348,7 +406,9 @@ function startSidecar(): void {
   })
 
   sidecarProcess.stderr?.on('data', (data: Buffer) => {
-    process.stderr.write(`[backend:err] ${data.toString()}`)
+    const chunk = data.toString()
+    process.stderr.write(`[backend:err] ${chunk}`)
+    appendLine('BACKEND-ERR', chunk)
   })
 
   sidecarProcess.on('exit', (code) => {
@@ -1180,6 +1240,17 @@ ipcMain.handle('shell:open-config-folder', async () => {
 
 ipcMain.handle('config:folder-path', () => join(homedir(), '.pq-companion'))
 
+// Opens ~/.pq-companion/logs in the OS file manager so the user can attach
+// electron.log / server.log to a bug report without hunting through hidden
+// directories. The folder is created on first launch by initLogger; if it
+// somehow doesn't exist yet we fall back to opening ~/.pq-companion.
+ipcMain.handle('shell:open-logs-folder', async () => {
+  const logsDir = join(homedir(), '.pq-companion', 'logs')
+  const target = existsSync(logsDir) ? logsDir : join(homedir(), '.pq-companion')
+  await shell.openPath(target)
+  return target
+})
+
 ipcMain.handle('updater:check', () => {
   if (!isDev) autoUpdater.checkForUpdates()
 })
@@ -1199,15 +1270,22 @@ ipcMain.handle('updater:quit-and-install', async () => {
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
-  // Bail early if the bundled EQ database is missing — without it the Go
-  // sidecar exits immediately and the app silently loses items/spells/npcs/
-  // zones. Showing a dialog up front gives the user a clear path to recovery.
+  // Bail early if the bundled EQ database is missing OR unreadable.
+  // existsSync alone isn't enough: an AV that ACL-locks the file post-install
+  // (without quarantining it) leaves stat() succeeding while open-for-read
+  // fails. Same for OneDrive cloud-only placeholders. The Go sidecar will hit
+  // SQLite CANTOPEN on every query in that state, so it's worth confirming
+  // read access up front and showing the same recovery dialog if we can't.
   const dbPath = getQuarmDbPath()
-  if (dbPath && !existsSync(dbPath)) {
-    console.error(`[main] quarm.db not found at ${dbPath}`)
-    await showDbMissingDialog(dbPath)
-    app.quit()
-    return
+  if (dbPath) {
+    const readable = await probeDbReadable(dbPath)
+    if (!readable.ok) {
+      console.error(`[main] quarm.db not usable at ${dbPath}: ${readable.reason}`)
+      await showDbMissingDialog(dbPath)
+      app.quit()
+      return
+    }
+    console.log(`[main] quarm.db check passed (${readable.reason})`)
   }
 
   // Map pq-audio:///<absolute-path> to a local file. The leading `/` after the

@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('electron', {
   },
   shell: {
     openConfigFolder: (): Promise<string> => ipcRenderer.invoke('shell:open-config-folder'),
+    openLogsFolder: (): Promise<string> => ipcRenderer.invoke('shell:open-logs-folder'),
     getConfigFolderPath: (): Promise<string> => ipcRenderer.invoke('config:folder-path'),
   },
   updater: {

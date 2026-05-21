@@ -364,6 +364,23 @@ export default function SettingsPage(): React.ReactElement {
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  if (window.electron?.shell) {
+                    window.electron.shell.openLogsFolder().catch(() => null)
+                  }
+                }}
+                disabled={!window.electron?.shell}
+                className="inline-flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+                style={{
+                  borderColor: 'var(--color-border)',
+                  color: 'var(--color-foreground)',
+                }}
+              >
+                <FileText size={13} />
+                Open logs folder
+              </button>
+              <button
+                type="button"
                 onClick={() => window.location.reload()}
                 className="inline-flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-medium transition-colors"
                 style={{
@@ -516,6 +533,7 @@ export default function SettingsPage(): React.ReactElement {
 
         {/* ── Backend Network ────────────────────────────────────────────── */}
         {tab === 'advanced' && (
+        <>
         <BackendNetworkSection
           config={config}
           setConfig={setConfig}
@@ -533,6 +551,8 @@ export default function SettingsPage(): React.ReactElement {
           onSave={handleSave}
           saving={saveState === 'saving'}
         />
+        <DiagnosticsSection />
+        </>
         )}
 
         {/* ── EverQuest Path ─────────────────────────────────────────────── */}
@@ -1774,6 +1794,51 @@ function DPSClassColorsSection({
           )
         })}
       </div>
+    </section>
+  )
+}
+
+// DiagnosticsSection exposes the log folder so a user reporting an issue can
+// hand back ~/.pq-companion/logs/ contents (server.log + electron.log, with
+// rotated siblings). Lives on the Advanced tab — same place a power user
+// would look when "the items page won't load."
+function DiagnosticsSection(): React.ReactElement {
+  const hasShell = typeof window !== 'undefined' && !!window.electron?.shell
+  return (
+    <section
+      className="mt-4 rounded-lg p-4"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+    >
+      <h2
+        className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide"
+        style={{ color: 'var(--color-muted)' }}
+      >
+        <FileText size={13} />
+        Diagnostics
+      </h2>
+      <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+        If something isn&rsquo;t working, the log folder contains the last few
+        sessions of <code>server.log</code> (backend) and <code>electron.log</code>{' '}
+        (UI shell). Attach those to a bug report so the cause can be diagnosed.
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          if (window.electron?.shell) {
+            window.electron.shell.openLogsFolder().catch(() => null)
+          }
+        }}
+        disabled={!hasShell}
+        className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+        style={{
+          backgroundColor: 'var(--color-surface-2)',
+          border: '1px solid var(--color-border)',
+          color: 'var(--color-foreground)',
+        }}
+      >
+        <FolderOpen size={13} />
+        Open logs folder
+      </button>
     </section>
   )
 }
