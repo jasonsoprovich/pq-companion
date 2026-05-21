@@ -37,8 +37,15 @@ function SourceLine({ sources }: SourceLineProps): React.ReactElement {
       </span>
     )
   }
-  if (sources.drops.length > 0) {
-    const npc = sources.drops[0]
+  // Go's nil slices serialise to JSON null, so each source list might come back
+  // as null rather than []. Normalise once at the top.
+  const drops = sources.drops ?? []
+  const merchants = sources.merchants ?? []
+  const forageZones = sources.forage_zones ?? []
+  const groundSpawns = sources.ground_spawns ?? []
+  const tradeskills = sources.tradeskills ?? []
+  if (drops.length > 0) {
+    const npc = drops[0]
     return (
       <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
         Drops from{' '}
@@ -61,14 +68,14 @@ function SourceLine({ sources }: SourceLineProps): React.ReactElement {
             </button>
           </>
         )}
-        {sources.drops.length > 1 && (
-          <span style={{ color: 'var(--color-muted)' }}>{` + ${sources.drops.length - 1} more`}</span>
+        {drops.length > 1 && (
+          <span style={{ color: 'var(--color-muted)' }}>{` + ${drops.length - 1} more`}</span>
         )}
       </span>
     )
   }
-  if (sources.merchants.length > 0) {
-    const m = sources.merchants[0]
+  if (merchants.length > 0) {
+    const m = merchants[0]
     return (
       <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
         Sold by{' '}
@@ -94,8 +101,8 @@ function SourceLine({ sources }: SourceLineProps): React.ReactElement {
       </span>
     )
   }
-  if (sources.forage_zones.length > 0) {
-    const z = sources.forage_zones[0]
+  if (forageZones.length > 0) {
+    const z = forageZones[0]
     return (
       <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
         Foraged in{' '}
@@ -109,8 +116,8 @@ function SourceLine({ sources }: SourceLineProps): React.ReactElement {
       </span>
     )
   }
-  if (sources.ground_spawns.length > 0) {
-    const g = sources.ground_spawns[0]
+  if (groundSpawns.length > 0) {
+    const g = groundSpawns[0]
     return (
       <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
         Ground spawn in{' '}
@@ -124,8 +131,8 @@ function SourceLine({ sources }: SourceLineProps): React.ReactElement {
       </span>
     )
   }
-  if (sources.tradeskills.length > 0) {
-    const t = sources.tradeskills[0]
+  if (tradeskills.length > 0) {
+    const t = tradeskills[0]
     return (
       <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
         {t.role === 'product' ? 'Combined via ' : 'Used in '}
