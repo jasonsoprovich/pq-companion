@@ -138,7 +138,7 @@ func EnchanterPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Enchanter",
 		Class:       ClassPtr(ClassEnchanter),
-		Description: "CC break + cast-failure alerts plus spell timers for the enchanter buff (VoG, KEI, IS, GRM, Speed of the Shissar/Brood), debuff (Tashanian, Cripple, Asphyxiate), root (Root, Fetter, Greater Fetter), mez (Mesmerize, Mesmerization, Dazzle, Enthrall, Entrance, Glamour of Kintaz, Rapture / Ancient: Eternal Rapture), charm (Charm, Beguile, Cajoling Whispers, Allure, Dictate, Boltran's Agacerie), and pacify (Lull, Calm, Soothe, Pacify, Wake of Tranquility) lines.",
+		Description: "CC break + cast-failure alerts plus spell timers for the enchanter buff (VoG, KEI, Gift of Brilliance, IS, GRM, Speed of the Shissar/Brood), debuff (Tashanian, Cripple, Asphyxiate), root (Root, Fetter, Greater Fetter), mez (Mesmerize, Mesmerization, Dazzle, Enthrall, Entrance, Glamour of Kintaz, Rapture / Ancient: Eternal Rapture), charm (Charm, Beguile, Cajoling Whispers, Allure, Dictate, Boltran's Agacerie), and pacify (Lull, Calm, Soothe, Pacify, Wake of Tranquility) lines.",
 		Triggers: []Trigger{
 			// ── Crowd-control breaks ─────────────────────────────────────
 			{
@@ -237,6 +237,17 @@ func EnchanterPack() TriggerPack {
 				TimerType:         TimerTypeBuff,
 				TimerDurationSecs: 9000,
 				SpellID:           2570,
+				PackName:          "Enchanter",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Gift of Brilliance",
+				Enabled:           true,
+				Pattern:           `^(?:Your thoughts begin to race and flow faster\.|[A-Z][a-zA-Z']{2,14} appears to be staring into nothingness\.)$`,
+				WornOffPattern:    `^Your gift of brilliance fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 6000,
+				SpellID:           1410,
 				PackName:          "Enchanter",
 				Actions:           []Action{},
 			},
