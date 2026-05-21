@@ -1957,17 +1957,20 @@ func WizardPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Wizard",
 		Class:       ClassPtr(ClassWizard),
-		Description: "Harvest alert, root break alert, and spell timers for Manaskin and Atol's Spectral Shackles.",
+		Description: "Harvest alert, snare break alert, and spell timers for Manaskin and Atol's Spectral Shackles.",
 		Triggers: []Trigger{
 			// ── Crowd-control break ──────────────────────────────────────
+			// Atol's Spectral Shackles is a snare (SPA 3 movement-speed
+			// -35%), not a root — despite the flavour text about feet
+			// being bound. Label the break accordingly.
 			{
-				Name:     "Root Broke",
+				Name:     "Snare Broke",
 				Enabled:  true,
 				Pattern:  `Your Atol's Spectral Shackles spell has worn off\.`,
 				PackName: "Wizard",
 				Actions: []Action{
-					{Type: ActionOverlayText, Text: "ROOT BROKE!", DurationSecs: 5, Color: "#ff6633"},
-					{Type: ActionTextToSpeech, Text: "Root broke", Volume: 1.0},
+					{Type: ActionOverlayText, Text: "SNARE BROKE!", DurationSecs: 5, Color: "#ff8833"},
+					{Type: ActionTextToSpeech, Text: "Snare broke", Volume: 1.0},
 				},
 			},
 
@@ -2001,7 +2004,7 @@ func WizardPack() TriggerPack {
 				Actions:           []Action{},
 			},
 
-			// ── Snare/root (timer) ──────────────────────────────────────
+			// ── Snare (timer) ───────────────────────────────────────────
 			// Atol's shares "Your feet come free." with the paladin's
 			// Immobilize, but each trigger keys on its own timer so the
 			// shared fade only clears the matching pack's timer.
