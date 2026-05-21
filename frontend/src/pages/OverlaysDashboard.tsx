@@ -7,7 +7,7 @@
  * Layout (positions, sizes, visibility) is persisted to localStorage and
  * restored on next mount. Drag/resize snaps to a 16px grid.
  */
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Eye, EyeOff, MonitorPlay, RotateCcw, HeartPulse, ExternalLink, Layers, X } from 'lucide-react'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
@@ -26,6 +26,10 @@ import {
 } from '../services/dashboardLayout'
 
 const SNAP_GRID = 16
+// Extra empty space kept below/right of the lowest/rightmost visible panel
+// so panels never sit flush against the scroll container edge and users can
+// still grab the bottom resize handle once scrolled to the end.
+const CANVAS_PADDING = 120
 
 // HPS tracking is wired up end-to-end (panel, dashboard layout, popout window)
 // but no log-parsing pipeline currently produces healer stats, so the UI is
@@ -116,6 +120,18 @@ export default function OverlaysDashboard(): React.ReactElement {
     const id = setInterval(check, 1500)
     return () => { cancelled = true; clearInterval(id) }
   }, [])
+
+  const sizerExtent = useMemo(() => {
+    let maxRight = 0
+    let maxBottom = 0
+    for (const key of VISIBLE_PANEL_KEYS) {
+      const p = layout[key]
+      if (!p.visible) continue
+      if (p.x + p.width > maxRight) maxRight = p.x + p.width
+      if (p.y + p.height > maxBottom) maxBottom = p.y + p.height
+    }
+    return { width: maxRight + CANVAS_PADDING, height: maxBottom + CANVAS_PADDING }
+  }, [layout])
 
   const handleTogglePopouts = useCallback(() => {
     const o = window.electron?.overlay
@@ -217,6 +233,20 @@ export default function OverlaysDashboard(): React.ReactElement {
 
       {/* Dashboard canvas */}
       <div style={{ position: 'relative', flex: 1, overflow: 'auto' }}>
+        {/* Invisible sizer forces the scroll container to extend past the
+            lowest/rightmost panel so panels aren't tight against the edge
+            when scrolled to the end. */}
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: sizerExtent.width,
+            height: sizerExtent.height,
+            pointerEvents: 'none',
+          }}
+        />
         <div
           style={{
             position: 'absolute',

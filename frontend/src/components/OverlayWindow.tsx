@@ -22,6 +22,18 @@ function snap(value: number, grid?: number): number {
   return Math.round(value / grid) * grid
 }
 
+function findScrollableAncestor(el: HTMLElement | null): HTMLElement | null {
+  let node: HTMLElement | null = el?.parentElement ?? null
+  while (node && node !== document.body) {
+    const s = getComputedStyle(node)
+    if (/(auto|scroll)/.test(s.overflowY) || /(auto|scroll)/.test(s.overflowX)) {
+      return node
+    }
+    node = node.parentElement
+  }
+  return null
+}
+
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
 interface DragState {
@@ -53,6 +65,10 @@ const CURSOR_MAP: Record<ResizeDir, string> = {
 }
 
 const HANDLE_SIZE = 6 // px
+// Distance (in px) from the scroll container's edge at which a drag/resize
+// begins to autoscroll the container in that direction.
+const AUTOSCROLL_EDGE = 40
+const AUTOSCROLL_MAX_SPEED = 18
 
 /**
  * OverlayWindow — a draggable, resizable floating panel.
@@ -79,49 +95,115 @@ export default function OverlayWindow({
   const [pos, setPos] = useState({ x: defaultX, y: defaultY })
   const [size, setSize] = useState({ w: defaultWidth, h: defaultHeight })
 
+  const rootRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<DragState | null>(null)
   const resizeRef = useRef<ResizeState | null>(null)
+  // Scroll container captured at drag/resize start so we can (a) compensate
+  // the live position for any scroll that happens during the gesture and
+  // (b) autoscroll when the mouse approaches its edges.
+  const scrollContainerRef = useRef<HTMLElement | null>(null)
+  const initialScrollRef = useRef<{ top: number; left: number }>({ top: 0, left: 0 })
+  const lastMouseRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  const autoscrollRafRef = useRef<number | null>(null)
   // Latest values for the mouseup handler — refs avoid recreating listeners.
   const layoutRef = useRef({ pos, size })
   layoutRef.current = { pos, size }
   const onLayoutChangeRef = useRef(onLayoutChange)
   onLayoutChangeRef.current = onLayoutChange
 
+  const applyDragPosition = useCallback((clientX: number, clientY: number): void => {
+    const d = dragRef.current
+    if (!d) return
+    const sc = scrollContainerRef.current
+    const dsx = sc ? sc.scrollLeft - initialScrollRef.current.left : 0
+    const dsy = sc ? sc.scrollTop - initialScrollRef.current.top : 0
+    setPos({
+      x: Math.max(0, d.posX + (clientX - d.startX) + dsx),
+      y: Math.max(0, d.posY + (clientY - d.startY) + dsy),
+    })
+  }, [])
+
+  const applyResize = useCallback((clientX: number, clientY: number): void => {
+    const r = resizeRef.current
+    if (!r) return
+    const sc = scrollContainerRef.current
+    const dsx = sc ? sc.scrollLeft - initialScrollRef.current.left : 0
+    const dsy = sc ? sc.scrollTop - initialScrollRef.current.top : 0
+    const dx = (clientX - r.startX) + dsx
+    const dy = (clientY - r.startY) + dsy
+
+    let newW = r.startW
+    let newH = r.startH
+    let newX = r.startPosX
+    let newY = r.startPosY
+
+    if (r.dir.includes('e')) newW = Math.max(minWidth, r.startW + dx)
+    if (r.dir.includes('s')) newH = Math.max(minHeight, r.startH + dy)
+    if (r.dir.includes('w')) {
+      newW = Math.max(minWidth, r.startW - dx)
+      newX = r.startPosX + (r.startW - newW)
+    }
+    if (r.dir.includes('n')) {
+      newH = Math.max(minHeight, r.startH - dy)
+      newY = r.startPosY + (r.startH - newH)
+    }
+
+    setSize({ w: newW, h: newH })
+    setPos({ x: Math.max(0, newX), y: Math.max(0, newY) })
+  }, [minWidth, minHeight])
+
+  const stopAutoscroll = useCallback((): void => {
+    if (autoscrollRafRef.current !== null) {
+      cancelAnimationFrame(autoscrollRafRef.current)
+      autoscrollRafRef.current = null
+    }
+  }, [])
+
+  const tickAutoscroll = useCallback((): void => {
+    autoscrollRafRef.current = null
+    const sc = scrollContainerRef.current
+    const interacting = dragRef.current !== null || resizeRef.current !== null
+    if (!sc || !interacting) return
+
+    const r = sc.getBoundingClientRect()
+    const { x: mx, y: my } = lastMouseRef.current
+    let dx = 0
+    let dy = 0
+    if (my > r.bottom - AUTOSCROLL_EDGE) {
+      dy = Math.min(AUTOSCROLL_MAX_SPEED, my - (r.bottom - AUTOSCROLL_EDGE))
+    } else if (my < r.top + AUTOSCROLL_EDGE) {
+      dy = -Math.min(AUTOSCROLL_MAX_SPEED, (r.top + AUTOSCROLL_EDGE) - my)
+    }
+    if (mx > r.right - AUTOSCROLL_EDGE) {
+      dx = Math.min(AUTOSCROLL_MAX_SPEED, mx - (r.right - AUTOSCROLL_EDGE))
+    } else if (mx < r.left + AUTOSCROLL_EDGE) {
+      dx = -Math.min(AUTOSCROLL_MAX_SPEED, (r.left + AUTOSCROLL_EDGE) - mx)
+    }
+    if (dx !== 0 || dy !== 0) {
+      sc.scrollBy(dx, dy)
+      if (dragRef.current) applyDragPosition(mx, my)
+      else if (resizeRef.current) applyResize(mx, my)
+    }
+    autoscrollRafRef.current = requestAnimationFrame(tickAutoscroll)
+  }, [applyDragPosition, applyResize])
+
+  const ensureAutoscrollLoop = useCallback((): void => {
+    if (autoscrollRafRef.current !== null) return
+    autoscrollRafRef.current = requestAnimationFrame(tickAutoscroll)
+  }, [tickAutoscroll])
+
   // Attach/detach document-level mouse handlers once.
   useEffect(() => {
     const onMove = (e: MouseEvent): void => {
+      lastMouseRef.current = { x: e.clientX, y: e.clientY }
       if (dragRef.current) {
-        const d = dragRef.current
-        setPos({
-          x: Math.max(0, d.posX + (e.clientX - d.startX)),
-          y: Math.max(0, d.posY + (e.clientY - d.startY)),
-        })
+        applyDragPosition(e.clientX, e.clientY)
+        ensureAutoscrollLoop()
         return
       }
-
       if (resizeRef.current) {
-        const r = resizeRef.current
-        const dx = e.clientX - r.startX
-        const dy = e.clientY - r.startY
-
-        let newW = r.startW
-        let newH = r.startH
-        let newX = r.startPosX
-        let newY = r.startPosY
-
-        if (r.dir.includes('e')) newW = Math.max(minWidth, r.startW + dx)
-        if (r.dir.includes('s')) newH = Math.max(minHeight, r.startH + dy)
-        if (r.dir.includes('w')) {
-          newW = Math.max(minWidth, r.startW - dx)
-          newX = r.startPosX + (r.startW - newW)
-        }
-        if (r.dir.includes('n')) {
-          newH = Math.max(minHeight, r.startH - dy)
-          newY = r.startPosY + (r.startH - newH)
-        }
-
-        setSize({ w: newW, h: newH })
-        setPos({ x: Math.max(0, newX), y: Math.max(0, newY) })
+        applyResize(e.clientX, e.clientY)
+        ensureAutoscrollLoop()
       }
     }
 
@@ -129,6 +211,8 @@ export default function OverlayWindow({
       const wasInteracting = dragRef.current !== null || resizeRef.current !== null
       dragRef.current = null
       resizeRef.current = null
+      scrollContainerRef.current = null
+      stopAutoscroll()
       if (!wasInteracting) return
       // Snap final bounds to grid if requested, then notify the parent.
       const { pos: p, size: s } = layoutRef.current
@@ -146,17 +230,29 @@ export default function OverlayWindow({
     return () => {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
+      stopAutoscroll()
     }
-  }, [minWidth, minHeight, snapGridSize])
+  }, [minWidth, minHeight, snapGridSize, applyDragPosition, applyResize, ensureAutoscrollLoop, stopAutoscroll])
+
+  const captureScrollContainer = useCallback((): void => {
+    const sc = findScrollableAncestor(rootRef.current)
+    scrollContainerRef.current = sc
+    initialScrollRef.current = {
+      top: sc?.scrollTop ?? 0,
+      left: sc?.scrollLeft ?? 0,
+    }
+  }, [])
 
   const startDrag = useCallback((e: React.MouseEvent): void => {
     e.preventDefault()
+    captureScrollContainer()
     dragRef.current = { startX: e.clientX, startY: e.clientY, posX: pos.x, posY: pos.y }
-  }, [pos])
+  }, [pos, captureScrollContainer])
 
   const startResize = useCallback((dir: ResizeDir) => (e: React.MouseEvent): void => {
     e.preventDefault()
     e.stopPropagation()
+    captureScrollContainer()
     resizeRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -166,10 +262,11 @@ export default function OverlayWindow({
       startPosY: pos.y,
       dir,
     }
-  }, [pos, size])
+  }, [pos, size, captureScrollContainer])
 
   return (
     <div
+      ref={rootRef}
       style={{
         position: 'absolute',
         left: pos.x,

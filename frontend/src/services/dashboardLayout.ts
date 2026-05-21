@@ -18,13 +18,15 @@ export interface PanelLayout {
 
 export type DashboardLayout = Record<DashboardPanelKey, PanelLayout>
 
+// All defaults are aligned to the 16px snap grid so panels don't visibly
+// jump on the user's first drag.
 export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayout = {
-  buff:   { x: 24,  y: 24,  width: 300, height: 380, visible: true },
-  detrim: { x: 344, y: 24,  width: 300, height: 380, visible: true },
-  dps:    { x: 24,  y: 424, width: 620, height: 380, visible: true },
-  npc:    { x: 664, y: 24,  width: 400, height: 780, visible: true },
-  hps:    { x: 24,  y: 820, width: 620, height: 380, visible: true },
-  rolls:  { x: 664, y: 820, width: 360, height: 380, visible: false },
+  buff:   { x: 16,  y: 16,  width: 304, height: 384, visible: true },
+  detrim: { x: 336, y: 16,  width: 304, height: 384, visible: true },
+  dps:    { x: 16,  y: 416, width: 624, height: 384, visible: true },
+  npc:    { x: 656, y: 16,  width: 400, height: 784, visible: true },
+  hps:    { x: 16,  y: 816, width: 624, height: 384, visible: true },
+  rolls:  { x: 656, y: 816, width: 400, height: 384, visible: false },
 }
 
 export const DASHBOARD_PANEL_KEYS: DashboardPanelKey[] = ['buff', 'detrim', 'dps', 'npc', 'hps', 'rolls']
