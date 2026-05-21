@@ -344,6 +344,7 @@ interface ItemDetailModalProps {
 }
 
 export default function ItemDetailModal({ item, open, onClose }: ItemDetailModalProps): React.ReactElement | null {
+  const navigate = useNavigate()
   const [sources, setSources] = useState<ItemSources | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [copied, setCopied] = useState(false)
@@ -392,9 +393,17 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
           <div className="flex items-start justify-between gap-2 mb-2">
             <div className="flex items-start gap-3 min-w-0">
               <ItemIcon id={item.icon} name={item.name} size={36} />
-              <h2 className="text-xl font-bold leading-tight" style={{ color: 'var(--color-primary)' }}>
+              <button
+                onClick={() => {
+                  navigate(`/items?select=${item.id}`)
+                  onClose()
+                }}
+                className="text-left text-xl font-bold leading-tight underline decoration-dotted underline-offset-4 hover:opacity-80"
+                style={{ color: 'var(--color-primary)' }}
+                title="View item details"
+              >
                 {item.name}
-              </h2>
+              </button>
             </div>
             <button onClick={onClose} className="shrink-0 mt-0.5" title="Close">
               <X size={16} style={{ color: 'var(--color-muted)' }} />
