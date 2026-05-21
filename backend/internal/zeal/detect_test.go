@@ -54,3 +54,59 @@ func TestDetectInstallNonexistent(t *testing.T) {
 		t.Errorf("nonexistent path should return zero status, got %+v", s)
 	}
 }
+
+func TestDetectInstall_VersionTooOld(t *testing.T) {
+	dir := t.TempDir()
+	blob := append([]byte("Zeal version: \x00"), []byte("1.3.5\x00")...)
+	if err := os.WriteFile(filepath.Join(dir, "Zeal.asi"), blob, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := DetectInstall(dir)
+	if !s.Installed {
+		t.Fatal("expected Installed")
+	}
+	if s.Version != "1.3.5" {
+		t.Errorf("Version = %q; want 1.3.5", s.Version)
+	}
+	if s.VersionOK {
+		t.Errorf("VersionOK true; want false for 1.3.5 < %s", MinSupportedVersion)
+	}
+	if s.MinVersion != MinSupportedVersion {
+		t.Errorf("MinVersion = %q; want %q", s.MinVersion, MinSupportedVersion)
+	}
+}
+
+func TestDetectInstall_VersionOK(t *testing.T) {
+	dir := t.TempDir()
+	blob := append([]byte("Zeal version: \x00"), []byte("1.4.2\x00")...)
+	if err := os.WriteFile(filepath.Join(dir, "Zeal.asi"), blob, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := DetectInstall(dir)
+	if s.Version != "1.4.2" {
+		t.Errorf("Version = %q; want 1.4.2", s.Version)
+	}
+	if !s.VersionOK {
+		t.Error("VersionOK false; want true for 1.4.2 >= min")
+	}
+}
+
+func TestDetectInstall_VersionUnknownDoesNotWarn(t *testing.T) {
+	// Older Zeal binaries or stripped builds may not contain the literal we
+	// scan for. Treat as unknown — never trigger the warning banner on a
+	// detection failure.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Zeal.asi"), []byte("opaque-content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := DetectInstall(dir)
+	if !s.Installed {
+		t.Fatal("expected Installed")
+	}
+	if s.Version != "" {
+		t.Errorf("Version = %q; want empty", s.Version)
+	}
+	if !s.VersionOK {
+		t.Error("VersionOK false on unknown version; should be true to avoid false alarm")
+	}
+}

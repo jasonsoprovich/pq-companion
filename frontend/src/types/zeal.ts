@@ -58,6 +58,9 @@ export interface ZealInstallStatus {
   installed: boolean
   eqgame_present: boolean
   asi_path?: string
+  version?: string
+  min_version?: string
+  version_ok: boolean
 }
 
 export type ZealPipeState = 'idle' | 'connected' | 'disconnected' | 'unsupported'

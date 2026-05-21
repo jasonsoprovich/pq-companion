@@ -5,6 +5,7 @@ import Sidebar from './Sidebar'
 import GlobalSearch from './GlobalSearch'
 import UpdateNotification from './UpdateNotification'
 import ZealNotification from './ZealNotification'
+import ZealVersionWarning from './ZealVersionWarning'
 
 export default function Layout(): React.ReactElement {
   const [searchOpen, setSearchOpen] = useState(false)
@@ -36,6 +37,7 @@ export default function Layout(): React.ReactElement {
         </main>
       </div>
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <ZealVersionWarning />
       <UpdateNotification />
       <ZealNotification />
     </div>
