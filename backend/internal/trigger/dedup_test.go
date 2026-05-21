@@ -159,6 +159,109 @@ func TestInstalledPackNames_ExcludesUserAuthored(t *testing.T) {
 	}
 }
 
+// TestSharedDisciplines_DedupAcrossMeleePacks verifies that installing
+// every melee class pack produces exactly one Resistant + one Fearless
+// trigger (not 6 of each), even though all 6 packs include both.
+func TestSharedDisciplines_DedupAcrossMeleePacks(t *testing.T) {
+	s := openTestStore(t)
+
+	meleePacks := []TriggerPack{
+		WarriorPack(),
+		MonkPack(),
+		RoguePack(),
+		PaladinPack(),
+		RangerPack(),
+		BeastlordPack(),
+	}
+	for _, p := range meleePacks {
+		if err := InstallPack(s, p); err != nil {
+			t.Fatalf("install %s: %v", p.PackName, err)
+		}
+	}
+
+	resistant, _ := s.FindByDedupKey("disc_resistant")
+	fearless, _ := s.FindByDedupKey("disc_fearless")
+	if resistant == nil {
+		t.Fatal("disc_resistant not installed")
+	}
+	if fearless == nil {
+		t.Fatal("disc_fearless not installed")
+	}
+	if resistant.PackName != "Warrior" {
+		t.Errorf("disc_resistant owner=%q, want Warrior (first installed)", resistant.PackName)
+	}
+	if fearless.PackName != "Warrior" {
+		t.Errorf("disc_fearless owner=%q, want Warrior (first installed)", fearless.PackName)
+	}
+
+	// Count occurrences in the full trigger list — must be exactly 1 each.
+	list, _ := s.List()
+	resistantCount, fearlessCount := 0, 0
+	for _, tr := range list {
+		switch tr.DedupKey {
+		case "disc_resistant":
+			resistantCount++
+		case "disc_fearless":
+			fearlessCount++
+		}
+	}
+	if resistantCount != 1 {
+		t.Errorf("Resistant Discipline appears %d times, want 1", resistantCount)
+	}
+	if fearlessCount != 1 {
+		t.Errorf("Fearless Discipline appears %d times, want 1", fearlessCount)
+	}
+}
+
+// TestSharedDisciplines_PromoteOnUninstall verifies that uninstalling the
+// melee pack that owns Resistant/Fearless triggers promote-on-uninstall:
+// a still-installed melee pack takes over ownership so the disciplines
+// stay available to the user.
+func TestSharedDisciplines_PromoteOnUninstall(t *testing.T) {
+	s := openTestStore(t)
+
+	if err := InstallPack(s, WarriorPack()); err != nil {
+		t.Fatalf("install Warrior: %v", err)
+	}
+	if err := InstallPack(s, MonkPack()); err != nil {
+		t.Fatalf("install Monk: %v", err)
+	}
+
+	// Warrior owns the shared disciplines (installed first).
+	if err := UninstallPack(s, "Warrior", map[string]bool{"Monk": true}); err != nil {
+		t.Fatalf("UninstallPack: %v", err)
+	}
+
+	resistant, _ := s.FindByDedupKey("disc_resistant")
+	fearless, _ := s.FindByDedupKey("disc_fearless")
+	if resistant == nil || fearless == nil {
+		t.Fatal("shared disciplines lost after Warrior uninstall")
+	}
+	if resistant.PackName != "Monk" {
+		t.Errorf("disc_resistant after uninstall: owner=%q, want Monk", resistant.PackName)
+	}
+	if fearless.PackName != "Monk" {
+		t.Errorf("disc_fearless after uninstall: owner=%q, want Monk", fearless.PackName)
+	}
+}
+
+// TestSharedDisciplines_CooldownPersisted is a regression test for the
+// previously-missing cooldown_secs column. Confirms that a discipline's
+// CooldownSecs survives a roundtrip through the store.
+func TestSharedDisciplines_CooldownPersisted(t *testing.T) {
+	s := openTestStore(t)
+	if err := InstallPack(s, WarriorPack()); err != nil {
+		t.Fatalf("install Warrior: %v", err)
+	}
+	resistant, _ := s.FindByDedupKey("disc_resistant")
+	if resistant == nil {
+		t.Fatal("disc_resistant not found")
+	}
+	if resistant.CooldownSecs != 1800 {
+		t.Errorf("Resistant Discipline CooldownSecs=%d, want 1800 (30 min)", resistant.CooldownSecs)
+	}
+}
+
 func TestDedupKey_RoundtripPersists(t *testing.T) {
 	s := openTestStore(t)
 	id, _ := NewID()

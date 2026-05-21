@@ -80,6 +80,50 @@ func applyDefaultTimerAlerts(p TriggerPack) TriggerPack {
 	return p
 }
 
+// meleeSharedDisciplines returns the two disciplines available to every
+// melee class (Resistant + Fearless). Each carries a stable dedup_key so
+// the install-time skip logic ensures they show up exactly once in the
+// user's trigger list regardless of how many melee class packs they
+// install. Promote-on-uninstall keeps them around as long as any melee
+// pack is still installed.
+//
+// Pack name is parameterized so the trigger row records which pack
+// installed it (used by promote-on-uninstall to find a fallback).
+func meleeSharedDisciplines(packName string) []Trigger {
+	return []Trigger{
+		{
+			Name:    "Resistant Discipline",
+			Enabled: true,
+			// Self-cast: "You channel your will into magical resistance."
+			// Other-cast: "<name> has become more resistant."
+			Pattern:           `^(?:You channel your will into magical resistance\.|[A-Z][a-zA-Z']{2,14} has become more resistant\.)$`,
+			WornOffPattern:    `^Your resistance fades\.$`,
+			TimerType:         TimerTypeBuff,
+			TimerDurationSecs: 300, // 50 ticks
+			SpellID:           4585,
+			CooldownSecs:      1800,
+			DedupKey:          "disc_resistant",
+			PackName:          packName,
+			Actions:           []Action{},
+		},
+		{
+			Name:    "Fearless Discipline",
+			Enabled: true,
+			// Self-cast: "Your will drives fear from your mind."
+			// Other-cast: "<name>'s eyes gleam with iron will."
+			Pattern:           `^(?:Your will drives fear from your mind\.|[A-Z][a-zA-Z']{2,14}'s eyes gleam with iron will\.)$`,
+			WornOffPattern:    `^The specter of fear returns to your mind\.$`,
+			TimerType:         TimerTypeBuff,
+			TimerDurationSecs: 60, // 10 ticks
+			SpellID:           4587,
+			CooldownSecs:      1800,
+			DedupKey:          "disc_fearless",
+			PackName:          packName,
+			Actions:           []Action{},
+		},
+	}
+}
+
 // EnchanterPack returns the pre-built enchanter trigger pack: critical
 // crowd-control break alerts (mez/charm/root), casting-failure alerts
 // (resist, immunities, interrupt), and timer-creating triggers for the
@@ -916,18 +960,19 @@ func ShamanPack() TriggerPack {
 }
 
 // PaladinPack returns the pre-built paladin trigger pack: a Lay on
-// Hands overlay alert and timer-creating triggers for Immobilize,
-// Holyforge Discipline, and Sanctification Discipline. Pacify (Spell
-// 45) and Divine Aura are intentionally omitted — they live in the
-// Enchanter and Cleric packs respectively. Instant stuns (Stun,
-// Force, Force of Akilae) are also skipped: no duration to track and
-// generic resist alerts already live in the Enchanter pack.
+// Hands overlay alert and timer-creating triggers for Immobilize, both
+// paladin disciplines (Holyforge, Sanctification), and the two shared
+// melee disciplines (Resistant, Fearless). Pacify (Spell 45) and Divine
+// Aura are intentionally omitted — they live in the Enchanter and Cleric
+// packs respectively. Instant stuns (Stun, Force, Force of Akilae) are
+// also skipped: no duration to track and generic resist alerts already
+// live in the Enchanter pack.
 func PaladinPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Paladin",
 		Class:       ClassPtr(ClassPaladin),
-		Description: "Lay on Hands alert, root break alert, and spell timers for Immobilize, Holyforge Discipline, and Sanctification Discipline.",
-		Triggers: []Trigger{
+		Description: "Lay on Hands alert, root break alert, and spell timers for Immobilize, Holyforge Discipline, Sanctification Discipline, plus the shared melee disciplines Resistant and Fearless.",
+		Triggers: append([]Trigger{
 			// ── Emergency burst (overlay alert) ──────────────────────────
 			// Lay on Hands is instant with a 72-minute recast; the cast
 			// message ("Your hands shimmer with holy light.") only fires
@@ -994,7 +1039,7 @@ func PaladinPack() TriggerPack {
 				PackName:          "Paladin",
 				Actions:           []Action{},
 			},
-		},
+		}, meleeSharedDisciplines("Paladin")...),
 	}
 }
 
@@ -1116,12 +1161,13 @@ func WarriorPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Warrior",
 		Class:       ClassPtr(ClassWarrior),
-		Description: "Spell timers for Defensive, Evasive, Aggressive, and Furious Disciplines.",
-		Triggers: []Trigger{
-			// ── Disciplines (timers) ────────────────────────────────────
-			// Defensive / Aggressive / Evasive share the fade text "You
-			// return to your normal fighting style." but have unique cast
-			// messages, so each is distinguishable on its land anchor.
+		Description: "Spell timers for all 11 warrior disciplines: Defensive, Evasive, Aggressive, Furious, Precision, Charge, Mighty Strike, Fellstrike, Fortitude, plus the shared melee disciplines Resistant and Fearless.",
+		Triggers: append([]Trigger{
+			// ── Stance disciplines (timers) ─────────────────────────────
+			// Defensive / Aggressive / Evasive / Precision share the fade
+			// text "You return to your normal fighting style." but have
+			// unique cast messages, so each is distinguishable on its
+			// land anchor.
 			{
 				Name:              "Defensive Discipline",
 				Enabled:           true,
@@ -1159,6 +1205,23 @@ func WarriorPack() TriggerPack {
 				Actions:           []Action{},
 			},
 			{
+				Name:              "Precision Discipline",
+				Enabled:           true,
+				// The DB carries the cast_on_other as "'s assumes a
+				// precise fighting style." (literal apostrophe-s plus
+				// "assumes" — a known dump quirk); pattern allows both
+				// the apostrophe-s and a plain-name form.
+				Pattern:           `^(?:You assume a precise fighting style\.|[A-Z][a-zA-Z']{2,14}'?s? ?assumes a precise fighting style\.)$`,
+				WornOffPattern:    `^You return to your normal fighting style\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 60,
+				SpellID:           4501,
+				CooldownSecs:      1500,
+				PackName:          "Warrior",
+				Actions:           []Action{},
+			},
+			// ── Offensive disciplines (timers) ──────────────────────────
+			{
 				Name:              "Furious Discipline",
 				Enabled:           true,
 				Pattern:           `^(?:A consuming rage takes over your weapons\.|[A-Z][a-zA-Z']{2,14}'s body is consumed in rage\.)$`,
@@ -1170,15 +1233,67 @@ func WarriorPack() TriggerPack {
 				PackName:          "Warrior",
 				Actions:           []Action{},
 			},
-		},
+			{
+				Name:              "Charge Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your focus becomes perfect\.|[A-Z][a-zA-Z']{2,14}'s focus becomes perfect\.)$`,
+				WornOffPattern:    `^Your perfect focus fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 30,
+				SpellID:           4672,
+				CooldownSecs:      1500,
+				PackName:          "Warrior",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Mighty Strike Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:You feel like a killing machine\.|[A-Z][a-zA-Z']{2,14} feels like a killing machine\.)$`,
+				WornOffPattern:    `^Your killer instinct fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 30,
+				SpellID:           4514,
+				CooldownSecs:      1500,
+				PackName:          "Warrior",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Fellstrike Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your weapons strike true\.|[A-Z][a-zA-Z']{2,14}'s weapons strike true\.)$`,
+				WornOffPattern:    `^Your weapons lose their accuracy\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 30,
+				SpellID:           4675,
+				CooldownSecs:      1500,
+				PackName:          "Warrior",
+				Actions:           []Action{},
+			},
+			// ── Defensive (cooldown-style) disciplines ──────────────────
+			{
+				Name:              "Fortitude Discipline",
+				Enabled:           true,
+				// DB grammar quirk on cast_on_you: "You instincts take
+				// over..." (missing 'r'). Matched verbatim so the live
+				// log line — which mirrors the DB — fires the trigger.
+				Pattern:           `^(?:You instincts take over as you avoid every attack\.|[A-Z][a-zA-Z']{2,14}'s body begins to move with instinctual grace\.)$`,
+				WornOffPattern:    `^Your battle instinct leaves you\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 12,
+				SpellID:           4670,
+				CooldownSecs:      2400,
+				PackName:          "Warrior",
+				Actions:           []Action{},
+			},
+		}, meleeSharedDisciplines("Warrior")...),
 	}
 }
 
 // MonkPack returns the pre-built monk trigger pack: a Feign Death skill
-// overlay alert and timers for the four core monk disciplines
-// (Stonestance, Innerflame, Thunderkick, Ashenhand). Mend is intentionally
-// omitted — its exact log strings vary by classic-era client and we'd
-// risk false positives without verifying against real Quarm logs.
+// overlay alert and timers for all 8 monk disciplines plus the two shared
+// melee disciplines (Resistant, Fearless). Mend is intentionally omitted
+// — its exact log strings vary by classic-era client and we'd risk false
+// positives without verifying against real Quarm logs.
 //
 // The Feign Death entry overlaps with the Shadowknight pack — installing
 // both packs will cause duplicate overlay fires on FD; users can disable
@@ -1187,8 +1302,8 @@ func MonkPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Monk",
 		Class:       ClassPtr(ClassMonk),
-		Description: "Feign Death alert plus spell timers for Stonestance, Innerflame, Thunderkick, and Ashenhand Disciplines.",
-		Triggers: []Trigger{
+		Description: "Feign Death alert plus spell timers for all 8 monk disciplines (Stonestance, Innerflame, Thunderkick, Ashenhand, Silentfist, Whirlwind, Voiddance, Hundred Fists) plus the shared melee disciplines Resistant and Fearless.",
+		Triggers: append([]Trigger{
 			// ── Feign Death skill (overlay alert) ────────────────────────
 			{
 				Name:     "Feign Death",
@@ -1200,7 +1315,7 @@ func MonkPack() TriggerPack {
 				},
 			},
 
-			// ── Disciplines (timers) ────────────────────────────────────
+			// ── Defensive/utility disciplines (timers) ──────────────────
 			{
 				Name:              "Stonestance Discipline",
 				Enabled:           true,
@@ -1225,11 +1340,50 @@ func MonkPack() TriggerPack {
 				PackName:          "Monk",
 				Actions:           []Action{},
 			},
-			// Thunderkick and Ashenhand are single-use "next strike" discs
-			// — they consume on the first melee hit, expiring the buff via
-			// spell_fades. The 72-second timer is the natural max lifetime
-			// (formula 50 = level/5 ticks); using before then clears it
-			// via the worn_off line.
+			{
+				Name:              "Voiddance Discipline",
+				Enabled:           true,
+				// DB carries fade as "You movements return to normal."
+				// (a known dump quirk — missing 'r'); matched verbatim.
+				Pattern:           `^(?:You become untouchable\.|[A-Z][a-zA-Z']{2,14} becomes untouchable\.)$`,
+				WornOffPattern:    `^You movements return to normal\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 12,
+				SpellID:           4502,
+				CooldownSecs:      2400,
+				PackName:          "Monk",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Whirlwind Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your instincts take over as you turn aside every attack\.|[A-Z][a-zA-Z']{2,14}'s face becomes twisted with fury\.)$`,
+				WornOffPattern:    `^Your fury fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 12,
+				SpellID:           4509,
+				CooldownSecs:      2400,
+				PackName:          "Monk",
+				Actions:           []Action{},
+			},
+			// ── Offensive disciplines (timers) ──────────────────────────
+			{
+				Name:              "Hundred Fists Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your fists begin to blur\.|[A-Z][a-zA-Z']{2,14}'s fists begin to blur\.)$`,
+				WornOffPattern:    `^Your hands slow down\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 30,
+				SpellID:           4513,
+				CooldownSecs:      1320,
+				PackName:          "Monk",
+				Actions:           []Action{},
+			},
+			// Thunderkick / Ashenhand / Silentfist are single-use "next
+			// strike" discs — they consume on the first melee hit,
+			// expiring the buff via spell_fades. The 72-second timer is
+			// the natural max lifetime (formula 50 = level/5 ticks);
+			// using before then clears it via the worn_off line.
 			{
 				Name:              "Thunderkick Discipline",
 				Enabled:           true,
@@ -1254,22 +1408,34 @@ func MonkPack() TriggerPack {
 				PackName:          "Monk",
 				Actions:           []Action{},
 			},
-		},
+			{
+				Name:              "Silentfist Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your body is filled with silent fury\.|[A-Z][a-zA-Z']{2,14}'s body is filled with silent fury\.)$`,
+				WornOffPattern:    `^The silent fury fades away\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 72,
+				SpellID:           4507,
+				CooldownSecs:      600,
+				PackName:          "Monk",
+				Actions:           []Action{},
+			},
+		}, meleeSharedDisciplines("Monk")...),
 	}
 }
 
 // RoguePack returns the pre-built rogue trigger pack: timer-creating
-// triggers for Duelist, Deadeye, and Counterattack disciplines. Escape
-// (AA) and Evasion (skill) are intentionally omitted — their exact log
-// strings aren't in spells_new and we'd risk false positives without
-// verifying against real Quarm logs.
+// triggers for all 6 rogue disciplines plus the two shared melee
+// disciplines (Resistant, Fearless). Escape (AA) and Evasion (skill) are
+// intentionally omitted — their exact log strings aren't in spells_new
+// and we'd risk false positives without verifying against real Quarm logs.
 func RoguePack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Rogue",
 		Class:       ClassPtr(ClassRogue),
-		Description: "Spell timers for Duelist, Deadeye, and Counterattack Disciplines.",
-		Triggers: []Trigger{
-			// ── Disciplines (timers) ────────────────────────────────────
+		Description: "Spell timers for all 6 rogue disciplines (Duelist, Deadeye, Counterattack, Nimble, Kinesthetics, Blinding Speed) plus the shared melee disciplines Resistant and Fearless.",
+		Triggers: append([]Trigger{
+			// ── Offensive disciplines (timers) ──────────────────────────
 			{
 				Name:              "Duelist Discipline",
 				Enabled:           true,
@@ -1306,21 +1472,64 @@ func RoguePack() TriggerPack {
 				PackName:          "Rogue",
 				Actions:           []Action{},
 			},
-		},
+			// ── Evasive / speed disciplines (timers) ────────────────────
+			{
+				Name:              "Nimble Discipline",
+				Enabled:           true,
+				// DB carries fade as "You movements return to normal."
+				// (missing 'r' — a known dump quirk shared with
+				// Voiddance); matched verbatim.
+				Pattern:           `^(?:You bounce about nimbly\.|[A-Z][a-zA-Z']{2,14} bounces about nimbly\.)$`,
+				WornOffPattern:    `^You movements return to normal\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 12,
+				SpellID:           4515,
+				CooldownSecs:      1260,
+				PackName:          "Rogue",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Kinesthetics Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:Your arms feel alive with mystic energy\.|[A-Z][a-zA-Z']{2,14}'s arms feel alive with mystic energy\.)$`,
+				WornOffPattern:    `^The mystic energy fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 30,
+				SpellID:           4517,
+				CooldownSecs:      300,
+				PackName:          "Rogue",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Blinding Speed Discipline",
+				Enabled:           true,
+				// "Your hands speeds up." is the DB cast_on_you verbatim
+				// (grammar quirk — singular verb with plural subject).
+				Pattern:           `^(?:Your hands speeds up\.|[A-Z][a-zA-Z']{2,14}'s hands speeds up\.)$`,
+				WornOffPattern:    `^Your hands slow down\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 30,
+				SpellID:           4677,
+				CooldownSecs:      1200,
+				PackName:          "Rogue",
+				Actions:           []Action{},
+			},
+		}, meleeSharedDisciplines("Rogue")...),
 	}
 }
 
 // RangerPack returns the pre-built ranger trigger pack: timer-creating
-// triggers for Trueshot and Weapon Shield disciplines, the Call of
-// Sky / Call of Fire elemental weapon-proc buffs, and the Flame Lick
-// aggro tool. Ensnare and Entrapping Roots are intentionally omitted —
-// they're already covered by the Druid pack with the same SpellIDs.
+// triggers for both ranger disciplines (Trueshot, Weapon Shield), the
+// Call of Sky / Call of Fire elemental weapon-proc buffs, the Flame Lick
+// aggro tool, and the two shared melee disciplines (Resistant, Fearless).
+// Ensnare and Entrapping Roots are intentionally omitted — they're
+// already covered by the Druid pack with the same SpellIDs.
 func RangerPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Ranger",
 		Class:       ClassPtr(ClassRanger),
-		Description: "Spell timers for Trueshot Discipline, Weapon Shield Discipline, Call of Sky, Call of Fire, and Flame Lick.",
-		Triggers: []Trigger{
+		Description: "Spell timers for Trueshot Discipline, Weapon Shield Discipline, Call of Sky, Call of Fire, Flame Lick, plus the shared melee disciplines Resistant and Fearless.",
+		Triggers: append([]Trigger{
 			// ── Disciplines (timers) ────────────────────────────────────
 			{
 				Name:              "Trueshot Discipline",
@@ -1386,7 +1595,7 @@ func RangerPack() TriggerPack {
 				PackName:          "Ranger",
 				Actions:           []Action{},
 			},
-		},
+		}, meleeSharedDisciplines("Ranger")...),
 	}
 }
 
@@ -1814,8 +2023,8 @@ func BeastlordPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Beastlord",
 		Class:       ClassPtr(ClassBeastlord),
-		Description: "Spell timers for Spiritual Purity, Spiritual Dominion, Paragon of Spirit, Ferocity, and Sha's Advantage.",
-		Triggers: []Trigger{
+		Description: "Spell timers for Spiritual Purity, Spiritual Dominion, Paragon of Spirit, Ferocity, Sha's Advantage, both beastlord disciplines (Protective Spirit, Bestial Rage), plus the shared melee disciplines Resistant and Fearless.",
+		Triggers: append([]Trigger{
 			// ── Group mana/HP buffs (timers) ────────────────────────────
 			{
 				Name:              "Spiritual Purity",
@@ -1886,7 +2095,33 @@ func BeastlordPack() TriggerPack {
 				PackName:          "Beastlord",
 				Actions:           []Action{},
 			},
-		},
+
+			// ── Disciplines (timers) ────────────────────────────────────
+			{
+				Name:              "Protective Spirit Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:A protective spirit guards you\.|[A-Z][a-zA-Z']{2,14} is guarded by a protective spirit\.)$`,
+				WornOffPattern:    `^The protective spirit leaves you\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 12,
+				SpellID:           4671,
+				CooldownSecs:      234,
+				PackName:          "Beastlord",
+				Actions:           []Action{},
+			},
+			{
+				Name:              "Bestial Rage Discipline",
+				Enabled:           true,
+				Pattern:           `^(?:A bestial fury consumes you\.|[A-Z][a-zA-Z']{2,14} is consumed in a bestial fury\.)$`,
+				WornOffPattern:    `^The bestial fury fades\.$`,
+				TimerType:         TimerTypeBuff,
+				TimerDurationSecs: 30,
+				SpellID:           4678,
+				CooldownSecs:      1530,
+				PackName:          "Beastlord",
+				Actions:           []Action{},
+			},
+		}, meleeSharedDisciplines("Beastlord")...),
 	}
 }
 

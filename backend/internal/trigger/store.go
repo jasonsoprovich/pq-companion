@@ -71,7 +71,8 @@ func (s *Store) migrate() error {
 			exclude_patterns       TEXT    NOT NULL DEFAULT '[]',
 			source                 TEXT    NOT NULL DEFAULT 'log',
 			pipe_condition         TEXT    NOT NULL DEFAULT '',
-			dedup_key              TEXT    NOT NULL DEFAULT ''
+			dedup_key              TEXT    NOT NULL DEFAULT '',
+			cooldown_secs          INTEGER NOT NULL DEFAULT 0
 		)
 	`); err != nil {
 		return err
@@ -101,6 +102,7 @@ func (s *Store) migrate() error {
 		`ALTER TABLE triggers ADD COLUMN source TEXT NOT NULL DEFAULT 'log'`,
 		`ALTER TABLE triggers ADD COLUMN pipe_condition TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE triggers ADD COLUMN dedup_key TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE triggers ADD COLUMN cooldown_secs INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, stmt := range addColumns {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
@@ -177,12 +179,12 @@ func (s *Store) Insert(t *Trigger) error {
 		`INSERT INTO triggers (id, name, enabled, pattern, actions, pack_name, created_at,
 		                       timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		                       display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		                       source, pipe_condition, dedup_key)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       source, pipe_condition, dedup_key, cooldown_secs)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName, t.CreatedAt.Unix(),
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
-		source, pipeJSON, t.DedupKey,
+		source, pipeJSON, t.DedupKey, t.CooldownSecs,
 	)
 	if err != nil {
 		return fmt.Errorf("insert trigger: %w", err)
@@ -216,7 +218,7 @@ func (s *Store) List() ([]*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key
+		        source, pipe_condition, dedup_key, cooldown_secs
 		 FROM triggers ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -241,7 +243,7 @@ func (s *Store) Get(id string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key
+		        source, pipe_condition, dedup_key, cooldown_secs
 		 FROM triggers WHERE id = ?`, id,
 	)
 	t, err := scanTrigger(row)
@@ -289,12 +291,12 @@ func (s *Store) Update(t *Trigger) error {
 		`UPDATE triggers SET name=?, enabled=?, pattern=?, actions=?, pack_name=?,
 		                     timer_type=?, timer_duration_secs=?, worn_off_pattern=?, spell_id=?,
 		                     display_threshold_secs=?, characters=?, timer_alerts=?, exclude_patterns=?,
-		                     source=?, pipe_condition=?, dedup_key=?
+		                     source=?, pipe_condition=?, dedup_key=?, cooldown_secs=?
 		 WHERE id=?`,
 		t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName,
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
-		source, pipeJSON, t.DedupKey,
+		source, pipeJSON, t.DedupKey, t.CooldownSecs,
 		t.ID,
 	)
 	if err != nil {
@@ -330,7 +332,7 @@ func (s *Store) FindByPackAndName(packName, name string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key
+		        source, pipe_condition, dedup_key, cooldown_secs
 		 FROM triggers WHERE pack_name = ? AND name = ? LIMIT 1`,
 		packName, name,
 	)
@@ -358,7 +360,7 @@ func (s *Store) FindByDedupKey(key string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key
+		        source, pipe_condition, dedup_key, cooldown_secs
 		 FROM triggers WHERE dedup_key = ? LIMIT 1`, key,
 	)
 	t, err := scanTrigger(row)
@@ -452,7 +454,7 @@ func scanTrigger(row scanner) (*Trigger, error) {
 		&t.ID, &t.Name, &enabledInt, &t.Pattern, &actJSON, &t.PackName, &unixSec,
 		&timerType, &t.TimerDurationSecs, &t.WornOffPattern, &t.SpellID,
 		&t.DisplayThresholdSecs, &charJSON, &alertJSON, &excludeJSON,
-		&source, &pipeJSON, &t.DedupKey,
+		&source, &pipeJSON, &t.DedupKey, &t.CooldownSecs,
 	); err != nil {
 		return nil, err
 	}
