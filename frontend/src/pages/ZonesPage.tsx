@@ -328,6 +328,28 @@ function OverviewTab({ zone }: { zone: Zone }): React.ReactElement {
         <StatRow label="Succor Point" value={coordStr} />
         {zone.note && <StatRow label="Note" value={zone.note} />}
       </Section>
+      <Section title="Bard Swarm Limits">
+        <StatRow
+          label="PBAE spell hit cap"
+          value="12 targets"
+        />
+        <StatRow
+          label="Damaged-mob warp limit"
+          value="15 pulled"
+        />
+        <StatRow
+          label="Undamaged warp limit"
+          value={`${zone.pull_limit} pulled`}
+        />
+        <div
+          className="pt-1 text-[10px] leading-snug"
+          style={{ color: 'var(--color-muted)' }}
+        >
+          Pull more than the undamaged limit and untouched mobs begin warping;
+          damage more than 15 and the engaged mobs warp. PBAE hit cap and
+          damaged-warp limit are server-wide; the undamaged limit is per-zone.
+        </div>
+      </Section>
       {gy && (
         <Section title="Graveyard">
           <div className="flex justify-between py-0.5 text-sm">

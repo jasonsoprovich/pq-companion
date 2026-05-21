@@ -17,6 +17,7 @@ export interface Zone {
   expansion: number
   npc_level_min: number
   npc_level_max: number
+  pull_limit: number
   graveyard?: ZoneGraveyard
 }
 

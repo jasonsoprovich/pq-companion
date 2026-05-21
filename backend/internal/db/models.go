@@ -275,6 +275,7 @@ type Zone struct {
 	Expansion    int             `json:"expansion"`
 	NPCLevelMin  int             `json:"npc_level_min"`
 	NPCLevelMax  int             `json:"npc_level_max"`
+	PullLimit    int             `json:"pull_limit"`
 	Graveyard    *ZoneGraveyard  `json:"graveyard,omitempty"`
 }
 
