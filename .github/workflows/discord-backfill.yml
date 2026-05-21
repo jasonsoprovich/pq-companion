@@ -1,0 +1,98 @@
+name: Discord Backfill (one-shot)
+
+# One-time workflow: walks every section in CHANGELOG.md oldest-first and
+# posts each to the Discord #changelog channel. Skips #announcements
+# (backfilling 24 announcements would be noise — forward-only there).
+#
+# Run via Actions tab → "Discord Backfill (one-shot)" → Run workflow.
+# After it completes successfully, delete this file — it's no longer needed.
+# The ongoing discord-notify.yml workflow handles new releases going forward.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print what would be posted without hitting Discord"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Walk CHANGELOG.md and post each section
+        env:
+          DISCORD_CHANGELOG_WEBHOOK: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          # All version tags in file order (newest → oldest), then reversed.
+          VERSIONS=$(awk '
+            match($0, /^## v([0-9]+\.[0-9]+\.[0-9]+)/, m) { print m[1] }
+          ' CHANGELOG.md | tac)
+
+          if [ -z "$VERSIONS" ]; then
+            echo "::error::No version sections found in CHANGELOG.md"
+            exit 1
+          fi
+
+          COUNT=$(echo "$VERSIONS" | wc -l)
+          echo "Backfilling $COUNT release(s) to #changelog (oldest → newest)…"
+
+          while IFS= read -r V; do
+            [ -z "$V" ] && continue
+
+            # Extract the section for this version.
+            SECTION=$(awk -v ver="v$V" '
+              $0 ~ "^## "ver"( |$)" { found=1; print; next }
+              found && /^## v[0-9]+\.[0-9]+\.[0-9]+/ { exit }
+              found { print }
+            ' CHANGELOG.md)
+
+            BODY=$(echo "$SECTION" | awk 'NR>1' | awk '/./{p=1} p')
+
+            if [ "${#BODY}" -gt 4000 ]; then
+              BODY="${BODY:0:3900}"$'\n\n…full notes on the website.'
+            fi
+
+            RELEASE_URL=$(gh release view "v$V" \
+              --repo "$GITHUB_REPOSITORY" --json url -q .url 2>/dev/null || true)
+
+            PAYLOAD=$(jq -n \
+              --arg title "📦 PQ Companion v$V" \
+              --arg url "$RELEASE_URL" \
+              --arg desc "$BODY" \
+              '{
+                embeds: [
+                  ({
+                    title: $title,
+                    description: $desc,
+                    color: 13215820,
+                    footer: { text: "pq-companion.com/changelog" }
+                  } + (if $url == "" then {} else { url: $url } end))
+                ]
+              }')
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "── v$V (dry-run) ──"
+              echo "$PAYLOAD" | jq .
+            else
+              echo "Posting v$V…"
+              echo "$PAYLOAD" \
+                | curl -fsS -H "Content-Type: application/json" \
+                       -d @- "$DISCORD_CHANGELOG_WEBHOOK"
+              echo ""
+              # Stay well under Discord's webhook rate limit (30/min per
+              # channel). 2s between posts ≈ 30 over a minute.
+              sleep 2
+            fi
+          done <<< "$VERSIONS"
+
+          echo "Backfill complete."

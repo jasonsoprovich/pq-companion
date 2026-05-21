@@ -1,0 +1,134 @@
+name: Discord Notify
+
+# Posts the newest CHANGELOG.md section to Discord whenever a push to main
+# adds a new release section at the top of the file. Idempotent: re-runs on
+# unrelated CHANGELOG edits (typo fixes, etc.) detect no version change and
+# exit without posting.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "CHANGELOG.md"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force-post the current topmost section even if version hasn't changed"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: Detect new release section
+        id: detect
+        env:
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          set -euo pipefail
+
+          NEW_TOP=$(awk '/^## v[0-9]+\.[0-9]+\.[0-9]+/{print; exit}' CHANGELOG.md)
+          OLD_TOP=$(git show HEAD~1:CHANGELOG.md 2>/dev/null \
+            | awk '/^## v[0-9]+\.[0-9]+\.[0-9]+/{print; exit}' || true)
+
+          if [ -z "$NEW_TOP" ]; then
+            echo "No \`## v\` section found in CHANGELOG.md — skipping"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$NEW_TOP" = "$OLD_TOP" ] && [ "$FORCE" != "true" ]; then
+            echo "Topmost release unchanged ($NEW_TOP) — skipping"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Detected new top section: $NEW_TOP"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Extract section + post to Discord
+        if: steps.detect.outputs.changed == 'true'
+        env:
+          DISCORD_CHANGELOG_WEBHOOK: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
+          DISCORD_ANNOUNCEMENTS_WEBHOOK: ${{ secrets.DISCORD_ANNOUNCEMENTS_WEBHOOK }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Extract the topmost section (everything from the first `## v`
+          # line up to the line before the next `## v` line).
+          SECTION=$(awk '
+            /^## v[0-9]+\.[0-9]+\.[0-9]+/ {
+              if (seen) exit
+              seen = 1
+              print
+              next
+            }
+            seen { print }
+          ' CHANGELOG.md)
+
+          HEADER=$(echo "$SECTION" | head -1)
+          VERSION=$(echo "$HEADER" | sed -E 's/^## v([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          # Body = section minus the header line, with leading blanks stripped.
+          BODY=$(echo "$SECTION" | awk 'NR>1' | awk '/./{p=1} p')
+          # Headline = first non-empty paragraph that doesn't start with ### or -.
+          HEADLINE=$(echo "$BODY" | awk '
+            /^### / { exit }
+            /^- / { exit }
+            /./ { print; got=1; next }
+            got { exit }
+          ')
+
+          # Look up the matching GitHub release URL (may not exist yet if the
+          # CHANGELOG push raced ahead of the release publish).
+          RELEASE_URL=$(gh release view "v$VERSION" \
+            --repo "$GITHUB_REPOSITORY" --json url -q .url 2>/dev/null || true)
+
+          # Discord embed description max is 4096 chars.
+          if [ "${#BODY}" -gt 4000 ]; then
+            BODY="${BODY:0:3900}"$'\n\n…full notes on the website.'
+          fi
+
+          # ── Post to #changelog ──────────────────────────────────────────
+          jq -n \
+            --arg title "📦 PQ Companion v$VERSION" \
+            --arg url "$RELEASE_URL" \
+            --arg desc "$BODY" \
+            '{
+              embeds: [
+                ({
+                  title: $title,
+                  description: $desc,
+                  color: 13215820,
+                  footer: { text: "pq-companion.com/changelog" }
+                } + (if $url == "" then {} else { url: $url } end))
+              ]
+            }' \
+          | curl -fsS -H "Content-Type: application/json" \
+                 -d @- "$DISCORD_CHANGELOG_WEBHOOK"
+
+          echo "Posted to #changelog"
+
+          # ── Post to #announcements ──────────────────────────────────────
+          if [ -n "$HEADLINE" ]; then
+            ANN_BODY="**PQ Companion v$VERSION is out** — $HEADLINE"
+          else
+            ANN_BODY="**PQ Companion v$VERSION is out.**"
+          fi
+          if [ -n "$RELEASE_URL" ]; then
+            ANN_BODY="$ANN_BODY"$'\n'"$RELEASE_URL"
+          fi
+
+          jq -n --arg content "$ANN_BODY" '{ content: $content }' \
+          | curl -fsS -H "Content-Type: application/json" \
+                 -d @- "$DISCORD_ANNOUNCEMENTS_WEBHOOK"
+
+          echo "Posted to #announcements"
