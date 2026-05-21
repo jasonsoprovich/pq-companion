@@ -850,6 +850,40 @@ export function deleteCharacterSubtask(charID: number, taskID: number, subtaskID
   return del(`/api/characters/${charID}/tasks/${taskID}/subtasks/${subtaskID}`)
 }
 
+// ── Character Wishlist ─────────────────────────────────────────────────────────
+
+import type { WishlistListResponse, WishlistEntry } from '../types/wishlist'
+
+export function listWishlist(charID: number): Promise<WishlistListResponse> {
+  return get<WishlistListResponse>(`/api/characters/${charID}/wishlist`)
+}
+
+export function addWishlistEntries(
+  charID: number,
+  itemID: number,
+  slots: string[],
+): Promise<{ entries: WishlistEntry[] }> {
+  return post<{ entries: WishlistEntry[] }>(`/api/characters/${charID}/wishlist`, {
+    item_id: itemID,
+    slots,
+  })
+}
+
+export function deleteWishlistEntry(charID: number, entryID: number): Promise<void> {
+  return del(`/api/characters/${charID}/wishlist/${entryID}`)
+}
+
+export function reorderWishlistSlot(
+  charID: number,
+  slotBucket: string,
+  orderedIDs: number[],
+): Promise<void> {
+  return put<void>(`/api/characters/${charID}/wishlist/reorder`, {
+    slot_bucket: slotBucket,
+    ordered_ids: orderedIDs,
+  })
+}
+
 // ── Triggers ───────────────────────────────────────────────────────────────────
 
 export function listTriggers(): Promise<Trigger[]> {
