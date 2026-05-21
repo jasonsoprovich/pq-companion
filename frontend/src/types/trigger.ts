@@ -126,6 +126,13 @@ export interface Trigger {
    * tested independently — empty list = no exclusions.
    */
   exclude_patterns: string[]
+  /**
+   * Identifies the conceptual spell/discipline/skill this trigger
+   * represents, independent of which class pack ships it. When two
+   * packs both define a trigger with the same dedup_key, only one
+   * is installed; the second is skipped. Empty/undefined = no dedup.
+   */
+  dedup_key?: string
 }
 
 export interface TriggerFired {

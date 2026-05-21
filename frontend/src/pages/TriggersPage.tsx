@@ -1109,6 +1109,19 @@ function TriggerRow({ trigger, onDeleted, onUpdated }: TriggerRowProps): React.R
                 {trigger.pack_name}
               </span>
             )}
+            {trigger.dedup_key && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded shrink-0"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-primary)',
+                  border: '1px solid var(--color-primary)',
+                }}
+                title={`Shared across packs (dedup key: ${trigger.dedup_key}). Installing another pack that ships this same entry will skip the duplicate.`}
+              >
+                shared
+              </span>
+            )}
             <span
               className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded shrink-0"
               style={{
@@ -1760,8 +1773,19 @@ export default function TriggersPage(): React.ReactElement {
   const [search, setSearch] = useState('')
   const [classFilter, setClassFilter] = useState<number | null>(null)
   const [charFilter, setCharFilter] = useState<string>('')
+  const [packFilter, setPackFilter] = useState<string>('')
+  const [sortMode, setSortMode] = useState<'name' | 'recent'>('name')
   const [chars, setChars] = useState<Character[]>([])
   const [packClassByName, setPackClassByName] = useState<Map<string, number>>(new Map())
+  // Tracks which pack sections in the grouped trigger list are collapsed.
+  // Default: all expanded. Persists across refreshes via localStorage.
+  const [collapsedPacks, setCollapsedPacks] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('triggers.collapsedPacks')
+      if (raw) return new Set(JSON.parse(raw))
+    } catch {}
+    return new Set()
+  })
 
   const load = useCallback(() => {
     setLoading(true)
@@ -1798,10 +1822,10 @@ export default function TriggersPage(): React.ReactElement {
 
   const filteredTriggers = (() => {
     const q = search.trim().toLowerCase()
-    if (!q && classFilter === null && !charFilter) return triggers
+    if (!q && classFilter === null && !charFilter && !packFilter) return triggers
     return triggers.filter((t) => {
       if (q) {
-        const haystack = `${t.name}\n${t.pattern}\n${t.pack_name}`.toLowerCase()
+        const haystack = `${t.name}\n${t.pattern}\n${t.pack_name}\n${t.dedup_key ?? ''}`.toLowerCase()
         if (!haystack.includes(q)) return false
       }
       // Character filter: empty Characters list = fires for any character
@@ -1820,9 +1844,80 @@ export default function TriggersPage(): React.ReactElement {
         if (!t.pack_name) return false
         if (packClassByName.get(t.pack_name) !== classFilter) return false
       }
+      if (packFilter) {
+        // packFilter === "__uncategorized__" picks user-authored triggers
+        // (empty pack_name); any other value matches the pack name exactly.
+        if (packFilter === '__uncategorized__') {
+          if (t.pack_name) return false
+        } else if (t.pack_name !== packFilter) {
+          return false
+        }
+      }
       return true
     })
   })()
+
+  // Pack names currently represented in the user's triggers, for the
+  // pack-filter dropdown. Sorted alphabetically; the "Uncategorized"
+  // bucket (user-authored) is pinned to the end.
+  const packsInUse = (() => {
+    const set = new Set<string>()
+    let hasUncategorized = false
+    for (const t of triggers) {
+      if (t.pack_name) set.add(t.pack_name)
+      else hasUncategorized = true
+    }
+    const names = Array.from(set).sort((a, b) => a.localeCompare(b))
+    if (hasUncategorized) names.push('__uncategorized__')
+    return names
+  })()
+
+  // Group + sort the filtered triggers for display. Sections are pack
+  // names; uncategorized (user-authored) lives at the end. Each section's
+  // entries are sorted per sortMode.
+  const groupedTriggers = (() => {
+    const groups = new Map<string, Trigger[]>()
+    for (const t of filteredTriggers) {
+      const key = t.pack_name || '__uncategorized__'
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(t)
+    }
+    const ordered: { packName: string; items: Trigger[] }[] = []
+    const sortItems = (items: Trigger[]) => {
+      if (sortMode === 'recent') {
+        items.sort((a, b) => {
+          const aT = a.created_at ? new Date(a.created_at).getTime() : 0
+          const bT = b.created_at ? new Date(b.created_at).getTime() : 0
+          return bT - aT
+        })
+      } else {
+        items.sort((a, b) => a.name.localeCompare(b.name))
+      }
+    }
+    const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
+      if (a === '__uncategorized__') return 1
+      if (b === '__uncategorized__') return -1
+      return a.localeCompare(b)
+    })
+    for (const k of sortedKeys) {
+      const items = groups.get(k)!
+      sortItems(items)
+      ordered.push({ packName: k, items })
+    }
+    return ordered
+  })()
+
+  const togglePackCollapsed = (packName: string) => {
+    setCollapsedPacks((prev) => {
+      const next = new Set(prev)
+      if (next.has(packName)) next.delete(packName)
+      else next.add(packName)
+      try {
+        localStorage.setItem('triggers.collapsedPacks', JSON.stringify(Array.from(next)))
+      } catch {}
+      return next
+    })
+  }
 
   // Always offer all 15 EQ classes in the filter so the user can narrow to
   // any installed class pack, even before they have a character of that
@@ -2060,7 +2155,7 @@ export default function TriggersPage(): React.ReactElement {
                     />
                     <input
                       type="text"
-                      placeholder="Search triggers by name, pattern, or pack…"
+                      placeholder="Search triggers by name, pattern, pack, or dedup key…"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       className="w-full rounded pl-7 pr-3 py-1.5 text-xs outline-none"
@@ -2113,13 +2208,48 @@ export default function TriggersPage(): React.ReactElement {
                       ))}
                     </select>
                   )}
-                  {(search || classFilter !== null || charFilter) && (
+                  {packsInUse.length > 0 && (
+                    <select
+                      value={packFilter}
+                      onChange={(e) => setPackFilter(e.target.value)}
+                      className="rounded px-2 py-1.5 text-xs outline-none"
+                      style={{
+                        backgroundColor: 'var(--color-surface-2)',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-foreground)',
+                      }}
+                      title="Filter by trigger pack"
+                    >
+                      <option value="">All packs</option>
+                      {packsInUse.map((p) => (
+                        <option key={p} value={p}>
+                          {p === '__uncategorized__' ? 'Uncategorized' : p}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <select
+                    value={sortMode}
+                    onChange={(e) => setSortMode(e.target.value as 'name' | 'recent')}
+                    className="rounded px-2 py-1.5 text-xs outline-none"
+                    style={{
+                      backgroundColor: 'var(--color-surface-2)',
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-foreground)',
+                    }}
+                    title="Sort triggers within each pack"
+                  >
+                    <option value="name">Sort: Name</option>
+                    <option value="recent">Sort: Recent</option>
+                  </select>
+                  {(search || classFilter !== null || charFilter || packFilter) && (
                     <button
                       type="button"
                       onClick={() => {
                         setSearch('')
                         setClassFilter(null)
                         setCharFilter('')
+                        setPackFilter('')
                       }}
                       className="text-[11px] px-2 py-1.5 rounded"
                       style={{
@@ -2242,15 +2372,52 @@ export default function TriggersPage(): React.ReactElement {
                 </div>
               )}
 
-              {/* Trigger list */}
-              {filteredTriggers.map((t) => (
-                <TriggerRow
-                  key={t.id}
-                  trigger={t}
-                  onDeleted={handleDeleted}
-                  onUpdated={handleUpdated}
-                />
-              ))}
+              {/* Trigger list — grouped by pack with collapsible sections */}
+              {groupedTriggers.map((group) => {
+                const isCollapsed = collapsedPacks.has(group.packName)
+                const label =
+                  group.packName === '__uncategorized__' ? 'Uncategorized' : group.packName
+                return (
+                  <div key={group.packName} className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => togglePackCollapsed(group.packName)}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left"
+                      style={{
+                        backgroundColor: 'var(--color-surface-2)',
+                        border: '1px solid var(--color-border)',
+                      }}
+                    >
+                      {isCollapsed ? (
+                        <ChevronRight size={13} style={{ color: 'var(--color-muted)' }} />
+                      ) : (
+                        <ChevronDown size={13} style={{ color: 'var(--color-muted)' }} />
+                      )}
+                      <span
+                        className="text-xs font-semibold"
+                        style={{ color: 'var(--color-foreground)' }}
+                      >
+                        {label}
+                      </span>
+                      <span
+                        className="text-[11px]"
+                        style={{ color: 'var(--color-muted-foreground)' }}
+                      >
+                        {group.items.length}
+                      </span>
+                    </button>
+                    {!isCollapsed &&
+                      group.items.map((t) => (
+                        <TriggerRow
+                          key={t.id}
+                          trigger={t}
+                          onDeleted={handleDeleted}
+                          onUpdated={handleUpdated}
+                        />
+                      ))}
+                  </div>
+                )
+              })}
             </div>
           )}
         </>
