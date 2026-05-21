@@ -4,6 +4,8 @@ A desktop companion app for [Project Quarm](https://www.projectquarm.com/) — t
 
 > **Status:** Feature-complete and in active maintenance. See [FEATURES.md](FEATURES.md) for the full list of what's implemented.
 
+Join the community on [Discord](https://discord.gg/a2QytxSVgM) for help, feedback, and release announcements.
+
 ---
 
 ## What It Does
