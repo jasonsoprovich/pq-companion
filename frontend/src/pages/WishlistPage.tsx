@@ -18,6 +18,7 @@ import CharacterSubTabs from '../components/CharacterSubTabs'
 import ItemSearchModal from '../components/ItemSearchModal'
 import WishlistSlotPicker from '../components/WishlistSlotPicker'
 import ItemDetailModal from '../components/ItemDetailModal'
+import { ConfirmModal } from '../components/ConfirmModal'
 import { ItemIcon } from '../components/Icon'
 import { WISHLIST_SLOT_ORDER, GENERAL_BUCKET, validSlotsForItem, isMultiSlotItem } from '../lib/wishlistSlots'
 
@@ -238,6 +239,8 @@ export default function WishlistPage(): React.ReactElement {
   const [searchOpen, setSearchOpen] = useState(false)
   const [picker, setPicker] = useState<{ item: Item; currentSlots: string[] } | null>(null)
   const [detailItem, setDetailItem] = useState<Item | null>(null)
+  // Entry pending removal, waiting on user confirmation.
+  const [pendingDelete, setPendingDelete] = useState<WishlistEntry | null>(null)
 
   // Drag state
   const dragSrc = useRef<{ id: number; slot: string } | null>(null)
@@ -338,9 +341,11 @@ export default function WishlistPage(): React.ReactElement {
       .catch((err: Error) => setError(err.message))
   }
 
-  function handleDelete(entry: WishlistEntry) {
-    if (!viewedCharID) return
-    deleteWishlistEntry(viewedCharID, entry.id)
+  function confirmDelete() {
+    if (!viewedCharID || !pendingDelete) return
+    const id = pendingDelete.id
+    setPendingDelete(null)
+    deleteWishlistEntry(viewedCharID, id)
       .then(() => load())
       .catch((err: Error) => setError(err.message))
   }
@@ -498,7 +503,7 @@ export default function WishlistPage(): React.ReactElement {
                     entry={entry}
                     sources={sourcesCache.get(entry.item_id) ?? null}
                     onOpenItem={handleOpenItem}
-                    onDelete={() => handleDelete(entry)}
+                    onDelete={() => setPendingDelete(entry)}
                     isDraggedOver={dragOverID === entry.id}
                     onDragStart={onRowDragStart(entry)}
                     onDragOver={onRowDragOver(entry)}
@@ -531,6 +536,21 @@ export default function WishlistPage(): React.ReactElement {
         />
       )}
       <ItemDetailModal item={detailItem} open={!!detailItem} onClose={() => setDetailItem(null)} />
+      {pendingDelete && (
+        <ConfirmModal
+          title="Remove from wishlist"
+          message={
+            <>
+              Remove <strong>{pendingDelete.item?.name ?? `item #${pendingDelete.item_id}`}</strong>{' '}
+              from the <strong>{pendingDelete.slot_bucket}</strong> section?
+            </>
+          }
+          confirmLabel="Remove"
+          tone="danger"
+          onConfirm={confirmDelete}
+          onCancel={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   )
 }
