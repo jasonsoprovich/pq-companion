@@ -123,6 +123,46 @@ func TestNPCTracker_KillDoesNotClearUnrelatedTarget(t *testing.T) {
 	}
 }
 
+func TestStripCorpseSuffix(t *testing.T) {
+	cases := []struct {
+		in       string
+		wantName string
+		wantIs   bool
+	}{
+		{"a gnoll", "a gnoll", false},
+		{"a gnoll's corpse", "a gnoll", true},
+		{"A Gnoll's Corpse", "A Gnoll", true},
+		{"a_gnoll's_corpse", "a_gnoll", true},
+		{"Diabo`Teka`Temariel's corpse", "Diabo`Teka`Temariel", true},
+		{"corpse", "corpse", false},
+	}
+	for _, tc := range cases {
+		gotName, gotIs := stripCorpseSuffix(tc.in)
+		if gotName != tc.wantName || gotIs != tc.wantIs {
+			t.Errorf("stripCorpseSuffix(%q) = (%q, %t), want (%q, %t)",
+				tc.in, gotName, gotIs, tc.wantName, tc.wantIs)
+		}
+	}
+}
+
+func TestNPCTracker_PipeCorpseTargetFlags(t *testing.T) {
+	tr := newTestTracker()
+	tr.SetPipeTarget("a gnoll's corpse")
+	st := tr.GetState()
+	if !st.HasTarget {
+		t.Fatal("HasTarget = false, want true")
+	}
+	if st.TargetName != "a gnoll's corpse" {
+		t.Errorf("TargetName = %q, want %q", st.TargetName, "a gnoll's corpse")
+	}
+	if !st.IsCorpse {
+		t.Error("IsCorpse = false, want true")
+	}
+	if st.HPPercent != 0 {
+		t.Errorf("HPPercent = %d, want 0", st.HPPercent)
+	}
+}
+
 func TestNPCTracker_DeathClearsTarget(t *testing.T) {
 	tr := newTestTracker()
 

@@ -16,5 +16,9 @@ export interface TargetState {
   // (Zeal not running or no value yet for the current target).
   hp_percent: number
   pet_owner?: string
+  // is_corpse is true when the target name ended in "'s corpse" — the lookup
+  // strips the suffix to find the underlying NPC, but the HP bar should pin
+  // to 0% regardless of what Zeal reports.
+  is_corpse?: boolean
   last_updated: string
 }

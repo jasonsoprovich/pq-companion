@@ -39,6 +39,10 @@ type TargetState struct {
 	// PetOwner is the target's owner name when the target is a summoned pet.
 	// Empty for non-pet targets. Populated from the Zeal pipe.
 	PetOwner string `json:"pet_owner,omitempty"`
+	// IsCorpse is true when the target name ended in "'s corpse" — the DB
+	// lookup strips the suffix so loot/stats still resolve, but the frontend
+	// pins the HP bar to 0% regardless of what the pipe reports.
+	IsCorpse bool `json:"is_corpse,omitempty"`
 	// LastUpdated is the wall-clock time the state last changed.
 	LastUpdated time.Time `json:"last_updated"`
 }
@@ -232,7 +236,16 @@ func (t *NPCTracker) setTarget(displayName string) {
 		return
 	}
 
-	npcData, abilities := t.lookupNPC(displayName)
+	// Corpses target as "X's corpse" via ZealPipes — strip the suffix for DB
+	// lookup but keep the original name for display, and flag is_corpse so
+	// the overlay pins HP to 0%.
+	lookupName, isCorpse := stripCorpseSuffix(displayName)
+	npcData, abilities := t.lookupNPC(lookupName)
+
+	hpPercent := -1
+	if isCorpse {
+		hpPercent = 0
+	}
 
 	t.mu.Lock()
 	t.st = TargetState{
@@ -241,13 +254,31 @@ func (t *NPCTracker) setTarget(displayName string) {
 		NPCData:          npcData,
 		SpecialAbilities: abilities,
 		CurrentZone:      t.st.CurrentZone,
-		HPPercent:        -1, // unknown until pipe reports it
+		HPPercent:        hpPercent,
+		IsCorpse:         isCorpse,
 		LastUpdated:      time.Now(),
 	}
 	snap := t.st
 	t.mu.Unlock()
 
 	t.broadcast(snap)
+}
+
+// stripCorpseSuffix detects an "X's corpse" target name (Zeal sends this when
+// the player has a corpse selected) and returns the underlying NPC name plus
+// a flag. Both space and underscore variants are accepted since the pipe may
+// deliver either depending on the EQ build.
+func stripCorpseSuffix(name string) (string, bool) {
+	const spaceSuffix = "'s corpse"
+	const underscoreSuffix = "'s_corpse"
+	lower := strings.ToLower(name)
+	if strings.HasSuffix(lower, spaceSuffix) {
+		return strings.TrimSpace(name[:len(name)-len(spaceSuffix)]), true
+	}
+	if strings.HasSuffix(lower, underscoreSuffix) {
+		return strings.TrimSpace(name[:len(name)-len(underscoreSuffix)]), true
+	}
+	return name, false
 }
 
 func (t *NPCTracker) clearTarget() {

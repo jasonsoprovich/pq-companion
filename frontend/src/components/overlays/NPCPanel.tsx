@@ -350,7 +350,11 @@ function NPCCard({
           <span className="shrink-0 text-[10px] tabular-nums" style={{ color: 'var(--color-muted)' }}>{lastUpdated}</span>
         </div>
 
-        {state.hp_percent >= 0 && <TargetHPBar percent={state.hp_percent} />}
+        {state.is_corpse ? (
+          <TargetHPBar percent={0} />
+        ) : state.hp_percent >= 0 ? (
+          <TargetHPBar percent={state.hp_percent} />
+        ) : null}
 
         {npc && (npc.raid_target === 1 || npc.rare_spawn === 1) && (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
