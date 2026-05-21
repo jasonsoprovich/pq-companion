@@ -5,7 +5,7 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import { getOverlayNPCTarget, getLogStatus, getNPCLoot, getItem } from '../../services/api'
 import { className, bodyTypeName } from '../../lib/npcHelpers'
-import { effectiveDropPct, rarityColor } from '../../lib/lootHelpers'
+import { cleanLootDropLabel, effectiveDropPct, rarityColor } from '../../lib/lootHelpers'
 import OverlayWindow from '../OverlayWindow'
 import ItemDetailModal from '../ItemDetailModal'
 import { ItemIcon } from '../Icon'
@@ -197,14 +197,33 @@ function LootSection({
     return <p className="px-1 py-1 text-xs" style={{ color: 'var(--color-muted)' }}>No loot table for this NPC.</p>
   }
 
-  const renderDropList = (drops: LootDrop[]) => drops.map((drop) => (
-    <div key={drop.id}>
-      <p className="pb-0.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
-        {drop.name ? `${drop.name} · ` : ''}
-        {drop.multiplier > 1 ? `×${drop.multiplier} · ` : ''}
-        {drop.probability < 100 ? `${drop.probability}% chance` : 'Always drops'}
-      </p>
-      {drop.items.map((item) => {
+  type DropSection = { key: string; label: string | null; drops: LootDrop[] }
+
+  // Group drops by cleaned label so MAGELO-GEN/main tables merge into one
+  // unlabeled section and themed tables stay separate. If only a single
+  // section results, the heading is suppressed entirely — the items just
+  // read as the NPC's loot.
+  const groupDrops = (drops: LootDrop[]): DropSection[] => {
+    const sections: DropSection[] = []
+    const byLabel = new Map<string, DropSection>()
+    for (const drop of drops) {
+      const label = cleanLootDropLabel(drop.name)
+      const key = label ?? '__main__'
+      const existing = byLabel.get(key)
+      if (existing) {
+        existing.drops.push(drop)
+      } else {
+        const section: DropSection = { key, label, drops: [drop] }
+        byLabel.set(key, section)
+        sections.push(section)
+      }
+    }
+    return sections
+  }
+
+  const renderDropItems = (drops: LootDrop[]) =>
+    drops.flatMap((drop) =>
+      drop.items.map((item) => {
         const eff = effectiveDropPct(drop, item)
         return (
           <button
@@ -226,9 +245,44 @@ function LootSection({
             </span>
           </button>
         )
-      })}
-    </div>
-  ))
+      }),
+    )
+
+  const renderSectionHeading = (section: DropSection) => {
+    if (!section.label) return null
+    // Use the maximum table-level probability across merged drops; in practice
+    // these are always either all 100% or a single non-100% value.
+    const probability = section.drops.reduce((m, d) => Math.max(m, d.probability), 0)
+    const multiplier = section.drops.reduce((m, d) => Math.max(m, d.multiplier), 1)
+    return (
+      <p className="pb-0.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
+        {section.label}
+        {multiplier > 1 ? ` · ×${multiplier}` : ''}
+        {probability < 100 ? ` · ${probability}% chance` : ''}
+      </p>
+    )
+  }
+
+  const renderDropList = (drops: LootDrop[]) => {
+    const sections = groupDrops(drops)
+    if (sections.length === 0) return null
+    // Single-section case: drop the heading entirely. Multi-section case:
+    // every section gets a heading, and the auto-merged "main" bucket gets a
+    // generic "Main drops" label so the items don't read as if they belonged
+    // to the themed section above them.
+    const showHeadings = sections.length > 1
+    return sections.map((section) => {
+      const sectionWithLabel: DropSection = showHeadings && !section.label
+        ? { ...section, label: 'Main drops' }
+        : section
+      return (
+        <div key={section.key}>
+          {showHeadings && renderSectionHeading(sectionWithLabel)}
+          {renderDropItems(sectionWithLabel.drops)}
+        </div>
+      )
+    })
+  }
 
   return (
     <div className="flex flex-col gap-2">
