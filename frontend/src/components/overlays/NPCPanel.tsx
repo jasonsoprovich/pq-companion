@@ -332,7 +332,7 @@ function NPCCard({
               <Stat label="AC" value={npc.ac} />
               <Stat label="Min DMG" value={npc.min_dmg} color="#ef4444" />
               <Stat label="Max DMG" value={npc.max_dmg} color="#ef4444" />
-              <Stat label="Atk/Rd" value={npc.attack_count < 0 ? 1 : npc.attack_count} />
+              <Stat label="Atk/Rd" value={npc.attack_count < 0 ? 'default' : npc.attack_count} />
             </div>
           </div>
 
