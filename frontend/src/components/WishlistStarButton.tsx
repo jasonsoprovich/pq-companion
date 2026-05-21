@@ -79,12 +79,9 @@ export default function WishlistStarButton({
 
   function handleClick() {
     if (!item || !activeCharID) return
-    if (isMultiSlotItem(item.slots)) {
-      setPickerOpen(true)
-      return
-    }
-    // Single-slot or non-equippable: straight toggle.
-    const slots = validSlotsForItem(item.slots)
+    // Currently starred → click removes every entry for this item, regardless
+    // of how many slot buckets it spans. Fine-grained per-slot management lives
+    // on the wishlist page itself (drag/delete).
     if (isStarred) {
       listWishlist(activeCharID)
         .then((r) =>
@@ -96,9 +93,17 @@ export default function WishlistStarButton({
         )
         .then(refresh)
         .catch(() => undefined)
-    } else {
-      addWishlistEntries(activeCharID, item.id, slots).then(refresh).catch(() => undefined)
+      return
     }
+    // Not yet starred → adding. Multi-slot items need the user to pick which
+    // slot(s) they care about; single-slot / non-equippable items add straight
+    // to their canonical bucket.
+    if (isMultiSlotItem(item.slots)) {
+      setPickerOpen(true)
+      return
+    }
+    const slots = validSlotsForItem(item.slots)
+    addWishlistEntries(activeCharID, item.id, slots).then(refresh).catch(() => undefined)
   }
 
   function handlePickerConfirm(selected: string[]) {
