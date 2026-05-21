@@ -1,16 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Check, Copy, Star, X } from 'lucide-react'
-import {
-  getItemSources,
-  listCharacters,
-  listWishlist,
-  addWishlistEntries,
-  deleteWishlistEntry,
-} from '../services/api'
-import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
-import { validSlotsForItem, isMultiSlotItem } from '../lib/wishlistSlots'
-import WishlistSlotPicker from './WishlistSlotPicker'
+import { Check, Copy, X } from 'lucide-react'
+import { getItemSources } from '../services/api'
+import WishlistStarButton from './WishlistStarButton'
 import type { Item, ItemForageZone, ItemGroundSpawnZone, ItemSourceNPC, ItemSources, ItemTradeskillEntry } from '../types/item'
 import {
   baneBodyLabel,
@@ -354,15 +346,9 @@ interface ItemDetailModalProps {
 
 export default function ItemDetailModal({ item, open, onClose }: ItemDetailModalProps): React.ReactElement | null {
   const navigate = useNavigate()
-  const { active } = useActiveCharacter()
   const [sources, setSources] = useState<ItemSources | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [copied, setCopied] = useState(false)
-  // Active character → id, used by the wishlist star.
-  const [activeCharID, setActiveCharID] = useState<number | null>(null)
-  // Slot buckets this item is currently starred under for the active char.
-  const [starredSlots, setStarredSlots] = useState<string[]>([])
-  const [pickerOpen, setPickerOpen] = useState(false)
 
   useEffect(() => {
     setActiveTab('overview')
@@ -372,37 +358,6 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
       .then(setSources)
       .catch(() => setSources({ drops: [], merchants: [], forage_zones: [], ground_spawns: [], tradeskills: [] }))
   }, [item?.id])
-
-  // Resolve active character → id so the star action can talk to the API.
-  useEffect(() => {
-    if (!active) {
-      setActiveCharID(null)
-      return
-    }
-    listCharacters()
-      .then((r) => {
-        const c = r.characters.find((c) => c.name.toLowerCase() === active.toLowerCase())
-        setActiveCharID(c?.id ?? null)
-      })
-      .catch(() => setActiveCharID(null))
-  }, [active])
-
-  // Fetch starred-slot state for this item on the active character.
-  const refreshStarred = React.useCallback(() => {
-    if (!activeCharID || !item) {
-      setStarredSlots([])
-      return
-    }
-    listWishlist(activeCharID)
-      .then((r) => {
-        const slots = r.entries.filter((e) => e.item_id === item.id).map((e) => e.slot_bucket)
-        setStarredSlots(slots)
-      })
-      .catch(() => setStarredSlots([]))
-  }, [activeCharID, item])
-  useEffect(() => {
-    refreshStarred()
-  }, [refreshStarred])
 
   useEffect(() => {
     if (!open) return
@@ -414,61 +369,6 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
   }, [open, onClose])
 
   if (!open || !item) return null
-
-  const isStarred = starredSlots.length > 0
-  const starDisabled = !activeCharID
-  const starTitle = starDisabled
-    ? 'Set an active character to wishlist items'
-    : isStarred
-      ? `Wishlisted in ${starredSlots.join(', ')} — click to edit`
-      : 'Add to wishlist'
-
-  function handleStarClick() {
-    if (!item || !activeCharID) return
-    if (isMultiSlotItem(item.slots)) {
-      setPickerOpen(true)
-      return
-    }
-    // Single-slot or non-equippable — straight toggle.
-    const slots = validSlotsForItem(item.slots)
-    if (isStarred) {
-      // Remove every existing entry for this item.
-      Promise.all(
-        starredSlots.map((slot) =>
-          listWishlist(activeCharID).then((r) => {
-            const e = r.entries.find((e) => e.item_id === item.id && e.slot_bucket === slot)
-            return e ? deleteWishlistEntry(activeCharID, e.id) : Promise.resolve()
-          }),
-        ),
-      )
-        .then(refreshStarred)
-        .catch(() => undefined)
-    } else {
-      addWishlistEntries(activeCharID, item.id, slots).then(refreshStarred).catch(() => undefined)
-    }
-  }
-
-  function handlePickerConfirm(selected: string[]) {
-    if (!item || !activeCharID) return
-    setPickerOpen(false)
-    const toAdd = selected.filter((s) => !starredSlots.includes(s))
-    const toRemove = starredSlots.filter((s) => !selected.includes(s))
-    const work: Promise<unknown>[] = []
-    if (toAdd.length > 0) work.push(addWishlistEntries(activeCharID, item.id, toAdd))
-    if (toRemove.length > 0) {
-      work.push(
-        listWishlist(activeCharID).then((r) =>
-          Promise.all(
-            toRemove
-              .map((slot) => r.entries.find((e) => e.item_id === item.id && e.slot_bucket === slot))
-              .filter((e): e is NonNullable<typeof e> => !!e)
-              .map((e) => deleteWishlistEntry(activeCharID, e.id)),
-          ),
-        ),
-      )
-    }
-    Promise.all(work).then(refreshStarred).catch(() => undefined)
-  }
 
   function copyIngameLink() {
     if (!item) return
@@ -507,18 +407,7 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
               </button>
             </div>
             <div className="shrink-0 mt-0.5 flex items-center gap-2">
-              <button
-                onClick={handleStarClick}
-                disabled={starDisabled}
-                title={starTitle}
-                className="rounded p-0.5 disabled:opacity-40"
-              >
-                <Star
-                  size={18}
-                  style={{ color: isStarred ? 'var(--color-primary)' : 'var(--color-muted)' }}
-                  fill={isStarred ? 'currentColor' : 'none'}
-                />
-              </button>
+              <WishlistStarButton item={item} />
               <button onClick={onClose} title="Close">
                 <X size={16} style={{ color: 'var(--color-muted)' }} />
               </button>
@@ -552,14 +441,6 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
           {activeTab === 'tradeskills' && <TradeskillsTab entries={sources?.tradeskills ?? []} />}
         </div>
       </div>
-      <WishlistSlotPicker
-        open={pickerOpen}
-        itemName={item.name}
-        itemSlots={item.slots}
-        currentSlots={starredSlots}
-        onConfirm={handlePickerConfirm}
-        onClose={() => setPickerOpen(false)}
-      />
     </div>
   )
 }

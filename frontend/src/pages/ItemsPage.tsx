@@ -21,6 +21,7 @@ import {
 import { tradeskillLabel } from '../lib/enumsCache'
 import { ItemIcon } from '../components/Icon'
 import RawDataModal from '../components/RawDataModal'
+import WishlistStarButton from '../components/WishlistStarButton'
 
 // ── Filter definitions ─────────────────────────────────────────────────────────
 
@@ -1070,6 +1071,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
           <h2 className="text-xl font-bold leading-tight" style={{ color: 'var(--color-primary)' }}>
             {item.name}
           </h2>
+          <WishlistStarButton item={item} size={20} />
           <button
             onClick={() => setRawOpen(true)}
             className="ml-auto rounded px-2 py-1 text-xs"

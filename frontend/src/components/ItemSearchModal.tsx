@@ -50,7 +50,7 @@ export default function ItemSearchModal({
     const handle = setTimeout(() => {
       searchItems(q, 20, 0)
         .then((r) => {
-          setResults(r.items)
+          setResults(r.items ?? [])
           setActiveIdx(0)
         })
         .catch(() => setResults([]))
