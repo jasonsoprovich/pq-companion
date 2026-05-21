@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"time"
 )
 
 // keepSessions is how many prior server.log files to retain. Each app launch
@@ -58,7 +57,6 @@ func Init(appVersion string) (logPath string, closer io.Closer, err error) {
 		"arch", runtime.GOARCH,
 		"pid", os.Getpid(),
 		"log_file", logPath,
-		"time", time.Now().Format(time.RFC3339),
 	)
 	if exe, exeErr := os.Executable(); exeErr == nil {
 		slog.Info("executable path", "exe", exe)
