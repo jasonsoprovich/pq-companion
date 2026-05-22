@@ -112,6 +112,86 @@ func (s *Store) migrate() error {
 	return nil
 }
 
+// MigrateGroupAwarenessToGeneralTriggers is a one-time migration that
+// renames any installed "Group Awareness" pack to "General Triggers" and
+// inserts the two new class-agnostic triggers (Spell Resist, Spell
+// Interrupt) shipped with the rename. Idempotent via the
+// pack_default_updates ledger.
+//
+// Why: the Triggers page used to host a separate "Global Alerts" tab with
+// hardcoded death/zone/resist/interrupt event handlers. That subsystem
+// was removed; the resist/interrupt cases now live as regular triggers
+// inside the renamed pack so users get one unified surface.
+func (s *Store) MigrateGroupAwarenessToGeneralTriggers() error {
+	const key = "GroupAwareness:RenameAndAddSpellTriggers:v1"
+	applied, err := s.IsDefaultUpdateApplied(key)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+	if _, err := s.db.Exec(
+		`UPDATE triggers SET pack_name = 'General Triggers' WHERE pack_name = 'Group Awareness'`,
+	); err != nil {
+		return fmt.Errorf("rename Group Awareness pack: %w", err)
+	}
+	hasPack, err := s.packHasAnyTrigger("General Triggers")
+	if err != nil {
+		return err
+	}
+	if hasPack {
+		additions := []Trigger{
+			{
+				Name:     "Spell Resist",
+				Enabled:  true,
+				Pattern:  `Your target resisted the (.+) spell\.`,
+				PackName: "General Triggers",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "RESISTED!", DurationSecs: 3, Color: "#ffaa00"},
+				},
+			},
+			{
+				Name:     "Spell Interrupt",
+				Enabled:  true,
+				Pattern:  `Your(?: (.+))? spell is interrupted\.`,
+				PackName: "General Triggers",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "INTERRUPTED!", DurationSecs: 3, Color: "#ffaa00"},
+				},
+			},
+		}
+		for i := range additions {
+			t := &additions[i]
+			existing, err := s.FindByPackAndName(t.PackName, t.Name)
+			if err != nil {
+				return err
+			}
+			if existing != nil {
+				continue
+			}
+			id, err := NewID()
+			if err != nil {
+				return err
+			}
+			t.ID = id
+			t.CreatedAt = time.Now().UTC()
+			if err := s.Insert(t); err != nil {
+				return fmt.Errorf("insert %s: %w", t.Name, err)
+			}
+		}
+	}
+	return s.MarkDefaultUpdateApplied(key)
+}
+
+func (s *Store) packHasAnyTrigger(pack string) (bool, error) {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM triggers WHERE pack_name = ?`, pack).Scan(&n); err != nil {
+		return false, fmt.Errorf("count pack %s: %w", pack, err)
+	}
+	return n > 0, nil
+}
+
 // BackfillCharactersIfNeeded is a one-time migration that populates the
 // characters list of every existing trigger with the supplied character
 // names. Triggered by PRAGMA user_version: runs only when the version is

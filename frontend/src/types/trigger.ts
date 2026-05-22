@@ -147,7 +147,7 @@ export interface TriggerPack {
   pack_name: string
   description: string
   // EQ class index (0=Warrior … 14=Beastlord) for class-specific packs;
-  // omitted/null/undefined for class-agnostic packs (e.g. Group Awareness)
+  // omitted/null/undefined for class-agnostic packs (e.g. General Triggers)
   // and user-authored packs that don't specify a class.
   class?: number | null
   triggers: Trigger[]

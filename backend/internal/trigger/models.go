@@ -218,7 +218,7 @@ type TriggerPack struct {
 	PackName    string    `json:"pack_name"`
 	Description string    `json:"description"`
 	// Class is the EQ class index this pack targets (0=Warrior … 14=Beastlord).
-	// nil means class-agnostic (e.g. GroupAwareness, user-authored packs that
+	// nil means class-agnostic (e.g. GeneralTriggers, user-authored packs that
 	// don't specify a class). On import, class-specific packs default their
 	// Characters lists to the matching-class characters only, instead of every
 	// known character. Pointer so missing-in-JSON is distinguishable from

@@ -308,7 +308,7 @@ func TestApplyDefaultUpdates_AppendsAndIsIdempotent(t *testing.T) {
 	tr := &Trigger{
 		ID:              "ut1",
 		Name:            "Incoming Tell",
-		PackName:        "Group Awareness",
+		PackName:        "General Triggers",
 		Enabled:         true,
 		Pattern:         `\w+ tells you, '\['`, // user-customized: only fire on item-link tells
 		ExcludePatterns: []string{`^IDLEBOT \w+ tells you,`}, // user's personal entry
@@ -322,7 +322,7 @@ func TestApplyDefaultUpdates_AppendsAndIsIdempotent(t *testing.T) {
 	updates := []DefaultUpdate{
 		{
 			Key:                   "test:incoming-tell:v1",
-			PackName:              "Group Awareness",
+			PackName:              "General Triggers",
 			TriggerName:           "Incoming Tell",
 			AppendExcludePatterns: []string{`\b[Mm]aster[.!]`, `tells you, '[Tt]hat'll be `},
 		},
@@ -392,7 +392,7 @@ func TestApplyDefaultUpdates_MissingTriggerSkipsAndMarks(t *testing.T) {
 	updates := []DefaultUpdate{
 		{
 			Key:                   "test:missing:v1",
-			PackName:              "Group Awareness",
+			PackName:              "General Triggers",
 			TriggerName:           "Incoming Tell",
 			AppendExcludePatterns: []string{`anything`},
 		},

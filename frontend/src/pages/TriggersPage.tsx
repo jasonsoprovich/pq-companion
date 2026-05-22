@@ -15,13 +15,11 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  Bell,
   Search,
   Users,
   Sparkles,
 } from 'lucide-react'
 import { useVoices } from '../hooks/useVoices'
-import EventAlertsPanel from '../components/EventAlertsPanel'
 import NotificationActionEditor, { NotificationTypeSelect } from '../components/NotificationActionEditor'
 import SpellSearchPicker from '../components/SpellSearchPicker'
 import { buildSpellTriggerPrefill, type SpellTimerTriggerPrefill } from '../lib/spellHelpers'
@@ -1744,19 +1742,9 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
   )
 }
 
-// ── Alerts tab ────────────────────────────────────────────────────────────────
-
-function AlertsTab(): React.ReactElement {
-  return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <EventAlertsPanel inline />
-    </div>
-  )
-}
-
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-type Tab = 'triggers' | 'history' | 'packs' | 'alerts'
+type Tab = 'triggers' | 'history' | 'packs'
 
 export default function TriggersPage(): React.ReactElement {
   const [tab, setTab] = useState<Tab>('triggers')
@@ -1830,7 +1818,7 @@ export default function TriggersPage(): React.ReactElement {
       }
       // Character filter: empty Characters list = fires for any character
       // (engine's legacy semantic), so universal triggers pass — global
-      // alerts (e.g. Group Awareness death notifications) stay visible
+      // alerts (e.g. General Triggers death notifications) stay visible
       // no matter which character you narrow to.
       const universal = !t.characters || t.characters.length === 0
       if (charFilter && !universal) {
@@ -2088,7 +2076,7 @@ export default function TriggersPage(): React.ReactElement {
         className="flex gap-0 border-b shrink-0"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        {(['triggers', 'history', 'packs', 'alerts'] as Tab[]).map((t) => (
+        {(['triggers', 'history', 'packs'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -2098,12 +2086,6 @@ export default function TriggersPage(): React.ReactElement {
             {t === 'triggers' && <span>Triggers ({triggers.length})</span>}
             {t === 'history' && <span>History</span>}
             {t === 'packs' && <span>Packs</span>}
-            {t === 'alerts' && (
-              <span className="flex items-center gap-1">
-                <Bell size={10} />
-                Global Alerts
-              </span>
-            )}
           </button>
         ))}
       </div>
@@ -2433,9 +2415,6 @@ export default function TriggersPage(): React.ReactElement {
           onInstalled={load}
         />
       )}
-
-      {/* Tab: Alerts */}
-      {tab === 'alerts' && <AlertsTab />}
 
       {showClearAll && (
         <div

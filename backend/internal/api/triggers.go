@@ -298,7 +298,7 @@ func (h *triggerHandler) applyDefaultCharacters(pack *trigger.TriggerPack) {
 // can be unit-tested without spinning up a config.Manager / tailer.
 //
 // Behavior depends on whether the pack is class-specific (e.g. "Beastlord")
-// or class-agnostic (e.g. "Group Awareness"):
+// or class-agnostic (e.g. "General Triggers"):
 //
 //   - Class-agnostic pack (pack.Class == nil): default to all known characters.
 //     The pack applies to anyone the user plays.

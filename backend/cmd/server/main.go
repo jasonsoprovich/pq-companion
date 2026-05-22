@@ -324,6 +324,15 @@ func main() {
 		}
 	}
 
+	// One-time rename of the legacy "Group Awareness" pack to "General
+	// Triggers", plus insertion of Spell Resist / Spell Interrupt triggers
+	// for users who already had the pack installed. Must run before
+	// ApplyDefaultUpdates so the renamed pack name matches the DefaultUpdate
+	// entry that targets "General Triggers".
+	if err := triggerStore.MigrateGroupAwarenessToGeneralTriggers(); err != nil {
+		slog.Warn("trigger general-triggers migration failed", "err", err)
+	}
+
 	// One-time additive default updates for built-in packs. Each is keyed
 	// and runs at most once, only ever appending to list-typed fields on
 	// installed pack triggers — preserves user customizations while still

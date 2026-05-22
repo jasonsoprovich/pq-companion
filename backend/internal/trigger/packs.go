@@ -2139,18 +2139,18 @@ func BeastlordPack() TriggerPack {
 	}
 }
 
-// GroupAwarenessPack returns the pre-built group awareness trigger pack with
-// alerts for incoming tells, player deaths, and group member deaths.
-func GroupAwarenessPack() TriggerPack {
+// GeneralTriggersPack returns the pre-built class-agnostic trigger pack with
+// alerts for incoming tells, deaths, spell resists, and spell interrupts.
+func GeneralTriggersPack() TriggerPack {
 	return TriggerPack{
-		PackName:    "Group Awareness",
-		Description: "Alerts for incoming tells, your death, and group member deaths.",
+		PackName:    "General Triggers",
+		Description: "Class-agnostic alerts: incoming tells, deaths, spell resists, and spell interrupts.",
 		Triggers: []Trigger{
 			{
 				Name:     "Incoming Tell",
 				Enabled:  true,
 				Pattern:  `\w+ tells you,`,
-				PackName: "Group Awareness",
+				PackName: "General Triggers",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "INCOMING TELL!", DurationSecs: 5, Color: "#44aaff"},
 				},
@@ -2179,7 +2179,7 @@ func GroupAwarenessPack() TriggerPack {
 				Name:     "You Died",
 				Enabled:  true,
 				Pattern:  `You have been slain by`,
-				PackName: "Group Awareness",
+				PackName: "General Triggers",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "YOU DIED!", DurationSecs: 8, Color: "#ff0000"},
 				},
@@ -2188,9 +2188,27 @@ func GroupAwarenessPack() TriggerPack {
 				Name:     "Group Member Died",
 				Enabled:  true,
 				Pattern:  `\w+ has been slain by`,
-				PackName: "Group Awareness",
+				PackName: "General Triggers",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "GROUP DEATH!", DurationSecs: 5, Color: "#ff6600"},
+				},
+			},
+			{
+				Name:     "Spell Resist",
+				Enabled:  true,
+				Pattern:  `Your target resisted the (.+) spell\.`,
+				PackName: "General Triggers",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "RESISTED!", DurationSecs: 3, Color: "#ffaa00"},
+				},
+			},
+			{
+				Name:     "Spell Interrupt",
+				Enabled:  true,
+				Pattern:  `Your(?: (.+))? spell is interrupted\.`,
+				PackName: "General Triggers",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "INTERRUPTED!", DurationSecs: 3, Color: "#ffaa00"},
 				},
 			},
 		},
@@ -2200,7 +2218,7 @@ func GroupAwarenessPack() TriggerPack {
 // AllPacks returns all built-in trigger packs with default audio alerts
 // applied. Class packs run through applyDefaultTimerAlerts so every timer
 // trigger gets a fading/expiring TTS without each pack having to spell it
-// out per-spell. GroupAwareness has no timers and is returned as-is.
+// out per-spell. GeneralTriggers has no timers and is returned as-is.
 func AllPacks() []TriggerPack {
 	classPacks := []TriggerPack{
 		EnchanterPack(),
@@ -2223,7 +2241,7 @@ func AllPacks() []TriggerPack {
 	for _, p := range classPacks {
 		out = append(out, applyDefaultTimerAlerts(p))
 	}
-	out = append(out, GroupAwarenessPack())
+	out = append(out, GeneralTriggersPack())
 	return out
 }
 
@@ -2256,8 +2274,13 @@ func DefaultUpdates() []DefaultUpdate {
 			// Existing installs don't get this from a fresh InstallPack
 			// (they'd lose customizations); this migration adds them
 			// additively to whatever the user has now.
+			// Pack was renamed from "Group Awareness" to "General Triggers"
+			// by MigrateGroupAwarenessToGeneralTriggers (see store.go) — the
+			// rename runs before ApplyDefaultUpdates, so this targets the
+			// new name. Existing installs that already have this key in
+			// pack_default_updates skip it regardless.
 			Key:         "GroupAwareness:IncomingTell:pet-merchant-excludes-v1",
-			PackName:    "Group Awareness",
+			PackName:    "General Triggers",
 			TriggerName: "Incoming Tell",
 			AppendExcludePatterns: []string{
 				`\b[Mm]aster[.!]`,
