@@ -1176,6 +1176,20 @@ Parse and edit Zeal `_spellsets.ini` exports.
 - **Logparser camp/login follow**: the parser now follows the in-game character across `/camp` → character-select → re-login without losing state, so spell timers and combat tracking survive a swap
 - **Spell timer dedup**: zealpipe-divergence log lines are deduped across pulses — no more log-spam when the pipe and log disagree on a long buff
 
+## v0.8.0 — Wishlist, Keyring Tracker, Live Buffs, Canonical Enum Catalog
+
+- **Wishlist** — per-character wishlist tab with drag-reorder; star button on Items DB rows toggles entries on the active character's list
+- **Keyring tracker** — per-character `/keys` snapshot ingested from the log; inventory fallback covers keys not yet added to the in-game keyring (Plane of Time, Vex Thal, Grieg's End)
+- **Live Buffs in Character Stats** — buffs panel is now driven by the spell timer engine with swappable raid-buff presets per character; confirm-on-edit and remove-buff actions; v1 worn haste recomputed from item wornlevel + spell formula
+- **Canonical enum catalog** — every game-data label (item types, NPC classes/races, zones, slot/race/class bitmasks, bane types, body types, expansions, special abilities, tradeskills, spell target types) now lives in a single Go catalog served via `/api/enums`. Frontend consumes the same source, eliminating drift. Includes an `enum-audit` CLI for label verification. Corrected: NPC body types, post-PoP race/class hiding, Quarm-specific SPAs 160 + 500–504, spell target types 0/9/17
+- **Vex Thal zone-wide loot overlay** — zone-wide drops show on every NPC in the zone, targeted by lootdrop id with pool names
+- **Trigger packs** — full discipline coverage across all melee classes; `dedup_key` field for cross-pack shared triggers; pack-grouped UI with collapsibles, filter, sort, and shared badge; Global Alerts folded into General Triggers; Gift of Brilliance added to Enchanter pack
+- **Zeal version warning** when installed Zeal is below the minimum supported version (detected via crash-handler anchor)
+- **NPC overlay** resolves corpse targets to the underlying NPC and humanizes loot-table headings
+- **Inventory** hide-empty-bags toggle
+- **Zones** show bard swarm/warp limits on the zone overview
+- **Logging** mirrors backend slog to `~/.pq-companion/logs/server.log` and Electron + sidecar stdio to `electron.log` (3-session rotation)
+
 ## Phase 11 — Project Website
 _Planned_
 

@@ -9,6 +9,39 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.8.0 — 2026-05-22
+
+Wishlist, Keyring tracker, Live Buffs, and a sweeping rewrite of game-data enum labels.
+
+### Highlights
+- **Wishlist** — per-character wishlist tab with drag-reorder; star button on Items DB rows adds or removes entries
+- **Keyring tracker** — per-character `/keys` snapshot with inventory fallback for keys not yet added to a keyring (Plane of Time, Vex Thal, Grieg's End)
+- **Live Buffs** in Character Stats — buffs panel is now driven by the spell timer engine with swappable raid-buff presets per character; confirm-on-edit and remove-buff actions
+- **Canonical enum catalog** — item types, NPC classes/races, zone types, slot/race/class bitmasks, bane types, body types, expansions, special abilities, tradeskills, and spell target types all flow through a single Go catalog served by `/api/enums`, with a new `enum-audit` CLI for verification. Many previously-wrong labels are corrected (NPC body types, post-PoP race/class hiding, Quarm-specific SPAs 160 + 500–504, spell target types 0/9/17)
+- **Vex Thal zone-wide loot overlay** — zone-wide drops now show on every NPC in the zone, targeted by lootdrop id with pool names
+- **Trigger packs** — full discipline coverage across all melee classes; new `dedup_key` field lets shared triggers across packs fire once; pack-grouped UI with collapsibles, pack filter, sort, and shared badge; Global Alerts folded into General Triggers; Gift of Brilliance added to Enchanter pack
+- **Zeal version warning** — detects installed Zeal via crash-handler anchor and warns when below the minimum supported version
+- **NPC overlay** resolves corpse targets to the underlying NPC and humanizes loot-table headings
+- **Inventory** — hide-empty-bags toggle
+- **Zones** — bard swarm/warp limits shown on zone overview
+- **Items** — modal title links back to the items page
+- **Logging** — backend slog mirrors to `~/.pq-companion/logs/server.log`; Electron + sidecar stdio mirrors to `electron.log` (3-session rotation on both)
+
+### Fixes
+- Trigger fires deduplicated so a single log line no longer triggers multiple alerts
+- Mez TTS pronunciation corrected
+- Atol's Spectral Shackles wear-off labeled as snare rather than root
+- Spell-modal prefill matches both self and other landed text
+- NPC overlay shows "default" instead of "1" when `attack_count = -1`
+- Invisible-man placeholder rows hidden from NPC queries
+- Tradeskill ID → name mapping corrected on items
+- Wishlist: null-guarded source lists and items array; clicking a filled star prompts to remove the entry
+- DPS post-fight panel stays visible when broadcasts batch
+- v1 worn haste computed from item wornlevel + spell formula
+- Zeal shared bank slots capped at 10 on Project Quarm
+- Overlays: grid-snap defaults, bottom/right canvas padding, drag autoscroll
+- Keys: separate tabs for Key Tracker + Keyring; Grieg's End zone added; intermediate-state check shown in green
+
 ## v0.7.2 — 2026-05-18
 
 Character-switch and Zeal-pipe log hygiene.

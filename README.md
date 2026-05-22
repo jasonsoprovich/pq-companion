@@ -22,6 +22,8 @@ Join the community on [Discord](https://discord.gg/a2QytxSVgM) for help, feedbac
 - **Spellsets** — Read and edit your Zeal `_spellsets.ini` exports inside the app. Add and remove sets, rename inline, and import another character's spellsets — with off-class and ineligible-spell blocking so you never load something you can't cast.
 - **Inventory Tracker** — All items across all your characters in one searchable view, including bank and shared bank.
 - **Key Tracker** — Tracks item components for major raid keys (Veeshan's Peak, Old Sebilis, Howling Stones, and more) across all your characters.
+- **Keyring** — Live per-character `/keys` snapshot, with an inventory fallback for keys that aren't in the keyring yet (Plane of Time, Vex Thal, Grieg's End).
+- **Wishlist** — A per-character wishlist with drag-to-reorder. Star any item from the database to add or remove it.
 - **Players Tracker** — A searchable database of every player you've seen via `/who` and `/guildstat`: name, class, guild, zone, level history, first-seen / last-seen. Sortable, filterable by guild and class, across all your characters.
 - **Config Backup Manager** — Snapshot and restore all your EQ `.ini` config files with one click.
 - **App Backup & Restore** — Export your full app state (settings, triggers, trigger packs) as a single bundle and restore it on another machine or after a reinstall.
