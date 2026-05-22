@@ -871,7 +871,11 @@ export function deleteCharacterSubtask(charID: number, taskID: number, subtaskID
 
 // ── Character Wishlist ─────────────────────────────────────────────────────────
 
-import type { WishlistListResponse, WishlistEntry } from '../types/wishlist'
+import type {
+  WishlistListResponse,
+  WishlistEntry,
+  WishlistSlotLayout,
+} from '../types/wishlist'
 
 export function listWishlist(charID: number): Promise<WishlistListResponse> {
   return get<WishlistListResponse>(`/api/characters/${charID}/wishlist`)
@@ -892,15 +896,20 @@ export function deleteWishlistEntry(charID: number, entryID: number): Promise<vo
   return del(`/api/characters/${charID}/wishlist/${entryID}`)
 }
 
-export function reorderWishlistSlot(
-  charID: number,
-  slotBucket: string,
-  orderedIDs: number[],
-): Promise<void> {
+// Sends the character's full ordered entry-id list. Backend rejects the call
+// if it doesn't match the character's current set of entries exactly — the
+// frontend rebuilds the full order from its local state for every reorder.
+export function reorderWishlist(charID: number, orderedIDs: number[]): Promise<void> {
   return put<void>(`/api/characters/${charID}/wishlist/reorder`, {
-    slot_bucket: slotBucket,
     ordered_ids: orderedIDs,
   })
+}
+
+export function updateWishlistSlotLayout(
+  charID: number,
+  layout: WishlistSlotLayout[],
+): Promise<void> {
+  return put<void>(`/api/characters/${charID}/wishlist/slot-layout`, { layout })
 }
 
 // ── Triggers ───────────────────────────────────────────────────────────────────

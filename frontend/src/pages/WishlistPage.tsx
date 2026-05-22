@@ -1,18 +1,32 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Star, Plus, RefreshCw, GripVertical, Trash2, AlertCircle } from 'lucide-react'
+import {
+  Star,
+  Plus,
+  RefreshCw,
+  GripVertical,
+  Trash2,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  LayoutGrid,
+  List as ListIcon,
+  ChevronsDownUp,
+  ChevronsUpDown,
+} from 'lucide-react'
 import {
   listCharacters,
   listWishlist,
   addWishlistEntries,
   deleteWishlistEntry,
-  reorderWishlistSlot,
+  reorderWishlist,
+  updateWishlistSlotLayout,
   getItem,
   getItemSources,
   type Character,
 } from '../services/api'
 import type { Item, ItemSources } from '../types/item'
-import type { WishlistEntry } from '../types/wishlist'
+import type { WishlistEntry, WishlistSlotLayout } from '../types/wishlist'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import ItemSearchModal from '../components/ItemSearchModal'
@@ -22,13 +36,19 @@ import { ConfirmModal } from '../components/ConfirmModal'
 import { ItemIcon } from '../components/Icon'
 import { WISHLIST_SLOT_ORDER, GENERAL_BUCKET, validSlotsForItem, isMultiSlotItem } from '../lib/wishlistSlots'
 
+type ViewMode = 'category' | 'all'
+
+// MIME-ish keys we set on dataTransfer to distinguish drag kinds. Browsers
+// lowercase types, so check via includes() at the destination.
+const DRAG_TYPE_ITEM = 'application/x-wishlist-item'
+const DRAG_TYPE_CARD = 'application/x-wishlist-card'
+
 // ── Source line ───────────────────────────────────────────────────────────────
 
 interface SourceLineProps {
   sources: ItemSources | null
 }
 
-/** Picks the most informative single source line for a wishlist row. */
 function SourceLine({ sources }: SourceLineProps): React.ReactElement {
   const navigate = useNavigate()
   if (!sources) {
@@ -38,8 +58,6 @@ function SourceLine({ sources }: SourceLineProps): React.ReactElement {
       </span>
     )
   }
-  // Go's nil slices serialise to JSON null, so each source list might come back
-  // as null rather than []. Normalise once at the top.
   const drops = sources.drops ?? []
   const merchants = sources.merchants ?? []
   const forageZones = sources.forage_zones ?? []
@@ -153,9 +171,9 @@ function SourceLine({ sources }: SourceLineProps): React.ReactElement {
 interface WishlistRowProps {
   entry: WishlistEntry
   sources: ItemSources | null
+  showSlotBadge?: boolean
   onOpenItem: (item: { id: number; name: string; icon: number }) => void
   onDelete: () => void
-  // Drag handlers
   isDraggedOver: boolean
   onDragStart: (e: React.DragEvent) => void
   onDragOver: (e: React.DragEvent) => void
@@ -167,6 +185,7 @@ interface WishlistRowProps {
 function WishlistRow({
   entry,
   sources,
+  showSlotBadge,
   onOpenItem,
   onDelete,
   isDraggedOver,
@@ -191,23 +210,34 @@ function WishlistRow({
         border: `1px solid ${isDraggedOver ? 'var(--color-primary)' : 'var(--color-border)'}`,
       }}
     >
-      <span
-        className="cursor-grab"
-        style={{ color: 'var(--color-muted)' }}
-        title="Drag to reorder"
-      >
+      <span className="cursor-grab" style={{ color: 'var(--color-muted)' }} title="Drag to reorder">
         <GripVertical size={14} />
       </span>
       {item && <ItemIcon id={item.icon} name={item.name} size={28} />}
       <div className="min-w-0 flex-1">
-        <button
-          onClick={() => item && onOpenItem({ id: item.id, name: item.name, icon: item.icon })}
-          className="block max-w-full truncate text-left text-sm underline decoration-dotted"
-          style={{ color: 'var(--color-primary)' }}
-          title={item?.name}
-        >
-          {item?.name ?? `Item #${entry.item_id}`}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => item && onOpenItem({ id: item.id, name: item.name, icon: item.icon })}
+            className="block max-w-full truncate text-left text-sm underline decoration-dotted"
+            style={{ color: 'var(--color-primary)' }}
+            title={item?.name}
+          >
+            {item?.name ?? `Item #${entry.item_id}`}
+          </button>
+          {showSlotBadge && (
+            <span
+              className="shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                color: 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+              title={`Slot: ${entry.slot_bucket}`}
+            >
+              {entry.slot_bucket === GENERAL_BUCKET ? 'General' : entry.slot_bucket}
+            </span>
+          )}
+        </div>
         <div className="truncate">
           <SourceLine sources={sources} />
         </div>
@@ -224,6 +254,108 @@ function WishlistRow({
   )
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// computeBucketOrder returns the slot buckets to display in category view, in
+// the order the user has saved them — falling back to canonical order for any
+// bucket the user hasn't explicitly placed. Only buckets with at least one
+// entry are returned (empty cards aren't useful).
+function computeBucketOrder(entries: WishlistEntry[], layout: WishlistSlotLayout[]): string[] {
+  const present = new Set(entries.map((e) => e.slot_bucket))
+  const ordered: string[] = []
+  const seen = new Set<string>()
+  const sortedLayout = [...layout].sort(
+    (a, b) => a.position - b.position || a.slot_bucket.localeCompare(b.slot_bucket),
+  )
+  for (const l of sortedLayout) {
+    if (present.has(l.slot_bucket) && !seen.has(l.slot_bucket)) {
+      ordered.push(l.slot_bucket)
+      seen.add(l.slot_bucket)
+    }
+  }
+  for (const b of WISHLIST_SLOT_ORDER) {
+    if (present.has(b) && !seen.has(b)) {
+      ordered.push(b)
+      seen.add(b)
+    }
+  }
+  return ordered
+}
+
+// reorderItemsWithinBucket produces a new global entry list where two entries
+// in the same bucket are swapped to a new relative position, while every
+// entry of any other bucket keeps its existing global index. This preserves
+// the user's mental model: dragging boots inside the boots card only moves
+// boots — helmets stay where they were.
+function reorderItemsWithinBucket(
+  entries: WishlistEntry[],
+  bucket: string,
+  sourceID: number,
+  targetID: number,
+): WishlistEntry[] {
+  const bucketEntries = entries.filter((e) => e.slot_bucket === bucket)
+  const ids = bucketEntries.map((e) => e.id)
+  const from = ids.indexOf(sourceID)
+  const to = ids.indexOf(targetID)
+  if (from === -1 || to === -1 || from === to) return entries
+  const moved = bucketEntries.splice(from, 1)[0]
+  bucketEntries.splice(to, 0, moved)
+  let cursor = 0
+  return entries.map((e) => {
+    if (e.slot_bucket !== bucket) return e
+    return bucketEntries[cursor++]
+  })
+}
+
+// reorderItemsGlobal moves one entry to immediately before another in the
+// global list (used by the All Items view, which allows cross-bucket drag).
+function reorderItemsGlobal(
+  entries: WishlistEntry[],
+  sourceID: number,
+  targetID: number,
+): WishlistEntry[] {
+  const ids = entries.map((e) => e.id)
+  const from = ids.indexOf(sourceID)
+  const to = ids.indexOf(targetID)
+  if (from === -1 || to === -1 || from === to) return entries
+  const next = [...entries]
+  const moved = next.splice(from, 1)[0]
+  next.splice(to, 0, moved)
+  return next
+}
+
+// buildLayoutForOrder produces a full WishlistSlotLayout list from a displayed
+// bucket order and a collapsed-state lookup. Buckets not in the displayed
+// order but already saved in `existing` are kept (appended after visible ones)
+// so collapse state survives temporarily-empty cards.
+function buildLayoutForOrder(
+  displayedOrder: string[],
+  existing: WishlistSlotLayout[],
+  collapsedByBucket: Map<string, boolean>,
+): WishlistSlotLayout[] {
+  const out: WishlistSlotLayout[] = []
+  const seen = new Set<string>()
+  displayedOrder.forEach((bucket, i) => {
+    out.push({
+      slot_bucket: bucket,
+      position: i,
+      collapsed: collapsedByBucket.get(bucket) ?? false,
+    })
+    seen.add(bucket)
+  })
+  let pos = displayedOrder.length
+  for (const l of existing) {
+    if (seen.has(l.slot_bucket)) continue
+    out.push({
+      slot_bucket: l.slot_bucket,
+      position: pos++,
+      collapsed: collapsedByBucket.get(l.slot_bucket) ?? l.collapsed,
+    })
+    seen.add(l.slot_bucket)
+  }
+  return out
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function WishlistPage(): React.ReactElement {
@@ -231,6 +363,8 @@ export default function WishlistPage(): React.ReactElement {
   const [viewedCharacter, setViewedCharacter] = useState('')
   const [characters, setCharacters] = useState<Character[]>([])
   const [entries, setEntries] = useState<WishlistEntry[]>([])
+  const [slotLayout, setSlotLayout] = useState<WishlistSlotLayout[]>([])
+  const [viewMode, setViewMode] = useState<ViewMode>('category')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sourcesCache, setSourcesCache] = useState<Map<number, ItemSources>>(new Map())
@@ -239,14 +373,14 @@ export default function WishlistPage(): React.ReactElement {
   const [searchOpen, setSearchOpen] = useState(false)
   const [picker, setPicker] = useState<{ item: Item; currentSlots: string[] } | null>(null)
   const [detailItem, setDetailItem] = useState<Item | null>(null)
-  // Entry pending removal, waiting on user confirmation.
   const [pendingDelete, setPendingDelete] = useState<WishlistEntry | null>(null)
 
-  // Drag state
-  const dragSrc = useRef<{ id: number; slot: string } | null>(null)
-  const [dragOverID, setDragOverID] = useState<number | null>(null)
+  // Drag state — separate refs so item and card drags don't collide.
+  const itemDragSrc = useRef<{ id: number; slot: string } | null>(null)
+  const cardDragSrc = useRef<string | null>(null)
+  const [dragOverItemID, setDragOverItemID] = useState<number | null>(null)
+  const [dragOverCardBucket, setDragOverCardBucket] = useState<string | null>(null)
 
-  // Look up the active character's id from name.
   useEffect(() => {
     listCharacters().then((r) => setCharacters(r.characters)).catch(() => setCharacters([]))
   }, [])
@@ -254,7 +388,6 @@ export default function WishlistPage(): React.ReactElement {
     return characters.find((c) => c.name.toLowerCase() === viewedCharacter.toLowerCase())?.id ?? 0
   }, [characters, viewedCharacter])
 
-  // Default the viewed character to the active one.
   useEffect(() => {
     if (!viewedCharacter && active) setViewedCharacter(active)
   }, [active, viewedCharacter])
@@ -262,6 +395,7 @@ export default function WishlistPage(): React.ReactElement {
   const load = useCallback(() => {
     if (!viewedCharID) {
       setEntries([])
+      setSlotLayout([])
       setLoading(false)
       return
     }
@@ -269,7 +403,8 @@ export default function WishlistPage(): React.ReactElement {
     setError(null)
     listWishlist(viewedCharID)
       .then((r) => {
-        setEntries(r.entries)
+        setEntries(r.entries ?? [])
+        setSlotLayout(r.slot_layout ?? [])
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
@@ -279,7 +414,6 @@ export default function WishlistPage(): React.ReactElement {
     load()
   }, [load])
 
-  // Lazy-load sources for each unique item id once.
   useEffect(() => {
     const ids = new Set(entries.map((e) => e.item_id))
     for (const id of ids) {
@@ -290,15 +424,26 @@ export default function WishlistPage(): React.ReactElement {
     }
   }, [entries, sourcesCache])
 
-  // Group entries by bucket and sort by sort_order within each.
-  const grouped = useMemo(() => {
+  // ── Derived view state ──────────────────────────────────────────────────────
+
+  const bucketOrder = useMemo(
+    () => computeBucketOrder(entries, slotLayout),
+    [entries, slotLayout],
+  )
+
+  const collapsedByBucket = useMemo(() => {
+    const m = new Map<string, boolean>()
+    for (const l of slotLayout) m.set(l.slot_bucket, l.collapsed)
+    return m
+  }, [slotLayout])
+
+  const entriesByBucket = useMemo(() => {
     const m = new Map<string, WishlistEntry[]>()
     for (const e of entries) {
       const list = m.get(e.slot_bucket) ?? []
       list.push(e)
       m.set(e.slot_bucket, list)
     }
-    for (const list of m.values()) list.sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
     return m
   }, [entries])
 
@@ -308,15 +453,12 @@ export default function WishlistPage(): React.ReactElement {
     setSearchOpen(false)
     if (!viewedCharID) return
     if (isMultiSlotItem(item.slots)) {
-      // Open the slot picker, prefilled with whatever buckets are already
-      // starred for this item.
       const currentSlots = entries
         .filter((e) => e.item_id === item.id)
         .map((e) => e.slot_bucket)
       setPicker({ item, currentSlots })
       return
     }
-    // Single slot (or non-equippable → General) — add directly, no prompt.
     const slots = validSlotsForItem(item.slots)
     addWishlistEntries(viewedCharID, item.id, slots)
       .then(() => load())
@@ -354,65 +496,143 @@ export default function WishlistPage(): React.ReactElement {
     getItem(brief.id).then(setDetailItem).catch(() => undefined)
   }
 
-  // ── Drag/drop reorder ───────────────────────────────────────────────────────
+  // ── Layout persistence ──────────────────────────────────────────────────────
 
-  function onRowDragStart(entry: WishlistEntry) {
-    return (e: React.DragEvent) => {
-      dragSrc.current = { id: entry.id, slot: entry.slot_bucket }
-      e.dataTransfer.effectAllowed = 'move'
-      // Required for Firefox to initiate drag.
-      e.dataTransfer.setData('text/plain', String(entry.id))
-    }
-  }
-  function onRowDragOver(entry: WishlistEntry) {
-    return (e: React.DragEvent) => {
-      if (!dragSrc.current || dragSrc.current.slot !== entry.slot_bucket) return
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'move'
-      setDragOverID(entry.id)
-    }
-  }
-  function onRowDragLeave() {
-    setDragOverID(null)
-  }
-  function onRowDrop(targetEntry: WishlistEntry) {
-    return (e: React.DragEvent) => {
-      e.preventDefault()
-      const src = dragSrc.current
-      setDragOverID(null)
-      dragSrc.current = null
-      if (!src || src.slot !== targetEntry.slot_bucket || src.id === targetEntry.id) return
+  const persistLayout = useCallback(
+    (next: WishlistSlotLayout[]) => {
       if (!viewedCharID) return
-
-      const list = grouped.get(targetEntry.slot_bucket) ?? []
-      const ids = list.map((e) => e.id)
-      const from = ids.indexOf(src.id)
-      const to = ids.indexOf(targetEntry.id)
-      if (from === -1 || to === -1) return
-      ids.splice(to, 0, ids.splice(from, 1)[0])
-
-      // Optimistic local reorder.
-      setEntries((prev) =>
-        prev.map((e) => {
-          if (e.slot_bucket !== targetEntry.slot_bucket) return e
-          const idx = ids.indexOf(e.id)
-          return idx === -1 ? e : { ...e, sort_order: idx }
-        }),
-      )
-      reorderWishlistSlot(viewedCharID, targetEntry.slot_bucket, ids).catch((err: Error) => {
+      setSlotLayout(next)
+      updateWishlistSlotLayout(viewedCharID, next).catch((err: Error) => {
         setError(err.message)
         load()
       })
+    },
+    [viewedCharID, load],
+  )
+
+  function setBucketCollapsed(bucket: string, collapsed: boolean) {
+    const nextMap = new Map(collapsedByBucket)
+    nextMap.set(bucket, collapsed)
+    persistLayout(buildLayoutForOrder(bucketOrder, slotLayout, nextMap))
+  }
+
+  function setAllCollapsed(collapsed: boolean) {
+    const nextMap = new Map(collapsedByBucket)
+    for (const b of bucketOrder) nextMap.set(b, collapsed)
+    persistLayout(buildLayoutForOrder(bucketOrder, slotLayout, nextMap))
+  }
+
+  function reorderCards(sourceBucket: string, targetBucket: string) {
+    const from = bucketOrder.indexOf(sourceBucket)
+    const to = bucketOrder.indexOf(targetBucket)
+    if (from === -1 || to === -1 || from === to) return
+    const next = [...bucketOrder]
+    const moved = next.splice(from, 1)[0]
+    next.splice(to, 0, moved)
+    persistLayout(buildLayoutForOrder(next, slotLayout, collapsedByBucket))
+  }
+
+  // ── Item reorder ────────────────────────────────────────────────────────────
+
+  function commitEntryOrder(next: WishlistEntry[]) {
+    setEntries(next.map((e, i) => ({ ...e, sort_order: i })))
+    if (!viewedCharID) return
+    reorderWishlist(
+      viewedCharID,
+      next.map((e) => e.id),
+    ).catch((err: Error) => {
+      setError(err.message)
+      load()
+    })
+  }
+
+  // ── Item drag handlers ──────────────────────────────────────────────────────
+
+  function onItemDragStart(entry: WishlistEntry) {
+    return (e: React.DragEvent) => {
+      itemDragSrc.current = { id: entry.id, slot: entry.slot_bucket }
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData(DRAG_TYPE_ITEM, String(entry.id))
+      // Firefox requires text/plain for any drag.
+      e.dataTransfer.setData('text/plain', String(entry.id))
     }
   }
-  function onRowDragEnd() {
-    dragSrc.current = null
-    setDragOverID(null)
+  function onItemDragOver(entry: WishlistEntry) {
+    return (e: React.DragEvent) => {
+      const src = itemDragSrc.current
+      if (!src) return
+      // In category view, only allow drop on same-bucket targets.
+      if (viewMode === 'category' && src.slot !== entry.slot_bucket) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      setDragOverItemID(entry.id)
+    }
+  }
+  function onItemDragLeave() {
+    setDragOverItemID(null)
+  }
+  function onItemDrop(target: WishlistEntry) {
+    return (e: React.DragEvent) => {
+      e.preventDefault()
+      const src = itemDragSrc.current
+      setDragOverItemID(null)
+      itemDragSrc.current = null
+      if (!src || src.id === target.id) return
+      if (viewMode === 'category' && src.slot !== target.slot_bucket) return
+      const next =
+        viewMode === 'category'
+          ? reorderItemsWithinBucket(entries, target.slot_bucket, src.id, target.id)
+          : reorderItemsGlobal(entries, src.id, target.id)
+      commitEntryOrder(next)
+    }
+  }
+  function onItemDragEnd() {
+    itemDragSrc.current = null
+    setDragOverItemID(null)
+  }
+
+  // ── Card drag handlers ──────────────────────────────────────────────────────
+
+  function onCardDragStart(bucket: string) {
+    return (e: React.DragEvent) => {
+      cardDragSrc.current = bucket
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData(DRAG_TYPE_CARD, bucket)
+      e.dataTransfer.setData('text/plain', bucket)
+    }
+  }
+  function onCardDragOver(bucket: string) {
+    return (e: React.DragEvent) => {
+      if (!cardDragSrc.current || cardDragSrc.current === bucket) return
+      // Only react to card drags, not item drags drifting onto the header.
+      if (!e.dataTransfer.types.includes(DRAG_TYPE_CARD)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      setDragOverCardBucket(bucket)
+    }
+  }
+  function onCardDragLeave() {
+    setDragOverCardBucket(null)
+  }
+  function onCardDrop(bucket: string) {
+    return (e: React.DragEvent) => {
+      e.preventDefault()
+      const src = cardDragSrc.current
+      setDragOverCardBucket(null)
+      cardDragSrc.current = null
+      if (!src || src === bucket) return
+      reorderCards(src, bucket)
+    }
+  }
+  function onCardDragEnd() {
+    cardDragSrc.current = null
+    setDragOverCardBucket(null)
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
-  const sectionsToRender = WISHLIST_SLOT_ORDER.filter((s) => (grouped.get(s)?.length ?? 0) > 0)
+  const anyExpanded = bucketOrder.some((b) => !(collapsedByBucket.get(b) ?? false))
+  const isEmpty = entries.length === 0
 
   return (
     <div className="flex h-full flex-col">
@@ -425,6 +645,60 @@ export default function WishlistPage(): React.ReactElement {
         <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
           Wishlist
         </span>
+
+        {/* View toggle */}
+        <div
+          className="ml-3 flex overflow-hidden rounded"
+          style={{ border: '1px solid var(--color-border)' }}
+        >
+          <button
+            onClick={() => setViewMode('category')}
+            className="flex items-center gap-1 px-2 py-1 text-xs"
+            style={{
+              backgroundColor:
+                viewMode === 'category' ? 'var(--color-primary)' : 'var(--color-surface-2)',
+              color:
+                viewMode === 'category'
+                  ? 'var(--color-surface)'
+                  : 'var(--color-muted-foreground)',
+            }}
+            title="Group by slot"
+          >
+            <LayoutGrid size={11} />
+            Category
+          </button>
+          <button
+            onClick={() => setViewMode('all')}
+            className="flex items-center gap-1 px-2 py-1 text-xs"
+            style={{
+              backgroundColor:
+                viewMode === 'all' ? 'var(--color-primary)' : 'var(--color-surface-2)',
+              color:
+                viewMode === 'all' ? 'var(--color-surface)' : 'var(--color-muted-foreground)',
+            }}
+            title="Flat list of all items"
+          >
+            <ListIcon size={11} />
+            All items
+          </button>
+        </div>
+
+        {viewMode === 'category' && !isEmpty && (
+          <button
+            onClick={() => setAllCollapsed(anyExpanded)}
+            className="flex items-center gap-1 text-xs px-2 py-1 rounded"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+            title={anyExpanded ? 'Collapse all sections' : 'Expand all sections'}
+          >
+            {anyExpanded ? <ChevronsDownUp size={11} /> : <ChevronsUpDown size={11} />}
+            {anyExpanded ? 'Collapse all' : 'Expand all'}
+          </button>
+        )}
+
         <button
           onClick={() => setSearchOpen(true)}
           disabled={!viewedCharID}
@@ -465,7 +739,11 @@ export default function WishlistPage(): React.ReactElement {
         {error && (
           <div
             className="flex items-center gap-2 rounded px-3 py-2 text-xs"
-            style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-danger)', color: 'var(--color-danger)' }}
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--color-danger)',
+              color: 'var(--color-danger)',
+            }}
           >
             <AlertCircle size={14} />
             <span>{error}</span>
@@ -478,44 +756,125 @@ export default function WishlistPage(): React.ReactElement {
             </p>
           </div>
         )}
-        {!loading && viewedCharID && sectionsToRender.length === 0 && (
+        {!loading && viewedCharID && isEmpty && (
           <div className="flex h-32 items-center justify-center">
             <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
               No items wishlisted yet. Click "Add item" or star an item on its detail page.
             </p>
           </div>
         )}
-        {sectionsToRender.map((bucket) => {
-          const list = grouped.get(bucket) ?? []
-          return (
-            <div key={bucket}>
-              <div
-                className="mb-1.5 flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-widest"
-                style={{ color: 'var(--color-muted)' }}
-              >
-                <span>{bucket === GENERAL_BUCKET ? 'General' : bucket}</span>
-                <span style={{ color: 'var(--color-muted)' }}>{list.length}</span>
-              </div>
-              <div className="space-y-1.5">
-                {list.map((entry) => (
-                  <WishlistRow
-                    key={entry.id}
-                    entry={entry}
-                    sources={sourcesCache.get(entry.item_id) ?? null}
-                    onOpenItem={handleOpenItem}
-                    onDelete={() => setPendingDelete(entry)}
-                    isDraggedOver={dragOverID === entry.id}
-                    onDragStart={onRowDragStart(entry)}
-                    onDragOver={onRowDragOver(entry)}
-                    onDragLeave={onRowDragLeave}
-                    onDrop={onRowDrop(entry)}
-                    onDragEnd={onRowDragEnd}
-                  />
-                ))}
-              </div>
-            </div>
-          )
-        })}
+
+        {!loading && viewedCharID && !isEmpty && viewMode === 'category' && (
+          <>
+            {bucketOrder.map((bucket) => {
+              const list = entriesByBucket.get(bucket) ?? []
+              const collapsed = collapsedByBucket.get(bucket) ?? false
+              const isCardDragOver = dragOverCardBucket === bucket
+              return (
+                <div
+                  key={bucket}
+                  onDragOver={onCardDragOver(bucket)}
+                  onDragLeave={onCardDragLeave}
+                  onDrop={onCardDrop(bucket)}
+                  className="rounded"
+                  style={{
+                    border: `1px solid ${isCardDragOver ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                    backgroundColor: 'var(--color-surface-2)',
+                  }}
+                >
+                  {/* Card header */}
+                  <div
+                    className="flex items-center gap-1.5 px-2 py-1.5"
+                    style={{
+                      borderBottom: collapsed ? 'none' : '1px solid var(--color-border)',
+                    }}
+                  >
+                    <span
+                      draggable
+                      onDragStart={onCardDragStart(bucket)}
+                      onDragEnd={onCardDragEnd}
+                      className="cursor-grab shrink-0"
+                      style={{ color: 'var(--color-muted)' }}
+                      title="Drag to reorder section"
+                    >
+                      <GripVertical size={14} />
+                    </span>
+                    <button
+                      onClick={() => setBucketCollapsed(bucket, !collapsed)}
+                      className="flex flex-1 items-center gap-2 text-left"
+                      title={collapsed ? 'Expand section' : 'Collapse section'}
+                    >
+                      {collapsed ? (
+                        <ChevronRight size={12} style={{ color: 'var(--color-muted)' }} />
+                      ) : (
+                        <ChevronDown size={12} style={{ color: 'var(--color-muted)' }} />
+                      )}
+                      <span
+                        className="text-[10px] font-semibold uppercase tracking-widest"
+                        style={{ color: 'var(--color-muted)' }}
+                      >
+                        {bucket === GENERAL_BUCKET ? 'General' : bucket}
+                      </span>
+                      <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+                        {list.length}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => setBucketCollapsed(bucket, !collapsed)}
+                      className="shrink-0 rounded p-0.5"
+                      style={{ color: 'var(--color-muted)' }}
+                      title={collapsed ? 'Expand section' : 'Collapse section'}
+                    >
+                      <span className="text-sm font-mono leading-none">
+                        {collapsed ? '+' : '−'}
+                      </span>
+                    </button>
+                  </div>
+                  {!collapsed && (
+                    <div className="space-y-1.5 p-2">
+                      {list.map((entry) => (
+                        <WishlistRow
+                          key={entry.id}
+                          entry={entry}
+                          sources={sourcesCache.get(entry.item_id) ?? null}
+                          onOpenItem={handleOpenItem}
+                          onDelete={() => setPendingDelete(entry)}
+                          isDraggedOver={dragOverItemID === entry.id}
+                          onDragStart={onItemDragStart(entry)}
+                          onDragOver={onItemDragOver(entry)}
+                          onDragLeave={onItemDragLeave}
+                          onDrop={onItemDrop(entry)}
+                          onDragEnd={onItemDragEnd}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </>
+        )}
+
+        {!loading && viewedCharID && !isEmpty && viewMode === 'all' && (
+          <div className="space-y-1.5">
+            {entries.map((entry) => (
+              <WishlistRow
+                key={entry.id}
+                entry={entry}
+                sources={sourcesCache.get(entry.item_id) ?? null}
+                showSlotBadge
+                onOpenItem={handleOpenItem}
+                onDelete={() => setPendingDelete(entry)}
+                isDraggedOver={dragOverItemID === entry.id}
+                onDragStart={onItemDragStart(entry)}
+                onDragOver={onItemDragOver(entry)}
+                onDragLeave={onItemDragLeave}
+                onDrop={onItemDrop(entry)}
+                onDragEnd={onItemDragEnd}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Modals */}
