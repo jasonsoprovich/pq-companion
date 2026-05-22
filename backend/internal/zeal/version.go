@@ -18,13 +18,20 @@ import (
 // support an older release again.
 const MinSupportedVersion = "1.4.0"
 
-// versionAnchors are stable ASCII literals that the Zeal source bakes into
-// Zeal.asi's .rdata alongside the ZEAL_VERSION literal. Both come from
-// CoastalRedwood/Zeal: the first is the format used by the in-game `/version`
-// command; the second is the options-panel label key. We scan for either —
-// whichever the linker happened to keep adjacent to the version string is
-// fine.
+// versionAnchors are stable ASCII literals from CoastalRedwood/Zeal that the
+// linker may keep in the same .rdata cluster as the ZEAL_VERSION literal.
+// Listed best-first:
+//
+//   - "Zeal Version: " (capital V) is the crash-handler report label. Zeal's
+//     crash handler concatenates it with ZEAL_VERSION, so the compiler emits
+//     the version literal into the same translation unit's string pool — it
+//     is reliably adjacent.
+//   - "Zeal version: " (lowercase v) is the `/version` command output. The
+//     version is substituted at runtime via a format string, so the literal
+//     is only sometimes clustered nearby.
+//   - "Zeal_VersionValue" is the options-panel label key.
 var versionAnchors = [][]byte{
+	[]byte("Zeal Version: "),
 	[]byte("Zeal version: "),
 	[]byte("Zeal_VersionValue"),
 }
@@ -39,12 +46,17 @@ var versionPattern = regexp.MustCompile(`(?:^|\x00)([0-9]{1,2}\.[0-9]{1,3}\.[0-9
 // warning rather than false-alarming.
 //
 // Detection strategy: ZEAL_VERSION is a C string literal compiled into
-// .rdata. There's no API to read it. We locate one of the surrounding anchor
-// literals from Zeal.cpp, then scan a window around it for a
-// MAJOR.MINOR.PATCH-shaped null-terminated string. If no anchor is present
-// we widen to the entire file and take the first reasonable match — better
-// than nothing, but the anchored hit is preferred because the linker places
-// translation-unit strings together.
+// .rdata. There's no API to read it. We scan a window around every
+// occurrence of every anchor literal (see versionAnchors) for a
+// MAJOR.MINOR.PATCH-shaped null-terminated string, and within a window take
+// the match closest to the anchor.
+//
+// We deliberately do NOT fall back to scanning the whole file: Zeal.asi
+// statically links libraries (zlib, libpng) that bake their own
+// MAJOR.MINOR.PATCH literals into the binary, and an unanchored scan happily
+// returns one of those (e.g. libpng's "1.1.3"). A wrong version is worse
+// than no version — it would false-alarm the "update Zeal" banner — so an
+// unanchored binary is reported as unknown.
 func ReadInstalledVersion(asiPath string) (string, error) {
 	if strings.TrimSpace(asiPath) == "" {
 		return "", nil
@@ -54,41 +66,50 @@ func ReadInstalledVersion(asiPath string) (string, error) {
 		return "", err
 	}
 
-	anchorOff := -1
+	// MSVC packs a translation unit's string literals tightly, so when the
+	// version literal is clustered with an anchor it lands within a few KiB.
+	const window = 4096
 	for _, a := range versionAnchors {
-		if idx := bytes.Index(data, a); idx >= 0 {
-			anchorOff = idx
-			break
+		for off := 0; off < len(data); {
+			idx := bytes.Index(data[off:], a)
+			if idx < 0 {
+				break
+			}
+			idx += off
+			lo := max(idx-window, 0)
+			hi := min(len(data), idx+window)
+			if v := closestVersionMatch(data[lo:hi], idx-lo); v != "" {
+				return v, nil
+			}
+			off = idx + len(a)
 		}
-	}
-
-	// Look in a 4 KiB window on each side of the anchor first — MSVC packs
-	// per-translation-unit string literals tightly, so the version literal
-	// almost always lands inside this range.
-	if anchorOff >= 0 {
-		const window = 4096
-		lo := max(anchorOff-window, 0)
-		hi := min(len(data), anchorOff+window)
-		if v := firstVersionMatch(data[lo:hi]); v != "" {
-			return v, nil
-		}
-	}
-
-	// Fallback: scan the whole file. Higher chance of a false positive from
-	// some unrelated version-shaped string, but we'd rather find the version
-	// than silently skip the check.
-	if v := firstVersionMatch(data); v != "" {
-		return v, nil
 	}
 	return "", nil
 }
 
-func firstVersionMatch(b []byte) string {
-	m := versionPattern.FindSubmatch(b)
-	if m == nil {
+// closestVersionMatch returns the MAJOR.MINOR.PATCH literal nearest to
+// anchorPos within b, or "" if none is present. Picking the nearest match
+// (rather than the first) keeps the result correct when a window happens to
+// span more than one version-shaped string.
+func closestVersionMatch(b []byte, anchorPos int) string {
+	locs := versionPattern.FindAllSubmatchIndex(b, -1)
+	if locs == nil {
 		return ""
 	}
-	return string(m[1])
+	best := ""
+	bestDist := -1
+	for _, loc := range locs {
+		// loc[2]:loc[3] is capture group 1 (the version digits).
+		dist := loc[2] - anchorPos
+		if dist < 0 {
+			dist = -dist
+		}
+		if bestDist < 0 || dist < bestDist {
+			bestDist = dist
+			best = string(b[loc[2]:loc[3]])
+		}
+	}
+	return best
 }
 
 // CompareVersions returns -1 if a < b, 0 if equal, +1 if a > b. Non-numeric

@@ -683,7 +683,7 @@ export default function SettingsPage(): React.ReactElement {
 
           {zealStatus && !zealStatus.installed && !zealError && (
             <div className="space-y-2">
-              <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              <p className="text-sm font-medium" style={{ color: '#f87171' }}>
                 Zeal is not installed in your configured EverQuest folder
                 {zealStatus.eqgame_present ? '' : ' (eqgame.exe also not found — verify the path above)'}.
               </p>
