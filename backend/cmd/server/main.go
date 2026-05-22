@@ -22,6 +22,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/keyring"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
@@ -153,6 +154,29 @@ func main() {
 	} else {
 		defer playerStore.Close()
 		playersConsumer = players.NewConsumer(playerStore)
+	}
+
+	// Keyring tracker: persists per-character /keys snapshots. Master list
+	// is loaded from quarm.db keyring_data once at startup (read-only data).
+	// Non-fatal — failing here only disables the Keyring section in the Key
+	// Tracker page.
+	keyringStore, err := keyring.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	var (
+		keyringConsumer *keyring.Consumer
+		keyringMaster   []keyring.MasterEntry
+	)
+	if err != nil {
+		slog.Warn("open keyring tracker (disabled)", "err", err)
+	} else {
+		defer keyringStore.Close()
+		keyringMaster, err = keyring.LoadMaster(database.DB)
+		if err != nil {
+			slog.Warn("load keyring master list (tracker disabled)", "err", err)
+			keyringStore.Close()
+			keyringStore = nil
+		} else {
+			slog.Info("keyring master list loaded", "count", len(keyringMaster))
+		}
 	}
 
 	// Build the spell-landed detection index from the read-only spells_new
@@ -347,13 +371,18 @@ func main() {
 		slog.Info("trigger default updates applied", "mutated_triggers", mutated)
 	}
 
-	triggerEngine := trigger.NewEngine(triggerStore, hub, timerEngine, func() string {
+	activeChar := func() string {
 		if tailer != nil {
 			return tailer.ActiveCharacter()
 		}
 		return cfgMgr.Get().Character
-	})
+	}
+	triggerEngine := trigger.NewEngine(triggerStore, hub, timerEngine, activeChar)
 	triggerEngine.Reload()
+
+	if keyringStore != nil {
+		keyringConsumer = keyring.NewConsumer(keyringStore, keyringMaster, activeChar)
+	}
 
 	// Zeal IPC supervisor: discovers the eqgame.exe Zeal pipe and forwards
 	// live state into every downstream consumer that benefits from real-time,
@@ -462,7 +491,12 @@ func main() {
 		if playersConsumer != nil {
 			playersConsumer.Handle(ev)
 		}
-	}, triggerEngine.Handle, func(character string) {
+	}, func(ts time.Time, msg string) {
+		triggerEngine.Handle(ts, msg)
+		if keyringConsumer != nil {
+			keyringConsumer.HandleLine(ts, msg)
+		}
+	}, func(character string) {
 		slog.Info("logparser: auto-detected active character", "character", character)
 		// If the player switched to a character that doesn't match the
 		// configured manual override, drop the override so the new in-game
@@ -534,7 +568,7 @@ func main() {
 		runtimeAppVersion(),
 	)
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, keyringStore, keyringMaster, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

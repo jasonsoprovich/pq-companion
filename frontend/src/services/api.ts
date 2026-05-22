@@ -13,6 +13,11 @@ import type {
   ZealPipeStatus,
 } from '../types/zeal'
 import type { KeysResponse, KeysProgressResponse } from '../types/keys'
+import type {
+  KeyringMasterResponse,
+  KeyringCharactersResponse,
+  KeyringCharacterResponse,
+} from '../types/keyring'
 import type { Backup, BackupsResponse } from '../types/backup'
 import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { TargetState } from '../types/overlay'
@@ -383,6 +388,20 @@ export function getKeys(): Promise<KeysResponse> {
 
 export function getKeysProgress(): Promise<KeysProgressResponse> {
   return get<KeysProgressResponse>('/api/keys/progress')
+}
+
+// ── Keyring (per-character /keys snapshots) ───────────────────────────────────
+
+export function getKeyringMaster(): Promise<KeyringMasterResponse> {
+  return get<KeyringMasterResponse>('/api/keyring/master')
+}
+
+export function getKeyringCharacters(): Promise<KeyringCharactersResponse> {
+  return get<KeyringCharactersResponse>('/api/keyring/characters')
+}
+
+export function getKeyringForCharacter(name: string): Promise<KeyringCharacterResponse> {
+  return get<KeyringCharacterResponse>(`/api/keyring/characters/${encodeURIComponent(name)}`)
 }
 
 // ── Backups ────────────────────────────────────────────────────────────────────

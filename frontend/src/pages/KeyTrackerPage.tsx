@@ -5,6 +5,7 @@ import { getKeys, getKeysProgress } from '../services/api'
 import type { KeyDef, KeysProgressResponse, CharacterKeyProgress } from '../types/keys'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import CharacterSubTabs from '../components/CharacterSubTabs'
+import KeyringSection from '../components/KeyringSection'
 
 // ── Filter tabs ────────────────────────────────────────────────────────────────
 
@@ -550,6 +551,11 @@ export default function KeyTrackerPage(): React.ReactElement {
           Refresh
         </button>
       </div>
+
+      {/* /keys-driven keyring tracker (collapsible). Distinct from the
+          component-key progression view below — this one is the per-character
+          keyring snapshot, the one below is shared-bank-aware quest progress. */}
+      <KeyringSection initialCharacter={viewedCharacter} />
 
       {/* Character sub-tabs (per-character view; "All" shows the cross-character matrix) */}
       <CharacterSubTabs
