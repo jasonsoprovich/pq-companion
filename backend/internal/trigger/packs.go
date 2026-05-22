@@ -148,7 +148,9 @@ func EnchanterPack() TriggerPack {
 				PackName: "Enchanter",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "MEZ BROKE!", DurationSecs: 5, Color: "#ff4444"},
-					{Type: ActionTextToSpeech, Text: "Mez broke", Volume: 1.0},
+					// "Mezz" (not "Mez") so Windows SAPI pronounces it as the EQ term
+// instead of the prefix "mehz-". Pattern and overlay text remain "Mez".
+{Type: ActionTextToSpeech, Text: "Mezz broke", Volume: 1.0},
 				},
 			},
 			{
@@ -1644,7 +1646,9 @@ func BardPack() TriggerPack {
 				PackName: "Bard",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "MEZ BROKE!", DurationSecs: 5, Color: "#ff4444"},
-					{Type: ActionTextToSpeech, Text: "Mez broke", Volume: 1.0},
+					// "Mezz" (not "Mez") so Windows SAPI pronounces it as the EQ term
+// instead of the prefix "mehz-". Pattern and overlay text remain "Mez".
+{Type: ActionTextToSpeech, Text: "Mezz broke", Volume: 1.0},
 				},
 			},
 			{

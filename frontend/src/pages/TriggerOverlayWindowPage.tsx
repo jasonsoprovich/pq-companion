@@ -191,11 +191,20 @@ function TestAlertCard({ alert, onPositionCommit, onInteractiveChange }: TestAle
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
+// DEDUP_WINDOW_MS: if the same trigger_id fires again within this window with
+// the same matched_line, treat it as a duplicate of the first event and skip.
+// Defends against any double-broadcast path we haven't pinned down yet —
+// users were seeing stacked "MEZ BROKE!" / "ROOT BROKE!" overlay text on a
+// single in-game event. A real trigger never legitimately fires twice for
+// the exact same log line at the same instant.
+const DEDUP_WINDOW_MS = 750
+
 export default function TriggerOverlayWindowPage(): React.ReactElement {
   const [alerts, setAlerts] = useState<AlertEntry[]>([])
   const [testAlert, setTestAlert] = useState<TestAlert | null>(null)
   const [interactive, setInteractive] = useState(false)
   const gcTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lastFired = useRef<Map<string, number>>(new Map())
 
   // Garbage-collect expired alerts every 250 ms. Test alerts are sticky and
   // only cleared when the editor ends the positioning session, so they're
@@ -204,6 +213,9 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     gcTimer.current = setInterval(() => {
       const now = Date.now()
       setAlerts((prev) => prev.filter((a) => now < a.expiresAt + 500))
+      for (const [k, t] of lastFired.current) {
+        if (now - t > DEDUP_WINDOW_MS) lastFired.current.delete(k)
+      }
     }, 250)
     return () => {
       if (gcTimer.current !== null) clearInterval(gcTimer.current)
@@ -259,11 +271,16 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
       const event = msg.data as TriggerFired
       const overlayAction = event.actions.find((a) => a.type === 'overlay_text')
       if (!overlayAction) return
+      const now = Date.now()
+      const key = `${event.trigger_id}|${event.matched_line}`
+      const prev = lastFired.current.get(key)
+      if (prev !== undefined && now - prev < DEDUP_WINDOW_MS) return
+      lastFired.current.set(key, now)
       const durationMs = (overlayAction.duration_secs || 5) * 1000
       const entry: AlertEntry = {
         id: nextId++,
         event,
-        expiresAt: Date.now() + durationMs,
+        expiresAt: now + durationMs,
       }
       setAlerts((prev) => [entry, ...prev].slice(0, 8))
       return

@@ -184,6 +184,47 @@ func (s *Store) MigrateGroupAwarenessToGeneralTriggers() error {
 	return s.MarkDefaultUpdateApplied(key)
 }
 
+// MigrateMezBrokeTTSPronunciation rewrites the TTS text on the installed
+// "Mez Broke" triggers from "Mez broke" to "Mezz broke" so Windows SAPI
+// reads the EQ term correctly. Idempotent via pack_default_updates.
+//
+// Built-in pack definitions ship the corrected spelling; this migration
+// only matters for users who installed the Enchanter / Bard pack before
+// the rename.
+func (s *Store) MigrateMezBrokeTTSPronunciation() error {
+	const key = "MezBroke:TTSPronunciation:v1"
+	applied, err := s.IsDefaultUpdateApplied(key)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+	for _, packName := range []string{"Enchanter", "Bard"} {
+		t, err := s.FindByPackAndName(packName, "Mez Broke")
+		if err != nil {
+			return err
+		}
+		if t == nil {
+			continue
+		}
+		changed := false
+		for i := range t.Actions {
+			if t.Actions[i].Type == ActionTextToSpeech && t.Actions[i].Text == "Mez broke" {
+				t.Actions[i].Text = "Mezz broke"
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		if err := s.Update(t); err != nil {
+			return fmt.Errorf("update %s mez broke: %w", packName, err)
+		}
+	}
+	return s.MarkDefaultUpdateApplied(key)
+}
+
 func (s *Store) packHasAnyTrigger(pack string) (bool, error) {
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM triggers WHERE pack_name = ?`, pack).Scan(&n); err != nil {

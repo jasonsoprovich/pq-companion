@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import { useWebSocket } from './useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { playSound, speakText } from '../services/audio'
@@ -11,12 +11,31 @@ import type { TriggerFired } from '../types/trigger'
  * Mount this hook once at the App level so audio fires regardless of which
  * page the user is on.
  */
+
+// DEDUP_WINDOW_MS: kept in sync with TriggerOverlayWindowPage. A single
+// trigger should never legitimately fire twice for the same matched line
+// inside this window, so collapse duplicates to one audio play.
+const DEDUP_WINDOW_MS = 750
+
 export function useAudioEngine(): void {
+  const lastFired = useRef<Map<string, number>>(new Map())
+
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type !== WSEvent.TriggerFired) return
 
     const fired = msg.data as TriggerFired
     if (!fired?.actions) return
+
+    const now = Date.now()
+    const key = `${fired.trigger_id}|${fired.matched_line}`
+    const prev = lastFired.current.get(key)
+    if (prev !== undefined && now - prev < DEDUP_WINDOW_MS) return
+    lastFired.current.set(key, now)
+    if (lastFired.current.size > 256) {
+      for (const [k, t] of lastFired.current) {
+        if (now - t > DEDUP_WINDOW_MS) lastFired.current.delete(k)
+      }
+    }
 
     for (const action of fired.actions) {
       const vol = action.volume > 0 ? action.volume : 1.0

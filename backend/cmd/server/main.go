@@ -332,6 +332,9 @@ func main() {
 	if err := triggerStore.MigrateGroupAwarenessToGeneralTriggers(); err != nil {
 		slog.Warn("trigger general-triggers migration failed", "err", err)
 	}
+	if err := triggerStore.MigrateMezBrokeTTSPronunciation(); err != nil {
+		slog.Warn("trigger mez-broke tts migration failed", "err", err)
+	}
 
 	// One-time additive default updates for built-in packs. Each is keyed
 	// and runs at most once, only ever appending to list-typed fields on
