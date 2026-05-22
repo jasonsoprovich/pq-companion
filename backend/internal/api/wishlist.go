@@ -16,16 +16,15 @@ type wishlistHandler struct {
 	db    *db.DB
 }
 
-// validSlotBuckets is the closed set of bucket names the API accepts. Mirrors
-// the EQ canonical worn-slot order plus a "General" bucket for non-equippable
-// items. Matches frontend/src/lib/wishlistSlots.ts — keep in sync.
-var validSlotBuckets = map[string]bool{
-	"Charm": true, "Ear": true, "Head": true, "Face": true, "Neck": true,
-	"Shoulder": true, "Arms": true, "Back": true, "Wrist": true, "Range": true,
-	"Hands": true, "Primary": true, "Secondary": true, "Finger": true,
-	"Chest": true, "Legs": true, "Feet": true, "Waist": true, "Ammo": true,
-	"General": true,
-}
+// validSlotBuckets is the closed set of bucket names the API accepts. Derived
+// from character.CanonicalWishlistSlotOrder — single source of truth.
+var validSlotBuckets = func() map[string]bool {
+	m := make(map[string]bool, len(character.CanonicalWishlistSlotOrder))
+	for _, b := range character.CanonicalWishlistSlotOrder {
+		m[b] = true
+	}
+	return m
+}()
 
 // wishlistItemBrief is the lightweight item slice bundled with each entry —
 // just enough to render a row without the frontend fetching the full Item.
@@ -48,7 +47,8 @@ type wishlistRow struct {
 }
 
 type wishlistListResponse struct {
-	Entries []wishlistRow `json:"entries"`
+	Entries    []wishlistRow                  `json:"entries"`
+	SlotLayout []character.WishlistSlotLayout `json:"slot_layout"`
 }
 
 func (h *wishlistHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -66,6 +66,11 @@ func (h *wishlistHandler) list(w http.ResponseWriter, r *http.Request) {
 	}
 
 	entries, err := h.store.ListWishlist(charID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	layout, err := h.store.ListWishlistSlotLayout(charID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -92,7 +97,7 @@ func (h *wishlistHandler) list(w http.ResponseWriter, r *http.Request) {
 		}
 		rows = append(rows, row)
 	}
-	writeJSON(w, http.StatusOK, wishlistListResponse{Entries: rows})
+	writeJSON(w, http.StatusOK, wishlistListResponse{Entries: rows, SlotLayout: layout})
 }
 
 type wishlistAddRequest struct {
@@ -126,7 +131,6 @@ func (h *wishlistHandler) add(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "slots is required")
 		return
 	}
-	// Sanity-check that the item exists before creating wishlist rows for it.
 	if _, err := h.db.GetItem(req.ItemID); err != nil {
 		writeError(w, http.StatusBadRequest, "item not found")
 		return
@@ -168,8 +172,7 @@ func (h *wishlistHandler) del(w http.ResponseWriter, r *http.Request) {
 }
 
 type wishlistReorderRequest struct {
-	SlotBucket string `json:"slot_bucket"`
-	OrderedIDs []int  `json:"ordered_ids"`
+	OrderedIDs []int `json:"ordered_ids"`
 }
 
 func (h *wishlistHandler) reorder(w http.ResponseWriter, r *http.Request) {
@@ -183,11 +186,48 @@ func (h *wishlistHandler) reorder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if !validSlotBuckets[req.SlotBucket] {
-		writeError(w, http.StatusBadRequest, "invalid slot bucket")
+	if err := h.store.ReorderWishlist(charID, req.OrderedIDs); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := h.store.ReorderWishlistSlot(charID, req.SlotBucket, req.OrderedIDs); err != nil {
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type wishlistSlotLayoutRequest struct {
+	Layout []character.WishlistSlotLayout `json:"layout"`
+}
+
+func (h *wishlistHandler) updateSlotLayout(w http.ResponseWriter, r *http.Request) {
+	charID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid character id")
+		return
+	}
+	if _, ok, err := h.store.Get(charID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	} else if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+	var req wishlistSlotLayoutRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	seen := make(map[string]bool, len(req.Layout))
+	for _, l := range req.Layout {
+		if !validSlotBuckets[l.SlotBucket] {
+			writeError(w, http.StatusBadRequest, "invalid slot bucket: "+l.SlotBucket)
+			return
+		}
+		if seen[l.SlotBucket] {
+			writeError(w, http.StatusBadRequest, "duplicate slot bucket in layout: "+l.SlotBucket)
+			return
+		}
+		seen[l.SlotBucket] = true
+	}
+	if err := h.store.ReplaceWishlistSlotLayout(charID, req.Layout); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

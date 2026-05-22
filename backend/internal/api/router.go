@@ -135,6 +135,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/{id}/wishlist", wishlistH.list)
 			r.Post("/{id}/wishlist", wishlistH.add)
 			r.Put("/{id}/wishlist/reorder", wishlistH.reorder)
+			r.Put("/{id}/wishlist/slot-layout", wishlistH.updateSlotLayout)
 			r.Delete("/{id}/wishlist/{entryID}", wishlistH.del)
 		})
 		r.Route("/zeal", func(r chi.Router) {
