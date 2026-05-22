@@ -56,9 +56,22 @@ func LoadMaster(db *sql.DB) ([]MasterEntry, error) {
 		if err := rows.Scan(&e.KeyItem, &e.KeyName, &e.ZoneID, &e.Stage, &e.ItemName, &e.ZoneName); err != nil {
 			return nil, fmt.Errorf("scan keyring_data row: %w", err)
 		}
+		if name, ok := zoneIDOverrides[e.ZoneID]; ok && e.ZoneName == "" {
+			e.ZoneName = name
+		}
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// zoneIDOverrides patches keyring_data rows whose zoneid doesn't match any
+// row in the zone table. The upstream Quarm dump has Griegs Key pointing at
+// zoneid=140, but Grieg's End is zoneidnumber=163 — the JOIN comes back
+// empty and the UI shows "Unknown zone". Single static fallback covers the
+// case without obscuring legitimate future mismatches (they'll still surface
+// as "Unknown zone" until added here).
+var zoneIDOverrides = map[int]string{
+	140: "Grieg's End",
 }
 
 // NameIndex maps each master entry's key_name to its canonical KeyItem ID.

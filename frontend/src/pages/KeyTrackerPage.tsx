@@ -7,8 +7,9 @@ import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import KeyringSection from '../components/KeyringSection'
 
-// ── Filter tabs ────────────────────────────────────────────────────────────────
+// ── Tab + filter types ─────────────────────────────────────────────────────────
 
+type Tab = 'tracker' | 'keyring'
 type Filter = 'all' | 'in_progress' | 'complete'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -291,7 +292,7 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
                                 <CheckCircle2
                                   size={14}
                                   className="inline-block"
-                                  style={{ color: 'var(--color-primary)' }}
+                                  style={{ color: 'var(--color-success)' }}
                                 />
                               </span>
                             ) : ii?.shared_bank ? (
@@ -418,6 +419,7 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
 
 export default function KeyTrackerPage(): React.ReactElement {
   const { active } = useActiveCharacter()
+  const [tab, setTab] = useState<Tab>('tracker')
   const [viewedCharacter, setViewedCharacter] = useState('')
   const [keyDefs, setKeyDefs] = useState<KeyDef[]>([])
   const [progress, setProgress] = useState<KeysProgressResponse | null>(null)
@@ -529,87 +531,107 @@ export default function KeyTrackerPage(): React.ReactElement {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header bar */}
-      <div
-        className="flex items-center gap-3 border-b px-4 py-3 shrink-0"
-        style={{ borderColor: 'var(--color-border)' }}
-      >
-        <Key size={18} style={{ color: 'var(--color-primary)' }} />
-        <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
-          Key Tracker
-        </span>
-        <button
-          onClick={load}
-          className="ml-auto flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-          style={{
-            backgroundColor: 'var(--color-surface-2)',
-            color: 'var(--color-muted-foreground)',
-            border: '1px solid var(--color-border)',
-          }}
-        >
-          <RefreshCw size={11} />
-          Refresh
-        </button>
-      </div>
-
-      {/* /keys-driven keyring tracker (collapsible). Distinct from the
-          component-key progression view below — this one is the per-character
-          keyring snapshot, the one below is shared-bank-aware quest progress. */}
-      <KeyringSection initialCharacter={viewedCharacter} />
-
-      {/* Character sub-tabs (per-character view; "All" shows the cross-character matrix) */}
-      <CharacterSubTabs
-        value={viewedCharacter}
-        onChange={setViewedCharacter}
-        allowAll
-      />
-
-      {/* Filter tabs */}
+      {/* Top tab strip: Key Tracker (component progression) | Keyring (/keys snapshot).
+          Distinct surfaces — Key Tracker is shared-bank-aware quest progression with
+          per-component checkboxes; Keyring is the in-game /keys command snapshot per
+          character. They share the page only because both describe "keys". */}
       <div
         className="flex items-center gap-1 border-b px-4 shrink-0"
         style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
       >
-        {(['all', 'in_progress', 'complete'] as Filter[]).map((f) => {
-          const label = f === 'all' ? 'All' : f === 'in_progress' ? 'In Progress' : 'Complete'
-          const active = filter === f
+        <Key size={16} style={{ color: 'var(--color-primary)' }} className="mr-2" />
+        {(['tracker', 'keyring'] as Tab[]).map((t) => {
+          const label = t === 'tracker' ? 'Key Tracker' : 'Keyring'
+          const isActive = tab === t
           return (
             <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className="px-3 py-2 text-xs font-medium transition-colors"
+              key={t}
+              onClick={() => setTab(t)}
+              className="px-3 py-2.5 text-xs font-semibold transition-colors"
               style={{
-                color: active ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
-                borderBottom: active ? '2px solid var(--color-primary)' : '2px solid transparent',
+                color: isActive ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
+                borderBottom: isActive ? '2px solid var(--color-primary)' : '2px solid transparent',
               }}
             >
               {label}
             </button>
           )
         })}
-      </div>
-
-      {/* Key cards */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {filteredKeys.length === 0 ? (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
-              {filter === 'complete'
-                ? 'No keys completed yet.'
-                : filter === 'in_progress'
-                  ? 'No keys in progress.'
-                  : 'No keys defined.'}
-            </p>
-          </div>
-        ) : (
-          filteredKeys.map((kd) => (
-            <KeyCard
-              key={kd.id}
-              keyDef={kd}
-              chars={progressByKey.get(kd.id) ?? []}
-            />
-          ))
+        {tab === 'tracker' && (
+          <button
+            onClick={load}
+            className="ml-auto flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            <RefreshCw size={11} />
+            Refresh
+          </button>
         )}
       </div>
+
+      {tab === 'keyring' ? (
+        <KeyringSection initialCharacter={viewedCharacter || active} />
+      ) : (
+        <>
+          {/* Character sub-tabs (per-character view; "All" shows the cross-character matrix) */}
+          <CharacterSubTabs
+            value={viewedCharacter}
+            onChange={setViewedCharacter}
+            allowAll
+          />
+
+          {/* Filter tabs */}
+          <div
+            className="flex items-center gap-1 border-b px-4 shrink-0"
+            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+          >
+            {(['all', 'in_progress', 'complete'] as Filter[]).map((f) => {
+              const label = f === 'all' ? 'All' : f === 'in_progress' ? 'In Progress' : 'Complete'
+              const isActive = filter === f
+              return (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className="px-3 py-2 text-xs font-medium transition-colors"
+                  style={{
+                    color: isActive ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
+                    borderBottom: isActive ? '2px solid var(--color-primary)' : '2px solid transparent',
+                  }}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Key cards */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {filteredKeys.length === 0 ? (
+              <div className="flex h-full items-center justify-center">
+                <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
+                  {filter === 'complete'
+                    ? 'No keys completed yet.'
+                    : filter === 'in_progress'
+                      ? 'No keys in progress.'
+                      : 'No keys defined.'}
+                </p>
+              </div>
+            ) : (
+              filteredKeys.map((kd) => (
+                <KeyCard
+                  key={kd.id}
+                  keyDef={kd}
+                  chars={progressByKey.get(kd.id) ?? []}
+                />
+              ))
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
