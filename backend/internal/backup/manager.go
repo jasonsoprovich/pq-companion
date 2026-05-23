@@ -17,6 +17,24 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 )
 
+// DefaultBackupDir returns the user-home backups directory
+// (~/.pq-companion/backups). Exported so the server entrypoint can reuse the
+// same path for the app-export/import manager without duplicating the
+// "user home + .pq-companion + backups" join.
+//
+// Backups historically lived in <exe_dir>/backups, but that broke for users
+// who installed under C:\Program Files (no write access for standard
+// accounts). The path was moved into the user's home directory so it's
+// always writable. The legacy location is migrated on startup; see
+// MigrateLegacyDir.
+func DefaultBackupDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("home dir: %w", err)
+	}
+	return filepath.Join(home, ".pq-companion", "backups"), nil
+}
+
 // Manager handles backup creation, restoration, and deletion.
 // Backups are zip archives stored under <backupDir>/.
 // Metadata is persisted in a Store backed by user.db.
@@ -27,13 +45,18 @@ type Manager struct {
 }
 
 // NewManager opens (or creates) the user.db under ~/.pq-companion/ and
-// returns a ready Manager.  Backup archives are stored in <exe_dir>/backups/.
+// returns a ready Manager. Backup archives are stored in
+// ~/.pq-companion/backups/ — see DefaultBackupDir for the rationale.
 func NewManager(cfgMgr *config.Manager) (*Manager, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("home dir: %w", err)
 	}
-	return NewManagerAt(cfgMgr, filepath.Join(home, ".pq-companion"), exeBackupDir())
+	backupDir, err := DefaultBackupDir()
+	if err != nil {
+		return nil, err
+	}
+	return NewManagerAt(cfgMgr, filepath.Join(home, ".pq-companion"), backupDir)
 }
 
 // NewManagerAt is like NewManager but uses explicit directories.  baseDir is
@@ -50,15 +73,6 @@ func NewManagerAt(cfgMgr *config.Manager, baseDir, backupDir string) (*Manager, 
 	}
 
 	return &Manager{store: store, cfgMgr: cfgMgr, backupDir: backupDir}, nil
-}
-
-// exeBackupDir returns <exe_dir>/backups, falling back to "backups" for dev.
-func exeBackupDir() string {
-	exe, err := os.Executable()
-	if err == nil {
-		return filepath.Join(filepath.Dir(exe), "backups")
-	}
-	return "backups"
 }
 
 // Close releases the underlying database connection.

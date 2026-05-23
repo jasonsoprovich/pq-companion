@@ -65,7 +65,11 @@ func main() {
 	if hErr == nil {
 		appHome := filepath.Join(homeForImport, ".pq-companion")
 		userDBPath := filepath.Join(appHome, "user.db")
-		appBackup := appbackup.New(userDBPath, exeBackupsDir(), appHome, runtimeAppVersion())
+		backupsDir := filepath.Join(appHome, "backups")
+		// Move any backups from the legacy <exe_dir>/backups location before
+		// the import swap runs, so a pending import sees the up-to-date set.
+		backup.MigrateLegacyDir(backupsDir)
+		appBackup := appbackup.New(userDBPath, backupsDir, appHome, runtimeAppVersion())
 		applied, err := appBackup.ApplyPendingImport()
 		if err != nil {
 			slog.Error("apply pending app import", "err", err)
@@ -563,7 +567,7 @@ func main() {
 	// Live app-backup manager for export / import endpoints.
 	appBackupMgr := appbackup.New(
 		filepath.Join(home, ".pq-companion", "user.db"),
-		exeBackupsDir(),
+		filepath.Join(home, ".pq-companion", "backups"),
 		filepath.Join(home, ".pq-companion"),
 		runtimeAppVersion(),
 	)
@@ -609,18 +613,6 @@ func pruneCombatHistory(ctx context.Context, store *combat.HistoryStore, cfgMgr 
 			prune()
 		}
 	}
-}
-
-// exeBackupsDir matches backup.exeBackupDir's logic — the EQ-config backups
-// dir is under the running executable. Kept locally rather than exported
-// from the backup package to avoid creating a public surface for a single
-// caller.
-func exeBackupsDir() string {
-	exe, err := os.Executable()
-	if err == nil {
-		return filepath.Join(filepath.Dir(exe), "backups")
-	}
-	return "backups"
 }
 
 // runtimeAppVersion returns the app version Electron passed via the
