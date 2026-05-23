@@ -386,6 +386,12 @@ func main() {
 
 	if keyringStore != nil {
 		keyringConsumer = keyring.NewConsumer(keyringStore, keyringMaster, activeChar)
+		keyringConsumer.SetOnSnapshot(func(character string) {
+			hub.Broadcast(ws.Event{
+				Type: "keyring.snapshot",
+				Data: map[string]any{"character": character},
+			})
+		})
 	}
 
 	// Zeal IPC supervisor: discovers the eqgame.exe Zeal pipe and forwards

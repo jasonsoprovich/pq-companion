@@ -30,12 +30,23 @@ type Consumer struct {
 	store      *Store
 	nameIndex  map[string]int // key_name -> key_item (canonical id when duplicates collapse)
 	activeChar func() string  // returns the current in-game character name; "" disables snapshots
+	onSnapshot func(string)   // optional, fired after a successful Snapshot with the character name
 
 	mu          sync.Mutex
 	buffer      map[int]bool // key_items in the in-progress burst
 	character   string       // active character snapshotted when the burst started
 	lastMatchAt time.Time
 	timer       *time.Timer
+}
+
+// SetOnSnapshot registers a callback fired after each successful snapshot
+// commit. Used by the API layer to broadcast a WebSocket event so the UI
+// can refresh the keyring tab in place instead of relying on a tab-switch
+// remount to refetch. Safe to call before HandleLine starts feeding data.
+func (c *Consumer) SetOnSnapshot(fn func(character string)) {
+	c.mu.Lock()
+	c.onSnapshot = fn
+	c.mu.Unlock()
 }
 
 // NewConsumer constructs a consumer wired to store and using master as the
@@ -122,8 +133,14 @@ func (c *Consumer) flush() {
 	}
 	if err := c.store.Snapshot(character, items, observedAt); err != nil {
 		slog.Warn("keyring: snapshot failed", "character", character, "items", len(items), "err", err)
-	} else {
-		slog.Info("keyring: snapshot committed", "character", character, "items", len(items))
+		return
+	}
+	slog.Info("keyring: snapshot committed", "character", character, "items", len(items))
+	c.mu.Lock()
+	cb := c.onSnapshot
+	c.mu.Unlock()
+	if cb != nil {
+		cb(character)
 	}
 }
 

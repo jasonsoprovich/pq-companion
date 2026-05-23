@@ -16,19 +16,22 @@
  * char that's on the keyring but no longer holding the item must still
  * read as fully owned (green), not yellow.
  */
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Search, RefreshCw } from 'lucide-react'
 import { getKeyringMaster, getKeyringForCharacter, getAllInventories } from '../services/api'
 import type { KeyringMasterEntry } from '../types/keyring'
 import type { AllInventoriesResponse } from '../types/zeal'
+import { useWebSocket } from '../hooks/useWebSocket'
 import CharacterSubTabs from './CharacterSubTabs'
 
 type OwnedFilter = 'all' | 'owned' | 'missing'
 
 // Ownership states for a single key relative to the selected character.
-// "keyring" is permanent (in /keys output); "inventory" is the fallback
-// when the key item is on hand but hasn't been used.
-type Ownership = 'keyring' | 'inventory' | 'missing'
+// "keyring" is permanent (in /keys output); "upgraded" means a higher-stage
+// key in the same multi-stage chain (e.g. ToFS) is on the keyring, so this
+// lower-stage key was implicitly owned and consumed; "inventory" is the
+// fallback when the key item is on hand but hasn't been used.
+type Ownership = 'keyring' | 'upgraded' | 'inventory' | 'missing'
 
 interface KeyringSectionProps {
   /** Active character set from the parent page so the panel opens on the same view. */
@@ -73,13 +76,28 @@ export default function KeyringSection({ initialCharacter }: KeyringSectionProps
     return () => { cancelled = true }
   }, [])
 
-  // Owned set refreshes whenever the character changes.
+  // Owned set refreshes whenever the character changes. We also expose it as
+  // a callable so the WS subscription and the manual refresh button can
+  // trigger a refetch without forcing the effect to re-run.
+  const refreshOwned = useCallback(async (name: string): Promise<void> => {
+    if (!name) {
+      setOwned(new Set())
+      return
+    }
+    try {
+      const res = await getKeyringForCharacter(name)
+      setOwned(new Set((res.entries ?? []).map((e) => e.key_item)))
+    } catch {
+      setOwned(new Set())
+    }
+  }, [])
+
   useEffect(() => {
+    let cancelled = false
     if (!character) {
       setOwned(new Set())
       return
     }
-    let cancelled = false
     getKeyringForCharacter(character)
       .then((res) => {
         if (cancelled) return
@@ -91,6 +109,26 @@ export default function KeyringSection({ initialCharacter }: KeyringSectionProps
       })
     return () => { cancelled = true }
   }, [character])
+
+  // Live refresh: when the backend commits a /keys snapshot for the active
+  // character, refetch in place so the Keyring tab shows the new state
+  // without requiring a tab-switch remount.
+  useWebSocket((msg) => {
+    if (msg.type !== 'keyring.snapshot') return
+    const data = msg.data as { character?: string } | null
+    const snapChar = data?.character ?? ''
+    if (!snapChar || !character) return
+    if (snapChar.toLowerCase() === character.toLowerCase()) {
+      void refreshOwned(character)
+    }
+  })
+
+  const handleManualRefresh = useCallback((): void => {
+    if (character) void refreshOwned(character)
+    // Pull a fresh inventory snapshot too — Zeal exports on logout, so a
+    // recent /camp may have produced a new file the user wants reflected.
+    getAllInventories().then(setInv).catch(() => {})
+  }, [character, refreshOwned])
 
   // Selected character's inventory item IDs ∪ shared-bank IDs. Shared bank
   // counts for every character on the account — if Osui doesn't have the
@@ -109,9 +147,30 @@ export default function KeyringSection({ initialCharacter }: KeyringSectionProps
     return ids
   }, [inv, character])
 
-  function ownershipOf(keyItem: number): Ownership {
-    if (owned.has(keyItem)) return 'keyring'
-    if (inventoryIDs.has(keyItem)) return 'inventory'
+  // Per-zone max owned stage across the keyring set. Multi-stage chains like
+  // Tower of Frozen Shadows upgrade in place: getting stage N consumes
+  // stage N-1, so /keys only shows the highest-stage key. Inferring the
+  // lower stages as owned matches what actually happened in-game and lets
+  // the UI mark the full progression green instead of stranding the earlier
+  // rows as "missing".
+  const maxOwnedStageByZone = useMemo<Map<number, number>>(() => {
+    const m = new Map<number, number>()
+    for (const k of master) {
+      if (k.stage <= 0) continue
+      if (!owned.has(k.key_item)) continue
+      const prev = m.get(k.zone_id) ?? 0
+      if (k.stage > prev) m.set(k.zone_id, k.stage)
+    }
+    return m
+  }, [master, owned])
+
+  function ownershipOf(entry: KeyringMasterEntry): Ownership {
+    if (owned.has(entry.key_item)) return 'keyring'
+    if (entry.stage > 0) {
+      const maxStage = maxOwnedStageByZone.get(entry.zone_id) ?? 0
+      if (entry.stage < maxStage) return 'upgraded'
+    }
+    if (inventoryIDs.has(entry.key_item)) return 'inventory'
     return 'missing'
   }
 
@@ -123,7 +182,7 @@ export default function KeyringSection({ initialCharacter }: KeyringSectionProps
     const q = search.trim().toLowerCase()
     const groups = new Map<string, KeyringMasterEntry[]>()
     for (const k of master) {
-      const state = ownershipOf(k.key_item)
+      const state = ownershipOf(k)
       if (filter === 'owned' && state === 'missing') continue
       if (filter === 'missing' && state !== 'missing') continue
       if (q) {
@@ -144,8 +203,10 @@ export default function KeyringSection({ initialCharacter }: KeyringSectionProps
     let onKeyring = 0
     let inInv = 0
     for (const k of master) {
-      const s = ownershipOf(k.key_item)
-      if (s === 'keyring') onKeyring++
+      const s = ownershipOf(k)
+      // Treat upgraded-stage keys as owned so the totals reflect the full
+      // progression a character has actually completed.
+      if (s === 'keyring' || s === 'upgraded') onKeyring++
       else if (s === 'inventory') inInv++
     }
     return { onKeyring, inInv, total: onKeyring + inInv }
@@ -223,6 +284,21 @@ export default function KeyringSection({ initialCharacter }: KeyringSectionProps
           >
             /keys to update
           </span>
+          <button
+            type="button"
+            onClick={handleManualRefresh}
+            disabled={!character}
+            className="inline-flex items-center justify-center rounded p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-muted-foreground)',
+            }}
+            title="Refresh keyring data for this character"
+            aria-label="Refresh keyring"
+          >
+            <RefreshCw size={12} />
+          </button>
         </div>
       </div>
 
@@ -294,7 +370,7 @@ function LegendDot({ color, label, muted }: LegendDotProps): React.ReactElement 
 interface KeyringZoneGroupProps {
   zone: string
   keys: KeyringMasterEntry[]
-  ownership: (keyItem: number) => Ownership
+  ownership: (entry: KeyringMasterEntry) => Ownership
 }
 
 function KeyringZoneGroup({ zone, keys, ownership }: KeyringZoneGroupProps): React.ReactElement {
@@ -317,7 +393,7 @@ function KeyringZoneGroup({ zone, keys, ownership }: KeyringZoneGroupProps): Rea
       </p>
       <div className="space-y-1">
         {sorted.map((k) => (
-          <KeyringRow key={k.key_item} entry={k} state={ownership(k.key_item)} />
+          <KeyringRow key={k.key_item} entry={k} state={ownership(k)} />
         ))}
       </div>
     </div>
@@ -338,6 +414,12 @@ const stateStyle: Record<Ownership, { color: string; bg: string; opacity: number
     bg: 'color-mix(in srgb, var(--color-success) 12%, transparent)',
     opacity: 1,
     title: 'On keyring — used in-game and permanently recorded',
+  },
+  upgraded: {
+    color: 'var(--color-success)',
+    bg: 'color-mix(in srgb, var(--color-success) 12%, transparent)',
+    opacity: 0.85,
+    title: 'Previously owned — upgraded into a higher-stage key in this chain (e.g. Tower of Frozen Shadows)',
   },
   inventory: {
     color: 'var(--color-warning, #ffaa00)',
