@@ -38,6 +38,11 @@ win:
 
 nsis:
   oneClick: false
+  # Per-user install under %LocalAppData%\Programs\PQ Companion. Removes the
+  # "Install for all users" radio that landed some users in C:\Program Files
+  # where the app couldn't write to its own directory; user can still pick
+  # a custom path via allowToChangeInstallationDirectory if they want.
+  perMachine: false
   allowToChangeInstallationDirectory: true
   deleteAppDataOnUninstall: false
   createDesktopShortcut: true
