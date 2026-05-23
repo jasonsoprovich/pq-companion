@@ -9,6 +9,19 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.8.1 — 2026-05-22
+
+Wishlist gets collapsible sections, drag-reorderable cards, and a flat All Items view.
+
+### Highlights
+- **Wishlist sections** — each slot is now a card you can collapse via `+`/`−` or by clicking its header; drag the grip on the left to reorder cards. The layout (order + collapse state) persists per character.
+- **Expand all / Collapse all** in the Wishlist toolbar — handy after a kill for quickly checking what's still on the list.
+- **All Items view** in Wishlist — flat list of everything wishlisted across slots, with free-form cross-slot drag for prioritizing upgrades. Toggle Category / All items from the toolbar.
+- One global ordering now backs both views, so reorders in either are reflected in the other.
+
+### Fixes
+- Character race displays "Iksar" / "Vah Shir" / "Froglok" instead of `Race 128` and the other post-Kunark race IDs.
+
 ## v0.8.0 — 2026-05-22
 
 Wishlist, Keyring tracker, Live Buffs, and a sweeping rewrite of game-data enum labels.

@@ -1190,6 +1190,14 @@ Parse and edit Zeal `_spellsets.ini` exports.
 - **Zones** show bard swarm/warp limits on the zone overview
 - **Logging** mirrors backend slog to `~/.pq-companion/logs/server.log` and Electron + sidecar stdio to `electron.log` (3-session rotation)
 
+## v0.8.1 — Wishlist UX Overhaul
+
+- **Wishlist sections are collapsible cards** — toggle via the `+`/`−` button or by clicking the header; the layout (card order + collapse state) persists per character
+- **Drag-reorder slot cards** — grip on the left of each card header reorders the section list
+- **Expand all / Collapse all** toolbar control
+- **All Items view** — flat list of every wishlisted item across slots with free-form cross-slot drag; toggle Category / All items from the toolbar. A single global ordering backs both views so reorders in one are reflected in the other
+- Character race displays "Iksar" / "Vah Shir" / "Froglok" instead of `Race 128` and other post-Kunark race IDs
+
 ## Phase 11 — Project Website
 _Planned_
 
