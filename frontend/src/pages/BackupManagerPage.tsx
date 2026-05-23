@@ -17,6 +17,7 @@ import {
   Zap,
   Download,
   Upload,
+  FolderOpen,
 } from 'lucide-react'
 import {
   listBackups,
@@ -878,6 +879,19 @@ export default function BackupManagerPage(): React.ReactElement {
           EQ Config Backups
         </span>
         <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => window.electron?.shell?.openBackupsFolder().catch(() => null)}
+            title="Open the backups folder in your file manager"
+            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            <FolderOpen size={11} />
+            Open folder
+          </button>
           <button
             onClick={load}
             className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"

@@ -1251,6 +1251,17 @@ ipcMain.handle('shell:open-logs-folder', async () => {
   return target
 })
 
+// Opens ~/.pq-companion/backups in the OS file manager so the user can grab
+// individual EQ-config backup zips (e.g. to move one to another machine
+// outside the full app-export flow). Created lazily by the backend on first
+// backup, so if it doesn't exist yet we fall back to ~/.pq-companion.
+ipcMain.handle('shell:open-backups-folder', async () => {
+  const backupsDir = join(homedir(), '.pq-companion', 'backups')
+  const target = existsSync(backupsDir) ? backupsDir : join(homedir(), '.pq-companion')
+  await shell.openPath(target)
+  return target
+})
+
 ipcMain.handle('updater:check', () => {
   if (!isDev) autoUpdater.checkForUpdates()
 })

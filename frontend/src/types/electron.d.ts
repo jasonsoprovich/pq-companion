@@ -58,6 +58,7 @@ export interface ElectronAPI {
   shell: {
     openConfigFolder: () => Promise<string>
     openLogsFolder: () => Promise<string>
+    openBackupsFolder: () => Promise<string>
     getConfigFolderPath: () => Promise<string>
   }
   updater: {
