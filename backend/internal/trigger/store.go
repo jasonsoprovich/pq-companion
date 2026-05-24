@@ -225,6 +225,54 @@ func (s *Store) MigrateMezBrokeTTSPronunciation() error {
 	return s.MarkDefaultUpdateApplied(key)
 }
 
+// MigrateRemoveDuplicateClassPackTriggers deletes triggers that used to ship
+// in class packs but were duplicates of triggers in the General Triggers
+// pack — installing both packs produced two overlays per event. As of this
+// migration the canonical location for generic resist/interrupt overlays is
+// the General Triggers pack; class packs only carry their class-specific
+// alerts.
+//
+// We only delete the specific (PackName, Name) pairs listed below and only
+// when the row matches the exact built-in pattern. That avoids clobbering a
+// user who manually renamed/customized the trigger — in that case the
+// pattern won't match and the row is left alone. Idempotent via
+// pack_default_updates.
+func (s *Store) MigrateRemoveDuplicateClassPackTriggers() error {
+	const key = "ClassPackDupes:RemoveResistInterrupt:v1"
+	applied, err := s.IsDefaultUpdateApplied(key)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+	dupes := []struct {
+		packName    string
+		triggerName string
+		pattern     string // exact pattern of the original built-in row
+	}{
+		{"Enchanter", "Spell Resisted", `Your target resisted the .+ spell\.`},
+		{"Enchanter", "Spell Interrupted", `Your spell is interrupted\.`},
+	}
+	for _, d := range dupes {
+		t, err := s.FindByPackAndName(d.packName, d.triggerName)
+		if err != nil {
+			return err
+		}
+		if t == nil {
+			continue
+		}
+		if t.Pattern != d.pattern {
+			// User customized the pattern — leave it alone.
+			continue
+		}
+		if err := s.Delete(t.ID); err != nil && err != ErrNotFound {
+			return fmt.Errorf("delete duplicate %s/%s: %w", d.packName, d.triggerName, err)
+		}
+	}
+	return s.MarkDefaultUpdateApplied(key)
+}
+
 func (s *Store) packHasAnyTrigger(pack string) (bool, error) {
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM triggers WHERE pack_name = ?`, pack).Scan(&n); err != nil {

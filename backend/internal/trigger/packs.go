@@ -125,9 +125,10 @@ func meleeSharedDisciplines(packName string) []Trigger {
 }
 
 // EnchanterPack returns the pre-built enchanter trigger pack: critical
-// crowd-control break alerts (mez/charm/root), casting-failure alerts
-// (resist, immunities, interrupt), and timer-creating triggers for the
-// standard enchanter buff/debuff/mez lines.
+// crowd-control break alerts (mez/charm/root), mez/charm immunity alerts,
+// and timer-creating triggers for the standard enchanter
+// buff/debuff/mez lines. Generic spell resist/interrupt overlays live in
+// the General Triggers pack — they are not class-specific.
 //
 // The timer triggers run alongside the spell-landed pipeline in
 // internal/spelltimer; the engine's same-name dedup window (3s) keeps
@@ -181,16 +182,10 @@ func EnchanterPack() TriggerPack {
 				},
 			},
 
-			// ── Resists, immunities, and interrupts ──────────────────────
-			{
-				Name:     "Spell Resisted",
-				Enabled:  true,
-				Pattern:  `Your target resisted the .+ spell\.`,
-				PackName: "Enchanter",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "RESIST!", DurationSecs: 4, Color: "#ff8800"},
-				},
-			},
+			// ── Immunities ──────────────────────────────────────────────
+			// Generic Spell Resisted / Spell Interrupted overlays live in
+			// the General Triggers pack — installing both packs without
+			// dedup would fire two overlays per event.
 			{
 				Name:     "Cannot Be Mezzed",
 				Enabled:  true,
@@ -207,15 +202,6 @@ func EnchanterPack() TriggerPack {
 				PackName: "Enchanter",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "CANNOT CHARM", DurationSecs: 4, Color: "#ff8800"},
-				},
-			},
-			{
-				Name:     "Spell Interrupted",
-				Enabled:  true,
-				Pattern:  `Your spell is interrupted\.`,
-				PackName: "Enchanter",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "INTERRUPTED!", DurationSecs: 3, Color: "#ffcc00"},
 				},
 			},
 
@@ -613,9 +599,8 @@ func EnchanterPack() TriggerPack {
 // triggers for the standard cleric raid-buff (Aegolism, Blessing of Aegolism,
 // Ancient: Gift of Aegolism, Naltron's Mark), emergency-buff (Divine
 // Intervention), self-defensive (Divine Aura), and target-debuff (Mark of
-// Karn) lines. Generic resist/interrupt overlays are intentionally omitted
-// — they live in the Enchanter pack and would duplicate if both are
-// installed.
+// Karn) lines. Generic resist/interrupt overlays are intentionally
+// omitted — they live in the General Triggers pack.
 func ClericPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Cleric",
@@ -726,8 +711,7 @@ func ClericPack() TriggerPack {
 // Glades, Blessing of Replenishment, Legacy of Thorn), target debuff
 // (Hand of Ro), DoT (Winged Death), and snare/root (Ensnare,
 // Entrapping Roots) lines. Generic resist/interrupt overlays are
-// intentionally omitted — they live in the Enchanter pack and would
-// duplicate if both are installed.
+// intentionally omitted — they live in the General Triggers pack.
 func DruidPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Druid",
@@ -851,7 +835,7 @@ func DruidPack() TriggerPack {
 // of Spirit, Regrowth of Dar Khura) lines. Instant utilities like
 // Cannibalize and Kragg's Mending are intentionally omitted (no timer
 // to track), and generic resist/interrupt overlays remain in the
-// Enchanter pack.
+// General Triggers pack.
 func ShamanPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Shaman",
