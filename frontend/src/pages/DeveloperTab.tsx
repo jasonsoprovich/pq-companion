@@ -1,6 +1,7 @@
 import React from 'react'
 import { Code2, AlertTriangle } from 'lucide-react'
 import SqlSandboxPanel from './SqlSandboxPanel'
+import SchemaDiagramsPanel from './SchemaDiagramsPanel'
 
 // DeveloperTab hosts power-user tools that don't belong in the regular UI:
 // SQL sandbox, schema explorer, and (planned) ER diagram viewer. Only
@@ -46,6 +47,7 @@ export default function DeveloperTab(): React.ReactElement {
       </section>
 
       <SqlSandboxPanel />
+      <SchemaDiagramsPanel />
     </div>
   )
 }
