@@ -52,7 +52,7 @@ func newServer(t *testing.T, body string) *httptest.Server {
 	}))
 }
 
-func TestStatus_MatchAndUnknown(t *testing.T) {
+func TestStatus_Match(t *testing.T) {
 	eqPath := testdataDir(t)
 	srv := newServer(t, manifestMatchingLocal)
 	defer srv.Close()
@@ -62,8 +62,8 @@ func TestStatus_MatchAndUnknown(t *testing.T) {
 	if s.ManifestVersion != "test-match" {
 		t.Errorf("ManifestVersion = %q", s.ManifestVersion)
 	}
-	if len(s.Files) != 2 {
-		t.Fatalf("Files = %d, want 2", len(s.Files))
+	if len(s.Files) != 1 {
+		t.Fatalf("Files = %d, want 1", len(s.Files))
 	}
 	eqgame := s.Files[0]
 	if eqgame.Name != "eqgame.dll" {
@@ -74,20 +74,6 @@ func TestStatus_MatchAndUnknown(t *testing.T) {
 	}
 	if eqgame.Manifest == nil || eqgame.Local == nil {
 		t.Error("expected both Local and Manifest populated for eqgame.dll")
-	}
-
-	eqw := s.Files[1]
-	if eqw.Name != "eqw.dll" {
-		t.Fatalf("second file = %q, want eqw.dll", eqw.Name)
-	}
-	if eqw.Status != StatusUnknown {
-		t.Errorf("eqw status = %q, want %q (eqw is not in manifest)", eqw.Status, StatusUnknown)
-	}
-	if eqw.Local == nil {
-		t.Error("expected eqw.dll Local info populated for local-only display")
-	}
-	if eqw.Manifest != nil {
-		t.Error("eqw.dll should have no Manifest entry")
 	}
 }
 

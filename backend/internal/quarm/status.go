@@ -53,18 +53,13 @@ type ClientStatus struct {
 	ManifestError   string       `json:"manifest_error,omitempty"`
 }
 
-// trackedFiles enumerates the client DLLs we report on. Order matches the
-// display order in the Settings UI.
-//
-// inManifest=false means "we never expect a manifest entry; show local-only
-// info" — that's true for eqw.dll because it ships with Zeal rather than as
-// part of the Quarm-patched game files.
-var trackedFiles = []struct {
-	name        string
-	inManifest  bool
-}{
-	{"eqgame.dll", true},
-	{"eqw.dll", false},
+// trackedFiles enumerates the client DLLs we report on. Currently only
+// eqgame.dll — it has a VS_VERSION_INFO resource we can read and is the only
+// game DLL covered by the Quarm patcher manifest. eqw.dll exists alongside
+// it but ships with Zeal, has no version resource, and isn't in the
+// manifest, so there's nothing useful to display for it.
+var trackedFiles = []string{
+	"eqgame.dll",
 }
 
 // Status inspects the configured EQ install and returns a per-file
@@ -84,8 +79,8 @@ func Status(ctx context.Context, eqPath string, fetcher *ManifestFetcher) Client
 		}
 	}
 
-	for _, t := range trackedFiles {
-		out.Files = append(out.Files, evaluateFile(eqPath, t.name, t.inManifest, manifest))
+	for _, name := range trackedFiles {
+		out.Files = append(out.Files, evaluateFile(eqPath, name, manifest))
 	}
 	return out
 }
@@ -93,7 +88,10 @@ func Status(ctx context.Context, eqPath string, fetcher *ManifestFetcher) Client
 // evaluateFile reads one DLL and produces its FileStatus. It is total: it
 // always returns a FileStatus with a meaningful Status, even for missing or
 // unreadable files. Errors are surfaced as Reason text, not as exceptions.
-func evaluateFile(eqPath, name string, inManifest bool, manifest *Manifest) FileStatus {
+// Every tracked file is expected to be present in the manifest — if the
+// manifest fetch failed (manifest is nil), Status falls back to "unknown"
+// with Local info still populated so the UI can show what's on disk.
+func evaluateFile(eqPath, name string, manifest *Manifest) FileStatus {
 	out := FileStatus{Name: name, Status: StatusUnknown}
 
 	if eqPath == "" {
@@ -104,14 +102,12 @@ func evaluateFile(eqPath, name string, inManifest bool, manifest *Manifest) File
 	info, err := InspectDLL(full)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			if inManifest && manifest != nil {
+			out.Reason = "file not found in EQ directory"
+			if manifest != nil {
 				out.Status = StatusMissing
-				out.Reason = "file not found in EQ directory"
 				if entry := manifest.FindEntry(name); entry != nil {
 					out.Manifest = entry
 				}
-			} else {
-				out.Reason = "file not found in EQ directory"
 			}
 			return out
 		}
@@ -120,16 +116,14 @@ func evaluateFile(eqPath, name string, inManifest bool, manifest *Manifest) File
 	}
 	out.Local = &info
 
-	if !inManifest || manifest == nil {
-		// Local-only display. Reason left empty unless we have a positive
-		// note to add — eqw.dll falls here every time.
+	if manifest == nil {
 		return out
 	}
 
 	entry := manifest.FindEntry(name)
 	if entry == nil {
-		// In manifest set conceptually but absent from the actual manifest
-		// — likely the manifest changed shape. Don't claim a mismatch.
+		// File is tracked locally but missing from the upstream manifest —
+		// likely the manifest changed shape. Don't claim a mismatch.
 		out.Reason = "manifest has no entry for this file"
 		return out
 	}
