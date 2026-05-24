@@ -18,6 +18,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/quarm"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/sandbox"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
@@ -28,7 +29,7 @@ import (
 // NewRouter builds and returns the chi router wired to all backend components.
 // combatHistory may be nil when persistence is disabled (e.g. user.db open
 // failed); in that case the history endpoints respond 503.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, actualPort int) http.Handler {
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, sb *sandbox.Sandbox, actualPort int) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -70,6 +71,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	raw := &rawHandler{db: database}
 	enumsH := &enumsHandler{}
 	quarmH := &quarmHandler{cfgMgr: cfgMgr, fetcher: quarm.NewManifestFetcher()}
+	sandboxH := &sandboxHandler{sb: sb, cfgMgr: cfgMgr}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
@@ -221,6 +223,10 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 				r.Post("/stop", rollsH.stop)
 				r.Delete("/", rollsH.remove)
 			})
+		})
+		r.Route("/sandbox", func(r chi.Router) {
+			r.Get("/schema", sandboxH.schema)
+			r.Post("/query", sandboxH.query)
 		})
 		r.Route("/triggers", func(r chi.Router) {
 			r.Get("/", triggerH.list)

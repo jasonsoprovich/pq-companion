@@ -27,6 +27,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/sandbox"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
@@ -581,7 +582,18 @@ func main() {
 		runtimeAppVersion(),
 	)
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, keyringStore, keyringMaster, actualPort)
+	// SQL sandbox: opens its own read-only connection pool to quarm.db so a
+	// runaway user query can't starve the main read pool. Failure here is
+	// non-fatal — the Developer tab's SQL panel will just 503.
+	sb, err := sandbox.Open(*dbPath)
+	if err != nil {
+		slog.Warn("open sql sandbox (developer SQL panel disabled)", "err", err)
+		sb = nil
+	} else {
+		defer sb.Close()
+	}
+
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, keyringStore, keyringMaster, sb, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {
