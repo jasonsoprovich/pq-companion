@@ -26,6 +26,7 @@ import type { TimerState } from '../types/timer'
 import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
+import type { SandboxResult, SandboxSchemaResponse } from '../types/sandbox'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -1080,4 +1081,14 @@ export function setRollWinnerRule(rule: WinnerRule): Promise<RollsState> {
 
 export function updateRollsSettings(patch: RollsSettingsPatch): Promise<RollsState> {
   return put<RollsState>('/api/rolls/settings', patch)
+}
+
+// ── Developer SQL sandbox ──────────────────────────────────────────────────────
+
+export function getSandboxSchema(): Promise<SandboxSchemaResponse> {
+  return get<SandboxSchemaResponse>('/api/sandbox/schema')
+}
+
+export function runSandboxQuery(sql: string): Promise<SandboxResult> {
+  return post<SandboxResult>('/api/sandbox/query', { sql })
 }
