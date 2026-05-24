@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Play, Loader2, Copy, Check, AlertTriangle, ChevronRight, ChevronDown, Database, Table as TableIcon, Eye } from 'lucide-react'
+import { Play, Loader2, Copy, Check, AlertTriangle, ChevronRight, ChevronDown, Database, Table as TableIcon, Eye, BookOpen } from 'lucide-react'
 import { getSandboxSchema, runSandboxQuery } from '../services/api'
 import type { SandboxResult, SandboxTable } from '../types/sandbox'
+import { STARTER_QUERIES } from '../lib/sandboxStarterQueries'
 
 const DEFAULT_QUERY = `-- Try a query. Hard cap: 10,000 rows, 8s deadline.
 -- Tip: click a table in the sidebar to insert its name at the cursor.
@@ -241,6 +242,13 @@ export default function SqlSandboxPanel(): React.ReactElement {
           />
 
           <div className="flex items-center gap-2">
+            <ExamplesPicker
+              onPick={(sql) => {
+                setSql(sql)
+                setResult(null)
+                setError(null)
+              }}
+            />
             <button
               type="button"
               onClick={() => void run()}
@@ -393,6 +401,78 @@ export default function SqlSandboxPanel(): React.ReactElement {
         </div>
       </div>
     </section>
+  )
+}
+
+// ExamplesPicker shows a small dropdown of curated SELECT statements the
+// user can drop into the query box as a starting point. Click outside or
+// pick an entry to dismiss.
+function ExamplesPicker({ onPick }: { onPick: (sql: string) => void }): React.ReactElement {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent): void => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('mousedown', close)
+    return () => window.removeEventListener('mousedown', close)
+  }, [open])
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
+        style={{
+          backgroundColor: 'var(--color-surface-2)',
+          border: '1px solid var(--color-border)',
+          color: 'var(--color-foreground)',
+          cursor: 'pointer',
+        }}
+      >
+        <BookOpen size={12} />
+        Examples
+      </button>
+      {open && (
+        <div
+          className="absolute z-10 mt-1 overflow-hidden rounded shadow-lg"
+          style={{
+            top: '100%',
+            left: 0,
+            width: 320,
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          {STARTER_QUERIES.map((q) => (
+            <button
+              key={q.id}
+              type="button"
+              onClick={() => {
+                onPick(q.sql)
+                setOpen(false)
+              }}
+              className="block w-full px-3 py-2 text-left text-xs"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                borderBottom: '1px solid var(--color-border)',
+                cursor: 'pointer',
+                color: 'var(--color-foreground)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-surface-2)')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ fontWeight: 600 }}>{q.label}</div>
+              <div className="mt-0.5" style={{ color: 'var(--color-muted-foreground)' }}>
+                {q.description}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
