@@ -325,6 +325,12 @@ export function getZoneDrops(shortName: string): Promise<ZoneDropItem[]> {
   return get<ZoneDropItem[]>(`/api/zones/short/${encodeURIComponent(shortName)}/drops`)
 }
 
+// ── Quarm client version ──────────────────────────────────────────────────────
+
+export function getQuarmClientStatus(): Promise<import('../types/quarm').QuarmClientStatus> {
+  return get<import('../types/quarm').QuarmClientStatus>('/api/quarm/client-status')
+}
+
 // ── Zeal ───────────────────────────────────────────────────────────────────────
 
 export function detectZeal(path?: string): Promise<ZealInstallStatus> {

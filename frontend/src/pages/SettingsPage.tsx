@@ -1,14 +1,26 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette } from 'lucide-react'
-import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, type ServerInfo, type TestPortResult } from '../services/api'
+import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config, DPSClassColors } from '../types/config'
 import { DEFAULT_DPS_CLASS_COLORS } from '../types/config'
 import type { LogFileInfo } from '../types/logEvent'
 import type { ZealInstallStatus, ZealPipeStatus } from '../types/zeal'
+import type { QuarmClientStatus, QuarmFileStatus } from '../types/quarm'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 
 const ZEAL_RELEASE_URL = 'https://github.com/CoastalRedwood/Zeal/releases/latest'
+const QUARM_PATCHER_RELEASE_URL = 'https://github.com/Pkelly668/QuarmPatcher/releases/latest'
+
+// formatManifestDate converts a YYYYMMDD manifest date into a readable form.
+// Returns the original string if it doesn't match the expected layout — the
+// upstream manifest format is stable but we'd rather show the raw value than
+// throw away information on an unexpected shape.
+function formatManifestDate(d: string): string {
+  if (!/^\d{8}$/.test(d)) return d
+  return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`
+}
+
 import BackupManagerPage from './BackupManagerPage'
 
 
@@ -47,6 +59,88 @@ function TabBar({ tabs, active, onChange }: TabBarProps): React.ReactElement {
   )
 }
 
+// QuarmFileRow renders one client DLL's status: a colored verdict pill plus
+// detail lines for local version/build-date and the matching manifest entry.
+// Used by the "EQ Client Version" section.
+function QuarmFileRow({ file }: { file: QuarmFileStatus }): React.ReactElement {
+  const verdict = (() => {
+    switch (file.status) {
+      case 'match':
+        return { label: 'Up to date', color: '#22c55e', icon: <CheckCircle2 size={12} /> }
+      case 'mismatch':
+        return { label: 'Out of date', color: '#f59e0b', icon: <AlertTriangle size={12} /> }
+      case 'missing':
+        return { label: 'Missing', color: '#f87171', icon: <AlertTriangle size={12} /> }
+      case 'unknown':
+      default:
+        return { label: 'Unknown', color: 'var(--color-muted)', icon: <FileText size={12} /> }
+    }
+  })()
+
+  return (
+    <div
+      className="mb-2 rounded px-3 py-2 text-xs last:mb-0"
+      style={{
+        backgroundColor: 'var(--color-surface-2)',
+        border: '1px solid var(--color-border)',
+      }}
+    >
+      <div className="flex items-center justify-between">
+        <code style={{ color: 'var(--color-foreground)' }}>{file.name}</code>
+        <span
+          className="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px]"
+          style={{ color: verdict.color, border: `1px solid ${verdict.color}` }}
+        >
+          {verdict.icon}
+          {verdict.label}
+        </span>
+      </div>
+
+      {file.local && (
+        <div className="mt-1 space-y-0.5" style={{ color: 'var(--color-muted-foreground)' }}>
+          {file.local.file_version && (
+            <div>
+              FileVersion: <span style={{ color: 'var(--color-foreground)' }}>{file.local.file_version}</span>
+            </div>
+          )}
+          <div>
+            Built: <span style={{ color: 'var(--color-foreground)' }}>
+              {new Date(file.local.compiled_at).toLocaleDateString()}
+            </span>
+            {' · '}
+            Size: <span style={{ color: 'var(--color-foreground)' }}>{file.local.size.toLocaleString()} bytes</span>
+          </div>
+          <div className="font-mono">
+            MD5: <span style={{ color: 'var(--color-foreground)' }}>{file.local.md5}</span>
+          </div>
+        </div>
+      )}
+
+      {file.manifest && (
+        <div className="mt-1 space-y-0.5" style={{ color: 'var(--color-muted-foreground)' }}>
+          <div>
+            Manifest expects size{' '}
+            <span style={{ color: 'var(--color-foreground)' }}>{file.manifest.size.toLocaleString()}</span>
+            , dated{' '}
+            <span style={{ color: 'var(--color-foreground)' }}>{formatManifestDate(file.manifest.date)}</span>
+          </div>
+          {file.local && file.local.md5 !== file.manifest.md5 && (
+            <div className="font-mono">
+              Manifest MD5: <span style={{ color: 'var(--color-foreground)' }}>{file.manifest.md5}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {file.reason && !file.local && (
+        <p className="mt-1" style={{ color: 'var(--color-muted-foreground)' }}>
+          {file.reason}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function SettingsPage(): React.ReactElement {
   const [tab, setTab] = useState<Tab>('general')
   const [config, setConfig] = useState<Config | null>(null)
@@ -69,6 +163,10 @@ export default function SettingsPage(): React.ReactElement {
   const [zealChecking, setZealChecking] = useState(false)
   const [zealError, setZealError] = useState<string | null>(null)
   const [pipeStatus, setPipeStatus] = useState<ZealPipeStatus | null>(null)
+
+  const [quarmStatus, setQuarmStatus] = useState<QuarmClientStatus | null>(null)
+  const [quarmChecking, setQuarmChecking] = useState(false)
+  const [quarmError, setQuarmError] = useState<string | null>(null)
 
   const [logLargeFile, setLogLargeFile] = useState(false)
   const [logFileInfo, setLogFileInfo] = useState<LogFileInfo | null>(null)
@@ -99,6 +197,20 @@ export default function SettingsPage(): React.ReactElement {
       setZealStatus(null)
     } finally {
       setZealChecking(false)
+    }
+  }
+
+  async function checkQuarmClient(): Promise<void> {
+    setQuarmChecking(true)
+    setQuarmError(null)
+    try {
+      const status = await getQuarmClientStatus()
+      setQuarmStatus(status)
+    } catch (err) {
+      setQuarmError((err as Error).message)
+      setQuarmStatus(null)
+    } finally {
+      setQuarmChecking(false)
     }
   }
 
@@ -142,6 +254,7 @@ export default function SettingsPage(): React.ReactElement {
     getServerInfo().then(setServerInfo).catch(() => null)
 
     void checkZeal()
+    void checkQuarmClient()
 
     const pollLogSize = () => {
       getLogStatus()
@@ -776,6 +889,79 @@ export default function SettingsPage(): React.ReactElement {
                 </pre>
               )}
             </div>
+          )}
+        </section>
+        )}
+
+        {/* ── EQ client version ──────────────────────────────────────────── */}
+        {tab === 'general' && (
+        <section
+          className="rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <div className="mb-1 flex items-center justify-between">
+            <h2
+              className="text-sm font-semibold uppercase tracking-wide"
+              style={{ color: 'var(--color-muted)' }}
+            >
+              EQ Client Version
+            </h2>
+            <button
+              onClick={() => void checkQuarmClient()}
+              disabled={quarmChecking}
+              className="flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                cursor: quarmChecking ? 'not-allowed' : 'pointer',
+                opacity: quarmChecking ? 0.5 : 1,
+              }}
+            >
+              {quarmChecking ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              {quarmChecking ? 'Checking…' : 'Re-check'}
+            </button>
+          </div>
+          <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Compares <code>eqgame.dll</code> in your EverQuest folder against the
+            public{' '}
+            <a
+              href={QUARM_PATCHER_RELEASE_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="underline"
+              style={{ color: 'var(--color-primary)' }}
+            >
+              Quarm Patcher manifest
+            </a>
+            . Informational only — PQ Companion does not patch game files.
+          </p>
+
+          {quarmError && (
+            <div className="flex items-start gap-2 text-xs" style={{ color: '#f87171' }}>
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+              <p>Couldn&apos;t check EQ client: {quarmError}</p>
+            </div>
+          )}
+
+          {!quarmError && quarmStatus && quarmStatus.files.map((f) => (
+            <QuarmFileRow key={f.name} file={f} />
+          ))}
+
+          {!quarmStatus && !quarmError && !quarmChecking && (
+            <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              Set your EverQuest folder above, then click Re-check.
+            </p>
+          )}
+
+          {!quarmError && quarmStatus?.manifest_error && (
+            <p
+              className="mt-2 text-xs"
+              style={{ color: 'var(--color-muted-foreground)' }}
+            >
+              Manifest unreachable ({quarmStatus.manifest_error}). Local DLL info
+              is still shown below.
+            </p>
           )}
         </section>
         )}

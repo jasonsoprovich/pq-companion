@@ -16,6 +16,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/quarm"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
@@ -68,6 +69,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	rollsH := &rollsHandler{tracker: rollTracker}
 	raw := &rawHandler{db: database}
 	enumsH := &enumsHandler{}
+	quarmH := &quarmHandler{cfgMgr: cfgMgr, fetcher: quarm.NewManifestFetcher()}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
@@ -137,6 +139,9 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Put("/{id}/wishlist/reorder", wishlistH.reorder)
 			r.Put("/{id}/wishlist/slot-layout", wishlistH.updateSlotLayout)
 			r.Delete("/{id}/wishlist/{entryID}", wishlistH.del)
+		})
+		r.Route("/quarm", func(r chi.Router) {
+			r.Get("/client-status", quarmH.clientStatus)
 		})
 		r.Route("/zeal", func(r chi.Router) {
 			r.Get("/detect", zealH.detect)
