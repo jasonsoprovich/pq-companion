@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2 } from 'lucide-react'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config, DPSClassColors } from '../types/config'
 import { DEFAULT_DPS_CLASS_COLORS } from '../types/config'
@@ -22,11 +22,12 @@ function formatManifestDate(d: string): string {
 }
 
 import BackupManagerPage from './BackupManagerPage'
+import DeveloperTab from './DeveloperTab'
 
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backups' | 'advanced'
+type Tab = 'general' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backups' | 'advanced' | 'developer'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -398,6 +399,33 @@ export default function SettingsPage(): React.ReactElement {
     }
   }
 
+  const developerMode = config?.preferences?.developer_mode ?? false
+
+  // Ctrl+Shift+D toggles the hidden Developer tab while the Settings page is
+  // focused. Persists via the preferences PUT so it survives restarts.
+  // Deliberately a chord (not a single key) so it can't fire by accident.
+  useEffect(() => {
+    if (!config) return
+    const handler = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return
+      if (e.key !== 'D' && e.key !== 'd') return
+      e.preventDefault()
+      const next: Config = {
+        ...config,
+        preferences: { ...config.preferences, developer_mode: !developerMode },
+      }
+      setConfig(next)
+      updateConfig(next)
+        .then((saved) => setOriginalConfig(saved))
+        .catch(() => null)
+      // Hop straight to the tab the first time the user reveals it so the
+      // unlock isn't silent. When hiding, fall back to General.
+      setTab(developerMode ? 'general' : 'developer')
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [config, developerMode])
+
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'general', label: 'General', icon: <Settings size={13} /> },
     { id: 'overlays', label: 'Overlays', icon: <Layers size={13} /> },
@@ -406,6 +434,9 @@ export default function SettingsPage(): React.ReactElement {
     { id: 'logs', label: 'Logs', icon: <FileText size={13} /> },
     { id: 'backups', label: 'EQ Config Backups', icon: <HardDrive size={13} /> },
     { id: 'advanced', label: 'Advanced', icon: <Wifi size={13} /> },
+    ...(developerMode
+      ? [{ id: 'developer' as Tab, label: 'Developer', icon: <Code2 size={13} /> }]
+      : []),
   ]
 
   if (loadError && tab !== 'backups') {
@@ -1500,6 +1531,9 @@ export default function SettingsPage(): React.ReactElement {
           )}
         </section>
         )}
+
+        {/* ── Developer ──────────────────────────────────────────────────── */}
+        {tab === 'developer' && <DeveloperTab />}
 
         {/* ── Save / Discard buttons ─────────────────────────────────────── */}
         <div className="flex items-center gap-3">

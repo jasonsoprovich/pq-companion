@@ -5,6 +5,7 @@ export interface Preferences {
   overlay_dps_enabled: boolean
   overlay_hps_enabled: boolean
   master_volume: number
+  developer_mode: boolean
 }
 
 export interface BackupSettings {

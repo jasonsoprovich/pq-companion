@@ -218,6 +218,12 @@ type Preferences struct {
 	// 0–100 (percent); the frontend converts to 0.0–1.0 at playback time.
 	// 100 = no dampening (default), 0 = mute everything.
 	MasterVolume int `yaml:"master_volume" json:"master_volume"`
+
+	// DeveloperMode reveals the Developer tab in the Settings page, which
+	// hosts power-user tools (SQL sandbox, schema viewer). Toggled in-app
+	// via the Ctrl+Shift+D shortcut while the Settings page is focused.
+	// Off by default so casual users don't stumble into raw-DB territory.
+	DeveloperMode bool `yaml:"developer_mode,omitempty" json:"developer_mode"`
 }
 
 // defaults returns a Config populated with sensible default values.
