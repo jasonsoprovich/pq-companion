@@ -82,30 +82,6 @@ func All() []KeyDef {
 			},
 		},
 		{
-			ID:          "griegs_end",
-			Name:        "Grieg's End",
-			Description: "Grieg's Key is required to enter Grieg's End on Luclin.",
-			Components: []Component{
-				{
-					ItemID:   27650,
-					ItemName: "Grieg's Key",
-					Notes:    "Dropped by mobs inside Grieg's End after defeating certain named.",
-				},
-			},
-		},
-		{
-			ID:          "grimling_forest_shackle",
-			Name:        "Grimling Forest Shackle Pens",
-			Description: "The Grimling Shackle Key opens the locked pen area in Grimling Forest on Luclin.",
-			Components: []Component{
-				{
-					ItemID:   6554,
-					ItemName: "Grimling Shackle Key",
-					Notes:    "Dropped by Grimling guards in Grimling Forest.",
-				},
-			},
-		},
-		{
 			ID:          "katta_castellum",
 			Name:        "Katta Castellum",
 			Description: "A Katta Castellum Badge of Service is required to enter the city of Katta Castellum on Luclin.",
