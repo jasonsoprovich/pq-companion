@@ -34,19 +34,77 @@ func All() []KeyDef {
 	return []KeyDef{
 		{
 			ID:          "veeshan_peak",
-			Name:        "Veeshan's Peak",
-			Description: "Requires completing the Ring of Scale key quest with Garudon in Field of Bone. Both components must be in your inventory when you hand in the Tome of Order and Discord.",
+			Name:        "Veeshan's Peak — Key of Veeshan",
+			Description: "Collect 9 Medallion Pieces (3 per medallion) and Trakanon's Tooth. Turn each set of 3 pieces in to its respective NPC for an assembled Medallion (Jarsath / Obulus / Kylong), then hand the 3 medallions plus Trakanon's Tooth to Emperor Ganak in Trakanon's Teeth for the Key of Veeshan. Holding an assembled medallion covers its 3 piece rows; holding the Key of Veeshan covers everything.",
 			Components: []Component{
+				// ── Medallion of the Jarsath (turn-in: Xiblin Fizzlebik, Timorous Deep) ──
 				{
-					ItemID:   1729,
-					ItemName: "Charasis Tome",
-					Notes:    "Drops from Hierophant Prime Grekal in Howling Stones (Charasis).",
+					ItemID:     19961,
+					ItemName:   "Piece of a Medallion (Jarsath — Top)",
+					Notes:      "Ground spawn in Swamp of No Hope (shoreline near +40, +2900).",
+					AltItemIDs: []int{19954}, // covered by holding Medallion of the Jarsath
 				},
 				{
-					ItemID:   18302,
-					ItemName: "Book of Scale",
-					Notes:    "Drops from Lady Vox (Permafrost) and Lord Nagafen (Sol B).",
+					ItemID:     19960,
+					ItemName:   "Piece of a Medallion (Jarsath — Middle)",
+					Notes:      "Drops from an ancient Jarsath (roaming undead, east side of Firiona Vie).",
+					AltItemIDs: []int{19954},
 				},
+				{
+					ItemID:     19959,
+					ItemName:   "Piece of a Medallion (Jarsath — Bottom)",
+					Notes:      "Drops from a bloodgill marauder underwater in front of Veksar (Lake of Ill Omen).",
+					AltItemIDs: []int{19954},
+				},
+				// ── Medallion of the Obulus (turn-in: Slixin Klex, Burning Woods) ──
+				{
+					ItemID:     19958,
+					ItemName:   "Piece of a Medallion (Obulus — Top)",
+					Notes:      "Hand a Burnished Wooden Stave (Chardok drop) to Ssolet Dnaas on a small island in Warsliks Wood.",
+					AltItemIDs: []int{19953}, // covered by holding Medallion of the Obulus
+				},
+				{
+					ItemID:     19957,
+					ItemName:   "Piece of a Medallion (Obulus — Middle)",
+					Notes:      "Drops from rotting skeleton (PH plaguebone skeleton at +2250, -5150) in Dreadlands.",
+					AltItemIDs: []int{19953},
+				},
+				{
+					ItemID:     19956,
+					ItemName:   "Piece of a Medallion (Obulus — Bottom)",
+					Notes:      "Drops from pained soul (PH spectral keeper near Sebilis) in Trakanon's Teeth.",
+					AltItemIDs: []int{19953},
+				},
+				// ── Medallion of the Kylong (turn-in: Professor Akabao, Lake of Ill Omen) ──
+				{
+					ItemID:     19964,
+					ItemName:   "Piece of a Medallion (Kylong — Top)",
+					Notes:      "Hand a Black Sapphire + Ruby to Niblek in the Chardok mines, or rare drop from a Di`zok royal guard / Di`zok Guardian.",
+					AltItemIDs: []int{19955}, // covered by holding Medallion of the Kylong
+				},
+				{
+					ItemID:     19963,
+					ItemName:   "Piece of a Medallion (Kylong — Middle)",
+					Notes:      "Drops from Verix Kylox's Remains (rare PH decayed kylong iksar) in Karnor's basement.",
+					AltItemIDs: []int{19955},
+				},
+				{
+					ItemID:     19962,
+					ItemName:   "Piece of a Medallion (Kylong — Bottom)",
+					Notes:      "Ground spawn on the second floor of the library in Kaesora.",
+					AltItemIDs: []int{19955},
+				},
+				// ── Final handin ingredient ──────────────────────────────────────────
+				{
+					ItemID:   7276,
+					ItemName: "Trakanon's Tooth",
+					Notes:    "Loot from Trakanon in Old Sebilis.",
+				},
+			},
+			FinalItem: &Component{
+				ItemID:   20884,
+				ItemName: "Key of Veeshan",
+				Notes:    "Turn the 3 assembled Medallions + Trakanon's Tooth in to Emperor Ganak in Trakanon's Teeth.",
 			},
 		},
 		{
