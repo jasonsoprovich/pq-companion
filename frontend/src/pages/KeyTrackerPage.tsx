@@ -419,7 +419,7 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
 
 export default function KeyTrackerPage(): React.ReactElement {
   const { active } = useActiveCharacter()
-  const [tab, setTab] = useState<Tab>('tracker')
+  const [tab, setTab] = useState<Tab>('keyring')
   const [viewedCharacter, setViewedCharacter] = useState('')
   const [keyDefs, setKeyDefs] = useState<KeyDef[]>([])
   const [progress, setProgress] = useState<KeysProgressResponse | null>(null)
@@ -540,7 +540,7 @@ export default function KeyTrackerPage(): React.ReactElement {
         style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
       >
         <Key size={16} style={{ color: 'var(--color-primary)' }} className="mr-2" />
-        {(['tracker', 'keyring'] as Tab[]).map((t) => {
+        {(['keyring', 'tracker'] as Tab[]).map((t) => {
           const label = t === 'tracker' ? 'Key Tracker' : 'Keyring'
           const isActive = tab === t
           return (
