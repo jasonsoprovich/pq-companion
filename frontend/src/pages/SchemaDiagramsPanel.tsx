@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Network, AlertTriangle, Loader2 } from 'lucide-react'
+import { AlertTriangle, Loader2 } from 'lucide-react'
 import { SCHEMA_DIAGRAMS } from '../lib/schemaDiagrams'
 
 // SchemaDiagramsPanel renders one of the curated Mermaid erDiagrams from
@@ -71,16 +71,6 @@ export default function SchemaDiagramsPanel(): React.ReactElement {
         border: '1px solid var(--color-border)',
       }}
     >
-      <div className="mb-3 flex items-center gap-2">
-        <Network size={14} style={{ color: 'var(--color-primary)' }} />
-        <h3
-          className="text-sm font-semibold uppercase tracking-wide"
-          style={{ color: 'var(--color-muted)' }}
-        >
-          Schema Diagrams
-        </h3>
-      </div>
-
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {SCHEMA_DIAGRAMS.map((d) => {
           const active = d.id === selected.id

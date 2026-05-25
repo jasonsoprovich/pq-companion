@@ -567,6 +567,17 @@ export default function SettingsPage(): React.ReactElement {
     )
   }
 
+  if (tab === 'developer') {
+    return (
+      <div className="flex h-full flex-col">
+        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <DeveloperTab />
+        </div>
+      </div>
+    )
+  }
+
   if (!config) return <></>
 
 
@@ -1531,9 +1542,6 @@ export default function SettingsPage(): React.ReactElement {
           )}
         </section>
         )}
-
-        {/* ── Developer ──────────────────────────────────────────────────── */}
-        {tab === 'developer' && <DeveloperTab />}
 
         {/* ── Save / Discard buttons ─────────────────────────────────────── */}
         <div className="flex items-center gap-3">

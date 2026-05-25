@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Play, Loader2, Copy, Check, AlertTriangle, ChevronRight, ChevronDown, Database, Table as TableIcon, Eye, BookOpen } from 'lucide-react'
+import { Play, Loader2, Copy, Check, AlertTriangle, ChevronRight, ChevronDown, Table as TableIcon, Eye, BookOpen } from 'lucide-react'
 import { getSandboxSchema, runSandboxQuery } from '../services/api'
 import type { SandboxResult, SandboxTable } from '../types/sandbox'
 import { STARTER_QUERIES } from '../lib/sandboxStarterQueries'
@@ -100,23 +100,17 @@ export default function SqlSandboxPanel(): React.ReactElement {
         border: '1px solid var(--color-border)',
       }}
     >
-      <div className="mb-3 flex items-center gap-2">
-        <Database size={14} style={{ color: 'var(--color-primary)' }} />
-        <h3
-          className="text-sm font-semibold uppercase tracking-wide"
-          style={{ color: 'var(--color-muted)' }}
-        >
-          SQL Sandbox
-        </h3>
-      </div>
-
-      <div className="flex gap-3" style={{ minHeight: 320 }}>
+      {/* Top row: schema sidebar (left) + query editor (right). Results
+          render in a separate block below so they get the full panel
+          width — clicking Run shouldn't squeeze the data into a narrow
+          column next to the sidebar. */}
+      <div className="flex gap-3">
         {/* Schema sidebar */}
         <aside
           className="shrink-0 overflow-y-auto rounded text-xs"
           style={{
-            width: 220,
-            maxHeight: 520,
+            width: 260,
+            maxHeight: 360,
             backgroundColor: 'var(--color-surface-2)',
             border: '1px solid var(--color-border)',
           }}
@@ -221,7 +215,7 @@ export default function SqlSandboxPanel(): React.ReactElement {
           })}
         </aside>
 
-        {/* Query + results */}
+        {/* Query editor + action row */}
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <textarea
             ref={textareaRef}
@@ -237,11 +231,11 @@ export default function SqlSandboxPanel(): React.ReactElement {
               color: 'var(--color-foreground)',
               outline: 'none',
               resize: 'vertical',
-              minHeight: 160,
+              minHeight: 200,
             }}
           />
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ExamplesPicker
               onPick={(sql) => {
                 setSql(sql)
@@ -291,7 +285,14 @@ export default function SqlSandboxPanel(): React.ReactElement {
               )}
             </div>
           </div>
+        </div>
+      </div>
 
+      {/* Results: full-width below the query so wide row sets (items,
+          spells, NPCs) get the horizontal room they need. Stays hidden
+          until the first run. */}
+      {(error || result) && (
+        <div className="mt-4">
           {error && (
             <div
               className="flex items-start gap-2 rounded px-3 py-2 text-xs"
@@ -312,7 +313,7 @@ export default function SqlSandboxPanel(): React.ReactElement {
               style={{
                 border: '1px solid var(--color-border)',
                 backgroundColor: 'var(--color-surface-2)',
-                maxHeight: 520,
+                maxHeight: 560,
               }}
             >
               {result.rows.length === 0 ? (
@@ -399,7 +400,7 @@ export default function SqlSandboxPanel(): React.ReactElement {
             </div>
           )}
         </div>
-      </div>
+      )}
     </section>
   )
 }
