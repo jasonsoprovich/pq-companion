@@ -59,14 +59,24 @@ func All() []KeyDef {
 		},
 		{
 			ID:          "old_sebilis",
-			Name:        "Old Sebilis",
-			Description: "A Trakanon's Tooth is required to zone into Old Sebilis. The tooth is carried — it is not consumed on entry.",
+			Name:        "Old Sebilis — Trakanon Idol",
+			Description: "Trakanon Idol grants access to Old Sebilis. Both medallions drop from common froglok mobs in Trakanon's Teeth; turn both in to Emperor Ganak (cave in the SW corner of the zone) to receive the idol.",
 			Components: []Component{
 				{
-					ItemID:   7276,
-					ItemName: "Trakanon's Tooth",
-					Notes:    "Drops from Trakanon in the pre-keyed section of Old Sebilis.",
+					ItemID:   19951,
+					ItemName: "Medallion of the Kunzar",
+					Notes:    "Drops from a froglok forager (common spawn around the central lake in Trakanon's Teeth).",
 				},
+				{
+					ItemID:   19952,
+					ItemName: "Medallion of the Nathsar",
+					Notes:    "Drops from a froglok hunter (common spawn around the central lake in Trakanon's Teeth).",
+				},
+			},
+			FinalItem: &Component{
+				ItemID:   20883,
+				ItemName: "Trakanon Idol",
+				Notes:    "Turn in both medallions to Emperor Ganak in Trakanon's Teeth.",
 			},
 		},
 		{
