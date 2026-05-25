@@ -14,7 +14,7 @@
  * this initial extraction and wired up in subsequent tasks.
  */
 import React, { useEffect, useState } from 'react'
-import { Volume2, FolderOpen, Play, Square, Crosshair, Check, X as XIcon } from 'lucide-react'
+import { Volume2, FolderOpen, Play, Square, Crosshair, X as XIcon } from 'lucide-react'
 import { playSoundForTest, speakTextForTest, stopTestPlayback } from '../services/audio'
 import { fireTriggerTestOverlay, endTriggerTestSession } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
@@ -161,21 +161,22 @@ export function OverlayTextFields({
         <button
           type="button"
           onClick={handleTogglePositioning}
+          disabled={positioning}
           className="flex items-center gap-1 rounded px-2 py-1 text-[11px] ml-auto"
           style={{
-            backgroundColor: positioning ? 'var(--color-success, #16a34a)' : 'var(--color-primary)',
-            color: 'var(--color-background)',
-            border: '1px solid transparent',
-            cursor: 'pointer',
+            backgroundColor: positioning ? 'var(--color-surface-2)' : 'var(--color-primary)',
+            color: positioning ? 'var(--color-muted-foreground)' : 'var(--color-background)',
+            border: positioning ? '1px dashed var(--color-border)' : '1px solid transparent',
+            cursor: positioning ? 'default' : 'pointer',
           }}
           title={
             positioning
-              ? 'Lock in the current position and dismiss the positioning overlay'
+              ? 'Drag the on-screen card to position, then click Done on the card to save'
               : 'Pop up the alert in the overlay so you can drag it into position'
           }
         >
-          {positioning ? <Check size={11} /> : <Crosshair size={11} />}
-          {positioning ? 'Done — Save Position' : 'Set Trigger Position'}
+          <Crosshair size={11} />
+          {positioning ? 'Positioning on overlay…' : 'Set Trigger Position'}
         </button>
       </div>
       {position && (
