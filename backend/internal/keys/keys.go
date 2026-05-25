@@ -180,6 +180,38 @@ func All() []KeyDef {
 			},
 		},
 		{
+			ID:          "hand_of_glory",
+			Name:        "Hand of Glory (Charasis door key)",
+			Description: "The Hand of Glory unlocks the locked interior doors in Howling Stones (Charasis). Loot 4 ground spawns from the zone (one per wing) and combine the 3 talons/ring inside the Blood Encrusted Glove (a 4-slot container) to create the Hand of Glory. All ground spawns except the Glove are tradable.",
+			Components: []Component{
+				{
+					ItemID:   20523,
+					ItemName: "Intricate Toothed Ring",
+					Notes:    "Ground spawn in Howling Stones (one wing).",
+				},
+				{
+					ItemID:   20521,
+					ItemName: "Ring-scored Talon",
+					Notes:    "Ground spawn in Howling Stones (one wing).",
+				},
+				{
+					ItemID:   20522,
+					ItemName: "Petrified Talonless Claw",
+					Notes:    "Ground spawn in Howling Stones (one wing).",
+				},
+				{
+					ItemID:   17751,
+					ItemName: "Blood Encrusted Glove",
+					Notes:    "Ground spawn in Howling Stones — 4-slot combine container (no-trade).",
+				},
+			},
+			FinalItem: &Component{
+				ItemID:   17274,
+				ItemName: "Hand of Glory",
+				Notes:    "Combine the 3 talons/ring inside the Blood Encrusted Glove. Click a locked door to add it to your key ring.",
+			},
+		},
+		{
 			ID:          "katta_castellum",
 			Name:        "Katta Castellum",
 			Description: "A Katta Castellum Badge of Service is required to enter the city of Katta Castellum on Luclin.",
