@@ -182,14 +182,34 @@ func All() []KeyDef {
 		},
 		{
 			ID:          "arx_seru",
-			Name:        "Arx Seru",
-			Description: "The Arx Key is required to access Arx Seru on Luclin. Obtained from Arbitor Xxylm in Katta Castellum after completing the citizenship quest chain.",
+			Name:        "Arx Seru — Arx Key (Lord Seru access)",
+			Description: "Kill the four Praesertum mini-raid mobs on the top floor of Sanctus Seru, loot one shard from each, and turn all four in to Elnerick Augustleaf in Katta Castellum to receive the Arx Key (and a Seal of Katta).",
 			Components: []Component{
 				{
-					ItemID:   3650,
-					ItemName: "Arx Key",
-					Notes:    "Obtained from Arbitor Xxylm in Katta Castellum.",
+					ItemID:   29881,
+					ItemName: "Shard of the Shoulder",
+					Notes:    "Drops from Praesertum Bikun (NW inner temple, Sanctus Seru).",
 				},
+				{
+					ItemID:   29883,
+					ItemName: "Shard of the Hand",
+					Notes:    "Drops from Praesertum Vantorus (SW inner temple, Sanctus Seru).",
+				},
+				{
+					ItemID:   29882,
+					ItemName: "Shard of the Eye",
+					Notes:    "Drops from Praesertum Rhugol (NE inner temple, Sanctus Seru).",
+				},
+				{
+					ItemID:   29884,
+					ItemName: "Shard of the Heart",
+					Notes:    "Drops from Praesertum Matpa (SE inner temple, Sanctus Seru — gates, mana-burn him).",
+				},
+			},
+			FinalItem: &Component{
+				ItemID:   3650,
+				ItemName: "Arx Key",
+				Notes:    "Turn the 4 shards in to Elnerick Augustleaf in Katta Castellum.",
 			},
 		},
 		{
