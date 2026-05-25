@@ -158,14 +158,25 @@ func All() []KeyDef {
 		},
 		{
 			ID:          "howling_stones",
-			Name:        "Howling Stones (Charasis)",
-			Description: "The Key to Charasis is required to enter Howling Stones. Obtained via a quest in Kaesora.",
+			Name:        "Howling Stones (Charasis) — Key to Charasis",
+			Description: "Loot a Jade Chokidai Prod (from the Chancellor of Di`zok in Lake of Ill Omen) and a Xalgozian Fang (from Xalgoz in Kaesora), then turn both in to Dugroz in Swamp of No Hope to receive the Key to Charasis.",
 			Components: []Component{
 				{
-					ItemID:   20600,
-					ItemName: "Key to Charasis",
-					Notes:    "Quest reward from Zebuxoruk's Cage quest started in Kaesora.",
+					ItemID:     7254,
+					ItemName:   "Jade Chokidai Prod",
+					Notes:      "Drops from Chancellor of Di`zok (roams the western half of Lake of Ill Omen, often the sarnak fort). Tradable — check the Bazaar.",
+					AltItemIDs: []int{7256}, // duplicate item id in Quarm db (same name)
 				},
+				{
+					ItemID:   7236,
+					ItemName: "Xalgozian Fang",
+					Notes:    "Drops from Xalgoz in Kaesora (has a PH).",
+				},
+			},
+			FinalItem: &Component{
+				ItemID:   20600,
+				ItemName: "Key to Charasis",
+				Notes:    "Hand both items to Dugroz in Swamp of No Hope.",
 			},
 		},
 		{
