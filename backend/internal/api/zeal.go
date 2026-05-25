@@ -21,6 +21,7 @@ type zealHandler struct {
 	cfgMgr  *config.Manager
 	db      *db.DB
 	pipe    *zealpipe.Supervisor
+	latest  *zeal.LatestFetcher
 }
 
 // enrichEntries fills in the Icon field on each entry by looking up
@@ -300,7 +301,7 @@ func (h *zealHandler) detect(w http.ResponseWriter, r *http.Request) {
 	if path == "" {
 		path = h.cfgMgr.Get().EQPath
 	}
-	writeJSON(w, http.StatusOK, zeal.DetectInstall(path))
+	writeJSON(w, http.StatusOK, zeal.DetectInstall(r.Context(), path, h.latest))
 }
 
 // GET /api/zeal/spellsets/all

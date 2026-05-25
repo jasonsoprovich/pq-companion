@@ -823,16 +823,75 @@ export default function SettingsPage(): React.ReactElement {
           </p>
 
           {zealStatus?.installed && (
-            <div className="flex items-start gap-2 text-sm" style={{ color: '#22c55e' }}>
-              <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
-              <div>
-                <p>Zeal is installed.</p>
-                {zealStatus.asi_path && (
-                  <p className="mt-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                    Found <code>{zealStatus.asi_path}</code>
+            <div className="space-y-2">
+              <div className="flex items-start gap-2 text-sm" style={{ color: '#22c55e' }}>
+                <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+                <div>
+                  <p>
+                    Zeal is installed
+                    {zealStatus.version ? ` (v${zealStatus.version})` : ''}.
                   </p>
-                )}
+                  {zealStatus.asi_path && (
+                    <p className="mt-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                      Found <code>{zealStatus.asi_path}</code>
+                    </p>
+                  )}
+                </div>
               </div>
+
+              {zealStatus.update_available && zealStatus.latest_version && (
+                <div
+                  className="flex items-start gap-2 rounded px-3 py-2 text-xs"
+                  style={{
+                    backgroundColor: 'rgba(245, 158, 11, 0.10)',
+                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                    color: 'var(--color-text)',
+                  }}
+                >
+                  <AlertTriangle size={12} className="mt-0.5 shrink-0" style={{ color: '#f59e0b' }} />
+                  <div className="flex-1">
+                    A newer Zeal is available:{' '}
+                    <span style={{ color: '#fcd34d' }}>v{zealStatus.latest_version}</span>{' '}
+                    (you have v{zealStatus.version}). Pq-companion still works, but updating
+                    keeps you on the latest fixes.
+                  </div>
+                  <a
+                    href={ZEAL_RELEASE_URL}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    style={{ color: '#fcd34d', textDecoration: 'underline' }}
+                  >
+                    Release notes
+                  </a>
+                </div>
+              )}
+
+              {zealStatus.export_on_camp_found && !zealStatus.export_on_camp && (
+                <div
+                  className="flex items-start gap-2 rounded px-3 py-2 text-xs"
+                  style={{
+                    backgroundColor: 'rgba(245, 158, 11, 0.10)',
+                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                    color: 'var(--color-text)',
+                  }}
+                >
+                  <AlertTriangle size={12} className="mt-0.5 shrink-0" style={{ color: '#f59e0b' }} />
+                  <div className="flex-1">
+                    Zeal&apos;s <code>ExportOnCamp</code> is disabled. Character inventory,
+                    spellbook, and stats will not refresh on /camp.{' '}
+                    <span style={{ color: 'var(--color-muted-foreground)' }}>
+                      Fix: edit <code>zeal.ini</code>, set{' '}
+                      <code>ExportOnCamp=TRUE</code> under <code>[Zeal]</code>, then relaunch EQ.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {zealStatus.export_on_camp_found && zealStatus.export_on_camp && (
+                <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  <code>ExportOnCamp</code> is enabled — character data refreshes when you /camp.
+                </p>
+              )}
             </div>
           )}
 

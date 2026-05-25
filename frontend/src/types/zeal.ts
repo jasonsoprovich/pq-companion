@@ -61,6 +61,20 @@ export interface ZealInstallStatus {
   version?: string
   min_version?: string
   version_ok: boolean
+  // Latest Zeal release the backend has discovered via GitHub. Empty when
+  // offline or the lookup hasn't completed yet.
+  latest_version?: string
+  // True when version is known and >= min, but strictly behind latest_version.
+  // Surfaces a soft "update available" notice in Settings only; the red
+  // version_ok=false banner takes precedence.
+  update_available: boolean
+  // True when zeal.ini was readable AND contained an ExportOnCamp key.
+  // Treat false as "unknown" — don't warn until Zeal has written its config.
+  export_on_camp_found: boolean
+  // True when zeal.ini's ExportOnCamp setting is enabled. When found && !enabled,
+  // pq-companion shows an amber banner: most character-data features depend on
+  // Zeal writing export files at /camp.
+  export_on_camp: boolean
 }
 
 export type ZealPipeState = 'idle' | 'connected' | 'disconnected' | 'unsupported'

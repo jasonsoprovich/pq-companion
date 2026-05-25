@@ -1,6 +1,7 @@
 package zeal
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,7 +28,7 @@ func TestDetectInstall(t *testing.T) {
 					t.Fatalf("write %s: %v", f, err)
 				}
 			}
-			s := DetectInstall(dir)
+			s := DetectInstall(context.Background(), dir, nil)
 			if s.Installed != tc.wantInstalled {
 				t.Errorf("Installed = %v, want %v", s.Installed, tc.wantInstalled)
 			}
@@ -42,14 +43,14 @@ func TestDetectInstall(t *testing.T) {
 }
 
 func TestDetectInstallEmptyPath(t *testing.T) {
-	s := DetectInstall("")
+	s := DetectInstall(context.Background(), "", nil)
 	if s.Installed || s.EQGamePresent {
 		t.Errorf("empty path should return zero status, got %+v", s)
 	}
 }
 
 func TestDetectInstallNonexistent(t *testing.T) {
-	s := DetectInstall(filepath.Join(os.TempDir(), "does-not-exist-pq-companion-test"))
+	s := DetectInstall(context.Background(), filepath.Join(os.TempDir(), "does-not-exist-pq-companion-test"), nil)
 	if s.Installed || s.EQGamePresent {
 		t.Errorf("nonexistent path should return zero status, got %+v", s)
 	}
@@ -61,7 +62,7 @@ func TestDetectInstall_VersionTooOld(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "Zeal.asi"), blob, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := DetectInstall(dir)
+	s := DetectInstall(context.Background(), dir, nil)
 	if !s.Installed {
 		t.Fatal("expected Installed")
 	}
@@ -82,7 +83,7 @@ func TestDetectInstall_VersionOK(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "Zeal.asi"), blob, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := DetectInstall(dir)
+	s := DetectInstall(context.Background(), dir, nil)
 	if s.Version != "1.4.2" {
 		t.Errorf("Version = %q; want 1.4.2", s.Version)
 	}
@@ -99,7 +100,7 @@ func TestDetectInstall_VersionUnknownDoesNotWarn(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "Zeal.asi"), []byte("opaque-content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := DetectInstall(dir)
+	s := DetectInstall(context.Background(), dir, nil)
 	if !s.Installed {
 		t.Fatal("expected Installed")
 	}
