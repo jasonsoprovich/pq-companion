@@ -62,6 +62,20 @@ type progressResponse struct {
 	Keys       []keyProgress `json:"keys"`
 }
 
+// holdsComponent returns true when the id-set contains the component's
+// canonical ItemID or any of its AltItemIDs.
+func holdsComponent(ids map[int]bool, comp keys.Component) bool {
+	if ids[comp.ItemID] {
+		return true
+	}
+	for _, alt := range comp.AltItemIDs {
+		if ids[alt] {
+			return true
+		}
+	}
+	return false
+}
+
 // GET /api/keys/progress
 // Returns per-key, per-character component status cross-referenced with Zeal inventory exports.
 func (h *keysHandler) progress(w http.ResponseWriter, r *http.Request) {
@@ -118,14 +132,16 @@ func (h *keysHandler) progress(w http.ResponseWriter, r *http.Request) {
 				Components: make([]componentStatus, 0, len(kd.Components)),
 			}
 			for _, comp := range kd.Components {
+				// A component is held if the character (or shared bank) has the
+				// canonical ItemID or any AltItemID — the latter handles "any one
+				// of N" quest steps like Sleeper's Tomb talismans.
+				have := holdsComponent(cp.HaveIDs, comp)
 				cs := componentStatus{
 					ItemID:   comp.ItemID,
 					ItemName: comp.ItemName,
-					Have:     cp.HaveIDs[comp.ItemID],
-					// SharedBank is true if the item is in shared bank AND this char doesn't
-					// already have their own copy. The frontend shows the SharedBank badge
-					// when the only source is the shared bank.
-					SharedBank: !cp.HaveIDs[comp.ItemID] && sharedIDs[comp.ItemID],
+					Have:     have,
+					// SharedBank is true if the only source is the shared bank.
+					SharedBank: !have && holdsComponent(sharedIDs, comp),
 				}
 				ckp.Components = append(ckp.Components, cs)
 			}

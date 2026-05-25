@@ -3,10 +3,14 @@
 package keys
 
 // Component is one required item for a key quest or zone access check.
+// AltItemIDs lists additional item IDs that also satisfy this component — used
+// when a quest accepts "any one of several items" (e.g. Sleeper's Tomb
+// talismans). The canonical ItemID is what's shown in the UI.
 type Component struct {
-	ItemID   int    `json:"item_id"`
-	ItemName string `json:"item_name"` // display only — canonical identifier is ItemID
-	Notes    string `json:"notes,omitempty"`
+	ItemID     int    `json:"item_id"`
+	ItemName   string `json:"item_name"` // display only — canonical identifier is ItemID
+	Notes      string `json:"notes,omitempty"`
+	AltItemIDs []int  `json:"alt_item_ids,omitempty"`
 }
 
 // KeyDef describes a zone key or access-item quest.
@@ -47,14 +51,29 @@ func All() []KeyDef {
 		},
 		{
 			ID:          "sleepers_tomb",
-			Name:        "Sleeper's Tomb",
-			Description: "The Sleeper's Key is obtained by completing the Warders quest chain in Velious. Hand in quest items to the relevant NPC to receive the key and gain access to Sleeper's Tomb.",
+			Name:        "Sleeper's Tomb — Sleeper's Key",
+			Description: "Turn in any ONE of the listed Velious talismans to Jaled Dar's shade in Dragon Necropolis to receive the Sleeper's Key.",
 			Components: []Component{
 				{
-					ItemID:   27265,
-					ItemName: "Sleeper's Key",
-					Notes:    "Reward from the Warders keying quest chain in Velious.",
+					// Single "any one of" component — the canonical display item is
+					// Klandicar's (common Western Wastes drop); AltItemIDs accept any
+					// of the other accepted talismans.
+					ItemID:   27255,
+					ItemName: "Sleeper's Tomb Talisman (any one)",
+					Notes:    "Klandicar's (Western Wastes), Lendiniara's (Temple of Veeshan), Sontalak's (Western Wastes), Yelinak's (Skyshrine), Zlandicar's (Dragon Necropolis), or Shard of Hsagra's Talisman (Kael / Velketor's).",
+					AltItemIDs: []int{
+						27259, // Lendiniara's Talisman
+						27256, // Sontalak's Talisman
+						27266, // Yelinak's Talisman
+						27258, // Zlandicar's Talisman
+						9296,  // Shard of Hsagra's Talisman
+					},
 				},
+			},
+			FinalItem: &Component{
+				ItemID:   27265,
+				ItemName: "Sleeper's Key",
+				Notes:    "Turn the talisman in to Jaled Dar's shade in Dragon Necropolis.",
 			},
 		},
 		{

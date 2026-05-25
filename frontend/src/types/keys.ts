@@ -2,6 +2,8 @@ export interface KeyComponent {
   item_id: number
   item_name: string
   notes?: string
+  /** Additional item IDs that also satisfy this component ("any one of"). */
+  alt_item_ids?: number[]
 }
 
 export interface KeyDef {
