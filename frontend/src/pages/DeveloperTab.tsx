@@ -1,14 +1,14 @@
 import React, { useState } from 'react'
 import { Code2, AlertTriangle, FileText, Database, Network } from 'lucide-react'
 import SqlSandboxPanel from './SqlSandboxPanel'
-import SchemaDiagramsPanel from './SchemaDiagramsPanel'
+import SchemaGraphPanel from './SchemaGraphPanel'
 
 // DeveloperTab hosts power-user tools that don't belong in the regular UI.
 // Only visible when Preferences.DeveloperMode is true; toggled by
 // Ctrl+Shift+D while the Settings page is focused. Each sub-tool gets its
 // own sub-tab so we don't pile three large panels onto one scroll-strip.
 
-type SubTab = 'notes' | 'sandbox' | 'diagrams'
+type SubTab = 'notes' | 'sandbox' | 'graph'
 
 interface SubTabDef {
   id: SubTab
@@ -19,7 +19,7 @@ interface SubTabDef {
 const SUB_TABS: SubTabDef[] = [
   { id: 'notes', label: 'Notes', icon: <FileText size={13} /> },
   { id: 'sandbox', label: 'SQL Sandbox', icon: <Database size={13} /> },
-  { id: 'diagrams', label: 'Schema Diagrams', icon: <Network size={13} /> },
+  { id: 'graph', label: 'Schema Graph', icon: <Network size={13} /> },
 ]
 
 export default function DeveloperTab(): React.ReactElement {
@@ -66,7 +66,7 @@ export default function DeveloperTab(): React.ReactElement {
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         {sub === 'notes' && <NotesPanel />}
         {sub === 'sandbox' && <SqlSandboxPanel />}
-        {sub === 'diagrams' && <SchemaDiagramsPanel />}
+        {sub === 'graph' && <SchemaGraphPanel />}
       </div>
     </div>
   )
@@ -113,12 +113,13 @@ function NotesPanel(): React.ReactElement {
             pages.
           </p>
           <p>
-            The <strong style={{ color: 'var(--color-foreground)' }}>Schema Diagrams</strong>{' '}
-            tab renders four curated ER diagrams covering Items &amp; Loot,
-            NPCs &amp; Spawns, Spells &amp; AAs, and Keys &amp; Zones.
-            quarm.db has no declared foreign keys, so these relationships are
-            hand-maintained &mdash; if one looks wrong after a database
-            refresh, please file an issue.
+            The <strong style={{ color: 'var(--color-foreground)' }}>Schema Graph</strong>{' '}
+            tab renders an interactive map of every game-content table in
+            quarm.db. Click a table to focus on its neighbours, drag nodes
+            around, scroll to zoom, or type into the search box to filter
+            down to one part of the schema. quarm.db has no declared foreign
+            keys &mdash; relationships are hand-maintained, so if an edge
+            looks wrong after a database refresh, please file an issue.
           </p>
           <p>
             To hide this tab again, press <kbd>Ctrl+Shift+D</kbd> anywhere

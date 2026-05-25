@@ -17,9 +17,11 @@
     "build:backend:win": "cd backend && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o bin/pq-companion-server.exe ./cmd/server"
   },
   "dependencies": {
+    "@types/dagre": "^0.7.54",
+    "@xyflow/react": "^12.10.2",
+    "dagre": "^0.8.5",
     "electron-updater": "^6.3.0",
     "lucide-react": "^1.8.0",
-    "mermaid": "^11.15.0",
     "react-router-dom": "^7.14.1"
   },
   "devDependencies": {
