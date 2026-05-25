@@ -4,10 +4,11 @@
  * configured duration. Renders in a dedicated frameless Electron window.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { Check } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import type { TriggerFired } from '../types/trigger'
-import { postTriggerTestPosition, getActiveTriggerTest } from '../services/api'
+import { postTriggerTestPosition, getActiveTriggerTest, endTriggerTestSession } from '../services/api'
 
 interface TestAlert {
   testId: string
@@ -100,10 +101,10 @@ function AlertCard({ entry }: { entry: AlertEntry }): React.ReactElement {
 interface TestAlertCardProps {
   alert: TestAlert
   onPositionCommit: (position: { x: number; y: number }) => void
-  onInteractiveChange: (interactive: boolean) => void
+  onDone: () => void
 }
 
-function TestAlertCard({ alert, onPositionCommit, onInteractiveChange }: TestAlertCardProps): React.ReactElement {
+function TestAlertCard({ alert, onPositionCommit, onDone }: TestAlertCardProps): React.ReactElement {
   const [pos, setPos] = useState(alert.position)
   const dragOffset = useRef<{ dx: number; dy: number } | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -113,10 +114,11 @@ function TestAlertCard({ alert, onPositionCommit, onInteractiveChange }: TestAle
   }, [alert.testId, alert.position.x, alert.position.y])
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    // Don't start a drag when the user clicks the Done button.
+    if ((e.target as HTMLElement).closest('[data-trigger-test-done]')) return
     e.currentTarget.setPointerCapture(e.pointerId)
     dragOffset.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y }
     setDragging(true)
-    onInteractiveChange(true)
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
@@ -134,17 +136,6 @@ function TestAlertCard({ alert, onPositionCommit, onInteractiveChange }: TestAle
     onPositionCommit(pos)
   }
 
-  // Hover state drives per-region click-through: outside the card the trigger
-  // overlay is fully click-through so the underlying app/game keeps receiving
-  // input. While dragging, ignore mouseleave — pointer capture means the card
-  // tracks the cursor but the cursor can briefly fall outside the box.
-  function handleMouseEnter() {
-    onInteractiveChange(true)
-  }
-  function handleMouseLeave() {
-    if (dragOffset.current === null) onInteractiveChange(false)
-  }
-
   const { color, fontSize, text } = alert
 
   return (
@@ -153,8 +144,6 @@ function TestAlertCard({ alert, onPositionCommit, onInteractiveChange }: TestAle
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       style={{
         position: 'fixed',
         left: pos.x,
@@ -182,8 +171,32 @@ function TestAlertCard({ alert, onPositionCommit, onInteractiveChange }: TestAle
       >
         {text || 'Test Overlay'}
       </div>
-      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginTop: 4, letterSpacing: '0.04em' }}>
-        Drag to position · click Done in the editor to lock
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 6 }}>
+        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', letterSpacing: '0.04em' }}>
+          Drag to position
+        </span>
+        <button
+          type="button"
+          data-trigger-test-done
+          onClick={onDone}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
+            fontSize: 10,
+            padding: '2px 6px',
+            borderRadius: 3,
+            backgroundColor: '#16a34a',
+            color: '#fff',
+            border: 'none',
+            cursor: 'pointer',
+            letterSpacing: '0.04em',
+          }}
+          title="Lock in this position and close the positioner"
+        >
+          <Check size={10} />
+          Done
+        </button>
       </div>
     </div>
   )
@@ -202,7 +215,6 @@ const DEDUP_WINDOW_MS = 750
 export default function TriggerOverlayWindowPage(): React.ReactElement {
   const [alerts, setAlerts] = useState<AlertEntry[]>([])
   const [testAlert, setTestAlert] = useState<TestAlert | null>(null)
-  const [interactive, setInteractive] = useState(false)
   const gcTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastFired = useRef<Map<string, number>>(new Map())
 
@@ -222,22 +234,21 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     }
   }, [])
 
-  // Per-region click-through: keep the window click-through everywhere except
-  // when the cursor is over the draggable test card. The main process loaded
-  // the window with setIgnoreMouseEvents(true, { forward: true }) so DOM
-  // mouseenter/leave still fire on elements while click-through is on.
+  // Click-through is toggled wholesale by whether a positioning session is
+  // active. Earlier versions tried a per-region (mouseenter/leave) toggle so
+  // the underlying app/game stayed clickable while positioning, but Electron's
+  // forwarded mousemove signal was unreliable on Windows for this screen-
+  // spanning transparent window — the first pointerdown never reached the
+  // card, so dragging silently failed. Instead, while testAlert is set the
+  // whole overlay accepts input (so the card is always draggable) and the
+  // card itself carries a Done button (since the editor that opened the
+  // session is behind this always-on-top window).
   useEffect(() => {
-    if (testAlert && interactive) {
+    if (testAlert) {
       window.electron?.overlay?.setIgnoreMouseEvents(false)
     } else {
       window.electron?.overlay?.setIgnoreMouseEvents(true)
     }
-  }, [testAlert, interactive])
-
-  // Reset the interactive flag whenever a positioning session ends so the
-  // window snaps back to click-through even if the card unmounted mid-hover.
-  useEffect(() => {
-    if (!testAlert) setInteractive(false)
   }, [testAlert])
 
   // Hydrate from the backend on first mount so a positioning session that
@@ -322,6 +333,15 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     [testAlert],
   )
 
+  const handleTestDone = useCallback(() => {
+    if (!testAlert) return
+    const id = testAlert.testId
+    // Clear locally first so click-through is restored immediately, even if
+    // the backend round-trip is slow or the editor has already closed.
+    setTestAlert(null)
+    void endTriggerTestSession(id).catch(() => {})
+  }, [testAlert])
+
   // The trigger overlay is fully invisible and click-through. The only thing
   // it ever shows is real-fire alerts (text-only, pointer-events:none) and,
   // during a positioning session, a single draggable test card. The "Done"
@@ -359,7 +379,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         <TestAlertCard
           alert={testAlert}
           onPositionCommit={handleTestPositionCommit}
-          onInteractiveChange={setInteractive}
+          onDone={handleTestDone}
         />
       )}
     </div>
