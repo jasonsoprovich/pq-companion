@@ -1022,6 +1022,20 @@ const ITEM_TABS: { key: ItemTabKey; label: string }[] = [
   { key: 'tradeskills', label: 'Tradeskills' },
 ]
 
+function visibleItemTabs(sources: ItemSources | null): { key: ItemTabKey; label: string }[] {
+  if (!sources) return [ITEM_TABS[0]]
+  return ITEM_TABS.filter((tab) => {
+    switch (tab.key) {
+      case 'overview': return true
+      case 'drops': return sources.drops.length > 0
+      case 'merchants': return sources.merchants.length > 0
+      case 'forage': return sources.forage_zones.length > 0
+      case 'ground-spawns': return sources.ground_spawns.length > 0
+      case 'tradeskills': return sources.tradeskills.length > 0
+    }
+  })
+}
+
 interface DetailPanelProps {
   item: Item | null
 }
@@ -1088,7 +1102,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
 
         {/* Tabs */}
         <div className="mt-3 flex gap-0 overflow-x-auto">
-          {ITEM_TABS.map((tab) => (
+          {visibleItemTabs(sources).map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}

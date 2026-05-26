@@ -338,6 +338,20 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'tradeskills', label: 'Tradeskills' },
 ]
 
+function visibleTabs(sources: ItemSources | null): { key: TabKey; label: string }[] {
+  if (!sources) return [TABS[0]]
+  return TABS.filter((tab) => {
+    switch (tab.key) {
+      case 'overview': return true
+      case 'drops': return sources.drops.length > 0
+      case 'merchants': return sources.merchants.length > 0
+      case 'forage': return sources.forage_zones.length > 0
+      case 'ground-spawns': return sources.ground_spawns.length > 0
+      case 'tradeskills': return sources.tradeskills.length > 0
+    }
+  })
+}
+
 interface ItemDetailModalProps {
   item: Item | null
   open: boolean
@@ -415,7 +429,7 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
           </div>
           {/* Tabs */}
           <div className="flex gap-0 overflow-x-auto">
-            {TABS.map((tab) => (
+            {visibleTabs(sources).map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
