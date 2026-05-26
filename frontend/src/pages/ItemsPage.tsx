@@ -1027,11 +1027,11 @@ function visibleItemTabs(sources: ItemSources | null): { key: ItemTabKey; label:
   return ITEM_TABS.filter((tab) => {
     switch (tab.key) {
       case 'overview': return true
-      case 'drops': return sources.drops.length > 0
-      case 'merchants': return sources.merchants.length > 0
-      case 'forage': return sources.forage_zones.length > 0
-      case 'ground-spawns': return sources.ground_spawns.length > 0
-      case 'tradeskills': return sources.tradeskills.length > 0
+      case 'drops': return (sources.drops?.length ?? 0) > 0
+      case 'merchants': return (sources.merchants?.length ?? 0) > 0
+      case 'forage': return (sources.forage_zones?.length ?? 0) > 0
+      case 'ground-spawns': return (sources.ground_spawns?.length ?? 0) > 0
+      case 'tradeskills': return (sources.tradeskills?.length ?? 0) > 0
     }
   })
 }
