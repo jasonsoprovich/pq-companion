@@ -1,6 +1,76 @@
 package spelltimer
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+)
+
+// bardSpell returns a *db.Spell shaped like a bard song: classes8 (bard)
+// learnable at the given level, all other classes locked at 255.
+func bardSpell(formula, base int) *db.Spell {
+	var cls [15]int
+	for i := range cls {
+		cls[i] = 255
+	}
+	cls[7] = 50 // bard learns at level 50
+	return &db.Spell{
+		BuffDurationFormula: formula,
+		BuffDuration:        base,
+		ClassLevels:         cls,
+	}
+}
+
+// nonBardSpell returns a *db.Spell castable by chanter (classes12 = index 11)
+// at the given level — used to confirm the bard clamp does NOT apply to
+// non-song spells with the same formula/base.
+func nonBardSpell(formula, base int) *db.Spell {
+	var cls [15]int
+	for i := range cls {
+		cls[i] = 255
+	}
+	cls[11] = 50 // enchanter
+	return &db.Spell{
+		BuffDurationFormula: formula,
+		BuffDuration:        base,
+		ClassLevels:         cls,
+	}
+}
+
+func TestSpellDurationTicks_BardSongUsesBase(t *testing.T) {
+	// Selo's Accelerando: formula=5, base=3. Formula 5 at level 60 yields
+	// min(60*5+3, 3*3) = 9 ticks (54s). With the bard clamp, we report
+	// the raw base of 3 ticks (18s) instead — matches in-game fade after
+	// the bard stops singing.
+	const level = 60
+	bard := bardSpell(5, 3)
+	if got := SpellDurationTicks(bard, level); got != 3 {
+		t.Errorf("bard song SpellDurationTicks = %d ticks, want 3 (base clamp)", got)
+	}
+
+	// Non-bard spell with the same formula+base must still run the full
+	// formula — the clamp is narrowly scoped to bard-only spells.
+	nonBard := nonBardSpell(5, 3)
+	if got := SpellDurationTicks(nonBard, level); got != 9 {
+		t.Errorf("non-bard spell SpellDurationTicks = %d ticks, want 9 (formula 5 cap)", got)
+	}
+}
+
+func TestIsBardSong_DisciplineExcluded(t *testing.T) {
+	// Resistant Discipline (id 4585): listed in classes8 alongside warrior,
+	// monk, rogue, etc. Not a song — must not trigger the bard clamp.
+	var cls [15]int
+	for i := range cls {
+		cls[i] = 255
+	}
+	cls[0] = 30 // warrior
+	cls[2] = 51 // monk
+	cls[7] = 30 // bard
+	disc := &db.Spell{ClassLevels: cls}
+	if isBardSong(disc) {
+		t.Errorf("isBardSong returned true for a cross-class discipline (multi-class)")
+	}
+}
 
 func TestCalcDurationTicks(t *testing.T) {
 	tests := []struct {

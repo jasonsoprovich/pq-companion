@@ -64,6 +64,27 @@ const (
 // (1–60 in the classic ruleset) is a valid level requirement.
 const classCannotCast = 255
 
+// targetTypeSelf is the spells_new.targettype value for a self-only spell
+// under the EQMacEmu/Server SpellTargetType enum (ST_Self = 6). Used to
+// recognise item-clicky self-buffs whose underlying spell is not castable
+// by any class (e.g. Shield of the Eighth from the Coldain Insignia Ring).
+const targetTypeSelf = 6
+
+// isItemClicky returns true when no player class can cast the underlying
+// spell — i.e. classes1..classes15 are all the cannot-cast sentinel. These
+// are typically item-click effects, AA-triggered spells, or NPC-only spells
+// that reached the player via a worn/clicky item. Used to bypass the
+// class-castability filter on the buff path and to correct goodEffect
+// mis-flagging in the categoriser.
+func isItemClicky(spell *db.Spell) bool {
+	for _, lvl := range spell.ClassLevels {
+		if lvl < classCannotCast {
+			return false
+		}
+	}
+	return true
+}
+
 // broadcastInterval is how often the engine pushes timer state updates to
 // WebSocket clients while timers are active.
 const broadcastInterval = time.Second
@@ -781,7 +802,12 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 			}
 		}
 		// Optional class filter: drop buffs the player's class can't cast.
-		if e.classFilterFn != nil {
+		// Item clickies (no class can cast them) are exempt — the user
+		// triggered the buff by clicking the item, so they always want the
+		// timer regardless of their character's class. Without this exemption
+		// Shield of the Eighth (Coldain Insignia Ring) and other clickies
+		// silently never reach the buff overlay.
+		if e.classFilterFn != nil && !isItemClicky(spell) {
 			if enabled, classIdx := e.classFilterFn(); enabled && classIdx >= 0 && classIdx < len(spell.ClassLevels) {
 				if spell.ClassLevels[classIdx] >= classCannotCast {
 					slog.Info("timer-debug: spell-landed skipped (class filter)",
@@ -806,7 +832,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		}
 	}
 
-	durationTicks := CalcDurationTicks(spell.BuffDurationFormula, spell.BuffDuration, defaultCasterLevel)
+	durationTicks := SpellDurationTicks(spell, defaultCasterLevel)
 	if durationTicks <= 0 {
 		slog.Info("timer-debug: landed spell has zero duration (no timer created)",
 			"name", spellName,
@@ -1283,6 +1309,16 @@ func categorize(spell *db.Spell) Category {
 	// EQ devs hand-flag every beneficial spell. Target type alone misses
 	// single-target friendly buffs (target type 5 with goodEffect=1).
 	if spell.GoodEffect == 1 {
+		return CategoryBuff
+	}
+	// Override for self-target item clickies that the source data
+	// mis-flags as detrimental. Maelin's Magical Concoction (the Velious
+	// Enchanter clicky mana buff) ships as goodEffect=0 in the PEQ data
+	// even though it's a beneficial self-only buff — without this it ends
+	// up in the detrimental overlay. The combined "self target + no class
+	// can cast it" check keeps the override narrow enough that legitimate
+	// player-cast debuffs aren't reclassified.
+	if spell.TargetType == targetTypeSelf && isItemClicky(spell) {
 		return CategoryBuff
 	}
 	return CategoryDebuff

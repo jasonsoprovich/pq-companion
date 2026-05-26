@@ -1,5 +1,56 @@
 package spelltimer
 
+import "github.com/jasonsoprovich/pq-companion/backend/internal/db"
+
+// bardSongUseBaseDuration controls how bard-song durations are computed.
+//
+// true  (default) — bard songs report their base duration (buffduration ×
+//                   6 seconds). Songs are pulse effects: the bard's client
+//                   re-applies the buff every tick, so the only time the
+//                   timer matters is right after the bard stops singing,
+//                   at which point the buff fades within ~base ticks.
+//                   18s for Selo's, not 54s, matches what the user sees.
+// false — bard songs run through the full duration formula like any other
+//         spell. Use only to revert if the base-duration mode causes
+//         regressions; the result (54s for Selo's at L60) doesn't match
+//         in-game fade behaviour.
+//
+// Detection is class-based, not formula- or skill-based: a song is a
+// spell only the bard class (index 7) can cast. See SpellDurationTicks.
+const bardSongUseBaseDuration = true
+
+// SpellDurationTicks returns the buff duration in EQ server ticks for a
+// landed spell, applying the bard-song base-duration clamp when enabled.
+// Use this in preference to the lower-level CalcDurationTicks anywhere a
+// full *db.Spell is available — only the parser-test fixtures call the
+// raw formula form directly.
+func SpellDurationTicks(spell *db.Spell, level int) int {
+	if bardSongUseBaseDuration && isBardSong(spell) {
+		return spell.BuffDuration
+	}
+	return CalcDurationTicks(spell.BuffDurationFormula, spell.BuffDuration, level)
+}
+
+// isBardSong reports whether spell is a bard song — a spell only the bard
+// class (classes8, index 7) can cast. Excludes the two cross-class
+// disciplines (Resistant/Fearless Discipline) which list bard in their
+// class table alongside warriors/rangers/etc. and aren't pulse songs.
+func isBardSong(spell *db.Spell) bool {
+	const bardIdx = 7
+	if spell.ClassLevels[bardIdx] >= 255 {
+		return false
+	}
+	for i, lvl := range spell.ClassLevels {
+		if i == bardIdx {
+			continue
+		}
+		if lvl < 255 {
+			return false
+		}
+	}
+	return true
+}
+
 // CalcDurationTicks computes the actual buff duration in EQ server ticks
 // (1 tick = 6 seconds) from the three spell DB fields:
 //   - formula  — the buffduration_formula column
