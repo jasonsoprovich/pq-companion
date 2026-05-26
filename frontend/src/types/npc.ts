@@ -126,3 +126,37 @@ export interface SearchResult<T> {
   items: T[]
   total: number
 }
+
+export interface NPCSpellEntry {
+  spell_id: number
+  spell_name: string
+  type: number
+  min_level: number
+  max_level: number
+  mana_cost: number
+  recast_delay: number
+  priority: number
+  source_id: number
+  source_name?: string
+}
+
+export interface NPCSpellProc {
+  spell_id: number
+  spell_name: string
+  chance: number
+}
+
+export interface NPCSpells {
+  npc_spells_id: number
+  list_name: string
+  attack_proc?: NPCSpellProc
+  range_proc?: NPCSpellProc
+  defensive_proc?: NPCSpellProc
+  entries: NPCSpellEntry[]
+  fail_recast: number
+  engaged_b_self_chance: number
+  engaged_b_other_chance: number
+  engaged_d_chance: number
+  pursue_d_chance: number
+  idle_b_chance: number
+}

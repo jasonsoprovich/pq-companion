@@ -606,6 +606,186 @@ func (db *DB) GetNPCFaction(npcID int) (*NPCFaction, error) {
 	return &result, nil
 }
 
+// GetNPCSpells returns the resolved npc_spells row + spell entries for an
+// NPC. If the NPC has no npc_spells_id (0) the result is (nil, nil) — no
+// caster AI is attached and the UI should hide the section. If parent_list
+// is set, this walks the inheritance chain (max depth 4) and appends each
+// ancestor's entries, tagging each entry with the source list name.
+//
+// Procs (attack/range/defensive) come from the NPC's own npc_spells row
+// only — they don't inherit. The schema models them as direct columns,
+// not list-merged entries.
+func (db *DB) GetNPCSpells(npcID int) (*NPCSpells, error) {
+	var listID int
+	if err := db.QueryRow(`SELECT npc_spells_id FROM npc_types WHERE id = ?`, npcID).Scan(&listID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get npc %d spells id: %w", npcID, err)
+	}
+	if listID == 0 {
+		return nil, nil
+	}
+
+	head, err := db.fetchNPCSpellListRow(listID)
+	if err != nil {
+		return nil, err
+	}
+	if head == nil {
+		return nil, nil
+	}
+
+	out := &NPCSpells{
+		NPCSpellsID:    head.id,
+		ListName:       head.name,
+		FailRecast:     head.failRecast,
+		EngagedSelf:    head.engagedSelf,
+		EngagedOther:   head.engagedOther,
+		EngagedDetri:   head.engagedDetri,
+		PursueDetri:    head.pursueDetri,
+		IdleBeneficial: head.idleBenef,
+		Entries:        []NPCSpellEntry{},
+	}
+
+	if head.attackProc > 0 {
+		out.AttackProc = &NPCSpellProc{
+			SpellID:   head.attackProc,
+			SpellName: db.lookupSpellName(head.attackProc),
+			Chance:    head.attackChance,
+		}
+	}
+	if head.rangeProc > 0 {
+		out.RangeProc = &NPCSpellProc{
+			SpellID:   head.rangeProc,
+			SpellName: db.lookupSpellName(head.rangeProc),
+			Chance:    head.rangeChance,
+		}
+	}
+	if head.defensiveProc > 0 {
+		out.DefensiveProc = &NPCSpellProc{
+			SpellID:   head.defensiveProc,
+			SpellName: db.lookupSpellName(head.defensiveProc),
+			Chance:    head.defensiveChance,
+		}
+	}
+
+	// Walk the list + its parent chain (parent_list -> parent_list -> ...),
+	// pulling entries from each. Depth-limited so a cyclic / mistyped chain
+	// can't hang the request.
+	current := head
+	visited := map[int]bool{current.id: true}
+	for depth := 0; depth < 4 && current != nil; depth++ {
+		entries, err := db.fetchNPCSpellEntries(current.id, current.name)
+		if err != nil {
+			return nil, err
+		}
+		out.Entries = append(out.Entries, entries...)
+		if current.parentList == 0 || visited[current.parentList] {
+			break
+		}
+		visited[current.parentList] = true
+		current, err = db.fetchNPCSpellListRow(current.parentList)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return out, nil
+}
+
+// npcSpellListRow is the parsed in-memory shape of a single npc_spells row.
+// Internal to GetNPCSpells — not part of the API payload (the columns are
+// projected onto NPCSpells fields with renaming).
+type npcSpellListRow struct {
+	id              int
+	name            string
+	parentList      int
+	attackProc      int
+	attackChance    int
+	rangeProc       int
+	rangeChance     int
+	defensiveProc   int
+	defensiveChance int
+	failRecast      int
+	engagedSelf     int
+	engagedOther    int
+	engagedDetri    int
+	pursueDetri     int
+	idleBenef       int
+}
+
+func (db *DB) fetchNPCSpellListRow(id int) (*npcSpellListRow, error) {
+	row := db.QueryRow(`
+		SELECT id, COALESCE(name, ''), parent_list,
+		       attack_proc, proc_chance,
+		       range_proc, rproc_chance,
+		       defensive_proc, dproc_chance,
+		       fail_recast,
+		       engaged_b_self_chance, engaged_b_other_chance, engaged_d_chance,
+		       pursue_d_chance, idle_b_chance
+		FROM npc_spells WHERE id = ?`, id)
+	var r npcSpellListRow
+	err := row.Scan(
+		&r.id, &r.name, &r.parentList,
+		&r.attackProc, &r.attackChance,
+		&r.rangeProc, &r.rangeChance,
+		&r.defensiveProc, &r.defensiveChance,
+		&r.failRecast,
+		&r.engagedSelf, &r.engagedOther, &r.engagedDetri,
+		&r.pursueDetri, &r.idleBenef,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("fetch npc_spells %d: %w", id, err)
+	}
+	return &r, nil
+}
+
+func (db *DB) fetchNPCSpellEntries(listID int, listName string) ([]NPCSpellEntry, error) {
+	rows, err := db.Query(`
+		SELECT e.spellid, COALESCE(s.name, ''), e.type,
+		       e.minlevel, e.maxlevel, e.manacost, e.recast_delay, e.priority
+		FROM npc_spells_entries e
+		LEFT JOIN spells_new s ON s.id = e.spellid
+		WHERE e.npc_spells_id = ?
+		ORDER BY e.priority DESC, e.minlevel ASC, e.spellid ASC`, listID)
+	if err != nil {
+		return nil, fmt.Errorf("fetch npc_spells_entries %d: %w", listID, err)
+	}
+	defer rows.Close()
+
+	var out []NPCSpellEntry
+	for rows.Next() {
+		var e NPCSpellEntry
+		if err := rows.Scan(
+			&e.SpellID, &e.SpellName, &e.Type,
+			&e.MinLevel, &e.MaxLevel, &e.ManaCost, &e.RecastDelay, &e.Priority,
+		); err != nil {
+			return nil, fmt.Errorf("scan npc_spells_entry: %w", err)
+		}
+		e.SourceID = listID
+		e.SourceName = listName
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// lookupSpellName resolves a spell ID to its name; empty string if missing.
+// Used for proc rendering — none of the call sites need to fail on a stale
+// proc id, so SQL errors are swallowed (the caller still has the id).
+func (db *DB) lookupSpellName(id int) string {
+	if id <= 0 {
+		return ""
+	}
+	var name string
+	if err := db.QueryRow(`SELECT COALESCE(name, '') FROM spells_new WHERE id = ?`, id).Scan(&name); err != nil {
+		return ""
+	}
+	return name
+}
+
 // GetNPCSpawns returns spawn point and spawn group data for the NPC with the given ID.
 func (db *DB) GetNPCSpawns(npcID int) (*NPCSpawns, error) {
 	// Spawn points: each row is one spawn2 entry where this NPC can appear.

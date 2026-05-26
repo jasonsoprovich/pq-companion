@@ -82,6 +82,27 @@ func (h *npcsHandler) faction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, faction)
 }
 
+func (h *npcsHandler) spells(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	spells, err := h.db.GetNPCSpells(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// nil means "NPC has no npc_spells_id assigned" — return empty payload
+	// rather than 404 so the frontend can render the section as "no caster
+	// AI" without a special error path.
+	if spells == nil {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, spells)
+}
+
 func (h *npcsHandler) loot(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {

@@ -1,6 +1,6 @@
 import type { Config } from '../types/config'
 import type { Item, ItemSources, SearchResult } from '../types/item'
-import type { NPC, NPCSpawns, NPCLootTable, NPCFaction } from '../types/npc'
+import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells } from '../types/npc'
 import type { BuffStatDelta, Spell, SpellCrossRefs } from '../types/spell'
 import type { Zone, ZoneConnection, ZoneGroundSpawn, ZoneForageItem, ZoneDropItem } from '../types/zone'
 import type {
@@ -237,6 +237,10 @@ export function getNPCLoot(id: number): Promise<NPCLootTable> {
 
 export function getNPCFaction(id: number): Promise<NPCFaction | null> {
   return get<NPCFaction | null>(`/api/npcs/${id}/faction`)
+}
+
+export function getNPCSpells(id: number): Promise<NPCSpells | null> {
+  return get<NPCSpells | null>(`/api/npcs/${id}/spells`)
 }
 
 // ── Zones ──────────────────────────────────────────────────────────────────────

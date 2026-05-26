@@ -397,6 +397,50 @@ type NPCSpawns struct {
 	SpawnGroups []NPCSpawnGroup `json:"spawn_groups"`
 }
 
+// NPCSpellEntry is one castable spell on an NPC's spell list. Spells_new
+// is joined so the frontend can show a name and link to the spell detail
+// page without a follow-up request. Source identifies which npc_spells row
+// the entry came from — for inherited entries (parent_list chain) this is
+// the parent's name so the UI can label "(inherited from <X>)".
+type NPCSpellEntry struct {
+	SpellID     int    `json:"spell_id"`
+	SpellName   string `json:"spell_name"`
+	Type        int    `json:"type"`         // AI category
+	MinLevel    int    `json:"min_level"`
+	MaxLevel    int    `json:"max_level"`
+	ManaCost    int    `json:"mana_cost"`    // -1 = use spell default
+	RecastDelay int    `json:"recast_delay"` // ms; -1 = use spell default
+	Priority    int    `json:"priority"`
+	SourceID    int    `json:"source_id"`
+	SourceName  string `json:"source_name,omitempty"`
+}
+
+// NPCSpellProc names one of the three proc slots (attack/range/defensive).
+// Resolved spell_name is included so the UI can render a link directly.
+type NPCSpellProc struct {
+	SpellID   int    `json:"spell_id"`
+	SpellName string `json:"spell_name"`
+	Chance    int    `json:"chance"`
+}
+
+// NPCSpells is the full /api/npcs/{id}/spells payload: the npc_spells row's
+// procs + AI tuning metadata plus the resolved list of castable spells
+// (own row + parent_list inheritance chain).
+type NPCSpells struct {
+	NPCSpellsID    int             `json:"npc_spells_id"`
+	ListName       string          `json:"list_name"`
+	AttackProc     *NPCSpellProc   `json:"attack_proc,omitempty"`
+	RangeProc      *NPCSpellProc   `json:"range_proc,omitempty"`
+	DefensiveProc  *NPCSpellProc   `json:"defensive_proc,omitempty"`
+	Entries        []NPCSpellEntry `json:"entries"`
+	FailRecast     int             `json:"fail_recast"`
+	EngagedSelf    int             `json:"engaged_b_self_chance"`
+	EngagedOther   int             `json:"engaged_b_other_chance"`
+	EngagedDetri   int             `json:"engaged_d_chance"`
+	PursueDetri    int             `json:"pursue_d_chance"`
+	IdleBeneficial int             `json:"idle_b_chance"`
+}
+
 // ZoneConnection is a zone reachable via a zone line from a source zone.
 type ZoneConnection struct {
 	ZoneID    int    `json:"zone_id"`

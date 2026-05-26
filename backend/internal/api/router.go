@@ -97,6 +97,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/{id}/spawns", npcs.spawns)
 			r.Get("/{id}/loot", npcs.loot)
 			r.Get("/{id}/faction", npcs.faction)
+			r.Get("/{id}/spells", npcs.spells)
 			r.Get("/{id}/raw", raw.rowFromTable("npc_types", "id"))
 		})
 		r.Route("/zones", func(r chi.Router) {

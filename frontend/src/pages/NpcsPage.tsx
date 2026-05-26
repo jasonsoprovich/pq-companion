@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Search, X, Bell } from 'lucide-react'
-import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot, getNPCFaction, getNPCRaw } from '../services/api'
-import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, LootDrop } from '../types/npc'
+import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot, getNPCFaction, getNPCSpells, getNPCRaw } from '../services/api'
+import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCSpellEntry, NPCSpellProc, LootDrop } from '../types/npc'
 import {
   bodyTypeName,
   className,
@@ -346,6 +346,140 @@ function SpecialAbilitiesList({ abilities }: SpecialAbilitiesListProps): React.R
   )
 }
 
+// ── Spells & Procs section ────────────────────────────────────────────────────
+
+interface NPCSpellsSectionProps {
+  spells: NPCSpells
+  onSpellClick: (id: number) => void
+}
+
+function SpellLink({ id, name, onClick }: { id: number; name: string; onClick: (id: number) => void }): React.ReactElement {
+  if (id <= 0) return <span style={{ color: 'var(--color-muted-foreground)' }}>—</span>
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(id)}
+      className="hover:underline"
+      style={{ color: 'var(--color-primary)', cursor: 'pointer', background: 'none', border: 'none', padding: 0, font: 'inherit' }}
+      title={`Open spell ${id} in the spell explorer`}
+    >
+      {name || `Spell #${id}`}
+    </button>
+  )
+}
+
+function ProcRow({ label, proc, onClick }: { label: string; proc: NPCSpellProc; onClick: (id: number) => void }): React.ReactElement {
+  return (
+    <div className="flex items-center justify-between gap-2 py-0.5 text-sm">
+      <div className="flex items-center gap-2">
+        <span style={{ color: 'var(--color-muted-foreground)', minWidth: 90 }}>{label}</span>
+        <SpellLink id={proc.spell_id} name={proc.spell_name} onClick={onClick} />
+      </div>
+      <span style={{ color: 'var(--color-muted)' }} className="text-xs">
+        {proc.chance}%
+      </span>
+    </div>
+  )
+}
+
+// Groups inherited entries together so a list with a parent_list chain
+// reads as "this NPC's own list" + "inherited from <parent>".
+function groupEntriesBySource(entries: NPCSpellEntry[], ownListID: number): { source: string; ownSource: boolean; entries: NPCSpellEntry[] }[] {
+  const buckets = new Map<number, { source: string; ownSource: boolean; entries: NPCSpellEntry[] }>()
+  for (const e of entries) {
+    const key = e.source_id
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        source: e.source_name || `List #${e.source_id}`,
+        ownSource: e.source_id === ownListID,
+        entries: [],
+      })
+    }
+    buckets.get(key)!.entries.push(e)
+  }
+  // Own list first; the rest in insertion order (which mirrors parent chain depth).
+  return Array.from(buckets.values()).sort((a, b) => Number(b.ownSource) - Number(a.ownSource))
+}
+
+function NPCSpellsSection({ spells, onSpellClick }: NPCSpellsSectionProps): React.ReactElement {
+  const [showTiming, setShowTiming] = useState(false)
+  const procs: { label: string; proc?: NPCSpellProc }[] = [
+    { label: 'Attack proc', proc: spells.attack_proc },
+    { label: 'Range proc', proc: spells.range_proc },
+    { label: 'Defensive proc', proc: spells.defensive_proc },
+  ]
+  const procsPresent = procs.some((p) => p.proc)
+  const grouped = groupEntriesBySource(spells.entries, spells.npc_spells_id)
+
+  const hasTimingData =
+    spells.fail_recast > 0 ||
+    spells.engaged_b_self_chance > 0 ||
+    spells.engaged_b_other_chance > 0 ||
+    spells.engaged_d_chance > 0 ||
+    spells.pursue_d_chance > 0 ||
+    spells.idle_b_chance > 0
+
+  return (
+    <div className="space-y-2 py-1">
+      {procsPresent && (
+        <div>
+          <div className="mb-0.5 text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Procs</div>
+          <div className="rounded border px-2 py-1" style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)' }}>
+            {procs.map(({ label, proc }) => (proc ? <ProcRow key={label} label={label} proc={proc} onClick={onSpellClick} /> : null))}
+          </div>
+        </div>
+      )}
+
+      {grouped.map((bucket) => (
+        <div key={bucket.source}>
+          <div className="mb-0.5 text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            {bucket.ownSource ? 'Cast spells' : `Inherited from ${bucket.source}`}
+          </div>
+          <div className="rounded border" style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)' }}>
+            {bucket.entries.map((e) => (
+              <div
+                key={`${e.source_id}-${e.spell_id}`}
+                className="flex items-center justify-between gap-2 px-2 py-1 text-sm"
+                style={{ borderTop: '1px solid var(--color-border)' }}
+              >
+                <SpellLink id={e.spell_id} name={e.spell_name} onClick={onSpellClick} />
+                <span className="text-xs tabular-nums" style={{ color: 'var(--color-muted)' }}>
+                  L{e.min_level}{e.max_level < 255 ? `–${e.max_level}` : '+'}
+                  {e.priority !== 0 ? ` · pri ${e.priority}` : ''}
+                  {e.recast_delay > 0 ? ` · ${Math.round(e.recast_delay / 1000)}s` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {hasTimingData && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowTiming((s) => !s)}
+            className="text-[11px]"
+            style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
+          >
+            {showTiming ? '▾ Hide AI timing' : '▸ Show AI timing'}
+          </button>
+          {showTiming && (
+            <div className="mt-1 rounded border px-2 py-1 text-xs" style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}>
+              {spells.fail_recast > 0 && <div>Fail recast: {spells.fail_recast} ms</div>}
+              {spells.engaged_b_self_chance > 0 && <div>Engaged · self-buff chance: {spells.engaged_b_self_chance}%</div>}
+              {spells.engaged_b_other_chance > 0 && <div>Engaged · ally-buff chance: {spells.engaged_b_other_chance}%</div>}
+              {spells.engaged_d_chance > 0 && <div>Engaged · detrimental chance: {spells.engaged_d_chance}%</div>}
+              {spells.pursue_d_chance > 0 && <div>Pursuing · detrimental chance: {spells.pursue_d_chance}%</div>}
+              {spells.idle_b_chance > 0 && <div>Idle · buff chance: {spells.idle_b_chance}%</div>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Detail panel ───────────────────────────────────────────────────────────────
 
 interface DetailPanelProps {
@@ -357,6 +491,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
   const [spawns, setSpawns] = useState<NPCSpawns | null>(null)
   const [loot, setLoot] = useState<NPCLootTable | null>(null)
   const [faction, setFaction] = useState<NPCFaction | null>(null)
+  const [spells, setSpells] = useState<NPCSpells | null>(null)
   const [bulkCopied, setBulkCopied] = useState<number | null>(null)
   const [rawOpen, setRawOpen] = useState(false)
   const rawFetcher = useCallback(() => getNPCRaw(npc!.id), [npc?.id])
@@ -375,6 +510,13 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
         .catch(() => setFaction(null))
     } else {
       setFaction(null)
+    }
+    if (npc.npc_spells_id > 0) {
+      getNPCSpells(npc.id)
+        .then(setSpells)
+        .catch(() => setSpells(null))
+    } else {
+      setSpells(null)
     }
   }, [npc?.id])
 
@@ -539,6 +681,13 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
         {specialAbilities.length > 0 && (
           <Section title="Special Abilities">
             <SpecialAbilitiesList abilities={specialAbilities} />
+          </Section>
+        )}
+
+        {/* Spells & Procs */}
+        {spells && (spells.entries.length > 0 || spells.attack_proc || spells.range_proc || spells.defensive_proc) && (
+          <Section title="Spells & Procs">
+            <NPCSpellsSection spells={spells} onSpellClick={(id) => navigate(`/spells?select=${id}`)} />
           </Section>
         )}
 
