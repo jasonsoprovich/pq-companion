@@ -32,6 +32,60 @@ ORDER BY ac DESC
 LIMIT 50;`,
   },
   {
+    id: 'items-by-slot-categorized',
+    label: 'Items: categorize by slot (Quarm bits)',
+    description: 'CASE on items.slots using the Mac-client bitmask.',
+    sql: `-- IMPORTANT: Project Quarm runs on the EQMacEmu fork, whose
+-- items.slots bitmask is NOT the modern EQEmu layout you'll find online.
+-- Modern EQEmu reuses bits 0x2000/0x4000/0x100000 for Waist/Primary/
+-- Powersource, etc. — using those values here returns the wrong slots
+-- (e.g. weapons surface as "Waist"). The bits below come from
+-- EQMacEmu/Server common/eq_constants.h:
+--   Charm=0x1     Ear=0x2/0x10    Head=0x4       Face=0x8
+--   Neck=0x20     Shoulder=0x40   Arms=0x80      Back=0x100
+--   Wrist=0x200/0x400  Range=0x800  Hands=0x1000
+--   Primary=0x2000  Secondary=0x4000  Finger=0x8000/0x10000
+--   Chest=0x20000  Legs=0x40000  Feet=0x80000
+--   Waist=0x100000  Ammo=0x200000
+--
+-- Tweak the WHERE clause at the bottom — slot_type='Waist' AND astr>9
+-- AND nodrop=-1 reproduces a "tradeable strength belts" filter.
+WITH CategorizedItems AS (
+  SELECT
+    id, Name, ac, hp, mana, nodrop, astr, slots,
+    CASE
+      WHEN (slots & 0x100000) != 0 THEN 'Waist'
+      WHEN (slots & 0x20000)  != 0 THEN 'Chest'
+      WHEN (slots & 0x40000)  != 0 THEN 'Legs'
+      WHEN (slots & 0x80000)  != 0 THEN 'Feet'
+      WHEN (slots & 0x1000)   != 0 THEN 'Hands'
+      WHEN (slots & 0x80)     != 0 THEN 'Arms'
+      WHEN (slots & 0x40)     != 0 THEN 'Shoulder'
+      WHEN (slots & 0x4)      != 0 THEN 'Head'
+      WHEN (slots & 0x8)      != 0 THEN 'Face'
+      WHEN (slots & 0x100)    != 0 THEN 'Back'
+      WHEN (slots & 0x20)     != 0 THEN 'Neck'
+      WHEN ((slots & 0x200) | (slots & 0x400)) != 0 THEN 'Wrist'
+      WHEN ((slots & 0x2)   | (slots & 0x10))  != 0 THEN 'Ear'
+      WHEN ((slots & 0x8000)| (slots & 0x10000))!= 0 THEN 'Finger'
+      WHEN (slots & 0x2000)   != 0 THEN 'Primary'
+      WHEN (slots & 0x4000)   != 0 THEN 'Secondary'
+      WHEN (slots & 0x800)    != 0 THEN 'Range'
+      WHEN (slots & 0x200000) != 0 THEN 'Ammo'
+      WHEN (slots & 0x1)      != 0 THEN 'Charm'
+      ELSE 'Other/Non-Equipable'
+    END AS slot_type
+  FROM items
+)
+SELECT id, Name, ac, hp, mana, nodrop, astr, slot_type
+FROM CategorizedItems
+WHERE astr > 9
+  AND nodrop = -1
+  AND slot_type = 'Waist'
+ORDER BY ac DESC
+LIMIT 50;`,
+  },
+  {
     id: 'items-by-class',
     label: 'Items: by class',
     description: 'Items usable by a given class (Enchanter = 0x2000).',

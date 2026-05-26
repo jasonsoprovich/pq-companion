@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Play, Loader2, Copy, Check, AlertTriangle, ChevronRight, ChevronDown, Table as TableIcon, Eye, BookOpen } from 'lucide-react'
+import { Play, Loader2, Copy, Check, AlertTriangle, ChevronRight, ChevronDown, Table as TableIcon, Eye, BookOpen, History as HistoryIcon } from 'lucide-react'
 import { getSandboxSchema, runSandboxQuery } from '../services/api'
 import type { SandboxResult, SandboxTable } from '../types/sandbox'
 import { STARTER_QUERIES } from '../lib/sandboxStarterQueries'
@@ -17,8 +17,36 @@ LIMIT 50;`
 // query if they need to see more rows at once.
 const VISIBLE_ROW_CAP = 1000
 
+// sessionStorage keys — scoped per-window so they survive tab switches
+// inside the app but clear when the user quits.
+const STORAGE_KEY_QUERY = 'sql-sandbox.query'
+const STORAGE_KEY_HISTORY = 'sql-sandbox.history'
+const HISTORY_LIMIT = 15
+
+function loadInitialQuery(): string {
+  try {
+    const saved = sessionStorage.getItem(STORAGE_KEY_QUERY)
+    if (saved !== null) return saved
+  } catch {
+    // sessionStorage can throw in restricted contexts; fall through.
+  }
+  return DEFAULT_QUERY
+}
+
+function loadInitialHistory(): string[] {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY_HISTORY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (Array.isArray(parsed)) return parsed.filter((v): v is string => typeof v === 'string')
+  } catch {
+    // Ignore corrupt history — better to start fresh than crash the panel.
+  }
+  return []
+}
+
 export default function SqlSandboxPanel(): React.ReactElement {
-  const [sql, setSql] = useState<string>(DEFAULT_QUERY)
+  const [sql, setSql] = useState<string>(loadInitialQuery)
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<SandboxResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -27,6 +55,7 @@ export default function SqlSandboxPanel(): React.ReactElement {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [copied, setCopied] = useState(false)
   const [showAll, setShowAll] = useState(false)
+  const [history, setHistory] = useState<string[]>(loadInitialHistory)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
@@ -34,6 +63,35 @@ export default function SqlSandboxPanel(): React.ReactElement {
       .then((r) => setSchema(r.tables))
       .catch((e: Error) => setSchemaError(e.message))
   }, [])
+
+  // Persist the in-progress query so a tab switch (component unmount)
+  // doesn't wipe the user's work. Cleared automatically on app quit
+  // because sessionStorage is per-window.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(STORAGE_KEY_QUERY, sql)
+    } catch {
+      // Storage quota / private-mode restrictions — ignore.
+    }
+  }, [sql])
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(history))
+    } catch {
+      // Same fallback as the query persist.
+    }
+  }, [history])
+
+  function pushHistory(entry: string): void {
+    const trimmed = entry.trim()
+    if (!trimmed) return
+    setHistory((prev) => {
+      // Dedup: drop any earlier copy so the latest run is always at the top.
+      const filtered = prev.filter((q) => q !== entry)
+      return [entry, ...filtered].slice(0, HISTORY_LIMIT)
+    })
+  }
 
   async function run(): Promise<void> {
     if (running) return
@@ -43,6 +101,7 @@ export default function SqlSandboxPanel(): React.ReactElement {
     try {
       const r = await runSandboxQuery(sql)
       setResult(r)
+      pushHistory(sql)
     } catch (e) {
       setError((e as Error).message)
       setResult(null)
@@ -243,6 +302,15 @@ export default function SqlSandboxPanel(): React.ReactElement {
                 setError(null)
               }}
             />
+            <HistoryPicker
+              history={history}
+              onPick={(sql) => {
+                setSql(sql)
+                setResult(null)
+                setError(null)
+              }}
+              onClear={() => setHistory([])}
+            />
             <button
               type="button"
               onClick={() => void run()}
@@ -321,7 +389,7 @@ export default function SqlSandboxPanel(): React.ReactElement {
                   (no rows)
                 </p>
               ) : (
-                <table className="w-full text-xs">
+                <table className="min-w-full text-xs" style={{ width: 'max-content' }}>
                   <thead
                     style={{
                       position: 'sticky',
@@ -475,6 +543,147 @@ function ExamplesPicker({ onPick }: { onPick: (sql: string) => void }): React.Re
       )}
     </div>
   )
+}
+
+// HistoryPicker surfaces the recent run history (most recent first) so the
+// user can re-load a prior query without retyping it. History is kept in
+// sessionStorage, so it persists across tab switches inside the app but
+// clears on quit. Capped at HISTORY_LIMIT entries.
+function HistoryPicker({
+  history,
+  onPick,
+  onClear,
+}: {
+  history: string[]
+  onPick: (sql: string) => void
+  onClear: () => void
+}): React.ReactElement {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent): void => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('mousedown', close)
+    return () => window.removeEventListener('mousedown', close)
+  }, [open])
+  const empty = history.length === 0
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
+        style={{
+          backgroundColor: 'var(--color-surface-2)',
+          border: '1px solid var(--color-border)',
+          color: 'var(--color-foreground)',
+          cursor: 'pointer',
+          opacity: empty ? 0.6 : 1,
+        }}
+        title={empty ? 'No history yet — run a query first' : 'Recent queries'}
+      >
+        <HistoryIcon size={12} />
+        History
+        {!empty && (
+          <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+            ({history.length})
+          </span>
+        )}
+      </button>
+      {open && (
+        <div
+          className="absolute z-10 mt-1 overflow-hidden rounded shadow-lg"
+          style={{
+            top: '100%',
+            left: 0,
+            width: 420,
+            maxHeight: 360,
+            overflowY: 'auto',
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          {empty ? (
+            <p className="px-3 py-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              No queries yet. Run one and it'll show up here.
+            </p>
+          ) : (
+            <>
+              {history.map((q, i) => (
+                <button
+                  key={`${i}-${q.slice(0, 16)}`}
+                  type="button"
+                  onClick={() => {
+                    onPick(q)
+                    setOpen(false)
+                  }}
+                  className="block w-full px-3 py-2 text-left text-xs"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: '1px solid var(--color-border)',
+                    cursor: 'pointer',
+                    color: 'var(--color-foreground)',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-surface-2)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                  title={q}
+                >
+                  <div
+                    className="font-mono"
+                    style={{
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {summarizeQuery(q)}
+                  </div>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  onClear()
+                  setOpen(false)
+                }}
+                className="block w-full px-3 py-2 text-left text-xs"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--color-muted-foreground)',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-surface-2)')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+              >
+                Clear history
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// summarizeQuery collapses a multi-line SQL statement into a single line of
+// significant text so it fits nicely in a dropdown row. Strips leading
+// comments + whitespace so a header comment doesn't drown out the actual
+// statement.
+function summarizeQuery(sql: string): string {
+  const lines = sql.split('\n')
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) continue
+    if (line.startsWith('--')) continue
+    return line.length > 120 ? line.slice(0, 117) + '…' : line
+  }
+  // Fallback: collapse whitespace and truncate.
+  const collapsed = sql.replace(/\s+/g, ' ').trim()
+  return collapsed.length > 120 ? collapsed.slice(0, 117) + '…' : collapsed
 }
 
 // formatCell renders a SQLite scalar to a string for display. null becomes
