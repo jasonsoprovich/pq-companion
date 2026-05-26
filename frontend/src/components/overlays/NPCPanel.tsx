@@ -9,6 +9,7 @@ import { cleanLootDropLabel, effectiveDropPct, rarityColor } from '../../lib/loo
 import OverlayWindow from '../OverlayWindow'
 import ItemDetailModal from '../ItemDetailModal'
 import { ItemIcon } from '../Icon'
+import { ResistChip } from '../ResistChip'
 import type { TargetState, SpecialAbility } from '../../types/overlay'
 import type { LogTailerStatus } from '../../types/logEvent'
 import type { NPCLootTable, LootDrop } from '../../types/npc'
@@ -400,11 +401,11 @@ function NPCCard({
           <div>
             <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Resists</p>
             <div className="flex flex-wrap gap-1.5">
-              <Stat label="Magic" value={npc.mr} />
-              <Stat label="Cold" value={npc.cr} />
-              <Stat label="Disease" value={npc.dr} />
-              <Stat label="Fire" value={npc.fr} />
-              <Stat label="Poison" value={npc.pr} />
+              <ResistChip type="magic"   value={npc.mr} />
+              <ResistChip type="cold"    value={npc.cr} />
+              <ResistChip type="fire"    value={npc.fr} />
+              <ResistChip type="disease" value={npc.dr} />
+              <ResistChip type="poison"  value={npc.pr} />
             </div>
           </div>
 
