@@ -44,7 +44,14 @@ nsis:
   # a custom path via allowToChangeInstallationDirectory if they want.
   perMachine: false
   allowToChangeInstallationDirectory: true
-  deleteAppDataOnUninstall: false
+  # Removes %AppData%\PQ Companion (Electron userData — overlayBounds.json,
+  # Chromium Cache/Local Storage/IndexedDB/GPUCache) on uninstall. Anything
+  # the user actually cares about lives in ~/.pq-companion, which is handled
+  # by build/installer.nsh below with an opt-in prompt.
+  deleteAppDataOnUninstall: true
+  # Custom NSIS hooks that also wipe %LocalAppData%\pq-companion-updater
+  # (electron-updater download cache) and optionally ~/.pq-companion.
+  include: build/installer.nsh
   createDesktopShortcut: true
   createStartMenuShortcut: true
   installerIcon: build/icon.ico
