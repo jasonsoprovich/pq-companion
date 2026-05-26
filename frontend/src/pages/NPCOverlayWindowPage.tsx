@@ -351,6 +351,9 @@ function NPCContent({ state, view }: { state: TargetState; view: View }): React.
             {/* Combat */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               <Chip label="HP" value={npc.hp.toLocaleString()} color="#22c55e" />
+              {npc.mana > 0 && (
+                <Chip label="Mana" value={npc.mana.toLocaleString()} color="#3b82f6" />
+              )}
               <Chip label="AC" value={npc.ac} />
               <Chip label="DMG" value={`${npc.min_dmg}-${npc.max_dmg}`} color="#ef4444" />
               <Chip label="Atk/Rd" value={npc.attack_count < 0 ? 'default' : npc.attack_count} />

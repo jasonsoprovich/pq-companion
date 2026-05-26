@@ -387,6 +387,9 @@ function NPCCard({
             <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Combat</p>
             <div className="flex flex-wrap gap-1.5">
               <Stat label="HP" value={npc.hp.toLocaleString()} color="#22c55e" />
+              {npc.mana > 0 && (
+                <Stat label="Mana" value={npc.mana.toLocaleString()} color="#3b82f6" />
+              )}
               <Stat label="AC" value={npc.ac} />
               <Stat label="Min DMG" value={npc.min_dmg} color="#ef4444" />
               <Stat label="Max DMG" value={npc.max_dmg} color="#ef4444" />
