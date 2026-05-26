@@ -78,6 +78,16 @@ export default function CreateTriggerModal({
   const [patternError, setPatternError] = useState<string | null>(null)
   const voices = useVoices()
 
+  // Dismiss on Escape. Backdrop click already works via the outer div's
+  // onClick handler; this covers the keyboard path.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   // Reset form whenever prefill changes (e.g. user picks a different spell)
   useEffect(() => {
     setName(prefill.name)

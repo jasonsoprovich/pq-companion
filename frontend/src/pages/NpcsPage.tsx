@@ -254,10 +254,34 @@ interface SpecialAbilitiesListProps {
 function SpecialAbilitiesList({ abilities }: SpecialAbilitiesListProps): React.ReactElement {
   const [activeCode, setActiveCode] = useState<number | null>(null)
   const [alertPrefill, setAlertPrefill] = useState<TriggerPrefill | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
 
   function toggle(code: number) {
     setActiveCode((prev) => (prev === code ? null : code))
   }
+
+  // Dismiss the open popover on Escape or any click outside the badge row.
+  // The ref wraps both the badges AND the popover, so clicking another
+  // badge falls through to that badge's own toggle handler (no double
+  // close + reopen race), and only clicks completely outside the abilities
+  // section dismiss.
+  useEffect(() => {
+    if (activeCode === null) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActiveCode(null)
+    }
+    const onClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setActiveCode(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('mousedown', onClick)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('mousedown', onClick)
+    }
+  }, [activeCode])
 
   function openCreateAlert(sa: SpecialAbility) {
     const known = specialAbilityAlertPattern(sa.code)
@@ -272,7 +296,7 @@ function SpecialAbilitiesList({ abilities }: SpecialAbilitiesListProps): React.R
   }
 
   return (
-    <div className="flex flex-wrap gap-1.5 py-1">
+    <div ref={containerRef} className="flex flex-wrap gap-1.5 py-1">
       {abilities.map((sa) => (
         <div key={sa.code} className="relative">
           <button
