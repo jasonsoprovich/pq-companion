@@ -15,8 +15,9 @@ import (
 func newTestEngine() *Engine {
 	hub := ws.NewHub()
 	return &Engine{
-		hub:    hub,
-		timers: make(map[string]*ActiveTimer),
+		hub:         hub,
+		timers:      make(map[string]*ActiveTimer),
+		pendingArms: make(map[string]*pendingArm),
 		charCtx: func() (string, string, int) {
 			return "/eq", "Osui", -1
 		},
@@ -291,6 +292,69 @@ func TestStartExternal_MergesMetadataOntoExistingTimer(t *testing.T) {
 	}
 	if string(got.TimerAlerts) != string(alerts) {
 		t.Errorf("alerts: got %s, want %s", got.TimerAlerts, alerts)
+	}
+}
+
+// Mez spells (Mesmerize/Mesmerization/Dazzle) share the "X has been
+// mesmerized." land text but have divergent durations, so the trigger
+// pack fires them on "You begin casting <Name>." Without deferred
+// rendering, this creates a visible 2-3s "ghost" timer that later gets
+// merged when the spell lands — and on fizzle/interrupt/resist leaves a
+// stale timer running for its full nominal duration. StartExternal must
+// stash these as pendingArms instead of creating immediate timers.
+func TestStartExternal_DefersMezTimerToSpellLanded(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	alerts := json.RawMessage(`[{"id":"fade","seconds":5,"type":"tts"}]`)
+
+	e.StartExternal("Mesmerize", "debuff", 24, 8, now, alerts, 0)
+
+	if len(e.timers) != 0 {
+		t.Fatalf("mez cast-begin must not create a visible timer, got %d", len(e.timers))
+	}
+	arm, ok := e.pendingArms["Mesmerize"]
+	if !ok {
+		t.Fatal("pendingArms missing Mesmerize entry")
+	}
+	if arm.DisplayThresholdSecs != 8 {
+		t.Errorf("pending arm threshold: got %d, want 8", arm.DisplayThresholdSecs)
+	}
+	if string(arm.TimerAlerts) != string(alerts) {
+		t.Errorf("pending arm alerts: got %s, want %s", arm.TimerAlerts, alerts)
+	}
+}
+
+// StopExternal must also clear pendingArms so a resist or worn-off line
+// for a deferred-render spell doesn't leave a stale arm that gets
+// falsely promoted onto a later genuine cast.
+func TestStopExternal_ClearsPendingArm(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	e.StartExternal("Dazzle", "debuff", 96, 0, now, nil, 0)
+	if _, ok := e.pendingArms["Dazzle"]; !ok {
+		t.Fatal("setup: Dazzle arm not stored")
+	}
+
+	e.StopExternal("Dazzle")
+
+	if _, ok := e.pendingArms["Dazzle"]; ok {
+		t.Error("pending arm should have been cleared on StopExternal")
+	}
+}
+
+// Pending arms older than pendingArmTTL must be GC'd lazily so a fizzled
+// mez doesn't get promoted onto a recast minutes later.
+func TestStartExternal_ExpiresStalePendingArms(t *testing.T) {
+	e := newTestEngine()
+	stale := time.Now().Add(-2 * pendingArmTTL)
+	e.pendingArms["Mesmerization"] = &pendingArm{ArmedAt: stale}
+
+	// Any StartExternal call triggers gcPendingArmsLocked; use an unrelated
+	// non-deferred trigger so we don't reseed the slot.
+	e.StartExternal("AE Incoming", "debuff", 30, 0, time.Now(), nil, 0)
+
+	if _, ok := e.pendingArms["Mesmerization"]; ok {
+		t.Error("stale pending arm should have been GC'd")
 	}
 }
 

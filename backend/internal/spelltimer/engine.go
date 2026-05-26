@@ -85,6 +85,39 @@ const lastCastWindow = 30 * time.Second
 // composite key. Picked so a literal '@' never appears in either side.
 const timerKeySep = "@"
 
+// deferredRenderSpells are spells whose trigger-driven cast-begin entry
+// should NOT render a timer immediately. Instead the trigger metadata
+// (threshold, alerts) is stashed as a pendingArm and grafted onto the
+// real timer when the spell-landed pipeline fires. This eliminates the
+// brief "ghost" timer the user saw on every mez cast and avoids leaving
+// a stale full-duration timer on fizzle/interrupt/push.
+//
+// Scope: only the three mez spells whose shared land text ("X has been
+// mesmerized.") forces the trigger pack to fire on cast-begin in the
+// first place. Charm/Root/Fetter cast-begin triggers stay synchronous —
+// the spell-landed pipeline is unreliable for charm (empty cast_on_other)
+// and the user hasn't reported the same visual artifact for those lines.
+var deferredRenderSpells = map[string]bool{
+	"Mesmerize":     true,
+	"Mesmerization": true,
+	"Dazzle":        true,
+}
+
+// pendingArmTTL is how long a pendingArm survives without a matching
+// spell-landed event. Covers the longest deferred cast time (Dazzle = 2s)
+// plus a generous interrupt window before we give up and assume the cast
+// fizzled / was pushed / never lands. Lazy-GC'd on every StartExternal.
+const pendingArmTTL = 10 * time.Second
+
+// pendingArm holds trigger-supplied metadata for a deferred-render spell
+// while we wait for the spell-landed event to materialise the real timer.
+// See deferredRenderSpells.
+type pendingArm struct {
+	DisplayThresholdSecs int
+	TimerAlerts          json.RawMessage
+	ArmedAt              time.Time
+}
+
 // timerKey returns the composite map key used to identify a timer. Targets
 // that aren't tied to a specific recipient (e.g. trigger-driven timers) pass
 // an empty string — the resulting key still namespaces them away from any
@@ -111,6 +144,11 @@ type Engine struct {
 
 	mu     sync.Mutex
 	timers map[string]*ActiveTimer // keyed by timerKey(spell, target)
+
+	// pendingArms holds trigger-supplied metadata for deferred-render
+	// spells (see deferredRenderSpells). Populated by StartExternal,
+	// consumed by onSpellLanded, lazily GC'd by pendingArmTTL.
+	pendingArms map[string]*pendingArm
 
 	// lastCastSpell and lastCastAt track the most recent EventSpellCast.
 	// Used (a) to disambiguate ambiguous EventSpellLanded matches — many
@@ -166,6 +204,7 @@ func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn S
 		classFilterFn: classFilterFn,
 		modeFn:        modeFn,
 		timers:        make(map[string]*ActiveTimer),
+		pendingArms:   make(map[string]*pendingArm),
 	}
 }
 
@@ -487,6 +526,29 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 	key := timerKey(name, "")
 
 	e.mu.Lock()
+	e.gcPendingArmsLocked(time.Now())
+
+	// Deferred-render path: spells in deferredRenderSpells (currently the
+	// three mez spells with shared land text) stash trigger metadata as a
+	// pendingArm and DO NOT create a visible timer. The spell-landed
+	// pipeline promotes the arm into a real timer when the spell actually
+	// lands; if it never lands (fizzle, interrupt, push, resist) the arm
+	// expires via pendingArmTTL or StopExternal.
+	if deferredRenderSpells[name] {
+		e.pendingArms[name] = &pendingArm{
+			DisplayThresholdSecs: displayThresholdSecs,
+			TimerAlerts:          alerts,
+			ArmedAt:              startedAt,
+		}
+		e.mu.Unlock()
+		slog.Info("timer-debug: pending arm stored for deferred-render spell",
+			"name", name,
+			"threshold_secs", displayThresholdSecs,
+			"alerts_bytes", len(alerts),
+		)
+		return
+	}
+
 	// If a same-spell-name timer was just created (typically by the
 	// spell-landed pipeline firing on the same log line), don't add a second
 	// row — but DO carry the trigger's per-spell metadata onto the existing
@@ -546,8 +608,31 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 // target. Called by the trigger engine when a worn-off pattern fires; we
 // match by name (not composite key) so a user-authored worn-off pattern
 // also clears any spell-landed entries for the same buff.
+//
+// Also clears any pendingArm for the spell — a resist of a deferred-render
+// spell (e.g. mez) reaches us through the trigger's WornOffPattern, and
+// without this the arm would linger until pendingArmTTL and could falsely
+// promote a stale arm onto a later genuine cast.
 func (e *Engine) StopExternal(name string) {
+	e.mu.Lock()
+	delete(e.pendingArms, name)
+	e.mu.Unlock()
 	e.removeBySpellName(name)
+}
+
+// gcPendingArmsLocked drops pending arms older than pendingArmTTL. Lazy
+// GC: called from StartExternal and onSpellLanded so we don't need a
+// dedicated ticker. Caller must hold e.mu.
+func (e *Engine) gcPendingArmsLocked(now time.Time) {
+	for name, arm := range e.pendingArms {
+		if now.Sub(arm.ArmedAt) > pendingArmTTL {
+			delete(e.pendingArms, name)
+			slog.Info("timer-debug: pending arm expired (no land within TTL)",
+				"name", name,
+				"age_ms", now.Sub(arm.ArmedAt).Milliseconds(),
+			)
+		}
+	}
 }
 
 // ClearAll removes every active timer and broadcasts the resulting empty
@@ -784,6 +869,24 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		}
 		delete(e.timers, existingKey)
 		break
+	}
+	// Pending-arm promotion: for deferred-render spells (mez), the
+	// trigger's metadata was stashed instead of creating a timer on
+	// cast-begin. Graft it onto the new timer now and clear the arm.
+	e.gcPendingArmsLocked(time.Now())
+	if arm, ok := e.pendingArms[spellName]; ok {
+		if arm.DisplayThresholdSecs > 0 {
+			timer.DisplayThresholdSecs = arm.DisplayThresholdSecs
+		}
+		if len(arm.TimerAlerts) > 0 {
+			timer.TimerAlerts = arm.TimerAlerts
+		}
+		delete(e.pendingArms, spellName)
+		slog.Info("timer-debug: pending arm promoted to landed timer",
+			"spell", spellName,
+			"target", target,
+			"arm_age_ms", time.Since(arm.ArmedAt).Milliseconds(),
+		)
 	}
 	// Recasting on the same target replaces the timer (refresh). No dedup
 	// against the same key is needed; with composite keys, recasts on the
