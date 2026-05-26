@@ -24,8 +24,14 @@ var (
 	// Zone change: "You have entered The North Karana."
 	reZone = regexp.MustCompile(`^You have entered (.+)\.$`)
 
-	// Spell begin casting: "You begin casting Mesmerization."
-	reSpellCast = regexp.MustCompile(`^You begin casting (.+)\.$`)
+	// Spell begin casting: "You begin casting Mesmerization." Bards use a
+	// different verb — "You begin singing Selo's Accelerando." — emitted by
+	// the EQMacEmu server (zone/bardsong.cpp) for any IsBardSong spell. The
+	// app needs to recognise both so the timer engine sees a bard's
+	// EventSpellCast and can satisfy the cast-by-me filter on detrimental
+	// songs (Chords of Dissonance, Largo's Melodic Binding, etc.) and the
+	// ambiguous-cast disambiguation for shared-text song buffs.
+	reSpellCast = regexp.MustCompile(`^You begin (?:casting|singing) (.+)\.$`)
 
 	// Spell interrupted: "Your spell is interrupted." or
 	// "Your <SpellName> spell is interrupted."

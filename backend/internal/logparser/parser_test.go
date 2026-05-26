@@ -85,6 +85,20 @@ func TestParseLine(t *testing.T) {
 			wantType: EventSpellCast,
 			wantData: SpellCastData{SpellName: "Color Flux"},
 		},
+		{
+			name:     "spell: begin singing (bard song)",
+			line:     "[Mon Apr 13 06:00:00 2026] You begin singing Selo`s Accelerando.",
+			wantOK:   true,
+			wantType: EventSpellCast,
+			wantData: SpellCastData{SpellName: "Selo`s Accelerando"},
+		},
+		{
+			name:     "spell: begin singing detrimental song",
+			line:     "[Mon Apr 13 06:00:00 2026] You begin singing Chords of Dissonance.",
+			wantOK:   true,
+			wantType: EventSpellCast,
+			wantData: SpellCastData{SpellName: "Chords of Dissonance"},
+		},
 
 		// --- Spell interrupt ---
 		{
