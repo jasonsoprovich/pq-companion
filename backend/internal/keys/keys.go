@@ -212,18 +212,6 @@ func All() []KeyDef {
 			},
 		},
 		{
-			ID:          "katta_castellum",
-			Name:        "Katta Castellum",
-			Description: "A Katta Castellum Badge of Service is required to enter the city of Katta Castellum on Luclin.",
-			Components: []Component{
-				{
-					ItemID:   31752,
-					ItemName: "Katta Castellum Badge of Service",
-					Notes:    "Obtained via citizenship quest with the Combine ambassador.",
-				},
-			},
-		},
-		{
 			ID:          "arx_seru",
 			Name:        "Arx Seru — Arx Key (Lord Seru access)",
 			Description: "Kill the four Praesertum mini-raid mobs on the top floor of Sanctus Seru, loot one shard from each, and turn all four in to Elnerick Augustleaf in Katta Castellum to receive the Arx Key (and a Seal of Katta).",
