@@ -303,6 +303,16 @@ func TestParseSpecialAbilities(t *testing.T) {
 			wantLen: 2,
 			wantFirst: db.SpecialAbility{Code: 2, Value: 1, Name: "Enrage"},
 		},
+		{
+			// Regression: Thall_Va_Xakra's row is "1,1^2,1^3,1,30^...".
+			// The "3,1,30" entry is Rampage with a range arg in the third
+			// field; the old SplitN(",", 2) dropped it silently. Confirm
+			// it's now parsed with code=3, value=1 and the third field
+			// ignored.
+			raw:     "1,1^3,1,30^10,1",
+			wantLen: 3,
+			wantFirst: db.SpecialAbility{Code: 1, Value: 1, Name: "Summon"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.raw, func(t *testing.T) {

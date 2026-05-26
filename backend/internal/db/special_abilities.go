@@ -18,7 +18,16 @@ type SpecialAbility struct {
 
 // ParseSpecialAbilities parses the caret-delimited special_abilities string
 // from npc_types into a slice of SpecialAbility.
-// Format: "code,value^code,value^..." (e.g. "1,1^18,1^19,1")
+// Format: "code,value[,extra...]^code,value[,extra...]^..."
+//
+// Most entries are two fields ("1,1"), but some encode an extra arg after
+// the value — e.g. Rampage on Thall_Va_Xakra is "3,1,30" where 30 is the
+// range. SplitN with limit=2 broke on those because Atoi("1,30") failed
+// and the entry was silently dropped from the overlay; mob would show all
+// its other abilities but Rampage went missing. We now read the first
+// two fields and ignore any trailing extras, matching the frontend
+// parser's behavior (npcHelpers.ts parseSpecialAbilities).
+//
 // Empty or null input returns nil.
 func ParseSpecialAbilities(raw string) []SpecialAbility {
 	raw = strings.TrimSpace(raw)
@@ -34,15 +43,15 @@ func ParseSpecialAbilities(raw string) []SpecialAbility {
 		if part == "" {
 			continue
 		}
-		kv := strings.SplitN(part, ",", 2)
-		if len(kv) != 2 {
+		fields := strings.Split(part, ",")
+		if len(fields) < 2 {
 			continue
 		}
-		code, err := strconv.Atoi(strings.TrimSpace(kv[0]))
+		code, err := strconv.Atoi(strings.TrimSpace(fields[0]))
 		if err != nil {
 			continue
 		}
-		val, err := strconv.Atoi(strings.TrimSpace(kv[1]))
+		val, err := strconv.Atoi(strings.TrimSpace(fields[1]))
 		if err != nil {
 			continue
 		}
