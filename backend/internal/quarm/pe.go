@@ -40,9 +40,21 @@ func InspectDLL(path string) (FileInfo, error) {
 	if err != nil {
 		return FileInfo{}, err
 	}
+	info, err := InspectDLLBytes(data)
+	if err != nil {
+		return info, err
+	}
+	info.Path = path
+	return info, nil
+}
+
+// InspectDLLBytes is the in-memory variant of InspectDLL. Used by the
+// manifest fetcher to inspect a reference DLL downloaded over HTTP without
+// touching disk. The returned FileInfo has Path="" — callers that care
+// (Settings UI) populate it from their own context.
+func InspectDLLBytes(data []byte) (FileInfo, error) {
 	sum := md5.Sum(data)
 	info := FileInfo{
-		Path: path,
 		Size: int64(len(data)),
 		MD5:  hex.EncodeToString(sum[:]),
 	}

@@ -16,6 +16,11 @@ export interface QuarmManifestEntry {
   md5: string
   date: string // YYYYMMDD
   size: number
+  // FileVersion extracted from the reference DLL the manifest points to.
+  // Empty when the entry isn't a DLL, the download failed, or the binary
+  // has no VS_VERSION_INFO resource. Used to mark "MD5 differs but version
+  // matches" cases as up-to-date instead of falsely warning.
+  ref_file_version?: string
 }
 
 export interface QuarmFileStatus {

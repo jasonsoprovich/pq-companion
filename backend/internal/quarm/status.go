@@ -129,10 +129,32 @@ func evaluateFile(eqPath, name string, manifest *Manifest) FileStatus {
 	}
 	out.Manifest = entry
 
+	// Exact byte match — strongest signal, always wins.
 	if entry.MD5 == info.MD5 && entry.Size == info.Size {
 		out.Status = StatusMatch
 		return out
 	}
+
+	// MD5 differs. The Pkelly668 manifest has historically lagged Quarm's
+	// real distribution (and Quarm's actual patcher may serve a different
+	// build with the same product version). Prefer FileVersion when both
+	// sides have one — if the version strings match, the binary is
+	// functionally the canonical client even though the bytes differ.
+	if entry.RefFileVersion != "" && info.FileVersion != "" {
+		if entry.RefFileVersion == info.FileVersion {
+			out.Status = StatusMatch
+			out.Reason = "version matches reference; checksum differs (likely a patcher build variant)"
+			return out
+		}
+		out.Status = StatusMismatch
+		out.Reason = "client version differs from patcher reference"
+		return out
+	}
+
+	// No reference version to compare against — keep the legacy MD5
+	// verdict but soften the language so users who just ran the patcher
+	// aren't told they're out of date with no way to fix it.
 	out.Status = StatusMismatch
+	out.Reason = "checksum differs from patcher reference"
 	return out
 }

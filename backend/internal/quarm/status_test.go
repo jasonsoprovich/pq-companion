@@ -89,6 +89,62 @@ func TestStatus_Mismatch(t *testing.T) {
 	}
 }
 
+// When the manifest's MD5 differs from the local file but the
+// FileVersion strings match (because the manifest's downloadprefix
+// resolves to a DLL with the same product version), Status should
+// report Match — not Mismatch — so users who ran the official Quarm
+// patcher aren't told they're out of date when they're actually fine.
+func TestStatus_VersionMatchesEvenWhenMD5Differs(t *testing.T) {
+	eqPath := testdataDir(t)
+	dllBytes, err := os.ReadFile(filepath.Join(eqPath, "eqgame.dll"))
+	if err != nil {
+		t.Fatalf("read fixture DLL: %v", err)
+	}
+
+	// Serve the manifest at /manifest.yml and the same DLL bytes the
+	// local fixture has at /eqgame.dll. The manifest declares a wrong
+	// MD5/size so the byte comparison fails, forcing the version path.
+	var srv *httptest.Server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/eqgame.dll", func(w http.ResponseWriter, r *http.Request) {
+		w.Write(dllBytes)
+	})
+	mux.HandleFunc("/manifest.yml", func(w http.ResponseWriter, r *http.Request) {
+		body := `version: test-version-match
+downloadprefix: ` + srv.URL + `/
+downloads:
+- name: eqgame.dll
+  md5: deadbeefdeadbeefdeadbeefdeadbeef
+  date: "20260101"
+  size: 1
+`
+		w.Write([]byte(body))
+	})
+	srv = httptest.NewServer(mux)
+	defer srv.Close()
+
+	f := &ManifestFetcher{
+		url:    srv.URL + "/manifest.yml",
+		ttl:    0,
+		client: srv.Client(),
+	}
+
+	s := Status(context.Background(), eqPath, f)
+	if len(s.Files) != 1 || s.Files[0].Name != "eqgame.dll" {
+		t.Fatalf("unexpected files: %+v", s.Files)
+	}
+	got := s.Files[0]
+	if got.Status != StatusMatch {
+		t.Errorf("status = %q, want %q (reason=%q)", got.Status, StatusMatch, got.Reason)
+	}
+	if got.Manifest == nil || got.Manifest.RefFileVersion == "" {
+		t.Errorf("expected manifest entry with non-empty RefFileVersion, got %+v", got.Manifest)
+	}
+	if got.Reason == "" {
+		t.Error("expected a Reason hint when match is via FileVersion fallback")
+	}
+}
+
 func TestStatus_NoEQPath(t *testing.T) {
 	srv := newServer(t, manifestMatchingLocal)
 	defer srv.Close()

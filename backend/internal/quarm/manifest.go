@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,11 +24,23 @@ import (
 const ManifestURL = "https://github.com/Pkelly668/QuarmPatcher/releases/latest/download/filelist_rof.yml"
 
 // ManifestEntry is one file listed in filelist_rof.yml.
+//
+// RefFileVersion is NOT read from the YAML — it is populated by the
+// ManifestFetcher after parsing, by downloading the reference DLL and
+// inspecting its VS_VERSION_INFO resource. The Pkelly668 patcher manifest
+// has historically lagged Quarm's actual distribution (the user runs the
+// official patcher and ends up with a different MD5 but the same product
+// version), so the Settings UI now prefers the version-string comparison
+// over MD5 and only flags a true version difference as "out of date."
+// Empty when the file has no version resource, the reference download
+// failed, or the manifest's downloadprefix isn't reachable — in those
+// cases callers should fall back to MD5.
 type ManifestEntry struct {
-	Name string `yaml:"name" json:"name"`
-	MD5  string `yaml:"md5" json:"md5"`
-	Date string `yaml:"date" json:"date"` // YYYYMMDD
-	Size int64  `yaml:"size" json:"size"`
+	Name           string `yaml:"name" json:"name"`
+	MD5            string `yaml:"md5" json:"md5"`
+	Date           string `yaml:"date" json:"date"` // YYYYMMDD
+	Size           int64  `yaml:"size" json:"size"`
+	RefFileVersion string `yaml:"-" json:"ref_file_version,omitempty"`
 }
 
 // Manifest mirrors the YAML structure exactly. We only read the fields we
@@ -121,10 +134,49 @@ func (f *ManifestFetcher) Get(ctx context.Context) (*Manifest, error) {
 		}
 		return nil, err
 	}
+	enrichRefFileVersions(ctx, f.client, m)
 	f.cached = m
 	f.cachedAt = time.Now()
 	f.lastErr = nil
 	return m, nil
+}
+
+// enrichRefFileVersions downloads each .dll entry's reference binary from
+// the manifest's downloadprefix and fills in RefFileVersion by inspecting
+// the VS_VERSION_INFO resource. Best-effort: any per-file failure (network
+// error, malformed PE, missing prefix) leaves RefFileVersion empty and the
+// status path falls back to MD5 comparison. We only enrich .dll entries
+// because they're the only files Settings inspects today; doing every
+// entry would be a ~250 MB download for no benefit.
+func enrichRefFileVersions(ctx context.Context, client *http.Client, m *Manifest) {
+	if m == nil || m.DownloadPrefix == "" {
+		return
+	}
+	for i := range m.Downloads {
+		e := &m.Downloads[i]
+		if !strings.HasSuffix(strings.ToLower(e.Name), ".dll") {
+			continue
+		}
+		url := m.DownloadPrefix + e.Name
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20)) // 32 MiB cap
+		resp.Body.Close()
+		if err != nil || resp.StatusCode != http.StatusOK {
+			continue
+		}
+		info, err := InspectDLLBytes(body)
+		if err != nil {
+			continue
+		}
+		e.RefFileVersion = info.FileVersion
+	}
 }
 
 // LastError reports the most recent fetch failure, if any. Used by the API

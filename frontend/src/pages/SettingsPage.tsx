@@ -125,6 +125,12 @@ function QuarmFileRow({ file }: { file: QuarmFileStatus }): React.ReactElement {
             , dated{' '}
             <span style={{ color: 'var(--color-foreground)' }}>{formatManifestDate(file.manifest.date)}</span>
           </div>
+          {file.manifest.ref_file_version && (
+            <div>
+              Manifest FileVersion:{' '}
+              <span style={{ color: 'var(--color-foreground)' }}>{file.manifest.ref_file_version}</span>
+            </div>
+          )}
           {file.local && file.local.md5 !== file.manifest.md5 && (
             <div className="font-mono">
               Manifest MD5: <span style={{ color: 'var(--color-foreground)' }}>{file.manifest.md5}</span>
@@ -133,7 +139,7 @@ function QuarmFileRow({ file }: { file: QuarmFileStatus }): React.ReactElement {
         </div>
       )}
 
-      {file.reason && !file.local && (
+      {file.reason && (
         <p className="mt-1" style={{ color: 'var(--color-muted-foreground)' }}>
           {file.reason}
         </p>
