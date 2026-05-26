@@ -382,6 +382,66 @@ function ProcRow({ label, proc, onClick }: { label: string; proc: NPCSpellProc; 
   )
 }
 
+// SPELL_LIST_COLLAPSED_COUNT is the cap on spells shown per source bucket
+// before the "Show N more" expand button kicks in. Geonid shamans and
+// other heavy casters can have 30+ entries; truncating keeps the section
+// from dominating the detail page.
+const SPELL_LIST_COLLAPSED_COUNT = 10
+
+function SpellBucket({
+  title,
+  entries,
+  onSpellClick,
+}: {
+  title: string
+  entries: NPCSpellEntry[]
+  onSpellClick: (id: number) => void
+}): React.ReactElement {
+  const [expanded, setExpanded] = useState(false)
+  const overflow = entries.length - SPELL_LIST_COLLAPSED_COUNT
+  const visible = expanded || overflow <= 0 ? entries : entries.slice(0, SPELL_LIST_COLLAPSED_COUNT)
+
+  return (
+    <div>
+      <div className="mb-0.5 text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+        {title} <span style={{ color: 'var(--color-muted)' }}>({entries.length})</span>
+      </div>
+      <div className="rounded border" style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)' }}>
+        {visible.map((e) => (
+          <div
+            key={`${e.source_id}-${e.spell_id}`}
+            className="flex items-center justify-between gap-2 px-2 py-1 text-sm"
+            style={{ borderTop: '1px solid var(--color-border)' }}
+          >
+            <SpellLink id={e.spell_id} name={e.spell_name} onClick={onSpellClick} />
+            <span className="text-xs tabular-nums" style={{ color: 'var(--color-muted)' }}>
+              L{e.min_level}{e.max_level < 255 ? `–${e.max_level}` : '+'}
+              {e.priority !== 0 ? ` · pri ${e.priority}` : ''}
+              {e.recast_delay > 0 ? ` · ${Math.round(e.recast_delay / 1000)}s` : ''}
+            </span>
+          </div>
+        ))}
+        {overflow > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpanded((s) => !s)}
+            className="w-full px-2 py-1 text-xs"
+            style={{
+              color: 'var(--color-primary)',
+              background: 'none',
+              border: 'none',
+              borderTop: '1px solid var(--color-border)',
+              cursor: 'pointer',
+            }}
+          >
+            {expanded ? '▴ Show less' : `▾ Show ${overflow} more`}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // Groups inherited entries together so a list with a parent_list chain
 // reads as "this NPC's own list" + "inherited from <parent>".
 function groupEntriesBySource(entries: NPCSpellEntry[], ownListID: number): { source: string; ownSource: boolean; entries: NPCSpellEntry[] }[] {
@@ -431,27 +491,12 @@ function NPCSpellsSection({ spells, onSpellClick }: NPCSpellsSectionProps): Reac
       )}
 
       {grouped.map((bucket) => (
-        <div key={bucket.source}>
-          <div className="mb-0.5 text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
-            {bucket.ownSource ? 'Cast spells' : `Inherited from ${bucket.source}`}
-          </div>
-          <div className="rounded border" style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)' }}>
-            {bucket.entries.map((e) => (
-              <div
-                key={`${e.source_id}-${e.spell_id}`}
-                className="flex items-center justify-between gap-2 px-2 py-1 text-sm"
-                style={{ borderTop: '1px solid var(--color-border)' }}
-              >
-                <SpellLink id={e.spell_id} name={e.spell_name} onClick={onSpellClick} />
-                <span className="text-xs tabular-nums" style={{ color: 'var(--color-muted)' }}>
-                  L{e.min_level}{e.max_level < 255 ? `–${e.max_level}` : '+'}
-                  {e.priority !== 0 ? ` · pri ${e.priority}` : ''}
-                  {e.recast_delay > 0 ? ` · ${Math.round(e.recast_delay / 1000)}s` : ''}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <SpellBucket
+          key={bucket.source}
+          title={bucket.ownSource ? 'Cast spells' : `Inherited from ${bucket.source}`}
+          entries={bucket.entries}
+          onSpellClick={onSpellClick}
+        />
       ))}
 
       {hasTimingData && (
