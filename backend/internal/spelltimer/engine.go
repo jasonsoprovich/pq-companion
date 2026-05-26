@@ -917,14 +917,20 @@ func (e *Engine) removeOnKill(target string) {
 	if target == "" {
 		return
 	}
+	normTarget := normalizeNPCName(target)
 	e.mu.Lock()
 	removed := 0
+	survivors := make([]string, 0, len(e.timers))
 	for k, t := range e.timers {
-		match := t.TargetName == target
+		match := normalizeNPCName(t.TargetName) == normTarget
 		orphan := t.TargetName == "" && isDetrimentalCategory(t.Category)
 		if match || orphan {
 			delete(e.timers, k)
 			removed++
+			continue
+		}
+		if isDetrimentalCategory(t.Category) {
+			survivors = append(survivors, t.SpellName+"@"+t.TargetName)
 		}
 	}
 	snap := e.snapshot(time.Now())
@@ -933,7 +939,31 @@ func (e *Engine) removeOnKill(target string) {
 	if removed > 0 {
 		slog.Info("timer-debug: removed timers on kill", "target", target, "removed", removed)
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+	} else {
+		slog.Info("timer-debug: kill matched no timers",
+			"target", target,
+			"normalized", normTarget,
+			"detrimental_survivors", survivors)
 	}
+}
+
+// normalizeNPCName returns a lowercased, trimmed form of an NPC name with any
+// leading article ("a ", "an ", "the ") removed. EQ logs and the Zeal pipe
+// usually agree on the surface form, but case or article quirks can sneak in
+// when a name is captured from different sources (kill line vs. spell-landed
+// line vs. pipe target slot). Using the normalized form for equality keeps
+// removeOnKill robust to those drift cases.
+func normalizeNPCName(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch {
+	case strings.HasPrefix(s, "a "):
+		return s[2:]
+	case strings.HasPrefix(s, "an "):
+		return s[3:]
+	case strings.HasPrefix(s, "the "):
+		return s[4:]
+	}
+	return s
 }
 
 // isDetrimentalCategory reports whether a timer category represents a
