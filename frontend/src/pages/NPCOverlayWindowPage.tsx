@@ -360,8 +360,8 @@ function NPCContent({ state, view }: { state: TargetState; view: View }): React.
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               <ResistChip type="magic"   value={npc.mr} />
               <ResistChip type="cold"    value={npc.cr} />
-              <ResistChip type="disease" value={npc.dr} />
               <ResistChip type="fire"    value={npc.fr} />
+              <ResistChip type="disease" value={npc.dr} />
               <ResistChip type="poison"  value={npc.pr} />
             </div>
 
