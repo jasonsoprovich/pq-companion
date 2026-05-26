@@ -26,7 +26,14 @@ import type { TimerState } from '../types/timer'
 import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
-import type { SandboxResult, SandboxSchemaResponse } from '../types/sandbox'
+import type {
+  SandboxResult,
+  SandboxSchemaResponse,
+  SavedQuery,
+  SavedQueryListResponse,
+  SavedQueryPack,
+  SavedQueryImportResponse,
+} from '../types/sandbox'
 
 export interface GlobalSearchResult {
   items: Item[]
@@ -1095,4 +1102,38 @@ export function getSandboxSchema(): Promise<SandboxSchemaResponse> {
 
 export function runSandboxQuery(sql: string): Promise<SandboxResult> {
   return post<SandboxResult>('/api/sandbox/query', { sql })
+}
+
+// Saved-query CRUD + pack import/export. Backed by user.db so entries
+// survive app updates (unlike the read-only quarm.db the sandbox queries
+// against).
+
+export interface SavedQueryInput {
+  name: string
+  description?: string
+  sql: string
+}
+
+export function listSavedQueries(): Promise<SavedQueryListResponse> {
+  return get<SavedQueryListResponse>('/api/sandbox/saved')
+}
+
+export function createSavedQuery(input: SavedQueryInput): Promise<SavedQuery> {
+  return post<SavedQuery>('/api/sandbox/saved', input)
+}
+
+export function updateSavedQuery(id: string, input: SavedQueryInput): Promise<SavedQuery> {
+  return put<SavedQuery>(`/api/sandbox/saved/${encodeURIComponent(id)}`, input)
+}
+
+export function deleteSavedQuery(id: string): Promise<void> {
+  return del<void>(`/api/sandbox/saved/${encodeURIComponent(id)}`)
+}
+
+export function exportSavedQueryPack(): Promise<SavedQueryPack> {
+  return get<SavedQueryPack>('/api/sandbox/saved/export')
+}
+
+export function importSavedQueryPack(pack: SavedQueryPack): Promise<SavedQueryImportResponse> {
+  return post<SavedQueryImportResponse>('/api/sandbox/saved/import', pack)
 }

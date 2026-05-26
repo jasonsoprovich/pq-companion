@@ -28,6 +28,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/sandbox"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/savedquery"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
@@ -593,7 +594,18 @@ func main() {
 		defer sb.Close()
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, keyringStore, keyringMaster, sb, actualPort)
+	// Saved-query store: persists user-authored SQL queries in user.db so
+	// they survive app updates and can be exported as JSON packs. Non-fatal
+	// — failure here just disables the Saved dropdown in the SQL panel.
+	savedQueryStore, err := savedquery.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	if err != nil {
+		slog.Warn("open saved query store (Saved dropdown disabled)", "err", err)
+		savedQueryStore = nil
+	} else {
+		defer savedQueryStore.Close()
+	}
+
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, keyringStore, keyringMaster, sb, savedQueryStore, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

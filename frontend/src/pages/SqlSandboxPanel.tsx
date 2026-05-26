@@ -1,7 +1,38 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Play, Loader2, Copy, Check, AlertTriangle, ChevronRight, ChevronDown, Table as TableIcon, Eye, BookOpen, History as HistoryIcon } from 'lucide-react'
-import { getSandboxSchema, runSandboxQuery } from '../services/api'
-import type { SandboxResult, SandboxTable } from '../types/sandbox'
+import {
+  Play,
+  Loader2,
+  Copy,
+  Check,
+  AlertTriangle,
+  ChevronRight,
+  ChevronDown,
+  Table as TableIcon,
+  Eye,
+  BookOpen,
+  History as HistoryIcon,
+  Bookmark,
+  BookmarkPlus,
+  Trash2,
+  Download,
+  Upload,
+} from 'lucide-react'
+import {
+  getSandboxSchema,
+  runSandboxQuery,
+  listSavedQueries,
+  createSavedQuery,
+  updateSavedQuery,
+  deleteSavedQuery,
+  exportSavedQueryPack,
+  importSavedQueryPack,
+} from '../services/api'
+import type {
+  SandboxResult,
+  SandboxTable,
+  SavedQuery,
+  SavedQueryPack,
+} from '../types/sandbox'
 import { STARTER_QUERIES } from '../lib/sandboxStarterQueries'
 
 const DEFAULT_QUERY = `-- Try a query. Hard cap: 10,000 rows, 8s deadline.
@@ -56,13 +87,39 @@ export default function SqlSandboxPanel(): React.ReactElement {
   const [copied, setCopied] = useState(false)
   const [showAll, setShowAll] = useState(false)
   const [history, setHistory] = useState<string[]>(loadInitialHistory)
+  const [saved, setSaved] = useState<SavedQuery[]>([])
+  const [savedError, setSavedError] = useState<string | null>(null)
+  // Tracks the id of the currently-loaded saved query (if any) so the Save
+  // button can offer "Save changes" vs "Save as new". Cleared whenever the
+  // user picks Examples / History or starts a new query from scratch.
+  const [loadedSavedId, setLoadedSavedId] = useState<string | null>(null)
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false)
+  const [saveDialogName, setSaveDialogName] = useState('')
+  const [saveDialogDesc, setSaveDialogDesc] = useState('')
+  const [saving, setSaving] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const importInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     getSandboxSchema()
       .then((r) => setSchema(r.tables))
       .catch((e: Error) => setSchemaError(e.message))
   }, [])
+
+  // Load the user's saved queries on mount. Failures aren't fatal — the
+  // sandbox still works without them, so we just surface a small inline
+  // error inside the Saved dropdown.
+  useEffect(() => {
+    listSavedQueries()
+      .then((r) => setSaved(r.queries))
+      .catch((e: Error) => setSavedError(e.message))
+  }, [])
+
+  const loadedSaved = useMemo(
+    () => (loadedSavedId ? saved.find((q) => q.id === loadedSavedId) ?? null : null),
+    [saved, loadedSavedId],
+  )
+  const hasUnsavedChanges = loadedSaved !== null && loadedSaved.sql !== sql
 
   // Persist the in-progress query so a tab switch (component unmount)
   // doesn't wipe the user's work. Cleared automatically on app quit
@@ -132,6 +189,115 @@ export default function SqlSandboxPanel(): React.ReactElement {
       el.focus()
       el.selectionStart = el.selectionEnd = start + text.length
     })
+  }
+
+  function openSaveDialog(): void {
+    // Prefill the form with the loaded saved query's metadata when there is
+    // one, so the common "edit & save changes" path doesn't force the user
+    // to retype the name every time.
+    if (loadedSaved) {
+      setSaveDialogName(loadedSaved.name)
+      setSaveDialogDesc(loadedSaved.description)
+    } else {
+      setSaveDialogName('')
+      setSaveDialogDesc('')
+    }
+    setSaveDialogOpen(true)
+  }
+
+  async function performSave(mode: 'update' | 'create'): Promise<void> {
+    const name = saveDialogName.trim()
+    if (!name) {
+      setSavedError('Name is required.')
+      return
+    }
+    setSaving(true)
+    setSavedError(null)
+    try {
+      if (mode === 'update' && loadedSavedId) {
+        const updated = await updateSavedQuery(loadedSavedId, {
+          name,
+          description: saveDialogDesc,
+          sql,
+        })
+        setSaved((prev) => sortByName(prev.map((q) => (q.id === updated.id ? updated : q))))
+      } else {
+        const created = await createSavedQuery({ name, description: saveDialogDesc, sql })
+        setSaved((prev) => sortByName([...prev, created]))
+        setLoadedSavedId(created.id)
+      }
+      setSaveDialogOpen(false)
+    } catch (e) {
+      setSavedError((e as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function loadSavedQuery(q: SavedQuery): void {
+    setSql(q.sql)
+    setLoadedSavedId(q.id)
+    setResult(null)
+    setError(null)
+  }
+
+  async function removeSavedQuery(id: string): Promise<void> {
+    try {
+      await deleteSavedQuery(id)
+      setSaved((prev) => prev.filter((q) => q.id !== id))
+      if (loadedSavedId === id) setLoadedSavedId(null)
+    } catch (e) {
+      setSavedError((e as Error).message)
+    }
+  }
+
+  async function exportPack(): Promise<void> {
+    try {
+      const pack = await exportSavedQueryPack()
+      // Build a Blob on the renderer side and trigger a download via a
+      // synthetic anchor. Keeps the file picker (and "where to save")
+      // entirely client-side, where the user expects it.
+      const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'pq-companion-queries.json'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setSavedError((e as Error).message)
+    }
+  }
+
+  function triggerImport(): void {
+    importInputRef.current?.click()
+  }
+
+  async function handleImportFile(file: File): Promise<void> {
+    try {
+      const text = await file.text()
+      let pack: SavedQueryPack
+      try {
+        pack = JSON.parse(text) as SavedQueryPack
+      } catch {
+        setSavedError('Selected file is not valid JSON.')
+        return
+      }
+      if (pack.kind !== 'pq-companion.query-pack') {
+        setSavedError(
+          'Selected file is not a PQ Companion query pack (missing or wrong "kind" field).',
+        )
+        return
+      }
+      await importSavedQueryPack(pack)
+      const refreshed = await listSavedQueries()
+      setSaved(refreshed.queries)
+      setSavedError(null)
+    } catch (e) {
+      setSavedError((e as Error).message)
+    }
   }
 
   async function copyQuery(): Promise<void> {
@@ -276,6 +442,56 @@ export default function SqlSandboxPanel(): React.ReactElement {
 
         {/* Query editor + action row */}
         <div className="flex min-w-0 flex-1 flex-col gap-2">
+          {loadedSaved && !saveDialogOpen && (
+            <div
+              className="flex items-center gap-2 rounded px-3 py-1.5 text-[11px]"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-muted-foreground)',
+              }}
+            >
+              <Bookmark size={12} style={{ color: 'var(--color-primary)' }} />
+              <span>
+                Editing <strong style={{ color: 'var(--color-foreground)' }}>{loadedSaved.name}</strong>
+              </span>
+              {hasUnsavedChanges && (
+                <span style={{ color: '#fbbf24' }}>· unsaved changes</span>
+              )}
+              <button
+                type="button"
+                onClick={() => setLoadedSavedId(null)}
+                className="ml-auto"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  color: 'var(--color-muted)',
+                  textDecoration: 'underline',
+                }}
+                title="Detach this query from the saved entry (won't delete it)"
+              >
+                detach
+              </button>
+            </div>
+          )}
+          {saveDialogOpen && (
+            <SaveDialog
+              name={saveDialogName}
+              description={saveDialogDesc}
+              onName={setSaveDialogName}
+              onDescription={setSaveDialogDesc}
+              saving={saving}
+              canUpdate={loadedSavedId !== null}
+              onCancel={() => {
+                setSaveDialogOpen(false)
+                setSavedError(null)
+              }}
+              onUpdate={() => void performSave('update')}
+              onCreate={() => void performSave('create')}
+            />
+          )}
           <textarea
             ref={textareaRef}
             value={sql}
@@ -298,6 +514,7 @@ export default function SqlSandboxPanel(): React.ReactElement {
             <ExamplesPicker
               onPick={(sql) => {
                 setSql(sql)
+                setLoadedSavedId(null)
                 setResult(null)
                 setError(null)
               }}
@@ -306,10 +523,53 @@ export default function SqlSandboxPanel(): React.ReactElement {
               history={history}
               onPick={(sql) => {
                 setSql(sql)
+                setLoadedSavedId(null)
                 setResult(null)
                 setError(null)
               }}
               onClear={() => setHistory([])}
+            />
+            <SavedPicker
+              saved={saved}
+              error={savedError}
+              loadedSavedId={loadedSavedId}
+              onPick={loadSavedQuery}
+              onDelete={(id) => void removeSavedQuery(id)}
+              onExport={() => void exportPack()}
+              onImport={triggerImport}
+            />
+            <button
+              type="button"
+              onClick={openSaveDialog}
+              className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                cursor: 'pointer',
+              }}
+              title={
+                loadedSaved
+                  ? hasUnsavedChanges
+                    ? `Update "${loadedSaved.name}" or save a new copy`
+                    : `Edit "${loadedSaved.name}" metadata`
+                  : 'Save this query for later'
+              }
+            >
+              <BookmarkPlus size={12} />
+              {loadedSaved && hasUnsavedChanges ? 'Save changes' : 'Save'}
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) void handleImportFile(file)
+                // Reset so picking the same file twice still fires onChange.
+                e.target.value = ''
+              }}
             />
             <button
               type="button"
@@ -541,6 +801,370 @@ function ExamplesPicker({ onPick }: { onPick: (sql: string) => void }): React.Re
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// sortByName keeps the in-memory list aligned with the backend's
+// ORDER BY name COLLATE NOCASE so insertions don't briefly shuffle the
+// dropdown out of order.
+function sortByName(list: SavedQuery[]): SavedQuery[] {
+  return [...list].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+}
+
+// SavedPicker is the dropdown next to Examples/History that lists the
+// user's saved queries from user.db. Each row is clickable to load,
+// plus a small Delete affordance and pack import/export at the bottom.
+function SavedPicker({
+  saved,
+  error,
+  loadedSavedId,
+  onPick,
+  onDelete,
+  onExport,
+  onImport,
+}: {
+  saved: SavedQuery[]
+  error: string | null
+  loadedSavedId: string | null
+  onPick: (q: SavedQuery) => void
+  onDelete: (id: string) => void
+  onExport: () => void
+  onImport: () => void
+}): React.ReactElement {
+  const [open, setOpen] = useState(false)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const ref = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent): void => {
+      if (!ref.current?.contains(e.target as Node)) {
+        setOpen(false)
+        setConfirmId(null)
+      }
+    }
+    window.addEventListener('mousedown', close)
+    return () => window.removeEventListener('mousedown', close)
+  }, [open])
+  const count = saved.length
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
+        style={{
+          backgroundColor: 'var(--color-surface-2)',
+          border: '1px solid var(--color-border)',
+          color: 'var(--color-foreground)',
+          cursor: 'pointer',
+        }}
+      >
+        <Bookmark size={12} />
+        Saved
+        {count > 0 && (
+          <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+            ({count})
+          </span>
+        )}
+      </button>
+      {open && (
+        <div
+          className="absolute z-10 mt-1 overflow-hidden rounded shadow-lg"
+          style={{
+            top: '100%',
+            left: 0,
+            width: 440,
+            maxHeight: 420,
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          <div
+            style={{
+              overflowY: 'auto',
+              flex: 1,
+            }}
+          >
+            {error && (
+              <p className="px-3 py-2 text-xs" style={{ color: '#f87171' }}>
+                {error}
+              </p>
+            )}
+            {!error && saved.length === 0 && (
+              <p className="px-3 py-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                No saved queries yet. Use <strong>Save</strong> after a run to keep one for later.
+              </p>
+            )}
+            {saved.map((q) => {
+              const isLoaded = q.id === loadedSavedId
+              const confirming = q.id === confirmId
+              return (
+                <div
+                  key={q.id}
+                  className="flex items-start gap-2 px-3 py-2 text-xs"
+                  style={{
+                    borderBottom: '1px solid var(--color-border)',
+                    backgroundColor: isLoaded
+                      ? 'color-mix(in srgb, var(--color-primary) 8%, transparent)'
+                      : 'transparent',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isLoaded) e.currentTarget.style.backgroundColor = 'var(--color-surface-2)'
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isLoaded) e.currentTarget.style.backgroundColor = 'transparent'
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onPick(q)
+                      setOpen(false)
+                    }}
+                    className="min-w-0 flex-1 text-left"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
+                      color: 'var(--color-foreground)',
+                    }}
+                    title={q.sql}
+                  >
+                    <div style={{ fontWeight: 600 }}>{q.name}</div>
+                    {q.description && (
+                      <div
+                        className="mt-0.5"
+                        style={{
+                          color: 'var(--color-muted-foreground)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {q.description}
+                      </div>
+                    )}
+                  </button>
+                  {confirming ? (
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onDelete(q.id)
+                          setConfirmId(null)
+                        }}
+                        className="rounded px-2 py-0.5 text-[10px] font-semibold"
+                        style={{
+                          backgroundColor: '#dc2626',
+                          color: '#fff',
+                          border: 'none',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Delete
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmId(null)}
+                        className="rounded px-2 py-0.5 text-[10px]"
+                        style={{
+                          backgroundColor: 'transparent',
+                          color: 'var(--color-muted)',
+                          border: '1px solid var(--color-border)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmId(q.id)}
+                      className="shrink-0"
+                      title="Delete this saved query"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: 2,
+                        cursor: 'pointer',
+                        color: 'var(--color-muted)',
+                      }}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <div
+            className="flex items-center gap-1 px-2 py-1.5"
+            style={{
+              borderTop: '1px solid var(--color-border)',
+              backgroundColor: 'var(--color-surface-2)',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                onImport()
+                setOpen(false)
+              }}
+              className="flex items-center gap-1 rounded px-2 py-1 text-[11px]"
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                cursor: 'pointer',
+              }}
+              title="Import a JSON query pack from a file"
+            >
+              <Upload size={11} />
+              Import pack
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onExport()
+                setOpen(false)
+              }}
+              disabled={saved.length === 0}
+              className="flex items-center gap-1 rounded px-2 py-1 text-[11px]"
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                cursor: saved.length === 0 ? 'not-allowed' : 'pointer',
+                opacity: saved.length === 0 ? 0.5 : 1,
+              }}
+              title="Download all saved queries as a JSON pack to share"
+            >
+              <Download size={11} />
+              Export pack
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// SaveDialog is the inline form rendered above the textarea when the user
+// clicks Save. Two paths: "Save changes" updates the currently-loaded
+// saved entry; "Save as new" always creates a fresh row.
+function SaveDialog({
+  name,
+  description,
+  onName,
+  onDescription,
+  saving,
+  canUpdate,
+  onCancel,
+  onUpdate,
+  onCreate,
+}: {
+  name: string
+  description: string
+  onName: (v: string) => void
+  onDescription: (v: string) => void
+  saving: boolean
+  canUpdate: boolean
+  onCancel: () => void
+  onUpdate: () => void
+  onCreate: () => void
+}): React.ReactElement {
+  return (
+    <div
+      className="flex flex-col gap-2 rounded px-3 py-2 text-xs"
+      style={{
+        backgroundColor: 'var(--color-surface-2)',
+        border: '1px solid var(--color-border)',
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => onName(e.target.value)}
+          placeholder="Query name"
+          className="rounded px-2 py-1 text-xs"
+          style={{
+            flex: 1,
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-foreground)',
+            outline: 'none',
+          }}
+          autoFocus
+        />
+        <input
+          type="text"
+          value={description}
+          onChange={(e) => onDescription(e.target.value)}
+          placeholder="Description (optional)"
+          className="rounded px-2 py-1 text-xs"
+          style={{
+            flex: 2,
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-foreground)',
+            outline: 'none',
+          }}
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        {canUpdate && (
+          <button
+            type="button"
+            onClick={onUpdate}
+            disabled={saving}
+            className="rounded px-3 py-1 text-xs font-semibold"
+            style={{
+              backgroundColor: 'var(--color-primary)',
+              color: '#fff',
+              border: 'none',
+              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.7 : 1,
+            }}
+          >
+            Save changes
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onCreate}
+          disabled={saving}
+          className="rounded px-3 py-1 text-xs font-medium"
+          style={{
+            backgroundColor: canUpdate ? 'var(--color-surface)' : 'var(--color-primary)',
+            color: canUpdate ? 'var(--color-foreground)' : '#fff',
+            border: canUpdate ? '1px solid var(--color-border)' : 'none',
+            cursor: saving ? 'not-allowed' : 'pointer',
+            opacity: saving ? 0.7 : 1,
+          }}
+        >
+          {canUpdate ? 'Save as new' : 'Save'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={saving}
+          className="ml-auto rounded px-3 py-1 text-xs"
+          style={{
+            backgroundColor: 'transparent',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-foreground)',
+            cursor: saving ? 'not-allowed' : 'pointer',
+          }}
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   )
 }
