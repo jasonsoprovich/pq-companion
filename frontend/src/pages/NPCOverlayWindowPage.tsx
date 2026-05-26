@@ -4,6 +4,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
+import { useNPCOverlaySections } from '../hooks/useNPCOverlaySections'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { ItemIcon } from '../components/Icon'
 import { ResistChip } from '../components/ResistChip'
@@ -12,6 +13,7 @@ import { className, bodyTypeName } from '../lib/npcHelpers'
 import { effectiveDropPct, rarityColor } from '../lib/lootHelpers'
 import type { TargetState, SpecialAbility } from '../types/overlay'
 import type { NPCLootTable, LootDrop } from '../types/npc'
+import type { NPCOverlaySections } from '../types/config'
 
 // ── Ability badge colours ──────────────────────────────────────────────────────
 // Yellow  = special attacks (direct combat threat to the player)
@@ -219,7 +221,15 @@ function LootContent({ npcId }: { npcId: number }): React.ReactElement {
   )
 }
 
-function NPCContent({ state, view }: { state: TargetState; view: View }): React.ReactElement {
+function NPCContent({
+  state,
+  view,
+  sections,
+}: {
+  state: TargetState
+  view: View
+  sections: NPCOverlaySections
+}): React.ReactElement {
   const npc = state.npc_data
   const abilities = (state.special_abilities ?? []).filter((a) => a.value !== 0)
 
@@ -297,47 +307,50 @@ function NPCContent({ state, view }: { state: TargetState; view: View }): React.
           <LootContent npcId={npc.id} />
         ) : (
           <>
-            {/* Identity */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              <Chip label="Lv" value={npc.level} color="#c9a84c" />
-              <Chip value={className(npc.class)} />
-              <Chip value={npc.race_name} />
-              <Chip value={bodyTypeName(npc.body_type)} />
-            </div>
+            {sections.identity && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                <Chip label="Lv" value={npc.level} color="#c9a84c" />
+                <Chip value={className(npc.class)} />
+                <Chip value={npc.race_name} />
+                <Chip value={bodyTypeName(npc.body_type)} />
+              </div>
+            )}
 
-            {/* Combat */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              <Chip label="HP" value={npc.hp.toLocaleString()} color="#22c55e" />
-              {npc.mana > 0 && (
-                <Chip label="Mana" value={npc.mana.toLocaleString()} color="#3b82f6" />
-              )}
-              <Chip label="AC" value={npc.ac} />
-              <Chip label="DMG" value={`${npc.min_dmg}-${npc.max_dmg}`} color="#ef4444" />
-              <Chip label="Atk/Rd" value={npc.attack_count < 0 ? 'default' : npc.attack_count} />
-            </div>
+            {sections.combat && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                <Chip label="HP" value={npc.hp.toLocaleString()} color="#22c55e" />
+                {npc.mana > 0 && (
+                  <Chip label="Mana" value={npc.mana.toLocaleString()} color="#3b82f6" />
+                )}
+                <Chip label="AC" value={npc.ac} />
+                <Chip label="DMG" value={`${npc.min_dmg}-${npc.max_dmg}`} color="#ef4444" />
+                <Chip label="Atk/Rd" value={npc.attack_count < 0 ? 'default' : npc.attack_count} />
+              </div>
+            )}
 
-            {/* Resists */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              <ResistChip type="magic"   value={npc.mr} />
-              <ResistChip type="cold"    value={npc.cr} />
-              <ResistChip type="fire"    value={npc.fr} />
-              <ResistChip type="disease" value={npc.dr} />
-              <ResistChip type="poison"  value={npc.pr} />
-            </div>
+            {sections.resists && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                <ResistChip type="magic"   value={npc.mr} />
+                <ResistChip type="cold"    value={npc.cr} />
+                <ResistChip type="fire"    value={npc.fr} />
+                <ResistChip type="disease" value={npc.dr} />
+                <ResistChip type="poison"  value={npc.pr} />
+              </div>
+            )}
 
-            {/* Attributes */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              <Chip label="STR" value={npc.str} />
-              <Chip label="STA" value={npc.sta} />
-              <Chip label="DEX" value={npc.dex} />
-              <Chip label="AGI" value={npc.agi} />
-              <Chip label="INT" value={npc.int} />
-              <Chip label="WIS" value={npc.wis} />
-              <Chip label="CHA" value={npc.cha} />
-            </div>
+            {sections.attributes && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                <Chip label="STR" value={npc.str} />
+                <Chip label="STA" value={npc.sta} />
+                <Chip label="DEX" value={npc.dex} />
+                <Chip label="AGI" value={npc.agi} />
+                <Chip label="INT" value={npc.int} />
+                <Chip label="WIS" value={npc.wis} />
+                <Chip label="CHA" value={npc.cha} />
+              </div>
+            )}
 
-            {/* Special Abilities */}
-            {abilities.length > 0 && (
+            {sections.special_abilities && abilities.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                 {abilities.map((a) => (
                   <AbilityBadge key={a.code} ability={a} />
@@ -362,6 +375,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
   const [target, setTarget] = useState<TargetState | null>(null)
   const [view, setView] = useState<View>('stats')
+  const sections = useNPCOverlaySections('popout')
 
   useEffect(() => {
     getOverlayNPCTarget()
@@ -440,7 +454,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
           <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: 0 }}>Loading…</p>
         </div>
       ) : target.has_target ? (
-        <NPCContent state={target} view={view} />
+        <NPCContent state={target} view={view} sections={sections} />
       ) : (
         <NoTarget zone={target.current_zone} />
       )}

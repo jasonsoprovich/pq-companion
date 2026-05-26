@@ -1,3 +1,19 @@
+export interface NPCOverlaySections {
+  identity: boolean
+  combat: boolean
+  resists: boolean
+  attributes: boolean
+  special_abilities: boolean
+}
+
+export const DEFAULT_NPC_OVERLAY_SECTIONS: NPCOverlaySections = {
+  identity: true,
+  combat: true,
+  resists: true,
+  attributes: true,
+  special_abilities: true,
+}
+
 export interface Preferences {
   overlay_opacity: number
   minimize_to_tray: boolean
@@ -6,6 +22,8 @@ export interface Preferences {
   overlay_hps_enabled: boolean
   master_volume: number
   developer_mode: boolean
+  npc_overlay_dashboard_sections: NPCOverlaySections
+  npc_overlay_popout_sections: NPCOverlaySections
 }
 
 export interface BackupSettings {

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Crosshair, AlertTriangle, CheckCircle2, Circle, ExternalLink } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { useNPCOverlaySections } from '../../hooks/useNPCOverlaySections'
 import { WSEvent } from '../../lib/wsEvents'
 import { getOverlayNPCTarget, getLogStatus, getNPCLoot, getItem } from '../../services/api'
 import { className, bodyTypeName } from '../../lib/npcHelpers'
@@ -14,6 +15,7 @@ import type { TargetState, SpecialAbility } from '../../types/overlay'
 import type { LogTailerStatus } from '../../types/logEvent'
 import type { NPCLootTable, LootDrop } from '../../types/npc'
 import type { Item } from '../../types/item'
+import type { NPCOverlaySections } from '../../types/config'
 
 type View = 'stats' | 'loot'
 
@@ -318,10 +320,12 @@ function NoTarget({ zone }: { zone?: string }): React.ReactElement {
 function NPCCard({
   state,
   view,
+  sections,
   onItemClick,
 }: {
   state: TargetState
   view: View
+  sections: NPCOverlaySections
   onItemClick: (id: number) => void
 }): React.ReactElement {
   const npc = state.npc_data
@@ -374,55 +378,63 @@ function NPCCard({
           <LootSection npcId={npc.id} onItemClick={onItemClick} />
         ) : (
         <>
-          <div>
-            <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Identity</p>
-            <div className="flex flex-wrap gap-1.5">
-              <Stat label="Level" value={npc.level} color="var(--color-primary)" />
-              <Stat label="Class" value={className(npc.class)} />
-              <Stat label="Race" value={npc.race_name} />
-              <Stat label="Body" value={bodyTypeName(npc.body_type)} />
+          {sections.identity && (
+            <div>
+              <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Identity</p>
+              <div className="flex flex-wrap gap-1.5">
+                <Stat label="Level" value={npc.level} color="var(--color-primary)" />
+                <Stat label="Class" value={className(npc.class)} />
+                <Stat label="Race" value={npc.race_name} />
+                <Stat label="Body" value={bodyTypeName(npc.body_type)} />
+              </div>
             </div>
-          </div>
+          )}
 
-          <div>
-            <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Combat</p>
-            <div className="flex flex-wrap gap-1.5">
-              <Stat label="HP" value={npc.hp.toLocaleString()} color="#22c55e" />
-              {npc.mana > 0 && (
-                <Stat label="Mana" value={npc.mana.toLocaleString()} color="#3b82f6" />
-              )}
-              <Stat label="AC" value={npc.ac} />
-              <Stat label="Min DMG" value={npc.min_dmg} color="#ef4444" />
-              <Stat label="Max DMG" value={npc.max_dmg} color="#ef4444" />
-              <Stat label="Atk/Rd" value={npc.attack_count < 0 ? 'default' : npc.attack_count} />
+          {sections.combat && (
+            <div>
+              <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Combat</p>
+              <div className="flex flex-wrap gap-1.5">
+                <Stat label="HP" value={npc.hp.toLocaleString()} color="#22c55e" />
+                {npc.mana > 0 && (
+                  <Stat label="Mana" value={npc.mana.toLocaleString()} color="#3b82f6" />
+                )}
+                <Stat label="AC" value={npc.ac} />
+                <Stat label="Min DMG" value={npc.min_dmg} color="#ef4444" />
+                <Stat label="Max DMG" value={npc.max_dmg} color="#ef4444" />
+                <Stat label="Atk/Rd" value={npc.attack_count < 0 ? 'default' : npc.attack_count} />
+              </div>
             </div>
-          </div>
+          )}
 
-          <div>
-            <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Resists</p>
-            <div className="flex flex-wrap gap-1.5">
-              <ResistChip type="magic"   value={npc.mr} />
-              <ResistChip type="cold"    value={npc.cr} />
-              <ResistChip type="fire"    value={npc.fr} />
-              <ResistChip type="disease" value={npc.dr} />
-              <ResistChip type="poison"  value={npc.pr} />
+          {sections.resists && (
+            <div>
+              <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Resists</p>
+              <div className="flex flex-wrap gap-1.5">
+                <ResistChip type="magic"   value={npc.mr} />
+                <ResistChip type="cold"    value={npc.cr} />
+                <ResistChip type="fire"    value={npc.fr} />
+                <ResistChip type="disease" value={npc.dr} />
+                <ResistChip type="poison"  value={npc.pr} />
+              </div>
             </div>
-          </div>
+          )}
 
-          <div>
-            <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Attributes</p>
-            <div className="flex flex-wrap gap-1.5">
-              <Stat label="STR" value={npc.str} />
-              <Stat label="STA" value={npc.sta} />
-              <Stat label="DEX" value={npc.dex} />
-              <Stat label="AGI" value={npc.agi} />
-              <Stat label="INT" value={npc.int} />
-              <Stat label="WIS" value={npc.wis} />
-              <Stat label="CHA" value={npc.cha} />
+          {sections.attributes && (
+            <div>
+              <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Attributes</p>
+              <div className="flex flex-wrap gap-1.5">
+                <Stat label="STR" value={npc.str} />
+                <Stat label="STA" value={npc.sta} />
+                <Stat label="DEX" value={npc.dex} />
+                <Stat label="AGI" value={npc.agi} />
+                <Stat label="INT" value={npc.int} />
+                <Stat label="WIS" value={npc.wis} />
+                <Stat label="CHA" value={npc.cha} />
+              </div>
             </div>
-          </div>
+          )}
 
-          {abilities.length > 0 && (
+          {sections.special_abilities && abilities.length > 0 && (
             <div>
               <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Special Abilities</p>
               <div className="flex flex-wrap gap-1">
@@ -456,6 +468,7 @@ export default function NPCPanel({
   const [view, setView] = useState<View>('stats')
   const [modalItem, setModalItem] = useState<Item | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const sections = useNPCOverlaySections('dashboard')
 
   useEffect(() => {
     getOverlayNPCTarget().then(setTarget).catch(() => setTarget(null))
@@ -520,7 +533,7 @@ export default function NPCPanel({
             <p className="text-sm" style={{ color: 'var(--color-muted)' }}>Loading…</p>
           </div>
         ) : target.has_target ? (
-          <NPCCard state={target} view={view} onItemClick={handleItemClick} />
+          <NPCCard state={target} view={view} sections={sections} onItemClick={handleItemClick} />
         ) : (
           <NoTarget zone={target.current_zone} />
         )}

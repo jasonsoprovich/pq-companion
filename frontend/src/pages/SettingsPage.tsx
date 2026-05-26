@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2 } from 'lucide-react'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, type ServerInfo, type TestPortResult } from '../services/api'
-import type { Config, DPSClassColors } from '../types/config'
-import { DEFAULT_DPS_CLASS_COLORS } from '../types/config'
+import type { Config, DPSClassColors, NPCOverlaySections } from '../types/config'
+import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
 import type { LogFileInfo } from '../types/logEvent'
 import type { ZealInstallStatus, ZealPipeStatus } from '../types/zeal'
 import type { QuarmClientStatus, QuarmFileStatus } from '../types/quarm'
@@ -1289,6 +1289,38 @@ export default function SettingsPage(): React.ReactElement {
         </section>
         )}
 
+        {/* ── NPC Overlay sections ───────────────────────────────────────── */}
+        {tab === 'overlays' && (
+        <NPCOverlaySectionsCard
+          dashboard={
+            config.preferences.npc_overlay_dashboard_sections ??
+            DEFAULT_NPC_OVERLAY_SECTIONS
+          }
+          popout={
+            config.preferences.npc_overlay_popout_sections ??
+            DEFAULT_NPC_OVERLAY_SECTIONS
+          }
+          onChangeDashboard={(next) =>
+            setConfig({
+              ...config,
+              preferences: {
+                ...config.preferences,
+                npc_overlay_dashboard_sections: next,
+              },
+            })
+          }
+          onChangePopout={(next) =>
+            setConfig({
+              ...config,
+              preferences: {
+                ...config.preferences,
+                npc_overlay_popout_sections: next,
+              },
+            })
+          }
+        />
+        )}
+
         {/* ── Spell Timers ───────────────────────────────────────────────── */}
         {tab === 'spelltimers' && (
         <section
@@ -2088,6 +2120,105 @@ function DPSClassColorsSection({
         })}
       </div>
     </section>
+  )
+}
+
+// NPCOverlaySectionsCard renders two parallel checklists controlling which
+// information sections appear on each NPC overlay surface (the embedded
+// dashboard panel and the floating popout window). Name, zone, pet owner,
+// raid/rare badges, and the HP bar are always shown — they're the
+// minimum-viable readout that justifies the overlay existing.
+const NPC_SECTION_ROWS: ReadonlyArray<{
+  key: keyof NPCOverlaySections
+  label: string
+  hint: string
+}> = [
+  { key: 'identity', label: 'Identity', hint: 'Level, class, race, body type' },
+  { key: 'combat', label: 'Combat', hint: 'HP, mana, AC, damage, attacks/round' },
+  { key: 'resists', label: 'Resists', hint: 'MR, CR, FR, DR, PR chips' },
+  { key: 'attributes', label: 'Attributes', hint: 'STR / STA / DEX / AGI / INT / WIS / CHA' },
+  { key: 'special_abilities', label: 'Special Abilities', hint: 'Summon, rampage, immunities, etc.' },
+]
+
+function NPCOverlaySectionsCard({
+  dashboard,
+  popout,
+  onChangeDashboard,
+  onChangePopout,
+}: {
+  dashboard: NPCOverlaySections
+  popout: NPCOverlaySections
+  onChangeDashboard: (next: NPCOverlaySections) => void
+  onChangePopout: (next: NPCOverlaySections) => void
+}): React.ReactElement {
+  return (
+    <section
+      className="mt-4 rounded-lg p-4"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+    >
+      <h2
+        className="mb-1 text-sm font-semibold uppercase tracking-wide"
+        style={{ color: 'var(--color-muted)' }}
+      >
+        NPC Overlay Sections
+      </h2>
+      <p className="mb-4 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+        Choose which sections appear on each NPC overlay surface. The target name and HP bar are always shown.
+      </p>
+
+      <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
+        <NPCSectionList
+          title="Dashboard panel"
+          value={dashboard}
+          onChange={onChangeDashboard}
+        />
+        <NPCSectionList
+          title="Popout overlay"
+          value={popout}
+          onChange={onChangePopout}
+        />
+      </div>
+    </section>
+  )
+}
+
+function NPCSectionList({
+  title,
+  value,
+  onChange,
+}: {
+  title: string
+  value: NPCOverlaySections
+  onChange: (next: NPCOverlaySections) => void
+}): React.ReactElement {
+  return (
+    <div
+      className="rounded p-3"
+      style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+    >
+      <p
+        className="mb-2 text-xs font-semibold uppercase tracking-wide"
+        style={{ color: 'var(--color-muted-foreground)' }}
+      >
+        {title}
+      </p>
+      <div className="flex flex-col gap-2">
+        {NPC_SECTION_ROWS.map((row) => (
+          <label key={row.key} className="flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              checked={value[row.key]}
+              onChange={(e) => onChange({ ...value, [row.key]: e.target.checked })}
+              style={{ marginTop: 3 }}
+            />
+            <span>
+              <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>{row.label}</span>
+              <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>{row.hint}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </div>
   )
 }
 

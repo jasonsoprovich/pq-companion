@@ -224,6 +224,39 @@ type Preferences struct {
 	// via the Ctrl+Shift+D shortcut while the Settings page is focused.
 	// Off by default so casual users don't stumble into raw-DB territory.
 	DeveloperMode bool `yaml:"developer_mode,omitempty" json:"developer_mode"`
+
+	// NPCOverlayDashboardSections controls which optional sections of the
+	// NPC overlay are visible in the dashboard panel. Name, zone, pet
+	// owner, raid/rare badges, and the HP bar are always shown regardless
+	// of these toggles.
+	NPCOverlayDashboardSections NPCOverlaySections `yaml:"npc_overlay_dashboard_sections" json:"npc_overlay_dashboard_sections"`
+
+	// NPCOverlayPopoutSections is the same toggle set applied to the
+	// floating popout overlay window, so users can run a denser surface
+	// in one place and a sparser one in the other.
+	NPCOverlayPopoutSections NPCOverlaySections `yaml:"npc_overlay_popout_sections" json:"npc_overlay_popout_sections"`
+}
+
+// NPCOverlaySections toggles individual NPC overlay sections on/off. All
+// fields default to true so behaviour is unchanged for upgrading users.
+type NPCOverlaySections struct {
+	Identity         bool `yaml:"identity" json:"identity"`
+	Combat           bool `yaml:"combat" json:"combat"`
+	Resists          bool `yaml:"resists" json:"resists"`
+	Attributes       bool `yaml:"attributes" json:"attributes"`
+	SpecialAbilities bool `yaml:"special_abilities" json:"special_abilities"`
+}
+
+// DefaultNPCOverlaySections returns the all-visible default — matches the
+// behaviour before this preference existed.
+func DefaultNPCOverlaySections() NPCOverlaySections {
+	return NPCOverlaySections{
+		Identity:         true,
+		Combat:           true,
+		Resists:          true,
+		Attributes:       true,
+		SpecialAbilities: true,
+	}
 }
 
 // defaults returns a Config populated with sensible default values.
@@ -237,12 +270,14 @@ func defaults() Config {
 		ServerAddr:     ":17654",
 		CharacterClass: -1,
 		Preferences: Preferences{
-			OverlayOpacity:    0.25,
-			MinimizeToTray:    true,
-			ParseCombatLog:    true,
-			OverlayDPSEnabled: true,
-			OverlayHPSEnabled: false,
-			MasterVolume:      100,
+			OverlayOpacity:              0.25,
+			MinimizeToTray:              true,
+			ParseCombatLog:              true,
+			OverlayDPSEnabled:           true,
+			OverlayHPSEnabled:           false,
+			MasterVolume:                100,
+			NPCOverlayDashboardSections: DefaultNPCOverlaySections(),
+			NPCOverlayPopoutSections:    DefaultNPCOverlaySections(),
 		},
 		Backup: BackupSettings{
 			AutoBackup: false,
@@ -352,7 +387,25 @@ func applyDefaults(cfg *Config) bool {
 	if fillDPSColorDefaults(&cfg.DPSClassColors) {
 		changed = true
 	}
+	// NPC overlay sections: configs that predate this preference deserialize
+	// with every bool false, which would hide every section. Detect the
+	// all-zero case and substitute the all-visible default so the overlay
+	// keeps working after upgrade. Once the user makes any explicit choice
+	// (toggling at least one section on), the struct will have a true value
+	// and this branch becomes a no-op.
+	if isZeroNPCOverlaySections(cfg.Preferences.NPCOverlayDashboardSections) {
+		cfg.Preferences.NPCOverlayDashboardSections = DefaultNPCOverlaySections()
+		changed = true
+	}
+	if isZeroNPCOverlaySections(cfg.Preferences.NPCOverlayPopoutSections) {
+		cfg.Preferences.NPCOverlayPopoutSections = DefaultNPCOverlaySections()
+		changed = true
+	}
 	return changed
+}
+
+func isZeroNPCOverlaySections(s NPCOverlaySections) bool {
+	return !s.Identity && !s.Combat && !s.Resists && !s.Attributes && !s.SpecialAbilities
 }
 
 // fillDPSColorDefaults populates any empty hex fields with the corresponding
