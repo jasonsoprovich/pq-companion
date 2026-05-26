@@ -9,6 +9,30 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.8.2 — 2026-05-25
+
+Developer mode lands with a guarded SQL sandbox, key tracker gets a sweeping quest rewrite, and the NPC overlay grows mana plus color-coded resists.
+
+### Highlights
+- **Developer mode** — hidden Settings tab unlocked by Ctrl+Shift+D, with a read-only SQL sandbox (guarded `/api/sandbox` endpoint), 10 curated starter queries, an interactive schema graph, and a curated Mermaid ER diagrams panel
+- **Key tracker rewrites** — Howling Stones now uses the full Key to Charasis quest; Arx Seru uses the 4-shard Praesertum quest; Veeshan's Peak uses the full Key of Veeshan quest; Sleeper's Tomb accepts any one Velious talisman; Sebilis swaps Trakanon's Tooth for the Trakanon Idol quest. Hand of Glory (Charasis internal doors) added. Grieg's End and Grimling pens dropped from the tracker
+- **Keyring** — tab is first and default; live-refreshes on `/keys` and infers upgraded stages as owned; corrected Lucid Shard zone mappings for the Vex Thal key
+- **NPC overlay** — NPC max mana shown beside HP when > 0, resists reordered to MR/CR/FR/DR/PR with EQ-convention colour-coding, multi-field `special_abilities` entries (e.g. Rampage range) now parse correctly
+- **NPC detail page** — new **Spells & Procs** section; long cast-spell lists collapse with a show-more toggle; Escape and outside-click dismiss ability popovers and modals
+- **Zeal** — soft update notice and an `ExportOnCamp` warning when the setting is disabled
+- **Settings** — EQ client version status panel (drops the unused `eqw.dll` row)
+- **Backup Manager** — Open folder button in the header
+- **Spell timers** — mez timer defers rendering until the spell actually lands; NPC names are normalized on kill match and unmatched kills are logged
+
+### Fixes
+- Quarm client-status detection uses `FileVersion` (not MD5) as the primary signal, so patch-day MD5 churn no longer flips users to "unknown"
+- Triggers: positioning button is passive while a session is active, and the positioning card is reliably draggable
+- Triggers: removed duplicate generic resist/interrupt rules from the Enchanter pack
+- Spells: class spell list excludes disciplines and entries above level 60
+- Installer pinned to per-user install so it stops defaulting to Program Files
+- EQ-config backups directory moved to the user home with a migration from the legacy location
+- `quarm.db` DSN now includes `immutable=1` so Program Files installs work without write access
+
 ## v0.8.1 — 2026-05-22
 
 Wishlist gets collapsible sections, drag-reorderable cards, and a flat All Items view.

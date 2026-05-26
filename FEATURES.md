@@ -1198,6 +1198,24 @@ Parse and edit Zeal `_spellsets.ini` exports.
 - **All Items view** — flat list of every wishlisted item across slots with free-form cross-slot drag; toggle Category / All items from the toolbar. A single global ordering backs both views so reorders in one are reflected in the other
 - Character race displays "Iksar" / "Vah Shir" / "Froglok" instead of `Race 128` and other post-Kunark race IDs
 
+## v0.8.2 — Developer Mode, Key Tracker Rewrites, NPC Overlay Polish
+
+- **Developer mode** — hidden Settings tab unlocked by `Ctrl+Shift+D`. Includes a guarded read-only SQL sandbox (`/api/sandbox`) with 10 curated starter queries, an interactive schema graph, and a curated Mermaid ER diagrams panel. Full-width layout with sub-tabs and results below the query editor
+- **Key tracker quest rewrites** — Howling Stones uses the full Key to Charasis quest; Arx Seru uses the 4-shard Praesertum quest; Veeshan's Peak uses the full Key of Veeshan quest; Sleeper's Tomb accepts any one Velious talisman; Sebilis swaps Trakanon's Tooth for the Trakanon Idol quest. Hand of Glory (Charasis internal doors) added. Grieg's End and Grimling pens dropped from the tracker
+- **Keyring** tab is first and default; live-refreshes on `/keys` and infers upgraded stages as owned. Corrected Lucid Shard zone mappings for the Vex Thal key
+- **NPC overlay** — max mana shown beside HP when > 0; resists reordered to MR/CR/FR/DR/PR with EQ-convention colour-coding; multi-field `special_abilities` entries (e.g. Rampage range) now parse correctly
+- **NPC detail page** — new Spells & Procs section with collapsible long cast-spell lists; Escape and outside-click dismiss ability popovers and modals
+- **Zeal** — soft update notice and an `ExportOnCamp` warning when the setting is disabled
+- **Settings** — EQ client version status panel (drops the unused `eqw.dll` row)
+- **Backup Manager** — Open folder button in the header
+- **Spell timers** — mez timer defers rendering until the spell actually lands; NPC names normalized on kill match; unmatched kills logged
+- **Quarm client-status** uses `FileVersion` (not MD5) as the primary signal, so patch-day MD5 churn no longer flips users to "unknown"
+- **Triggers** — positioning button passive while a session is active; positioning card reliably draggable; removed duplicate generic resist/interrupt rules from the Enchanter pack
+- **Spells** — class spell list excludes disciplines and entries above level 60
+- **Installer** pinned to per-user install so it stops defaulting to Program Files
+- **EQ-config backups** directory moved to the user home with a migration from the legacy location
+- `quarm.db` DSN now includes `immutable=1` so Program Files installs work without write access
+
 ## Phase 11 — Project Website
 _Planned_
 
