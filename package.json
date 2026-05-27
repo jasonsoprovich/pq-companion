@@ -6,6 +6,7 @@
   "author": "jasonsoprovich",
   "private": true,
   "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
@@ -13,8 +14,8 @@
     "dist": "npm run build:backend:win && npm run build && node scripts/verify-backend-fresh.cjs && electron-builder --win",
     "dist:win": "npm run build:backend:win && npm run build && node scripts/verify-backend-fresh.cjs && electron-builder --win",
     "typecheck": "tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json",
-    "build:backend": "cd backend && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o bin/pq-companion-server.exe ./cmd/server",
-    "build:backend:win": "cd backend && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o bin/pq-companion-server.exe ./cmd/server"
+    "build:backend": "cd backend && cross-env CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o bin/pq-companion-server.exe ./cmd/server",
+    "build:backend:win": "cd backend && cross-env CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o bin/pq-companion-server.exe ./cmd/server"
   },
   "dependencies": {
     "@types/dagre": "^0.7.54",
@@ -30,6 +31,7 @@
     "@types/react": "^18.3.29",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.3.0",
+    "cross-env": "^10.1.0",
     "electron": "^42.3.0",
     "electron-builder": "^26.11.1",
     "electron-vite": "^5.0.0",
