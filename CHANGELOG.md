@@ -9,6 +9,21 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.8.3 — 2026-05-26
+
+SQL sandbox grows saved queries with import/export, bard song timers stop misbehaving, and item detail tabs hide empty source categories.
+
+### Highlights
+- **SQL sandbox** — saved queries with import/export of query packs; horizontal scroll for wide result sets; query persistence and per-tab history; new Quarm-slot example query
+- **NPC overlay** — per-surface section visibility, so you can hide individual sections on the live overlay, the NPC detail page, or both
+- **Item details** — Drops From / Purchased From / Foraged From / Ground Spawns / Tradeskills tabs hide themselves when an item has no entries in that category, instead of opening to an empty list
+- **Installer** — uninstaller clears the auto-updater cache and optionally removes your user data (`~/.pq-companion`) on uninstall
+
+### Fixes
+- Bard song timers now use the correct base duration and apply item clicky timing rules consistently
+- Log parser recognizes "You begin singing" for bard songs so timers start when the song actually starts
+- Removed the stray Katta Castellum entry from the key tracker
+
 ## v0.8.2 — 2026-05-25
 
 Developer mode lands with a guarded SQL sandbox, key tracker gets a sweeping quest rewrite, and the NPC overlay grows mana plus color-coded resists.
