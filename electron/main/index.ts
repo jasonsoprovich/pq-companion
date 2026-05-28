@@ -579,12 +579,17 @@ function createDPSOverlay(): void {
     alwaysOnTop: true,
     skipTaskbar: true,
     hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
     },
+  })
+
+  dpsOverlayWindow.once('ready-to-show', () => {
+    dpsOverlayWindow?.show()
   })
 
   // Keep it above fullscreen apps on macOS/Windows.
@@ -633,12 +638,17 @@ function createHPSOverlay(): void {
     alwaysOnTop: true,
     skipTaskbar: true,
     hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
     },
+  })
+
+  hpsOverlayWindow.once('ready-to-show', () => {
+    hpsOverlayWindow?.show()
   })
 
   hpsOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
@@ -686,12 +696,17 @@ function createBuffTimerOverlay(): void {
     alwaysOnTop: true,
     skipTaskbar: true,
     hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
     },
+  })
+
+  buffTimerWindow.once('ready-to-show', () => {
+    buffTimerWindow?.show()
   })
 
   buffTimerWindow.setAlwaysOnTop(true, 'screen-saver')
@@ -739,12 +754,17 @@ function createDetrimTimerOverlay(): void {
     alwaysOnTop: true,
     skipTaskbar: true,
     hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
     },
+  })
+
+  detrimTimerWindow.once('ready-to-show', () => {
+    detrimTimerWindow?.show()
   })
 
   detrimTimerWindow.setAlwaysOnTop(true, 'screen-saver')
@@ -819,12 +839,17 @@ function createTriggerOverlay(): void {
     alwaysOnTop: true,
     skipTaskbar: true,
     hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
     },
+  })
+
+  triggerOverlayWindow.once('ready-to-show', () => {
+    triggerOverlayWindow?.show()
   })
 
   triggerOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
@@ -876,12 +901,17 @@ function createNPCOverlay(): void {
     alwaysOnTop: true,
     skipTaskbar: true,
     hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
     },
+  })
+
+  npcOverlayWindow.once('ready-to-show', () => {
+    npcOverlayWindow?.show()
   })
 
   npcOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
@@ -929,12 +959,17 @@ function createRollTrackerOverlay(): void {
     alwaysOnTop: true,
     skipTaskbar: true,
     hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
     },
+  })
+
+  rollTrackerWindow.once('ready-to-show', () => {
+    rollTrackerWindow?.show()
   })
 
   rollTrackerWindow.setAlwaysOnTop(true, 'screen-saver')
