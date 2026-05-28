@@ -44,11 +44,13 @@ nsis:
   # a custom path via allowToChangeInstallationDirectory if they want.
   perMachine: false
   allowToChangeInstallationDirectory: true
-  # Removes %AppData%\PQ Companion (Electron userData — overlayBounds.json,
-  # Chromium Cache/Local Storage/IndexedDB/GPUCache) on uninstall. Anything
-  # the user actually cares about lives in ~/.pq-companion, which is handled
-  # by build/installer.nsh below with an opt-in prompt.
-  deleteAppDataOnUninstall: true
+  # Do NOT use electron-builder's built-in AppData wipe. It runs the RMDir
+  # unconditionally — including during the silent uninstall that the
+  # electron-updater drives as part of an auto-update — which deleted users'
+  # saved overlayBounds.json on upgrade (issue #126). AppData cleanup is
+  # instead handled in build/installer.nsh, guarded by ${isUpdated} so it
+  # only runs on a real user-initiated uninstall.
+  deleteAppDataOnUninstall: false
   # Custom NSIS hooks that also wipe %LocalAppData%\pq-companion-updater
   # (electron-updater download cache) and optionally ~/.pq-companion.
   include: build/installer.nsh
