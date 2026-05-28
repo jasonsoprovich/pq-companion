@@ -58,9 +58,16 @@ nsis:
   uninstallerIcon: build/icon.ico
   installerHeaderIcon: build/icon.ico
 
-# ── Auto-updater publish config (used by Task 6.2) ───────────────────────────
+# ── Auto-updater publish config ──────────────────────────────────────────────
+# releaseType: draft is intentional. electron-builder uploads installer.exe,
+# .blockmap, and latest.yml in parallel; when the release does not yet exist,
+# each upload races to create it and only one wins — the others abort, leaving
+# the release with partial assets (see v0.9.0 first publish attempt). The
+# release workflow pre-creates an empty draft before electron-builder runs,
+# so all uploads target an existing release. A later workflow step flips the
+# draft to published.
 publish:
   provider: github
   owner: jasonsoprovich
   repo: pq-companion
-  releaseType: release
+  releaseType: draft

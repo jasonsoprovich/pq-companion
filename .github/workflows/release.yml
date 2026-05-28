@@ -87,6 +87,30 @@ jobs:
       - name: Build Electron renderer + main
         run: npm run build
 
+      # Pre-create an empty draft release so all three of electron-builder's
+      # parallel uploads (installer.exe, .blockmap, latest.yml) target the
+      # same existing release rather than racing each other to create it.
+      # Without this, only the first upload's "create release" call wins and
+      # the others abort with a duplicate-tag collision, leaving the release
+      # with partial assets — observed once on v0.9.0's first publish.
+      - name: Pre-create draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="v$(node -p "require('./package.json').version")"
+          if gh release view "$VERSION" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Draft $VERSION already exists; reusing it"
+          else
+            echo "Creating draft release $VERSION"
+            gh release create "$VERSION" \
+              --draft \
+              --title "$VERSION" \
+              --generate-notes \
+              --target "${{ github.sha }}" \
+              --repo "${{ github.repository }}"
+          fi
+
       # Publish uploads the installer + latest.yml to the GitHub release.
       # Code signing: electron-builder automatically signs when WIN_CSC_LINK and
       # WIN_CSC_KEY_PASSWORD are set as repository secrets (base64-encoded PFX).
