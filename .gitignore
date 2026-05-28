@@ -10,6 +10,7 @@
 !/docs/db-pipeline.md
 !/docs/enum-audit.md
 !/docs/database-test-plan.md
+!/docs/issue-123-divergence-triage-plan.md
 
 # ── Environment & secrets ─────────────────────────────────────────────────────
 .env
