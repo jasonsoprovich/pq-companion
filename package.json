@@ -6,6 +6,7 @@
   "author": "jasonsoprovich",
   "private": true,
   "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
@@ -13,30 +14,31 @@
     "dist": "npm run build:backend:win && npm run build && node scripts/verify-backend-fresh.cjs && electron-builder --win",
     "dist:win": "npm run build:backend:win && npm run build && node scripts/verify-backend-fresh.cjs && electron-builder --win",
     "typecheck": "tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json",
-    "build:backend": "cd backend && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o bin/pq-companion-server.exe ./cmd/server",
-    "build:backend:win": "cd backend && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o bin/pq-companion-server.exe ./cmd/server"
+    "build:backend": "cd backend && cross-env CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o bin/pq-companion-server.exe ./cmd/server",
+    "build:backend:win": "cd backend && cross-env CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o bin/pq-companion-server.exe ./cmd/server"
   },
   "dependencies": {
     "@types/dagre": "^0.7.54",
     "@xyflow/react": "^12.10.2",
     "dagre": "^0.8.5",
     "electron-updater": "^6.3.0",
-    "lucide-react": "^1.8.0",
-    "react-router-dom": "^7.14.1"
+    "lucide-react": "^1.16.0",
+    "react-router-dom": "^7.15.1"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.1.0",
-    "@types/node": "^22.0.0",
-    "@types/react": "^18.3.0",
-    "@types/react-dom": "^18.3.0",
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/node": "^22.19.19",
+    "@types/react": "^18.3.29",
+    "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.3.0",
-    "electron": "^33.0.0",
-    "electron-builder": "^25.1.0",
-    "electron-vite": "^2.3.0",
+    "cross-env": "^10.1.0",
+    "electron": "^42.3.0",
+    "electron-builder": "^26.11.1",
+    "electron-vite": "^5.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "tailwindcss": "^4.1.0",
+    "tailwindcss": "^4.3.0",
     "typescript": "^5.6.0",
-    "vite": "^5.4.0"
+    "vite": "^7.3.3"
   }
 }
