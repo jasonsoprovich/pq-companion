@@ -16,19 +16,36 @@ const messageHandlers = new Set<(msg: WsMessage) => void>()
 const stateHandlers = new Set<(state: WsReadyState) => void>()
 let currentState: WsReadyState = 'closed'
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+// In-flight connect promise. Without this, parallel consumer mounts each call
+// connect(), and the OPEN/CONNECTING guard above passes for every one of them
+// because `socket` is still null until after the async getBackendWsUrl() await.
+// Each call then constructs its own WebSocket, leaving multiple sockets alive
+// — every onmessage fires across the shared handler set, so each event lands
+// N times in the Log Feed where N is the number of leaked sockets (issue #124).
+let connectPromise: Promise<void> | null = null
 
 function setState(state: WsReadyState): void {
   currentState = state
   stateHandlers.forEach((h) => h(state))
 }
 
-async function connect(): Promise<void> {
+function connect(): Promise<void> {
   if (
     socket?.readyState === WebSocket.OPEN ||
     socket?.readyState === WebSocket.CONNECTING
   ) {
-    return
+    return Promise.resolve()
   }
+  if (connectPromise) {
+    return connectPromise
+  }
+  connectPromise = doConnect().finally(() => {
+    connectPromise = null
+  })
+  return connectPromise
+}
+
+async function doConnect(): Promise<void> {
   if (reconnectTimer !== null) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
