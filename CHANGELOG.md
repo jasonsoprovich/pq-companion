@@ -9,6 +9,14 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.9.0 — 2026-05-28
+
+A foundational update: the desktop runtime under the app has been refreshed to the latest stable version, closing out every known security advisory.
+
+### Highlights
+- **Runtime upgrade** — PQ Companion now runs on the latest stable version of Electron (the desktop framework). This brings a modern Chromium engine and Node.js runtime under the hood, which gives the app better rendering performance and access to newer web platform features. No outward behavior changes — everything should work exactly the way it did before, just on a more current foundation.
+- **Security** — the runtime upgrade resolves 18 published Electron security advisories. As of this release, the app has zero known vulnerabilities across its entire dependency tree.
+
 ## v0.8.3 — 2026-05-26
 
 SQL sandbox grows saved queries with import/export, bard song timers stop misbehaving, and item detail tabs hide empty source categories.
