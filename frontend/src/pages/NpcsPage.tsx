@@ -741,7 +741,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
           {npc.aggro_radius > 0 && (
             <StatRow label="Aggro Radius" value={npc.aggro_radius} />
           )}
-          <StatRow label="Run Speed" value={npc.run_speed.toFixed(2)} />
+          <StatRow label="Run Speed" value={`${Math.round((npc.run_speed / 0.7) * 100)}%`} />
           <StatRow label="Size" value={npc.size.toFixed(1)} />
         </Section>
 

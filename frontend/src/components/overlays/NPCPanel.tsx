@@ -402,6 +402,7 @@ function NPCCard({
                 <Stat label="Min DMG" value={npc.min_dmg} color="#ef4444" />
                 <Stat label="Max DMG" value={npc.max_dmg} color="#ef4444" />
                 <Stat label="Atk/Rd" value={npc.attack_count < 0 ? 'default' : npc.attack_count} />
+                <Stat label="Speed" value={`${Math.round((npc.run_speed / 0.7) * 100)}%`} />
               </div>
             </div>
           )}

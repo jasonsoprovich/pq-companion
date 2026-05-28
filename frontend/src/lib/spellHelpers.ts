@@ -230,6 +230,66 @@ const RESIST_NAMES: Record<number, string> = {
   46: 'Fire', 47: 'Cold', 48: 'Poison', 49: 'Disease', 50: 'Magic',
 }
 
+// Project Quarm classic-era player level cap. Used as the upper bound when
+// scaling level-formula effects past the highest castable class level.
+const SERVER_LEVEL_CAP = 60
+
+// Mirrors EQMacEmu Mob::CalcSpellEffectValue_formula (zone/spell_effects.cpp).
+// Returns the effect value at a given caster level, applying updownsign and
+// the post-formula max clamp. Unknown formulas fall back to raw base.
+function applyLevelFormula(formula: number, base: number, max: number, level: number): number {
+  const ubase = Math.abs(base)
+  const updownsign = max !== 0 && max < base ? -1 : 1
+  let result: number
+  switch (formula) {
+    case 0:
+    case 100: result = ubase; break
+    case 101: result = updownsign * (ubase + Math.floor(level / 2)); break
+    case 102: result = updownsign * (ubase + level); break
+    case 103: result = updownsign * (ubase + level * 2); break
+    case 104: result = updownsign * (ubase + level * 3); break
+    case 105: result = updownsign * (ubase + level * 4); break
+    case 119: result = updownsign * (ubase + Math.floor(level / 8)); break
+    default: return base
+  }
+  if (max !== 0) {
+    if (updownsign === 1 && result > max) result = max
+    if (updownsign === -1 && result < max) result = max
+  }
+  if (base < 0 && result > 0) result = -result
+  return result
+}
+
+// Smallest caster level at which `applyLevelFormula` first reaches `max`.
+// Returns undefined for static formulas or when the value never grows past base.
+function formulaCapLevel(formula: number, base: number, max: number): number | undefined {
+  const ubase = Math.abs(base)
+  const umax = Math.abs(max)
+  if (max === 0 || umax <= ubase) return undefined
+  const span = umax - ubase
+  switch (formula) {
+    case 101: return span * 2
+    case 102: return span
+    case 103: return Math.ceil(span / 2)
+    case 104: return Math.ceil(span / 3)
+    case 105: return Math.ceil(span / 4)
+    case 119: return span * 8
+    default: return undefined
+  }
+}
+
+// Lowest castable level across the spell's class table. 255 is the
+// "not castable" sentinel; entries above the server cap (e.g. Ranger 65 on
+// some spells) are ignored.
+function minCasterLevel(classLevels?: number[]): number | undefined {
+  if (!classLevels || classLevels.length === 0) return undefined
+  let min = Infinity
+  for (const lvl of classLevels) {
+    if (lvl > 0 && lvl <= SERVER_LEVEL_CAP && lvl < min) min = lvl
+  }
+  return Number.isFinite(min) ? min : undefined
+}
+
 /**
  * Returns a human-readable description for a spell effect slot.
  *
@@ -242,10 +302,14 @@ const RESIST_NAMES: Record<number, string> = {
  * with formula 102 (linear scaling by level), the description renders a range
  * `+1% to +50%` matching pqdi rather than the raw base value.
  *
+ * `classLevels` is the spell's 15-class level table — when supplied alongside
+ * a level-scaling formula on SPA 3 (movement speed), the description renders
+ * a pqdi-style "+N% (Lx) to +M% (Ly)" range.
+ *
  * Returns empty string for sentinel/blank slots and for ID/base combinations
  * that should not render.
  */
-export function effectDescription(id: number, base: number, buffduration: number, max?: number, formula?: number): string {
+export function effectDescription(id: number, base: number, buffduration: number, max?: number, formula?: number, classLevels?: number[]): string {
   if (id === 254 || id === 255 || id === 320) return ''
 
   const sign = base > 0 ? '+' : ''
@@ -280,9 +344,22 @@ export function effectDescription(id: number, base: number, buffduration: number
     case 2: // ATK
       if (base === 0) return ''
       return `${sign}${base} ATK`
-    case 3: // Movement Speed (% modifier)
+    case 3: { // Movement Speed (% modifier)
       if (base === 0) return ''
-      return `Movement Speed ${sign}${base}%`
+      const verb = base > 0 ? 'Increase' : 'Decrease'
+      const minL = minCasterLevel(classLevels)
+      if (formula !== undefined && formula !== 100 && formula !== 0 && minL !== undefined) {
+        const lowVal = applyLevelFormula(formula, base, max ?? 0, minL)
+        const cap = formulaCapLevel(formula, base, max ?? 0)
+        const highL = Math.min(SERVER_LEVEL_CAP, cap ?? SERVER_LEVEL_CAP)
+        const highVal = applyLevelFormula(formula, base, max ?? 0, highL)
+        if (Math.abs(lowVal) !== Math.abs(highVal)) {
+          return `${verb} Movement by ${Math.abs(lowVal)}% (L${minL}) to ${Math.abs(highVal)}% (L${highL})`
+        }
+        return `${verb} Movement by ${Math.abs(highVal)}%`
+      }
+      return `${verb} Movement by ${Math.abs(base)}%`
+    }
     case 11: { // Melee Haste v1 — "+100" encoded (base 122 → +22%)
       if (base === 0) return ''
       const pct = base - 100

@@ -366,6 +366,7 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
         spell.buff_duration,
         spell.effect_max_values[i] ?? 0,
         spell.effect_formulas?.[i] ?? 0,
+        spell.class_levels,
       ),
     }))
     .filter((e) => e.description !== '')
