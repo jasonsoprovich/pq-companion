@@ -14,6 +14,7 @@ export const WSEvent = {
   TriggerTestSessionEnded: 'trigger:test_session_ended',
   ConfigUpdated: 'config:updated',
   ConfigCharacterDetected: 'config:character_detected',
+  WishlistChanged: 'wishlist:changed',
   ZealConnected: 'zeal:connected',
   ZealDisconnected: 'zeal:disconnected',
 } as const

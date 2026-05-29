@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Crosshair, AlertTriangle, CheckCircle2, Circle, ExternalLink } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNPCOverlaySections } from '../../hooks/useNPCOverlaySections'
+import { useWishlistItemIds } from '../../hooks/useWishlistItemIds'
 import { WSEvent } from '../../lib/wsEvents'
 import { getOverlayNPCTarget, getLogStatus, getNPCLoot, getItem } from '../../services/api'
 import { className, bodyTypeName } from '../../lib/npcHelpers'
@@ -170,9 +171,11 @@ function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => voi
 function LootSection({
   npcId,
   onItemClick,
+  wishlistItemIds,
 }: {
   npcId: number
   onItemClick: (id: number) => void
+  wishlistItemIds: Set<number>
 }): React.ReactElement {
   const [loot, setLoot] = useState<NPCLootTable | null>(null)
   const [loading, setLoading] = useState(true)
@@ -228,12 +231,22 @@ function LootSection({
     drops.flatMap((drop) =>
       drop.items.map((item) => {
         const eff = effectiveDropPct(drop, item)
+        const wished = wishlistItemIds.has(item.item_id)
         return (
           <button
             key={`${drop.id}-${item.item_id}`}
             onClick={() => onItemClick(item.item_id)}
-            className="flex w-full items-center gap-2 border-t py-0.5 text-left"
-            style={{ borderColor: 'var(--color-border)' }}
+            title={wished ? 'On your wishlist' : undefined}
+            className="flex w-full items-center gap-2 border-t py-0.5 pr-1 text-left"
+            style={{
+              borderColor: 'var(--color-border)',
+              // Subtle green cue for wishlisted drops — a left accent + faint
+              // tint. The item-name text keeps its rarity color; transparent
+              // border when not wished keeps rows from shifting.
+              borderLeft: wished ? '2px solid #22c55e' : '2px solid transparent',
+              paddingLeft: 4,
+              backgroundColor: wished ? 'rgba(34,197,94,0.10)' : 'transparent',
+            }}
           >
             <ItemIcon id={item.item_icon} name={item.item_name} size={20} />
             <span
@@ -350,6 +363,7 @@ function NPCDetails({
   view,
   variantLabel,
   onItemClick,
+  wishlistItemIds,
 }: {
   npc: NPC
   abilities: SpecialAbility[]
@@ -357,6 +371,7 @@ function NPCDetails({
   view: View
   variantLabel?: string
   onItemClick: (id: number) => void
+  wishlistItemIds: Set<number>
 }): React.ReactElement {
   return (
     <div className="flex flex-col gap-2">
@@ -368,7 +383,7 @@ function NPCDetails({
         </div>
       )}
       {view === 'loot' ? (
-        <LootSection npcId={npc.id} onItemClick={onItemClick} />
+        <LootSection npcId={npc.id} onItemClick={onItemClick} wishlistItemIds={wishlistItemIds} />
       ) : (
         <>
           {sections.identity && (
@@ -449,11 +464,13 @@ function NPCCard({
   view,
   sections,
   onItemClick,
+  wishlistItemIds,
 }: {
   state: TargetState
   view: View
   sections: NPCOverlaySections
   onItemClick: (id: number) => void
+  wishlistItemIds: Set<number>
 }): React.ReactElement {
   const npc = state.npc_data
   const abilities = state.special_abilities ?? []
@@ -515,6 +532,7 @@ function NPCCard({
               view={view}
               variantLabel={`${className(v.npc.class)} · L${v.npc.level}`}
               onItemClick={onItemClick}
+              wishlistItemIds={wishlistItemIds}
             />
           ))
         ) : (
@@ -524,6 +542,7 @@ function NPCCard({
             sections={sections}
             view={view}
             onItemClick={onItemClick}
+            wishlistItemIds={wishlistItemIds}
           />
         )
       ) : (
@@ -549,6 +568,7 @@ export default function NPCPanel({
   const [modalItem, setModalItem] = useState<Item | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const sections = useNPCOverlaySections('dashboard')
+  const wishlistItemIds = useWishlistItemIds()
 
   useEffect(() => {
     getOverlayNPCTarget().then(setTarget).catch(() => setTarget(null))
@@ -613,7 +633,7 @@ export default function NPCPanel({
             <p className="text-sm" style={{ color: 'var(--color-muted)' }}>Loading…</p>
           </div>
         ) : target.has_target ? (
-          <NPCCard state={target} view={view} sections={sections} onItemClick={handleItemClick} />
+          <NPCCard state={target} view={view} sections={sections} onItemClick={handleItemClick} wishlistItemIds={wishlistItemIds} />
         ) : (
           <NoTarget zone={target.current_zone} />
         )}

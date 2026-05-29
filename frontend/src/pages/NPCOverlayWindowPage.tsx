@@ -6,6 +6,7 @@ import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import { useNPCOverlaySections } from '../hooks/useNPCOverlaySections'
+import { useWishlistItemIds } from '../hooks/useWishlistItemIds'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { ItemIcon } from '../components/Icon'
 import { ResistChip } from '../components/ResistChip'
@@ -132,7 +133,13 @@ function NoTarget({ zone }: { zone?: string }): React.ReactElement {
 
 // ── Loot content ───────────────────────────────────────────────────────────────
 
-function LootContent({ npcId }: { npcId: number }): React.ReactElement {
+function LootContent({
+  npcId,
+  wishlistItemIds,
+}: {
+  npcId: number
+  wishlistItemIds: Set<number>
+}): React.ReactElement {
   const [loot, setLoot] = useState<NPCLootTable | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -170,15 +177,23 @@ function LootContent({ npcId }: { npcId: number }): React.ReactElement {
       </div>
       {drop.items.map((item) => {
         const eff = effectiveDropPct(drop, item)
+        const wished = wishlistItemIds.has(item.item_id)
         return (
           <div
             key={`${drop.id}-${item.item_id}`}
+            title={wished ? 'On your wishlist' : undefined}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              padding: '1px 0',
+              padding: '1px 4px 1px 2px',
               borderTop: '1px solid rgba(255,255,255,0.05)',
+              // Subtle green cue for wishlisted drops. A left accent + faint
+              // tint, leaving the item-name text color free to keep encoding
+              // drop rarity. transparent border when not wished avoids any
+              // row-to-row layout shift.
+              borderLeft: wished ? '2px solid #22c55e' : '2px solid transparent',
+              backgroundColor: wished ? 'rgba(34,197,94,0.10)' : 'transparent',
             }}
           >
             <ItemIcon id={item.item_icon} name={item.item_name} size={18} />
@@ -226,10 +241,12 @@ function NPCContent({
   state,
   view,
   sections,
+  wishlistItemIds,
 }: {
   state: TargetState
   view: View
   sections: NPCOverlaySections
+  wishlistItemIds: Set<number>
 }): React.ReactElement {
   const npc = state.npc_data
   const abilities = (state.special_abilities ?? []).filter((a) => a.value !== 0)
@@ -305,7 +322,7 @@ function NPCContent({
 
       {npc ? (
         view === 'loot' ? (
-          <LootContent npcId={npc.id} />
+          <LootContent npcId={npc.id} wishlistItemIds={wishlistItemIds} />
         ) : (
           <>
             {sections.identity && (
@@ -378,6 +395,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
   const [target, setTarget] = useState<TargetState | null>(null)
   const [view, setView] = useState<View>('stats')
   const sections = useNPCOverlaySections('popout')
+  const wishlistItemIds = useWishlistItemIds()
 
   useEffect(() => {
     getOverlayNPCTarget()
@@ -457,7 +475,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
           <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: 0 }}>Loading…</p>
         </div>
       ) : target.has_target ? (
-        <NPCContent state={target} view={view} sections={sections} />
+        <NPCContent state={target} view={view} sections={sections} wishlistItemIds={wishlistItemIds} />
       ) : (
         <NoTarget zone={target.current_zone} />
       )}
