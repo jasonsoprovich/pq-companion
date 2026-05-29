@@ -18,6 +18,10 @@ import type {
   KeyringCharactersResponse,
   KeyringCharacterResponse,
 } from '../types/keyring'
+import type {
+  LockoutCharactersResponse,
+  LockoutCharacterResponse,
+} from '../types/lockouts'
 import type { Backup, BackupsResponse } from '../types/backup'
 import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { TargetState } from '../types/overlay'
@@ -420,6 +424,16 @@ export function getKeyringCharacters(): Promise<KeyringCharactersResponse> {
 
 export function getKeyringForCharacter(name: string): Promise<KeyringCharacterResponse> {
   return get<KeyringCharacterResponse>(`/api/keyring/characters/${encodeURIComponent(name)}`)
+}
+
+// ── Lockouts (per-character /sll loot & legacy-item lockouts) ─────────────────
+
+export function getLockoutCharacters(): Promise<LockoutCharactersResponse> {
+  return get<LockoutCharactersResponse>('/api/lockouts/characters')
+}
+
+export function getLockoutForCharacter(name: string): Promise<LockoutCharacterResponse> {
+  return get<LockoutCharacterResponse>(`/api/lockouts/characters/${encodeURIComponent(name)}`)
 }
 
 // ── Backups ────────────────────────────────────────────────────────────────────

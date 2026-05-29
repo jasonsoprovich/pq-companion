@@ -17,6 +17,7 @@ import InventoryPage from './pages/InventoryPage'
 import SpellChecklistPage from './pages/SpellChecklistPage'
 import InventoryTrackerPage from './pages/InventoryTrackerPage'
 import KeyTrackerPage from './pages/KeyTrackerPage'
+import LockoutTrackerPage from './pages/LockoutTrackerPage'
 import WishlistPage from './pages/WishlistPage'
 import LogFeedPage from './pages/LogFeedPage'
 import DPSOverlayWindowPage from './pages/DPSOverlayWindowPage'
@@ -155,6 +156,7 @@ export default function App(): React.ReactElement {
             <Route path="spells" element={<SpellChecklistPage />} />
             <Route path="spellsets" element={<CharacterSpellsetsPage />} />
             <Route path="keys" element={<KeyTrackerPage />} />
+            <Route path="lockouts" element={<LockoutTrackerPage />} />
             <Route path="wishlist" element={<WishlistPage />} />
             <Route path="tasks" element={<CharacterTasksPage />} />
           </Route>
