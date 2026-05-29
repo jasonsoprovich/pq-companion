@@ -85,6 +85,34 @@ func isItemClicky(spell *db.Spell) bool {
 	return true
 }
 
+// classFilterAllowsBuff reports whether a landed buff survives the optional
+// "only show buffs my class can cast" filter.
+//
+// Spells no player class can cast (isItemClicky == true) cover three very
+// different cases that the spell data can't tell apart: item clickies the
+// user triggered, OTHER players' item clickies, and NPC-only buffs/recourses
+// (e.g. Fiery Might, Harmonize, Shroud of Pain Recourse — all target-self,
+// all classes 255). The only signal that distinguishes "mine" from "someone
+// else's" is where the spell landed: the user triggered a clicky by clicking
+// the item, so it lands on *them*. We therefore exempt an all-classes-255
+// spell from the filter ONLY when it lands on the active player. Without the
+// isSelfTarget gate, scope=anyone surfaces every clicky and NPC self-buff
+// cast by anyone in the zone, flooding the buff overlay with spells the
+// user's class can't cast.
+func classFilterAllowsBuff(spell *db.Spell, isSelfTarget, enabled bool, classIdx int) bool {
+	if !enabled {
+		return true
+	}
+	if isItemClicky(spell) && isSelfTarget {
+		return true
+	}
+	if classIdx < 0 || classIdx >= len(spell.ClassLevels) {
+		// Unknown / unset class — don't filter rather than hide everything.
+		return true
+	}
+	return spell.ClassLevels[classIdx] < classCannotCast
+}
+
 // broadcastInterval is how often the engine pushes timer state updates to
 // WebSocket clients while timers are active.
 const broadcastInterval = time.Second
@@ -862,18 +890,16 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 			}
 		}
 		// Optional class filter: drop buffs the player's class can't cast.
-		// Item clickies (no class can cast them) are exempt — the user
-		// triggered the buff by clicking the item, so they always want the
-		// timer regardless of their character's class. Without this exemption
-		// Shield of the Eighth (Coldain Insignia Ring) and other clickies
-		// silently never reach the buff overlay.
-		if e.classFilterFn != nil && !isItemClicky(spell) {
-			if enabled, classIdx := e.classFilterFn(); enabled && classIdx >= 0 && classIdx < len(spell.ClassLevels) {
-				if spell.ClassLevels[classIdx] >= classCannotCast {
-					slog.Info("timer-debug: spell-landed skipped (class filter)",
-						"spell", spellName, "target", target, "class_idx", classIdx)
-					return
-				}
+		// Item clickies the user triggered (all classes 255, landing on the
+		// player) are exempt so Shield of the Eighth (Coldain Insignia Ring)
+		// and friends still reach the buff overlay. The isSelfTarget gate
+		// keeps OTHER players' clickies and NPC self-buffs/recourses out of
+		// the overlay under scope=anyone — see classFilterAllowsBuff.
+		if e.classFilterFn != nil {
+			if enabled, classIdx := e.classFilterFn(); !classFilterAllowsBuff(spell, isSelfTarget, enabled, classIdx) {
+				slog.Info("timer-debug: spell-landed skipped (class filter)",
+					"spell", spellName, "target", target, "class_idx", classIdx)
+				return
 			}
 		}
 
@@ -991,6 +1017,22 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 }
 
+// commonCandidateName returns the shared display name when every ambiguous
+// land candidate resolves to the same name, or "" when the candidates name
+// different spells (so the caller must still disambiguate by recent cast).
+func commonCandidateName(cands []logparser.SpellLandedCandidate) string {
+	if len(cands) == 0 {
+		return ""
+	}
+	name := cands[0].SpellName
+	for _, c := range cands[1:] {
+		if c.SpellName != name {
+			return ""
+		}
+	}
+	return name
+}
+
 // resolveLandedSpellName returns the canonical spell name for a landed event,
 // disambiguating ambiguous matches (multiple spells share the same cast text)
 // against the most recently observed cast. Returns "" if the event is
@@ -1001,6 +1043,15 @@ func (e *Engine) resolveLandedSpellName(data logparser.SpellLandedData) string {
 	}
 	if len(data.Candidates) == 0 {
 		return ""
+	}
+	// If every candidate carries the same display name (e.g. the two
+	// "Fungal Regrowth" rows that differ only by spell ID), the *name* is
+	// unambiguous even though the ID isn't — return it without needing a
+	// recent cast. This rescues instant item clickies whose shared land text
+	// maps onto same-named spell rows and which emit no "You begin casting"
+	// line to disambiguate against.
+	if name := commonCandidateName(data.Candidates); name != "" {
+		return name
 	}
 	e.mu.Lock()
 	lastSpell := e.lastCastSpell
