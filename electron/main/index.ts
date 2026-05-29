@@ -194,6 +194,64 @@ function trackOverlayBounds(name: OverlayName, win: BrowserWindow): void {
   win.on('close', () => persistBounds(name, win))
 }
 
+// ── Main window state persistence ─────────────────────────────────────────────
+// The main window gets its own state file (separate from overlayBounds.json)
+// because it also tracks a `maximized` flag, which Bounds can't express. We
+// restore the pre-maximize size/position AND the maximized state so reopening
+// lands exactly where the user left it — including on a second monitor, since
+// isOnScreen() validates against every display.
+
+type MainWindowState = { bounds?: Bounds; maximized?: boolean }
+
+function mainWindowStateFilePath(): string {
+  return join(app.getPath('userData'), 'mainWindowState.json')
+}
+
+function loadMainWindowState(): MainWindowState {
+  try {
+    return JSON.parse(readFileSync(mainWindowStateFilePath(), 'utf8')) as MainWindowState
+  } catch {
+    return {}
+  }
+}
+
+function saveMainWindowState(state: MainWindowState): void {
+  try {
+    writeFileSync(mainWindowStateFilePath(), JSON.stringify(state, null, 2), 'utf8')
+  } catch (err) {
+    console.error('[main] Failed to write main window state:', err)
+  }
+}
+
+let mainStateDebounce: ReturnType<typeof setTimeout> | null = null
+
+// Persist the main window's normal (non-maximized) bounds plus its maximized
+// flag. While maximized we deliberately keep the previously-saved bounds so
+// the restore size survives — getBounds() during maximize returns the
+// maximized rect, which we don't want to treat as the restore size.
+function persistMainWindowState(win: BrowserWindow): void {
+  if (mainStateDebounce) clearTimeout(mainStateDebounce)
+  mainStateDebounce = setTimeout(() => {
+    mainStateDebounce = null
+    if (win.isDestroyed()) return
+    const state = loadMainWindowState()
+    state.maximized = win.isMaximized()
+    if (!state.maximized) {
+      const b = win.getBounds()
+      state.bounds = { x: b.x, y: b.y, width: b.width, height: b.height }
+    }
+    saveMainWindowState(state)
+  }, 500)
+}
+
+function trackMainWindowBounds(win: BrowserWindow): void {
+  win.on('move', () => persistMainWindowState(win))
+  win.on('resize', () => persistMainWindowState(win))
+  win.on('maximize', () => persistMainWindowState(win))
+  win.on('unmaximize', () => persistMainWindowState(win))
+  win.on('close', () => persistMainWindowState(win))
+}
+
 let mainWindow: BrowserWindow | null = null
 let dpsOverlayWindow: BrowserWindow | null = null
 let hpsOverlayWindow: BrowserWindow | null = null
@@ -515,9 +573,16 @@ function closeAllOverlays(): void {
 function createMainWindow(): void {
   nativeTheme.themeSource = 'dark'
 
+  // Restore the last-used size/position when it still falls on a connected
+  // display; otherwise fall back to the first-run default. isOnScreen()
+  // checks every display, so a window left on a second monitor reopens there.
+  const savedState = loadMainWindowState()
+  const restored = savedState.bounds && isOnScreen(savedState.bounds) ? savedState.bounds : null
+
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 860,
+    width: restored?.width ?? 1280,
+    height: restored?.height ?? 860,
+    ...(restored ? { x: restored.x, y: restored.y } : {}),
     minWidth: 960,
     minHeight: 640,
     backgroundColor: '#0a0a0a',
@@ -533,8 +598,11 @@ function createMainWindow(): void {
   })
 
   mainWindow.once('ready-to-show', () => {
+    if (savedState.maximized) mainWindow?.maximize()
     mainWindow?.show()
   })
+
+  trackMainWindowBounds(mainWindow)
 
   if (isDev) {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
