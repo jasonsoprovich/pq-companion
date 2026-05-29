@@ -35,7 +35,7 @@ const historyMaxSize = 200
 // pipeline would produce. 0 = use durationSecs as given.
 type TimerSink interface {
 	StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int)
-	StopExternal(name string)
+	StopExternal(name string, spellID int)
 }
 
 // compiled pairs a Trigger with its pre-compiled patterns for efficient matching.
@@ -168,7 +168,7 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 		}
 		if c.wornOff != nil && c.wornOff.MatchString(message) {
 			if e.sink != nil && c.timerKey != "" {
-				e.sink.StopExternal(c.timerKey)
+				e.sink.StopExternal(c.timerKey, c.trigger.SpellID)
 			}
 		}
 	}

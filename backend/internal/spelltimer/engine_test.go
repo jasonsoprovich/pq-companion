@@ -335,7 +335,7 @@ func TestStopExternal_ClearsPendingArm(t *testing.T) {
 		t.Fatal("setup: Dazzle arm not stored")
 	}
 
-	e.StopExternal("Dazzle")
+	e.StopExternal("Dazzle", 0)
 
 	if _, ok := e.pendingArms["Dazzle"]; ok {
 		t.Error("pending arm should have been cleared on StopExternal")
@@ -376,7 +376,7 @@ func TestStopExternal_RemovesAllSameNameTimers(t *testing.T) {
 		CastAt: now, StartsAt: now, ExpiresAt: now.Add(2 * time.Minute),
 	}
 
-	e.StopExternal("Visions of Grandeur")
+	e.StopExternal("Visions of Grandeur", 0)
 
 	if len(e.timers) != 1 {
 		t.Errorf("expected 1 surviving timer, got %d", len(e.timers))
@@ -384,6 +384,98 @@ func TestStopExternal_RemovesAllSameNameTimers(t *testing.T) {
 	if _, ok := e.timers[timerKey("Tashanian", "Mob")]; !ok {
 		t.Error("Tashanian timer should have been preserved")
 	}
+}
+
+// sameSpellForDedup matches on name, on a shared non-zero SpellID, and on
+// neither when both differ. The SpellID arm is what lets a combined pack
+// name ("Speed of the Shissar/Brood") dedup against the DB name the
+// spell-landed pipeline resolves ("Speed of the Shissar").
+func TestSameSpellForDedup(t *testing.T) {
+	cases := []struct {
+		name     string
+		existing *ActiveTimer
+		inName   string
+		inID     int
+		want     bool
+	}{
+		{"name match", &ActiveTimer{SpellName: "Clarity"}, "Clarity", 0, true},
+		{"id match, names differ", &ActiveTimer{SpellName: "Speed of the Shissar", SpellID: 1939}, "Speed of the Shissar/Brood", 1939, true},
+		{"id zero, names differ", &ActiveTimer{SpellName: "Speed of the Shissar", SpellID: 1939}, "Speed of the Shissar/Brood", 0, false},
+		{"existing id zero", &ActiveTimer{SpellName: "Foo", SpellID: 0}, "Bar", 1939, false},
+		{"different id and name", &ActiveTimer{SpellName: "Foo", SpellID: 10}, "Bar", 20, false},
+	}
+	for _, tc := range cases {
+		if got := sameSpellForDedup(tc.existing, tc.inName, tc.inID); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// A trigger using a combined pack name but linked to a DB SpellID must dedup
+// against an already-present spell-landed timer carrying that same SpellID
+// under the canonical DB name — otherwise the user sees two rows for one
+// cast (the reported "Speed of the Shissar" + "Speed of the Shissar/Brood"
+// double-timer). The trigger's per-spell metadata grafts onto the surviving
+// timer; the surviving timer keeps its target-bearing identity.
+func TestStartExternal_DedupsBySpellIDAcrossNames(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+
+	// Spell-landed-style timer already present (target-keyed, DB name, no
+	// per-trigger metadata).
+	key := timerKey("Speed of the Shissar", "Tank")
+	e.timers[key] = &ActiveTimer{
+		ID: key, SpellName: "Speed of the Shissar", SpellID: 1939,
+		TargetName: "Tank", Category: CategoryBuff,
+		CastAt: now, StartsAt: now, ExpiresAt: now.Add(30 * time.Minute),
+	}
+
+	// Enchanter pack trigger fires with the combined name + linked SpellID and
+	// a display-threshold override.
+	e.StartExternal("Speed of the Shissar/Brood", "buff", 1800, 120, now, nil, 1939)
+
+	if len(e.timers) != 1 {
+		t.Fatalf("expected the trigger to merge into the existing timer, got %d rows", len(e.timers))
+	}
+	surviving, ok := e.timers[key]
+	if !ok {
+		t.Fatalf("the target-keyed spell-landed timer should survive; keys: %v", keysOf(e.timers))
+	}
+	if surviving.TargetName != "Tank" {
+		t.Errorf("surviving timer lost its target: %q", surviving.TargetName)
+	}
+	if surviving.DisplayThresholdSecs != 120 {
+		t.Errorf("trigger threshold should graft onto surviving timer, got %d", surviving.DisplayThresholdSecs)
+	}
+}
+
+// The trigger's worn-off pattern fires StopExternal with the combined pack
+// name + SpellID. After a merge the surviving timer carries the DB name, so a
+// name-only removal would miss it; the SpellID arm clears it. This is the
+// fade path for haste buffs, which log "Your body slows." (the worn-off
+// pattern) with no generic "...spell has worn off." line.
+func TestStopExternal_RemovesMergedTimerBySpellID(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	key := timerKey("Speed of the Shissar", "Osui")
+	e.timers[key] = &ActiveTimer{
+		ID: key, SpellName: "Speed of the Shissar", SpellID: 1939,
+		TargetName: "Osui", CastAt: now, StartsAt: now, ExpiresAt: now.Add(30 * time.Minute),
+	}
+
+	e.StopExternal("Speed of the Shissar/Brood", 1939)
+
+	if len(e.timers) != 0 {
+		t.Errorf("merged timer should be cleared by SpellID, got %d rows", len(e.timers))
+	}
+}
+
+func keysOf(m map[string]*ActiveTimer) []string {
+	ks := make([]string, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
+	}
+	return ks
 }
 
 // SpellFade ("Your X spell has worn off.") only fires for the active player,

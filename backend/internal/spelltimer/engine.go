@@ -147,6 +147,22 @@ func timerKey(spellName, targetName string) string {
 	return spellName + timerKeySep + targetName
 }
 
+// sameSpellForDedup reports whether an existing timer represents the same
+// underlying spell as an incoming (name, spellID) pair, for cross-pipeline
+// dedup. A name match is the common case. A SpellID match additionally
+// catches packs that give a trigger a combined display name — e.g. the
+// Enchanter pack's "Speed of the Shissar/Brood" — while linking it to a
+// single DB spell (1939). There the trigger's name differs from the
+// spell-landed pipeline's resolved DB name ("Speed of the Shissar"), but
+// both timers carry the same SpellID, so without this they'd show as two
+// separate rows for one cast.
+func sameSpellForDedup(existing *ActiveTimer, name string, spellID int) bool {
+	if existing.SpellName == name {
+		return true
+	}
+	return spellID > 0 && existing.SpellID == spellID
+}
+
 // Engine watches parsed log events, maintains a live map of active spell
 // timers, and broadcasts state changes via WebSocket.
 //
@@ -566,7 +582,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 	}
 
 	var resolvedIcon int
-	if spellID > 0 {
+	if spellID > 0 && e.db != nil {
 		if spell, err := e.db.GetSpell(spellID); err == nil && spell != nil {
 			extended := e.applyDurationModifiers(spell, float64(durationSecs))
 			durationSecs = int(extended)
@@ -615,7 +631,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 	// the spell-landed timer wins on identity (target, accurate duration via
 	// duration focuses).
 	for _, existing := range e.timers {
-		if existing.SpellName == name && time.Since(existing.CastAt) < dedupGraceWindow {
+		if sameSpellForDedup(existing, name, spellID) && time.Since(existing.CastAt) < dedupGraceWindow {
 			if displayThresholdSecs > 0 {
 				existing.DisplayThresholdSecs = displayThresholdSecs
 			}
@@ -666,15 +682,23 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 // match by name (not composite key) so a user-authored worn-off pattern
 // also clears any spell-landed entries for the same buff.
 //
+// spellID, when > 0, additionally removes any timer carrying that SpellID
+// even if its name differs — this clears merged timers where the spell-landed
+// pipeline won identity under the DB name (e.g. "Speed of the Shissar") while
+// the firing trigger used a combined pack name ("Speed of the Shissar/Brood").
+// Without it, a haste buff that fades via "Your body slows." (the trigger's
+// worn-off pattern, with no generic "...spell has worn off." line) would
+// linger to natural expiry.
+//
 // Also clears any pendingArm for the spell — a resist of a deferred-render
 // spell (e.g. mez) reaches us through the trigger's WornOffPattern, and
 // without this the arm would linger until pendingArmTTL and could falsely
 // promote a stale arm onto a later genuine cast.
-func (e *Engine) StopExternal(name string) {
+func (e *Engine) StopExternal(name string, spellID int) {
 	e.mu.Lock()
 	delete(e.pendingArms, name)
 	e.mu.Unlock()
-	e.removeBySpellName(name)
+	e.removeBySpellNameOrID(name, spellID)
 }
 
 // gcPendingArmsLocked drops pending arms older than pendingArmTTL. Lazy
@@ -917,7 +941,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		if existingKey == key {
 			continue
 		}
-		if existing.SpellName != spellName {
+		if !sameSpellForDedup(existing, spellName, spell.ID) {
 			continue
 		}
 		if time.Since(existing.CastAt) >= dedupGraceWindow {
@@ -1186,18 +1210,20 @@ func (e *Engine) removeIllusionsForPlayer(player string) {
 	}
 }
 
-// removeBySpellName deletes every timer whose SpellName matches, regardless
-// of target. Used by StopExternal: a custom-trigger worn-off pattern is
-// presumed to wipe the spell entirely (the user wrote it that way), and we
-// also want to catch any spell-landed timer we may have created in parallel.
-func (e *Engine) removeBySpellName(spellName string) {
-	if spellName == "" {
+// removeBySpellNameOrID deletes every timer whose SpellName matches, or (when
+// spellID > 0) whose SpellID matches, regardless of target. Used by
+// StopExternal: a custom-trigger worn-off pattern is presumed to wipe the
+// spell entirely (the user wrote it that way), and we also want to catch any
+// spell-landed timer we may have created in parallel — including merged
+// timers that survived under the DB name rather than the trigger's name.
+func (e *Engine) removeBySpellNameOrID(spellName string, spellID int) {
+	if spellName == "" && spellID <= 0 {
 		return
 	}
 	e.mu.Lock()
 	removed := 0
 	for k, t := range e.timers {
-		if t.SpellName == spellName {
+		if t.SpellName == spellName || (spellID > 0 && t.SpellID == spellID) {
 			delete(e.timers, k)
 			removed++
 		}
