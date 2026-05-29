@@ -649,6 +649,86 @@ func TestHandle_Kill_RemovesMultiWordBossTimer(t *testing.T) {
 	}
 }
 
+func TestParseCorpseTarget(t *testing.T) {
+	cases := []struct {
+		in       string
+		wantName string
+		wantOK   bool
+	}{
+		{"Daibo Xi Xin's corpse", "Daibo Xi Xin", true},
+		{"a netherbian drone's corpse", "a netherbian drone", true},
+		{"A Gnoll's Corpse", "A Gnoll", true},
+		{"a_gnoll's_corpse", "a_gnoll", true},
+		{"Daibo Xi Xin", "Daibo Xi Xin", false},
+		{"corpse", "corpse", false},
+	}
+	for _, tc := range cases {
+		gotName, gotOK := parseCorpseTarget(tc.in)
+		if gotName != tc.wantName || gotOK != tc.wantOK {
+			t.Errorf("parseCorpseTarget(%q) = (%q, %t), want (%q, %t)",
+				tc.in, gotName, gotOK, tc.wantName, tc.wantOK)
+		}
+	}
+}
+
+// A Zeal corpse target is the raid-range death signal: when a boss dies while
+// still selected, the pipe reports "<Name>'s corpse" even though the slain
+// line never reaches a far-off caster's log. The transition must drop the
+// boss's detrimental timers just like a log-driven kill would.
+func TestHandlePipeTarget_CorpseDropsDetrimental(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	e.timers[timerKey("Tashanian", "Daibo Xi Xin")] = &ActiveTimer{
+		ID: timerKey("Tashanian", "Daibo Xi Xin"), SpellName: "Tashanian", Category: CategoryDebuff,
+		TargetName: "Daibo Xi Xin", CastAt: now, StartsAt: now, ExpiresAt: now.Add(13 * time.Minute),
+	}
+
+	// Live target first, then the corpse form once it dies.
+	e.HandlePipeTarget("Daibo Xi Xin")
+	if _, ok := e.timers[timerKey("Tashanian", "Daibo Xi Xin")]; !ok {
+		t.Fatal("timer should still exist while the boss is alive")
+	}
+	e.HandlePipeTarget("Daibo Xi Xin's corpse")
+	if _, ok := e.timers[timerKey("Tashanian", "Daibo Xi Xin")]; ok {
+		t.Error("detrimental timer should be removed once the target is a corpse")
+	}
+}
+
+// A non-corpse target must never drop timers, and the ~10 Hz repeat of the
+// same corpse name must not keep re-firing removeOnKill against later timers.
+func TestHandlePipeTarget_NonCorpseAndRepeatAreNoops(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	add := func() {
+		e.timers[timerKey("Cripple", "a netherbian drone")] = &ActiveTimer{
+			ID: timerKey("Cripple", "a netherbian drone"), SpellName: "Cripple", Category: CategoryDebuff,
+			TargetName: "a netherbian drone", CastAt: now, StartsAt: now, ExpiresAt: now.Add(3 * time.Minute),
+		}
+	}
+
+	// Live target: no removal.
+	add()
+	e.HandlePipeTarget("a netherbian drone")
+	if _, ok := e.timers[timerKey("Cripple", "a netherbian drone")]; !ok {
+		t.Error("live (non-corpse) target must not drop timers")
+	}
+
+	// First corpse pulse removes it.
+	e.HandlePipeTarget("a netherbian drone's corpse")
+	if _, ok := e.timers[timerKey("Cripple", "a netherbian drone")]; ok {
+		t.Fatal("corpse target should have removed the timer")
+	}
+
+	// A re-cast on a freshly-pulled same-name mob, then a repeat of the
+	// identical corpse string: the de-dupe must suppress the repeat so the
+	// new timer survives until the target actually changes.
+	add()
+	e.HandlePipeTarget("a netherbian drone's corpse")
+	if _, ok := e.timers[timerKey("Cripple", "a netherbian drone")]; !ok {
+		t.Error("repeated identical corpse target must be de-duped, not re-fire removeOnKill")
+	}
+}
+
 // scope=cast_by_me drops other-target lands when there's no recent local
 // cast of the same spell — i.e. another player's buff on a third party.
 func TestOnSpellLanded_ScopeCastByMe_FiltersWithoutRecentCast(t *testing.T) {

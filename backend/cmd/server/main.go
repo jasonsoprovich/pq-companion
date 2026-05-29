@@ -497,6 +497,10 @@ func main() {
 		}
 		timerEngine.SetPipeCasting(castingName)
 		timerEngine.SetPipeBuffSlots(buffSlots)
+		// Corpse-target death signal: drops detrimental timers when a boss
+		// dies while still selected, even if the slain-line is out of log
+		// range (raid casters far from the target). See HandlePipeTarget.
+		timerEngine.HandlePipeTarget(targetName)
 		triggerEngine.HandlePipeTarget(targetName, targetHP, env.Character, time.Now())
 		triggerEngine.HandlePipeBuffSlots(buffSlots, env.Character, time.Now())
 	})

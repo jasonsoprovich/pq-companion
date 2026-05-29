@@ -192,6 +192,11 @@ type Engine struct {
 	// be tightened over time.
 	pipeCasting string
 
+	// lastPipeTarget is the most recent target name reported by the Zeal pipe
+	// (LabelTargetName, id 28). The pipe resends the current target at ~10 Hz,
+	// so HandlePipeTarget tracks the last value and only acts on transitions.
+	lastPipeTarget string
+
 	// pipeBuffSlots is the most recent self-buff slot snapshot from the pipe
 	// (Buff0..14, plus 15..20 from game.dll). Stored as a set keyed by spell
 	// name. Used for divergence logging against the engine's active self-buff
@@ -412,6 +417,37 @@ func (e *Engine) SetPipeCasting(name string) {
 	e.mu.Lock()
 	e.pipeCasting = strings.TrimSpace(name)
 	e.mu.Unlock()
+}
+
+// HandlePipeTarget consumes the player's current target name from the Zeal
+// pipe (LabelTargetName, id 28) and uses the corpse form as a death signal for
+// detrimental timers.
+//
+// When a mob dies while the player still has it selected, Zeal flips the
+// target name to "<Name>'s corpse". That corpse form is an unambiguous,
+// always-in-range death signal — unlike the log's slain-line, which never
+// reaches a caster standing far from a raid boss. On the transition into a
+// corpse target we drop any detrimental timers keyed to that NPC, the same
+// cleanup the log-driven EventKill path performs via removeOnKill.
+//
+// The pipe resends the current target at ~10 Hz, so we de-dupe against the
+// last seen name and act only when it changes; non-corpse and empty targets
+// just update the de-dupe state. Limitation: Zeal only exposes the player's
+// own target, so a debuff lingers if the caster retargets away before the boss
+// dies — the log path remains the fallback for that case.
+func (e *Engine) HandlePipeTarget(name string) {
+	name = strings.TrimSpace(name)
+	e.mu.Lock()
+	if name == e.lastPipeTarget {
+		e.mu.Unlock()
+		return
+	}
+	e.lastPipeTarget = name
+	e.mu.Unlock()
+
+	if base, ok := parseCorpseTarget(name); ok {
+		e.removeOnKill(base)
+	}
 }
 
 // SetPipeBuffSlots records the current self-buff slot snapshot from the pipe
@@ -1093,6 +1129,25 @@ func normalizeNPCName(s string) string {
 		return s[4:]
 	}
 	return s
+}
+
+// parseCorpseTarget detects an "X's corpse" target name — the form Zeal sends
+// when the player has a corpse selected — and returns the underlying NPC name
+// with a flag. Both the space and underscore variants are recognised since the
+// pipe may deliver either depending on the EQ build. Mirrors
+// overlay.stripCorpseSuffix; kept local to avoid a cross-package dependency for
+// one small string check.
+func parseCorpseTarget(name string) (string, bool) {
+	const spaceSuffix = "'s corpse"
+	const underscoreSuffix = "'s_corpse"
+	lower := strings.ToLower(name)
+	switch {
+	case strings.HasSuffix(lower, spaceSuffix):
+		return strings.TrimSpace(name[:len(name)-len(spaceSuffix)]), true
+	case strings.HasSuffix(lower, underscoreSuffix):
+		return strings.TrimSpace(name[:len(name)-len(underscoreSuffix)]), true
+	}
+	return name, false
 }
 
 // isDetrimentalCategory reports whether a timer category represents a
