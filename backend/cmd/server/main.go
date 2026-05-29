@@ -23,6 +23,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/keyring"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/lockout"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
@@ -119,7 +120,6 @@ func main() {
 
 	// zealWatcher is initialized after charStore is opened; see below.
 
-
 	backupMgr, err := backup.NewManager(cfgMgr)
 	if err != nil {
 		slog.Error("open backup manager", "err", err)
@@ -183,6 +183,17 @@ func main() {
 		} else {
 			slog.Info("keyring master list loaded", "count", len(keyringMaster))
 		}
+	}
+
+	// Lockout tracker: persists per-character /sll loot & legacy-item lockout
+	// snapshots. Non-fatal — failing here only disables the Lockouts page.
+	lockoutStore, err := lockout.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	var lockoutConsumer *lockout.Consumer
+	if err != nil {
+		slog.Warn("open lockout tracker (disabled)", "err", err)
+		lockoutStore = nil
+	} else {
+		defer lockoutStore.Close()
 	}
 
 	// Build the spell-landed detection index from the read-only spells_new
@@ -399,6 +410,16 @@ func main() {
 		})
 	}
 
+	if lockoutStore != nil {
+		lockoutConsumer = lockout.NewConsumer(lockoutStore, activeChar)
+		lockoutConsumer.SetOnSnapshot(func(character string) {
+			hub.Broadcast(ws.Event{
+				Type: "lockouts.snapshot",
+				Data: map[string]any{"character": character},
+			})
+		})
+	}
+
 	// Zeal IPC supervisor: discovers the eqgame.exe Zeal pipe and forwards
 	// live state into every downstream consumer that benefits from real-time,
 	// authoritative game data instead of log inference.
@@ -522,6 +543,9 @@ func main() {
 		if keyringConsumer != nil {
 			keyringConsumer.HandleLine(ts, msg)
 		}
+		if lockoutConsumer != nil {
+			lockoutConsumer.HandleLine(ts, msg)
+		}
 	}, func(character string) {
 		slog.Info("logparser: auto-detected active character", "character", character)
 		// If the player switched to a character that doesn't match the
@@ -616,7 +640,7 @@ func main() {
 		defer savedQueryStore.Close()
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, keyringStore, keyringMaster, sb, savedQueryStore, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {
