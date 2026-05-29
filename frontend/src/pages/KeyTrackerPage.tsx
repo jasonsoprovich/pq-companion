@@ -14,6 +14,32 @@ type Filter = 'all' | 'in_progress' | 'complete'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+// Bag containers and slots use either ":" or "-" as separator depending on the
+// Zeal version (mirrors InventoryTrackerPage). Turn the raw location into a
+// human label so the user knows which bag/bank slot holds the key piece.
+const BAG_SLOT_RE = /^(General|Bank|SharedBank)(\d+)[:\-]Slot(\d+)$/
+const BAG_CONTAINER_RE = /^(General|Bank|SharedBank)(\d+)$/
+
+function kindLabel(kind: string): string {
+  if (kind === 'General') return 'Bag'
+  if (kind === 'SharedBank') return 'Shared Bank'
+  return 'Bank'
+}
+
+function formatLocation(loc: string): string {
+  const s = loc.match(BAG_SLOT_RE)
+  if (s) return `${kindLabel(s[1])} ${s[2]}, Slot ${s[3]}`
+  const c = loc.match(BAG_CONTAINER_RE)
+  if (c) return `${kindLabel(c[1])} ${c[2]}`
+  return loc // equipment slot, Cursor, etc. — shown as-is
+}
+
+/** Joins formatted locations for display; returns '' when none are known. */
+function formatLocations(locs?: string[]): string {
+  if (!locs || locs.length === 0) return ''
+  return locs.map(formatLocation).join(', ')
+}
+
 function hasFinalKey(chars: CharacterKeyProgress[]): boolean {
   return chars.some((c) => c.final_item && (c.final_item.have || c.final_item.shared_bank))
 }
@@ -212,28 +238,49 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
                       </td>
                       {hasExportChars.map((charProg) => {
                         const fi = charProg.final_item
+                        const locText = formatLocations(fi?.locations)
                         return (
-                          <td key={charProg.character} className="px-3 py-2 text-center">
+                          <td key={charProg.character} className="px-3 py-2 text-center align-top">
                             {fi?.have ? (
-                              <span title="Keyed">
-                                <CheckCircle2
-                                  size={14}
-                                  className="inline-block"
-                                  style={{ color: 'var(--color-success)' }}
-                                />
-                              </span>
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span title={locText ? `Keyed — ${locText}` : 'Keyed'}>
+                                  <CheckCircle2
+                                    size={14}
+                                    className="inline-block"
+                                    style={{ color: 'var(--color-success)' }}
+                                  />
+                                </span>
+                                {locText && (
+                                  <span
+                                    className="text-[9px] leading-tight"
+                                    style={{ color: 'var(--color-muted)' }}
+                                  >
+                                    {locText}
+                                  </span>
+                                )}
+                              </div>
                             ) : fi?.shared_bank ? (
-                              <span
-                                className="inline-block text-[9px] px-1.5 py-0.5 rounded font-medium"
-                                style={{
-                                  backgroundColor: 'var(--color-surface-2)',
-                                  color: 'var(--color-primary)',
-                                  border: '1px solid var(--color-border)',
-                                }}
-                                title="In Shared Bank"
-                              >
-                                SB
-                              </span>
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span
+                                  className="inline-block text-[9px] px-1.5 py-0.5 rounded font-medium"
+                                  style={{
+                                    backgroundColor: 'var(--color-surface-2)',
+                                    color: 'var(--color-primary)',
+                                    border: '1px solid var(--color-border)',
+                                  }}
+                                  title={locText ? `In Shared Bank — ${locText}` : 'In Shared Bank'}
+                                >
+                                  SB
+                                </span>
+                                {locText && (
+                                  <span
+                                    className="text-[9px] leading-tight"
+                                    style={{ color: 'var(--color-muted)' }}
+                                  >
+                                    {locText}
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <span title="Not assembled">
                                 <Circle
@@ -285,28 +332,56 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
                         const doneViaFinal = !!(
                           charProg.final_item?.have || charProg.final_item?.shared_bank
                         )
+                        // Only the character's own held intermediate has a real
+                        // slot; if it's complete only because the final key exists,
+                        // the intermediate was already consumed.
+                        const locText = ii?.have ? formatLocations(ii.locations) : ''
                         return (
-                          <td key={charProg.character} className="px-3 py-2 text-center">
+                          <td key={charProg.character} className="px-3 py-2 text-center align-top">
                             {ii?.have || doneViaFinal ? (
-                              <span title="Have it — first-combine complete">
-                                <CheckCircle2
-                                  size={14}
-                                  className="inline-block"
-                                  style={{ color: 'var(--color-success)' }}
-                                />
-                              </span>
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span title={locText ? `Have it — ${locText}` : 'Have it — first-combine complete'}>
+                                  <CheckCircle2
+                                    size={14}
+                                    className="inline-block"
+                                    style={{ color: 'var(--color-success)' }}
+                                  />
+                                </span>
+                                {locText && (
+                                  <span
+                                    className="text-[9px] leading-tight"
+                                    style={{ color: 'var(--color-muted)' }}
+                                  >
+                                    {locText}
+                                  </span>
+                                )}
+                              </div>
                             ) : ii?.shared_bank ? (
-                              <span
-                                className="inline-block text-[9px] px-1.5 py-0.5 rounded font-medium"
-                                style={{
-                                  backgroundColor: 'var(--color-surface-2)',
-                                  color: 'var(--color-primary)',
-                                  border: '1px solid var(--color-border)',
-                                }}
-                                title="In Shared Bank"
-                              >
-                                SB
-                              </span>
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span
+                                  className="inline-block text-[9px] px-1.5 py-0.5 rounded font-medium"
+                                  style={{
+                                    backgroundColor: 'var(--color-surface-2)',
+                                    color: 'var(--color-primary)',
+                                    border: '1px solid var(--color-border)',
+                                  }}
+                                  title={
+                                    formatLocations(ii.locations)
+                                      ? `In Shared Bank — ${formatLocations(ii.locations)}`
+                                      : 'In Shared Bank'
+                                  }
+                                >
+                                  SB
+                                </span>
+                                {formatLocations(ii.locations) && (
+                                  <span
+                                    className="text-[9px] leading-tight"
+                                    style={{ color: 'var(--color-muted)' }}
+                                  >
+                                    {formatLocations(ii.locations)}
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <span title="Not yet combined">
                                 <Circle
@@ -346,28 +421,49 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
                           charProg.intermediate_item &&
                           (charProg.intermediate_item.have || charProg.intermediate_item.shared_bank)
                         )
+                        const locText = formatLocations(cs.locations)
                         return (
-                          <td key={charProg.character} className="px-3 py-2 text-center">
+                          <td key={charProg.character} className="px-3 py-2 text-center align-top">
                             {cs.have ? (
-                              <span title="Have it">
-                                <CheckCircle2
-                                  size={14}
-                                  className="inline-block"
-                                  style={{ color: 'var(--color-success)' }}
-                                />
-                              </span>
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span title={locText ? `Have it — ${locText}` : 'Have it'}>
+                                  <CheckCircle2
+                                    size={14}
+                                    className="inline-block"
+                                    style={{ color: 'var(--color-success)' }}
+                                  />
+                                </span>
+                                {locText && (
+                                  <span
+                                    className="text-[9px] leading-tight"
+                                    style={{ color: 'var(--color-muted)' }}
+                                  >
+                                    {locText}
+                                  </span>
+                                )}
+                              </div>
                             ) : cs.shared_bank ? (
-                              <span
-                                className="inline-block text-[9px] px-1.5 py-0.5 rounded font-medium"
-                                style={{
-                                  backgroundColor: 'var(--color-surface-2)',
-                                  color: 'var(--color-primary)',
-                                  border: '1px solid var(--color-border)',
-                                }}
-                                title="In Shared Bank"
-                              >
-                                SB
-                              </span>
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span
+                                  className="inline-block text-[9px] px-1.5 py-0.5 rounded font-medium"
+                                  style={{
+                                    backgroundColor: 'var(--color-surface-2)',
+                                    color: 'var(--color-primary)',
+                                    border: '1px solid var(--color-border)',
+                                  }}
+                                  title={locText ? `In Shared Bank — ${locText}` : 'In Shared Bank'}
+                                >
+                                  SB
+                                </span>
+                                {locText && (
+                                  <span
+                                    className="text-[9px] leading-tight"
+                                    style={{ color: 'var(--color-muted)' }}
+                                  >
+                                    {locText}
+                                  </span>
+                                )}
+                              </div>
                             ) : keyedViaFinal ? (
                               <span title="Covered by assembled key">
                                 <CheckCircle2

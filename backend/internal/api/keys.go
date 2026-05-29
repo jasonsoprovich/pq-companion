@@ -22,15 +22,16 @@ func (h *keysHandler) list(w http.ResponseWriter, r *http.Request) {
 
 // characterProgress tracks which component item IDs a single character holds.
 type characterProgress struct {
-	Character string         `json:"character"`
-	HasExport bool           `json:"has_export"`
-	HaveIDs   map[int]bool   `json:"-"` // internal lookup set
+	Character string           `json:"character"`
+	HasExport bool             `json:"has_export"`
+	HaveIDs   map[int]bool     `json:"-"` // internal lookup set
+	HaveLocs  map[int][]string `json:"-"` // item ID → raw Zeal locations (bag/bank slots)
 }
 
 // keyProgress is the per-key section of the progress response.
 type keyProgress struct {
-	KeyID      string                      `json:"key_id"`
-	Characters []characterKeyProgress      `json:"characters"`
+	KeyID      string                 `json:"key_id"`
+	Characters []characterKeyProgress `json:"characters"`
 }
 
 // characterKeyProgress is the per-character view of one key.
@@ -41,19 +42,20 @@ type keyProgress struct {
 // Have or SharedBank is true, the first IntermediateCoverCount components are
 // considered complete (the intermediate combine consumed them).
 type characterKeyProgress struct {
-	Character      string            `json:"character"`
-	HasExport      bool              `json:"has_export"`
-	Components     []componentStatus `json:"components"`
-	FinalItem      *componentStatus  `json:"final_item,omitempty"`
-	IntermediateItem *componentStatus `json:"intermediate_item,omitempty"`
+	Character        string            `json:"character"`
+	HasExport        bool              `json:"has_export"`
+	Components       []componentStatus `json:"components"`
+	FinalItem        *componentStatus  `json:"final_item,omitempty"`
+	IntermediateItem *componentStatus  `json:"intermediate_item,omitempty"`
 }
 
 // componentStatus is the status of one component for one character.
 type componentStatus struct {
-	ItemID      int    `json:"item_id"`
-	ItemName    string `json:"item_name"`
-	Have        bool   `json:"have"`        // present in this character's inventory
-	SharedBank  bool   `json:"shared_bank"` // present in shared bank (counts for all)
+	ItemID     int      `json:"item_id"`
+	ItemName   string   `json:"item_name"`
+	Have       bool     `json:"have"`                // present in this character's inventory
+	SharedBank bool     `json:"shared_bank"`         // present in shared bank (counts for all)
+	Locations  []string `json:"locations,omitempty"` // raw Zeal locations of the held item (bag/bank slots)
 }
 
 // progressResponse is the full GET /api/keys/progress response.
@@ -74,6 +76,18 @@ func holdsComponent(ids map[int]bool, comp keys.Component) bool {
 		}
 	}
 	return false
+}
+
+// componentLocations gathers every Zeal location at which the component's
+// canonical ItemID or any AltItemID is held. Same-name medallions live at
+// distinct item IDs, so each component row resolves to its own slot(s); the
+// list also covers genuine duplicate stacks of the same ID.
+func componentLocations(locs map[int][]string, comp keys.Component) []string {
+	out := append([]string(nil), locs[comp.ItemID]...)
+	for _, alt := range comp.AltItemIDs {
+		out = append(out, locs[alt]...)
+	}
+	return out
 }
 
 // GET /api/keys/progress
@@ -99,22 +113,26 @@ func (h *keysHandler) progress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build shared-bank item ID set.
+	// Build shared-bank item ID set and per-ID location list.
 	sharedIDs := make(map[int]bool, len(allInv.SharedBank))
+	sharedLocs := make(map[int][]string, len(allInv.SharedBank))
 	for _, e := range allInv.SharedBank {
 		sharedIDs[e.ID] = true
+		sharedLocs[e.ID] = append(sharedLocs[e.ID], e.Location)
 	}
 
-	// Build per-character item ID sets.
+	// Build per-character item ID sets and per-ID location lists.
 	chars := make([]characterProgress, 0, len(allInv.Characters))
 	for _, inv := range allInv.Characters {
 		cp := characterProgress{
 			Character: inv.Character,
 			HasExport: true,
 			HaveIDs:   make(map[int]bool, len(inv.Entries)),
+			HaveLocs:  make(map[int][]string, len(inv.Entries)),
 		}
 		for _, e := range inv.Entries {
 			cp.HaveIDs[e.ID] = true
+			cp.HaveLocs[e.ID] = append(cp.HaveLocs[e.ID], e.Location)
 		}
 		chars = append(chars, cp)
 	}
@@ -136,32 +154,56 @@ func (h *keysHandler) progress(w http.ResponseWriter, r *http.Request) {
 				// canonical ItemID or any AltItemID — the latter handles "any one
 				// of N" quest steps like Sleeper's Tomb talismans.
 				have := holdsComponent(cp.HaveIDs, comp)
+				inShared := !have && holdsComponent(sharedIDs, comp)
 				cs := componentStatus{
 					ItemID:   comp.ItemID,
 					ItemName: comp.ItemName,
 					Have:     have,
 					// SharedBank is true if the only source is the shared bank.
-					SharedBank: !have && holdsComponent(sharedIDs, comp),
+					SharedBank: inShared,
+				}
+				// Record where the held item lives so the user can find the
+				// right bag/bank slot — only meaningful when it's actually held.
+				if have {
+					cs.Locations = componentLocations(cp.HaveLocs, comp)
+				} else if inShared {
+					cs.Locations = componentLocations(sharedLocs, comp)
 				}
 				ckp.Components = append(ckp.Components, cs)
 			}
 			if kd.IntermediateItem != nil {
 				ii := *kd.IntermediateItem
-				ckp.IntermediateItem = &componentStatus{
+				have := cp.HaveIDs[ii.ItemID]
+				inShared := !have && sharedIDs[ii.ItemID]
+				cs := &componentStatus{
 					ItemID:     ii.ItemID,
 					ItemName:   ii.ItemName,
-					Have:       cp.HaveIDs[ii.ItemID],
-					SharedBank: !cp.HaveIDs[ii.ItemID] && sharedIDs[ii.ItemID],
+					Have:       have,
+					SharedBank: inShared,
 				}
+				if have {
+					cs.Locations = componentLocations(cp.HaveLocs, ii)
+				} else if inShared {
+					cs.Locations = componentLocations(sharedLocs, ii)
+				}
+				ckp.IntermediateItem = cs
 			}
 			if kd.FinalItem != nil {
 				fi := *kd.FinalItem
-				ckp.FinalItem = &componentStatus{
+				have := cp.HaveIDs[fi.ItemID]
+				inShared := !have && sharedIDs[fi.ItemID]
+				cs := &componentStatus{
 					ItemID:     fi.ItemID,
 					ItemName:   fi.ItemName,
-					Have:       cp.HaveIDs[fi.ItemID],
-					SharedBank: !cp.HaveIDs[fi.ItemID] && sharedIDs[fi.ItemID],
+					Have:       have,
+					SharedBank: inShared,
 				}
+				if have {
+					cs.Locations = componentLocations(cp.HaveLocs, fi)
+				} else if inShared {
+					cs.Locations = componentLocations(sharedLocs, fi)
+				}
+				ckp.FinalItem = cs
 			}
 			kp.Characters = append(kp.Characters, ckp)
 		}

@@ -25,6 +25,8 @@ export interface ComponentStatus {
   item_name: string
   have: boolean
   shared_bank: boolean
+  /** Raw Zeal locations (e.g. "General1:Slot3", "Bank2") of the held item. */
+  locations?: string[]
 }
 
 export interface CharacterKeyProgress {
