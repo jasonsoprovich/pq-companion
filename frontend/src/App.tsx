@@ -32,6 +32,7 @@ import CombatLayout from './components/CombatLayout'
 import TriggersPage from './pages/TriggersPage'
 import RollTrackerPage from './pages/RollTrackerPage'
 import RollTrackerWindowPage from './pages/RollTrackerWindowPage'
+import RespawnTimerWindowPage from './pages/RespawnTimerWindowPage'
 import PlayersPage from './pages/PlayersPage'
 import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
 import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
@@ -126,6 +127,7 @@ export default function App(): React.ReactElement {
         <Route path="trigger-overlay-window" element={<OverlayPage><TriggerOverlayWindowPage /></OverlayPage>} />
         <Route path="npc-overlay-window" element={<OverlayPage><NPCOverlayWindowPage /></OverlayPage>} />
         <Route path="roll-tracker-window" element={<OverlayPage><RollTrackerWindowPage /></OverlayPage>} />
+        <Route path="respawn-timer-window" element={<OverlayPage><RespawnTimerWindowPage /></OverlayPage>} />
 
         {/* Main app routes — wrapped in full Layout with audio/alert hooks */}
         <Route path="/" element={<MainWindowLayout />}>

@@ -88,7 +88,7 @@ function audioMimeType(ext: string): string {
 
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
-type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'trigger' | 'npc' | 'rollTracker'
+type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'trigger' | 'npc' | 'rollTracker' | 'respawnTimer'
 type Bounds = { x: number; y: number; width: number; height: number }
 
 type BoundsStore = Partial<Record<OverlayName, Bounds>>
@@ -285,6 +285,7 @@ let detrimTimerWindow: BrowserWindow | null = null
 let triggerOverlayWindow: BrowserWindow | null = null
 let npcOverlayWindow: BrowserWindow | null = null
 let rollTrackerWindow: BrowserWindow | null = null
+let respawnTimerWindow: BrowserWindow | null = null
 let sidecarProcess: ChildProcess | null = null
 
 // Backend port is discovered at runtime: the Go sidecar tries its preferred
@@ -590,7 +591,7 @@ function setupAutoUpdater(): void {
 // ── Window management ─────────────────────────────────────────────────────────
 
 function closeAllOverlays(): void {
-  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, triggerOverlayWindow, npcOverlayWindow, rollTrackerWindow]) {
+  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, triggerOverlayWindow, npcOverlayWindow, rollTrackerWindow, respawnTimerWindow]) {
     if (win && !win.isDestroyed()) win.destroy()
   }
 }
@@ -879,6 +880,64 @@ function createDetrimTimerOverlay(): void {
 
   detrimTimerWindow.on('closed', () => {
     detrimTimerWindow = null
+  })
+}
+
+// ── Respawn (death) Timer overlay window ─────────────────────────────────────
+
+function createRespawnTimerOverlay(): void {
+  if (respawnTimerWindow && !respawnTimerWindow.isDestroyed()) {
+    respawnTimerWindow.focus()
+    return
+  }
+
+  const { x, y, width, height } = getRestoredBounds('respawnTimer', { x: 0, y: 0, width: 300, height: 320 })
+  respawnTimerWindow = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    minWidth: 200,
+    minHeight: 140,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    },
+  })
+
+  respawnTimerWindow.once('ready-to-show', () => {
+    respawnTimerWindow?.show()
+  })
+
+  respawnTimerWindow.setAlwaysOnTop(true, 'screen-saver')
+  respawnTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  windowToOverlayName.set(respawnTimerWindow, 'respawnTimer')
+  if (getOverlayLocked('respawnTimer')) {
+    respawnTimerWindow.setIgnoreMouseEvents(true, { forward: true })
+  }
+  trackOverlayBounds('respawnTimer', respawnTimerWindow)
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    respawnTimerWindow.loadURL(`${rendererUrl}/#/respawn-timer-window`)
+  } else {
+    respawnTimerWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/respawn-timer-window',
+    })
+  }
+
+  respawnTimerWindow.on('closed', () => {
+    respawnTimerWindow = null
   })
 }
 
@@ -1222,6 +1281,24 @@ ipcMain.handle('overlay:detrimtimer:toggle', () => {
   }
 })
 
+ipcMain.handle('overlay:respawntimer:open', () => {
+  createRespawnTimerOverlay()
+})
+
+ipcMain.handle('overlay:respawntimer:close', () => {
+  if (respawnTimerWindow && !respawnTimerWindow.isDestroyed()) {
+    respawnTimerWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:respawntimer:toggle', () => {
+  if (respawnTimerWindow && !respawnTimerWindow.isDestroyed()) {
+    respawnTimerWindow.close()
+  } else {
+    createRespawnTimerOverlay()
+  }
+})
+
 ipcMain.handle('overlay:trigger:open', () => {
   createTriggerOverlay()
 })
@@ -1287,6 +1364,7 @@ function popoutWindows(): BrowserWindow[] {
     triggerOverlayWindow,
     npcOverlayWindow,
     rollTrackerWindow,
+    respawnTimerWindow,
   ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
 }
 
@@ -1299,6 +1377,7 @@ ipcMain.handle('overlay:popouts:open-all', () => {
   if (!npcOverlayWindow || npcOverlayWindow.isDestroyed()) createNPCOverlay()
   if (!triggerOverlayWindow || triggerOverlayWindow.isDestroyed()) createTriggerOverlay()
   if (!rollTrackerWindow || rollTrackerWindow.isDestroyed()) createRollTrackerOverlay()
+  if (!respawnTimerWindow || respawnTimerWindow.isDestroyed()) createRespawnTimerOverlay()
 })
 
 ipcMain.handle('overlay:popouts:close-all', () => {

@@ -6,6 +6,7 @@
 export const WSEvent = {
   OverlayCombat: 'overlay:combat',
   OverlayTimers: 'overlay:timers',
+  OverlayRespawns: 'overlay:respawns',
   OverlayRolls: 'overlay:rolls',
   OverlayNPCTarget: 'overlay:npc_target',
   TriggerFired: 'trigger:fired',

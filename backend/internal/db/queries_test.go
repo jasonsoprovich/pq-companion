@@ -238,6 +238,58 @@ func TestGetNPCVariantsByNameInZone_NoMatch(t *testing.T) {
 	}
 }
 
+func TestGetRespawnTimesInZone(t *testing.T) {
+	d := openTestDB(t)
+
+	// a_skeleton spawns in nektulos with known respawn timing.
+	infos, err := d.GetRespawnTimesInZone("a_skeleton", "nektulos")
+	if err != nil {
+		t.Fatalf("GetRespawnTimesInZone: %v", err)
+	}
+	if len(infos) == 0 {
+		t.Fatal("got 0 respawn rows for a_skeleton in nektulos, want >0")
+	}
+	for _, ri := range infos {
+		if ri.RespawnTime <= 0 {
+			t.Errorf("non-positive respawn time: %+v", ri)
+		}
+		if ri.NPCID <= 0 {
+			t.Errorf("missing npc id: %+v", ri)
+		}
+	}
+
+	// A name with no spawn data returns an empty slice, not an error.
+	none, err := d.GetRespawnTimesInZone("a_nonexistent_mob_xyzzy", "qeynos")
+	if err != nil {
+		t.Fatalf("GetRespawnTimesInZone (none): %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("got %d rows for unknown name, want 0", len(none))
+	}
+}
+
+func TestGetZoneShortNameByLongName(t *testing.T) {
+	d := openTestDB(t)
+	tests := []struct {
+		long string
+		want string
+	}{
+		{"Northern Plains of Karana", "northkarana"},
+		{"The Feerrott", "feerrott"},
+		{"Plane of Fear (Instanced)", "fearplane"}, // parenthetical stripped
+		{"Not A Real Zone Name", ""},               // no match → empty, no error
+	}
+	for _, tc := range tests {
+		got, err := d.GetZoneShortNameByLongName(tc.long)
+		if err != nil {
+			t.Fatalf("GetZoneShortNameByLongName(%q): %v", tc.long, err)
+		}
+		if got != tc.want {
+			t.Errorf("GetZoneShortNameByLongName(%q) = %q, want %q", tc.long, got, tc.want)
+		}
+	}
+}
+
 func TestSearchNPCs(t *testing.T) {
 	d := openTestDB(t)
 	tests := []struct {
@@ -381,13 +433,13 @@ func TestSearchZones(t *testing.T) {
 
 func TestParseSpecialAbilities(t *testing.T) {
 	tests := []struct {
-		raw     string
-		wantLen int
+		raw       string
+		wantLen   int
 		wantFirst db.SpecialAbility
 	}{
 		{
-			raw:     "1,1^18,1^19,1",
-			wantLen: 3,
+			raw:       "1,1^18,1^19,1",
+			wantLen:   3,
 			wantFirst: db.SpecialAbility{Code: 1, Value: 1, Name: "Summon"},
 		},
 		{
@@ -395,8 +447,8 @@ func TestParseSpecialAbilities(t *testing.T) {
 			wantLen: 0,
 		},
 		{
-			raw:     "2,1^4,1",
-			wantLen: 2,
+			raw:       "2,1^4,1",
+			wantLen:   2,
 			wantFirst: db.SpecialAbility{Code: 2, Value: 1, Name: "Enrage"},
 		},
 		{
@@ -405,8 +457,8 @@ func TestParseSpecialAbilities(t *testing.T) {
 			// field; the old SplitN(",", 2) dropped it silently. Confirm
 			// it's now parsed with code=3, value=1 and the third field
 			// ignored.
-			raw:     "1,1^3,1,30^10,1",
-			wantLen: 3,
+			raw:       "1,1^3,1,30^10,1",
+			wantLen:   3,
 			wantFirst: db.SpecialAbility{Code: 1, Value: 1, Name: "Summon"},
 		},
 	}

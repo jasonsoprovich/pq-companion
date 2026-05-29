@@ -15,6 +15,7 @@ import DPSPanel from '../components/overlays/DPSPanel'
 import HPSPanel from '../components/overlays/HPSPanel'
 import NPCPanel from '../components/overlays/NPCPanel'
 import RollTrackerPanel from '../components/overlays/RollTrackerPanel'
+import RespawnTimerPanel from '../components/overlays/RespawnTimerPanel'
 import {
   DASHBOARD_PANEL_KEYS,
   DASHBOARD_PANEL_LABELS,
@@ -327,6 +328,17 @@ export default function OverlaysDashboard(): React.ReactElement {
             defaultHeight={layout.rolls.height}
             snapGridSize={SNAP_GRID}
             onLayoutChange={handleLayoutChange('rolls')}
+          />
+        )}
+        {layout.respawn.visible && (
+          <RespawnTimerPanel
+            key={`respawn-${layoutVersion}`}
+            defaultX={layout.respawn.x}
+            defaultY={layout.respawn.y}
+            defaultWidth={layout.respawn.width}
+            defaultHeight={layout.respawn.height}
+            snapGridSize={SNAP_GRID}
+            onLayoutChange={handleLayoutChange('respawn')}
           />
         )}
       </div>

@@ -11,24 +11,24 @@ type Item struct {
 	ItemType  int    `json:"item_type"`
 
 	// Combat
-	Damage  int `json:"damage"`
-	Delay   int `json:"delay"`
-	Range   int `json:"range"`
-	AC      int `json:"ac"`
+	Damage   int `json:"damage"`
+	Delay    int `json:"delay"`
+	Range    int `json:"range"`
+	AC       int `json:"ac"`
 	BaneAmt  int `json:"bane_amt"`
 	BaneBody int `json:"bane_body"`
 	BaneRace int `json:"bane_race"`
 
 	// Stats
-	HP       int `json:"hp"`
-	Mana     int `json:"mana"`
-	Strength int `json:"str"`
-	Stamina  int `json:"sta"`
-	Agility  int `json:"agi"`
-	Dexterity int `json:"dex"`
-	Wisdom   int `json:"wis"`
+	HP           int `json:"hp"`
+	Mana         int `json:"mana"`
+	Strength     int `json:"str"`
+	Stamina      int `json:"sta"`
+	Agility      int `json:"agi"`
+	Dexterity    int `json:"dex"`
+	Wisdom       int `json:"wis"`
 	Intelligence int `json:"int"`
-	Charisma int `json:"cha"`
+	Charisma     int `json:"cha"`
 
 	// Resists
 	MagicResist   int `json:"mr"`
@@ -80,9 +80,9 @@ type Item struct {
 	Stackable int `json:"stackable"`
 	StackSize int `json:"stack_size"`
 
-	Price    int    `json:"price"`
-	Icon     int    `json:"icon"`
-	MinStatus int   `json:"min_status"`
+	Price     int `json:"price"`
+	Icon      int `json:"icon"`
+	MinStatus int `json:"min_status"`
 
 	// Duplicate-name collapse (set by GetItem, omitted in list views). The
 	// dump ships several rows per item name; lists show only the canonical
@@ -156,17 +156,17 @@ type NPC struct {
 	CHA int `json:"cha"`
 
 	// Behavior
-	AggroRadius  int     `json:"aggro_radius"`
-	RunSpeed     float64 `json:"run_speed"`
-	Size         float64 `json:"size"`
-	RaidTarget   int     `json:"raid_target"`
-	RareSpawn    int     `json:"rare_spawn"`
+	AggroRadius int     `json:"aggro_radius"`
+	RunSpeed    float64 `json:"run_speed"`
+	Size        float64 `json:"size"`
+	RaidTarget  int     `json:"raid_target"`
+	RareSpawn   int     `json:"rare_spawn"`
 
 	// Links
-	LootTableID    int `json:"loottable_id"`
-	MerchantID     int `json:"merchant_id"`
-	NPCSpellsID    int `json:"npc_spells_id"`
-	NPCFactionID   int `json:"npc_faction_id"`
+	LootTableID  int `json:"loottable_id"`
+	MerchantID   int `json:"merchant_id"`
+	NPCSpellsID  int `json:"npc_spells_id"`
+	NPCFactionID int `json:"npc_faction_id"`
 
 	// Raw special abilities string; parsed separately via ParseSpecialAbilities.
 	SpecialAbilities string `json:"special_abilities"`
@@ -221,11 +221,11 @@ type Spell struct {
 	Name string `json:"name"`
 
 	// Text
-	YouCast    string `json:"you_cast"`
-	OtherCasts string `json:"other_casts"`
-	CastOnYou  string `json:"cast_on_you"`
+	YouCast     string `json:"you_cast"`
+	OtherCasts  string `json:"other_casts"`
+	CastOnYou   string `json:"cast_on_you"`
 	CastOnOther string `json:"cast_on_other"`
-	SpellFades string `json:"spell_fades"`
+	SpellFades  string `json:"spell_fades"`
 
 	// Timing (milliseconds)
 	CastTime     int `json:"cast_time"`
@@ -244,11 +244,11 @@ type Spell struct {
 	Skill      int `json:"skill"`
 
 	// Effect slots (12 slots each)
-	EffectIDs        [12]int `json:"effect_ids"`
-	EffectBaseValues [12]int `json:"effect_base_values"`
+	EffectIDs         [12]int `json:"effect_ids"`
+	EffectBaseValues  [12]int `json:"effect_base_values"`
 	EffectLimitValues [12]int `json:"effect_limit_values"`
-	EffectMaxValues  [12]int `json:"effect_max_values"`
-	EffectFormulas   [12]int `json:"effect_formulas"`
+	EffectMaxValues   [12]int `json:"effect_max_values"`
+	EffectFormulas    [12]int `json:"effect_formulas"`
 
 	// Class levels (15 classes; 255 = cannot cast)
 	ClassLevels [15]int `json:"class_levels"`
@@ -288,35 +288,35 @@ type SpellCrossRefs struct {
 
 // Zone represents a row from the zone table.
 type Zone struct {
-	ID           int             `json:"id"`
-	ShortName    string          `json:"short_name"`
-	LongName     string          `json:"long_name"`
-	FileName     string          `json:"file_name"`
-	ZoneIDNumber int             `json:"zone_id_number"`
-	SafeX        float64         `json:"safe_x"`
-	SafeY        float64         `json:"safe_y"`
-	SafeZ        float64         `json:"safe_z"`
-	MinLevel     int             `json:"min_level"`
-	Note         string          `json:"note"`
-	Outdoor      int             `json:"outdoor"`
-	Hotzone      int             `json:"hotzone"`
-	CanLevitate  int             `json:"can_levitate"`
-	CanBind      int             `json:"can_bind"`
-	ExpMod       float64         `json:"exp_mod"`
-	Expansion    int             `json:"expansion"`
-	NPCLevelMin  int             `json:"npc_level_min"`
-	NPCLevelMax  int             `json:"npc_level_max"`
-	PullLimit    int             `json:"pull_limit"`
-	Graveyard    *ZoneGraveyard  `json:"graveyard,omitempty"`
+	ID           int            `json:"id"`
+	ShortName    string         `json:"short_name"`
+	LongName     string         `json:"long_name"`
+	FileName     string         `json:"file_name"`
+	ZoneIDNumber int            `json:"zone_id_number"`
+	SafeX        float64        `json:"safe_x"`
+	SafeY        float64        `json:"safe_y"`
+	SafeZ        float64        `json:"safe_z"`
+	MinLevel     int            `json:"min_level"`
+	Note         string         `json:"note"`
+	Outdoor      int            `json:"outdoor"`
+	Hotzone      int            `json:"hotzone"`
+	CanLevitate  int            `json:"can_levitate"`
+	CanBind      int            `json:"can_bind"`
+	ExpMod       float64        `json:"exp_mod"`
+	Expansion    int            `json:"expansion"`
+	NPCLevelMin  int            `json:"npc_level_min"`
+	NPCLevelMax  int            `json:"npc_level_max"`
+	PullLimit    int            `json:"pull_limit"`
+	Graveyard    *ZoneGraveyard `json:"graveyard,omitempty"`
 }
 
 // ZoneGraveyard describes where a player's corpse pops out when the
 // graveyard timer expires. Only set on zones that have a graveyard
 // configured (zone.graveyard_id > 0).
 type ZoneGraveyard struct {
-	ZoneID       int     `json:"zone_id"`     // destination zone DB id (for navigation)
-	ShortName    string  `json:"short_name"`  // destination short_name
-	LongName     string  `json:"long_name"`   // destination long_name
+	ZoneID       int     `json:"zone_id"`    // destination zone DB id (for navigation)
+	ShortName    string  `json:"short_name"` // destination short_name
+	LongName     string  `json:"long_name"`  // destination long_name
 	X            float64 `json:"x"`
 	Y            float64 `json:"y"`
 	Z            float64 `json:"z"`
@@ -428,6 +428,16 @@ type NPCSpawns struct {
 	SpawnGroups []NPCSpawnGroup `json:"spawn_groups"`
 }
 
+// RespawnInfo is one spawn2 row's respawn timing for an NPC name within a
+// zone, in seconds. NPCID is the npc_types.id the row resolved to (the same
+// name can map to multiple distinct NPC rows). Used by the death-timer
+// (respawn) overlay engine. See GetRespawnTimesInZone.
+type RespawnInfo struct {
+	NPCID       int
+	RespawnTime int // spawn2.respawntime, seconds
+	Variance    int // spawn2.variance, seconds
+}
+
 // NPCSpellEntry is one castable spell on an NPC's spell list. Spells_new
 // is joined so the frontend can show a name and link to the spell detail
 // page without a follow-up request. Source identifies which npc_spells row
@@ -436,7 +446,7 @@ type NPCSpawns struct {
 type NPCSpellEntry struct {
 	SpellID     int    `json:"spell_id"`
 	SpellName   string `json:"spell_name"`
-	Type        int    `json:"type"`         // AI category
+	Type        int    `json:"type"` // AI category
 	MinLevel    int    `json:"min_level"`
 	MaxLevel    int    `json:"max_level"`
 	ManaCost    int    `json:"mana_cost"`    // -1 = use spell default

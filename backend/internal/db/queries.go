@@ -985,6 +985,65 @@ func (db *DB) GetNPCSpawns(npcID int) (*NPCSpawns, error) {
 	}, nil
 }
 
+// GetRespawnTimesInZone returns the respawn timing of every spawn point that
+// can host an NPC with the given name (underscore form, e.g. "a_gnoll") in the
+// zone identified by its short_name. An empty slice (not an error) means the
+// name has no spawn data in that zone — the death-timer overlay treats that as
+// "skip, no timer". The same name can resolve to multiple npc_types rows and
+// multiple spawn points with different respawn times; the engine summarises the
+// set into a single estimate plus an ambiguity flag.
+func (db *DB) GetRespawnTimesInZone(name, zoneShort string) ([]RespawnInfo, error) {
+	rows, err := db.Query(`
+		SELECT n.id, s2.respawntime, s2.variance
+		FROM npc_types n
+		JOIN spawnentry se ON se.npcID = n.id
+		JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
+		WHERE n.name = ? COLLATE NOCASE AND s2.zone = ?`, name, zoneShort)
+	if err != nil {
+		return nil, fmt.Errorf("get respawn times for %q in zone %q: %w", name, zoneShort, err)
+	}
+	defer rows.Close()
+
+	var out []RespawnInfo
+	for rows.Next() {
+		var ri RespawnInfo
+		if err := rows.Scan(&ri.NPCID, &ri.RespawnTime, &ri.Variance); err != nil {
+			return nil, fmt.Errorf("scan respawn info: %w", err)
+		}
+		out = append(out, ri)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate respawn info: %w", err)
+	}
+	return out, nil
+}
+
+// GetZoneShortNameByLongName resolves a zone's long_name (as it appears in the
+// "You have entered <long_name>." log line) to its short_name. Returns "" with
+// no error when nothing matches, so callers can degrade gracefully. A trailing
+// parenthetical (e.g. "Plane of Fear (Instanced)") is stripped before matching.
+func (db *DB) GetZoneShortNameByLongName(longName string) (string, error) {
+	longName = strings.TrimSpace(longName)
+	if i := strings.Index(longName, " ("); i >= 0 {
+		longName = strings.TrimSpace(longName[:i])
+	}
+	if longName == "" {
+		return "", nil
+	}
+	var short string
+	err := db.QueryRow(
+		`SELECT short_name FROM zone WHERE long_name = ? COLLATE NOCASE LIMIT 1`,
+		longName,
+	).Scan(&short)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get zone short_name for %q: %w", longName, err)
+	}
+	return short, nil
+}
+
 // Quarm-specific zone-wide loot overlays. The Quarm DB stores zone-wide
 // shared drops as standalone lootdrops that aren't actually attached to any
 // NPC's loottable — they need to be surfaced manually on every NPC in the

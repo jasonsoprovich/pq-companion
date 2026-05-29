@@ -27,6 +27,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/respawn"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/sandbox"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/savedquery"
@@ -343,6 +344,11 @@ func main() {
 	})
 	go timerEngine.Start(context.Background())
 
+	// Respawn (death) timer engine: starts a countdown when a mob is killed,
+	// using the spawn data's respawn time for the player's current zone.
+	respawnEngine := respawn.NewEngine(hub, database)
+	go respawnEngine.Start(context.Background())
+
 	// Invalidate the engine's modifier cache whenever the Quarmy export is
 	// refreshed (new inventory or AAs). Without this, equipping/unequipping a
 	// focus item wouldn't take effect until the app restarts.
@@ -448,6 +454,7 @@ func main() {
 				return
 			}
 			npcTracker.SetPipePlayerSnapshot(p.Zone, p.Location.X, p.Location.Y, p.Location.Z)
+			respawnEngine.SetPipeZone(p.Zone)
 			return
 		case zealpipe.MsgLabel:
 			// Fall through to the label aggregator below.
@@ -519,6 +526,7 @@ func main() {
 		// the normal Handle() flow.
 		npcTracker.ResetPipeFields()
 		combatTracker.ResetPipeState()
+		respawnEngine.ResetPipeZone()
 		timerEngine.SetPipeCasting("")
 		timerEngine.SetPipeBuffSlots(nil)
 		triggerEngine.HandlePipeReset()
@@ -538,6 +546,7 @@ func main() {
 		npcTracker.Handle(ev)
 		combatTracker.Handle(ev)
 		timerEngine.Handle(ev)
+		respawnEngine.Handle(ev)
 		rollTracker.Handle(ev)
 		if playersConsumer != nil {
 			playersConsumer.Handle(ev)
@@ -644,7 +653,7 @@ func main() {
 		defer savedQueryStore.Close()
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

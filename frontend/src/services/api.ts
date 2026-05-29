@@ -27,6 +27,7 @@ import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { TargetState } from '../types/overlay'
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
+import type { RespawnState } from '../types/respawn'
 import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
@@ -608,6 +609,18 @@ export function clearTimers(category: 'buff' | 'detrimental' | 'all'): Promise<v
 
 export function removeTimer(id: string): Promise<void> {
   return del(`/api/overlay/timers/${encodeURIComponent(id)}`)
+}
+
+export function getRespawnState(): Promise<RespawnState> {
+  return get<RespawnState>('/api/overlay/respawns')
+}
+
+export function clearRespawns(): Promise<void> {
+  return del('/api/overlay/respawns')
+}
+
+export function removeRespawn(id: string): Promise<void> {
+  return del(`/api/overlay/respawns/${encodeURIComponent(id)}`)
 }
 
 // ── Config ─────────────────────────────────────────────────────────────────────

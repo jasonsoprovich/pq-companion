@@ -43,6 +43,9 @@ export interface ElectronAPI {
     openRollTracker: () => Promise<void>
     closeRollTracker: () => Promise<void>
     toggleRollTracker: () => Promise<void>
+    openRespawnTimer: () => Promise<void>
+    closeRespawnTimer: () => Promise<void>
+    toggleRespawnTimer: () => Promise<void>
     anyPopoutOpen: () => Promise<boolean>
     openAllPopouts: () => Promise<void>
     closeAllPopouts: () => Promise<void>
