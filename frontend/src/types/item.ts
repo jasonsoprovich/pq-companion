@@ -76,6 +76,14 @@ export interface Item {
   price: number
   icon: number
   min_status: number
+
+  // Duplicate-name collapse (set by GET /items/:id; absent in list views).
+  // The dump ships several rows per item name; lists show only the canonical
+  // one. variant_ids are the other rows sharing this name (hidden from lists,
+  // fetchable by id). canonical_id points back to the main row when this item
+  // is itself a variant.
+  variant_ids?: number[]
+  canonical_id?: number
 }
 
 export interface ItemSourceNPC {

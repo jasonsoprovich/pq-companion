@@ -99,6 +99,13 @@ func (vi *variantIndex) canonicalID(id int) int {
 	return canon
 }
 
+// variantFields returns the (siblings, canonicalID) pair for an id, for
+// populating the Item/Spell detail fields in one call. List rows are always
+// canonical, so there the siblings are the hidden variants and canonical is 0.
+func (vi *variantIndex) variantFields(id int) (siblings []int, canonical int) {
+	return vi.siblings(id), vi.canonicalID(id)
+}
+
 // ensureVariants builds both variant indexes once, on first use. On failure it
 // logs and installs an empty index so the feature degrades to "no collapse"
 // rather than breaking item/spell queries.

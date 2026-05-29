@@ -19,6 +19,7 @@ import {
 import CreateTriggerModal from '../components/CreateTriggerModal'
 import { ItemIcon, SpellIcon } from '../components/Icon'
 import RawDataModal from '../components/RawDataModal'
+import VariantLinks from '../components/VariantLinks'
 
 const SPELL_CLASSES: { index: number; abbr: string; full: string }[] = [
   { index: 0,  abbr: 'WAR', full: 'Warrior' },
@@ -610,6 +611,8 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
         <Section title="Info">
           <StatRow label="Spell ID" value={spell.id} />
         </Section>
+
+        <VariantLinks base="/spells" variantIds={spell.variant_ids} canonicalId={spell.canonical_id} />
       </div>
     </div>
   )

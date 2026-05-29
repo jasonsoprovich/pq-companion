@@ -81,8 +81,7 @@ func (db *DB) GetItem(id int) (*Item, error) {
 	// stay fetchable here (unlike hidden items above) so the detail view can
 	// link to them.
 	db.ensureVariants()
-	it.VariantIDs = db.itemVariants.siblings(it.ID)
-	it.CanonicalID = db.itemVariants.canonicalID(it.ID)
+	it.VariantIDs, it.CanonicalID = db.itemVariants.variantFields(it.ID)
 	return it, nil
 }
 
@@ -244,6 +243,11 @@ func (db *DB) SearchItems(f ItemFilter) (*SearchResult[Item], error) {
 	items, err := collectItems(rows)
 	if err != nil {
 		return nil, err
+	}
+	// List rows are canonical; attach their hidden variants so a row clicked
+	// straight from the list (without a follow-up GetItem) still shows them.
+	for i := range items {
+		items[i].VariantIDs, items[i].CanonicalID = db.itemVariants.variantFields(items[i].ID)
 	}
 	return &SearchResult[Item]{Items: items, Total: total}, nil
 }
@@ -1259,8 +1263,7 @@ func (db *DB) GetSpell(id int) (*Spell, error) {
 	}
 	// Surface any same-name duplicates collapsed out of list views.
 	db.ensureVariants()
-	sp.VariantIDs = db.spellVariants.siblings(sp.ID)
-	sp.CanonicalID = db.spellVariants.canonicalID(sp.ID)
+	sp.VariantIDs, sp.CanonicalID = db.spellVariants.variantFields(sp.ID)
 	return sp, nil
 }
 
@@ -1357,6 +1360,9 @@ func (db *DB) SearchSpells(query string, classIndex, minLevel, maxLevel, limit, 
 	if err != nil {
 		return nil, err
 	}
+	for i := range spells {
+		spells[i].VariantIDs, spells[i].CanonicalID = db.spellVariants.variantFields(spells[i].ID)
+	}
 	return &SearchResult[Spell]{Items: spells, Total: total}, nil
 }
 
@@ -1410,6 +1416,9 @@ func (db *DB) GetSpellsByClass(classIndex, limit, offset int) (*SearchResult[Spe
 	spells, err := collectSpells(rows)
 	if err != nil {
 		return nil, err
+	}
+	for i := range spells {
+		spells[i].VariantIDs, spells[i].CanonicalID = db.spellVariants.variantFields(spells[i].ID)
 	}
 	return &SearchResult[Spell]{Items: spells, Total: total}, nil
 }

@@ -22,6 +22,7 @@ import { tradeskillLabel } from '../lib/enumsCache'
 import { ItemIcon } from '../components/Icon'
 import RawDataModal from '../components/RawDataModal'
 import WishlistStarButton from '../components/WishlistStarButton'
+import VariantLinks from '../components/VariantLinks'
 
 // ── Filter definitions ─────────────────────────────────────────────────────────
 
@@ -878,6 +879,8 @@ function OverviewTab({ item, copied, onCopy }: OverviewTabProps): React.ReactEle
         {item.price > 0 && <StatRow label="Value" value={priceLabel(item.price)} />}
         <StatRow label="Item ID" value={item.id} />
       </Section>
+
+      <VariantLinks base="/items" variantIds={item.variant_ids} canonicalId={item.canonical_id} />
     </div>
   )
 }

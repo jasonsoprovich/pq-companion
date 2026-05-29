@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Check, Copy, X } from 'lucide-react'
 import { getItemSources } from '../services/api'
 import WishlistStarButton from './WishlistStarButton'
+import VariantLinks from './VariantLinks'
 import type { Item, ItemForageZone, ItemGroundSpawnZone, ItemSourceNPC, ItemSources, ItemTradeskillEntry } from '../types/item'
 import {
   baneBodyLabel,
@@ -230,6 +231,8 @@ function OverviewTab({ item, copied, onCopy }: { item: Item; copied: boolean; on
         {item.price > 0 && <StatRow label="Value" value={priceLabel(item.price)} />}
         <StatRow label="Item ID" value={item.id} />
       </Section>
+
+      <VariantLinks base="/items" variantIds={item.variant_ids} canonicalId={item.canonical_id} />
     </div>
   )
 }

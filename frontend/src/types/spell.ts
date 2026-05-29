@@ -42,6 +42,14 @@ export interface Spell {
   suspendable: number
   no_dispell: number
   zone_type: number
+
+  // Duplicate-name collapse (set by GET /spells/:id; absent in list views).
+  // The dump ships several rows per spell name; lists show only the canonical
+  // one. variant_ids are the other rows sharing this name (hidden from lists,
+  // fetchable by id). canonical_id points back to the main row when this spell
+  // is itself a variant.
+  variant_ids?: number[]
+  canonical_id?: number
 }
 
 // BuffStatDelta mirrors backend/internal/db/buffeffect.go. Returned by the

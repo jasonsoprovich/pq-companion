@@ -44,6 +44,13 @@ func TestItemVariants_CollapsesToMostReferenced(t *testing.T) {
 	if got := soleNamedItem(t, res.Items, "Spell: Bind Affinity"); got != 15035 {
 		t.Errorf("canonical Spell: Bind Affinity: got id %d, want 15035", got)
 	}
+	// The list row itself carries its hidden variants (so a detail view opened
+	// straight from a list click can render them without a second fetch).
+	for _, it := range res.Items {
+		if it.Name == "Spell: Bind Affinity" && len(it.VariantIDs) != 3 {
+			t.Errorf("list row VariantIDs = %v, want 3 hidden variants", it.VariantIDs)
+		}
+	}
 
 	canon, err := d.GetItem(15035)
 	if err != nil {
