@@ -8,6 +8,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
+import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { getCombatState } from '../services/api'
 import type { CombatState, HealerStats, FightState } from '../types/combat'
@@ -134,6 +135,7 @@ function HealTable({ fight, showAll }: { fight: FightState; showAll: boolean }):
 export default function HPSOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
+  const onDragMouseDown = useWindowDrag()
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
 
@@ -168,6 +170,7 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        onMouseDown={onDragMouseDown}
         className={locked ? 'no-drag' : 'drag-region'}
         onMouseEnter={enableInteraction}
         onMouseLeave={enableClickThrough}

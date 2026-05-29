@@ -12,6 +12,7 @@ import { Swords, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass, 
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
+import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { getCombatState, resetCombatState } from '../services/api'
 import type { CombatState, FightState } from '../types/combat'
@@ -213,6 +214,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
   const palette = useDPSClassColors()
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
+  const onDragMouseDown = useWindowDrag()
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
   const [combine, setCombine] = useCombinePetWithOwner()
@@ -308,6 +310,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        onMouseDown={onDragMouseDown}
         className={locked ? 'no-drag' : 'drag-region'}
         onMouseEnter={enableInteraction}
         onMouseLeave={enableClickThrough}

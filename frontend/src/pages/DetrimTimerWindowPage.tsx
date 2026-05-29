@@ -12,6 +12,7 @@ import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresh
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayLock } from '../hooks/useOverlayLock'
+import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { clearTimers, getTimerState, removeTimer } from '../services/api'
 import { SpellIcon } from '../components/Icon'
@@ -172,6 +173,7 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
 export default function DetrimTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
+  const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<TimerState | null>(null)
   const activePlayer = useActivePlayerName()
   const thresholds = useDisplayThresholds()
@@ -209,6 +211,7 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        onMouseDown={onDragMouseDown}
         className={locked ? 'no-drag' : 'drag-region'}
         onMouseEnter={enableInteraction}
         onMouseLeave={enableClickThrough}

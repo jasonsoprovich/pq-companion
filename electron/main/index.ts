@@ -1075,6 +1075,51 @@ ipcMain.handle('window:maximize', () => {
 ipcMain.handle('window:close', () => mainWindow?.close())
 ipcMain.handle('window:is-maximized', () => mainWindow?.isMaximized() ?? false)
 
+// ── IPC handlers — synthetic window dragging ─────────────────────────────────
+// Frameless/custom-titlebar windows using CSS `-webkit-app-region: drag`
+// cannot be dragged across monitor boundaries on Windows — Chromium clamps the
+// drag to the monitor it started on. We replace that with a main-process drag
+// loop driven by the global cursor position, which is free to span the whole
+// virtual desktop. The renderer signals drag start/end on the title bar.
+const dragLoops = new WeakMap<BrowserWindow, ReturnType<typeof setInterval>>()
+
+function stopDrag(win: BrowserWindow): void {
+  const loop = dragLoops.get(win)
+  if (loop) {
+    clearInterval(loop)
+    dragLoops.delete(win)
+  }
+}
+
+ipcMain.handle('window:drag:start', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win || win.isDestroyed() || win.isMaximized()) return
+  stopDrag(win) // clear any prior loop (e.g. a missed drag:end)
+  const start = win.getBounds()
+  const cursorStart = screen.getCursorScreenPoint()
+  // Free the window's own 'closed' handler from a dangling loop.
+  win.once('closed', () => stopDrag(win))
+  const loop = setInterval(() => {
+    if (win.isDestroyed()) {
+      stopDrag(win)
+      return
+    }
+    const cur = screen.getCursorScreenPoint()
+    win.setBounds({
+      x: start.x + (cur.x - cursorStart.x),
+      y: start.y + (cur.y - cursorStart.y),
+      width: start.width,
+      height: start.height,
+    })
+  }, 16)
+  dragLoops.set(win, loop)
+})
+
+ipcMain.handle('window:drag:end', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) stopDrag(win)
+})
+
 // ── IPC handlers — overlay windows ───────────────────────────────────────────
 
 ipcMain.handle('overlay:dps:open', () => {

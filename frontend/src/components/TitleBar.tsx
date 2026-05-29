@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react'
 import { Minus, Square, X } from 'lucide-react'
+import { useWindowDrag } from '../hooks/useWindowDrag'
 
 const isMac = navigator.userAgent.includes('Macintosh')
 
 export default function TitleBar(): React.ReactElement {
   const [maximized, setMaximized] = useState(false)
+  const onDragMouseDown = useWindowDrag()
 
   useEffect(() => {
     window.electron?.window.isMaximized().then(setMaximized)
@@ -26,6 +28,7 @@ export default function TitleBar(): React.ReactElement {
 
   return (
     <header
+      onMouseDown={onDragMouseDown}
       className="drag-region flex h-9 shrink-0 items-center border-b"
       style={{
         backgroundColor: 'var(--color-surface)',

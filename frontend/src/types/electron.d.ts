@@ -18,6 +18,8 @@ export interface ElectronAPI {
     maximize: () => Promise<void>
     close: () => Promise<void>
     isMaximized: () => Promise<boolean>
+    dragStart: () => Promise<void>
+    dragEnd: () => Promise<void>
   }
   overlay: {
     openDPS: () => Promise<void>

@@ -12,6 +12,7 @@ import { WSEvent } from '../lib/wsEvents'
 import { useBuffSortMode, sortBuffs } from '../hooks/useBuffSortMode'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
+import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { clearTimers, getTimerState, removeTimer } from '../services/api'
 import { SpellIcon } from '../components/Icon'
@@ -134,6 +135,7 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
 export default function BuffTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
+  const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<TimerState | null>(null)
   const activePlayer = useActivePlayerName()
   const thresholds = useDisplayThresholds()
@@ -175,6 +177,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        onMouseDown={onDragMouseDown}
         className={locked ? 'no-drag' : 'drag-region'}
         onMouseEnter={enableInteraction}
         onMouseLeave={enableClickThrough}

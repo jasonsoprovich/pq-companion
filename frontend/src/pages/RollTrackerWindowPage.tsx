@@ -20,6 +20,7 @@ import {
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
+import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
 import {
   getRolls,
@@ -161,6 +162,7 @@ function SessionRow({
 export default function RollTrackerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
+  const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<RollsState>({
     sessions: [],
     winner_rule: 'highest',
@@ -223,6 +225,7 @@ export default function RollTrackerWindowPage(): React.ReactElement {
       }}
     >
       <div
+        onMouseDown={onDragMouseDown}
         className={locked ? 'no-drag' : 'drag-region'}
         onMouseEnter={enableInteraction}
         onMouseLeave={enableClickThrough}

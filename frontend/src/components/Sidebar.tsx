@@ -4,6 +4,7 @@ import { Sword, Sparkles, Skull, Map, Settings, Search, Activity, Layers, Scroll
 import { getLogStatus } from '../services/api'
 import CharacterSwitcher from './CharacterSwitcher'
 import { useHistoryNav } from '../hooks/useHistoryNav'
+import { useWindowDrag } from '../hooks/useWindowDrag'
 
 interface NavItem {
   to: string
@@ -59,6 +60,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   const [logLargeFile, setLogLargeFile] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const { canGoBack, canGoForward, goBack, goForward } = useHistoryNav()
+  const onDragMouseDown = useWindowDrag()
 
   useEffect(() => {
     const poll = () => {
@@ -75,6 +77,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
 
   return (
     <aside
+      onMouseDown={onDragMouseDown}
       className="drag-region flex w-48 shrink-0 flex-col overflow-hidden border-r"
       style={{
         backgroundColor: 'var(--color-surface)',

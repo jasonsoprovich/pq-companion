@@ -4,6 +4,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayLock } from '../hooks/useOverlayLock'
+import { useWindowDrag } from '../hooks/useWindowDrag'
 import { useNPCOverlaySections } from '../hooks/useNPCOverlaySections'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { ItemIcon } from '../components/Icon'
@@ -373,6 +374,7 @@ function NPCContent({
 export default function NPCOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
   const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
+  const onDragMouseDown = useWindowDrag()
   const [target, setTarget] = useState<TargetState | null>(null)
   const [view, setView] = useState<View>('stats')
   const sections = useNPCOverlaySections('popout')
@@ -407,6 +409,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
     >
       {/* Drag region header */}
       <div
+        onMouseDown={onDragMouseDown}
         className={locked ? 'no-drag' : 'drag-region'}
         onMouseEnter={enableInteraction}
         onMouseLeave={enableClickThrough}
