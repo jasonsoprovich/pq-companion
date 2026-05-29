@@ -76,7 +76,9 @@ Capabilities (see `FEATURES.md` for the full implementation log):
 
 ### General
 - Format Go with `gofmt`
-- Format TypeScript with Prettier (80 char width)
+- TypeScript: no formatter is configured in this repo — do not run Prettier
+  or other formatters/linters. Match the surrounding code style by hand
+  (roughly 80 char width).
 - Commit messages: conventional commits (`feat:`, `fix:`, `docs:`, `chore:`, etc.)
 - Test changes locally before committing
 - `FEATURES.md` and `README.md` are only updated at release time (when running
