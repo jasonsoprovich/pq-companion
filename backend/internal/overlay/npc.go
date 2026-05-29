@@ -5,6 +5,7 @@ package overlay
 
 import (
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,16 @@ import (
 // combat target changes or is lost.
 const WSEventNPCTarget = "overlay:npc_target"
 
+// TargetVariant is one possible interpretation of an ambiguous target. About
+// 24% of npc_types rows share a name with at least one other row; when more
+// than one variant fits the player's zone + position (e.g. shared-spawngroup
+// rows like ssratemple's necro/SK shissar revenant), the overlay surfaces
+// the full set rather than guessing.
+type TargetVariant struct {
+	NPC              db.NPC              `json:"npc"`
+	SpecialAbilities []db.SpecialAbility `json:"special_abilities"`
+}
+
 // TargetState is the payload for WSEventNPCTarget events and the REST
 // response for GET /api/overlay/npc/target.
 type TargetState struct {
@@ -26,10 +37,18 @@ type TargetState struct {
 	HasTarget bool `json:"has_target"`
 	// TargetName is the display name as it appears in the log (spaces, not underscores).
 	TargetName string `json:"target_name,omitempty"`
-	// NPCData is the database record for the target, if a match was found.
+	// NPCData is the database record for the target. When Variants has more
+	// than one entry, this points at Variants[0] (deterministic, lowest npc_id)
+	// so single-variant consumers still render *something*.
 	NPCData *db.NPC `json:"npc_data,omitempty"`
-	// SpecialAbilities is the parsed special-abilities list from NPCData.
+	// SpecialAbilities is the parsed special-abilities list for NPCData.
 	SpecialAbilities []db.SpecialAbility `json:"special_abilities,omitempty"`
+	// Variants is non-empty (>= 2 entries) when the target name resolves to
+	// multiple npc_types rows the tracker couldn't reduce to one — e.g. rows
+	// that share a spawngroup and so are picked randomly by the server at
+	// spawn time. Frontend should render per-variant info (class, abilities,
+	// loot) instead of relying on NPCData alone.
+	Variants []TargetVariant `json:"variants,omitempty"`
 	// CurrentZone is the most recently seen zone name from the log.
 	CurrentZone string `json:"current_zone,omitempty"`
 	// HPPercent is the target's current HP as a 0-100 percentage when fed by
@@ -284,6 +303,10 @@ func (t *NPCTracker) setTarget(displayName string) {
 	t.mu.RLock()
 	same := t.st.HasTarget && t.st.TargetName == displayName
 	zone := t.st.CurrentZone
+	// Snapshot the pipe-sourced disambiguation inputs while we hold the lock.
+	zoneShort := t.pipeZoneShort
+	playerKnown := t.pipePlayerKnown
+	px, py := t.pipePlayerX, t.pipePlayerY
 	t.mu.RUnlock()
 	if same {
 		return
@@ -299,7 +322,7 @@ func (t *NPCTracker) setTarget(displayName string) {
 	// lookup but keep the original name for display, and flag is_corpse so
 	// the overlay pins HP to 0%.
 	lookupName, isCorpse := stripCorpseSuffix(displayName)
-	npcData, abilities := t.lookupNPC(lookupName)
+	primary, primaryAbilities, variants := t.lookupNPCVariants(lookupName, zoneShort, playerKnown, px, py)
 
 	hpPercent := -1
 	if isCorpse {
@@ -310,8 +333,9 @@ func (t *NPCTracker) setTarget(displayName string) {
 	t.st = TargetState{
 		HasTarget:        true,
 		TargetName:       displayName,
-		NPCData:          npcData,
-		SpecialAbilities: abilities,
+		NPCData:          primary,
+		SpecialAbilities: primaryAbilities,
+		Variants:         variants,
 		CurrentZone:      t.st.CurrentZone,
 		HPPercent:        hpPercent,
 		IsCorpse:         isCorpse,
@@ -366,41 +390,155 @@ func (t *NPCTracker) clearTarget() {
 // in the DB — try the longest variants first so the most-specific match wins.
 var placeholderPrefixes = []string{"###_", "###", "##_", "##", "#_", "#"}
 
-// lookupNPC converts the log display name (spaces) to the DB name format
-// (underscores) and queries the database. When the bare name misses, retry
-// with the placeholder prefixes — Project Quarm tags placeholder rows with
-// "## ", "# ", or "### " in the database name (e.g. "## Diabo`Teka`Temariel"
-// stored as "##_Diabo`Teka`Temariel"), which the /con phrase obviously omits.
-func (t *NPCTracker) lookupNPC(displayName string) (*db.NPC, []db.SpecialAbility) {
+// lookupNPCVariants converts the log display name (spaces) to the DB name
+// format (underscores) and returns:
+//   - primary: the single best-pick NPC (always the first variant by id when
+//     ambiguous, so single-variant consumers still render something).
+//   - primaryAbilities: parsed special abilities for primary.
+//   - variants: non-nil and len>=2 only when the tracker can't reduce the
+//     candidates to one — in which case the frontend should render the set
+//     instead of pretending primary is correct.
+//
+// Disambiguation cascade:
+//  1. Try GetNPCVariantsByNameInZone(name, zoneShort) — restricts to NPCs
+//     that actually spawn in the player's current zone.
+//  2. If that finds nothing, retry with placeholder prefixes ("## ", etc.)
+//     against the same zone, then fall back to a global name search.
+//  3. With >1 candidate variants in zone and a known player position, keep
+//     only variants whose nearest spawn point is within tieToleranceYards of
+//     the closest. This picks raid-boss variants apart by location (Kaas Thox
+//     at y=318 vs y=-321) while keeping shared-spawngroup variants (shissar
+//     necro/SK at identical coords) bundled as a set.
+//  4. With no player position, keep all zone matches as the variant set —
+//     honest about not knowing, lets the UI surface alternatives.
+func (t *NPCTracker) lookupNPCVariants(
+	displayName, zoneShort string,
+	playerKnown bool, px, py float64,
+) (*db.NPC, []db.SpecialAbility, []TargetVariant) {
 	if t.db == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	dbName := strings.ReplaceAll(displayName, " ", "_")
 
-	npc, err := t.db.GetNPCByName(dbName)
+	candidates := t.fetchVariants(dbName, zoneShort)
+	if len(candidates) == 0 {
+		// Zone-scoped query found nothing. Fall back to global name search
+		// (loses position-based disambiguation but preserves the prior
+		// behaviour of "still find the NPC even outside its usual zone" —
+		// useful for moved/quest-spawned mobs).
+		candidates = t.fetchVariants(dbName, "")
+	}
+	if len(candidates) == 0 {
+		slog.Debug("overlay: npc lookup miss", "display_name", displayName, "db_name", dbName)
+		return nil, nil, nil
+	}
+
+	// Position-based disambiguation only applies when multiple variants in
+	// the same zone are still in play AND we actually have a player position
+	// from Zeal. Otherwise we surface all candidates.
+	if len(candidates) > 1 && playerKnown && zoneShort != "" {
+		candidates = filterVariantsByPlayerPosition(candidates, px, py)
+	}
+
+	primaryVariant := candidates[0]
+	primary := primaryVariant.NPC
+	primaryAbilities := db.ParseSpecialAbilities(primary.SpecialAbilities)
+	primaryAbilities = mergeInvisFlags(primaryAbilities, &primary)
+
+	if len(candidates) == 1 {
+		return &primary, primaryAbilities, nil
+	}
+
+	// 2+ candidates remained after filtering — return the variant set.
+	out := make([]TargetVariant, 0, len(candidates))
+	for _, c := range candidates {
+		npc := c.NPC
+		abs := db.ParseSpecialAbilities(npc.SpecialAbilities)
+		abs = mergeInvisFlags(abs, &npc)
+		out = append(out, TargetVariant{NPC: npc, SpecialAbilities: abs})
+	}
+	return &primary, primaryAbilities, out
+}
+
+// fetchVariants runs the zone-scoped variants query, then retries with
+// placeholder prefixes if the bare name finds nothing. Returns nil on total
+// miss (caller treats as no DB record).
+func (t *NPCTracker) fetchVariants(dbName, zoneShort string) []db.NPCVariant {
+	candidates, err := t.db.GetNPCVariantsByNameInZone(dbName, zoneShort)
 	if err != nil {
-		// Try each placeholder-prefix variant. A miss on any single attempt is
-		// silent (sql.ErrNoRows wrapped); only log if every attempt fails.
-		for _, p := range placeholderPrefixes {
-			alt := p + dbName
-			n2, e2 := t.db.GetNPCByName(alt)
-			if e2 == nil {
-				slog.Debug("overlay: npc lookup matched via placeholder prefix",
-					"display_name", displayName, "db_name", alt)
-				npc = n2
-				err = nil
-				break
+		slog.Debug("overlay: variant lookup error", "db_name", dbName, "zone", zoneShort, "err", err)
+		return nil
+	}
+	if len(candidates) > 0 {
+		return candidates
+	}
+	for _, p := range placeholderPrefixes {
+		alt := p + dbName
+		c2, err := t.db.GetNPCVariantsByNameInZone(alt, zoneShort)
+		if err == nil && len(c2) > 0 {
+			slog.Debug("overlay: npc variants matched via placeholder prefix",
+				"db_name", alt, "zone", zoneShort, "variants", len(c2))
+			return c2
+		}
+	}
+	return nil
+}
+
+// tieToleranceYards is how close two variants' nearest-spawn distances must
+// be (after sqrt) for them to count as indistinguishable. 25 yards is loose
+// enough to forgive minor variance/rounding in spawn coordinates while still
+// resolving distinct raid placements (Kaas Thox variants are 600+ yards
+// apart) and tagging shared-spawngroup variants (distance delta ≈ 0).
+const tieToleranceYards = 25.0
+
+// filterVariantsByPlayerPosition keeps only the variants whose nearest spawn
+// point is within tieToleranceYards of the closest variant's nearest spawn.
+// Variants with no spawn points are dropped — without coordinates we can't
+// position-match them, and a sibling variant that does have spawns is the
+// better pick. Falls back to returning all candidates if every variant
+// lacks spawn points (preserves the variant set so callers still see them).
+func filterVariantsByPlayerPosition(variants []db.NPCVariant, px, py float64) []db.NPCVariant {
+	dists := make([]float64, len(variants))
+	minDist := math.Inf(1)
+	anyWithSpawns := false
+	for i, v := range variants {
+		d := nearestSpawnDistance(v.SpawnPoints, px, py)
+		dists[i] = d
+		if !math.IsInf(d, 1) {
+			anyWithSpawns = true
+			if d < minDist {
+				minDist = d
 			}
 		}
 	}
-	if err != nil {
-		slog.Debug("overlay: npc lookup miss", "display_name", displayName, "db_name", dbName)
-		return nil, nil
+	if !anyWithSpawns {
+		return variants
 	}
+	out := make([]db.NPCVariant, 0, len(variants))
+	for i, v := range variants {
+		if dists[i]-minDist <= tieToleranceYards {
+			out = append(out, v)
+		}
+	}
+	return out
+}
 
-	abilities := db.ParseSpecialAbilities(npc.SpecialAbilities)
-	abilities = mergeInvisFlags(abilities, npc)
-	return npc, abilities
+// nearestSpawnDistance returns the 2D distance from the player to the closest
+// spawn point of this variant. +Inf when there are no spawn points (variant
+// is script-spawned or otherwise unrouted through spawn2).
+func nearestSpawnDistance(spawnPoints []db.SpawnPoint, px, py float64) float64 {
+	minD2 := math.Inf(1)
+	for _, sp := range spawnPoints {
+		dx, dy := sp.X-px, sp.Y-py
+		d2 := dx*dx + dy*dy
+		if d2 < minD2 {
+			minD2 = d2
+		}
+	}
+	if math.IsInf(minD2, 1) {
+		return minD2
+	}
+	return math.Sqrt(minD2)
 }
 
 // mergeInvisFlags appends synthetic SpecialAbility entries for the dedicated

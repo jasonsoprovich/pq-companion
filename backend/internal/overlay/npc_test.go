@@ -1,8 +1,12 @@
 package overlay
 
 import (
+	"math"
+	"path/filepath"
+	"runtime"
 	"testing"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
@@ -13,6 +17,24 @@ import (
 func newTestTracker() *NPCTracker {
 	hub := ws.NewHub()
 	return NewNPCTracker(hub, nil)
+}
+
+// newRealDBTracker returns an NPCTracker backed by the on-disk quarm.db so
+// variant disambiguation tests can exercise the full lookup → filter path.
+func newRealDBTracker(t *testing.T) *NPCTracker {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	dbPath := filepath.Join(filepath.Dir(file), "..", "..", "data", "quarm.db")
+	d, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { d.Close() })
+	hub := ws.NewHub()
+	return NewNPCTracker(hub, d)
 }
 
 func TestNPCTracker_ZoneEventClearsTarget(t *testing.T) {
@@ -177,5 +199,158 @@ func TestNPCTracker_DeathClearsTarget(t *testing.T) {
 
 	if tr.GetState().HasTarget {
 		t.Error("HasTarget = true after player death, want false")
+	}
+}
+
+// ─── Variant disambiguation ───────────────────────────────────────────────────
+
+// nearestSpawnDistance returns +Inf for an empty spawn list — the filter
+// drops zero-spawn variants when any sibling has spawns, but keeps them as
+// the variant set when nothing has spawns.
+func TestNearestSpawnDistance_NoSpawns(t *testing.T) {
+	d := nearestSpawnDistance(nil, 0, 0)
+	if !math.IsInf(d, 1) {
+		t.Errorf("nearestSpawnDistance(nil) = %v, want +Inf", d)
+	}
+}
+
+func TestNearestSpawnDistance_PicksClosest(t *testing.T) {
+	spawns := []db.SpawnPoint{
+		{X: 100, Y: 100},
+		{X: 0, Y: 30}, // closest to player at (0,0)
+		{X: -50, Y: -50},
+	}
+	got := nearestSpawnDistance(spawns, 0, 0)
+	if math.Abs(got-30) > 1e-9 {
+		t.Errorf("nearestSpawnDistance = %v, want 30", got)
+	}
+}
+
+// Variants with distinct spawn points far apart resolve to a single winner
+// when the player stands near one of them (Kaas Thox pattern).
+func TestFilterVariantsByPlayerPosition_DistinctSpawnsPickOne(t *testing.T) {
+	north := db.NPCVariant{
+		NPC:         db.NPC{ID: 1},
+		SpawnPoints: []db.SpawnPoint{{X: 141, Y: 318}},
+	}
+	south := db.NPCVariant{
+		NPC:         db.NPC{ID: 2},
+		SpawnPoints: []db.SpawnPoint{{X: 141, Y: -321}},
+	}
+	// Player at the north spawn — south is 639 yards away, far past the tie
+	// tolerance, so only north survives.
+	got := filterVariantsByPlayerPosition([]db.NPCVariant{north, south}, 141, 318)
+	if len(got) != 1 {
+		t.Fatalf("got %d variants, want 1", len(got))
+	}
+	if got[0].NPC.ID != 1 {
+		t.Errorf("picked id %d, want 1", got[0].NPC.ID)
+	}
+}
+
+// Variants that share spawn points (Quarm RNG-pair, like ssratemple's
+// shissar revenant necro/SK) cannot be distinguished by position, so both
+// survive the filter and the caller surfaces them as a variant set.
+func TestFilterVariantsByPlayerPosition_SharedSpawnsKeepBoth(t *testing.T) {
+	shared := []db.SpawnPoint{
+		{X: 540, Y: -380, SpawngroupID: 162197},
+		{X: 580, Y: -400, SpawngroupID: 162197},
+	}
+	necro := db.NPCVariant{NPC: db.NPC{ID: 162197, Class: 11}, SpawnPoints: shared}
+	sk := db.NPCVariant{NPC: db.NPC{ID: 162490, Class: 5}, SpawnPoints: shared}
+	got := filterVariantsByPlayerPosition([]db.NPCVariant{necro, sk}, 550, -390)
+	if len(got) != 2 {
+		t.Fatalf("got %d variants, want 2 (shared spawns must keep both)", len(got))
+	}
+}
+
+// A variant with no spawn points is dropped when siblings have them — the
+// no-spawn entry can't be position-matched and at least one sibling can.
+func TestFilterVariantsByPlayerPosition_DropsNoSpawnWhenOthersExist(t *testing.T) {
+	noSpawns := db.NPCVariant{NPC: db.NPC{ID: 1}}
+	withSpawns := db.NPCVariant{NPC: db.NPC{ID: 2}, SpawnPoints: []db.SpawnPoint{{X: 10, Y: 10}}}
+	got := filterVariantsByPlayerPosition([]db.NPCVariant{noSpawns, withSpawns}, 10, 10)
+	if len(got) != 1 || got[0].NPC.ID != 2 {
+		t.Errorf("filter result = %+v, want only id=2", got)
+	}
+}
+
+// Integration: targeting "a Shissar Revenant" in ssratemple with no player
+// position yet should yield a variant set of 2 (necro + SK). The shissar
+// in The Grey is a third row globally, but it must NOT appear because the
+// zone filter restricts to ssratemple.
+func TestNPCTracker_VariantSetForSharedSpawngroupRNG(t *testing.T) {
+	tr := newRealDBTracker(t)
+	tr.SetPipePlayerSnapshot(162 /* ssratemple zoneidnumber */, 0, 0, 0)
+	// Player position is unknown — only zone is set — so all in-zone variants
+	// come back as the set.
+	tr.SetPipeTarget("A Shissar Revenant")
+	st := tr.GetState()
+	if !st.HasTarget {
+		t.Fatal("HasTarget = false, want true")
+	}
+	if len(st.Variants) != 2 {
+		t.Fatalf("Variants len = %d, want 2 (necro + SK in ssratemple)", len(st.Variants))
+	}
+	classes := map[int]bool{}
+	for _, v := range st.Variants {
+		classes[v.NPC.Class] = true
+	}
+	if !classes[5] || !classes[11] {
+		t.Errorf("Variant classes = %v, want both 5 (SK) and 11 (Necro)", classes)
+	}
+	// Primary must be a deterministic pick (lowest npc_id) so single-variant
+	// consumers see something stable.
+	if st.NPCData == nil {
+		t.Fatal("NPCData = nil, want a primary pick")
+	}
+	if st.NPCData.ID != st.Variants[0].NPC.ID {
+		t.Errorf("NPCData.ID = %d, want %d (Variants[0])", st.NPCData.ID, st.Variants[0].NPC.ID)
+	}
+}
+
+// Integration: targeting Kaas Thox in Vex Thal with the player standing at
+// the north spawn point should resolve to the north variant only — its
+// 600+ yard separation from the south variant blows past the tie tolerance.
+func TestNPCTracker_DistinctSpawnPicksByPosition(t *testing.T) {
+	tr := newRealDBTracker(t)
+	// Vex Thal zoneidnumber is 158 (verified in the DB earlier).
+	tr.SetPipePlayerSnapshot(158, 141, 318, 130)
+	tr.SetPipeTarget("Kaas Thox Xi Aten Ha Ra")
+	st := tr.GetState()
+	if !st.HasTarget {
+		t.Fatal("HasTarget = false, want true")
+	}
+	if len(st.Variants) != 0 {
+		t.Errorf("Variants len = %d, want 0 (position should single out one variant)", len(st.Variants))
+	}
+	if st.NPCData == nil {
+		t.Fatal("NPCData = nil, want a single resolved variant")
+	}
+	// The north spawn is npc_id 158437 with loottable 12519. If we picked the
+	// south variant (158464, loot 96732) we'd be showing the wrong loot.
+	if st.NPCData.ID != 158437 {
+		t.Errorf("Picked npc_id %d, want 158437 (north spawn variant)", st.NPCData.ID)
+	}
+}
+
+// Integration: when no player position is available but zone is, the variant
+// set still surfaces — we can't pick by position so the user sees the
+// alternatives honestly. (The kaas thox case with zone-only.)
+func TestNPCTracker_VariantSetWhenZoneKnownButPositionMissing(t *testing.T) {
+	tr := newRealDBTracker(t)
+	tr.SetPipePlayerSnapshot(158, 0, 0, 0)
+	// Manually clear pipePlayerKnown to simulate the rare "zone arrived,
+	// position not yet" race.
+	tr.mu.Lock()
+	tr.pipePlayerKnown = false
+	tr.mu.Unlock()
+	tr.SetPipeTarget("Kaas Thox Xi Aten Ha Ra")
+	st := tr.GetState()
+	if !st.HasTarget {
+		t.Fatal("HasTarget = false, want true")
+	}
+	if len(st.Variants) != 2 {
+		t.Errorf("Variants len = %d, want 2 (no position → keep both)", len(st.Variants))
 	}
 }
