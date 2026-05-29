@@ -5,15 +5,18 @@ import "github.com/jasonsoprovich/pq-companion/backend/internal/db"
 // bardSongUseBaseDuration controls how bard-song durations are computed.
 //
 // true  (default) — bard songs report their base duration (buffduration ×
-//                   6 seconds). Songs are pulse effects: the bard's client
-//                   re-applies the buff every tick, so the only time the
-//                   timer matters is right after the bard stops singing,
-//                   at which point the buff fades within ~base ticks.
-//                   18s for Selo's, not 54s, matches what the user sees.
+//
+//	6 seconds). Songs are pulse effects: the bard's client
+//	re-applies the buff every tick, so the only time the
+//	timer matters is right after the bard stops singing,
+//	at which point the buff fades within ~base ticks.
+//	18s for Selo's, not 54s, matches what the user sees.
+//
 // false — bard songs run through the full duration formula like any other
-//         spell. Use only to revert if the base-duration mode causes
-//         regressions; the result (54s for Selo's at L60) doesn't match
-//         in-game fade behaviour.
+//
+//	spell. Use only to revert if the base-duration mode causes
+//	regressions; the result (54s for Selo's at L60) doesn't match
+//	in-game fade behaviour.
 //
 // Detection is class-based, not formula- or skill-based: a song is a
 // spell only the bard class (index 7) can cast. See SpellDurationTicks.

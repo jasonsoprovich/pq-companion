@@ -91,10 +91,10 @@ func TestHandle_FailedCastsClearLastCast(t *testing.T) {
 // across multiple spells, using lastCastSpell as the disambiguator.
 func TestResolveLandedSpellName(t *testing.T) {
 	cases := []struct {
-		name      string
-		setup     func(*Engine)
-		data      logparser.SpellLandedData
-		want      string
+		name  string
+		setup func(*Engine)
+		data  logparser.SpellLandedData
+		want  string
 	}{
 		{
 			name: "unique match returns spell name directly",

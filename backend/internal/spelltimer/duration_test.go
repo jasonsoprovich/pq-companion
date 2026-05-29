@@ -97,8 +97,8 @@ func TestCalcDurationTicks(t *testing.T) {
 		{name: "f8 low level", formula: 8, base: 60, level: 5, want: 60},
 		// Formula 9: min(level*2 + 10, base) — anchored on PQDI Min Duration
 		// at each spell's minimum castable level.
-		{name: "f9 lull lvl1", formula: 9, base: 20, level: 1, want: 12},   // PQDI Lull min
-		{name: "f9 lull cap", formula: 9, base: 20, level: 60, want: 20},   // capped by base
+		{name: "f9 lull lvl1", formula: 9, base: 20, level: 1, want: 12},          // PQDI Lull min
+		{name: "f9 lull cap", formula: 9, base: 20, level: 60, want: 20},          // capped by base
 		{name: "f9 tashanian lvl57", formula: 9, base: 140, level: 57, want: 124}, // PQDI Tashanian min
 		{name: "f9 tashanian lvl60", formula: 9, base: 140, level: 60, want: 130},
 		// Formula 10: min(level*3 + 10, base) — anchored on PQDI charm-line
