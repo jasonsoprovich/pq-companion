@@ -69,7 +69,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	timerH := &timerHandler{engine: timerEngine}
 	triggerH := &triggerHandler{store: triggerStore, engine: triggerEngine, hub: hub, charStore: charStore, tailer: tailer, cfgMgr: cfgMgr}
 	tasksH := &tasksHandler{store: charStore}
-	wishlistH := &wishlistHandler{store: charStore, db: database}
+	wishlistH := &wishlistHandler{store: charStore, db: database, hub: hub}
 	rollsH := &rollsHandler{tracker: rollTracker}
 	raw := &rawHandler{db: database}
 	enumsH := &enumsHandler{}

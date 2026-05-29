@@ -8,12 +8,27 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
 // wishlistHandler handles per-character wishlist endpoints.
 type wishlistHandler struct {
 	store *character.Store
 	db    *db.DB
+	hub   *ws.Hub
+}
+
+// broadcastChanged notifies listeners (e.g. the NPC loot overlay, which
+// highlights wishlisted drops) that the character's wishlist membership
+// changed and any cached item-id set should be refetched. Fired only on
+// add/remove — reordering doesn't change membership.
+func (h *wishlistHandler) broadcastChanged(charID int) {
+	if h.hub != nil {
+		h.hub.Broadcast(ws.Event{
+			Type: "wishlist:changed",
+			Data: map[string]int{"character_id": charID},
+		})
+	}
 }
 
 // validSlotBuckets is the closed set of bucket names the API accepts. Derived
@@ -150,6 +165,7 @@ func (h *wishlistHandler) add(w http.ResponseWriter, r *http.Request) {
 		}
 		created = append(created, entry)
 	}
+	h.broadcastChanged(charID)
 	writeJSON(w, http.StatusCreated, map[string]any{"entries": created})
 }
 
@@ -168,6 +184,7 @@ func (h *wishlistHandler) del(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.broadcastChanged(charID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
