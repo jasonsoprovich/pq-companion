@@ -71,3 +71,9 @@ desktop.ini
 
 # ── Test Logs from game (all files found within /TAKPv22/ root directory) ────────────────────────────────────
 testdata/
+
+# Synthetic, hand-authored fixtures that MUST be committed (not real game logs).
+# Re-include the dir, re-ignore its contents, then un-ignore the specific file.
+!backend/internal/lockout/testdata/
+backend/internal/lockout/testdata/*
+!backend/internal/lockout/testdata/sll-sample.log
