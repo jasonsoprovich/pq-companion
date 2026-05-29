@@ -55,6 +55,16 @@ type NPCTracker struct {
 	db  *db.DB
 	mu  sync.RWMutex
 	st  TargetState
+
+	// Pipe-sourced player snapshot used to disambiguate same-name NPCs.
+	// Held under mu. Zero-valued when no Zeal pipe data is available; in
+	// that case variant lookups fall back to name-only.
+	pipeZoneIDNumber int    // EQ runtime zoneidnumber (0 = unknown)
+	pipeZoneShort    string // resolved from zoneidnumber via DB
+	pipePlayerX      float64
+	pipePlayerY      float64
+	pipePlayerZ      float64
+	pipePlayerKnown  bool // false until first MsgPlayer arrives
 }
 
 // NewNPCTracker returns an initialised NPCTracker. Inject the WebSocket hub
@@ -170,12 +180,18 @@ func (t *NPCTracker) SetPipeHPPercent(percent int) {
 	t.broadcast(snap)
 }
 
-// ResetPipeFields drops pipe-only state (HP%, pet owner) from the current
-// target without changing the target itself. Called when the Zeal pipe
-// disconnects so the overlay HP bar disappears rather than freezing at a
-// stale value — log-driven targeting continues regardless.
+// ResetPipeFields drops pipe-only state (HP%, pet owner, player snapshot)
+// from the current target without changing the target itself. Called when
+// the Zeal pipe disconnects so the overlay HP bar disappears rather than
+// freezing at a stale value — log-driven targeting continues regardless.
 func (t *NPCTracker) ResetPipeFields() {
 	t.mu.Lock()
+	// Drop the player snapshot unconditionally — once Zeal is gone, position
+	// is stale and shouldn't be used for variant disambiguation. Zone short
+	// name from the pipe is also dropped; log-driven CurrentZone is retained.
+	t.pipeZoneIDNumber = 0
+	t.pipeZoneShort = ""
+	t.pipePlayerKnown = false
 	if t.st.HPPercent == -1 && t.st.PetOwner == "" {
 		t.mu.Unlock()
 		return
@@ -186,6 +202,49 @@ func (t *NPCTracker) ResetPipeFields() {
 	snap := t.st
 	t.mu.Unlock()
 	t.broadcast(snap)
+}
+
+// SetPipePlayerSnapshot records the player's current zone and world position
+// from a Zeal MsgPlayer frame. Stored for later disambiguation; doesn't
+// trigger a re-lookup or broadcast on its own — that happens at next target
+// change. Zone-id lookups are cached: only the first snapshot at a given
+// zoneidnumber hits the DB.
+//
+// Called at ~10 Hz on the pipe message goroutine.
+func (t *NPCTracker) SetPipePlayerSnapshot(zoneIDNumber int, x, y, z float64) {
+	t.mu.Lock()
+	// Update position every tick — cheap, no DB cost.
+	t.pipePlayerX = x
+	t.pipePlayerY = y
+	t.pipePlayerZ = z
+	t.pipePlayerKnown = true
+	if zoneIDNumber == t.pipeZoneIDNumber {
+		t.mu.Unlock()
+		return
+	}
+	// Zone changed — resolve to short_name, then save. Drop the lock for the
+	// DB call so concurrent readers aren't held up.
+	t.pipeZoneIDNumber = zoneIDNumber
+	t.pipeZoneShort = ""
+	t.mu.Unlock()
+
+	if t.db == nil || zoneIDNumber == 0 {
+		return
+	}
+	z2, err := t.db.GetZoneByZoneIDNumber(zoneIDNumber)
+	if err != nil {
+		slog.Debug("overlay: zone lookup miss for pipe snapshot",
+			"zoneidnumber", zoneIDNumber, "err", err)
+		return
+	}
+	t.mu.Lock()
+	// Re-check under the lock: another snapshot may have changed the zone
+	// out from under us between unlock and lock. Only store if we're still
+	// the latest known zone.
+	if t.pipeZoneIDNumber == zoneIDNumber {
+		t.pipeZoneShort = z2.ShortName
+	}
+	t.mu.Unlock()
 }
 
 // SetPipePetOwner records the owner name when the current target is a pet.

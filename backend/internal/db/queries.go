@@ -1597,6 +1597,20 @@ func (db *DB) GetZoneByShortName(shortName string) (*Zone, error) {
 	return z, nil
 }
 
+// GetZoneByZoneIDNumber returns the zone matching the given zoneidnumber —
+// the in-game runtime zone identifier (e.g. 158 = Vex Thal). Distinct from
+// zone.id, which is a database primary key; the two never coincide.
+// Used to resolve the Zeal MsgPlayer "zone" field to a short_name.
+func (db *DB) GetZoneByZoneIDNumber(zoneIDNumber int) (*Zone, error) {
+	q := fmt.Sprintf("SELECT %s %s WHERE z.zoneidnumber = ?", zoneColumns, zoneFrom)
+	row := db.QueryRow(q, zoneIDNumber)
+	z, err := scanZone(row)
+	if err != nil {
+		return nil, fmt.Errorf("get zone by zoneidnumber %d: %w", zoneIDNumber, err)
+	}
+	return z, nil
+}
+
 // ZoneSearchFilters narrows zone search results. Nil fields mean no filter.
 type ZoneSearchFilters struct {
 	Expansion *int

@@ -417,6 +417,17 @@ func main() {
 			}
 			triggerEngine.HandlePipeCommand(cmd.Text, env.Character, time.Now())
 			return
+		case zealpipe.MsgPlayer:
+			// Per-tick player snapshot. Feed zone + position into the NPC
+			// tracker so it can disambiguate same-name NPC targets by
+			// proximity to known spawn points. Doesn't trigger any
+			// broadcast on its own — used at next target acquire.
+			p, err := zealpipe.DecodePlayer(env.Data)
+			if err != nil {
+				return
+			}
+			npcTracker.SetPipePlayerSnapshot(p.Zone, p.Location.X, p.Location.Y, p.Location.Z)
+			return
 		case zealpipe.MsgLabel:
 			// Fall through to the label aggregator below.
 		default:
