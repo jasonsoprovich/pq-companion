@@ -217,6 +217,22 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
   const [testAlert, setTestAlert] = useState<TestAlert | null>(null)
   const gcTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastFired = useRef<Map<string, number>>(new Map())
+  // Window-local center of the primary monitor, fetched from the main process.
+  // The overlay spans the whole virtual desktop, so without this the test card
+  // would default to the seam between monitors. Falls back to window center.
+  const defaultCenter = useRef<{ x: number; y: number } | null>(null)
+
+  useEffect(() => {
+    void window.electron?.screen?.triggerDefaultCenter()
+      .then((c) => { defaultCenter.current = c })
+      .catch(() => {})
+  }, [])
+
+  const makeDefaultPos = useCallback((): { x: number; y: number } => {
+    const cx = defaultCenter.current?.x ?? window.innerWidth / 2
+    const cy = defaultCenter.current?.y ?? window.innerHeight / 2
+    return { x: Math.max(0, Math.round(cx - 100)), y: Math.max(0, Math.round(cy - 40)) }
+  }, [])
 
   // Garbage-collect expired alerts every 250 ms. Test alerts are sticky and
   // only cleared when the editor ends the positioning session, so they're
@@ -261,10 +277,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
       .then((active) => {
         if (cancelled || !active) return
         const fontSize = active.font_size && active.font_size > 0 ? active.font_size : 20
-        const defaultPos = {
-          x: Math.max(0, Math.round(window.innerWidth / 2 - 100)),
-          y: Math.max(0, Math.round(window.innerHeight / 2 - 40)),
-        }
+        const defaultPos = makeDefaultPos()
         setTestAlert((prev) => prev ?? {
           testId: active.test_id,
           text: active.text || '',
@@ -275,7 +288,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [])
+  }, [makeDefaultPos])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === WSEvent.TriggerFired) {
@@ -299,10 +312,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     if (msg.type === WSEvent.TriggerTest) {
       const data = msg.data as TriggerTestPayload
       const fontSize = data.font_size && data.font_size > 0 ? data.font_size : 20
-      const defaultPos = {
-        x: Math.max(0, Math.round(window.innerWidth / 2 - 100)),
-        y: Math.max(0, Math.round(window.innerHeight / 2 - 40)),
-      }
+      const defaultPos = makeDefaultPos()
       setTestAlert({
         testId: data.test_id,
         text: data.text || '',
@@ -317,7 +327,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
       setTestAlert((prev) => (prev && prev.testId === data.test_id ? null : prev))
       return
     }
-  }, [])
+  }, [makeDefaultPos])
 
   useWebSocket(handleMessage)
 

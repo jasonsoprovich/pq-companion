@@ -50,6 +50,9 @@ export interface ElectronAPI {
     getLocked: () => Promise<boolean>
     setLocked: (locked: boolean) => Promise<void>
   }
+  screen: {
+    triggerDefaultCenter: () => Promise<{ x: number; y: number }>
+  }
   dialog: {
     selectFolder: () => Promise<string | null>
     selectSoundFile: () => Promise<string | null>

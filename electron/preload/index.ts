@@ -53,6 +53,10 @@ contextBridge.exposeInMainWorld('electron', {
     setLocked: (locked: boolean): Promise<void> =>
       ipcRenderer.invoke('overlay:lock:set', locked),
   },
+  screen: {
+    triggerDefaultCenter: (): Promise<{ x: number; y: number }> =>
+      ipcRenderer.invoke('screen:trigger-default-center'),
+  },
   dialog: {
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-folder'),
     selectSoundFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-sound-file'),
