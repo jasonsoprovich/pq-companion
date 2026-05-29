@@ -28,6 +28,7 @@ import DetrimTimerWindowPage from './pages/DetrimTimerWindowPage'
 import OverlaysDashboard from './pages/OverlaysDashboard'
 import CombatLogPage from './pages/CombatLogPage'
 import CombatHistoryPage from './pages/CombatHistoryPage'
+import CombatLayout from './components/CombatLayout'
 import TriggersPage from './pages/TriggersPage'
 import RollTrackerPage from './pages/RollTrackerPage'
 import RollTrackerWindowPage from './pages/RollTrackerWindowPage'
@@ -143,8 +144,13 @@ export default function App(): React.ReactElement {
           <Route path="npc-overlay" element={<Navigate to="/overlays" replace />} />
           <Route path="dps-overlay" element={<Navigate to="/overlays" replace />} />
           <Route path="spell-timers" element={<Navigate to="/overlays" replace />} />
-          <Route path="combat-log" element={<CombatLogPage />} />
-          <Route path="combat-history" element={<CombatHistoryPage />} />
+          <Route path="combat" element={<CombatLayout />}>
+            <Route index element={<Navigate to="/combat/log" replace />} />
+            <Route path="log" element={<CombatLogPage />} />
+            <Route path="history" element={<CombatHistoryPage />} />
+          </Route>
+          <Route path="combat-log" element={<Navigate to="/combat/log" replace />} />
+          <Route path="combat-history" element={<Navigate to="/combat/history" replace />} />
           <Route path="triggers" element={<TriggersPage />} />
           <Route path="rolls" element={<RollTrackerPage />} />
           <Route path="players" element={<PlayersPage />} />
