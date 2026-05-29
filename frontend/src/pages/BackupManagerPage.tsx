@@ -176,10 +176,15 @@ function CreateForm({ onCreated, onCancel }: CreateFormProps): React.ReactElemen
 
 function TriggerBadge({ reason }: { reason: string }): React.ReactElement | null {
   if (reason === 'manual' || !reason) return null
-  const label = reason === 'auto' ? 'auto' : 'scheduled'
-  const Icon = reason === 'auto' ? Zap : Clock
+  const isAuto = reason === 'auto'
+  const label = isAuto ? 'on change' : 'auto-saved'
+  const title = isAuto
+    ? 'Saved automatically when your EQ config files changed'
+    : 'Saved automatically on your backup schedule'
+  const Icon = isAuto ? Zap : Clock
   return (
     <span
+      title={title}
       className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded"
       style={{
         backgroundColor: 'var(--color-surface-2)',
@@ -261,7 +266,9 @@ function BackupCard({ backup, onDeleted, onRestored, onLockToggled }: BackupCard
         />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
-            {backup.name}
+            {backup.trigger_reason && backup.trigger_reason !== 'manual'
+              ? 'Automatic backup'
+              : backup.name}
           </p>
           {backup.notes && (
             <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--color-muted-foreground)' }}>
