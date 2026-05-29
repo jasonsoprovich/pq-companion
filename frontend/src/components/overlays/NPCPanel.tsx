@@ -11,9 +11,9 @@ import OverlayWindow from '../OverlayWindow'
 import ItemDetailModal from '../ItemDetailModal'
 import { ItemIcon } from '../Icon'
 import { ResistChip } from '../ResistChip'
-import type { TargetState, SpecialAbility } from '../../types/overlay'
+import type { TargetState, SpecialAbility, TargetVariant } from '../../types/overlay'
 import type { LogTailerStatus } from '../../types/logEvent'
-import type { NPCLootTable, LootDrop } from '../../types/npc'
+import type { NPC, NPCLootTable, LootDrop } from '../../types/npc'
 import type { Item } from '../../types/item'
 import type { NPCOverlaySections } from '../../types/config'
 
@@ -317,66 +317,59 @@ function NoTarget({ zone }: { zone?: string }): React.ReactElement {
   )
 }
 
-function NPCCard({
-  state,
-  view,
+// VariantRibbon surfaces same-name ambiguity (e.g. ssratemple's shissar
+// revenant necro/SK split) so the user understands the panel below is
+// showing multiple possible NPCs, not a single resolved one.
+function VariantRibbon({ variants }: { variants: TargetVariant[] }): React.ReactElement {
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1">
+      <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
+        Variants:
+      </span>
+      {variants.map((v) => (
+        <span
+          key={v.npc.id}
+          className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+          style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-foreground)' }}
+        >
+          {className(v.npc.class)} · L{v.npc.level}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+// NPCDetails renders the stats/loot view for one NPC. Used directly by
+// NPCCard for single-variant targets, and looped per variant when the
+// target name is ambiguous. variantLabel (when set) prefixes the section
+// as a header divider so stacked variant blocks read clearly.
+function NPCDetails({
+  npc,
+  abilities,
   sections,
+  view,
+  variantLabel,
   onItemClick,
 }: {
-  state: TargetState
-  view: View
+  npc: NPC
+  abilities: SpecialAbility[]
   sections: NPCOverlaySections
+  view: View
+  variantLabel?: string
   onItemClick: (id: number) => void
 }): React.ReactElement {
-  const npc = state.npc_data
-  const abilities = state.special_abilities ?? []
-
-  const lastUpdated = new Date(state.last_updated).toLocaleTimeString([], {
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-  })
-
   return (
-    <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-3">
-      <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-base font-bold leading-tight" style={{ color: 'var(--color-foreground)' }}>
-              {state.target_name ?? 'Unknown'}
-            </h2>
-            {state.pet_owner && (
-              <p className="mt-0.5 text-[11px] italic" style={{ color: 'var(--color-muted-foreground)' }}>
-                Pet of {state.pet_owner}
-              </p>
-            )}
-            {state.current_zone && (
-              <p className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>{state.current_zone}</p>
-            )}
-          </div>
-          <span className="shrink-0 text-[10px] tabular-nums" style={{ color: 'var(--color-muted)' }}>{lastUpdated}</span>
+    <div className="flex flex-col gap-2">
+      {variantLabel && (
+        <div className="flex items-center gap-2 border-b pb-1" style={{ borderColor: 'var(--color-border)' }}>
+          <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--color-primary)' }}>
+            {variantLabel}
+          </span>
         </div>
-
-        {state.is_corpse ? (
-          <TargetHPBar percent={0} />
-        ) : state.hp_percent >= 0 ? (
-          <TargetHPBar percent={state.hp_percent} />
-        ) : null}
-
-        {npc && (npc.raid_target === 1 || npc.rare_spawn === 1) && (
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {npc.raid_target === 1 && (
-              <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundColor: '#7c3aed' }}>RAID TARGET</span>
-            )}
-            {npc.rare_spawn === 1 && (
-              <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundColor: '#b45309' }}>RARE SPAWN</span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {npc ? (
-        view === 'loot' ? (
-          <LootSection npcId={npc.id} onItemClick={onItemClick} />
-        ) : (
+      )}
+      {view === 'loot' ? (
+        <LootSection npcId={npc.id} onItemClick={onItemClick} />
+      ) : (
         <>
           {sections.identity && (
             <div>
@@ -446,6 +439,92 @@ function NPCCard({
             </div>
           )}
         </>
+      )}
+    </div>
+  )
+}
+
+function NPCCard({
+  state,
+  view,
+  sections,
+  onItemClick,
+}: {
+  state: TargetState
+  view: View
+  sections: NPCOverlaySections
+  onItemClick: (id: number) => void
+}): React.ReactElement {
+  const npc = state.npc_data
+  const abilities = state.special_abilities ?? []
+  const variants = state.variants ?? []
+  const isAmbiguous = variants.length >= 2
+
+  const lastUpdated = new Date(state.last_updated).toLocaleTimeString([], {
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  })
+
+  return (
+    <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-3">
+      <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-bold leading-tight" style={{ color: 'var(--color-foreground)' }}>
+              {state.target_name ?? 'Unknown'}
+            </h2>
+            {state.pet_owner && (
+              <p className="mt-0.5 text-[11px] italic" style={{ color: 'var(--color-muted-foreground)' }}>
+                Pet of {state.pet_owner}
+              </p>
+            )}
+            {state.current_zone && (
+              <p className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>{state.current_zone}</p>
+            )}
+          </div>
+          <span className="shrink-0 text-[10px] tabular-nums" style={{ color: 'var(--color-muted)' }}>{lastUpdated}</span>
+        </div>
+
+        {state.is_corpse ? (
+          <TargetHPBar percent={0} />
+        ) : state.hp_percent >= 0 ? (
+          <TargetHPBar percent={state.hp_percent} />
+        ) : null}
+
+        {npc && (npc.raid_target === 1 || npc.rare_spawn === 1) && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {npc.raid_target === 1 && (
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundColor: '#7c3aed' }}>RAID TARGET</span>
+            )}
+            {npc.rare_spawn === 1 && (
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundColor: '#b45309' }}>RARE SPAWN</span>
+            )}
+          </div>
+        )}
+
+        {isAmbiguous && <VariantRibbon variants={variants} />}
+      </div>
+
+      {npc ? (
+        isAmbiguous ? (
+          variants.map((v) => (
+            <NPCDetails
+              key={v.npc.id}
+              npc={v.npc}
+              abilities={v.special_abilities}
+              sections={sections}
+              view={view}
+              variantLabel={`${className(v.npc.class)} · L${v.npc.level}`}
+              onItemClick={onItemClick}
+            />
+          ))
+        ) : (
+          <NPCDetails
+            npc={npc}
+            abilities={abilities}
+            sections={sections}
+            view={view}
+            onItemClick={onItemClick}
+          />
         )
       ) : (
         <div className="rounded px-3 py-2 text-xs" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
