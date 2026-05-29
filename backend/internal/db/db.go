@@ -4,6 +4,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"sync"
 
 	_ "modernc.org/sqlite"
 )
@@ -11,6 +12,16 @@ import (
 // DB wraps a sql.DB connection to the quarm.db SQLite database.
 type DB struct {
 	*sql.DB
+
+	// Duplicate-name collapse indexes, computed once from the loaded DB on
+	// first use (see variants.go). The EQMacEmu content dump ships multiple
+	// rows per item/spell name with different ids; these indexes pick a
+	// canonical row per name for list/search views and expose the rest as
+	// fetchable "variants." Computed lazily so opening the DB stays cheap and
+	// so tests that never touch items/spells don't pay for it.
+	variantsOnce  sync.Once
+	itemVariants  *variantIndex
+	spellVariants *variantIndex
 }
 
 // Open opens the SQLite database at the given path in read-only mode.
@@ -39,5 +50,5 @@ func Open(path string) (*DB, error) {
 	}
 	// Single reader connection is sufficient for a read-only DB.
 	db.SetMaxOpenConns(1)
-	return &DB{db}, nil
+	return &DB{DB: db}, nil
 }

@@ -77,6 +77,12 @@ func (db *DB) GetItem(id int) (*Item, error) {
 			it.WornHastePct = ComputeWornHastePct(sp, it.WornLevel)
 		}
 	}
+	// Surface any same-name duplicates collapsed out of list views. Variants
+	// stay fetchable here (unlike hidden items above) so the detail view can
+	// link to them.
+	db.ensureVariants()
+	it.VariantIDs = db.itemVariants.siblings(it.ID)
+	it.CanonicalID = db.itemVariants.canonicalID(it.ID)
 	return it, nil
 }
 
@@ -209,6 +215,12 @@ func (db *DB) SearchItems(f ItemFilter) (*SearchResult[Item], error) {
 	if clause, hargs := hiddenItemClause(); clause != "" {
 		where += " AND " + clause
 		args = append(args, hargs...)
+	}
+
+	// Collapse duplicate-name rows to the canonical one (see variants.go).
+	db.ensureVariants()
+	if clause := db.itemVariants.excludeNonCanonical("id"); clause != "" {
+		where += " AND " + clause
 	}
 
 	var total int
@@ -1245,6 +1257,10 @@ func (db *DB) GetSpell(id int) (*Spell, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get spell %d: %w", id, err)
 	}
+	// Surface any same-name duplicates collapsed out of list views.
+	db.ensureVariants()
+	sp.VariantIDs = db.spellVariants.siblings(sp.ID)
+	sp.CanonicalID = db.spellVariants.canonicalID(sp.ID)
 	return sp, nil
 }
 
@@ -1305,6 +1321,13 @@ func (db *DB) SearchSpells(query string, classIndex, minLevel, maxLevel, limit, 
 	}
 
 	where := strings.Join(conditions, " AND ")
+
+	// Collapse duplicate-name rows to the canonical one (see variants.go).
+	db.ensureVariants()
+	if clause := db.spellVariants.excludeNonCanonical("s.id"); clause != "" {
+		where += " AND " + clause
+	}
+
 	orderBy := "s.name"
 	if classCol != "" {
 		orderBy = classCol + ", s.name"
@@ -1360,6 +1383,12 @@ func (db *DB) GetSpellsByClass(classIndex, limit, offset int) (*SearchResult[Spe
 	}
 	col := fmt.Sprintf("s.classes%d", classIndex+1)
 	whereClause := fmt.Sprintf("%s BETWEEN 1 AND 60 AND s.IsDiscipline = 0 AND s.name != ''", col)
+
+	// Collapse duplicate-name rows to the canonical one (see variants.go).
+	db.ensureVariants()
+	if clause := db.spellVariants.excludeNonCanonical("s.id"); clause != "" {
+		whereClause += " AND " + clause
+	}
 
 	var total int
 	if err := db.QueryRow(

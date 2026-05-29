@@ -83,6 +83,14 @@ type Item struct {
 	Price    int    `json:"price"`
 	Icon     int    `json:"icon"`
 	MinStatus int   `json:"min_status"`
+
+	// Duplicate-name collapse (set by GetItem, omitted in list views). The
+	// dump ships several rows per item name; lists show only the canonical
+	// one. VariantIDs lists the other rows that share this name (hidden from
+	// lists but fetchable by id). CanonicalID points back to the "main" row
+	// when this item is itself a variant; 0 when this is the canonical row.
+	VariantIDs  []int `json:"variant_ids,omitempty"`
+	CanonicalID int   `json:"canonical_id,omitempty"`
 }
 
 // ItemFilter holds filter parameters for SearchItems.
@@ -257,6 +265,11 @@ type Spell struct {
 	// 0 = detrimental. Used to classify timer category for spells whose
 	// target type doesn't disambiguate (e.g. single-target friendly buffs).
 	GoodEffect int `json:"good_effect"`
+
+	// Duplicate-name collapse (set by GetSpell, omitted in list views).
+	// See the matching fields on Item.
+	VariantIDs  []int `json:"variant_ids,omitempty"`
+	CanonicalID int   `json:"canonical_id,omitempty"`
 }
 
 // SpellItemRef is a slim item reference used in spell cross-reference queries.
