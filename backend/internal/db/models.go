@@ -174,6 +174,24 @@ type NPC struct {
 	ExpPct     int     `json:"exp_pct"`
 }
 
+// SpawnPoint is one (spawngroup, world position) slot at which an NPC variant
+// can appear. Used by the overlay's variant disambiguation: a target sitting
+// near a known spawn point is almost certainly that variant.
+type SpawnPoint struct {
+	SpawngroupID int     `json:"spawngroup_id"`
+	X            float64 `json:"x"`
+	Y            float64 `json:"y"`
+	Z            float64 `json:"z"`
+}
+
+// NPCVariant pairs an NPC record with its spawn points in a specific zone.
+// Returned by GetNPCVariantsByNameInZone; consumers use SpawnPoints to pick
+// the variant nearest the player when multiple NPCs share a name.
+type NPCVariant struct {
+	NPC         NPC          `json:"npc"`
+	SpawnPoints []SpawnPoint `json:"spawn_points,omitempty"`
+}
+
 // FactionHit represents a single faction's standing change when an NPC is killed.
 type FactionHit struct {
 	FactionID   int    `json:"faction_id"`

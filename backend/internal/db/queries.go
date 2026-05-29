@@ -490,6 +490,102 @@ func (db *DB) GetNPCByName(name string) (*NPC, error) {
 	return n, nil
 }
 
+// GetNPCVariantsByNameInZone returns every npc_types row matching the given
+// name (case-insensitive), each paired with its spawn2 locations. About 24%
+// of NPCs in the Quarm DB share a name with at least one other row — the
+// overlay uses this to disambiguate against the player's zone and position
+// (see backend/internal/overlay/npc.go).
+//
+// When zoneShortName is non-empty, only variants with at least one spawn
+// point in that zone are returned, and each variant's SpawnPoints field is
+// populated. When it is empty (no Zeal data → zone unknown), the spawn join
+// is skipped and variants come back with SpawnPoints nil — callers can still
+// see the alternatives but can't position-match.
+//
+// Variants are ordered by npc_types.id ascending so callers get a
+// deterministic primary pick when no disambiguation signal is available.
+// Returns an empty slice (not an error) when nothing matches.
+func (db *DB) GetNPCVariantsByNameInZone(name, zoneShortName string) ([]NPCVariant, error) {
+	if zoneShortName == "" {
+		q := fmt.Sprintf(
+			"SELECT %s FROM npc_types n %s WHERE n.name = ? COLLATE NOCASE ORDER BY n.id",
+			npcColumns, npcJoin,
+		)
+		rows, err := db.Query(q, name)
+		if err != nil {
+			return nil, fmt.Errorf("get npc variants by name %q: %w", name, err)
+		}
+		defer rows.Close()
+		npcs, err := collectNPCs(rows)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]NPCVariant, len(npcs))
+		for i := range npcs {
+			out[i] = NPCVariant{NPC: npcs[i]}
+		}
+		return out, nil
+	}
+
+	// Zone-scoped variant: join npc_types → spawnentry → spawn2 so we only
+	// return variants that actually spawn in the requested zone, and gather
+	// every spawn point in one pass. Rows are ordered by npc_id, so we can
+	// fold them into variants in a single linear scan.
+	q := fmt.Sprintf(`
+		SELECT %s, s2.spawngroupID, s2.x, s2.y, s2.z
+		FROM npc_types n %s
+		JOIN spawnentry se ON se.npcID = n.id
+		JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
+		WHERE n.name = ? COLLATE NOCASE
+		  AND s2.zone = ?
+		ORDER BY n.id, s2.spawngroupID, s2.id`,
+		npcColumns, npcJoin)
+	rows, err := db.Query(q, name, zoneShortName)
+	if err != nil {
+		return nil, fmt.Errorf("get npc variants by name %q in zone %q: %w", name, zoneShortName, err)
+	}
+	defer rows.Close()
+
+	var variants []NPCVariant
+	curID := -1
+	for rows.Next() {
+		var n NPC
+		var spawngroupID int
+		var x, y, z float64
+		err := rows.Scan(
+			&n.ID, &n.Name, &n.LastName, &n.Level, &n.Race, &n.RaceName, &n.Class, &n.BodyType,
+			&n.HP, &n.Mana, &n.MinDmg, &n.MaxDmg, &n.AttackCount,
+			&n.MR, &n.CR, &n.DR, &n.FR, &n.PR, &n.AC,
+			&n.STR, &n.STA, &n.DEX, &n.AGI, &n.INT, &n.WIS, &n.CHA,
+			&n.AggroRadius, &n.RunSpeed, &n.Size,
+			&n.RaidTarget, &n.RareSpawn,
+			&n.LootTableID, &n.MerchantID, &n.NPCSpellsID, &n.NPCFactionID,
+			&n.SpecialAbilities,
+			&n.SeeInvis, &n.SeeInvisUndead,
+			&n.SpellScale, &n.HealScale, &n.ExpPct,
+			&spawngroupID, &x, &y, &z,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan npc variant: %w", err)
+		}
+		if curID != n.ID {
+			variants = append(variants, NPCVariant{NPC: n})
+			curID = n.ID
+		}
+		idx := len(variants) - 1
+		variants[idx].SpawnPoints = append(variants[idx].SpawnPoints, SpawnPoint{
+			SpawngroupID: spawngroupID,
+			X:            x,
+			Y:            y,
+			Z:            z,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate npc variants: %w", err)
+	}
+	return variants, nil
+}
+
 // nonPlayerNPCClause filters out rows in npc_types that do not reference
 // real in-game NPCs: empty/placeholder names ("", "#", "_") and the
 // Invisible Man race (127), which EQEmu uses exclusively for invisible

@@ -142,6 +142,102 @@ func TestGetNPC_NotFound(t *testing.T) {
 	}
 }
 
+// Kaas Thox Xi Aten Ha Ra is a canonical same-zone collision: two distinct
+// raid bosses in Vex Thal sharing one name, differing only in loottable_id
+// and physical spawn point. Disambiguating the two requires both rows plus
+// their spawn coordinates — exactly what GetNPCVariantsByNameInZone returns.
+func TestGetNPCVariantsByNameInZone_KaasThoxBothVariants(t *testing.T) {
+	d := openTestDB(t)
+	variants, err := d.GetNPCVariantsByNameInZone("Kaas_Thox_Xi_Aten_Ha_Ra", "vexthal")
+	if err != nil {
+		t.Fatalf("GetNPCVariantsByNameInZone: %v", err)
+	}
+	if len(variants) != 2 {
+		t.Fatalf("got %d variants, want 2", len(variants))
+	}
+	for _, v := range variants {
+		if len(v.SpawnPoints) == 0 {
+			t.Errorf("variant id=%d has no spawn points", v.NPC.ID)
+		}
+	}
+	// The two variants are at y=318 and y=-321 respectively — distinct enough
+	// that a player-position match will reliably pick one.
+	ys := []float64{variants[0].SpawnPoints[0].Y, variants[1].SpawnPoints[0].Y}
+	if (ys[0] > 0) == (ys[1] > 0) {
+		t.Errorf("expected variants on opposite sides of y=0, got y=%v, y=%v", ys[0], ys[1])
+	}
+	// Loot tables must differ — that's the whole reason this collision matters.
+	if variants[0].NPC.LootTableID == variants[1].NPC.LootTableID {
+		t.Errorf("variants have same loottable %d, expected divergent tables", variants[0].NPC.LootTableID)
+	}
+}
+
+// Shissar revenant in ssraeshza_temple is the other canonical case: two
+// variants (necromancer + shadow knight) that share a spawngroup. They come
+// back as separate npc_types rows but their SpawnPoints overlap, so the
+// caller must detect the shared-spawngroup case and surface both rather than
+// pick one.
+func TestGetNPCVariantsByNameInZone_ShissarSharedSpawngroup(t *testing.T) {
+	d := openTestDB(t)
+	variants, err := d.GetNPCVariantsByNameInZone("A_Shissar_Revenant", "ssratemple")
+	if err != nil {
+		t.Fatalf("GetNPCVariantsByNameInZone: %v", err)
+	}
+	if len(variants) != 2 {
+		t.Fatalf("got %d variants, want 2", len(variants))
+	}
+	// The class field is what differs: necro=11 vs SK=5. If both come back
+	// with the same class the join collapsed the variants somehow.
+	if variants[0].NPC.Class == variants[1].NPC.Class {
+		t.Errorf("variants have same class %d, expected different classes", variants[0].NPC.Class)
+	}
+	// Both variants must occupy spawngroup 162197 — that's what makes this
+	// case truly ambiguous from position alone.
+	gotShared := false
+	for _, sp1 := range variants[0].SpawnPoints {
+		for _, sp2 := range variants[1].SpawnPoints {
+			if sp1.SpawngroupID == sp2.SpawngroupID {
+				gotShared = true
+			}
+		}
+	}
+	if !gotShared {
+		t.Error("expected variants to share at least one spawngroup, got none")
+	}
+}
+
+// When no zone filter is given, the query should still return all variants
+// matching the name globally — but without spawn points. This is the
+// "no Zeal data, name only" fallback path used when the pipe is offline.
+func TestGetNPCVariantsByNameInZone_NoZoneReturnsAllNoSpawns(t *testing.T) {
+	d := openTestDB(t)
+	variants, err := d.GetNPCVariantsByNameInZone("A_Shissar_Revenant", "")
+	if err != nil {
+		t.Fatalf("GetNPCVariantsByNameInZone: %v", err)
+	}
+	if len(variants) < 2 {
+		t.Fatalf("got %d variants, want at least 2 (necro + SK in ssratemple)", len(variants))
+	}
+	for _, v := range variants {
+		if len(v.SpawnPoints) != 0 {
+			t.Errorf("variant id=%d has %d spawn points, want 0 (no zone filter)", v.NPC.ID, len(v.SpawnPoints))
+		}
+	}
+}
+
+// Empty result is not an error — the caller treats it like "no DB record",
+// the same as GetNPCByName returning sql.ErrNoRows today.
+func TestGetNPCVariantsByNameInZone_NoMatch(t *testing.T) {
+	d := openTestDB(t)
+	variants, err := d.GetNPCVariantsByNameInZone("a_nonexistent_mob_xyzzy", "qeynos")
+	if err != nil {
+		t.Fatalf("GetNPCVariantsByNameInZone: %v", err)
+	}
+	if len(variants) != 0 {
+		t.Errorf("got %d variants, want 0", len(variants))
+	}
+}
+
 func TestSearchNPCs(t *testing.T) {
 	d := openTestDB(t)
 	tests := []struct {
