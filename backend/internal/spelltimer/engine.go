@@ -200,12 +200,12 @@ func sameSpellForDedup(existing *ActiveTimer, name string, spellID int) bool {
 // a Visions of Grandeur cast on three different group members produces three
 // independently-tracked timers.
 type Engine struct {
-	hub             *ws.Hub
-	db              *db.DB
-	charCtx         CharacterContext
-	scopeFn         ScopeProvider
-	classFilterFn   ClassFilterProvider
-	modeFn          ModeProvider
+	hub           *ws.Hub
+	db            *db.DB
+	charCtx       CharacterContext
+	scopeFn       ScopeProvider
+	classFilterFn ClassFilterProvider
+	modeFn        ModeProvider
 
 	mu     sync.Mutex
 	timers map[string]*ActiveTimer // keyed by timerKey(spell, target)
@@ -225,9 +225,9 @@ type Engine struct {
 	// modifier cache: keeps the last-computed contributors per character so
 	// the engine doesn't re-parse the Quarmy export on every cast. Invalidated
 	// by character change or RefreshModifiers().
-	modMu        sync.Mutex
-	modCharName  string
-	modContribs  []buffmod.Modifier
+	modMu       sync.Mutex
+	modCharName string
+	modContribs []buffmod.Modifier
 
 	// pipeCasting is the spell name most recently reported by the Zeal pipe
 	// (LabelCastingName, id 134). Empty when the player isn't casting. Used
