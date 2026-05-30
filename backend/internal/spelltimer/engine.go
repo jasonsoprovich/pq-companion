@@ -425,6 +425,16 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		// so wipe every "Illusion: …" timer keyed to the active player.
 		e.removeIllusionsForPlayer(e.activePlayerName())
 
+	case logparser.EventCharmBroken:
+		// "Your charm spell has worn off." — EQ emits this generic line for
+		// every charm spell (Charm/Beguile/Cajoling Whispers/Allure/Dictate/
+		// Boltran's Agacerie), never a per-name "Your <spell> spell has worn
+		// off." So a charm timer's worn-off pattern can't match it and the
+		// EventSpellFade path never sees it (the parser routes it here). Only
+		// one charm is active at a time, so clear every charm timer — the same
+		// charm-break signal the combat tracker uses to release the pet.
+		e.removeCharmTimers()
+
 	case logparser.EventZone:
 		// Zoning no longer clears timers — buffs survive a zone change in
 		// EQ, and persisting them lets the user keep tracking long-running
@@ -1283,6 +1293,30 @@ func isCharmSpell(spell *db.Spell) bool {
 		}
 	}
 	return false
+}
+
+// removeCharmTimers deletes every charm timer. Called on EventCharmBroken
+// ("Your charm spell has worn off."), the generic line EQ emits for any charm
+// spell breaking. Only one charm can be active per character, so clearing all
+// charm-flagged timers is correct — and it's the worn-off path the charm
+// triggers can't express (their per-name pattern never matches the generic
+// line).
+func (e *Engine) removeCharmTimers() {
+	e.mu.Lock()
+	removed := 0
+	for k, t := range e.timers {
+		if t.IsCharm {
+			delete(e.timers, k)
+			removed++
+		}
+	}
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	if removed > 0 {
+		slog.Info("timer-debug: cleared charm timers on charm break", "removed", removed)
+		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+	}
 }
 
 // isDetrimentalCategory reports whether a timer category represents a

@@ -787,6 +787,33 @@ func TestHandle_Kill_KeepsOrphanCharmTimer(t *testing.T) {
 	}
 }
 
+// "Your charm spell has worn off." (EventCharmBroken) must clear the charm
+// timer. EQ emits this generic line for every charm spell, so the charm
+// trigger's per-name worn-off pattern never matches it — the engine has to
+// catch the break itself. Non-charm detrimentals are untouched.
+func TestHandle_CharmBroken_ClearsCharmTimers(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	e.timers[timerKey("Cajoling Whispers", "")] = &ActiveTimer{
+		ID: timerKey("Cajoling Whispers", ""), SpellName: "Cajoling Whispers",
+		Category: CategoryDebuff, IsCharm: true, TargetName: "",
+		CastAt: now, StartsAt: now, ExpiresAt: now.Add(3 * time.Minute),
+	}
+	e.timers[timerKey("Tashanian", "a gnoll")] = &ActiveTimer{
+		ID: timerKey("Tashanian", "a gnoll"), SpellName: "Tashanian", Category: CategoryDebuff,
+		TargetName: "a gnoll", CastAt: now, StartsAt: now, ExpiresAt: now.Add(13 * time.Minute),
+	}
+
+	e.Handle(logparser.LogEvent{Type: logparser.EventCharmBroken})
+
+	if _, ok := e.timers[timerKey("Cajoling Whispers", "")]; ok {
+		t.Error("charm timer should clear on EventCharmBroken")
+	}
+	if _, ok := e.timers[timerKey("Tashanian", "a gnoll")]; !ok {
+		t.Error("non-charm debuff should survive a charm break")
+	}
+}
+
 // Multi-word boss names — verify the existing target-match path handles
 // names with spaces (e.g. "Zun Thall Xakra") since these are the typical
 // raid targets where users notice debuffs lingering.
