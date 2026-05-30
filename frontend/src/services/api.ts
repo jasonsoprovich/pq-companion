@@ -834,6 +834,32 @@ export function getCharacterEquippedStats(id: number): Promise<EquippedStats> {
   return get<EquippedStats>(`/api/characters/${id}/equipped-stats`)
 }
 
+// DerivedStats carries one fully-derived StatBlock per display layer. Vitals
+// (HP/mana/AC/resists) are computed by the backend from each layer's total
+// attributes using Project Quarm's real formulas — the frontend just renders
+// the block matching the active mode. preset_buff_ids/live_buff_ids are sent so
+// the backend can fold those buffs into the +Buffs / Live layers.
+export interface DerivedStats {
+  character: string
+  level: number
+  class: number
+  base: StatBlock
+  equipped: StatBlock
+  buffed: StatBlock
+  live: StatBlock
+}
+
+export function getCharacterDerivedStats(
+  id: number,
+  presetBuffIDs: number[],
+  liveBuffIDs: number[],
+): Promise<DerivedStats> {
+  return post<DerivedStats>(`/api/characters/${id}/derived-stats`, {
+    preset_buff_ids: presetBuffIDs,
+    live_buff_ids: liveBuffIDs,
+  })
+}
+
 // ── Character Raid-Buff Preset ────────────────────────────────────────────────
 
 // MAX_RAID_BUFF_SLOTS mirrors backend character.MaxRaidBuffSlots — EQ's 13

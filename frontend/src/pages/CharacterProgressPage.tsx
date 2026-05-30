@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { TrendingUp, RefreshCw, AlertCircle, Check, Search, Trash2 } from 'lucide-react'
 import {
   getZealQuarmy, getCharacterAAs, listCharacters, getItem,
-  getCharacterSpellModifiers, searchSpells, getCharacterEquippedStats,
+  getCharacterSpellModifiers, searchSpells,
   getCharacterRaidBuffs, setCharacterRaidBuffs, getSpellStatDeltas,
-  getTimerState, MAX_RAID_BUFF_SLOTS,
+  getTimerState, MAX_RAID_BUFF_SLOTS, getCharacterDerivedStats,
 } from '../services/api'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
@@ -13,8 +13,8 @@ import { useActivePlayerName } from '../hooks/useActivePlayerName'
 import type { ActiveTimer, TimerState } from '../types/timer'
 import type {
   QuarmyData, CharacterAA, AAInfo, Character,
-  SpellModifier, SpellModifierResolution, EquippedStats, StatBlock,
-  SpellStatDeltaEntry,
+  SpellModifier, SpellModifierResolution, StatBlock,
+  SpellStatDeltaEntry, DerivedStats,
 } from '../services/api'
 import type { Spell } from '../types/spell'
 import type { Item } from '../types/item'
@@ -119,7 +119,6 @@ export default function CharacterProgressPage(): React.ReactElement {
   const [trainedAAs, setTrainedAAs] = useState<CharacterAA[]>([])
   const [availableAAs, setAvailableAAs] = useState<AAInfo[]>([])
   const [modifiers, setModifiers] = useState<SpellModifier[] | null>(null)
-  const [equippedStats, setEquippedStats] = useState<EquippedStats | null>(null)
   const [activeChar, setActiveChar] = useState<Character | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -168,17 +167,10 @@ export default function CharacterProgressPage(): React.ReactElement {
           // Quarmy export not available — modifiers panel will show its own empty state
           setModifiers(null)
         }
-        try {
-          const eq = await getCharacterEquippedStats(found.id)
-          setEquippedStats(eq)
-        } catch {
-          setEquippedStats(null)
-        }
       } else {
         setTrainedAAs([])
         setAvailableAAs([])
         setModifiers(null)
-        setEquippedStats(null)
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load data')
@@ -305,7 +297,7 @@ export default function CharacterProgressPage(): React.ReactElement {
           ) : (
             <>
               {tab === 'stats' && (
-                <StatsPanel stats={statsSource} hasStats={!!hasStats} gear={equippedStats} characterID={activeChar?.id ?? null} characterName={viewedCharacter} />
+                <StatsPanel stats={statsSource} hasStats={!!hasStats} characterID={activeChar?.id ?? null} characterName={viewedCharacter} />
               )}
               {tab === 'gear' && (
                 <GearPanel gear={equippedGear} hasQuarmy={!!quarmy} onLookup={handleLookup} />
@@ -404,126 +396,14 @@ function addDelta(into: Required<StatDelta>, d: StatDelta): void {
   into.dmg_shield += d.dmg_shield ?? 0
 }
 
-function statBlockToDelta(b: StatBlock): StatDelta {
-  return { ...b }
-}
-
-// ── Haste stacking + level cap ────────────────────────────────────────────────
-//
-// EQ classic / Project Quarm haste stacks across three tiers:
-//   v1 — worn equipment haste. Only the highest item applies; we receive it
-//        pre-maxed as gear.equipment.haste from the backend.
-//   v2 — spell / song / proc / clicky haste. Only the HIGHEST v2 source
-//        applies — multiple v2 hastes don't stack with each other.
-//   v3 — overhaste. The single way to push past the level-based cap; on
-//        Quarm only Warsong of the Vah Shir (spell 2610) provides this.
-//
-// Total haste shown = min(v1 + max(v2), levelCap(level)) + sum(v3).
-//
-// Level-based cap on (v1+v2), per Quarm patch notes / community reference:
-//   1-30 → 50%, 31-50 → 74%, 51-54 → 84%, 55-59 → 94%, 60 → 100%.
-
-const OVERHASTE_SPELL_IDS = new Set<number>([
-  2610, // Warsong of the Vah Shir — only v3 source on Quarm at present
-])
-
-function hasteCapForLevel(level: number): number {
-  if (level <= 0) return 100  // unknown level — fall back to the level-60 cap
-  if (level <= 30) return 50
-  if (level <= 50) return 74
-  if (level <= 54) return 84
-  if (level <= 59) return 94
-  return 100
-}
-
-// computeStackedHaste applies the v1/v2/v3 stacking rules and level cap. The
-// caller supplies whichever buff list is active for the current mode (raid
-// preset, live buffs, or empty for non-buffed modes).
-function computeStackedHaste(
-  wornHaste: number,
-  buffs: Array<{ id: number; meta: SpellStatDeltaEntry }>,
-  level: number,
-): number {
-  let v2Max = 0
-  let v3Sum = 0
-  for (const b of buffs) {
-    const h = b.meta.delta.haste ?? 0
-    if (h <= 0) continue
-    if (OVERHASTE_SPELL_IDS.has(b.id)) {
-      v3Sum += h
-    } else if (h > v2Max) {
-      v2Max = h
-    }
-  }
-  const cap = hasteCapForLevel(level)
-  return Math.min(wornHaste + v2Max, cap) + v3Sum
-}
-
-// EQ class indices (0-indexed; 0 = Warrior).
-const INT_CASTER_CLASSES = new Set([10, 11, 12, 13]) // Necro, Wiz, Mag, Enchanter
-const WIS_CASTER_CLASSES = new Set([1, 2, 3, 4, 5, 9, 14]) // Cleric, Pal, Rng, SK, Druid, Shm, Bst
-
-// statDerivedBonus is the INT/WIS-driven Mana bonus that quarmy.com layers on
-// top of base_data — without it, casters read ~30% low on Mana since
-// base_data.mana is only the level-up floor. Reverse-fit against Osui
-// (lvl-60 Enchanter, INT 255 → ~4233 in-game with full gear/buffs); other
-// caster classes land within ~10%. base_data.hp already encodes a STA
-// baseline, so we don't add a STA-driven HP bonus on top.
-function statDerivedBonus(level: number, classIdx: number, total: { int: number; wis: number }): { mana: number } {
-  if (level <= 0 || classIdx < 0) return { mana: 0 }
-  const intl = Math.min(255, total.int)
-  const wis = Math.min(255, total.wis)
-  if (INT_CASTER_CLASSES.has(classIdx)) {
-    return { mana: Math.floor((intl * level) / 10) }
-  }
-  if (WIS_CASTER_CLASSES.has(classIdx)) {
-    return { mana: Math.floor((wis * level) / 10) }
-  }
-  return { mana: 0 }
-}
-
-// AC class softcap factor — multiplier applied to item AC when computing the
-// displayed total. Plate classes get more out of every point of armor than
-// cloth; these values are reverse-fit against quarmy.com so the displayed AC
-// lands within ~10%. Indexed by EQ class (0-indexed).
-const AC_FACTOR_BY_CLASS: Record<number, number> = {
-  0: 2.5,  // Warrior
-  1: 2.2,  // Cleric
-  2: 2.4,  // Paladin
-  3: 2.2,  // Ranger
-  4: 2.4,  // SK
-  5: 2.0,  // Druid
-  6: 2.1,  // Monk
-  7: 2.1,  // Bard
-  8: 2.1,  // Rogue
-  9: 2.0,  // Shaman
-  10: 2.0, // Necromancer
-  11: 2.0, // Wizard
-  12: 2.0, // Magician
-  13: 2.2, // Enchanter
-  14: 2.0, // Beastlord
-}
-
-// displayedAC mirrors EQEmu's softcap math: item AC is scaled by a per-class
-// factor, then spell-AC, level bonus, and an AGI-derived bonus stack on top.
-// Approximate — matches in-game inspection AC within ~10% across classes.
-function displayedAC(level: number, classIdx: number, itemAC: number, spellAC: number, totalAGI: number): number {
-  if (itemAC <= 0 && spellAC <= 0) return 0
-  const factor = AC_FACTOR_BY_CLASS[classIdx] ?? 2.0
-  const agi = Math.min(255, totalAGI)
-  const agiBonus = agi > 75 ? Math.floor((agi - 75) / 3) : 0
-  return Math.floor(itemAC * factor) + spellAC + level + agiBonus
-}
-
 interface StatsPanelProps {
   stats: { base_str: number; base_sta: number; base_cha: number; base_dex: number; base_int: number; base_agi: number; base_wis: number } | null
   hasStats: boolean
-  gear: EquippedStats | null
   characterID: number | null
   characterName: string
 }
 
-function StatsPanel({ stats, hasStats, gear, characterID, characterName }: StatsPanelProps): React.ReactElement {
+function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelProps): React.ReactElement {
   const [mode, setMode] = useState<StatMode>('equipped')
   // Saved raid-buff preset (ordered list of spell IDs) plus the resolved
   // name/icon/delta metadata for each. Both are loaded together — when the
@@ -547,6 +427,11 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
   const activePlayerName = useActivePlayerName()
   const [timerState, setTimerState] = useState<TimerState | null>(null)
   const [liveBuffMeta, setLiveBuffMeta] = useState<Record<string, SpellStatDeltaEntry>>({})
+
+  // Backend-derived stat blocks for all four display layers, recomputed with
+  // Project Quarm's real HP/mana/AC/resist formulas. The frontend no longer
+  // approximates these — it just renders the block for the active mode.
+  const [derived, setDerived] = useState<DerivedStats | null>(null)
 
   // Fetch the saved preset whenever the character changes. Falls back to
   // DEFAULT_PRESET_IDS when the backend returns an empty list (new character
@@ -646,6 +531,25 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
       .catch(() => { /* keep prior cache rather than blanking */ })
     return () => { cancelled = true }
   }, [liveSpellIDsKey])
+
+  // Refetch the derived stat blocks whenever the character, the saved buff
+  // preset, or the live buff set changes. The backend returns every layer at
+  // once, so switching display modes is instant (no refetch). The active
+  // preset/live spell ids are sent so the +Buffs and Live layers fold them in.
+  const presetKey = presetIds.join(',')
+  useEffect(() => {
+    if (characterID == null) {
+      setDerived(null)
+      return
+    }
+    let cancelled = false
+    const liveIDs = liveSpellIDsKey.length > 0 ? liveSpellIDsKey.split(',').map(Number) : []
+    getCharacterDerivedStats(characterID, presetIds, liveIDs)
+      .then((d) => { if (!cancelled) setDerived(d) })
+      .catch(() => { /* keep last-good blocks rather than blanking */ })
+    return () => { cancelled = true }
+    // presetIds is captured via presetKey; liveIDs via liveSpellIDsKey.
+  }, [characterID, presetKey, liveSpellIDsKey])
 
   const handleSwapAegolism = useCallback(() => {
     const hasAego = presetIds.includes(AEGOLISM_SPELL_ID)
@@ -747,60 +651,21 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
     }
   }
 
-  // Sum every active source into one delta. Base attribs come from quarmy on
-  // the character row; the backend's `base` block fills in HP/Mana from
-  // base_data and the +25 starting resists.
-  const total = emptyDelta()
-  if (gear?.base) {
-    addDelta(total, statBlockToDelta(gear.base))
-  } else {
-    // Fall back to quarmy attribs only if the equipped-stats endpoint hasn't
-    // resolved yet — at least the seven attributes still show.
-    addDelta(total, {
-      str: stats.base_str, sta: stats.base_sta, agi: stats.base_agi,
-      dex: stats.base_dex, wis: stats.base_wis, int: stats.base_int, cha: stats.base_cha,
-    })
-  }
-  if (includesGear && gear?.equipment) addDelta(total, statBlockToDelta(gear.equipment))
-  if (includesBuffs) {
-    for (const b of buffEntries) addDelta(total, b.meta.delta)
-  }
-  if (includesLive) {
-    for (const b of liveBuffEntries) addDelta(total, b.meta.delta)
-  }
-
-  // Override the haste field with the proper v1/v2/v3 stacking + level cap.
-  // The addDelta loop above sums haste contributions additively, which is
-  // wrong for haste — only the highest v2 source applies, and the (v1+v2)
-  // sum is capped per level. v3 (overhaste) is added on top of the cap.
-  {
-    const wornHaste = includesGear ? (gear?.equipment?.haste ?? 0) : 0
-    const activeBuffs = includesBuffs
-      ? buffEntries
-      : includesLive
-      ? liveBuffEntries.map((e) => ({ id: e.id, meta: e.meta }))
-      : []
-    total.haste = computeStackedHaste(wornHaste, activeBuffs, gear?.level ?? 0)
-  }
-
-  // Apply EQ's stat-driven Mana bonus and softcapped AC once the cumulative
-  // attributes are known. Quarmy.com does the same (with the full EQEmu
-  // formula); this is the reverse-fit approximation.
-  if (gear) {
-    const bonus = statDerivedBonus(gear.level, gear.class, {
-      int: total.int, wis: total.wis,
-    })
-    total.mana += bonus.mana
-
-    // Recompute AC with the softcap factor — `total.ac` was the raw sum of
-    // item + spell AC, which underrepresents the in-game number by ~50%.
-    const itemAC = includesGear ? (gear.equipment.ac ?? 0) : 0
-    const spellAC = total.ac - itemAC
-    total.ac = displayedAC(gear.level, gear.class, itemAC, spellAC, total.agi)
+  // The backend derives every layer's vitals (HP/mana/AC/resists) from that
+  // layer's total attributes using Project Quarm's real formulas; we just pick
+  // the block for the active mode. While the first fetch is in flight, fall
+  // back to the quarmy base attributes so the seven stat bars still render —
+  // vitals read zero until the derived blocks resolve.
+  const block: StatBlock = (derived && derived[mode]) || {
+    hp: 0, mana: 0, ac: 0,
+    str: stats.base_str, sta: stats.base_sta, agi: stats.base_agi, dex: stats.base_dex,
+    wis: stats.base_wis, int: stats.base_int, cha: stats.base_cha,
+    pr: 0, mr: 0, dr: 0, fr: 0, cr: 0,
+    attack: 0, haste: 0, spell_haste: 0, regen: 0, mana_regen: 0, ft: 0, dmg_shield: 0,
   }
 
   const capped = (v: number) => Math.min(STAT_CAP, v)
-  const gearMissing = includesGear && !gear
+  const gearMissing = includesGear && !derived
 
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
@@ -818,27 +683,27 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
         )}
 
         <div className="mb-4 grid grid-cols-3 gap-3">
-          <VitalRow label="HP" value={total.hp} />
-          <VitalRow label="Mana" value={total.mana} />
-          <VitalRow label="AC" value={total.ac} />
+          <VitalRow label="HP" value={block.hp} />
+          <VitalRow label="Mana" value={block.mana} />
+          <VitalRow label="AC" value={block.ac} />
         </div>
 
         <div className="space-y-3">
-          <StatBar label="STR" value={capped(total.str)} max={STAT_CAP} />
-          <StatBar label="STA" value={capped(total.sta)} max={STAT_CAP} />
-          <StatBar label="AGI" value={capped(total.agi)} max={STAT_CAP} />
-          <StatBar label="DEX" value={capped(total.dex)} max={STAT_CAP} />
-          <StatBar label="WIS" value={capped(total.wis)} max={STAT_CAP} />
-          <StatBar label="INT" value={capped(total.int)} max={STAT_CAP} />
-          <StatBar label="CHA" value={capped(total.cha)} max={STAT_CAP} />
+          <StatBar label="STR" value={capped(block.str)} max={STAT_CAP} />
+          <StatBar label="STA" value={capped(block.sta)} max={STAT_CAP} />
+          <StatBar label="AGI" value={capped(block.agi)} max={STAT_CAP} />
+          <StatBar label="DEX" value={capped(block.dex)} max={STAT_CAP} />
+          <StatBar label="WIS" value={capped(block.wis)} max={STAT_CAP} />
+          <StatBar label="INT" value={capped(block.int)} max={STAT_CAP} />
+          <StatBar label="CHA" value={capped(block.cha)} max={STAT_CAP} />
         </div>
 
         <div className="mt-4 grid grid-cols-5 gap-2">
-          <ResistRow label="MAGIC"   value={total.mr} />
-          <ResistRow label="COLD"    value={total.cr} />
-          <ResistRow label="FIRE"    value={total.fr} />
-          <ResistRow label="DISEASE" value={total.dr} />
-          <ResistRow label="POISON"  value={total.pr} />
+          <ResistRow label="MAGIC"   value={block.mr} />
+          <ResistRow label="COLD"    value={block.cr} />
+          <ResistRow label="FIRE"    value={block.fr} />
+          <ResistRow label="DISEASE" value={block.dr} />
+          <ResistRow label="POISON"  value={block.pr} />
         </div>
 
         {includesGear && (
@@ -847,13 +712,13 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
             style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
           >
             <div className="grid grid-cols-2 gap-y-1">
-              <span>Haste</span>           <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{total.haste}%</span>
-              <span>Spell Haste</span>     <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }} title="Hard-capped at 50% per Project Quarm rules">{total.spell_haste}%</span>
-              <span>Worn ATK</span>        <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{total.attack}</span>
-              <span>HP Regen</span>        <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{total.regen}/tick</span>
-              <span>Flowing Thought</span> <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{total.ft}/15</span>
-              <span>Mana Regen</span>      <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{total.mana_regen}/tick</span>
-              <span>Damage Shield</span>   <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{total.dmg_shield}</span>
+              <span>Haste</span>           <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{block.haste}%</span>
+              <span>Spell Haste</span>     <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }} title="Hard-capped at 50% per Project Quarm rules">{block.spell_haste}%</span>
+              <span>Worn ATK</span>        <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{block.attack}</span>
+              <span>HP Regen</span>        <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{block.regen}/tick</span>
+              <span>Flowing Thought</span> <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{block.ft}/15</span>
+              <span>Mana Regen</span>      <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{block.mana_regen}/tick</span>
+              <span>Damage Shield</span>   <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{block.dmg_shield}</span>
             </div>
           </div>
         )}
