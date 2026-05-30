@@ -309,6 +309,7 @@ function StatsBody({
               <Chip label="AC" value={npc.ac} />
               <Chip label="DMG" value={`${npc.min_dmg}-${npc.max_dmg}`} color="#ef4444" />
               <Chip label="Atk/Rd" value={npc.attack_count < 0 ? 'default' : npc.attack_count} />
+              <Chip label="Speed" value={`${Math.round((npc.run_speed / 0.7) * 100)}%`} />
             </div>
           )}
 
