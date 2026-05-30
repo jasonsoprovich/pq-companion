@@ -55,8 +55,11 @@ func TestDerivedStats_OsuiPipeline(t *testing.T) {
 	}
 
 	defense, _ := d.DefenseSkillCap(14, 60) // Enchanter, level 60
-	if defense != 100 {
-		t.Fatalf("Enchanter L60 defense cap = %d, want 100", defense)
+	// Defense is skill_caps.skill_id 15 in the Mac-era enum; the caster cap is
+	// 145 (matches in-game AC and EQMacEmu's GetAvoidance comments). Querying
+	// skill_id 9 here previously returned Bind Wound's 100 and made AC ~120 low.
+	if defense != 145 {
+		t.Fatalf("Enchanter L60 defense cap = %d, want 145", defense)
 	}
 
 	base := osui()

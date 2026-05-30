@@ -281,19 +281,27 @@ func (db *DB) GetBaseData(level, classIdx int) (BaseData, error) {
 	return bd, nil
 }
 
-// DefenseSkillCap returns the maximum Defense skill (skill_caps skill_id 9) a
-// class can reach at the given level. Used as the assumed Defense value when
-// computing displayed AC — a max-level main is virtually always at cap, and
-// the Quarmy export carries no live skill values. classIdx is 1-indexed
-// (1=Warrior … 14=Enchanter, 15=Beastlord). Returns 0 if no row matches.
+// defenseSkillID is the skill_caps.skill_id for the Defense skill in the
+// Quarm/EQMacEmu data. The Mac-era skill enum is offset from modern EQEmu
+// (where Defense is 16): here Defense is 15 (id 9 is Bind Wound). Verified
+// against EQMacEmu's own GetAvoidance comments — the level-60 caps under
+// skill_id 15 match exactly: WAR/PAL/SHD/MNK/BRD/ROG 252, RNG/BST 240,
+// CLR/DRU/SHM 200, NEC/WIZ/MAG/ENC 145.
+const defenseSkillID = 15
+
+// DefenseSkillCap returns the maximum Defense skill a class can reach at the
+// given level. Used as the assumed Defense value when computing displayed AC —
+// a max-level main is virtually always at cap, and the Quarmy export carries
+// no live skill values. classIdx is 1-indexed (1=Warrior … 14=Enchanter,
+// 15=Beastlord). Returns 0 if no row matches.
 func (db *DB) DefenseSkillCap(classIdx, level int) (int, error) {
 	if level <= 0 || classIdx <= 0 {
 		return 0, nil
 	}
 	var cap int
 	err := db.QueryRow(
-		`SELECT cap FROM skill_caps WHERE skill_id = 9 AND class_id = ? AND level = ?`,
-		classIdx, level,
+		`SELECT cap FROM skill_caps WHERE skill_id = ? AND class_id = ? AND level = ?`,
+		defenseSkillID, classIdx, level,
 	).Scan(&cap)
 	if err == sql.ErrNoRows {
 		return 0, nil
