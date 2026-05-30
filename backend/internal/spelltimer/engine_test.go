@@ -720,6 +720,39 @@ func TestHandle_Kill_RemovesOrphanDetrimentalTimers(t *testing.T) {
 	}
 }
 
+// sameLandOrphan gates the cross-name dedup that collapses a broad trigger's
+// phantom timer (e.g. the Enchanter pack's "Tashanian" firing on the shared
+// "glances nervously about" land text) into the pipeline's target-bound row.
+// It must fire only for a target-less, non-charm detrimental whose land
+// timestamp matches the resolving spell — never for charm, a buff, a
+// target-bound timer, or an orphan from a different log line.
+func TestSameLandOrphan(t *testing.T) {
+	land := time.Date(2026, 5, 30, 12, 13, 47, 0, time.UTC)
+	orphanDebuff := &ActiveTimer{TargetName: "", Category: CategoryDebuff, StartsAt: land}
+	if !sameLandOrphan(orphanDebuff, land) {
+		t.Error("orphan detrimental on the same land line should merge")
+	}
+	// Different land line (timestamp) — two distinct debuffs, keep both.
+	if sameLandOrphan(orphanDebuff, land.Add(time.Second)) {
+		t.Error("orphan from a different land timestamp must not merge")
+	}
+	// Charm orphan is intentionally kept separate.
+	charm := &ActiveTimer{TargetName: "", Category: CategoryDebuff, IsCharm: true, StartsAt: land}
+	if sameLandOrphan(charm, land) {
+		t.Error("charm orphan must not be absorbed")
+	}
+	// Target-bound timer is not an orphan.
+	bound := &ActiveTimer{TargetName: "a gnoll", Category: CategoryDebuff, StartsAt: land}
+	if sameLandOrphan(bound, land) {
+		t.Error("target-bound timer must not merge as an orphan")
+	}
+	// A buff orphan (e.g. a self-buff trigger) is out of scope.
+	buff := &ActiveTimer{TargetName: "", Category: CategoryBuff, StartsAt: land}
+	if sameLandOrphan(buff, land) {
+		t.Error("buff orphan must not be treated as a detrimental land twin")
+	}
+}
+
 // A charm timer (Cajoling Whispers etc.) tracks a living, still-charmed pet.
 // Killing an UNRELATED mob — e.g. the enemy the charmed pet is tanking — must
 // not sweep the orphan charm timer away with the other detrimentals.

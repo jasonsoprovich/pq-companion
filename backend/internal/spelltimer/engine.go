@@ -191,6 +191,23 @@ func sameSpellForDedup(existing *ActiveTimer, name string, spellID int) bool {
 	return spellID > 0 && existing.SpellID == spellID
 }
 
+// sameLandOrphan reports whether existing is a target-less, non-charm
+// detrimental created by a trigger that fired on the same land line the
+// spell-landed pipeline just resolved (identical land timestamp). That makes
+// it the trigger-pack twin of the spell the pipeline named — e.g. the
+// Enchanter pack's broad "Tashanian" trigger firing on the shared
+// "<mob> glances nervously about." text while the pipeline resolves the actual
+// Tash-line spell cast. onSpellLanded absorbs such an orphan into the
+// target-bound timer so the user sees one row (with a target) instead of two.
+// Charm is excluded — its orphan is intentionally kept distinct (see
+// removeOnKill) and never shares a land line with a different spell here.
+func sameLandOrphan(existing *ActiveTimer, landedAt time.Time) bool {
+	return existing.TargetName == "" &&
+		!existing.IsCharm &&
+		isDetrimentalCategory(existing.Category) &&
+		existing.StartsAt.Equal(landedAt)
+}
+
 // Engine watches parsed log events, maintains a live map of active spell
 // timers, and broadcasts state changes via WebSocket.
 //
@@ -967,11 +984,23 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	// timer and drop the old entry — otherwise the spell-landed timer ends
 	// up with DisplayThresholdSecs=0 and the per-trigger override is lost.
 	// This is the symmetric counterpart to the dedup in StartExternal.
+	//
+	// We also absorb a same-LAND orphan here: a trigger detrimental that fired
+	// on the exact land line this spell resolved from, but under a different
+	// name. The Enchanter pack's "Tashanian" trigger matches the generic
+	// "<mob> glances nervously about." land text shared by the whole Tash line,
+	// so casting Tashania (or any other Tash spell) spawns a phantom orphan
+	// "Tashanian" timer alongside the pipeline's correct Tashania@target one.
+	// Keying on an identical land timestamp keeps this tight — two genuinely
+	// different debuffs land on separate log lines (separate timestamps).
+	landDetrimental := isDetrimentalCategory(timer.Category)
 	for existingKey, existing := range e.timers {
 		if existingKey == key {
 			continue
 		}
-		if !sameSpellForDedup(existing, spellName, spell.ID) {
+		sameSpell := sameSpellForDedup(existing, spellName, spell.ID)
+		sameLand := landDetrimental && sameLandOrphan(existing, landedAt)
+		if !sameSpell && !sameLand {
 			continue
 		}
 		if time.Since(existing.CastAt) >= dedupGraceWindow {
