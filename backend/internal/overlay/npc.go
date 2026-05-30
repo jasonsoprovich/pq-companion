@@ -460,28 +460,57 @@ func (t *NPCTracker) lookupNPCVariants(
 	return &primary, primaryAbilities, out
 }
 
-// fetchVariants runs the zone-scoped variants query, then retries with
-// placeholder prefixes if the bare name finds nothing. Returns nil on total
-// miss (caller treats as no DB record).
+// fetchVariants gathers every same-name npc_types row for the target — both
+// the bare display name and each placeholder-prefixed form ("#Foo", "##_Foo",
+// …) — and returns them as one deduplicated candidate set. Returns nil on a
+// total miss (caller treats as no DB record).
+//
+// Project Quarm frequently splits one logical NPC across a bare row and a
+// "#"-prefixed row that live in different zones/versions and carry *different*
+// special_abilities. "Venril Sathir", for instance, has a plain row with no
+// Rampage and a "#Venril_Sathir" row that does. The old code returned the
+// bare match and only consulted the prefixes when the bare name found nothing,
+// so whenever both forms existed the "#"-row was never surfaced — and any
+// ability that lived only on it (Rampage being the common one) silently
+// vanished from the overlay even though the DB search page still listed it.
+// Unioning both sets keeps every variant in play; zone/position
+// disambiguation downstream narrows them when Zeal data is available, and the
+// frontend renders the full set otherwise.
+//
+// Bare matches are added first so the deterministic primary pick (lowest id
+// of the bare form) is unchanged for the common single-row case.
 func (t *NPCTracker) fetchVariants(dbName, zoneShort string) []db.NPCVariant {
-	candidates, err := t.db.GetNPCVariantsByNameInZone(dbName, zoneShort)
+	seen := make(map[int]struct{})
+	var out []db.NPCVariant
+	add := func(vs []db.NPCVariant) {
+		for _, v := range vs {
+			if _, dup := seen[v.NPC.ID]; dup {
+				continue
+			}
+			seen[v.NPC.ID] = struct{}{}
+			out = append(out, v)
+		}
+	}
+
+	bare, err := t.db.GetNPCVariantsByNameInZone(dbName, zoneShort)
 	if err != nil {
 		slog.Debug("overlay: variant lookup error", "db_name", dbName, "zone", zoneShort, "err", err)
-		return nil
-	}
-	if len(candidates) > 0 {
-		return candidates
+	} else {
+		add(bare)
 	}
 	for _, p := range placeholderPrefixes {
 		alt := p + dbName
 		c2, err := t.db.GetNPCVariantsByNameInZone(alt, zoneShort)
-		if err == nil && len(c2) > 0 {
-			slog.Debug("overlay: npc variants matched via placeholder prefix",
-				"db_name", alt, "zone", zoneShort, "variants", len(c2))
-			return c2
+		if err != nil {
+			slog.Debug("overlay: variant lookup error", "db_name", alt, "zone", zoneShort, "err", err)
+			continue
 		}
+		add(c2)
 	}
-	return nil
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // tieToleranceYards is how close two variants' nearest-spawn distances must
