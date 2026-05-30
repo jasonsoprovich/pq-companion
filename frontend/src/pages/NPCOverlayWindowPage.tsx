@@ -13,8 +13,8 @@ import { ResistChip } from '../components/ResistChip'
 import { getOverlayNPCTarget, getNPCLoot } from '../services/api'
 import { className, bodyTypeName } from '../lib/npcHelpers'
 import { effectiveDropPct, rarityColor } from '../lib/lootHelpers'
-import type { TargetState, SpecialAbility } from '../types/overlay'
-import type { NPCLootTable, LootDrop } from '../types/npc'
+import type { TargetState, SpecialAbility, TargetVariant } from '../types/overlay'
+import type { NPC, NPCLootTable, LootDrop } from '../types/npc'
 import type { NPCOverlaySections } from '../types/config'
 
 // ── Ability badge colours ──────────────────────────────────────────────────────
@@ -237,6 +237,116 @@ function LootContent({
   )
 }
 
+// VariantRibbon surfaces same-name ambiguity (e.g. a bare "Venril Sathir"
+// row and a "#Venril_Sathir" row with a different ability set) so the user
+// understands the blocks below show multiple candidate NPCs, not one
+// resolved target.
+function VariantRibbon({ variants }: { variants: TargetVariant[] }): React.ReactElement {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        Variants:
+      </span>
+      {variants.map((v) => (
+        <span
+          key={v.npc.id}
+          style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.85)', fontSize: 10, fontWeight: 600, borderRadius: 3, padding: '1px 6px' }}
+        >
+          {className(v.npc.class)} · L{v.npc.level}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+// StatsBody renders the stats/loot view for a single NPC. Used directly for a
+// single resolved target and looped per variant when the target name is
+// ambiguous; variantLabel (when set) prefixes the block as a divider header.
+function StatsBody({
+  npc,
+  abilities,
+  sections,
+  view,
+  wishlistItemIds,
+  variantLabel,
+}: {
+  npc: NPC
+  abilities: SpecialAbility[]
+  sections: NPCOverlaySections
+  view: View
+  wishlistItemIds: Set<number>
+  variantLabel?: string
+}): React.ReactElement {
+  const shown = abilities.filter((a) => a.value !== 0)
+  return (
+    <>
+      {variantLabel && (
+        <div style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 2 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(180, 200, 255, 0.85)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            {variantLabel}
+          </span>
+        </div>
+      )}
+      {view === 'loot' ? (
+        <LootContent npcId={npc.id} wishlistItemIds={wishlistItemIds} />
+      ) : (
+        <>
+          {sections.identity && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              <Chip label="Lv" value={npc.level} color="#c9a84c" />
+              <Chip value={className(npc.class)} />
+              <Chip value={npc.race_name} />
+              <Chip value={bodyTypeName(npc.body_type)} />
+            </div>
+          )}
+
+          {sections.combat && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              <Chip label="HP" value={npc.hp.toLocaleString()} color="#22c55e" />
+              {npc.mana > 0 && (
+                <Chip label="Mana" value={npc.mana.toLocaleString()} color="#3b82f6" />
+              )}
+              <Chip label="AC" value={npc.ac} />
+              <Chip label="DMG" value={`${npc.min_dmg}-${npc.max_dmg}`} color="#ef4444" />
+              <Chip label="Atk/Rd" value={npc.attack_count < 0 ? 'default' : npc.attack_count} />
+            </div>
+          )}
+
+          {sections.resists && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              <ResistChip type="magic"   value={npc.mr} />
+              <ResistChip type="cold"    value={npc.cr} />
+              <ResistChip type="fire"    value={npc.fr} />
+              <ResistChip type="disease" value={npc.dr} />
+              <ResistChip type="poison"  value={npc.pr} />
+            </div>
+          )}
+
+          {sections.attributes && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              <Chip label="STR" value={npc.str} />
+              <Chip label="STA" value={npc.sta} />
+              <Chip label="DEX" value={npc.dex} />
+              <Chip label="AGI" value={npc.agi} />
+              <Chip label="INT" value={npc.int} />
+              <Chip label="WIS" value={npc.wis} />
+              <Chip label="CHA" value={npc.cha} />
+            </div>
+          )}
+
+          {sections.special_abilities && shown.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {shown.map((a) => (
+                <AbilityBadge key={a.code} ability={a} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </>
+  )
+}
+
 function NPCContent({
   state,
   view,
@@ -250,6 +360,8 @@ function NPCContent({
 }): React.ReactElement {
   const npc = state.npc_data
   const abilities = (state.special_abilities ?? []).filter((a) => a.value !== 0)
+  const variants = state.variants ?? []
+  const isAmbiguous = variants.length >= 2
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
@@ -318,64 +430,34 @@ function NPCContent({
             )}
           </div>
         )}
+        {isAmbiguous && (
+          <div style={{ marginTop: 4 }}>
+            <VariantRibbon variants={variants} />
+          </div>
+        )}
       </div>
 
       {npc ? (
-        view === 'loot' ? (
-          <LootContent npcId={npc.id} wishlistItemIds={wishlistItemIds} />
+        isAmbiguous ? (
+          variants.map((v) => (
+            <StatsBody
+              key={v.npc.id}
+              npc={v.npc}
+              abilities={v.special_abilities}
+              sections={sections}
+              view={view}
+              wishlistItemIds={wishlistItemIds}
+              variantLabel={`${className(v.npc.class)} · L${v.npc.level}`}
+            />
+          ))
         ) : (
-          <>
-            {sections.identity && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                <Chip label="Lv" value={npc.level} color="#c9a84c" />
-                <Chip value={className(npc.class)} />
-                <Chip value={npc.race_name} />
-                <Chip value={bodyTypeName(npc.body_type)} />
-              </div>
-            )}
-
-            {sections.combat && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                <Chip label="HP" value={npc.hp.toLocaleString()} color="#22c55e" />
-                {npc.mana > 0 && (
-                  <Chip label="Mana" value={npc.mana.toLocaleString()} color="#3b82f6" />
-                )}
-                <Chip label="AC" value={npc.ac} />
-                <Chip label="DMG" value={`${npc.min_dmg}-${npc.max_dmg}`} color="#ef4444" />
-                <Chip label="Atk/Rd" value={npc.attack_count < 0 ? 'default' : npc.attack_count} />
-              </div>
-            )}
-
-            {sections.resists && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                <ResistChip type="magic"   value={npc.mr} />
-                <ResistChip type="cold"    value={npc.cr} />
-                <ResistChip type="fire"    value={npc.fr} />
-                <ResistChip type="disease" value={npc.dr} />
-                <ResistChip type="poison"  value={npc.pr} />
-              </div>
-            )}
-
-            {sections.attributes && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                <Chip label="STR" value={npc.str} />
-                <Chip label="STA" value={npc.sta} />
-                <Chip label="DEX" value={npc.dex} />
-                <Chip label="AGI" value={npc.agi} />
-                <Chip label="INT" value={npc.int} />
-                <Chip label="WIS" value={npc.wis} />
-                <Chip label="CHA" value={npc.cha} />
-              </div>
-            )}
-
-            {sections.special_abilities && abilities.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {abilities.map((a) => (
-                  <AbilityBadge key={a.code} ability={a} />
-                ))}
-              </div>
-            )}
-          </>
+          <StatsBody
+            npc={npc}
+            abilities={abilities}
+            sections={sections}
+            view={view}
+            wishlistItemIds={wishlistItemIds}
+          />
         )
       ) : (
         <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: 0, padding: '4px 0' }}>
