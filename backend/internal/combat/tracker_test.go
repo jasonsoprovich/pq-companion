@@ -237,7 +237,7 @@ func TestSessionAggregatesAccumulate(t *testing.T) {
 
 	// Second fight.
 	tr.Handle(hitEvent("You", "a skeleton", 200, now.Add(10*time.Second)))
-	tr.Handle(zoneEvent(now.Add(11*time.Second)))
+	tr.Handle(zoneEvent(now.Add(11 * time.Second)))
 
 	st := tr.GetState()
 	if st.SessionDamage != 500 {
@@ -935,10 +935,13 @@ func TestZoneEndsAllActiveFights(t *testing.T) {
 	}
 }
 
-// TestCurrentFightTracksMostRecentlyTouched verifies the snapshot picks the
-// fight whose lastTouched is most recent — it should switch as the player
-// (or a hostile mob) targets a new NPC mid-pull.
-func TestCurrentFightTracksMostRecentlyTouched(t *testing.T) {
+// TestCurrentFightMergesSimultaneousMobs verifies the live snapshot folds
+// every active mob into ONE encounter instead of flickering between targets
+// as damage lands on each. Previously CurrentFight tracked only the
+// most-recently-touched fight, so a boss-plus-adds pull made the meter jump
+// between mobs; now the player's total accumulates across the whole pull and
+// PrimaryTarget names the mob taking the most damage.
+func TestCurrentFightMergesSimultaneousMobs(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()
 
@@ -946,15 +949,31 @@ func TestCurrentFightTracksMostRecentlyTouched(t *testing.T) {
 	tr.Handle(hitEvent("You", "a wolf", 80, now.Add(2*time.Second)))
 
 	st := tr.GetState()
-	if st.CurrentFight == nil || st.CurrentFight.PrimaryTarget != "a wolf" {
-		t.Fatalf("expected CurrentFight to track 'a wolf', got %+v", st.CurrentFight)
+	if st.CurrentFight == nil {
+		t.Fatal("expected a merged CurrentFight while two mobs are active")
+	}
+	// Both mobs active: the meter shows one combat, not just the latest.
+	if st.CurrentFight.PrimaryTarget != "a gnoll" {
+		t.Fatalf("expected PrimaryTarget to be the highest-damage mob 'a gnoll', got %q",
+			st.CurrentFight.PrimaryTarget)
+	}
+	you := findCombatant(st.CurrentFight.Combatants, "You")
+	if you == nil {
+		t.Fatal("expected a 'You' combatant row in the merged fight")
+	}
+	if you.TotalDamage != 180 {
+		t.Fatalf("expected merged You damage 100+80=180, got %d", you.TotalDamage)
 	}
 
-	// Swap back to the gnoll — CurrentFight should follow.
+	// More damage on the gnoll keeps the encounter merged and growing.
 	tr.Handle(hitEvent("You", "a gnoll", 50, now.Add(3*time.Second)))
 	st = tr.GetState()
-	if st.CurrentFight == nil || st.CurrentFight.PrimaryTarget != "a gnoll" {
-		t.Fatalf("expected CurrentFight to track 'a gnoll' after re-engage, got %+v", st.CurrentFight)
+	you = findCombatant(st.CurrentFight.Combatants, "You")
+	if you == nil || you.TotalDamage != 230 {
+		t.Fatalf("expected merged You damage 230 after re-engage, got %+v", you)
+	}
+	if st.CurrentFight.PrimaryTarget != "a gnoll" {
+		t.Fatalf("expected PrimaryTarget 'a gnoll', got %q", st.CurrentFight.PrimaryTarget)
 	}
 }
 
@@ -971,7 +990,7 @@ func TestZoneTrackedForDeath(t *testing.T) {
 	}
 }
 
-// findCombatantByName returns the combatant entry with the given name from
+// findCombatant returns the combatant entry with the given name from
 // the most recently archived fight, or nil if not found.
 func findArchivedCombatant(st CombatState, name string) *EntityStats {
 	if len(st.RecentFights) == 0 {

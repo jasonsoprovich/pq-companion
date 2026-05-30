@@ -18,6 +18,19 @@ const fightExpiryWithDamage = 30 * time.Second
 // landing a hit). Matches EQLogParser's MaxTimeout (60 s).
 const fightExpiryNoDamage = 60 * time.Second
 
+// fightExpiryRaid is the per-NPC inactivity window used in raid-scale
+// encounters, replacing fightExpiryWithDamage when many players are present.
+// Raid bosses have long mechanic-driven lulls (phase transitions, repositions,
+// mass-rez gaps) that a 30 s group timeout would split into several spurious
+// "fights". Matches eqlogparser's RaidFightTimeout (120 s).
+const fightExpiryRaid = 120 * time.Second
+
+// raidPlayerThreshold is the number of distinct verified players (seen on
+// raid/guild/group/tell channels this session) at or above which the tracker
+// treats the situation as a raid and applies fightExpiryRaid. Six covers a
+// full group plus a couple of outside chatters without tripping on a duo.
+const raidPlayerThreshold = 6
+
 // maxRecentFights is the number of completed fights retained in memory.
 const maxRecentFights = 20
 
@@ -95,16 +108,16 @@ type FightState struct {
 	StartTime     time.Time     `json:"start_time"`
 	Duration      float64       `json:"duration_seconds"`
 	PrimaryTarget string        `json:"primary_target,omitempty"` // most-hit NPC target
-	Combatants    []EntityStats `json:"combatants"`                // outgoing damage dealers sorted by DPS desc (NPCs excluded)
-	TotalDamage   int64         `json:"total_damage"`              // sum of all outgoing damage (all players)
-	TotalDPS      float64       `json:"total_dps"`                 // total outgoing DPS (all players)
-	YouDamage     int64         `json:"you_damage"`                // player personal outgoing damage
-	YouDPS        float64       `json:"you_dps"`                   // player personal DPS
-	Healers       []HealerStats `json:"healers"`                   // healers sorted by total heal desc
-	TotalHeal     int64         `json:"total_heal"`                // sum of all healing done (all healers)
-	TotalHPS      float64       `json:"total_hps"`                 // total HPS (all healers)
-	YouHeal       int64         `json:"you_heal"`                  // player personal healing done
-	YouHPS        float64       `json:"you_hps"`                   // player personal HPS
+	Combatants    []EntityStats `json:"combatants"`               // outgoing damage dealers sorted by DPS desc (NPCs excluded)
+	TotalDamage   int64         `json:"total_damage"`             // sum of all outgoing damage (all players)
+	TotalDPS      float64       `json:"total_dps"`                // total outgoing DPS (all players)
+	YouDamage     int64         `json:"you_damage"`               // player personal outgoing damage
+	YouDPS        float64       `json:"you_dps"`                  // player personal DPS
+	Healers       []HealerStats `json:"healers"`                  // healers sorted by total heal desc
+	TotalHeal     int64         `json:"total_heal"`               // sum of all healing done (all healers)
+	TotalHPS      float64       `json:"total_hps"`                // total HPS (all healers)
+	YouHeal       int64         `json:"you_heal"`                 // player personal healing done
+	YouHPS        float64       `json:"you_hps"`                  // player personal HPS
 }
 
 // FightSummary is an immutable snapshot of a completed fight.

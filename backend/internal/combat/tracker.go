@@ -200,7 +200,8 @@ type Tracker struct {
 	// "You" at least once this session. Combined with looksLikeNPC, this
 	// catches single-word-named hostiles (e.g. a charmed pet that turned and
 	// is now an NPC) so they're filtered out of player-DPS combatant lists in
-	// subsequent fights too. Cleared by Reset; never shrinks otherwise (the
+	// subsequent fights too. Preserved across Reset (world identity, not a
+	// session stat); never shrinks otherwise (the
 	// rare false positive — a friendly spell hitting "You" — would just hide
 	// that entity from the DPS list, which is a reasonable default).
 	confirmedHostiles map[string]bool
@@ -210,7 +211,7 @@ type Tracker struct {
 	// router disambiguate single-word boss names from player names: when
 	// "Sandrian hit Zlandicar for 29", Sandrian ∈ verifiedPlayers and
 	// Zlandicar ∉, so Zlandicar is the NPC. Populated by
-	// EventVerifiedPlayer; cleared by Reset.
+	// EventVerifiedPlayer; preserved across Reset (player identity persists).
 	verifiedPlayers map[string]bool
 
 	// charmedPets is the subset of petOwners that came from a charmed-pet
@@ -505,6 +506,20 @@ func (t *Tracker) GetState() CombatState {
 
 // Reset clears all fight history, session aggregates, and death records,
 // returning the tracker to a clean state without restarting the process.
+//
+// It deliberately PRESERVES the identity-knowledge maps — petOwners,
+// charmedPets, verifiedPlayers, and confirmedHostiles — because those describe
+// the world (who owns which pet, who is a player, which names are hostile),
+// not the session's damage stats. Wiping them on every "clear meter" was the
+// cause of pets (especially mage/necro/shaman pets, whose game-generated names
+// embed no owner) detaching from their owner until a fresh "My leader is"
+// line happened to reappear. Beastlord warders survived only because their
+// "Owner`s warder" name lets deriveOwnerFromName rebuild the link with no map.
+// The Zeal-sourced pet binding (pipePetName) is likewise left intact.
+//
+// pendingCrits is the one map cleared here: it is a transient per-actor queue
+// of unmatched crit announcements, not durable identity, so a stale entry
+// after a clear would just mis-tag the next same-damage hit.
 func (t *Tracker) Reset() {
 	t.mu.Lock()
 	for _, f := range t.activeFights {
@@ -518,11 +533,7 @@ func (t *Tracker) Reset() {
 	t.sessionFightTime = 0
 	t.sessionHeal = 0
 	t.deaths = []DeathRecord{}
-	t.petOwners = make(map[string]string)
 	t.pendingCrits = make(map[string][]int)
-	t.confirmedHostiles = make(map[string]bool)
-	t.verifiedPlayers = make(map[string]bool)
-	t.charmedPets = make(map[string]bool)
 	snap := t.snapshot(time.Now())
 	t.mu.Unlock()
 
@@ -681,6 +692,9 @@ func (t *Tracker) armFightTimerLocked(f *Fight) {
 	d := fightExpiryNoDamage
 	if f.hasDamage {
 		d = fightExpiryWithDamage
+		if t.isRaidLikeLocked() {
+			d = fightExpiryRaid
+		}
 	}
 	npcName := f.npcName
 	fightID := f.id
@@ -898,8 +912,121 @@ func (t *Tracker) mostRecentActiveFightLocked() *Fight {
 	return latest
 }
 
+// isRaidLikeLocked reports whether the session looks like a raid, used to pick
+// the longer fight-inactivity timeout. Heuristic: a healthy number of distinct
+// players have been verified on raid/guild/group/tell channels. Caller must
+// hold t.mu.
+func (t *Tracker) isRaidLikeLocked() bool {
+	return len(t.verifiedPlayers) >= raidPlayerThreshold
+}
+
+// mergedActiveFightLocked folds every currently-active fight into a single
+// synthetic Fight for the live meter, so a multi-mob encounter (a boss plus
+// adds, or an AoE group pull) shows as ONE combat instead of flickering
+// between targets as damage lands on each mob in turn. It also lets a pet
+// fighting an add roll up under its owner who is tanking the boss, since both
+// land in the same merged combatant list.
+//
+// Returns the merged fight and the set of every contributing NPC name (so the
+// renderer can exclude all of them, not just the primary, from the DPS rows).
+// PrimaryTarget is the mob that took the most player damage — the de-facto
+// boss. Returns (nil, nil) when no fights are active. The synthetic fight is
+// read-only: it is never inserted into activeFights and carries no timer.
+// Archiving and history stay per-NPC; only the live view is merged.
+// Caller must hold t.mu.
+func (t *Tracker) mergedActiveFightLocked() (*Fight, map[string]bool) {
+	if len(t.activeFights) == 0 {
+		return nil, nil
+	}
+	names := make(map[string]bool, len(t.activeFights))
+	for name := range t.activeFights {
+		names[name] = true
+	}
+	if len(t.activeFights) == 1 {
+		return t.mostRecentActiveFightLocked(), names
+	}
+
+	merged := &Fight{
+		outgoing: make(map[string]*internalEntity),
+		healers:  make(map[string]*internalHealer),
+	}
+	var bestDamage int64 = -1
+	for _, f := range t.activeFights {
+		if merged.startTime.IsZero() || f.startTime.Before(merged.startTime) {
+			merged.startTime = f.startTime
+		}
+		if f.lastTouched.After(merged.lastTouched) {
+			merged.lastTouched = f.lastTouched
+		}
+		var fightDamage int64
+		for name, e := range f.outgoing {
+			dst := merged.outgoing[name]
+			if dst == nil {
+				dst = &internalEntity{}
+				merged.outgoing[name] = dst
+			}
+			mergeEntityInto(dst, e)
+			fightDamage += e.totalDamage
+		}
+		for name, h := range f.healers {
+			dst := merged.healers[name]
+			if dst == nil {
+				dst = &internalHealer{}
+				merged.healers[name] = dst
+			}
+			mergeHealerInto(dst, h)
+		}
+		if f.incoming != nil {
+			if merged.incoming == nil {
+				merged.incoming = &internalEntity{}
+			}
+			mergeEntityInto(merged.incoming, f.incoming)
+		}
+		// The boss is the mob the raid is pouring the most damage into.
+		if fightDamage > bestDamage {
+			bestDamage = fightDamage
+			merged.npcName = f.npcName
+		}
+	}
+	return merged, names
+}
+
+// mergeEntityInto adds src's damage rolls into dst, widening the activity span
+// to cover both. Used to combine the same attacker across merged fights.
+func mergeEntityInto(dst, src *internalEntity) {
+	dst.totalDamage += src.totalDamage
+	dst.hitCount += src.hitCount
+	dst.critCount += src.critCount
+	dst.critDamage += src.critDamage
+	if src.maxHit > dst.maxHit {
+		dst.maxHit = src.maxHit
+	}
+	if dst.firstActivity.IsZero() || (!src.firstActivity.IsZero() && src.firstActivity.Before(dst.firstActivity)) {
+		dst.firstActivity = src.firstActivity
+	}
+	if src.lastActivity.After(dst.lastActivity) {
+		dst.lastActivity = src.lastActivity
+	}
+}
+
+// mergeHealerInto is the heal-side analogue of mergeEntityInto.
+func mergeHealerInto(dst, src *internalHealer) {
+	dst.totalHeal += src.totalHeal
+	dst.healCount += src.healCount
+	if src.maxHeal > dst.maxHeal {
+		dst.maxHeal = src.maxHeal
+	}
+	if dst.firstActivity.IsZero() || (!src.firstActivity.IsZero() && src.firstActivity.Before(dst.firstActivity)) {
+		dst.firstActivity = src.firstActivity
+	}
+	if src.lastActivity.After(dst.lastActivity) {
+		dst.lastActivity = src.lastActivity
+	}
+}
+
 // recordPetOwner stores a pet→owner binding announced by EQ's "My leader is X"
-// message. The mapping is session-scoped (NewTracker / Reset) so it applies
+// message. The mapping is session-scoped (cleared on NewTracker, preserved
+// across Reset) so it applies
 // across fights — once a charm is established, every hit the pet lands until
 // charm break gets attributed to the owner.
 func (t *Tracker) recordPetOwner(pet, owner string) {
@@ -1054,7 +1181,7 @@ func (t *Tracker) archiveFightLocked(f *Fight, endTime time.Time) {
 	}
 	raidSecs := raidSecondsForFight(f)
 
-	combatants := excludeNPCsByName(buildEntityStats(f.outgoing, duration, raidSecs), f.npcName, t.petOwners, t.confirmedHostiles)
+	combatants := excludeNPCsByName(buildEntityStats(f.outgoing, duration, raidSecs), map[string]bool{f.npcName: true}, t.petOwners, t.confirmedHostiles)
 	stampPetOwners(combatants, t.petOwners)
 	stampClasses(combatants, t.selfClass(), t.classResolverFn)
 
@@ -1160,7 +1287,7 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 		return state
 	}
 
-	f := t.mostRecentActiveFightLocked()
+	f, fightNPCs := t.mergedActiveFightLocked()
 	if f == nil {
 		return state
 	}
@@ -1171,7 +1298,7 @@ func (t *Tracker) snapshot(now time.Time) CombatState {
 	}
 	raidSecs := raidSecondsForFight(f)
 
-	combatants := excludeNPCsByName(buildEntityStats(f.outgoing, duration, raidSecs), f.npcName, t.petOwners, t.confirmedHostiles)
+	combatants := excludeNPCsByName(buildEntityStats(f.outgoing, duration, raidSecs), fightNPCs, t.petOwners, t.confirmedHostiles)
 	stampPetOwners(combatants, t.petOwners)
 	stampClasses(combatants, t.selfClass(), t.classResolverFn)
 
@@ -1342,14 +1469,14 @@ func safeDivide(numerator, denominator float64) float64 {
 // can't recognise on its own — e.g. a charm-broken pet whose name still has
 // the shape of a player. Once it has hit "You" it stays filtered for the
 // rest of the session.
-func excludeNPCsByName(combatants []EntityStats, fightNPC string, petOwners map[string]string, confirmedHostiles map[string]bool) []EntityStats {
+func excludeNPCsByName(combatants []EntityStats, fightNPCs map[string]bool, petOwners map[string]string, confirmedHostiles map[string]bool) []EntityStats {
 	filtered := combatants[:0]
 	for _, c := range combatants {
 		if _, isPet := petOwners[c.Name]; isPet {
 			filtered = append(filtered, c)
 			continue
 		}
-		if c.Name == fightNPC {
+		if fightNPCs[c.Name] {
 			continue
 		}
 		if looksLikeNPC(c.Name) || confirmedHostiles[c.Name] {
@@ -1438,4 +1565,3 @@ func deriveOwnerFromName(name string) string {
 	}
 	return ""
 }
-
