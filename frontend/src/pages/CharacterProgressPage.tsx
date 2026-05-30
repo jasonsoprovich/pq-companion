@@ -834,11 +834,11 @@ function StatsPanel({ stats, hasStats, gear, characterID, characterName }: Stats
         </div>
 
         <div className="mt-4 grid grid-cols-5 gap-2">
-          <ResistRow label="POISON"  value={total.pr} />
           <ResistRow label="MAGIC"   value={total.mr} />
-          <ResistRow label="DISEASE" value={total.dr} />
-          <ResistRow label="FIRE"    value={total.fr} />
           <ResistRow label="COLD"    value={total.cr} />
+          <ResistRow label="FIRE"    value={total.fr} />
+          <ResistRow label="DISEASE" value={total.dr} />
+          <ResistRow label="POISON"  value={total.pr} />
         </div>
 
         {includesGear && (
