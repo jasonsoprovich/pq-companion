@@ -720,6 +720,40 @@ func TestHandle_Kill_RemovesOrphanDetrimentalTimers(t *testing.T) {
 	}
 }
 
+// A charm timer (Cajoling Whispers etc.) tracks a living, still-charmed pet.
+// Killing an UNRELATED mob — e.g. the enemy the charmed pet is tanking — must
+// not sweep the orphan charm timer away with the other detrimentals.
+// Reproduces the live report: charming a Netherbian Warrior, then killing the
+// Netherbian Drone it was fighting, dropped the charm timer.
+func TestHandle_Kill_KeepsOrphanCharmTimer(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	// Orphan charm (trigger-driven "You begin casting Cajoling Whispers." —
+	// no target on the line). Flagged IsCharm by StartExternal's spell lookup.
+	e.timers[timerKey("Cajoling Whispers", "")] = &ActiveTimer{
+		ID: timerKey("Cajoling Whispers", ""), SpellName: "Cajoling Whispers",
+		Category: CategoryDebuff, IsCharm: true, TargetName: "",
+		CastAt: now, StartsAt: now, ExpiresAt: now.Add(3 * time.Minute),
+	}
+	// A plain orphan debuff in the same fight — should still clear on kill.
+	e.timers[timerKey("Tashanian", "")] = &ActiveTimer{
+		ID: timerKey("Tashanian", ""), SpellName: "Tashanian", Category: CategoryDebuff,
+		TargetName: "", CastAt: now, StartsAt: now, ExpiresAt: now.Add(13 * time.Minute),
+	}
+
+	e.Handle(logparser.LogEvent{
+		Type: logparser.EventKill,
+		Data: logparser.KillData{Killer: "Osui", Target: "A Netherbian Drone"},
+	})
+
+	if _, ok := e.timers[timerKey("Cajoling Whispers", "")]; !ok {
+		t.Error("orphan charm timer should survive an unrelated kill")
+	}
+	if _, ok := e.timers[timerKey("Tashanian", "")]; ok {
+		t.Error("orphan non-charm debuff should still clear on kill")
+	}
+}
+
 // Multi-word boss names — verify the existing target-match path handles
 // names with spaces (e.g. "Zun Thall Xakra") since these are the typical
 // raid targets where users notice debuffs lingering.

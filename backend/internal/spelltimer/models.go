@@ -77,6 +77,14 @@ type ActiveTimer struct {
 	// just stores and emits whatever the trigger engine handed in. Empty
 	// (nil) for spell-cast-driven timers.
 	TimerAlerts json.RawMessage `json:"timer_alerts,omitempty"`
+
+	// IsCharm marks a timer whose source spell is a Charm effect (SPA 22).
+	// Charm represents an ongoing pet the player controls, so — unlike a
+	// debuff or mez — its timer must survive the death of *other* mobs.
+	// removeOnKill's orphan-clear path skips charm timers; they clear only
+	// via their charm-break worn-off message (or expiry). Internal-only; the
+	// frontend doesn't need it.
+	IsCharm bool `json:"-"`
 }
 
 // TimerState is the full payload broadcast via WebSocket and returned by the

@@ -610,11 +610,13 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 	}
 
 	var resolvedIcon int
+	var isCharm bool
 	if spellID > 0 && e.db != nil {
 		if spell, err := e.db.GetSpell(spellID); err == nil && spell != nil {
 			extended := e.applyDurationModifiers(spell, float64(durationSecs))
 			durationSecs = int(extended)
 			resolvedIcon = spell.NewIcon
+			isCharm = isCharmSpell(spell)
 		}
 	}
 
@@ -691,6 +693,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 		DurationSeconds:      float64(durationSecs),
 		DisplayThresholdSecs: displayThresholdSecs,
 		TimerAlerts:          alerts,
+		IsCharm:              isCharm,
 	}
 	e.timers[key] = timer
 	snap := e.snapshot(time.Now())
@@ -953,6 +956,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		StartsAt:        landedAt,
 		ExpiresAt:       expiresAt,
 		DurationSeconds: durationSeconds,
+		IsCharm:         isCharmSpell(spell),
 	}
 
 	e.mu.Lock()
@@ -1153,6 +1157,13 @@ func (e *Engine) removeByTarget(target string) {
 // expectations ("I killed it, the debuff is gone"). Buffs are left
 // alone — a target-less buff is usually a self-buff or a raid-wide
 // effect that survives a single mob's death.
+//
+// Charm is the one detrimental excluded from the orphan sweep: a charmed
+// pet is a living ally the player keeps fighting WITH, so killing the mob
+// it's tanking must not drop the charm timer. Charm orphans clear via their
+// charm-break worn-off message (or expiry) instead. A charm timer that IS
+// bound to the slain mob (the player killed their own charm) still clears
+// through the normal target match below.
 func (e *Engine) removeOnKill(target string) {
 	if target == "" {
 		return
@@ -1163,7 +1174,7 @@ func (e *Engine) removeOnKill(target string) {
 	survivors := make([]string, 0, len(e.timers))
 	for k, t := range e.timers {
 		match := normalizeNPCName(t.TargetName) == normTarget
-		orphan := t.TargetName == "" && isDetrimentalCategory(t.Category)
+		orphan := t.TargetName == "" && isDetrimentalCategory(t.Category) && !t.IsCharm
 		if match || orphan {
 			delete(e.timers, k)
 			removed++
@@ -1223,6 +1234,26 @@ func parseCorpseTarget(name string) (string, bool) {
 		return strings.TrimSpace(name[:len(name)-len(underscoreSuffix)]), true
 	}
 	return name, false
+}
+
+// seCharm is the EQ spell effect id (SPA) for Charm in the Quarm/EQMacEmu
+// spell data (spells_new.effectidN). A charm timer tracks a living pet the
+// player controls, which is why it gets special handling in removeOnKill.
+const seCharm = 22
+
+// isCharmSpell reports whether a spell applies the Charm effect. Used to flag
+// charm timers (Charm/Beguile/Cajoling Whispers/Allure/Dictate/Boltran's
+// Agacerie) so they aren't swept up by the kill-time orphan cleanup.
+func isCharmSpell(spell *db.Spell) bool {
+	if spell == nil {
+		return false
+	}
+	for _, id := range spell.EffectIDs {
+		if id == seCharm {
+			return true
+		}
+	}
+	return false
 }
 
 // isDetrimentalCategory reports whether a timer category represents a
