@@ -26,6 +26,19 @@ const (
 	detrimentalExpireSecs = 10
 )
 
+// npcNameClass matches a spell target's name inside a pack's cast_on_other
+// land pattern. Mirrors backend logparser.nameClass (castindex.go): a
+// lowercase-leading articled mob ("a sand giant"), a multi-word named NPC,
+// or an apostrophe/backtick possessive ("Gygr`s warder"). The pack patterns
+// historically used an uppercase-only, single-word class which only ever
+// matched player names and single-word named mobs — so a detrimental trigger
+// never fired on the overwhelming majority of targets ("a gnoll", "an ice
+// goblin"). Defined as a const (not a raw-string literal in each pattern)
+// because it contains a backtick. Pack triggers fire without the spell-landed
+// pipeline's scope gate, so only splice this into patterns whose land-text
+// suffix is specific enough not to false-match unrelated emotes.
+const npcNameClass = "[a-zA-Z][a-zA-Z' `]{2,29}"
+
 // buffFadingAlert returns the standard "fading soon" TimerAlert used by
 // built-in class packs. The threshold (seconds) is picked per-trigger by
 // duration band; see applyDefaultTimerAlerts.
@@ -150,13 +163,13 @@ func EnchanterPack() TriggerPack {
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "MEZ BROKE!", DurationSecs: 5, Color: "#ff4444"},
 					// "Mezz" (not "Mez") so Windows SAPI pronounces it as the EQ term
-// instead of the prefix "mehz-". Pattern and overlay text remain "Mez".
-{Type: ActionTextToSpeech, Text: "Mezz broke", Volume: 1.0},
+					// instead of the prefix "mehz-". Pattern and overlay text remain "Mez".
+					{Type: ActionTextToSpeech, Text: "Mezz broke", Volume: 1.0},
 				},
 			},
 			{
-				Name:     "Charm Broke",
-				Enabled:  true,
+				Name:    "Charm Broke",
+				Enabled: true,
 				// EQ emits the same generic line for every charm spell:
 				// "Your charm spell has worn off." (lowercase 'charm',
 				// regardless of whether the underlying spell was Charm,
@@ -275,11 +288,11 @@ func EnchanterPack() TriggerPack {
 
 			// ── Debuffs (timers) ─────────────────────────────────────────
 			{
-				Name:              "Tashanian",
-				Enabled:           true,
-				Pattern:           `^(?:You hear the barking of Tashania\.|[A-Z][a-zA-Z']{2,14} glances nervously about\.)$`,
-				WornOffPattern:    `^The barking fades\.$`,
-				TimerType:         TimerTypeDetrimental,
+				Name:           "Tashanian",
+				Enabled:        true,
+				Pattern:        `^(?:You hear the barking of Tashania\.|[A-Z][a-zA-Z']{2,14} glances nervously about\.)$`,
+				WornOffPattern: `^The barking fades\.$`,
+				TimerType:      TimerTypeDetrimental,
 				// 780s = 130 ticks per the corrected formula 9
 				// (level*2+10, base 140) at level 60. PQDI shows max 140
 				// ticks but that requires level 65+ which Quarm caps out
@@ -290,11 +303,11 @@ func EnchanterPack() TriggerPack {
 				Actions:           []Action{},
 			},
 			{
-				Name:              "Cripple",
-				Enabled:           true,
-				Pattern:           `^(?:You have been crippled\.|[A-Z][a-zA-Z']{2,14} has been crippled\.)$`,
-				WornOffPattern:    `^You feel your strength return\.$`,
-				TimerType:         TimerTypeDetrimental,
+				Name:           "Cripple",
+				Enabled:        true,
+				Pattern:        `^(?:You have been crippled\.|[A-Z][a-zA-Z']{2,14} has been crippled\.)$`,
+				WornOffPattern: `^You feel your strength return\.$`,
+				TimerType:      TimerTypeDetrimental,
 				// 450s = 75 ticks per the corrected formula 8 (fixed base)
 				// matching PQDI for spell 1592 (base=75). Was 810s (135
 				// ticks) under the old formula 8.
@@ -566,11 +579,11 @@ func EnchanterPack() TriggerPack {
 				Actions:           []Action{},
 			},
 			{
-				Name:              "Pacify",
-				Enabled:           true,
-				Pattern:           `^You begin casting Pacify\.$`,
-				WornOffPattern:    `^(?:Your Pacify spell has worn off\.|Your target resisted the Pacify spell\.)$`,
-				TimerType:         TimerTypeDetrimental,
+				Name:           "Pacify",
+				Enabled:        true,
+				Pattern:        `^You begin casting Pacify\.$`,
+				WornOffPattern: `^(?:Your Pacify spell has worn off\.|Your target resisted the Pacify spell\.)$`,
+				TimerType:      TimerTypeDetrimental,
 				// 360s = 6 minutes per PQDI (spell 45, buffduration=60 ticks).
 				// Was 720 — that came from the EQEmu-canonical formula 8
 				// reading; Quarm uses fixed base, fixed here in lockstep with
@@ -1202,8 +1215,8 @@ func WarriorPack() TriggerPack {
 				Actions:           []Action{},
 			},
 			{
-				Name:              "Precision Discipline",
-				Enabled:           true,
+				Name:    "Precision Discipline",
+				Enabled: true,
 				// The DB carries the cast_on_other as "'s assumes a
 				// precise fighting style." (literal apostrophe-s plus
 				// "assumes" — a known dump quirk); pattern allows both
@@ -1268,8 +1281,8 @@ func WarriorPack() TriggerPack {
 			},
 			// ── Defensive (cooldown-style) disciplines ──────────────────
 			{
-				Name:              "Fortitude Discipline",
-				Enabled:           true,
+				Name:    "Fortitude Discipline",
+				Enabled: true,
 				// DB grammar quirk on cast_on_you: "You instincts take
 				// over..." (missing 'r'). Matched verbatim so the live
 				// log line — which mirrors the DB — fires the trigger.
@@ -1338,8 +1351,8 @@ func MonkPack() TriggerPack {
 				Actions:           []Action{},
 			},
 			{
-				Name:              "Voiddance Discipline",
-				Enabled:           true,
+				Name:    "Voiddance Discipline",
+				Enabled: true,
 				// DB carries fade as "You movements return to normal."
 				// (a known dump quirk — missing 'r'); matched verbatim.
 				Pattern:           `^(?:You become untouchable\.|[A-Z][a-zA-Z']{2,14} becomes untouchable\.)$`,
@@ -1471,8 +1484,8 @@ func RoguePack() TriggerPack {
 			},
 			// ── Evasive / speed disciplines (timers) ────────────────────
 			{
-				Name:              "Nimble Discipline",
-				Enabled:           true,
+				Name:    "Nimble Discipline",
+				Enabled: true,
 				// DB carries fade as "You movements return to normal."
 				// (missing 'r' — a known dump quirk shared with
 				// Voiddance); matched verbatim.
@@ -1498,8 +1511,8 @@ func RoguePack() TriggerPack {
 				Actions:           []Action{},
 			},
 			{
-				Name:              "Blinding Speed Discipline",
-				Enabled:           true,
+				Name:    "Blinding Speed Discipline",
+				Enabled: true,
 				// "Your hands speeds up." is the DB cast_on_you verbatim
 				// (grammar quirk — singular verb with plural subject).
 				Pattern:           `^(?:Your hands speeds up\.|[A-Z][a-zA-Z']{2,14}'s hands speeds up\.)$`,
@@ -1631,8 +1644,8 @@ func BardPack() TriggerPack {
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "MEZ BROKE!", DurationSecs: 5, Color: "#ff4444"},
 					// "Mezz" (not "Mez") so Windows SAPI pronounces it as the EQ term
-// instead of the prefix "mehz-". Pattern and overlay text remain "Mez".
-{Type: ActionTextToSpeech, Text: "Mezz broke", Volume: 1.0},
+					// instead of the prefix "mehz-". Pattern and overlay text remain "Mez".
+					{Type: ActionTextToSpeech, Text: "Mezz broke", Volume: 1.0},
 				},
 			},
 			{
@@ -1657,7 +1670,7 @@ func BardPack() TriggerPack {
 				Enabled:           true,
 				Pattern:           `^You feel replenished\.$`,
 				TimerType:         TimerTypeBuff,
-				TimerDurationSecs: 54,
+				TimerDurationSecs: 18,
 				SpellID:           1759,
 				PackName:          "Bard",
 				Actions:           []Action{},
@@ -1668,7 +1681,7 @@ func BardPack() TriggerPack {
 				Pattern:           `^You hear the war horns of Zek echo in your mind\.$`,
 				WornOffPattern:    `^The warsong of Zek fades\.$`,
 				TimerType:         TimerTypeBuff,
-				TimerDurationSecs: 54,
+				TimerDurationSecs: 18,
 				SpellID:           3374,
 				PackName:          "Bard",
 				Actions:           []Action{},
@@ -1679,7 +1692,7 @@ func BardPack() TriggerPack {
 				Pattern:           `^You feel an aura of protection engulf you\.$`,
 				WornOffPattern:    `^Your protection fades\.$`,
 				TimerType:         TimerTypeBuff,
-				TimerDurationSecs: 54,
+				TimerDurationSecs: 18,
 				SpellID:           748,
 				PackName:          "Bard",
 				Actions:           []Action{},
@@ -1690,7 +1703,7 @@ func BardPack() TriggerPack {
 				Pattern:           `^Crystalline scales gather around you\.$`,
 				WornOffPattern:    `^The crystalline scales fall away\.$`,
 				TimerType:         TimerTypeBuff,
-				TimerDurationSecs: 54,
+				TimerDurationSecs: 18,
 				SpellID:           3368,
 				PackName:          "Bard",
 				Actions:           []Action{},
@@ -1701,7 +1714,7 @@ func BardPack() TriggerPack {
 				Pattern:           `^You feel an aura of elemental protection surrounding you\.$`,
 				WornOffPattern:    `^The aura of protection fades\.$`,
 				TimerType:         TimerTypeBuff,
-				TimerDurationSecs: 54,
+				TimerDurationSecs: 18,
 				SpellID:           710,
 				PackName:          "Bard",
 				Actions:           []Action{},
@@ -1716,7 +1729,7 @@ func BardPack() TriggerPack {
 				Pattern:           `^You feel an aura of mystic protection surrounding you\.$`,
 				WornOffPattern:    `^The aura of protection fades\.$`,
 				TimerType:         TimerTypeBuff,
-				TimerDurationSecs: 54,
+				TimerDurationSecs: 18,
 				SpellID:           709,
 				PackName:          "Bard",
 				Actions:           []Action{},
@@ -1726,7 +1739,7 @@ func BardPack() TriggerPack {
 			{
 				Name:              "Kelin's Lucid Lullaby",
 				Enabled:           true,
-				Pattern:           `^(?:You feel quite drowsy\.|[A-Z][a-zA-Z']{2,14}'s head nods\.)$`,
+				Pattern:           `^(?:You feel quite drowsy\.|` + npcNameClass + `'s head nods\.)$`,
 				WornOffPattern:    `^You no longer feel sleepy\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 18,
@@ -1737,10 +1750,10 @@ func BardPack() TriggerPack {
 			{
 				Name:              "Kelin's Lugubrious Lament",
 				Enabled:           true,
-				Pattern:           `^(?:You feel a strong sense of loss\.|[A-Z][a-zA-Z']{2,14} looks sad\.)$`,
+				Pattern:           `^(?:You feel a strong sense of loss\.|` + npcNameClass + ` looks sad\.)$`,
 				WornOffPattern:    `^You no longer feel sad\.$`,
 				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 54,
+				TimerDurationSecs: 18,
 				SpellID:           728,
 				PackName:          "Bard",
 				Actions:           []Action{},
@@ -1748,7 +1761,7 @@ func BardPack() TriggerPack {
 			{
 				Name:              "Solon's Bewitching Bravura",
 				Enabled:           true,
-				Pattern:           `^(?:You are captivated by the bewitching tune\.|[A-Z][a-zA-Z']{2,14}'s eyes glaze over\.)$`,
+				Pattern:           `^(?:You are captivated by the bewitching tune\.|` + npcNameClass + `'s eyes glaze over\.)$`,
 				WornOffPattern:    `^You are no longer captivated\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 60,
@@ -1759,10 +1772,10 @@ func BardPack() TriggerPack {
 			{
 				Name:              "Largo's Absonant Binding",
 				Enabled:           true,
-				Pattern:           `^(?:Strands of solid music bind your body\.|[A-Z][a-zA-Z']{2,14} is bound by strands of solid music\.)$`,
+				Pattern:           `^(?:Strands of solid music bind your body\.|` + npcNameClass + ` is bound by strands of solid music\.)$`,
 				WornOffPattern:    `^The strands of fade away\.$`,
 				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 54,
+				TimerDurationSecs: 18,
 				SpellID:           1751,
 				PackName:          "Bard",
 				Actions:           []Action{},
@@ -2147,9 +2160,9 @@ func GeneralTriggersPack() TriggerPack {
 				// PCs are indistinguishable from regular players in the log;
 				// add their character names here to silence them too.
 				ExcludePatterns: []string{
-					`\b[Mm]aster[.!]`,                  // pet command responses (Attacking ... Master., By your command, master., Following you, Master.)
-					`tells you, '[Tt]hat'll be `,       // NPC merchant: selling price
-					`tells you, '[Ii]'ll give you `,    // NPC merchant: buying offer
+					`\b[Mm]aster[.!]`,               // pet command responses (Attacking ... Master., By your command, master., Following you, Master.)
+					`tells you, '[Tt]hat'll be `,    // NPC merchant: selling price
+					`tells you, '[Ii]'ll give you `, // NPC merchant: buying offer
 					`tells you, 'I'?m not interested in buying`,
 					`tells you, 'Welcome to my bank`,
 					`tells you, 'Come back soon`,
