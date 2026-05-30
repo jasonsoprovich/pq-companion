@@ -436,6 +436,7 @@ type RespawnInfo struct {
 	NPCID       int
 	RespawnTime int // spawn2.respawntime, seconds
 	Variance    int // spawn2.variance, seconds
+	Level       int // npc_types.level, used by the fast-respawn reduction
 }
 
 // NPCSpellEntry is one castable spell on an NPC's spell list. Spells_new

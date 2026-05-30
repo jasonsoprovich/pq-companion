@@ -174,6 +174,23 @@ func (e *Engine) onKill(displayName string, diedAt time.Time) {
 		return
 	}
 
+	// Apply Quarm's fast-respawn reduction per spawn point. The zone flags
+	// decide whether (and how) the raw spawn2.respawntime collapses to a fixed
+	// fast value; reducing each row before summarising also dissolves a false
+	// "ambiguous" range when every spawn maps to the same fast timer.
+	reduced, dungeon, err := e.db.GetZoneSpawnReduction(zoneShort)
+	if err != nil {
+		slog.Warn("respawn: DB error looking up zone reduction flags",
+			"zone", zoneShort, "err", err)
+		// Fall through with reduced=false: raw respawntime is used.
+	}
+	if reduced {
+		for i := range infos {
+			infos[i].RespawnTime = reduceRespawnTime(
+				infos[i].RespawnTime, infos[i].Level, reduced, dungeon)
+		}
+	}
+
 	estimate, ambiguous, minS, maxS, npcID := summarize(infos)
 	if estimate <= 0 {
 		return

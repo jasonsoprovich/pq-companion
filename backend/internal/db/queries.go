@@ -1025,7 +1025,7 @@ func (db *DB) GetNPCSpawns(npcID int) (*NPCSpawns, error) {
 // set into a single estimate plus an ambiguity flag.
 func (db *DB) GetRespawnTimesInZone(name, zoneShort string) ([]RespawnInfo, error) {
 	rows, err := db.Query(`
-		SELECT n.id, s2.respawntime, s2.variance
+		SELECT n.id, s2.respawntime, s2.variance, n.level
 		FROM npc_types n
 		JOIN spawnentry se ON se.npcID = n.id
 		JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
@@ -1038,7 +1038,7 @@ func (db *DB) GetRespawnTimesInZone(name, zoneShort string) ([]RespawnInfo, erro
 	var out []RespawnInfo
 	for rows.Next() {
 		var ri RespawnInfo
-		if err := rows.Scan(&ri.NPCID, &ri.RespawnTime, &ri.Variance); err != nil {
+		if err := rows.Scan(&ri.NPCID, &ri.RespawnTime, &ri.Variance, &ri.Level); err != nil {
 			return nil, fmt.Errorf("scan respawn info: %w", err)
 		}
 		out = append(out, ri)
@@ -1047,6 +1047,27 @@ func (db *DB) GetRespawnTimesInZone(name, zoneShort string) ([]RespawnInfo, erro
 		return nil, fmt.Errorf("iterate respawn info: %w", err)
 	}
 	return out, nil
+}
+
+// GetZoneSpawnReduction reports the two zone flags that drive Quarm's
+// fast-respawn (RespawnReductionSystem): whether the zone participates in
+// reduced spawn timers (zone.reducedspawntimers) and whether it uses the
+// dungeon bounds rather than the standard/newbie ones (zone.castdungeon).
+// An unknown zone returns (false, false, nil) so the engine falls back to the
+// raw spawn2.respawntime. See respawn.reduceRespawnTime.
+func (db *DB) GetZoneSpawnReduction(zoneShort string) (reduced, dungeon bool, err error) {
+	var r, d int
+	err = db.QueryRow(
+		`SELECT reducedspawntimers, castdungeon FROM zone WHERE short_name = ? COLLATE NOCASE LIMIT 1`,
+		zoneShort,
+	).Scan(&r, &d)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, fmt.Errorf("get spawn reduction flags for zone %q: %w", zoneShort, err)
+	}
+	return r != 0, d != 0, nil
 }
 
 // GetZoneShortNameByLongName resolves a zone's long_name (as it appears in the

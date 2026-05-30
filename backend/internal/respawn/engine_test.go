@@ -46,8 +46,10 @@ func killEvent(target string, ts time.Time) logparser.LogEvent {
 // the spawn data's respawn time and an ascending per-name label index.
 func TestOnKill_StartsTimer(t *testing.T) {
 	e := newTestEngine(t)
-	// a_skeleton spawns in nektulos with a 150s respawn (verified against the
-	// fixture DB). Set the zone directly to avoid depending on long-name text.
+	// a_skeleton (level 4) spawns in nektulos with a 150s raw respawn. nektulos
+	// is a standard reduced zone (reducedspawntimers=1, castdungeon=0), so a
+	// newbie mob's 150s collapses to the 60s fast timer. Set the zone directly
+	// to avoid depending on long-name text.
 	e.logZoneShort = "nektulos"
 	e.logZoneLong = "Nektulos Forest"
 
@@ -65,10 +67,10 @@ func TestOnKill_StartsTimer(t *testing.T) {
 	if tm.LabelIndex != 1 {
 		t.Errorf("label index: got %d, want 1", tm.LabelIndex)
 	}
-	if tm.DurationSeconds != 150 {
-		t.Errorf("duration: got %v, want 150", tm.DurationSeconds)
+	if tm.DurationSeconds != 60 {
+		t.Errorf("duration: got %v, want 60 (fast-respawn reduced)", tm.DurationSeconds)
 	}
-	if tm.RemainingSeconds <= 140 || tm.RemainingSeconds > 151 {
+	if tm.RemainingSeconds <= 50 || tm.RemainingSeconds > 61 {
 		t.Errorf("remaining out of range: got %v", tm.RemainingSeconds)
 	}
 	if tm.Zone != "nektulos" {
