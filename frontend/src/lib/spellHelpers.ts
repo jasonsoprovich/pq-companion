@@ -148,11 +148,31 @@ export function spellIsBuff(targetType: number): boolean {
   return targetType === 6 || targetType === 14 || targetType === 41
 }
 
-// Matches an EQ-valid character name: capitalised, 3–15 chars, letters or
-// apostrophe. Used to splice into cast_on_other patterns so a trigger fires
-// regardless of who the spell landed on. Mirrors the convention used in the
-// hand-rolled pack triggers (backend/internal/trigger/packs.go).
-const NAME_REGEX = `[A-Z][a-zA-Z']{2,14}`
+// Matches a spell target's name in a cast_on_other line so a trigger fires
+// regardless of who the spell landed on. Mirrors backend logparser.nameClass
+// (castindex.go): lowercase-leading articled mobs ("a sand giant"), multi-word
+// named NPCs, and apostrophe/backtick possessives ("Gygr`s warder"). The old
+// uppercase-only, single-word form silently dropped every detrimental landing
+// on trash mobs — the bulk of real targets — so bard debuff songs and other
+// "+"-button triggers never fired on anything but a single-word named mob.
+const NAME_REGEX = `[a-zA-Z][a-zA-Z' \`]{2,29}`
+
+// Bard class index in the 15-class level table (WAR..BST). Mirrors backend
+// spelltimer.isBardSong / buffmod.BardClassIdx.
+const BARD_CLASS_IDX = 7
+
+// isBardSong reports whether a spell is a bard song — castable only by the
+// bard class. Mirrors backend spelltimer.isBardSong: bard (index 7) below the
+// 255 "cannot cast" sentinel and every other class at 255. Bard songs report
+// their base duration rather than the scaled formula result (see backend
+// duration.go bardSongUseBaseDuration) — songs pulse-refresh every tick while
+// the bard sings, so the timer only matters for the ~base ticks after they
+// stop, not the inflated formula cap.
+function isBardSong(classLevels: number[] | undefined): boolean {
+  if (!classLevels || classLevels.length <= BARD_CLASS_IDX) return false
+  if (classLevels[BARD_CLASS_IDX] >= 255) return false
+  return classLevels.every((lvl, i) => i === BARD_CLASS_IDX || lvl >= 255)
+}
 
 /**
  * Build a trigger prefill from a spell DB record. Generates an alternation
@@ -170,6 +190,7 @@ export function buildSpellTriggerPrefill(spell: {
   target_type: number
   buff_duration: number
   buff_duration_formula: number
+  class_levels?: number[]
 }): SpellTimerTriggerPrefill {
   const branches: string[] = []
   if (spell.cast_on_you) branches.push(escapeRegex(spell.cast_on_you))
@@ -181,8 +202,13 @@ export function buildSpellTriggerPrefill(spell: {
   const wornOff = spell.spell_fades ? `^${escapeRegex(spell.spell_fades)}$` : ''
 
   // Approximate duration at the level cap; scaling formulas generally hit
-  // their cap by 60, so this is a useful default the user can tweak.
-  const durationTicks = approxDurationTicks(spell.buff_duration_formula, spell.buff_duration, 60)
+  // their cap by 60, so this is a useful default the user can tweak. Bard
+  // songs are the exception — they report their base duration, not the
+  // formula cap (see isBardSong), so e.g. Tuyen's Chant of Flame reads 18s
+  // not the 54s the formula-5 cap would give.
+  const durationTicks = isBardSong(spell.class_levels)
+    ? spell.buff_duration
+    : approxDurationTicks(spell.buff_duration_formula, spell.buff_duration, 60)
   const durationSecs = durationTicks > 0 ? durationTicks * 6 : 0
 
   return {
