@@ -17,6 +17,7 @@ Join the community on [Discord](https://discord.gg/a2QytxSVgM) for help, feedbac
 - **Combat Log** — Persistent fight history with Personal / Raid / Encounter DPS metrics, expandable per-combatant breakdowns, date-range filters, and event-based session grouping.
 - **Roll Tracker** — Parses `/random` rolls into sessions, with an optional timer that auto-stops collection, a dashboard panel, and a pop-out overlay window.
 - **Spell Timer Engine** — Countdown bars for every buff, debuff, mez, stun, and DoT. Tick-accurate durations, with Zeal-pipe corroboration when available. Separate overlay windows for buffs and detrimentals.
+- **NPC Respawn Timers** — A transparent overlay that tracks NPC deaths and counts down to respawn, with Project Quarm's fast-respawn reduction applied automatically.
 - **Log Feed** — Real-time feed of every parsed combat, spell, and zone event from your EQ log.
 - **Spell Checklist** — See every spell your class can learn, cross-referenced against your Zeal spellbook, so you always know what you're missing.
 - **Spellsets** — Read and edit your Zeal `_spellsets.ini` exports inside the app. Add and remove sets, rename inline, and import another character's spellsets — with off-class and ineligible-spell blocking so you never load something you can't cast.
@@ -25,6 +26,7 @@ Join the community on [Discord](https://discord.gg/a2QytxSVgM) for help, feedbac
 - **Keyring** — Live per-character `/keys` snapshot, with an inventory fallback for keys that aren't in the keyring yet (Plane of Time, Vex Thal, Grieg's End).
 - **Wishlist** — A per-character wishlist with drag-to-reorder. Star any item from the database to add or remove it.
 - **Players Tracker** — A searchable database of every player you've seen via `/who` and `/guildstat`: name, class, guild, zone, level history, first-seen / last-seen. Sortable, filterable by guild and class, across all your characters.
+- **Lockouts Tracker** — Live `/sll` countdowns for loot and legacy lockouts, tracked per character so you always know when an instance or flag is available again.
 - **Config Backup Manager** — Snapshot and restore all your EQ `.ini` config files with one click.
 - **App Backup & Restore** — Export your full app state (settings, triggers, trigger packs) as a single bundle and restore it on another machine or after a reinstall.
 - **Custom Triggers** — A GINA-style regex trigger engine. Write patterns that match any log line — or fire on live Zeal pipe events — and trigger configurable on-screen text and audio alerts. Includes cooldown timers for disciplines and long-recast spells. Ships with pre-built packs for enchanters (mez breaks, charm breaks, resists), bards, and group awareness (tells, deaths). Import and export trigger packs as JSON. Live history feed and a standalone transparent overlay window.

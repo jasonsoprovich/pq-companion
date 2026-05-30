@@ -1216,6 +1216,27 @@ Parse and edit Zeal `_spellsets.ini` exports.
 - **EQ-config backups** directory moved to the user home with a migration from the legacy location
 - `quarm.db` DSN now includes `immutable=1` so Program Files installs work without write access
 
+## v0.10.0 — Lockouts Tracker, Real Stat Formulas, Respawn Timers, Multi-Monitor Overlays
+
+- **Lockouts tracker** — new Lockouts page with live `/sll` countdowns; a `/sll` loot & legacy lockout parser feeds a per-character store exposed via the lockout API
+- **Character stats from real formulas** — the `eqstat` package ports Project Quarm's player HP/mana/AC/resist formulas to Go; stats are derived on the backend from per-layer totals (with AA passive stat bonuses resolved from `aa_effects`) and the frontend renders the backend-derived stat blocks instead of approximating
+- **NPC respawn timers** — new NPC death/respawn timer overlay; Quarm's fast-respawn reduction is applied to death timers
+- **Multi-monitor overlays** — the trigger overlay can span all monitors, and overlay windows can be dragged across monitors via synthetic drag
+- **Main window state** — persists size, position, and maximized state between launches
+- **Combat tab merge** — Combat Log and History combined into one sidebar tab with sub-tabs; game-generated pet names are attributed to their owner, with pet bindings preserved on clear and multi-mob live encounters merged
+- **NPC overlay disambiguation** — same-name NPCs are disambiguated by zone and player position using a captured Zeal player snapshot (`GetNPCVariantsByNameInZone`); the panel renders the variant set for ambiguous targets, and the popped-out window handles `#`-prefixed same-name rows and their special abilities
+- **Wishlist on the NPC overlay** — wishlisted drops are highlighted in the loot section; a `wishlist:changed` WS event broadcasts on add/remove
+- **Explorer canonical rows** — duplicate-name items and spells collapse to a single canonical row with links to the variants on the detail pages
+- **Key tracker** — shows the bag/bank location of held key components
+- **Locked overlays interactive on hover** (#127) — locked overlays go fully interactive on hover for scrolling and per-row actions
+- Charm spell timers cleared on charm-break, kept when an unrelated mob dies, and no longer spawn phantom duplicates; detrimental timers drop on a Zeal corpse target
+- Other players' clickies and NPC self-buffs no longer flood the buff overlay; combined-name pack triggers dedup against spell-landed by `SpellID`
+- Character Info resist order matched to the NPC overlay (MR/CR/FR/DR/PR); Defense skill uses the correct `skill_id` for AC
+- Debuff `cast_on_other` patterns broadened and bard song durations corrected across all class packs; installed packs migrated to the broadened patterns
+- Overlay positions preserved across auto-updates (#126); popout windows defer show until ready-to-show to remove flicker (#125); duplicate WebSocket connections no longer race on mount (#124)
+- NPC run speed % and level-scaled movement spell range fixed; run speed now shows on the popped-out overlay
+- Clarified confusing "Scheduled" labels in the config backup list
+
 ## Phase 11 — Project Website
 _Planned_
 

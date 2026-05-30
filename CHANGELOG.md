@@ -9,6 +9,33 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.10.0 — 2026-05-30
+
+A big feature release: a new Lockouts tracker, character stats now computed from real Project Quarm formulas, NPC respawn timers, and multi-monitor overlay support.
+
+### Highlights
+- **Lockouts tracker** — new Lockouts page with live `/sll` countdowns, parsing loot and legacy lockouts per character
+- **Character stats** — stats are now derived on the backend from real Project Quarm formulas (HP/mana/AC/resists), including AA passive stat bonuses resolved from the game data, instead of frontend approximations
+- **NPC respawn timers** — new death/respawn timer overlay, with Quarm's fast-respawn reduction applied to death timers
+- **Multi-monitor overlays** — the trigger overlay can span all monitors, and overlay windows can be dragged across monitors
+- **Combat tab** — Combat Log and History merged into one sidebar tab with sub-tabs; game-generated pet names are now attributed to their owner in DPS
+- **NPC overlay** — same-name NPCs disambiguated by zone and player position; wishlisted drops are highlighted in the loot section
+- **Database explorer** — duplicate-name items and spells collapse to a single canonical row with links to the variants
+- **Key tracker** — shows the bag/bank location of held key components
+- **Window state** — the main window remembers its size, position, and maximized state between launches
+- **Overlays** — locked overlays become interactive on hover for scrolling and per-row actions
+
+### Fixes
+- Overlay positions are preserved across auto-updates, and popout windows no longer flicker on open
+- Fixed duplicate WebSocket connections racing on startup
+- Charm spell timers are handled correctly — cleared on charm-break, kept when an unrelated mob dies, and no longer spawn phantom duplicates
+- Other players' clickies and NPC self-buffs no longer flood the buff overlay
+- Detrimental timers drop correctly when targeting a Zeal corpse
+- Character Info resist order now matches the NPC overlay (MR/CR/FR/DR/PR), and the Defense skill uses the correct skill ID for AC
+- Debuff trigger patterns broadened and bard song durations corrected across all class packs
+- NPC run speed percentage and level-scaled movement spell range fixed; run speed now shows on the popped-out overlay
+- Clarified confusing "Scheduled" labels in the config backup list
+
 ## v0.9.0 — 2026-05-28
 
 A foundational update: the desktop runtime under the app has been refreshed to the latest stable version, closing out every known security advisory.
