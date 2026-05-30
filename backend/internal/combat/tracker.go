@@ -43,6 +43,69 @@ func looksLikeNPC(name string) bool {
 	return false
 }
 
+// EQMac summoned-pet name model. Project Quarm runs the EQMac client, whose
+// name generator (mirrored in EQMacEmu/Server common/name_generator.cpp's
+// name_tables[] "// Pet" rows) builds a pet name positionally: a guaranteed
+// initial consonant, an optional second and third syllable, then a guaranteed
+// ending, each drawn from its own column. So a pet name is exactly
+//
+//	initial + [second] + [third] + ending
+//
+// over these closed pools. Modelling the real columns (rather than a loose
+// "any syllable, any slot" decomposition) keeps player names that merely reuse
+// the syllables from matching: e.g. "Karen" = K+ar+en, but "en" is not a valid
+// ending. Validated against every "My leader is" pet name in the real Osui
+// capture (0 misses) and the player/owner names in that same log (0 false
+// hits, including the pet-shaped Narya/Nukken/Xasik).
+var petNameInitials = map[byte]bool{
+	'G': true, 'J': true, 'K': true, 'L': true, 'V': true, 'X': true, 'Z': true,
+}
+
+var (
+	petFragSecond = []string{"", "ab", "on", "ib", "as", "ar", "ob", "eb", "en"}
+	petFragThird  = []string{"", "ar", "an", "ek", "ob"}
+	petFragEnd    = []string{"tik", "er", "n", "ab"}
+)
+
+// isGeneratedPetName reports whether name was produced by the EQMac summoned-pet
+// generator. These game-generated names embed no owner, so they're the pets our
+// possessive-name and "My leader is" heuristics can't resolve alone.
+//
+// A match is strong evidence, not proof: the name space still overlaps a few
+// real player names, so callers pair this with the verifiedPlayers guard and
+// treat any owner it yields as overridable by an authoritative signal (Zeal pet
+// name, "My leader is", charm tell).
+func isGeneratedPetName(name string) bool {
+	if len(name) < 4 || len(name) > 15 {
+		return false
+	}
+	// EQ entity names are always capitalised, so the initial is matched
+	// case-sensitively (a lowercase first letter is an article-prefixed NPC
+	// like "a gnoll", never a pet). Only the syllable tail is lowercased.
+	if !petNameInitials[name[0]] {
+		return false
+	}
+	rest := strings.ToLower(name[1:])
+	for _, sec := range petFragSecond {
+		if !strings.HasPrefix(rest, sec) {
+			continue
+		}
+		afterSec := rest[len(sec):]
+		for _, third := range petFragThird {
+			if !strings.HasPrefix(afterSec, third) {
+				continue
+			}
+			tail := afterSec[len(third):]
+			for _, end := range petFragEnd {
+				if tail == end {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // internalEntity accumulates raw hit data for one combatant inside an
 // active fight. Per-player active time is the simple span between the
 // first and last activity timestamps — matches EQLogParser's "Personal
@@ -582,8 +645,18 @@ func (t *Tracker) resolveNPC(actor, target string) string {
 	// activeFights check because a stale prior fight on the pet's own
 	// name (e.g. damaged-then-charmed mob) would otherwise capture the
 	// pet's new outgoing damage in the wrong row.
+	// A name in petOwners is a known pet; a game-generated pet name is a pet
+	// we may not have an owner for yet. Either way it's a minion, not the
+	// fight target. The verifiedPlayers guard protects the rare player whose
+	// name happens to be generator-shaped.
 	_, targetIsPet := t.petOwners[target]
+	if !targetIsPet {
+		targetIsPet = isGeneratedPetName(target) && !t.verifiedPlayers[target]
+	}
 	_, actorIsPet := t.petOwners[actor]
+	if !actorIsPet {
+		actorIsPet = isGeneratedPetName(actor) && !t.verifiedPlayers[actor]
+	}
 	if actorIsPet && !targetIsPet {
 		return target
 	}
@@ -834,6 +907,12 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 // at least one damage line touching an NPC to have started a fight first.
 func (t *Tracker) recordHeal(ts time.Time, data logparser.HealData) {
 	t.mu.Lock()
+	// A heal line names both caster and target, so it's the one owner signal
+	// that survives in our local log for another raider's summoned pet: the
+	// pet's owner buffs aren't logged on our client, but someone healing the
+	// pet is. Do this before the active-fight gate so the binding lands even
+	// for an out-of-combat top-off.
+	t.inferPetOwnerFromHealLocked(data.Actor, data.Target)
 	f := t.mostRecentActiveFightLocked()
 	if f == nil {
 		t.mu.Unlock()
@@ -1029,6 +1108,39 @@ func mergeHealerInto(dst, src *internalHealer) {
 // across Reset) so it applies
 // across fights — once a charm is established, every hit the pet lands until
 // charm break gets attributed to the owner.
+// inferPetOwnerFromHealLocked tentatively binds a game-generated pet name to
+// the player healing it. This is how an OTHER raider's mage/necro/shaman pet
+// (whose name embeds no owner, and whose owner's buff casts never reach our
+// log) gets attributed before anyone runs /pet who leader. Deliberately
+// conservative:
+//   - only fires for an EQMac generator name (no player false positives in the
+//     real capture),
+//   - never rebinds a pet we already have an owner for,
+//   - never treats a known real player as a pet.
+//
+// It is a low-confidence signal: a cleric topping off someone else's pet would
+// mis-bind it. That's acceptable because every authoritative source -
+// "My leader is", the Zeal pipe, charm tells - overwrites it via the normal
+// recordPetOwner / SetPipePetName paths. Caller must hold t.mu.
+func (t *Tracker) inferPetOwnerFromHealLocked(healer, target string) {
+	if !isGeneratedPetName(target) || t.verifiedPlayers[target] {
+		return
+	}
+	if _, known := t.petOwners[target]; known {
+		return
+	}
+	owner := healer
+	if owner == "You" {
+		if n := t.playerName(); n != "" {
+			owner = n
+		}
+	}
+	if owner == "" || owner == target {
+		return
+	}
+	t.petOwners[target] = owner
+}
+
 func (t *Tracker) recordPetOwner(pet, owner string) {
 	if pet == "" || owner == "" {
 		return

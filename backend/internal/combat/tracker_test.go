@@ -977,6 +977,81 @@ func TestCurrentFightMergesSimultaneousMobs(t *testing.T) {
 	}
 }
 
+// TestIsGeneratedPetName checks the EQMac pet-name recognizer against real
+// data: pet names from the "My leader is" lines in the Osui capture must be
+// accepted, and the player/owner names from that same log (including the
+// pet-shaped Narya/Nukken/Xasik) rejected.
+func TestIsGeneratedPetName(t *testing.T) {
+	pets := []string{"Vonanab", "Kebartik", "Vebekab", "Jekab", "Vebobtik",
+		"Venarab", "Vober", "Kabtik", "Vasann", "Lasekn", "Gareker", "Goner",
+		"Jibantik", "Kenarer", "Kabobab", "Karn", "Kann", "Zekn", "Gobn", "Zonekn"}
+	for _, n := range pets {
+		if !isGeneratedPetName(n) {
+			t.Errorf("expected real pet name %q to be recognised", n)
+		}
+	}
+	players := []string{"Narya", "Nukken", "Xasik", "Kildrey", "Maykill",
+		"Udabut", "Ammaru", "Kaalos", "Tarnak", "Zlandicar", "Sandrian",
+		"Takkisina", "Karen", "You", "", "kebartik", "Gnoll"}
+	for _, n := range players {
+		if isGeneratedPetName(n) {
+			t.Errorf("expected non-pet name %q NOT to be treated as a pet", n)
+		}
+	}
+}
+
+// TestPetOwnerInferredFromHeal verifies a generated-name pet (no owner in its
+// name, no "My leader is" line) is attributed to whoever heals it.
+func TestPetOwnerInferredFromHeal(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("Vonanab", "a gnoll", 100, now))
+	tr.Handle(healEvent("Tarnak", "Vonanab", 50, now.Add(time.Second)))
+
+	st := tr.GetState()
+	pet := requireCombatant(t, st, "Vonanab")
+	if pet.OwnerName != "Tarnak" {
+		t.Fatalf("expected Vonanab attributed to Tarnak via heal, got owner %q", pet.OwnerName)
+	}
+}
+
+// TestInferredPetOwnerYieldsToLeaderLine confirms the heal-based guess is
+// low-confidence: an authoritative "My leader is" line overrides it.
+func TestInferredPetOwnerYieldsToLeaderLine(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("Vonanab", "a gnoll", 100, now))
+	tr.Handle(healEvent("Tarnak", "Vonanab", 50, now.Add(time.Second)))
+	tr.Handle(petOwnerEvent("Vonanab", "Kildrey", now.Add(2*time.Second)))
+
+	st := tr.GetState()
+	pet := requireCombatant(t, st, "Vonanab")
+	if pet.OwnerName != "Kildrey" {
+		t.Fatalf("expected leader line to override heal guess (Kildrey), got %q", pet.OwnerName)
+	}
+}
+
+// TestGeneratedPetDamageToUnconfirmedBossKept ensures a generated pet's damage
+// to a single-token boss name (which fails looksLikeNPC) is routed to that
+// boss's fight instead of being dropped as an unresolved player-vs-player hit.
+func TestGeneratedPetDamageToUnconfirmedBossKept(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("Kebartik", "Zlandicar", 100, now))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil || st.CurrentFight.PrimaryTarget != "Zlandicar" {
+		t.Fatalf("expected a fight against Zlandicar, got %+v", st.CurrentFight)
+	}
+	pet := requireCombatant(t, st, "Kebartik")
+	if pet.TotalDamage != 100 {
+		t.Fatalf("expected Kebartik's 100 damage retained, got %d", pet.TotalDamage)
+	}
+}
+
 func TestZoneTrackedForDeath(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()
