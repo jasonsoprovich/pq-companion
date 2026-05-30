@@ -7,12 +7,16 @@ import { useCallback, useEffect, useState } from 'react'
  * move, drag edges to resize, all controls clickable.
  *
  * Locked: the window passes mouse events through to the game underneath via
- * Electron's setIgnoreMouseEvents. Hovering the header strip temporarily
- * disables passthrough so the header buttons (clear, lock, close, etc.)
- * stay clickable; the body of the overlay remains click-through even when
- * the cursor is over it. forward:true keeps mouseenter/mouseleave flowing
- * to the renderer even while passthrough is on, which is what makes the
- * auto-toggle work.
+ * Electron's setIgnoreMouseEvents. Hovering anywhere over the overlay
+ * temporarily disables passthrough so the whole window — header buttons,
+ * the scrollable timer list, and per-row controls — stays interactive while
+ * the cursor is over it; moving the cursor off the overlay restores
+ * click-through. forward:true keeps mouseenter/mouseleave flowing to the
+ * renderer even while passthrough is on, which is what makes the auto-toggle
+ * work. (The overlay pages wire enableInteraction/enableClickThrough to the
+ * root container's onMouseEnter/onMouseLeave.) Move/resize stay disabled
+ * while locked — drag is gated by the no-drag class and resize is turned off
+ * in the main process. See issue #127.
  *
  * Lock state is persisted per overlay in the main process.
  */
@@ -51,8 +55,8 @@ export function useOverlayLock(): {
     })
   }, [])
 
-  // While locked, hovering a no-drag region (e.g. the header buttons) should
-  // temporarily disable passthrough so clicks register.
+  // While locked, hovering anywhere over the overlay should temporarily
+  // disable passthrough so clicks and scroll register on the whole window.
   const enableInteraction = useCallback(() => {
     if (!locked) return
     window.electron?.overlay?.setIgnoreMouseEvents(false)

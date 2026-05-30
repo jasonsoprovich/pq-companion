@@ -211,6 +211,8 @@ export default function RollTrackerWindowPage(): React.ReactElement {
 
   return (
     <div
+      onMouseEnter={enableInteraction}
+      onMouseLeave={enableClickThrough}
       style={{
         width: '100vw',
         height: '100vh',
@@ -227,8 +229,6 @@ export default function RollTrackerWindowPage(): React.ReactElement {
       <div
         onMouseDown={onDragMouseDown}
         className={locked ? 'no-drag' : 'drag-region'}
-        onMouseEnter={enableInteraction}
-        onMouseLeave={enableClickThrough}
         style={{
           display: 'flex',
           alignItems: 'center',

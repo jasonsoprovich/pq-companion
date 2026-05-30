@@ -692,6 +692,7 @@ function createDPSOverlay(): void {
   windowToOverlayName.set(dpsOverlayWindow, 'dps')
   if (getOverlayLocked('dps')) {
     dpsOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+    dpsOverlayWindow.setResizable(false)
   }
   trackOverlayBounds('dps', dpsOverlayWindow)
 
@@ -750,6 +751,7 @@ function createHPSOverlay(): void {
   windowToOverlayName.set(hpsOverlayWindow, 'hps')
   if (getOverlayLocked('hps')) {
     hpsOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+    hpsOverlayWindow.setResizable(false)
   }
   trackOverlayBounds('hps', hpsOverlayWindow)
 
@@ -808,6 +810,7 @@ function createBuffTimerOverlay(): void {
   windowToOverlayName.set(buffTimerWindow, 'buffTimer')
   if (getOverlayLocked('buffTimer')) {
     buffTimerWindow.setIgnoreMouseEvents(true, { forward: true })
+    buffTimerWindow.setResizable(false)
   }
   trackOverlayBounds('buffTimer', buffTimerWindow)
 
@@ -866,6 +869,7 @@ function createDetrimTimerOverlay(): void {
   windowToOverlayName.set(detrimTimerWindow, 'detrimTimer')
   if (getOverlayLocked('detrimTimer')) {
     detrimTimerWindow.setIgnoreMouseEvents(true, { forward: true })
+    detrimTimerWindow.setResizable(false)
   }
   trackOverlayBounds('detrimTimer', detrimTimerWindow)
 
@@ -924,6 +928,7 @@ function createRespawnTimerOverlay(): void {
   windowToOverlayName.set(respawnTimerWindow, 'respawnTimer')
   if (getOverlayLocked('respawnTimer')) {
     respawnTimerWindow.setIgnoreMouseEvents(true, { forward: true })
+    respawnTimerWindow.setResizable(false)
   }
   trackOverlayBounds('respawnTimer', respawnTimerWindow)
 
@@ -1061,6 +1066,7 @@ function createNPCOverlay(): void {
   windowToOverlayName.set(npcOverlayWindow, 'npc')
   if (getOverlayLocked('npc')) {
     npcOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+    npcOverlayWindow.setResizable(false)
   }
   trackOverlayBounds('npc', npcOverlayWindow)
 
@@ -1119,6 +1125,7 @@ function createRollTrackerOverlay(): void {
   windowToOverlayName.set(rollTrackerWindow, 'rollTracker')
   if (getOverlayLocked('rollTracker')) {
     rollTrackerWindow.setIgnoreMouseEvents(true, { forward: true })
+    rollTrackerWindow.setResizable(false)
   }
   trackOverlayBounds('rollTracker', rollTrackerWindow)
 
@@ -1408,6 +1415,11 @@ ipcMain.handle('overlay:lock:set', (event, locked: boolean) => {
   if (!name) return
   setOverlayLocked(name, locked)
   win.setIgnoreMouseEvents(locked, { forward: true })
+  // While locked the overlay still goes interactive on hover (so its list can
+  // be scrolled and per-row controls clicked — issue #127), which would also
+  // re-enable OS edge-resize. Disable resize while locked so the window can't
+  // be moved or resized; dragging is already gated by the no-drag class.
+  win.setResizable(!locked)
 })
 
 // ── IPC handlers — dialogs ────────────────────────────────────────────────────
