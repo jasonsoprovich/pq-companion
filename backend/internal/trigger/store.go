@@ -273,6 +273,122 @@ func (s *Store) MigrateRemoveDuplicateClassPackTriggers() error {
 	return s.MarkDefaultUpdateApplied(key)
 }
 
+// MigrateBroadenDebuffPatternsAndBardDurations brings already-installed
+// built-in packs up to parity with two corrections shipped after the packs
+// were first authored:
+//
+//   - Every detrimental trigger's cast_on_other branch was broadened from an
+//     uppercase-only, single-word target-name class to npcNameClass, so the
+//     timer fires on the articled / lowercase / multi-word mobs that make up
+//     the vast majority of real targets ("a sand giant has been crippled.").
+//     (commits c34016f, a289611)
+//   - Eight Bard buff/debuff songs had their hardcoded 54s timer corrected to
+//     their true 18s base duration. (commit c34016f)
+//
+// These edits live in the pack definitions, which only reach user.db at
+// import time — so a user who imported a pack before the fix keeps the stale
+// pattern/duration in their installed row. This migration patches those rows
+// in place so existing installs don't need a destructive re-import.
+//
+// Only the pattern and timer_duration_secs columns are touched, and only when
+// the row still holds the exact pre-fix built-in value. A row a user has
+// customized (different pattern or duration) is left untouched, and the user's
+// overlay text, TTS actions, and timer alerts are never read or modified
+// regardless. Idempotent via pack_default_updates.
+func (s *Store) MigrateBroadenDebuffPatternsAndBardDurations() error {
+	const key = "Packs:BroadenDebuffPatterns+BardDurations:v1"
+	applied, err := s.IsDefaultUpdateApplied(key)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+
+	// correction is a guarded in-place fix to one installed pack trigger. An
+	// empty newPattern (or zero newDuration) means "leave that column alone".
+	type correction struct {
+		packName    string
+		triggerName string
+		oldPattern  string
+		newPattern  string
+		oldDuration int
+		newDuration int
+	}
+	byKey := map[string]*correction{}
+	get := func(pack, name string) *correction {
+		k := pack + "\x00" + name
+		c := byKey[k]
+		if c == nil {
+			c = &correction{packName: pack, triggerName: name}
+			byKey[k] = c
+		}
+		return c
+	}
+
+	// Pattern broadening: find every detrimental trigger whose current
+	// built-in pattern embeds npcNameClass and reconstruct the pre-broadening
+	// pattern by reversing the substitution. This auto-covers Bard plus the
+	// ten class packs touched by a289611 without hand-listing each trigger,
+	// and will pick up any future trigger broadened the same way.
+	const oldNameClass = `[A-Z][a-zA-Z']{2,14}`
+	for _, pack := range AllPacks() {
+		for _, tr := range pack.Triggers {
+			if !strings.Contains(tr.Pattern, npcNameClass) {
+				continue
+			}
+			c := get(pack.PackName, tr.Name)
+			c.oldPattern = strings.ReplaceAll(tr.Pattern, npcNameClass, oldNameClass)
+			c.newPattern = tr.Pattern
+		}
+	}
+
+	// Bard song duration corrections (54s → 18s base). These can't be derived
+	// from the current definition, so the affected songs are listed explicitly.
+	for _, name := range []string{
+		"Cantata of Replenishment",
+		"Warsong of Zek",
+		"Niv's Melody of Preservation",
+		"Psalm of Veeshan",
+		"Elemental Rhythms",
+		"Guardian Rhythms",
+		"Kelin's Lugubrious Lament",
+		"Largo's Absonant Binding",
+	} {
+		c := get("Bard", name)
+		c.oldDuration = 54
+		c.newDuration = 18
+	}
+
+	for _, c := range byKey {
+		t, err := s.FindByPackAndName(c.packName, c.triggerName)
+		if err != nil {
+			return err
+		}
+		if t == nil {
+			// Pack not installed or the trigger was removed — nothing to do.
+			continue
+		}
+		changed := false
+		if c.newPattern != "" && t.Pattern == c.oldPattern {
+			t.Pattern = c.newPattern
+			changed = true
+		}
+		if c.newDuration != 0 && t.TimerDurationSecs == c.oldDuration {
+			t.TimerDurationSecs = c.newDuration
+			changed = true
+		}
+		if !changed {
+			// Row missing or user-customized in both columns — leave it alone.
+			continue
+		}
+		if err := s.Update(t); err != nil {
+			return fmt.Errorf("update %s/%s: %w", c.packName, c.triggerName, err)
+		}
+	}
+	return s.MarkDefaultUpdateApplied(key)
+}
+
 func (s *Store) packHasAnyTrigger(pack string) (bool, error) {
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM triggers WHERE pack_name = ?`, pack).Scan(&n); err != nil {

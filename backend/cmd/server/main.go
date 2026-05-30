@@ -385,6 +385,12 @@ func main() {
 	if err := triggerStore.MigrateRemoveDuplicateClassPackTriggers(); err != nil {
 		slog.Warn("trigger class-pack dupe removal failed", "err", err)
 	}
+	// In-place fix for packs imported before the debuff-pattern broadening and
+	// the Bard 54s→18s song-duration correction. Only rewrites the pattern /
+	// duration columns of un-customized rows; never touches user actions/alerts.
+	if err := triggerStore.MigrateBroadenDebuffPatternsAndBardDurations(); err != nil {
+		slog.Warn("trigger debuff-pattern/bard-duration migration failed", "err", err)
+	}
 
 	// One-time additive default updates for built-in packs. Each is keyed
 	// and runs at most once, only ever appending to list-typed fields on
