@@ -290,7 +290,7 @@ func EnchanterPack() TriggerPack {
 			{
 				Name:           "Tashanian",
 				Enabled:        true,
-				Pattern:        `^(?:You hear the barking of Tashania\.|[A-Z][a-zA-Z']{2,14} glances nervously about\.)$`,
+				Pattern:        `^(?:You hear the barking of Tashania\.|` + npcNameClass + ` glances nervously about\.)$`,
 				WornOffPattern: `^The barking fades\.$`,
 				TimerType:      TimerTypeDetrimental,
 				// 780s = 130 ticks per the corrected formula 9
@@ -305,7 +305,7 @@ func EnchanterPack() TriggerPack {
 			{
 				Name:           "Cripple",
 				Enabled:        true,
-				Pattern:        `^(?:You have been crippled\.|[A-Z][a-zA-Z']{2,14} has been crippled\.)$`,
+				Pattern:        `^(?:You have been crippled\.|` + npcNameClass + ` has been crippled\.)$`,
 				WornOffPattern: `^You feel your strength return\.$`,
 				TimerType:      TimerTypeDetrimental,
 				// 450s = 75 ticks per the corrected formula 8 (fixed base)
@@ -319,7 +319,7 @@ func EnchanterPack() TriggerPack {
 			{
 				Name:              "Asphyxiate",
 				Enabled:           true,
-				Pattern:           `^(?:You feel a shortness of breath\.|[A-Z][a-zA-Z']{2,14} begins to choke\.)$`,
+				Pattern:           `^(?:You feel a shortness of breath\.|` + npcNameClass + ` begins to choke\.)$`,
 				WornOffPattern:    `^You can breathe again\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 120,
@@ -410,7 +410,7 @@ func EnchanterPack() TriggerPack {
 			{
 				Name:              "Enthrall",
 				Enabled:           true,
-				Pattern:           `^(?:You have been enthralled\.|[A-Z][a-zA-Z']{2,14} has been enthralled\.)$`,
+				Pattern:           `^(?:You have been enthralled\.|` + npcNameClass + ` has been enthralled\.)$`,
 				WornOffPattern:    `^Your Enthrall spell has worn off\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 144,
@@ -421,7 +421,7 @@ func EnchanterPack() TriggerPack {
 			{
 				Name:              "Entrance",
 				Enabled:           true,
-				Pattern:           `^(?:You have been entranced\.|[A-Z][a-zA-Z']{2,14} has been entranced\.)$`,
+				Pattern:           `^(?:You have been entranced\.|` + npcNameClass + ` has been entranced\.)$`,
 				WornOffPattern:    `^Your Entrance spell has worn off\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 72,
@@ -432,7 +432,7 @@ func EnchanterPack() TriggerPack {
 			{
 				Name:              "Glamour of Kintaz",
 				Enabled:           true,
-				Pattern:           `^(?:You are mesmerized by the Glamour of Kintaz\.|[A-Z][a-zA-Z']{2,14} has been mesmerized by the Glamour of Kintaz\.)$`,
+				Pattern:           `^(?:You are mesmerized by the Glamour of Kintaz\.|` + npcNameClass + ` has been mesmerized by the Glamour of Kintaz\.)$`,
 				WornOffPattern:    `^Your Glamour of Kintaz spell has worn off\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 54,
@@ -447,7 +447,7 @@ func EnchanterPack() TriggerPack {
 			{
 				Name:              "Rapture",
 				Enabled:           true,
-				Pattern:           `^(?:You swoon, overcome by rapture\.|[A-Z][a-zA-Z']{2,14} swoons in raptured bliss\.)$`,
+				Pattern:           `^(?:You swoon, overcome by rapture\.|` + npcNameClass + ` swoons in raptured bliss\.)$`,
 				WornOffPattern:    `^Your (?:Rapture|Ancient: Eternal Rapture) spell has worn off\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 42,
@@ -707,7 +707,7 @@ func ClericPack() TriggerPack {
 			{
 				Name:              "Mark of Karn",
 				Enabled:           true,
-				Pattern:           `^(?:Your skin gleams with a pure aura\.|[A-Z][a-zA-Z']{2,14}'s skin gleams with a pure aura\.)$`,
+				Pattern:           `^(?:Your skin gleams with a pure aura\.|` + npcNameClass + `'s skin gleams with a pure aura\.)$`,
 				WornOffPattern:    `^The aura fades\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 570,
@@ -795,7 +795,7 @@ func DruidPack() TriggerPack {
 			{
 				Name:              "Hand of Ro",
 				Enabled:           true,
-				Pattern:           `^(?:You are immolated by blazing flames\.|[A-Z][a-zA-Z']{2,14} is immolated by blazing flames\.)$`,
+				Pattern:           `^(?:You are immolated by blazing flames\.|` + npcNameClass + ` is immolated by blazing flames\.)$`,
 				WornOffPattern:    `^The flames die down\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 180,
@@ -806,7 +806,7 @@ func DruidPack() TriggerPack {
 			{
 				Name:              "Winged Death",
 				Enabled:           true,
-				Pattern:           `^(?:You feel the pain of a million stings\.|[A-Z][a-zA-Z']{2,14} is engulfed by a swarm of deadly insects\.)$`,
+				Pattern:           `^(?:You feel the pain of a million stings\.|` + npcNameClass + ` is engulfed by a swarm of deadly insects\.)$`,
 				WornOffPattern:    `^The swarm departs\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 54,
@@ -819,7 +819,7 @@ func DruidPack() TriggerPack {
 			{
 				Name:              "Ensnare",
 				Enabled:           true,
-				Pattern:           `^(?:You are ensnared\.|[A-Z][a-zA-Z']{2,14} has been ensnared\.)$`,
+				Pattern:           `^(?:You are ensnared\.|` + npcNameClass + ` has been ensnared\.)$`,
 				WornOffPattern:    `^You are no longer ensnared\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 720,
@@ -830,7 +830,7 @@ func DruidPack() TriggerPack {
 			{
 				Name:              "Entrapping Roots",
 				Enabled:           true,
-				Pattern:           `^(?:Your feet become entwined\.|[A-Z][a-zA-Z']{2,14} is entrapped by roots\.)$`,
+				Pattern:           `^(?:Your feet become entwined\.|` + npcNameClass + ` is entrapped by roots\.)$`,
 				WornOffPattern:    `^(?:The roots fall from your feet\.|Your Entrapping Roots spell has worn off\.|Your target resisted the Entrapping Roots spell\.)$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 540,
@@ -859,7 +859,7 @@ func ShamanPack() TriggerPack {
 			{
 				Name:              "Turgur's Insects",
 				Enabled:           true,
-				Pattern:           `^(?:You feel drowsy\.|[A-Z][a-zA-Z']{2,14} yawns\.)$`,
+				Pattern:           `^(?:You feel drowsy\.|` + npcNameClass + ` yawns\.)$`,
 				WornOffPattern:    `^You feel less drowsy\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 390,
@@ -870,7 +870,7 @@ func ShamanPack() TriggerPack {
 			{
 				Name:              "Plague of Insects",
 				Enabled:           true,
-				Pattern:           `^(?:You're motions slow as a plague of insects chew at your skin\.|[A-Z][a-zA-Z']{2,14}'s motions slow as a plague of insects chews at their skin\.)$`,
+				Pattern:           `^(?:You're motions slow as a plague of insects chew at your skin\.|` + npcNameClass + `'s motions slow as a plague of insects chews at their skin\.)$`,
 				WornOffPattern:    `^The plague of insects subsides\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 630,
@@ -1015,7 +1015,7 @@ func PaladinPack() TriggerPack {
 			{
 				Name:              "Immobilize",
 				Enabled:           true,
-				Pattern:           `^(?:Your feet adhere to the ground\.|[A-Z][a-zA-Z']{2,14} adheres to the ground\.)$`,
+				Pattern:           `^(?:Your feet adhere to the ground\.|` + npcNameClass + ` adheres to the ground\.)$`,
 				WornOffPattern:    `^(?:Your feet come free\.|Your Immobilize spell has worn off\.|Your target resisted the Immobilize spell\.)$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 180,
@@ -1096,7 +1096,7 @@ func ShadowknightPack() TriggerPack {
 			{
 				Name:              "Engulfing Darkness",
 				Enabled:           true,
-				Pattern:           `^(?:You are engulfed by darkness\.|[A-Z][a-zA-Z']{2,14} is engulfed by darkness\.)$`,
+				Pattern:           `^(?:You are engulfed by darkness\.|` + npcNameClass + ` is engulfed by darkness\.)$`,
 				WornOffPattern:    `^(?:The darkness fades\.|Your Engulfing Darkness spell has worn off\.|Your target resisted the Engulfing Darkness spell\.)$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 60,
@@ -1109,7 +1109,7 @@ func ShadowknightPack() TriggerPack {
 			{
 				Name:              "Disease Cloud",
 				Enabled:           true,
-				Pattern:           `^(?:Your stomach begins to cramp\.|[A-Z][a-zA-Z']{2,14} doubles over in pain\.)$`,
+				Pattern:           `^(?:Your stomach begins to cramp\.|` + npcNameClass + ` doubles over in pain\.)$`,
 				WornOffPattern:    `^Your stomach feels better\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 360,
@@ -1136,7 +1136,7 @@ func ShadowknightPack() TriggerPack {
 			{
 				Name:              "Asystole",
 				Enabled:           true,
-				Pattern:           `^(?:Your heart stops\.|[A-Z][a-zA-Z']{2,14} clutches their chest\.)$`,
+				Pattern:           `^(?:Your heart stops\.|` + npcNameClass + ` clutches their chest\.)$`,
 				WornOffPattern:    `^Your heartbeat resumes\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 60,
@@ -1597,7 +1597,7 @@ func RangerPack() TriggerPack {
 			{
 				Name:              "Flame Lick",
 				Enabled:           true,
-				Pattern:           `^(?:You are surrounded by flickering flames\.|[A-Z][a-zA-Z']{2,14} is surrounded by flickering flames\.)$`,
+				Pattern:           `^(?:You are surrounded by flickering flames\.|` + npcNameClass + ` is surrounded by flickering flames\.)$`,
 				WornOffPattern:    `^The flames are extinguished\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 48,
@@ -1883,7 +1883,7 @@ func NecromancerPack() TriggerPack {
 			{
 				Name:              "Splurt",
 				Enabled:           true,
-				Pattern:           `^(?:Your body begins to splurt\.|[A-Z][a-zA-Z']{2,14}'s body begins to splurt\.)$`,
+				Pattern:           `^(?:Your body begins to splurt\.|` + npcNameClass + `'s body begins to splurt\.)$`,
 				WornOffPattern:    `^Your body stops splurting\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 96,
@@ -1920,7 +1920,7 @@ func NecromancerPack() TriggerPack {
 			{
 				Name:              "Bond of Death",
 				Enabled:           true,
-				Pattern:           `^(?:You feel your life force drain away\.|[A-Z][a-zA-Z']{2,14} staggers\.)$`,
+				Pattern:           `^(?:You feel your life force drain away\.|` + npcNameClass + ` staggers\.)$`,
 				WornOffPattern:    `^The bond fades\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 54,
@@ -2012,7 +2012,7 @@ func WizardPack() TriggerPack {
 			{
 				Name:              "Atol's Spectral Shackles",
 				Enabled:           true,
-				Pattern:           `^(?:Spectral shackles bind your feet to the ground\.|[A-Z][a-zA-Z']{2,14} is shackled to the ground\.)$`,
+				Pattern:           `^(?:Spectral shackles bind your feet to the ground\.|` + npcNameClass + ` is shackled to the ground\.)$`,
 				WornOffPattern:    `^(?:Your feet come free\.|Your Atol's Spectral Shackles spell has worn off\.|Your target resisted the Atol's Spectral Shackles spell\.)$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 150,
@@ -2102,7 +2102,7 @@ func BeastlordPack() TriggerPack {
 			{
 				Name:              "Sha's Advantage",
 				Enabled:           true,
-				Pattern:           `^(?:You lose your fighting edge\.|[A-Z][a-zA-Z']{2,14} loses their fighting edge\.)$`,
+				Pattern:           `^(?:You lose your fighting edge\.|` + npcNameClass + ` loses their fighting edge\.)$`,
 				WornOffPattern:    `^You regain your fighting edge\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 630,
