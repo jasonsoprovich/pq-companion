@@ -371,6 +371,27 @@ func CapAttribute(v, level, capMod int) int {
 	return v
 }
 
+// ── Haste ────────────────────────────────────────────────────────────────────
+
+// MeleeHasteCap is the level-based ceiling on combined worn + spell melee haste
+// (v1 + v2) before overhaste (v3). Overhaste stacks on top of this cap.
+func MeleeHasteCap(level int) int {
+	switch {
+	case level <= 0:
+		return 100 // unknown level — assume max
+	case level <= 30:
+		return 50
+	case level <= 50:
+		return 74
+	case level <= 54:
+		return 84
+	case level <= 59:
+		return 94
+	default:
+		return 100
+	}
+}
+
 // ── AC ───────────────────────────────────────────────────────────────────────
 
 // isACCaster reports whether the class uses the pure-caster AC path: raw item

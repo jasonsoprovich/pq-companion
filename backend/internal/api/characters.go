@@ -12,6 +12,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/eqstat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
@@ -428,7 +429,7 @@ const itemFTCap = 15
 
 // EQEmu SPA codes referenced when parsing a worneffect spell.
 const (
-	spaHitpoints   = 0  // base/tick = HP regen on a worn buff
+	spaHitpoints   = 0 // base/tick = HP regen on a worn buff
 	spaAC          = 1
 	spaATK         = 2
 	spaSTR         = 4
@@ -594,51 +595,7 @@ func (h *charactersHandler) equippedStats(w http.ResponseWriter, r *http.Request
 	}
 
 	// ── Equipment block ──
-	q, err := zeal.ParseQuarmy(zeal.QuarmyPath(cfg.EQPath, char.Name), char.Name)
-	if err == nil && q != nil {
-		// Worn haste doesn't stack — only the highest-haste item applies.
-		// Track the running max separately and assign at the end.
-		bestHaste := 0
-		for _, entry := range q.Inventory {
-			if !equipSlots[entry.Location] || entry.ID <= 0 {
-				continue
-			}
-			item, err := h.db.GetItem(entry.ID)
-			if err != nil || item == nil {
-				continue
-			}
-			resp.Equipment.HP += item.HP
-			resp.Equipment.Mana += item.Mana
-			resp.Equipment.AC += item.AC
-			resp.Equipment.STR += item.Strength
-			resp.Equipment.STA += item.Stamina
-			resp.Equipment.AGI += item.Agility
-			resp.Equipment.DEX += item.Dexterity
-			resp.Equipment.WIS += item.Wisdom
-			resp.Equipment.INT += item.Intelligence
-			resp.Equipment.CHA += item.Charisma
-			resp.Equipment.PR += item.PoisonResist
-			resp.Equipment.MR += item.MagicResist
-			resp.Equipment.DR += item.DiseaseResist
-			resp.Equipment.FR += item.FireResist
-			resp.Equipment.CR += item.ColdResist
-
-			if item.WornEffect > 0 {
-				worn, err := h.db.GetSpell(item.WornEffect)
-				if err == nil && worn != nil {
-					if h := parseWornEffect(worn, item.WornLevel, &resp.Equipment); h > bestHaste {
-						bestHaste = h
-					}
-				}
-			}
-		}
-		resp.Equipment.Haste = bestHaste
-
-		// Item Flowing Thought is capped at 15 per EQ's worn-mana-regen rule.
-		if resp.Equipment.FT > itemFTCap {
-			resp.Equipment.FT = itemFTCap
-		}
-	}
+	resp.Equipment, _ = h.sumEquipment(cfg.EQPath, char.Name)
 
 	// Spell haste (SPA 127) summary across equipped item focuses + trained
 	// AAs, hard-capped at SpellHasteCapPercent (50%). Distinct from melee
@@ -648,6 +605,291 @@ func (h *charactersHandler) equippedStats(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// sumEquipment returns the raw summed contribution of the character's currently
+// worn items: attributes, item AC, resists, the flat HP/Mana pools, and the
+// parsed worn-effect bonuses (attack, regen, FT, damage shield). bestHaste is
+// the single highest worn melee-haste value (worn haste doesn't stack). A
+// missing or unreadable Quarmy export yields a zero block.
+func (h *charactersHandler) sumEquipment(eqPath, charName string) (block statBlock, bestHaste int) {
+	q, err := zeal.ParseQuarmy(zeal.QuarmyPath(eqPath, charName), charName)
+	if err != nil || q == nil {
+		return block, 0
+	}
+	for _, entry := range q.Inventory {
+		if !equipSlots[entry.Location] || entry.ID <= 0 {
+			continue
+		}
+		item, err := h.db.GetItem(entry.ID)
+		if err != nil || item == nil {
+			continue
+		}
+		block.HP += item.HP
+		block.Mana += item.Mana
+		block.AC += item.AC
+		block.STR += item.Strength
+		block.STA += item.Stamina
+		block.AGI += item.Agility
+		block.DEX += item.Dexterity
+		block.WIS += item.Wisdom
+		block.INT += item.Intelligence
+		block.CHA += item.Charisma
+		block.PR += item.PoisonResist
+		block.MR += item.MagicResist
+		block.DR += item.DiseaseResist
+		block.FR += item.FireResist
+		block.CR += item.ColdResist
+
+		if item.WornEffect > 0 {
+			worn, err := h.db.GetSpell(item.WornEffect)
+			if err == nil && worn != nil {
+				if hv := parseWornEffect(worn, item.WornLevel, &block); hv > bestHaste {
+					bestHaste = hv
+				}
+			}
+		}
+	}
+	block.Haste = bestHaste
+	// Item Flowing Thought is capped at 15 per EQ's worn-mana-regen rule.
+	if block.FT > itemFTCap {
+		block.FT = itemFTCap
+	}
+	return block, bestHaste
+}
+
+// overhasteSpellIDs are the only sources of v3 "overhaste" on Project Quarm —
+// the lone tier that stacks past the level-based melee-haste cap.
+var overhasteSpellIDs = map[int]bool{
+	2610: true, // Warsong of the Vah Shir
+}
+
+// resolvedBuff pairs a buff spell's id (needed to classify overhaste) with its
+// parsed stat delta.
+type resolvedBuff struct {
+	id    int
+	delta db.BuffStatDelta
+}
+
+// resolveBuffs loads each unique buff spell and computes its stat delta. Unknown
+// or duplicate spell ids are skipped.
+func (h *charactersHandler) resolveBuffs(ids []int) []resolvedBuff {
+	seen := make(map[int]bool, len(ids))
+	out := make([]resolvedBuff, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		sp, err := h.db.GetSpell(id)
+		if err != nil || sp == nil {
+			continue
+		}
+		out = append(out, resolvedBuff{id: id, delta: db.ComputeBuffStatDelta(sp)})
+	}
+	return out
+}
+
+// derivedStatsRequest is the body of the derived-stats endpoint: the buff spell
+// ids active in the "+Buffs" preset and in the "Live Buffs" view. The backend
+// computes all four display layers so the UI can switch modes instantly.
+type derivedStatsRequest struct {
+	PresetBuffIDs []int `json:"preset_buff_ids"`
+	LiveBuffIDs   []int `json:"live_buff_ids"`
+}
+
+// derivedStatsResponse carries one fully-derived statBlock per display mode.
+type derivedStatsResponse struct {
+	Character string    `json:"character"`
+	Level     int       `json:"level"`
+	Class     int       `json:"class"`
+	Base      statBlock `json:"base"`
+	Equipped  statBlock `json:"equipped"`
+	Buffed    statBlock `json:"buffed"`
+	Live      statBlock `json:"live"`
+}
+
+// derivedStats computes the character's HP, Mana, AC, attributes, resists, and
+// worn-bonus stats for every display layer, using Project Quarm's real
+// server-side formulas (see internal/eqstat). Unlike the older additive
+// equipped-stats endpoint, vitals are *derived* from each layer's total
+// attributes — so a buff that raises STA correctly compounds into HP, etc.
+func (h *charactersHandler) derivedStats(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	char, ok, err := h.store.Get(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+	cfg := h.mgr.Get()
+	if cfg.EQPath == "" {
+		writeError(w, http.StatusBadRequest, "eq_path not configured")
+		return
+	}
+
+	var req derivedStatsRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req) // empty body → all-equipped only
+	}
+
+	// Shared inputs computed once.
+	var aa db.AABonuses
+	if trained, err := h.store.ListAAs(id); err == nil {
+		conv := make([]db.TrainedAA, 0, len(trained))
+		for _, t := range trained {
+			conv = append(conv, db.TrainedAA{AAID: t.AAID, Rank: t.Rank})
+		}
+		aa, _ = h.db.AAStatBonuses(conv)
+	}
+	spellHasteBase := 0
+	if mods, err := buffmod.Compute(cfg.EQPath, char.Name, h.db); err == nil && mods != nil {
+		spellHasteBase = buffmod.SpellHasteSummary(mods.Contributors)
+	}
+	defenseSkill, _ := h.db.DefenseSkillCap(char.Class+1, char.Level)
+	itemBlock, itemHaste := h.sumEquipment(cfg.EQPath, char.Name)
+
+	presetBuffs := h.resolveBuffs(req.PresetBuffIDs)
+	liveBuffs := h.resolveBuffs(req.LiveBuffIDs)
+
+	empty := statBlock{}
+	resp := derivedStatsResponse{
+		Character: char.Name,
+		Level:     char.Level,
+		Class:     char.Class,
+		Base:      h.deriveBlock(char, aa, 0, defenseSkill, empty, 0, nil),
+		Equipped:  h.deriveBlock(char, aa, spellHasteBase, defenseSkill, itemBlock, itemHaste, nil),
+		Buffed:    h.deriveBlock(char, aa, spellHasteBase, defenseSkill, itemBlock, itemHaste, presetBuffs),
+		Live:      h.deriveBlock(char, aa, spellHasteBase, defenseSkill, itemBlock, itemHaste, liveBuffs),
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// deriveBlock combines one display layer's inputs (base attributes + always-on
+// AA bonuses + optional equipment + optional buffs) and derives the vitals from
+// the resulting totals using the Quarm formulas. item is the raw worn-item
+// contribution (zero for the base layer); buffs is the active buff set (nil for
+// base/equipped).
+func (h *charactersHandler) deriveBlock(
+	char character.Character,
+	aa db.AABonuses,
+	spellHasteBase, defenseSkill int,
+	item statBlock, itemHaste int,
+	buffs []resolvedBuff,
+) statBlock {
+	level, class, race := char.Level, char.Class, char.Race
+
+	// Additive attribute contributions beyond base: AA grants + items + buffs.
+	addSTR := aa.STR + item.STR
+	addSTA := aa.STA + item.STA
+	addAGI := aa.AGI + item.AGI
+	addDEX := aa.DEX + item.DEX
+	addWIS := aa.WIS + item.WIS
+	addINT := aa.INT + item.INT
+	addCHA := aa.CHA + item.CHA
+
+	// Additive resists: AA + item + buffs (racial/class base added in eqstat).
+	addRes := eqstat.Resists{
+		MR: aa.MR + item.MR, CR: aa.CR + item.CR, FR: aa.FR + item.FR,
+		DR: aa.DR + item.DR, PR: aa.PR + item.PR,
+	}
+
+	itemHP := item.HP     // inside the AA HP-percent
+	buffHP := 0           // added after the HP-percent
+	flatMana := item.Mana // item + buff mana pool (linear)
+	itemAC := item.AC
+	spellAC := 0
+	attack := item.Attack + aa.Attack
+	regen := item.Regen + aa.HPRegen
+	manaRegen := item.ManaRegen + aa.ManaRegen
+	ft := item.FT
+	dmgShield := item.DmgShield
+	spellHaste := spellHasteBase
+
+	buffHasteV2 := 0 // highest non-overhaste buff haste
+	overhasteV3 := 0 // summed overhaste
+	for _, b := range buffs {
+		d := b.delta
+		addSTR += d.STR
+		addSTA += d.STA
+		addAGI += d.AGI
+		addDEX += d.DEX
+		addWIS += d.WIS
+		addINT += d.INT
+		addCHA += d.CHA
+		addRes.MR += d.MR
+		addRes.CR += d.CR
+		addRes.FR += d.FR
+		addRes.DR += d.DR
+		addRes.PR += d.PR
+		buffHP += d.HP
+		flatMana += d.Mana
+		spellAC += d.AC
+		attack += d.Attack
+		regen += d.Regen
+		manaRegen += d.ManaRegen
+		dmgShield += d.DmgShield
+		spellHaste += d.SpellHaste
+		if d.Haste > 0 {
+			if overhasteSpellIDs[b.id] {
+				overhasteV3 += d.Haste
+			} else if d.Haste > buffHasteV2 {
+				buffHasteV2 = d.Haste
+			}
+		}
+	}
+
+	// Total attributes = base + additive, each capped at the level's stat cap.
+	totSTR := eqstat.CapAttribute(char.BaseSTR+addSTR, level, 0)
+	totSTA := eqstat.CapAttribute(char.BaseSTA+addSTA, level, 0)
+	totAGI := eqstat.CapAttribute(char.BaseAGI+addAGI, level, 0)
+	totDEX := eqstat.CapAttribute(char.BaseDEX+addDEX, level, 0)
+	totWIS := eqstat.CapAttribute(char.BaseWIS+addWIS, level, 0)
+	totINT := eqstat.CapAttribute(char.BaseINT+addINT, level, 0)
+	totCHA := eqstat.CapAttribute(char.BaseCHA+addCHA, level, 0)
+
+	res := eqstat.Resistance(class, level, race, addRes, eqstat.Resists{})
+
+	if spellHaste > buffmod.SpellHasteCapPercent {
+		spellHaste = buffmod.SpellHasteCapPercent
+	}
+	haste := itemHaste + buffHasteV2
+	if cap := eqstat.MeleeHasteCap(level); haste > cap {
+		haste = cap
+	}
+	haste += overhasteV3
+
+	return statBlock{
+		HP:         eqstat.MaxHP(class, level, totSTA, itemHP, buffHP, 0, aa.HPPct),
+		Mana:       eqstat.MaxMana(class, level, totWIS, totINT, flatMana),
+		AC:         eqstat.DisplayedAC(class, level, race, itemAC, spellAC, totAGI, defenseSkill, 0),
+		STR:        totSTR,
+		STA:        totSTA,
+		AGI:        totAGI,
+		DEX:        totDEX,
+		WIS:        totWIS,
+		INT:        totINT,
+		CHA:        totCHA,
+		MR:         res.MR,
+		CR:         res.CR,
+		FR:         res.FR,
+		DR:         res.DR,
+		PR:         res.PR,
+		Attack:     attack,
+		Haste:      haste,
+		SpellHaste: spellHaste,
+		Regen:      regen,
+		ManaRegen:  manaRegen,
+		FT:         ft,
+		DmgShield:  dmgShield,
+	}
 }
 
 // isBeneficialSpell pulls spells_new.goodEffect (1 = beneficial). On any
