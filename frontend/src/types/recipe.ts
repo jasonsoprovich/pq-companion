@@ -20,6 +20,10 @@ export interface RecipeEntry {
   // True when the item is itself produced by at least one enabled recipe —
   // drives the ingredient drill-down affordance.
   craftable?: boolean
+  // True when this container row is a combine-station type (Forge, Oven,
+  // Enchanters Lexicon, …) rather than a specific inventory item. Such rows
+  // have no icon or item-detail page.
+  station?: boolean
 }
 
 export interface RecipeDetail extends RecipeSummary {

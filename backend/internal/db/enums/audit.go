@@ -47,6 +47,7 @@ type AuditFinding struct {
 func Defs() []AuditDef {
 	return []AuditDef{
 		TradeskillsAudit,
+		ContainerTypesAudit,
 		SpecialAbilitiesAudit,
 		ItemTypesAudit,
 		NPCClassesAudit,
@@ -97,7 +98,7 @@ func RunAudit(db *sql.DB) ([]AuditFinding, error) {
 // observed code paired with its current label and a few example rows.
 type SampleReport struct {
 	Name   string
-	Source string                  // upstream citation, e.g. "EQMacEmu/Server common/spdat.h"
+	Source string // upstream citation, e.g. "EQMacEmu/Server common/spdat.h"
 	Codes  []SampleReportCode
 }
 

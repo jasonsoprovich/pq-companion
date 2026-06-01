@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db/enums"
 )
 
 // RecipeSummary is a slim tradeskill recipe record for list/search views. The
@@ -33,6 +35,11 @@ type RecipeEntry struct {
 	Count       int    `json:"count"`
 	VendorPrice *int   `json:"vendor_price,omitempty"`
 	Craftable   bool   `json:"craftable,omitempty"`
+	// Station marks a container entry that is a combine-station type (a bagtype
+	// code such as Forge or Enchanters Lexicon) rather than a specific
+	// inventory item. ItemID holds the bagtype code, and there is no icon or
+	// item-detail page to link to. See enums.ContainerTypeName.
+	Station bool `json:"station,omitempty"`
 }
 
 // RecipeDetail is a full recipe: header metadata plus its entries grouped by
@@ -204,8 +211,11 @@ func (db *DB) GetRecipe(id int) (*RecipeDetail, error) {
 		switch {
 		case isCon != 0:
 			e.Role = "container"
+			// A container row with no items row is a bagtype / combine-station
+			// code, not an item — resolve it to its station name.
 			if e.ItemName == "" {
-				e.ItemName = "(combine container)"
+				e.ItemName = enums.ContainerTypeName(e.ItemID)
+				e.Station = true
 			}
 			d.Containers = append(d.Containers, e)
 		case successCount > 0:

@@ -20,6 +20,7 @@ func makeTestDB(t *testing.T) *sql.DB {
 
 	for _, stmt := range []string{
 		`CREATE TABLE tradeskill_recipe (id INTEGER PRIMARY KEY, tradeskill INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1)`,
+		`CREATE TABLE tradeskill_recipe_entries (id INTEGER PRIMARY KEY, recipe_id INTEGER NOT NULL, item_id INTEGER NOT NULL, iscontainer INTEGER NOT NULL DEFAULT 0)`,
 		`CREATE TABLE npc_types (id INTEGER PRIMARY KEY, special_abilities TEXT, class INTEGER NOT NULL DEFAULT 0, race INTEGER NOT NULL DEFAULT 1, bodytype INTEGER NOT NULL DEFAULT 1)`,
 		`CREATE TABLE items (id INTEGER PRIMARY KEY, itemtype INTEGER NOT NULL DEFAULT 0, slots INTEGER NOT NULL DEFAULT 0, classes INTEGER NOT NULL DEFAULT 0, races INTEGER NOT NULL DEFAULT 0, banedmgbody INTEGER NOT NULL DEFAULT 0, banedmgrace INTEGER NOT NULL DEFAULT 0)`,
 		`CREATE TABLE zone (id INTEGER PRIMARY KEY, expansion INTEGER NOT NULL DEFAULT 0)`,

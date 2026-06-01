@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Hammer } from 'lucide-react'
 import { getRecipe, getItemSources } from '../services/api'
 import { tradeskillLabel } from '../lib/enumsCache'
 import { priceLabel } from '../lib/itemHelpers'
@@ -15,10 +15,10 @@ import type { ItemTradeskillEntry } from '../types/item'
 const MAX_DRILL_DEPTH = 4
 
 // A recipe entry's item links to its item-detail page only when it's a real
-// inventory item. World-container codes (e.g. id 27) and unresolved rows are
-// rendered as plain text — navigating to them would 404.
+// inventory item. Combine-station rows (Forge, Lexicon, …) and unresolved rows
+// are rendered as plain text — navigating to them would 404.
 function isLinkableEntry(e: RecipeEntry): boolean {
-  return e.item_id > 0 && e.item_name !== '(combine container)' && !e.item_name.startsWith('Item #')
+  return !e.station && e.item_id > 0 && !e.item_name.startsWith('Item #')
 }
 
 interface EntryRowProps {
@@ -99,7 +99,17 @@ function EntryRow({ entry, depth, onNavigate }: EntryRowProps): React.ReactEleme
         ) : (
           <span className="w-[13px] shrink-0" />
         )}
-        <ItemIcon id={entry.icon} name={entry.item_name} size={22} />
+        {entry.station ? (
+          <span
+            className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded"
+            style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}
+            title="Combine station"
+          >
+            <Hammer size={13} />
+          </span>
+        ) : (
+          <ItemIcon id={entry.icon} name={entry.item_name} size={22} />
+        )}
         {linkable ? (
           <button
             onClick={goToItem}
@@ -110,7 +120,11 @@ function EntryRow({ entry, depth, onNavigate }: EntryRowProps): React.ReactEleme
             {entry.item_name}
           </button>
         ) : (
-          <span className="min-w-0 flex-1 truncate" style={{ color: 'var(--color-muted-foreground)' }}>
+          <span
+            className="min-w-0 flex-1 truncate"
+            style={{ color: 'var(--color-muted-foreground)' }}
+            title={entry.station ? 'Combine in any container of this type' : undefined}
+          >
             {entry.item_name}
           </span>
         )}

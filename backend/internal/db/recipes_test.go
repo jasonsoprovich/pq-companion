@@ -53,6 +53,24 @@ func TestGetRecipe_Mesmerization(t *testing.T) {
 	if len(r.Containers) == 0 {
 		t.Errorf("expected at least one container, got none")
 	}
+	// Container code 27 has no items row — it must resolve to the bagtype
+	// station name (Enchanters Lexicon) and be flagged as a station, not
+	// rendered as "(combine container)".
+	foundStation := false
+	for _, c := range r.Containers {
+		if c.ItemID == 27 {
+			foundStation = true
+			if !c.Station {
+				t.Errorf("container 27 should be a station")
+			}
+			if c.ItemName != "Enchanters Lexicon" {
+				t.Errorf("container 27 name = %q, want Enchanters Lexicon", c.ItemName)
+			}
+		}
+	}
+	if !foundStation {
+		t.Errorf("expected combine-station container (code 27) in recipe")
+	}
 }
 
 func TestGetRecipe_NotFound(t *testing.T) {
