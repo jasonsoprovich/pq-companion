@@ -231,6 +231,41 @@ func (db *DB) GetRecipe(id int) (*RecipeDetail, error) {
 	return &d, rows.Err()
 }
 
+// GetRecipeSummariesByIDs returns recipe summaries for the given ids. Disabled
+// or missing recipes are silently skipped. Result order is not guaranteed —
+// callers that need a specific order (e.g. favorites) should reorder by id.
+func (db *DB) GetRecipeSummariesByIDs(ids []int) ([]RecipeSummary, error) {
+	if len(ids) == 0 {
+		return []RecipeSummary{}, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	q := fmt.Sprintf(`
+		SELECT r.id, r.name, r.tradeskill, r.trivial,
+		       COALESCE(%s, 0) AS product_item_id,
+		       COALESCE(%s, 0) AS product_icon
+		FROM tradeskill_recipe r
+		WHERE r.enabled = 1 AND r.id IN (%s)`,
+		productSubquery("tre.item_id"), productSubquery("pi.icon"), placeholders)
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get recipe summaries: %w", err)
+	}
+	defer rows.Close()
+	out := []RecipeSummary{}
+	for rows.Next() {
+		var s RecipeSummary
+		if err := rows.Scan(&s.ID, &s.Name, &s.Tradeskill, &s.Trivial, &s.ProductItemID, &s.ProductIcon); err != nil {
+			return nil, fmt.Errorf("scan recipe summary: %w", err)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 // GetRecipeTradeskills returns the distinct tradeskill disciplines that have at
 // least one enabled recipe, with their recipe counts, ordered by id.
 func (db *DB) GetRecipeTradeskills() ([]RecipeTradeskillCount, error) {
