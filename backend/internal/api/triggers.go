@@ -517,6 +517,11 @@ func (h *triggerHandler) testOverlayPosition(w http.ResponseWriter, r *http.Requ
 
 type testOverlayEndRequest struct {
 	TestID string `json:"test_id"`
+	// Cancelled distinguishes a cancel (revert to the pre-session position)
+	// from a confirm (keep the dragged position). The backend doesn't act on
+	// it — it's relayed verbatim in the broadcast so the trigger editor can
+	// decide whether to revert, regardless of which window ended the session.
+	Cancelled bool `json:"cancelled,omitempty"`
 }
 
 func (h *triggerHandler) testOverlayEnd(w http.ResponseWriter, r *http.Request) {

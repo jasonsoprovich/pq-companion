@@ -1138,8 +1138,11 @@ export function postTriggerTestPosition(testId: string, position: { x: number; y
   return post<void>('/api/triggers/test-overlay/position', { test_id: testId, position })
 }
 
-export function endTriggerTestSession(testId: string): Promise<void> {
-  return post<void>('/api/triggers/test-overlay/end', { test_id: testId })
+// endTriggerTestSession ends a positioning session. `cancelled` is relayed to
+// the trigger editor so it can revert to the pre-session position on cancel
+// (Escape) versus keeping the dragged position on confirm (Done).
+export function endTriggerTestSession(testId: string, cancelled = false): Promise<void> {
+  return post<void>('/api/triggers/test-overlay/end', { test_id: testId, cancelled })
 }
 
 export interface ActiveTriggerTest {

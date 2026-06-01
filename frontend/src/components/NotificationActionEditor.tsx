@@ -13,7 +13,7 @@
  * Test buttons (file browse / play / position) are left as no-op slots in
  * this initial extraction and wired up in subsequent tasks.
  */
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Volume2, FolderOpen, Play, Square, Crosshair, Check, X as XIcon } from 'lucide-react'
 import { playSoundForTest, speakTextForTest, stopTestPlayback } from '../services/audio'
 import { fireTriggerTestOverlay, endTriggerTestSession } from '../services/api'
@@ -67,6 +67,13 @@ export function OverlayTextFields({
   // simultaneous editors don't clobber each other's position updates.
   const [testId] = useState(() => `test-${Math.random().toString(36).slice(2)}-${Date.now()}`)
   const [positioning, setPositioning] = useState(false)
+  // The position as it was when the session started. Drag updates are applied
+  // to the field live during a session, so cancel/Escape needs this to revert.
+  const startPosRef = useRef<{ x: number; y: number } | null>(null)
+  // Whether a positioning session was ever opened by this editor. Drives the
+  // unmount teardown independently of the `positioning` flag, so a desync can't
+  // strand the overlay card.
+  const everStartedRef = useRef(false)
 
   useWebSocket((msg) => {
     if (msg.type === WSEvent.TriggerTestPosition) {
@@ -76,41 +83,32 @@ export function OverlayTextFields({
       return
     }
     if (msg.type === WSEvent.TriggerTestSessionEnded) {
-      const data = msg.data as { test_id: string }
+      const data = msg.data as { test_id: string; cancelled?: boolean }
       if (data.test_id !== testId) return
+      // The session may have been ended from the overlay window (its Done
+      // button or Escape there). Sync our button state, and if it was a
+      // cancel, revert the field to the pre-session position.
+      if (data.cancelled) onPositionChange?.(startPosRef.current ?? null)
       setPositioning(false)
       return
     }
   })
 
-  // End any open positioning session if this editor unmounts.
+  // Always end the session when this editor unmounts (e.g. the trigger modal
+  // closes / saves mid-session). This runs unconditionally — not gated on the
+  // `positioning` flag — so even if that state desynced, the desktop-spanning
+  // overlay can never be left with an orphaned input-capturing card (the cause
+  // of the "app hung, nothing clickable" reports). The backend no-ops if the
+  // id doesn't match an active session.
   useEffect(() => {
     return () => {
-      if (positioning) void endTriggerTestSession(testId).catch(() => {})
+      if (everStartedRef.current) void endTriggerTestSession(testId).catch(() => {})
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [testId])
 
-  // endPositioning is the single teardown path: it dismisses the positioning
-  // UI and tells the backend to end the session, which broadcasts
-  // TriggerTestSessionEnded so the overlay window restores click-through. The
-  // drop position is already auto-saved on each drag-release, so this just
-  // confirms. Reachable from the editor's Done button AND Escape — crucial
-  // because the overlay's own Done button can render off-screen on
-  // multi-monitor setups, which would otherwise leave the input-capturing
-  // overlay stuck on top of the whole desktop.
-  function endPositioning() {
-    setPositioning(false)
-    void endTriggerTestSession(testId).catch(() => {})
-  }
-
-  useEscapeToClose(endPositioning, positioning)
-
-  function handleTogglePositioning() {
-    if (positioning) {
-      endPositioning()
-      return
-    }
+  function startPositioning() {
+    startPosRef.current = position ?? null
+    everStartedRef.current = true
     setPositioning(true)
     void window.electron?.overlay?.openTrigger?.()
     void fireTriggerTestOverlay({
@@ -125,6 +123,27 @@ export function OverlayTextFields({
       // doesn't get stuck in the "Done" state.
       setPositioning(false)
     })
+  }
+
+  // Confirm keeps the dragged position (already applied to the field live).
+  function confirmPositioning() {
+    setPositioning(false)
+    void endTriggerTestSession(testId, false).catch(() => {})
+  }
+
+  // Cancel reverts the field to the position captured when the session began.
+  function cancelPositioning() {
+    setPositioning(false)
+    onPositionChange?.(startPosRef.current ?? null)
+    void endTriggerTestSession(testId, true).catch(() => {})
+  }
+
+  // The editor's Done button confirms; Escape cancels and reverts.
+  useEscapeToClose(cancelPositioning, positioning)
+
+  function handlePositionButton() {
+    if (positioning) confirmPositioning()
+    else startPositioning()
   }
 
   function handleClearPosition() {
@@ -173,7 +192,7 @@ export function OverlayTextFields({
         </div>
         <button
           type="button"
-          onClick={handleTogglePositioning}
+          onClick={handlePositionButton}
           className="flex items-center gap-1 rounded px-2 py-1 text-[11px] ml-auto"
           style={{
             backgroundColor: positioning ? '#16a34a' : 'var(--color-primary)',

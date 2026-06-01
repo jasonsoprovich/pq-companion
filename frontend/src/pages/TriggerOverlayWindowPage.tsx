@@ -374,30 +374,35 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     [testAlert],
   )
 
-  const handleTestDone = useCallback(() => {
-    if (!testAlert) return
-    const id = testAlert.testId
-    // Clear locally first so click-through is restored immediately, even if
-    // the backend round-trip is slow or the editor has already closed.
-    setTestAlert(null)
-    // Hand focus back to the main window so it doesn't feel hung after the
-    // desktop-spanning overlay grabbed it during positioning.
-    void window.electron?.overlay?.triggerPositioningEnded?.()
-    void endTriggerTestSession(id).catch(() => {})
-  }, [testAlert])
+  const endSession = useCallback((cancelled: boolean) => {
+    setTestAlert((prev) => {
+      if (!prev) return prev
+      // Hand focus back to the main window so it doesn't feel hung after the
+      // desktop-spanning overlay grabbed it during positioning, and tell the
+      // backend to end the session (cancelled vs confirmed decides whether the
+      // editor reverts the position). Clearing the card locally also restores
+      // click-through immediately via the testAlert effect.
+      void window.electron?.overlay?.triggerPositioningEnded?.()
+      void endTriggerTestSession(prev.testId, cancelled).catch(() => {})
+      return null
+    })
+  }, [])
 
-  // Escape ends the positioning session from the overlay side too. Once the
-  // user drags the test card, keyboard focus is on this overlay window rather
-  // than the editor, so the editor's own Escape handler can't see the keypress
-  // — this guarantees Escape always works as a bail-out.
+  // The card's Done button confirms (keeps the dragged position).
+  const handleTestDone = useCallback(() => endSession(false), [endSession])
+
+  // Escape ends the positioning session from the overlay side too, as a CANCEL
+  // (revert). Once the user drags the test card, keyboard focus is on this
+  // overlay window rather than the editor, so the editor's own Escape handler
+  // can't see the keypress — this guarantees Escape always works as a bail-out.
   useEffect(() => {
     if (!testAlert) return
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') handleTestDone()
+      if (e.key === 'Escape') endSession(true)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [testAlert, handleTestDone])
+  }, [testAlert, endSession])
 
   // The trigger overlay is fully invisible and click-through. The only thing
   // it ever shows is real-fire alerts (text-only, pointer-events:none) and,
