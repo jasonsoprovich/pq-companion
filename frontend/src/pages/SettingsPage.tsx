@@ -3,6 +3,8 @@ import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, Re
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config, DPSClassColors, NPCOverlaySections } from '../types/config'
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
+import { OVERLAY_DEFS, resolveLockedMode } from '../lib/overlays'
+import type { OverlayName, LockedMode } from '../lib/overlays'
 import type { LogFileInfo } from '../types/logEvent'
 import type { ZealInstallStatus, ZealPipeStatus } from '../types/zeal'
 import type { QuarmClientStatus, QuarmFileStatus } from '../types/quarm'
@@ -1289,6 +1291,22 @@ export default function SettingsPage(): React.ReactElement {
         </section>
         )}
 
+        {/* ── Overlay lock behaviour ─────────────────────────────────────── */}
+        {tab === 'overlays' && (
+        <OverlayLockModeCard
+          modes={config.preferences.overlay_locked_modes ?? {}}
+          onChange={(next) =>
+            setConfig({
+              ...config,
+              preferences: {
+                ...config.preferences,
+                overlay_locked_modes: next,
+              },
+            })
+          }
+        />
+        )}
+
         {/* ── NPC Overlay sections ───────────────────────────────────────── */}
         {tab === 'overlays' && (
         <NPCOverlaySectionsCard
@@ -2120,6 +2138,150 @@ function DPSClassColorsSection({
         })}
       </div>
     </section>
+  )
+}
+
+// OverlayLockModeCard lets the user pick, per popout overlay, how it behaves
+// while locked. The two modes trade off "click reaches the game" against
+// "scroll / clear rows from the overlay" — see lib/overlays.ts. Rows are
+// generated from OVERLAY_DEFS, so a newly registered overlay shows up here
+// automatically with both options.
+const LOCK_MODE_OPTIONS: ReadonlyArray<{
+  value: LockedMode
+  label: string
+  hint: string
+}> = [
+  {
+    value: 'interactive',
+    label: 'Interactive on hover',
+    hint: 'Hover the overlay to scroll and clear individual rows; move away and clicks pass through to the game.',
+  },
+  {
+    value: 'clickthrough',
+    label: 'Click-through',
+    hint: 'Only the title-bar buttons are clickable; scrolling and clicks everywhere else pass through to the game.',
+  },
+]
+
+function OverlayLockModeCard({
+  modes,
+  onChange,
+}: {
+  modes: Partial<Record<OverlayName, LockedMode>>
+  onChange: (next: Partial<Record<OverlayName, LockedMode>>) => void
+}): React.ReactElement {
+  const setAll = (mode: LockedMode): void => {
+    const next: Partial<Record<OverlayName, LockedMode>> = {}
+    for (const def of OVERLAY_DEFS) next[def.name] = mode
+    onChange(next)
+  }
+
+  return (
+    <section
+      className="mt-4 rounded-lg p-4"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+    >
+      <h2
+        className="mb-1 text-sm font-semibold uppercase tracking-wide"
+        style={{ color: 'var(--color-muted)' }}
+      >
+        Overlay Lock Behaviour
+      </h2>
+      <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+        When an overlay is locked it can&rsquo;t be moved or resized. Choose how
+        each one reacts to the mouse while locked:
+      </p>
+
+      {/* Mode legend */}
+      <div className="mb-3 flex flex-col gap-1">
+        {LOCK_MODE_OPTIONS.map((opt) => (
+          <p key={opt.value} className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            <span className="font-semibold" style={{ color: 'var(--color-foreground)' }}>
+              {opt.label}:
+            </span>{' '}
+            {opt.hint}
+          </p>
+        ))}
+      </div>
+
+      {/* Set-all shortcut */}
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          Set all to
+        </span>
+        {LOCK_MODE_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => setAll(opt.value)}
+            className="rounded px-2 py-1 text-xs"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-foreground)',
+              cursor: 'pointer',
+            }}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Per-overlay rows */}
+      <div className="flex flex-col gap-2">
+        {OVERLAY_DEFS.map((def) => {
+          const mode = resolveLockedMode(modes, def.name)
+          return (
+            <div
+              key={def.name}
+              className="flex items-center justify-between rounded p-2"
+              style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+            >
+              <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                {def.label}
+              </span>
+              <LockModeToggle
+                value={mode}
+                onChange={(next) => onChange({ ...modes, [def.name]: next })}
+              />
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+// LockModeToggle is a two-segment control choosing between the locked modes.
+function LockModeToggle({
+  value,
+  onChange,
+}: {
+  value: LockedMode
+  onChange: (next: LockedMode) => void
+}): React.ReactElement {
+  return (
+    <div
+      className="inline-flex overflow-hidden rounded"
+      style={{ border: '1px solid var(--color-border)' }}
+    >
+      {LOCK_MODE_OPTIONS.map((opt) => {
+        const active = value === opt.value
+        return (
+          <button
+            key={opt.value}
+            onClick={() => onChange(opt.value)}
+            className="px-2 py-1 text-xs"
+            style={{
+              backgroundColor: active ? 'var(--color-primary)' : 'transparent',
+              color: active ? '#fff' : 'var(--color-muted-foreground)',
+              cursor: 'pointer',
+            }}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
