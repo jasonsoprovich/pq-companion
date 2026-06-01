@@ -14,10 +14,11 @@
  * this initial extraction and wired up in subsequent tasks.
  */
 import React, { useEffect, useState } from 'react'
-import { Volume2, FolderOpen, Play, Square, Crosshair, X as XIcon } from 'lucide-react'
+import { Volume2, FolderOpen, Play, Square, Crosshair, Check, X as XIcon } from 'lucide-react'
 import { playSoundForTest, speakTextForTest, stopTestPlayback } from '../services/audio'
 import { fireTriggerTestOverlay, endTriggerTestSession } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { WSEvent } from '../lib/wsEvents'
 
 export type NotificationActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
@@ -90,12 +91,24 @@ export function OverlayTextFields({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // endPositioning is the single teardown path: it dismisses the positioning
+  // UI and tells the backend to end the session, which broadcasts
+  // TriggerTestSessionEnded so the overlay window restores click-through. The
+  // drop position is already auto-saved on each drag-release, so this just
+  // confirms. Reachable from the editor's Done button AND Escape — crucial
+  // because the overlay's own Done button can render off-screen on
+  // multi-monitor setups, which would otherwise leave the input-capturing
+  // overlay stuck on top of the whole desktop.
+  function endPositioning() {
+    setPositioning(false)
+    void endTriggerTestSession(testId).catch(() => {})
+  }
+
+  useEscapeToClose(endPositioning, positioning)
+
   function handleTogglePositioning() {
     if (positioning) {
-      // Second click confirms / saves: drop position is already auto-saved on
-      // each drag-release; this just dismisses the positioning UI.
-      setPositioning(false)
-      void endTriggerTestSession(testId).catch(() => {})
+      endPositioning()
       return
     }
     setPositioning(true)
@@ -161,22 +174,21 @@ export function OverlayTextFields({
         <button
           type="button"
           onClick={handleTogglePositioning}
-          disabled={positioning}
           className="flex items-center gap-1 rounded px-2 py-1 text-[11px] ml-auto"
           style={{
-            backgroundColor: positioning ? 'var(--color-surface-2)' : 'var(--color-primary)',
-            color: positioning ? 'var(--color-muted-foreground)' : 'var(--color-background)',
-            border: positioning ? '1px dashed var(--color-border)' : '1px solid transparent',
-            cursor: positioning ? 'default' : 'pointer',
+            backgroundColor: positioning ? '#16a34a' : 'var(--color-primary)',
+            color: positioning ? '#fff' : 'var(--color-background)',
+            border: '1px solid transparent',
+            cursor: 'pointer',
           }}
           title={
             positioning
-              ? 'Drag the on-screen card to position, then click Done on the card to save'
+              ? 'Drag the on-screen card to position, then click here (or press Esc) to save and finish'
               : 'Pop up the alert in the overlay so you can drag it into position'
           }
         >
-          <Crosshair size={11} />
-          {positioning ? 'Positioning on overlay…' : 'Set Trigger Position'}
+          {positioning ? <Check size={11} /> : <Crosshair size={11} />}
+          {positioning ? 'Done — Save Position' : 'Set Trigger Position'}
         </button>
       </div>
       {position && (

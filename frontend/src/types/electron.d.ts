@@ -50,6 +50,7 @@ export interface ElectronAPI {
     openAllPopouts: () => Promise<void>
     closeAllPopouts: () => Promise<void>
     setIgnoreMouseEvents: (ignore: boolean) => Promise<void>
+    triggerPositioningEnded: () => Promise<void>
     getLocked: () => Promise<boolean>
     setLocked: (locked: boolean) => Promise<void>
   }

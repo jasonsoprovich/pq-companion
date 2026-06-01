@@ -1399,6 +1399,16 @@ ipcMain.handle('overlay:set-ignore-mouse-events', (event, ignore: boolean) => {
   win?.setIgnoreMouseEvents(ignore, { forward: true })
 })
 
+// Called when a trigger positioning session ends. The desktop-spanning trigger
+// overlay takes focus while positioning (the user clicks/drags the test card);
+// without handing focus back, the main window stays unfocused afterward so
+// keyboard shortcuts (refresh) and window interaction feel dead — the "partial
+// hang" users reported. Restoring focus here covers every end path (overlay
+// Done, editor Done, Escape, editor unmount).
+ipcMain.handle('overlay:trigger:positioning-ended', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus()
+})
+
 // ── IPC handlers — overlay lock state ────────────────────────────────────────
 
 ipcMain.handle('overlay:lock:get', (event) => {

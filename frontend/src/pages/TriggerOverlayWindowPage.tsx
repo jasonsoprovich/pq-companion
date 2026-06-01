@@ -222,16 +222,27 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
   // would default to the seam between monitors. Falls back to window center.
   const defaultCenter = useRef<{ x: number; y: number } | null>(null)
 
-  useEffect(() => {
-    void window.electron?.screen?.triggerDefaultCenter()
-      .then((c) => { defaultCenter.current = c })
-      .catch(() => {})
+  // Clamp a position into the current overlay viewport (the whole virtual
+  // desktop) so a position saved on a previous monitor layout — e.g. on a
+  // display that's since been unplugged — can't render the card off-screen.
+  // Leaves a margin so the card body and its Done button stay reachable.
+  const clampToViewport = useCallback((p: { x: number; y: number }): { x: number; y: number } => {
+    const maxX = Math.max(0, window.innerWidth - 120)
+    const maxY = Math.max(0, window.innerHeight - 60)
+    return {
+      x: Math.min(Math.max(0, p.x), maxX),
+      y: Math.min(Math.max(0, p.y), maxY),
+    }
   }, [])
 
   const makeDefaultPos = useCallback((): { x: number; y: number } => {
-    const cx = defaultCenter.current?.x ?? window.innerWidth / 2
-    const cy = defaultCenter.current?.y ?? window.innerHeight / 2
-    return { x: Math.max(0, Math.round(cx - 100)), y: Math.max(0, Math.round(cy - 40)) }
+    const c = defaultCenter.current
+    if (c) return { x: Math.max(0, Math.round(c.x - 100)), y: Math.max(0, Math.round(c.y - 40)) }
+    // Before the primary-center IPC resolves, fall back to the top-left of the
+    // virtual desktop — always on a real monitor. The window *center* maps to
+    // the seam between monitors on a multi-display setup, where the card would
+    // appear to vanish entirely.
+    return { x: 80, y: 80 }
   }, [])
 
   // Garbage-collect expired alerts every 250 ms. Test alerts are sticky and
@@ -271,24 +282,37 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
   // was started before this overlay window finished loading still shows up.
   // Otherwise the editor's initial trigger:test broadcast is lost to the
   // window-startup race and the user has to click Set Position twice.
+  //
+  // The primary-monitor center is fetched FIRST so that if we have to fall
+  // back to a default position, it lands on the primary display rather than
+  // at the virtual-desktop seam.
   useEffect(() => {
     let cancelled = false
-    void getActiveTriggerTest()
-      .then((active) => {
+    async function init() {
+      try {
+        const c = await window.electron?.screen?.triggerDefaultCenter()
+        if (!cancelled && c) defaultCenter.current = c
+      } catch {
+        /* fall back to makeDefaultPos's top-left default */
+      }
+      try {
+        const active = await getActiveTriggerTest()
         if (cancelled || !active) return
         const fontSize = active.font_size && active.font_size > 0 ? active.font_size : 20
-        const defaultPos = makeDefaultPos()
         setTestAlert((prev) => prev ?? {
           testId: active.test_id,
           text: active.text || '',
           color: active.color || '#ffffff',
           fontSize,
-          position: active.position ?? defaultPos,
+          position: active.position ? clampToViewport(active.position) : makeDefaultPos(),
         })
-      })
-      .catch(() => {})
+      } catch {
+        /* no active session */
+      }
+    }
+    void init()
     return () => { cancelled = true }
-  }, [makeDefaultPos])
+  }, [makeDefaultPos, clampToViewport])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === WSEvent.TriggerFired) {
@@ -312,22 +336,29 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     if (msg.type === WSEvent.TriggerTest) {
       const data = msg.data as TriggerTestPayload
       const fontSize = data.font_size && data.font_size > 0 ? data.font_size : 20
-      const defaultPos = makeDefaultPos()
       setTestAlert({
         testId: data.test_id,
         text: data.text || '',
         color: data.color || '#ffffff',
         fontSize,
-        position: data.position ?? defaultPos,
+        position: data.position ? clampToViewport(data.position) : makeDefaultPos(),
       })
       return
     }
     if (msg.type === WSEvent.TriggerTestSessionEnded) {
       const data = msg.data as { test_id: string }
-      setTestAlert((prev) => (prev && prev.testId === data.test_id ? null : prev))
+      setTestAlert((prev) => {
+        if (prev && prev.testId === data.test_id) {
+          // Session ended from the editor (Done / Escape / unmount) — hand
+          // focus back to the main window so it doesn't feel hung.
+          void window.electron?.overlay?.triggerPositioningEnded?.()
+          return null
+        }
+        return prev
+      })
       return
     }
-  }, [makeDefaultPos])
+  }, [makeDefaultPos, clampToViewport])
 
   useWebSocket(handleMessage)
 
@@ -349,8 +380,24 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     // Clear locally first so click-through is restored immediately, even if
     // the backend round-trip is slow or the editor has already closed.
     setTestAlert(null)
+    // Hand focus back to the main window so it doesn't feel hung after the
+    // desktop-spanning overlay grabbed it during positioning.
+    void window.electron?.overlay?.triggerPositioningEnded?.()
     void endTriggerTestSession(id).catch(() => {})
   }, [testAlert])
+
+  // Escape ends the positioning session from the overlay side too. Once the
+  // user drags the test card, keyboard focus is on this overlay window rather
+  // than the editor, so the editor's own Escape handler can't see the keypress
+  // — this guarantees Escape always works as a bail-out.
+  useEffect(() => {
+    if (!testAlert) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') handleTestDone()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [testAlert, handleTestDone])
 
   // The trigger overlay is fully invisible and click-through. The only thing
   // it ever shows is real-fire alerts (text-only, pointer-events:none) and,

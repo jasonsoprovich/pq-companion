@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('electron', {
     closeAllPopouts: (): Promise<void> => ipcRenderer.invoke('overlay:popouts:close-all'),
     setIgnoreMouseEvents: (ignore: boolean): Promise<void> =>
       ipcRenderer.invoke('overlay:set-ignore-mouse-events', ignore),
+    triggerPositioningEnded: (): Promise<void> =>
+      ipcRenderer.invoke('overlay:trigger:positioning-ended'),
     getLocked: (): Promise<boolean> => ipcRenderer.invoke('overlay:lock:get'),
     setLocked: (locked: boolean): Promise<void> =>
       ipcRenderer.invoke('overlay:lock:set', locked),
