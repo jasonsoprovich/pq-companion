@@ -261,6 +261,41 @@ These are inherent to log-file parsing and affect multiple features:
 
 ---
 
+## 8. Tradeskills / recipes
+
+### 8.1 Component cost coverage is partial
+
+- **Limitation:** The recipe view shows a component's cost only when that
+  component is sold by at least one merchant, and even then it's the item's
+  flat base price — not what a vendor actually charges. Most tradeskill
+  components (drops, sub-combines, quest pieces) are not vendor-sold, so they
+  show no price, and there is no whole-recipe cost rollup.
+- **Root cause:** `quarm.db` stores a static `items.price` and a
+  `merchantlist` membership, but final merchant pricing is computed live from
+  Charisma, faction, and the merchant's markup — none of which exist in the
+  static DB. Items with no `merchantlist` row have no price reference at all.
+- **Sources checked:** `quarm.db` (`items.price`, `merchantlist`), Log (no
+  pricing), Zeal (no merchant snapshot today).
+- **Could a future data source fix this?** **Partially.** A future Zeal field
+  exposing the live merchant window (item → actual buy price) would give real,
+  CHA/faction-adjusted costs, but only for merchants the player has open.
+
+### 8.2 Recipes don't model success rate, skill-ups, or yield variance
+
+- **Limitation:** The recipe view shows the trivial and the
+  container/component/product list, but not the chance of success at a given
+  skill, expected skill-ups, or any randomized/bonus yield.
+- **Root cause:** `tradeskill_recipe` only stores `trivial`, `skillneeded`,
+  and a `nofail` flag. The success curve and skill-up odds are server-side
+  formulas in the EQMacEmu fork, not data in the dump.
+- **Sources checked:** `quarm.db` (`tradeskill_recipe` / `_entries`), Log
+  (combine results only, post-hoc), Zeal (no tradeskill state).
+- **Could a future data source fix this?** **No** for the formula itself
+  (it's server code); a documented constant set could be hardcoded if Quarm
+  publishes it.
+
+---
+
 ## Template for new entries
 
 ```
