@@ -235,6 +235,17 @@ type Preferences struct {
 	// floating popout overlay window, so users can run a denser surface
 	// in one place and a sparser one in the other.
 	NPCOverlayPopoutSections NPCOverlaySections `yaml:"npc_overlay_popout_sections" json:"npc_overlay_popout_sections"`
+
+	// OverlayLockedModes maps each popout overlay (by its canonical name:
+	// "dps", "hps", "buffTimer", "detrimTimer", "npc", "rollTracker",
+	// "respawnTimer") to how it behaves while locked:
+	//   "interactive"  — hover the overlay to scroll / clear individual rows;
+	//                     move off and clicks pass through to the game (default)
+	//   "clickthrough" — only the title-bar buttons are clickable; scrolling
+	//                     and clicks everywhere else pass through to the game
+	// Missing keys default to "interactive" (the pre-existing behaviour), so
+	// the map can be nil/omitted for upgrading users with no migration.
+	OverlayLockedModes map[string]string `yaml:"overlay_locked_modes,omitempty" json:"overlay_locked_modes,omitempty"`
 }
 
 // NPCOverlaySections toggles individual NPC overlay sections on/off. All
