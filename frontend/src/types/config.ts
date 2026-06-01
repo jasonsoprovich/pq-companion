@@ -1,3 +1,5 @@
+import type { OverlayName, LockedMode } from '../lib/overlays'
+
 export interface NPCOverlaySections {
   identity: boolean
   combat: boolean
@@ -24,6 +26,9 @@ export interface Preferences {
   developer_mode: boolean
   npc_overlay_dashboard_sections: NPCOverlaySections
   npc_overlay_popout_sections: NPCOverlaySections
+  // Per-overlay locked behaviour, keyed by canonical overlay name. Missing
+  // keys default to "interactive". See lib/overlays.ts.
+  overlay_locked_modes?: Partial<Record<OverlayName, LockedMode>>
 }
 
 export interface BackupSettings {

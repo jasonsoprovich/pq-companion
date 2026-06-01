@@ -172,7 +172,8 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
 
 export default function DetrimTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
+  const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
+    useOverlayLock('detrimTimer')
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<TimerState | null>(null)
   const activePlayer = useActivePlayerName()
@@ -196,8 +197,7 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
 
   return (
     <div
-      onMouseEnter={enableInteraction}
-      onMouseLeave={enableClickThrough}
+      {...rootInteractionProps}
       style={{
         width: '100vw',
         height: '100vh',
@@ -213,6 +213,7 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={locked ? 'no-drag' : 'drag-region'}
         style={{

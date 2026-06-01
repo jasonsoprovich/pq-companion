@@ -473,7 +473,8 @@ function NPCContent({
 
 export default function NPCOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
+  const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
+    useOverlayLock('npc')
   const onDragMouseDown = useWindowDrag()
   const [target, setTarget] = useState<TargetState | null>(null)
   const [view, setView] = useState<View>('stats')
@@ -495,8 +496,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
 
   return (
     <div
-      onMouseEnter={enableInteraction}
-      onMouseLeave={enableClickThrough}
+      {...rootInteractionProps}
       style={{
         width: '100vw',
         height: '100vh',
@@ -512,6 +512,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
     >
       {/* Drag region header */}
       <div
+        {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={locked ? 'no-drag' : 'drag-region'}
         style={{

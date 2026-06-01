@@ -161,7 +161,8 @@ function SessionRow({
 
 export default function RollTrackerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
+  const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
+    useOverlayLock('rollTracker')
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<RollsState>({
     sessions: [],
@@ -211,8 +212,7 @@ export default function RollTrackerWindowPage(): React.ReactElement {
 
   return (
     <div
-      onMouseEnter={enableInteraction}
-      onMouseLeave={enableClickThrough}
+      {...rootInteractionProps}
       style={{
         width: '100vw',
         height: '100vh',
@@ -227,6 +227,7 @@ export default function RollTrackerWindowPage(): React.ReactElement {
       }}
     >
       <div
+        {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={locked ? 'no-drag' : 'drag-region'}
         style={{

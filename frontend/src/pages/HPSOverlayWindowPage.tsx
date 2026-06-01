@@ -134,7 +134,8 @@ function HealTable({ fight, showAll }: { fight: FightState; showAll: boolean }):
 
 export default function HPSOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
+  const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
+    useOverlayLock('hps')
   const onDragMouseDown = useWindowDrag()
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
@@ -155,8 +156,7 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
 
   return (
     <div
-      onMouseEnter={enableInteraction}
-      onMouseLeave={enableClickThrough}
+      {...rootInteractionProps}
       style={{
         width: '100vw',
         height: '100vh',
@@ -172,6 +172,7 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={locked ? 'no-drag' : 'drag-region'}
         style={{
@@ -196,7 +197,8 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
         </div>
 
         {/* Controls — no-drag zone. Hover handling lives on the header strip
-            (parent), so the controls inherit interactive mode while hovered. */}
+            and/or the root depending on locked mode, so the controls inherit
+            interactive mode while hovered. */}
         <div
           className="no-drag"
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}

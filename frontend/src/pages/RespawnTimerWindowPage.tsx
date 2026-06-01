@@ -16,7 +16,8 @@ import type { RespawnState } from '../types/respawn'
 
 export default function RespawnTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const { locked, toggleLocked, enableInteraction, enableClickThrough } = useOverlayLock()
+  const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
+    useOverlayLock('respawnTimer')
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<RespawnState | null>(null)
 
@@ -37,8 +38,7 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
 
   return (
     <div
-      onMouseEnter={enableInteraction}
-      onMouseLeave={enableClickThrough}
+      {...rootInteractionProps}
       style={{
         width: '100vw',
         height: '100vh',
@@ -54,6 +54,7 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={locked ? 'no-drag' : 'drag-region'}
         style={{
