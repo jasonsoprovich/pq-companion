@@ -289,22 +289,20 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     }
   }, [])
 
-  // Click-through is toggled wholesale by whether a positioning session is
-  // active. Earlier versions tried a per-region (mouseenter/leave) toggle so
-  // the underlying app/game stayed clickable while positioning, but Electron's
-  // forwarded mousemove signal was unreliable on Windows for this screen-
-  // spanning transparent window — the first pointerdown never reached the
-  // card, so dragging silently failed. Instead, while testAlert is set the
-  // whole overlay accepts input (so the card is always draggable) and the
-  // card itself carries a Done button (since the editor that opened the
-  // session is behind this always-on-top window).
+  // Drive the overlay window's visibility + input mode from what it currently
+  // needs to show:
+  //   - positioning session active → 'interactive' (visible, captures the mouse
+  //     so the card is draggable; the card carries Done/Cancel since the editor
+  //     is behind this always-on-top window)
+  //   - live alert(s) only → 'passthrough' (visible but click-through, text-only)
+  //   - nothing → 'hidden' (the window is hidden entirely)
+  // Hiding when idle is what guarantees the desktop-spanning overlay can never
+  // capture input and lock the app out — click-through alone (setIgnoreMouse-
+  // Events) proved unreliable on some multi-monitor Windows setups.
   useEffect(() => {
-    if (testAlert) {
-      window.electron?.overlay?.setIgnoreMouseEvents(false)
-    } else {
-      window.electron?.overlay?.setIgnoreMouseEvents(true)
-    }
-  }, [testAlert])
+    const mode = testAlert ? 'interactive' : alerts.length > 0 ? 'passthrough' : 'hidden'
+    void window.electron?.overlay?.setTriggerMode?.(mode)
+  }, [testAlert, alerts.length])
 
   // Hydrate from the backend on first mount so a positioning session that
   // was started before this overlay window finished loading still shows up.
@@ -377,10 +375,9 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
       const data = msg.data as { test_id: string }
       const cur = testAlertRef.current
       if (cur && cur.testId === data.test_id) {
-        // Session ended from the editor (Done / Escape / unmount). Clear the
-        // card and force click-through + focus restore via the main process.
+        // Session ended from the editor (Done / Escape / unmount). Clearing the
+        // card lets the mode effect hide the overlay and restore input/focus.
         setTestAlert(null)
-        void window.electron?.overlay?.triggerPositioningEnded?.()
       }
       return
     }
@@ -403,12 +400,11 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
   const endSession = useCallback((cancelled: boolean) => {
     const cur = testAlertRef.current
     if (!cur) return
-    // Clear the card locally, then force click-through + focus restore via the
-    // main process (authoritative — doesn't rely on the testAlert effect), and
-    // tell the backend to end the session. `cancelled` decides whether the
+    // Clear the card locally — the mode effect then hides the overlay (or drops
+    // it to passthrough if a live alert is up), which restores input and focus.
+    // Also tell the backend to end the session; `cancelled` decides whether the
     // editor reverts the position vs keeps the dragged one.
     setTestAlert(null)
-    void window.electron?.overlay?.triggerPositioningEnded?.()
     void endTriggerTestSession(cur.testId, cancelled).catch(() => {})
   }, [])
 

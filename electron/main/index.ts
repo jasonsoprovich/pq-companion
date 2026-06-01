@@ -994,9 +994,12 @@ function createTriggerOverlay(): void {
     },
   })
 
-  triggerOverlayWindow.once('ready-to-show', () => {
-    triggerOverlayWindow?.show()
-  })
+  // Do NOT auto-show on ready-to-show. The trigger overlay is hidden whenever
+  // it's idle (no positioning session, no live alert) and only shown on demand
+  // by the renderer via overlay:trigger:set-mode. A hidden window cannot
+  // capture mouse input, which is the only fully reliable way to guarantee the
+  // desktop-spanning overlay never locks the app out — setIgnoreMouseEvents
+  // alone proved unreliable on some multi-monitor Windows setups.
 
   triggerOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   triggerOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
@@ -1310,6 +1313,32 @@ ipcMain.handle('overlay:trigger:open', () => {
   createTriggerOverlay()
 })
 
+// Drives the trigger overlay's visibility + input behaviour from the renderer,
+// which knows whether a positioning session or a live alert is active:
+//   'interactive' — positioning: visible and capturing mouse (card is draggable)
+//   'passthrough' — live alert only: visible but click-through (text overlay)
+//   'hidden'      — idle: hidden entirely so it can never capture input
+// Hiding when idle is the authoritative lockout fix; click-through alone was
+// unreliable on some setups.
+ipcMain.handle('overlay:trigger:set-mode', (_event, mode: 'interactive' | 'passthrough' | 'hidden') => {
+  const win = triggerOverlayWindow
+  if (!win || win.isDestroyed()) return
+  if (mode === 'interactive') {
+    win.setIgnoreMouseEvents(false)
+    if (!win.isVisible()) win.showInactive()
+    return
+  }
+  if (mode === 'passthrough') {
+    win.setIgnoreMouseEvents(true, { forward: true })
+    if (!win.isVisible()) win.showInactive()
+    return
+  }
+  // hidden
+  win.setIgnoreMouseEvents(true, { forward: true })
+  if (win.isVisible()) win.hide()
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus()
+})
+
 ipcMain.handle('overlay:trigger:close', () => {
   if (triggerOverlayWindow && !triggerOverlayWindow.isDestroyed()) {
     triggerOverlayWindow.close()
@@ -1397,25 +1426,6 @@ ipcMain.handle('overlay:popouts:close-all', () => {
 ipcMain.handle('overlay:set-ignore-mouse-events', (event, ignore: boolean) => {
   const win = BrowserWindow.fromWebContents(event.sender)
   win?.setIgnoreMouseEvents(ignore, { forward: true })
-})
-
-// Called when a trigger positioning session ends. While positioning, the
-// desktop-spanning trigger overlay captures all mouse input (so the test card
-// is draggable) and takes focus — which means it sits on top of the entire app
-// and the editor's own controls are unreachable. If the overlay isn't returned
-// to click-through the instant the session ends, every click lands on the
-// invisible overlay instead of the app, which reads as a total freeze/crash.
-//
-// This handler is the AUTHORITATIVE restore: it forces the overlay back to
-// click-through from the main process rather than relying on the overlay
-// renderer's own effect (which the bug reports show can fail to take hold), and
-// hands focus back to the main window. It's invoked from every end path —
-// overlay Done/Cancel/Escape, editor Done/Escape, and editor unmount.
-ipcMain.handle('overlay:trigger:positioning-ended', () => {
-  if (triggerOverlayWindow && !triggerOverlayWindow.isDestroyed()) {
-    triggerOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
-  }
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus()
 })
 
 // ── IPC handlers — overlay lock state ────────────────────────────────────────

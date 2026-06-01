@@ -84,11 +84,14 @@ export function OverlayTextFields({
     }
     if (msg.type === WSEvent.TriggerTestSessionEnded) {
       const data = msg.data as { test_id: string; cancelled?: boolean }
-      if (data.test_id !== testId) return
-      // The session may have been ended from the overlay window (its Done
-      // button or Escape there). Sync our button state, and if it was a
-      // cancel, revert the field to the pre-session position.
-      if (data.cancelled) onPositionChange?.(startPosRef.current ?? null)
+      // The session may have been ended from the overlay window (its Done /
+      // Cancel button or Escape there). Reset our button state on any
+      // session-ended while we're positioning — there's only ever one
+      // positioner at a time, so we don't need an exact id match to clear the
+      // stuck "Done" label. Revert the position only on an id match + cancel.
+      if (data.test_id === testId && data.cancelled) {
+        onPositionChange?.(startPosRef.current ?? null)
+      }
       setPositioning(false)
       return
     }
@@ -102,7 +105,12 @@ export function OverlayTextFields({
   // id doesn't match an active session.
   useEffect(() => {
     return () => {
-      if (everStartedRef.current) void endTriggerTestSession(testId).catch(() => {})
+      if (everStartedRef.current) {
+        // Force the overlay hidden from the main process so it can never be
+        // left capturing input if this editor goes away mid-session.
+        void window.electron?.overlay?.setTriggerMode?.('hidden')
+        void endTriggerTestSession(testId).catch(() => {})
+      }
     }
   }, [testId])
 
@@ -128,10 +136,9 @@ export function OverlayTextFields({
   // Confirm keeps the dragged position (already applied to the field live).
   function confirmPositioning() {
     setPositioning(false)
-    // Force the overlay back to click-through + refocus the main window via the
-    // main process, so input is restored even if the overlay renderer is slow
-    // to process the session-ended broadcast.
-    void window.electron?.overlay?.triggerPositioningEnded?.()
+    // Force the overlay hidden via the main process so input is restored even
+    // if the overlay renderer is slow to process the session-ended broadcast.
+    void window.electron?.overlay?.setTriggerMode?.('hidden')
     void endTriggerTestSession(testId, false).catch(() => {})
   }
 
@@ -139,7 +146,7 @@ export function OverlayTextFields({
   function cancelPositioning() {
     setPositioning(false)
     onPositionChange?.(startPosRef.current ?? null)
-    void window.electron?.overlay?.triggerPositioningEnded?.()
+    void window.electron?.overlay?.setTriggerMode?.('hidden')
     void endTriggerTestSession(testId, true).catch(() => {})
   }
 
