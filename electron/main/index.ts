@@ -1399,13 +1399,22 @@ ipcMain.handle('overlay:set-ignore-mouse-events', (event, ignore: boolean) => {
   win?.setIgnoreMouseEvents(ignore, { forward: true })
 })
 
-// Called when a trigger positioning session ends. The desktop-spanning trigger
-// overlay takes focus while positioning (the user clicks/drags the test card);
-// without handing focus back, the main window stays unfocused afterward so
-// keyboard shortcuts (refresh) and window interaction feel dead — the "partial
-// hang" users reported. Restoring focus here covers every end path (overlay
-// Done, editor Done, Escape, editor unmount).
+// Called when a trigger positioning session ends. While positioning, the
+// desktop-spanning trigger overlay captures all mouse input (so the test card
+// is draggable) and takes focus — which means it sits on top of the entire app
+// and the editor's own controls are unreachable. If the overlay isn't returned
+// to click-through the instant the session ends, every click lands on the
+// invisible overlay instead of the app, which reads as a total freeze/crash.
+//
+// This handler is the AUTHORITATIVE restore: it forces the overlay back to
+// click-through from the main process rather than relying on the overlay
+// renderer's own effect (which the bug reports show can fail to take hold), and
+// hands focus back to the main window. It's invoked from every end path —
+// overlay Done/Cancel/Escape, editor Done/Escape, and editor unmount.
 ipcMain.handle('overlay:trigger:positioning-ended', () => {
+  if (triggerOverlayWindow && !triggerOverlayWindow.isDestroyed()) {
+    triggerOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  }
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus()
 })
 

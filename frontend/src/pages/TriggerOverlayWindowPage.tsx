@@ -4,7 +4,7 @@
  * configured duration. Renders in a dedicated frameless Electron window.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Check } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import type { TriggerFired } from '../types/trigger'
@@ -102,9 +102,10 @@ interface TestAlertCardProps {
   alert: TestAlert
   onPositionCommit: (position: { x: number; y: number }) => void
   onDone: () => void
+  onCancel: () => void
 }
 
-function TestAlertCard({ alert, onPositionCommit, onDone }: TestAlertCardProps): React.ReactElement {
+function TestAlertCard({ alert, onPositionCommit, onDone, onCancel }: TestAlertCardProps): React.ReactElement {
   const [pos, setPos] = useState(alert.position)
   const dragOffset = useRef<{ dx: number; dy: number } | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -114,8 +115,8 @@ function TestAlertCard({ alert, onPositionCommit, onDone }: TestAlertCardProps):
   }, [alert.testId, alert.position.x, alert.position.y])
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    // Don't start a drag when the user clicks the Done button.
-    if ((e.target as HTMLElement).closest('[data-trigger-test-done]')) return
+    // Don't start a drag when the user clicks one of the card's buttons.
+    if ((e.target as HTMLElement).closest('button')) return
     e.currentTarget.setPointerCapture(e.pointerId)
     dragOffset.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y }
     setDragging(true)
@@ -171,13 +172,33 @@ function TestAlertCard({ alert, onPositionCommit, onDone }: TestAlertCardProps):
       >
         {text || 'Test Overlay'}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6 }}>
         <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', letterSpacing: '0.04em' }}>
           Drag to position
         </span>
         <button
           type="button"
-          data-trigger-test-done
+          onClick={onCancel}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
+            fontSize: 10,
+            padding: '2px 6px',
+            borderRadius: 3,
+            backgroundColor: 'rgba(255,255,255,0.12)',
+            color: '#fff',
+            border: '1px solid rgba(255,255,255,0.25)',
+            cursor: 'pointer',
+            letterSpacing: '0.04em',
+          }}
+          title="Discard and revert to the previous position (Esc)"
+        >
+          <X size={10} />
+          Cancel
+        </button>
+        <button
+          type="button"
           onClick={onDone}
           style={{
             display: 'inline-flex',
@@ -221,6 +242,13 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
   // The overlay spans the whole virtual desktop, so without this the test card
   // would default to the seam between monitors. Falls back to window center.
   const defaultCenter = useRef<{ x: number; y: number } | null>(null)
+  // Mirror of testAlert so end handlers can read it without putting impure side
+  // effects inside a state updater (those are double-invoked in dev and have
+  // proven fragile here).
+  const testAlertRef = useRef<TestAlert | null>(null)
+  useEffect(() => {
+    testAlertRef.current = testAlert
+  }, [testAlert])
 
   // Clamp a position into the current overlay viewport (the whole virtual
   // desktop) so a position saved on a previous monitor layout — e.g. on a
@@ -347,15 +375,13 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     }
     if (msg.type === WSEvent.TriggerTestSessionEnded) {
       const data = msg.data as { test_id: string }
-      setTestAlert((prev) => {
-        if (prev && prev.testId === data.test_id) {
-          // Session ended from the editor (Done / Escape / unmount) — hand
-          // focus back to the main window so it doesn't feel hung.
-          void window.electron?.overlay?.triggerPositioningEnded?.()
-          return null
-        }
-        return prev
-      })
+      const cur = testAlertRef.current
+      if (cur && cur.testId === data.test_id) {
+        // Session ended from the editor (Done / Escape / unmount). Clear the
+        // card and force click-through + focus restore via the main process.
+        setTestAlert(null)
+        void window.electron?.overlay?.triggerPositioningEnded?.()
+      }
       return
     }
   }, [makeDefaultPos, clampToViewport])
@@ -375,17 +401,15 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
   )
 
   const endSession = useCallback((cancelled: boolean) => {
-    setTestAlert((prev) => {
-      if (!prev) return prev
-      // Hand focus back to the main window so it doesn't feel hung after the
-      // desktop-spanning overlay grabbed it during positioning, and tell the
-      // backend to end the session (cancelled vs confirmed decides whether the
-      // editor reverts the position). Clearing the card locally also restores
-      // click-through immediately via the testAlert effect.
-      void window.electron?.overlay?.triggerPositioningEnded?.()
-      void endTriggerTestSession(prev.testId, cancelled).catch(() => {})
-      return null
-    })
+    const cur = testAlertRef.current
+    if (!cur) return
+    // Clear the card locally, then force click-through + focus restore via the
+    // main process (authoritative — doesn't rely on the testAlert effect), and
+    // tell the backend to end the session. `cancelled` decides whether the
+    // editor reverts the position vs keeps the dragged one.
+    setTestAlert(null)
+    void window.electron?.overlay?.triggerPositioningEnded?.()
+    void endTriggerTestSession(cur.testId, cancelled).catch(() => {})
   }, [])
 
   // The card's Done button confirms (keeps the dragged position).
@@ -442,6 +466,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
           alert={testAlert}
           onPositionCommit={handleTestPositionCommit}
           onDone={handleTestDone}
+          onCancel={() => endSession(true)}
         />
       )}
     </div>

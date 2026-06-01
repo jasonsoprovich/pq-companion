@@ -128,6 +128,10 @@ export function OverlayTextFields({
   // Confirm keeps the dragged position (already applied to the field live).
   function confirmPositioning() {
     setPositioning(false)
+    // Force the overlay back to click-through + refocus the main window via the
+    // main process, so input is restored even if the overlay renderer is slow
+    // to process the session-ended broadcast.
+    void window.electron?.overlay?.triggerPositioningEnded?.()
     void endTriggerTestSession(testId, false).catch(() => {})
   }
 
@@ -135,6 +139,7 @@ export function OverlayTextFields({
   function cancelPositioning() {
     setPositioning(false)
     onPositionChange?.(startPosRef.current ?? null)
+    void window.electron?.overlay?.triggerPositioningEnded?.()
     void endTriggerTestSession(testId, true).catch(() => {})
   }
 
