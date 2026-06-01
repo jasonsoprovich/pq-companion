@@ -12,6 +12,7 @@ import ItemsPage from './pages/ItemsPage'
 import SpellsPage from './pages/SpellsPage'
 import NpcsPage from './pages/NpcsPage'
 import ZonesPage from './pages/ZonesPage'
+import RecipesPage from './pages/RecipesPage'
 import SettingsPage from './pages/SettingsPage'
 import InventoryPage from './pages/InventoryPage'
 import SpellChecklistPage from './pages/SpellChecklistPage'
@@ -136,6 +137,7 @@ export default function App(): React.ReactElement {
           <Route path="spells" element={<SpellsPage />} />
           <Route path="npcs" element={<NpcsPage />} />
           <Route path="zones" element={<ZonesPage />} />
+          <Route path="recipes" element={<RecipesPage />} />
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="backup-manager" element={<Navigate to="/settings" replace />} />
           <Route path="log-feed" element={<LogFeedPage />} />
