@@ -54,6 +54,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	spells := &spellsHandler{db: database}
 	npcs := &npcsHandler{db: database}
 	zones := &zonesHandler{db: database}
+	recipes := &recipesHandler{db: database}
 	cfg := &configHandler{mgr: cfgMgr, hub: hub, actualPort: actualPort}
 	charactersH := &charactersHandler{store: charStore, mgr: cfgMgr, db: database, watcher: zealWatcher}
 	search := &searchHandler{db: database}
@@ -117,6 +118,12 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/short/{name}/drops", zones.getDrops)
 			r.Get("/{id}", zones.get)
 			r.Get("/{id}/raw", raw.rowFromTable("zone", "id"))
+		})
+		r.Route("/recipes", func(r chi.Router) {
+			r.Get("/", recipes.search)
+			r.Get("/tradeskills", recipes.tradeskills)
+			r.Get("/{id}", recipes.get)
+			r.Get("/{id}/raw", raw.rowFromTable("tradeskill_recipe", "id"))
 		})
 		r.Route("/config", func(r chi.Router) {
 			r.Get("/", cfg.get)
