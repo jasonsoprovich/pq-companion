@@ -31,6 +31,7 @@ import type { RespawnState } from '../types/respawn'
 import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
+import type { RecipeSummary, RecipeDetail, RecipeTradeskillCount } from '../types/recipe'
 import type {
   SandboxResult,
   SandboxSchemaResponse,
@@ -173,6 +174,54 @@ export function getItem(id: number): Promise<Item> {
 
 export function getItemSources(id: number): Promise<ItemSources> {
   return get<ItemSources>(`/api/items/${id}/sources`)
+}
+
+// ── Tradeskill recipes ──────────────────────────────────────────────────────────
+
+export interface RecipeSearchFilter {
+  tradeskill?: number // -1 / undefined = any
+  trivialMin?: number
+  trivialMax?: number
+}
+
+export function searchRecipes(
+  q: string,
+  limit = 50,
+  offset = 0,
+  filter: RecipeSearchFilter = {},
+): Promise<SearchResult<RecipeSummary>> {
+  const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) })
+  if (filter.tradeskill !== undefined && filter.tradeskill >= 0) {
+    params.set('tradeskill', String(filter.tradeskill))
+  }
+  if (filter.trivialMin && filter.trivialMin > 0) params.set('trivial_min', String(filter.trivialMin))
+  if (filter.trivialMax && filter.trivialMax > 0) params.set('trivial_max', String(filter.trivialMax))
+  return get<SearchResult<RecipeSummary>>(`/api/recipes?${params}`)
+}
+
+export function getRecipe(id: number): Promise<RecipeDetail> {
+  return get<RecipeDetail>(`/api/recipes/${id}`)
+}
+
+export function getRecipeTradeskills(): Promise<RecipeTradeskillCount[]> {
+  return get<RecipeTradeskillCount[]>('/api/recipes/tradeskills')
+}
+
+export function getRecipeRaw(id: number): Promise<RawRow> {
+  return get<RawRow>(`/api/recipes/${id}/raw`)
+}
+
+// Global (not per-character) favorite recipes.
+export function listFavoriteRecipes(): Promise<RecipeSummary[]> {
+  return get<RecipeSummary[]>('/api/favorite-recipes')
+}
+
+export function addFavoriteRecipe(recipeId: number): Promise<void> {
+  return post<void>('/api/favorite-recipes', { recipe_id: recipeId })
+}
+
+export function removeFavoriteRecipe(recipeId: number): Promise<void> {
+  return del(`/api/favorite-recipes/${recipeId}`)
 }
 
 // ── Enums catalog ──────────────────────────────────────────────────────────────

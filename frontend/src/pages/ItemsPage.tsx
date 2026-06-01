@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Filter, Search, X } from 'lucide-react'
 import { searchItems, getItem, getItemSources, getItemRaw } from '../services/api'
 import type { ItemSearchFilter } from '../services/api'
-import type { Item, ItemSourceNPC, ItemSources, ItemForageZone, ItemGroundSpawnZone, ItemTradeskillEntry } from '../types/item'
+import type { Item, ItemSourceNPC, ItemSources, ItemForageZone, ItemGroundSpawnZone } from '../types/item'
 import {
   baneBodyLabel,
   baneRaceLabel,
@@ -18,11 +18,11 @@ import {
   slotsLabel,
   weightLabel,
 } from '../lib/itemHelpers'
-import { tradeskillLabel } from '../lib/enumsCache'
 import { ItemIcon } from '../components/Icon'
 import RawDataModal from '../components/RawDataModal'
 import WishlistStarButton from '../components/WishlistStarButton'
 import VariantLinks from '../components/VariantLinks'
+import { ItemTradeskillsTab } from '../components/RecipeView'
 
 // ── Filter definitions ─────────────────────────────────────────────────────────
 
@@ -967,51 +967,6 @@ function GroundSpawnsTab({ spawns }: { spawns: ItemGroundSpawnZone[] }): React.R
   )
 }
 
-// ── Tab: Tradeskills ───────────────────────────────────────────────────────────
-
-function TradeskillsTab({ entries }: { entries: ItemTradeskillEntry[] }): React.ReactElement {
-  if (entries.length === 0) return <EmptyTabMessage message="Not used in any tradeskill recipe." />
-  const products = entries.filter((e) => e.role === 'product')
-  const ingredients = entries.filter((e) => e.role === 'ingredient')
-  return (
-    <div className="flex flex-col gap-3">
-      {products.length > 0 && (
-        <div>
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
-            Produced by
-          </div>
-          {products.map((ts) => (
-            <div key={ts.recipe_id} className="flex items-center justify-between gap-3 py-0.5 text-sm">
-              <span style={{ color: 'var(--color-foreground)' }}>{ts.recipe_name}</span>
-              <div className="flex shrink-0 items-center gap-2 text-xs" style={{ color: 'var(--color-muted)' }}>
-                <span>{tradeskillLabel(ts.tradeskill)}</span>
-                <span>Trivial {ts.trivial}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      {ingredients.length > 0 && (
-        <div>
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
-            Used as ingredient in
-          </div>
-          {ingredients.map((ts) => (
-            <div key={ts.recipe_id} className="flex items-center justify-between gap-3 py-0.5 text-sm">
-              <span style={{ color: 'var(--color-foreground)' }}>{ts.recipe_name}</span>
-              <div className="flex shrink-0 items-center gap-2 text-xs" style={{ color: 'var(--color-muted)' }}>
-                <span>{tradeskillLabel(ts.tradeskill)}</span>
-                {ts.count > 1 && <span>×{ts.count}</span>}
-                <span>Trivial {ts.trivial}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Detail panel ───────────────────────────────────────────────────────────────
 
 type ItemTabKey = 'overview' | 'drops' | 'merchants' | 'forage' | 'ground-spawns' | 'tradeskills'
@@ -1142,7 +1097,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
           <GroundSpawnsTab spawns={sources?.ground_spawns ?? []} />
         )}
         {activeTab === 'tradeskills' && (
-          <TradeskillsTab entries={sources?.tradeskills ?? []} />
+          <ItemTradeskillsTab entries={sources?.tradeskills ?? []} />
         )}
       </div>
 
