@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { UserSearch, RefreshCw, Trash2, AlertCircle, EyeOff, X, ArrowUp, ArrowDown } from 'lucide-react'
 import { listPlayers, deletePlayer, clearPlayers, getPlayerHistory } from '../services/api'
 import type { PlayerSighting, PlayerLevelHistoryEntry } from '../types/player'
@@ -47,6 +48,8 @@ function PlayerDetail({
 }): React.ReactElement {
   const [history, setHistory] = useState<PlayerLevelHistoryEntry[] | null>(null)
   const [historyErr, setHistoryErr] = useState<string | null>(null)
+
+  useEscapeToClose(onClose)
 
   useEffect(() => {
     let cancelled = false
@@ -540,6 +543,7 @@ function ConfirmModal({
   onCancel: () => void
   onConfirm: () => void
 }): React.ReactElement {
+  useEscapeToClose(onCancel)
   return (
     <div
       onClick={onCancel}

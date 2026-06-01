@@ -3,6 +3,7 @@ import { Search, X } from 'lucide-react'
 import { searchSpells } from '../services/api'
 import type { Spell } from '../types/spell'
 import { SpellIcon } from './Icon'
+import { useEscapeToClose } from '../hooks/useEscapeToClose'
 
 // BuffPicker is a search modal for selecting a beneficial buff spell. Used
 // by the Raid Buffs panel on the character stats page to swap individual
@@ -28,6 +29,8 @@ export function BuffPicker({ currentSpellId, existingSpellIDs, onPick, onClear, 
   const [results, setResults] = useState<Spell[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEscapeToClose(onClose)
 
   // Debounce the search — every keystroke would hammer the API otherwise.
   useEffect(() => {

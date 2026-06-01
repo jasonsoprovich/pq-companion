@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import {
   Activity,
   AlertCircle,
@@ -849,9 +850,7 @@ function Pagination({
 // ── confirm modal ─────────────────────────────────────────────────────────────
 
 // ConfirmModal mirrors the themed confirmation pattern used elsewhere in
-// the app (see TriggersPage). Backdrop closes; Escape isn't bound because
-// React's modal patterns here don't use it consistently and adding only
-// here would be inconsistent.
+// the app (see TriggersPage). Backdrop click or Escape cancels.
 function ConfirmModal({
   title,
   body,
@@ -865,6 +864,7 @@ function ConfirmModal({
   onCancel: () => void
   onConfirm: () => void
 }): React.ReactElement {
+  useEscapeToClose(onCancel)
   return (
     <div
       onClick={onCancel}

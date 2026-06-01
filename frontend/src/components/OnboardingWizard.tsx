@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import {
   Sparkles,
   FolderOpen,
@@ -50,6 +51,10 @@ export default function OnboardingWizard({
   const [step, setStep] = useState<Step>('welcome')
   const [config, setConfig] = useState<Config | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+
+  // Only allow Esc to dismiss when cancelling is permitted — first-run setup
+  // is mandatory and shouldn't be escapable.
+  useEscapeToClose(() => onCancel?.(), allowCancel && !!onCancel)
 
   const [eqPath, setEqPath] = useState('')
   const [validating, setValidating] = useState(false)

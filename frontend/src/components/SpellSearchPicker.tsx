@@ -4,6 +4,7 @@ import { searchSpells } from '../services/api'
 import type { Spell } from '../types/spell'
 import { castableClassesShort } from '../lib/spellHelpers'
 import { SpellIcon } from './Icon'
+import { useEscapeToClose } from '../hooks/useEscapeToClose'
 
 interface SpellSearchPickerProps {
   onPick: (spell: Spell) => void
@@ -23,6 +24,8 @@ export default function SpellSearchPicker({
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEscapeToClose(onClose)
 
   useEffect(() => {
     inputRef.current?.focus()

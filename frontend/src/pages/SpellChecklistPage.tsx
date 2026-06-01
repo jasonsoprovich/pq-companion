@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
+import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { useNavigate } from 'react-router-dom'
 import {
   BookOpen,
@@ -91,6 +92,7 @@ interface SpellDetailModalProps {
 }
 
 function SpellDetailModal({ spell, onClose, onOpenInExplorer }: SpellDetailModalProps): React.ReactElement {
+  useEscapeToClose(onClose)
   const classes = castableClasses(spell.class_levels)
   const hasDuration = spell.buff_duration > 0
   const hasAoE = spell.aoe_range > 0

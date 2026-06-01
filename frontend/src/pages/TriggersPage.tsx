@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import {
   Zap,
   Plus,
@@ -975,6 +976,7 @@ interface TriggerRowProps {
 function TriggerRow({ trigger, onDeleted, onUpdated }: TriggerRowProps): React.ReactElement {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  useEscapeToClose(() => setConfirmDelete(false), confirmDelete)
   const [toggling, setToggling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
@@ -1353,6 +1355,7 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [confirm, setConfirm] = useState<PackConfirm | null>(null)
+  useEscapeToClose(() => setConfirm(null), !!confirm)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const ginaInputRef = useRef<HTMLInputElement>(null)
 
@@ -1758,6 +1761,9 @@ export default function TriggersPage(): React.ReactElement {
   const [emptyNewMenuOpen, setEmptyNewMenuOpen] = useState(false)
   const [showClearAll, setShowClearAll] = useState(false)
   const [clearingAll, setClearingAll] = useState(false)
+  useEscapeToClose(() => {
+    if (!clearingAll) setShowClearAll(false)
+  }, showClearAll)
   const [search, setSearch] = useState('')
   const [classFilter, setClassFilter] = useState<number | null>(null)
   const [charFilter, setCharFilter] = useState<string>('')

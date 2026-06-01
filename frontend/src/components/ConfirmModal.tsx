@@ -1,5 +1,6 @@
 import React from 'react'
 import { AlertTriangle } from 'lucide-react'
+import { useEscapeToClose } from '../hooks/useEscapeToClose'
 
 // ConfirmModal is the shared "are you sure?" prompt used wherever the user
 // is about to mutate persisted state. Styled to match CharacterSpellsetsPage's
@@ -24,6 +25,7 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps): React.ReactElement {
+  useEscapeToClose(onCancel)
   const confirmBg = tone === 'danger' ? 'var(--color-danger, #ef4444)' : 'var(--color-primary)'
   return (
     <div

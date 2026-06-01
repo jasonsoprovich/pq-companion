@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Filter, Search, X } from 'lucide-react'
 import { searchItems, getItem, getItemSources, getItemRaw } from '../services/api'
@@ -205,6 +206,7 @@ interface FilterModalProps {
 }
 
 function FilterModal({ filter, onChange, onClose }: FilterModalProps): React.ReactElement {
+  useEscapeToClose(onClose)
   const [draft, setDraft] = useState<FilterState>(filter)
 
   function set<K extends keyof FilterState>(key: K, value: FilterState[K]) {

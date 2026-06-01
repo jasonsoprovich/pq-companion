@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import {
   Check,
   Download,
@@ -85,6 +86,7 @@ function SlotPicker({
   onPick,
   onClose,
 }: SlotPickerProps): React.ReactElement {
+  useEscapeToClose(onClose)
   const [query, setQuery] = useState('')
 
   const eligible = useMemo(() => {
@@ -231,6 +233,7 @@ function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps): React.ReactElement {
+  useEscapeToClose(onCancel)
   return (
     <div
       onClick={onCancel}
