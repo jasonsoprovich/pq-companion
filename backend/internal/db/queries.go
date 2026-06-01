@@ -1581,8 +1581,17 @@ func (db *DB) GetSpellsByClass(classIndex, limit, offset int) (*SearchResult[Spe
 // GetSpellCrossRefs returns items that reference the given spell ID, split into
 // scroll items (which teach the spell) and effect items (click/worn/proc/focus).
 func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
+	// Collapse duplicate-name item rows to their canonical row, matching the
+	// items list/search. Without this the same scroll (e.g. "Spell:
+	// Mesmerization") shows up once per duplicate id. See variants.go.
+	db.ensureVariants()
+	exclude := db.itemVariants.excludeNonCanonical("id")
+	scrollWhere := "scrolleffect = ?"
+	if exclude != "" {
+		scrollWhere += " AND " + exclude
+	}
 	scrollRows, err := db.Query(
-		"SELECT id, name, icon FROM items WHERE scrolleffect = ? ORDER BY name",
+		"SELECT id, name, icon FROM items WHERE "+scrollWhere+" ORDER BY name",
 		spellID,
 	)
 	if err != nil {
@@ -1605,7 +1614,7 @@ func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
 		return nil, err
 	}
 
-	effectRows, err := db.Query(`
+	effectQuery := `
 		SELECT effect_type, id, name, icon FROM (
 			SELECT 'click' AS effect_type, id, name, icon FROM items WHERE clickeffect = ?
 			UNION
@@ -1614,9 +1623,12 @@ func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
 			SELECT 'proc', id, name, icon FROM items WHERE proceffect = ?
 			UNION
 			SELECT 'focus', id, name, icon FROM items WHERE focuseffect = ?
-		) ORDER BY effect_type, name`,
-		spellID, spellID, spellID, spellID,
-	)
+		)`
+	if exclude != "" {
+		effectQuery += " WHERE " + exclude
+	}
+	effectQuery += " ORDER BY effect_type, name"
+	effectRows, err := db.Query(effectQuery, spellID, spellID, spellID, spellID)
 	if err != nil {
 		return nil, fmt.Errorf("get spell effect items: %w", err)
 	}
