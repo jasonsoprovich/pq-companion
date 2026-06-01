@@ -853,39 +853,53 @@ function StatModeToggle({ mode, onChange }: StatModeToggleProps): React.ReactEle
   )
 }
 
-// formatSplit renders a SourceSplit as a hover tooltip string showing where a
-// stat total comes from, e.g. "Equip 0 · Buffs 14 · AA 3" (issue #128). Sources
-// with no contribution are still listed so the parts visibly sum to the total.
-// Pass includeAA=false for stats that have no AA source (Flowing Thought).
-function formatSplit(split: SourceSplit, includeAA = true): string {
-  const parts = [`Equip ${split.item}`, `Buffs ${split.buff}`]
-  if (includeAA) parts.push(`AA ${split.aa}`)
-  return parts.join(' · ')
-}
-
-// BreakdownRow is a worn-bonus row whose label/value reveal the per-source
-// split on hover (native tooltip). The dashed underline + help cursor signal
-// that a breakdown is available (issue #128).
+// BreakdownRow is a worn-bonus row whose label reveals a per-source split
+// (Equip / Buffs / AA) in an instant hover popover (issue #128). The small "i"
+// dot signals a breakdown is available; the popover is pure CSS group-hover so
+// it appears immediately and reliably — unlike the native `title` tooltip it
+// replaces, which was laggy and easy to miss. Pass includeAA=false for stats
+// with no AA source (Flowing Thought is worn-focus only on Quarm).
 function BreakdownRow({
   label, value, split, includeAA = true,
 }: {
   label: string; value: string; split: SourceSplit; includeAA?: boolean
 }): React.ReactElement {
-  const tip = formatSplit(split, includeAA)
+  const rows: Array<[string, number]> = [
+    ['Equip', split.item],
+    ['Buffs', split.buff],
+  ]
+  if (includeAA) rows.push(['AA', split.aa])
   return (
     <>
-      <span
-        className="cursor-help"
-        style={{ textDecoration: 'underline dotted', textUnderlineOffset: '2px' }}
-        title={tip}
-      >
-        {label}
+      <span className="group relative flex w-fit cursor-help items-center gap-1">
+        <span style={{ textDecoration: 'underline dotted', textUnderlineOffset: '2px' }}>
+          {label}
+        </span>
+        <span
+          aria-hidden
+          className="inline-flex h-3 w-3 items-center justify-center rounded-full text-[9px] font-bold leading-none"
+          style={{ border: '1px solid var(--color-border)', color: 'var(--color-muted-foreground)' }}
+        >
+          i
+        </span>
+        <span
+          role="tooltip"
+          className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden min-w-[8rem] whitespace-nowrap rounded border px-2 py-1.5 shadow-lg group-hover:block"
+          style={{
+            background: 'var(--color-surface-2)',
+            borderColor: 'var(--color-border)',
+            color: 'var(--color-foreground)',
+          }}
+        >
+          {rows.map(([k, v]) => (
+            <span key={k} className="flex justify-between gap-4">
+              <span style={{ color: 'var(--color-muted-foreground)' }}>{k}</span>
+              <span className="font-mono">{v}</span>
+            </span>
+          ))}
+        </span>
       </span>
-      <span
-        className="cursor-help text-right font-mono"
-        style={{ color: 'var(--color-foreground)' }}
-        title={tip}
-      >
+      <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>
         {value}
       </span>
     </>
