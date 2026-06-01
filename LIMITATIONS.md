@@ -241,6 +241,26 @@ These are inherent to log-file parsing and affect multiple features:
 
 ---
 
+## 7. Character stat derivation
+
+### 7.1 Derived stats assume skills are trained to the class/level cap
+
+- **Limitation:** The Character Info → Stats tab derives the displayed AC and
+  ATK rating assuming the character's Defense, Offense, and weapon skills are at
+  the class/level cap, and that the equipped weapon matches the character's
+  best-trained melee skill. A character below cap, or wielding an off-skill
+  weapon, will read slightly high.
+- **Root cause:** The Quarmy/Zeal export carries base attributes, level, class,
+  race, inventory, and AAs — but **no live skill values** and no equipped-weapon
+  skill type. The skill caps come from `quarm.db` (`skill_caps`).
+- **Sources checked:** Quarmy export (no skills), `quarm.db` (caps only), Zeal
+  (no skill snapshot today).
+- **Could a future data source fix this?** **Partially.** A future Zeal field
+  exposing live skill values and the equipped-weapon type would let us use the
+  character's actual skills instead of the cap assumption.
+
+---
+
 ## Template for new entries
 
 ```

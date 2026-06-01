@@ -281,35 +281,79 @@ func (db *DB) GetBaseData(level, classIdx int) (BaseData, error) {
 	return bd, nil
 }
 
-// defenseSkillID is the skill_caps.skill_id for the Defense skill in the
-// Quarm/EQMacEmu data. The Mac-era skill enum is offset from modern EQEmu
-// (where Defense is 16): here Defense is 15 (id 9 is Bind Wound). Verified
-// against EQMacEmu's own GetAvoidance comments — the level-60 caps under
-// skill_id 15 match exactly: WAR/PAL/SHD/MNK/BRD/ROG 252, RNG/BST 240,
-// CLR/DRU/SHM 200, NEC/WIZ/MAG/ENC 145.
-const defenseSkillID = 15
+// Mac-era skill_caps.skill_id values for the Quarm/EQMacEmu data. The Mac-era
+// skill enum is offset from modern EQEmu (where Defense is 16): here Defense is
+// 15 (id 9 is Bind Wound). Verified against EQMacEmu's common/skills.h and the
+// level-60 caps in skill_caps: Defense (15) gives WAR/PAL/SHD/MNK/BRD/ROG 252,
+// RNG/BST 240, CLR/DRU/SHM 200, NEC/WIZ/MAG/ENC 145; Offense (22) and the melee
+// weapon skills match the same enum.
+const (
+	defenseSkillID = 15
+	offenseSkillID = 22
+)
 
-// DefenseSkillCap returns the maximum Defense skill a class can reach at the
-// given level. Used as the assumed Defense value when computing displayed AC —
-// a max-level main is virtually always at cap, and the Quarmy export carries
-// no live skill values. classIdx is 1-indexed (1=Warrior … 14=Enchanter,
-// 15=Beastlord). Returns 0 if no row matches.
-func (db *DB) DefenseSkillCap(classIdx, level int) (int, error) {
+// meleeWeaponSkillIDs are the player melee weapon skills plus Hand to Hand (19),
+// in the Mac-era enum: 1HBlunt(0), 1HSlash(1), 2HBlunt(2), 2HSlash(3),
+// 1HPiercing(29). BestWeaponSkillCap takes the max cap across these — the
+// character's most-trained melee skill, used as the assumed weapon skill for
+// the ATK rating (the export carries no equipped-weapon type).
+var meleeWeaponSkillIDs = []int{0, 1, 2, 3, 29, 19}
+
+// skillCap returns the maximum value of the given skill a class can reach at
+// the given level. classIdx is 1-indexed (1=Warrior … 14=Enchanter,
+// 15=Beastlord). Returns 0 if no row matches (the class never trains it).
+func (db *DB) skillCap(skillID, classIdx, level int) (int, error) {
 	if level <= 0 || classIdx <= 0 {
 		return 0, nil
 	}
 	var cap int
 	err := db.QueryRow(
 		`SELECT cap FROM skill_caps WHERE skill_id = ? AND class_id = ? AND level = ?`,
-		defenseSkillID, classIdx, level,
+		skillID, classIdx, level,
 	).Scan(&cap)
 	if err == sql.ErrNoRows {
 		return 0, nil
 	}
 	if err != nil {
-		return 0, fmt.Errorf("defense skill cap(%d,%d): %w", classIdx, level, err)
+		return 0, fmt.Errorf("skill cap(skill=%d,class=%d,level=%d): %w", skillID, classIdx, level, err)
 	}
 	return cap, nil
+}
+
+// DefenseSkillCap returns the maximum Defense skill a class can reach at the
+// given level. Used as the assumed Defense value when computing displayed AC —
+// a max-level main is virtually always at cap, and the Quarmy export carries
+// no live skill values.
+func (db *DB) DefenseSkillCap(classIdx, level int) (int, error) {
+	return db.skillCap(defenseSkillID, classIdx, level)
+}
+
+// OffenseSkillCap returns the maximum Offense skill a class can reach at the
+// given level, used as the assumed Offense value in the ATK rating. Pure
+// casters have no Offense skill and correctly return 0.
+func (db *DB) OffenseSkillCap(classIdx, level int) (int, error) {
+	return db.skillCap(offenseSkillID, classIdx, level)
+}
+
+// BestWeaponSkillCap returns the highest melee weapon skill cap (across the
+// player melee weapon skills and Hand to Hand) for the class/level — the
+// assumed weapon skill when deriving the ATK rating. Returns 0 if no row
+// matches.
+func (db *DB) BestWeaponSkillCap(classIdx, level int) (int, error) {
+	if level <= 0 || classIdx <= 0 {
+		return 0, nil
+	}
+	best := 0
+	for _, id := range meleeWeaponSkillIDs {
+		c, err := db.skillCap(id, classIdx, level)
+		if err != nil {
+			return 0, err
+		}
+		if c > best {
+			best = c
+		}
+	}
+	return best, nil
 }
 
 func collectItems(rows *sql.Rows) ([]Item, error) {

@@ -562,3 +562,37 @@ func DisplayedAC(class, level, race, itemAC, spellAC, agi, defenseSkill, weight 
 	mit := mitigation(class, level, race, itemAC, spellAC, agi, defenseSkill, weight)
 	return (av + mit) * 1000 / 847
 }
+
+// ── Attack rating ──────────────────────────────────────────────────────────
+
+// DisplayedATK reproduces the client inventory-window ATK rating, ported from
+// EQMacEmu (zone/client.cpp). It is the combined offense + to-hit number:
+//
+//	offense = weaponSkill + itemATK + strBonus   (strBonus = (2·STR-150)/3 when STR > 75)
+//	toHit   = 7 + offenseSkill + weaponSkill
+//	ATK     = (offense + toHit) × 1000 / 744
+//
+// itemATK is the summed worn/AA/buff SE_ATK bonus (the value the rest of this
+// app tracks as statBlock.Attack). weaponSkill is the character's melee weapon
+// skill for the equipped weapon — since the Quarmy export carries no live skill
+// values or equipped-weapon type, callers pass the class/level cap for the
+// best trainable weapon skill (see db.BestWeaponSkillCap), matching how
+// DisplayedAC assumes a capped Defense skill. offenseSkill is likewise the
+// Offense skill cap (0 for pure casters, which legitimately have no Offense).
+// Rangers level 55+ gain an extra (level·4 - 216) offense bonus.
+func DisplayedATK(class, level, str, itemATK, offenseSkill, weaponSkill int) int {
+	strBonus := 0
+	if str > 75 {
+		strBonus = (2*str - 150) / 3
+	}
+	offense := weaponSkill + itemATK + strBonus
+	if class == Ranger && level >= 55 {
+		offense += level*4 - 216
+	}
+	toHit := 7 + offenseSkill + weaponSkill
+	atk := (offense + toHit) * 1000 / 744
+	if atk < 0 {
+		atk = 0
+	}
+	return atk
+}

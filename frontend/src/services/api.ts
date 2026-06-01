@@ -813,6 +813,21 @@ export function getZealQuarmy(character?: string): Promise<{ quarmy: QuarmyData 
   return get<{ quarmy: QuarmyData | null }>(`/api/zeal/quarmy${qs}`)
 }
 
+// SourceSplit attributes a stat total to its three contributing sources.
+// The parts sum to the matching StatBlock field.
+export interface SourceSplit {
+  item: number; aa: number; buff: number
+}
+
+// StatBreakdown carries the per-source split for the stats the Stats panel
+// exposes a hover breakdown on (issue #128). FT has no AA/buff source on Quarm.
+export interface StatBreakdown {
+  mana_regen: SourceSplit
+  regen: SourceSplit
+  ft: SourceSplit
+  attack: SourceSplit
+}
+
 export interface StatBlock {
   hp: number; mana: number; ac: number
   str: number; sta: number; agi: number; dex: number
@@ -820,6 +835,10 @@ export interface StatBlock {
   pr: number; mr: number; dr: number; fr: number; cr: number
   attack: number; haste: number; spell_haste: number; regen: number
   mana_regen: number; ft: number; dmg_shield: number
+  // atk_rating is the EQ inventory-window Attack rating (offense + to-hit),
+  // distinct from `attack` (the raw worn/AA/buff +ATK bonus that feeds it).
+  atk_rating: number
+  breakdown: StatBreakdown
 }
 
 export interface EquippedStats {

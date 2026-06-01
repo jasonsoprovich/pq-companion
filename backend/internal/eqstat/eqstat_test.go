@@ -150,3 +150,47 @@ func TestDisplayedACPlateTank(t *testing.T) {
 		t.Errorf("DisplayedAC plate = %d, want 1550", got)
 	}
 }
+
+func TestDisplayedATKWarrior(t *testing.T) {
+	// L60 Warrior at cap: weapon skill 250, offense skill 245, item ATK 200,
+	// STR 255. strBonus = (2*255-150)/3 = 360/3 = 120.
+	// offense = 250 + 200 + 120 = 570. toHit = 7 + 245 + 250 = 502.
+	// (570 + 502) * 1000 / 744 = 1072000/744 = 1440.
+	if got := DisplayedATK(Warrior, 60, 255, 200, 245, 250); got != 1440 {
+		t.Errorf("DisplayedATK warrior = %d, want 1440", got)
+	}
+}
+
+func TestDisplayedATKCaster(t *testing.T) {
+	// Pure caster has offense skill 0; still gets weapon skill + STR term.
+	// L60 Enchanter: weapon skill 110, offense 0, item ATK 0, STR 80.
+	// strBonus = (2*80-150)/3 = 10/3 = 3. offense = 110 + 0 + 3 = 113.
+	// toHit = 7 + 0 + 110 = 117. (113+117)*1000/744 = 230000/744 = 309.
+	if got := DisplayedATK(Enchanter, 60, 80, 0, 0, 110); got != 309 {
+		t.Errorf("DisplayedATK caster = %d, want 309", got)
+	}
+}
+
+func TestDisplayedATKStrFloor(t *testing.T) {
+	// STR ≤ 75 contributes no strBonus.
+	// offense = 100 + 0 + 0 = 100. toHit = 7 + 50 + 100 = 157.
+	// (100+157)*1000/744 = 257000/744 = 345.
+	if got := DisplayedATK(Warrior, 20, 75, 0, 50, 100); got != 345 {
+		t.Errorf("DisplayedATK str-floor = %d, want 345", got)
+	}
+}
+
+func TestDisplayedATKRangerBonus(t *testing.T) {
+	// Ranger 55+ adds level*4-216 to offense. L60: 60*4-216 = 24.
+	// weapon 250, offense 252, item 0, STR 100 → strBonus (200-150)/3=16.
+	// offense = 250 + 0 + 16 + 24 = 290. toHit = 7 + 252 + 250 = 509.
+	// (290+509)*1000/744 = 799000/744 = 1073.
+	if got := DisplayedATK(Ranger, 60, 100, 0, 252, 250); got != 1073 {
+		t.Errorf("DisplayedATK ranger = %d, want 1073", got)
+	}
+	// Below 55 the bonus is absent: offense = 250+16 = 266, toHit = 509 → same
+	// minus 24/... recompute: (266+509)*1000/744 = 775000/744 = 1041.
+	if got := DisplayedATK(Ranger, 54, 100, 0, 252, 250); got != 1041 {
+		t.Errorf("DisplayedATK ranger <55 = %d, want 1041", got)
+	}
+}

@@ -541,3 +541,38 @@ func TestNPCSpecialAbilities_RealDB(t *testing.T) {
 		t.Errorf("ParseSpecialAbilities(%q) returned empty for non-empty raw value", raw)
 	}
 }
+
+func TestSkillCaps_RealDB(t *testing.T) {
+	d := openTestDB(t)
+
+	// Defense (skill_id 15) — caster cap is 145, plate cap 252. These pin the
+	// Mac-era enum that the AC/ATK math relies on.
+	if c, _ := d.DefenseSkillCap(14, 60); c != 145 { // Enchanter
+		t.Errorf("DefenseSkillCap(Enchanter,60) = %d, want 145", c)
+	}
+	if c, _ := d.DefenseSkillCap(1, 60); c != 252 { // Warrior
+		t.Errorf("DefenseSkillCap(Warrior,60) = %d, want 252", c)
+	}
+
+	// Offense (skill_id 22) — Warrior 245; pure casters have no Offense row → 0.
+	if c, _ := d.OffenseSkillCap(1, 60); c != 245 { // Warrior
+		t.Errorf("OffenseSkillCap(Warrior,60) = %d, want 245", c)
+	}
+	if c, _ := d.OffenseSkillCap(14, 60); c != 0 { // Enchanter
+		t.Errorf("OffenseSkillCap(Enchanter,60) = %d, want 0", c)
+	}
+
+	// Best melee weapon skill cap — Warrior 250, Enchanter 110 (Hand to Hand /
+	// 1H Blunt floor).
+	if c, _ := d.BestWeaponSkillCap(1, 60); c != 250 { // Warrior
+		t.Errorf("BestWeaponSkillCap(Warrior,60) = %d, want 250", c)
+	}
+	if c, _ := d.BestWeaponSkillCap(14, 60); c != 110 { // Enchanter
+		t.Errorf("BestWeaponSkillCap(Enchanter,60) = %d, want 110", c)
+	}
+
+	// Zero/invalid inputs are safe.
+	if c, _ := d.OffenseSkillCap(0, 0); c != 0 {
+		t.Errorf("OffenseSkillCap(0,0) = %d, want 0", c)
+	}
+}

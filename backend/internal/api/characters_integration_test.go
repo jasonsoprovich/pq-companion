@@ -62,8 +62,29 @@ func TestDerivedStats_OsuiPipeline(t *testing.T) {
 		t.Fatalf("Enchanter L60 defense cap = %d, want 145", defense)
 	}
 
+	offense, _ := d.OffenseSkillCap(14, 60) // Enchanter has no Offense skill
+	weapon, _ := d.BestWeaponSkillCap(14, 60)
+	if offense != 0 {
+		t.Fatalf("Enchanter L60 offense cap = %d, want 0 (casters have no Offense)", offense)
+	}
+	if weapon != 110 {
+		t.Fatalf("Enchanter L60 best weapon cap = %d, want 110", weapon)
+	}
+
 	base := osui()
-	equipped := h.deriveBlock(base, aa, 0, defense, item, itemHaste, nil)
+	skills := skillCaps{defense: defense, offense: offense, weapon: weapon}
+	equipped := h.deriveBlock(base, aa, 0, skills, item, itemHaste, nil)
+
+	// ATK rating is present and positive even for a pure caster (weapon skill +
+	// STR term carry it). It must exceed the raw worn ATK bonus it derives from.
+	if equipped.ATKRating <= equipped.Attack {
+		t.Errorf("equipped ATKRating = %d, expected > worn ATK bonus %d", equipped.ATKRating, equipped.Attack)
+	}
+	t.Logf("Osui equipped: HP=%d Mana=%d AC=%d ATK=%d | wornATK=%d (item %d, aa %d, buff %d) | manaRegen=%d (item %d, aa %d, buff %d) | FT=%d",
+		equipped.HP, equipped.Mana, equipped.AC, equipped.ATKRating,
+		equipped.Attack, equipped.Breakdown.Attack.Item, equipped.Breakdown.Attack.AA, equipped.Breakdown.Attack.Buff,
+		equipped.ManaRegen, equipped.Breakdown.ManaRegen.Item, equipped.Breakdown.ManaRegen.AA, equipped.Breakdown.ManaRegen.Buff,
+		equipped.FT)
 
 	// Sanity ranges for a geared level-60 Enchanter (no raid buffs):
 	// HP a couple thousand, mana a few thousand, AC a few hundred.

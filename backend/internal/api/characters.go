@@ -402,6 +402,31 @@ type statBlock struct {
 	ManaRegen  int `json:"mana_regen"`
 	FT         int `json:"ft"`
 	DmgShield  int `json:"dmg_shield"`
+	// ATKRating is the EQ inventory-window Attack rating (offense + to-hit),
+	// distinct from Attack above (the raw worn/AA/buff SE_ATK bonus that feeds
+	// into it). Zero on the base layer until skills are known.
+	ATKRating int `json:"atk_rating"`
+	// Breakdown splits the regen-type and attack-bonus stats by source so the
+	// UI can show where each total comes from (see issue #128).
+	Breakdown statBreakdown `json:"breakdown"`
+}
+
+// sourceSplit attributes a single stat's total to its three contributing
+// sources. The components sum to the corresponding statBlock field.
+type sourceSplit struct {
+	Item int `json:"item"`
+	AA   int `json:"aa"`
+	Buff int `json:"buff"`
+}
+
+// statBreakdown carries the per-source split for the stats the Stats panel
+// exposes a hover breakdown on. FT has no AA or buff source (worn focus only),
+// so its AA/Buff components are always zero.
+type statBreakdown struct {
+	ManaRegen sourceSplit `json:"mana_regen"`
+	Regen     sourceSplit `json:"regen"`
+	FT        sourceSplit `json:"ft"`
+	Attack    sourceSplit `json:"attack"`
 }
 
 // equippedStatsResponse is the per-source breakdown the Stats panel renders.
@@ -753,7 +778,13 @@ func (h *charactersHandler) derivedStats(w http.ResponseWriter, r *http.Request)
 	if mods, err := buffmod.Compute(cfg.EQPath, char.Name, h.db); err == nil && mods != nil {
 		spellHasteBase = buffmod.SpellHasteSummary(mods.Contributors)
 	}
-	defenseSkill, _ := h.db.DefenseSkillCap(char.Class+1, char.Level)
+	// Skill caps the ATK rating and displayed AC assume — a max-level main is
+	// virtually always at cap and the export carries no live skill values.
+	classIdx := char.Class + 1
+	defenseSkill, _ := h.db.DefenseSkillCap(classIdx, char.Level)
+	offenseSkill, _ := h.db.OffenseSkillCap(classIdx, char.Level)
+	weaponSkill, _ := h.db.BestWeaponSkillCap(classIdx, char.Level)
+	skills := skillCaps{defense: defenseSkill, offense: offenseSkill, weapon: weaponSkill}
 	itemBlock, itemHaste := h.sumEquipment(cfg.EQPath, char.Name)
 
 	presetBuffs := h.resolveBuffs(req.PresetBuffIDs)
@@ -764,12 +795,19 @@ func (h *charactersHandler) derivedStats(w http.ResponseWriter, r *http.Request)
 		Character: char.Name,
 		Level:     char.Level,
 		Class:     char.Class,
-		Base:      h.deriveBlock(char, aa, 0, defenseSkill, empty, 0, nil),
-		Equipped:  h.deriveBlock(char, aa, spellHasteBase, defenseSkill, itemBlock, itemHaste, nil),
-		Buffed:    h.deriveBlock(char, aa, spellHasteBase, defenseSkill, itemBlock, itemHaste, presetBuffs),
-		Live:      h.deriveBlock(char, aa, spellHasteBase, defenseSkill, itemBlock, itemHaste, liveBuffs),
+		Base:      h.deriveBlock(char, aa, 0, skills, empty, 0, nil),
+		Equipped:  h.deriveBlock(char, aa, spellHasteBase, skills, itemBlock, itemHaste, nil),
+		Buffed:    h.deriveBlock(char, aa, spellHasteBase, skills, itemBlock, itemHaste, presetBuffs),
+		Live:      h.deriveBlock(char, aa, spellHasteBase, skills, itemBlock, itemHaste, liveBuffs),
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// skillCaps bundles the assumed-at-cap skill values a derived stat layer needs.
+type skillCaps struct {
+	defense int
+	offense int
+	weapon  int
 }
 
 // deriveBlock combines one display layer's inputs (base attributes + always-on
@@ -780,7 +818,7 @@ func (h *charactersHandler) derivedStats(w http.ResponseWriter, r *http.Request)
 func (h *charactersHandler) deriveBlock(
 	char character.Character,
 	aa db.AABonuses,
-	spellHasteBase, defenseSkill int,
+	spellHasteBase int, skills skillCaps,
 	item statBlock, itemHaste int,
 	buffs []resolvedBuff,
 ) statBlock {
@@ -813,6 +851,10 @@ func (h *charactersHandler) deriveBlock(
 	dmgShield := item.DmgShield
 	spellHaste := spellHasteBase
 
+	// Buff-only sums for the source breakdown (issue #128) — kept alongside the
+	// running totals so the UI can split a stat into Equip / Buffs / AA.
+	buffAttack, buffRegen, buffManaRegen := 0, 0, 0
+
 	buffHasteV2 := 0 // highest non-overhaste buff haste
 	overhasteV3 := 0 // summed overhaste
 	for _, b := range buffs {
@@ -837,6 +879,9 @@ func (h *charactersHandler) deriveBlock(
 		manaRegen += d.ManaRegen
 		dmgShield += d.DmgShield
 		spellHaste += d.SpellHaste
+		buffAttack += d.Attack
+		buffRegen += d.Regen
+		buffManaRegen += d.ManaRegen
 		if d.Haste > 0 {
 			if overhasteSpellIDs[b.id] {
 				overhasteV3 += d.Haste
@@ -869,7 +914,7 @@ func (h *charactersHandler) deriveBlock(
 	return statBlock{
 		HP:         eqstat.MaxHP(class, level, totSTA, itemHP, buffHP, 0, aa.HPPct),
 		Mana:       eqstat.MaxMana(class, level, totWIS, totINT, flatMana),
-		AC:         eqstat.DisplayedAC(class, level, race, itemAC, spellAC, totAGI, defenseSkill, 0),
+		AC:         eqstat.DisplayedAC(class, level, race, itemAC, spellAC, totAGI, skills.defense, 0),
 		STR:        totSTR,
 		STA:        totSTA,
 		AGI:        totAGI,
@@ -889,6 +934,16 @@ func (h *charactersHandler) deriveBlock(
 		ManaRegen:  manaRegen,
 		FT:         ft,
 		DmgShield:  dmgShield,
+		ATKRating:  eqstat.DisplayedATK(class, level, totSTR, attack, skills.offense, skills.weapon),
+		Breakdown: statBreakdown{
+			// attack = item.Attack + aa.Attack + Σ buff; regen/manaRegen
+			// similarly start from item + AA before the buff loop adds in.
+			Attack:    sourceSplit{Item: item.Attack, AA: aa.Attack, Buff: buffAttack},
+			Regen:     sourceSplit{Item: item.Regen, AA: aa.HPRegen, Buff: buffRegen},
+			ManaRegen: sourceSplit{Item: item.ManaRegen, AA: aa.ManaRegen, Buff: buffManaRegen},
+			// FT is worn-focus only — no AA or buff source on Quarm.
+			FT: sourceSplit{Item: item.FT},
+		},
 	}
 }
 

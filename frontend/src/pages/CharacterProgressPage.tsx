@@ -14,7 +14,7 @@ import type { ActiveTimer, TimerState } from '../types/timer'
 import type {
   QuarmyData, CharacterAA, AAInfo, Character,
   SpellModifier, SpellModifierResolution, StatBlock,
-  SpellStatDeltaEntry, DerivedStats,
+  SpellStatDeltaEntry, DerivedStats, SourceSplit,
 } from '../services/api'
 import type { Spell } from '../types/spell'
 import type { Item } from '../types/item'
@@ -656,13 +656,22 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
   // the block for the active mode. While the first fetch is in flight, fall
   // back to the quarmy base attributes so the seven stat bars still render —
   // vitals read zero until the derived blocks resolve.
+  const emptySplit = { item: 0, aa: 0, buff: 0 }
   const block: StatBlock = (derived && derived[mode]) || {
     hp: 0, mana: 0, ac: 0,
     str: stats.base_str, sta: stats.base_sta, agi: stats.base_agi, dex: stats.base_dex,
     wis: stats.base_wis, int: stats.base_int, cha: stats.base_cha,
     pr: 0, mr: 0, dr: 0, fr: 0, cr: 0,
     attack: 0, haste: 0, spell_haste: 0, regen: 0, mana_regen: 0, ft: 0, dmg_shield: 0,
+    atk_rating: 0,
+    breakdown: { mana_regen: emptySplit, regen: emptySplit, ft: emptySplit, attack: emptySplit },
   }
+
+  // Mana is hidden for pure-melee classes (Warrior/Monk/Rogue/Bard) — they
+  // show HP + ATK as their headline vitals instead. Class is 0-indexed to
+  // match eqstat. Until the derived blocks load we don't know the class, so we
+  // optimistically show Mana (it reads 0 and is replaced on first fetch).
+  const showMana = derived == null || ![0, 6, 7, 8].includes(derived.class)
 
   const capped = (v: number) => Math.min(STAT_CAP, v)
   const gearMissing = includesGear && !derived
@@ -682,10 +691,11 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
           </p>
         )}
 
-        <div className="mb-4 grid grid-cols-3 gap-3">
+        <div className="mb-4 grid grid-cols-2 gap-3">
           <VitalRow label="HP" value={block.hp} />
-          <VitalRow label="Mana" value={block.mana} />
+          {showMana && <VitalRow label="Mana" value={block.mana} />}
           <VitalRow label="AC" value={block.ac} />
+          <VitalRow label="ATK" value={block.atk_rating} />
         </div>
 
         <div className="space-y-3">
@@ -714,10 +724,10 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
             <div className="grid grid-cols-2 gap-y-1">
               <span>Haste</span>           <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{block.haste}%</span>
               <span>Spell Haste</span>     <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }} title="Hard-capped at 50% per Project Quarm rules">{block.spell_haste}%</span>
-              <span>Worn ATK</span>        <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{block.attack}</span>
-              <span>HP Regen</span>        <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{block.regen}/tick</span>
-              <span>Flowing Thought</span> <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{block.ft}/15</span>
-              <span>Mana Regen</span>      <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>+{block.mana_regen}/tick</span>
+              <BreakdownRow label="Worn ATK"        value={`+${block.attack}`}        split={block.breakdown.attack} />
+              <BreakdownRow label="HP Regen"        value={`+${block.regen}/tick`}    split={block.breakdown.regen} />
+              <BreakdownRow label="Flowing Thought" value={`${block.ft}/15`}          split={block.breakdown.ft} includeAA={false} />
+              <BreakdownRow label="Mana Regen"      value={`+${block.mana_regen}/tick`} split={block.breakdown.mana_regen} />
               <span>Damage Shield</span>   <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{block.dmg_shield}</span>
             </div>
           </div>
@@ -840,6 +850,45 @@ function StatModeToggle({ mode, onChange }: StatModeToggleProps): React.ReactEle
         )
       })}
     </div>
+  )
+}
+
+// formatSplit renders a SourceSplit as a hover tooltip string showing where a
+// stat total comes from, e.g. "Equip 0 · Buffs 14 · AA 3" (issue #128). Sources
+// with no contribution are still listed so the parts visibly sum to the total.
+// Pass includeAA=false for stats that have no AA source (Flowing Thought).
+function formatSplit(split: SourceSplit, includeAA = true): string {
+  const parts = [`Equip ${split.item}`, `Buffs ${split.buff}`]
+  if (includeAA) parts.push(`AA ${split.aa}`)
+  return parts.join(' · ')
+}
+
+// BreakdownRow is a worn-bonus row whose label/value reveal the per-source
+// split on hover (native tooltip). The dashed underline + help cursor signal
+// that a breakdown is available (issue #128).
+function BreakdownRow({
+  label, value, split, includeAA = true,
+}: {
+  label: string; value: string; split: SourceSplit; includeAA?: boolean
+}): React.ReactElement {
+  const tip = formatSplit(split, includeAA)
+  return (
+    <>
+      <span
+        className="cursor-help"
+        style={{ textDecoration: 'underline dotted', textUnderlineOffset: '2px' }}
+        title={tip}
+      >
+        {label}
+      </span>
+      <span
+        className="cursor-help text-right font-mono"
+        style={{ color: 'var(--color-foreground)' }}
+        title={tip}
+      >
+        {value}
+      </span>
+    </>
   )
 }
 
