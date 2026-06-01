@@ -24,7 +24,7 @@ func TestDeriveBlock_Base(t *testing.T) {
 	h := &charactersHandler{}
 	aa := db.AABonuses{INT: 6} // Innate Intelligence rank 3
 
-	b := h.deriveBlock(osui(), aa, 0, skillCaps{defense: 100}, statBlock{}, 0, nil)
+	b := h.deriveBlock(osui(), aa, spellHasteSplit{}, skillCaps{defense: 100}, statBlock{}, 0, nil)
 
 	if b.INT != 120 {
 		t.Errorf("base INT = %d, want 120 (114 + 6 AA)", b.INT)
@@ -57,7 +57,7 @@ func TestDeriveBlock_Compounding(t *testing.T) {
 	// Buff: Aegolism-like — 1775 flat HP and 129 spell AC (÷3 → +43 mitigation).
 	buffs := []resolvedBuff{{id: 999, delta: db.BuffStatDelta{HP: 1775, AC: 129}}}
 
-	b := h.deriveBlock(osui(), aa, 0, skillCaps{defense: 100}, item, 0, buffs)
+	b := h.deriveBlock(osui(), aa, spellHasteSplit{}, skillCaps{defense: 100}, item, 0, buffs)
 
 	if b.STA != 147 {
 		t.Fatalf("total STA = %d, want 147", b.STA)
@@ -78,9 +78,9 @@ func TestDeriveBlock_Compounding(t *testing.T) {
 // carries, because base HP scales with STA.
 func TestDeriveBlock_BuffStaRaisesHP(t *testing.T) {
 	h := &charactersHandler{}
-	base := h.deriveBlock(osui(), db.AABonuses{}, 0, skillCaps{defense: 100}, statBlock{}, 0, nil)
+	base := h.deriveBlock(osui(), db.AABonuses{}, spellHasteSplit{}, skillCaps{defense: 100}, statBlock{}, 0, nil)
 	// A buff granting only +100 STA (no flat HP).
-	buffed := h.deriveBlock(osui(), db.AABonuses{}, 0, skillCaps{defense: 100}, statBlock{}, 0,
+	buffed := h.deriveBlock(osui(), db.AABonuses{}, spellHasteSplit{}, skillCaps{defense: 100}, statBlock{}, 0,
 		[]resolvedBuff{{id: 1, delta: db.BuffStatDelta{STA: 100}}})
 	if buffed.HP <= base.HP {
 		t.Errorf("STA buff did not raise HP: base %d, buffed %d", base.HP, buffed.HP)

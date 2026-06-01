@@ -423,10 +423,13 @@ type sourceSplit struct {
 // exposes a hover breakdown on. FT has no AA or buff source (worn focus only),
 // so its AA/Buff components are always zero.
 type statBreakdown struct {
-	ManaRegen sourceSplit `json:"mana_regen"`
-	Regen     sourceSplit `json:"regen"`
-	FT        sourceSplit `json:"ft"`
-	Attack    sourceSplit `json:"attack"`
+	ManaRegen  sourceSplit `json:"mana_regen"`
+	Regen      sourceSplit `json:"regen"`
+	FT         sourceSplit `json:"ft"`
+	Attack     sourceSplit `json:"attack"`
+	Haste      sourceSplit `json:"haste"`
+	SpellHaste sourceSplit `json:"spell_haste"`
+	DmgShield  sourceSplit `json:"dmg_shield"`
 }
 
 // equippedStatsResponse is the per-source breakdown the Stats panel renders.
@@ -774,10 +777,11 @@ func (h *charactersHandler) derivedStats(w http.ResponseWriter, r *http.Request)
 		}
 		aa, _ = h.db.AAStatBonuses(conv)
 	}
-	spellHasteBase := 0
+	spellHasteItem, spellHasteAA := 0, 0
 	if mods, err := buffmod.Compute(cfg.EQPath, char.Name, h.db); err == nil && mods != nil {
-		spellHasteBase = buffmod.SpellHasteSummary(mods.Contributors)
+		spellHasteItem, spellHasteAA = buffmod.SpellHasteSources(mods.Contributors)
 	}
+	spellHaste := spellHasteSplit{item: spellHasteItem, aa: spellHasteAA}
 	// Skill caps the ATK rating and displayed AC assume — a max-level main is
 	// virtually always at cap and the export carries no live skill values.
 	classIdx := char.Class + 1
@@ -795,10 +799,10 @@ func (h *charactersHandler) derivedStats(w http.ResponseWriter, r *http.Request)
 		Character: char.Name,
 		Level:     char.Level,
 		Class:     char.Class,
-		Base:      h.deriveBlock(char, aa, 0, skills, empty, 0, nil),
-		Equipped:  h.deriveBlock(char, aa, spellHasteBase, skills, itemBlock, itemHaste, nil),
-		Buffed:    h.deriveBlock(char, aa, spellHasteBase, skills, itemBlock, itemHaste, presetBuffs),
-		Live:      h.deriveBlock(char, aa, spellHasteBase, skills, itemBlock, itemHaste, liveBuffs),
+		Base:      h.deriveBlock(char, aa, spellHasteSplit{}, skills, empty, 0, nil),
+		Equipped:  h.deriveBlock(char, aa, spellHaste, skills, itemBlock, itemHaste, nil),
+		Buffed:    h.deriveBlock(char, aa, spellHaste, skills, itemBlock, itemHaste, presetBuffs),
+		Live:      h.deriveBlock(char, aa, spellHaste, skills, itemBlock, itemHaste, liveBuffs),
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -810,6 +814,14 @@ type skillCaps struct {
 	weapon  int
 }
 
+// spellHasteSplit carries the worn-focus and AA components of spell haste (SPA
+// 127) into a derived layer so the panel can show an Equip / Buffs / AA split.
+// Buffs add on top inside deriveBlock; the combined total is capped there.
+type spellHasteSplit struct {
+	item int
+	aa   int
+}
+
 // deriveBlock combines one display layer's inputs (base attributes + always-on
 // AA bonuses + optional equipment + optional buffs) and derives the vitals from
 // the resulting totals using the Quarm formulas. item is the raw worn-item
@@ -818,7 +830,7 @@ type skillCaps struct {
 func (h *charactersHandler) deriveBlock(
 	char character.Character,
 	aa db.AABonuses,
-	spellHasteBase int, skills skillCaps,
+	spellHasteSrc spellHasteSplit, skills skillCaps,
 	item statBlock, itemHaste int,
 	buffs []resolvedBuff,
 ) statBlock {
@@ -849,11 +861,12 @@ func (h *charactersHandler) deriveBlock(
 	manaRegen := item.ManaRegen + aa.ManaRegen
 	ft := item.FT
 	dmgShield := item.DmgShield
-	spellHaste := spellHasteBase
+	spellHaste := spellHasteSrc.item + spellHasteSrc.aa
 
 	// Buff-only sums for the source breakdown (issue #128) — kept alongside the
 	// running totals so the UI can split a stat into Equip / Buffs / AA.
 	buffAttack, buffRegen, buffManaRegen := 0, 0, 0
+	buffDmgShield, buffSpellHaste := 0, 0
 
 	buffHasteV2 := 0 // highest non-overhaste buff haste
 	overhasteV3 := 0 // summed overhaste
@@ -882,6 +895,8 @@ func (h *charactersHandler) deriveBlock(
 		buffAttack += d.Attack
 		buffRegen += d.Regen
 		buffManaRegen += d.ManaRegen
+		buffDmgShield += d.DmgShield
+		buffSpellHaste += d.SpellHaste
 		if d.Haste > 0 {
 			if overhasteSpellIDs[b.id] {
 				overhasteV3 += d.Haste
@@ -943,6 +958,15 @@ func (h *charactersHandler) deriveBlock(
 			ManaRegen: sourceSplit{Item: item.ManaRegen, AA: aa.ManaRegen, Buff: buffManaRegen},
 			// FT is worn-focus only — no AA or buff source on Quarm.
 			FT: sourceSplit{Item: item.FT},
+			// Melee haste has no AA source in this model; Equip is the worn-item
+			// haste, Buffs the highest non-overhaste buff plus summed overhaste.
+			// Spell haste splits worn focus / AA / buff (SPA 127). Damage Shield
+			// is item + buff only. These show raw source contributions, so when a
+			// cap applies (melee/level cap or the 50% spell-haste cap) the parts
+			// can sum higher than the capped total shown on the row.
+			Haste:      sourceSplit{Item: itemHaste, Buff: buffHasteV2 + overhasteV3},
+			SpellHaste: sourceSplit{Item: spellHasteSrc.item, AA: spellHasteSrc.aa, Buff: buffSpellHaste},
+			DmgShield:  sourceSplit{Item: item.DmgShield, Buff: buffDmgShield},
 		},
 	}
 }

@@ -73,7 +73,7 @@ func TestDerivedStats_OsuiPipeline(t *testing.T) {
 
 	base := osui()
 	skills := skillCaps{defense: defense, offense: offense, weapon: weapon}
-	equipped := h.deriveBlock(base, aa, 0, skills, item, itemHaste, nil)
+	equipped := h.deriveBlock(base, aa, spellHasteSplit{}, skills, item, itemHaste, nil)
 
 	// ATK rating is present and positive even for a pure caster (weapon skill +
 	// STR term carry it). It must exceed the raw worn ATK bonus it derives from.

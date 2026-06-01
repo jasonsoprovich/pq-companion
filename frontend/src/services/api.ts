@@ -869,12 +869,17 @@ export interface SourceSplit {
 }
 
 // StatBreakdown carries the per-source split for the stats the Stats panel
-// exposes a hover breakdown on (issue #128). FT has no AA/buff source on Quarm.
+// exposes a hover breakdown on (issue #128). FT has no AA/buff source on Quarm;
+// haste/dmg_shield have no AA source. For the capped stats (haste, spell_haste)
+// the parts are raw source contributions and can sum above the capped total.
 export interface StatBreakdown {
   mana_regen: SourceSplit
   regen: SourceSplit
   ft: SourceSplit
   attack: SourceSplit
+  haste: SourceSplit
+  spell_haste: SourceSplit
+  dmg_shield: SourceSplit
 }
 
 export interface StatBlock {

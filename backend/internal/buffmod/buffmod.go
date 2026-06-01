@@ -325,6 +325,28 @@ func SpellHasteSummary(contributors []Modifier) int {
 	return total
 }
 
+// SpellHasteSources returns the worn-focus and AA components of the character's
+// spell haste (SPA 127) separately, before the SpellHasteCapPercent clamp, so
+// the stat panel can show an Equip / AA breakdown (issue #128). Item foci use
+// best-only stacking; AA foci sum. The caller applies the cap to the combined
+// total (plus any buff contribution).
+func SpellHasteSources(contributors []Modifier) (item, aa int) {
+	for _, c := range contributors {
+		if c.SPA != SPACastTime {
+			continue
+		}
+		switch c.Source {
+		case "item":
+			if c.Percent > item {
+				item = c.Percent
+			}
+		case "aa":
+			aa += c.Percent
+		}
+	}
+	return item, aa
+}
+
 // SpellLevel returns the lowest non-255 class level from a spell's classes
 // array — the level at which the lowest-level class first learns the spell.
 // This is what EQEmu compares against SPA 134 (Limit: Max Level) and SPA 139

@@ -664,7 +664,10 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
     pr: 0, mr: 0, dr: 0, fr: 0, cr: 0,
     attack: 0, haste: 0, spell_haste: 0, regen: 0, mana_regen: 0, ft: 0, dmg_shield: 0,
     atk_rating: 0,
-    breakdown: { mana_regen: emptySplit, regen: emptySplit, ft: emptySplit, attack: emptySplit },
+    breakdown: {
+      mana_regen: emptySplit, regen: emptySplit, ft: emptySplit, attack: emptySplit,
+      haste: emptySplit, spell_haste: emptySplit, dmg_shield: emptySplit,
+    },
   }
 
   // Mana is hidden for pure-melee classes (Warrior/Monk/Rogue/Bard) — they
@@ -722,13 +725,13 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
             style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
           >
             <div className="grid grid-cols-2 gap-y-1">
-              <span>Haste</span>           <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{block.haste}%</span>
-              <span>Spell Haste</span>     <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }} title="Hard-capped at 50% per Project Quarm rules">{block.spell_haste}%</span>
+              <BreakdownRow label="Haste"           value={`${block.haste}%`}          split={block.breakdown.haste} includeAA={false} />
+              <BreakdownRow label="Spell Haste"     value={`${block.spell_haste}%`}    split={block.breakdown.spell_haste} note="Hard-capped at 50% per Project Quarm rules" />
               <BreakdownRow label="Worn ATK"        value={`+${block.attack}`}        split={block.breakdown.attack} />
               <BreakdownRow label="HP Regen"        value={`+${block.regen}/tick`}    split={block.breakdown.regen} />
               <BreakdownRow label="Flowing Thought" value={`${block.ft}/15`}          split={block.breakdown.ft} includeAA={false} />
               <BreakdownRow label="Mana Regen"      value={`+${block.mana_regen}/tick`} split={block.breakdown.mana_regen} />
-              <span>Damage Shield</span>   <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>{block.dmg_shield}</span>
+              <BreakdownRow label="Damage Shield"   value={`${block.dmg_shield}`}     split={block.breakdown.dmg_shield} includeAA={false} />
             </div>
           </div>
         )}
@@ -860,9 +863,10 @@ function StatModeToggle({ mode, onChange }: StatModeToggleProps): React.ReactEle
 // replaces, which was laggy and easy to miss. Pass includeAA=false for stats
 // with no AA source (Flowing Thought is worn-focus only on Quarm).
 function BreakdownRow({
-  label, value, split, includeAA = true,
+  label, value, split, includeAA = true, note,
 }: {
-  label: string; value: string; split: SourceSplit; includeAA?: boolean
+  label: string; value: string; split: SourceSplit
+  includeAA?: boolean; note?: string
 }): React.ReactElement {
   const rows: Array<[string, number]> = [
     ['Equip', split.item],
@@ -897,6 +901,14 @@ function BreakdownRow({
               <span className="font-mono">{v}</span>
             </span>
           ))}
+          {note && (
+            <span
+              className="mt-1 block max-w-[12rem] whitespace-normal border-t pt-1 text-[10px] italic"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
+            >
+              {note}
+            </span>
+          )}
         </span>
       </span>
       <span className="text-right font-mono" style={{ color: 'var(--color-foreground)' }}>
