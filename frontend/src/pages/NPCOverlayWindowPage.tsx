@@ -11,7 +11,7 @@ import OverlayLockButton from '../components/OverlayLockButton'
 import { ItemIcon } from '../components/Icon'
 import { ResistChip } from '../components/ResistChip'
 import { getOverlayNPCTarget, getNPCLoot } from '../services/api'
-import { className, bodyTypeName } from '../lib/npcHelpers'
+import { className, bodyTypeName, npcRunSpeedPct } from '../lib/npcHelpers'
 import { effectiveDropPct, rarityColor } from '../lib/lootHelpers'
 import type { TargetState, SpecialAbility, TargetVariant } from '../types/overlay'
 import type { NPC, NPCLootTable, LootDrop } from '../types/npc'
@@ -309,7 +309,7 @@ function StatsBody({
               <Chip label="AC" value={npc.ac} />
               <Chip label="DMG" value={`${npc.min_dmg}-${npc.max_dmg}`} color="#ef4444" />
               <Chip label="Atk/Rd" value={npc.attack_count < 0 ? 'default' : npc.attack_count} />
-              <Chip label="Speed" value={`${Math.round((npc.run_speed / 0.7) * 100)}%`} />
+              <Chip label="Speed" value={`${npcRunSpeedPct(npc.run_speed)}%`} />
             </div>
           )}
 

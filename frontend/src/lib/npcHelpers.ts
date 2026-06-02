@@ -40,6 +40,23 @@ export function bodyTypeName(bodyType: number): string {
   return npcBodyTypeName(bodyType)
 }
 
+// ── Run Speed ─────────────────────────────────────────────────────────────────────
+//
+// npc_types.runspeed is on the NPC movement scale, NOT the client scale. Per
+// EQMacEmu (zone/mob.cpp): "in game a 0.7 speed for client, is same as a 1.4
+// speed for NPCs." So an unbuffered player's base run speed corresponds to an
+// NPC runspeed of 1.4 — that's our 100% reference. Most NPCs sit around 1.25
+// (~89%, slightly slower than a player); faster mobs run 1.5+ (107%+).
+//
+// (Dividing by 0.7 — the client-scale value — double-counted and made every
+// 1.25 NPC read as ~179%, which is actually mount/bridle speed.)
+const PLAYER_BASE_RUNSPEED = 1.4
+
+// NPC run speed as a percentage of an unbuffered player's base run speed.
+export function npcRunSpeedPct(runSpeed: number): number {
+  return Math.round((runSpeed / PLAYER_BASE_RUNSPEED) * 100)
+}
+
 // ── Special Abilities ───────────────────────────────────────────────────────────
 
 export interface SpecialAbility {

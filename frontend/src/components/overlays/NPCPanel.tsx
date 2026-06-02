@@ -6,7 +6,7 @@ import { useNPCOverlaySections } from '../../hooks/useNPCOverlaySections'
 import { useWishlistItemIds } from '../../hooks/useWishlistItemIds'
 import { WSEvent } from '../../lib/wsEvents'
 import { getOverlayNPCTarget, getLogStatus, getNPCLoot, getItem } from '../../services/api'
-import { className, bodyTypeName } from '../../lib/npcHelpers'
+import { className, bodyTypeName, npcRunSpeedPct } from '../../lib/npcHelpers'
 import { cleanLootDropLabel, effectiveDropPct, rarityColor } from '../../lib/lootHelpers'
 import OverlayWindow from '../OverlayWindow'
 import ItemDetailModal from '../ItemDetailModal'
@@ -410,7 +410,7 @@ function NPCDetails({
                 <Stat label="Min DMG" value={npc.min_dmg} color="#ef4444" />
                 <Stat label="Max DMG" value={npc.max_dmg} color="#ef4444" />
                 <Stat label="Atk/Rd" value={npc.attack_count < 0 ? 'default' : npc.attack_count} />
-                <Stat label="Speed" value={`${Math.round((npc.run_speed / 0.7) * 100)}%`} />
+                <Stat label="Speed" value={`${npcRunSpeedPct(npc.run_speed)}%`} />
               </div>
             </div>
           )}
