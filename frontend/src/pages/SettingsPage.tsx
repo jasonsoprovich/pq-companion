@@ -155,6 +155,20 @@ export default function SettingsPage(): React.ReactElement {
   const [tab, setTab] = useState<Tab>('general')
   const [config, setConfig] = useState<Config | null>(null)
   const [originalConfig, setOriginalConfig] = useState<Config | null>(null)
+  // Latest saved config, mirrored into a ref so the unmount cleanup below can
+  // read it without re-subscribing.
+  const originalConfigRef = useRef<Config | null>(null)
+  useEffect(() => {
+    originalConfigRef.current = originalConfig
+  }, [originalConfig])
+  // Leaving Settings discards unsaved changes; revert any unsaved high-contrast
+  // preview to the saved value so the preview doesn't leak past this page.
+  useEffect(() => {
+    return () => {
+      const oc = originalConfigRef.current
+      if (oc) applyContrast(Boolean(oc.preferences.high_contrast))
+    }
+  }, [])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
