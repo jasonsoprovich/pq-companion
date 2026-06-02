@@ -331,6 +331,10 @@ export function getZone(id: number): Promise<Zone> {
   return get<Zone>(`/api/zones/${id}`)
 }
 
+export function getZoneByShortName(shortName: string): Promise<Zone> {
+  return get<Zone>(`/api/zones/short/${encodeURIComponent(shortName)}`)
+}
+
 // ── Raw row (experimental) ─────────────────────────────────────────────────────
 
 export interface RawField {

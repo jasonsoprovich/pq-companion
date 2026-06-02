@@ -5,6 +5,7 @@ import { Search, X } from 'lucide-react'
 import {
   getNPCsByZone,
   getZone,
+  getZoneByShortName,
   getZoneConnections,
   getZoneDrops,
   getZoneExpansions,
@@ -861,13 +862,17 @@ export default function ZonesPage(): React.ReactElement {
   // entry — Back steps from one selected zone to the previously selected one
   // rather than jumping straight to the prior page (issue #9).
   useEffect(() => {
-    const id = Number(searchParams.get('select'))
-    if (!id) {
+    const raw = searchParams.get('select')
+    if (!raw) {
       setSelected(null)
       return
     }
-    if (selected?.id === id) return // already showing it (set on click)
-    getZone(id).then(setSelected).catch(() => {/* ignore */})
+    // Already showing it? Internal picks push the numeric id; source links from
+    // items/spells pass the zone short_name — accept either.
+    if (selected && (String(selected.id) === raw || selected.short_name === raw)) return
+    const numId = Number(raw)
+    const fetchZone = Number.isFinite(numId) && numId > 0 ? getZone(numId) : getZoneByShortName(raw)
+    fetchZone.then(setSelected).catch(() => {/* ignore */})
   }, [searchParams, selected])
 
   // Push a new ?select entry on each pick so it lands in history; clearing

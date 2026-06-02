@@ -1345,8 +1345,13 @@ ipcMain.handle('overlay:trigger:set-mode', (_event, mode: 'interactive' | 'passt
   }
   // hidden
   win.setIgnoreMouseEvents(true, { forward: true })
+  // Only hand focus back to the main window if the overlay actually HELD focus
+  // — i.e. an interactive positioning session the user clicked into. A live
+  // alert is shown with showInactive() and never takes focus, so hiding it when
+  // it expires must NOT pull focus off the game window.
+  const overlayHadFocus = win.isFocused()
   if (win.isVisible()) win.hide()
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus()
+  if (overlayHadFocus && mainWindow && !mainWindow.isDestroyed()) mainWindow.focus()
 })
 
 ipcMain.handle('overlay:trigger:close', () => {
