@@ -1237,6 +1237,24 @@ Parse and edit Zeal `_spellsets.ini` exports.
 - NPC run speed % and level-scaled movement spell range fixed; run speed now shows on the popped-out overlay
 - Clarified confusing "Scheduled" labels in the config backup list
 
+## v0.11.0 — Recipes Browser, Accessibility, Stat Breakdowns
+
+- **Recipes browser** — new Recipes page in the database section backed by tradeskill recipe queries and API; combine-station containers are named instead of labelled "(combine container)", and item detail pages gain a Tradeskills tab listing every ingredient of the recipes an item is used in
+- **Favorite recipes** — a global favorite-recipes store and API to pin frequently-used combines
+- **Accessibility** — app-wide zoom and a high-contrast text mode in Settings for readability, with the high-contrast preview no longer reverting before save (#130)
+- **Spell acquisition sources** — a "Where to get it" button on the spell checklist surfaces where each spell can be obtained, consolidated into a single spell-acquisition view
+- **Trigger capture substitution** — regex capture groups can be substituted into trigger action text (#132)
+- **Character stat breakdowns** — hover popovers detail the sources of Haste, Spell Haste, Damage Shield, ATK rating, and HP/mana regen (#128), replacing the laggy native-title tooltip
+- **Per-overlay lock behaviour** — each overlay's locked-mode behaviour is configurable in the Overlays tab, wired through the lock hook and persisted in config
+- Buff durations ported to the EQMacEmu `CalcBuffDuration` formulas, fixing Forlorn Deeds and other spells that showed incorrect durations (#131)
+- Zeal `/outputfile` exports recognized in both naming formats (#133)
+- Fletching Mastery no longer offered as an AA to non-ranger classes (#134)
+- Trigger overlay no longer steals game focus; Set Position is recoverable on multi-monitor setups, with corrected Escape semantics and teardown; Escape bound as a universal modal-close fallback
+- Instant-clicky spell timers resolve land collisions via item lookup; self timers clear on your own death
+- NPC run-speed percentage corrected to the NPC-scale player base
+- Back navigation preserves search and drill-down state and steps through item selections across explorers
+- Duplicate-name items collapse in spell cross-references
+
 ## Phase 11 — Project Website
 _Planned_
 

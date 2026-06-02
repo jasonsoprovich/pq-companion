@@ -12,6 +12,7 @@ Join the community on [Discord](https://discord.gg/a2QytxSVgM) for help, feedbac
 
 - **Database Explorer** — Search every item, spell, NPC, and zone in the Project Quarm database. Full stat panels, resist info, class restrictions, spell effects, NPC special abilities, and zone NPC rosters.
 - **Global Search** — Press `Cmd+K` / `Ctrl+K` to search items, spells, NPCs, and zones simultaneously from anywhere in the app.
+- **Recipe Browser** — Browse tradeskill recipes in the database section, and on any item see every recipe it's an ingredient in via the Tradeskills tab. Pin frequently-used combines as favorites.
 - **NPC Info Overlay** — See your current target's level, class, HP, resists, and special abilities (Summon, Unmezzable, Uncharmable, etc.) the moment you engage — pulled from the database automatically via your combat log. With Zeal connected, the overlay also shows a live HP bar and a pet-owner badge, plus an on-demand loot table with drop rates.
 - **DPS Meter** — A transparent overlay showing live damage output for you and your group, with fight duration, session totals, and per-class bar colors. Floats above the game as a standalone window.
 - **Combat Log** — Persistent fight history with Personal / Raid / Encounter DPS metrics, expandable per-combatant breakdowns, date-range filters, and event-based session grouping.
@@ -19,7 +20,7 @@ Join the community on [Discord](https://discord.gg/a2QytxSVgM) for help, feedbac
 - **Spell Timer Engine** — Countdown bars for every buff, debuff, mez, stun, and DoT. Tick-accurate durations, with Zeal-pipe corroboration when available. Separate overlay windows for buffs and detrimentals.
 - **NPC Respawn Timers** — A transparent overlay that tracks NPC deaths and counts down to respawn, with Project Quarm's fast-respawn reduction applied automatically.
 - **Log Feed** — Real-time feed of every parsed combat, spell, and zone event from your EQ log.
-- **Spell Checklist** — See every spell your class can learn, cross-referenced against your Zeal spellbook, so you always know what you're missing.
+- **Spell Checklist** — See every spell your class can learn, cross-referenced against your Zeal spellbook, so you always know what you're missing — with a "Where to get it" button on each spell that surfaces where it can be obtained.
 - **Spellsets** — Read and edit your Zeal `_spellsets.ini` exports inside the app. Add and remove sets, rename inline, and import another character's spellsets — with off-class and ineligible-spell blocking so you never load something you can't cast.
 - **Inventory Tracker** — All items across all your characters in one searchable view, including bank and shared bank.
 - **Key Tracker** — Tracks item components for major raid keys (Veeshan's Peak, Old Sebilis, Howling Stones, and more) across all your characters.
@@ -31,7 +32,7 @@ Join the community on [Discord](https://discord.gg/a2QytxSVgM) for help, feedbac
 - **App Backup & Restore** — Export your full app state (settings, triggers, trigger packs) as a single bundle and restore it on another machine or after a reinstall.
 - **Custom Triggers** — A GINA-style regex trigger engine. Write patterns that match any log line — or fire on live Zeal pipe events — and trigger configurable on-screen text and audio alerts. Includes cooldown timers for disciplines and long-recast spells. Ships with pre-built packs for enchanters (mez breaks, charm breaks, resists), bards, and group awareness (tells, deaths). Import and export trigger packs as JSON. Live history feed and a standalone transparent overlay window.
 - **Zeal Pipes Integration** — When Zeal is running, the app talks to it over Windows named pipes for real-time target, pet, cast, and buff data — no waiting on log lines or file exports.
-- **Settings** — Point the app at your EQ folder and character name; everything else is automatic.
+- **Settings** — Point the app at your EQ folder and character name; everything else is automatic. Includes app-wide zoom and a high-contrast text mode for readability, plus per-overlay lock-behaviour controls.
 
 ---
 
