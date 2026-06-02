@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useCachedState } from '../hooks/useCachedState'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Search, X, Bell } from 'lucide-react'
 import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot, getNPCFaction, getNPCSpells, getNPCRaw } from '../services/api'
@@ -42,13 +43,13 @@ interface SearchPaneProps {
 const NPC_PAGE_SIZE = 50
 
 function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactElement {
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useCachedState('npcs.query', '')
   const [npcs, setNpcs] = useState<NPC[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showPlaceholders, setShowPlaceholders] = useState(true)
+  const [showPlaceholders, setShowPlaceholders] = useCachedState('npcs.showPlaceholders', true)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const runSearch = useCallback((q: string, placeholders: boolean) => {
@@ -83,7 +84,8 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   }, [query, showPlaceholders, runSearch])
 
   useEffect(() => {
-    runSearch('', showPlaceholders)
+    runSearch(query, showPlaceholders)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runSearch])
 
   const hasMore = !loading && npcs.length < total
@@ -915,7 +917,9 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function NpcsPage(): React.ReactElement {
-  const [selected, setSelected] = useState<NPC | null>(null)
+  // Cached so Back / returning to the tab restores the NPC you were viewing
+  // along with the search (issue #9).
+  const [selected, setSelected] = useCachedState<NPC | null>('npcs.selected', null)
   const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(() => {

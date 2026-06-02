@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
+import { useCachedState } from '../hooks/useCachedState'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Filter, Search, X } from 'lucide-react'
 import { searchItems, getItem, getItemSources, getItemRaw } from '../services/api'
@@ -407,8 +408,8 @@ interface SearchPaneProps {
 const ITEM_PAGE_SIZE = 50
 
 function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactElement {
-  const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<FilterState>(EMPTY_FILTER)
+  const [query, setQuery] = useCachedState('items.query', '')
+  const [filter, setFilter] = useCachedState<FilterState>('items.filter', EMPTY_FILTER)
   const [showModal, setShowModal] = useState(false)
   const [items, setItems] = useState<Item[]>([])
   const [total, setTotal] = useState(0)
@@ -452,7 +453,8 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   }, [query, filter, runSearch])
 
   useEffect(() => {
-    runSearch('', EMPTY_FILTER)
+    runSearch(query, filter)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runSearch])
 
   const hasMore = !loading && items.length < total
@@ -1116,7 +1118,9 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function ItemsPage(): React.ReactElement {
-  const [selected, setSelected] = useState<Item | null>(null)
+  // Cached so Back / returning to the tab restores the item you were viewing
+  // along with the search (issue #9).
+  const [selected, setSelected] = useCachedState<Item | null>('items.selected', null)
   const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(() => {

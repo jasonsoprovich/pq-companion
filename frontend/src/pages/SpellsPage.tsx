@@ -21,6 +21,7 @@ import { ItemIcon, SpellIcon } from '../components/Icon'
 import RawDataModal from '../components/RawDataModal'
 import VariantLinks from '../components/VariantLinks'
 import SpellAcquisition from '../components/SpellAcquisition'
+import { useCachedState } from '../hooks/useCachedState'
 
 const SPELL_CLASSES: { index: number; abbr: string; full: string }[] = [
   { index: 0,  abbr: 'WAR', full: 'Warrior' },
@@ -50,10 +51,10 @@ interface SearchPaneProps {
 const SPELL_PAGE_SIZE = 50
 
 function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactElement {
-  const [query, setQuery] = useState('')
-  const [classIndex, setClassIndex] = useState(-1)
-  const [minLevel, setMinLevel] = useState('')
-  const [maxLevel, setMaxLevel] = useState('')
+  const [query, setQuery] = useCachedState('spells.query', '')
+  const [classIndex, setClassIndex] = useCachedState('spells.classIndex', -1)
+  const [minLevel, setMinLevel] = useCachedState('spells.minLevel', '')
+  const [maxLevel, setMaxLevel] = useCachedState('spells.maxLevel', '')
   const [spells, setSpells] = useState<Spell[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -100,7 +101,8 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   }, [query, classIndex, minLevel, maxLevel, runSearch])
 
   useEffect(() => {
-    runSearch('', -1, '', '')
+    runSearch(query, classIndex, minLevel, maxLevel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runSearch])
 
   const hasMore = !loading && classIndex < 0 && spells.length < total
@@ -635,7 +637,9 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function SpellsPage(): React.ReactElement {
-  const [selected, setSelected] = useState<Spell | null>(null)
+  // Cached so Back / returning to the tab restores the spell you were viewing
+  // along with the search (issue #9).
+  const [selected, setSelected] = useCachedState<Spell | null>('spells.selected', null)
   const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(() => {

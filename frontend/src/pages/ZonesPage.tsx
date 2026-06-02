@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useCachedState } from '../hooks/useCachedState'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, X } from 'lucide-react'
 import {
@@ -54,8 +55,8 @@ interface SearchPaneProps {
 }
 
 function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactElement {
-  const [query, setQuery] = useState('')
-  const [expansion, setExpansion] = useState<number | null>(null)
+  const [query, setQuery] = useCachedState('zones.query', '')
+  const [expansion, setExpansion] = useCachedState<number | null>('zones.expansion', null)
   const [expansionOptions, setExpansionOptions] = useState<number[]>([])
   const [zones, setZones] = useState<Zone[]>([])
   const [total, setTotal] = useState(0)
@@ -83,11 +84,12 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
     }
   }, [query, expansion, runSearch])
 
-  // Fire the initial empty-query search immediately so the list populates
-  // on mount without waiting for the 300ms debounce. Matches the pattern
-  // used by ItemsPage / SpellsPage / NpcsPage.
+  // Fire the search immediately on mount so the list populates without waiting
+  // for the 300ms debounce. Uses the (possibly cached) query/expansion so a
+  // restored search shows its results right away (issue #9).
   useEffect(() => {
-    runSearch('', null)
+    runSearch(query, expansion)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runSearch])
 
   useEffect(() => {
@@ -852,7 +854,9 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function ZonesPage(): React.ReactElement {
-  const [selected, setSelected] = useState<Zone | null>(null)
+  // Cached so Back / returning to the tab restores the zone you were viewing
+  // (its mob list), not just the search (issue #9).
+  const [selected, setSelected] = useCachedState<Zone | null>('zones.selected', null)
   const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(() => {
