@@ -38,10 +38,9 @@ func nonBardSpell(formula, base int) *db.Spell {
 }
 
 func TestSpellDurationTicks_BardSongUsesBase(t *testing.T) {
-	// Selo's Accelerando: formula=5, base=3. Formula 5 at level 60 yields
-	// min(60*5+3, 3*3) = 9 ticks (54s). With the bard clamp, we report
-	// the raw base of 3 ticks (18s) instead — matches in-game fade after
-	// the bard stops singing.
+	// Selo's Accelerando: formula=5, base=3. EQMac formula 5 = min(2, base) =
+	// 2 ticks. With the bard clamp we report the raw base of 3 ticks (18s)
+	// instead — matches in-game fade after the bard stops singing.
 	const level = 60
 	bard := bardSpell(5, 3)
 	if got := SpellDurationTicks(bard, level); got != 3 {
@@ -51,8 +50,8 @@ func TestSpellDurationTicks_BardSongUsesBase(t *testing.T) {
 	// Non-bard spell with the same formula+base must still run the full
 	// formula — the clamp is narrowly scoped to bard-only spells.
 	nonBard := nonBardSpell(5, 3)
-	if got := SpellDurationTicks(nonBard, level); got != 9 {
-		t.Errorf("non-bard spell SpellDurationTicks = %d ticks, want 9 (formula 5 cap)", got)
+	if got := SpellDurationTicks(nonBard, level); got != 2 {
+		t.Errorf("non-bard spell SpellDurationTicks = %d ticks, want 2 (formula 5 = min(2,base))", got)
 	}
 }
 
@@ -80,21 +79,41 @@ func TestCalcDurationTicks(t *testing.T) {
 		level   int
 		want    int
 	}{
+		// Values are a faithful port of EQMacEmu CalcBuffDuration_formula and
+		// were spot-checked against PQDI (Project Quarm's data site).
+		//
 		// Formula 0: instant, always 0
 		{name: "instant", formula: 0, base: 10, level: 60, want: 0},
 		// Formula 1: min(level/2, base)
 		{name: "f1 capped by base", formula: 1, base: 20, level: 60, want: 20},
 		{name: "f1 capped by level", formula: 1, base: 100, level: 60, want: 30},
 		{name: "f1 low level", formula: 1, base: 100, level: 10, want: 5},
+		// Formula 2: min(level<=1 ? 6 : level/2+5, base)
+		{name: "f2 lvl1", formula: 2, base: 100, level: 1, want: 6},
+		{name: "f2 lvl60", formula: 2, base: 100, level: 60, want: 35},
+		{name: "f2 capped by base", formula: 2, base: 20, level: 60, want: 20},
 		// Formula 3: min(level*30, base) — used by some long mezzes
 		{name: "f3 capped by base", formula: 3, base: 200, level: 60, want: 200},
 		{name: "f3 low level", formula: 3, base: 1800, level: 5, want: 150},
-		// Formula 8: Quarm-style fixed-base buff (e.g. Pacify, base=60).
-		// EQEmu canonical "level + base capped at base*3" overshoots and
-		// would yield 12-minute Pacify timers — verified against PQDI which
-		// shows 6 minutes / 60 ticks for spell 45.
+		// Formula 4: min(50, base) — fixed 50 ticks
+		{name: "f4 fixed 50", formula: 4, base: 100, level: 60, want: 50},
+		{name: "f4 capped by base", formula: 4, base: 30, level: 60, want: 30},
+		// Formula 5: min(2, base) — verified against PQDI Invigor (base 3) = 2
+		{name: "f5 invigor", formula: 5, base: 3, level: 60, want: 2},
+		{name: "f5 base1", formula: 5, base: 1, level: 60, want: 1},
+		// Formula 6: min(level/2+2, base) — verified against PQDI Forlorn Deeds
+		// (id 1712, base 35, Enchanter L57): 30 ticks at L57, 32 at L60. The
+		// previous modern-EQEmu formula reported ~105 ticks (issue #131).
+		{name: "f6 forlorn lvl57", formula: 6, base: 35, level: 57, want: 30},
+		{name: "f6 forlorn lvl60", formula: 6, base: 35, level: 60, want: 32},
+		{name: "f6 capped by base", formula: 6, base: 20, level: 60, want: 20},
+		// Formula 7: min(level, base) — verified against PQDI Berserker
+		// Strength (id 21, base 30, Enchanter L20): 20 ticks at L20, caps at 30
+		{name: "f7 berserker lvl20", formula: 7, base: 30, level: 20, want: 20},
+		{name: "f7 berserker cap", formula: 7, base: 30, level: 60, want: 30},
+		// Formula 8: min(level+10, base) — Pacify (id 45, base 60) = 60 at L60
 		{name: "f8 pacify 60", formula: 8, base: 60, level: 60, want: 60},
-		{name: "f8 low level", formula: 8, base: 60, level: 5, want: 60},
+		{name: "f8 low level", formula: 8, base: 60, level: 5, want: 15},
 		// Formula 9: min(level*2 + 10, base) — anchored on PQDI Min Duration
 		// at each spell's minimum castable level.
 		{name: "f9 lull lvl1", formula: 9, base: 20, level: 1, want: 12},          // PQDI Lull min
@@ -108,16 +127,16 @@ func TestCalcDurationTicks(t *testing.T) {
 		{name: "f10 cajoling lvl39", formula: 10, base: 205, level: 39, want: 127}, // PQDI Cajoling min
 		{name: "f10 charm lvl60", formula: 10, base: 205, level: 60, want: 190},
 		{name: "f10 cap reached", formula: 10, base: 205, level: 65, want: 205},
-		// Formula 11: fixed base regardless of level
-		{name: "f11 fixed", formula: 11, base: 72, level: 1, want: 72},
-		{name: "f11 fixed high level", formula: 11, base: 72, level: 60, want: 72},
-		// Formula 50: level/5
-		{name: "f50", formula: 50, base: 0, level: 60, want: 12},
-		{name: "f50 min 1", formula: 50, base: 0, level: 3, want: 1},
-		// Formula 3600: treated as instant
-		{name: "f3600", formula: 3600, base: 100, level: 60, want: 0},
-		// Default/unknown formula falls back to base
-		{name: "unknown formula", formula: 99, base: 40, level: 60, want: 40},
+		// Formula 11: min(level*30 + 90, base) — base-capped in practice
+		{name: "f11 capped by base", formula: 11, base: 72, level: 1, want: 72},
+		{name: "f11 high level", formula: 11, base: 72, level: 60, want: 72},
+		// Formula 50: permanent buff — reported as 0 (no countdown timer)
+		{name: "f50 permanent", formula: 50, base: 270, level: 60, want: 0},
+		// Formula >= 200: literal tick count (the field IS the duration)
+		{name: "f600 literal", formula: 600, base: 100, level: 60, want: 600},
+		{name: "f3600 literal", formula: 3600, base: 100, level: 60, want: 3600},
+		// Unknown formula (< 200, not in the table): no timer
+		{name: "unknown formula", formula: 99, base: 40, level: 60, want: 0},
 		// Level 0 guard: treated as level 1
 		{name: "level 0", formula: 11, base: 30, level: 0, want: 30},
 	}

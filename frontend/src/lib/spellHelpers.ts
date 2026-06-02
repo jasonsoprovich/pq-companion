@@ -201,11 +201,10 @@ export function buildSpellTriggerPrefill(spell: {
       : `^${escapeRegex(spell.name)}$`
   const wornOff = spell.spell_fades ? `^${escapeRegex(spell.spell_fades)}$` : ''
 
-  // Approximate duration at the level cap; scaling formulas generally hit
-  // their cap by 60, so this is a useful default the user can tweak. Bard
-  // songs are the exception — they report their base duration, not the
-  // formula cap (see isBardSong), so e.g. Tuyen's Chant of Flame reads 18s
-  // not the 54s the formula-5 cap would give.
+  // Approximate duration at the level cap (60); scaling formulas generally
+  // hit their cap by 60, so this is a useful default the user can tweak. Bard
+  // songs are the exception — they report their base duration rather than the
+  // formula result (see isBardSong).
   const durationTicks = isBardSong(spell.class_levels)
     ? spell.buff_duration
     : approxDurationTicks(spell.buff_duration_formula, spell.buff_duration, 60)
@@ -222,28 +221,44 @@ export function buildSpellTriggerPrefill(spell: {
 }
 
 /**
- * Mirror of backend spelltimer.CalcDurationTicks for the common formulas.
- * Returns 0 for instant / permanent / unknown cases.
+ * Mirror of backend spelltimer.CalcDurationTicks — a faithful port of
+ * EQMacEmu's CalcBuffDuration_formula (the EQMac/Quarm ruleset, which diverges
+ * from modern EQEmu). Keep in lockstep with backend/internal/spelltimer/
+ * duration.go. Returns 0 for instant / permanent / unknown cases.
  */
 function approxDurationTicks(formula: number, base: number, level: number): number {
   if (level <= 0) level = 1
+  // Any formula value >= 200 is a literal tick count.
+  if (formula >= 200) return formula
   switch (formula) {
     case 0: return 0
-    case 1: return Math.min(Math.floor(level / 2), base)
-    case 2: return Math.min(Math.floor(30 / level) + base, base * 2)
-    case 3: return Math.min(level * 30, base)
-    case 4: return Math.min(level * 2 + base, base * 3)
-    case 5: return Math.min(level * 5 + base, base * 3)
-    case 6: return Math.min(level * 30 + base, base * 3)
-    case 7: return Math.min(level * 5, base)
-    case 8: return Math.min(level + base, base * 3)
-    case 9: return Math.min(level * 2, base)
-    case 10: return Math.min(level, base)
-    case 11: return base
-    case 50: return Math.max(1, Math.floor(level / 5))
-    case 3600: return 0
-    default: return base
+    case 1: return capAtBase(Math.floor(level / 2), base)
+    case 2: return capAtBase(level <= 1 ? 6 : Math.floor(level / 2) + 5, base)
+    case 3: return capAtBase(level * 30, base)
+    case 4: return capToBase(50, base)
+    case 5: return capToBase(2, base)
+    case 6: return capToBase(Math.floor(level / 2) + 2, base)
+    case 7: return capToBase(level, base)
+    case 8: return capAtBase(level + 10, base)
+    case 9: return capAtBase(level * 2 + 10, base)
+    case 10: return capAtBase(level * 3 + 10, base)
+    case 11: return capAtBase(level * 30 + 90, base)
+    case 12: return capToBase(Math.max(1, Math.floor(level / 4)), base)
+    case 50: return 0 // permanent buff — no countdown
+    default: return 0
   }
+}
+
+// capAtBase / capToBase mirror the two clamping patterns in EQMacEmu's
+// CalcBuffDuration_formula (see duration.go for the C++ correspondence).
+function capAtBase(i: number, base: number): number {
+  if (i < base) return i < 1 ? 1 : i
+  return base
+}
+
+function capToBase(i: number, base: number): number {
+  if (base !== 0) return i < base ? i : base
+  return i
 }
 
 // ── Effect descriptions ────────────────────────────────────────────────────────

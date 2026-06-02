@@ -223,16 +223,34 @@ CREATE TABLE spells_new (
 
 #### Duration Formula (`spells_new.buffdurationformula`)
 
-| Value | Formula |
+Project Quarm runs the **EQMacEmu** ruleset, whose duration formulas DIVERGE
+from modern EQEmu. The canonical source is `CalcBuffDuration_formula` in
+EQMacEmu/Server `zone/spells.cpp` (ported in
+`backend/internal/spelltimer/duration.go` and mirrored in
+`frontend/src/lib/spellHelpers.ts`). Every result is capped at `buffduration`
+(the column is the per-formula MAX tick count), and `level` is the caster level.
+
+| Value | Result (before the `buffduration` cap) |
 |---|---|
 | 0 | Instant (0 ticks) |
-| 1 | `duration` ticks |
-| 3 | `level / 2` ticks, capped at `duration` |
-| 5 | `duration` ticks |
-| 7 | `duration` ticks (most buffs) |
+| 1 | `level / 2` |
+| 2 | `level/2 + 5` (6 at level 1) |
+| 3 | `level * 30` |
+| 4 | `50` (fixed) |
+| 5 | `2` (fixed) |
+| 6 | `level/2 + 2` |
+| 7 | `level` |
+| 8 | `level + 10` |
+| 9 | `level*2 + 10` |
+| 10 | `level*3 + 10` |
+| 11 | `level*30 + 90` |
+| 12 | `level / 4` (min 1; unused by current spells) |
 | 50 | Permanent |
+| ≥ 200 | Literal tick count (the formula value itself) |
 
-Tick = 6 seconds. So `buffduration = 30` = 180 seconds = 3 minutes.
+Tick = 6 seconds. So `buffduration = 30` = 180 seconds = 3 minutes. Example:
+Forlorn Deeds (formula 6, `buffduration` 35) at level 60 = `min(60/2+2, 35)` =
+32 ticks = 3m 12s.
 
 ---
 

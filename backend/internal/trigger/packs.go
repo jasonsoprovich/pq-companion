@@ -585,9 +585,9 @@ func EnchanterPack() TriggerPack {
 				WornOffPattern: `^(?:Your Pacify spell has worn off\.|Your target resisted the Pacify spell\.)$`,
 				TimerType:      TimerTypeDetrimental,
 				// 360s = 6 minutes per PQDI (spell 45, buffduration=60 ticks).
-				// Was 720 — that came from the EQEmu-canonical formula 8
-				// reading; Quarm uses fixed base, fixed here in lockstep with
-				// the spelltimer.CalcDurationTicks formula-8 fix.
+				// EQMac formula 8 = min(level+10, base); at level 60 that's the
+				// full 60-tick base. Was 720 (from the modern-EQEmu reading);
+				// kept in lockstep with the spelltimer.CalcDurationTicks port.
 				TimerDurationSecs: 360,
 				SpellID:           45,
 				PackName:          "Enchanter",
