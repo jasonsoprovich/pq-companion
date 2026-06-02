@@ -291,7 +291,7 @@ function GroundSpawnsTab({ spawns }: { spawns: ItemGroundSpawnZone[] }): React.R
 
 // ── Modal ──────────────────────────────────────────────────────────────────────
 
-type TabKey = 'overview' | 'drops' | 'merchants' | 'forage' | 'ground-spawns' | 'tradeskills'
+export type TabKey = 'overview' | 'drops' | 'merchants' | 'forage' | 'ground-spawns' | 'tradeskills'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'overview', label: 'Overview' },
@@ -320,22 +320,32 @@ interface ItemDetailModalProps {
   item: Item | null
   open: boolean
   onClose: () => void
+  // Which tab to open on. 'sources' resolves to the best available source tab
+  // once sources load (Purchased From, else Drops From, else Overview) — used
+  // by the spell "Where to get it" flow. Defaults to 'overview'.
+  initialTab?: TabKey | 'sources'
 }
 
-export default function ItemDetailModal({ item, open, onClose }: ItemDetailModalProps): React.ReactElement | null {
+export default function ItemDetailModal({ item, open, onClose, initialTab }: ItemDetailModalProps): React.ReactElement | null {
   const navigate = useNavigate()
   const [sources, setSources] = useState<ItemSources | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
-    setActiveTab('overview')
+    // 'sources' stays on overview until the fetch resolves the best tab.
+    setActiveTab(initialTab && initialTab !== 'sources' ? initialTab : 'overview')
     setSources(null)
     if (!item) return
     getItemSources(item.id)
-      .then(setSources)
+      .then((s) => {
+        setSources(s)
+        if (initialTab === 'sources') {
+          setActiveTab(s.merchants?.length ? 'merchants' : s.drops?.length ? 'drops' : 'overview')
+        }
+      })
       .catch(() => setSources({ drops: [], merchants: [], forage_zones: [], ground_spawns: [], tradeskills: [] }))
-  }, [item?.id])
+  }, [item?.id, initialTab])
 
   useEffect(() => {
     if (!open) return

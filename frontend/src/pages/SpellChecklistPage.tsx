@@ -9,16 +9,22 @@ import {
   RefreshCw,
   AlertCircle,
   X,
+  ShoppingBag,
 } from 'lucide-react'
 import {
   getSpell,
   getSpellsByClass,
   getZealSpellbook,
   listCharacters,
+  getSpellCrossRefs,
+  getItem,
+  getItemSources,
   type Character,
 } from '../services/api'
 import type { Spell } from '../types/spell'
+import type { Item } from '../types/item'
 import type { Spellbook } from '../types/zeal'
+import ItemDetailModal from '../components/ItemDetailModal'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import {
@@ -284,9 +290,11 @@ interface SpellRowProps {
   classIndex: number
   known: boolean
   onSelect: (id: number) => void
+  onShowSources: (id: number) => void
+  sourcesLoading: boolean
 }
 
-function SpellRow({ spell, classIndex, known, onSelect }: SpellRowProps): React.ReactElement {
+function SpellRow({ spell, classIndex, known, onSelect, onShowSources, sourcesLoading }: SpellRowProps): React.ReactElement {
   const level = classLevel(spell, classIndex)
   return (
     <div
@@ -346,6 +354,20 @@ function SpellRow({ spell, classIndex, known, onSelect }: SpellRowProps): React.
         </span>
       )}
 
+      {/* Where to get it — opens the scroll's vendor/drop sources */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onShowSources(spell.id) }}
+        disabled={sourcesLoading}
+        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-100"
+        title="Where to get it (vendors & drops)"
+      >
+        {sourcesLoading ? (
+          <RefreshCw size={12} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
+        ) : (
+          <ShoppingBag size={12} style={{ color: 'var(--color-muted)' }} />
+        )}
+      </button>
+
       {/* Open in explorer */}
       <button
         onClick={(e) => { e.stopPropagation(); onSelect(spell.id) }}
@@ -373,7 +395,20 @@ export default function SpellChecklistPage(): React.ReactElement {
   const [loadingBook, setLoadingBook] = useState(true)
   const [spellError, setSpellError] = useState<string | null>(null)
   const [modalSpell, setModalSpell] = useState<Spell | null>(null)
+  // Scroll item whose vendor/drop sources are shown via the reused
+  // ItemDetailModal, plus the in-flight spell id and a transient message for
+  // the no-scroll / error cases.
+  const [sourcesItem, setSourcesItem] = useState<Item | null>(null)
+  const [sourcesLoadingId, setSourcesLoadingId] = useState<number | null>(null)
+  const [sourcesMsg, setSourcesMsg] = useState<string | null>(null)
   const navigate = useNavigate()
+
+  // Auto-dismiss the transient sources message.
+  useEffect(() => {
+    if (!sourcesMsg) return
+    const t = setTimeout(() => setSourcesMsg(null), 3000)
+    return () => clearTimeout(t)
+  }, [sourcesMsg])
 
   // Default the viewed character to the active character once known.
   useEffect(() => {
@@ -431,6 +466,41 @@ export default function SpellChecklistPage(): React.ReactElement {
     getSpell(id)
       .then(setModalSpell)
       .catch(() => { /* non-fatal */ })
+  }
+
+  // Resolve a spell to its scroll item and open that item's sources (vendors /
+  // drops) in the reused ItemDetailModal. A spell can have several scroll
+  // variants (e.g. a no-trade quest copy with no sources alongside the real
+  // vendor scroll), so pick the variant with the most sources and only open
+  // when there's actually somewhere to get it.
+  async function handleShowSources(spellId: number) {
+    setSourcesLoadingId(spellId)
+    setSourcesMsg(null)
+    try {
+      const cr = await getSpellCrossRefs(spellId)
+      const scrolls = cr.scroll_items
+      if (scrolls.length === 0) {
+        setSourcesMsg('No scroll exists for this spell — it can’t be bought or dropped.')
+        return
+      }
+      const counted = await Promise.all(
+        scrolls.map(async (s) => {
+          const src = await getItemSources(s.id).catch(() => null)
+          return { id: s.id, count: (src?.merchants?.length ?? 0) + (src?.drops?.length ?? 0) }
+        }),
+      )
+      counted.sort((a, b) => b.count - a.count)
+      const best = counted[0]
+      if (best.count === 0) {
+        setSourcesMsg('No vendors or drops found for this spell scroll.')
+        return
+      }
+      setSourcesItem(await getItem(best.id))
+    } catch {
+      setSourcesMsg('Could not load spell sources.')
+    } finally {
+      setSourcesLoadingId(null)
+    }
   }
 
   function handleOpenInExplorer(id: number) {
@@ -690,6 +760,8 @@ export default function SpellChecklistPage(): React.ReactElement {
             classIndex={classIndex}
             known={knownIds.has(spell.id)}
             onSelect={handleSelectSpell}
+            onShowSources={handleShowSources}
+            sourcesLoading={sourcesLoadingId === spell.id}
           />
         ))}
       </div>
@@ -700,6 +772,26 @@ export default function SpellChecklistPage(): React.ReactElement {
           onClose={() => setModalSpell(null)}
           onOpenInExplorer={handleOpenInExplorer}
         />
+      )}
+
+      <ItemDetailModal
+        item={sourcesItem}
+        open={!!sourcesItem}
+        onClose={() => setSourcesItem(null)}
+        initialTab="sources"
+      />
+
+      {sourcesMsg && (
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1200] rounded-md px-4 py-2 text-sm shadow-lg"
+          style={{
+            backgroundColor: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-foreground)',
+          }}
+        >
+          {sourcesMsg}
+        </div>
       )}
     </div>
   )
