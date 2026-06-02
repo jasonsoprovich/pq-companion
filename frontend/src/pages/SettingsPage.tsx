@@ -6,6 +6,7 @@ import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types
 import { OVERLAY_DEFS, resolveLockedMode } from '../lib/overlays'
 import type { OverlayName, LockedMode } from '../lib/overlays'
 import type { LogFileInfo } from '../types/logEvent'
+import { applyContrast } from '../hooks/useHighContrast'
 import type { ZealInstallStatus, ZealPipeStatus } from '../types/zeal'
 import type { QuarmClientStatus, QuarmFileStatus } from '../types/quarm'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
@@ -345,6 +346,8 @@ export default function SettingsPage(): React.ReactElement {
   function handleCancel(): void {
     if (originalConfig) {
       setConfig(originalConfig)
+      // Revert the optimistic high-contrast preview if it was toggled.
+      applyContrast(Boolean(originalConfig.preferences.high_contrast))
     }
     flashSaveState('discarded')
   }
@@ -1214,6 +1217,56 @@ export default function SettingsPage(): React.ReactElement {
                   position: 'absolute',
                   top: 2,
                   left: config.preferences.minimize_to_tray ? 20 : 2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  backgroundColor: '#fff',
+                  transition: 'left 0.15s',
+                }}
+              />
+            </div>
+          </label>
+
+          <label className="flex cursor-pointer items-center justify-between py-1 mt-4">
+            <div>
+              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                High Contrast Text
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                Brighten muted text and borders for easier reading on
+                high-resolution displays.
+              </p>
+            </div>
+            <div
+              onClick={() => {
+                const next = !config.preferences.high_contrast
+                // Apply immediately for instant feedback; the hook keeps it in
+                // sync after the change is saved.
+                applyContrast(next)
+                setConfig({
+                  ...config,
+                  preferences: { ...config.preferences, high_contrast: next },
+                })
+              }}
+              style={{
+                width: 40,
+                height: 22,
+                borderRadius: 11,
+                backgroundColor: config.preferences.high_contrast
+                  ? 'var(--color-primary)'
+                  : 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+                position: 'relative',
+                flexShrink: 0,
+                transition: 'background-color 0.15s',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 2,
+                  left: config.preferences.high_contrast ? 20 : 2,
                   width: 16,
                   height: 16,
                   borderRadius: '50%',

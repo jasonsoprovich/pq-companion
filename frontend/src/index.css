@@ -30,6 +30,19 @@
   --scrollbar-thumb-hover: #3a3a3a;
 }
 
+/* ── High-contrast accessibility mode (issue #130) ───────────────────────────
+   Toggled via the data-contrast attribute on <html> (see useHighContrast).
+   Only raises the contrast of the muted greys and borders that were hard to
+   read on high-res displays — it does NOT touch sizes/spacing, so there's no
+   layout risk. The light-grey-on-black secondary text the report flagged
+   becomes near-white. */
+html[data-contrast="high"] {
+  --color-muted: #b8b8b8;
+  --color-muted-foreground: #dcdcdc;
+  --color-border: #3d3d3d;
+  --color-border-subtle: #303030;
+}
+
 /* ── Reset & base ─────────────────────────────────────────────────────────── */
 
 *,

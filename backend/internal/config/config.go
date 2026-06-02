@@ -204,6 +204,10 @@ type Preferences struct {
 	// MinimizeToTray controls whether closing the main window hides to tray.
 	MinimizeToTray bool `yaml:"minimize_to_tray" json:"minimize_to_tray"`
 
+	// HighContrast raises the contrast of muted text and borders for
+	// readability on high-resolution displays (issue #130). Off by default.
+	HighContrast bool `yaml:"high_contrast,omitempty" json:"high_contrast"`
+
 	// ParseCombatLog enables real-time combat log parsing.
 	ParseCombatLog bool `yaml:"parse_combat_log" json:"parse_combat_log"`
 

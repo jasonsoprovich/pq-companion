@@ -7,6 +7,7 @@ import { loadEnums } from './lib/enumsCache'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useTimerAlerts } from './hooks/useTimerAlerts'
 import { useMasterVolume } from './hooks/useMasterVolume'
+import { useHighContrast } from './hooks/useHighContrast'
 import { useLogFeedSubscriber } from './hooks/useLogFeed'
 import ItemsPage from './pages/ItemsPage'
 import SpellsPage from './pages/SpellsPage'
@@ -57,6 +58,7 @@ function OverlayPage({ children }: { children: React.ReactNode }): React.ReactEl
 // and never fire duplicate TTS or sound alerts.
 function MainWindowLayout(): React.ReactElement {
   useMasterVolume()
+  useHighContrast()
   useAudioEngine()
   useTimerAlerts()
   // Keep the Log Feed populating in the background so it persists across tab
