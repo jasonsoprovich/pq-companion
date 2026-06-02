@@ -9,6 +9,42 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.11.0 — 2026-06-02
+
+A tradeskills release: a new Recipes browser, accessibility options, richer
+character stat breakdowns, and a wave of trigger and overlay fixes.
+
+### Highlights
+- **Recipes browser** — new Recipes page in the database section, with full
+  tradeskill recipe lookups, named combine-station containers, and a global
+  favorite-recipes store; item pages gain a Tradeskills tab listing every
+  ingredient
+- **Accessibility** — app-wide zoom and a high-contrast text mode in Settings
+  for readability (#130)
+- **Spell checklist** — a "Where to get it" sources button shows where each
+  spell can be acquired
+- **Trigger captures** — regex capture groups can now be substituted into
+  trigger action text (#132)
+- **Character breakdowns** — hover popovers detail the sources of Haste, Spell
+  Haste, Damage Shield, ATK rating, and HP/mana regen, replacing the laggy
+  native tooltip (#128)
+- **Per-overlay lock behaviour** — each overlay's locked-mode behaviour is now
+  configurable in the Overlays tab
+
+### Fixes
+- Buff durations now use the EQMacEmu formulas, fixing Forlorn Deeds and other
+  spells that showed incorrect durations (#131)
+- Zeal `/outputfile` exports are recognized in both naming formats (#133)
+- Fletching Mastery is no longer offered as an AA to non-ranger classes (#134)
+- The trigger overlay no longer steals game focus, Set Position is recoverable
+  on multi-monitor setups, and Escape reliably closes modals
+- Instant-clicky spell timers no longer collide via item lookup
+- Corrected NPC run-speed percentages
+- Back navigation preserves search and drill-down state and steps through item
+  selections across explorers
+- Self spell timers clear correctly on your own death
+- Duplicate-name items collapse in spell cross-references
+
 ## v0.10.0 — 2026-05-30
 
 A big feature release: a new Lockouts tracker, character stats now computed from real Project Quarm formulas, NPC respawn timers, and multi-monitor overlay support.
