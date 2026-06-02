@@ -587,6 +587,13 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
           <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
             Matched against the log message text (after the timestamp).
           </p>
+          <p className="text-[10px] leading-snug" style={{ color: 'var(--color-muted)' }}>
+            Reuse capture groups in the alert/TTS text: <span className="font-mono">{'{1}'}</span>,{' '}
+            <span className="font-mono">{'{2}'}</span> (or <span className="font-mono">$1</span>,{' '}
+            <span className="font-mono">$2</span>) for numbered groups,{' '}
+            <span className="font-mono">{'{name}'}</span> for named groups like{' '}
+            <span className="font-mono">(?P&lt;name&gt;…)</span>.
+          </p>
         </div>
       )}
 

@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -71,11 +72,11 @@ func TestEngine_DisabledTriggerDoesNotFire(t *testing.T) {
 	s, e := openTestEngine(t)
 
 	tr := &Trigger{
-		ID:      "disabled1",
-		Name:    "Disabled Trigger",
-		Enabled: false,
-		Pattern: `You have been slain`,
-		Actions: []Action{},
+		ID:        "disabled1",
+		Name:      "Disabled Trigger",
+		Enabled:   false,
+		Pattern:   `You have been slain`,
+		Actions:   []Action{},
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := s.Insert(tr); err != nil {
@@ -93,11 +94,11 @@ func TestEngine_ReloadUpdatesPatterns(t *testing.T) {
 	s, e := openTestEngine(t)
 
 	tr := &Trigger{
-		ID:      "upd1",
-		Name:    "Tell Alert",
-		Enabled: true,
-		Pattern: `\w+ tells you,`,
-		Actions: []Action{},
+		ID:        "upd1",
+		Name:      "Tell Alert",
+		Enabled:   true,
+		Pattern:   `\w+ tells you,`,
+		Actions:   []Action{},
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := s.Insert(tr); err != nil {
@@ -203,11 +204,11 @@ func TestEngine_HistoryRingBuffer(t *testing.T) {
 	s, e := openTestEngine(t)
 
 	tr := &Trigger{
-		ID:      "ring1",
-		Name:    "Any Hit",
-		Enabled: true,
-		Pattern: `damage`,
-		Actions: []Action{},
+		ID:        "ring1",
+		Name:      "Any Hit",
+		Enabled:   true,
+		Pattern:   `damage`,
+		Actions:   []Action{},
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := s.Insert(tr); err != nil {
@@ -310,7 +311,7 @@ func TestApplyDefaultUpdates_AppendsAndIsIdempotent(t *testing.T) {
 		Name:            "Incoming Tell",
 		PackName:        "General Triggers",
 		Enabled:         true,
-		Pattern:         `\w+ tells you, '\['`, // user-customized: only fire on item-link tells
+		Pattern:         `\w+ tells you, '\['`,               // user-customized: only fire on item-link tells
 		ExcludePatterns: []string{`^IDLEBOT \w+ tells you,`}, // user's personal entry
 		Actions:         []Action{},
 		CreatedAt:       time.Now().UTC(),
@@ -618,3 +619,72 @@ func TestPipe_LogTriggersUntouchedByReload(t *testing.T) {
 	}
 }
 
+func TestSubstituteCaptures(t *testing.T) {
+	re := regexp.MustCompile(`^(.+) tells you, '(.+)'$`)
+	line := "Bob tells you, 'can you rez me?'"
+	m := re.FindStringSubmatch(line)
+	names := re.SubexpNames()
+
+	cases := []struct{ in, want string }{
+		{"Tell from {1}: {2}", "Tell from Bob: can you rez me?"},
+		{"Tell from $1: $2", "Tell from Bob: can you rez me?"},
+		{"whole: {0}", "whole: " + line},
+		{"no refs here", "no refs here"},
+		{"unknown {9} and {nope} stay", "unknown {9} and {nope} stay"},
+	}
+	for _, c := range cases {
+		if got := substituteCaptures(c.in, m, names); got != c.want {
+			t.Errorf("substituteCaptures(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+
+	// Named groups.
+	reNamed := regexp.MustCompile(`^(?P<sender>.+) tells you, '(?P<message>.+)'$`)
+	mn := reNamed.FindStringSubmatch(line)
+	if got := substituteCaptures("Tell from {sender}: {message}", mn, reNamed.SubexpNames()); got != "Tell from Bob: can you rez me?" {
+		t.Errorf("named-group substitution = %q", got)
+	}
+
+	// No match → template returned unchanged.
+	if got := substituteCaptures("Tell from {1}", nil, nil); got != "Tell from {1}" {
+		t.Errorf("no-match should pass through, got %q", got)
+	}
+}
+
+func TestEngine_CaptureSubstitutionInActions(t *testing.T) {
+	s, e := openTestEngine(t)
+
+	tr := &Trigger{
+		ID:      "tell1",
+		Name:    "Incoming Tell",
+		Enabled: true,
+		Pattern: `^(.+) tells you, '(.+)'$`,
+		Actions: []Action{
+			{Type: ActionTextToSpeech, Text: "Tell from {1}: {2}"},
+			{Type: ActionOverlayText, Text: "$1 says hi", DurationSecs: 5},
+		},
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	e.Handle(time.Now(), "Bob tells you, 'can you rez me?'")
+	hist := e.GetHistory()
+	if len(hist) != 1 {
+		t.Fatalf("expected 1 fired event, got %d", len(hist))
+	}
+	if got := hist[0].Actions[0].Text; got != "Tell from Bob: can you rez me?" {
+		t.Errorf("TTS text not substituted: %q", got)
+	}
+	if got := hist[0].Actions[1].Text; got != "Bob says hi" {
+		t.Errorf("overlay text not substituted: %q", got)
+	}
+
+	// The stored trigger's action text must NOT be mutated by firing.
+	stored, _ := s.Get("tell1")
+	if stored.Actions[0].Text != "Tell from {1}: {2}" {
+		t.Errorf("stored trigger action text was mutated: %q", stored.Actions[0].Text)
+	}
+}

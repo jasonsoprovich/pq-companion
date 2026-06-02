@@ -380,9 +380,10 @@ export function TextToSpeechFields({
   volume,
   onVolumeChange,
 }: TextToSpeechFieldsProps): React.ReactElement {
-  // Strip simple {placeholder} tokens for the test playback so the user
-  // hears something like "Mez broke" instead of literal "{spell} broke".
-  const testText = text.replace(/\{[^}]+\}/g, '').replace(/\s+/g, ' ').trim()
+  // Strip capture placeholders ({...} and $N) for the test playback so the
+  // user hears "Mez broke" rather than the literal "{1} broke" — there's no
+  // live regex match behind the test button.
+  const testText = text.replace(/\{[^}]+\}/g, '').replace(/\$\d+/g, '').replace(/\s+/g, ' ').trim()
   const canTest = testText.length > 0
   const [playing, setPlaying] = useState(false)
 

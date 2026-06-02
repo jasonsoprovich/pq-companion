@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strconv"
 	"sync"
 	"time"
 
@@ -163,8 +164,8 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 		if !triggerAppliesTo(c.trigger, active) {
 			continue
 		}
-		if c.re.MatchString(message) && !matchesAny(c.excludes, message) {
-			e.fire(c, message, timestamp)
+		if m := c.re.FindStringSubmatch(message); m != nil && !matchesAny(c.excludes, message) {
+			e.fire(c, message, timestamp, m, c.re.SubexpNames())
 		}
 		if c.wornOff != nil && c.wornOff.MatchString(message) {
 			if e.sink != nil && c.timerKey != "" {
@@ -373,6 +374,49 @@ func matchesAny(res []*regexp.Regexp, s string) bool {
 	return false
 }
 
+// curlyCaptureRe / dollarCaptureRe find capture references in trigger action
+// text: {name_or_number} and $number respectively.
+var (
+	curlyCaptureRe  = regexp.MustCompile(`\{([A-Za-z0-9_]+)\}`)
+	dollarCaptureRe = regexp.MustCompile(`\$(\d+)`)
+)
+
+// substituteCaptures fills regex capture references in template using a matched
+// line's submatches (#132). Supported syntaxes:
+//
+//	{N} / $N   numbered group (0 = the whole matched line)
+//	{name}     named group from a (?P<name>...) pattern
+//
+// A reference that doesn't resolve to a participating group is left untouched,
+// so literal braces or dollar signs in alert text survive unchanged. The
+// trigger that produced `match` is the only source of values — there's no
+// implicit {target}/{spell}; capture those with a named group if wanted.
+func substituteCaptures(template string, match []string, names []string) string {
+	if template == "" || len(match) == 0 {
+		return template
+	}
+	lookup := make(map[string]string, len(match)*2)
+	for i, v := range match {
+		lookup[strconv.Itoa(i)] = v
+		if i < len(names) && names[i] != "" {
+			lookup[names[i]] = v
+		}
+	}
+	template = curlyCaptureRe.ReplaceAllStringFunc(template, func(tok string) string {
+		if v, ok := lookup[tok[1:len(tok)-1]]; ok { // strip { }
+			return v
+		}
+		return tok
+	})
+	template = dollarCaptureRe.ReplaceAllStringFunc(template, func(tok string) string {
+		if v, ok := lookup[tok[1:]]; ok { // strip $
+			return v
+		}
+		return tok
+	})
+	return template
+}
+
 // triggerAppliesTo reports whether the trigger should fire for the given
 // active character. Empty Characters list = applies to any character (legacy
 // safety fallback). Empty active = trigger fires regardless (no character
@@ -400,13 +444,26 @@ func (e *Engine) GetHistory() []TriggerFired {
 
 // ── internal ─────────────────────────────────────────────────────────────────
 
-func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time) {
+// fire emits a trigger's actions. match/names are the regex submatches and
+// their names from the line that matched, used to substitute capture
+// references ({1}, $1, {name}) into the action text (#132).
+func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match []string, names []string) {
 	t := c.trigger
+
+	// Substitute regex captures into the action text on a copy — never mutate
+	// the shared trigger. Done for every fire so {1}/{name} in overlay or TTS
+	// text resolve to the matched values.
+	actions := make([]Action, len(t.Actions))
+	copy(actions, t.Actions)
+	for i := range actions {
+		actions[i].Text = substituteCaptures(actions[i].Text, match, names)
+	}
+
 	event := TriggerFired{
 		TriggerID:   t.ID,
 		TriggerName: t.Name,
 		MatchedLine: matchedLine,
-		Actions:     t.Actions,
+		Actions:     actions,
 		FiredAt:     firedAt,
 	}
 
