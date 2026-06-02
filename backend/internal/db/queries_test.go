@@ -576,3 +576,41 @@ func TestSkillCaps_RealDB(t *testing.T) {
 		t.Errorf("OffenseSkillCap(0,0) = %d, want 0", c)
 	}
 }
+
+// ─── Alternate Advancement ──────────────────────────────────────────────────────
+
+// Fletching Mastery is a Ranger archery AA whose `classes` mask is corrupt in
+// the source dump (65534 = all classes); aaClassMaskOverrides corrects it to
+// Ranger only. Druids must not see it; Rangers must (issue #134).
+func TestListAvailableAAs_FletchingMasteryRangerOnly(t *testing.T) {
+	d := openTestDB(t)
+	const (
+		ranger = 4 // 1-indexed EQ class
+		druid  = 6
+	)
+
+	has := func(class int, name string) bool {
+		t.Helper()
+		aas, err := d.ListAvailableAAs(class)
+		if err != nil {
+			t.Fatalf("ListAvailableAAs(%d): %v", class, err)
+		}
+		for _, a := range aas {
+			if a.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+
+	if has(druid, "Fletching Mastery") {
+		t.Error("druid should NOT have Fletching Mastery (issue #134)")
+	}
+	if !has(ranger, "Fletching Mastery") {
+		t.Error("ranger SHOULD have Fletching Mastery")
+	}
+	// Sanity: a genuine all-class AA still shows for druid.
+	if !has(druid, "Innate Strength") {
+		t.Error("druid should still have the all-class Innate Strength AA")
+	}
+}

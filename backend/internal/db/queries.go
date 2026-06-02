@@ -2047,6 +2047,29 @@ func (db *DB) LookupAANames(ids []int) (map[int]string, error) {
 	return result, rows.Err()
 }
 
+// aaClassMaskOverrides corrects altadv_vars rows whose `classes` bitmask is
+// wrong in the source MySQL dump (quarm.db is regenerated from those dumps and
+// is never hand-edited, so the correction lives in code).
+//
+// Keyed by eqmacid → correct classes bitmask (bit N set for 1-indexed class N).
+//
+//   - 83 Fletching Mastery → 16 (Ranger only). The dump flags it 65534 (all
+//     classes), so druids and everyone else wrongly saw it (issue #134). It's
+//     a Ranger archery AA: eqmacid 82/83/84 are Archery Mastery / Fletching
+//     Mastery / Endless Quiver, and 82 & 84 both correctly read classes=16.
+var aaClassMaskOverrides = map[int]int{
+	83: 16, // Fletching Mastery → Ranger
+}
+
+// effectiveAAClasses returns the class bitmask to use for an AA, applying any
+// known correction from aaClassMaskOverrides.
+func effectiveAAClasses(eqmacid, classes int) int {
+	if c, ok := aaClassMaskOverrides[eqmacid]; ok {
+		return c
+	}
+	return classes
+}
+
 // ListAvailableAAs returns all Alternate Advancement abilities eligible for the
 // given EQ class index (1-15). The classes column is a bitmask where bit N
 // (1-indexed) is set when class N can purchase the AA.
@@ -2066,21 +2089,22 @@ func (db *DB) LookupAANames(ids []int) (map[int]string, error) {
 // in altadv_vars — once with a legacy eqmacid and again with the current
 // client-facing eqmacid. We dedupe by name keeping the row with the highest
 // eqmacid, which is what the client/Zeal export references.
+//
+// The class bitmask filter is applied in Go (not SQL) so aaClassMaskOverrides
+// can correct rows whose `classes` value is wrong in the source dump.
 func (db *DB) ListAvailableAAs(class int) ([]AAInfo, error) {
 	if class < 1 || class > 15 {
 		return []AAInfo{}, nil
 	}
 	mask := 1 << class
 	rows, err := db.Query(
-		`SELECT eqmacid, name, cost, cost_inc, max_level, type
+		`SELECT eqmacid, name, cost, cost_inc, max_level, type, classes
 		 FROM altadv_vars
 		 WHERE name != 'NOT USED'
 		   AND cost > 0
 		   AND eqmacid > 0
 		   AND class_type != 0
-		   AND (classes & ?) != 0
 		 ORDER BY eqmacid`,
-		mask,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list available aas: %w", err)
@@ -2090,8 +2114,12 @@ func (db *DB) ListAvailableAAs(class int) ([]AAInfo, error) {
 	byName := make(map[string]AAInfo)
 	for rows.Next() {
 		var info AAInfo
-		if err := rows.Scan(&info.AAID, &info.Name, &info.Cost, &info.CostInc, &info.MaxLevel, &info.Type); err != nil {
+		var classes int
+		if err := rows.Scan(&info.AAID, &info.Name, &info.Cost, &info.CostInc, &info.MaxLevel, &info.Type, &classes); err != nil {
 			return nil, fmt.Errorf("scan aa: %w", err)
+		}
+		if effectiveAAClasses(info.AAID, classes)&mask == 0 {
+			continue
 		}
 		// Keep the entry with the highest eqmacid for each duplicated name —
 		// it's the one the live client/Zeal export references.
