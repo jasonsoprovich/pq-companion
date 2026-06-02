@@ -637,23 +637,33 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function SpellsPage(): React.ReactElement {
-  // Cached so Back / returning to the tab restores the spell you were viewing
-  // along with the search (issue #9).
-  const [selected, setSelected] = useCachedState<Spell | null>('spells.selected', null)
+  const [selected, setSelected] = useState<Spell | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
+  // Selection is driven by the URL (?select=id) so each pick is its own history
+  // entry — Back steps from one selected spell to the previously selected one
+  // rather than jumping straight to the prior page (issue #9).
   useEffect(() => {
     const id = Number(searchParams.get('select'))
-    if (!id) return
-    getSpell(id)
-      .then(setSelected)
-      .catch(() => {/* ignore */})
-      .finally(() => setSearchParams({}, { replace: true }))
-  }, [searchParams, setSearchParams])
+    if (!id) {
+      setSelected(null)
+      return
+    }
+    if (selected?.id === id) return // already showing it (set on click)
+    getSpell(id).then(setSelected).catch(() => {/* ignore */})
+  }, [searchParams, selected])
+
+  const handleSelect = useCallback(
+    (spell: Spell | null) => {
+      setSelected(spell)
+      setSearchParams(spell ? { select: String(spell.id) } : {})
+    },
+    [setSearchParams],
+  )
 
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>
-      <SearchPane selectedId={selected?.id ?? null} onSelect={setSelected} />
+      <SearchPane selectedId={selected?.id ?? null} onSelect={handleSelect} />
       <DetailPanel spell={selected} />
     </div>
   )

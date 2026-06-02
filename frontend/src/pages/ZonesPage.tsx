@@ -854,23 +854,35 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function ZonesPage(): React.ReactElement {
-  // Cached so Back / returning to the tab restores the zone you were viewing
-  // (its mob list), not just the search (issue #9).
-  const [selected, setSelected] = useCachedState<Zone | null>('zones.selected', null)
+  const [selected, setSelected] = useState<Zone | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
+  // Selection is driven by the URL (?select=id) so each pick is its own history
+  // entry — Back steps from one selected zone to the previously selected one
+  // rather than jumping straight to the prior page (issue #9).
   useEffect(() => {
     const id = Number(searchParams.get('select'))
-    if (!id) return
-    getZone(id)
-      .then(setSelected)
-      .catch(() => {/* ignore */})
-      .finally(() => setSearchParams({}, { replace: true }))
-  }, [searchParams, setSearchParams])
+    if (!id) {
+      setSelected(null)
+      return
+    }
+    if (selected?.id === id) return // already showing it (set on click)
+    getZone(id).then(setSelected).catch(() => {/* ignore */})
+  }, [searchParams, selected])
+
+  // Push a new ?select entry on each pick so it lands in history; clearing
+  // selection drops the param.
+  const handleSelect = useCallback(
+    (zone: Zone | null) => {
+      setSelected(zone)
+      setSearchParams(zone ? { select: String(zone.id) } : {})
+    },
+    [setSearchParams],
+  )
 
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>
-      <SearchPane selectedId={selected?.id ?? null} onSelect={setSelected} />
+      <SearchPane selectedId={selected?.id ?? null} onSelect={handleSelect} />
       <DetailPanel zone={selected} />
     </div>
   )

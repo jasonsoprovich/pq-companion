@@ -917,23 +917,33 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function NpcsPage(): React.ReactElement {
-  // Cached so Back / returning to the tab restores the NPC you were viewing
-  // along with the search (issue #9).
-  const [selected, setSelected] = useCachedState<NPC | null>('npcs.selected', null)
+  const [selected, setSelected] = useState<NPC | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
+  // Selection is driven by the URL (?select=id) so each pick is its own history
+  // entry — Back steps from one selected NPC to the previously selected one
+  // rather than jumping straight to the prior page (issue #9).
   useEffect(() => {
     const id = Number(searchParams.get('select'))
-    if (!id) return
-    getNPC(id)
-      .then(setSelected)
-      .catch(() => {/* ignore */})
-      .finally(() => setSearchParams({}, { replace: true }))
-  }, [searchParams, setSearchParams])
+    if (!id) {
+      setSelected(null)
+      return
+    }
+    if (selected?.id === id) return // already showing it (set on click)
+    getNPC(id).then(setSelected).catch(() => {/* ignore */})
+  }, [searchParams, selected])
+
+  const handleSelect = useCallback(
+    (npc: NPC | null) => {
+      setSelected(npc)
+      setSearchParams(npc ? { select: String(npc.id) } : {})
+    },
+    [setSearchParams],
+  )
 
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>
-      <SearchPane selectedId={selected?.id ?? null} onSelect={setSelected} />
+      <SearchPane selectedId={selected?.id ?? null} onSelect={handleSelect} />
       <DetailPanel npc={selected} />
     </div>
   )

@@ -1118,23 +1118,33 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function ItemsPage(): React.ReactElement {
-  // Cached so Back / returning to the tab restores the item you were viewing
-  // along with the search (issue #9).
-  const [selected, setSelected] = useCachedState<Item | null>('items.selected', null)
+  const [selected, setSelected] = useState<Item | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
+  // Selection is driven by the URL (?select=id) so each pick is its own history
+  // entry — Back steps from one selected item to the previously selected one
+  // rather than jumping straight to the prior page (issue #9).
   useEffect(() => {
     const id = Number(searchParams.get('select'))
-    if (!id) return
-    getItem(id)
-      .then(setSelected)
-      .catch(() => {/* ignore */})
-      .finally(() => setSearchParams({}, { replace: true }))
-  }, [searchParams, setSearchParams])
+    if (!id) {
+      setSelected(null)
+      return
+    }
+    if (selected?.id === id) return // already showing it (set on click)
+    getItem(id).then(setSelected).catch(() => {/* ignore */})
+  }, [searchParams, selected])
+
+  const handleSelect = useCallback(
+    (item: Item | null) => {
+      setSelected(item)
+      setSearchParams(item ? { select: String(item.id) } : {})
+    },
+    [setSearchParams],
+  )
 
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>
-      <SearchPane selectedId={selected?.id ?? null} onSelect={setSelected} />
+      <SearchPane selectedId={selected?.id ?? null} onSelect={handleSelect} />
       <DetailPanel item={selected} />
     </div>
   )
