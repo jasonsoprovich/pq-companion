@@ -8,6 +8,7 @@ import { useAudioEngine } from './hooks/useAudioEngine'
 import { useTimerAlerts } from './hooks/useTimerAlerts'
 import { useMasterVolume } from './hooks/useMasterVolume'
 import { useHighContrast } from './hooks/useHighContrast'
+import { useZoom } from './hooks/useZoom'
 import { useLogFeedSubscriber } from './hooks/useLogFeed'
 import ItemsPage from './pages/ItemsPage'
 import SpellsPage from './pages/SpellsPage'
@@ -59,6 +60,7 @@ function OverlayPage({ children }: { children: React.ReactNode }): React.ReactEl
 function MainWindowLayout(): React.ReactElement {
   useMasterVolume()
   useHighContrast()
+  useZoom()
   useAudioEngine()
   useTimerAlerts()
   // Keep the Log Feed populating in the background so it persists across tab

@@ -7,6 +7,7 @@ import { OVERLAY_DEFS, resolveLockedMode } from '../lib/overlays'
 import type { OverlayName, LockedMode } from '../lib/overlays'
 import type { LogFileInfo } from '../types/logEvent'
 import { applyContrast } from '../hooks/useHighContrast'
+import { applyZoom } from '../hooks/useZoom'
 import type { ZealInstallStatus, ZealPipeStatus } from '../types/zeal'
 import type { QuarmClientStatus, QuarmFileStatus } from '../types/quarm'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
@@ -162,11 +163,15 @@ export default function SettingsPage(): React.ReactElement {
     originalConfigRef.current = originalConfig
   }, [originalConfig])
   // Leaving Settings discards unsaved changes; revert any unsaved high-contrast
-  // preview to the saved value so the preview doesn't leak past this page.
+  // or zoom preview to the saved value so the preview doesn't leak past this
+  // page.
   useEffect(() => {
     return () => {
       const oc = originalConfigRef.current
-      if (oc) applyContrast(Boolean(oc.preferences.high_contrast))
+      if (oc) {
+        applyContrast(Boolean(oc.preferences.high_contrast))
+        applyZoom(oc.preferences.zoom_factor)
+      }
     }
   }, [])
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -360,8 +365,9 @@ export default function SettingsPage(): React.ReactElement {
   function handleCancel(): void {
     if (originalConfig) {
       setConfig(originalConfig)
-      // Revert the optimistic high-contrast preview if it was toggled.
+      // Revert any optimistic high-contrast / zoom preview.
       applyContrast(Boolean(originalConfig.preferences.high_contrast))
+      applyZoom(originalConfig.preferences.zoom_factor)
     }
     flashSaveState('discarded')
   }
@@ -1290,6 +1296,41 @@ export default function SettingsPage(): React.ReactElement {
               />
             </div>
           </label>
+
+          <div className="py-1 mt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  Zoom
+                </p>
+                <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Scale the whole app up or down for readability on
+                  high-resolution displays.
+                </p>
+              </div>
+              <span className="text-sm font-mono" style={{ color: 'var(--color-muted-foreground)' }}>
+                {Math.round((config.preferences.zoom_factor || 1) * 100)}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min={80}
+              max={150}
+              step={5}
+              value={Math.round((config.preferences.zoom_factor || 1) * 100)}
+              onChange={(e) => {
+                const factor = (parseInt(e.target.value) || 100) / 100
+                // Apply immediately for live feedback; the hook keeps it in
+                // sync after saving.
+                applyZoom(factor)
+                setConfig({
+                  ...config,
+                  preferences: { ...config.preferences, zoom_factor: factor },
+                })
+              }}
+              className="w-full mt-2"
+            />
+          </div>
         </section>
         )}
 

@@ -1159,6 +1159,16 @@ ipcMain.handle('window:maximize', () => {
 ipcMain.handle('window:close', () => mainWindow?.close())
 ipcMain.handle('window:is-maximized', () => mainWindow?.isMaximized() ?? false)
 
+// Scales the whole main-window UI like a browser zoom (issue #130). Clamped to
+// a sane range so the UI can't be zoomed into uselessness. Applied to the
+// calling window's webContents so it works regardless of which window asks.
+ipcMain.handle('window:set-zoom', (event, factor: number) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win || win.isDestroyed()) return
+  const clamped = Math.max(0.7, Math.min(2.0, factor || 1))
+  win.webContents.setZoomFactor(clamped)
+})
+
 // ── IPC handlers — synthetic window dragging ─────────────────────────────────
 // Frameless/custom-titlebar windows using CSS `-webkit-app-region: drag`
 // cannot be dragged across monitor boundaries on Windows — Chromium clamps the

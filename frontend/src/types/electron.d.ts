@@ -20,6 +20,7 @@ export interface ElectronAPI {
     isMaximized: () => Promise<boolean>
     dragStart: () => Promise<void>
     dragEnd: () => Promise<void>
+    setZoom: (factor: number) => Promise<void>
   }
   overlay: {
     openDPS: () => Promise<void>

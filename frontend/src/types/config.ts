@@ -20,6 +20,7 @@ export interface Preferences {
   overlay_opacity: number
   minimize_to_tray: boolean
   high_contrast: boolean
+  zoom_factor: number
   parse_combat_log: boolean
   overlay_dps_enabled: boolean
   overlay_hps_enabled: boolean

@@ -208,6 +208,11 @@ type Preferences struct {
 	// readability on high-resolution displays (issue #130). Off by default.
 	HighContrast bool `yaml:"high_contrast,omitempty" json:"high_contrast"`
 
+	// ZoomFactor scales the entire main window via Electron's zoom (like a
+	// browser Ctrl+/Ctrl-), for readability on high-resolution displays
+	// (issue #130). 1.0 = 100% (default). 0 is treated as 1.0 by the client.
+	ZoomFactor float64 `yaml:"zoom_factor,omitempty" json:"zoom_factor"`
+
 	// ParseCombatLog enables real-time combat log parsing.
 	ParseCombatLog bool `yaml:"parse_combat_log" json:"parse_combat_log"`
 
@@ -291,6 +296,7 @@ func defaults() Config {
 			OverlayDPSEnabled:           true,
 			OverlayHPSEnabled:           false,
 			MasterVolume:                100,
+			ZoomFactor:                  1.0,
 			NPCOverlayDashboardSections: DefaultNPCOverlaySections(),
 			NPCOverlayPopoutSections:    DefaultNPCOverlaySections(),
 		},
