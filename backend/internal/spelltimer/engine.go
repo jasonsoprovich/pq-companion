@@ -239,6 +239,16 @@ type Engine struct {
 	lastCastSpell string
 	lastCastAt    time.Time
 
+	// clickableSpellIDs is the set of spell IDs produced by some item's click
+	// or proc effect, lazily loaded from the DB on first need (see
+	// resolveLandedSpellName). Used as a last resort to disambiguate instant
+	// item-clicky land collisions: two differently-named clickies can share
+	// identical cast-on-you text and emit no "begin casting" line, but only
+	// one is actually produced by an item the player can trigger.
+	clickableMu       sync.Mutex
+	clickableSpellIDs map[int]bool
+	clickableLoaded   bool
+
 	// modifier cache: keeps the last-computed contributors per character so
 	// the engine doesn't re-parse the Quarmy export on every cast. Invalidated
 	// by character change or RefreshModifiers().
@@ -1104,23 +1114,83 @@ func (e *Engine) resolveLandedSpellName(data logparser.SpellLandedData) string {
 	lastAge := time.Since(e.lastCastAt)
 	e.mu.Unlock()
 
-	if lastSpell == "" || lastAge > lastCastWindow {
-		slog.Info("timer-debug: ambiguous spell-landed with no recent cast — skipping",
-			"candidates", len(data.Candidates),
-			"last_cast_age_ms", lastAge.Milliseconds(),
-		)
-		return ""
-	}
-	for _, c := range data.Candidates {
-		if c.SpellName == lastSpell {
-			return c.SpellName
+	if lastSpell != "" && lastAge <= lastCastWindow {
+		for _, c := range data.Candidates {
+			if c.SpellName == lastSpell {
+				return c.SpellName
+			}
 		}
+		slog.Info("timer-debug: ambiguous spell-landed; recent cast doesn't match any candidate",
+			"last_spell", lastSpell,
+			"candidates", len(data.Candidates),
+		)
 	}
-	slog.Info("timer-debug: ambiguous spell-landed; recent cast doesn't match any candidate",
-		"last_spell", lastSpell,
+
+	// Last resort: an ambiguous self-land with no disambiguating recent cast
+	// is, by construction, an instant item clicky (a player-cast spell would
+	// have logged "You begin casting"). The real spell must therefore be one
+	// an item can actually produce. If exactly one candidate is item-produced,
+	// resolve to it — this rescues collisions like "Shield of the Eighth"
+	// (Coldain ring clicky) sharing cast text with the item-less, never-
+	// triggerable "Shield of the Ring".
+	if name := e.soleClickableCandidate(data.Candidates); name != "" {
+		slog.Info("timer-debug: ambiguous spell-landed resolved to sole item-clicky candidate",
+			"spell", name,
+			"candidates", len(data.Candidates),
+		)
+		return name
+	}
+
+	slog.Info("timer-debug: ambiguous spell-landed with no recent cast — skipping",
 		"candidates", len(data.Candidates),
+		"last_cast_age_ms", lastAge.Milliseconds(),
 	)
 	return ""
+}
+
+// soleClickableCandidate returns the unique candidate name produced by an item
+// click/proc effect, or "" when zero or more than one candidate is item-
+// produced (so the caller can't safely disambiguate). The clickable-spell set
+// is loaded from the DB once and cached.
+func (e *Engine) soleClickableCandidate(cands []logparser.SpellLandedCandidate) string {
+	clickable := e.clickableIDs()
+	if clickable == nil {
+		return ""
+	}
+	var name string
+	matches := 0
+	for _, c := range cands {
+		if clickable[c.SpellID] {
+			matches++
+			name = c.SpellName
+		}
+	}
+	if matches == 1 {
+		return name
+	}
+	return ""
+}
+
+// clickableIDs returns the cached set of item-produced spell IDs, loading it
+// from the DB on first call. Returns nil if the DB is unavailable or the load
+// fails (callers treat nil as "can't disambiguate").
+func (e *Engine) clickableIDs() map[int]bool {
+	e.clickableMu.Lock()
+	defer e.clickableMu.Unlock()
+	if e.clickableLoaded {
+		return e.clickableSpellIDs
+	}
+	e.clickableLoaded = true
+	if e.db == nil {
+		return nil
+	}
+	ids, err := e.db.InstantEffectSpellIDs()
+	if err != nil {
+		slog.Warn("timer-debug: failed to load clickable spell IDs", "err", err)
+		return nil
+	}
+	e.clickableSpellIDs = ids
+	return ids
 }
 
 // RemoveByID removes a single timer by its composite key (the ID field

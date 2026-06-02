@@ -42,3 +42,34 @@ func (d *DB) LoadCastMessages() ([]CastMessage, error) {
 	}
 	return msgs, rows.Err()
 }
+
+// InstantEffectSpellIDs returns the set of spell IDs produced by an item's
+// click or proc effect. These fire with no "You begin casting" line, so when
+// a self-landed buff is ambiguous and has no recent cast to disambiguate
+// against, the real spell must be one of these — a candidate no item can
+// produce (e.g. an orphaned all-classes-255 spell row) can be ruled out. Used
+// by the spell-timer engine to resolve instant-clicky land collisions where
+// two differently-named spells share identical cast-on-you text (e.g. "Shield
+// of the Eighth" vs the item-less "Shield of the Ring"). Read-only data.
+func (d *DB) InstantEffectSpellIDs() (map[int]bool, error) {
+	const q = `
+		SELECT clickeffect FROM items WHERE clickeffect > 0
+		UNION
+		SELECT proceffect  FROM items WHERE proceffect  > 0
+	`
+	rows, err := d.Query(q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := make(map[int]bool)
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids[id] = true
+	}
+	return ids, rows.Err()
+}

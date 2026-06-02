@@ -158,6 +158,41 @@ func TestResolveLandedSpellName(t *testing.T) {
 			},
 			want: "",
 		},
+		{
+			// Shield of the Eighth (Coldain ring clicky, id 1963) shares its
+			// cast-on-you text with the item-less Shield of the Ring (1796).
+			// Both are instant clickies (no "begin casting" line), so there's
+			// no recent cast to disambiguate against — but only one is produced
+			// by a real item, so it resolves uniquely.
+			name: "ambiguous instant clicky resolves to sole item-produced candidate",
+			setup: func(e *Engine) {
+				e.clickableLoaded = true
+				e.clickableSpellIDs = map[int]bool{1963: true}
+			},
+			data: logparser.SpellLandedData{
+				Candidates: []logparser.SpellLandedCandidate{
+					{SpellID: 1796, SpellName: "Shield of the Ring"},
+					{SpellID: 1963, SpellName: "Shield of the Eighth"},
+				},
+			},
+			want: "Shield of the Eighth",
+		},
+		{
+			// When more than one candidate is item-produced we can't safely
+			// pick, so we stay ambiguous (no recent cast → skip).
+			name: "ambiguous with multiple item-produced candidates stays empty",
+			setup: func(e *Engine) {
+				e.clickableLoaded = true
+				e.clickableSpellIDs = map[int]bool{1796: true, 1963: true}
+			},
+			data: logparser.SpellLandedData{
+				Candidates: []logparser.SpellLandedCandidate{
+					{SpellID: 1796, SpellName: "Shield of the Ring"},
+					{SpellID: 1963, SpellName: "Shield of the Eighth"},
+				},
+			},
+			want: "",
+		},
 	}
 
 	for _, tc := range cases {
