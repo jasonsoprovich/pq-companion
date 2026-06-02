@@ -441,10 +441,13 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		// raid buffs across zone lines.
 
 	case logparser.EventDeath:
-		// Active player death: clear only timers targeting the active
-		// player. Buffs we put on others (and debuffs we have on mobs)
-		// remain — the user can clear them manually if needed.
-		e.removeByTarget(e.activePlayerName())
+		// Active player death: EQ strips every buff (and detrimental) from you
+		// when you die, so clear all timers targeting the active player. Buffs
+		// we put on OTHER players (and debuffs on mobs) remain — keeping those
+		// alive through our own death is the whole reason buffs-on-others don't
+		// reset here. removeSelfTimers matches both the resolved character name
+		// and the literal "You" placeholder.
+		e.removeSelfTimers()
 
 	case logparser.EventKill:
 		// Something we (or a group member) just killed. If it had any of
@@ -1155,17 +1158,18 @@ func (e *Engine) removeTimer(key string) {
 	}
 }
 
-// removeByTarget deletes every timer whose TargetName matches. Used when a
-// target dies (player, ally, or mob killed in our log) — anything we'd
-// applied to them is no longer relevant.
-func (e *Engine) removeByTarget(target string) {
-	if target == "" {
-		return
-	}
+// removeSelfTimers deletes every timer targeting the active player on their own
+// death. It matches BOTH the resolved character name and the literal "You"
+// placeholder: timers created before the character context is available (early
+// startup) carry TargetName "You", while later ones carry the real name, and a
+// plain name match would leave the "You" ones lingering on the overlay after
+// death. Timers on other players / mobs are left untouched.
+func (e *Engine) removeSelfTimers() {
+	active := e.activePlayerName()
 	e.mu.Lock()
 	removed := 0
 	for k, t := range e.timers {
-		if t.TargetName == target {
+		if t.TargetName == active || t.TargetName == "You" {
 			delete(e.timers, k)
 			removed++
 		}
@@ -1174,7 +1178,7 @@ func (e *Engine) removeByTarget(target string) {
 	e.mu.Unlock()
 
 	if removed > 0 {
-		slog.Info("timer-debug: removed timers by target", "target", target, "removed", removed)
+		slog.Info("timer-debug: removed self timers on death", "active", active, "removed", removed)
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 	}
 }
@@ -1188,8 +1192,8 @@ func (e *Engine) removeByTarget(target string) {
 // hasn't been wired to capture and forward it. When the spell-landed
 // pipeline doesn't ALSO fire on the same line (because the spell's
 // cast_on_other DB text doesn't match, or the cast-by-me gate filters
-// it), only the target-less trigger timer exists. removeByTarget alone
-// would never clear it because TargetName is empty.
+// it), only the target-less trigger timer exists. An exact target match
+// alone would never clear it because TargetName is empty.
 //
 // In practice the active player almost always debuffs the mob they're
 // killing, so wiping orphan detrimentals on any kill matches user

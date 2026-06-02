@@ -627,6 +627,13 @@ func TestHandle_Death_ClearsSelfTargetsOnly(t *testing.T) {
 		ID: timerKey("Symbol of Marzin", "Osui"), SpellName: "Symbol of Marzin",
 		TargetName: "Osui", CastAt: now, StartsAt: now, ExpiresAt: now.Add(30 * time.Minute),
 	}
+	// A self-buff created before the character context was available carries
+	// the literal "You" placeholder rather than the resolved name. It must
+	// still be cleared on death (the original bug: these lingered).
+	e.timers[timerKey("Clarity", "You")] = &ActiveTimer{
+		ID: timerKey("Clarity", "You"), SpellName: "Clarity",
+		TargetName: "You", CastAt: now, StartsAt: now, ExpiresAt: now.Add(30 * time.Minute),
+	}
 	e.timers[timerKey("Visions of Grandeur", "Tank")] = &ActiveTimer{
 		ID: timerKey("Visions of Grandeur", "Tank"), SpellName: "Visions of Grandeur",
 		TargetName: "Tank", CastAt: now, StartsAt: now, ExpiresAt: now.Add(30 * time.Minute),
@@ -639,6 +646,9 @@ func TestHandle_Death_ClearsSelfTargetsOnly(t *testing.T) {
 
 	if _, ok := e.timers[timerKey("Symbol of Marzin", "Osui")]; ok {
 		t.Error("self-target buff should have been removed on player death")
+	}
+	if _, ok := e.timers[timerKey("Clarity", "You")]; ok {
+		t.Error(`self-target buff with "You" placeholder should have been removed on player death`)
 	}
 	if _, ok := e.timers[timerKey("Visions of Grandeur", "Tank")]; !ok {
 		t.Error("buff on Tank should have survived player death")
