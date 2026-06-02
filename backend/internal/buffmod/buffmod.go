@@ -153,7 +153,11 @@ func Compute(eqPath, charName string, gameDB *db.DB) (*Result, error) {
 	if charName == "" {
 		return nil, fmt.Errorf("character name required")
 	}
-	q, err := zeal.ParseQuarmy(zeal.QuarmyPath(eqPath, charName), charName)
+	path := zeal.FindQuarmyFile(eqPath, charName)
+	if path == "" {
+		return nil, fmt.Errorf("no quarmy export found for %s", charName)
+	}
+	q, err := zeal.ParseQuarmy(path, charName)
 	if err != nil {
 		return nil, fmt.Errorf("parse quarmy: %w", err)
 	}

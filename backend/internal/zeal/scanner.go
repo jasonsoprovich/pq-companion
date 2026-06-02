@@ -28,8 +28,10 @@ func sharedBankSlotInRange(location string) bool {
 	return n >= 1 && n <= maxSharedBankSlot
 }
 
-// inventoryFileRe matches "<CharName>-Inventory.txt" and captures the character name.
-var inventoryFileRe = regexp.MustCompile(`(?i)^(.+?)-Inventory\.txt$`)
+// inventoryFileRe matches a Zeal inventory export in either /outputfile format
+// — "<CharName>-Inventory.txt" (format 0) or "<CharName>-Inventory_pq.proj.txt"
+// (format 1, #133) — and captures the character name.
+var inventoryFileRe = regexp.MustCompile(`(?i)^(.+?)-Inventory(?:_pq\.proj)?\.txt$`)
 
 // spellsetFileRe matches "<CharName>_spellsets.ini" and captures the character name.
 var spellsetFileRe = regexp.MustCompile(`(?i)^(.+?)_spellsets\.ini$`)
@@ -40,8 +42,9 @@ var spellsetFileRe = regexp.MustCompile(`(?i)^(.+?)_spellsets\.ini$`)
 //   - chars: one *Inventory per discovered file, with SharedBank entries removed
 //   - sharedBank: the SharedBank entries from the most-recently-modified export file
 func ScanAllInventories(eqPath string) ([]*Inventory, []InventoryEntry, error) {
-	pattern := filepath.Join(eqPath, "*-Inventory.txt")
-	matches, err := filepath.Glob(pattern)
+	// Glob broadly and let inventoryFileRe filter, so both /outputfile formats
+	// (<Char>-Inventory.txt and <Char>-Inventory_pq.proj.txt) are picked up.
+	matches, err := filepath.Glob(filepath.Join(eqPath, "*-Inventory*.txt"))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -51,14 +54,18 @@ func ScanAllInventories(eqPath string) ([]*Inventory, []InventoryEntry, error) {
 		sbEnt []InventoryEntry
 	}
 
-	results := make([]parsed, 0, len(matches))
+	// Keep one parsed result per character — the most recently exported — so a
+	// user who has both naming formats on disk doesn't get duplicate characters
+	// in the all-inventories view (#133).
+	byChar := make(map[string]parsed)
 	for _, path := range matches {
 		base := filepath.Base(path)
 		m := inventoryFileRe.FindStringSubmatch(base)
 		if m == nil {
 			continue
 		}
-		inv, parseErr := ParseInventory(path, m[1])
+		character := m[1]
+		inv, parseErr := ParseInventory(path, character)
 		if parseErr != nil {
 			continue
 		}
@@ -77,14 +84,18 @@ func ScanAllInventories(eqPath string) ([]*Inventory, []InventoryEntry, error) {
 			}
 		}
 		inv.Entries = charEnt
-		results = append(results, parsed{inv, sbEnt})
+
+		if existing, ok := byChar[character]; ok && !inv.ExportedAt.After(existing.inv.ExportedAt) {
+			continue // an equal-or-newer export for this character already won
+		}
+		byChar[character] = parsed{inv, sbEnt}
 	}
 
-	chars := make([]*Inventory, 0, len(results))
+	chars := make([]*Inventory, 0, len(byChar))
 	var sharedBank []InventoryEntry
 	var newestTime time.Time
 
-	for _, r := range results {
+	for _, r := range byChar {
 		chars = append(chars, r.inv)
 		if r.inv.ExportedAt.After(newestTime) {
 			newestTime = r.inv.ExportedAt

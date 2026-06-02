@@ -83,7 +83,13 @@ func (h *zealHandler) spellbook(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
-	sb, err := zeal.ParseSpellbook(zeal.SpellbookPath(cfg.EQPath, name), name)
+	path := zeal.FindSpellbookFile(cfg.EQPath, name)
+	if path == "" {
+		// No export in either format — not an error to the caller.
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	sb, err := zeal.ParseSpellbook(path, name)
 	if err != nil {
 		// Missing file is not an error from the caller's perspective.
 		json.NewEncoder(w).Encode(resp)
@@ -135,7 +141,12 @@ func (h *zealHandler) quarmy(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
-	q, err := zeal.ParseQuarmy(zeal.QuarmyPath(cfg.EQPath, name), name)
+	path := zeal.FindQuarmyFile(cfg.EQPath, name)
+	if path == "" {
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	q, err := zeal.ParseQuarmy(path, name)
 	if err != nil {
 		json.NewEncoder(w).Encode(resp)
 		return

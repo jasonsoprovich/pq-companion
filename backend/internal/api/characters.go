@@ -641,7 +641,11 @@ func (h *charactersHandler) equippedStats(w http.ResponseWriter, r *http.Request
 // the single highest worn melee-haste value (worn haste doesn't stack). A
 // missing or unreadable Quarmy export yields a zero block.
 func (h *charactersHandler) sumEquipment(eqPath, charName string) (block statBlock, bestHaste int) {
-	q, err := zeal.ParseQuarmy(zeal.QuarmyPath(eqPath, charName), charName)
+	path := zeal.FindQuarmyFile(eqPath, charName)
+	if path == "" {
+		return block, 0
+	}
+	q, err := zeal.ParseQuarmy(path, charName)
 	if err != nil || q == nil {
 		return block, 0
 	}

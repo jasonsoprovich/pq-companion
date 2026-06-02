@@ -22,6 +22,54 @@ func SpellbookPath(eqPath, character string) string {
 	return filepath.Join(eqPath, fmt.Sprintf("%s-Spellbook.txt", character))
 }
 
+// hostTag is the Project Quarm server tag Zeal appends to "format 1"
+// (/outputfile format 1) export filenames — the same token that appears in the
+// log filename eqlog_<Char>_pq.proj.txt. Format 0 omits it entirely.
+const hostTag = "_pq.proj"
+
+// FindInventoryFile, FindSpellbookFile and FindQuarmyFile return the path to the
+// most-recently-modified Zeal export of that type for character, checking BOTH
+// the legacy format-0 name (<Char>-<Type>.txt) and the format-1 name
+// (<Char>-<Type>_pq.proj.txt). They return "" when neither exists.
+//
+// /outputfile format is a Zeal toggle (issue #133): supporting both means the
+// user never has to pick one, and when both files are present the newer wins.
+func FindInventoryFile(eqPath, character string) string {
+	return findExport(eqPath, character, "Inventory")
+}
+
+func FindSpellbookFile(eqPath, character string) string {
+	return findExport(eqPath, character, "Spellbook")
+}
+
+func FindQuarmyFile(eqPath, character string) string {
+	return findExport(eqPath, character, "Quarmy")
+}
+
+func findExport(eqPath, character, typ string) string {
+	return newestExisting(
+		filepath.Join(eqPath, fmt.Sprintf("%s-%s.txt", character, typ)),
+		filepath.Join(eqPath, fmt.Sprintf("%s-%s%s.txt", character, typ, hostTag)),
+	)
+}
+
+// newestExisting returns the path with the latest mod time among those that
+// exist on disk, or "" if none of them do.
+func newestExisting(paths ...string) string {
+	best := ""
+	var bestMod time.Time
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		if best == "" || info.ModTime().After(bestMod) {
+			best, bestMod = p, info.ModTime()
+		}
+	}
+	return best
+}
+
 // ParseInventory reads and parses a Zeal inventory export file.
 // Format: tab-delimited with header row: Location\tName\tID\tCount\tSlots
 // Returns a non-nil Inventory even if the file is empty (zero entries).

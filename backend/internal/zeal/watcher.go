@@ -144,8 +144,8 @@ func (w *Watcher) RefreshAllPersonas() {
 		return
 	}
 	for _, c := range chars {
-		path := QuarmyPath(cfg.EQPath, c.Name)
-		if ModTime(path).IsZero() {
+		path := FindQuarmyFile(cfg.EQPath, c.Name)
+		if path == "" {
 			continue
 		}
 		data, err := ParseQuarmy(path, c.Name)
@@ -213,9 +213,13 @@ func (w *Watcher) check() {
 		}
 	}
 
-	invPath := InventoryPath(cfg.EQPath, character)
-	spellPath := SpellbookPath(cfg.EQPath, character)
-	quarmyPath := QuarmyPath(cfg.EQPath, character)
+	// Resolve each export across both /outputfile naming formats (#133),
+	// preferring the most recently written when both are present. An empty
+	// result means no file yet; the per-type check methods handle that via
+	// ModTime's zero return.
+	invPath := FindInventoryFile(cfg.EQPath, character)
+	spellPath := FindSpellbookFile(cfg.EQPath, character)
+	quarmyPath := FindQuarmyFile(cfg.EQPath, character)
 	spellsetsPath := SpellsetPath(cfg.EQPath, character)
 
 	w.checkInventory(invPath, character)
