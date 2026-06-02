@@ -20,6 +20,7 @@ import CreateTriggerModal from '../components/CreateTriggerModal'
 import { ItemIcon, SpellIcon } from '../components/Icon'
 import RawDataModal from '../components/RawDataModal'
 import VariantLinks from '../components/VariantLinks'
+import SpellAcquisition from '../components/SpellAcquisition'
 
 const SPELL_CLASSES: { index: number; abbr: string; full: string }[] = [
   { index: 0,  abbr: 'WAR', full: 'Warrior' },
@@ -569,6 +570,19 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
               </button>
             ))}
           </Section>
+        )}
+
+        {/* How to acquire — vendors, drops, tradeskill, etc. for the scroll */}
+        {crossRefs && crossRefs.scroll_items.length > 0 && (
+          <div>
+            <div
+              className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+              style={{ color: 'var(--color-muted)' }}
+            >
+              How to acquire
+            </div>
+            <SpellAcquisition spellId={spell.id} />
+          </div>
         )}
 
         {/* Items with this effect */}

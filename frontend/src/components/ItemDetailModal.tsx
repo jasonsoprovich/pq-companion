@@ -20,6 +20,7 @@ import {
 } from '../lib/itemHelpers'
 import { ItemIcon } from './Icon'
 import { ItemTradeskillsTab } from './RecipeView'
+import { SourceNPCLink } from './SourceNPCLink'
 
 // ── Shared primitives ──────────────────────────────────────────────────────────
 
@@ -49,10 +50,6 @@ function EmptyTabMessage({ message }: { message: string }): React.ReactElement {
   return <p className="py-4 text-sm" style={{ color: 'var(--color-muted)' }}>{message}</p>
 }
 
-function formatNPCName(name: string): string {
-  return name.replace(/_/g, ' ')
-}
-
 // ── Tab content ────────────────────────────────────────────────────────────────
 
 function SpellEffectRow({ label, spellId, name, detail }: { label: string; spellId: number; name: string; detail?: string }): React.ReactElement {
@@ -77,36 +74,6 @@ function SpellEffectRow({ label, spellId, name, detail }: { label: string; spell
   )
 }
 
-function SourceNPCLink({ npc, showRate }: { npc: ItemSourceNPC; showRate?: boolean }): React.ReactElement {
-  const navigate = useNavigate()
-  return (
-    <div className="flex w-full items-center justify-between gap-3 py-0.5 text-sm">
-      <button
-        onClick={() => navigate(`/npcs?select=${npc.id}`)}
-        className="min-w-0 truncate text-left underline decoration-dotted"
-        style={{ color: 'var(--color-primary)' }}
-      >
-        {formatNPCName(npc.name)}
-      </button>
-      <div className="flex shrink-0 items-center gap-2">
-        {showRate && npc.drop_rate != null && npc.drop_rate > 0 && (
-          <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            {npc.drop_rate.toFixed(2)}%
-          </span>
-        )}
-        {npc.zone_name && (
-          <button
-            onClick={() => navigate(`/zones?select=${npc.zone_short_name}`)}
-            className="text-xs underline decoration-dotted"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            {npc.zone_name}
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
 
 function OverviewTab({ item, copied, onCopy }: { item: Item; copied: boolean; onCopy: () => void }): React.ReactElement {
   const flags: string[] = []
@@ -291,7 +258,7 @@ function GroundSpawnsTab({ spawns }: { spawns: ItemGroundSpawnZone[] }): React.R
 
 // ── Modal ──────────────────────────────────────────────────────────────────────
 
-export type TabKey = 'overview' | 'drops' | 'merchants' | 'forage' | 'ground-spawns' | 'tradeskills'
+type TabKey = 'overview' | 'drops' | 'merchants' | 'forage' | 'ground-spawns' | 'tradeskills'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'overview', label: 'Overview' },
@@ -320,32 +287,22 @@ interface ItemDetailModalProps {
   item: Item | null
   open: boolean
   onClose: () => void
-  // Which tab to open on. 'sources' resolves to the best available source tab
-  // once sources load (Purchased From, else Drops From, else Overview) — used
-  // by the spell "Where to get it" flow. Defaults to 'overview'.
-  initialTab?: TabKey | 'sources'
 }
 
-export default function ItemDetailModal({ item, open, onClose, initialTab }: ItemDetailModalProps): React.ReactElement | null {
+export default function ItemDetailModal({ item, open, onClose }: ItemDetailModalProps): React.ReactElement | null {
   const navigate = useNavigate()
   const [sources, setSources] = useState<ItemSources | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
-    // 'sources' stays on overview until the fetch resolves the best tab.
-    setActiveTab(initialTab && initialTab !== 'sources' ? initialTab : 'overview')
+    setActiveTab('overview')
     setSources(null)
     if (!item) return
     getItemSources(item.id)
-      .then((s) => {
-        setSources(s)
-        if (initialTab === 'sources') {
-          setActiveTab(s.merchants?.length ? 'merchants' : s.drops?.length ? 'drops' : 'overview')
-        }
-      })
+      .then(setSources)
       .catch(() => setSources({ drops: [], merchants: [], forage_zones: [], ground_spawns: [], tradeskills: [] }))
-  }, [item?.id, initialTab])
+  }, [item?.id])
 
   useEffect(() => {
     if (!open) return

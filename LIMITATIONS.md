@@ -296,6 +296,26 @@ These are inherent to log-file parsing and affect multiple features:
 
 ---
 
+## 9. Spell acquisition
+
+### 9.1 Quest-given spells can't be sourced
+
+- **Limitation:** The spell "How to acquire" panel covers vendors, drops,
+  tradeskill/research recipes, forage, and ground spawns, but NOT spells that
+  are handed out by a quest. For those (and any genuinely unobtainable scroll)
+  it shows "likely a quest reward or a starting spell."
+- **Root cause:** Quest rewards live in the server's Perl quest scripts, not
+  in `quarm.db`. There's no table linking a quest turn-in to the spell scroll
+  it grants.
+- **Sources checked:** `quarm.db` (`items.scrolleffect` → merchantlist /
+  loot / tradeskill / forage / ground_spawns), Log (no quest reward data),
+  Zeal (none).
+- **Could a future data source fix this?** **Partially** — only if a
+  quest→reward dataset were exported from the server scripts and added to the
+  dump.
+
+---
+
 ## Template for new entries
 
 ```
