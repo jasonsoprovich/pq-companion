@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  MessageSquare, RefreshCw, Trash2, AlertCircle, X, ArrowUp, ArrowDown,
-  ChevronRight, ChevronDown, ScanLine, Search,
+  MessageSquare, RefreshCw, Trash2, AlertCircle, ArrowUp, ArrowDown,
+  ChevronRight, ChevronDown, Search,
 } from 'lucide-react'
 import {
-  listTellConversations, getTellThread, deleteTellPeer, clearTells, scanTells,
+  listTellConversations, getTellThread, deleteTellPeer, clearTells,
   listTellCharacters,
 } from '../services/api'
 import type { Tell, TellConversation } from '../types/tell'
@@ -178,9 +178,6 @@ export default function TellTrackerPage(): React.ReactElement {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [confirmClearOpen, setConfirmClearOpen] = useState(false)
-  const [scanModalOpen, setScanModalOpen] = useState(false)
-  const [scanning, setScanning] = useState(false)
-  const [scanResult, setScanResult] = useState<string | null>(null)
   const [characters, setCharacters] = useState<string[]>([])
   const [selectedChar, setSelectedChar] = useState<string>('')
 
@@ -248,20 +245,6 @@ export default function TellTrackerPage(): React.ReactElement {
     }
   }
 
-  async function doScan() {
-    setScanning(true)
-    setScanResult(null)
-    try {
-      const r = await scanTells(selectedChar || undefined)
-      setScanResult(`Scanned ${r.character}'s log — added ${r.inserted} new tell${r.inserted === 1 ? '' : 's'}.`)
-      load()
-    } catch (e) {
-      setScanResult(`Scan failed: ${(e as Error).message}`)
-    } finally {
-      setScanning(false)
-    }
-  }
-
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -272,14 +255,6 @@ export default function TellTrackerPage(): React.ReactElement {
           {convos.length} conversation{convos.length === 1 ? '' : 's'}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={() => { setScanResult(null); setScanModalOpen(true) }}
-            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-            style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)', border: '1px solid var(--color-border)' }}
-          >
-            <ScanLine size={11} />
-            Scan logs
-          </button>
           <button
             onClick={() => setConfirmClearOpen(true)}
             disabled={convos.length === 0}
@@ -363,7 +338,7 @@ export default function TellTrackerPage(): React.ReactElement {
             <MessageSquare size={32} style={{ color: 'var(--color-muted)' }} />
             <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>No tells tracked yet.</p>
             <p className="text-[11px] max-w-md text-center" style={{ color: 'var(--color-muted)' }}>
-              Direct tells you send and receive in-game appear here, grouped by player. Channel chatter and NPC merchant replies are filtered out. Use <span className="font-medium">Scan logs</span> to backfill past conversations from your current log file.
+              Direct tells you send and receive in-game appear here, grouped by player. Channel chatter and NPC merchant replies are filtered out. To backfill past conversations from a character's log, use <span className="font-medium">Settings → Log Backfill</span>.
             </p>
           </div>
         )}
@@ -389,71 +364,6 @@ export default function TellTrackerPage(): React.ReactElement {
         />
       )}
 
-      {scanModalOpen && (
-        <ScanModal
-          scanning={scanning}
-          result={scanResult}
-          onScan={doScan}
-          onClose={() => setScanModalOpen(false)}
-        />
-      )}
-    </div>
-  )
-}
-
-function ScanModal({
-  scanning,
-  result,
-  onScan,
-  onClose,
-}: {
-  scanning: boolean
-  result: string | null
-  onScan: () => void
-  onClose: () => void
-}): React.ReactElement {
-  useEscapeToClose(onClose)
-  return (
-    <div
-      onClick={onClose}
-      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="rounded-lg p-4 space-y-3"
-        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', width: '100%', maxWidth: 460 }}
-      >
-        <div className="flex items-center gap-2">
-          <ScanLine size={16} style={{ color: 'var(--color-primary)' }} />
-          <p className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>Scan existing logs?</p>
-        </div>
-        <p className="text-xs leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>
-          This reads your active character's entire log file to capture past tell conversations. Large logs can take a while to process. Going forward, new tells are tracked automatically — you only need this once to backfill history. Re-scanning is safe and won't create duplicates.
-        </p>
-        {result && (
-          <p className="text-xs rounded px-2 py-1.5" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-foreground)' }}>
-            {result}
-          </p>
-        )}
-        <div className="flex justify-end gap-2 pt-1">
-          <button
-            onClick={onClose}
-            className="text-xs px-3 py-1.5 rounded font-medium"
-            style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-foreground)', border: '1px solid var(--color-border)' }}
-          >
-            Close
-          </button>
-          <button
-            onClick={onScan}
-            disabled={scanning}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium disabled:opacity-60"
-            style={{ backgroundColor: 'var(--color-primary)', color: '#fff', border: '1px solid transparent' }}
-          >
-            {scanning ? <RefreshCw size={12} className="animate-spin" /> : <ScanLine size={12} />}
-            {scanning ? 'Scanning…' : 'Scan now'}
-          </button>
-        </div>
-      </div>
     </div>
   )
 }

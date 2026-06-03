@@ -17,6 +17,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/api"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/appbackup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/applog"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/backfill"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
@@ -452,6 +453,26 @@ func main() {
 		})
 	}
 
+	// Backfill registry: powers Settings → Log Backfill. Each tracker that can
+	// be retroactively populated from a character's log registers a dedup-safe,
+	// timestamp-aware handler here. Upcoming trackers (loot, tradeskills) plug
+	// in the same way.
+	backfillRegistry := backfill.NewRegistry()
+	if tellStore != nil {
+		backfillRegistry.Register(backfill.Section{
+			Key:        "tells",
+			Label:      "Tell Tracker",
+			NewHandler: func(character string) backfill.Handler { return tells.NewBackfillHandler(tellStore, character) },
+		})
+	}
+	if playerStore != nil {
+		backfillRegistry.Register(backfill.Section{
+			Key:        "players",
+			Label:      "Player Tracker",
+			NewHandler: func(string) backfill.Handler { return players.NewBackfillConsumer(playerStore) },
+		})
+	}
+
 	// Zeal IPC supervisor: discovers the eqgame.exe Zeal pipe and forwards
 	// live state into every downstream consumer that benefits from real-time,
 	// authoritative game data instead of log inference.
@@ -685,7 +706,7 @@ func main() {
 		defer savedQueryStore.Close()
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, tellStore, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, tellStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

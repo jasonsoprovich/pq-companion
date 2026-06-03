@@ -265,7 +265,7 @@ export default function PlayersPage(): React.ReactElement {
       >
         <UserSearch size={18} style={{ color: 'var(--color-primary)' }} />
         <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
-          Players
+          Player Tracker
         </span>
         <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
           {players.length} tracked

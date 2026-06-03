@@ -30,7 +30,7 @@ const PARSING_NAV: NavItem[] = [
   { to: '/combat', label: 'Combat Log', icon: <ScrollText size={16} /> },
   { to: '/triggers', label: 'Triggers', icon: <Zap size={16} /> },
   { to: '/rolls', label: 'Roll Tracker', icon: <Dice5 size={16} /> },
-  { to: '/players', label: 'Players', icon: <UserSearch size={16} /> },
+  { to: '/players', label: 'Player Tracker', icon: <UserSearch size={16} /> },
   { to: '/tells', label: 'Tell Tracker', icon: <MessageSquare size={16} /> },
 ]
 

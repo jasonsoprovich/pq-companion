@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -142,27 +141,4 @@ func (h *tellsHandler) clear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": n})
-}
-
-// scan handles POST /api/tells/scan — optional historical backfill from the
-// active character's log file. Off by default; the UI gates this behind a
-// warning modal because large logs take time to walk.
-func (h *tellsHandler) scan(w http.ResponseWriter, r *http.Request) {
-	character := h.activeCharacter(r)
-	if character == "" {
-		writeError(w, http.StatusBadRequest, "no active character to scan")
-		return
-	}
-	eqPath := h.mgr.Get().EQPath
-	if eqPath == "" {
-		writeError(w, http.StatusBadRequest, "eq_path not configured")
-		return
-	}
-	path := filepath.Join(eqPath, "eqlog_"+character+"_pq.proj.txt")
-	n, err := tells.ScanFile(h.store, path, character)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"inserted": n, "character": character})
 }

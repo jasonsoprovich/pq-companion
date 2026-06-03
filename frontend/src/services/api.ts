@@ -611,9 +611,31 @@ export function clearTells(character?: string): Promise<{ deleted: number }> {
   return post<{ deleted: number }>(`/api/tells/clear${qs}`)
 }
 
-export function scanTells(character?: string): Promise<{ inserted: number; character: string }> {
-  const qs = character ? `?character=${encodeURIComponent(character)}` : ''
-  return post<{ inserted: number; character: string }>(`/api/tells/scan${qs}`)
+// ── Log Backfill (retroactively populate trackers from a character's log) ──────
+
+export interface BackfillSection {
+  key: string
+  label: string
+}
+
+export interface BackfillInfo {
+  sections: BackfillSection[]
+  characters: string[]
+  active: string
+}
+
+export function getBackfillInfo(): Promise<BackfillInfo> {
+  return get<BackfillInfo>('/api/backfill')
+}
+
+export function runBackfill(
+  character: string,
+  sections: string[],
+): Promise<{ results: Record<string, number>; character: string }> {
+  return post<{ results: Record<string, number>; character: string }>('/api/backfill', {
+    character,
+    sections,
+  })
 }
 
 // ── App Backup (export/import full app state) ──────────────────────────────────
