@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, DatabaseBackup } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, DatabaseBackup, PanelLeft } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
+import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config, DPSClassColors, NPCOverlaySections } from '../types/config'
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
@@ -32,7 +33,7 @@ import DeveloperTab from './DeveloperTab'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backfill' | 'backups' | 'advanced' | 'developer'
+type Tab = 'general' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backfill' | 'backups' | 'advanced' | 'developer'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -460,6 +461,7 @@ export default function SettingsPage(): React.ReactElement {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'general', label: 'General', icon: <Settings size={13} /> },
+    { id: 'navigation', label: 'Navigation', icon: <PanelLeft size={13} /> },
     { id: 'overlays', label: 'Overlays', icon: <Layers size={13} /> },
     { id: 'spelltimers', label: 'Spell Timers', icon: <Sparkles size={13} /> },
     { id: 'dpscolors', label: 'DPS Class Colors', icon: <Palette size={13} /> },
@@ -617,6 +619,17 @@ export default function SettingsPage(): React.ReactElement {
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           <BackfillPanel />
+        </div>
+      </div>
+    )
+  }
+
+  if (tab === 'navigation') {
+    return (
+      <div className="flex h-full flex-col">
+        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <SidebarNavSettings />
         </div>
       </div>
     )

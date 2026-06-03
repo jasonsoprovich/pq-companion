@@ -262,6 +262,19 @@ type Preferences struct {
 	// Missing keys default to "interactive" (the pre-existing behaviour), so
 	// the map can be nil/omitted for upgrading users with no migration.
 	OverlayLockedModes map[string]string `yaml:"overlay_locked_modes,omitempty" json:"overlay_locked_modes,omitempty"`
+
+	// SidebarHidden lists side-nav route keys (e.g. "/loot") the user has
+	// hidden from the navigation menu. Hiding only removes the tab from the
+	// sidebar — the page is still reachable by URL. Empty/omitted = nothing
+	// hidden. The fixed controls (back/forward, search, character switcher,
+	// settings) are never hideable.
+	SidebarHidden []string `yaml:"sidebar_hidden,omitempty" json:"sidebar_hidden,omitempty"`
+
+	// SidebarOrder is a flat list of side-nav route keys in the user's
+	// preferred display order. Items are ordered within their section by their
+	// position here; keys absent from the list keep their default order after
+	// the listed ones. Empty/omitted = default order.
+	SidebarOrder []string `yaml:"sidebar_order,omitempty" json:"sidebar_order,omitempty"`
 }
 
 // NPCOverlaySections toggles individual NPC overlay sections on/off. All

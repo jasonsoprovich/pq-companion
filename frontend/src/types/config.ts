@@ -31,6 +31,12 @@ export interface Preferences {
   // Per-overlay locked behaviour, keyed by canonical overlay name. Missing
   // keys default to "interactive". See lib/overlays.ts.
   overlay_locked_modes?: Partial<Record<OverlayName, LockedMode>>
+  // Side-nav route keys the user has hidden from the navigation menu (the
+  // page is still reachable by URL). The fixed controls are never hideable.
+  sidebar_hidden?: string[]
+  // Flat list of side-nav route keys in preferred display order; items are
+  // ordered within their section by position here.
+  sidebar_order?: string[]
 }
 
 export interface BackupSettings {
