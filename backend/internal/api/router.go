@@ -216,6 +216,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		})
 		r.Route("/tells", func(r chi.Router) {
 			r.Get("/", tellsH.list)
+			r.Get("/characters", tellsH.characters)
 			r.Post("/clear", tellsH.clear)
 			r.Post("/scan", tellsH.scan)
 			r.Get("/{peer}", tellsH.thread)

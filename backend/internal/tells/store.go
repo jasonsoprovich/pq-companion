@@ -225,6 +225,25 @@ func (s *Store) Messages(character, peer string, sortDesc bool) ([]Tell, error) 
 	return out, rows.Err()
 }
 
+// Characters returns the distinct, non-empty local character names that have
+// stored tells, sorted case-insensitively.
+func (s *Store) Characters() ([]string, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT character FROM tells WHERE character <> '' ORDER BY character COLLATE NOCASE`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // DeletePeer removes all tells with one peer (optionally scoped to a character).
 func (s *Store) DeletePeer(character, peer string) error {
 	pred, args := charPred("character", character)

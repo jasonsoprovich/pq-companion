@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
@@ -29,6 +31,49 @@ func (h *tellsHandler) activeCharacter(r *http.Request) string {
 		}
 	}
 	return h.mgr.Get().Character
+}
+
+// detectedCharacter resolves the in-game / configured active character without
+// honoring the ?character= override (used to highlight the default tab).
+func (h *tellsHandler) detectedCharacter() string {
+	if h.tailer != nil {
+		if c := h.tailer.ActiveCharacter(); c != "" {
+			return c
+		}
+	}
+	return h.mgr.Get().Character
+}
+
+// characters handles GET /api/tells/characters — the set of characters to show
+// as tabs: every character with an EQ log file plus any that already have
+// stored tells, case-folded and sorted. Each has its own log file and so its
+// own separate conversations.
+func (h *tellsHandler) characters(w http.ResponseWriter, r *http.Request) {
+	byLower := map[string]string{}
+	for _, d := range logparser.DiscoverCharacters(h.mgr.Get().EQPath) {
+		byLower[strings.ToLower(d.Name)] = d.Name
+	}
+	withTells, err := h.store.Characters()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, c := range withTells {
+		if _, ok := byLower[strings.ToLower(c)]; !ok {
+			byLower[strings.ToLower(c)] = c
+		}
+	}
+	names := make([]string, 0, len(byLower))
+	for _, n := range byLower {
+		names = append(names, n)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		return strings.ToLower(names[i]) < strings.ToLower(names[j])
+	})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"characters": names,
+		"active":     h.detectedCharacter(),
+	})
 }
 
 // list handles GET /api/tells — per-peer conversation summaries.

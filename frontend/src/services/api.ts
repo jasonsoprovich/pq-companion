@@ -584,6 +584,10 @@ export function listTellConversations(
   )
 }
 
+export function listTellCharacters(): Promise<{ characters: string[]; active: string }> {
+  return get<{ characters: string[]; active: string }>('/api/tells/characters')
+}
+
 export function getTellThread(
   peer: string,
   opts: { character?: string; sort?: 'asc' | 'desc' } = {},

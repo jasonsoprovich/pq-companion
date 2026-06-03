@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import {
   listTellConversations, getTellThread, deleteTellPeer, clearTells, scanTells,
+  listTellCharacters,
 } from '../services/api'
 import type { Tell, TellConversation } from '../types/tell'
 import { useWebSocket } from '../hooks/useWebSocket'
@@ -35,11 +36,13 @@ function formatTimestamp(unix: number): string {
 // full message thread (lazily loaded the first time it's opened).
 function ConversationRow({
   convo,
+  character,
   expanded,
   onToggle,
   onDeleted,
 }: {
   convo: TellConversation
+  character: string
   expanded: boolean
   onToggle: () => void
   onDeleted: () => void
@@ -48,10 +51,10 @@ function ConversationRow({
   const [err, setErr] = useState<string | null>(null)
 
   const loadThread = useCallback(() => {
-    getTellThread(convo.peer, { sort: 'asc' })
+    getTellThread(convo.peer, { sort: 'asc', character: character || undefined })
       .then((r) => setThread(r.messages))
       .catch((e: Error) => setErr(e.message))
-  }, [convo.peer])
+  }, [convo.peer, character])
 
   useEffect(() => {
     if (expanded && thread === null) loadThread()
@@ -67,7 +70,7 @@ function ConversationRow({
   async function handleDelete(e: React.MouseEvent) {
     e.stopPropagation()
     try {
-      await deleteTellPeer(convo.peer)
+      await deleteTellPeer(convo.peer, character || undefined)
       onDeleted()
     } catch {
       // best-effort
@@ -115,7 +118,10 @@ function ConversationRow({
       </button>
 
       {expanded && (
-        <div className="border-t px-3 py-2" style={{ borderColor: 'var(--color-border)' }}>
+        <div
+          className="border-t px-3 py-3 flex flex-col gap-2.5"
+          style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-background)' }}
+        >
           {err && (
             <p className="text-xs" style={{ color: 'var(--color-danger)' }}>{err}</p>
           )}
@@ -125,30 +131,39 @@ function ConversationRow({
           {thread !== null && thread.length === 0 && (
             <p className="text-xs" style={{ color: 'var(--color-muted)' }}>No messages.</p>
           )}
-          {thread !== null && thread.length > 0 && (
-            <div className="space-y-1.5">
-              {thread.map((m) => (
+          {thread !== null && thread.map((m) => {
+            const out = m.direction === 'out'
+            return (
+              <div key={m.id} className="flex flex-col" style={{ alignItems: out ? 'flex-end' : 'flex-start' }}>
+                {/* Sender label, sitting above the bubble like a chat header */}
+                <span
+                  className="mb-0.5 px-1 text-[10px] font-semibold uppercase tracking-wide"
+                  style={{ color: out ? 'var(--color-primary)' : 'var(--color-muted-foreground)' }}
+                >
+                  {out ? 'You' : m.peer}
+                </span>
+                {/* Message bubble — indented to ~80% width and aligned by sender */}
                 <div
-                  key={m.id}
-                  className="flex flex-col rounded px-2 py-1.5"
+                  className="rounded-2xl px-3 py-2"
                   style={{
-                    backgroundColor: 'var(--color-surface-2)',
-                    borderLeft: `2px solid ${m.direction === 'out' ? 'var(--color-primary)' : 'var(--color-muted)'}`,
+                    maxWidth: '80%',
+                    backgroundColor: out ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                    color: out ? '#fff' : 'var(--color-foreground)',
+                    borderBottomRightRadius: out ? 4 : undefined,
+                    borderBottomLeftRadius: out ? undefined : 4,
                   }}
                 >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-[11px] font-semibold" style={{ color: m.direction === 'out' ? 'var(--color-primary)' : 'var(--color-foreground)' }}>
-                      {m.direction === 'out' ? 'You' : m.peer}
-                    </span>
-                    <span className="text-[10px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
-                      {formatTimestamp(m.ts)}{m.zone ? ` · ${m.zone}` : ''}
-                    </span>
-                  </div>
-                  <span className="text-xs" style={{ color: 'var(--color-foreground)' }}>{m.message}</span>
+                  <span className="text-xs leading-relaxed" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {m.message}
+                  </span>
                 </div>
-              ))}
-            </div>
-          )}
+                {/* Timestamp / zone footnote under the bubble */}
+                <span className="mt-0.5 px-1 text-[10px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
+                  {formatTimestamp(m.ts)}{m.zone ? ` · ${m.zone}` : ''}
+                </span>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -166,19 +181,42 @@ export default function TellTrackerPage(): React.ReactElement {
   const [scanModalOpen, setScanModalOpen] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<string | null>(null)
+  const [characters, setCharacters] = useState<string[]>([])
+  const [selectedChar, setSelectedChar] = useState<string>('')
+
+  // Each character has its own log file and so its own conversations. Load the
+  // tab set once; default the selection to the active in-game character.
+  useEffect(() => {
+    listTellCharacters()
+      .then((r) => {
+        setCharacters(r.characters)
+        setSelectedChar((cur) => {
+          if (cur && r.characters.includes(cur)) return cur
+          if (r.active && r.characters.includes(r.active)) return r.active
+          return r.characters[0] ?? r.active ?? ''
+        })
+      })
+      .catch(() => { /* tabs are best-effort; fall back to all-characters view */ })
+  }, [])
 
   const load = useCallback(() => {
-    listTellConversations({ search, sort: sortDir, limit: 1000 })
+    listTellConversations({ search, sort: sortDir, character: selectedChar || undefined, limit: 1000 })
       .then((r) => setConvos(r.conversations))
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [search, sortDir])
+  }, [search, sortDir, selectedChar])
 
   useEffect(() => {
     setLoading(true)
     setError(null)
     load()
   }, [load])
+
+  // Collapse open threads when switching characters so we don't show one
+  // character's expanded conversation under another's list.
+  useEffect(() => {
+    setExpanded(new Set())
+  }, [selectedChar])
 
   // Live updates: a new tell bumps the list. Coalesce bursts with a short timer
   // so a rapid back-and-forth conversation doesn't refetch on every line.
@@ -202,7 +240,7 @@ export default function TellTrackerPage(): React.ReactElement {
   async function doClearAll() {
     setConfirmClearOpen(false)
     try {
-      await clearTells()
+      await clearTells(selectedChar || undefined)
       setExpanded(new Set())
       load()
     } catch (e) {
@@ -214,7 +252,7 @@ export default function TellTrackerPage(): React.ReactElement {
     setScanning(true)
     setScanResult(null)
     try {
-      const r = await scanTells()
+      const r = await scanTells(selectedChar || undefined)
       setScanResult(`Scanned ${r.character}'s log — added ${r.inserted} new tell${r.inserted === 1 ? '' : 's'}.`)
       load()
     } catch (e) {
@@ -253,6 +291,35 @@ export default function TellTrackerPage(): React.ReactElement {
           </button>
         </div>
       </div>
+
+      {/* Character tabs — each character has its own log file & conversations */}
+      {characters.length > 1 && (
+        <div
+          className="border-b px-3 pt-2 shrink-0 flex items-end gap-1 overflow-x-auto"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          {characters.map((name) => {
+            const active = name === selectedChar
+            return (
+              <button
+                key={name}
+                onClick={() => setSelectedChar(name)}
+                className="rounded-t px-3 py-1.5 text-xs font-medium whitespace-nowrap"
+                style={{
+                  backgroundColor: active ? 'var(--color-surface)' : 'transparent',
+                  color: active ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
+                  border: '1px solid',
+                  borderColor: active ? 'var(--color-border)' : 'transparent',
+                  borderBottom: active ? '1px solid var(--color-surface)' : '1px solid transparent',
+                  marginBottom: -1,
+                }}
+              >
+                {name}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="border-b px-4 py-2 shrink-0 flex items-center gap-2 flex-wrap" style={{ borderColor: 'var(--color-border)' }}>
@@ -304,6 +371,7 @@ export default function TellTrackerPage(): React.ReactElement {
           <ConversationRow
             key={c.peer}
             convo={c}
+            character={selectedChar}
             expanded={expanded.has(c.peer)}
             onToggle={() => toggle(c.peer)}
             onDeleted={() => { setExpanded((p) => { const n = new Set(p); n.delete(c.peer); return n }); load() }}
