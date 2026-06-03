@@ -3,6 +3,7 @@ import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { UserSearch, RefreshCw, Trash2, AlertCircle, EyeOff, X, ArrowUp, ArrowDown } from 'lucide-react'
 import { listPlayers, deletePlayer, clearPlayers, getPlayerHistory } from '../services/api'
 import type { PlayerSighting, PlayerLevelHistoryEntry } from '../types/player'
+import MissingLogNotice from '../components/MissingLogNotice'
 
 // EQ class list — matches what /who emits. Used to drive the class filter chip
 // row plus the "no class data yet" guard.
@@ -389,6 +390,7 @@ export default function PlayersPage(): React.ReactElement {
 
       {/* Detail panel */}
       <div className="flex-1 overflow-y-auto p-4">
+        <MissingLogNotice />
         {selected && (
           <div
             style={{

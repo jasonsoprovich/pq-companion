@@ -12,6 +12,7 @@ import { channelLabel } from '../types/chat'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
+import MissingLogNotice from '../components/MissingLogNotice'
 
 // Standard channels always shown in the dropdown (even before they have data),
 // in this order; named/custom channels present are appended alphabetically.
@@ -257,6 +258,7 @@ export default function ChatHistoryPage(): React.ReactElement {
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        <MissingLogNotice />
         {loading && (
           <div className="flex flex-1 items-center justify-center py-12">
             <RefreshCw size={18} className="animate-spin" style={{ color: 'var(--color-muted)' }} />

@@ -18,6 +18,7 @@ import {
   updateConfig,
   validateEQPath,
   type DiscoveredCharacter,
+  type EqDiagnostics,
 } from '../services/api'
 import type { Config } from '../types/config'
 import type { ZealInstallStatus } from '../types/zeal'
@@ -59,6 +60,7 @@ export default function OnboardingWizard({
   const [eqPath, setEqPath] = useState('')
   const [validating, setValidating] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
+  const [eqDiag, setEqDiag] = useState<EqDiagnostics | null>(null)
   const [discovered, setDiscovered] = useState<DiscoveredCharacter[]>([])
   const [pathConfirmed, setPathConfirmed] = useState(false)
 
@@ -140,6 +142,7 @@ export default function OnboardingWizard({
     setValidationError(null)
     try {
       const result = await validateEQPath(eqPath.trim())
+      setEqDiag(result.diagnostics ?? null)
       if (!result.valid) {
         setValidationError(result.error ?? 'Folder is not a valid EverQuest installation')
         setDiscovered(result.characters)
@@ -379,6 +382,24 @@ export default function OnboardingWizard({
                 >
                   <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                   <p>{validationError}</p>
+                </div>
+              )}
+
+              {/* Read-only diagnostics so the user can see exactly what's
+                  wrong; the actual toggles live in Settings (the EQ path must
+                  be saved first). */}
+              {eqDiag && !pathConfirmed && (
+                <div className="rounded p-3 text-xs" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)' }}>
+                  <DiagRow label="EverQuest logging" on={eqDiag.log_enabled} offText={eqDiag.log_found ? 'off' : 'not set'} />
+                  {eqDiag.zeal_installed && (
+                    <DiagRow label="Zeal output on camp" on={eqDiag.export_on_camp} offText="off" />
+                  )}
+                  {eqDiag.zeal_installed && (
+                    <DiagRow label={`Zeal ${eqDiag.zeal_version || 'version'}`} on={eqDiag.zeal_version_ok} offText="update recommended" />
+                  )}
+                  <p className="mt-2" style={{ color: 'var(--color-muted)' }}>
+                    You can turn logging and Zeal output on from Settings once setup is complete.
+                  </p>
                 </div>
               )}
             </div>
@@ -688,6 +709,17 @@ export default function OnboardingWizard({
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// DiagRow is one green/red status line in the wizard's path diagnostics.
+function DiagRow({ label, on, offText }: { label: string; on: boolean; offText: string }): React.ReactElement {
+  return (
+    <div className="flex items-center gap-2 py-0.5">
+      <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: on ? '#22c55e' : '#ef4444' }} />
+      <span style={{ color: 'var(--color-foreground)' }}>{label}</span>
+      <span className="ml-auto" style={{ color: on ? '#22c55e' : '#ef4444' }}>{on ? 'on' : offText}</span>
     </div>
   )
 }

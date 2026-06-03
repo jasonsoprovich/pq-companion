@@ -5,6 +5,7 @@ import type { LootEntry } from '../types/loot'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
+import MissingLogNotice from '../components/MissingLogNotice'
 
 function formatTimestamp(unix: number): string {
   if (!unix) return ''
@@ -175,6 +176,7 @@ export default function LootTrackerPage(): React.ReactElement {
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-4">
+        <MissingLogNotice />
         {loading && (
           <div className="flex flex-1 items-center justify-center py-12">
             <RefreshCw size={18} className="animate-spin" style={{ color: 'var(--color-muted)' }} />

@@ -815,15 +815,41 @@ export interface DiscoveredCharacter {
   mod_time: number
 }
 
+export interface EqDiagnostics {
+  eq_path: string
+  has_logs: boolean
+  character_count: number
+  log_found: boolean
+  log_enabled: boolean
+  zeal_installed: boolean
+  zeal_version?: string
+  zeal_version_ok: boolean
+  export_on_camp_found: boolean
+  export_on_camp: boolean
+}
+
 export interface ValidateEQPathResponse {
   valid: boolean
   error?: string
   has_logs: boolean
   characters: DiscoveredCharacter[]
+  diagnostics?: EqDiagnostics
 }
 
 export function validateEQPath(path: string): Promise<ValidateEQPathResponse> {
   return post<ValidateEQPathResponse>('/api/config/validate-eq-path', { path })
+}
+
+export function getEqDiagnostics(): Promise<EqDiagnostics> {
+  return get<EqDiagnostics>('/api/config/eq-diagnostics')
+}
+
+export function setLogging(enabled: boolean): Promise<EqDiagnostics> {
+  return post<EqDiagnostics>('/api/config/set-logging', { enabled })
+}
+
+export function setExportOnCamp(enabled: boolean): Promise<EqDiagnostics> {
+  return post<EqDiagnostics>('/api/config/set-export-on-camp', { enabled })
 }
 
 // ── Characters ─────────────────────────────────────────────────────────────────

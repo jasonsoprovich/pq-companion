@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, DatabaseBackup, PanelLeft } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
+import EqLogStatusCard from '../components/settings/EqLogStatusCard'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config, DPSClassColors, NPCOverlaySections } from '../types/config'
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
@@ -843,6 +844,9 @@ export default function SettingsPage(): React.ReactElement {
           </div>
         </section>
         )}
+
+        {/* ── EverQuest logging & Zeal status/toggles ──────────────────────── */}
+        {tab === 'general' && <EqLogStatusCard />}
 
         {/* ── Zeal integration ───────────────────────────────────────────── */}
         {tab === 'general' && (
