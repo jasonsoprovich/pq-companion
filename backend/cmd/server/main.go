@@ -32,6 +32,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/sandbox"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/savedquery"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/tells"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
@@ -161,6 +162,18 @@ func main() {
 	} else {
 		defer playerStore.Close()
 		playersConsumer = players.NewConsumer(playerStore)
+	}
+
+	// Tell tracker: persists direct player-to-player tells so the user can
+	// browse conversation history. Non-fatal — failing here only disables the
+	// Tell Tracker page.
+	tellStore, err := tells.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	var tellConsumer *tells.Consumer
+	if err != nil {
+		slog.Warn("open tell tracker (disabled)", "err", err)
+		tellStore = nil
+	} else {
+		defer tellStore.Close()
 	}
 
 	// Keyring tracker: persists per-character /keys snapshots. Master list
@@ -432,6 +445,13 @@ func main() {
 		})
 	}
 
+	if tellStore != nil {
+		tellConsumer = tells.NewConsumer(tellStore, activeChar)
+		tellConsumer.SetOnInsert(func(t tells.Tell) {
+			hub.Broadcast(ws.Event{Type: "tells:new", Data: t})
+		})
+	}
+
 	// Zeal IPC supervisor: discovers the eqgame.exe Zeal pipe and forwards
 	// live state into every downstream consumer that benefits from real-time,
 	// authoritative game data instead of log inference.
@@ -557,6 +577,9 @@ func main() {
 		if playersConsumer != nil {
 			playersConsumer.Handle(ev)
 		}
+		if tellConsumer != nil {
+			tellConsumer.HandleEvent(ev)
+		}
 	}, func(ts time.Time, msg string) {
 		triggerEngine.Handle(ts, msg)
 		if keyringConsumer != nil {
@@ -564,6 +587,9 @@ func main() {
 		}
 		if lockoutConsumer != nil {
 			lockoutConsumer.HandleLine(ts, msg)
+		}
+		if tellConsumer != nil {
+			tellConsumer.HandleLine(ts, msg)
 		}
 	}, func(character string) {
 		slog.Info("logparser: auto-detected active character", "character", character)
@@ -659,7 +685,7 @@ func main() {
 		defer savedQueryStore.Close()
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, tellStore, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

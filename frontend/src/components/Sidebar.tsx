@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Sword, Sparkles, Skull, Map, Hammer, Settings, Search, Activity, Layers, ScrollText, Zap, Users, ChevronLeft, ChevronRight, Dice5, UserSearch } from 'lucide-react'
+import { Sword, Sparkles, Skull, Map, Hammer, Settings, Search, Activity, Layers, ScrollText, Zap, Users, ChevronLeft, ChevronRight, Dice5, UserSearch, MessageSquare } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import CharacterSwitcher from './CharacterSwitcher'
 import { useHistoryNav } from '../hooks/useHistoryNav'
@@ -31,6 +31,7 @@ const PARSING_NAV: NavItem[] = [
   { to: '/triggers', label: 'Triggers', icon: <Zap size={16} /> },
   { to: '/rolls', label: 'Roll Tracker', icon: <Dice5 size={16} /> },
   { to: '/players', label: 'Players', icon: <UserSearch size={16} /> },
+  { to: '/tells', label: 'Tell Tracker', icon: <MessageSquare size={16} /> },
 ]
 
 function SidebarLink({ to, label, icon }: NavItem): React.ReactElement {

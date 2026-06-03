@@ -1,0 +1,123 @@
+package api
+
+import (
+	"net/http"
+	"path/filepath"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/tells"
+)
+
+type tellsHandler struct {
+	store  *tells.Store
+	mgr    *config.Manager
+	tailer *logparser.Tailer
+}
+
+// activeCharacter resolves the character to scope tell queries to: an explicit
+// ?character= wins, else the in-game detected character, else the configured
+// override. Empty means "all characters".
+func (h *tellsHandler) activeCharacter(r *http.Request) string {
+	if c := r.URL.Query().Get("character"); c != "" {
+		return c
+	}
+	if h.tailer != nil {
+		if c := h.tailer.ActiveCharacter(); c != "" {
+			return c
+		}
+	}
+	return h.mgr.Get().Character
+}
+
+// list handles GET /api/tells — per-peer conversation summaries.
+func (h *tellsHandler) list(w http.ResponseWriter, r *http.Request) {
+	limit := queryInt(r, "limit", 500)
+	if limit > 2000 {
+		limit = 2000
+	}
+	f := tells.ConversationFilters{
+		Character:    h.activeCharacter(r),
+		PeerContains: r.URL.Query().Get("search"),
+		SortDesc:     r.URL.Query().Get("sort") != "asc",
+		Limit:        limit,
+		Offset:       queryInt(r, "offset", 0),
+	}
+	out, err := h.store.Conversations(f)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if out == nil {
+		out = []tells.Conversation{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"conversations": out})
+}
+
+// thread handles GET /api/tells/{peer} — the full message history with a peer.
+func (h *tellsHandler) thread(w http.ResponseWriter, r *http.Request) {
+	peer := chi.URLParam(r, "peer")
+	if peer == "" {
+		writeError(w, http.StatusBadRequest, "peer required")
+		return
+	}
+	sortDesc := r.URL.Query().Get("sort") == "desc"
+	rows, err := h.store.Messages(h.activeCharacter(r), peer, sortDesc)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if rows == nil {
+		rows = []tells.Tell{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"messages": rows})
+}
+
+// delete handles DELETE /api/tells/{peer}.
+func (h *tellsHandler) delete(w http.ResponseWriter, r *http.Request) {
+	peer := chi.URLParam(r, "peer")
+	if peer == "" {
+		writeError(w, http.StatusBadRequest, "peer required")
+		return
+	}
+	if err := h.store.DeletePeer(h.activeCharacter(r), peer); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// clear handles POST /api/tells/clear — wipes the active character's tells (or
+// all of them when no character is in scope).
+func (h *tellsHandler) clear(w http.ResponseWriter, r *http.Request) {
+	n, err := h.store.Clear(h.activeCharacter(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": n})
+}
+
+// scan handles POST /api/tells/scan — optional historical backfill from the
+// active character's log file. Off by default; the UI gates this behind a
+// warning modal because large logs take time to walk.
+func (h *tellsHandler) scan(w http.ResponseWriter, r *http.Request) {
+	character := h.activeCharacter(r)
+	if character == "" {
+		writeError(w, http.StatusBadRequest, "no active character to scan")
+		return
+	}
+	eqPath := h.mgr.Get().EQPath
+	if eqPath == "" {
+		writeError(w, http.StatusBadRequest, "eq_path not configured")
+		return
+	}
+	path := filepath.Join(eqPath, "eqlog_"+character+"_pq.proj.txt")
+	n, err := tells.ScanFile(h.store, path, character)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"inserted": n, "character": character})
+}

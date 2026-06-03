@@ -559,6 +559,59 @@ export function clearPlayers(): Promise<{ deleted: number }> {
   return post<{ deleted: number }>(`/api/players/clear`)
 }
 
+// ── Tells (direct player-to-player tell history) ───────────────────────────────
+
+export interface TellListFilters {
+  search?: string
+  sort?: 'asc' | 'desc'
+  character?: string
+  limit?: number
+  offset?: number
+}
+
+export function listTellConversations(
+  filters: TellListFilters = {},
+): Promise<import('../types/tell').TellConversationListResponse> {
+  const params = new URLSearchParams()
+  if (filters.search) params.set('search', filters.search)
+  if (filters.sort) params.set('sort', filters.sort)
+  if (filters.character) params.set('character', filters.character)
+  if (filters.limit) params.set('limit', String(filters.limit))
+  if (filters.offset) params.set('offset', String(filters.offset))
+  const qs = params.toString()
+  return get<import('../types/tell').TellConversationListResponse>(
+    `/api/tells${qs ? '?' + qs : ''}`,
+  )
+}
+
+export function getTellThread(
+  peer: string,
+  opts: { character?: string; sort?: 'asc' | 'desc' } = {},
+): Promise<import('../types/tell').TellThreadResponse> {
+  const params = new URLSearchParams()
+  if (opts.character) params.set('character', opts.character)
+  if (opts.sort) params.set('sort', opts.sort)
+  const qs = params.toString()
+  return get<import('../types/tell').TellThreadResponse>(
+    `/api/tells/${encodeURIComponent(peer)}${qs ? '?' + qs : ''}`,
+  )
+}
+
+export function deleteTellPeer(peer: string, character?: string): Promise<{ ok: boolean }> {
+  const qs = character ? `?character=${encodeURIComponent(character)}` : ''
+  return del<{ ok: boolean }>(`/api/tells/${encodeURIComponent(peer)}${qs}`)
+}
+
+export function clearTells(character?: string): Promise<{ deleted: number }> {
+  const qs = character ? `?character=${encodeURIComponent(character)}` : ''
+  return post<{ deleted: number }>(`/api/tells/clear${qs}`)
+}
+
+export function scanTells(character?: string): Promise<{ inserted: number; character: string }> {
+  const qs = character ? `?character=${encodeURIComponent(character)}` : ''
+  return post<{ inserted: number; character: string }>(`/api/tells/scan${qs}`)
+}
+
 // ── App Backup (export/import full app state) ──────────────────────────────────
 
 export interface AppBackupManifest {
