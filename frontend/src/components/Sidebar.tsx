@@ -1,39 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Sword, Sparkles, Skull, Map, Hammer, Settings, Search, Activity, Layers, ScrollText, Zap, Users, ChevronLeft, ChevronRight, Dice5, UserSearch, MessageSquare, Package } from 'lucide-react'
+import { Settings, Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import CharacterSwitcher from './CharacterSwitcher'
 import { useHistoryNav } from '../hooks/useHistoryNav'
 import { useWindowDrag } from '../hooks/useWindowDrag'
-
-interface NavItem {
-  to: string
-  label: string
-  icon: React.ReactNode
-}
-
-const PRIMARY_NAV: NavItem[] = [
-  { to: '/items', label: 'Items', icon: <Sword size={16} /> },
-  { to: '/spells', label: 'Spells', icon: <Sparkles size={16} /> },
-  { to: '/npcs', label: 'NPCs', icon: <Skull size={16} /> },
-  { to: '/zones', label: 'Zones', icon: <Map size={16} /> },
-  { to: '/recipes', label: 'Recipes', icon: <Hammer size={16} /> },
-]
-
-const ZEAL_NAV: NavItem[] = [
-  { to: '/characters', label: 'Characters', icon: <Users size={16} /> },
-]
-
-const PARSING_NAV: NavItem[] = [
-  { to: '/log-feed', label: 'Log Feed', icon: <Activity size={16} /> },
-  { to: '/overlays', label: 'Overlays', icon: <Layers size={16} /> },
-  { to: '/combat', label: 'Combat Log', icon: <ScrollText size={16} /> },
-  { to: '/triggers', label: 'Triggers', icon: <Zap size={16} /> },
-  { to: '/rolls', label: 'Roll Tracker', icon: <Dice5 size={16} /> },
-  { to: '/players', label: 'Player Tracker', icon: <UserSearch size={16} /> },
-  { to: '/chat', label: 'Chat History', icon: <MessageSquare size={16} /> },
-  { to: '/loot', label: 'Loot Tracker', icon: <Package size={16} /> },
-]
+import { NAV_SECTIONS, orderItems, type NavItem } from '../lib/sidebarNav'
+import { useSidebarPrefs } from '../hooks/useSidebarPrefs'
 
 function SidebarLink({ to, label, icon }: NavItem): React.ReactElement {
   return (
@@ -63,6 +36,17 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const { canGoBack, canGoForward, goBack, goForward } = useHistoryNav()
   const onDragMouseDown = useWindowDrag()
+  const { hidden, order } = useSidebarPrefs()
+
+  // Apply the user's hide/order prefs to each section; drop sections that end
+  // up empty so their header doesn't dangle.
+  const sections = useMemo(() => {
+    const hiddenSet = new Set(hidden)
+    return NAV_SECTIONS.map((s) => ({
+      ...s,
+      items: orderItems(s.items, order).filter((i) => !hiddenSet.has(i.to)),
+    })).filter((s) => s.items.length > 0)
+  }, [hidden, order])
 
   useEffect(() => {
     const poll = () => {
@@ -125,54 +109,26 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
         <CharacterSwitcher />
       </div>
 
-      {/* Scrollable nav — hidden scrollbar */}
+      {/* Scrollable nav — hidden scrollbar. Sections, their visible items, and
+          their order all come from the user's navigation preferences. */}
       <div className="scrollbar-hidden flex-1 overflow-y-auto">
-        {/* Section header */}
-        <div className="px-4 pb-1 pt-3">
-          <span
-            className="text-[10px] font-semibold uppercase tracking-widest"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            Database
-          </span>
-        </div>
-
-        {/* Primary nav */}
-        <nav className="space-y-0.5 px-2 py-1">
-          {PRIMARY_NAV.map((item) => (
-            <SidebarLink key={item.to} {...item} />
-          ))}
-        </nav>
-
-        {/* Zeal section */}
-        <div className="px-4 pb-1 pt-3">
-          <span
-            className="text-[10px] font-semibold uppercase tracking-widest"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            Zeal
-          </span>
-        </div>
-        <nav className="space-y-0.5 px-2 py-1">
-          {ZEAL_NAV.map((item) => (
-            <SidebarLink key={item.to} {...item} />
-          ))}
-        </nav>
-
-        {/* Parsing section */}
-        <div className="px-4 pb-1 pt-3">
-          <span
-            className="text-[10px] font-semibold uppercase tracking-widest"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            Parsing
-          </span>
-        </div>
-        <nav className="space-y-0.5 px-2 py-1">
-          {PARSING_NAV.map((item) => (
-            <SidebarLink key={item.to} {...item} />
-          ))}
-        </nav>
+        {sections.map((section) => (
+          <React.Fragment key={section.id}>
+            <div className="px-4 pb-1 pt-3">
+              <span
+                className="text-[10px] font-semibold uppercase tracking-widest"
+                style={{ color: 'var(--color-muted)' }}
+              >
+                {section.label}
+              </span>
+            </div>
+            <nav className="space-y-0.5 px-2 py-1">
+              {section.items.map((item) => (
+                <SidebarLink key={item.to} {...item} />
+              ))}
+            </nav>
+          </React.Fragment>
+        ))}
       </div>
 
       {/* Bottom — Settings (always visible) */}
