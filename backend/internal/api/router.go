@@ -17,6 +17,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/keyring"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/lockout"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/loot"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/quarm"
@@ -34,7 +35,7 @@ import (
 // NewRouter builds and returns the chi router wired to all backend components.
 // combatHistory may be nil when persistence is disabled (e.g. user.db open
 // failed); in that case the history endpoints respond 503.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, respawnEngine *respawn.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, chatStore *chat.Store, backfillRegistry *backfill.Registry, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, lockoutStore *lockout.Store, sb *sandbox.Sandbox, savedQueryStore *savedquery.Store, actualPort int) http.Handler {
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, respawnEngine *respawn.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, chatStore *chat.Store, lootStore *loot.Store, backfillRegistry *backfill.Registry, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, lockoutStore *lockout.Store, sb *sandbox.Sandbox, savedQueryStore *savedquery.Store, actualPort int) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -67,6 +68,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	appBackupH := &appBackupHandler{mgr: appBackupMgr}
 	playersH := &playersHandler{store: playerStore}
 	chatH := &chatHandler{store: chatStore, mgr: cfgMgr, tailer: tailer}
+	lootH := &lootHandler{store: lootStore, mgr: cfgMgr, tailer: tailer}
 	backfillH := &backfillHandler{registry: backfillRegistry, mgr: cfgMgr, tailer: tailer, hub: hub}
 	keyringH := &keyringHandler{store: keyringStore, master: keyringMaster}
 	lockoutsH := &lockoutsHandler{store: lockoutStore}
@@ -223,6 +225,11 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/thread/{peer}", chatH.thread)
 			r.Post("/clear", chatH.clear)
 			r.Delete("/peer/{peer}", chatH.deletePeer)
+		})
+		r.Route("/loot", func(r chi.Router) {
+			r.Get("/", lootH.list)
+			r.Get("/meta", lootH.meta)
+			r.Post("/clear", lootH.clear)
 		})
 		r.Route("/backfill", func(r chi.Router) {
 			r.Get("/", backfillH.info)

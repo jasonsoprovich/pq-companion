@@ -38,6 +38,7 @@ import RollTrackerWindowPage from './pages/RollTrackerWindowPage'
 import RespawnTimerWindowPage from './pages/RespawnTimerWindowPage'
 import PlayersPage from './pages/PlayersPage'
 import ChatHistoryPage from './pages/ChatHistoryPage'
+import LootTrackerPage from './pages/LootTrackerPage'
 import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
 import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
 import CharactersPage from './pages/CharactersPage'
@@ -164,6 +165,7 @@ export default function App(): React.ReactElement {
           <Route path="rolls" element={<RollTrackerPage />} />
           <Route path="players" element={<PlayersPage />} />
           <Route path="chat" element={<ChatHistoryPage />} />
+          <Route path="loot" element={<LootTrackerPage />} />
           <Route path="characters" element={<CharactersLayout />}>
             <Route index element={<Navigate to="/characters/overview" replace />} />
             <Route path="overview" element={<CharactersPage />} />

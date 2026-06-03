@@ -621,6 +621,41 @@ export function clearChat(character?: string, channel?: string): Promise<{ delet
   return post<{ deleted: number }>(`/api/chat/clear${qs ? '?' + qs : ''}`)
 }
 
+// ── Loot Tracker ───────────────────────────────────────────────────────────────
+
+export interface LootFilters {
+  character?: string
+  search?: string
+  player?: string
+  zone?: string
+  sort?: 'asc' | 'desc'
+  limit?: number
+  offset?: number
+}
+
+export function getLootMeta(character?: string): Promise<import('../types/loot').LootMetaResponse> {
+  const qs = character ? `?character=${encodeURIComponent(character)}` : ''
+  return get<import('../types/loot').LootMetaResponse>(`/api/loot/meta${qs}`)
+}
+
+export function listLoot(f: LootFilters = {}): Promise<import('../types/loot').LootListResponse> {
+  const p = new URLSearchParams()
+  if (f.character) p.set('character', f.character)
+  if (f.search) p.set('search', f.search)
+  if (f.player) p.set('player', f.player)
+  if (f.zone) p.set('zone', f.zone)
+  if (f.sort) p.set('sort', f.sort)
+  if (f.limit) p.set('limit', String(f.limit))
+  if (f.offset) p.set('offset', String(f.offset))
+  const qs = p.toString()
+  return get<import('../types/loot').LootListResponse>(`/api/loot${qs ? '?' + qs : ''}`)
+}
+
+export function clearLoot(character?: string): Promise<{ deleted: number }> {
+  const qs = character ? `?character=${encodeURIComponent(character)}` : ''
+  return post<{ deleted: number }>(`/api/loot/clear${qs}`)
+}
+
 // ── Log Backfill (retroactively populate trackers from a character's log) ──────
 
 export interface BackfillSection {
