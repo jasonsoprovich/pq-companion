@@ -289,7 +289,7 @@ func (s *Store) Channels(character string) ([]string, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []string
+	out := []string{} // non-nil so the API serializes [] not null
 	for rows.Next() {
 		var c string
 		if err := rows.Scan(&c); err != nil {
@@ -307,7 +307,7 @@ func (s *Store) Characters() ([]string, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []string
+	out := []string{}
 	for rows.Next() {
 		var c string
 		if err := rows.Scan(&c); err != nil {

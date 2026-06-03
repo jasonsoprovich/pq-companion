@@ -61,6 +61,9 @@ func (h *chatHandler) channels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if channels == nil {
+		channels = []string{}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"channels":   channels,
 		"characters": chars,

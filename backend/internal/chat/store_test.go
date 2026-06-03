@@ -74,6 +74,33 @@ func TestStoreRoundTrip(t *testing.T) {
 	}
 }
 
+// TestEmptyStoreReturnsNonNilSlices guards the black-screen regression: an
+// empty store must return [] (not nil) for Channels/Characters so the API
+// serializes "[]" rather than "null" — a null channels array crashed the
+// Chat History page's channel dropdown.
+func TestEmptyStoreReturnsNonNilSlices(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "user.db"))
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer s.Close()
+
+	chans, err := s.Channels("Nobody")
+	if err != nil {
+		t.Fatalf("Channels: %v", err)
+	}
+	if chans == nil {
+		t.Error("Channels returned nil; want non-nil empty slice")
+	}
+	chars, err := s.Characters()
+	if err != nil {
+		t.Fatalf("Characters: %v", err)
+	}
+	if chars == nil {
+		t.Error("Characters returned nil; want non-nil empty slice")
+	}
+}
+
 func (s *Store) mustFeed(t *testing.T, f FeedFilters) []Message {
 	t.Helper()
 	r, err := s.Feed(f)

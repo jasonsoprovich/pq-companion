@@ -68,12 +68,13 @@ export default function ChatHistoryPage(): React.ReactElement {
   const loadMeta = useCallback(() => {
     getChatChannels(selectedChar || undefined)
       .then((r) => {
-        setCharacters(r.characters)
-        setPresentChannels(r.channels)
+        const chars = r.characters ?? []
+        setCharacters(chars)
+        setPresentChannels(r.channels ?? [])
         setSelectedChar((cur) => {
-          if (cur && r.characters.includes(cur)) return cur
-          if (r.active && r.characters.includes(r.active)) return r.active
-          return r.characters[0] ?? r.active ?? ''
+          if (cur && chars.includes(cur)) return cur
+          if (r.active && chars.includes(r.active)) return r.active
+          return chars[0] ?? r.active ?? ''
         })
       })
       .catch(() => { /* best effort */ })
@@ -82,7 +83,7 @@ export default function ChatHistoryPage(): React.ReactElement {
   useEffect(() => { loadMeta() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const channelOptions = useMemo(() => {
-    const named = presentChannels.filter((c) => !KNOWN_CHANNELS.includes(c)).sort()
+    const named = (presentChannels ?? []).filter((c) => !KNOWN_CHANNELS.includes(c)).sort()
     return [...KNOWN_CHANNELS, ...named]
   }, [presentChannels])
 
