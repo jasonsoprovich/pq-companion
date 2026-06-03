@@ -377,25 +377,16 @@ function ConversationRow({
           {thread !== null && thread.map((m) => {
             const out = m.direction === 'out'
             return (
-              <div key={m.id} className="flex flex-col" style={{ alignItems: out ? 'flex-end' : 'flex-start' }}>
-                {/* Sender + time on one compact line above the bubble. */}
-                <div className="flex items-baseline gap-1.5 px-1 leading-none" style={{ flexDirection: out ? 'row-reverse' : 'row' }}>
-                  <span className="text-[10px] font-semibold" style={{ color: out ? 'var(--color-primary)' : 'var(--color-muted-foreground)' }}>
-                    {out ? 'You' : m.peer}
-                  </span>
-                  <span className="text-[9px] tabular-nums" style={{ color: 'var(--color-muted)' }} title={m.zone || undefined}>
-                    {formatTimestamp(m.ts)}
-                  </span>
-                </div>
-                <div className="mt-0.5 rounded-xl px-2.5 py-1" style={{
-                  maxWidth: '82%',
-                  backgroundColor: out ? 'var(--color-primary)' : 'var(--color-surface-2)',
-                  color: out ? '#fff' : 'var(--color-foreground)',
-                  borderTopRightRadius: out ? 4 : undefined,
-                  borderTopLeftRadius: out ? undefined : 4,
-                }}>
-                  <span className="text-xs leading-snug" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.message}</span>
-                </div>
+              <div key={m.id} className="flex items-baseline gap-2 rounded px-2 py-1" style={{ backgroundColor: 'var(--color-surface)' }}>
+                <span className="text-[10px] tabular-nums shrink-0" style={{ color: 'var(--color-muted)', minWidth: '5.5rem' }} title={m.zone || undefined}>
+                  {formatTimestamp(m.ts)}
+                </span>
+                <span className="text-xs font-semibold shrink-0" style={{ color: out ? 'var(--color-primary)' : 'var(--color-foreground)', minWidth: '6rem' }}>
+                  {out ? 'You' : m.peer}
+                </span>
+                <span className="text-xs" style={{ color: 'var(--color-foreground)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {m.message}
+                </span>
               </div>
             )
           })}
