@@ -16,6 +16,7 @@ export const WSEvent = {
   ConfigUpdated: 'config:updated',
   ConfigCharacterDetected: 'config:character_detected',
   ChatNew: 'chat:new',
+  LootNew: 'loot:new',
   BackfillProgress: 'backfill:progress',
   WishlistChanged: 'wishlist:changed',
   ZealConnected: 'zeal:connected',
