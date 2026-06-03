@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { DatabaseBackup, RefreshCw, AlertTriangle, CheckCircle2, AlertCircle } from 'lucide-react'
-import { getBackfillInfo, runBackfill, type BackfillSection } from '../../services/api'
+import { DatabaseBackup, RefreshCw, AlertTriangle, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
+import { getBackfillInfo, runBackfill, getConfig, updateConfig, type BackfillSection } from '../../services/api'
 import { useEscapeToClose } from '../../hooks/useEscapeToClose'
 
 interface RunResult {
@@ -75,6 +75,8 @@ export default function BackfillPanel(): React.ReactElement {
           Log Backfill
         </h1>
       </div>
+
+      <ChatRetentionCard />
 
       <section
         className="rounded-lg p-4"
@@ -220,6 +222,96 @@ function CheckRow({
       <input type="checkbox" checked={checked} onChange={onChange} />
       {label}
     </label>
+  )
+}
+
+// ChatRetentionCard controls how long Chat History is kept before the daily
+// purge. Negative is stored as "keep forever" (-1); otherwise a positive day
+// count. Saves immediately on Apply.
+function ChatRetentionCard(): React.ReactElement {
+  const [retention, setRetention] = useState<number | null>(null) // current saved value
+  const [days, setDays] = useState('30')
+  const [keepForever, setKeepForever] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    getConfig()
+      .then((c) => {
+        const v = c.chat_retention_days
+        setRetention(v)
+        if (v < 0) {
+          setKeepForever(true)
+        } else {
+          setDays(String(v || 30))
+        }
+      })
+      .catch(() => setRetention(30))
+  }, [])
+
+  const target = keepForever ? -1 : Math.max(1, parseInt(days, 10) || 30)
+  const dirty = retention !== null && target !== retention
+
+  async function apply() {
+    setSaving(true)
+    setSaved(false)
+    try {
+      const cfg = await getConfig()
+      const next = { ...cfg, chat_retention_days: target }
+      const savedCfg = await updateConfig(next)
+      setRetention(savedCfg.chat_retention_days)
+      setSaved(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section
+      className="mb-4 rounded-lg p-4"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+    >
+      <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+        <Clock size={13} /> Chat History retention
+      </h2>
+      <p className="mb-3 text-xs leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>
+        Chat messages older than this are deleted by a daily cleanup so the history stays fast. Tells and all
+        channels share this window.
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-foreground)' }}>
+          Keep
+          <input
+            type="number"
+            min={1}
+            value={days}
+            disabled={keepForever}
+            onChange={(e) => { setDays(e.target.value); setSaved(false) }}
+            className="w-20 rounded px-2 py-1 text-sm outline-none disabled:opacity-50"
+            style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+          />
+          days
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 text-sm" style={{ color: 'var(--color-foreground)' }}>
+          <input type="checkbox" checked={keepForever} onChange={(e) => { setKeepForever(e.target.checked); setSaved(false) }} />
+          Keep forever
+        </label>
+        <button
+          onClick={apply}
+          disabled={saving || !dirty}
+          className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+          style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+        >
+          {saving ? <RefreshCw size={12} className="animate-spin" /> : null}
+          Apply
+        </button>
+        {saved && !dirty && (
+          <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--color-primary)' }}>
+            <CheckCircle2 size={12} /> Saved
+          </span>
+        )}
+      </div>
+    </section>
   )
 }
 

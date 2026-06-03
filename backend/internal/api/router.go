@@ -10,6 +10,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backfill"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/chat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
@@ -24,7 +25,6 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/sandbox"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/savedquery"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
-	"github.com/jasonsoprovich/pq-companion/backend/internal/tells"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
@@ -34,7 +34,7 @@ import (
 // NewRouter builds and returns the chi router wired to all backend components.
 // combatHistory may be nil when persistence is disabled (e.g. user.db open
 // failed); in that case the history endpoints respond 503.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, respawnEngine *respawn.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, tellStore *tells.Store, backfillRegistry *backfill.Registry, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, lockoutStore *lockout.Store, sb *sandbox.Sandbox, savedQueryStore *savedquery.Store, actualPort int) http.Handler {
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, respawnEngine *respawn.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, chatStore *chat.Store, backfillRegistry *backfill.Registry, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, lockoutStore *lockout.Store, sb *sandbox.Sandbox, savedQueryStore *savedquery.Store, actualPort int) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -66,7 +66,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	backupH := &backupHandler{mgr: backupMgr}
 	appBackupH := &appBackupHandler{mgr: appBackupMgr}
 	playersH := &playersHandler{store: playerStore}
-	tellsH := &tellsHandler{store: tellStore, mgr: cfgMgr, tailer: tailer}
+	chatH := &chatHandler{store: chatStore, mgr: cfgMgr, tailer: tailer}
 	backfillH := &backfillHandler{registry: backfillRegistry, mgr: cfgMgr, tailer: tailer}
 	keyringH := &keyringHandler{store: keyringStore, master: keyringMaster}
 	lockoutsH := &lockoutsHandler{store: lockoutStore}
@@ -216,12 +216,13 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/{name}/history", playersH.history)
 			r.Delete("/{name}", playersH.delete)
 		})
-		r.Route("/tells", func(r chi.Router) {
-			r.Get("/", tellsH.list)
-			r.Get("/characters", tellsH.characters)
-			r.Post("/clear", tellsH.clear)
-			r.Get("/{peer}", tellsH.thread)
-			r.Delete("/{peer}", tellsH.delete)
+		r.Route("/chat", func(r chi.Router) {
+			r.Get("/channels", chatH.channels)
+			r.Get("/conversations", chatH.conversations)
+			r.Get("/feed", chatH.feed)
+			r.Get("/thread/{peer}", chatH.thread)
+			r.Post("/clear", chatH.clear)
+			r.Delete("/peer/{peer}", chatH.deletePeer)
 		})
 		r.Route("/backfill", func(r chi.Router) {
 			r.Get("/", backfillH.info)

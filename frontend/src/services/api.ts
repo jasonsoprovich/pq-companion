@@ -559,56 +559,66 @@ export function clearPlayers(): Promise<{ deleted: number }> {
   return post<{ deleted: number }>(`/api/players/clear`)
 }
 
-// ── Tells (direct player-to-player tell history) ───────────────────────────────
+// ── Chat History (multi-channel player chat) ───────────────────────────────────
 
-export interface TellListFilters {
-  search?: string
-  sort?: 'asc' | 'desc'
+export interface ChatFilters {
   character?: string
+  channel?: string
+  search?: string
+  from?: number // unix seconds
+  to?: number
+  sort?: 'asc' | 'desc'
   limit?: number
   offset?: number
 }
 
-export function listTellConversations(
-  filters: TellListFilters = {},
-): Promise<import('../types/tell').TellConversationListResponse> {
-  const params = new URLSearchParams()
-  if (filters.search) params.set('search', filters.search)
-  if (filters.sort) params.set('sort', filters.sort)
-  if (filters.character) params.set('character', filters.character)
-  if (filters.limit) params.set('limit', String(filters.limit))
-  if (filters.offset) params.set('offset', String(filters.offset))
-  const qs = params.toString()
-  return get<import('../types/tell').TellConversationListResponse>(
-    `/api/tells${qs ? '?' + qs : ''}`,
-  )
+function chatParams(f: ChatFilters): string {
+  const p = new URLSearchParams()
+  if (f.character) p.set('character', f.character)
+  if (f.channel) p.set('channel', f.channel)
+  if (f.search) p.set('search', f.search)
+  if (f.from) p.set('from', String(f.from))
+  if (f.to) p.set('to', String(f.to))
+  if (f.sort) p.set('sort', f.sort)
+  if (f.limit) p.set('limit', String(f.limit))
+  if (f.offset) p.set('offset', String(f.offset))
+  const qs = p.toString()
+  return qs ? '?' + qs : ''
 }
 
-export function listTellCharacters(): Promise<{ characters: string[]; active: string }> {
-  return get<{ characters: string[]; active: string }>('/api/tells/characters')
+export function getChatChannels(character?: string): Promise<import('../types/chat').ChatChannelsResponse> {
+  const qs = character ? `?character=${encodeURIComponent(character)}` : ''
+  return get<import('../types/chat').ChatChannelsResponse>(`/api/chat/channels${qs}`)
 }
 
-export function getTellThread(
+export function listChatConversations(f: ChatFilters = {}): Promise<import('../types/chat').ChatConversationListResponse> {
+  return get<import('../types/chat').ChatConversationListResponse>(`/api/chat/conversations${chatParams(f)}`)
+}
+
+export function getChatThread(
   peer: string,
   opts: { character?: string; sort?: 'asc' | 'desc' } = {},
-): Promise<import('../types/tell').TellThreadResponse> {
-  const params = new URLSearchParams()
-  if (opts.character) params.set('character', opts.character)
-  if (opts.sort) params.set('sort', opts.sort)
-  const qs = params.toString()
-  return get<import('../types/tell').TellThreadResponse>(
-    `/api/tells/${encodeURIComponent(peer)}${qs ? '?' + qs : ''}`,
+): Promise<import('../types/chat').ChatMessageListResponse> {
+  return get<import('../types/chat').ChatMessageListResponse>(
+    `/api/chat/thread/${encodeURIComponent(peer)}${chatParams(opts)}`,
   )
 }
 
-export function deleteTellPeer(peer: string, character?: string): Promise<{ ok: boolean }> {
-  const qs = character ? `?character=${encodeURIComponent(character)}` : ''
-  return del<{ ok: boolean }>(`/api/tells/${encodeURIComponent(peer)}${qs}`)
+export function getChatFeed(f: ChatFilters = {}): Promise<import('../types/chat').ChatMessageListResponse> {
+  return get<import('../types/chat').ChatMessageListResponse>(`/api/chat/feed${chatParams(f)}`)
 }
 
-export function clearTells(character?: string): Promise<{ deleted: number }> {
+export function deleteChatPeer(peer: string, character?: string): Promise<{ ok: boolean }> {
   const qs = character ? `?character=${encodeURIComponent(character)}` : ''
-  return post<{ deleted: number }>(`/api/tells/clear${qs}`)
+  return del<{ ok: boolean }>(`/api/chat/peer/${encodeURIComponent(peer)}${qs}`)
+}
+
+export function clearChat(character?: string, channel?: string): Promise<{ deleted: number }> {
+  const p = new URLSearchParams()
+  if (character) p.set('character', character)
+  if (channel) p.set('channel', channel)
+  const qs = p.toString()
+  return post<{ deleted: number }>(`/api/chat/clear${qs ? '?' + qs : ''}`)
 }
 
 // ── Log Backfill (retroactively populate trackers from a character's log) ──────

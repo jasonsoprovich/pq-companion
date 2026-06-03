@@ -31,7 +31,7 @@ const PARSING_NAV: NavItem[] = [
   { to: '/triggers', label: 'Triggers', icon: <Zap size={16} /> },
   { to: '/rolls', label: 'Roll Tracker', icon: <Dice5 size={16} /> },
   { to: '/players', label: 'Player Tracker', icon: <UserSearch size={16} /> },
-  { to: '/tells', label: 'Tell Tracker', icon: <MessageSquare size={16} /> },
+  { to: '/chat', label: 'Chat History', icon: <MessageSquare size={16} /> },
 ]
 
 function SidebarLink({ to, label, icon }: NavItem): React.ReactElement {
