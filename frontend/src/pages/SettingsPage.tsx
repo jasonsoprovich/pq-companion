@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2 } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, DatabaseBackup } from 'lucide-react'
+import BackfillPanel from '../components/settings/BackfillPanel'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config, DPSClassColors, NPCOverlaySections } from '../types/config'
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
@@ -31,7 +32,7 @@ import DeveloperTab from './DeveloperTab'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backups' | 'advanced' | 'developer'
+type Tab = 'general' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backfill' | 'backups' | 'advanced' | 'developer'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -463,6 +464,7 @@ export default function SettingsPage(): React.ReactElement {
     { id: 'spelltimers', label: 'Spell Timers', icon: <Sparkles size={13} /> },
     { id: 'dpscolors', label: 'DPS Class Colors', icon: <Palette size={13} /> },
     { id: 'logs', label: 'Logs', icon: <FileText size={13} /> },
+    { id: 'backfill', label: 'Log Backfill', icon: <DatabaseBackup size={13} /> },
     { id: 'backups', label: 'EQ Config Backups', icon: <HardDrive size={13} /> },
     { id: 'advanced', label: 'Advanced', icon: <Wifi size={13} /> },
     ...(developerMode
@@ -604,6 +606,17 @@ export default function SettingsPage(): React.ReactElement {
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           <DeveloperTab />
+        </div>
+      </div>
+    )
+  }
+
+  if (tab === 'backfill') {
+    return (
+      <div className="flex h-full flex-col">
+        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <BackfillPanel />
         </div>
       </div>
     )

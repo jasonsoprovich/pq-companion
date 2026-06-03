@@ -52,6 +52,13 @@ type Config struct {
 	// OnboardingCompleted is true once the user has finished the first-launch
 	// setup wizard. When false (default), the wizard is shown on app launch.
 	OnboardingCompleted bool `yaml:"onboarding_completed" json:"onboarding_completed"`
+
+	// ChatRetentionDays is how many days of Chat History to keep before the
+	// daily purge deletes older messages. Default 30. A negative value (e.g.
+	// -1) keeps chat forever. As with Combat.RetentionDays, the YAML decoder
+	// can't tell a missing field from an explicit 0, so applyDefaults treats 0
+	// as "use the default"; "keep forever" is stored as -1.
+	ChatRetentionDays int `yaml:"chat_retention_days" json:"chat_retention_days"`
 }
 
 // BackupSettings configures automatic backup behaviour.
@@ -315,7 +322,8 @@ func defaults() Config {
 		Combat: CombatSettings{
 			RetentionDays: 30,
 		},
-		DPSClassColors: DefaultDPSClassColors(),
+		ChatRetentionDays: 30,
+		DPSClassColors:    DefaultDPSClassColors(),
 	}
 }
 
@@ -400,6 +408,13 @@ func applyDefaults(cfg *Config) bool {
 	// pruneCombatHistory honours as "skip".
 	if cfg.Combat.RetentionDays == 0 {
 		cfg.Combat.RetentionDays = 30
+		changed = true
+	}
+	// Chat history retention: same convention as Combat — a missing/zero value
+	// means "use the default" (30 days); a negative value disables the purge
+	// (keep forever).
+	if cfg.ChatRetentionDays == 0 {
+		cfg.ChatRetentionDays = 30
 		changed = true
 	}
 	// DPS class colour palette: fill in any blank entries from the defaults so

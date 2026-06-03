@@ -17,8 +17,10 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/api"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/appbackup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/applog"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/backfill"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/chat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
@@ -161,6 +163,18 @@ func main() {
 	} else {
 		defer playerStore.Close()
 		playersConsumer = players.NewConsumer(playerStore)
+	}
+
+	// Chat history: persists player chat across tells + guild/raid/group/ooc/
+	// auction/shout and named channels so the user can browse history. Non-fatal
+	// — failing here only disables the Chat History page.
+	chatStore, err := chat.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	var chatConsumer *chat.Consumer
+	if err != nil {
+		slog.Warn("open chat history (disabled)", "err", err)
+		chatStore = nil
+	} else {
+		defer chatStore.Close()
 	}
 
 	// Keyring tracker: persists per-character /keys snapshots. Master list
@@ -432,6 +446,59 @@ func main() {
 		})
 	}
 
+	if chatStore != nil {
+		chatConsumer = chat.NewConsumer(chatStore, activeChar)
+		chatConsumer.SetOnInsert(func(m chat.Message) {
+			hub.Broadcast(ws.Event{Type: "chat:new", Data: m})
+		})
+	}
+
+	// Backfill registry: powers Settings → Log Backfill. Each tracker that can
+	// be retroactively populated from a character's log registers a dedup-safe,
+	// timestamp-aware handler here. Upcoming trackers (loot, tradeskills) plug
+	// in the same way.
+	backfillRegistry := backfill.NewRegistry()
+	if chatStore != nil {
+		backfillRegistry.Register(backfill.Section{
+			Key:        "chat",
+			Label:      "Chat History",
+			NewHandler: func(character string) backfill.Handler { return chat.NewBackfillHandler(chatStore, character) },
+		})
+	}
+	if playerStore != nil {
+		backfillRegistry.Register(backfill.Section{
+			Key:        "players",
+			Label:      "Player Tracker",
+			NewHandler: func(string) backfill.Handler { return players.NewBackfillConsumer(playerStore) },
+		})
+	}
+
+	// Chat history retention: purge messages older than the configured window
+	// (default 30 days; 0 = keep forever) on startup and once a day, keeping the
+	// single table lean so queries stay fast.
+	if chatStore != nil {
+		go func() {
+			purge := func() {
+				days := cfgMgr.Get().ChatRetentionDays
+				if days <= 0 {
+					return // keep forever
+				}
+				cutoff := time.Now().AddDate(0, 0, -days)
+				if n, err := chatStore.Purge(cutoff); err != nil {
+					slog.Warn("chat retention purge failed", "err", err)
+				} else if n > 0 {
+					slog.Info("chat retention purge", "deleted", n, "older_than_days", days)
+				}
+			}
+			purge()
+			ticker := time.NewTicker(24 * time.Hour)
+			defer ticker.Stop()
+			for range ticker.C {
+				purge()
+			}
+		}()
+	}
+
 	// Zeal IPC supervisor: discovers the eqgame.exe Zeal pipe and forwards
 	// live state into every downstream consumer that benefits from real-time,
 	// authoritative game data instead of log inference.
@@ -557,6 +624,9 @@ func main() {
 		if playersConsumer != nil {
 			playersConsumer.Handle(ev)
 		}
+		if chatConsumer != nil {
+			chatConsumer.HandleEvent(ev)
+		}
 	}, func(ts time.Time, msg string) {
 		triggerEngine.Handle(ts, msg)
 		if keyringConsumer != nil {
@@ -564,6 +634,9 @@ func main() {
 		}
 		if lockoutConsumer != nil {
 			lockoutConsumer.HandleLine(ts, msg)
+		}
+		if chatConsumer != nil {
+			chatConsumer.HandleLine(ts, msg)
 		}
 	}, func(character string) {
 		slog.Info("logparser: auto-detected active character", "character", character)
@@ -659,7 +732,7 @@ func main() {
 		defer savedQueryStore.Close()
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

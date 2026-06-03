@@ -15,6 +15,8 @@ export const WSEvent = {
   TriggerTestSessionEnded: 'trigger:test_session_ended',
   ConfigUpdated: 'config:updated',
   ConfigCharacterDetected: 'config:character_detected',
+  ChatNew: 'chat:new',
+  BackfillProgress: 'backfill:progress',
   WishlistChanged: 'wishlist:changed',
   ZealConnected: 'zeal:connected',
   ZealDisconnected: 'zeal:disconnected',

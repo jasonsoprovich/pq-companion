@@ -141,4 +141,8 @@ export interface Config {
   spell_timer: SpellTimerSettings
   dps_class_colors: DPSClassColors
   onboarding_completed: boolean
+  // Days of Chat History to keep before the daily purge. Default 30; a
+  // negative value (-1) keeps chat forever. 0 is coerced to the default
+  // server-side.
+  chat_retention_days: number
 }

@@ -122,13 +122,13 @@ func (s *Store) migrate() error {
 // types so future producers (Zeal pipe later?) can call without dragging
 // log-specific structs in.
 type SightingInput struct {
-	Name      string
-	Level     int
-	Class     string
-	Race      string
-	Guild     string
-	Anonymous bool
-	Zone      string
+	Name       string
+	Level      int
+	Class      string
+	Race       string
+	Guild      string
+	Anonymous  bool
+	Zone       string
 	ObservedAt time.Time
 }
 
@@ -161,9 +161,9 @@ func (s *Store) Upsert(in SightingInput) error {
 	defer tx.Rollback() //nolint:errcheck
 
 	var (
-		existsRow      bool
-		prevLevel      int
-		prevClass      string
+		existsRow bool
+		prevLevel int
+		prevClass string
 	)
 	row := tx.QueryRow(`SELECT last_seen_level, class FROM player_sightings WHERE name = ?`, in.Name)
 	if err := row.Scan(&prevLevel, &prevClass); err != nil {
@@ -295,6 +295,133 @@ func (s *Store) UpdateGuild(name, guild, zone string, observedAt time.Time) erro
 		}
 	}
 	return tx.Commit()
+}
+
+// BackfillUpsert applies a historical /who sighting from a log replay in a
+// timestamp-aware, idempotent way — the rules differ from the live Upsert so
+// re-running a backfill (or backfilling after live tracking) never inflates
+// counts, duplicates level history, or clobbers newer live data:
+//
+//   - New player: inserted with count 1 and first/last seen = the log
+//     timestamp (a level-history row is added for non-anonymous sightings).
+//   - Existing player: first_seen_at is pulled EARLIER when the log predates
+//     it; last-seen fields are updated only when the log sighting is NEWER than
+//     the stored last_seen_at (so live data always wins). sightings_count is
+//     never bumped, and level history is added only when that (name, level)
+//     pair isn't already recorded.
+//
+// Returns whether the row was created or changed (false ⇒ already current,
+// which is what a second backfill pass produces).
+func (s *Store) BackfillUpsert(in SightingInput) (bool, error) {
+	if in.Name == "" {
+		return false, fmt.Errorf("name required")
+	}
+	now := in.ObservedAt
+	if now.IsZero() {
+		now = time.Now()
+	}
+	nowUnix := now.Unix()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var (
+		exists      bool
+		prevLevel   int
+		prevSeenAt  int64
+		prevFirstAt int64
+	)
+	row := tx.QueryRow(`SELECT last_seen_level, last_seen_at, first_seen_at FROM player_sightings WHERE name = ?`, in.Name)
+	if err := row.Scan(&prevLevel, &prevSeenAt, &prevFirstAt); err != nil {
+		if err != sql.ErrNoRows {
+			return false, err
+		}
+	} else {
+		exists = true
+	}
+
+	addLevelHistory := func() error {
+		if in.Anonymous || in.Level <= 0 {
+			return nil
+		}
+		var seen int
+		err := tx.QueryRow(`SELECT 1 FROM player_level_history WHERE name = ? AND level = ?`, in.Name, in.Level).Scan(&seen)
+		if err == nil {
+			return nil // already recorded this (name, level)
+		}
+		if err != sql.ErrNoRows {
+			return err
+		}
+		_, err = tx.Exec(`INSERT INTO player_level_history (name, level, class, zone, observed_at) VALUES (?, ?, ?, ?, ?)`,
+			in.Name, in.Level, in.Class, in.Zone, nowUnix)
+		return err
+	}
+
+	changed := false
+	if !exists {
+		if in.Anonymous {
+			if _, err := tx.Exec(`
+				INSERT INTO player_sightings (name, last_seen_zone, last_seen_at, first_seen_at, last_anonymous, sightings_count)
+				VALUES (?, ?, ?, ?, 1, 1)
+			`, in.Name, in.Zone, nowUnix, nowUnix); err != nil {
+				return false, err
+			}
+		} else {
+			if _, err := tx.Exec(`
+				INSERT INTO player_sightings (name, class, race, guild, last_seen_level, last_seen_zone, last_seen_at, first_seen_at, last_anonymous, sightings_count)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+			`, in.Name, in.Class, in.Race, in.Guild, in.Level, in.Zone, nowUnix, nowUnix); err != nil {
+				return false, err
+			}
+			if err := addLevelHistory(); err != nil {
+				return false, err
+			}
+		}
+		changed = true
+	} else {
+		// Pull first_seen earlier when the log proves an earlier encounter.
+		if nowUnix < prevFirstAt {
+			if _, err := tx.Exec(`UPDATE player_sightings SET first_seen_at = ? WHERE name = ?`, nowUnix, in.Name); err != nil {
+				return false, err
+			}
+			changed = true
+		}
+		// Only refresh last-seen data when this sighting is newer than stored.
+		if nowUnix > prevSeenAt {
+			if in.Anonymous {
+				if _, err := tx.Exec(`
+					UPDATE player_sightings
+					SET last_seen_zone = COALESCE(NULLIF(?, ''), last_seen_zone), last_seen_at = ?, last_anonymous = 1
+					WHERE name = ?
+				`, in.Zone, nowUnix, in.Name); err != nil {
+					return false, err
+				}
+			} else {
+				if _, err := tx.Exec(`
+					UPDATE player_sightings
+					SET class = ?, race = ?, guild = ?, last_seen_level = ?,
+					    last_seen_zone = COALESCE(NULLIF(?, ''), last_seen_zone), last_seen_at = ?, last_anonymous = 0
+					WHERE name = ?
+				`, in.Class, in.Race, in.Guild, in.Level, in.Zone, nowUnix, in.Name); err != nil {
+					return false, err
+				}
+				if in.Level > 0 && in.Level != prevLevel {
+					if err := addLevelHistory(); err != nil {
+						return false, err
+					}
+				}
+			}
+			changed = true
+		}
+	}
+
+	if !changed {
+		return false, nil // deferred Rollback discards the no-op transaction
+	}
+	return true, tx.Commit()
 }
 
 // SearchFilters narrows the list of returned sightings.
