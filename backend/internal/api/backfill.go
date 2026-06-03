@@ -10,12 +10,14 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backfill"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
 type backfillHandler struct {
 	registry *backfill.Registry
 	mgr      *config.Manager
 	tailer   *logparser.Tailer
+	hub      *ws.Hub
 }
 
 // info handles GET /api/backfill — the available sections plus the characters
@@ -68,7 +70,15 @@ func (h *backfillHandler) run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logPath := filepath.Join(eqPath, "eqlog_"+req.Character+"_pq.proj.txt")
-	results, err := h.registry.Run(logPath, req.Character, req.Sections)
+	results, err := h.registry.Run(logPath, req.Character, req.Sections, func(done, total int64) {
+		if h.hub != nil {
+			h.hub.Broadcast(ws.Event{Type: "backfill:progress", Data: map[string]any{
+				"character": req.Character,
+				"done":      done,
+				"total":     total,
+			}})
+		}
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

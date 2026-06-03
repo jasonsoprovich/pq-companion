@@ -355,7 +355,7 @@ function ConversationRow({
 
   return (
     <div className="rounded-lg border" style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
-      <button onClick={onToggle} className="flex w-full items-center gap-2 px-3 py-2 text-left" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+      <button onClick={onToggle} className="flex w-full items-center gap-2 px-3 py-1.5 text-left" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
         {expanded ? <ChevronDown size={14} style={{ color: 'var(--color-muted)' }} /> : <ChevronRight size={14} style={{ color: 'var(--color-muted)' }} />}
         <span className="text-sm font-semibold" style={{ color: 'var(--color-primary)' }}>{convo.peer}</span>
         <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>{convo.count} message{convo.count === 1 ? '' : 's'}</span>
@@ -370,7 +370,7 @@ function ConversationRow({
       </button>
 
       {expanded && (
-        <div className="border-t px-3 py-3 flex flex-col gap-2.5" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-background)' }}>
+        <div className="border-t px-2.5 py-2 flex flex-col gap-1" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-background)' }}>
           {err && <p className="text-xs" style={{ color: 'var(--color-danger)' }}>{err}</p>}
           {!err && thread === null && <p className="text-xs" style={{ color: 'var(--color-muted)' }}>Loading…</p>}
           {thread !== null && thread.length === 0 && <p className="text-xs" style={{ color: 'var(--color-muted)' }}>No messages.</p>}
@@ -378,21 +378,24 @@ function ConversationRow({
             const out = m.direction === 'out'
             return (
               <div key={m.id} className="flex flex-col" style={{ alignItems: out ? 'flex-end' : 'flex-start' }}>
-                <span className="mb-0.5 px-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: out ? 'var(--color-primary)' : 'var(--color-muted-foreground)' }}>
-                  {out ? 'You' : m.peer}
-                </span>
-                <div className="rounded-2xl px-3 py-2" style={{
-                  maxWidth: '80%',
+                {/* Sender + time on one compact line above the bubble. */}
+                <div className="flex items-baseline gap-1.5 px-1 leading-none" style={{ flexDirection: out ? 'row-reverse' : 'row' }}>
+                  <span className="text-[10px] font-semibold" style={{ color: out ? 'var(--color-primary)' : 'var(--color-muted-foreground)' }}>
+                    {out ? 'You' : m.peer}
+                  </span>
+                  <span className="text-[9px] tabular-nums" style={{ color: 'var(--color-muted)' }} title={m.zone || undefined}>
+                    {formatTimestamp(m.ts)}
+                  </span>
+                </div>
+                <div className="mt-0.5 rounded-xl px-2.5 py-1" style={{
+                  maxWidth: '82%',
                   backgroundColor: out ? 'var(--color-primary)' : 'var(--color-surface-2)',
                   color: out ? '#fff' : 'var(--color-foreground)',
-                  borderBottomRightRadius: out ? 4 : undefined,
-                  borderBottomLeftRadius: out ? undefined : 4,
+                  borderTopRightRadius: out ? 4 : undefined,
+                  borderTopLeftRadius: out ? undefined : 4,
                 }}>
-                  <span className="text-xs leading-relaxed" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.message}</span>
+                  <span className="text-xs leading-snug" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.message}</span>
                 </div>
-                <span className="mt-0.5 px-1 text-[10px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
-                  {formatTimestamp(m.ts)}{m.zone ? ` · ${m.zone}` : ''}
-                </span>
               </div>
             )
           })}

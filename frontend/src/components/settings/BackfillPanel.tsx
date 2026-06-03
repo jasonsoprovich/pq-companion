@@ -1,7 +1,24 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { DatabaseBackup, RefreshCw, AlertTriangle, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
 import { getBackfillInfo, runBackfill, getConfig, updateConfig, type BackfillSection } from '../../services/api'
 import { useEscapeToClose } from '../../hooks/useEscapeToClose'
+import { useWebSocket } from '../../hooks/useWebSocket'
+import { WSEvent } from '../../lib/wsEvents'
+
+interface BackfillProgress {
+  character: string
+  done: number
+  total: number
+}
+
+function fmtDuration(sec: number): string {
+  if (!isFinite(sec) || sec < 0) return '—'
+  const s = Math.round(sec)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  const rem = s % 60
+  return rem ? `${m}m ${rem}s` : `${m}m`
+}
 
 interface RunResult {
   character: string
@@ -18,8 +35,12 @@ export default function BackfillPanel(): React.ReactElement {
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [running, setRunning] = useState(false)
-  const [progress, setProgress] = useState<string | null>(null)
   const [results, setResults] = useState<RunResult[] | null>(null)
+  // Live progress for the running backfill.
+  const [runChars, setRunChars] = useState<string[]>([])
+  const [prog, setProg] = useState<BackfillProgress | null>(null)
+  const charStartRef = useRef<number>(0)
+  const [charElapsed, setCharElapsed] = useState(0)
 
   useEffect(() => {
     getBackfillInfo()
@@ -43,16 +64,33 @@ export default function BackfillPanel(): React.ReactElement {
 
   const canRun = selChars.size > 0 && selSections.size > 0 && !running
 
+  // Live progress events from the backend scan.
+  const onWs = useCallback((msg: { type: string; data?: unknown }) => {
+    if (msg.type !== WSEvent.BackfillProgress) return
+    setProg(msg.data as BackfillProgress)
+  }, [])
+  useWebSocket(onWs)
+
+  // Tick elapsed every second while running so the timer/ETA advance smoothly
+  // between progress events.
+  useEffect(() => {
+    if (!running) return
+    const t = setInterval(() => setCharElapsed((Date.now() - charStartRef.current) / 1000), 500)
+    return () => clearInterval(t)
+  }, [running])
+
   async function doRun() {
     setConfirmOpen(false)
-    setRunning(true)
     setResults(null)
     const chars = Array.from(selChars)
     const secs = Array.from(selSections)
+    setRunChars(chars)
+    setRunning(true)
     const out: RunResult[] = []
-    for (let i = 0; i < chars.length; i++) {
-      const c = chars[i]
-      setProgress(`Backfilling ${c} (${i + 1}/${chars.length})…`)
+    for (const c of chars) {
+      charStartRef.current = Date.now()
+      setCharElapsed(0)
+      setProg({ character: c, done: 0, total: 0 })
       try {
         const r = await runBackfill(c, secs)
         out.push({ character: c, results: r.results })
@@ -61,7 +99,7 @@ export default function BackfillPanel(): React.ReactElement {
       }
     }
     setResults(out)
-    setProgress(null)
+    setProg(null)
     setRunning(false)
   }
 
@@ -162,9 +200,6 @@ export default function BackfillPanel(): React.ReactElement {
                 {running ? <RefreshCw size={12} className="animate-spin" /> : <DatabaseBackup size={12} />}
                 {running ? 'Backfilling…' : 'Run backfill'}
               </button>
-              {progress && (
-                <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>{progress}</span>
-              )}
             </div>
 
             {/* Results */}
@@ -206,6 +241,68 @@ export default function BackfillPanel(): React.ReactElement {
           onConfirm={doRun}
         />
       )}
+
+      {running && (
+        <ProgressModal
+          runChars={runChars}
+          prog={prog}
+          elapsed={charElapsed}
+        />
+      )}
+    </div>
+  )
+}
+
+// ProgressModal shows live backfill progress so a multi-minute scan never looks
+// hung: per-character progress bar (bytes processed / file size), elapsed time,
+// and an ETA extrapolated from the current rate.
+function ProgressModal({
+  runChars, prog, elapsed,
+}: {
+  runChars: string[]
+  prog: BackfillProgress | null
+  elapsed: number
+}): React.ReactElement {
+  const idx = prog ? runChars.indexOf(prog.character) : -1
+  const fraction = prog && prog.total > 0 ? Math.min(1, prog.done / prog.total) : 0
+  const pct = Math.round(fraction * 100)
+  // ETA for the current file once we have a stable-enough sample.
+  const eta = fraction > 0.03 ? (elapsed * (1 - fraction)) / fraction : null
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div className="rounded-lg p-5 space-y-3" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', width: '100%', maxWidth: 440 }}>
+        <div className="flex items-center gap-2">
+          <RefreshCw size={16} className="animate-spin" style={{ color: 'var(--color-primary)' }} />
+          <p className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>Backfilling logs…</p>
+        </div>
+
+        <div className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          {prog ? (
+            <>
+              <span className="font-medium" style={{ color: 'var(--color-foreground)' }}>{prog.character}</span>
+              {runChars.length > 1 && idx >= 0 && <span> · character {idx + 1} of {runChars.length}</span>}
+            </>
+          ) : 'Starting…'}
+        </div>
+
+        {/* Progress bar */}
+        <div className="h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: 'var(--color-surface-2)' }}>
+          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: 'var(--color-primary)' }} />
+        </div>
+
+        <div className="flex justify-between text-[11px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
+          <span>{pct}%</span>
+          <span>
+            {fmtDuration(elapsed)} elapsed
+            {eta !== null && <> · ~{fmtDuration(eta)} left</>}
+          </span>
+        </div>
+
+        <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+          Large logs can take a few minutes per character — this is normal, not a freeze. Progress updates live as the log is read.
+        </p>
+      </div>
     </div>
   )
 }

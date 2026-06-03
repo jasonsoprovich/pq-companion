@@ -66,11 +66,20 @@ func (r *Registry) Sections() []SectionInfo {
 	return out
 }
 
+// progressInterval throttles progress callbacks so a multi-minute scan emits a
+// handful of updates per second rather than one per line.
+const progressInterval = 150 * time.Millisecond
+
 // Run replays logPath once, dispatching every line to the handlers for the
 // requested section keys, attributing rows to character. Returns
 // inserted/updated counts keyed by section. Unknown keys are ignored; an empty
 // selection is a no-op.
-func (r *Registry) Run(logPath, character string, keys []string) (map[string]int, error) {
+//
+// progress, if non-nil, is called periodically with the number of bytes
+// processed and the total file size, so callers can render a progress bar and
+// ETA for long backfills. It is always called once at the start (0/total) and
+// once at the end (total/total).
+func (r *Registry) Run(logPath, character string, keys []string, progress func(done, total int64)) (map[string]int, error) {
 	want := make(map[string]bool, len(keys))
 	for _, k := range keys {
 		want[k] = true
@@ -96,22 +105,41 @@ func (r *Registry) Run(logPath, character string, keys []string) (map[string]int
 	}
 	defer f.Close()
 
+	var total int64
+	if fi, err := f.Stat(); err == nil {
+		total = fi.Size()
+	}
+	var done int64
+	var lastEmit time.Time
+	emit := func(force bool) {
+		if progress == nil {
+			return
+		}
+		now := time.Now()
+		if force || now.Sub(lastEmit) >= progressInterval {
+			lastEmit = now
+			progress(done, total)
+		}
+	}
+	emit(true) // 0 / total so the bar appears immediately
+
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
 		line := sc.Text()
+		done += int64(len(line)) + 1 // +1 approximates the stripped newline
 		ts, msg, ok := logparser.ParseRawLine(line)
-		if !ok {
-			continue
-		}
-		if ev, ok := logparser.ParseLine(line); ok {
+		if ok {
+			if ev, ok := logparser.ParseLine(line); ok {
+				for _, a := range handlers {
+					a.h.HandleEvent(ev)
+				}
+			}
 			for _, a := range handlers {
-				a.h.HandleEvent(ev)
+				a.h.HandleLine(ts, msg)
 			}
 		}
-		for _, a := range handlers {
-			a.h.HandleLine(ts, msg)
-		}
+		emit(false)
 	}
 	if err := sc.Err(); err != nil {
 		return nil, fmt.Errorf("read log: %w", err)
@@ -120,5 +148,6 @@ func (r *Registry) Run(logPath, character string, keys []string) (map[string]int
 		a.h.Finalize()
 		res[a.key] = a.h.Inserted()
 	}
+	emit(true) // 100%
 	return res, nil
 }

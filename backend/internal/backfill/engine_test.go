@@ -57,9 +57,17 @@ func TestRegistryRun(t *testing.T) {
 		NewHandler: func(string) Handler { t.Fatal("unselected section built"); return nil },
 	})
 
-	res, err := r.Run(path, "Osui", []string{"stub"})
+	var progressCalls int
+	var lastDone, lastTotal int64
+	res, err := r.Run(path, "Osui", []string{"stub"}, func(done, total int64) {
+		progressCalls++
+		lastDone, lastTotal = done, total
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+	if progressCalls < 2 || lastTotal == 0 || lastDone == 0 {
+		t.Errorf("progress: calls=%d done=%d total=%d, want >=2 calls and non-zero final", progressCalls, lastDone, lastTotal)
 	}
 	if built != "Osui" {
 		t.Errorf("handler built for %q, want Osui", built)
@@ -77,7 +85,7 @@ func TestRegistryRun(t *testing.T) {
 	}
 
 	// Empty selection is a no-op.
-	res2, err := r.Run(path, "Osui", nil)
+	res2, err := r.Run(path, "Osui", nil, nil)
 	if err != nil || len(res2) != 0 {
 		t.Errorf("empty selection: res=%v err=%v, want empty/nil", res2, err)
 	}
