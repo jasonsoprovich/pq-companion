@@ -98,3 +98,33 @@ export interface SpellCrossRefs {
   scroll_items: SpellItemRef[]
   effect_items: SpellItemRef[]
 }
+
+// ── Shopping route ───────────────────────────────────────────────────────────
+
+export interface ShoppingSpell {
+  id: number
+  name: string
+}
+
+export interface ShoppingVendor {
+  id: number
+  name: string
+  x: number
+  y: number
+  spell_ids: number[]
+}
+
+export interface ShoppingStop {
+  zone_short: string
+  zone_name: string
+  reason: 'anchor' | 'greedy'
+  spells: ShoppingSpell[]
+  vendors: ShoppingVendor[]
+}
+
+export interface ShoppingRoute {
+  stops: ShoppingStop[]
+  unavailable: ShoppingSpell[]
+  total_zones: number
+  total_spells: number
+}

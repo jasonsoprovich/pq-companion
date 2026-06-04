@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Circle,
   ExternalLink,
+  Map,
   RefreshCw,
   AlertCircle,
   X,
@@ -20,6 +21,7 @@ import {
 import type { Spell } from '../types/spell'
 import type { Spellbook } from '../types/zeal'
 import SpellAcquisition from '../components/SpellAcquisition'
+import ShoppingRoutePanel from '../components/ShoppingRoutePanel'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import {
@@ -381,6 +383,7 @@ export default function SpellChecklistPage(): React.ReactElement {
   const [loadingBook, setLoadingBook] = useState(true)
   const [spellError, setSpellError] = useState<string | null>(null)
   const [modalSpell, setModalSpell] = useState<Spell | null>(null)
+  const [routeIds, setRouteIds] = useState<number[] | null>(null)
   const navigate = useNavigate()
 
   // Default the viewed character to the active character once known.
@@ -462,6 +465,18 @@ export default function SpellChecklistPage(): React.ReactElement {
 
   const knownCount = spells.filter((s) => knownIds.has(s.id)).length
   const loading = loadingSpells || loadingBook
+
+  // Spells the route should cover: still-missing, within the level filter,
+  // regardless of which tab is active. Vendor-only spells are filtered out
+  // server-side and reported as "unavailable" in the panel.
+  const missingSpells = spells.filter((s) => {
+    if (knownIds.has(s.id)) return false
+    const lvl = classLevel(s, classIndex)
+    if (minLvl > 0 && lvl < minLvl) return false
+    if (maxLvl > 0 && lvl > maxLvl) return false
+    return true
+  })
+  const missingIds = missingSpells.map((s) => s.id)
 
   return (
     <div className="flex h-full flex-col" style={{ backgroundColor: 'var(--color-background)' }}>
@@ -575,6 +590,26 @@ export default function SpellChecklistPage(): React.ReactElement {
                 : `${spells.length} spells`}
             </span>
           )}
+
+          {/* Plan shopping route */}
+          <button
+            onClick={() => setRouteIds(missingIds)}
+            disabled={loading || missingIds.length === 0}
+            className="flex items-center gap-1 text-xs px-2 py-1 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-primary)',
+              border: '1px solid var(--color-border)',
+            }}
+            title={
+              missingIds.length === 0
+                ? 'No missing spells to shop for'
+                : `Plan an efficient route to buy ${missingIds.length} missing spell${missingIds.length === 1 ? '' : 's'}`
+            }
+          >
+            <Map size={11} />
+            Plan route{missingIds.length > 0 ? ` (${missingIds.length})` : ''}
+          </button>
 
           {/* Refresh */}
           <button
@@ -707,6 +742,13 @@ export default function SpellChecklistPage(): React.ReactElement {
           spell={modalSpell}
           onClose={() => setModalSpell(null)}
           onOpenInExplorer={handleOpenInExplorer}
+        />
+      )}
+
+      {routeIds && (
+        <ShoppingRoutePanel
+          spellIds={routeIds}
+          onClose={() => setRouteIds(null)}
         />
       )}
     </div>

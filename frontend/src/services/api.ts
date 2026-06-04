@@ -1,7 +1,7 @@
 import type { Config } from '../types/config'
 import type { Item, ItemSources, SearchResult } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells } from '../types/npc'
-import type { BuffStatDelta, Spell, SpellCrossRefs } from '../types/spell'
+import type { BuffStatDelta, Spell, SpellCrossRefs, ShoppingRoute } from '../types/spell'
 import type { Zone, ZoneConnection, ZoneGroundSpawn, ZoneForageItem, ZoneDropItem } from '../types/zone'
 import type {
   ZealInventoryResponse,
@@ -270,6 +270,13 @@ export interface SpellStatDeltaEntry {
 // the raid-buff / live-buff UIs can render labels without a second fetch.
 export function getSpellStatDeltas(ids: number[]): Promise<Record<string, SpellStatDeltaEntry>> {
   return post<Record<string, SpellStatDeltaEntry>>(`/api/spells/stat-deltas`, { ids })
+}
+
+// Compute an efficient shopping route covering the given spells: an ordered
+// list of zones to visit (fewest-zones greedy set-cover), the spells/vendors
+// at each, and any spells no vendor sells. Used by the spell checklist.
+export function getShoppingRoute(spellIds: number[]): Promise<ShoppingRoute> {
+  return post<ShoppingRoute>(`/api/spells/shopping-route`, { spell_ids: spellIds })
 }
 
 // ── NPCs ───────────────────────────────────────────────────────────────────────
