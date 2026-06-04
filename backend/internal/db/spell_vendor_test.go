@@ -63,6 +63,41 @@ func TestGetSpellVendorOptions(t *testing.T) {
 	}
 }
 
+// TestGetZoneAdjacency confirms the zone graph loads and is symmetric (every
+// edge present in both directions), with no self-loops.
+func TestGetZoneAdjacency(t *testing.T) {
+	d := openTestDB(t)
+	adj, err := d.GetZoneAdjacency()
+	if err != nil {
+		t.Fatalf("GetZoneAdjacency: %v", err)
+	}
+	if len(adj) < 50 {
+		t.Fatalf("expected a substantial zone graph, got %d nodes", len(adj))
+	}
+	// Plane of Knowledge is a hub — it should connect to many zones.
+	if len(adj["poknowledge"]) < 5 {
+		t.Errorf("poknowledge has %d neighbors, expected many (hub)", len(adj["poknowledge"]))
+	}
+	for node, neighbors := range adj {
+		for _, n := range neighbors {
+			if n == node {
+				t.Errorf("self-loop at %q", node)
+			}
+			// Symmetry: n must list node back.
+			found := false
+			for _, back := range adj[n] {
+				if back == node {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("edge %q->%q not mirrored", node, n)
+			}
+		}
+	}
+}
+
 // TestGetSpellVendorOptionsEmpty confirms a non-vendor spell id yields no
 // options (it would surface as "unavailable" in the route).
 func TestGetSpellVendorOptionsEmpty(t *testing.T) {

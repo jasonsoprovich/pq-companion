@@ -1717,6 +1717,55 @@ func (db *DB) GetSpellVendorOptions(spellIDs []int) ([]SpellVendorOption, error)
 	return out, rows.Err()
 }
 
+// GetZoneAdjacency returns an undirected zone-connectivity graph derived from
+// zone_points: a map of zone short_name → the short_names of zones reachable by
+// a single zone line. Each line yields both directions so the graph can be
+// walked back and forth. Self-loops and unresolved targets are skipped. Used by
+// the shopping-route optimizer to order stops from a starting zone.
+func (db *DB) GetZoneAdjacency() (map[string][]string, error) {
+	rows, err := db.Query(`
+		SELECT DISTINCT zp.zone AS src, z.short_name AS dst
+		FROM zone_points zp
+		JOIN zone z ON z.zoneidnumber = zp.target_zone_id
+		WHERE zp.target_zone_id > 0
+		  AND zp.zone IS NOT NULL AND zp.zone != ''
+		  AND z.short_name != zp.zone`)
+	if err != nil {
+		return nil, fmt.Errorf("get zone adjacency: %w", err)
+	}
+	defer rows.Close()
+
+	// Dedup edges with a set per node so undirected mirrors don't double up.
+	seen := map[string]map[string]bool{}
+	add := func(a, b string) {
+		if seen[a] == nil {
+			seen[a] = map[string]bool{}
+		}
+		seen[a][b] = true
+	}
+	for rows.Next() {
+		var src, dst string
+		if err := rows.Scan(&src, &dst); err != nil {
+			return nil, fmt.Errorf("scan zone edge: %w", err)
+		}
+		add(src, dst)
+		add(dst, src)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	adj := make(map[string][]string, len(seen))
+	for node, neighbors := range seen {
+		list := make([]string, 0, len(neighbors))
+		for n := range neighbors {
+			list = append(list, n)
+		}
+		adj[node] = list
+	}
+	return adj, nil
+}
+
 // ─── Zones ────────────────────────────────────────────────────────────────────
 
 // zoneVisibilityFilter returns a SQL clause restricting `short_name` to the

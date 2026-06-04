@@ -149,29 +149,41 @@ type shoppingVendor struct {
 type shoppingStop struct {
 	ZoneShort string           `json:"zone_short"`
 	ZoneName  string           `json:"zone_name"`
-	Reason    string           `json:"reason"` // "anchor" or "greedy"
+	Reason    string           `json:"reason"`    // "anchor" or "greedy"
+	Alignment string           `json:"alignment"` // "good", "neutral", or "evil"
 	Spells    []shoppingSpell  `json:"spells"`
 	Vendors   []shoppingVendor `json:"vendors"`
 }
 
 // shoppingRoute is the full POST /api/spells/shopping-route response.
 type shoppingRoute struct {
-	Stops       []shoppingStop  `json:"stops"`
-	Unavailable []shoppingSpell `json:"unavailable"` // no vendor sells these
-	TotalZones  int             `json:"total_zones"`
-	TotalSpells int             `json:"total_spells"` // spells successfully routed
+	Stops               []shoppingStop  `json:"stops"`
+	Unavailable         []shoppingSpell `json:"unavailable"`           // no vendor sells these anywhere
+	ExcludedByAlignment []shoppingSpell `json:"excluded_by_alignment"` // only sold in filtered-out towns
+	TotalZones          int             `json:"total_zones"`
+	TotalSpells         int             `json:"total_spells"` // spells successfully routed
 }
 
 // POST /api/spells/shopping-route
-// Body: { "spell_ids": [123, 456, ...] }
 //
-// Resolves each spell to the zones where its scroll is sold, runs the greedy
-// set-cover optimizer (internal/shoproute), and returns an ordered itinerary
-// of zones to visit plus the spells/vendors at each, and any spells no vendor
-// carries. Used by the spell-checklist "plan shopping route" action.
+//	Body: {
+//	  "spell_ids": [123, 456, ...],
+//	  "exclude_alignments": ["evil"],   // optional: drop good/neutral/evil towns
+//	  "start_zone": "poknowledge"        // optional: order stops from here
+//	}
+//
+// Resolves each spell to the zones where its scroll is sold, optionally filters
+// out towns by alignment, runs the greedy set-cover optimizer
+// (internal/shoproute), optionally orders the stops from a starting zone, and
+// returns the itinerary plus the spells/vendors at each. Spells no vendor
+// carries are reported in unavailable; spells whose only vendors were filtered
+// out by the alignment choice are reported separately in excluded_by_alignment.
+// Used by the spell-checklist "plan shopping route" action.
 func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		SpellIDs []int `json:"spell_ids"`
+		SpellIDs          []int    `json:"spell_ids"`
+		ExcludeAlignments []string `json:"exclude_alignments"`
+		StartZone         string   `json:"start_zone"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -186,31 +198,42 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	excludedAlignment := make(map[string]bool, len(body.ExcludeAlignments))
+	for _, a := range body.ExcludeAlignments {
+		excludedAlignment[a] = true
+	}
+
 	opts, err := h.db.GetSpellVendorOptions(body.SpellIDs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	// Index the options for assembly. zonesPerSpell feeds the solver; the rest
-	// are lookups for enriching the result.
-	zonesPerSpell := make(map[int]map[string]bool)
+	// Index the options for assembly. allowedZones feeds the solver (after the
+	// alignment filter); the rest are lookups for enriching the result.
+	// anyVendorZone tracks pre-filter availability so we can tell "no vendor
+	// anywhere" apart from "only sold in a filtered-out town".
+	allowedZones := make(map[int]map[string]bool)
+	anyVendorZone := make(map[int]bool)
 	spellName := make(map[int]string)
 	zoneName := make(map[string]string)
 	// byZone[zoneShort] -> list of (spell, vendor) options in that zone.
 	byZone := make(map[string][]db.SpellVendorOption)
 	for _, o := range opts {
-		if zonesPerSpell[o.SpellID] == nil {
-			zonesPerSpell[o.SpellID] = make(map[string]bool)
-		}
-		zonesPerSpell[o.SpellID][o.ZoneShort] = true
 		spellName[o.SpellID] = o.SpellName
+		anyVendorZone[o.SpellID] = true
+		if excludedAlignment[shoproute.Alignment(o.ZoneShort)] {
+			continue
+		}
+		if allowedZones[o.SpellID] == nil {
+			allowedZones[o.SpellID] = make(map[string]bool)
+		}
+		allowedZones[o.SpellID][o.ZoneShort] = true
 		zoneName[o.ZoneShort] = o.ZoneName
 		byZone[o.ZoneShort] = append(byZone[o.ZoneShort], o)
 	}
 
-	// Build the solver input over the originally requested spells so that
-	// spells with no vendor option surface as unavailable.
+	// Build the solver input over the originally requested spells (deduped).
 	input := make([]shoproute.SpellAvail, 0, len(body.SpellIDs))
 	seen := make(map[int]bool, len(body.SpellIDs))
 	for _, id := range body.SpellIDs {
@@ -219,16 +242,27 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		seen[id] = true
 		input = append(input, shoproute.SpellAvail{
-			SpellID: id, Zones: zonesPerSpell[id],
+			SpellID: id, Zones: allowedZones[id],
 		})
 	}
 
 	plan := shoproute.Solve(input)
 
+	// Order the stops from the starting zone, if one was given.
+	if body.StartZone != "" && len(plan.Stops) > 1 {
+		adj, err := h.db.GetZoneAdjacency()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		plan.Stops = shoproute.Order(plan.Stops, body.StartZone, adj)
+	}
+
 	resp := shoppingRoute{
-		Stops:       make([]shoppingStop, 0, len(plan.Stops)),
-		Unavailable: []shoppingSpell{},
-		TotalZones:  len(plan.Stops),
+		Stops:               make([]shoppingStop, 0, len(plan.Stops)),
+		Unavailable:         []shoppingSpell{},
+		ExcludedByAlignment: []shoppingSpell{},
+		TotalZones:          len(plan.Stops),
 	}
 	for _, st := range plan.Stops {
 		covered := make(map[int]bool, len(st.SpellIDs))
@@ -269,18 +303,28 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 			ZoneShort: st.Zone,
 			ZoneName:  zoneName[st.Zone],
 			Reason:    string(st.Reason),
+			Alignment: shoproute.Alignment(st.Zone),
 			Spells:    spells,
 			Vendors:   vendors,
 		})
 	}
 
-	// Name the unavailable spells (they have no vendor row, so look them up).
+	// Split uncovered spells: those with no vendor at all vs. those whose only
+	// vendors sit in a filtered-out town. Names come from the vendor rows when
+	// available, else a direct lookup.
 	for _, id := range plan.Uncovered {
-		name := ""
-		if sp, err := h.db.GetSpell(id); err == nil && sp != nil {
-			name = sp.Name
+		name := spellName[id]
+		if name == "" {
+			if sp, err := h.db.GetSpell(id); err == nil && sp != nil {
+				name = sp.Name
+			}
 		}
-		resp.Unavailable = append(resp.Unavailable, shoppingSpell{ID: id, Name: name})
+		entry := shoppingSpell{ID: id, Name: name}
+		if anyVendorZone[id] {
+			resp.ExcludedByAlignment = append(resp.ExcludedByAlignment, entry)
+		} else {
+			resp.Unavailable = append(resp.Unavailable, entry)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, resp)
