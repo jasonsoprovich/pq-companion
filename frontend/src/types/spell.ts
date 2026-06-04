@@ -125,11 +125,20 @@ export interface ShoppingStop {
   vendors: ShoppingVendor[]
 }
 
+export interface ShoppingCandidateZone {
+  zone_short: string
+  zone_name: string
+  alignment: ZoneAlignment
+  spell_count: number
+}
+
 export interface ShoppingRoute {
   stops: ShoppingStop[]
   unavailable: ShoppingSpell[]
   excluded_by_alignment: ShoppingSpell[]
   excluded_by_expansion: ShoppingSpell[]
+  excluded_by_zone: ShoppingSpell[]
+  candidate_zones: ShoppingCandidateZone[]
   total_zones: number
   total_spells: number
 }
@@ -138,4 +147,5 @@ export interface ShoppingRouteOptions {
   excludeAlignments?: ZoneAlignment[]
   startZone?: string
   includePoK?: boolean
+  excludeZones?: string[]
 }

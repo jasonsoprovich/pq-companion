@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Map as MapIcon, MapPin, RefreshCw, AlertCircle, X, Navigation, BookOpen } from 'lucide-react'
+import { Map as MapIcon, MapPin, RefreshCw, AlertCircle, X, Navigation, BookOpen, Ban, ChevronDown } from 'lucide-react'
 import { getShoppingRoute } from '../services/api'
-import type { ShoppingRoute, ShoppingStop, ShoppingSpell, ZoneAlignment } from '../types/spell'
+import type { ShoppingRoute, ShoppingStop, ShoppingSpell, ShoppingCandidateZone, ZoneAlignment } from '../types/spell'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { formatNPCName } from './SourceNPCLink'
 
@@ -38,6 +38,12 @@ const ALIGNMENTS: { key: ZoneAlignment; label: string }[] = [
 const LS_ALIGN = 'pq-companion:shop-exclude-alignments'
 const LS_START = 'pq-companion:shop-start-zone'
 const LS_POK = 'pq-companion:shop-include-pok'
+const LS_ZONES = 'pq-companion:shop-exclude-zones'
+
+const EMPTY_ROUTE: ShoppingRoute = {
+  stops: [], unavailable: [], excluded_by_alignment: [], excluded_by_expansion: [],
+  excluded_by_zone: [], candidate_zones: [], total_zones: 0, total_spells: 0,
+}
 
 function loadJSON<T>(key: string, fallback: T): T {
   try {
@@ -60,11 +66,12 @@ const alignmentColor: Record<ZoneAlignment, string> = {
 
 // StopCard renders one zone in the itinerary.
 function StopCard({
-  stop, index, onExcludeSpell,
+  stop, index, onExcludeSpell, onExcludeZone,
 }: {
   stop: ShoppingStop
   index: number
   onExcludeSpell: (s: ShoppingSpell) => void
+  onExcludeZone: (zoneShort: string) => void
 }): React.ReactElement {
   const navigate = useNavigate()
   return (
@@ -105,6 +112,15 @@ function StopCard({
             only source
           </span>
         )}
+        <div className="flex-1" />
+        <button
+          onClick={() => onExcludeZone(stop.zone_short)}
+          className="shrink-0 opacity-50 transition-opacity hover:opacity-100"
+          style={{ color: 'var(--color-muted)' }}
+          title="Skip this town — re-route its spells to the next-best source"
+        >
+          <Ban size={13} />
+        </button>
       </div>
 
       {/* Spells covered at this stop — each removable */}
@@ -165,6 +181,9 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
   // Plane of Knowledge is off by default — the Planes of Power hub isn't on this
   // server's timeline yet, so it shouldn't be a recommended source.
   const [includePoK, setIncludePoK] = useState<boolean>(() => loadJSON<boolean>(LS_POK, false))
+  // Towns the player never wants routed through (persisted preference).
+  const [excludeZones, setExcludeZones] = useState<string[]>(() => loadJSON<string[]>(LS_ZONES, []))
+  const [showZonePicker, setShowZonePicker] = useState(false)
 
   const [route, setRoute] = useState<ShoppingRoute | null>(null)
   const [loading, setLoading] = useState(true)
@@ -175,31 +194,42 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
   useEffect(() => { saveJSON(LS_ALIGN, excludeAlignments) }, [excludeAlignments])
   useEffect(() => { saveJSON(LS_START, startZone) }, [startZone])
   useEffect(() => { saveJSON(LS_POK, includePoK) }, [includePoK])
+  useEffect(() => { saveJSON(LS_ZONES, excludeZones) }, [excludeZones])
 
   // Stable dependency keys so the fetch only re-runs on real changes.
   const activeKey = spellIds.join(',')
   const alignKey = [...excludeAlignments].sort().join(',')
+  const zonesKey = [...excludeZones].sort().join(',')
 
   useEffect(() => {
     let cancelled = false
     if (spellIds.length === 0) {
-      setRoute({ stops: [], unavailable: [], excluded_by_alignment: [], excluded_by_expansion: [], total_zones: 0, total_spells: 0 })
+      setRoute(EMPTY_ROUTE)
       setLoading(false)
       setError(null)
       return
     }
     setLoading(true)
     setError(null)
-    getShoppingRoute(spellIds, { excludeAlignments, startZone, includePoK })
+    getShoppingRoute(spellIds, { excludeAlignments, startZone, includePoK, excludeZones })
       .then((r) => { if (!cancelled) setRoute(r) })
       .catch((err: Error) => { if (!cancelled) setError(err.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey, alignKey, startZone, includePoK])
+  }, [activeKey, alignKey, startZone, includePoK, zonesKey])
 
   const toggleAlignment = (a: ZoneAlignment) =>
     setExcludeAlignments((prev) => (prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]))
+
+  const excludedZoneSet = useMemo(() => new Set(excludeZones), [excludeZones])
+  const toggleZone = (short: string) =>
+    setExcludeZones((prev) => (prev.includes(short) ? prev.filter((z) => z !== short) : [...prev, short]))
+
+  // Resolve an excluded zone's display name from the candidate list (it may not
+  // be in the current route once excluded), falling back to the short name.
+  const zoneNameOf = (short: string) =>
+    route?.candidate_zones.find((c) => c.zone_short === short)?.zone_name || short
 
   // Start-zone options: hubs + any zone the current route visits, deduped.
   const startOptions = useMemo(() => {
@@ -308,10 +338,94 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
             <BookOpen size={11} />
             Plane of Knowledge
           </button>
+
+          {/* Skip-towns picker toggle */}
+          <button
+            onClick={() => setShowZonePicker((v) => !v)}
+            className="flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] transition-colors"
+            style={{
+              backgroundColor: excludeZones.length > 0 ? 'var(--color-surface-2)' : 'transparent',
+              color: excludeZones.length > 0 ? '#f87171' : 'var(--color-muted)',
+              border: '1px solid var(--color-border)',
+            }}
+            title="Choose towns to never route through"
+          >
+            <Ban size={11} />
+            Skip towns{excludeZones.length > 0 ? ` (${excludeZones.length})` : ''}
+            <ChevronDown size={11} style={{ transform: showZonePicker ? 'rotate(180deg)' : 'none' }} />
+          </button>
         </div>
+
+        {/* Skip-towns picker: every candidate source town, checkable */}
+        {showZonePicker && (
+          <div
+            className="shrink-0 max-h-48 overflow-y-auto px-5 py-2"
+            style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+          >
+            {(route?.candidate_zones.length ?? 0) === 0 ? (
+              <p className="py-2 text-center text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                No candidate towns to skip.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-0.5">
+                {route?.candidate_zones.map((c) => {
+                  const excluded = excludedZoneSet.has(c.zone_short)
+                  return (
+                    <label
+                      key={c.zone_short}
+                      className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs"
+                      style={{ color: excluded ? 'var(--color-muted)' : 'var(--color-foreground)' }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={excluded}
+                        onChange={() => toggleZone(c.zone_short)}
+                      />
+                      <span className="flex-1 truncate" style={{ textDecoration: excluded ? 'line-through' : 'none' }}>
+                        {c.zone_name || c.zone_short}
+                      </span>
+                      <span className="text-[10px] uppercase tracking-wide" style={{ color: alignmentColor[c.alignment] }}>
+                        {c.alignment}
+                      </span>
+                      <span className="tabular-nums text-[10px]" style={{ color: 'var(--color-muted)' }}>
+                        {c.spell_count} {c.spell_count === 1 ? 'spell' : 'spells'}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Body */}
         <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-5 py-4">
+          {/* Skipped-towns summary — each chip restores the town on click */}
+          {excludeZones.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1 text-[11px]">
+              <span style={{ color: 'var(--color-muted)' }}>Skipping:</span>
+              {excludeZones.map((z) => (
+                <button
+                  key={z}
+                  onClick={() => toggleZone(z)}
+                  className="flex items-center gap-1 rounded px-1.5 py-0.5"
+                  style={{ backgroundColor: 'var(--color-surface-2)', color: '#f87171' }}
+                  title="Stop skipping this town"
+                >
+                  {zoneNameOf(z)}
+                  <X size={10} />
+                </button>
+              ))}
+              <button
+                onClick={() => setExcludeZones([])}
+                className="ml-1 underline"
+                style={{ color: 'var(--color-muted)' }}
+              >
+                restore all
+              </button>
+            </div>
+          )}
+
           {loading && (
             <div className="flex items-center justify-center py-10">
               <RefreshCw size={20} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
@@ -339,6 +453,7 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
               stop={stop}
               index={i}
               onExcludeSpell={(s) => onRemoveSpell(s.id)}
+              onExcludeZone={toggleZone}
             />
           ))}
 
@@ -361,6 +476,29 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
               </div>
               <p className="mt-1.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
                 Re-enable the relevant town alignment above to include these.
+              </p>
+            </div>
+          )}
+
+          {/* Spells whose only towns are ones the player chose to skip */}
+          {!loading && !error && route && (route.excluded_by_zone?.length ?? 0) > 0 && (
+            <div
+              className="mt-1 rounded border px-3 py-2"
+              style={{ backgroundColor: 'rgba(248,113,113,0.06)', borderColor: 'rgba(248,113,113,0.3)' }}
+            >
+              <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold" style={{ color: '#f87171' }}>
+                <Ban size={12} />
+                Only sold in towns you're skipping ({route.excluded_by_zone.length})
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {route.excluded_by_zone.map((s) => (
+                  <span key={s.id} className="rounded px-1.5 py-0.5 text-[11px]" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)' }}>
+                    {s.name || `Spell ${s.id}`}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                Restore one of the skipped towns above to route these.
               </p>
             </div>
           )}

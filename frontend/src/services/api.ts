@@ -285,6 +285,7 @@ export function getShoppingRoute(
     exclude_alignments: opts.excludeAlignments ?? [],
     start_zone: opts.startZone ?? '',
     include_pok: opts.includePoK ?? false,
+    exclude_zones: opts.excludeZones ?? [],
   })
 }
 

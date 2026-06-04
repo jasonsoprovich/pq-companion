@@ -130,6 +130,61 @@ func TestShoppingRouteHonorsStartZone(t *testing.T) {
 	}
 }
 
+// TestShoppingRouteZoneExclusionReroutes is the regression test for the
+// "skip this town and recalc" feature: Strengthen (40) and Minor Illusion (287)
+// both sell in Ak'Anon, which the planner picks as the single nearest two-cover
+// town. Excluding Ak'Anon must drop it and re-route both spells to the next-best
+// town that still carries them — without leaving either spell uncovered.
+func TestShoppingRouteZoneExclusionReroutes(t *testing.T) {
+	d := openTestDB(t)
+
+	const strengthen, minorIllusion = 40, 287
+	ids := []int{strengthen, minorIllusion}
+	opts, err := d.GetSpellVendorOptions(ids)
+	if err != nil {
+		t.Fatalf("GetSpellVendorOptions: %v", err)
+	}
+
+	// Mirror the handler's source filtering: drop PoK (off) and the excluded
+	// town (akanon), keep everything else.
+	exclude := map[string]bool{"poknowledge": true, "akanon": true}
+	zonesPerSpell := map[int]map[string]bool{strengthen: {}, minorIllusion: {}}
+	for _, o := range opts {
+		if exclude[o.ZoneShort] {
+			continue
+		}
+		zonesPerSpell[o.SpellID][o.ZoneShort] = true
+	}
+	input := []shoproute.SpellAvail{
+		{SpellID: strengthen, Zones: zonesPerSpell[strengthen]},
+		{SpellID: minorIllusion, Zones: zonesPerSpell[minorIllusion]},
+	}
+
+	adj, err := d.GetZoneAdjacency()
+	if err != nil {
+		t.Fatalf("GetZoneAdjacency: %v", err)
+	}
+	dests, _ := d.GetTeleportDestinations()
+	adj = shoproute.LinkHub(adj, "nexus", dests)
+	plan := shoproute.Solve(input, shoproute.Distances("nexus", adj))
+
+	if len(plan.Uncovered) != 0 {
+		t.Errorf("excluding Ak'Anon left spells uncovered: %v", plan.Uncovered)
+	}
+	covered := map[int]bool{}
+	for _, st := range plan.Stops {
+		if st.Zone == "akanon" {
+			t.Errorf("route still visits Ak'Anon after excluding it")
+		}
+		for _, id := range st.SpellIDs {
+			covered[id] = true
+		}
+	}
+	if !covered[strengthen] || !covered[minorIllusion] {
+		t.Errorf("both spells should still be routed, got %v", covered)
+	}
+}
+
 // TestTeleportDestinationsAreReachable checks that the Druid/Wizard port
 // destinations load from the real DB and that, once linked onto the Nexus hub,
 // a zone that's far by zone-lines (South Ro) collapses to a single hop from the

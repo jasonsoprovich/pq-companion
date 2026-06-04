@@ -161,11 +161,22 @@ type shoppingStop struct {
 }
 
 // shoppingRoute is the full POST /api/spells/shopping-route response.
+// shoppingZone is a candidate source town offered for exclusion: a zone that
+// sells at least one selected spell (after alignment/expansion filtering).
+type shoppingZone struct {
+	ZoneShort  string `json:"zone_short"`
+	ZoneName   string `json:"zone_name"`
+	Alignment  string `json:"alignment"`
+	SpellCount int    `json:"spell_count"` // selected spells this town can supply
+}
+
 type shoppingRoute struct {
 	Stops               []shoppingStop  `json:"stops"`
 	Unavailable         []shoppingSpell `json:"unavailable"`           // no vendor sells these anywhere
 	ExcludedByAlignment []shoppingSpell `json:"excluded_by_alignment"` // only sold in filtered-out towns
 	ExcludedByExpansion []shoppingSpell `json:"excluded_by_expansion"` // only sold in a not-yet-released zone (Plane of Knowledge)
+	ExcludedByZone      []shoppingSpell `json:"excluded_by_zone"`      // only sold in towns the player excluded
+	CandidateZones      []shoppingZone  `json:"candidate_zones"`       // every source town, for the exclusion picker
 	TotalZones          int             `json:"total_zones"`
 	TotalSpells         int             `json:"total_spells"` // spells successfully routed
 }
@@ -194,6 +205,10 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		// default because the Planes of Power book hub isn't on this server's
 		// timeline yet, so routing players there would be wrong.
 		IncludePoK bool `json:"include_pok"`
+		// ExcludeZones are zone short_names the player never wants routed
+		// through (faction, preference). Their spells re-route to the next-best
+		// town; a spell sold *only* in excluded towns is reported separately.
+		ExcludeZones []string `json:"exclude_zones"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -219,27 +234,33 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Zones dropped as sources because their expansion isn't live on this
-	// server yet. Plane of Knowledge (the Planes of Power book hub) sells a huge
-	// slice of the spell list, so leaving it in would route everyone there;
-	// it's opt-in via include_pok.
-	excludedZone := map[string]bool{}
-	if !body.IncludePoK {
-		excludedZone["poknowledge"] = true
+	// Plane of Knowledge is dropped as a source because its expansion isn't live
+	// on this server yet (the PoP book hub sells a huge slice of the spell list,
+	// so leaving it in would route everyone there); it's opt-in via include_pok.
+	pokExcluded := !body.IncludePoK
+
+	// Zones the player chose to skip. Their spells re-route elsewhere.
+	userExcluded := make(map[string]bool, len(body.ExcludeZones))
+	for _, z := range body.ExcludeZones {
+		userExcluded[z] = true
 	}
 
-	// Index the options for assembly. allowedZones feeds the solver (after the
-	// alignment and expansion filters); the rest are lookups for enriching the
-	// result. anyVendorZone and alignmentOK record availability at each filter
-	// stage so an uncovered spell can be bucketed: no vendor at all, only in a
-	// filtered-out town, or only in a not-yet-released zone.
+	// Index the options for assembly. allowedZones feeds the solver (after every
+	// filter); the rest are lookups for enriching the result. The per-stage
+	// availability flags let an uncovered spell be bucketed precisely: no vendor
+	// at all, only in a wrong-alignment town, only in a disabled zone (PoK), or
+	// only in a town the player excluded.
 	allowedZones := make(map[int]map[string]bool)
 	anyVendorZone := make(map[int]bool)
 	alignmentOK := make(map[int]bool)
+	expansionOK := make(map[int]bool)
 	spellName := make(map[int]string)
 	zoneName := make(map[string]string)
 	// byZone[zoneShort] -> list of (spell, vendor) options in that zone.
 	byZone := make(map[string][]db.SpellVendorOption)
+	// candidateSpells[zoneShort] -> set of selected spells that zone could sell,
+	// before the player's own exclusions — the universe offered for exclusion.
+	candidateSpells := make(map[string]map[int]bool)
 	for _, o := range opts {
 		spellName[o.SpellID] = o.SpellName
 		anyVendorZone[o.SpellID] = true
@@ -247,14 +268,22 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		alignmentOK[o.SpellID] = true
-		if excludedZone[o.ZoneShort] {
+		if pokExcluded && o.ZoneShort == "poknowledge" {
+			continue
+		}
+		expansionOK[o.SpellID] = true
+		zoneName[o.ZoneShort] = o.ZoneName
+		if candidateSpells[o.ZoneShort] == nil {
+			candidateSpells[o.ZoneShort] = make(map[int]bool)
+		}
+		candidateSpells[o.ZoneShort][o.SpellID] = true
+		if userExcluded[o.ZoneShort] {
 			continue
 		}
 		if allowedZones[o.SpellID] == nil {
 			allowedZones[o.SpellID] = make(map[string]bool)
 		}
 		allowedZones[o.SpellID][o.ZoneShort] = true
-		zoneName[o.ZoneShort] = o.ZoneName
 		byZone[o.ZoneShort] = append(byZone[o.ZoneShort], o)
 	}
 
@@ -290,8 +319,17 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		if dests, derr := h.db.GetTeleportDestinations(); derr == nil {
 			adj = shoproute.LinkHub(adj, teleportHub, dests)
 		}
-		if len(excludedZone) > 0 {
-			adj = pruneAdjacency(adj, excludedZone)
+		// Don't path through zones we won't shop in (disabled PoK, or towns the
+		// player excluded).
+		graphExclude := make(map[string]bool, len(userExcluded)+1)
+		for z := range userExcluded {
+			graphExclude[z] = true
+		}
+		if pokExcluded {
+			graphExclude["poknowledge"] = true
+		}
+		if len(graphExclude) > 0 {
+			adj = pruneAdjacency(adj, graphExclude)
 		}
 		dist = shoproute.Distances(body.StartZone, adj)
 	}
@@ -308,6 +346,8 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		Unavailable:         []shoppingSpell{},
 		ExcludedByAlignment: []shoppingSpell{},
 		ExcludedByExpansion: []shoppingSpell{},
+		ExcludedByZone:      []shoppingSpell{},
+		CandidateZones:      []shoppingZone{},
 		TotalZones:          len(plan.Stops),
 	}
 	for _, st := range plan.Stops {
@@ -356,8 +396,8 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Split uncovered spells into why-we-couldn't-route-them buckets, in order
-	// of precedence: no vendor anywhere; only sold in a filtered-out town; or
-	// (alignment was fine) only sold in a disabled zone like Plane of Knowledge.
+	// of precedence: no vendor anywhere; only in a wrong-alignment town; only in
+	// a disabled zone (PoK); otherwise only in a town the player excluded.
 	// Names come from the vendor rows when available, else a direct lookup.
 	for _, id := range plan.Uncovered {
 		name := spellName[id]
@@ -372,10 +412,31 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 			resp.Unavailable = append(resp.Unavailable, entry)
 		case !alignmentOK[id]:
 			resp.ExcludedByAlignment = append(resp.ExcludedByAlignment, entry)
-		default:
+		case !expansionOK[id]:
 			resp.ExcludedByExpansion = append(resp.ExcludedByExpansion, entry)
+		default:
+			resp.ExcludedByZone = append(resp.ExcludedByZone, entry)
 		}
 	}
+
+	// Every source town that could supply a selected spell (post alignment/
+	// expansion, pre player-exclusion) — the universe the UI offers for the
+	// "skip these towns" picker. Sorted by name for a stable list.
+	for short, spells := range candidateSpells {
+		resp.CandidateZones = append(resp.CandidateZones, shoppingZone{
+			ZoneShort:  short,
+			ZoneName:   zoneName[short],
+			Alignment:  shoproute.Alignment(short),
+			SpellCount: len(spells),
+		})
+	}
+	sort.Slice(resp.CandidateZones, func(i, j int) bool {
+		a, b := resp.CandidateZones[i], resp.CandidateZones[j]
+		if a.ZoneName != b.ZoneName {
+			return a.ZoneName < b.ZoneName
+		}
+		return a.ZoneShort < b.ZoneShort
+	})
 
 	writeJSON(w, http.StatusOK, resp)
 }
