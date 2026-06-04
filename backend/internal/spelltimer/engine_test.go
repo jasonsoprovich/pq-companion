@@ -505,6 +505,68 @@ func TestStopExternal_RemovesMergedTimerBySpellID(t *testing.T) {
 	}
 }
 
+// An ambiguous self-land for the Speed of the Shissar/Brood pair (identical
+// "...body pulses with the spirit of the Shissar." text, two DB rows) with no
+// disambiguating recent cast resolves to the combined group name rather than
+// "" — so the pipeline creates a target-keyed timer instead of dropping the
+// land and leaving only the pack trigger's target-less row.
+func TestResolveLandedSpellName_AmbiguousGroupFallback(t *testing.T) {
+	e := newTestEngine()
+	data := logparser.SpellLandedData{
+		Kind: logparser.SpellLandedKindYou,
+		Candidates: []logparser.SpellLandedCandidate{
+			{SpellID: 1939, SpellName: "Speed of the Shissar"},
+			{SpellID: 2895, SpellName: "Speed of the Brood"},
+		},
+	}
+
+	if got := e.resolveLandedSpellName(data); got != "Speed of the Shissar/Brood" {
+		t.Errorf("ambiguous land: want combined group name, got %q", got)
+	}
+
+	// A recent matching cast still wins — it names the specific member, which is
+	// more precise than the combined fallback.
+	e.lastCastSpell = "Speed of the Brood"
+	e.lastCastAt = time.Now()
+	if got := e.resolveLandedSpellName(data); got != "Speed of the Brood" {
+		t.Errorf("recent cast should resolve to the specific member, got %q", got)
+	}
+}
+
+func TestMatchAmbiguousLandGroup(t *testing.T) {
+	cand := func(ids ...int) []logparser.SpellLandedCandidate {
+		out := make([]logparser.SpellLandedCandidate, len(ids))
+		for i, id := range ids {
+			out[i] = logparser.SpellLandedCandidate{SpellID: id}
+		}
+		return out
+	}
+	if g := matchAmbiguousLandGroup(cand(1939, 2895)); g == nil || g.displayName != "Speed of the Shissar/Brood" {
+		t.Errorf("exact member set should match the group, got %v", g)
+	}
+	if g := matchAmbiguousLandGroup(cand(2895, 1939)); g == nil {
+		t.Error("member order should not matter")
+	}
+	if g := matchAmbiguousLandGroup(cand(1939)); g != nil {
+		t.Error("a subset of members must not match")
+	}
+	if g := matchAmbiguousLandGroup(cand(1939, 2895, 9999)); g != nil {
+		t.Error("a superset with an outsider must not match")
+	}
+	if g := matchAmbiguousLandGroup(cand(1939, 9999)); g != nil {
+		t.Error("a set with a non-member must not match")
+	}
+}
+
+func TestAmbiguousGroupRepID(t *testing.T) {
+	if got := ambiguousGroupRepID("Speed of the Shissar/Brood"); got != 1939 {
+		t.Errorf("combined name should map to rep spell 1939, got %d", got)
+	}
+	if got := ambiguousGroupRepID("Clarity"); got != 0 {
+		t.Errorf("ordinary spell should map to 0, got %d", got)
+	}
+}
+
 func keysOf(m map[string]*ActiveTimer) []string {
 	ks := make([]string, 0, len(m))
 	for k := range m {

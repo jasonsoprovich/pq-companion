@@ -885,8 +885,16 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	}
 
 	// Look up the spell so we know its category (buff vs detrimental) and
-	// class table for the filters below.
-	spell, err := e.db.GetSpellByExactName(spellName)
+	// class table for the filters below. A combined ambiguous-group name (e.g.
+	// "Speed of the Shissar/Brood") isn't itself a DB row — fetch the group's
+	// representative spell for metadata while keeping the combined display name.
+	var spell *db.Spell
+	var err error
+	if repID := ambiguousGroupRepID(spellName); repID > 0 {
+		spell, err = e.db.GetSpell(repID)
+	} else {
+		spell, err = e.db.GetSpellByExactName(spellName)
+	}
 	if err != nil {
 		slog.Warn("spelltimer: DB error looking up spell", "name", spellName, "err", err)
 		return
@@ -1091,6 +1099,71 @@ func commonCandidateName(cands []logparser.SpellLandedCandidate) string {
 	return name
 }
 
+// ambiguousLandGroup collapses two or more differently-named spells that share
+// identical land text — and so can't be told apart in the log without a
+// disambiguating recent cast — into one combined display name. RepSpellID
+// supplies category/duration/icon for the timer; the members are mechanically
+// equivalent for timer purposes (same buff, same duration). Resolved only as a
+// last resort in resolveLandedSpellName, so a self-cast of a specific member
+// still shows that member's name via the recent-cast match above.
+//
+// Without this, an ambiguous self-land (e.g. another player's group Speed of
+// the Brood landing on you) resolves to "" and the pipeline drops it, leaving
+// only the Enchanter pack's target-less "Speed of the Shissar/Brood" trigger
+// row. Resolving to the combined name lets the pipeline create a proper
+// target-keyed timer that the pack trigger then dedups into.
+type ambiguousLandGroup struct {
+	displayName string
+	repSpellID  int
+	memberIDs   map[int]bool
+}
+
+var ambiguousLandGroups = []ambiguousLandGroup{
+	{
+		// 1939 Speed of the Shissar (single) + 2895 Speed of the Brood (group)
+		// — identical "...body pulses with the spirit of the Shissar." text.
+		displayName: "Speed of the Shissar/Brood",
+		repSpellID:  1939,
+		memberIDs:   map[int]bool{1939: true, 2895: true},
+	},
+}
+
+// matchAmbiguousLandGroup returns the group whose members are EXACTLY the
+// candidate set (every candidate is a member and every member is present), or
+// nil. The exact-match requirement keeps an unrelated set of shared-text spells
+// from being mislabeled as this group.
+func matchAmbiguousLandGroup(cands []logparser.SpellLandedCandidate) *ambiguousLandGroup {
+	for i := range ambiguousLandGroups {
+		g := &ambiguousLandGroups[i]
+		if len(cands) != len(g.memberIDs) {
+			continue
+		}
+		all := true
+		for _, c := range cands {
+			if !g.memberIDs[c.SpellID] {
+				all = false
+				break
+			}
+		}
+		if all {
+			return g
+		}
+	}
+	return nil
+}
+
+// ambiguousGroupRepID returns the representative DB spell ID for a combined
+// group display name (so onSpellLanded can fetch metadata for a name that isn't
+// itself a real spell row), or 0 when name is an ordinary spell.
+func ambiguousGroupRepID(name string) int {
+	for i := range ambiguousLandGroups {
+		if ambiguousLandGroups[i].displayName == name {
+			return ambiguousLandGroups[i].repSpellID
+		}
+	}
+	return 0
+}
+
 // resolveLandedSpellName returns the canonical spell name for a landed event,
 // disambiguating ambiguous matches (multiple spells share the same cast text)
 // against the most recently observed cast. Returns "" if the event is
@@ -1141,6 +1214,19 @@ func (e *Engine) resolveLandedSpellName(data logparser.SpellLandedData) string {
 			"candidates", len(data.Candidates),
 		)
 		return name
+	}
+
+	// Known display-equivalent group (e.g. Speed of the Shissar/Brood): the
+	// members are indistinguishable in the log and mechanically identical, so
+	// rather than dropping the land, resolve to the combined name. The timer
+	// still gets a target (you, for a self-land) and the pack trigger dedups
+	// into it by SpellID.
+	if g := matchAmbiguousLandGroup(data.Candidates); g != nil {
+		slog.Info("timer-debug: ambiguous spell-landed resolved to combined group name",
+			"spell", g.displayName,
+			"candidates", len(data.Candidates),
+		)
+		return g.displayName
 	}
 
 	slog.Info("timer-debug: ambiguous spell-landed with no recent cast — skipping",
