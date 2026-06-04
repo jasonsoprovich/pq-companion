@@ -404,6 +404,12 @@ func Resolve(spellID int, spellName string, spellLevel, casterLevel, baseDuratio
 		SpellLevel:      spellLevel,
 		CasterLevel:     casterLevel,
 		BaseDurationSec: baseDurationSec,
+		// Applied must never be nil: a nil slice marshals to JSON null, and the
+		// frontend reads r.applied.length unconditionally. When no contributor
+		// applies (e.g. the off-class clicky gate fires for a Shaman buff like
+		// Primal Avatar resolved by a Magician), an empty slice keeps the
+		// render path safe instead of black-screening the app.
+		Applied: []Modifier{},
 	}
 
 	for _, spa := range []int{SPADuration, SPACastTime} {

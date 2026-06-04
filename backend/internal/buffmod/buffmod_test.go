@@ -379,6 +379,17 @@ func TestOffClassClickyDurationGate(t *testing.T) {
 	if in.DurationItemPercent != 15 {
 		t.Errorf("in-class item duration = %d, want 15", in.DurationItemPercent)
 	}
+
+	// Regression for the Primal Avatar black-screen crash: when the off-class
+	// gate fires and no cast-time focus matches either, Applied must still be a
+	// non-nil empty slice. A nil slice marshals to JSON null, which the
+	// frontend then dereferences as r.applied.length and crashes the render.
+	if off.Applied == nil {
+		t.Error("off-class Applied is nil; must be non-nil empty slice to avoid JSON null")
+	}
+	if len(off.Applied) != 0 {
+		t.Errorf("off-class Applied count = %d, want 0", len(off.Applied))
+	}
 }
 
 // TestBardDurationExempt confirms that bard casters (class index 7) never
