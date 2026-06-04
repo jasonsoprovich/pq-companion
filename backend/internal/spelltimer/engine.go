@@ -824,6 +824,8 @@ func categoryMatchesGroup(cat Category, group string) bool {
 		return cat == CategoryBuff
 	case "detrimental":
 		return cat == CategoryDebuff || cat == CategoryDot || cat == CategoryMez || cat == CategoryStun
+	case "ch_chain":
+		return cat == CategoryCHChain
 	}
 	return false
 }

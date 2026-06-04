@@ -19,15 +19,15 @@ func (h *timerHandler) state(w http.ResponseWriter, r *http.Request) {
 
 // clear handles POST /api/overlay/timers/clear — removes active timers in the
 // given category group. The ?category= query parameter accepts "buff",
-// "detrimental", "all", or empty (treated as "all").
+// "detrimental", "ch_chain", "all", or empty (treated as "all").
 func (h *timerHandler) clear(w http.ResponseWriter, r *http.Request) {
 	group := r.URL.Query().Get("category")
 	switch group {
-	case "", "all", "buff", "detrimental":
+	case "", "all", "buff", "detrimental", "ch_chain":
 		// accepted
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "category must be one of: buff, detrimental, all",
+			"error": "category must be one of: buff, detrimental, ch_chain, all",
 		})
 		return
 	}

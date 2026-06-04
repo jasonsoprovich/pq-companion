@@ -1629,6 +1629,98 @@ export default function SettingsPage(): React.ReactElement {
               ))}
             </div>
           </div>
+
+          {/* ── CH Chain overlay ─────────────────────────────────────────── */}
+          <div className="mt-6 border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+            <p className="mb-1 text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+              CH Chain overlay
+            </p>
+            <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Watches raid chat for Complete-Heal chain calls and shows a countdown bar per chain
+              position in a dedicated overlay window. The pattern must capture the named groups
+              <code className="font-mono"> caster</code>, <code className="font-mono">chainnum</code>,
+              and <code className="font-mono">target</code>.
+            </p>
+
+            <label className="mb-3 flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.ch_chain?.enabled ?? false}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    ch_chain: { ...config.ch_chain, enabled: e.target.checked },
+                  })
+                }
+                style={{ marginTop: 3 }}
+              />
+              <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                Track CH chains from raid chat
+              </span>
+            </label>
+
+            <label className="mb-3 flex flex-col gap-1">
+              <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Chain-call pattern (regex)</span>
+              <input
+                type="text"
+                value={config.ch_chain?.pattern ?? ''}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    ch_chain: { ...config.ch_chain, pattern: e.target.value },
+                  })
+                }
+                spellCheck={false}
+                className="rounded px-2 py-1 font-mono text-xs"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-foreground)',
+                  border: '1px solid var(--color-border)',
+                }}
+              />
+            </label>
+
+            <div className="flex items-end gap-3">
+              <label className="flex flex-col gap-1" style={{ maxWidth: 160 }}>
+                <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Cadence (seconds per cast)</span>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={config.ch_chain?.interval_secs ?? 6}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      ch_chain: {
+                        ...config.ch_chain,
+                        interval_secs: Math.max(1, Number(e.target.value) || 1),
+                      },
+                    })
+                  }
+                  className="rounded px-2 py-1 text-sm"
+                  style={{
+                    backgroundColor: 'var(--color-surface-2)',
+                    color: 'var(--color-foreground)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => window.electron?.overlay?.toggleCHChain()}
+                className="rounded px-3 py-1.5 text-xs font-medium"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-foreground)',
+                  border: '1px solid var(--color-border)',
+                  cursor: 'pointer',
+                }}
+                title="Open or close the floating CH Chain overlay window"
+              >
+                Toggle CH Chain overlay
+              </button>
+            </div>
+          </div>
         </section>
         )}
 

@@ -88,7 +88,7 @@ function audioMimeType(ext: string): string {
 
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
-type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'trigger' | 'npc' | 'rollTracker' | 'respawnTimer'
+type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'trigger' | 'npc' | 'rollTracker' | 'respawnTimer' | 'chChain'
 type Bounds = { x: number; y: number; width: number; height: number }
 
 type BoundsStore = Partial<Record<OverlayName, Bounds>>
@@ -281,6 +281,7 @@ let mainWindow: BrowserWindow | null = null
 let dpsOverlayWindow: BrowserWindow | null = null
 let hpsOverlayWindow: BrowserWindow | null = null
 let buffTimerWindow: BrowserWindow | null = null
+let chChainWindow: BrowserWindow | null = null
 let detrimTimerWindow: BrowserWindow | null = null
 let triggerOverlayWindow: BrowserWindow | null = null
 let npcOverlayWindow: BrowserWindow | null = null
@@ -591,7 +592,7 @@ function setupAutoUpdater(): void {
 // ── Window management ─────────────────────────────────────────────────────────
 
 function closeAllOverlays(): void {
-  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, triggerOverlayWindow, npcOverlayWindow, rollTrackerWindow, respawnTimerWindow]) {
+  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, triggerOverlayWindow, npcOverlayWindow, rollTrackerWindow, respawnTimerWindow, chChainWindow]) {
     if (win && !win.isDestroyed()) win.destroy()
   }
 }
@@ -825,6 +826,63 @@ function createBuffTimerOverlay(): void {
 
   buffTimerWindow.on('closed', () => {
     buffTimerWindow = null
+  })
+}
+
+function createCHChainOverlay(): void {
+  if (chChainWindow && !chChainWindow.isDestroyed()) {
+    chChainWindow.focus()
+    return
+  }
+
+  const { x, y, width, height } = getRestoredBounds('chChain', { x: 0, y: 0, width: 260, height: 320 })
+  chChainWindow = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    minWidth: 180,
+    minHeight: 120,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    },
+  })
+
+  chChainWindow.once('ready-to-show', () => {
+    chChainWindow?.show()
+  })
+
+  chChainWindow.setAlwaysOnTop(true, 'screen-saver')
+  chChainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  windowToOverlayName.set(chChainWindow, 'chChain')
+  if (getOverlayLocked('chChain')) {
+    chChainWindow.setIgnoreMouseEvents(true, { forward: true })
+    chChainWindow.setResizable(false)
+  }
+  trackOverlayBounds('chChain', chChainWindow)
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    chChainWindow.loadURL(`${rendererUrl}/#/ch-chain-window`)
+  } else {
+    chChainWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/ch-chain-window',
+    })
+  }
+
+  chChainWindow.on('closed', () => {
+    chChainWindow = null
   })
 }
 
@@ -1283,6 +1341,24 @@ ipcMain.handle('overlay:bufftimer:toggle', () => {
   }
 })
 
+ipcMain.handle('overlay:chchain:open', () => {
+  createCHChainOverlay()
+})
+
+ipcMain.handle('overlay:chchain:close', () => {
+  if (chChainWindow && !chChainWindow.isDestroyed()) {
+    chChainWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:chchain:toggle', () => {
+  if (chChainWindow && !chChainWindow.isDestroyed()) {
+    chChainWindow.close()
+  } else {
+    createCHChainOverlay()
+  }
+})
+
 ipcMain.handle('overlay:detrimtimer:open', () => {
   createDetrimTimerOverlay()
 })
@@ -1416,6 +1492,7 @@ function popoutWindows(): BrowserWindow[] {
     npcOverlayWindow,
     rollTrackerWindow,
     respawnTimerWindow,
+    chChainWindow,
   ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
 }
 
@@ -1429,6 +1506,7 @@ ipcMain.handle('overlay:popouts:open-all', () => {
   if (!triggerOverlayWindow || triggerOverlayWindow.isDestroyed()) createTriggerOverlay()
   if (!rollTrackerWindow || rollTrackerWindow.isDestroyed()) createRollTrackerOverlay()
   if (!respawnTimerWindow || respawnTimerWindow.isDestroyed()) createRespawnTimerOverlay()
+  if (!chChainWindow || chChainWindow.isDestroyed()) createCHChainOverlay()
 })
 
 ipcMain.handle('overlay:popouts:close-all', () => {

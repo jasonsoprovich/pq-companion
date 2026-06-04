@@ -32,6 +32,9 @@ export interface ElectronAPI {
     openBuffTimer: () => Promise<void>
     closeBuffTimer: () => Promise<void>
     toggleBuffTimer: () => Promise<void>
+    openCHChain: () => Promise<void>
+    closeCHChain: () => Promise<void>
+    toggleCHChain: () => Promise<void>
     openDetrimTimer: () => Promise<void>
     closeDetrimTimer: () => Promise<void>
     toggleDetrimTimer: () => Promise<void>
