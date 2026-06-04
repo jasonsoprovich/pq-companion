@@ -546,26 +546,28 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
 
   useEffect(() => {
     if (!npc) { setSpawns(null); setLoot(null); setFaction(null); return }
+    let cancelled = false
     getNPCSpawns(npc.id)
-      .then(setSpawns)
-      .catch(() => setSpawns({ spawn_points: [], spawn_groups: [] }))
+      .then((s) => { if (!cancelled) setSpawns(s) })
+      .catch(() => { if (!cancelled) setSpawns({ spawn_points: [], spawn_groups: [] }) })
     getNPCLoot(npc.id)
-      .then(setLoot)
-      .catch(() => setLoot(null))
+      .then((l) => { if (!cancelled) setLoot(l) })
+      .catch(() => { if (!cancelled) setLoot(null) })
     if (npc.npc_faction_id > 0) {
       getNPCFaction(npc.id)
-        .then(setFaction)
-        .catch(() => setFaction(null))
+        .then((f) => { if (!cancelled) setFaction(f) })
+        .catch(() => { if (!cancelled) setFaction(null) })
     } else {
       setFaction(null)
     }
     if (npc.npc_spells_id > 0) {
       getNPCSpells(npc.id)
-        .then(setSpells)
-        .catch(() => setSpells(null))
+        .then((sp) => { if (!cancelled) setSpells(sp) })
+        .catch(() => { if (!cancelled) setSpells(null) })
     } else {
       setSpells(null)
     }
+    return () => { cancelled = true }
   }, [npc?.id])
 
   function copyBulkLinks(dropId: number, items: { item_id: number; item_name: string }[]) {
@@ -931,7 +933,9 @@ export default function NpcsPage(): React.ReactElement {
       return
     }
     if (selected?.id === id) return // already showing it (set on click)
-    getNPC(id).then(setSelected).catch(() => {/* ignore */})
+    let cancelled = false
+    getNPC(id).then((n) => { if (!cancelled) setSelected(n) }).catch(() => {/* ignore */})
+    return () => { cancelled = true }
   }, [searchParams, selected])
 
   const handleSelect = useCallback(
@@ -945,7 +949,10 @@ export default function NpcsPage(): React.ReactElement {
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>
       <SearchPane selectedId={selected?.id ?? null} onSelect={handleSelect} />
-      <DetailPanel npc={selected} />
+      {/* Key by id so the panel remounts on each pick — spawns/loot/faction/
+          spells reset synchronously instead of lingering from the previously
+          viewed NPC and flickering when the new fetches land. */}
+      <DetailPanel key={selected?.id ?? 'none'} npc={selected} />
     </div>
   )
 }

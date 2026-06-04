@@ -872,7 +872,9 @@ export default function ZonesPage(): React.ReactElement {
     if (selected && (String(selected.id) === raw || selected.short_name === raw)) return
     const numId = Number(raw)
     const fetchZone = Number.isFinite(numId) && numId > 0 ? getZone(numId) : getZoneByShortName(raw)
-    fetchZone.then(setSelected).catch(() => {/* ignore */})
+    let cancelled = false
+    fetchZone.then((z) => { if (!cancelled) setSelected(z) }).catch(() => {/* ignore */})
+    return () => { cancelled = true }
   }, [searchParams, selected])
 
   // Push a new ?select entry on each pick so it lands in history; clearing
@@ -888,7 +890,9 @@ export default function ZonesPage(): React.ReactElement {
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>
       <SearchPane selectedId={selected?.id ?? null} onSelect={handleSelect} />
-      <DetailPanel zone={selected} />
+      {/* Key by id so the panel (and its per-tab fetches) remount on each pick
+          instead of lingering on the previously viewed zone's data. */}
+      <DetailPanel key={selected?.id ?? 'none'} zone={selected} />
     </div>
   )
 }

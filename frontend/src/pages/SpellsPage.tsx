@@ -338,9 +338,11 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
 
   useEffect(() => {
     if (!spell) { setCrossRefs(null); return }
+    let cancelled = false
     getSpellCrossRefs(spell.id)
-      .then(setCrossRefs)
-      .catch(() => setCrossRefs(null))
+      .then((r) => { if (!cancelled) setCrossRefs(r) })
+      .catch(() => { if (!cancelled) setCrossRefs(null) })
+    return () => { cancelled = true }
   }, [spell?.id])
 
   if (!spell) {
@@ -650,7 +652,9 @@ export default function SpellsPage(): React.ReactElement {
       return
     }
     if (selected?.id === id) return // already showing it (set on click)
-    getSpell(id).then(setSelected).catch(() => {/* ignore */})
+    let cancelled = false
+    getSpell(id).then((s) => { if (!cancelled) setSelected(s) }).catch(() => {/* ignore */})
+    return () => { cancelled = true }
   }, [searchParams, selected])
 
   const handleSelect = useCallback(
@@ -664,7 +668,9 @@ export default function SpellsPage(): React.ReactElement {
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>
       <SearchPane selectedId={selected?.id ?? null} onSelect={handleSelect} />
-      <DetailPanel spell={selected} />
+      {/* Key by id so the panel remounts on each pick — cross-ref state resets
+          synchronously instead of lingering from the previously viewed spell. */}
+      <DetailPanel key={selected?.id ?? 'none'} spell={selected} />
     </div>
   )
 }

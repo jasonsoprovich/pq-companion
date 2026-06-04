@@ -1012,9 +1012,11 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
   useEffect(() => {
     setActiveTab('overview')
     if (!item) { setSources(null); return }
+    let cancelled = false
     getItemSources(item.id)
-      .then(setSources)
-      .catch(() => setSources({ drops: [], merchants: [], forage_zones: [], ground_spawns: [], tradeskills: [] }))
+      .then((s) => { if (!cancelled) setSources(s) })
+      .catch(() => { if (!cancelled) setSources({ drops: [], merchants: [], forage_zones: [], ground_spawns: [], tradeskills: [] }) })
+    return () => { cancelled = true }
   }, [item?.id])
 
   function copyIngameLink() {
@@ -1131,7 +1133,9 @@ export default function ItemsPage(): React.ReactElement {
       return
     }
     if (selected?.id === id) return // already showing it (set on click)
-    getItem(id).then(setSelected).catch(() => {/* ignore */})
+    let cancelled = false
+    getItem(id).then((it) => { if (!cancelled) setSelected(it) }).catch(() => {/* ignore */})
+    return () => { cancelled = true }
   }, [searchParams, selected])
 
   const handleSelect = useCallback(
@@ -1145,7 +1149,10 @@ export default function ItemsPage(): React.ReactElement {
   return (
     <div className="flex h-full" style={{ backgroundColor: 'var(--color-background)' }}>
       <SearchPane selectedId={selected?.id ?? null} onSelect={handleSelect} />
-      <DetailPanel item={selected} />
+      {/* Key by id so the panel remounts on each pick — secondary state
+          (sources/tabs) resets synchronously instead of lingering from the
+          previously viewed item and flickering when the new fetch lands. */}
+      <DetailPanel key={selected?.id ?? 'none'} item={selected} />
     </div>
   )
 }
