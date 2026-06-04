@@ -115,6 +115,23 @@ a future data source fix this?" column against the new capabilities.
 - **Could a future data source fix this?** **No** for others. **Yes** for a
   self-only "a curse landed on you" alert.
 
+### 2.4 CH-chain tracking relies on chat callouts, not actual casts
+
+- **Limitation:** The CH Chain overlay and CH Metronome cannot see other
+  clerics' Complete Heal casts or the heals landing on the tank. They are
+  driven entirely by the chain *callout* lines clerics post to raid chat. If a
+  guild doesn't call its chain in chat (e.g. uses a silent `/pause`-timed
+  macro), there is nothing to track.
+- **Root cause:** Other players' spell casts log only as the generic
+  "Soandso begins to cast a spell." with no spell name, and heals on a third
+  party (the tank) aren't in your log at all. Only the chat callout carries the
+  caster + position + target.
+- **Sources checked:** Log (own casts named; others' casts nameless; no
+  third-party heal lines), Zeal (own client data only).
+- **Could a future data source fix this?** **No.** Even ZealPipes exposes only
+  the local client's state. Chat callouts are the only viable signal, so the
+  feature is built on the user-configurable callout regex.
+
 ---
 
 ## 3. NPC identification
