@@ -6,6 +6,7 @@ package overlay
 import (
 	"log/slog"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -440,6 +441,14 @@ func (t *NPCTracker) lookupNPCVariants(
 		candidates = filterVariantsByPlayerPosition(candidates, px, py)
 	}
 
+	// Order the survivors strongest-first so the headline is the row the player
+	// is actually fighting. Same-name rows in Quarm are frequently a raid boss
+	// plus low-HP siblings that all spawn in the same zone (e.g. Cazic Thule
+	// 450k vs 32k, A Dracoliche 175k vs 32k) — picking the lowest id arbitrarily
+	// headlined the weak version. Prefer raid_target, then HP, then id so the
+	// real boss wins and the rest fall under the "other versions" disclosure.
+	sortVariantsByStrength(candidates)
+
 	primaryVariant := candidates[0]
 	primary := primaryVariant.NPC
 	primaryAbilities := db.ParseSpecialAbilities(primary.SpecialAbilities)
@@ -511,6 +520,25 @@ func (t *NPCTracker) fetchVariants(dbName, zoneShort string) []db.NPCVariant {
 		return nil
 	}
 	return out
+}
+
+// sortVariantsByStrength orders candidates so the most boss-like row comes
+// first: raid_target rows ahead of normal ones, then higher HP, then lower id
+// as a stable tiebreak. This drives the overlay's primary (headline) pick. It
+// deliberately does NOT drop any variant — siblings that share a name and HP
+// (legit RNG spawn pairs) stay in the set and remain reachable behind the
+// frontend's "other versions" disclosure.
+func sortVariantsByStrength(variants []db.NPCVariant) {
+	sort.SliceStable(variants, func(i, j int) bool {
+		a, b := variants[i].NPC, variants[j].NPC
+		if a.RaidTarget != b.RaidTarget {
+			return a.RaidTarget > b.RaidTarget
+		}
+		if a.HP != b.HP {
+			return a.HP > b.HP
+		}
+		return a.ID < b.ID
+	})
 }
 
 // tieToleranceYards is how close two variants' nearest-spawn distances must

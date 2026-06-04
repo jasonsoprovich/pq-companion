@@ -264,6 +264,43 @@ func TestFilterVariantsByPlayerPosition_SharedSpawnsKeepBoth(t *testing.T) {
 	}
 }
 
+// Same-name boss rows in Quarm (a raid boss plus low-HP siblings that all
+// spawn in one zone) must headline the real boss. sortVariantsByStrength
+// orders raid_target first, then HP, then id — so A Dracoliche's 175k raid row
+// wins over its 32k siblings even though the 32k normal row has the lowest id.
+func TestSortVariantsByStrength_RaidBossWins(t *testing.T) {
+	// Mirrors quarm.db a_dracoliche rows that spawn in fearplane.
+	in := []db.NPCVariant{
+		{NPC: db.NPC{ID: 72006, HP: 32000, RaidTarget: 0}},  // normal, lowest id
+		{NPC: db.NPC{ID: 72090, HP: 175000, RaidTarget: 1}}, // the raid boss
+		{NPC: db.NPC{ID: 72590, HP: 32000, RaidTarget: 1}},  // low-HP raid sibling
+	}
+	sortVariantsByStrength(in)
+	if in[0].NPC.ID != 72090 {
+		t.Errorf("primary id = %d, want 72090 (175k raid boss)", in[0].NPC.ID)
+	}
+	// raid_target rows ahead of the normal one; HP breaks the raid tie.
+	wantOrder := []int{72090, 72590, 72006}
+	for i, want := range wantOrder {
+		if in[i].NPC.ID != want {
+			t.Errorf("position %d = id %d, want %d", i, in[i].NPC.ID, want)
+		}
+	}
+}
+
+// HP alone resolves ties when raid_target matches — Cazic Thule's 450k raid row
+// outranks its 32k raid sibling regardless of id ordering.
+func TestSortVariantsByStrength_HighestHPAmongRaid(t *testing.T) {
+	in := []db.NPCVariant{
+		{NPC: db.NPC{ID: 72500, HP: 32000, RaidTarget: 1}},
+		{NPC: db.NPC{ID: 72003, HP: 450000, RaidTarget: 1}},
+	}
+	sortVariantsByStrength(in)
+	if in[0].NPC.ID != 72003 {
+		t.Errorf("primary id = %d, want 72003 (450k)", in[0].NPC.ID)
+	}
+}
+
 // A variant with no spawn points is dropped when siblings have them — the
 // no-spawn entry can't be position-matched and at least one sibling can.
 func TestFilterVariantsByPlayerPosition_DropsNoSpawnWhenOthersExist(t *testing.T) {

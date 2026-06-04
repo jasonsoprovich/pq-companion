@@ -390,24 +390,53 @@ function NoTarget({ zone }: { zone?: string }): React.ReactElement {
   )
 }
 
-// VariantRibbon surfaces same-name ambiguity (e.g. ssratemple's shissar
-// revenant necro/SK split) so the user understands the panel below is
-// showing multiple possible NPCs, not a single resolved one.
-function VariantRibbon({ variants }: { variants: TargetVariant[] }): React.ReactElement {
+// OtherVariants collapses the non-primary same-name rows behind a disclosure.
+// Quarm gives many bosses several rows that all spawn in one zone (a raid boss
+// plus low-HP siblings, e.g. Cazic Thule 450k vs 32k); the backend headlines
+// the strongest and hands the rest here so they stay reachable without stacking
+// full cards and burying the real target. The HP in each label makes the
+// distinction obvious. Collapsed by default; key by primary id upstream so it
+// resets when the target changes.
+function OtherVariants({
+  variants,
+  sections,
+  view,
+  onItemClick,
+  wishlistItemIds,
+}: {
+  variants: TargetVariant[]
+  sections: NPCOverlaySections
+  view: View
+  onItemClick: (id: number) => void
+  wishlistItemIds: Set<number>
+}): React.ReactElement {
+  const [open, setOpen] = useState(false)
   return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-1">
-      <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
-        Variants:
-      </span>
-      {variants.map((v) => (
-        <span
-          key={v.npc.id}
-          className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
-          style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-foreground)' }}
-        >
-          {className(v.npc.class)} · L{v.npc.level}
-        </span>
-      ))}
+    <div className="flex flex-col gap-2">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="self-start rounded px-2 py-1 text-[11px] font-medium"
+        style={{
+          backgroundColor: 'var(--color-surface-2)',
+          border: '1px solid var(--color-border)',
+          color: 'var(--color-muted)',
+        }}
+      >
+        {open ? '▾' : '▸'} {variants.length} other DB version{variants.length > 1 ? 's' : ''}
+      </button>
+      {open &&
+        variants.map((v) => (
+          <NPCDetails
+            key={v.npc.id}
+            npc={v.npc}
+            abilities={v.special_abilities}
+            sections={sections}
+            view={view}
+            variantLabel={`${className(v.npc.class)} · L${v.npc.level} · ${v.npc.hp.toLocaleString()} HP`}
+            onItemClick={onItemClick}
+            wishlistItemIds={wishlistItemIds}
+          />
+        ))}
     </div>
   )
 }
@@ -537,7 +566,9 @@ function NPCCard({
   const npc = state.npc_data
   const abilities = state.special_abilities ?? []
   const variants = state.variants ?? []
-  const isAmbiguous = variants.length >= 2
+  // npc is the strongest row (backend headlines it); the disclosure shows the
+  // rest. Filter by id rather than slice so the primary never double-renders.
+  const otherVariants = npc ? variants.filter((v) => v.npc.id !== npc.id) : []
 
   const lastUpdated = new Date(state.last_updated).toLocaleTimeString([], {
     hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -580,24 +611,14 @@ function NPCCard({
           </div>
         )}
 
-        {isAmbiguous && <VariantRibbon variants={variants} />}
       </div>
 
       {npc ? (
-        isAmbiguous ? (
-          variants.map((v) => (
-            <NPCDetails
-              key={v.npc.id}
-              npc={v.npc}
-              abilities={v.special_abilities}
-              sections={sections}
-              view={view}
-              variantLabel={`${className(v.npc.class)} · L${v.npc.level}`}
-              onItemClick={onItemClick}
-              wishlistItemIds={wishlistItemIds}
-            />
-          ))
-        ) : (
+        // The backend orders variants strongest-first, so npc/abilities is the
+        // most boss-like row (raid_target, then HP) — headline it, and tuck any
+        // remaining same-name rows under a collapsed disclosure so raids aren't
+        // buried in duplicate cards.
+        <>
           <NPCDetails
             npc={npc}
             abilities={abilities}
@@ -606,7 +627,17 @@ function NPCCard({
             onItemClick={onItemClick}
             wishlistItemIds={wishlistItemIds}
           />
-        )
+          {otherVariants.length > 0 && (
+            <OtherVariants
+              key={npc.id}
+              variants={otherVariants}
+              sections={sections}
+              view={view}
+              onItemClick={onItemClick}
+              wishlistItemIds={wishlistItemIds}
+            />
+          )}
+        </>
       ) : (
         <div className="rounded px-3 py-2 text-xs" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
           No database record found for this NPC. It may be a pet, player, or unknown entity.
