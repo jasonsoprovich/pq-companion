@@ -49,7 +49,8 @@ contextBridge.exposeInMainWorld('electron', {
     closeRespawnTimer: (): Promise<void> => ipcRenderer.invoke('overlay:respawntimer:close'),
     toggleRespawnTimer: (): Promise<void> => ipcRenderer.invoke('overlay:respawntimer:toggle'),
     anyPopoutOpen: (): Promise<boolean> => ipcRenderer.invoke('overlay:popouts:any-open'),
-    openAllPopouts: (): Promise<void> => ipcRenderer.invoke('overlay:popouts:open-all'),
+    openAllPopouts: (panels?: string[]): Promise<void> =>
+      ipcRenderer.invoke('overlay:popouts:open-all', panels),
     closeAllPopouts: (): Promise<void> => ipcRenderer.invoke('overlay:popouts:close-all'),
     setIgnoreMouseEvents: (ignore: boolean): Promise<void> =>
       ipcRenderer.invoke('overlay:set-ignore-mouse-events', ignore),

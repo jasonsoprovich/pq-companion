@@ -141,10 +141,14 @@ export default function OverlaysDashboard(): React.ReactElement {
       o.closeAllPopouts().catch(() => {})
       setAnyPopoutOpen(false)
     } else {
-      o.openAllPopouts().catch(() => {})
+      // Only pop out overlays the user has toggled visible in the dashboard —
+      // a panel hidden here shouldn't open as a floating window. Trigger Alerts
+      // has no dashboard toggle and is always included by the main process.
+      const visiblePanels = VISIBLE_PANEL_KEYS.filter((k) => layout[k].visible)
+      o.openAllPopouts(visiblePanels).catch(() => {})
       setAnyPopoutOpen(true)
     }
-  }, [anyPopoutOpen])
+  }, [anyPopoutOpen, layout])
 
   return (
     <div
@@ -209,7 +213,7 @@ export default function OverlaysDashboard(): React.ReactElement {
               title={
                 anyPopoutOpen
                   ? 'Close all standalone overlay windows'
-                  : 'Open every standalone overlay window (buff/detrim/dps/npc/trigger)'
+                  : 'Pop out the overlays you have toggled visible above (plus Trigger Alerts)'
               }
             >
               {anyPopoutOpen ? <X size={11} /> : <Layers size={11} />}
