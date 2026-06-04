@@ -4,7 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import {
   BookOpen,
   CheckCircle2,
-  Circle,
+  CheckSquare,
+  Square,
   ExternalLink,
   Map,
   RefreshCw,
@@ -59,6 +60,31 @@ const CLASSES: { index: number; abbr: string; full: string }[] = [
 
 const LS_CLASS_KEY = 'pq-companion:spell-checklist-class'
 const DEFAULT_CLASS = 13 // Enchanter
+
+// Shopping-run selection is keyed by character, not class: two characters of
+// the same class have independent spellbooks, so they get independent runs.
+// We persist the *deselected* (unchecked) ids, so new missing spells default
+// to selected and learned spells simply stop appearing in the missing set.
+const lsSelectionKey = (character: string) =>
+  `pq-companion:spell-selection-excluded:${(character || '_').toLowerCase()}`
+
+function loadDeselected(character: string): Set<number> {
+  try {
+    const v = localStorage.getItem(lsSelectionKey(character))
+    if (v) return new Set(JSON.parse(v) as number[])
+  } catch {
+    // ignore
+  }
+  return new Set()
+}
+
+function saveDeselected(character: string, ids: Set<number>): void {
+  try {
+    localStorage.setItem(lsSelectionKey(character), JSON.stringify([...ids]))
+  } catch {
+    // ignore
+  }
+}
 
 type Filter = 'all' | 'known' | 'missing'
 
@@ -293,10 +319,12 @@ interface SpellRowProps {
   spell: Spell
   classIndex: number
   known: boolean
+  selected: boolean
   onSelect: (id: number) => void
+  onToggleSelect: (id: number) => void
 }
 
-function SpellRow({ spell, classIndex, known, onSelect }: SpellRowProps): React.ReactElement {
+function SpellRow({ spell, classIndex, known, selected, onSelect, onToggleSelect }: SpellRowProps): React.ReactElement {
   const level = classLevel(spell, classIndex)
   return (
     <div
@@ -304,7 +332,7 @@ function SpellRow({ spell, classIndex, known, onSelect }: SpellRowProps): React.
       style={{ borderBottom: '1px solid var(--color-border)' }}
       onClick={() => onSelect(spell.id)}
     >
-      {/* Known indicator */}
+      {/* Owned spells show a check; missing spells get a route-selection checkbox. */}
       <div className="shrink-0 w-4">
         {known ? (
           <CheckCircle2
@@ -312,10 +340,16 @@ function SpellRow({ spell, classIndex, known, onSelect }: SpellRowProps): React.
             style={{ color: 'var(--color-primary)' }}
           />
         ) : (
-          <Circle
-            size={15}
-            style={{ color: 'var(--color-muted)' }}
-          />
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleSelect(spell.id) }}
+            title={selected ? 'In shopping run — click to remove' : 'Add to shopping run'}
+          >
+            {selected ? (
+              <CheckSquare size={15} style={{ color: 'var(--color-primary)' }} />
+            ) : (
+              <Square size={15} style={{ color: 'var(--color-muted)' }} />
+            )}
+          </button>
         )}
       </div>
 
@@ -383,7 +417,9 @@ export default function SpellChecklistPage(): React.ReactElement {
   const [loadingBook, setLoadingBook] = useState(true)
   const [spellError, setSpellError] = useState<string | null>(null)
   const [modalSpell, setModalSpell] = useState<Spell | null>(null)
-  const [routeIds, setRouteIds] = useState<number[] | null>(null)
+  const [showRoute, setShowRoute] = useState(false)
+  // Ids the user has unchecked for the current shopping run (per character).
+  const [deselected, setDeselected] = useState<Set<number>>(new Set())
   const navigate = useNavigate()
 
   // Default the viewed character to the active character once known.
@@ -429,6 +465,10 @@ export default function SpellChecklistPage(): React.ReactElement {
 
   useEffect(() => { loadSpells(classIndex) }, [classIndex, loadSpells])
   useEffect(() => { loadSpellbook() }, [loadSpellbook])
+
+  // Reload the saved shopping-run selection whenever the viewed character
+  // changes — each character keeps its own checked/unchecked state.
+  useEffect(() => { setDeselected(loadDeselected(viewedCharacter)) }, [viewedCharacter])
 
   function handleClassChange(idx: number) {
     setClassIndex(idx)
@@ -476,7 +516,35 @@ export default function SpellChecklistPage(): React.ReactElement {
     if (maxLvl > 0 && lvl > maxLvl) return false
     return true
   })
-  const missingIds = missingSpells.map((s) => s.id)
+  // The selected subset (what the route actually plans for): missing spells the
+  // user hasn't unchecked. Default-all-selected falls out naturally because we
+  // only store *deselections*.
+  const selectedMissing = missingSpells.filter((s) => !deselected.has(s.id))
+  const selectedIds = selectedMissing.map((s) => s.id)
+
+  function commitDeselected(next: Set<number>) {
+    setDeselected(next)
+    saveDeselected(viewedCharacter, next)
+  }
+
+  function toggleSelect(id: number) {
+    const next = new Set(deselected)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    commitDeselected(next)
+  }
+
+  function selectAllMissing() {
+    const next = new Set(deselected)
+    for (const s of missingSpells) next.delete(s.id)
+    commitDeselected(next)
+  }
+
+  function selectNoneMissing() {
+    const next = new Set(deselected)
+    for (const s of missingSpells) next.add(s.id)
+    commitDeselected(next)
+  }
 
   return (
     <div className="flex h-full flex-col" style={{ backgroundColor: 'var(--color-background)' }}>
@@ -580,6 +648,33 @@ export default function SpellChecklistPage(): React.ReactElement {
             )}
           </div>
 
+          {/* Shopping-run selection controls */}
+          {!loading && !spellError && missingSpells.length > 0 && (
+            <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
+              <span className="tabular-nums">
+                {selectedIds.length}/{missingSpells.length} selected
+              </span>
+              <button
+                onClick={selectAllMissing}
+                disabled={selectedIds.length === missingSpells.length}
+                className="rounded px-1.5 py-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)', border: '1px solid var(--color-border)' }}
+                title="Select every missing spell"
+              >
+                All
+              </button>
+              <button
+                onClick={selectNoneMissing}
+                disabled={selectedIds.length === 0}
+                className="rounded px-1.5 py-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)', border: '1px solid var(--color-border)' }}
+                title="Clear the selection"
+              >
+                None
+              </button>
+            </div>
+          )}
+
           <div className="flex-1" />
 
           {/* Stats */}
@@ -593,8 +688,8 @@ export default function SpellChecklistPage(): React.ReactElement {
 
           {/* Plan shopping route */}
           <button
-            onClick={() => setRouteIds(missingIds)}
-            disabled={loading || missingIds.length === 0}
+            onClick={() => setShowRoute(true)}
+            disabled={loading || selectedIds.length === 0}
             className="flex items-center gap-1 text-xs px-2 py-1 rounded disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
               backgroundColor: 'var(--color-surface-2)',
@@ -602,13 +697,13 @@ export default function SpellChecklistPage(): React.ReactElement {
               border: '1px solid var(--color-border)',
             }}
             title={
-              missingIds.length === 0
-                ? 'No missing spells to shop for'
-                : `Plan an efficient route to buy ${missingIds.length} missing spell${missingIds.length === 1 ? '' : 's'}`
+              selectedIds.length === 0
+                ? 'Select some missing spells to plan a run'
+                : `Plan an efficient route to buy ${selectedIds.length} selected spell${selectedIds.length === 1 ? '' : 's'}`
             }
           >
             <Map size={11} />
-            Plan route{missingIds.length > 0 ? ` (${missingIds.length})` : ''}
+            Plan route{selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}
           </button>
 
           {/* Refresh */}
@@ -732,7 +827,9 @@ export default function SpellChecklistPage(): React.ReactElement {
             spell={spell}
             classIndex={classIndex}
             known={knownIds.has(spell.id)}
+            selected={!deselected.has(spell.id)}
             onSelect={handleSelectSpell}
+            onToggleSelect={toggleSelect}
           />
         ))}
       </div>
@@ -745,11 +842,11 @@ export default function SpellChecklistPage(): React.ReactElement {
         />
       )}
 
-      {routeIds && (
+      {showRoute && (
         <ShoppingRoutePanel
-          spellIds={routeIds}
-          classIndex={classIndex}
-          onClose={() => setRouteIds(null)}
+          spellIds={selectedIds}
+          onRemoveSpell={(id) => commitDeselected(new Set(deselected).add(id))}
+          onClose={() => setShowRoute(false)}
         />
       )}
     </div>

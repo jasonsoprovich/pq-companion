@@ -1,14 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Map as MapIcon, MapPin, RefreshCw, AlertCircle, X, Plus, Navigation } from 'lucide-react'
+import { Map as MapIcon, MapPin, RefreshCw, AlertCircle, X, Navigation } from 'lucide-react'
 import { getShoppingRoute } from '../services/api'
 import type { ShoppingRoute, ShoppingStop, ShoppingSpell, ZoneAlignment } from '../types/spell'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { formatNPCName } from './SourceNPCLink'
 
 interface Props {
+  // The selected spells to plan for. Selection is owned by the checklist page
+  // (per character) — this panel just renders the route for what it's given.
   spellIds: number[]
-  classIndex: number // used to scope the per-class exclusion list
+  // Remove a spell from the run; the page drops it from the selection and
+  // re-passes a shorter spellIds, which re-plans the route.
+  onRemoveSpell: (id: number) => void
   onClose: () => void
 }
 
@@ -33,7 +37,6 @@ const ALIGNMENTS: { key: ZoneAlignment; label: string }[] = [
 
 const LS_ALIGN = 'pq-companion:shop-exclude-alignments'
 const LS_START = 'pq-companion:shop-start-zone'
-const lsExcludeKey = (classIndex: number) => `pq-companion:shop-excluded:${classIndex}`
 
 function loadJSON<T>(key: string, fallback: T): T {
   try {
@@ -151,10 +154,9 @@ function StopCard({
   )
 }
 
-export default function ShoppingRoutePanel({ spellIds, classIndex, onClose }: Props): React.ReactElement {
+export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }: Props): React.ReactElement {
   useEscapeToClose(onClose)
 
-  const [excluded, setExcluded] = useState<ShoppingSpell[]>(() => loadJSON(lsExcludeKey(classIndex), []))
   const [excludeAlignments, setExcludeAlignments] = useState<ZoneAlignment[]>(() => loadJSON(LS_ALIGN, []))
   const [startZone, setStartZone] = useState<string>(() => loadJSON<string>(LS_START, ''))
 
@@ -162,21 +164,18 @@ export default function ShoppingRoutePanel({ spellIds, classIndex, onClose }: Pr
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Persist preferences.
-  useEffect(() => { saveJSON(lsExcludeKey(classIndex), excluded) }, [excluded, classIndex])
+  // Persist preferences. (The spell selection itself is owned and persisted by
+  // the checklist page, per character.)
   useEffect(() => { saveJSON(LS_ALIGN, excludeAlignments) }, [excludeAlignments])
   useEffect(() => { saveJSON(LS_START, startZone) }, [startZone])
 
-  const excludedIds = useMemo(() => new Set(excluded.map((s) => s.id)), [excluded])
-  const activeIds = useMemo(() => spellIds.filter((id) => !excludedIds.has(id)), [spellIds, excludedIds])
-
   // Stable dependency keys so the fetch only re-runs on real changes.
-  const activeKey = activeIds.join(',')
+  const activeKey = spellIds.join(',')
   const alignKey = [...excludeAlignments].sort().join(',')
 
   useEffect(() => {
     let cancelled = false
-    if (activeIds.length === 0) {
+    if (spellIds.length === 0) {
       setRoute({ stops: [], unavailable: [], excluded_by_alignment: [], total_zones: 0, total_spells: 0 })
       setLoading(false)
       setError(null)
@@ -184,17 +183,13 @@ export default function ShoppingRoutePanel({ spellIds, classIndex, onClose }: Pr
     }
     setLoading(true)
     setError(null)
-    getShoppingRoute(activeIds, { excludeAlignments, startZone })
+    getShoppingRoute(spellIds, { excludeAlignments, startZone })
       .then((r) => { if (!cancelled) setRoute(r) })
       .catch((err: Error) => { if (!cancelled) setError(err.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeKey, alignKey, startZone])
-
-  const excludeSpell = (s: ShoppingSpell) =>
-    setExcluded((prev) => (prev.some((e) => e.id === s.id) ? prev : [...prev, s]))
-  const restoreSpell = (id: number) => setExcluded((prev) => prev.filter((e) => e.id !== id))
 
   const toggleAlignment = (a: ZoneAlignment) =>
     setExcludeAlignments((prev) => (prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]))
@@ -307,14 +302,19 @@ export default function ShoppingRoutePanel({ spellIds, classIndex, onClose }: Pr
 
           {!loading && !error && route && route.stops.length === 0 && (
             <p className="py-8 text-center text-sm" style={{ color: 'var(--color-muted)' }}>
-              {activeIds.length === 0
-                ? 'No spells selected — every spell has been removed below.'
+              {spellIds.length === 0
+                ? 'No spells selected — pick some spells on the checklist to plan a run.'
                 : 'No vendor route found for these spells.'}
             </p>
           )}
 
           {!loading && !error && route && route.stops.map((stop, i) => (
-            <StopCard key={stop.zone_short} stop={stop} index={i} onExcludeSpell={excludeSpell} />
+            <StopCard
+              key={stop.zone_short}
+              stop={stop}
+              index={i}
+              onExcludeSpell={(s) => onRemoveSpell(s.id)}
+            />
           ))}
 
           {/* Spells whose only towns were filtered out by alignment */}
@@ -364,34 +364,7 @@ export default function ShoppingRoutePanel({ spellIds, classIndex, onClose }: Pr
             </div>
           )}
 
-          {/* Spells the user removed — restorable */}
-          {excluded.length > 0 && (
-            <div
-              className="mt-1 rounded border px-3 py-2"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-            >
-              <div className="mb-1 flex items-center justify-between text-xs font-semibold" style={{ color: 'var(--color-muted-foreground)' }}>
-                <span>Removed from route ({excluded.length})</span>
-                <button onClick={() => setExcluded([])} className="text-[11px] underline" style={{ color: 'var(--color-muted)' }}>
-                  restore all
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {excluded.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => restoreSpell(s.id)}
-                    className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]"
-                    style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)' }}
-                    title="Add this spell back to the route"
-                  >
-                    <Plus size={10} />
-                    {s.name || `Spell ${s.id}`}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Removing a spell here unchecks it on the checklist; re-add it there. */}
         </div>
       </div>
     </div>
