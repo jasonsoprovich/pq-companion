@@ -1421,14 +1421,26 @@ function popoutWindows(): BrowserWindow[] {
 
 ipcMain.handle('overlay:popouts:any-open', () => popoutWindows().length > 0)
 
-ipcMain.handle('overlay:popouts:open-all', () => {
-  if (!dpsOverlayWindow || dpsOverlayWindow.isDestroyed()) createDPSOverlay()
-  if (!buffTimerWindow || buffTimerWindow.isDestroyed()) createBuffTimerOverlay()
-  if (!detrimTimerWindow || detrimTimerWindow.isDestroyed()) createDetrimTimerOverlay()
-  if (!npcOverlayWindow || npcOverlayWindow.isDestroyed()) createNPCOverlay()
+ipcMain.handle('overlay:popouts:open-all', (_event, panels?: string[]) => {
+  // `panels` is the set of dashboard panel keys the user has toggled visible
+  // (buff/detrim/dps/npc/rolls/respawn). Only those overlays pop out, so the
+  // button respects the dashboard view instead of opening everything. When the
+  // argument is omitted (legacy callers), fall back to opening all panels.
+  const all = !Array.isArray(panels)
+  const want = new Set(panels ?? [])
+  const wants = (key: string): boolean => all || want.has(key)
+
+  if (wants('dps') && (!dpsOverlayWindow || dpsOverlayWindow.isDestroyed())) createDPSOverlay()
+  if (wants('buff') && (!buffTimerWindow || buffTimerWindow.isDestroyed())) createBuffTimerOverlay()
+  if (wants('detrim') && (!detrimTimerWindow || detrimTimerWindow.isDestroyed())) createDetrimTimerOverlay()
+  if (wants('npc') && (!npcOverlayWindow || npcOverlayWindow.isDestroyed())) createNPCOverlay()
+  if (wants('rolls') && (!rollTrackerWindow || rollTrackerWindow.isDestroyed())) createRollTrackerOverlay()
+  if (wants('respawn') && (!respawnTimerWindow || respawnTimerWindow.isDestroyed())) createRespawnTimerOverlay()
+
+  // Trigger Alerts has no in-dashboard panel or visibility toggle, so it isn't
+  // something the user can "disable in the dashboard view". It always pops out
+  // (and stays invisible until a trigger actually fires).
   if (!triggerOverlayWindow || triggerOverlayWindow.isDestroyed()) createTriggerOverlay()
-  if (!rollTrackerWindow || rollTrackerWindow.isDestroyed()) createRollTrackerOverlay()
-  if (!respawnTimerWindow || respawnTimerWindow.isDestroyed()) createRespawnTimerOverlay()
 })
 
 ipcMain.handle('overlay:popouts:close-all', () => {

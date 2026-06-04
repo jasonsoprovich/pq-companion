@@ -48,7 +48,7 @@ export interface ElectronAPI {
     closeRespawnTimer: () => Promise<void>
     toggleRespawnTimer: () => Promise<void>
     anyPopoutOpen: () => Promise<boolean>
-    openAllPopouts: () => Promise<void>
+    openAllPopouts: (panels?: string[]) => Promise<void>
     closeAllPopouts: () => Promise<void>
     setIgnoreMouseEvents: (ignore: boolean) => Promise<void>
     setTriggerMode: (mode: 'interactive' | 'passthrough' | 'hidden') => Promise<void>
