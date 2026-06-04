@@ -22,6 +22,7 @@ import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import ItemDetailModal from '../components/ItemDetailModal'
 import { BuffPicker } from '../components/BuffPicker'
 import { ConfirmModal } from '../components/ConfirmModal'
+import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SpellIcon } from '../components/Icon'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 
@@ -306,10 +307,12 @@ export default function CharacterProgressPage(): React.ReactElement {
                 <AAPanel trained={trainedAAs} available={availableAAs} />
               )}
               {tab === 'modifiers' && (
-                <SpellModifiersPanel
-                  characterID={activeChar?.id ?? null}
-                  contributors={modifiers}
-                />
+                <ErrorBoundary label="Spell Modifiers">
+                  <SpellModifiersPanel
+                    characterID={activeChar?.id ?? null}
+                    contributors={modifiers}
+                  />
+                </ErrorBoundary>
               )}
             </>
           )}
@@ -1511,6 +1514,7 @@ function SpellModifiersPanel({ characterID, contributors }: SpellModifiersPanelP
   const [results, setResults] = useState<Spell[]>([])
   const [resolution, setResolution] = useState<SpellModifierResolution | null>(null)
   const [resolveLoading, setResolveLoading] = useState(false)
+  const [resolveError, setResolveError] = useState<string | null>(null)
 
   // Debounced spell search.
   useEffect(() => {
@@ -1526,9 +1530,25 @@ function SpellModifiersPanel({ characterID, contributors }: SpellModifiersPanelP
   const resolve = useCallback(async (spellID: number) => {
     if (!characterID) return
     setResolveLoading(true)
+    setResolveError(null)
+    setResolution(null)
+    // Bound the request so a hung backend can never leave the panel stuck on
+    // "Resolving…" — surface a retryable error instead.
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 8000),
+    )
     try {
-      const resp = await getCharacterSpellModifiers(characterID, spellID)
+      const resp = await Promise.race([
+        getCharacterSpellModifiers(characterID, spellID),
+        timeout,
+      ])
       setResolution(resp.resolution ?? null)
+    } catch (err) {
+      setResolveError(
+        err instanceof Error && err.message === 'timeout'
+          ? 'Resolving this spell timed out. Try again.'
+          : 'Could not resolve this spell.',
+      )
     } finally {
       setResolveLoading(false)
     }
@@ -1648,7 +1668,10 @@ function SpellModifiersPanel({ characterID, contributors }: SpellModifiersPanelP
         {resolveLoading && (
           <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Resolving…</p>
         )}
-        {resolution && !resolveLoading && (
+        {resolveError && !resolveLoading && (
+          <p className="text-xs" style={{ color: 'var(--color-danger)' }}>{resolveError}</p>
+        )}
+        {resolution && !resolveLoading && !resolveError && (
           <ResolutionDisplay r={resolution} />
         )}
       </div>
@@ -1717,6 +1740,9 @@ function formatDuration(sec: number): string {
 
 function ResolutionDisplay({ r }: { r: SpellModifierResolution }): React.ReactElement {
   const ctSign = r.cast_time_percent > 0 ? '−' : ''
+  // applied can arrive as null from the API (Go nil slice → JSON null); never
+  // read .length / .map without coalescing or the whole panel crashes.
+  const applied = r.applied ?? []
   return (
     <div
       className="rounded p-3"
@@ -1782,13 +1808,13 @@ function ResolutionDisplay({ r }: { r: SpellModifierResolution }): React.ReactEl
         Total {r.base_duration_sec}s × {(1 + r.duration_aa_percent / 100).toFixed(2)} × {(1 + r.duration_item_percent / 100).toFixed(2)} = {r.extended_duration_sec}s · cast time {ctSign}{r.cast_time_percent}%
       </p>
 
-      {r.applied.length > 0 && (
+      {applied.length > 0 && (
         <div>
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
-            Applied ({r.applied.length})
+            Applied ({applied.length})
           </p>
           <div className="space-y-1">
-            {r.applied.map((m, i) => (
+            {applied.map((m, i) => (
               <div key={i} className="text-xs" style={{ color: 'var(--color-foreground)' }}>
                 {m.source === 'item' ? m.source_item_name : `${m.source_aa_name} rank ${m.source_aa_rank}`}
                 <span className="ml-2 font-mono" style={{ color: 'var(--color-primary)' }}>
