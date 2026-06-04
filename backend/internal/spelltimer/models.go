@@ -29,6 +29,9 @@ const (
 	CategoryMez    Category = "mez"
 	CategoryDot    Category = "dot"
 	CategoryStun   Category = "stun"
+	// CategoryCHChain is for Complete-Heal-chain countdown bars driven by the
+	// CH-chain matcher off raid chat, shown in the dedicated CH Chain overlay.
+	CategoryCHChain Category = "ch_chain"
 )
 
 // ActiveTimer represents one spell that is currently ticking down.

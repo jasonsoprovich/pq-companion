@@ -40,6 +40,9 @@ type Config struct {
 	// SpellTimer holds spell timer engine settings.
 	SpellTimer SpellTimerSettings `yaml:"spell_timer" json:"spell_timer"`
 
+	// CHChain configures the Complete-Heal-chain overlay matcher.
+	CHChain CHChainSettings `yaml:"ch_chain" json:"ch_chain"`
+
 	// Combat holds combat tracker / history settings.
 	Combat CombatSettings `yaml:"combat" json:"combat"`
 
@@ -287,6 +290,42 @@ type NPCOverlaySections struct {
 	SpecialAbilities bool `yaml:"special_abilities" json:"special_abilities"`
 }
 
+// CHChainSettings configures the Complete-Heal-chain overlay matcher, which
+// watches raid chat for chain-call lines and creates ch_chain countdown timers.
+type CHChainSettings struct {
+	// Enabled turns the matcher on. When false, no ch_chain timers are
+	// created and the CH Chain overlay stays empty. On by default for fresh
+	// installs.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// Pattern is the regex matched against each raw raid-chat line. It must
+	// capture named groups `caster`, `chainnum`, and `target`. Empty means
+	// "use the built-in default" (DefaultCHChainPattern).
+	Pattern string `yaml:"pattern" json:"pattern"`
+
+	// IntervalSecs is the per-cast cadence each chain position counts down —
+	// the time until the next healer in the rotation casts. 0 means "use the
+	// default" (DefaultCHChainIntervalSecs).
+	IntervalSecs int `yaml:"interval_secs" json:"interval_secs"`
+}
+
+// DefaultCHChainPattern matches the common guild chain-call format, e.g.
+// "Soandso tells the raid, '--- 001 --- CH Winian with << 100% Mana >>'",
+// capturing caster, chainnum (leading zeros stripped), and target.
+const DefaultCHChainPattern = `^(?P<caster>\w+) tells the raid, '-+\s*0*(?P<chainnum>\d+)\s*-+\s*CH\s+(?P<target>\w+)`
+
+// DefaultCHChainIntervalSecs is the default per-cast countdown cadence.
+const DefaultCHChainIntervalSecs = 6
+
+// DefaultCHChainSettings returns the on-by-default settings for fresh installs.
+func DefaultCHChainSettings() CHChainSettings {
+	return CHChainSettings{
+		Enabled:      true,
+		Pattern:      DefaultCHChainPattern,
+		IntervalSecs: DefaultCHChainIntervalSecs,
+	}
+}
+
 // DefaultNPCOverlaySections returns the all-visible default — matches the
 // behaviour before this preference existed.
 func DefaultNPCOverlaySections() NPCOverlaySections {
@@ -335,6 +374,7 @@ func defaults() Config {
 		Combat: CombatSettings{
 			RetentionDays: 30,
 		},
+		CHChain:           DefaultCHChainSettings(),
 		ChatRetentionDays: 30,
 		DPSClassColors:    DefaultDPSClassColors(),
 	}
@@ -434,6 +474,18 @@ func applyDefaults(cfg *Config) bool {
 	// upgrading users get the palette without losing per-class overrides
 	// they may have set previously.
 	if fillDPSColorDefaults(&cfg.DPSClassColors) {
+		changed = true
+	}
+	// CH-chain matcher: backfill the regex and cadence so the feature has
+	// sensible values whenever the user enables it. Enabled itself is left as
+	// loaded (false for configs predating the feature) — it's opt-in for
+	// upgrading users and on by default only for fresh installs.
+	if cfg.CHChain.Pattern == "" {
+		cfg.CHChain.Pattern = DefaultCHChainPattern
+		changed = true
+	}
+	if cfg.CHChain.IntervalSecs <= 0 {
+		cfg.CHChain.IntervalSecs = DefaultCHChainIntervalSecs
 		changed = true
 	}
 	// NPC overlay sections: configs that predate this preference deserialize

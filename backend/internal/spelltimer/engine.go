@@ -644,7 +644,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 	}
 	cat := Category(category)
 	switch cat {
-	case CategoryBuff, CategoryDebuff, CategoryMez, CategoryDot, CategoryStun:
+	case CategoryBuff, CategoryDebuff, CategoryMez, CategoryDot, CategoryStun, CategoryCHChain:
 	default:
 		cat = CategoryDebuff
 	}
