@@ -5,7 +5,7 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNPCOverlaySections } from '../../hooks/useNPCOverlaySections'
 import { useWishlistItemIds } from '../../hooks/useWishlistItemIds'
 import { WSEvent } from '../../lib/wsEvents'
-import { getOverlayNPCTarget, getLogStatus, getNPCLoot, getItem } from '../../services/api'
+import { getOverlayNPCTarget, getLogStatus, getNPCLoot, getNPCFaction, getItem } from '../../services/api'
 import { className, bodyTypeName, npcRunSpeedPct } from '../../lib/npcHelpers'
 import { cleanLootDropLabel, effectiveDropPct, rarityColor } from '../../lib/lootHelpers'
 import OverlayWindow from '../OverlayWindow'
@@ -14,7 +14,7 @@ import { ItemIcon } from '../Icon'
 import { ResistChip } from '../ResistChip'
 import type { TargetState, SpecialAbility, TargetVariant } from '../../types/overlay'
 import type { LogTailerStatus } from '../../types/logEvent'
-import type { NPC, NPCLootTable, LootDrop } from '../../types/npc'
+import type { NPC, NPCLootTable, LootDrop, NPCFaction } from '../../types/npc'
 import type { Item } from '../../types/item'
 import type { NPCOverlaySections } from '../../types/config'
 
@@ -315,6 +315,66 @@ function LootSection({
   )
 }
 
+// FactionSection fetches and renders the targeted NPC's faction: its primary
+// (standing) faction plus the per-faction hits taken when it's killed. Faction
+// is keyed by npc_types.id, which the overlay target already carries, so this
+// is a simple per-id fetch like LootSection. Renders nothing while loading or
+// when the NPC has no faction so the section stays compact and silent.
+function FactionSection({ npcId }: { npcId: number }): React.ReactElement | null {
+  const [faction, setFaction] = useState<NPCFaction | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setFaction(null)
+    getNPCFaction(npcId)
+      .then((f) => { if (!cancelled) setFaction(f) })
+      .catch(() => { if (!cancelled) setFaction(null) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [npcId])
+
+  // Stay silent until we have something worth showing — no loading flash, and
+  // no empty heading for the many NPCs that have no faction at all.
+  if (loading || !faction) return null
+  const hasPrimary = !!faction.primary_faction_name
+  if (!hasPrimary && faction.hits.length === 0) return null
+
+  return (
+    <div>
+      <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Faction</p>
+      {hasPrimary && (
+        <p className="mb-1 text-xs" style={{ color: 'var(--color-foreground)' }}>
+          {faction.primary_faction_name}
+        </p>
+      )}
+      {faction.hits.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {faction.hits.map((hit) => (
+            <span
+              key={hit.faction_id}
+              className="rounded px-1.5 py-0.5 text-[10px]"
+              style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-muted-foreground)' }}
+            >
+              {hit.faction_name}
+              <span
+                className="ml-1"
+                style={{
+                  color: hit.value > 0 ? '#22c55e' : hit.value < 0 ? '#f87171' : 'var(--color-muted)',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {hit.value > 0 ? `+${hit.value}` : hit.value}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function NoTarget({ zone }: { zone?: string }): React.ReactElement {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4">
@@ -453,6 +513,8 @@ function NPCDetails({
               </div>
             </div>
           )}
+
+          {sections.faction && <FactionSection npcId={npc.id} />}
         </>
       )}
     </div>
