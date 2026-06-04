@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Package, RefreshCw, Trash2, AlertCircle, X, ArrowUp, ArrowDown } from 'lucide-react'
-import { getLootMeta, listLoot, clearLoot } from '../services/api'
+import { getLootMeta, listLoot, clearLoot, searchItems, searchZones } from '../services/api'
 import type { LootEntry } from '../types/loot'
+import type { Item } from '../types/item'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import MissingLogNotice from '../components/MissingLogNotice'
 import BackfillLink from '../components/BackfillLink'
+import ItemDetailModal from '../components/ItemDetailModal'
 
 function formatTimestamp(unix: number): string {
   if (!unix) return ''
@@ -33,6 +36,30 @@ export default function LootTrackerPage(): React.ReactElement {
   const [sortField, setSortField] = useState<SortField>('time')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [confirmClearOpen, setConfirmClearOpen] = useState(false)
+  const [modalItem, setModalItem] = useState<Item | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+  const navigate = useNavigate()
+
+  // Resolve a loot item name to its DB record and open the item popup. Picks an
+  // exact (case-insensitive) name match, falling back to the first result.
+  async function openItem(name: string) {
+    try {
+      const r = await searchItems(name, 10)
+      const exact = r.items.find((i) => i.name.toLowerCase() === name.toLowerCase())
+      const item = exact ?? r.items[0]
+      if (item) { setModalItem(item); setModalOpen(true) }
+    } catch { /* best-effort */ }
+  }
+
+  // Resolve a zone long name to its DB record and jump to the Zone browser.
+  async function openZone(zoneName: string) {
+    try {
+      const r = await searchZones(zoneName)
+      const exact = r.items.find((z) => z.long_name.toLowerCase() === zoneName.toLowerCase())
+      const zone = exact ?? r.items[0]
+      if (zone) navigate(`/zones?select=${zone.id}`)
+    } catch { /* best-effort */ }
+  }
 
   const loadMeta = useCallback(() => {
     getLootMeta(selectedChar || undefined)
@@ -110,6 +137,8 @@ export default function LootTrackerPage(): React.ReactElement {
 
   return (
     <div className="flex h-full flex-col">
+      <ItemDetailModal item={modalItem} open={modalOpen} onClose={() => setModalOpen(false)} />
+
       {/* Header */}
       <div className="flex items-center gap-3 border-b px-4 py-3 shrink-0" style={{ borderColor: 'var(--color-border)' }}>
         <Package size={18} style={{ color: 'var(--color-primary)' }} />
@@ -213,9 +242,27 @@ export default function LootTrackerPage(): React.ReactElement {
                 return (
                   <React.Fragment key={r.id}>
                     <span className="py-1 tabular-nums whitespace-nowrap" style={{ color: 'var(--color-muted)' }}>{formatTimestamp(r.ts)}</span>
-                    <span className="py-1" style={{ color: 'var(--color-foreground)' }}>{r.item}</span>
+                    <button
+                      onClick={() => openItem(r.item)}
+                      className="py-1 text-left hover:underline"
+                      style={{ color: 'var(--color-primary)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                      title="View item details"
+                    >
+                      {r.item}
+                    </button>
                     <span className="py-1 whitespace-nowrap font-medium" style={{ color: mine ? 'var(--color-primary)' : 'var(--color-foreground)' }}>{r.player}</span>
-                    <span className="py-1 truncate" style={{ color: 'var(--color-muted-foreground)' }}>{r.zone || '—'}</span>
+                    {r.zone ? (
+                      <button
+                        onClick={() => openZone(r.zone)}
+                        className="py-1 truncate text-left hover:underline"
+                        style={{ color: 'var(--color-primary)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                        title="Open this zone in the Zone browser"
+                      >
+                        {r.zone}
+                      </button>
+                    ) : (
+                      <span className="py-1 truncate" style={{ color: 'var(--color-muted-foreground)' }}>—</span>
+                    )}
                     {showNPC && <span className="py-1 truncate" style={{ color: 'var(--color-muted-foreground)' }}>{r.npc || '—'}</span>}
                   </React.Fragment>
                 )
