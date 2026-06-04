@@ -74,10 +74,10 @@ func TestSolve(t *testing.T) {
 		{
 			name: "anchor first then greedy on remainder",
 			spells: []SpellAvail{
-				avail(1, "sol"),                       // anchor
-				avail(2, "commons", "ecommons"),       // greedy
-				avail(3, "commons", "nektulos"),       // greedy, co-located w/ 2
-				avail(4, "sol", "commons"),            // free via sol anchor
+				avail(1, "sol"),                 // anchor
+				avail(2, "commons", "ecommons"), // greedy
+				avail(3, "commons", "nektulos"), // greedy, co-located w/ 2
+				avail(4, "sol", "commons"),      // free via sol anchor
 			},
 			wantStops: []Stop{
 				{Zone: "sol", Reason: ReasonAnchor, SpellIDs: []int{1, 4}},
