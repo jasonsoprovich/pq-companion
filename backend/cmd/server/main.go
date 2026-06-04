@@ -518,6 +518,13 @@ func main() {
 			NewHandler: func(character string) backfill.Handler { return loot.NewBackfillHandler(lootStore, character) },
 		})
 	}
+	if skillsStore != nil {
+		backfillRegistry.Register(backfill.Section{
+			Key:        "skills",
+			Label:      "Skill Tracker",
+			NewHandler: func(character string) backfill.Handler { return skills.NewBackfillHandler(skillsStore, character) },
+		})
+	}
 
 	// Chat history retention: purge messages older than the configured window
 	// (default 30 days; 0 = keep forever) on startup and once a day, keeping the
