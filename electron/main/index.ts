@@ -88,7 +88,7 @@ function audioMimeType(ext: string): string {
 
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
-type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'trigger' | 'npc' | 'rollTracker' | 'respawnTimer' | 'chChain'
+type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'trigger' | 'npc' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome'
 type Bounds = { x: number; y: number; width: number; height: number }
 
 type BoundsStore = Partial<Record<OverlayName, Bounds>>
@@ -282,6 +282,7 @@ let dpsOverlayWindow: BrowserWindow | null = null
 let hpsOverlayWindow: BrowserWindow | null = null
 let buffTimerWindow: BrowserWindow | null = null
 let chChainWindow: BrowserWindow | null = null
+let chMetronomeWindow: BrowserWindow | null = null
 let detrimTimerWindow: BrowserWindow | null = null
 let triggerOverlayWindow: BrowserWindow | null = null
 let npcOverlayWindow: BrowserWindow | null = null
@@ -592,7 +593,7 @@ function setupAutoUpdater(): void {
 // ── Window management ─────────────────────────────────────────────────────────
 
 function closeAllOverlays(): void {
-  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, triggerOverlayWindow, npcOverlayWindow, rollTrackerWindow, respawnTimerWindow, chChainWindow]) {
+  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, triggerOverlayWindow, npcOverlayWindow, rollTrackerWindow, respawnTimerWindow, chChainWindow, chMetronomeWindow]) {
     if (win && !win.isDestroyed()) win.destroy()
   }
 }
@@ -883,6 +884,63 @@ function createCHChainOverlay(): void {
 
   chChainWindow.on('closed', () => {
     chChainWindow = null
+  })
+}
+
+function createCHMetronomeOverlay(): void {
+  if (chMetronomeWindow && !chMetronomeWindow.isDestroyed()) {
+    chMetronomeWindow.focus()
+    return
+  }
+
+  const { x, y, width, height } = getRestoredBounds('chMetronome', { x: 0, y: 0, width: 220, height: 220 })
+  chMetronomeWindow = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    minWidth: 180,
+    minHeight: 180,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    },
+  })
+
+  chMetronomeWindow.once('ready-to-show', () => {
+    chMetronomeWindow?.show()
+  })
+
+  chMetronomeWindow.setAlwaysOnTop(true, 'screen-saver')
+  chMetronomeWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  windowToOverlayName.set(chMetronomeWindow, 'chMetronome')
+  if (getOverlayLocked('chMetronome')) {
+    chMetronomeWindow.setIgnoreMouseEvents(true, { forward: true })
+    chMetronomeWindow.setResizable(false)
+  }
+  trackOverlayBounds('chMetronome', chMetronomeWindow)
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    chMetronomeWindow.loadURL(`${rendererUrl}/#/ch-metronome-window`)
+  } else {
+    chMetronomeWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/ch-metronome-window',
+    })
+  }
+
+  chMetronomeWindow.on('closed', () => {
+    chMetronomeWindow = null
   })
 }
 
@@ -1359,6 +1417,24 @@ ipcMain.handle('overlay:chchain:toggle', () => {
   }
 })
 
+ipcMain.handle('overlay:chmetronome:open', () => {
+  createCHMetronomeOverlay()
+})
+
+ipcMain.handle('overlay:chmetronome:close', () => {
+  if (chMetronomeWindow && !chMetronomeWindow.isDestroyed()) {
+    chMetronomeWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:chmetronome:toggle', () => {
+  if (chMetronomeWindow && !chMetronomeWindow.isDestroyed()) {
+    chMetronomeWindow.close()
+  } else {
+    createCHMetronomeOverlay()
+  }
+})
+
 ipcMain.handle('overlay:detrimtimer:open', () => {
   createDetrimTimerOverlay()
 })
@@ -1493,6 +1569,7 @@ function popoutWindows(): BrowserWindow[] {
     rollTrackerWindow,
     respawnTimerWindow,
     chChainWindow,
+    chMetronomeWindow,
   ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
 }
 

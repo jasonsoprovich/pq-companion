@@ -28,6 +28,7 @@ import HPSOverlayWindowPage from './pages/HPSOverlayWindowPage'
 import { DEV_HPS } from './lib/devFlags'
 import BuffTimerWindowPage from './pages/BuffTimerWindowPage'
 import CHChainOverlayWindowPage from './pages/CHChainOverlayWindowPage'
+import CHMetronomeOverlayWindowPage from './pages/CHMetronomeOverlayWindowPage'
 import DetrimTimerWindowPage from './pages/DetrimTimerWindowPage'
 import OverlaysDashboard from './pages/OverlaysDashboard'
 import CombatLogPage from './pages/CombatLogPage'
@@ -140,6 +141,7 @@ export default function App(): React.ReactElement {
         <Route path="roll-tracker-window" element={<OverlayPage><RollTrackerWindowPage /></OverlayPage>} />
         <Route path="respawn-timer-window" element={<OverlayPage><RespawnTimerWindowPage /></OverlayPage>} />
         <Route path="ch-chain-window" element={<OverlayPage><CHChainOverlayWindowPage /></OverlayPage>} />
+        <Route path="ch-metronome-window" element={<OverlayPage><CHMetronomeOverlayWindowPage /></OverlayPage>} />
 
         {/* Main app routes — wrapped in full Layout with audio/alert hooks */}
         <Route path="/" element={<MainWindowLayout />}>

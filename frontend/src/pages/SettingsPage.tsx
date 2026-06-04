@@ -1722,6 +1722,27 @@ export default function SettingsPage(): React.ReactElement {
                 Toggle CH Chain overlay
               </button>
             </div>
+
+            <p className="mb-2 mt-4 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              The <span style={{ color: 'var(--color-foreground)' }}>CH Metronome</span> is a personal
+              window for one cleric: set your position in the chain, how many clerics are in it, and
+              your desired delay, and it counts down to your cast — flashing CAST NOW when it's your
+              turn — off the same chain calls above.
+            </p>
+            <button
+              type="button"
+              onClick={() => window.electron?.overlay?.toggleCHMetronome()}
+              className="rounded px-3 py-1.5 text-xs font-medium"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                color: 'var(--color-foreground)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+              }}
+              title="Open or close the personal CH Metronome overlay window"
+            >
+              Toggle CH Metronome overlay
+            </button>
           </div>
         </section>
         )}
