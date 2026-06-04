@@ -62,10 +62,10 @@ func TestDerivedStats_OsuiPipeline(t *testing.T) {
 		t.Fatalf("Enchanter L60 defense cap = %d, want 145", defense)
 	}
 
-	offense, _ := d.OffenseSkillCap(14, 60) // Enchanter has no Offense skill
+	offense, _ := d.OffenseSkillCap(14, 60) // Offense is universal; Enchanter L60 cap is 140
 	weapon, _ := d.BestWeaponSkillCap(14, 60)
-	if offense != 0 {
-		t.Fatalf("Enchanter L60 offense cap = %d, want 0 (casters have no Offense)", offense)
+	if offense != 140 {
+		t.Fatalf("Enchanter L60 offense cap = %d, want 140", offense)
 	}
 	if weapon != 110 {
 		t.Fatalf("Enchanter L60 best weapon cap = %d, want 110", weapon)

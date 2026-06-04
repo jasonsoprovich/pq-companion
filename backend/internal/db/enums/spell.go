@@ -174,8 +174,8 @@ var spellEffects = map[int]string{
 	158: "Reflect Spell", // SE_Reflect
 	159: "All Stats",
 	160: "Movement Speed (Stackable)", // Quarm reuses this code (modern EQEmu = SE_MakeDrunk) for a stackable run-speed buff on Swiftness/Fleetness/Nimbleness. Confirmed via pqdi.cc/spell/3891 etc. — rendered as "Increase Movement by N%".
-	161: "Magic Rune",         // SE_MitigateSpellDamage — previously labeled "Rune" (swapped with 162)
-	162: "Rune",               // SE_MitigateMeleeDamage — previously labeled "Magic Rune" (swapped with 161)
+	161: "Magic Rune",                 // SE_MitigateSpellDamage — previously labeled "Rune" (swapped with 162)
+	162: "Rune",                       // SE_MitigateMeleeDamage — previously labeled "Magic Rune" (swapped with 161)
 	163: "Negate Attacks",
 	164: "Kick Damage Bonus", // Quarm-specific; powers Power Kick / Savage Kick. pqdi.cc has no label either ("Unknown Effect by N") — this is a best-guess from spell context
 	165: "Bash Damage Bonus", // Quarm-specific; powers Power Bash / Savage Bash. pqdi.cc has no label either — best-guess from spell context
@@ -226,11 +226,11 @@ var spellEffects = map[int]string{
 	218: "Pet Crit Chance",
 	219: "Slay Undead",
 	220: "Skill Damage",
-	301: "Archery Damage Modifier",        // SE_ArcheryDamageModifier — powers Trueshot Discipline
-	500: "Kill XP Multiplier",             // Quarm-specific; verified via pqdi.cc/spell/3999 (Maelin's Magical Concoction)
-	501: "Quest XP Multiplier",            // Quarm-specific; verified via pqdi
-	503: "Skillup Rate Multiplier",        // Quarm-specific; verified via pqdi
-	504: "Tradeskill Skillup Multiplier",  // Quarm-specific; verified via pqdi
+	301: "Archery Damage Modifier",       // SE_ArcheryDamageModifier — powers Trueshot Discipline
+	500: "Kill XP Multiplier",            // Quarm-specific; verified via pqdi.cc/spell/3999 (Maelin's Magical Concoction)
+	501: "Quest XP Multiplier",           // Quarm-specific; verified via pqdi
+	503: "Skillup Rate Multiplier",       // Quarm-specific; verified via pqdi
+	504: "Tradeskill Skillup Multiplier", // Quarm-specific; verified via pqdi
 }
 
 // SpellEffectName returns the label for a SPA code, or empty for the
@@ -338,28 +338,28 @@ var SpellResistsAudit = AuditDef{
 // representative spells in every populated bucket.
 var spellTargetTypes = map[int]string{
 	0:  "No Target",
-	1:  "Single Target",   // ST_TargetOptional — single target, falls back to caster
-	2:  "PB AE (PCs)",     // ST_AEClientV1 — older PB-AE variant, players only
-	3:  "Group Teleport",  // ST_GroupTeleport — Circle of <zone> ports
-	4:  "PB AE",           // ST_AECaster — area of effect around the caster
-	5:  "Single",          // ST_Target
-	6:  "Self",            // ST_Self
-	8:  "Targeted AE",     // ST_AETarget — AE centered on the target
-	9:  "Animal",          // ST_Animal
-	10: "Undead",          // ST_Undead
-	11: "Summoned",        // ST_Summoned
-	13: "Lifetap",         // ST_Tap
-	14: "Pet",             // ST_Pet — single target, caster's pet
-	15: "Corpse",          // ST_Corpse — rez / soulbind etc.
-	16: "Plant",           // ST_Plant
-	17: "Uber Giant",      // ST_UberGiant
-	18: "Uber Dragon",     // ST_UberDragon
-	20: "Targeted AE Tap", // ST_TargetAETap
-	24: "AE Undead",       // ST_UndeadAE
-	25: "AE Summoned",     // ST_SummonedAE
-	40: "Bard AE",         // ST_AEBard — PB AE on bard pulse
-	41: "Group",           // ST_Group — whole group buff
-	43: "Project Illusion",// ST_ProjectIllusion
+	1:  "Single Target",    // ST_TargetOptional — single target, falls back to caster
+	2:  "PB AE (PCs)",      // ST_AEClientV1 — older PB-AE variant, players only
+	3:  "Group Teleport",   // ST_GroupTeleport — Circle of <zone> ports
+	4:  "PB AE",            // ST_AECaster — area of effect around the caster
+	5:  "Single",           // ST_Target
+	6:  "Self",             // ST_Self
+	8:  "Targeted AE",      // ST_AETarget — AE centered on the target
+	9:  "Animal",           // ST_Animal
+	10: "Undead",           // ST_Undead
+	11: "Summoned",         // ST_Summoned
+	13: "Lifetap",          // ST_Tap
+	14: "Pet",              // ST_Pet — single target, caster's pet
+	15: "Corpse",           // ST_Corpse — rez / soulbind etc.
+	16: "Plant",            // ST_Plant
+	17: "Uber Giant",       // ST_UberGiant
+	18: "Uber Dragon",      // ST_UberDragon
+	20: "Targeted AE Tap",  // ST_TargetAETap
+	24: "AE Undead",        // ST_UndeadAE
+	25: "AE Summoned",      // ST_SummonedAE
+	40: "Bard AE",          // ST_AEBard — PB AE on bard pulse
+	41: "Group",            // ST_Group — whole group buff
+	43: "Project Illusion", // ST_ProjectIllusion
 }
 
 // SpellTargetName returns the target-type label, or "" for unknown.

@@ -554,12 +554,12 @@ func TestSkillCaps_RealDB(t *testing.T) {
 		t.Errorf("DefenseSkillCap(Warrior,60) = %d, want 252", c)
 	}
 
-	// Offense (skill_id 22) — Warrior 245; pure casters have no Offense row → 0.
-	if c, _ := d.OffenseSkillCap(1, 60); c != 245 { // Warrior
-		t.Errorf("OffenseSkillCap(Warrior,60) = %d, want 245", c)
+	// Offense (skill_id 33) — universal skill: Warrior 252, casters ~140.
+	if c, _ := d.OffenseSkillCap(1, 60); c != 252 { // Warrior
+		t.Errorf("OffenseSkillCap(Warrior,60) = %d, want 252", c)
 	}
-	if c, _ := d.OffenseSkillCap(14, 60); c != 0 { // Enchanter
-		t.Errorf("OffenseSkillCap(Enchanter,60) = %d, want 0", c)
+	if c, _ := d.OffenseSkillCap(14, 60); c != 140 { // Enchanter
+		t.Errorf("OffenseSkillCap(Enchanter,60) = %d, want 140", c)
 	}
 
 	// Best melee weapon skill cap — Warrior 250, Enchanter 110 (Hand to Hand /

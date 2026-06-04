@@ -159,19 +159,25 @@ func extractBitmaskCodes(db *sql.DB, query string, maxBit int) ([]int, error) {
 var ItemSlotBitsAudit = AuditDef{
 	Name:       "Item Slot Bit",
 	KnownCodes: keysAsSet(itemSlotBits),
-	Extract:    func(db *sql.DB) ([]int, error) { return extractBitmaskCodes(db, `SELECT DISTINCT slots FROM items`, 24) },
+	Extract: func(db *sql.DB) ([]int, error) {
+		return extractBitmaskCodes(db, `SELECT DISTINCT slots FROM items`, 24)
+	},
 }
 
 var ItemClassBitsAudit = AuditDef{
 	Name:       "Item Class Bit",
 	KnownCodes: mergeSets(keysAsSet(itemClassBits), keysAsSet(itemClassBitsOutOfEra)),
-	Extract:    func(db *sql.DB) ([]int, error) { return extractBitmaskCodes(db, `SELECT DISTINCT classes FROM items`, 16) },
+	Extract: func(db *sql.DB) ([]int, error) {
+		return extractBitmaskCodes(db, `SELECT DISTINCT classes FROM items`, 16)
+	},
 }
 
 var ItemRaceBitsAudit = AuditDef{
 	Name:       "Item Race Bit",
 	KnownCodes: mergeSets(keysAsSet(itemRaceBits), keysAsSet(itemRaceBitsOutOfEra)),
-	Extract:    func(db *sql.DB) ([]int, error) { return extractBitmaskCodes(db, `SELECT DISTINCT races FROM items`, 16) },
+	Extract: func(db *sql.DB) ([]int, error) {
+		return extractBitmaskCodes(db, `SELECT DISTINCT races FROM items`, 16)
+	},
 }
 
 func init() {
