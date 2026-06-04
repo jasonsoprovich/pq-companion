@@ -31,6 +31,7 @@ const CATEGORY_COLORS: Record<TimerCategory, string> = {
   dot: '#ef4444',
   mez: '#a855f7',
   stun: '#eab308',
+  ch_chain: '#3b82f6',
 }
 
 function detrimTarget(targetName: string, activePlayer: string): string {

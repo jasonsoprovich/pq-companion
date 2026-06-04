@@ -21,6 +21,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/chat"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/chchain"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
@@ -383,6 +384,13 @@ func main() {
 	})
 	go timerEngine.Start(context.Background())
 
+	// CH-chain matcher: watches raid chat for chain-call lines and creates
+	// ch_chain countdown timers in the engine. Reads its regex/cadence/enabled
+	// state live from config so Settings changes take effect without a restart.
+	chChainMatcher := chchain.New(timerEngine, func() config.CHChainSettings {
+		return cfgMgr.Get().CHChain
+	})
+
 	// Respawn (death) timer engine: starts a countdown when a mob is killed,
 	// using the spawn data's respawn time for the player's current zone.
 	respawnEngine := respawn.NewEngine(hub, database)
@@ -688,6 +696,7 @@ func main() {
 		}
 	}, func(ts time.Time, msg string) {
 		triggerEngine.Handle(ts, msg)
+		chChainMatcher.HandleLine(ts, msg)
 		if keyringConsumer != nil {
 			keyringConsumer.HandleLine(ts, msg)
 		}

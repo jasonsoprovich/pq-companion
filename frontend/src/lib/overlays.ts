@@ -19,6 +19,7 @@ export type OverlayName =
   | 'npc'
   | 'rollTracker'
   | 'respawnTimer'
+  | 'chChain'
 
 /**
  * How an overlay behaves while locked.
@@ -39,6 +40,7 @@ export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'npc', label: 'NPC Info' },
   { name: 'rollTracker', label: 'Roll Tracker' },
   { name: 'respawnTimer', label: 'Respawn Timers' },
+  { name: 'chChain', label: 'CH Chain' },
 ]
 
 /**

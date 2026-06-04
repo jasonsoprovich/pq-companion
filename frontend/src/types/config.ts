@@ -97,6 +97,17 @@ export interface SpellTimerSettings {
   tracking_mode?: TrackingMode
 }
 
+// CHChainSettings configures the Complete-Heal-chain overlay matcher. Mirrors
+// backend config.CHChainSettings.
+export interface CHChainSettings {
+  enabled: boolean
+  // Regex matched against raid-chat lines; should capture named groups
+  // caster, chainnum, target. Empty = backend default.
+  pattern: string
+  // Per-cast countdown cadence in seconds.
+  interval_secs: number
+}
+
 // DPSClassColors stores the user's per-class bar colour for the DPS meter
 // and combat history rows. Each field is a CSS-style "#RRGGBB" hex string;
 // the frontend renders the value directly. Unknown / unresolved
@@ -147,6 +158,7 @@ export interface Config {
   preferences: Preferences
   backup: BackupSettings
   spell_timer: SpellTimerSettings
+  ch_chain: CHChainSettings
   dps_class_colors: DPSClassColors
   onboarding_completed: boolean
   // Days of Chat History to keep before the daily purge. Default 30; a
