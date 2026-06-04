@@ -494,6 +494,7 @@ function NPCSpellsSection({ spells, onSpellClick }: NPCSpellsSectionProps): Reac
           summary={spells.summary}
           sections={DEFAULT_NPC_OVERLAY_SECTIONS}
           showHeading={false}
+          onSpellClick={onSpellClick}
           theme={{
             heading: 'var(--color-muted)',
             muted: 'var(--color-muted)',

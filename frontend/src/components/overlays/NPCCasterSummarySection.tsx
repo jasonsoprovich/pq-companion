@@ -30,6 +30,33 @@ function chunkLabel(kind?: string): string {
   }
 }
 
+// SpellName renders a spell as a clickable link when onClick is supplied (the
+// DB page wires it to the spell explorer), and as plain text otherwise (the
+// floating overlay windows have no in-window navigation target). Mirrors the
+// SpellLink used by the full enumerated list so the summary feels the same.
+function SpellName({
+  id,
+  name,
+  onClick,
+}: {
+  id: number
+  name: string
+  onClick?: (id: number) => void
+}): React.ReactElement {
+  if (!onClick || id <= 0) return <>{name}</>
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(id)}
+      className="hover:underline"
+      style={{ color: 'var(--color-primary)', cursor: 'pointer', background: 'none', border: 'none', padding: 0, font: 'inherit' }}
+      title={`Open spell ${id} in the spell explorer`}
+    >
+      {name}
+    </button>
+  )
+}
+
 // NPCCasterSummarySection renders the distilled caster-AI readout: curated
 // highlight chips, procs, named signature spells, and inherited class lists
 // collapsed to a count. Inherited lists are never enumerated — that's the whole
@@ -42,6 +69,7 @@ export default function NPCCasterSummarySection({
   sections,
   theme,
   showHeading = true,
+  onSpellClick,
 }: {
   summary: NPCCasterSummary
   sections: NPCOverlaySections
@@ -49,6 +77,10 @@ export default function NPCCasterSummarySection({
   // showHeading renders the "Spells & Abilities" label. The DB page already
   // wraps the section in its own titled card, so it passes false.
   showHeading?: boolean
+  // onSpellClick makes proc/signature spell names clickable (e.g. open the
+  // spell explorer). Omitted in contexts with no navigation target, where the
+  // names stay plain text.
+  onSpellClick?: (id: number) => void
 }): React.ReactElement | null {
   if (!sections.spells) return null
 
@@ -110,13 +142,18 @@ export default function NPCCasterSummarySection({
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 4, marginBottom: 2 }}>
           <span style={rowLabelStyle}>Procs:</span>
           <span style={{ fontSize: 10, color: theme.chipText }}>
-            {procs
-              .map((p) => {
-                const ctx = chunkLabel(p.kind)
-                const chance = p.chance ? ` ${p.chance}%` : ''
-                return `${p.spell_name}${chance}${ctx ? ` (${ctx})` : ''}`
-              })
-              .join(', ')}
+            {procs.map((p, i) => {
+              const ctx = chunkLabel(p.kind)
+              const chance = p.chance ? ` ${p.chance}%` : ''
+              return (
+                <React.Fragment key={p.spell_id || i}>
+                  {i > 0 && ', '}
+                  <SpellName id={p.spell_id} name={p.spell_name} onClick={onSpellClick} />
+                  {chance}
+                  {ctx ? ` (${ctx})` : ''}
+                </React.Fragment>
+              )
+            })}
           </span>
         </div>
       )}
@@ -125,7 +162,12 @@ export default function NPCCasterSummarySection({
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 4, marginBottom: 2 }}>
           <span style={rowLabelStyle}>Signature:</span>
           <span style={{ fontSize: 10, color: theme.chipText }}>
-            {signature.map((s) => s.spell_name).join(', ')}
+            {signature.map((s, i) => (
+              <React.Fragment key={s.spell_id || i}>
+                {i > 0 && ', '}
+                <SpellName id={s.spell_id} name={s.spell_name} onClick={onSpellClick} />
+              </React.Fragment>
+            ))}
             {overflow > 0 && <span style={{ color: theme.muted }}>{`, +${overflow} more`}</span>}
           </span>
         </div>
