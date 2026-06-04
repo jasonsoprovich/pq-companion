@@ -32,6 +32,7 @@ import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertT
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
 import type { RecipeSummary, RecipeDetail, RecipeTradeskillCount } from '../types/recipe'
+import type { SkillsResponse } from '../types/skill'
 import type {
   SandboxResult,
   SandboxSchemaResponse,
@@ -1009,6 +1010,10 @@ export function getCharacterSpellModifiers(
 ): Promise<SpellModifiersResponse> {
   const qs = spellID ? `?spell_id=${spellID}` : ''
   return get<SpellModifiersResponse>(`/api/characters/${id}/spell-modifiers${qs}`)
+}
+
+export function getCharacterSkills(id: number): Promise<SkillsResponse> {
+  return get<SkillsResponse>(`/api/characters/${id}/skills`)
 }
 
 export function getZealQuarmy(character?: string): Promise<{ quarmy: QuarmyData | null }> {
