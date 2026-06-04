@@ -169,6 +169,29 @@ a future data source fix this?" column against the new capabilities.
 - **Could a future data source fix this?** **Partially.** Zeal gives a live HP%
   bar, but absolute live stats remain template-derived.
 
+### 3.5 Duplicate-named bosses have no "active version" flag
+
+- **Limitation:** Several raid bosses carry *multiple* `npc_types` rows of the
+  same name that are all assigned to spawn in the same zone — a real raid
+  version plus low-HP siblings. Concrete cases (Plane of Fear): **Cazic Thule**
+  (450k-HP raid row + 32k rows) and **A Dracoliche** (175k-HP raid row + 32k
+  rows), present in both `fearplane` and `fear_instanced`. The overlay can't
+  *prove* which one the live spawn is.
+- **Root cause:** Same as 3.1 (no live spawn/NPC ID), compounded by the fact
+  that the data itself flags more than one same-name row as spawnable in the
+  zone — `raid_target` is set on several of them, so there is no single
+  authoritative "this is the live version" column.
+- **Mitigation in app:** The overlay now headlines the strongest candidate
+  (`raid_target` first, then highest `hp`, then lowest `id`), which reliably
+  matches the raid boss being fought, and collapses the remaining same-name
+  rows under a "N other DB version(s)" disclosure instead of stacking them.
+  This is a heuristic, not a resolution — if a group fought a low-HP variant the
+  headline would still show the raid row.
+- **Sources checked:** DB (`npc_types` name/hp/raid_target, `spawn2`/`spawnentry`
+  per zone), Log (name only), Zeal (`TargetName` + HP%, no ID).
+- **Could a future data source fix this?** **No** without a target spawn/NPC ID
+  from Zeal. Re-check on each Zeal release.
+
 ---
 
 ## 4. Instances & respawn timers
