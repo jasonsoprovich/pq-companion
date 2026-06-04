@@ -4,6 +4,7 @@ import TitleBar from './TitleBar'
 import Sidebar from './Sidebar'
 import GlobalSearch from './GlobalSearch'
 import UpdateNotification from './UpdateNotification'
+import BackfillProgressBar from './BackfillProgressBar'
 import ZealNotification from './ZealNotification'
 import ZealVersionWarning from './ZealVersionWarning'
 
@@ -38,6 +39,7 @@ export default function Layout(): React.ReactElement {
       </div>
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
       <ZealVersionWarning />
+      <BackfillProgressBar />
       <UpdateNotification />
       <ZealNotification />
     </div>

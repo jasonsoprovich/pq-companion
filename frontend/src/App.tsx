@@ -48,6 +48,7 @@ import CharacterTasksPage from './pages/CharacterTasksPage'
 import CharacterSpellsetsPage from './pages/CharacterSpellsetsPage'
 import CharactersLayout from './components/CharactersLayout'
 import { ActiveCharacterProvider } from './contexts/ActiveCharacterContext'
+import { BackfillProvider } from './contexts/BackfillContext'
 
 function OverlayPage({ children }: { children: React.ReactNode }): React.ReactElement {
   useEffect(() => {
@@ -92,14 +93,16 @@ function MainWindowLayout(): React.ReactElement {
 
   return (
     <ActiveCharacterProvider>
-      {onboardingDone === false && (
-        <OnboardingWizard
-          allowCancel
-          onCancel={() => setOnboardingDone(true)}
-          onComplete={() => setOnboardingDone(true)}
-        />
-      )}
-      <Layout />
+      <BackfillProvider>
+        {onboardingDone === false && (
+          <OnboardingWizard
+            allowCancel
+            onCancel={() => setOnboardingDone(true)}
+            onComplete={() => setOnboardingDone(true)}
+          />
+        )}
+        <Layout />
+      </BackfillProvider>
     </ActiveCharacterProvider>
   )
 }
