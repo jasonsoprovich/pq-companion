@@ -1,14 +1,14 @@
 /**
  * OverlaysDashboard — customizable in-app dashboard combining the four
  * draggable/resizable overlay panels. The toolbar exposes per-panel show/hide,
- * a Reset button, and pop-out toggles for the standalone Electron overlay
- * windows that don't have an in-dashboard panel (HPS, CH Chain, CH Metronome).
+ * a Pop Out All toggle, and a Reset button. The only standalone Electron overlay
+ * without an in-dashboard panel is HPS (gated behind SHOW_HPS).
  *
  * Layout (positions, sizes, visibility) is persisted to localStorage and
  * restored on next mount. Drag/resize snaps to a 16px grid.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Eye, EyeOff, MonitorPlay, RotateCcw, HeartPulse, Gauge, ExternalLink, Layers, X } from 'lucide-react'
+import { Eye, EyeOff, MonitorPlay, RotateCcw, HeartPulse, ExternalLink, Layers, X } from 'lucide-react'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
@@ -16,6 +16,8 @@ import HPSPanel from '../components/overlays/HPSPanel'
 import NPCPanel from '../components/overlays/NPCPanel'
 import RollTrackerPanel from '../components/overlays/RollTrackerPanel'
 import RespawnTimerPanel from '../components/overlays/RespawnTimerPanel'
+import CHChainPanel from '../components/overlays/CHChainPanel'
+import CHMetronomePanel from '../components/overlays/CHMetronomePanel'
 import {
   DASHBOARD_PANEL_KEYS,
   DASHBOARD_PANEL_LABELS,
@@ -160,18 +162,22 @@ export default function OverlaysDashboard(): React.ReactElement {
         backgroundColor: 'var(--color-background)',
       }}
     >
-      {/* Toolbar */}
+      {/* Toolbar — title pinned left, panel toggles flow in the middle (wrapping
+          to new rows as the window narrows), action buttons pinned right so they
+          never wrap away into a disconnected row. */}
       <div
-        className="flex items-center gap-2 border-b px-4 py-2 shrink-0 flex-wrap"
+        className="flex items-start gap-3 border-b px-4 py-2 shrink-0"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <MonitorPlay size={14} style={{ color: 'var(--color-primary)' }} />
-        <span className="text-xs font-semibold mr-2" style={{ color: 'var(--color-foreground)' }}>
-          Overlays
-        </span>
+        <div className="flex items-center gap-2 shrink-0 h-6">
+          <MonitorPlay size={14} style={{ color: 'var(--color-primary)' }} />
+          <span className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
+            Overlays
+          </span>
+        </div>
 
-        {/* Per-panel show/hide */}
-        <div className="flex items-center gap-1.5 flex-wrap">
+        {/* Per-panel show/hide — grows to fill, wraps within its own area */}
+        <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
           {VISIBLE_PANEL_KEYS.map((key) => (
             <PanelToggle
               key={key}
@@ -182,9 +188,8 @@ export default function OverlaysDashboard(): React.ReactElement {
           ))}
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          {/* Standalone overlays — these don't have in-dashboard panels but the
-              user can pop them out as floating Electron windows. */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* HPS has no in-dashboard panel — pop it out as a floating window. */}
           {SHOW_HPS && (
             <button
               onClick={() => window.electron?.overlay?.toggleHPS()}
@@ -198,38 +203,6 @@ export default function OverlaysDashboard(): React.ReactElement {
             >
               <HeartPulse size={11} />
               HPS Meter
-              <ExternalLink size={9} style={{ opacity: 0.6 }} />
-            </button>
-          )}
-          {typeof window.electron?.overlay?.toggleCHChain === 'function' && (
-            <button
-              onClick={() => window.electron?.overlay?.toggleCHChain()}
-              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-              style={{
-                backgroundColor: 'var(--color-surface-2)',
-                color: 'var(--color-muted-foreground)',
-                border: '1px solid var(--color-border)',
-              }}
-              title="Toggle the CH Chain overlay window"
-            >
-              <HeartPulse size={11} />
-              CH Chain
-              <ExternalLink size={9} style={{ opacity: 0.6 }} />
-            </button>
-          )}
-          {typeof window.electron?.overlay?.toggleCHMetronome === 'function' && (
-            <button
-              onClick={() => window.electron?.overlay?.toggleCHMetronome()}
-              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-              style={{
-                backgroundColor: 'var(--color-surface-2)',
-                color: 'var(--color-muted-foreground)',
-                border: '1px solid var(--color-border)',
-              }}
-              title="Toggle the CH Metronome overlay window"
-            >
-              <Gauge size={11} />
-              CH Metronome
               <ExternalLink size={9} style={{ opacity: 0.6 }} />
             </button>
           )}
@@ -375,6 +348,28 @@ export default function OverlaysDashboard(): React.ReactElement {
             defaultHeight={layout.respawn.height}
             snapGridSize={SNAP_GRID}
             onLayoutChange={handleLayoutChange('respawn')}
+          />
+        )}
+        {layout.chChain.visible && (
+          <CHChainPanel
+            key={`chChain-${layoutVersion}`}
+            defaultX={layout.chChain.x}
+            defaultY={layout.chChain.y}
+            defaultWidth={layout.chChain.width}
+            defaultHeight={layout.chChain.height}
+            snapGridSize={SNAP_GRID}
+            onLayoutChange={handleLayoutChange('chChain')}
+          />
+        )}
+        {layout.chMetronome.visible && (
+          <CHMetronomePanel
+            key={`chMetronome-${layoutVersion}`}
+            defaultX={layout.chMetronome.x}
+            defaultY={layout.chMetronome.y}
+            defaultWidth={layout.chMetronome.width}
+            defaultHeight={layout.chMetronome.height}
+            snapGridSize={SNAP_GRID}
+            onLayoutChange={handleLayoutChange('chMetronome')}
           />
         )}
       </div>

@@ -1590,13 +1590,13 @@ ipcMain.handle('overlay:popouts:open-all', (_event, panels?: string[]) => {
   if (wants('npc') && (!npcOverlayWindow || npcOverlayWindow.isDestroyed())) createNPCOverlay()
   if (wants('rolls') && (!rollTrackerWindow || rollTrackerWindow.isDestroyed())) createRollTrackerOverlay()
   if (wants('respawn') && (!respawnTimerWindow || respawnTimerWindow.isDestroyed())) createRespawnTimerOverlay()
+  if (wants('chChain') && (!chChainWindow || chChainWindow.isDestroyed())) createCHChainOverlay()
+  if (wants('chMetronome') && (!chMetronomeWindow || chMetronomeWindow.isDestroyed())) createCHMetronomeOverlay()
 
-  // Trigger Alerts and CH Chain have no in-dashboard panel or visibility
-  // toggle, so they aren't something the user can "disable in the dashboard
-  // view". They always pop out (and stay invisible until a trigger fires /
-  // a chain is called).
+  // Trigger Alerts has no in-dashboard panel or visibility toggle, so it isn't
+  // something the user can "disable in the dashboard view". It always pops out
+  // (and stays invisible until a trigger fires).
   if (!triggerOverlayWindow || triggerOverlayWindow.isDestroyed()) createTriggerOverlay()
-  if (!chChainWindow || chChainWindow.isDestroyed()) createCHChainOverlay()
 })
 
 ipcMain.handle('overlay:popouts:close-all', () => {

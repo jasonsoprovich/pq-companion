@@ -6,7 +6,16 @@
 
 const STORAGE_KEY = 'pq-overlay-dashboard-layout-v1'
 
-export type DashboardPanelKey = 'buff' | 'detrim' | 'dps' | 'npc' | 'hps' | 'rolls' | 'respawn'
+export type DashboardPanelKey =
+  | 'buff'
+  | 'detrim'
+  | 'dps'
+  | 'npc'
+  | 'hps'
+  | 'rolls'
+  | 'respawn'
+  | 'chChain'
+  | 'chMetronome'
 
 export interface PanelLayout {
   x: number
@@ -28,9 +37,12 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayout = {
   hps:     { x: 16,  y: 816, width: 624, height: 384, visible: true },
   rolls:   { x: 656, y: 816, width: 400, height: 384, visible: false },
   respawn: { x: 336, y: 416, width: 304, height: 384, visible: false },
+  chChain:     { x: 656, y: 416, width: 304, height: 336, visible: false },
+  chMetronome: { x: 976, y: 416, width: 240, height: 272, visible: false },
 }
 
-export const DASHBOARD_PANEL_KEYS: DashboardPanelKey[] = ['buff', 'detrim', 'dps', 'npc', 'hps', 'rolls', 'respawn']
+export const DASHBOARD_PANEL_KEYS: DashboardPanelKey[] =
+  ['buff', 'detrim', 'dps', 'npc', 'hps', 'rolls', 'respawn', 'chChain', 'chMetronome']
 
 export const DASHBOARD_PANEL_LABELS: Record<DashboardPanelKey, string> = {
   buff: 'Buff Timers',
@@ -40,6 +52,8 @@ export const DASHBOARD_PANEL_LABELS: Record<DashboardPanelKey, string> = {
   hps: 'HPS Meter',
   rolls: 'Roll Tracker',
   respawn: 'Respawn Timers',
+  chChain: 'CH Chain',
+  chMetronome: 'CH Metronome',
 }
 
 function isPanelLayout(v: unknown): v is PanelLayout {
