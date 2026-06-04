@@ -39,6 +39,31 @@ func names(stops []Stop) []string {
 	return out
 }
 
+func TestLinkHub(t *testing.T) {
+	// A line a—b—c—d (d is three hops from a), plus teleport dests x and y.
+	base := map[string][]string{
+		"a": {"b"}, "b": {"a", "c"}, "c": {"b", "d"}, "d": {"c"},
+	}
+	adj := LinkHub(base, "a", []string{"x", "y", "a" /* self, ignored */})
+
+	// Hub gains both dests; dests point back to the hub (one hop).
+	if d := Distances("a", adj); d["x"] != 1 || d["y"] != 1 {
+		t.Errorf("dests should be one hop from hub: x=%d y=%d", d["x"], d["y"])
+	}
+	// Dest-to-dest is two hops (via the hub), not one — it's a star, not a mesh.
+	if d := Distances("x", adj); d["y"] != 2 {
+		t.Errorf("dest-to-dest should be 2 via hub, got %d", d["y"])
+	}
+	// Original edges are untouched.
+	if d := Distances("a", adj); d["d"] != 3 {
+		t.Errorf("original path a..d should be 3 hops, got %d", d["d"])
+	}
+	// Input map isn't mutated.
+	if len(base["a"]) != 1 {
+		t.Errorf("LinkHub mutated its input: base[a]=%v", base["a"])
+	}
+}
+
 func TestOrder(t *testing.T) {
 	// A linear chain: start - a - b - c - d
 	adj := map[string][]string{

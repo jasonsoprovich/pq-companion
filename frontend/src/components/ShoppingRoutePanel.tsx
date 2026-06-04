@@ -159,7 +159,9 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
   useEscapeToClose(onClose)
 
   const [excludeAlignments, setExcludeAlignments] = useState<ZoneAlignment[]>(() => loadJSON(LS_ALIGN, []))
-  const [startZone, setStartZone] = useState<string>(() => loadJSON<string>(LS_START, ''))
+  // Default to the Nexus: it's the common bind point and the teleport hub, so
+  // out of the box the route reflects easy travel from there.
+  const [startZone, setStartZone] = useState<string>(() => loadJSON<string>(LS_START, 'nexus'))
   // Plane of Knowledge is off by default — the Planes of Power hub isn't on this
   // server's timeline yet, so it shouldn't be a recommended source.
   const [includePoK, setIncludePoK] = useState<boolean>(() => loadJSON<boolean>(LS_POK, false))

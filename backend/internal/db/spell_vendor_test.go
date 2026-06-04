@@ -130,6 +130,46 @@ func TestShoppingRouteHonorsStartZone(t *testing.T) {
 	}
 }
 
+// TestTeleportDestinationsAreReachable checks that the Druid/Wizard port
+// destinations load from the real DB and that, once linked onto the Nexus hub,
+// a zone that's far by zone-lines (South Ro) collapses to a single hop from the
+// Nexus — the "easy to catch a port" model the route relies on.
+func TestTeleportDestinationsAreReachable(t *testing.T) {
+	d := openTestDB(t)
+
+	dests, err := d.GetTeleportDestinations()
+	if err != nil {
+		t.Fatalf("GetTeleportDestinations: %v", err)
+	}
+	if len(dests) < 20 {
+		t.Fatalf("expected the full Druid/Wizard port list, got %d: %v", len(dests), dests)
+	}
+	set := map[string]bool{}
+	for _, z := range dests {
+		set[z] = true
+	}
+	// Spot-check known ports are present and evac-only junk is absent.
+	for _, want := range []string{"sro", "commons", "gfaydark", "nexus"} {
+		if !set[want] {
+			t.Errorf("expected %q among teleport destinations", want)
+		}
+	}
+
+	adj, err := d.GetZoneAdjacency()
+	if err != nil {
+		t.Fatalf("GetZoneAdjacency: %v", err)
+	}
+	// Before linking, South Ro is several zone-lines from the Nexus.
+	if base := shoproute.Distances("nexus", adj)["sro"]; base <= 1 {
+		t.Fatalf("test premise broken: sro already %d hop(s) from nexus before linking", base)
+	}
+	// After linking the teleport hub, it's one hop.
+	linked := shoproute.LinkHub(adj, "nexus", dests)
+	if got := shoproute.Distances("nexus", linked)["sro"]; got != 1 {
+		t.Errorf("sro should be 1 hop from nexus after teleport linking, got %d", got)
+	}
+}
+
 // TestGetZoneAdjacency confirms the zone graph loads and is symmetric (every
 // edge present in both directions), with no self-loops.
 func TestGetZoneAdjacency(t *testing.T) {

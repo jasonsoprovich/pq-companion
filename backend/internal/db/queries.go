@@ -1766,6 +1766,41 @@ func (db *DB) GetZoneAdjacency() (map[string][]string, error) {
 	return adj, nil
 }
 
+// GetTeleportDestinations returns the zone short_names a Druid or Wizard can
+// deliberately port a group to — spells whose first effect is Teleport (SPA 83)
+// or Translocate (SPA 104). Succor/Evacuate (SPA 88) are excluded: those are
+// one-way escapes to a fixed safe spot, not travel a player would choose for a
+// shopping trip. Destinations that don't resolve to a real zone (familiar/pet
+// pseudo-zones, instanced planes) are dropped via the zone join.
+//
+// The shopping-route optimizer adds these as cheap edges from the Nexus, where
+// most Quarm players bind and can readily catch a port, so portable zones count
+// as easy to reach.
+func (db *DB) GetTeleportDestinations() ([]string, error) {
+	rows, err := db.Query(`
+		SELECT DISTINCT z.short_name
+		FROM spells_new sp
+		JOIN zone z ON z.short_name = sp.teleport_zone
+		WHERE sp.effectid1 IN (83, 104)
+		  AND sp.teleport_zone IS NOT NULL AND sp.teleport_zone != ''
+		  AND (sp.classes6 < 255 OR sp.classes12 < 255)
+		ORDER BY z.short_name`)
+	if err != nil {
+		return nil, fmt.Errorf("get teleport destinations: %w", err)
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var z string
+		if err := rows.Scan(&z); err != nil {
+			return nil, fmt.Errorf("scan teleport destination: %w", err)
+		}
+		out = append(out, z)
+	}
+	return out, rows.Err()
+}
+
 // ─── Zones ────────────────────────────────────────────────────────────────────
 
 // zoneVisibilityFilter returns a SQL clause restricting `short_name` to the

@@ -48,6 +48,43 @@ func Order(stops []Stop, start string, adj map[string][]string) []Stop {
 	return ordered
 }
 
+// LinkHub returns a copy of adj with undirected edges added from hub to each
+// destination zone. It models cheap teleport access from a bind/port hub (the
+// Nexus): once linked, every portable zone sits one hop from the hub, so the
+// solver treats it as easy to reach. It's a star, not a mesh — destinations
+// connect to each other only through the hub (two hops), which mirrors "gate to
+// bind, port out again" without collapsing every zone-to-zone distance.
+//
+// Existing edges are preserved; self-links and duplicates are skipped.
+func LinkHub(adj map[string][]string, hub string, dests []string) map[string][]string {
+	out := make(map[string][]string, len(adj)+1)
+	seen := make(map[string]map[string]bool, len(adj)+1)
+	for z, ns := range adj {
+		out[z] = append([]string(nil), ns...)
+		seen[z] = make(map[string]bool, len(ns))
+		for _, n := range ns {
+			seen[z][n] = true
+		}
+	}
+	add := func(a, b string) {
+		if a == b {
+			return
+		}
+		if seen[a] == nil {
+			seen[a] = map[string]bool{}
+		}
+		if !seen[a][b] {
+			seen[a][b] = true
+			out[a] = append(out[a], b)
+		}
+	}
+	for _, d := range dests {
+		add(hub, d)
+		add(d, hub)
+	}
+	return out
+}
+
 // Distances returns hop-distance from start to every zone reachable over the
 // adjacency graph (start maps to 0; absent zones are unreachable). The solver
 // uses it to prefer nearer sources when several zones tie on coverage.

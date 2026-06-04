@@ -21,6 +21,11 @@ const maxStatDeltaIDs = 200
 // list is at most a couple hundred entries; this leaves comfortable headroom.
 const maxShoppingIDs = 500
 
+// teleportHub is the zone Druid/Wizard teleport destinations are linked to in
+// the travel graph. Most Quarm players bind in the Nexus and can readily catch
+// a port there, so portable zones count as one hop from it.
+const teleportHub = "nexus"
+
 // GET /api/spells/class/{classIndex}
 // Returns all spells castable by the given class (0=Warrior … 14=Beastlord),
 // ordered by that class's required level. Supports ?limit= and ?offset= for
@@ -268,8 +273,10 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 
 	// With a start zone, fetch the connectivity graph once and derive hop
 	// distances so the solver prefers nearer sources (and so we can order the
-	// stops afterwards). Excluded zones are pruned from the graph too, so the
-	// route never paths through, say, Plane of Knowledge while it's disabled.
+	// stops afterwards). We layer Druid/Wizard teleport destinations onto the
+	// graph as cheap edges from the Nexus (the bind/port hub), then prune
+	// excluded zones so the route never paths through, say, Plane of Knowledge
+	// while it's disabled.
 	var dist map[string]int
 	var adj map[string][]string
 	if body.StartZone != "" {
@@ -277,6 +284,11 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
+		}
+		// Teleport links are additive; if the lookup fails, fall back to plain
+		// zone-line travel rather than failing the whole route.
+		if dests, derr := h.db.GetTeleportDestinations(); derr == nil {
+			adj = shoproute.LinkHub(adj, teleportHub, dests)
 		}
 		if len(excludedZone) > 0 {
 			adj = pruneAdjacency(adj, excludedZone)

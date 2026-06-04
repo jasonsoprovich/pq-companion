@@ -385,6 +385,28 @@ These are inherent to log-file parsing and affect multiple features:
 
 ---
 
+### 9.2 Shopping-route travel cost is a heuristic, not real EQ travel
+
+- **Limitation:** The "plan shopping route" travel model measures distance as
+  zone-line hops over the `zone_points` graph, plus a flat one-hop link from the
+  **Nexus** to every Druid/Wizard teleport destination. It does NOT model: ports
+  originating anywhere other than the Nexus, gating to bind, boats, the PoK book
+  network (intentionally off — see the Plane of Knowledge toggle), Call of the
+  Hero, run speed, or class. So "nearest source" is an ease-of-travel proxy
+  anchored at the Nexus, not a true shortest path for an arbitrary character.
+- **Root cause:** Real travel depends on the player's class, bind point, group,
+  and live world state, none of which are in the DB. Teleport destinations are
+  derived from `spells_new` (Druid/Wizard spells with effect SPA 83 Teleport or
+  104 Translocate, joined to a real `zone`); the Nexus is used as the hub
+  because most Quarm players bind there.
+- **Sources checked:** `quarm.db` (`zone_points` for adjacency, `spells_new`
+  teleport effects/`teleport_zone` for ports), Log (none), Zeal (none).
+- **Could a future data source fix this?** **Partially** — modeling per-class
+  ports from an arbitrary start, bind points, or boats would need that state as
+  input; the current model is deliberately Nexus-centric and start-zone-driven.
+
+---
+
 ## 10. NPC caster summary (overlay)
 
 ### 10.1 Caster highlights are heuristic, not the NPC's real-time cast list
