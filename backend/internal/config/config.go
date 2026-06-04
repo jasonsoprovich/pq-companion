@@ -252,6 +252,13 @@ type Preferences struct {
 	// in one place and a sparser one in the other.
 	NPCOverlayPopoutSections NPCOverlaySections `yaml:"npc_overlay_popout_sections" json:"npc_overlay_popout_sections"`
 
+	// NPCFactionSectionMigrationDone marks that the one-time migration which
+	// turns the (later-added) Faction section on for pre-existing configs has
+	// run. Without it, configs saved before the Faction field existed would
+	// deserialize Faction=false and never show the new section even though it
+	// defaults on for fresh installs. See applyDefaults.
+	NPCFactionSectionMigrationDone bool `yaml:"npc_faction_section_migration_done,omitempty" json:"npc_faction_section_migration_done"`
+
 	// OverlayLockedModes maps each popout overlay (by its canonical name:
 	// "dps", "hps", "buffTimer", "detrimTimer", "npc", "rollTracker",
 	// "respawnTimer") to how it behaves while locked:
@@ -285,10 +292,12 @@ type NPCOverlaySections struct {
 	Resists          bool `yaml:"resists" json:"resists"`
 	Attributes       bool `yaml:"attributes" json:"attributes"`
 	SpecialAbilities bool `yaml:"special_abilities" json:"special_abilities"`
+	Faction          bool `yaml:"faction" json:"faction"`
 }
 
 // DefaultNPCOverlaySections returns the all-visible default — matches the
-// behaviour before this preference existed.
+// behaviour before this preference existed (Faction was added later and is
+// also on by default; see the migration in applyDefaults for existing configs).
 func DefaultNPCOverlaySections() NPCOverlaySections {
 	return NPCOverlaySections{
 		Identity:         true,
@@ -296,6 +305,7 @@ func DefaultNPCOverlaySections() NPCOverlaySections {
 		Resists:          true,
 		Attributes:       true,
 		SpecialAbilities: true,
+		Faction:          true,
 	}
 }
 
@@ -450,11 +460,23 @@ func applyDefaults(cfg *Config) bool {
 		cfg.Preferences.NPCOverlayPopoutSections = DefaultNPCOverlaySections()
 		changed = true
 	}
+	// One-time migration for the later-added Faction section: configs written
+	// before the field existed deserialize Faction=false on otherwise-populated
+	// section structs (so the all-zero reset above doesn't touch them). Turn it
+	// on once to match the fresh-install default, then never override the user's
+	// explicit choice again.
+	if !cfg.Preferences.NPCFactionSectionMigrationDone {
+		cfg.Preferences.NPCOverlayDashboardSections.Faction = true
+		cfg.Preferences.NPCOverlayPopoutSections.Faction = true
+		cfg.Preferences.NPCFactionSectionMigrationDone = true
+		changed = true
+	}
 	return changed
 }
 
 func isZeroNPCOverlaySections(s NPCOverlaySections) bool {
-	return !s.Identity && !s.Combat && !s.Resists && !s.Attributes && !s.SpecialAbilities
+	return !s.Identity && !s.Combat && !s.Resists && !s.Attributes &&
+		!s.SpecialAbilities && !s.Faction
 }
 
 // fillDPSColorDefaults populates any empty hex fields with the corresponding
