@@ -139,6 +139,10 @@ const (
 	// fill in guild membership for the targeted player without waiting
 	// for a /who with guild visible.
 	EventGuildStat EventType = "log:guild_stat"
+
+	// EventSkillUp is emitted on "You have become better at <Skill>! (<rank>)".
+	// Feeds the per-character Skill Tracker with the new skill value.
+	EventSkillUp EventType = "log:skill_up"
 )
 
 // LogEvent is the parsed representation of a single EQ log line.
@@ -335,10 +339,10 @@ type VerifiedPlayerData struct {
 // values rather than overwriting them with empty data.
 type WhoEntryData struct {
 	Name      string `json:"name"`
-	Level     int    `json:"level"`     // 0 when anonymous
-	Class     string `json:"class"`     // empty when anonymous
-	Race      string `json:"race"`      // empty when not present
-	Guild     string `json:"guild"`     // empty when not present / hidden
+	Level     int    `json:"level"` // 0 when anonymous
+	Class     string `json:"class"` // empty when anonymous
+	Race      string `json:"race"`  // empty when not present
+	Guild     string `json:"guild"` // empty when not present / hidden
 	Anonymous bool   `json:"anonymous"`
 	LFG       bool   `json:"lfg"`
 	AFK       bool   `json:"afk"`
@@ -360,4 +364,12 @@ type WhoSummaryData struct {
 type GuildStatData struct {
 	Player string `json:"player"`
 	Guild  string `json:"guild"`
+}
+
+// SkillUpData is the structured payload for EventSkillUp, parsed from
+// "You have become better at <Skill>! (<rank>)". SkillName is the in-game
+// display name (e.g. "1H Blunt", "Dual Wield"); Rank is the new skill value.
+type SkillUpData struct {
+	SkillName string `json:"skill_name"`
+	Rank      int    `json:"rank"`
 }

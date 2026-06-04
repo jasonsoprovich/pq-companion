@@ -340,4 +340,3 @@ func logFilePath(eqPath, character string) string {
 	}
 	return filepath.Join(eqPath, "eqlog_"+character+"_pq.proj.txt")
 }
-

@@ -234,6 +234,11 @@ var (
 	reWhoGuild   = regexp.MustCompile(`<([^>]+)>`)
 	reWhoSummary = regexp.MustCompile(`^There (?:are|is) \d+ players? in (.+)\.$`)
 	reGuildStat  = regexp.MustCompile(`^(\w+) is a member of (.+)\.$`)
+
+	// Skill improvement: "You have become better at 1H Blunt! (6)". The skill
+	// name can contain spaces (e.g. "Dual Wield", "Sense Heading"); the value
+	// is the new skill rank.
+	reSkillUp = regexp.MustCompile(`^You have become better at (.+)! \((\d+)\)$`)
 )
 
 // ParseRawLine extracts the timestamp and message from any valid EQ log line
@@ -689,6 +694,19 @@ func classifyMessage(msg string) (LogEvent, bool) {
 			Data: GuildStatData{
 				Player: m[1],
 				Guild:  strings.TrimSpace(m[2]),
+			},
+		}, true
+	}
+
+	// "You have become better at <Skill>! (<rank>)" — a skill gain for the
+	// active character. Feeds the per-character Skill Tracker.
+	if m := reSkillUp.FindStringSubmatch(msg); m != nil {
+		rank, _ := strconv.Atoi(m[2])
+		return LogEvent{
+			Type: EventSkillUp,
+			Data: SkillUpData{
+				SkillName: strings.TrimSpace(m[1]),
+				Rank:      rank,
 			},
 		}, true
 	}

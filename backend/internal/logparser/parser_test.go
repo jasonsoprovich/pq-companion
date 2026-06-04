@@ -54,6 +54,22 @@ func TestParseLine(t *testing.T) {
 			wantOK: false,
 		},
 
+		// --- Skill up ---
+		{
+			name:     "skill up: multi-word skill",
+			line:     "[Mon Apr 13 06:00:00 2026] You have become better at 1H Blunt! (6)",
+			wantOK:   true,
+			wantType: EventSkillUp,
+			wantData: SkillUpData{SkillName: "1H Blunt", Rank: 6},
+		},
+		{
+			name:     "skill up: single-word skill",
+			line:     "[Mon Apr 13 06:00:00 2026] You have become better at Swimming! (5)",
+			wantOK:   true,
+			wantType: EventSkillUp,
+			wantData: SkillUpData{SkillName: "Swimming", Rank: 5},
+		},
+
 		// --- Zone change ---
 		{
 			name:     "zone: multi-word zone name",
@@ -727,6 +743,14 @@ func compareData(t *testing.T, got, want interface{}) {
 		}
 		if g != w {
 			t.Errorf("SpellCastData = %+v, want %+v", g, w)
+		}
+	case SkillUpData:
+		g, ok := got.(SkillUpData)
+		if !ok {
+			t.Fatalf("Data type = %T, want SkillUpData", got)
+		}
+		if g != w {
+			t.Errorf("SkillUpData = %+v, want %+v", g, w)
 		}
 	case SpellInterruptData:
 		g, ok := got.(SpellInterruptData)
