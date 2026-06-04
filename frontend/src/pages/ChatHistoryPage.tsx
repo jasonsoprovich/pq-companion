@@ -13,6 +13,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import MissingLogNotice from '../components/MissingLogNotice'
+import BackfillLink from '../components/BackfillLink'
 
 // Standard channels always shown in the dropdown (even before they have data),
 // in this order; named/custom channels present are appended alphabetically.
@@ -154,6 +155,7 @@ export default function ChatHistoryPage(): React.ReactElement {
           {isTell ? `${count} conversation${count === 1 ? '' : 's'}` : `${count} message${count === 1 ? '' : 's'}`}
         </span>
         <div className="ml-auto flex items-center gap-2">
+          <BackfillLink />
           <button
             onClick={() => { load(); loadMeta() }}
             className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
@@ -278,7 +280,7 @@ export default function ChatHistoryPage(): React.ReactElement {
               No {channelLabel(channel)} chat {isTell ? 'tracked' : 'captured'} yet.
             </p>
             <p className="text-[11px] max-w-md text-center" style={{ color: 'var(--color-muted)' }}>
-              Chat is captured live as you play. To backfill from a character's log, use <span className="font-medium">Settings → Log Backfill</span>.
+              Chat is captured live as you play. To backfill from a character's log, use the <span className="font-medium">Backfill</span> button above (Settings → Logs).
             </p>
           </div>
         )}

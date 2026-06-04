@@ -15,7 +15,11 @@ const (
 	// notification is shown in the UI.
 	LogSizeWarningThreshold = 75 * 1024 * 1024 // 75 MB
 
-	purgeKeepDays = 7
+	// purgeKeepDays is how many days of log entries the cleanup keeps when
+	// trimming the live log. 30 days matches the Chat History retention default
+	// and the typical backfill window, so trimming won't drop entries the
+	// trackers still expect to be able to backfill.
+	purgeKeepDays = 30
 )
 
 // FileInfo holds metadata about an EQ log file.

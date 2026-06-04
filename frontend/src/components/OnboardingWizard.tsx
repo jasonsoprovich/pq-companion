@@ -17,9 +17,13 @@ import {
   getConfig,
   updateConfig,
   validateEQPath,
+  getBackfillInfo,
+  runBackfill,
   type DiscoveredCharacter,
   type EqDiagnostics,
 } from '../services/api'
+import { useWebSocket } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 import type { Config } from '../types/config'
 import type { ZealInstallStatus } from '../types/zeal'
 import { charClassLabel, charClassOptions } from '../lib/enumsCache'
@@ -69,6 +73,11 @@ export default function OnboardingWizard({
 
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Optional log backfill on finish (only offered when logs were detected).
+  const [backfillOptIn, setBackfillOptIn] = useState(true)
+  const [backfilling, setBackfilling] = useState(false)
+  const [backfillPct, setBackfillPct] = useState(0)
 
   const [zealStatus, setZealStatus] = useState<ZealInstallStatus | null>(null)
   const [zealChecking, setZealChecking] = useState(false)
@@ -163,6 +172,13 @@ export default function OnboardingWizard({
     }
   }
 
+  // Live backfill progress while finishing.
+  useWebSocket((msg) => {
+    if (msg.type !== WSEvent.BackfillProgress) return
+    const d = msg.data as { done: number; total: number }
+    if (d && d.total > 0) setBackfillPct(Math.min(100, Math.round((d.done / d.total) * 100)))
+  })
+
   async function handleFinish(): Promise<void> {
     if (!config) return
     setSaving(true)
@@ -176,6 +192,24 @@ export default function OnboardingWizard({
         onboarding_completed: true,
       }
       await updateConfig(updated)
+
+      // Optional: backfill the trackers from this character's existing log.
+      // Non-fatal — a failure here shouldn't block finishing setup.
+      if (backfillOptIn && discovered.length > 0 && character.trim()) {
+        try {
+          setBackfilling(true)
+          setBackfillPct(0)
+          const info = await getBackfillInfo()
+          const sections = info.sections.map((s) => s.key)
+          if (sections.length > 0) {
+            await runBackfill(character.trim(), sections)
+          }
+        } catch {
+          // ignore — user can backfill later from Settings → Logs
+        } finally {
+          setBackfilling(false)
+        }
+      }
       onComplete()
     } catch (err) {
       setSaveError((err as Error).message)
@@ -640,6 +674,37 @@ export default function OnboardingWizard({
                   </span>
                 </div>
               </div>
+
+              {/* Optional backfill — only when this character has a log to read. */}
+              {discovered.length > 0 && (
+                <div className="rounded p-3" style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+                  <label className="flex cursor-pointer items-start gap-2 text-sm" style={{ color: 'var(--color-foreground)' }}>
+                    <input
+                      type="checkbox"
+                      checked={backfillOptIn}
+                      disabled={backfilling}
+                      onChange={(e) => setBackfillOptIn(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Backfill chat, loot, and player history from {character || 'this character'}&apos;s existing log
+                      <span className="ml-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                        (recommended for existing players — can take a few minutes)
+                      </span>
+                    </span>
+                  </label>
+                  {backfilling && (
+                    <div className="mt-3">
+                      <div className="h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: 'var(--color-surface)' }}>
+                        <div className="h-full rounded-full transition-all" style={{ width: `${backfillPct}%`, backgroundColor: 'var(--color-primary)' }} />
+                      </div>
+                      <p className="mt-1 text-[11px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
+                        Backfilling… {backfillPct}%
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
               {saveError && (
                 <div
                   className="flex items-center gap-2 rounded p-3 text-sm"
@@ -704,7 +769,7 @@ export default function OnboardingWizard({
               }}
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-              {saving ? 'Saving…' : 'Finish'}
+              {backfilling ? 'Backfilling…' : saving ? 'Saving…' : 'Finish'}
             </button>
           )}
         </div>

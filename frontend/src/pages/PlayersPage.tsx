@@ -4,6 +4,7 @@ import { UserSearch, RefreshCw, Trash2, AlertCircle, EyeOff, X, ArrowUp, ArrowDo
 import { listPlayers, deletePlayer, clearPlayers, getPlayerHistory } from '../services/api'
 import type { PlayerSighting, PlayerLevelHistoryEntry } from '../types/player'
 import MissingLogNotice from '../components/MissingLogNotice'
+import BackfillLink from '../components/BackfillLink'
 
 // EQ class list — matches what /who emits. Used to drive the class filter chip
 // row plus the "no class data yet" guard.
@@ -272,6 +273,7 @@ export default function PlayersPage(): React.ReactElement {
           {players.length} tracked
         </span>
         <div className="ml-auto flex items-center gap-2">
+          <BackfillLink />
           <button
             onClick={load}
             className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"

@@ -106,22 +106,16 @@ export default function BackfillPanel(): React.ReactElement {
   const labelFor = (key: string) => sections.find((s) => s.key === key)?.label ?? key
 
   return (
-    <div className="mx-auto max-w-xl p-6">
-      <div className="mb-6 flex items-center gap-3">
-        <DatabaseBackup size={20} style={{ color: 'var(--color-primary)' }} />
-        <h1 className="text-lg font-semibold" style={{ color: 'var(--color-foreground)' }}>
-          Log Backfill
-        </h1>
-      </div>
-
+    <>
       <ChatRetentionCard />
 
       <section
+        id="log-backfill"
         className="rounded-lg p-4"
         style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
       >
-        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
-          Backfill trackers from a log file
+        <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+          <DatabaseBackup size={13} /> Log Backfill
         </h2>
         <p className="mb-4 text-xs leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>
           Trackers normally fill in going forward as you play. This replays a character's existing log to
@@ -249,7 +243,7 @@ export default function BackfillPanel(): React.ReactElement {
           elapsed={charElapsed}
         />
       )}
-    </div>
+    </>
   )
 }
 
@@ -365,7 +359,7 @@ function ChatRetentionCard(): React.ReactElement {
 
   return (
     <section
-      className="mb-4 rounded-lg p-4"
+      className="rounded-lg p-4"
       style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
     >
       <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
