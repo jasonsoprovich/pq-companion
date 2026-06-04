@@ -82,9 +82,12 @@ export default function ChatHistoryPage(): React.ReactElement {
           if (r.active && chars.includes(r.active)) return r.active
           return chars[0] ?? r.active ?? ''
         })
+        // Flip metaLoaded in the same batch as selectedChar so the feed effect
+        // (gated on metaLoaded) fires exactly once with the resolved character,
+        // instead of loading first for "" and again after the name resolves.
+        setMetaLoaded(true)
       })
-      .catch(() => { /* best effort */ })
-      .finally(() => setMetaLoaded(true))
+      .catch(() => { setMetaLoaded(true) })
   }, [selectedChar])
 
   useEffect(() => { loadMeta() }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -112,7 +115,10 @@ export default function ChatHistoryPage(): React.ReactElement {
     }
   }, [channel, selectedChar, search, fromDate, toDate, sortDir])
 
-  useEffect(() => { load() }, [load])
+  // Wait for the character/channel metadata before the first fetch: otherwise
+  // the feed loads once for the unresolved (empty) character and then again
+  // once loadMeta sets the real selectedChar — a visible double spinner.
+  useEffect(() => { if (metaLoaded) load() }, [load, metaLoaded])
 
   // Collapse threads when changing character or channel.
   useEffect(() => { setExpanded(new Set()) }, [selectedChar, channel])
