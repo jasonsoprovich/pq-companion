@@ -10,10 +10,11 @@ import { useWishlistItemIds } from '../hooks/useWishlistItemIds'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { ItemIcon } from '../components/Icon'
 import { ResistChip } from '../components/ResistChip'
+import NPCCasterSummarySection from '../components/overlays/NPCCasterSummarySection'
 import { getOverlayNPCTarget, getNPCLoot } from '../services/api'
 import { className, bodyTypeName, npcRunSpeedPct } from '../lib/npcHelpers'
 import { effectiveDropPct, rarityColor } from '../lib/lootHelpers'
-import type { TargetState, SpecialAbility, TargetVariant } from '../types/overlay'
+import type { TargetState, SpecialAbility, TargetVariant, NPCCasterSummary } from '../types/overlay'
 import type { NPC, NPCLootTable, LootDrop } from '../types/npc'
 import type { NPCOverlaySections } from '../types/config'
 
@@ -265,6 +266,7 @@ function VariantRibbon({ variants }: { variants: TargetVariant[] }): React.React
 function StatsBody({
   npc,
   abilities,
+  casterSummary,
   sections,
   view,
   wishlistItemIds,
@@ -272,6 +274,7 @@ function StatsBody({
 }: {
   npc: NPC
   abilities: SpecialAbility[]
+  casterSummary?: NPCCasterSummary
   sections: NPCOverlaySections
   view: View
   wishlistItemIds: Set<number>
@@ -341,6 +344,19 @@ function StatsBody({
                 <AbilityBadge key={a.code} ability={a} />
               ))}
             </div>
+          )}
+
+          {casterSummary && (
+            <NPCCasterSummarySection
+              summary={casterSummary}
+              sections={sections}
+              theme={{
+                heading: 'rgba(255,255,255,0.4)',
+                muted: 'rgba(255,255,255,0.45)',
+                chipBg: 'rgba(255,255,255,0.08)',
+                chipText: 'rgba(255,255,255,0.85)',
+              }}
+            />
           )}
         </>
       )}
@@ -445,6 +461,7 @@ function NPCContent({
               key={v.npc.id}
               npc={v.npc}
               abilities={v.special_abilities}
+              casterSummary={v.caster_summary}
               sections={sections}
               view={view}
               wishlistItemIds={wishlistItemIds}
@@ -455,6 +472,7 @@ function NPCContent({
           <StatsBody
             npc={npc}
             abilities={abilities}
+            casterSummary={state.caster_summary}
             sections={sections}
             view={view}
             wishlistItemIds={wishlistItemIds}

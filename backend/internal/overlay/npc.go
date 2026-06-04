@@ -27,8 +27,9 @@ const WSEventNPCTarget = "overlay:npc_target"
 // rows like ssratemple's necro/SK shissar revenant), the overlay surfaces
 // the full set rather than guessing.
 type TargetVariant struct {
-	NPC              db.NPC              `json:"npc"`
-	SpecialAbilities []db.SpecialAbility `json:"special_abilities"`
+	NPC              db.NPC               `json:"npc"`
+	SpecialAbilities []db.SpecialAbility  `json:"special_abilities"`
+	CasterSummary    *db.NPCCasterSummary `json:"caster_summary,omitempty"`
 }
 
 // TargetState is the payload for WSEventNPCTarget events and the REST
@@ -44,6 +45,10 @@ type TargetState struct {
 	NPCData *db.NPC `json:"npc_data,omitempty"`
 	// SpecialAbilities is the parsed special-abilities list for NPCData.
 	SpecialAbilities []db.SpecialAbility `json:"special_abilities,omitempty"`
+	// CasterSummary is the distilled caster-AI readout for NPCData (Complete
+	// Heal / Gate / AE highlights, procs, signature spells, class-list counts).
+	// Nil when the NPC has no caster AI; the overlay hides the section then.
+	CasterSummary *db.NPCCasterSummary `json:"caster_summary,omitempty"`
 	// Variants is non-empty (>= 2 entries) when the target name resolves to
 	// multiple npc_types rows the tracker couldn't reduce to one — e.g. rows
 	// that share a spawngroup and so are picked randomly by the server at
@@ -323,7 +328,7 @@ func (t *NPCTracker) setTarget(displayName string) {
 	// lookup but keep the original name for display, and flag is_corpse so
 	// the overlay pins HP to 0%.
 	lookupName, isCorpse := stripCorpseSuffix(displayName)
-	primary, primaryAbilities, variants := t.lookupNPCVariants(lookupName, zoneShort, playerKnown, px, py)
+	primary, primaryAbilities, primarySummary, variants := t.lookupNPCVariants(lookupName, zoneShort, playerKnown, px, py)
 
 	hpPercent := -1
 	if isCorpse {
@@ -336,6 +341,7 @@ func (t *NPCTracker) setTarget(displayName string) {
 		TargetName:       displayName,
 		NPCData:          primary,
 		SpecialAbilities: primaryAbilities,
+		CasterSummary:    primarySummary,
 		Variants:         variants,
 		CurrentZone:      t.st.CurrentZone,
 		HPPercent:        hpPercent,
@@ -415,9 +421,9 @@ var placeholderPrefixes = []string{"###_", "###", "##_", "##", "#_", "#"}
 func (t *NPCTracker) lookupNPCVariants(
 	displayName, zoneShort string,
 	playerKnown bool, px, py float64,
-) (*db.NPC, []db.SpecialAbility, []TargetVariant) {
+) (*db.NPC, []db.SpecialAbility, *db.NPCCasterSummary, []TargetVariant) {
 	if t.db == nil {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	dbName := strings.ReplaceAll(displayName, " ", "_")
 
@@ -431,7 +437,7 @@ func (t *NPCTracker) lookupNPCVariants(
 	}
 	if len(candidates) == 0 {
 		slog.Debug("overlay: npc lookup miss", "display_name", displayName, "db_name", dbName)
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
 	// Position-based disambiguation only applies when multiple variants in
@@ -453,9 +459,10 @@ func (t *NPCTracker) lookupNPCVariants(
 	primary := primaryVariant.NPC
 	primaryAbilities := db.ParseSpecialAbilities(primary.SpecialAbilities)
 	primaryAbilities = mergeInvisFlags(primaryAbilities, &primary)
+	primarySummary := t.casterSummary(primary.ID)
 
 	if len(candidates) == 1 {
-		return &primary, primaryAbilities, nil
+		return &primary, primaryAbilities, primarySummary, nil
 	}
 
 	// 2+ candidates remained after filtering — return the variant set.
@@ -464,9 +471,27 @@ func (t *NPCTracker) lookupNPCVariants(
 		npc := c.NPC
 		abs := db.ParseSpecialAbilities(npc.SpecialAbilities)
 		abs = mergeInvisFlags(abs, &npc)
-		out = append(out, TargetVariant{NPC: npc, SpecialAbilities: abs})
+		out = append(out, TargetVariant{
+			NPC:              npc,
+			SpecialAbilities: abs,
+			CasterSummary:    t.casterSummary(npc.ID),
+		})
 	}
-	return &primary, primaryAbilities, out
+	return &primary, primaryAbilities, primarySummary, out
+}
+
+// casterSummary fetches the distilled caster-AI summary for an NPC, swallowing
+// errors (logged at debug) so a summary failure never breaks target tracking.
+func (t *NPCTracker) casterSummary(npcID int) *db.NPCCasterSummary {
+	if t.db == nil {
+		return nil
+	}
+	s, err := t.db.SummarizeNPCCaster(npcID)
+	if err != nil {
+		slog.Debug("overlay: caster summary failed", "npc_id", npcID, "err", err)
+		return nil
+	}
+	return s
 }
 
 // fetchVariants gathers every same-name npc_types row for the target — both

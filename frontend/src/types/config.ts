@@ -7,6 +7,12 @@ export interface NPCOverlaySections {
   attributes: boolean
   special_abilities: boolean
   faction: boolean
+  // spells is the master toggle for the caster-summary section (highlights are
+  // always shown when on). The spells_* flags are per-group sub-toggles.
+  spells: boolean
+  spells_procs: boolean
+  spells_signature: boolean
+  spells_class: boolean
 }
 
 export const DEFAULT_NPC_OVERLAY_SECTIONS: NPCOverlaySections = {
@@ -16,6 +22,10 @@ export const DEFAULT_NPC_OVERLAY_SECTIONS: NPCOverlaySections = {
   attributes: true,
   special_abilities: true,
   faction: true,
+  spells: true,
+  spells_procs: true,
+  spells_signature: true,
+  spells_class: true,
 }
 
 export interface Preferences {

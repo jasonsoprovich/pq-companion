@@ -262,6 +262,13 @@ type Preferences struct {
 	// defaults on for fresh installs. See applyDefaults.
 	NPCFactionSectionMigrationDone bool `yaml:"npc_faction_section_migration_done,omitempty" json:"npc_faction_section_migration_done"`
 
+	// NPCSpellsSectionMigrationDone marks that the one-time migration which turns
+	// the (later-added) Spells & Abilities section — and its sub-toggles — on for
+	// pre-existing configs has run. Same rationale as the Faction marker above:
+	// a bool can't distinguish "missing" from an explicit false, so without this
+	// upgrading users would never see the new section. See applyDefaults.
+	NPCSpellsSectionMigrationDone bool `yaml:"npc_spells_section_migration_done,omitempty" json:"npc_spells_section_migration_done"`
+
 	// OverlayLockedModes maps each popout overlay (by its canonical name:
 	// "dps", "hps", "buffTimer", "detrimTimer", "npc", "rollTracker",
 	// "respawnTimer") to how it behaves while locked:
@@ -296,6 +303,14 @@ type NPCOverlaySections struct {
 	Attributes       bool `yaml:"attributes" json:"attributes"`
 	SpecialAbilities bool `yaml:"special_abilities" json:"special_abilities"`
 	Faction          bool `yaml:"faction" json:"faction"`
+	// Spells is the master toggle for the caster-summary section (highlights are
+	// always shown when it's on). SpellsProcs / SpellsSignature / SpellsClass are
+	// the per-group sub-toggles for procs, named signature spells, and the
+	// inherited class-list counts respectively.
+	Spells          bool `yaml:"spells" json:"spells"`
+	SpellsProcs     bool `yaml:"spells_procs" json:"spells_procs"`
+	SpellsSignature bool `yaml:"spells_signature" json:"spells_signature"`
+	SpellsClass     bool `yaml:"spells_class" json:"spells_class"`
 }
 
 // CHChainSettings configures the Complete-Heal-chain overlay matcher, which
@@ -345,6 +360,10 @@ func DefaultNPCOverlaySections() NPCOverlaySections {
 		Attributes:       true,
 		SpecialAbilities: true,
 		Faction:          true,
+		Spells:           true,
+		SpellsProcs:      true,
+		SpellsSignature:  true,
+		SpellsClass:      true,
 	}
 }
 
@@ -521,6 +540,22 @@ func applyDefaults(cfg *Config) bool {
 		cfg.Preferences.NPCOverlayDashboardSections.Faction = true
 		cfg.Preferences.NPCOverlayPopoutSections.Faction = true
 		cfg.Preferences.NPCFactionSectionMigrationDone = true
+		changed = true
+	}
+	// One-time migration for the later-added Spells & Abilities section and its
+	// three sub-toggles. Same pattern as Faction above: turn them on once to
+	// match the fresh-install default, then never override an explicit choice.
+	if !cfg.Preferences.NPCSpellsSectionMigrationDone {
+		for _, s := range []*NPCOverlaySections{
+			&cfg.Preferences.NPCOverlayDashboardSections,
+			&cfg.Preferences.NPCOverlayPopoutSections,
+		} {
+			s.Spells = true
+			s.SpellsProcs = true
+			s.SpellsSignature = true
+			s.SpellsClass = true
+		}
+		cfg.Preferences.NPCSpellsSectionMigrationDone = true
 		changed = true
 	}
 	return changed

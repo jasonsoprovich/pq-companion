@@ -2532,6 +2532,18 @@ const NPC_SECTION_ROWS: ReadonlyArray<{
   { key: 'faction', label: 'Faction', hint: 'Primary faction and the hits taken on a kill' },
 ]
 
+// NPC_SPELL_SUBROWS are the per-group sub-toggles nested under the "Spells &
+// Abilities" master switch. Highlights have no sub-toggle — they're the headline
+// callouts and always show when the master is on.
+const NPC_SPELL_SUBROWS: ReadonlyArray<{
+  key: keyof NPCOverlaySections
+  label: string
+}> = [
+  { key: 'spells_procs', label: 'Procs' },
+  { key: 'spells_signature', label: 'Signature spells' },
+  { key: 'spells_class', label: 'Class spell summary' },
+]
+
 function NPCOverlaySectionsCard({
   dashboard,
   popout,
@@ -2609,6 +2621,36 @@ function NPCSectionList({
             </span>
           </label>
         ))}
+
+        {/* Spells & Abilities: master toggle + per-group sub-toggles. Highlights
+            (Complete Heal / Gate / AE / mez etc.) always show when the master is
+            on; the children gate procs, signature spells, and class-list counts. */}
+        <label className="flex cursor-pointer items-start gap-2">
+          <input
+            type="checkbox"
+            checked={value.spells}
+            onChange={(e) => onChange({ ...value, spells: e.target.checked })}
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>Spells &amp; Abilities</span>
+            <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Caster highlights, procs, signature spells, class lists</span>
+          </span>
+        </label>
+        {value.spells && (
+          <div className="ml-6 flex flex-col gap-1.5">
+            {NPC_SPELL_SUBROWS.map((row) => (
+              <label key={row.key} className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={value[row.key]}
+                  onChange={(e) => onChange({ ...value, [row.key]: e.target.checked })}
+                />
+                <span className="text-xs" style={{ color: 'var(--color-foreground)' }}>{row.label}</span>
+              </label>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

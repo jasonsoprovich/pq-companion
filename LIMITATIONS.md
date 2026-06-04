@@ -368,6 +368,31 @@ These are inherent to log-file parsing and affect multiple features:
 
 ---
 
+## 10. NPC caster summary (overlay)
+
+### 10.1 Caster highlights are heuristic, not the NPC's real-time cast list
+
+- **Limitation:** The NPC overlay's "Spells & Abilities" section shows the
+  NPC's *potential* caster AI (curated highlights like Complete Heal / Gate /
+  AE, procs, signature spells, and a count of inherited class lists). It does
+  NOT show which spell the NPC is casting right now, nor guarantee it will ever
+  cast a given spell in a fight.
+- **Root cause:** The data is the static `npc_spells` / `npc_spells_entries`
+  list (with `parent_list` inheritance) plus `spells_new` effect/target columns
+  — the server picks spells at runtime by level gate, mana, recast, and AI
+  state, none of which are logged. Highlights are derived heuristically from
+  SPA effect ids and targettype/aoerange, so categories needing a base-value
+  comparison that we don't surface (e.g. snare vs SoW, slow vs self-haste) are
+  intentionally omitted to avoid false positives.
+- **Sources checked:** DB (`npc_spells*`, `spells_new`) — full static list;
+  Log (NPC spell casts appear as generic "begins casting"/landed messages with
+  no caster→list mapping); Zeal (none).
+- **Could a future data source fix this?** **Partially** — real-time "what is
+  this NPC casting" would need a Zeal/log feed of NPC cast events tied to the
+  target; the static potential list is already as complete as the DB allows.
+
+---
+
 ## Template for new entries
 
 ```

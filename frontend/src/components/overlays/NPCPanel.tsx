@@ -12,7 +12,8 @@ import OverlayWindow from '../OverlayWindow'
 import ItemDetailModal from '../ItemDetailModal'
 import { ItemIcon } from '../Icon'
 import { ResistChip } from '../ResistChip'
-import type { TargetState, SpecialAbility, TargetVariant } from '../../types/overlay'
+import NPCCasterSummarySection from './NPCCasterSummarySection'
+import type { TargetState, SpecialAbility, TargetVariant, NPCCasterSummary } from '../../types/overlay'
 import type { LogTailerStatus } from '../../types/logEvent'
 import type { NPC, NPCLootTable, LootDrop, NPCFaction } from '../../types/npc'
 import type { Item } from '../../types/item'
@@ -430,6 +431,7 @@ function OtherVariants({
             key={v.npc.id}
             npc={v.npc}
             abilities={v.special_abilities}
+            casterSummary={v.caster_summary}
             sections={sections}
             view={view}
             variantLabel={`${className(v.npc.class)} · L${v.npc.level} · ${v.npc.hp.toLocaleString()} HP`}
@@ -448,6 +450,7 @@ function OtherVariants({
 function NPCDetails({
   npc,
   abilities,
+  casterSummary,
   sections,
   view,
   variantLabel,
@@ -456,6 +459,7 @@ function NPCDetails({
 }: {
   npc: NPC
   abilities: SpecialAbility[]
+  casterSummary?: NPCCasterSummary
   sections: NPCOverlaySections
   view: View
   variantLabel?: string
@@ -543,6 +547,19 @@ function NPCDetails({
             </div>
           )}
 
+          {casterSummary && (
+            <NPCCasterSummarySection
+              summary={casterSummary}
+              sections={sections}
+              theme={{
+                heading: 'var(--color-muted)',
+                muted: 'var(--color-muted)',
+                chipBg: 'rgba(255,255,255,0.08)',
+                chipText: 'var(--color-foreground)',
+              }}
+            />
+          )}
+
           {sections.faction && <FactionSection npcId={npc.id} />}
         </>
       )}
@@ -622,6 +639,7 @@ function NPCCard({
           <NPCDetails
             npc={npc}
             abilities={abilities}
+            casterSummary={state.caster_summary}
             sections={sections}
             view={view}
             onItemClick={onItemClick}
