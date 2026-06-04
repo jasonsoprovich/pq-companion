@@ -332,10 +332,20 @@ type CHChainSettings struct {
 	IntervalSecs int `yaml:"interval_secs" json:"interval_secs"`
 }
 
-// DefaultCHChainPattern matches the common guild chain-call format, e.g.
+// DefaultCHChainPattern matches the common guild chain-call formats, e.g.
 // "Soandso tells the raid, '--- 001 --- CH Winian with << 100% Mana >>'",
-// capturing caster, chainnum (leading zeros stripped), and target.
-const DefaultCHChainPattern = `^(?P<caster>\w+) tells the raid, '-+\s*0*(?P<chainnum>\d+)\s*-+\s*CH\s+(?P<target>\w+)`
+// capturing caster, chainnum, and target. It tolerates a range of channels
+// (raid/group/guild tells, party/raid/guild "tell your", custom channel
+// tells, OOC, shout, auction) and decorations around the number and target.
+//
+// Note: this is RE2 (Go's regexp), which has no backreferences. The user
+// feedback pattern expressed the letter-marker form as a same-letter
+// backreference ((?<letter>[A-Za-z])\k<letter>{2,3}); RE2 can't enforce
+// "same letter repeated", so chainnum's letter branch is [A-Za-z]{3,4} (the
+// surrounding CH/COMPLETE HEALING context keeps it from over-matching). The
+// numeric branch is what produces a usable position; a letter marker parses
+// to 0 via strconv.Atoi in the matcher.
+const DefaultCHChainPattern = `^(?P<caster>(You|[A-Z][a-z]{3,14})) (?:tells? (?:the (?:raid|group|guild)|your (party|raid|guild)|[A-Za-z]+(?:-[A-Za-z]+)+:\d)|says out of character|shouts|auctions?),\s+'[^a-zA-Z0-9]*\b(?P<chainnum>\d{3,4}|[A-Za-z]{3,4})[^a-zA-Z0-9]*\b(?:CH|COMPLETE HEALING)\b(?:[^a-zA-Z0-9]*(?:on|to)[^a-zA-Z0-9]*)?[^a-zA-Z0-9]*(?P<target>[A-Z][a-z]{3,14})\b(.*)$`
 
 // DefaultCHChainIntervalSecs is the default per-cast countdown cadence.
 const DefaultCHChainIntervalSecs = 6
