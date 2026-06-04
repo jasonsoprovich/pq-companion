@@ -394,6 +394,21 @@ type ItemSources struct {
 	Tradeskills  []ItemTradeskillEntry `json:"tradeskills"`
 }
 
+// SpellVendorOption is one place a spell's scroll can be purchased: a vendor
+// NPC and the zone it spawns in. A single spell may have many of these (across
+// zones and vendors); the shopping-route optimizer consumes the full set.
+type SpellVendorOption struct {
+	SpellID    int     `json:"spell_id"`
+	SpellName  string  `json:"spell_name"`
+	ZoneShort  string  `json:"zone_short"`
+	ZoneName   string  `json:"zone_name"`
+	VendorID   int     `json:"vendor_id"`
+	VendorName string  `json:"vendor_name"`
+	Price      int     `json:"price"` // base scroll price in copper (approximate)
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+}
+
 // NPCSpawnPoint represents a single spawn point for an NPC.
 type NPCSpawnPoint struct {
 	ID              int     `json:"id"`

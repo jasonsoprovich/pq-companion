@@ -1658,6 +1658,65 @@ func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
 	return result, nil
 }
 
+// GetSpellVendorOptions returns, for each requested spell id, every vendor/zone
+// pair where a scroll teaching that spell can be bought. A spell maps to its
+// scroll via items.scrolleffect; the scroll maps to vendors via merchantlist,
+// and each vendor to its zone(s) via the spawn chain. Rows are collapsed to one
+// per (spell, zone, vendor) — taking the cheapest scroll variant and one
+// representative spawn point — and vendors with no resolvable spawn (no zone)
+// are dropped, since the route can't direct a player there.
+//
+// This is the batch input for the shopping-route optimizer (internal/shoproute).
+func (db *DB) GetSpellVendorOptions(spellIDs []int) ([]SpellVendorOption, error) {
+	if len(spellIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.Repeat("?,", len(spellIDs))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(spellIDs))
+	for i, id := range spellIDs {
+		args[i] = id
+	}
+
+	rows, err := db.Query(`
+		SELECT i.scrolleffect AS spell_id,
+		       sn.name        AS spell_name,
+		       s2.zone        AS zone_short,
+		       COALESCE(z.long_name, s2.zone) AS zone_name,
+		       n.id           AS vendor_id,
+		       n.name         AS vendor_name,
+		       MIN(i.price)   AS price,
+		       MIN(s2.x)      AS x,
+		       MIN(s2.y)      AS y
+		FROM items i
+		JOIN spells_new sn ON sn.id = i.scrolleffect
+		JOIN merchantlist ml ON ml.item = i.id
+		JOIN npc_types n ON n.merchant_id = ml.merchantid AND n.merchant_id > 0
+		JOIN spawnentry se ON se.npcid = n.id
+		JOIN spawngroup sg ON sg.id = se.spawngroupid
+		JOIN spawn2 s2 ON s2.spawngroupID = sg.id
+		LEFT JOIN zone z ON z.short_name = s2.zone
+		WHERE i.scrolleffect IN (`+placeholders+`)
+		  AND s2.zone IS NOT NULL AND s2.zone != ''
+		GROUP BY i.scrolleffect, s2.zone, n.id
+		ORDER BY i.scrolleffect, zone_name, vendor_name`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get spell vendor options: %w", err)
+	}
+	defer rows.Close()
+
+	var out []SpellVendorOption
+	for rows.Next() {
+		var o SpellVendorOption
+		if err := rows.Scan(&o.SpellID, &o.SpellName, &o.ZoneShort, &o.ZoneName,
+			&o.VendorID, &o.VendorName, &o.Price, &o.X, &o.Y); err != nil {
+			return nil, fmt.Errorf("scan spell vendor option: %w", err)
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
 // ─── Zones ────────────────────────────────────────────────────────────────────
 
 // zoneVisibilityFilter returns a SQL clause restricting `short_name` to the
