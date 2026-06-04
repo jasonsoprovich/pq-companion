@@ -63,6 +63,10 @@ export default function ChatHistoryPage(): React.ReactElement {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Whether the character/channel metadata fetch has returned. Until it has,
+  // the character tab bar's height is reserved so it doesn't pop in a moment
+  // after the page renders and shove the content down (a jarring shift).
+  const [metaLoaded, setMetaLoaded] = useState(false)
   const [confirmClearOpen, setConfirmClearOpen] = useState(false)
 
   // Load characters + present channels once (and refresh after backfills via a
@@ -80,6 +84,7 @@ export default function ChatHistoryPage(): React.ReactElement {
         })
       })
       .catch(() => { /* best effort */ })
+      .finally(() => setMetaLoaded(true))
   }, [selectedChar])
 
   useEffect(() => { loadMeta() }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -176,8 +181,24 @@ export default function ChatHistoryPage(): React.ReactElement {
         </div>
       </div>
 
-      {/* Character tabs */}
-      {characters.length > 1 && (
+      {/* Character tabs. While metadata is still loading we reserve the bar's
+          height so a multi-character bar doesn't pop in late and shove the
+          content down. Once loaded, the bar shows only when there's more than
+          one character to switch between. */}
+      {!metaLoaded ? (
+        // Reserved-height placeholder: same markup as the real bar with one
+        // invisible tab, so the row occupies the exact final height and the
+        // content below never jumps when the tabs resolve.
+        <div className="border-b px-3 pt-2 shrink-0 flex items-end gap-1 overflow-x-auto" style={{ borderColor: 'var(--color-border)' }} aria-hidden>
+          <button
+            className="rounded-t px-3 py-1.5 text-xs font-medium whitespace-nowrap"
+            style={{ visibility: 'hidden', border: '1px solid transparent', marginBottom: -1 }}
+            tabIndex={-1}
+          >
+            &nbsp;
+          </button>
+        </div>
+      ) : characters.length > 1 ? (
         <div className="border-b px-3 pt-2 shrink-0 flex items-end gap-1 overflow-x-auto" style={{ borderColor: 'var(--color-border)' }}>
           {characters.map((name) => {
             const active = name === selectedChar
@@ -200,7 +221,7 @@ export default function ChatHistoryPage(): React.ReactElement {
             )
           })}
         </div>
-      )}
+      ) : null}
 
       {/* Filters */}
       <div className="border-b px-4 py-2 shrink-0 flex items-center gap-2 flex-wrap" style={{ borderColor: 'var(--color-border)' }}>
