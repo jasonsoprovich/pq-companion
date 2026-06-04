@@ -994,7 +994,9 @@ export interface SpellModifierResolution {
   duration_item_percent: number
   duration_percent: number
   cast_time_percent: number
-  applied: SpellModifier[]
+  // May be null over the wire if the backend ever emits a nil slice — always
+  // null-coalesce before reading .length / .map (see ResolutionDisplay).
+  applied: SpellModifier[] | null
 }
 
 export interface SpellModifiersResponse {
