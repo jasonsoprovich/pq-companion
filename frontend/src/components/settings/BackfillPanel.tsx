@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { DatabaseBackup, RefreshCw, AlertTriangle, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
 import { getBackfillInfo, runBackfill, getConfig, updateConfig, type BackfillSection } from '../../services/api'
+import { DEV_SKILLS } from '../../lib/devFlags'
 import { useEscapeToClose } from '../../hooks/useEscapeToClose'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
@@ -45,11 +46,17 @@ export default function BackfillPanel(): React.ReactElement {
   useEffect(() => {
     getBackfillInfo()
       .then((info) => {
-        setSections(info.sections)
+        // The Skill Tracker is hidden behind DEV_SKILLS (no full skill-snapshot
+        // data source exists — see lib/devFlags). Drop its backfill row too so
+        // it isn't an orphaned, dead-end option.
+        const sections = DEV_SKILLS
+          ? info.sections
+          : info.sections.filter((s) => s.key !== 'skills')
+        setSections(sections)
         setCharacters(info.characters)
         // Default: the active character selected, all sections selected.
         setSelChars(new Set(info.active && info.characters.includes(info.active) ? [info.active] : []))
-        setSelSections(new Set(info.sections.map((s) => s.key)))
+        setSelSections(new Set(sections.map((s) => s.key)))
       })
       .catch((e: Error) => setLoadErr(e.message))
       .finally(() => setLoading(false))

@@ -259,24 +259,34 @@ These are inherent to log-file parsing and affect multiple features:
   exposing live skill values and the equipped-weapon type would let us use the
   character's actual skills instead of the cap assumption.
 
-### 7.2 Skill Tracker only knows skills it has watched rise, and infers the specialization
+### 7.2 Skill Tracker has no full skill snapshot — DISABLED behind a dev flag
 
-- **Limitation:** The character Skills tab is built from `EventSkillUp` log
-  lines ("You have become better at X! (N)"), so a skill the character hasn't
-  raised while logging (or backfilling) shows no value at all — there's no full
-  skill snapshot. For the five caster Specialize <school> skills, only one may
-  exceed 50 on Quarm; we infer the chosen school from the observed values
-  (whichever is already above 50) and lock the others' displayed cap at 50. If
-  no school has passed 50 yet, all five show their full trainable cap because
-  the primary isn't yet decided.
-- **Root cause:** EQ logs a skill only when it changes, never a full list. The
-  Quarmy/Zeal export carries no live skill values, and `skill_caps` lists the
-  raw per-school cap without encoding the single-primary rule.
-- **Sources checked:** Log (skill-up lines only), `quarm.db` (`skill_caps`
-  caps), Zeal (no skill snapshot today).
-- **Could a future data source fix this?** **Partially.** A Zeal field exposing
-  the full live skill list (and the chosen specialization) would replace both
-  the watch-only gap and the specialization inference.
+- **Limitation:** The character Skills tab can only be built from `EventSkillUp`
+  log lines ("You have become better at X! (N)"), which fire *only when a skill
+  rises*. A character already at cap — or whose older logs were purged — emits
+  no such lines, so the page can never populate and looks broken. Running a Log
+  Backfill doesn't help: the historical lines simply aren't there. Because this
+  makes the feature unusable for most players (it only works for skills raised
+  while actively logging), the Skills tab and its backfill row are **hidden
+  behind the `DEV_SKILLS` flag** (`VITE_DEV_SKILLS=true`), mirroring the
+  disabled HPS meter. The backend tracking/parser/store still run, so data
+  accumulates for if/when a snapshot source appears and the feature is
+  re-enabled.
+- **Root cause:** EQ logs a skill only when it *changes*, never a full list, and
+  **no data source exposes a skill snapshot:** the Quarmy/Zeal export carries no
+  skill values, and the ZealPipes `LabelType` enum (verified against the
+  OkieDan/ZealPipes source on 2026-06-03 — 40 named entries) has **zero**
+  skill-related labels (no Skill*, Defense, Offense, tradeskills, etc.).
+  Secondary nuance: for the five caster Specialize <school> skills only one may
+  exceed 50 on Quarm; the chosen school can only be inferred from observed
+  values (whichever is already >50), and `skill_caps` doesn't encode the rule.
+- **Sources checked:** Log (skill-up *deltas* only, no snapshot), `quarm.db`
+  (`skill_caps` caps only), Quarmy export (no skills), ZealPipes (no skill
+  `LabelType` — confirmed in the enum source).
+- **Could a future data source fix this?** **Only with new data.** A Zeal /
+  ZealPipes addition exposing the live skill list (ideally with the chosen
+  specialization) would make the tab viable; re-enable by flipping `DEV_SKILLS`.
+  Re-check this against each new Zeal release.
 
 ---
 

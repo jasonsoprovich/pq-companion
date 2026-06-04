@@ -20,6 +20,7 @@ import type {
 import type { Spell } from '../types/spell'
 import type { Item } from '../types/item'
 import type { SkillView } from '../types/skill'
+import { DEV_SKILLS } from '../lib/devFlags'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import ItemDetailModal from '../components/ItemDetailModal'
 import { BuffPicker } from '../components/BuffPicker'
@@ -293,7 +294,9 @@ export default function CharacterProgressPage(): React.ReactElement {
             <TabButton active={tab === 'modifiers'} onClick={() => setTab('modifiers')}>
               Spell Modifiers {modifiers && modifiers.length > 0 ? `(${modifiers.length})` : ''}
             </TabButton>
-            <TabButton active={tab === 'skills'} onClick={() => setTab('skills')}>Skills</TabButton>
+            {DEV_SKILLS && (
+              <TabButton active={tab === 'skills'} onClick={() => setTab('skills')}>Skills</TabButton>
+            )}
           </div>
 
           {loading ? (
@@ -317,7 +320,7 @@ export default function CharacterProgressPage(): React.ReactElement {
                   />
                 </ErrorBoundary>
               )}
-              {tab === 'skills' && (
+              {DEV_SKILLS && tab === 'skills' && (
                 <SkillsPanel characterID={activeChar?.id ?? null} />
               )}
             </>
