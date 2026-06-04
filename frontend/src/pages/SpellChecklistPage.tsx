@@ -10,6 +10,7 @@ import {
   Map,
   RefreshCw,
   AlertCircle,
+  Search,
   X,
 } from 'lucide-react'
 import {
@@ -411,6 +412,7 @@ export default function SpellChecklistPage(): React.ReactElement {
   const [classIndex, setClassIndex] = useState<number>(savedClass)
   const [filter, setFilter] = useState<Filter>('all')
   const [levelFilter, setLevelFilter] = useState<LevelFilter>({ min: '', max: '' })
+  const [query, setQuery] = useState('')
   const [spells, setSpells] = useState<Spell[]>([])
   const [spellbook, setSpellbook] = useState<Spellbook | null>(null)
   const [loadingSpells, setLoadingSpells] = useState(true)
@@ -494,9 +496,12 @@ export default function SpellChecklistPage(): React.ReactElement {
   const minLvl = parseInt(levelFilter.min) || 0
   const maxLvl = parseInt(levelFilter.max) || 0
 
+  const nameQuery = query.trim().toLowerCase()
+
   const filteredSpells = spells.filter((s) => {
     if (filter === 'known' && !knownIds.has(s.id)) return false
     if (filter === 'missing' && knownIds.has(s.id)) return false
+    if (nameQuery && !s.name.toLowerCase().includes(nameQuery)) return false
     const lvl = classLevel(s, classIndex)
     if (minLvl > 0 && lvl < minLvl) return false
     if (maxLvl > 0 && lvl > maxLvl) return false
@@ -592,6 +597,27 @@ export default function SpellChecklistPage(): React.ReactElement {
 
         {/* Row 2: filter tabs + level range + stats */}
         <div className="flex items-center gap-3 flex-wrap">
+          {/* Name search */}
+          <div
+            className="flex items-center gap-1.5 rounded px-2 py-1"
+            style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+          >
+            <Search size={12} style={{ color: 'var(--color-muted)' }} />
+            <input
+              type="text"
+              placeholder="Search spells…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="bg-transparent text-xs outline-none"
+              style={{ color: 'var(--color-foreground)', width: '9rem' }}
+            />
+            {query && (
+              <button onClick={() => setQuery('')} title="Clear search">
+                <X size={11} style={{ color: 'var(--color-muted)' }} />
+              </button>
+            )}
+          </div>
+
           {/* Filter tabs */}
           <div
             className="flex rounded overflow-hidden text-xs"
@@ -812,11 +838,13 @@ export default function SpellChecklistPage(): React.ReactElement {
         {!loading && !spellError && filteredSpells.length === 0 && (
           <div className="flex h-full items-center justify-center">
             <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
-              {filter === 'known'
-                ? 'No known spells for this class.'
-                : filter === 'missing'
-                  ? 'All spells known!'
-                  : 'No spells found for this class.'}
+              {nameQuery
+                ? `No spells match "${query.trim()}".`
+                : filter === 'known'
+                  ? 'No known spells for this class.'
+                  : filter === 'missing'
+                    ? 'All spells known!'
+                    : 'No spells found for this class.'}
             </p>
           </div>
         )}
