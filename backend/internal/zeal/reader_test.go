@@ -173,6 +173,40 @@ func TestParseInventory(t *testing.T) {
 	}
 }
 
+// Format-1 ("_pq.proj") exports number the doubled equipment slots
+// (Ear1/Ear2, Wrist1/Wrist2, Finger1/Finger2) and use a "Count/Charges"
+// header, where format 0 repeats the bare Ear/Wrist/Fingers names. The parser
+// must normalize the numbered slots to the canonical names so format-1 users
+// don't get empty Ear/Ring/Wrist slots on the inventory screen (#137), while
+// leaving bag slots like General1 untouched.
+func TestParseInventory_Format1SlotNames(t *testing.T) {
+	content := "Location\tName\tID\tCount/Charges\tSlots\n" +
+		"Ear1\tEarring A\t27939\t1\t0\n" +
+		"Ear2\tEarring B\t28771\t1\t0\n" +
+		"Wrist1\tBracer A\t1618\t1\t0\n" +
+		"Wrist2\tBracer B\t28938\t1\t0\n" +
+		"Finger1\tRing A\t19719\t1\t0\n" +
+		"Finger2\tRing B\t8735\t1\t0\n" +
+		"General1\tBox\t11703\t1\t10\n" +
+		"General1-Slot1\tWarhammer\t32151\t1\t0\n"
+
+	path := writeTemp(t, "Tester_pq.proj-Inventory.txt", content)
+	inv, err := ParseInventory(path, "Tester")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := []string{"Ear", "Ear", "Wrist", "Wrist", "Fingers", "Fingers", "General1", "General1-Slot1"}
+	if len(inv.Entries) != len(want) {
+		t.Fatalf("entries count = %d, want %d", len(inv.Entries), len(want))
+	}
+	for i, w := range want {
+		if inv.Entries[i].Location != w {
+			t.Errorf("entry[%d] location = %q, want %q", i, inv.Entries[i].Location, w)
+		}
+	}
+}
+
 func TestParseInventory_NoHeader(t *testing.T) {
 	// File without a header row should still parse correctly.
 	content := "Head\tIron Cap\t1001\t1\t0\n"

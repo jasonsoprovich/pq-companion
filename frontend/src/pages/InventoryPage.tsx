@@ -9,10 +9,13 @@ import { ItemIcon } from '../components/Icon'
 
 // ── Slot ordering for equipment display ───────────────────────────────────────
 
+// Canonical EQ equipment slot order. The backend zeal parser normalizes both
+// export formats to these names (the doubled Ear/Wrist/Fingers slots come
+// through as repeated entries), so this single ordering covers both formats.
 const EQUIPMENT_ORDER = [
-  'Charm', 'Ear1', 'Ear2', 'Head', 'Face', 'Neck', 'Shoulders', 'Arms',
-  'Wrists', 'Wrist', 'Hands', 'Primary', 'Secondary', 'Range', 'Ammo',
-  'Finger1', 'Finger2', 'Ring1', 'Ring2', 'Chest', 'Back', 'Waist', 'Legs', 'Feet',
+  'Charm', 'Ear', 'Head', 'Face', 'Neck', 'Shoulders', 'Arms', 'Back',
+  'Wrist', 'Range', 'Hands', 'Primary', 'Secondary',
+  'Fingers', 'Chest', 'Legs', 'Feet', 'Waist', 'PowerSource', 'Ammo',
 ]
 
 // Returns the bag number from a location like "General3" or "General3:Slot2".

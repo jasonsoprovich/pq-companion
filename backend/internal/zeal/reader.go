@@ -119,8 +119,38 @@ func ParseInventory(path, character string) (*Inventory, error) {
 	return inv, scanner.Err()
 }
 
+// inventorySlotAliases maps the numbered equipment-slot names emitted by the
+// "_pq.proj" (format 1) Zeal export to the canonical names used by the plain
+// (format 0) export and the rest of the app. EQ's three doubled slots come out
+// as Ear1/Ear2, Wrist1/Wrist2, Finger1/Finger2 in format 1, but as repeated
+// Ear/Wrist/Fingers rows in format 0. Normalizing at parse time means every
+// downstream consumer (equip-focus resolution, the character gear panel, the
+// inventory tracker) sees one slot vocabulary regardless of export format.
+//
+// Note "Finger" (singular, format 1) → "Fingers" (plural, the canonical name in
+// equipSlots). Bag slots like "General1" are intentionally NOT in this map — a
+// blanket digit strip would wrongly collapse them to "General".
+//
+// Fixes #137: format-1 users saw empty Ear / Ring (Fingers) / Wrist slots on
+// the character inventory & equipment screens.
+var inventorySlotAliases = map[string]string{
+	"Ear1": "Ear", "Ear2": "Ear",
+	"Wrist1": "Wrist", "Wrist2": "Wrist",
+	"Finger1": "Fingers", "Finger2": "Fingers",
+}
+
+// canonicalSlot maps a raw export slot name to the app's canonical name,
+// passing through anything not in inventorySlotAliases unchanged.
+func canonicalSlot(loc string) string {
+	if canon, ok := inventorySlotAliases[loc]; ok {
+		return canon
+	}
+	return loc
+}
+
 // parseInventoryLine parses one tab-delimited inventory row.
-// Expected: Location\tName\tID\tCount\tSlots
+// Expected: Location\tName\tID\tCount\tSlots (format-1 exports use a
+// "Count/Charges" header but the same column positions).
 func parseInventoryLine(line string) (InventoryEntry, bool) {
 	parts := strings.Split(line, "\t")
 	if len(parts) < 4 {
@@ -143,7 +173,7 @@ func parseInventoryLine(line string) (InventoryEntry, bool) {
 	}
 
 	return InventoryEntry{
-		Location: strings.TrimSpace(parts[0]),
+		Location: canonicalSlot(strings.TrimSpace(parts[0])),
 		Name:     strings.TrimSpace(parts[1]),
 		ID:       id,
 		Count:    count,
