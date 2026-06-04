@@ -2437,6 +2437,7 @@ const NPC_SECTION_ROWS: ReadonlyArray<{
   { key: 'resists', label: 'Resists', hint: 'MR, CR, FR, DR, PR chips' },
   { key: 'attributes', label: 'Attributes', hint: 'STR / STA / DEX / AGI / INT / WIS / CHA' },
   { key: 'special_abilities', label: 'Special Abilities', hint: 'Summon, rampage, immunities, etc.' },
+  { key: 'faction', label: 'Faction', hint: 'Primary faction and the hits taken on a kill' },
 ]
 
 function NPCOverlaySectionsCard({

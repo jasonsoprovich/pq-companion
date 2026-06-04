@@ -6,6 +6,7 @@ export interface NPCOverlaySections {
   resists: boolean
   attributes: boolean
   special_abilities: boolean
+  faction: boolean
 }
 
 export const DEFAULT_NPC_OVERLAY_SECTIONS: NPCOverlaySections = {
@@ -14,6 +15,7 @@ export const DEFAULT_NPC_OVERLAY_SECTIONS: NPCOverlaySections = {
   resists: true,
   attributes: true,
   special_abilities: true,
+  faction: true,
 }
 
 export interface Preferences {

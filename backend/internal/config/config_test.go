@@ -215,3 +215,66 @@ spell_timer:
 			got, TrackingScopeAnyone)
 	}
 }
+
+// The Faction NPC-overlay section was added after the other five. A config
+// written with the original sections populated but no faction field must have
+// faction turned on exactly once, and the user's later choice to disable it
+// must survive subsequent loads.
+func TestLoadFrom_MigratesNPCFactionSection_Once(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	// Pre-faction config: the original five sections set, no faction key and no
+	// migration flag.
+	const old = `eq_path: /games/EQ
+preferences:
+  npc_overlay_dashboard_sections:
+    identity: true
+    combat: true
+    resists: true
+    attributes: true
+    special_abilities: true
+  npc_overlay_popout_sections:
+    identity: true
+    combat: false
+    resists: true
+    attributes: true
+    special_abilities: true
+`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	cfg := m.Get()
+
+	if !cfg.Preferences.NPCOverlayDashboardSections.Faction {
+		t.Error("dashboard Faction should be on after migration")
+	}
+	if !cfg.Preferences.NPCOverlayPopoutSections.Faction {
+		t.Error("popout Faction should be on after migration")
+	}
+	if !cfg.Preferences.NPCFactionSectionMigrationDone {
+		t.Error("NPCFactionSectionMigrationDone should be true after migration")
+	}
+	// The non-faction toggles must be left untouched by the migration.
+	if cfg.Preferences.NPCOverlayPopoutSections.Combat {
+		t.Error("migration must not change unrelated toggles (popout combat)")
+	}
+
+	// User disables faction on the popout, then we reload.
+	cfg.Preferences.NPCOverlayPopoutSections.Faction = false
+	if err := m.Update(cfg); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	m2, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom (reload): %v", err)
+	}
+	if m2.Get().Preferences.NPCOverlayPopoutSections.Faction {
+		t.Error("reload after disabling faction: must stay off (migration is one-shot)")
+	}
+}
