@@ -114,10 +114,13 @@ export interface ShoppingVendor {
   spell_ids: number[]
 }
 
+export type ZoneAlignment = 'good' | 'neutral' | 'evil'
+
 export interface ShoppingStop {
   zone_short: string
   zone_name: string
   reason: 'anchor' | 'greedy'
+  alignment: ZoneAlignment
   spells: ShoppingSpell[]
   vendors: ShoppingVendor[]
 }
@@ -125,6 +128,12 @@ export interface ShoppingStop {
 export interface ShoppingRoute {
   stops: ShoppingStop[]
   unavailable: ShoppingSpell[]
+  excluded_by_alignment: ShoppingSpell[]
   total_zones: number
   total_spells: number
+}
+
+export interface ShoppingRouteOptions {
+  excludeAlignments?: ZoneAlignment[]
+  startZone?: string
 }

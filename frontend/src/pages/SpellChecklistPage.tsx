@@ -748,6 +748,7 @@ export default function SpellChecklistPage(): React.ReactElement {
       {routeIds && (
         <ShoppingRoutePanel
           spellIds={routeIds}
+          classIndex={classIndex}
           onClose={() => setRouteIds(null)}
         />
       )}

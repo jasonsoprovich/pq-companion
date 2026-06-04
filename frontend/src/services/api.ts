@@ -1,7 +1,7 @@
 import type { Config } from '../types/config'
 import type { Item, ItemSources, SearchResult } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells } from '../types/npc'
-import type { BuffStatDelta, Spell, SpellCrossRefs, ShoppingRoute } from '../types/spell'
+import type { BuffStatDelta, Spell, SpellCrossRefs, ShoppingRoute, ShoppingRouteOptions } from '../types/spell'
 import type { Zone, ZoneConnection, ZoneGroundSpawn, ZoneForageItem, ZoneDropItem } from '../types/zone'
 import type {
   ZealInventoryResponse,
@@ -274,9 +274,17 @@ export function getSpellStatDeltas(ids: number[]): Promise<Record<string, SpellS
 
 // Compute an efficient shopping route covering the given spells: an ordered
 // list of zones to visit (fewest-zones greedy set-cover), the spells/vendors
-// at each, and any spells no vendor sells. Used by the spell checklist.
-export function getShoppingRoute(spellIds: number[]): Promise<ShoppingRoute> {
-  return post<ShoppingRoute>(`/api/spells/shopping-route`, { spell_ids: spellIds })
+// at each, and any spells no vendor sells. Optionally exclude towns by
+// alignment and order the stops from a starting zone. Used by the checklist.
+export function getShoppingRoute(
+  spellIds: number[],
+  opts: ShoppingRouteOptions = {},
+): Promise<ShoppingRoute> {
+  return post<ShoppingRoute>(`/api/spells/shopping-route`, {
+    spell_ids: spellIds,
+    exclude_alignments: opts.excludeAlignments ?? [],
+    start_zone: opts.startZone ?? '',
+  })
 }
 
 // ── NPCs ───────────────────────────────────────────────────────────────────────
