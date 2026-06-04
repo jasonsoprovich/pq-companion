@@ -283,21 +283,24 @@ func (db *DB) GetBaseData(level, classIdx int) (BaseData, error) {
 
 // Mac-era skill_caps.skill_id values for the Quarm/EQMacEmu data. The Mac-era
 // skill enum is offset from modern EQEmu (where Defense is 16): here Defense is
-// 15 (id 9 is Bind Wound). Verified against EQMacEmu's common/skills.h and the
-// level-60 caps in skill_caps: Defense (15) gives WAR/PAL/SHD/MNK/BRD/ROG 252,
-// RNG/BST 240, CLR/DRU/SHM 200, NEC/WIZ/MAG/ENC 145; Offense (22) and the melee
-// weapon skills match the same enum.
+// 15 (id 9 is Bind Wound). quarm.db skill_caps follows the EQMacEmu
+// common/skills.h enum verbatim — verified against the DB by class availability:
+// Defense (15) gives WAR/PAL/SHD/MNK/BRD/ROG 252, RNG/BST 240, CLR/DRU/SHM 200,
+// NEC/WIZ/MAG/ENC 145; Offense (33) has a row for every class (casters ~140), as
+// expected for a universal skill. (skill_id 22 is Dual Wield, not Offense — only
+// the dual-wield classes have it; it was previously misidentified here.)
 const (
 	defenseSkillID = 15
-	offenseSkillID = 22
+	offenseSkillID = 33
 )
 
-// meleeWeaponSkillIDs are the player melee weapon skills plus Hand to Hand (19),
-// in the Mac-era enum: 1HBlunt(0), 1HSlash(1), 2HBlunt(2), 2HSlash(3),
-// 1HPiercing(29). BestWeaponSkillCap takes the max cap across these — the
-// character's most-trained melee skill, used as the assumed weapon skill for
-// the ATK rating (the export carries no equipped-weapon type).
-var meleeWeaponSkillIDs = []int{0, 1, 2, 3, 29, 19}
+// meleeWeaponSkillIDs are the player melee weapon skills plus Hand to Hand, in
+// the EQMac enum: 1HBlunt(0), 1HSlash(1), 2HBlunt(2), 2HSlash(3), 1HPiercing(36),
+// HandToHand(28). BestWeaponSkillCap takes the max cap across these — the
+// character's most-trained melee skill, used as the assumed weapon skill for the
+// ATK rating (the export carries no equipped-weapon type). (Previously used
+// 29/19, which are actually Hide and Dodge.)
+var meleeWeaponSkillIDs = []int{0, 1, 2, 3, 36, 28}
 
 // skillCap returns the maximum value of the given skill a class can reach at
 // the given level. classIdx is 1-indexed (1=Warrior … 14=Enchanter,
