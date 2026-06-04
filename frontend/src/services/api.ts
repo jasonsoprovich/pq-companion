@@ -910,6 +910,7 @@ export interface QuarmyInventoryEntry {
   id: number
   count: number
   slots: number
+  icon?: number // joined in by API from items.icon
 }
 
 export interface QuarmyData {

@@ -27,6 +27,7 @@ import { BuffPicker } from '../components/BuffPicker'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SpellIcon } from '../components/Icon'
+import { EquipmentPaperDoll } from '../components/EquipmentPaperDoll'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 
 // ── Equipment slot ordering ────────────────────────────────────────────────────
@@ -1198,7 +1199,7 @@ function formatBuffEffects(d: StatDelta | Required<StatDelta>): string {
 // ── Gear Panel ────────────────────────────────────────────────────────────────
 
 interface GearPanelProps {
-  gear: Array<{ location: string; name: string; id: number; count: number }>
+  gear: Array<{ location: string; name: string; id: number; count: number; icon?: number }>
   hasQuarmy: boolean
   onLookup: (id: number) => void
 }
@@ -1217,48 +1218,10 @@ function GearPanel({ gear, hasQuarmy, onLookup }: GearPanelProps): React.ReactEl
     return <EmptyState message="No equipped items found" hint="Equipment slots appear empty in the quarmy export." />
   }
 
+  // In-game-style equipment grid, positioning each item by its slot.
   return (
-    <div
-      className="rounded-lg overflow-hidden overflow-y-auto"
-      style={{ border: '1px solid var(--color-border)' }}
-    >
-      <table className="w-full text-sm">
-        <thead className="sticky top-0">
-          <tr style={{ backgroundColor: 'var(--color-surface-2)' }}>
-            <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)', width: '120px' }}>Slot</th>
-            <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Item</th>
-          </tr>
-        </thead>
-        <tbody>
-          {gear.map((item, i) => {
-            const clickable = item.id > 0
-            return (
-              <tr
-                key={`${item.location}-${i}`}
-                onClick={clickable ? () => onLookup(item.id) : undefined}
-                style={{
-                  backgroundColor: i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-2)',
-                  borderTop: '1px solid var(--color-border)',
-                  cursor: clickable ? 'pointer' : 'default',
-                }}
-              >
-                <td
-                  className="px-4 py-2 text-xs font-medium"
-                  style={{ color: 'var(--color-muted-foreground)' }}
-                >
-                  {item.location}
-                </td>
-                <td
-                  className="px-4 py-2"
-                  style={{ color: clickable ? 'var(--color-primary)' : 'var(--color-foreground)' }}
-                >
-                  {item.name}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+    <div className="mx-auto" style={{ maxWidth: 720 }}>
+      <EquipmentPaperDoll equipped={gear} onLookup={onLookup} />
     </div>
   )
 }
