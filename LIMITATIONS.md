@@ -259,6 +259,25 @@ These are inherent to log-file parsing and affect multiple features:
   exposing live skill values and the equipped-weapon type would let us use the
   character's actual skills instead of the cap assumption.
 
+### 7.2 Skill Tracker only knows skills it has watched rise, and infers the specialization
+
+- **Limitation:** The character Skills tab is built from `EventSkillUp` log
+  lines ("You have become better at X! (N)"), so a skill the character hasn't
+  raised while logging (or backfilling) shows no value at all — there's no full
+  skill snapshot. For the five caster Specialize <school> skills, only one may
+  exceed 50 on Quarm; we infer the chosen school from the observed values
+  (whichever is already above 50) and lock the others' displayed cap at 50. If
+  no school has passed 50 yet, all five show their full trainable cap because
+  the primary isn't yet decided.
+- **Root cause:** EQ logs a skill only when it changes, never a full list. The
+  Quarmy/Zeal export carries no live skill values, and `skill_caps` lists the
+  raw per-school cap without encoding the single-primary rule.
+- **Sources checked:** Log (skill-up lines only), `quarm.db` (`skill_caps`
+  caps), Zeal (no skill snapshot today).
+- **Could a future data source fix this?** **Partially.** A Zeal field exposing
+  the full live skill list (and the chosen specialization) would replace both
+  the watch-only gap and the specialization inference.
+
 ---
 
 ## 8. Tradeskills / recipes

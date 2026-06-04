@@ -320,6 +320,14 @@ func (db *DB) skillCap(skillID, classIdx, level int) (int, error) {
 	return cap, nil
 }
 
+// SkillCap returns the maximum value of the given skill_id a class can reach
+// at the given level, looked up from skill_caps. classIdx is 1-indexed
+// (1=Warrior … 15=Beastlord). Returns 0 when the class never trains the skill.
+// Exported wrapper around skillCap for the Skill Tracker.
+func (db *DB) SkillCap(skillID, classIdx, level int) (int, error) {
+	return db.skillCap(skillID, classIdx, level)
+}
+
 // DefenseSkillCap returns the maximum Defense skill a class can reach at the
 // given level. Used as the assumed Defense value when computing displayed AC —
 // a max-level main is virtually always at cap, and the Quarmy export carries

@@ -6,6 +6,7 @@ import {
   getCharacterSpellModifiers, searchSpells,
   getCharacterRaidBuffs, setCharacterRaidBuffs, getSpellStatDeltas,
   getTimerState, MAX_RAID_BUFF_SLOTS, getCharacterDerivedStats,
+  getCharacterSkills,
 } from '../services/api'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
@@ -18,6 +19,7 @@ import type {
 } from '../services/api'
 import type { Spell } from '../types/spell'
 import type { Item } from '../types/item'
+import type { SkillView } from '../types/skill'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import ItemDetailModal from '../components/ItemDetailModal'
 import { BuffPicker } from '../components/BuffPicker'
@@ -79,7 +81,7 @@ function StatBar({ label, value, max = 255 }: StatBarProps): React.ReactElement 
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-type Tab = 'stats' | 'gear' | 'aas' | 'modifiers'
+type Tab = 'stats' | 'gear' | 'aas' | 'modifiers' | 'skills'
 
 interface TabButtonProps {
   active: boolean
@@ -291,6 +293,7 @@ export default function CharacterProgressPage(): React.ReactElement {
             <TabButton active={tab === 'modifiers'} onClick={() => setTab('modifiers')}>
               Spell Modifiers {modifiers && modifiers.length > 0 ? `(${modifiers.length})` : ''}
             </TabButton>
+            <TabButton active={tab === 'skills'} onClick={() => setTab('skills')}>Skills</TabButton>
           </div>
 
           {loading ? (
@@ -313,6 +316,9 @@ export default function CharacterProgressPage(): React.ReactElement {
                     contributors={modifiers}
                   />
                 </ErrorBoundary>
+              )}
+              {tab === 'skills' && (
+                <SkillsPanel characterID={activeChar?.id ?? null} />
               )}
             </>
           )}
@@ -1823,6 +1829,106 @@ function ResolutionDisplay({ r }: { r: SpellModifierResolution }): React.ReactEl
               </div>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Skills ──────────────────────────────────────────────────────────────────
+
+function SkillsPanel({ characterID }: { characterID: number | null }): React.ReactElement {
+  const [skills, setSkills] = useState<SkillView[] | null>(null)
+  const [error, setError] = useState(false)
+  const [query, setQuery] = useState('')
+
+  const load = useCallback(() => {
+    if (!characterID) { setSkills([]); return }
+    getCharacterSkills(characterID)
+      .then((r) => setSkills(r.skills ?? []))
+      .catch(() => setError(true))
+  }, [characterID])
+
+  useEffect(() => { setSkills(null); setError(false); load() }, [load])
+
+  // Live-refresh when the active character gains a skill.
+  const handle = useCallback((msg: WsMessage) => {
+    if (msg.type === WSEvent.SkillsUpdate) load()
+  }, [load])
+  useWebSocket(handle)
+
+  if (!characterID) {
+    return <EmptyState message="No character selected" hint="Pick a character to see their tracked skills." />
+  }
+  if (error) {
+    return <EmptyState message="Couldn't load skills" hint="The skill tracker may be unavailable. Try again shortly." />
+  }
+  if (skills === null) {
+    return <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>Loading…</p>
+  }
+  if (skills.length === 0) {
+    return (
+      <EmptyState
+        message="No skills tracked yet"
+        hint="Skill values are recorded as you raise them in game ('You have become better at …!'). Play with logging on — or run a Log Backfill from Settings → Logs — and they'll appear here with their class/level caps."
+      />
+    )
+  }
+
+  const term = query.trim().toLowerCase()
+  const filtered = term
+    ? skills.filter((s) => s.skill_name.toLowerCase().includes(term))
+    : skills
+
+  return (
+    <div className="space-y-3">
+      <div className="relative">
+        <Search size={14} style={{
+          position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)',
+          color: 'var(--color-muted-foreground)',
+        }} />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter skills…"
+          className="w-full rounded px-3 py-1.5 pl-8 text-sm"
+          style={{
+            backgroundColor: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-foreground)',
+          }}
+        />
+      </div>
+      {filtered.length === 0 ? (
+        <p className="px-1 text-xs" style={{ color: 'var(--color-muted)' }}>No skills match “{query}”.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {filtered.map((s) => <SkillRow key={s.skill_name} s={s} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SkillRow({ s }: { s: SkillView }): React.ReactElement {
+  const hasCap = s.cap > 0
+  const pct = hasCap ? Math.min(100, Math.round((s.value / s.cap) * 100)) : 0
+  const atCap = hasCap && s.value >= s.cap
+  return (
+    <div
+      className="rounded px-3 py-2"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+    >
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span style={{ color: 'var(--color-foreground)' }}>{s.skill_name}</span>
+        <span className="font-mono tabular-nums" style={{ color: atCap ? '#22c55e' : 'var(--color-foreground)' }}>
+          {s.value}{hasCap ? ` / ${s.cap}` : ''}{atCap ? ' ✓' : ''}
+        </span>
+      </div>
+      {hasCap && (
+        <div className="mt-1 h-1 overflow-hidden rounded" style={{ backgroundColor: 'var(--color-surface-3)' }}>
+          <div style={{ width: `${pct}%`, height: '100%', backgroundColor: atCap ? '#22c55e' : 'var(--color-primary)' }} />
         </div>
       )}
     </div>

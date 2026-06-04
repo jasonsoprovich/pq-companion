@@ -42,7 +42,7 @@ type BuffStatDelta struct {
 // (parseWornEffect) but kept separate so the helper can live in the db
 // package without an import cycle.
 const (
-	spaBuffHitpoints = 0   // base/tick = HP regen when buffduration>0
+	spaBuffHitpoints = 0 // base/tick = HP regen when buffduration>0
 	spaBuffAC        = 1
 	spaBuffATK       = 2
 	spaBuffSTR       = 4
@@ -52,8 +52,8 @@ const (
 	spaBuffINT       = 8
 	spaBuffWIS       = 9
 	spaBuffCHA       = 10
-	spaBuffHasteV1   = 11  // melee haste v1 (worn-context primarily)
-	spaBuffMana      = 15  // base/tick = mana regen when buffduration>0
+	spaBuffHasteV1   = 11 // melee haste v1 (worn-context primarily)
+	spaBuffMana      = 15 // base/tick = mana regen when buffduration>0
 	spaBuffFireRes   = 46
 	spaBuffColdRes   = 47
 	spaBuffPoisonRes = 48

@@ -34,6 +34,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/sandbox"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/savedquery"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/skills"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
@@ -187,6 +188,18 @@ func main() {
 		lootStore = nil
 	} else {
 		defer lootStore.Close()
+	}
+
+	// Skill tracker: persists each character's skill values from "You have
+	// become better at X! (N)" lines. Non-fatal — failing here only disables
+	// the character Skills tab.
+	skillsStore, err := skills.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	var skillsConsumer *skills.Consumer
+	if err != nil {
+		slog.Warn("open skill tracker (disabled)", "err", err)
+		skillsStore = nil
+	} else {
+		defer skillsStore.Close()
 	}
 
 	// Keyring tracker: persists per-character /keys snapshots. Master list
@@ -472,6 +485,13 @@ func main() {
 		})
 	}
 
+	if skillsStore != nil {
+		skillsConsumer = skills.NewConsumer(skillsStore, activeChar)
+		skillsConsumer.SetOnUpdate(func(u skills.Update) {
+			hub.Broadcast(ws.Event{Type: "skills:update", Data: u})
+		})
+	}
+
 	// Backfill registry: powers Settings → Log Backfill. Each tracker that can
 	// be retroactively populated from a character's log registers a dedup-safe,
 	// timestamp-aware handler here. Upcoming trackers (loot, tradeskills) plug
@@ -496,6 +516,13 @@ func main() {
 			Key:        "loot",
 			Label:      "Loot Tracker",
 			NewHandler: func(character string) backfill.Handler { return loot.NewBackfillHandler(lootStore, character) },
+		})
+	}
+	if skillsStore != nil {
+		backfillRegistry.Register(backfill.Section{
+			Key:        "skills",
+			Label:      "Skill Tracker",
+			NewHandler: func(character string) backfill.Handler { return skills.NewBackfillHandler(skillsStore, character) },
 		})
 	}
 
@@ -656,6 +683,9 @@ func main() {
 		if lootConsumer != nil {
 			lootConsumer.HandleEvent(ev)
 		}
+		if skillsConsumer != nil {
+			skillsConsumer.Handle(ev)
+		}
 	}, func(ts time.Time, msg string) {
 		triggerEngine.Handle(ts, msg)
 		if keyringConsumer != nil {
@@ -764,7 +794,7 @@ func main() {
 		defer savedQueryStore.Close()
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {
