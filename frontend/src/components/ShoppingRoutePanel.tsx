@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Map, MapPin, RefreshCw, AlertCircle, X, Plus, Navigation } from 'lucide-react'
+import { Map as MapIcon, MapPin, RefreshCw, AlertCircle, X, Plus, Navigation } from 'lucide-react'
 import { getShoppingRoute } from '../services/api'
 import type { ShoppingRoute, ShoppingStop, ShoppingSpell, ZoneAlignment } from '../types/spell'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
@@ -225,7 +225,7 @@ export default function ShoppingRoutePanel({ spellIds, classIndex, onClose }: Pr
           className="flex shrink-0 items-center gap-2 px-5 pt-4 pb-3"
           style={{ borderBottom: '1px solid var(--color-border)' }}
         >
-          <Map size={18} style={{ color: 'var(--color-primary)' }} />
+          <MapIcon size={18} style={{ color: 'var(--color-primary)' }} />
           <h2 className="text-base font-bold" style={{ color: 'var(--color-primary)' }}>
             Shopping route
           </h2>
@@ -318,7 +318,7 @@ export default function ShoppingRoutePanel({ spellIds, classIndex, onClose }: Pr
           ))}
 
           {/* Spells whose only towns were filtered out by alignment */}
-          {!loading && !error && route && route.excluded_by_alignment.length > 0 && (
+          {!loading && !error && route && (route.excluded_by_alignment?.length ?? 0) > 0 && (
             <div
               className="mt-1 rounded border px-3 py-2"
               style={{ backgroundColor: 'rgba(248,113,113,0.06)', borderColor: 'rgba(248,113,113,0.3)' }}
@@ -341,7 +341,7 @@ export default function ShoppingRoutePanel({ spellIds, classIndex, onClose }: Pr
           )}
 
           {/* Spells no vendor sells anywhere */}
-          {!loading && !error && route && route.unavailable.length > 0 && (
+          {!loading && !error && route && (route.unavailable?.length ?? 0) > 0 && (
             <div
               className="mt-1 rounded border px-3 py-2"
               style={{ backgroundColor: 'rgba(255,200,50,0.06)', borderColor: 'rgba(255,200,50,0.3)' }}
