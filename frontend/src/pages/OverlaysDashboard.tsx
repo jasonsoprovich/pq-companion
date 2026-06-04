@@ -2,13 +2,13 @@
  * OverlaysDashboard — customizable in-app dashboard combining the four
  * draggable/resizable overlay panels. The toolbar exposes per-panel show/hide,
  * a Reset button, and pop-out toggles for the standalone Electron overlay
- * windows that don't have an in-dashboard panel (Trigger Alerts, HPS).
+ * windows that don't have an in-dashboard panel (HPS, CH Chain, CH Metronome).
  *
  * Layout (positions, sizes, visibility) is persisted to localStorage and
  * restored on next mount. Drag/resize snaps to a 16px grid.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Eye, EyeOff, MonitorPlay, RotateCcw, HeartPulse, ExternalLink, Layers, X } from 'lucide-react'
+import { Eye, EyeOff, MonitorPlay, RotateCcw, HeartPulse, Gauge, ExternalLink, Layers, X } from 'lucide-react'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
@@ -198,6 +198,38 @@ export default function OverlaysDashboard(): React.ReactElement {
             >
               <HeartPulse size={11} />
               HPS Meter
+              <ExternalLink size={9} style={{ opacity: 0.6 }} />
+            </button>
+          )}
+          {typeof window.electron?.overlay?.toggleCHChain === 'function' && (
+            <button
+              onClick={() => window.electron?.overlay?.toggleCHChain()}
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                color: 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+              title="Toggle the CH Chain overlay window"
+            >
+              <HeartPulse size={11} />
+              CH Chain
+              <ExternalLink size={9} style={{ opacity: 0.6 }} />
+            </button>
+          )}
+          {typeof window.electron?.overlay?.toggleCHMetronome === 'function' && (
+            <button
+              onClick={() => window.electron?.overlay?.toggleCHMetronome()}
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                color: 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+              title="Toggle the CH Metronome overlay window"
+            >
+              <Gauge size={11} />
+              CH Metronome
               <ExternalLink size={9} style={{ opacity: 0.6 }} />
             </button>
           )}
