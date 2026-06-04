@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, DatabaseBackup, PanelLeft } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
+import EqLogStatusCard from '../components/settings/EqLogStatusCard'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config, DPSClassColors, NPCOverlaySections } from '../types/config'
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
@@ -33,7 +35,7 @@ import DeveloperTab from './DeveloperTab'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backfill' | 'backups' | 'advanced' | 'developer'
+type Tab = 'general' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backups' | 'advanced' | 'developer'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -155,7 +157,14 @@ function QuarmFileRow({ file }: { file: QuarmFileStatus }): React.ReactElement {
 }
 
 export default function SettingsPage(): React.ReactElement {
-  const [tab, setTab] = useState<Tab>('general')
+  const [searchParams] = useSearchParams()
+  // Allow deep-linking to a specific tab via ?tab= (e.g. links to the Logs tab
+  // for backfill). Falls back to General for unknown/absent values.
+  const [tab, setTab] = useState<Tab>(() => {
+    const valid: Tab[] = ['general', 'navigation', 'overlays', 'spelltimers', 'dpscolors', 'logs', 'backups', 'advanced', 'developer']
+    const t = searchParams.get('tab') ?? ''
+    return (valid as string[]).includes(t) ? (t as Tab) : 'general'
+  })
   const [config, setConfig] = useState<Config | null>(null)
   const [originalConfig, setOriginalConfig] = useState<Config | null>(null)
   // Latest saved config, mirrored into a ref so the unmount cleanup below can
@@ -466,7 +475,6 @@ export default function SettingsPage(): React.ReactElement {
     { id: 'spelltimers', label: 'Spell Timers', icon: <Sparkles size={13} /> },
     { id: 'dpscolors', label: 'DPS Class Colors', icon: <Palette size={13} /> },
     { id: 'logs', label: 'Logs', icon: <FileText size={13} /> },
-    { id: 'backfill', label: 'Log Backfill', icon: <DatabaseBackup size={13} /> },
     { id: 'backups', label: 'EQ Config Backups', icon: <HardDrive size={13} /> },
     { id: 'advanced', label: 'Advanced', icon: <Wifi size={13} /> },
     ...(developerMode
@@ -608,17 +616,6 @@ export default function SettingsPage(): React.ReactElement {
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           <DeveloperTab />
-        </div>
-      </div>
-    )
-  }
-
-  if (tab === 'backfill') {
-    return (
-      <div className="flex h-full flex-col">
-        <TabBar tabs={tabs} active={tab} onChange={setTab} />
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <BackfillPanel />
         </div>
       </div>
     )
@@ -843,6 +840,9 @@ export default function SettingsPage(): React.ReactElement {
           </div>
         </section>
         )}
+
+        {/* ── EverQuest logging & Zeal status/toggles ──────────────────────── */}
+        {tab === 'general' && <EqLogStatusCard />}
 
         {/* ── Zeal integration ───────────────────────────────────────────── */}
         {tab === 'general' && (
@@ -1666,7 +1666,7 @@ export default function SettingsPage(): React.ReactElement {
             )}
           </h2>
           <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Archives the current EverQuest log file to a <code className="font-mono">.bak.txt</code> next to it, then trims the live log to the last 7 days of entries. Files over 75 MB are flagged for cleanup. Unrelated to the EQ Config Backups tab — that one protects your <code className="font-mono">.ini</code> files.
+            Archives the current EverQuest log file to a <code className="font-mono">.bak.txt</code> next to it, then trims the live log to the last 30 days of entries. Files over 75 MB are flagged for cleanup. Unrelated to the EQ Config Backups tab — that one protects your <code className="font-mono">.ini</code> files.
           </p>
 
           {/* Load file info */}
@@ -1791,6 +1791,9 @@ export default function SettingsPage(): React.ReactElement {
           )}
         </section>
         )}
+
+        {/* ── Chat retention + Log Backfill (merged into the Logs tab) ─────── */}
+        {tab === 'logs' && <BackfillPanel />}
 
         {/* ── Save / Discard buttons ─────────────────────────────────────── */}
         <div className="flex items-center gap-3">

@@ -64,7 +64,7 @@ func (h *logHandler) info(w http.ResponseWriter, r *http.Request) {
 }
 
 // cleanup handles POST /api/log/cleanup — backs up the log file and purges
-// entries older than 7 days.
+// entries older than the retention window (see logparser.purgeKeepDays).
 func (h *logHandler) cleanup(w http.ResponseWriter, r *http.Request) {
 	s := h.tailer.Status()
 	if !s.FileExists || s.FilePath == "" {

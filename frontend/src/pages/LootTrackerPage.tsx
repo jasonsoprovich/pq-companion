@@ -5,6 +5,8 @@ import type { LootEntry } from '../types/loot'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
+import MissingLogNotice from '../components/MissingLogNotice'
+import BackfillLink from '../components/BackfillLink'
 
 function formatTimestamp(unix: number): string {
   if (!unix) return ''
@@ -114,6 +116,7 @@ export default function LootTrackerPage(): React.ReactElement {
         <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>Loot Tracker</span>
         <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>{rows.length} item{rows.length === 1 ? '' : 's'}</span>
         <div className="ml-auto flex items-center gap-2">
+          <BackfillLink />
           <button onClick={() => { load(); loadMeta() }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
             style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)', border: '1px solid var(--color-border)' }}>
             <RefreshCw size={11} /> Refresh
@@ -175,6 +178,7 @@ export default function LootTrackerPage(): React.ReactElement {
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-4">
+        <MissingLogNotice />
         {loading && (
           <div className="flex flex-1 items-center justify-center py-12">
             <RefreshCw size={18} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
@@ -191,7 +195,7 @@ export default function LootTrackerPage(): React.ReactElement {
             <Package size={32} style={{ color: 'var(--color-muted)' }} />
             <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>No loot tracked yet.</p>
             <p className="text-[11px] max-w-md text-center" style={{ color: 'var(--color-muted)' }}>
-              Items looted by you and others in your group/raid are captured here as you play. To backfill from a character's log, use <span className="font-medium">Settings → Log Backfill</span>.
+              Items looted by you and others in your group/raid are captured here as you play. To backfill from a character's log, use the <span className="font-medium">Backfill</span> button above (Settings → Logs).
             </p>
           </div>
         )}

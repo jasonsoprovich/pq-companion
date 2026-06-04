@@ -59,7 +59,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	zones := &zonesHandler{db: database}
 	recipes := &recipesHandler{db: database}
 	favRecipes := &favoriteRecipesHandler{store: charStore, db: database}
-	cfg := &configHandler{mgr: cfgMgr, hub: hub, actualPort: actualPort}
+	cfg := &configHandler{mgr: cfgMgr, hub: hub, backupMgr: backupMgr, actualPort: actualPort}
 	charactersH := &charactersHandler{store: charStore, mgr: cfgMgr, db: database, watcher: zealWatcher}
 	search := &searchHandler{db: database}
 	zealH := &zealHandler{watcher: zealWatcher, cfgMgr: cfgMgr, db: database, pipe: pipeSupervisor, latest: zeal.NewLatestFetcher()}
@@ -141,6 +141,9 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/", cfg.get)
 			r.Put("/", cfg.update)
 			r.Post("/validate-eq-path", cfg.validateEQPath)
+			r.Get("/eq-diagnostics", cfg.diagnostics)
+			r.Post("/set-logging", cfg.setLogging)
+			r.Post("/set-export-on-camp", cfg.setExportOnCamp)
 			r.Get("/server-info", cfg.serverInfo)
 			r.Get("/test-port", cfg.testPort)
 		})

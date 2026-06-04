@@ -17,8 +17,13 @@ import {
   getConfig,
   updateConfig,
   validateEQPath,
+  getBackfillInfo,
+  runBackfill,
   type DiscoveredCharacter,
+  type EqDiagnostics,
 } from '../services/api'
+import { useWebSocket } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 import type { Config } from '../types/config'
 import type { ZealInstallStatus } from '../types/zeal'
 import { charClassLabel, charClassOptions } from '../lib/enumsCache'
@@ -59,6 +64,7 @@ export default function OnboardingWizard({
   const [eqPath, setEqPath] = useState('')
   const [validating, setValidating] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
+  const [eqDiag, setEqDiag] = useState<EqDiagnostics | null>(null)
   const [discovered, setDiscovered] = useState<DiscoveredCharacter[]>([])
   const [pathConfirmed, setPathConfirmed] = useState(false)
 
@@ -67,6 +73,11 @@ export default function OnboardingWizard({
 
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Optional log backfill on finish (only offered when logs were detected).
+  const [backfillOptIn, setBackfillOptIn] = useState(true)
+  const [backfilling, setBackfilling] = useState(false)
+  const [backfillPct, setBackfillPct] = useState(0)
 
   const [zealStatus, setZealStatus] = useState<ZealInstallStatus | null>(null)
   const [zealChecking, setZealChecking] = useState(false)
@@ -140,6 +151,7 @@ export default function OnboardingWizard({
     setValidationError(null)
     try {
       const result = await validateEQPath(eqPath.trim())
+      setEqDiag(result.diagnostics ?? null)
       if (!result.valid) {
         setValidationError(result.error ?? 'Folder is not a valid EverQuest installation')
         setDiscovered(result.characters)
@@ -160,6 +172,13 @@ export default function OnboardingWizard({
     }
   }
 
+  // Live backfill progress while finishing.
+  useWebSocket((msg) => {
+    if (msg.type !== WSEvent.BackfillProgress) return
+    const d = msg.data as { done: number; total: number }
+    if (d && d.total > 0) setBackfillPct(Math.min(100, Math.round((d.done / d.total) * 100)))
+  })
+
   async function handleFinish(): Promise<void> {
     if (!config) return
     setSaving(true)
@@ -173,6 +192,24 @@ export default function OnboardingWizard({
         onboarding_completed: true,
       }
       await updateConfig(updated)
+
+      // Optional: backfill the trackers from this character's existing log.
+      // Non-fatal — a failure here shouldn't block finishing setup.
+      if (backfillOptIn && discovered.length > 0 && character.trim()) {
+        try {
+          setBackfilling(true)
+          setBackfillPct(0)
+          const info = await getBackfillInfo()
+          const sections = info.sections.map((s) => s.key)
+          if (sections.length > 0) {
+            await runBackfill(character.trim(), sections)
+          }
+        } catch {
+          // ignore — user can backfill later from Settings → Logs
+        } finally {
+          setBackfilling(false)
+        }
+      }
       onComplete()
     } catch (err) {
       setSaveError((err as Error).message)
@@ -379,6 +416,24 @@ export default function OnboardingWizard({
                 >
                   <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                   <p>{validationError}</p>
+                </div>
+              )}
+
+              {/* Read-only diagnostics so the user can see exactly what's
+                  wrong; the actual toggles live in Settings (the EQ path must
+                  be saved first). */}
+              {eqDiag && !pathConfirmed && (
+                <div className="rounded p-3 text-xs" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)' }}>
+                  <DiagRow label="EverQuest logging" on={eqDiag.log_enabled} offText={eqDiag.log_found ? 'off' : 'not set'} />
+                  {eqDiag.zeal_installed && (
+                    <DiagRow label="Zeal output on camp" on={eqDiag.export_on_camp} offText="off" />
+                  )}
+                  {eqDiag.zeal_installed && (
+                    <DiagRow label={`Zeal ${eqDiag.zeal_version || 'version'}`} on={eqDiag.zeal_version_ok} offText="update recommended" />
+                  )}
+                  <p className="mt-2" style={{ color: 'var(--color-muted)' }}>
+                    You can turn logging and Zeal output on from Settings once setup is complete.
+                  </p>
                 </div>
               )}
             </div>
@@ -619,6 +674,37 @@ export default function OnboardingWizard({
                   </span>
                 </div>
               </div>
+
+              {/* Optional backfill — only when this character has a log to read. */}
+              {discovered.length > 0 && (
+                <div className="rounded p-3" style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+                  <label className="flex cursor-pointer items-start gap-2 text-sm" style={{ color: 'var(--color-foreground)' }}>
+                    <input
+                      type="checkbox"
+                      checked={backfillOptIn}
+                      disabled={backfilling}
+                      onChange={(e) => setBackfillOptIn(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Backfill chat, loot, and player history from {character || 'this character'}&apos;s existing log
+                      <span className="ml-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                        (recommended for existing players — can take a few minutes)
+                      </span>
+                    </span>
+                  </label>
+                  {backfilling && (
+                    <div className="mt-3">
+                      <div className="h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: 'var(--color-surface)' }}>
+                        <div className="h-full rounded-full transition-all" style={{ width: `${backfillPct}%`, backgroundColor: 'var(--color-primary)' }} />
+                      </div>
+                      <p className="mt-1 text-[11px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
+                        Backfilling… {backfillPct}%
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
               {saveError && (
                 <div
                   className="flex items-center gap-2 rounded p-3 text-sm"
@@ -683,11 +769,22 @@ export default function OnboardingWizard({
               }}
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-              {saving ? 'Saving…' : 'Finish'}
+              {backfilling ? 'Backfilling…' : saving ? 'Saving…' : 'Finish'}
             </button>
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// DiagRow is one green/red status line in the wizard's path diagnostics.
+function DiagRow({ label, on, offText }: { label: string; on: boolean; offText: string }): React.ReactElement {
+  return (
+    <div className="flex items-center gap-2 py-0.5">
+      <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: on ? '#22c55e' : '#ef4444' }} />
+      <span style={{ color: 'var(--color-foreground)' }}>{label}</span>
+      <span className="ml-auto" style={{ color: on ? '#22c55e' : '#ef4444' }}>{on ? 'on' : offText}</span>
     </div>
   )
 }
