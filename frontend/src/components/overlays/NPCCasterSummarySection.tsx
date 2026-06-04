@@ -41,10 +41,14 @@ export default function NPCCasterSummarySection({
   summary,
   sections,
   theme,
+  showHeading = true,
 }: {
   summary: NPCCasterSummary
   sections: NPCOverlaySections
   theme: CasterSummaryTheme
+  // showHeading renders the "Spells & Abilities" label. The DB page already
+  // wraps the section in its own titled card, so it passes false.
+  showHeading?: boolean
 }): React.ReactElement | null {
   if (!sections.spells) return null
 
@@ -80,7 +84,7 @@ export default function NPCCasterSummarySection({
 
   return (
     <div>
-      <p style={headingStyle}>Spells &amp; Abilities</p>
+      {showHeading && <p style={headingStyle}>Spells &amp; Abilities</p>}
 
       {highlights.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: signature.length || procs.length || classLists.length ? 4 : 0 }}>

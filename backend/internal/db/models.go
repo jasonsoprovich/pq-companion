@@ -481,6 +481,10 @@ type NPCSpells struct {
 	EngagedDetri   int             `json:"engaged_d_chance"`
 	PursueDetri    int             `json:"pursue_d_chance"`
 	IdleBeneficial int             `json:"idle_b_chance"`
+	// Summary is the distilled caster readout (highlights/procs/signature/class)
+	// — the same data the NPC overlay shows. Populated by the API handler so the
+	// database NPC page renders a consistent summary above the full spell list.
+	Summary *NPCCasterSummary `json:"summary,omitempty"`
 }
 
 // ZoneConnection is a zone reachable via a zone line from a source zone.

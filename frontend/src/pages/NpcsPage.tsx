@@ -17,6 +17,8 @@ import { inGameItemLink } from '../lib/itemHelpers'
 import CreateTriggerModal, { type TriggerPrefill } from '../components/CreateTriggerModal'
 import { ItemIcon } from '../components/Icon'
 import RawDataModal from './../components/RawDataModal'
+import NPCCasterSummarySection from '../components/overlays/NPCCasterSummarySection'
+import { DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
 
 function formatRespawnTime(seconds: number): string {
   if (seconds <= 0) return '—'
@@ -466,6 +468,7 @@ function groupEntriesBySource(entries: NPCSpellEntry[], ownListID: number): { so
 
 function NPCSpellsSection({ spells, onSpellClick }: NPCSpellsSectionProps): React.ReactElement {
   const [showTiming, setShowTiming] = useState(false)
+  const [showFullList, setShowFullList] = useState(false)
   const procs: { label: string; proc?: NPCSpellProc }[] = [
     { label: 'Attack proc', proc: spells.attack_proc },
     { label: 'Range proc', proc: spells.range_proc },
@@ -484,23 +487,56 @@ function NPCSpellsSection({ spells, onSpellClick }: NPCSpellsSectionProps): Reac
 
   return (
     <div className="space-y-2 py-1">
-      {procsPresent && (
-        <div>
-          <div className="mb-0.5 text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Procs</div>
-          <div className="rounded border px-2 py-1" style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)' }}>
-            {procs.map(({ label, proc }) => (proc ? <ProcRow key={label} label={label} proc={proc} onClick={onSpellClick} /> : null))}
-          </div>
-        </div>
+      {/* Distilled summary — same readout as the NPC overlays, for consistency
+          across the dashboard panel, popout, and this page. */}
+      {spells.summary && (
+        <NPCCasterSummarySection
+          summary={spells.summary}
+          sections={DEFAULT_NPC_OVERLAY_SECTIONS}
+          showHeading={false}
+          theme={{
+            heading: 'var(--color-muted)',
+            muted: 'var(--color-muted)',
+            chipBg: 'rgba(255,255,255,0.08)',
+            chipText: 'var(--color-foreground)',
+          }}
+        />
       )}
 
-      {grouped.map((bucket) => (
-        <SpellBucket
-          key={bucket.source}
-          title={bucket.ownSource ? 'Cast spells' : `Inherited from ${bucket.source}`}
-          entries={bucket.entries}
-          onSpellClick={onSpellClick}
-        />
-      ))}
+      {/* Full enumerated list (procs + per-source buckets), collapsed by default
+          — the summary above covers the at-a-glance need. */}
+      {spells.entries.length > 0 && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowFullList((s) => !s)}
+            className="text-[11px]"
+            style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
+          >
+            {showFullList ? '▾ Hide full spell list' : `▸ Show full spell list (${spells.entries.length})`}
+          </button>
+          {showFullList && (
+            <div className="mt-2 space-y-2">
+              {procsPresent && (
+                <div>
+                  <div className="mb-0.5 text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Procs</div>
+                  <div className="rounded border px-2 py-1" style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)' }}>
+                    {procs.map(({ label, proc }) => (proc ? <ProcRow key={label} label={label} proc={proc} onClick={onSpellClick} /> : null))}
+                  </div>
+                </div>
+              )}
+              {grouped.map((bucket) => (
+                <SpellBucket
+                  key={bucket.source}
+                  title={bucket.ownSource ? 'Cast spells' : `Inherited from ${bucket.source}`}
+                  entries={bucket.entries}
+                  onSpellClick={onSpellClick}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {hasTimingData && (
         <div>

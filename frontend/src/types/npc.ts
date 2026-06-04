@@ -146,6 +146,40 @@ export interface NPCSpellProc {
   chance: number
 }
 
+// ── Caster summary (distilled view shown in the overlays AND the DB page) ──
+
+// CasterHighlight is one curated caster-AI callout (Complete Heal, Gate, AE,
+// mez/charm/etc.). severity is "danger" (combat threat) or "info" (utility).
+export interface CasterHighlight {
+  tag: string
+  label: string
+  severity: 'danger' | 'info'
+}
+
+// NamedSpell references a spell by id + name. chance/kind are only present for
+// procs ("attack" | "range" | "defensive"); omitted for signature casts.
+export interface NamedSpell {
+  spell_id: number
+  spell_name: string
+  chance?: number
+  kind?: string
+}
+
+// ClassListSummary is an inherited parent spell list collapsed to a count.
+export interface ClassListSummary {
+  list_name: string
+  count: number
+}
+
+// NPCCasterSummary is the distilled, summary view of an NPC's caster AI.
+export interface NPCCasterSummary {
+  highlights?: CasterHighlight[]
+  procs?: NamedSpell[]
+  signature?: NamedSpell[]
+  signature_overflow?: number
+  class_lists?: ClassListSummary[]
+}
+
 export interface NPCSpells {
   npc_spells_id: number
   list_name: string
@@ -159,4 +193,7 @@ export interface NPCSpells {
   engaged_d_chance: number
   pursue_d_chance: number
   idle_b_chance: number
+  // summary mirrors the overlay caster summary so the DB page can show a
+  // consistent readout above the full enumerated list.
+  summary?: NPCCasterSummary
 }

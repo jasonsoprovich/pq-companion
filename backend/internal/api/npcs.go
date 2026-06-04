@@ -100,6 +100,13 @@ func (h *npcsHandler) spells(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, nil)
 		return
 	}
+	// Attach the distilled caster summary (highlights/procs/signature/class) so
+	// the database NPC page shows the same readout as the overlays above the
+	// full spell list. A summary failure is non-fatal — the full list still
+	// renders.
+	if summary, err := h.db.SummarizeNPCCaster(id); err == nil {
+		spells.Summary = summary
+	}
 	writeJSON(w, http.StatusOK, spells)
 }
 

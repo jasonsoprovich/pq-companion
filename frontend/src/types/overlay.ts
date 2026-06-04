@@ -1,44 +1,18 @@
-import type { NPC } from './npc'
+import type { NPC, NPCCasterSummary } from './npc'
+
+// Caster-summary types live in ./npc (shared by the overlays and the DB page);
+// re-exported here so existing overlay imports keep resolving.
+export type {
+  NPCCasterSummary,
+  CasterHighlight,
+  NamedSpell,
+  ClassListSummary,
+} from './npc'
 
 export interface SpecialAbility {
   code: number
   value: number
   name: string
-}
-
-// CasterHighlight is one curated caster-AI callout (Complete Heal, Gate, AE,
-// mez/charm/etc.). severity is "danger" (combat threat — red chip) or "info"
-// (utility — neutral chip).
-export interface CasterHighlight {
-  tag: string
-  label: string
-  severity: 'danger' | 'info'
-}
-
-// NamedSpell references a spell by id + name. chance/kind are only present for
-// procs ("attack" | "range" | "defensive"); omitted for signature casts.
-export interface NamedSpell {
-  spell_id: number
-  spell_name: string
-  chance?: number
-  kind?: string
-}
-
-// ClassListSummary is an inherited parent spell list collapsed to a count
-// (e.g. "Default Wizard List" × 64) — never enumerated in the overlay.
-export interface ClassListSummary {
-  list_name: string
-  count: number
-}
-
-// NPCCasterSummary is the distilled, overlay-friendly view of an NPC's caster
-// AI. Absent when the NPC has no caster AI (the section is hidden then).
-export interface NPCCasterSummary {
-  highlights?: CasterHighlight[]
-  procs?: NamedSpell[]
-  signature?: NamedSpell[]
-  signature_overflow?: number
-  class_lists?: ClassListSummary[]
 }
 
 // TargetVariant carries one alternative interpretation when the targeted
