@@ -27,7 +27,6 @@ func Order(stops []Stop, start string, adj map[string][]string) []Stop {
 		remaining[s.Zone] = true
 	}
 
-	const unreachable = int(^uint(0) >> 1) // max int
 	ordered := make([]Stop, 0, len(stops))
 	current := start
 	for len(remaining) > 0 {
@@ -36,7 +35,7 @@ func Order(stops []Stop, start string, adj map[string][]string) []Stop {
 		for z := range remaining {
 			d, ok := dist[z]
 			if !ok {
-				d = unreachable
+				d = distUnreachable
 			}
 			if best == "" || d < bestDist || (d == bestDist && z < best) {
 				best, bestDist = z, d
@@ -47,6 +46,13 @@ func Order(stops []Stop, start string, adj map[string][]string) []Stop {
 		current = best
 	}
 	return ordered
+}
+
+// Distances returns hop-distance from start to every zone reachable over the
+// adjacency graph (start maps to 0; absent zones are unreachable). The solver
+// uses it to prefer nearer sources when several zones tie on coverage.
+func Distances(start string, adj map[string][]string) map[string]int {
+	return bfsDistances(start, adj)
 }
 
 // bfsDistances returns the hop distance from start to every reachable zone.

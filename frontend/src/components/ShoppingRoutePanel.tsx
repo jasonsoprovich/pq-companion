@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Map as MapIcon, MapPin, RefreshCw, AlertCircle, X, Navigation } from 'lucide-react'
+import { Map as MapIcon, MapPin, RefreshCw, AlertCircle, X, Navigation, BookOpen } from 'lucide-react'
 import { getShoppingRoute } from '../services/api'
 import type { ShoppingRoute, ShoppingStop, ShoppingSpell, ZoneAlignment } from '../types/spell'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
@@ -37,6 +37,7 @@ const ALIGNMENTS: { key: ZoneAlignment; label: string }[] = [
 
 const LS_ALIGN = 'pq-companion:shop-exclude-alignments'
 const LS_START = 'pq-companion:shop-start-zone'
+const LS_POK = 'pq-companion:shop-include-pok'
 
 function loadJSON<T>(key: string, fallback: T): T {
   try {
@@ -159,6 +160,9 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
 
   const [excludeAlignments, setExcludeAlignments] = useState<ZoneAlignment[]>(() => loadJSON(LS_ALIGN, []))
   const [startZone, setStartZone] = useState<string>(() => loadJSON<string>(LS_START, ''))
+  // Plane of Knowledge is off by default — the Planes of Power hub isn't on this
+  // server's timeline yet, so it shouldn't be a recommended source.
+  const [includePoK, setIncludePoK] = useState<boolean>(() => loadJSON<boolean>(LS_POK, false))
 
   const [route, setRoute] = useState<ShoppingRoute | null>(null)
   const [loading, setLoading] = useState(true)
@@ -168,6 +172,7 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
   // the checklist page, per character.)
   useEffect(() => { saveJSON(LS_ALIGN, excludeAlignments) }, [excludeAlignments])
   useEffect(() => { saveJSON(LS_START, startZone) }, [startZone])
+  useEffect(() => { saveJSON(LS_POK, includePoK) }, [includePoK])
 
   // Stable dependency keys so the fetch only re-runs on real changes.
   const activeKey = spellIds.join(',')
@@ -176,20 +181,20 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
   useEffect(() => {
     let cancelled = false
     if (spellIds.length === 0) {
-      setRoute({ stops: [], unavailable: [], excluded_by_alignment: [], total_zones: 0, total_spells: 0 })
+      setRoute({ stops: [], unavailable: [], excluded_by_alignment: [], excluded_by_expansion: [], total_zones: 0, total_spells: 0 })
       setLoading(false)
       setError(null)
       return
     }
     setLoading(true)
     setError(null)
-    getShoppingRoute(spellIds, { excludeAlignments, startZone })
+    getShoppingRoute(spellIds, { excludeAlignments, startZone, includePoK })
       .then((r) => { if (!cancelled) setRoute(r) })
       .catch((err: Error) => { if (!cancelled) setError(err.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey, alignKey, startZone])
+  }, [activeKey, alignKey, startZone, includePoK])
 
   const toggleAlignment = (a: ZoneAlignment) =>
     setExcludeAlignments((prev) => (prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]))
@@ -283,6 +288,24 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
               })}
             </div>
           </div>
+
+          {/* Plane of Knowledge source toggle (off by default — not on this
+              server's timeline yet) */}
+          <button
+            onClick={() => setIncludePoK((v) => !v)}
+            className="flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] transition-colors"
+            style={{
+              backgroundColor: includePoK ? 'var(--color-surface-2)' : 'transparent',
+              color: includePoK ? 'var(--color-primary)' : 'var(--color-muted)',
+              border: '1px solid var(--color-border)',
+            }}
+            title={includePoK
+              ? 'Including Plane of Knowledge as a source — click to disable'
+              : 'Plane of Knowledge is disabled (not on this server yet) — click to include it'}
+          >
+            <BookOpen size={11} />
+            Plane of Knowledge
+          </button>
         </div>
 
         {/* Body */}
@@ -336,6 +359,30 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
               </div>
               <p className="mt-1.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
                 Re-enable the relevant town alignment above to include these.
+              </p>
+            </div>
+          )}
+
+          {/* Spells whose only source is a zone that isn't released yet (PoK) */}
+          {!loading && !error && route && (route.excluded_by_expansion?.length ?? 0) > 0 && (
+            <div
+              className="mt-1 rounded border px-3 py-2"
+              style={{ backgroundColor: 'rgba(96,165,250,0.06)', borderColor: 'rgba(96,165,250,0.3)' }}
+            >
+              <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold" style={{ color: '#60a5fa' }}>
+                <BookOpen size={12} />
+                Only sold in Plane of Knowledge ({route.excluded_by_expansion.length})
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {route.excluded_by_expansion.map((s) => (
+                  <span key={s.id} className="rounded px-1.5 py-0.5 text-[11px]" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)' }}>
+                    {s.name || `Spell ${s.id}`}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                Plane of Knowledge isn't on this server yet. Toggle it on above to
+                route there anyway.
               </p>
             </div>
           )}

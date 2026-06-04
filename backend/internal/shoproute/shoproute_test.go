@@ -111,7 +111,7 @@ func TestSolve(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Solve(tt.spells)
+			got := Solve(tt.spells, nil)
 			if !reflect.DeepEqual(got.Stops, tt.wantStops) {
 				t.Errorf("stops:\n got %+v\nwant %+v", got.Stops, tt.wantStops)
 			}
@@ -144,11 +144,39 @@ func TestSolveDeterministic(t *testing.T) {
 		avail(4, "d"),
 		avail(5, "a", "e"),
 	}
-	first := Solve(spells)
+	first := Solve(spells, nil)
 	for i := 0; i < 50; i++ {
-		got := Solve(spells)
+		got := Solve(spells, nil)
 		if !reflect.DeepEqual(got, first) {
 			t.Fatalf("run %d differed:\n got %+v\nwant %+v", i, got, first)
 		}
+	}
+}
+
+// TestSolveDistanceTiebreak covers the real bug: a single spell sold in several
+// zones used to always go to the alphabetically-first zone, ignoring where the
+// player starts. With distances, the nearest source wins; with no distances the
+// old alphabetical tiebreak still holds.
+func TestSolveDistanceTiebreak(t *testing.T) {
+	// "strengthen" is sold in three zones; akanon sorts first alphabetically.
+	spells := []SpellAvail{avail(1, "akanon", "poknowledge", "shadowhaven")}
+
+	// No distance signal -> alphabetical tiebreak picks akanon (old behaviour).
+	if got := Solve(spells, nil).Stops[0].Zone; got != "akanon" {
+		t.Errorf("no-dist tiebreak: got %q, want akanon", got)
+	}
+
+	// Starting next to Shadow Haven -> it's the nearest source and should win,
+	// even though akanon and poknowledge sort earlier.
+	dist := map[string]int{"shadowhaven": 0, "nexus": 1, "akanon": 5, "poknowledge": 9}
+	if got := Solve(spells, dist).Stops[0].Zone; got != "shadowhaven" {
+		t.Errorf("dist tiebreak: got %q, want shadowhaven", got)
+	}
+
+	// A zone absent from the distance map is treated as far away, so a known-near
+	// zone still beats it.
+	dist2 := map[string]int{"akanon": 2} // shadowhaven/poknowledge unreachable
+	if got := Solve(spells, dist2).Stops[0].Zone; got != "akanon" {
+		t.Errorf("partial-dist tiebreak: got %q, want akanon", got)
 	}
 }

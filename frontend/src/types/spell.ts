@@ -129,6 +129,7 @@ export interface ShoppingRoute {
   stops: ShoppingStop[]
   unavailable: ShoppingSpell[]
   excluded_by_alignment: ShoppingSpell[]
+  excluded_by_expansion: ShoppingSpell[]
   total_zones: number
   total_spells: number
 }
@@ -136,4 +137,5 @@ export interface ShoppingRoute {
 export interface ShoppingRouteOptions {
   excludeAlignments?: ZoneAlignment[]
   startZone?: string
+  includePoK?: boolean
 }

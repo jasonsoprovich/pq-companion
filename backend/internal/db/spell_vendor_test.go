@@ -41,7 +41,7 @@ func TestGetSpellVendorOptions(t *testing.T) {
 	for _, id := range ids {
 		input = append(input, shoproute.SpellAvail{SpellID: id, Zones: zonesPerSpell[id]})
 	}
-	plan := shoproute.Solve(input)
+	plan := shoproute.Solve(input, nil)
 
 	if len(plan.Uncovered) != 0 {
 		t.Errorf("unexpected uncovered spells: %v", plan.Uncovered)
@@ -60,6 +60,73 @@ func TestGetSpellVendorOptions(t *testing.T) {
 		if covered[id] != 1 {
 			t.Errorf("spell %d covered %d times, want 1", id, covered[id])
 		}
+	}
+}
+
+// TestShoppingRouteHonorsStartZone is the regression test for the reported bug:
+// Strengthen (spell 40) is sold in ~14 zones, so with no distance signal the
+// solver used to always pick the alphabetically-first zone (Ak'Anon), ignoring
+// where the player starts. With Plane of Knowledge excluded (it's pruned from
+// the graph and dropped as a source) and a start next to Shadow Haven, the
+// nearest source — Shadow Haven — must win.
+func TestShoppingRouteHonorsStartZone(t *testing.T) {
+	d := openTestDB(t)
+
+	const strengthen = 40
+	opts, err := d.GetSpellVendorOptions([]int{strengthen})
+	if err != nil {
+		t.Fatalf("GetSpellVendorOptions: %v", err)
+	}
+
+	// Build the source-zone set with Plane of Knowledge excluded, mirroring the
+	// handler's default (include_pok = false).
+	zones := map[string]bool{}
+	for _, o := range opts {
+		if o.ZoneShort == "poknowledge" {
+			continue
+		}
+		zones[o.ZoneShort] = true
+	}
+	if !zones["shadowhaven"] {
+		t.Fatalf("test premise broken: Strengthen not sold in shadowhaven; zones=%v", zones)
+	}
+	input := []shoproute.SpellAvail{{SpellID: strengthen, Zones: zones}}
+
+	adj, err := d.GetZoneAdjacency()
+	if err != nil {
+		t.Fatalf("GetZoneAdjacency: %v", err)
+	}
+	// Prune PoK from the graph the way the handler does, so distances don't
+	// shortcut through the book hub.
+	for z, ns := range adj {
+		if z == "poknowledge" {
+			delete(adj, z)
+			continue
+		}
+		kept := ns[:0]
+		for _, n := range ns {
+			if n != "poknowledge" {
+				kept = append(kept, n)
+			}
+		}
+		adj[z] = kept
+	}
+
+	// Starting at the Nexus (one hop from Shadow Haven), the nearest source wins.
+	dist := shoproute.Distances("nexus", adj)
+	plan := shoproute.Solve(input, dist)
+	if len(plan.Stops) != 1 {
+		t.Fatalf("expected one stop, got %d: %+v", len(plan.Stops), plan.Stops)
+	}
+	if got := plan.Stops[0].Zone; got != "shadowhaven" {
+		t.Errorf("start=nexus, PoK off: routed to %q, want shadowhaven", got)
+	}
+
+	// Sanity check the old behaviour: with no distance signal the alphabetical
+	// tiebreak still picks the earliest zone (akanon), proving distance is what
+	// changes the result.
+	if got := shoproute.Solve(input, nil).Stops[0].Zone; got != "akanon" {
+		t.Errorf("no-dist control: routed to %q, want akanon", got)
 	}
 }
 

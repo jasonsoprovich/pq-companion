@@ -160,6 +160,7 @@ type shoppingRoute struct {
 	Stops               []shoppingStop  `json:"stops"`
 	Unavailable         []shoppingSpell `json:"unavailable"`           // no vendor sells these anywhere
 	ExcludedByAlignment []shoppingSpell `json:"excluded_by_alignment"` // only sold in filtered-out towns
+	ExcludedByExpansion []shoppingSpell `json:"excluded_by_expansion"` // only sold in a not-yet-released zone (Plane of Knowledge)
 	TotalZones          int             `json:"total_zones"`
 	TotalSpells         int             `json:"total_spells"` // spells successfully routed
 }
@@ -184,6 +185,10 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		SpellIDs          []int    `json:"spell_ids"`
 		ExcludeAlignments []string `json:"exclude_alignments"`
 		StartZone         string   `json:"start_zone"`
+		// IncludePoK opts Plane of Knowledge back in as a source. It's false by
+		// default because the Planes of Power book hub isn't on this server's
+		// timeline yet, so routing players there would be wrong.
+		IncludePoK bool `json:"include_pok"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -209,12 +214,23 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Zones dropped as sources because their expansion isn't live on this
+	// server yet. Plane of Knowledge (the Planes of Power book hub) sells a huge
+	// slice of the spell list, so leaving it in would route everyone there;
+	// it's opt-in via include_pok.
+	excludedZone := map[string]bool{}
+	if !body.IncludePoK {
+		excludedZone["poknowledge"] = true
+	}
+
 	// Index the options for assembly. allowedZones feeds the solver (after the
-	// alignment filter); the rest are lookups for enriching the result.
-	// anyVendorZone tracks pre-filter availability so we can tell "no vendor
-	// anywhere" apart from "only sold in a filtered-out town".
+	// alignment and expansion filters); the rest are lookups for enriching the
+	// result. anyVendorZone and alignmentOK record availability at each filter
+	// stage so an uncovered spell can be bucketed: no vendor at all, only in a
+	// filtered-out town, or only in a not-yet-released zone.
 	allowedZones := make(map[int]map[string]bool)
 	anyVendorZone := make(map[int]bool)
+	alignmentOK := make(map[int]bool)
 	spellName := make(map[int]string)
 	zoneName := make(map[string]string)
 	// byZone[zoneShort] -> list of (spell, vendor) options in that zone.
@@ -223,6 +239,10 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		spellName[o.SpellID] = o.SpellName
 		anyVendorZone[o.SpellID] = true
 		if excludedAlignment[shoproute.Alignment(o.ZoneShort)] {
+			continue
+		}
+		alignmentOK[o.SpellID] = true
+		if excludedZone[o.ZoneShort] {
 			continue
 		}
 		if allowedZones[o.SpellID] == nil {
@@ -246,15 +266,28 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	plan := shoproute.Solve(input)
-
-	// Order the stops from the starting zone, if one was given.
-	if body.StartZone != "" && len(plan.Stops) > 1 {
-		adj, err := h.db.GetZoneAdjacency()
+	// With a start zone, fetch the connectivity graph once and derive hop
+	// distances so the solver prefers nearer sources (and so we can order the
+	// stops afterwards). Excluded zones are pruned from the graph too, so the
+	// route never paths through, say, Plane of Knowledge while it's disabled.
+	var dist map[string]int
+	var adj map[string][]string
+	if body.StartZone != "" {
+		adj, err = h.db.GetZoneAdjacency()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		if len(excludedZone) > 0 {
+			adj = pruneAdjacency(adj, excludedZone)
+		}
+		dist = shoproute.Distances(body.StartZone, adj)
+	}
+
+	plan := shoproute.Solve(input, dist)
+
+	// Order the stops from the starting zone, if one was given.
+	if body.StartZone != "" && len(plan.Stops) > 1 {
 		plan.Stops = shoproute.Order(plan.Stops, body.StartZone, adj)
 	}
 
@@ -262,6 +295,7 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		Stops:               make([]shoppingStop, 0, len(plan.Stops)),
 		Unavailable:         []shoppingSpell{},
 		ExcludedByAlignment: []shoppingSpell{},
+		ExcludedByExpansion: []shoppingSpell{},
 		TotalZones:          len(plan.Stops),
 	}
 	for _, st := range plan.Stops {
@@ -309,9 +343,10 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Split uncovered spells: those with no vendor at all vs. those whose only
-	// vendors sit in a filtered-out town. Names come from the vendor rows when
-	// available, else a direct lookup.
+	// Split uncovered spells into why-we-couldn't-route-them buckets, in order
+	// of precedence: no vendor anywhere; only sold in a filtered-out town; or
+	// (alignment was fine) only sold in a disabled zone like Plane of Knowledge.
+	// Names come from the vendor rows when available, else a direct lookup.
 	for _, id := range plan.Uncovered {
 		name := spellName[id]
 		if name == "" {
@@ -320,14 +355,37 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		entry := shoppingSpell{ID: id, Name: name}
-		if anyVendorZone[id] {
-			resp.ExcludedByAlignment = append(resp.ExcludedByAlignment, entry)
-		} else {
+		switch {
+		case !anyVendorZone[id]:
 			resp.Unavailable = append(resp.Unavailable, entry)
+		case !alignmentOK[id]:
+			resp.ExcludedByAlignment = append(resp.ExcludedByAlignment, entry)
+		default:
+			resp.ExcludedByExpansion = append(resp.ExcludedByExpansion, entry)
 		}
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// pruneAdjacency returns a copy of the zone-connectivity graph with the dropped
+// zones removed as both nodes and neighbours, so distance and ordering never
+// traverse a disabled zone (e.g. Plane of Knowledge while it's off).
+func pruneAdjacency(adj map[string][]string, drop map[string]bool) map[string][]string {
+	out := make(map[string][]string, len(adj))
+	for z, neighbors := range adj {
+		if drop[z] {
+			continue
+		}
+		kept := make([]string, 0, len(neighbors))
+		for _, n := range neighbors {
+			if !drop[n] {
+				kept = append(kept, n)
+			}
+		}
+		out[z] = kept
+	}
+	return out
 }
 
 func (h *spellsHandler) search(w http.ResponseWriter, r *http.Request) {

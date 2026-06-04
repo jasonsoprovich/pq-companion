@@ -22,6 +22,11 @@ package shoproute
 
 import "sort"
 
+// distUnreachable is the distance assigned to a zone the start can't reach over
+// the connectivity graph — larger than any real hop count, so reachable zones
+// always sort ahead of unreachable ones.
+const distUnreachable = int(^uint(0) >> 1) // max int
+
 // SpellAvail is the solver input for one spell: the spell's id and the set of
 // zone short-names where it can be purchased. A spell with an empty Zones set
 // is reported back as unavailable.
@@ -57,9 +62,16 @@ type Plan struct {
 
 // Solve runs the two-phase greedy set-cover heuristic over the given spells.
 //
-// Determinism: when two zones tie on coverage, the zone whose short-name sorts
-// first wins, so the same input always yields the same route.
-func Solve(spells []SpellAvail) Plan {
+// dist gives hop-distance from the player's start zone to each zone (see
+// Distances). When a spell is sold in several zones that tie on coverage, the
+// nearest one is preferred, so the route reflects where the player actually is.
+// Pass a nil dist when there's no start zone — then ties fall through to the
+// short-name.
+//
+// Determinism: coverage is the primary key; among equal-coverage zones the
+// nearer wins; the lexicographically-first short-name breaks any remaining tie,
+// so the same input always yields the same route.
+func Solve(spells []SpellAvail, dist map[string]int) Plan {
 	// missing tracks spells not yet covered, keyed by spell id.
 	missing := make(map[int]map[string]bool, len(spells))
 	var uncovered []int
@@ -104,7 +116,7 @@ func Solve(spells []SpellAvail) Plan {
 
 	// Phase 2 — greedy max-density over whatever remains.
 	for len(missing) > 0 {
-		best := bestZone(missing)
+		best := bestZone(missing, dist)
 		if best == "" {
 			break // defensive: every remaining spell had at least one zone
 		}
@@ -133,20 +145,48 @@ func takeCovered(missing map[int]map[string]bool, z string) []int {
 	return covered
 }
 
-// bestZone returns the zone covering the most still-missing spells, breaking
-// ties by lexicographic zone short-name for determinism.
-func bestZone(missing map[int]map[string]bool) string {
+// bestZone returns the zone covering the most still-missing spells. Ties on
+// coverage go to the zone nearest the start (per dist), then to the
+// lexicographically-first short-name for determinism.
+func bestZone(missing map[int]map[string]bool, dist map[string]int) string {
 	counts := make(map[string]int)
 	for _, zones := range missing {
 		for z := range zones {
 			counts[z]++
 		}
 	}
-	best, bestCount := "", 0
+	best, bestCount, bestDist := "", 0, 0
 	for z, c := range counts {
-		if c > bestCount || (c == bestCount && z < best) {
-			best, bestCount = z, c
+		d := zoneDist(dist, z)
+		if best == "" || better(c, d, z, bestCount, bestDist, best) {
+			best, bestCount, bestDist = z, c, d
 		}
 	}
 	return best
+}
+
+// better reports whether candidate (c,d,z) beats the current best (bc,bd,bz):
+// more coverage wins; equal coverage goes to the closer zone; equal distance
+// goes to the lexicographically smaller short-name.
+func better(c, d int, z string, bc, bd int, bz string) bool {
+	if c != bc {
+		return c > bc
+	}
+	if d != bd {
+		return d < bd
+	}
+	return z < bz
+}
+
+// zoneDist looks up a zone's hop-distance from the start. With no distance map
+// every zone scores 0, so the comparison falls through to the short-name and
+// behaviour matches the old alphabetical tiebreak.
+func zoneDist(dist map[string]int, z string) int {
+	if dist == nil {
+		return 0
+	}
+	if d, ok := dist[z]; ok {
+		return d
+	}
+	return distUnreachable
 }
