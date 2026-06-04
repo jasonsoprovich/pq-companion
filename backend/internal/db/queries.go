@@ -28,6 +28,7 @@ const itemColumns = `
   i.wornlevel,
   i.focuseffect,
   COALESCE(NULLIF(i.focusname, ''), (SELECT s.name FROM spells_new s WHERE s.id = i.focuseffect), '') AS focusname,
+  i.maxcharges,
   i.bagsize, i.bagslots, i.bagtype,
   i.stackable, i.stacksize,
   i.price, i.icon, i.minstatus`
@@ -48,6 +49,7 @@ func scanItem(row interface {
 		&it.RecLevel, &it.ReqLevel,
 		&it.ClickEffect, &it.ClickName, &it.ProcEffect, &it.ProcName,
 		&it.WornEffect, &it.WornName, &it.WornLevel, &it.FocusEffect, &it.FocusName,
+		&it.MaxCharges,
 		&it.BagSize, &it.BagSlots, &it.BagType,
 		&it.Stackable, &it.StackSize,
 		&it.Price, &it.Icon, &it.MinStatus,

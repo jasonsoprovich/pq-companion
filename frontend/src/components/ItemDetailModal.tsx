@@ -166,6 +166,7 @@ function OverviewTab({ item, copied, onCopy }: { item: Item; copied: boolean; on
       {hasEffects && (
         <Section title="Effects">
           {item.click_effect > 0 && item.click_name && <SpellEffectRow label="Click" spellId={item.click_effect} name={item.click_name} />}
+          {item.click_effect > 0 && item.max_charges > 0 && <StatRow label="Charges" value={item.max_charges} />}
           {item.proc_effect > 0 && item.proc_name && <SpellEffectRow label="Proc" spellId={item.proc_effect} name={item.proc_name} />}
           {item.worn_effect > 0 && item.worn_name && (
             <SpellEffectRow

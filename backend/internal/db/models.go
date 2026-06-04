@@ -65,6 +65,11 @@ type Item struct {
 	FocusEffect int    `json:"focus_effect"`
 	FocusName   string `json:"focus_name"`
 
+	// MaxCharges is the limited-use charge count for click items. EQ uses -1
+	// (and occasionally 0) as a sentinel for unlimited/permanent clickies; a
+	// positive value means genuinely limited charges (e.g. Puppet Strings=10).
+	MaxCharges int `json:"max_charges"`
+
 	// Derived (set by GetItem when applicable, omitted otherwise): effective worn
 	// haste % for items whose worn effect is a SPA 11/119 haste spell. Computed
 	// by applying the spell's formula to WornLevel, then subtracting the +100
