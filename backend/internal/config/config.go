@@ -326,11 +326,18 @@ type CHChainSettings struct {
 	// "use the built-in default" (DefaultCHChainPattern).
 	Pattern string `yaml:"pattern" json:"pattern"`
 
-	// IntervalSecs is the per-cast cadence each chain position counts down —
-	// the time until the next healer in the rotation casts. 0 means "use the
-	// default" (DefaultCHChainIntervalSecs).
+	// IntervalSecs is the EXPECTED chain cadence — the spacing the raid is
+	// aiming for between consecutive casts. The overlay no longer uses it to
+	// size the countdown bars (those now run the fixed CH cast time); it's a
+	// reference baseline the overlay compares the live measured cadence
+	// against to flag a stalled chain. 0 means "use DefaultCHChainIntervalSecs".
 	IntervalSecs int `yaml:"interval_secs" json:"interval_secs"`
 }
+
+// CHCastSecs is Complete Heal's cast time in seconds. Each ch_chain countdown
+// bar runs this long so it reads as "time until this cleric's heal lands",
+// making chain gaps visible. A constant of the spell, not user-configurable.
+const CHCastSecs = 10
 
 // DefaultCHChainPattern matches the common guild chain-call formats, e.g.
 // "Soandso tells the raid, '--- 001 --- CH Winian with << 100% Mana >>'",

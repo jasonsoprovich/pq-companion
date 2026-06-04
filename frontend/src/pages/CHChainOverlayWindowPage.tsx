@@ -59,7 +59,10 @@ function ChainRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
       : 0
   const { position, text } = parseLabel(timer.spell_name)
-  const urgent = pct < 0.34
+  // Each bar is the 10s CH cast counting down to the heal landing, so a
+  // near-empty bar means "heal incoming" — a good thing. Highlight it green,
+  // not red (red is reserved for the header stall warning).
+  const landing = pct < 0.34
 
   return (
     <div
@@ -77,7 +80,7 @@ function ChainRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
           top: 0,
           bottom: 0,
           width: `${pct * 100}%`,
-          backgroundColor: '#3b82f6',
+          backgroundColor: landing ? '#22c55e' : '#3b82f6',
           opacity: 0.5,
           pointerEvents: 'none',
           transition: 'width 1s linear',
@@ -113,11 +116,11 @@ function ChainRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
           <span
             style={{
               fontSize: 12,
-              color: urgent ? '#fca5a5' : 'rgba(255,255,255,1)',
+              color: 'rgba(255,255,255,1)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-              fontWeight: urgent ? 600 : 500,
+              fontWeight: landing ? 600 : 500,
               textShadow: '0 1px 2px rgba(0,0,0,0.9)',
             }}
           >
@@ -127,10 +130,10 @@ function ChainRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
         <span
           style={{
             fontSize: 11,
-            color: urgent ? '#fca5a5' : '#93c5fd',
+            color: landing ? '#86efac' : '#93c5fd',
             fontVariantNumeric: 'tabular-nums',
             flexShrink: 0,
-            fontWeight: urgent ? 700 : 600,
+            fontWeight: landing ? 700 : 600,
             textShadow: '0 1px 2px rgba(0,0,0,0.9)',
           }}
         >

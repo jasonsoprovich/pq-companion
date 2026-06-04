@@ -40,12 +40,40 @@ func TestMatcher_DefaultPattern(t *testing.T) {
 	if c.category != "ch_chain" {
 		t.Errorf("category = %q, want ch_chain", c.category)
 	}
-	if c.dur != 6 {
-		t.Errorf("duration = %d, want 6", c.dur)
+	// Bars now run the fixed CH cast time, not the configured cadence.
+	if c.dur != config.CHCastSecs {
+		t.Errorf("duration = %d, want %d", c.dur, config.CHCastSecs)
 	}
 	// Label carries chain position, target, and caster for the overlay.
 	if want := "#1  Winian  ← Soandso"; c.name != want {
 		t.Errorf("label = %q, want %q", c.name, want)
+	}
+}
+
+// TestMatcher_RealRaidFormat locks in a real-world chain-call format observed
+// in the wild: double-space after "raid,", "- - NNN - CH <Tank>" markers, and
+// trailing mana/health notes. The speaker is the casting cleric.
+func TestMatcher_RealRaidFormat(t *testing.T) {
+	s := &fakeSink{}
+	m := newMatcher(s, true, config.DefaultCHChainPattern, 6)
+
+	lines := []struct {
+		in   string
+		want string
+	}{
+		{"Luna tells the raid,  '- - 001 - CH Krayziefoo'", "#1  Krayziefoo  ← Luna"},
+		{"Koramak tells the raid,  '- - 002 - CH Krayziefoo - 94% remaining'", "#2  Krayziefoo  ← Koramak"},
+		{"Theofonias tells the raid,  '- - 003 - CH Krayziefoo, 90% mana'", "#3  Krayziefoo  ← Theofonias"},
+	}
+	for _, tc := range lines {
+		s.calls = nil
+		m.HandleLine(time.Unix(1, 0), tc.in)
+		if len(s.calls) != 1 {
+			t.Fatalf("%q: got %d calls, want 1", tc.in, len(s.calls))
+		}
+		if s.calls[0].name != tc.want {
+			t.Errorf("%q: label = %q, want %q", tc.in, s.calls[0].name, tc.want)
+		}
 	}
 }
 

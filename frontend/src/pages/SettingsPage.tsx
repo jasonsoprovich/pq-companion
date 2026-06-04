@@ -1636,8 +1636,10 @@ export default function SettingsPage(): React.ReactElement {
               CH Chain overlay
             </p>
             <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-              Watches raid chat for Complete-Heal chain calls and shows a countdown bar per chain
-              position in a dedicated overlay window. The pattern must capture the named groups
+              Watches raid chat for Complete-Heal chain calls and shows one bar per chain position
+              in a dedicated overlay window. Each bar runs the 10s CH cast, counting down to when
+              that heal lands, and the header shows the live cadence measured between calls (turning
+              red when the chain stalls). The pattern must capture the named groups
               <code className="font-mono"> caster</code>, <code className="font-mono">chainnum</code>,
               and <code className="font-mono">target</code>.
             </p>
@@ -1682,7 +1684,7 @@ export default function SettingsPage(): React.ReactElement {
 
             <div className="flex items-end gap-3">
               <label className="flex flex-col gap-1" style={{ maxWidth: 160 }}>
-                <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Cadence (seconds per cast)</span>
+                <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Expected cadence (seconds)</span>
                 <input
                   type="number"
                   min={1}

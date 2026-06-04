@@ -85,11 +85,6 @@ func (m *Matcher) HandleLine(ts time.Time, msg string) {
 		return // a chain call with no target isn't actionable
 	}
 
-	interval := settings.IntervalSecs
-	if interval <= 0 {
-		interval = config.DefaultCHChainIntervalSecs
-	}
-
 	// The label doubles as the timer key. Encoding the position as a leading
 	// "#N" lets the overlay sort by chain order; including target keeps each
 	// position's bar distinct so concurrent calls don't dedup into one.
@@ -98,7 +93,11 @@ func (m *Matcher) HandleLine(ts time.Time, msg string) {
 		label += "  ← " + caster // "← caster"
 	}
 
-	m.sink.StartExternal(label, categoryCHChain, interval, 0, ts, nil, 0)
+	// The bar runs the CH cast time, so it counts down to when this cleric's
+	// heal lands (a callout fires at cast-start). The live spacing between
+	// casts is measured in the overlay from successive callout timestamps, so
+	// the bar length is the fixed cast duration rather than the cadence.
+	m.sink.StartExternal(label, categoryCHChain, config.CHCastSecs, 0, ts, nil, 0)
 }
 
 // compile returns the regex + capture-group names for src, recompiling only
