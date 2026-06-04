@@ -29,6 +29,30 @@ function parseLabel(label: string): { position: number; text: string } {
   return { position: parseInt(m[1], 10), text: m[2] }
 }
 
+// computeCadence derives the chain's live spacing from the gaps between
+// consecutive callout start times — so it follows the raid leader speeding
+// up / slowing down the chain mid-fight, rather than a static config value.
+// Returns null when there aren't yet two callouts to measure. `stalled` is
+// true when the most recent gap ran notably longer than the running median,
+// i.e. the chain skipped a beat and a spot-heal may be needed.
+function computeCadence(
+  timers: ActiveTimer[],
+): { cadence: number; stalled: boolean } | null {
+  const starts = timers
+    .map((t) => Date.parse(t.starts_at))
+    .filter((ms) => !Number.isNaN(ms))
+    .sort((a, b) => a - b)
+  if (starts.length < 2) return null
+  const gaps: number[] = []
+  for (let i = 1; i < starts.length; i++) {
+    gaps.push((starts[i] - starts[i - 1]) / 1000)
+  }
+  const sorted = [...gaps].sort((a, b) => a - b)
+  const median = sorted[Math.floor(sorted.length / 2)]
+  const last = gaps[gaps.length - 1]
+  return { cadence: median, stalled: gaps.length >= 2 && last > median * 1.5 }
+}
+
 function ChainRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
   const pct =
     timer.duration_seconds > 0
@@ -143,6 +167,7 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
       if (pa !== pb) return pa - pb
       return a.remaining_seconds - b.remaining_seconds
     })
+  const cadence = computeCadence(chain)
 
   return (
     <div
@@ -183,6 +208,25 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
           {chain.length > 0 && (
             <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginLeft: 2 }}>
               {chain.length}
+            </span>
+          )}
+          {cadence && (
+            <span
+              title={
+                cadence.stalled
+                  ? 'Chain slowed — last gap ran long; a spot-heal may be needed'
+                  : 'Live chain cadence (measured between callouts)'
+              }
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                marginLeft: 4,
+                color: cadence.stalled ? '#fca5a5' : 'rgba(147,197,253,0.9)',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {cadence.stalled ? '⚠ ' : ''}
+              {cadence.cadence.toFixed(1)}s
             </span>
           )}
         </div>
