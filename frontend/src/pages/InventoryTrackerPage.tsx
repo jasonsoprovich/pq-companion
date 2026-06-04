@@ -291,6 +291,15 @@ export default function InventoryTrackerPage(): React.ReactElement {
   // on Character Info → Gear), so a single filtered list serves every view.
   const equippedFiltered = useMemo(() => filterByQuery(equipped, query), [equipped, query])
 
+  // Rechargeable items: limited-charge clickies the character holds anywhere
+  // (equipped, bags, or bank). The API flags these by setting max_charges (only
+  // for clickeffect>0, maxcharges>1); when set, `count` is the current charge
+  // count, so we show current/max. Multiple copies appear as separate rows.
+  const rechargeables = useMemo<TaggedEntry[]>(() => {
+    const list = allTagged.filter((e) => !isEmptyEntry(e) && (e.max_charges ?? 0) > 1)
+    return filterByQuery(list, query).sort((a, b) => a.name.localeCompare(b.name))
+  }, [allTagged, query])
+
   const hasEmptyBag = useMemo(
     () =>
       bagGroups.some((g) => g.slots.every(isEmptyEntry)) ||
@@ -504,6 +513,54 @@ export default function InventoryTrackerPage(): React.ReactElement {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
+        {/* Rechargeable — limited-charge clickies, current/max charges. Hidden
+            entirely when the held set has none (or none match the search). */}
+        {rechargeables.length > 0 && (
+          <div>
+            <SectionTitle label="Rechargeable" count={rechargeables.length} />
+            <div
+              className="grid gap-1.5"
+              style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}
+            >
+              {rechargeables.map((e, i) => {
+                const max = e.max_charges ?? 0
+                const current = e.count
+                const below = current < max
+                return (
+                  <button
+                    key={`rc-${e.character}-${e.location}-${i}`}
+                    onClick={() => handleLookup(e.id)}
+                    className="flex items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs"
+                    style={{
+                      backgroundColor: 'var(--color-surface-2)',
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-foreground)',
+                    }}
+                    title={`${e.name} — ${current} of ${max} charges${showCharBadge ? ` (${e.character})` : ''}`}
+                  >
+                    <ItemIcon id={e.icon} name={e.name} size={18} />
+                    <span className="truncate flex-1">{e.name}</span>
+                    {showCharBadge && (
+                      <span className="shrink-0 text-[10px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                        {e.character}
+                      </span>
+                    )}
+                    <span
+                      className="shrink-0 tabular-nums font-semibold rounded px-1.5 py-0.5 text-[10px]"
+                      style={{
+                        color: below ? 'var(--color-warning)' : 'var(--color-success)',
+                        backgroundColor: 'var(--color-surface-3)',
+                      }}
+                    >
+                      {current} / {max}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Equipped — flat slot tiles, matching the bag-slot layout below. The
             in-game equipment grid lives on Character Info → Gear instead. */}
         <div>

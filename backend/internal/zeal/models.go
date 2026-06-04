@@ -15,6 +15,11 @@ type InventoryEntry struct {
 	Count    int    `json:"count"`
 	Slots    int    `json:"slots"` // bag capacity; 0 for non-containers
 	Icon     int    `json:"icon,omitempty"`
+	// MaxCharges is the item's full charge capacity, joined in by the API layer
+	// for rechargeable click items only (clickeffect > 0, maxcharges > 1); 0/omitted
+	// otherwise. When set, Count carries the item's current charge count, so the
+	// "Rechargeable Items" view reads charges-remaining as Count / MaxCharges.
+	MaxCharges int `json:"max_charges,omitempty"`
 }
 
 // Inventory is the full parsed state of a character's inventory export.
@@ -31,9 +36,9 @@ type SpellbookEntry struct {
 
 // Spellbook is the full parsed state of a character's spellbook export.
 type Spellbook struct {
-	Character  string           `json:"character"`
-	ExportedAt time.Time        `json:"exported_at"`
-	SpellIDs   []int            `json:"spell_ids"`
+	Character  string    `json:"character"`
+	ExportedAt time.Time `json:"exported_at"`
+	SpellIDs   []int     `json:"spell_ids"`
 }
 
 // State is the combined in-memory snapshot held by the Watcher.
@@ -96,8 +101,10 @@ type AAEntry struct {
 // It contains character identity (level/class/race), stats, inventory, and AAs.
 //
 // Class and Race are the raw EQ 1-indexed IDs as written by Zeal:
-//   Class: 1=Warrior … 14=Enchanter, 15=Beastlord
-//   Race:  1=Human, 2=Barbarian, 3=Erudite, 4=Wood Elf, …
+//
+//	Class: 1=Warrior … 14=Enchanter, 15=Beastlord
+//	Race:  1=Human, 2=Barbarian, 3=Erudite, 4=Wood Elf, …
+//
 // Callers persisting to user.db must convert Class to the app's 0-indexed scheme.
 type QuarmyData struct {
 	Character  string           `json:"character"`

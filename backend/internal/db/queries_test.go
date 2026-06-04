@@ -523,6 +523,74 @@ func TestItemIcons(t *testing.T) {
 	}
 }
 
+func TestRechargeableMaxCharges(t *testing.T) {
+	d := openTestDB(t)
+	// Empty input → empty result, no error.
+	got, err := d.RechargeableMaxCharges(nil)
+	if err != nil {
+		t.Fatalf("RechargeableMaxCharges(nil): %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("RechargeableMaxCharges(nil) = %v, want empty map", got)
+	}
+
+	// Seed: a genuine multi-charge clicky, an unlimited clicky (-1 sentinel),
+	// and a single-charge item — only the first should come back.
+	limited := seedRechargeID(t, d, "clickeffect > 0 AND maxcharges > 1")
+	unlimited := seedRechargeID(t, d, "clickeffect > 0 AND maxcharges = -1")
+	single := seedRechargeID(t, d, "clickeffect > 0 AND maxcharges = 1")
+	if limited.id == 0 {
+		t.Skip("no multi-charge clicky in DB")
+	}
+
+	ids := []int{limited.id, -1}
+	if unlimited.id != 0 {
+		ids = append(ids, unlimited.id)
+	}
+	if single.id != 0 {
+		ids = append(ids, single.id)
+	}
+	got, err = d.RechargeableMaxCharges(ids)
+	if err != nil {
+		t.Fatalf("RechargeableMaxCharges: %v", err)
+	}
+	if got[limited.id] != limited.maxCharges {
+		t.Errorf("limited[%d] = %d, want %d", limited.id, got[limited.id], limited.maxCharges)
+	}
+	if unlimited.id != 0 {
+		if _, ok := got[unlimited.id]; ok {
+			t.Errorf("unlimited clicky %d should be excluded, got %d", unlimited.id, got[unlimited.id])
+		}
+	}
+	if single.id != 0 {
+		if _, ok := got[single.id]; ok {
+			t.Errorf("single-charge item %d should be excluded, got %d", single.id, got[single.id])
+		}
+	}
+	if _, ok := got[-1]; ok {
+		t.Errorf("non-existent id -1 should be omitted")
+	}
+}
+
+type rechargeSeed struct {
+	id         int
+	maxCharges int
+}
+
+func seedRechargeID(t *testing.T, d *db.DB, where string) rechargeSeed {
+	t.Helper()
+	var s rechargeSeed
+	err := d.QueryRow("SELECT id, maxcharges FROM items WHERE "+where+" LIMIT 1").
+		Scan(&s.id, &s.maxCharges)
+	if err == sql.ErrNoRows {
+		return rechargeSeed{}
+	}
+	if err != nil {
+		t.Fatalf("seed query (%s): %v", where, err)
+	}
+	return s
+}
+
 func TestNPCSpecialAbilities_RealDB(t *testing.T) {
 	d := openTestDB(t)
 	// Find any NPC that has special abilities set.

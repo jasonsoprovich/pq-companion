@@ -5,6 +5,10 @@ export interface InventoryEntry {
   count: number
   slots: number // bag capacity; 0 for non-containers
   icon?: number // joined in by API from items.icon
+  // Full charge capacity, set by the API only for rechargeable click items
+  // (clickeffect > 0, maxcharges > 1). When present, `count` is the current
+  // charge count, so charges-remaining reads as count / max_charges.
+  max_charges?: number
 }
 
 export interface Inventory {

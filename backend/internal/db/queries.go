@@ -116,6 +116,41 @@ func (db *DB) ItemIcons(ids []int) (map[int]int, error) {
 	return out, rows.Err()
 }
 
+// RechargeableMaxCharges returns id→maxcharges for the given item IDs, limited
+// to genuinely rechargeable items: click items (clickeffect > 0) with a
+// positive multi-charge cap (maxcharges > 1). Single-charge consumables and
+// unlimited clickies (the -1/0 sentinel) are excluded, so a present entry means
+// "this is a rechargeable item." Used to flag held inventory items.
+func (db *DB) RechargeableMaxCharges(ids []int) (map[int]int, error) {
+	out := make(map[int]int, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(ids))
+	placeholders = placeholders[:len(placeholders)-1]
+	q := fmt.Sprintf(
+		"SELECT id, maxcharges FROM items WHERE clickeffect > 0 AND maxcharges > 1 AND id IN (%s)",
+		placeholders,
+	)
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query rechargeable charges: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, maxCharges int
+		if err := rows.Scan(&id, &maxCharges); err != nil {
+			return nil, fmt.Errorf("scan rechargeable charges: %w", err)
+		}
+		out[id] = maxCharges
+	}
+	return out, rows.Err()
+}
+
 // SearchItems returns a filtered, paginated list of items.
 // Zero-value fields in f mean "no filter" (except ItemType: -1 = any).
 func (db *DB) SearchItems(f ItemFilter) (*SearchResult[Item], error) {

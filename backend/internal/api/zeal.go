@@ -24,10 +24,11 @@ type zealHandler struct {
 	latest  *zeal.LatestFetcher
 }
 
-// enrichEntries fills in the Icon field on each entry by looking up
-// items.icon for all referenced IDs in a single query. Errors are logged
-// implicitly (entries are returned without icons) — icons are decorative
-// and shouldn't fail the inventory request.
+// enrichEntries fills in the Icon and MaxCharges fields on each entry by looking
+// up the items DB for all referenced IDs in batch queries. Errors are swallowed
+// (entries are returned without the enrichment) — these fields are decorative /
+// supplementary and shouldn't fail the inventory request. MaxCharges is set only
+// for rechargeable click items, which flags them for the Rechargeable Items view.
 func (h *zealHandler) enrichEntries(entries []zeal.InventoryEntry) {
 	if len(entries) == 0 || h.db == nil {
 		return
@@ -38,13 +39,18 @@ func (h *zealHandler) enrichEntries(entries []zeal.InventoryEntry) {
 			ids = append(ids, e.ID)
 		}
 	}
-	icons, err := h.db.ItemIcons(ids)
-	if err != nil {
-		return
+	if icons, err := h.db.ItemIcons(ids); err == nil {
+		for i := range entries {
+			if icon, ok := icons[entries[i].ID]; ok {
+				entries[i].Icon = icon
+			}
+		}
 	}
-	for i := range entries {
-		if icon, ok := icons[entries[i].ID]; ok {
-			entries[i].Icon = icon
+	if charges, err := h.db.RechargeableMaxCharges(ids); err == nil {
+		for i := range entries {
+			if max, ok := charges[entries[i].ID]; ok {
+				entries[i].MaxCharges = max
+			}
 		}
 	}
 }
