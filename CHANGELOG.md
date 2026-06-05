@@ -9,6 +9,18 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.12.1 — 2026-06-05
+
+A fix for NPC level display: range-spawning NPCs now show their full level range.
+
+### Fixes
+- NPCs that spawn within a level range (e.g. a Shissar Revenant at 50–54)
+  previously displayed only their lowest possible level, which could
+  mislead on level-gated mechanics like charm caps. They now show the
+  full range (e.g. "50-54") everywhere a level appears: the NPC overlays
+  (dashboard and pop-out), the Database Explorer NPC detail and list, the
+  Zones NPC list, and global search.
+
 ## v0.12.0 — 2026-06-05
 
 A raid-utility release: Complete Heal chain overlays, a Loot Tracker, a
