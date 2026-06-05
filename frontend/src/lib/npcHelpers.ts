@@ -14,6 +14,18 @@ export function npcDisplayName(npc: NPC): string {
   return last ? `${name} ${last}` : name
 }
 
+// ── Level ───────────────────────────────────────────────────────────────────────
+
+// Formats an NPC's spawn level for display. Quarm NPCs with max_level > level
+// spawn at a random level in [level, max_level], so show the full range
+// (e.g. "50-54") rather than a single value — the bare level is just the low
+// end and misleads on things like charm level caps. max_level of 0 (or <=
+// level) means a fixed level, so show the level alone.
+export function npcLevelLabel(npc: NPC): string {
+  if (npc.max_level > npc.level) return `${npc.level}-${npc.max_level}`
+  return String(npc.level)
+}
+
 // ── Class ───────────────────────────────────────────────────────────────────────
 
 // NPC class labels live in the canonical Go catalog

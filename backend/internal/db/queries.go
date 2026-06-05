@@ -566,7 +566,7 @@ func collectSourceNPCs(rows *sql.Rows, withDropRate bool) ([]ItemSourceNPC, erro
 // ─── NPCs ─────────────────────────────────────────────────────────────────────
 
 const npcColumns = `
-  n.id, n.name, COALESCE(n.lastname, ''), n.level, n.race, COALESCE(r.name, 'Race ' || n.race), n.class, n.bodytype,
+  n.id, n.name, COALESCE(n.lastname, ''), n.level, n.maxlevel, n.race, COALESCE(r.name, 'Race ' || n.race), n.class, n.bodytype,
   n.hp, n.mana, n.mindmg, n.maxdmg, n.attack_count,
   n.MR, n.CR, n.DR, n.FR, n.PR, n.AC,
   n.STR, n.STA, n.DEX, n.AGI, n."_INT", n.WIS, n.CHA,
@@ -584,7 +584,7 @@ func scanNPC(row interface {
 }) (*NPC, error) {
 	var n NPC
 	err := row.Scan(
-		&n.ID, &n.Name, &n.LastName, &n.Level, &n.Race, &n.RaceName, &n.Class, &n.BodyType,
+		&n.ID, &n.Name, &n.LastName, &n.Level, &n.MaxLevel, &n.Race, &n.RaceName, &n.Class, &n.BodyType,
 		&n.HP, &n.Mana, &n.MinDmg, &n.MaxDmg, &n.AttackCount,
 		&n.MR, &n.CR, &n.DR, &n.FR, &n.PR, &n.AC,
 		&n.STR, &n.STA, &n.DEX, &n.AGI, &n.INT, &n.WIS, &n.CHA,
@@ -692,7 +692,7 @@ func (db *DB) GetNPCVariantsByNameInZone(name, zoneShortName string) ([]NPCVaria
 		var spawngroupID int
 		var x, y, z float64
 		err := rows.Scan(
-			&n.ID, &n.Name, &n.LastName, &n.Level, &n.Race, &n.RaceName, &n.Class, &n.BodyType,
+			&n.ID, &n.Name, &n.LastName, &n.Level, &n.MaxLevel, &n.Race, &n.RaceName, &n.Class, &n.BodyType,
 			&n.HP, &n.Mana, &n.MinDmg, &n.MaxDmg, &n.AttackCount,
 			&n.MR, &n.CR, &n.DR, &n.FR, &n.PR, &n.AC,
 			&n.STR, &n.STA, &n.DEX, &n.AGI, &n.INT, &n.WIS, &n.CHA,

@@ -134,6 +134,7 @@ type NPC struct {
 	Name     string `json:"name"`
 	LastName string `json:"last_name"`
 	Level    int    `json:"level"`
+	MaxLevel int    `json:"max_level"`
 	Race     int    `json:"race"`
 	RaceName string `json:"race_name"`
 	Class    int    `json:"class"`

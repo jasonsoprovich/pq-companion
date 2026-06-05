@@ -12,7 +12,7 @@ import { ItemIcon } from '../components/Icon'
 import { ResistChip } from '../components/ResistChip'
 import NPCCasterSummarySection from '../components/overlays/NPCCasterSummarySection'
 import { getOverlayNPCTarget, getNPCLoot } from '../services/api'
-import { className, bodyTypeName, npcRunSpeedPct } from '../lib/npcHelpers'
+import { className, bodyTypeName, npcRunSpeedPct, npcLevelLabel } from '../lib/npcHelpers'
 import { effectiveDropPct, rarityColor } from '../lib/lootHelpers'
 import type { TargetState, SpecialAbility, TargetVariant, NPCCasterSummary } from '../types/overlay'
 import type { NPC, NPCLootTable, LootDrop } from '../types/npc'
@@ -253,7 +253,7 @@ function VariantRibbon({ variants }: { variants: TargetVariant[] }): React.React
           key={v.npc.id}
           style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.85)', fontSize: 10, fontWeight: 600, borderRadius: 3, padding: '1px 6px' }}
         >
-          {className(v.npc.class)} · L{v.npc.level}
+          {className(v.npc.class)} · L{npcLevelLabel(v.npc)}
         </span>
       ))}
     </div>
@@ -296,7 +296,7 @@ function StatsBody({
         <>
           {sections.identity && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              <Chip label="Lv" value={npc.level} color="#c9a84c" />
+              <Chip label="Lv" value={npcLevelLabel(npc)} color="#c9a84c" />
               <Chip value={className(npc.class)} />
               <Chip value={npc.race_name} />
               <Chip value={bodyTypeName(npc.body_type)} />
@@ -465,7 +465,7 @@ function NPCContent({
               sections={sections}
               view={view}
               wishlistItemIds={wishlistItemIds}
-              variantLabel={`${className(v.npc.class)} · L${v.npc.level}`}
+              variantLabel={`${className(v.npc.class)} · L${npcLevelLabel(v.npc)}`}
             />
           ))
         ) : (

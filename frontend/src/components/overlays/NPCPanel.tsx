@@ -6,7 +6,7 @@ import { useNPCOverlaySections } from '../../hooks/useNPCOverlaySections'
 import { useWishlistItemIds } from '../../hooks/useWishlistItemIds'
 import { WSEvent } from '../../lib/wsEvents'
 import { getOverlayNPCTarget, getLogStatus, getNPCLoot, getNPCFaction, getItem } from '../../services/api'
-import { className, bodyTypeName, npcRunSpeedPct } from '../../lib/npcHelpers'
+import { className, bodyTypeName, npcRunSpeedPct, npcLevelLabel } from '../../lib/npcHelpers'
 import { cleanLootDropLabel, effectiveDropPct, rarityColor } from '../../lib/lootHelpers'
 import OverlayWindow from '../OverlayWindow'
 import ItemDetailModal from '../ItemDetailModal'
@@ -434,7 +434,7 @@ function OtherVariants({
             casterSummary={v.caster_summary}
             sections={sections}
             view={view}
-            variantLabel={`${className(v.npc.class)} · L${v.npc.level} · ${v.npc.hp.toLocaleString()} HP`}
+            variantLabel={`${className(v.npc.class)} · L${npcLevelLabel(v.npc)} · ${v.npc.hp.toLocaleString()} HP`}
             onItemClick={onItemClick}
             wishlistItemIds={wishlistItemIds}
           />
@@ -483,7 +483,7 @@ function NPCDetails({
             <div>
               <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Identity</p>
               <div className="flex flex-wrap gap-1.5">
-                <Stat label="Level" value={npc.level} color="var(--color-primary)" />
+                <Stat label="Level" value={npcLevelLabel(npc)} color="var(--color-primary)" />
                 <Stat label="Class" value={className(npc.class)} />
                 <Stat label="Race" value={npc.race_name} />
                 <Stat label="Body" value={bodyTypeName(npc.body_type)} />

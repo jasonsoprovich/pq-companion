@@ -3,6 +3,7 @@ export interface NPC {
   name: string
   last_name: string
   level: number
+  max_level: number
   race: number
   race_name: string
   class: number
