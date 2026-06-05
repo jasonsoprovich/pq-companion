@@ -8,6 +8,7 @@ import {
   bodyTypeName,
   className,
   npcDisplayName,
+  npcLevelLabel,
   npcRunSpeedPct,
   npcSpecialAbilities,
   specialAbilityAlertPattern,
@@ -182,7 +183,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
                 {npcDisplayName(npc)}
               </div>
               <div className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                {`Lv ${npc.level} ${className(npc.class)}`}
+                {`Lv ${npcLevelLabel(npc)} ${className(npc.class)}`}
               </div>
             </button>
           ))}
@@ -707,7 +708,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-            {`Level ${npc.level} ${className(npc.class)} · ${npc.race_name}`}
+            {`Level ${npcLevelLabel(npc)} ${className(npc.class)} · ${npc.race_name}`}
           </span>
           {flags.map((f) => (
             <span
