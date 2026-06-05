@@ -17,7 +17,7 @@ import {
 import RawDataModal from '../components/RawDataModal'
 import type { NPC } from '../types/npc'
 import type { Zone, ZoneConnection, ZoneDropItem, ZoneForageItem, ZoneGroundSpawn } from '../types/zone'
-import { className, npcDisplayName } from '../lib/npcHelpers'
+import { className, npcDisplayName, npcLevelLabel } from '../lib/npcHelpers'
 import { zoneExpansionName } from '../lib/enumsCache'
 
 function expansionName(id: number): string {
@@ -437,7 +437,7 @@ function NPCsTab({ shortName }: { shortName: string }): React.ReactElement {
             </div>
             <div className="ml-4 shrink-0 text-right">
               <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-                Lv {npc.level}
+                Lv {npcLevelLabel(npc)}
               </span>
               {npc.hp > 0 && (
                 <div className="text-[11px]" style={{ color: 'var(--color-muted)' }}>

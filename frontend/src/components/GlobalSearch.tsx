@@ -8,7 +8,7 @@ import type { NPC } from '../types/npc'
 import type { Zone } from '../types/zone'
 import { effectiveItemTypeLabel } from '../lib/itemHelpers'
 import { castableClassesShort } from '../lib/spellHelpers'
-import { npcDisplayName, className as npcClassName } from '../lib/npcHelpers'
+import { npcDisplayName, className as npcClassName, npcLevelLabel } from '../lib/npcHelpers'
 import { ItemIcon, SpellIcon } from './Icon'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ function ResultRow({ entry, active, onHover, onClick }: ResultRowProps): React.R
     subtitle = castableClassesShort(entry.spell.class_levels)
   } else if (entry.kind === 'npc') {
     name = npcDisplayName(entry.npc)
-    subtitle = `Level ${entry.npc.level} ${npcClassName(entry.npc.class)}`
+    subtitle = `Level ${npcLevelLabel(entry.npc)} ${npcClassName(entry.npc.class)}`
   } else {
     name = entry.zone.long_name
     subtitle = entry.zone.short_name
