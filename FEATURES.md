@@ -1255,6 +1255,28 @@ Parse and edit Zeal `_spellsets.ini` exports.
 - Back navigation preserves search and drill-down state and steps through item selections across explorers
 - Duplicate-name items collapse in spell cross-references
 
+## v0.12.0 — CH Chain Overlays, Loot & Chat Trackers, Shopping Routes
+
+- **CH Chain & Metronome** — a Complete Heal chain matcher and `ch_chain` timer category (backend) feed a CH Chain overlay window with cast-to-land bars, live measured cadence, and a stall indicator, plus a personal CH metronome overlay; both are first-class dashboard panels with their own Overlays toggles, and the default CH-chain pattern was broadened per user feedback
+- **Loot Tracker** (#135) — a dedicated Loot Tracker page logs drops as they happen, with clickable items (detail popup) and zones (jump to the Zone browser)
+- **Chat History** (#136) — the Tell Tracker for direct player-to-player tells grew into a full multi-channel Chat History with per-character tabs, chat-style conversation threads, tighter tell bubbles, and a live backfill progress meter
+- **Shopping route planner** — pick spells on the checklist and the app plans an efficient vendor shopping run: a pure greedy set-cover solver, a batched `GetSpellVendorOptions` query, a `POST /api/spells/shopping-route` endpoint, distance-aware sourcing, Druid/Wizard teleports modeled as a Nexus hub, a Plane of Knowledge toggle, town exclusion, and alignment/start-zone ordering; route panel controls let you exclude spells, filter towns, and set the start zone
+- **NPC caster summary** — NPC pages and the NPC overlay headline an NPC's class, key procs/highlights, and signature spells (collapsing the full list), with clickable proc/signature spells; the overlay also gains an optional Faction section with a config toggle and migration
+- **Rechargeable Items** — the inventory tracker adds a Rechargeable Items section, and limited-charge clicky items show their remaining charge count
+- **Log Backfill** — unified into the Logs tab and now runs in the background with a bottom progress bar, plus a 30-day log trim and wizard-driven backfill; the Logs tab adds log/Zeal status toggles, wizard diagnostics, and missing-log notices
+- **Navigation settings** — a new Settings → Navigation tab hides and reorders sidebar tabs
+- **Spell checklist** — added a spell-name search filter and per-spell selection for shopping runs
+- **Gear layouts** — swap gear-display layouts between the Gear tab and the Inventory tab
+- **Pop Out All** respects dashboard visibility toggles, only opening dashboard-visible overlays
+- Skill Tracker (per-character skills tab, caps + specialize lock, Log Backfill support) is present but gated behind a `DEV_SKILLS` flag — no reliable snapshot source yet
+- Ear, Ring, and Wrist slots no longer show empty for Zeal `_pq.proj` exports — format-1 equipment slot names are normalized (#137)
+- Corrected Offense/weapon `skill_id`s used for the ATK rating
+- Chat History no longer black-screens with no chat rows, double-loads its spinner, or shifts layout on load
+- Fixed a Primal Avatar crash from an empty buff-modifier resolution and hardened the Spell Modifiers panel against bad resolutions
+- Ambiguous Shissar/Brood self-lands resolve to the correct targeted timer
+- Duplicate-named bosses headline the strongest matching NPC and collapse the rest
+- Switching between items/spells/NPCs/zones no longer flickers the detail panel
+
 ## Phase 11 — Project Website
 _Planned_
 

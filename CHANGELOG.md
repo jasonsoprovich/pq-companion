@@ -9,6 +9,52 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.12.0 — 2026-06-05
+
+A raid-utility release: Complete Heal chain overlays, a Loot Tracker, a
+multi-channel Chat History, and an automatic spell-shopping route planner.
+
+### Highlights
+- **CH Chain & Metronome** — track raid Complete Heal chains in real time:
+  cast-to-land bars, live measured cadence, and a stall indicator, plus a
+  personal metronome overlay. Both are first-class dashboard panels with
+  their own Overlays toggles
+- **Loot Tracker** — a dedicated page that logs drops as they happen, with
+  clickable items (detail popup) and zones (jump to the Zone browser) (#135)
+- **Chat History** — the Tell Tracker grew into a full multi-channel chat
+  log with per-character tabs and chat-style conversation threads (#136)
+- **Shopping route planner** — pick spells on the checklist and the app plans
+  an efficient vendor shopping run: a greedy set-cover solver, distance-aware
+  sourcing, Druid/Wizard teleports modeled as a Nexus hub, a Plane of
+  Knowledge toggle, town exclusion, and alignment/start-zone ordering
+- **NPC caster summary** — NPC pages and the NPC overlay now headline an
+  NPC's class, key procs, and signature spells, with clickable proc spells;
+  the overlay also gains an optional faction section
+- **Rechargeable Items** — the inventory tracker adds a Rechargeable Items
+  section, and limited-charge clicky items show their remaining charge count
+- **Log Backfill** — unified into the Logs tab and now runs in the background
+  with a bottom progress bar, plus a 30-day log trim and wizard-driven
+  backfill
+- **Navigation settings** — a new Settings → Navigation tab lets you hide and
+  reorder sidebar tabs
+- **Spell checklist** — added a spell-name search filter and per-spell
+  selection for shopping runs
+- **Gear layouts** — swap gear-display layouts between the Gear tab and the
+  Inventory tab
+
+### Fixes
+- Ear, Ring, and Wrist slots no longer show empty for Zeal `_pq.proj` exports
+  (format-1 equipment slot names are now normalized) (#137)
+- Corrected Offense/weapon skill IDs used for the ATK rating
+- Opening Chat History no longer black-screens with no chat rows, double-loads
+  its spinner, or shifts layout on load
+- Fixed a Primal Avatar crash from an empty buff-modifier resolution, and
+  hardened the Spell Modifiers panel against bad resolutions
+- Ambiguous Shissar/Brood self-lands now resolve to the correct targeted timer
+- Duplicate-named bosses headline the strongest matching NPC and collapse the
+  rest
+- Switching between items/spells/NPCs/zones no longer flickers the detail panel
+
 ## v0.11.0 — 2026-06-02
 
 A tradeskills release: a new Recipes browser, accessibility options, richer

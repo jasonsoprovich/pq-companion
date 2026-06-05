@@ -19,10 +19,13 @@ Join the community on [Discord](https://discord.gg/a2QytxSVgM) for help, feedbac
 - **Roll Tracker** — Parses `/random` rolls into sessions, with an optional timer that auto-stops collection, a dashboard panel, and a pop-out overlay window.
 - **Spell Timer Engine** — Countdown bars for every buff, debuff, mez, stun, and DoT. Tick-accurate durations, with Zeal-pipe corroboration when available. Separate overlay windows for buffs and detrimentals.
 - **NPC Respawn Timers** — A transparent overlay that tracks NPC deaths and counts down to respawn, with Project Quarm's fast-respawn reduction applied automatically.
+- **CH Chain Overlay** — Tracks raid Complete Heal chains in real time from heal callouts: cast-to-land bars, live measured cadence, and a stall indicator, plus a personal CH metronome overlay that paces your slot. Both float as standalone dashboard panels.
+- **Loot Tracker** — A dedicated page that logs drops as they happen, with clickable items (full detail popup) and zones (jump straight to the Zone browser).
+- **Chat History** — A multi-channel log of your tells and conversations, with per-character tabs and chat-style threads so you can scroll back through who said what.
 - **Log Feed** — Real-time feed of every parsed combat, spell, and zone event from your EQ log.
-- **Spell Checklist** — See every spell your class can learn, cross-referenced against your Zeal spellbook, so you always know what you're missing — with a "Where to get it" button on each spell that surfaces where it can be obtained.
+- **Spell Checklist** — See every spell your class can learn, cross-referenced against your Zeal spellbook, so you always know what you're missing — with a "Where to get it" button on each spell that surfaces where it can be obtained, a name-search filter, and a shopping-route planner that maps an efficient vendor run for the spells you select.
 - **Spellsets** — Read and edit your Zeal `_spellsets.ini` exports inside the app. Add and remove sets, rename inline, and import another character's spellsets — with off-class and ineligible-spell blocking so you never load something you can't cast.
-- **Inventory Tracker** — All items across all your characters in one searchable view, including bank and shared bank.
+- **Inventory Tracker** — All items across all your characters in one searchable view, including bank and shared bank, with a dedicated Rechargeable Items section and remaining charge counts on limited-charge clickies.
 - **Key Tracker** — Tracks item components for major raid keys (Veeshan's Peak, Old Sebilis, Howling Stones, and more) across all your characters.
 - **Keyring** — Live per-character `/keys` snapshot, with an inventory fallback for keys that aren't in the keyring yet (Plane of Time, Vex Thal, Grieg's End).
 - **Wishlist** — A per-character wishlist with drag-to-reorder. Star any item from the database to add or remove it.
@@ -32,7 +35,7 @@ Join the community on [Discord](https://discord.gg/a2QytxSVgM) for help, feedbac
 - **App Backup & Restore** — Export your full app state (settings, triggers, trigger packs) as a single bundle and restore it on another machine or after a reinstall.
 - **Custom Triggers** — A GINA-style regex trigger engine. Write patterns that match any log line — or fire on live Zeal pipe events — and trigger configurable on-screen text and audio alerts. Includes cooldown timers for disciplines and long-recast spells. Ships with pre-built packs for enchanters (mez breaks, charm breaks, resists), bards, and group awareness (tells, deaths). Import and export trigger packs as JSON. Live history feed and a standalone transparent overlay window.
 - **Zeal Pipes Integration** — When Zeal is running, the app talks to it over Windows named pipes for real-time target, pet, cast, and buff data — no waiting on log lines or file exports.
-- **Settings** — Point the app at your EQ folder and character name; everything else is automatic. Includes app-wide zoom and a high-contrast text mode for readability, plus per-overlay lock-behaviour controls.
+- **Settings** — Point the app at your EQ folder and character name; everything else is automatic. Includes app-wide zoom and a high-contrast text mode for readability, per-overlay lock-behaviour controls, a Navigation tab to hide and reorder sidebar tabs, and unified Log Backfill with status diagnostics.
 
 ---
 
