@@ -124,11 +124,18 @@ export default function CHChainPanel({
 
   const chain = (state?.timers ?? [])
     .filter((t) => t.category === 'ch_chain')
+    // Order by when each CH was actually cast (first-cast on top), not by the
+    // "#N" label. chainnum is often a letter sequence (the regex allows it), so
+    // the parsed position collapses to 0 for every bar and ordering would fall
+    // back to alphabetical — cast time is the order the healer actually wants.
     .sort((a, b) => {
+      const ta = Date.parse(a.starts_at)
+      const tb = Date.parse(b.starts_at)
+      if (!Number.isNaN(ta) && !Number.isNaN(tb) && ta !== tb) return ta - tb
       const pa = parseLabel(a.spell_name).position
       const pb = parseLabel(b.spell_name).position
       if (pa !== pb) return pa - pb
-      return a.remaining_seconds - b.remaining_seconds
+      return a.spell_name.localeCompare(b.spell_name)
     })
   const cadence = computeCadence(chain)
 
