@@ -58,11 +58,13 @@ export interface ElectronAPI {
     closeAllPopouts: () => Promise<void>
     setIgnoreMouseEvents: (ignore: boolean) => Promise<void>
     setTriggerMode: (mode: 'interactive' | 'passthrough' | 'hidden') => Promise<void>
+    onTriggerEscape: (cb: () => void) => () => void
     getLocked: () => Promise<boolean>
     setLocked: (locked: boolean) => Promise<void>
   }
   screen: {
     triggerDefaultCenter: () => Promise<{ x: number; y: number }>
+    triggerDisplays: () => Promise<Array<{ x: number; y: number; width: number; height: number }>>
   }
   dialog: {
     selectFolder: () => Promise<string | null>

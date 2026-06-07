@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol, globalShortcut } from 'electron'
 import { join, extname, dirname } from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import { existsSync, readFileSync, writeFileSync, statSync } from 'fs'
@@ -1141,6 +1141,9 @@ function createTriggerOverlay(): void {
 
   triggerOverlayWindow.on('closed', () => {
     triggerOverlayWindow = null
+    // Don't leave a global Escape capture dangling if the window goes away
+    // mid-session — it would silently swallow Escape app-wide.
+    setTriggerEscapeShortcut(false)
   })
 }
 
@@ -1336,11 +1339,34 @@ ipcMain.handle('window:drag:end', (event) => {
 // appears on the primary monitor rather than at the seam between displays.
 ipcMain.handle('screen:trigger-default-center', () => {
   const v = virtualDesktopBounds()
-  const p = screen.getPrimaryDisplay().bounds
-  return {
-    x: Math.round(p.x - v.x + p.width / 2),
-    y: Math.round(p.y - v.y + p.height / 2),
+  // Center the card on the display the editor (main window) is on, so it spawns
+  // on the monitor the user is actually looking at — not always the primary,
+  // which on a multi-monitor setup may be a screen they aren't watching.
+  let target = screen.getPrimaryDisplay()
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    target = screen.getDisplayMatching(mainWindow.getBounds())
   }
+  const b = target.bounds
+  return {
+    x: Math.round(b.x - v.x + b.width / 2),
+    y: Math.round(b.y - v.y + b.height / 2),
+  }
+})
+
+// Each connected display's full bounds expressed in coordinates local to the
+// trigger overlay window (which spans the whole virtual desktop). The renderer
+// uses these to clamp the test card onto a REAL monitor — the bounding
+// rectangle of the virtual desktop can contain "dead" gaps (non-rectangular
+// multi-monitor layouts) where a clamped card would be invisible yet the
+// overlay still captures every click.
+ipcMain.handle('screen:trigger-displays', () => {
+  const v = virtualDesktopBounds()
+  return screen.getAllDisplays().map((d) => ({
+    x: d.bounds.x - v.x,
+    y: d.bounds.y - v.y,
+    width: d.bounds.width,
+    height: d.bounds.height,
+  }))
 })
 
 // ── IPC handlers — overlay windows ───────────────────────────────────────────
@@ -1482,9 +1508,49 @@ ipcMain.handle('overlay:trigger:open', () => {
 //   'hidden'      — idle: hidden entirely so it can never capture input
 // Hiding when idle is the authoritative lockout fix; click-through alone was
 // unreliable on some setups.
+// While an interactive positioning session is live the trigger overlay spans
+// every monitor and captures ALL mouse input, so the ONLY way to interact with
+// anything is the test card. If that card lands on a monitor the user isn't
+// looking at (or focus is on a fullscreen game), the desktop appears frozen.
+// A global Escape is an always-available bail-out: it fires regardless of which
+// window/app currently holds focus, where the renderer-local Escape handlers
+// cannot. Registered only for the duration of a session.
+let triggerEscapeRegistered = false
+
+function forceEndTriggerPositioning(): void {
+  const win = triggerOverlayWindow
+  if (!win || win.isDestroyed()) return
+  // Break the input lockout immediately from the main process — don't wait on a
+  // renderer round-trip — then ask the renderer to tear the session down cleanly
+  // (revert position, reset the editor button, clear the backend session).
+  win.setIgnoreMouseEvents(true, { forward: true })
+  const overlayHadFocus = win.isFocused()
+  if (win.isVisible()) win.hide()
+  if (overlayHadFocus && mainWindow && !mainWindow.isDestroyed()) mainWindow.focus()
+  win.webContents.send('overlay:trigger:escape')
+  // Drop the capture immediately. The session is over from the main process's
+  // point of view; if the renderer later re-enters interactive it re-registers.
+  // Without this, a dead/slow renderer that never sends set-mode('hidden') would
+  // leave Escape swallowed app-wide.
+  setTriggerEscapeShortcut(false)
+}
+
+function setTriggerEscapeShortcut(active: boolean): void {
+  if (active === triggerEscapeRegistered) return
+  if (active) {
+    triggerEscapeRegistered = globalShortcut.register('Escape', forceEndTriggerPositioning)
+  } else {
+    globalShortcut.unregister('Escape')
+    triggerEscapeRegistered = false
+  }
+}
+
 ipcMain.handle('overlay:trigger:set-mode', (_event, mode: 'interactive' | 'passthrough' | 'hidden') => {
   const win = triggerOverlayWindow
   if (!win || win.isDestroyed()) return
+  // The global-Escape bail-out is only needed while the overlay is capturing the
+  // whole desktop (interactive). Drop it the moment we leave that mode.
+  setTriggerEscapeShortcut(mode === 'interactive')
   if (mode === 'interactive') {
     win.setIgnoreMouseEvents(false)
     if (!win.isVisible()) win.showInactive()

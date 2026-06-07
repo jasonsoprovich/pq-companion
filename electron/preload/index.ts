@@ -62,6 +62,13 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('overlay:set-ignore-mouse-events', ignore),
     setTriggerMode: (mode: 'interactive' | 'passthrough' | 'hidden'): Promise<void> =>
       ipcRenderer.invoke('overlay:trigger:set-mode', mode),
+    // Fired by the main process when the global Escape bail-out is hit during a
+    // positioning session — the renderer ends the session cleanly in response.
+    onTriggerEscape: (cb: () => void): (() => void) => {
+      const listener = (): void => cb()
+      ipcRenderer.on('overlay:trigger:escape', listener)
+      return () => ipcRenderer.removeListener('overlay:trigger:escape', listener)
+    },
     getLocked: (): Promise<boolean> => ipcRenderer.invoke('overlay:lock:get'),
     setLocked: (locked: boolean): Promise<void> =>
       ipcRenderer.invoke('overlay:lock:set', locked),
@@ -69,6 +76,8 @@ contextBridge.exposeInMainWorld('electron', {
   screen: {
     triggerDefaultCenter: (): Promise<{ x: number; y: number }> =>
       ipcRenderer.invoke('screen:trigger-default-center'),
+    triggerDisplays: (): Promise<Array<{ x: number; y: number; width: number; height: number }>> =>
+      ipcRenderer.invoke('screen:trigger-displays'),
   },
   dialog: {
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-folder'),

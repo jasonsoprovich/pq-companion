@@ -242,6 +242,11 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
   // The overlay spans the whole virtual desktop, so without this the test card
   // would default to the seam between monitors. Falls back to window center.
   const defaultCenter = useRef<{ x: number; y: number } | null>(null)
+  // Each connected display's bounds in window-local coords, fetched from the
+  // main process. Used to clamp the card onto a REAL monitor rather than the
+  // virtual-desktop bounding rectangle, which can include dead gaps on
+  // non-rectangular multi-monitor layouts.
+  const displays = useRef<Array<{ x: number; y: number; width: number; height: number }> | null>(null)
   // Mirror of testAlert so end handlers can read it without putting impure side
   // effects inside a state updater (those are double-invoked in dev and have
   // proven fragile here).
@@ -255,8 +260,41 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
   // display that's since been unplugged — can't render the card off-screen.
   // Leaves a margin so the card body and its Done button stay reachable.
   const clampToViewport = useCallback((p: { x: number; y: number }): { x: number; y: number } => {
-    const maxX = Math.max(0, window.innerWidth - 120)
-    const maxY = Math.max(0, window.innerHeight - 60)
+    const CARD_W = 120
+    const CARD_H = 60
+    const list = displays.current
+    if (list && list.length > 0) {
+      // Clamp within the display the point already falls on; otherwise snap to
+      // the nearest display by center distance. This guarantees the card lands
+      // on a real monitor even if the saved position came from a layout (e.g. a
+      // since-unplugged display) that maps to a dead gap in the virtual desktop.
+      let target = list.find(
+        (d) => p.x >= d.x && p.x < d.x + d.width && p.y >= d.y && p.y < d.y + d.height,
+      )
+      if (!target) {
+        let best = Infinity
+        for (const d of list) {
+          const cx = d.x + d.width / 2
+          const cy = d.y + d.height / 2
+          const dist = (p.x - cx) ** 2 + (p.y - cy) ** 2
+          if (dist < best) {
+            best = dist
+            target = d
+          }
+        }
+      }
+      if (target) {
+        const maxX = Math.max(target.x, target.x + target.width - CARD_W)
+        const maxY = Math.max(target.y, target.y + target.height - CARD_H)
+        return {
+          x: Math.min(Math.max(target.x, p.x), maxX),
+          y: Math.min(Math.max(target.y, p.y), maxY),
+        }
+      }
+    }
+    // Fallback before the display list resolves: clamp to the whole viewport.
+    const maxX = Math.max(0, window.innerWidth - CARD_W)
+    const maxY = Math.max(0, window.innerHeight - CARD_H)
     return {
       x: Math.min(Math.max(0, p.x), maxX),
       y: Math.min(Math.max(0, p.y), maxY),
@@ -320,6 +358,12 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         if (!cancelled && c) defaultCenter.current = c
       } catch {
         /* fall back to makeDefaultPos's top-left default */
+      }
+      try {
+        const list = await window.electron?.screen?.triggerDisplays()
+        if (!cancelled && list && list.length > 0) displays.current = list
+      } catch {
+        /* fall back to clampToViewport's whole-viewport clamp */
       }
       try {
         const active = await getActiveTriggerTest()
@@ -410,6 +454,15 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
 
   // The card's Done button confirms (keeps the dragged position).
   const handleTestDone = useCallback(() => endSession(false), [endSession])
+
+  // The main process fires this when the global Escape bail-out is hit — it
+  // works even when focus is on a fullscreen game or the card spawned on a
+  // monitor the user can't see, which is exactly when the renderer-local Escape
+  // handlers can't. Treated as a CANCEL (revert), matching in-window Escape.
+  useEffect(() => {
+    const off = window.electron?.overlay?.onTriggerEscape?.(() => endSession(true))
+    return () => off?.()
+  }, [endSession])
 
   // Escape ends the positioning session from the overlay side too, as a CANCEL
   // (revert). Once the user drags the test card, keyboard focus is on this
