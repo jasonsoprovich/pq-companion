@@ -9,6 +9,22 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.12.2 — 2026-06-06
+
+Two overlay fixes: a multi-monitor positioning lockout and CH chain ordering.
+
+### Fixes
+- Setting a trigger's on-screen text position no longer freezes the app on
+  multi-monitor setups. While positioning, the alert overlay spans every monitor
+  and captures all mouse input, so if the draggable card appeared on a screen you
+  weren't looking at (or behind a fullscreen game) every click was swallowed and
+  the app seemed frozen. The card now opens centered on the monitor the main
+  window is on, can no longer land in a gap between displays, and pressing Escape
+  always cancels positioning no matter which window has focus.
+- The CH Chain overlay now lists heals in the order they were cast instead of
+  alphabetically. Chains that use letter-based call numbers were being sorted by
+  name; bars are now ordered by cast time.
+
 ## v0.12.1 — 2026-06-05
 
 A fix for NPC level display: range-spawning NPCs now show their full level range.
