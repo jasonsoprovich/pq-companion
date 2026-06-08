@@ -9,6 +9,25 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.12.3 — 2026-06-08
+
+Trigger alert overlays now behave reliably on multi-monitor setups, with a
+new monitor picker.
+
+### Highlights
+- **Overlay monitor** — on multi-monitor setups, a new picker in the Overlays
+  tab chooses which monitor trigger alert text (and the positioning card)
+  appears on. Single-monitor users see no change.
+
+### Fixes
+- Trigger overlay text positioning now works reliably across multiple monitors.
+  The previous release stopped the app from freezing, but the draggable card
+  could still vanish when dragged toward another screen, or never appear at all
+  if the app was started on certain monitors — a side effect of the alert
+  overlay stretching across every display, which doesn't map cleanly across
+  monitors that use different scaling. The overlay is now confined to a single
+  chosen monitor, so the card stays visible and lands where you drop it.
+
 ## v0.12.2 — 2026-06-06
 
 Two overlay fixes: a multi-monitor positioning lockout and CH chain ordering.
