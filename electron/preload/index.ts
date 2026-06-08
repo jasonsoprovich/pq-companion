@@ -72,12 +72,18 @@ contextBridge.exposeInMainWorld('electron', {
     getLocked: (): Promise<boolean> => ipcRenderer.invoke('overlay:lock:get'),
     setLocked: (locked: boolean): Promise<void> =>
       ipcRenderer.invoke('overlay:lock:set', locked),
+    // Pin trigger alert text (and the positioning card) to one monitor.
+    setDisplay: (id: number): Promise<void> =>
+      ipcRenderer.invoke('overlay:set-display', id),
   },
   screen: {
     triggerDefaultCenter: (): Promise<{ x: number; y: number }> =>
       ipcRenderer.invoke('screen:trigger-default-center'),
     triggerDisplays: (): Promise<Array<{ x: number; y: number; width: number; height: number }>> =>
       ipcRenderer.invoke('screen:trigger-displays'),
+    listDisplays: (): Promise<
+      Array<{ id: number; label: string; width: number; height: number; isPrimary: boolean; isCurrent: boolean }>
+    > => ipcRenderer.invoke('screen:list-displays'),
   },
   dialog: {
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-folder'),

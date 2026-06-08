@@ -181,29 +181,70 @@ function isOnScreen(bounds: Bounds): boolean {
   })
 }
 
-// virtualDesktopBounds returns the rectangle that covers every connected
-// display (the full virtual desktop). Used to size the trigger overlay so its
-// notification text can be positioned on any monitor. Uses full display bounds
-// (not workArea) so text can sit anywhere, including over taskbars.
-function virtualDesktopBounds(): Bounds {
+// ── Trigger overlay target display ────────────────────────────────────────────
+// The trigger overlay (the invisible canvas that trigger alert text and the
+// positioning card render into) covers exactly ONE monitor. A window spanning
+// the whole virtual desktop is unreliable on multi-monitor Windows: Chromium
+// applies a single scale factor to the entire window, so its CSS pixels line up
+// with screen coordinates only on the monitor that owns that scale factor. On a
+// differently-scaled monitor the positioning card drifts into a region that
+// maps to no visible pixels — to the user it simply "vanishes." Confining the
+// overlay to one monitor makes CSS px == screen DIP everywhere inside it, which
+// kills that whole class of multi-monitor positioning bugs.
+//
+// The chosen monitor is persisted by display id, with an identical-bounds
+// fallback in case ids shift across a reboot/replug. Default (no saved choice):
+// the monitor EQ / the main window is on, else the primary.
+type OverlayDisplayPref = { id: number; bounds: Bounds }
+
+function overlayDisplayFilePath(): string {
+  return join(app.getPath('userData'), 'overlayDisplay.json')
+}
+
+function loadOverlayDisplayPref(): OverlayDisplayPref | null {
+  try {
+    return JSON.parse(readFileSync(overlayDisplayFilePath(), 'utf8')) as OverlayDisplayPref
+  } catch {
+    return null
+  }
+}
+
+function saveOverlayDisplayPref(pref: OverlayDisplayPref): void {
+  try {
+    writeFileSync(overlayDisplayFilePath(), JSON.stringify(pref, null, 2), 'utf8')
+  } catch (err) {
+    console.error('[main] Failed to write overlay display pref:', err)
+  }
+}
+
+function resolveOverlayDisplay() {
   const displays = screen.getAllDisplays()
-  let minX = Infinity
-  let minY = Infinity
-  let maxX = -Infinity
-  let maxY = -Infinity
-  for (const d of displays) {
-    const b = d.bounds
-    minX = Math.min(minX, b.x)
-    minY = Math.min(minY, b.y)
-    maxX = Math.max(maxX, b.x + b.width)
-    maxY = Math.max(maxY, b.y + b.height)
+  const pref = loadOverlayDisplayPref()
+  if (pref) {
+    const byId = displays.find((d) => d.id === pref.id)
+    if (byId) return byId
+    // Display ids can change across a reboot/replug; fall back to a display in
+    // the same spot so the user's choice survives an unchanged layout.
+    const byBounds = displays.find(
+      (d) =>
+        d.bounds.x === pref.bounds.x &&
+        d.bounds.y === pref.bounds.y &&
+        d.bounds.width === pref.bounds.width &&
+        d.bounds.height === pref.bounds.height,
+    )
+    if (byBounds) return byBounds
   }
-  if (!Number.isFinite(minX)) {
-    // No displays reported (shouldn't happen); fall back to the primary.
-    const p = screen.getPrimaryDisplay().bounds
-    return { x: p.x, y: p.y, width: p.width, height: p.height }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return screen.getDisplayMatching(mainWindow.getBounds())
   }
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+  return screen.getPrimaryDisplay()
+}
+
+// Full bounds (not workArea) of the chosen overlay monitor, so trigger text can
+// sit anywhere on it, including over the taskbar.
+function overlayDisplayBounds(): Bounds {
+  const b = resolveOverlayDisplay().bounds
+  return { x: b.x, y: b.y, width: b.width, height: b.height }
 }
 
 function getRestoredBounds(name: OverlayName, defaults: Bounds): Bounds {
@@ -1071,22 +1112,23 @@ function createTriggerOverlay(): void {
   }
 
   // The trigger overlay is the invisible click-through canvas that real-fire
-  // alerts and the positioning test card render into. It spans the entire
-  // virtual desktop (every monitor) so notification text can be positioned on
-  // any display. The window has no chrome, isn't visible outside a positioning
-  // session, and the renderer toggles click-through over just the test card,
-  // so a desktop-spanning size never blocks the underlying app/game.
+  // alerts and the positioning test card render into. It covers exactly one
+  // monitor — the user's chosen overlay display (see resolveOverlayDisplay) —
+  // so notification text and the positioning card share a clean, single-DPI
+  // coordinate space. The window has no chrome, isn't visible outside a
+  // positioning session, and the renderer toggles click-through over just the
+  // test card, so a full-monitor size never blocks the underlying app/game.
   //
-  // Because it must always cover the full desktop, we do NOT persist or restore
-  // its bounds (unlike the other overlays) — they're recomputed from the
-  // current display layout every time. Drop any stale saved bounds left over
-  // from older single-display versions.
+  // Because it's always pinned to the chosen monitor, we do NOT persist or
+  // restore its bounds (unlike the other overlays) — they're recomputed from
+  // the current display layout every time. Drop any stale saved bounds left
+  // over from older versions.
   const store = loadBoundsStore()
   if (store.trigger) {
     delete store.trigger
     saveBoundsStore(store)
   }
-  const { x, y, width, height } = virtualDesktopBounds()
+  const { x, y, width, height } = overlayDisplayBounds()
   triggerOverlayWindow = new BrowserWindow({
     x,
     y,
@@ -1333,40 +1375,48 @@ ipcMain.handle('window:drag:end', (event) => {
   if (win) stopDrag(win)
 })
 
-// Returns the center of the primary display expressed in coordinates local to
-// the trigger overlay window (which spans the whole virtual desktop). The
-// trigger positioner uses this as its default spawn point so the test card
-// appears on the primary monitor rather than at the seam between displays.
+// Default spawn point for the positioning card, in coordinates local to the
+// trigger overlay window. The overlay now covers exactly one monitor, so its
+// window-local center is simply half its size — no virtual-desktop offset math.
 ipcMain.handle('screen:trigger-default-center', () => {
-  const v = virtualDesktopBounds()
-  // Center the card on the display the editor (main window) is on, so it spawns
-  // on the monitor the user is actually looking at — not always the primary,
-  // which on a multi-monitor setup may be a screen they aren't watching.
-  let target = screen.getPrimaryDisplay()
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    target = screen.getDisplayMatching(mainWindow.getBounds())
-  }
-  const b = target.bounds
-  return {
-    x: Math.round(b.x - v.x + b.width / 2),
-    y: Math.round(b.y - v.y + b.height / 2),
-  }
+  const b = overlayDisplayBounds()
+  return { x: Math.round(b.width / 2), y: Math.round(b.height / 2) }
 })
 
-// Each connected display's full bounds expressed in coordinates local to the
-// trigger overlay window (which spans the whole virtual desktop). The renderer
-// uses these to clamp the test card onto a REAL monitor — the bounding
-// rectangle of the virtual desktop can contain "dead" gaps (non-rectangular
-// multi-monitor layouts) where a clamped card would be invisible yet the
-// overlay still captures every click.
+// The overlay covers exactly one monitor, so the only "display" in window-local
+// coordinates is the whole window. Returned as a one-element list so the
+// renderer's clamp logic stays unchanged.
 ipcMain.handle('screen:trigger-displays', () => {
-  const v = virtualDesktopBounds()
-  return screen.getAllDisplays().map((d) => ({
-    x: d.bounds.x - v.x,
-    y: d.bounds.y - v.y,
+  const b = overlayDisplayBounds()
+  return [{ x: 0, y: 0, width: b.width, height: b.height }]
+})
+
+// Lists every connected display for the overlay-monitor picker, with a
+// human-readable label plus the id used to persist the choice.
+ipcMain.handle('screen:list-displays', () => {
+  const primaryId = screen.getPrimaryDisplay().id
+  const chosenId = resolveOverlayDisplay().id
+  return screen.getAllDisplays().map((d, i) => ({
+    id: d.id,
+    label: d.label && d.label.trim().length > 0 ? d.label : `Display ${i + 1}`,
     width: d.bounds.width,
     height: d.bounds.height,
+    isPrimary: d.id === primaryId,
+    isCurrent: d.id === chosenId,
   }))
+})
+
+// Persists which monitor the trigger overlay covers and, if the overlay window
+// already exists, moves/resizes it to the new monitor immediately.
+ipcMain.handle('overlay:set-display', (_event, id: number) => {
+  const target = screen.getAllDisplays().find((d) => d.id === id)
+  if (!target) return
+  const b = target.bounds
+  const bounds = { x: b.x, y: b.y, width: b.width, height: b.height }
+  saveOverlayDisplayPref({ id: target.id, bounds })
+  if (triggerOverlayWindow && !triggerOverlayWindow.isDestroyed()) {
+    triggerOverlayWindow.setBounds(bounds)
+  }
 })
 
 // ── IPC handlers — overlay windows ───────────────────────────────────────────
@@ -1880,11 +1930,13 @@ app.whenReady().then(async () => {
   createMainWindow()
   setupAutoUpdater()
 
-  // Keep the trigger overlay spanning the full virtual desktop when the
-  // monitor layout changes (plug/unplug a display, resolution or DPI change).
+  // Keep the trigger overlay pinned to its chosen monitor when the layout
+  // changes (plug/unplug a display, resolution or DPI change). If the chosen
+  // monitor was unplugged, resolveOverlayDisplay() re-homes the overlay to a
+  // still-connected one so it never lands on a now-missing display.
   const resizeTriggerOverlay = (): void => {
     if (!triggerOverlayWindow || triggerOverlayWindow.isDestroyed()) return
-    triggerOverlayWindow.setBounds(virtualDesktopBounds())
+    triggerOverlayWindow.setBounds(overlayDisplayBounds())
   }
   screen.on('display-added', resizeTriggerOverlay)
   screen.on('display-removed', resizeTriggerOverlay)

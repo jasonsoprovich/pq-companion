@@ -61,20 +61,29 @@ function AlertCard({ entry }: { entry: AlertEntry }): React.ReactElement {
   const color = overlayAction?.color || '#ffffff'
   const fontSize = overlayAction?.font_size && overlayAction.font_size > 0 ? overlayAction.font_size : 20
   const position = overlayAction?.position
-  const positioned = !!position
 
   // Live trigger alerts render as text-only — no card background or border —
   // so they don't block the gameplay view. A dark text shadow gives enough
   // contrast against any background. The dashed border / hint text only
   // belong to the test card during a positioning session.
+  //
+  // Pinned alerts are clamped onto the current overlay window (one monitor). A
+  // position saved under the old desktop-spanning overlay — or on a monitor
+  // since deselected/unplugged — could otherwise render the text off-screen.
+  // The margins keep at least the start of the text reachable.
   return (
     <div
       style={{
         transition: 'opacity 0.5s ease',
         opacity,
         pointerEvents: 'none',
-        ...(positioned
-          ? { position: 'fixed', left: position.x, top: position.y, zIndex: 10 }
+        ...(position
+          ? {
+              position: 'fixed',
+              left: Math.min(Math.max(0, position.x), Math.max(0, window.innerWidth - 40)),
+              top: Math.min(Math.max(0, position.y), Math.max(0, window.innerHeight - 24)),
+              zIndex: 10,
+            }
           : { padding: '4px 8px' }),
       }}
     >

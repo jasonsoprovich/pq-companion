@@ -61,10 +61,14 @@ export interface ElectronAPI {
     onTriggerEscape: (cb: () => void) => () => void
     getLocked: () => Promise<boolean>
     setLocked: (locked: boolean) => Promise<void>
+    setDisplay: (id: number) => Promise<void>
   }
   screen: {
     triggerDefaultCenter: () => Promise<{ x: number; y: number }>
     triggerDisplays: () => Promise<Array<{ x: number; y: number; width: number; height: number }>>
+    listDisplays: () => Promise<
+      Array<{ id: number; label: string; width: number; height: number; isPrimary: boolean; isCurrent: boolean }>
+    >
   }
   dialog: {
     selectFolder: () => Promise<string | null>

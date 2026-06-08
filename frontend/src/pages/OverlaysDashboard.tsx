@@ -8,7 +8,7 @@
  * restored on next mount. Drag/resize snaps to a 16px grid.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Eye, EyeOff, MonitorPlay, RotateCcw, HeartPulse, ExternalLink, Layers, X } from 'lucide-react'
+import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, HeartPulse, ExternalLink, Layers, X } from 'lucide-react'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
@@ -124,6 +124,33 @@ export default function OverlaysDashboard(): React.ReactElement {
     return () => { cancelled = true; clearInterval(id) }
   }, [])
 
+  // Multi-monitor: pick which monitor trigger alert text (and the positioning
+  // card) appears on. The trigger overlay covers exactly that one monitor —
+  // spanning the whole desktop is unreliable across mixed-DPI screens. The
+  // picker is hidden on single-monitor setups (nothing to choose).
+  const [displays, setDisplays] = useState<
+    Array<{ id: number; label: string; width: number; height: number; isPrimary: boolean; isCurrent: boolean }>
+  >([])
+
+  const refreshDisplays = useCallback(() => {
+    window.electron?.screen?.listDisplays?.()
+      .then((list) => setDisplays(list ?? []))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => { refreshDisplays() }, [refreshDisplays])
+
+  const currentDisplayId = displays.find((d) => d.isCurrent)?.id
+
+  const handleDisplayChange = useCallback(
+    (id: number) => {
+      window.electron?.overlay?.setDisplay?.(id)
+        .then(() => refreshDisplays())
+        .catch(() => {})
+    },
+    [refreshDisplays],
+  )
+
   const sizerExtent = useMemo(() => {
     let maxRight = 0
     let maxBottom = 0
@@ -189,6 +216,34 @@ export default function OverlaysDashboard(): React.ReactElement {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {/* Overlay monitor picker — only meaningful with more than one
+              display. Trigger alert text and the positioning card are pinned
+              to the chosen monitor. */}
+          {displays.length > 1 && (
+            <div
+              className="flex items-center gap-1.5"
+              title="Which monitor trigger alert text and the positioning card appear on"
+            >
+              <Monitor size={11} style={{ color: 'var(--color-muted-foreground)' }} />
+              <select
+                value={currentDisplayId ?? ''}
+                onChange={(e) => handleDisplayChange(Number(e.target.value))}
+                className="text-xs rounded px-1.5 py-1 outline-none"
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  color: 'var(--color-foreground)',
+                  border: '1px solid var(--color-border)',
+                  cursor: 'pointer',
+                }}
+              >
+                {displays.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {`${d.label} (${d.width}×${d.height})${d.isPrimary ? ' • Primary' : ''}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {/* HPS has no in-dashboard panel — pop it out as a floating window. */}
           {SHOW_HPS && (
             <button
