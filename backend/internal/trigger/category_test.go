@@ -135,11 +135,16 @@ func TestListCategories_CountsAndFlags(t *testing.T) {
 		t.Fatalf("Empty One: %+v (want count=0, custom-row)", c)
 	}
 
-	// Sorted by name.
+	// Ordered by sort_order ascending: explicit custom categories (with rows)
+	// come before unordered in-use packs.
 	for i := 1; i < len(cats); i++ {
-		if cats[i-1].Name > cats[i].Name {
-			t.Fatalf("not sorted: %q before %q", cats[i-1].Name, cats[i].Name)
+		if cats[i-1].SortOrder > cats[i].SortOrder {
+			t.Fatalf("not ordered by sort_order: %d before %d", cats[i-1].SortOrder, cats[i].SortOrder)
 		}
+	}
+	// "Empty One" (explicit) sorts ahead of the unordered "Custom A" pack.
+	if cats[0].Name != "Empty One" {
+		t.Fatalf("expected Empty One first, got %q", cats[0].Name)
 	}
 }
 
@@ -250,7 +255,7 @@ func TestDeleteCategory_OrphansTriggers(t *testing.T) {
 		t.Fatalf("Insert b: %v", err)
 	}
 
-	if err := s.DeleteCategory("Doomed"); err != nil {
+	if err := s.DeleteCategory("Doomed", false); err != nil {
 		t.Fatalf("DeleteCategory: %v", err)
 	}
 
@@ -275,7 +280,7 @@ func TestDeleteCategory_OrphansTriggers(t *testing.T) {
 
 func TestDeleteCategory_Rejects(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.DeleteCategory("Nope"); !errors.Is(err, ErrCategoryNotFound) {
+	if err := s.DeleteCategory("Nope", false); !errors.Is(err, ErrCategoryNotFound) {
 		t.Fatalf("missing: want ErrCategoryNotFound, got %v", err)
 	}
 	packs := AllPacks()
@@ -283,9 +288,152 @@ func TestDeleteCategory_Rejects(t *testing.T) {
 		if err := s.Insert(makeTrigger("x", packs[0].PackName)); err != nil {
 			t.Fatalf("Insert builtin trigger: %v", err)
 		}
-		if err := s.DeleteCategory(packs[0].PackName); !errors.Is(err, ErrCategoryBuiltin) {
+		if err := s.DeleteCategory(packs[0].PackName, false); !errors.Is(err, ErrCategoryBuiltin) {
 			t.Fatalf("delete builtin: want ErrCategoryBuiltin, got %v", err)
 		}
+	}
+}
+
+func TestDeleteCategory_DeletesTriggers(t *testing.T) {
+	s := openTestStore(t)
+	if _, err := s.CreateCategory("Doomed"); err != nil {
+		t.Fatalf("CreateCategory: %v", err)
+	}
+	if err := s.Insert(makeTrigger("a", "Doomed")); err != nil {
+		t.Fatalf("Insert a: %v", err)
+	}
+	if err := s.Insert(makeTrigger("u", "")); err != nil { // bystander, must survive
+		t.Fatalf("Insert u: %v", err)
+	}
+
+	if err := s.DeleteCategory("Doomed", true); err != nil {
+		t.Fatalf("DeleteCategory: %v", err)
+	}
+
+	list, err := s.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 1 || list[0].Name != "u" {
+		t.Fatalf("expected only the bystander to survive, got %d: %+v", len(list), list)
+	}
+	if _, ok := catByName(mustList(t, s))["Doomed"]; ok {
+		t.Fatal("category row survived delete")
+	}
+}
+
+func TestCreateCategory_AppendsSortOrder(t *testing.T) {
+	s := openTestStore(t)
+	a, err := s.CreateCategory("Alpha")
+	if err != nil {
+		t.Fatalf("CreateCategory Alpha: %v", err)
+	}
+	b, err := s.CreateCategory("Bravo")
+	if err != nil {
+		t.Fatalf("CreateCategory Bravo: %v", err)
+	}
+	if !(a.SortOrder < b.SortOrder) {
+		t.Fatalf("expected Alpha(%d) to sort before Bravo(%d)", a.SortOrder, b.SortOrder)
+	}
+}
+
+func TestReorderCategories(t *testing.T) {
+	s := openTestStore(t)
+	for _, n := range []string{"Alpha", "Bravo", "Charlie"} {
+		if _, err := s.CreateCategory(n); err != nil {
+			t.Fatalf("CreateCategory %s: %v", n, err)
+		}
+	}
+	// Reverse the order.
+	if err := s.ReorderCategories([]string{"Charlie", "Bravo", "Alpha"}); err != nil {
+		t.Fatalf("ReorderCategories: %v", err)
+	}
+	cats, err := s.ListCategories()
+	if err != nil {
+		t.Fatalf("ListCategories: %v", err)
+	}
+	got := []string{}
+	for _, c := range cats {
+		got = append(got, c.Name)
+	}
+	want := []string{"Charlie", "Bravo", "Alpha"}
+	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("order = %v, want %v", got, want)
+	}
+}
+
+func TestReorderCategories_MaterializesPackRow(t *testing.T) {
+	s := openTestStore(t)
+	packs := AllPacks()
+	if len(packs) == 0 {
+		t.Skip("no built-in packs")
+	}
+	pack := packs[0].PackName
+	if err := s.Insert(makeTrigger("x", pack)); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if _, err := s.CreateCategory("Custom"); err != nil {
+		t.Fatalf("CreateCategory: %v", err)
+	}
+	// Put the pack ahead of the custom category.
+	if err := s.ReorderCategories([]string{pack, "Custom"}); err != nil {
+		t.Fatalf("ReorderCategories: %v", err)
+	}
+	cats, err := s.ListCategories()
+	if err != nil {
+		t.Fatalf("ListCategories: %v", err)
+	}
+	if len(cats) < 2 || cats[0].Name != pack {
+		t.Fatalf("expected pack %q first, got %+v", pack, cats)
+	}
+}
+
+func TestReorderTriggers(t *testing.T) {
+	s := openTestStore(t)
+	for _, n := range []string{"a", "b", "c"} {
+		if err := s.Insert(makeTrigger(n, "Cat")); err != nil {
+			t.Fatalf("Insert %s: %v", n, err)
+		}
+	}
+	idOf := func(name string) string { return name + ":Cat" }
+	// New order: c, a, b
+	if err := s.ReorderTriggers([]string{idOf("c"), idOf("a"), idOf("b")}); err != nil {
+		t.Fatalf("ReorderTriggers: %v", err)
+	}
+	bySort := map[string]int{}
+	list, err := s.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, tr := range list {
+		bySort[tr.Name] = tr.SortOrder
+	}
+	if !(bySort["c"] < bySort["a"] && bySort["a"] < bySort["b"]) {
+		t.Fatalf("sort orders not applied: %+v", bySort)
+	}
+}
+
+func TestNextTriggerSortOrder_AppendsPerCategory(t *testing.T) {
+	s := openTestStore(t)
+	// makeTrigger uses SortOrder 0; emulate the handler's append by setting it.
+	first := makeTrigger("a", "Cat")
+	n, err := s.NextTriggerSortOrder("Cat")
+	if err != nil {
+		t.Fatalf("NextTriggerSortOrder: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("empty category next = %d, want 0", n)
+	}
+	first.SortOrder = n
+	if err := s.Insert(first); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	n2, err := s.NextTriggerSortOrder("Cat")
+	if err != nil {
+		t.Fatalf("NextTriggerSortOrder: %v", err)
+	}
+	if n2 != 1 {
+		t.Fatalf("next after one = %d, want 1", n2)
 	}
 }
 

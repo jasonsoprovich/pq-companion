@@ -72,7 +72,8 @@ func (s *Store) migrate() error {
 			source                 TEXT    NOT NULL DEFAULT 'log',
 			pipe_condition         TEXT    NOT NULL DEFAULT '',
 			dedup_key              TEXT    NOT NULL DEFAULT '',
-			cooldown_secs          INTEGER NOT NULL DEFAULT 0
+			cooldown_secs          INTEGER NOT NULL DEFAULT 0,
+			sort_order             INTEGER NOT NULL DEFAULT 0
 		)
 	`); err != nil {
 		return err
@@ -96,7 +97,9 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS trigger_categories (
 			name       TEXT    NOT NULL PRIMARY KEY,
-			created_at INTEGER NOT NULL
+			created_at INTEGER NOT NULL,
+			explicit   INTEGER NOT NULL DEFAULT 1,
+			sort_order INTEGER NOT NULL DEFAULT 0
 		)
 	`); err != nil {
 		return err
@@ -116,6 +119,11 @@ func (s *Store) migrate() error {
 		`ALTER TABLE triggers ADD COLUMN pipe_condition TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE triggers ADD COLUMN dedup_key TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE triggers ADD COLUMN cooldown_secs INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE triggers ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`,
+		// trigger_categories columns for databases created before category
+		// ordering. Existing rows were all user-created → explicit defaults 1.
+		`ALTER TABLE trigger_categories ADD COLUMN explicit INTEGER NOT NULL DEFAULT 1`,
+		`ALTER TABLE trigger_categories ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, stmt := range addColumns {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
@@ -477,12 +485,12 @@ func (s *Store) Insert(t *Trigger) error {
 		`INSERT INTO triggers (id, name, enabled, pattern, actions, pack_name, created_at,
 		                       timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		                       display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		                       source, pipe_condition, dedup_key, cooldown_secs)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       source, pipe_condition, dedup_key, cooldown_secs, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName, t.CreatedAt.Unix(),
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
-		source, pipeJSON, t.DedupKey, t.CooldownSecs,
+		source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder,
 	)
 	if err != nil {
 		return fmt.Errorf("insert trigger: %w", err)
@@ -516,7 +524,7 @@ func (s *Store) List() ([]*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key, cooldown_secs
+		        source, pipe_condition, dedup_key, cooldown_secs, sort_order
 		 FROM triggers ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -541,7 +549,7 @@ func (s *Store) Get(id string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key, cooldown_secs
+		        source, pipe_condition, dedup_key, cooldown_secs, sort_order
 		 FROM triggers WHERE id = ?`, id,
 	)
 	t, err := scanTrigger(row)
@@ -589,12 +597,12 @@ func (s *Store) Update(t *Trigger) error {
 		`UPDATE triggers SET name=?, enabled=?, pattern=?, actions=?, pack_name=?,
 		                     timer_type=?, timer_duration_secs=?, worn_off_pattern=?, spell_id=?,
 		                     display_threshold_secs=?, characters=?, timer_alerts=?, exclude_patterns=?,
-		                     source=?, pipe_condition=?, dedup_key=?, cooldown_secs=?
+		                     source=?, pipe_condition=?, dedup_key=?, cooldown_secs=?, sort_order=?
 		 WHERE id=?`,
 		t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName,
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
-		source, pipeJSON, t.DedupKey, t.CooldownSecs,
+		source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder,
 		t.ID,
 	)
 	if err != nil {
@@ -630,7 +638,7 @@ func (s *Store) FindByPackAndName(packName, name string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key, cooldown_secs
+		        source, pipe_condition, dedup_key, cooldown_secs, sort_order
 		 FROM triggers WHERE pack_name = ? AND name = ? LIMIT 1`,
 		packName, name,
 	)
@@ -658,7 +666,7 @@ func (s *Store) FindByDedupKey(key string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key, cooldown_secs
+		        source, pipe_condition, dedup_key, cooldown_secs, sort_order
 		 FROM triggers WHERE dedup_key = ? LIMIT 1`, key,
 	)
 	t, err := scanTrigger(row)
@@ -738,6 +746,41 @@ func (s *Store) DeleteAll() error {
 	return nil
 }
 
+// NextTriggerSortOrder returns one past the highest sort_order among triggers
+// in the given category (empty packName = Uncategorized), so a freshly created
+// or moved trigger appends to the end of that category's manual order.
+func (s *Store) NextTriggerSortOrder(packName string) (int, error) {
+	var max sql.NullInt64
+	err := s.db.QueryRow(
+		`SELECT MAX(sort_order) FROM triggers WHERE pack_name = ?`, packName,
+	).Scan(&max)
+	if err != nil {
+		return 0, fmt.Errorf("next trigger sort order for %q: %w", packName, err)
+	}
+	if !max.Valid {
+		return 0, nil
+	}
+	return int(max.Int64) + 1, nil
+}
+
+// ReorderTriggers rewrites the manual sort_order of the given trigger IDs to
+// match their position in ids (0-based). Used by the Manual sort mode's
+// drag-to-reorder. IDs are updated in a single transaction; unknown IDs are
+// no-ops.
+func (s *Store) ReorderTriggers(ids []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin reorder triggers: %w", err)
+	}
+	defer tx.Rollback()
+	for i, id := range ids {
+		if _, err := tx.Exec(`UPDATE triggers SET sort_order = ? WHERE id = ?`, i, id); err != nil {
+			return fmt.Errorf("reorder trigger %s: %w", id, err)
+		}
+	}
+	return tx.Commit()
+}
+
 type scanner interface {
 	Scan(...any) error
 }
@@ -752,7 +795,7 @@ func scanTrigger(row scanner) (*Trigger, error) {
 		&t.ID, &t.Name, &enabledInt, &t.Pattern, &actJSON, &t.PackName, &unixSec,
 		&timerType, &t.TimerDurationSecs, &t.WornOffPattern, &t.SpellID,
 		&t.DisplayThresholdSecs, &charJSON, &alertJSON, &excludeJSON,
-		&source, &pipeJSON, &t.DedupKey, &t.CooldownSecs,
+		&source, &pipeJSON, &t.DedupKey, &t.CooldownSecs, &t.SortOrder,
 	); err != nil {
 		return nil, err
 	}

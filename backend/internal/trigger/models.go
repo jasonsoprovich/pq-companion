@@ -200,6 +200,12 @@ type Trigger struct {
 	// re-installs from a surviving pack on uninstall. Empty = no dedup;
 	// each trigger lives independently. Convention: "<slug>_<event>".
 	DedupKey string `json:"dedup_key,omitempty"`
+
+	// SortOrder is the trigger's manual position within its category, used by
+	// the Triggers page "Manual" sort mode. Lower sorts first; ties fall back
+	// to CreatedAt. Set on create/move to append at the end of the target
+	// category; rewritten in bulk when the user drags rows into a custom order.
+	SortOrder int `json:"sort_order"`
 }
 
 // TriggerFired is the payload of a WSEventTriggerFired WebSocket event and a
@@ -215,8 +221,8 @@ type TriggerFired struct {
 // TriggerPack is a portable collection of triggers used for import/export and
 // built-in packs.
 type TriggerPack struct {
-	PackName    string    `json:"pack_name"`
-	Description string    `json:"description"`
+	PackName    string `json:"pack_name"`
+	Description string `json:"description"`
 	// Class is the EQ class index this pack targets (0=Warrior … 14=Beastlord).
 	// nil means class-agnostic (e.g. GeneralTriggers, user-authored packs that
 	// don't specify a class). On import, class-specific packs default their

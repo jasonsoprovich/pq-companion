@@ -160,6 +160,10 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 	if t.ExcludePatterns == nil {
 		t.ExcludePatterns = []string{}
 	}
+	// Append the new trigger to the end of its category's manual order.
+	if order, err := h.store.NextTriggerSortOrder(t.PackName); err == nil {
+		t.SortOrder = order
+	}
 	if err := h.store.Insert(t); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -212,9 +216,16 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	existing.PipeCondition = req.PipeCondition
 	// Only touch the category when the request carries pack_name — an
 	// omitted field (older callers, edits that don't change category)
-	// leaves the existing value intact.
+	// leaves the existing value intact. On a category change, re-append to
+	// the end of the destination's manual order.
 	if req.PackName != nil {
-		existing.PackName = strings.TrimSpace(*req.PackName)
+		newPack := strings.TrimSpace(*req.PackName)
+		if newPack != existing.PackName {
+			existing.PackName = newPack
+			if order, err := h.store.NextTriggerSortOrder(newPack); err == nil {
+				existing.SortOrder = order
+			}
+		}
 	}
 	if existing.Actions == nil {
 		existing.Actions = []trigger.Action{}
@@ -517,15 +528,55 @@ func (h *triggerHandler) renameCategory(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// deleteCategory removes a custom category, moving its triggers to
-// Uncategorized.
+// deleteCategory removes a custom category. The ?triggers= query selects what
+// happens to its triggers: "delete" removes them outright, anything else (the
+// default) moves them to Uncategorized.
 func (h *triggerHandler) deleteCategory(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	if err := h.store.DeleteCategory(name); err != nil {
+	deleteTriggers := r.URL.Query().Get("triggers") == "delete"
+	if err := h.store.DeleteCategory(name, deleteTriggers); err != nil {
 		writeCategoryError(w, err)
 		return
 	}
 	h.engine.Reload()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type reorderCategoriesRequest struct {
+	Order []string `json:"order"`
+}
+
+// reorderCategories persists a new display order for the category sections.
+func (h *triggerHandler) reorderCategories(w http.ResponseWriter, r *http.Request) {
+	var req reorderCategoriesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if err := h.store.ReorderCategories(req.Order); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Ordering doesn't affect matching, so no engine reload.
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type reorderTriggersRequest struct {
+	IDs []string `json:"ids"`
+}
+
+// reorderTriggers persists a new manual order for the given trigger IDs
+// (their position in the list becomes their sort_order).
+func (h *triggerHandler) reorderTriggers(w http.ResponseWriter, r *http.Request) {
+	var req reorderTriggersRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if err := h.store.ReorderTriggers(req.IDs); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

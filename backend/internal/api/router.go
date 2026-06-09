@@ -310,6 +310,10 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Delete("/packs/{name}", triggerH.removePack)
 			r.Get("/categories", triggerH.listCategories)
 			r.Post("/categories", triggerH.createCategory)
+			// Reorder routes use POST on a static sub-path so a category named
+			// "order" can't shadow them (vs. the PUT/{name} rename route).
+			r.Post("/categories/order", triggerH.reorderCategories)
+			r.Post("/order", triggerH.reorderTriggers)
 			r.Put("/categories/{name}", triggerH.renameCategory)
 			r.Delete("/categories/{name}", triggerH.deleteCategory)
 			r.Post("/test-overlay", triggerH.testOverlay)

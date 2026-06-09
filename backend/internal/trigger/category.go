@@ -1,6 +1,7 @@
 package trigger
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"sort"
@@ -23,16 +24,21 @@ var (
 )
 
 // Category is a trigger grouping surfaced to the UI. The category key is the
-// pack_name column on triggers. Custom categories are persisted in the
-// trigger_categories table so an empty, freshly-created group survives a
-// restart; built-in (class) and imported packs appear here too — derived from
-// the pack_name values currently in use — but are flagged IsBuiltin and stay
-// read-only (managed from the Packs tab).
+// pack_name column on triggers.
+//
+// Custom categories (Explicit) are user-created, persisted in the
+// trigger_categories table, and stay visible even when empty so they can serve
+// as drag-and-drop targets. Built-in (class) and imported packs appear here too
+// — derived from the pack_name values currently in use — but are flagged
+// IsBuiltin and stay read-only (managed from the Packs tab). Pack categories
+// vanish from the list when they hold no triggers.
 type Category struct {
 	Name      string `json:"name"`
 	Count     int    `json:"count"`      // triggers currently in this category
 	IsBuiltin bool   `json:"is_builtin"` // true = managed via the Packs tab, not editable here
-	Custom    bool   `json:"custom"`     // true = has a row in trigger_categories
+	Custom    bool   `json:"custom"`     // true = user-created (explicit, non-builtin)
+	Explicit  bool   `json:"explicit"`   // true = has a persisted row (always visible)
+	SortOrder int    `json:"sort_order"` // display order; lower sorts first
 }
 
 // builtinPackNames returns the set of pack names shipped as built-in packs.
@@ -79,33 +85,39 @@ func (s *Store) categoryCounts() (map[string]int, error) {
 	return out, rows.Err()
 }
 
-// categoryRows returns the set of category names persisted in the
-// trigger_categories table (including ones with no triggers yet).
-func (s *Store) categoryRows() (map[string]bool, error) {
-	rows, err := s.db.Query(`SELECT name FROM trigger_categories`)
+// categoryRow mirrors a trigger_categories row.
+type categoryRow struct {
+	Explicit  bool
+	SortOrder int
+}
+
+// categoryRows returns the persisted trigger_categories rows keyed by name.
+func (s *Store) categoryRows() (map[string]categoryRow, error) {
+	rows, err := s.db.Query(`SELECT name, explicit, sort_order FROM trigger_categories`)
 	if err != nil {
 		return nil, fmt.Errorf("category rows: %w", err)
 	}
 	defer rows.Close()
-	out := make(map[string]bool)
+	out := make(map[string]categoryRow)
 	for rows.Next() {
 		var name string
-		if err := rows.Scan(&name); err != nil {
+		var explicitInt, sortOrder int
+		if err := rows.Scan(&name, &explicitInt, &sortOrder); err != nil {
 			return nil, err
 		}
-		out[name] = true
+		out[name] = categoryRow{Explicit: explicitInt != 0, SortOrder: sortOrder}
 	}
 	return out, rows.Err()
 }
 
 // categoryExists reports whether the name names a real category — either a
-// persisted custom row or a pack_name currently carried by ≥1 trigger.
+// persisted row or a pack_name currently carried by ≥1 trigger.
 func (s *Store) categoryExists(name string) (bool, error) {
 	rows, err := s.categoryRows()
 	if err != nil {
 		return false, err
 	}
-	if rows[name] {
+	if _, ok := rows[name]; ok {
 		return true, nil
 	}
 	counts, err := s.categoryCounts()
@@ -116,8 +128,8 @@ func (s *Store) categoryExists(name string) (bool, error) {
 }
 
 // categoryNameTaken reports whether the name is unavailable for a new category:
-// already a custom row, already in use by triggers, or reserved by a built-in
-// pack (even one not currently installed).
+// already a persisted row, already in use by triggers, or reserved by a
+// built-in pack (even one not currently installed).
 func (s *Store) categoryNameTaken(name string) (bool, error) {
 	if builtinPackNames()[name] {
 		return true, nil
@@ -126,9 +138,11 @@ func (s *Store) categoryNameTaken(name string) (bool, error) {
 }
 
 // ListCategories returns every category surfaced to the UI: persisted custom
-// categories plus any pack_name values currently in use, each with its trigger
-// count and built-in flag. The reserved Uncategorized bucket is not included —
-// the frontend renders it separately. Sorted by name.
+// categories (always, even when empty) plus any pack_name values currently in
+// use, each with its trigger count, built-in flag, and display order. The
+// reserved Uncategorized bucket is not included — the frontend renders it
+// separately. Sorted by SortOrder then name; categories without an explicit
+// order fall to the end alphabetically.
 func (s *Store) ListCategories() ([]Category, error) {
 	counts, err := s.categoryCounts()
 	if err != nil {
@@ -148,17 +162,52 @@ func (s *Store) ListCategories() ([]Category, error) {
 		names[n] = true
 	}
 
+	// Categories without a persisted order sort after ordered ones.
+	const unordered = 1 << 30
+
 	out := make([]Category, 0, len(names))
 	for n := range names {
+		row, hasRow := rows[n]
+		count := counts[n]
+		explicit := hasRow && row.Explicit
+		// A pack-derived placeholder row (explicit=0) with no triggers — e.g.
+		// a pack that was reordered then uninstalled — is not shown.
+		if !explicit && count == 0 {
+			continue
+		}
+		order := unordered
+		if hasRow {
+			order = row.SortOrder
+		}
 		out = append(out, Category{
 			Name:      n,
-			Count:     counts[n],
+			Count:     count,
 			IsBuiltin: builtin[n],
-			Custom:    rows[n],
+			Custom:    explicit && !builtin[n],
+			Explicit:  explicit,
+			SortOrder: order,
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].SortOrder != out[j].SortOrder {
+			return out[i].SortOrder < out[j].SortOrder
+		}
+		return out[i].Name < out[j].Name
+	})
 	return out, nil
+}
+
+// nextCategorySortOrder returns one past the highest persisted category order.
+func (s *Store) nextCategorySortOrder() (int, error) {
+	var max sql.NullInt64
+	err := s.db.QueryRow(`SELECT MAX(sort_order) FROM trigger_categories`).Scan(&max)
+	if err != nil {
+		return 0, fmt.Errorf("next category sort order: %w", err)
+	}
+	if !max.Valid {
+		return 0, nil
+	}
+	return int(max.Int64) + 1, nil
 }
 
 // CreateCategory persists a new, empty custom category. Rejects empty/reserved
@@ -176,13 +225,17 @@ func (s *Store) CreateCategory(name string) (Category, error) {
 	if taken {
 		return Category{}, ErrCategoryExists
 	}
+	order, err := s.nextCategorySortOrder()
+	if err != nil {
+		return Category{}, err
+	}
 	if _, err := s.db.Exec(
-		`INSERT INTO trigger_categories (name, created_at) VALUES (?, ?)`,
-		norm, time.Now().UTC().Unix(),
+		`INSERT INTO trigger_categories (name, created_at, explicit, sort_order) VALUES (?, ?, 1, ?)`,
+		norm, time.Now().UTC().Unix(), order,
 	); err != nil {
 		return Category{}, fmt.Errorf("create category %s: %w", norm, err)
 	}
-	return Category{Name: norm, Count: 0, IsBuiltin: false, Custom: true}, nil
+	return Category{Name: norm, Count: 0, IsBuiltin: false, Custom: true, Explicit: true, SortOrder: order}, nil
 }
 
 // RenameCategory renames a custom category, cascading the new name to every
@@ -233,10 +286,10 @@ func (s *Store) RenameCategory(oldName, newName string) error {
 	return tx.Commit()
 }
 
-// DeleteCategory removes a custom category, moving its triggers to
-// Uncategorized (empty pack_name) rather than deleting them — distinct from
-// uninstalling a pack. Built-in packs cannot be deleted here.
-func (s *Store) DeleteCategory(name string) error {
+// DeleteCategory removes a custom category. When deleteTriggers is true its
+// triggers are deleted outright; otherwise they move to Uncategorized (empty
+// pack_name). Built-in packs cannot be deleted here.
+func (s *Store) DeleteCategory(name string, deleteTriggers bool) error {
 	norm, err := normalizeCategoryName(name)
 	if err != nil {
 		return err
@@ -257,11 +310,47 @@ func (s *Store) DeleteCategory(name string) error {
 		return fmt.Errorf("begin delete category: %w", err)
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`UPDATE triggers SET pack_name='' WHERE pack_name=?`, norm); err != nil {
-		return fmt.Errorf("orphan category triggers: %w", err)
+	if deleteTriggers {
+		if _, err := tx.Exec(`DELETE FROM triggers WHERE pack_name=?`, norm); err != nil {
+			return fmt.Errorf("delete category triggers: %w", err)
+		}
+	} else {
+		if _, err := tx.Exec(`UPDATE triggers SET pack_name='' WHERE pack_name=?`, norm); err != nil {
+			return fmt.Errorf("orphan category triggers: %w", err)
+		}
 	}
 	if _, err := tx.Exec(`DELETE FROM trigger_categories WHERE name=?`, norm); err != nil {
 		return fmt.Errorf("delete category row: %w", err)
+	}
+	return tx.Commit()
+}
+
+// ReorderCategories rewrites category display order to match the position of
+// each name in order (0-based). Custom rows keep their explicit flag; pack
+// categories included in the list get a lazily-materialized placeholder row
+// (explicit=0) so their order persists. Reserved/blank names are skipped;
+// built-in names are allowed (they're reorderable, just not renamable/
+// deletable).
+func (s *Store) ReorderCategories(order []string) error {
+	now := time.Now().UTC().Unix()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin reorder categories: %w", err)
+	}
+	defer tx.Rollback()
+	for i, name := range order {
+		norm := strings.TrimSpace(name)
+		if norm == "" || norm == reservedUncategorized {
+			continue
+		}
+		if _, err := tx.Exec(
+			`INSERT INTO trigger_categories (name, created_at, explicit, sort_order)
+			 VALUES (?, ?, 0, ?)
+			 ON CONFLICT(name) DO UPDATE SET sort_order = excluded.sort_order`,
+			norm, now, i,
+		); err != nil {
+			return fmt.Errorf("reorder category %s: %w", norm, err)
+		}
 	}
 	return tx.Commit()
 }
