@@ -1315,8 +1315,22 @@ export function renameTriggerCategory(name: string, newName: string): Promise<vo
   return put<void>(`/api/triggers/categories/${encodeURIComponent(name)}`, { new_name: newName })
 }
 
-export function deleteTriggerCategory(name: string): Promise<void> {
-  return del(`/api/triggers/categories/${encodeURIComponent(name)}`)
+// deleteTriggerCategory removes a category. deleteTriggers=true deletes its
+// triggers outright; false (default) moves them to Uncategorized.
+export function deleteTriggerCategory(name: string, deleteTriggers = false): Promise<void> {
+  const mode = deleteTriggers ? 'delete' : 'orphan'
+  return del(`/api/triggers/categories/${encodeURIComponent(name)}?triggers=${mode}`)
+}
+
+// reorderTriggerCategories persists the display order of category sections.
+export function reorderTriggerCategories(order: string[]): Promise<void> {
+  return post<void>('/api/triggers/categories/order', { order })
+}
+
+// reorderTriggers persists the manual order of the given trigger IDs (their
+// position in the array becomes their sort_order).
+export function reorderTriggers(ids: string[]): Promise<void> {
+  return post<void>('/api/triggers/order', { ids })
 }
 
 export function exportTriggerPack(): Promise<TriggerPack> {

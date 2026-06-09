@@ -1915,78 +1915,41 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
 
 type Tab = 'triggers' | 'history' | 'packs'
 
-// ── Manage categories modal ────────────────────────────────────────────────────
+// ── Delete category modal ───────────────────────────────────────────────────
 
-interface ManageCategoriesModalProps {
-  categories: TriggerCategory[]
+interface DeleteCategoryModalProps {
+  category: TriggerCategory
   onClose: () => void
-  // Refresh triggers + categories after a mutation. Rename/delete cascade to
-  // trigger pack_name, so the full list (not just counts) must reload.
+  // Reload triggers + categories after the delete (it cascades to pack_name).
   onChanged: () => void
 }
 
-function ManageCategoriesModal({
-  categories,
+function DeleteCategoryModal({
+  category,
   onClose,
   onChanged,
-}: ManageCategoriesModalProps): React.ReactElement {
-  const [newName, setNewName] = useState('')
-  const [adding, setAdding] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [renaming, setRenaming] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState('')
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+}: DeleteCategoryModalProps): React.ReactElement {
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEscapeToClose(onClose, true)
 
-  // Context-aware Escape: cancel an in-progress rename/delete first, otherwise
-  // close the modal. This modal owns the topmost Escape layer while open.
-  useEscapeToClose(() => {
-    if (renaming) { setRenaming(null); return }
-    if (confirmDelete) { setConfirmDelete(null); return }
-    onClose()
-  }, true)
-
-  // Custom = user-created or imported (editable here). Built-in/class packs are
-  // read-only — they're managed from the Packs tab.
-  const custom = categories.filter((c) => !c.is_builtin)
-  const builtin = categories.filter((c) => c.is_builtin)
-
-  const handleAdd = () => {
-    const trimmed = newName.trim()
-    if (!trimmed) return
-    setAdding(true)
-    setError(null)
-    createTriggerCategory(trimmed)
-      .then(() => { setNewName(''); onChanged() })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setAdding(false))
-  }
-
-  const startRename = (name: string) => {
-    setRenaming(name)
-    setRenameValue(name)
-    setConfirmDelete(null)
-    setError(null)
-  }
-
-  const handleRename = (oldName: string) => {
-    const trimmed = renameValue.trim()
-    if (!trimmed || trimmed === oldName) { setRenaming(null); return }
+  const run = (deleteTriggers: boolean) => {
     setBusy(true)
     setError(null)
-    renameTriggerCategory(oldName, trimmed)
-      .then(() => { setRenaming(null); onChanged() })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setBusy(false))
+    deleteTriggerCategory(category.name, deleteTriggers)
+      .then(() => onChanged())
+      .catch((e: Error) => {
+        setError(e.message)
+        setBusy(false)
+      })
   }
 
-  const handleDelete = (name: string) => {
-    setBusy(true)
-    setError(null)
-    deleteTriggerCategory(name)
-      .then(() => { setConfirmDelete(null); onChanged() })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setBusy(false))
+  const n = category.count
+  const plural = n === 1 ? '' : 's'
+  const choiceBtn = {
+    border: '1px solid var(--color-border)',
+    backgroundColor: 'var(--color-surface-2)',
+    cursor: 'pointer' as const,
   }
 
   return (
@@ -1996,185 +1959,76 @@ function ManageCategoriesModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-lg"
+        className="w-full max-w-sm rounded-lg"
         style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div
           className="flex items-center gap-2 border-b px-4 py-3"
           style={{ borderColor: 'var(--color-border)' }}
         >
-          <Tags size={15} style={{ color: 'var(--color-primary)' }} />
-          <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
-            Manage Categories
+          <Trash2 size={15} style={{ color: 'var(--color-destructive)' }} />
+          <span className="text-sm font-semibold truncate" style={{ color: 'var(--color-foreground)' }}>
+            Delete “{category.name}”
           </span>
-          <button onClick={onClose} className="ml-auto" style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }} aria-label="Close">
+          <button
+            onClick={onClose}
+            className="ml-auto shrink-0"
+            style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
+            aria-label="Close"
+          >
             <X size={16} />
           </button>
         </div>
 
-        <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
-          {/* Add */}
-          <div className="space-y-1">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="New category name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAdd() } }}
-                className="flex-1 rounded px-3 py-1.5 text-sm outline-none"
-                style={{
-                  backgroundColor: 'var(--color-surface-2)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-foreground)',
-                }}
-                disabled={adding}
-              />
+        <div className="p-4 space-y-3">
+          <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            {n === 0
+              ? 'This category is empty and will be removed.'
+              : `This category has ${n} trigger${plural}. What should happen to ${n === 1 ? 'it' : 'them'}?`}
+          </p>
+          {error && (
+            <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>{error}</p>
+          )}
+          <div className="flex flex-col gap-2">
+            {n > 0 ? (
+              <>
+                <button
+                  onClick={() => run(false)}
+                  disabled={busy}
+                  className="rounded px-3 py-2 text-xs font-medium text-left"
+                  style={{ ...choiceBtn, color: 'var(--color-foreground)' }}
+                >
+                  Move {n} trigger{plural} to Uncategorized
+                </button>
+                <button
+                  onClick={() => run(true)}
+                  disabled={busy}
+                  className="rounded px-3 py-2 text-xs font-medium text-left"
+                  style={{ ...choiceBtn, color: 'var(--color-destructive)' }}
+                >
+                  Delete category and all {n} trigger{plural}
+                </button>
+              </>
+            ) : (
               <button
-                onClick={handleAdd}
-                disabled={adding || !newName.trim()}
-                className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold"
-                style={{
-                  backgroundColor: 'var(--color-primary)',
-                  color: 'var(--color-background)',
-                  border: '1px solid transparent',
-                  cursor: 'pointer',
-                }}
+                onClick={() => run(false)}
+                disabled={busy}
+                className="rounded px-3 py-2 text-xs font-medium text-left"
+                style={{ ...choiceBtn, color: 'var(--color-destructive)' }}
               >
-                <Plus size={12} /> Add
+                Delete category
               </button>
-            </div>
-            {error && (
-              <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>{error}</p>
             )}
+            <button
+              onClick={onClose}
+              disabled={busy}
+              className="rounded px-3 py-2 text-xs"
+              style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
+            >
+              Cancel
+            </button>
           </div>
-
-          {/* Custom categories (editable) */}
-          {custom.length === 0 ? (
-            <p className="text-xs italic px-1" style={{ color: 'var(--color-muted-foreground)' }}>
-              No custom categories yet. Create one above, then assign triggers to it
-              from the trigger editor's Category dropdown.
-            </p>
-          ) : (
-            <div className="space-y-1.5">
-              {custom.map((c) => (
-                <div
-                  key={c.name}
-                  className="flex items-center gap-2 rounded px-3 py-2"
-                  style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
-                >
-                  {renaming === c.name ? (
-                    <>
-                      <input
-                        type="text"
-                        autoFocus
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') { e.preventDefault(); handleRename(c.name) }
-                        }}
-                        className="flex-1 rounded px-2 py-1 text-sm outline-none"
-                        style={{
-                          backgroundColor: 'var(--color-surface)',
-                          border: '1px solid var(--color-border)',
-                          color: 'var(--color-foreground)',
-                        }}
-                        disabled={busy}
-                      />
-                      <button
-                        onClick={() => handleRename(c.name)}
-                        disabled={busy}
-                        className="text-[11px] px-2 py-1 rounded font-semibold"
-                        style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-background)', cursor: 'pointer' }}
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setRenaming(null)}
-                        disabled={busy}
-                        className="text-[11px] px-2 py-1 rounded"
-                        style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
-                      >
-                        Cancel
-                      </button>
-                    </>
-                  ) : confirmDelete === c.name ? (
-                    <>
-                      <span className="flex-1 text-xs" style={{ color: 'var(--color-foreground)' }}>
-                        Delete “{c.name}”? Its {c.count} trigger{c.count === 1 ? '' : 's'} move
-                        to Uncategorized.
-                      </span>
-                      <button
-                        onClick={() => handleDelete(c.name)}
-                        disabled={busy}
-                        className="text-[11px] px-2 py-1 rounded font-semibold"
-                        style={{ backgroundColor: 'var(--color-danger)', color: '#fff', cursor: 'pointer' }}
-                      >
-                        Delete
-                      </button>
-                      <button
-                        onClick={() => setConfirmDelete(null)}
-                        disabled={busy}
-                        className="text-[11px] px-2 py-1 rounded"
-                        style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
-                      >
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="flex-1 text-sm truncate" style={{ color: 'var(--color-foreground)' }}>
-                        {c.name}
-                      </span>
-                      <span className="text-[11px] tabular-nums" style={{ color: 'var(--color-muted-foreground)' }}>
-                        {c.count}
-                      </span>
-                      <button
-                        onClick={() => startRename(c.name)}
-                        title="Rename"
-                        style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
-                      >
-                        <Pencil size={13} />
-                      </button>
-                      <button
-                        onClick={() => { setConfirmDelete(c.name); setRenaming(null); setError(null) }}
-                        title="Delete"
-                        style={{ color: 'var(--color-danger)', cursor: 'pointer' }}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Built-in / class packs (read-only) */}
-          {builtin.length > 0 && (
-            <div className="space-y-1.5 pt-1">
-              <p className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-                Packs — managed from the Packs tab
-              </p>
-              {builtin.map((c) => (
-                <div
-                  key={c.name}
-                  className="flex items-center gap-2 rounded px-3 py-2"
-                  style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', opacity: 0.7 }}
-                >
-                  <Package size={12} style={{ color: 'var(--color-muted)' }} />
-                  <span className="flex-1 text-sm truncate" style={{ color: 'var(--color-foreground)' }}>
-                    {c.name}
-                  </span>
-                  <span className="text-[11px] tabular-nums" style={{ color: 'var(--color-muted-foreground)' }}>
-                    {c.count}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -2213,7 +2067,16 @@ export default function TriggersPage(): React.ReactElement {
     return new Set()
   })
   const [categories, setCategories] = useState<TriggerCategory[]>([])
-  const [showCategories, setShowCategories] = useState(false)
+  // Inline category management on the section headers: which category is being
+  // renamed (+ its edit-box value), which is pending delete (opens the modal),
+  // and whether a New Category create is in flight.
+  const [renamingCategory, setRenamingCategory] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [deletingCategory, setDeletingCategory] = useState<TriggerCategory | null>(null)
+  const [creatingCategory, setCreatingCategory] = useState(false)
+  // Latches a rename commit so the input's unmount-blur doesn't fire twice
+  // (and so Escape skips the rename). See commitRenameCategory.
+  const cancelRenameRef = useRef(false)
   // Drag-and-drop: the trigger currently being dragged by its grip handle,
   // and the category section being hovered over (for highlight).
   const [dragTrigger, setDragTrigger] = useState<Trigger | null>(null)
@@ -2314,9 +2177,12 @@ export default function TriggersPage(): React.ReactElement {
     return names
   })()
 
-  // Group + sort the filtered triggers for display. Sections are pack
-  // names; uncategorized (user-authored) lives at the end. Each section's
-  // entries are sorted per sortMode.
+  const hasActiveFilter = !!(search.trim() || classFilter !== null || charFilter || packFilter)
+
+  // Group + sort the filtered triggers for display. Sections follow the
+  // backend category order; Uncategorized pins last. Empty custom categories
+  // are shown (so they can be drag targets) when no filter is narrowing the
+  // view. Each section's entries are sorted per sortMode.
   const groupedTriggers = (() => {
     const groups = new Map<string, Trigger[]>()
     for (const t of filteredTriggers) {
@@ -2324,7 +2190,18 @@ export default function TriggersPage(): React.ReactElement {
       if (!groups.has(key)) groups.set(key, [])
       groups.get(key)!.push(t)
     }
-    const ordered: { packName: string; items: Trigger[] }[] = []
+    if (!hasActiveFilter) {
+      for (const c of categories) {
+        if (c.custom && !groups.has(c.name)) groups.set(c.name, [])
+      }
+    }
+    const orderIndex = new Map<string, number>()
+    categories.forEach((c, i) => orderIndex.set(c.name, i))
+    const orderOf = (key: string): number => {
+      if (key === '__uncategorized__') return Number.MAX_SAFE_INTEGER
+      const idx = orderIndex.get(key)
+      return idx === undefined ? Number.MAX_SAFE_INTEGER - 1 : idx
+    }
     const sortItems = (items: Trigger[]) => {
       if (sortMode === 'recent') {
         items.sort((a, b) => {
@@ -2336,16 +2213,17 @@ export default function TriggersPage(): React.ReactElement {
         items.sort((a, b) => a.name.localeCompare(b.name))
       }
     }
-    const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
-      if (a === '__uncategorized__') return 1
-      if (b === '__uncategorized__') return -1
-      return a.localeCompare(b)
+    const ordered = Array.from(groups.entries()).map(([packName, items]) => ({
+      packName,
+      items,
+    }))
+    ordered.sort((a, b) => {
+      const oa = orderOf(a.packName)
+      const ob = orderOf(b.packName)
+      if (oa !== ob) return oa - ob
+      return a.packName.localeCompare(b.packName)
     })
-    for (const k of sortedKeys) {
-      const items = groups.get(k)!
-      sortItems(items)
-      ordered.push({ packName: k, items })
-    }
+    for (const g of ordered) sortItems(g.items)
     return ordered
   })()
 
@@ -2381,6 +2259,56 @@ export default function TriggersPage(): React.ReactElement {
   const handleUpdated = (updated: Trigger) => {
     setTriggers((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
     reloadCategories()
+  }
+
+  // ── Category management (inline, on the section headers) ──
+  // Create a category with a unique default name, then immediately drop its
+  // header into rename mode so the user can type the real name.
+  const handleNewCategory = () => {
+    if (creatingCategory) return
+    const existing = new Set(categories.map((c) => c.name))
+    let name = 'New Category'
+    for (let i = 2; existing.has(name); i++) name = `New Category ${i}`
+    setCreatingCategory(true)
+    createTriggerCategory(name)
+      .then((cat) => {
+        reloadCategories()
+        cancelRenameRef.current = false
+        setRenamingCategory(cat.name)
+        setRenameValue(cat.name)
+      })
+      .catch(() => {})
+      .finally(() => setCreatingCategory(false))
+  }
+
+  const startRenameCategory = (name: string) => {
+    cancelRenameRef.current = false
+    setRenamingCategory(name)
+    setRenameValue(name)
+  }
+
+  const cancelRenameCategory = () => {
+    cancelRenameRef.current = true
+    setRenamingCategory(null)
+  }
+
+  // Commit the inline rename. Reentrant-safe: the input's onBlur fires again
+  // when Enter/Escape unmounts it, so the first call latches cancelRenameRef
+  // to make the second a no-op. Escape sets the latch up front to skip the
+  // rename entirely.
+  const commitRenameCategory = (oldName: string) => {
+    if (cancelRenameRef.current) {
+      cancelRenameRef.current = false
+      setRenamingCategory(null)
+      return
+    }
+    cancelRenameRef.current = true
+    const trimmed = renameValue.trim()
+    setRenamingCategory(null)
+    if (!trimmed || trimmed === oldName) return
+    renameTriggerCategory(oldName, trimmed)
+      .then(() => load()) // cascades to trigger pack_name → reload everything
+      .catch(() => {})
   }
 
   // ── Drag-and-drop: move a trigger to a category by dropping on its section ──
@@ -2484,17 +2412,18 @@ export default function TriggersPage(): React.ReactElement {
                 Refresh
               </button>
               <button
-                onClick={() => setShowCategories(true)}
+                onClick={handleNewCategory}
+                disabled={creatingCategory}
                 className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
                 style={{
                   backgroundColor: 'var(--color-surface-2)',
                   color: 'var(--color-muted-foreground)',
                   border: '1px solid var(--color-border)',
                 }}
-                title="Create, rename, and delete trigger categories"
+                title="Add a new empty category, then rename it inline"
               >
                 <Tags size={11} />
-                Categories
+                New Category
               </button>
               {triggers.length > 0 && (
                 <button
@@ -2883,6 +2812,9 @@ export default function TriggersPage(): React.ReactElement {
                   group.packName === '__uncategorized__' ? 'Uncategorized' : group.packName
                 const isDropTarget = dragOverPack === group.packName
                 const dropHint = !!dragTrigger && canDropOnPack(group.packName)
+                const cat = categories.find((c) => c.name === group.packName)
+                const isCustom = !!cat?.custom
+                const isRenaming = renamingCategory === group.packName
                 return (
                   <div
                     key={group.packName}
@@ -2905,10 +2837,8 @@ export default function TriggersPage(): React.ReactElement {
                       handleDropOnPack(group.packName)
                     }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => togglePackCollapsed(group.packName)}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left"
+                    <div
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5"
                       style={{
                         backgroundColor: isDropTarget
                           ? 'var(--color-surface-3)'
@@ -2920,32 +2850,90 @@ export default function TriggersPage(): React.ReactElement {
                         }`,
                       }}
                     >
-                      {isCollapsed ? (
-                        <ChevronRight size={13} style={{ color: 'var(--color-muted)' }} />
-                      ) : (
-                        <ChevronDown size={13} style={{ color: 'var(--color-muted)' }} />
+                      <button
+                        type="button"
+                        onClick={() => togglePackCollapsed(group.packName)}
+                        className="flex flex-1 items-center gap-2 text-left min-w-0"
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                      >
+                        {isCollapsed ? (
+                          <ChevronRight size={13} style={{ color: 'var(--color-muted)' }} />
+                        ) : (
+                          <ChevronDown size={13} style={{ color: 'var(--color-muted)' }} />
+                        )}
+                        {!isRenaming && (
+                          <>
+                            <span
+                              className="text-xs font-semibold truncate"
+                              style={{ color: 'var(--color-foreground)' }}
+                            >
+                              {label}
+                            </span>
+                            <span
+                              className="text-[11px] shrink-0"
+                              style={{ color: 'var(--color-muted-foreground)' }}
+                            >
+                              {group.items.length}
+                            </span>
+                          </>
+                        )}
+                      </button>
+                      {isRenaming && (
+                        <input
+                          type="text"
+                          autoFocus
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              commitRenameCategory(group.packName)
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              cancelRenameCategory()
+                            }
+                          }}
+                          onBlur={() => commitRenameCategory(group.packName)}
+                          className="flex-1 rounded px-2 py-0.5 text-xs outline-none min-w-0"
+                          style={{
+                            backgroundColor: 'var(--color-surface)',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-foreground)',
+                          }}
+                        />
                       )}
-                      <span
-                        className="text-xs font-semibold"
-                        style={{ color: 'var(--color-foreground)' }}
-                      >
-                        {label}
-                      </span>
-                      <span
-                        className="text-[11px]"
-                        style={{ color: 'var(--color-muted-foreground)' }}
-                      >
-                        {group.items.length}
-                      </span>
                       {isDropTarget && (
                         <span
-                          className="ml-auto text-[11px] font-medium"
+                          className="text-[11px] font-medium shrink-0"
                           style={{ color: 'var(--color-primary)' }}
                         >
                           Move here
                         </span>
                       )}
-                    </button>
+                      {isCustom && !isRenaming && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => startRenameCategory(group.packName)}
+                            className="p-0.5 rounded"
+                            title="Rename category"
+                            style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
+                          >
+                            <Pencil size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => cat && setDeletingCategory(cat)}
+                            className="p-0.5 rounded"
+                            title="Delete category"
+                            style={{ color: 'var(--color-destructive)', cursor: 'pointer' }}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     {!isCollapsed &&
                       group.items.map((t) => (
                         <TriggerRow
@@ -2979,11 +2967,14 @@ export default function TriggersPage(): React.ReactElement {
         />
       )}
 
-      {showCategories && (
-        <ManageCategoriesModal
-          categories={categories}
-          onClose={() => setShowCategories(false)}
-          onChanged={load}
+      {deletingCategory && (
+        <DeleteCategoryModal
+          category={deletingCategory}
+          onClose={() => setDeletingCategory(null)}
+          onChanged={() => {
+            load()
+            setDeletingCategory(null)
+          }}
         />
       )}
 

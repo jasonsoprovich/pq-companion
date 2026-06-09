@@ -133,6 +133,12 @@ export interface Trigger {
    * is installed; the second is skipped. Empty/undefined = no dedup.
    */
   dedup_key?: string
+  /**
+   * Manual position within the trigger's category, used by the Triggers
+   * page "Manual" sort mode. Lower sorts first; set on create/move to
+   * append at the end of the category.
+   */
+  sort_order: number
 }
 
 export interface TriggerFired {
@@ -163,5 +169,7 @@ export interface TriggerCategory {
   name: string
   count: number       // triggers currently in this category
   is_builtin: boolean // true = managed via the Packs tab, not editable here
-  custom: boolean     // true = has a persisted custom-category row
+  custom: boolean     // true = user-created (always visible, editable)
+  explicit: boolean   // true = has a persisted row (visible even when empty)
+  sort_order: number  // display order; lower sorts first
 }
