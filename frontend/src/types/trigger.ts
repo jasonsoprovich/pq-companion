@@ -152,3 +152,16 @@ export interface TriggerPack {
   class?: number | null
   triggers: Trigger[]
 }
+
+/**
+ * A trigger grouping (category), keyed off pack_name. Custom categories are
+ * user-created and editable; built-in (class) and imported packs surface here
+ * too but are flagged is_builtin and stay read-only (managed from the Packs
+ * tab). The Uncategorized bucket (empty pack_name) is not represented here.
+ */
+export interface TriggerCategory {
+  name: string
+  count: number       // triggers currently in this category
+  is_builtin: boolean // true = managed via the Packs tab, not editable here
+  custom: boolean     // true = has a persisted custom-category row
+}

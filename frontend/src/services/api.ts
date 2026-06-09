@@ -28,7 +28,7 @@ import type { TargetState } from '../types/overlay'
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { RespawnState } from '../types/respawn'
-import type { Trigger, TriggerFired, TriggerPack, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition } from '../types/trigger'
+import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
 import type { RecipeSummary, RecipeDetail, RecipeTradeskillCount } from '../types/recipe'
@@ -1258,6 +1258,11 @@ export interface CreateTriggerRequest {
   source?: TriggerSource
   /** Typed match definition for pipe-source triggers. */
   pipe_condition?: PipeCondition
+  /**
+   * Category (pack_name). Omit to leave the existing category untouched on
+   * update; send '' for Uncategorized. Backend treats absent as no-change.
+   */
+  pack_name?: string
 }
 
 export function createTrigger(req: CreateTriggerRequest): Promise<Trigger> {
@@ -1294,6 +1299,24 @@ export function removeTriggerPack(packName: string): Promise<void> {
 
 export function importTriggerPack(pack: TriggerPack): Promise<{ status: string; pack_name: string }> {
   return post<{ status: string; pack_name: string }>('/api/triggers/import', pack)
+}
+
+// ── Trigger categories ───────────────────────────────────────────────────────
+
+export function listTriggerCategories(): Promise<TriggerCategory[]> {
+  return get<TriggerCategory[]>('/api/triggers/categories')
+}
+
+export function createTriggerCategory(name: string): Promise<TriggerCategory> {
+  return post<TriggerCategory>('/api/triggers/categories', { name })
+}
+
+export function renameTriggerCategory(name: string, newName: string): Promise<void> {
+  return put<void>(`/api/triggers/categories/${encodeURIComponent(name)}`, { new_name: newName })
+}
+
+export function deleteTriggerCategory(name: string): Promise<void> {
+  return del(`/api/triggers/categories/${encodeURIComponent(name)}`)
 }
 
 export function exportTriggerPack(): Promise<TriggerPack> {

@@ -19,6 +19,7 @@ import {
   Search,
   Users,
   Sparkles,
+  Tags,
 } from 'lucide-react'
 import { useVoices } from '../hooks/useVoices'
 import NotificationActionEditor, { NotificationTypeSelect } from '../components/NotificationActionEditor'
@@ -38,6 +39,10 @@ import {
   exportTriggerPack,
   importGINAxml,
   listCharacters,
+  listTriggerCategories,
+  createTriggerCategory,
+  renameTriggerCategory,
+  deleteTriggerCategory,
   type CreateTriggerRequest,
   type Character,
 } from '../services/api'
@@ -48,6 +53,7 @@ import type {
   Trigger,
   TriggerFired,
   TriggerPack,
+  TriggerCategory,
   Action,
   TimerType,
   TimerAlertThreshold,
@@ -275,12 +281,25 @@ function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps):
 interface TriggerFormProps {
   initial?: Trigger
   prefill?: SpellTimerTriggerPrefill
+  /** Categories for the dropdown; built-in entries are shown but flagged. */
+  categories: TriggerCategory[]
+  /** Called after the form creates a new category inline, so the parent
+   *  can refresh its category list. */
+  onCategoriesChanged: () => void
   onSaved: (t: Trigger) => void
   onCancel: () => void
 }
 
-function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps): React.ReactElement {
+function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSaved, onCancel }: TriggerFormProps): React.ReactElement {
   const [name, setName] = useState(initial?.name ?? prefill?.name ?? '')
+  // Category (pack_name). Defaults to the trigger's current category on edit,
+  // Uncategorized ('') on create. The "__new__" sentinel opens an inline
+  // create input.
+  const [packName, setPackName] = useState(initial?.pack_name ?? '')
+  const [creatingCat, setCreatingCat] = useState(false)
+  const [newCatName, setNewCatName] = useState('')
+  const [addingCat, setAddingCat] = useState(false)
+  const [catError, setCatError] = useState<string | null>(null)
   const [pattern, setPattern] = useState(initial?.pattern ?? prefill?.pattern ?? '')
   const [enabled, setEnabled] = useState(initial?.enabled ?? true)
   const [source, setSource] = useState<TriggerSource>(initial?.source === 'pipe' ? 'pipe' : 'log')
@@ -394,6 +413,31 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
     setActions((prev) => [...prev, { type: 'overlay_text', text: '', duration_secs: 5, color: '#ffffff', sound_path: '', volume: 0, voice: '' }])
   }
 
+  const handleCategorySelect = (v: string) => {
+    if (v === '__new__') {
+      setCreatingCat(true)
+      setCatError(null)
+      return
+    }
+    setPackName(v)
+  }
+
+  const handleAddCategory = () => {
+    const trimmed = newCatName.trim()
+    if (!trimmed) return
+    setAddingCat(true)
+    setCatError(null)
+    createTriggerCategory(trimmed)
+      .then((cat) => {
+        setPackName(cat.name)
+        setCreatingCat(false)
+        setNewCatName('')
+        onCategoriesChanged()
+      })
+      .catch((err: Error) => setCatError(err.message))
+      .finally(() => setAddingCat(false))
+  }
+
   const buildPipeCondition = (): PipeCondition | null => {
     switch (pipeKind) {
       case 'target_hp_below': {
@@ -465,6 +509,7 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
       exclude_patterns: source === 'pipe' ? [] : excludeList,
       source,
       pipe_condition: pipeCondition,
+      pack_name: packName,
     }
 
     setSubmitting(true)
@@ -521,6 +566,85 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
           style={inputStyle}
           disabled={submitting}
         />
+      </div>
+
+      {/* Category */}
+      <div className="space-y-1">
+        <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+          Category
+        </label>
+        {creatingCat ? (
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                autoFocus
+                placeholder="New category name"
+                value={newCatName}
+                onChange={(e) => setNewCatName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); handleAddCategory() }
+                  else if (e.key === 'Escape') { e.preventDefault(); setCreatingCat(false); setCatError(null) }
+                }}
+                className="flex-1 rounded px-3 py-1.5 text-sm outline-none"
+                style={inputStyle}
+                disabled={addingCat}
+              />
+              <button
+                type="button"
+                onClick={handleAddCategory}
+                disabled={addingCat || !newCatName.trim()}
+                className="rounded px-3 py-1.5 text-xs font-semibold"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  color: 'var(--color-background)',
+                  border: '1px solid transparent',
+                  cursor: 'pointer',
+                }}
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                onClick={() => { setCreatingCat(false); setCatError(null); setNewCatName('') }}
+                disabled={addingCat}
+                className="rounded px-3 py-1.5 text-xs"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-muted-foreground)',
+                  border: '1px solid var(--color-border)',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+            {catError && (
+              <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>{catError}</p>
+            )}
+          </div>
+        ) : (
+          <select
+            value={packName}
+            onChange={(e) => handleCategorySelect(e.target.value)}
+            className="w-full rounded px-3 py-1.5 text-sm outline-none"
+            style={inputStyle}
+            disabled={submitting}
+          >
+            <option value="">Uncategorized</option>
+            {categories.map((c) => (
+              <option key={c.name} value={c.name}>
+                {c.name}{c.is_builtin ? ' (pack)' : ''}
+              </option>
+            ))}
+            {/* Defensive: keep the current value selectable even if the
+                category list hasn't loaded or doesn't include it yet. */}
+            {packName && !categories.some((c) => c.name === packName) && (
+              <option value={packName}>{packName}</option>
+            )}
+            <option value="__new__">+ New category…</option>
+          </select>
+        )}
       </div>
 
       {/* Source toggle */}
@@ -976,11 +1100,13 @@ function TriggerForm({ initial, prefill, onSaved, onCancel }: TriggerFormProps):
 
 interface TriggerRowProps {
   trigger: Trigger
+  categories: TriggerCategory[]
+  onCategoriesChanged: () => void
   onDeleted: (id: string) => void
   onUpdated: (t: Trigger) => void
 }
 
-function TriggerRow({ trigger, onDeleted, onUpdated }: TriggerRowProps): React.ReactElement {
+function TriggerRow({ trigger, categories, onCategoriesChanged, onDeleted, onUpdated }: TriggerRowProps): React.ReactElement {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   useEscapeToClose(() => setConfirmDelete(false), confirmDelete)
@@ -1047,6 +1173,8 @@ function TriggerRow({ trigger, onDeleted, onUpdated }: TriggerRowProps): React.R
     return (
       <TriggerForm
         initial={trigger}
+        categories={categories}
+        onCategoriesChanged={onCategoriesChanged}
         onSaved={(t) => {
           onUpdated(t)
           setIsEditing(false)
@@ -1756,6 +1884,272 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
 
 type Tab = 'triggers' | 'history' | 'packs'
 
+// ── Manage categories modal ────────────────────────────────────────────────────
+
+interface ManageCategoriesModalProps {
+  categories: TriggerCategory[]
+  onClose: () => void
+  // Refresh triggers + categories after a mutation. Rename/delete cascade to
+  // trigger pack_name, so the full list (not just counts) must reload.
+  onChanged: () => void
+}
+
+function ManageCategoriesModal({
+  categories,
+  onClose,
+  onChanged,
+}: ManageCategoriesModalProps): React.ReactElement {
+  const [newName, setNewName] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  // Context-aware Escape: cancel an in-progress rename/delete first, otherwise
+  // close the modal. This modal owns the topmost Escape layer while open.
+  useEscapeToClose(() => {
+    if (renaming) { setRenaming(null); return }
+    if (confirmDelete) { setConfirmDelete(null); return }
+    onClose()
+  }, true)
+
+  // Custom = user-created or imported (editable here). Built-in/class packs are
+  // read-only — they're managed from the Packs tab.
+  const custom = categories.filter((c) => !c.is_builtin)
+  const builtin = categories.filter((c) => c.is_builtin)
+
+  const handleAdd = () => {
+    const trimmed = newName.trim()
+    if (!trimmed) return
+    setAdding(true)
+    setError(null)
+    createTriggerCategory(trimmed)
+      .then(() => { setNewName(''); onChanged() })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setAdding(false))
+  }
+
+  const startRename = (name: string) => {
+    setRenaming(name)
+    setRenameValue(name)
+    setConfirmDelete(null)
+    setError(null)
+  }
+
+  const handleRename = (oldName: string) => {
+    const trimmed = renameValue.trim()
+    if (!trimmed || trimmed === oldName) { setRenaming(null); return }
+    setBusy(true)
+    setError(null)
+    renameTriggerCategory(oldName, trimmed)
+      .then(() => { setRenaming(null); onChanged() })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setBusy(false))
+  }
+
+  const handleDelete = (name: string) => {
+    setBusy(true)
+    setError(null)
+    deleteTriggerCategory(name)
+      .then(() => { setConfirmDelete(null); onChanged() })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setBusy(false))
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-lg"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center gap-2 border-b px-4 py-3"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          <Tags size={15} style={{ color: 'var(--color-primary)' }} />
+          <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+            Manage Categories
+          </span>
+          <button onClick={onClose} className="ml-auto" style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }} aria-label="Close">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+          {/* Add */}
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="New category name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAdd() } }}
+                className="flex-1 rounded px-3 py-1.5 text-sm outline-none"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-foreground)',
+                }}
+                disabled={adding}
+              />
+              <button
+                onClick={handleAdd}
+                disabled={adding || !newName.trim()}
+                className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  color: 'var(--color-background)',
+                  border: '1px solid transparent',
+                  cursor: 'pointer',
+                }}
+              >
+                <Plus size={12} /> Add
+              </button>
+            </div>
+            {error && (
+              <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>{error}</p>
+            )}
+          </div>
+
+          {/* Custom categories (editable) */}
+          {custom.length === 0 ? (
+            <p className="text-xs italic px-1" style={{ color: 'var(--color-muted-foreground)' }}>
+              No custom categories yet. Create one above, then assign triggers to it
+              from the trigger editor's Category dropdown.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {custom.map((c) => (
+                <div
+                  key={c.name}
+                  className="flex items-center gap-2 rounded px-3 py-2"
+                  style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+                >
+                  {renaming === c.name ? (
+                    <>
+                      <input
+                        type="text"
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); handleRename(c.name) }
+                        }}
+                        className="flex-1 rounded px-2 py-1 text-sm outline-none"
+                        style={{
+                          backgroundColor: 'var(--color-surface)',
+                          border: '1px solid var(--color-border)',
+                          color: 'var(--color-foreground)',
+                        }}
+                        disabled={busy}
+                      />
+                      <button
+                        onClick={() => handleRename(c.name)}
+                        disabled={busy}
+                        className="text-[11px] px-2 py-1 rounded font-semibold"
+                        style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-background)', cursor: 'pointer' }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setRenaming(null)}
+                        disabled={busy}
+                        className="text-[11px] px-2 py-1 rounded"
+                        style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : confirmDelete === c.name ? (
+                    <>
+                      <span className="flex-1 text-xs" style={{ color: 'var(--color-foreground)' }}>
+                        Delete “{c.name}”? Its {c.count} trigger{c.count === 1 ? '' : 's'} move
+                        to Uncategorized.
+                      </span>
+                      <button
+                        onClick={() => handleDelete(c.name)}
+                        disabled={busy}
+                        className="text-[11px] px-2 py-1 rounded font-semibold"
+                        style={{ backgroundColor: 'var(--color-danger)', color: '#fff', cursor: 'pointer' }}
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(null)}
+                        disabled={busy}
+                        className="text-[11px] px-2 py-1 rounded"
+                        style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-sm truncate" style={{ color: 'var(--color-foreground)' }}>
+                        {c.name}
+                      </span>
+                      <span className="text-[11px] tabular-nums" style={{ color: 'var(--color-muted-foreground)' }}>
+                        {c.count}
+                      </span>
+                      <button
+                        onClick={() => startRename(c.name)}
+                        title="Rename"
+                        style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        onClick={() => { setConfirmDelete(c.name); setRenaming(null); setError(null) }}
+                        title="Delete"
+                        style={{ color: 'var(--color-danger)', cursor: 'pointer' }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Built-in / class packs (read-only) */}
+          {builtin.length > 0 && (
+            <div className="space-y-1.5 pt-1">
+              <p className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+                Packs — managed from the Packs tab
+              </p>
+              {builtin.map((c) => (
+                <div
+                  key={c.name}
+                  className="flex items-center gap-2 rounded px-3 py-2"
+                  style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', opacity: 0.7 }}
+                >
+                  <Package size={12} style={{ color: 'var(--color-muted)' }} />
+                  <span className="flex-1 text-sm truncate" style={{ color: 'var(--color-foreground)' }}>
+                    {c.name}
+                  </span>
+                  <span className="text-[11px] tabular-nums" style={{ color: 'var(--color-muted-foreground)' }}>
+                    {c.count}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function TriggersPage(): React.ReactElement {
   const [tab, setTab] = useState<Tab>('triggers')
   const [triggers, setTriggers] = useState<Trigger[]>([])
@@ -1787,6 +2181,17 @@ export default function TriggersPage(): React.ReactElement {
     } catch {}
     return new Set()
   })
+  const [categories, setCategories] = useState<TriggerCategory[]>([])
+  const [showCategories, setShowCategories] = useState(false)
+
+  // Categories are partly derived from in-use pack_name values, so refresh
+  // them whenever triggers change (create/move/delete) as well as after
+  // explicit category edits.
+  const reloadCategories = useCallback(() => {
+    listTriggerCategories()
+      .then(setCategories)
+      .catch(() => {})
+  }, [])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -1795,7 +2200,8 @@ export default function TriggersPage(): React.ReactElement {
       .then(setTriggers)
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [])
+    reloadCategories()
+  }, [reloadCategories])
 
   useEffect(() => { load() }, [load])
 
@@ -1929,14 +2335,17 @@ export default function TriggersPage(): React.ReactElement {
     setTriggers((prev) => [...prev, t])
     setShowCreate(false)
     setCreatePrefill(undefined)
+    reloadCategories()
   }
 
   const handleDeleted = (id: string) => {
     setTriggers((prev) => prev.filter((t) => t.id !== id))
+    reloadCategories()
   }
 
   const handleUpdated = (updated: Trigger) => {
     setTriggers((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
+    reloadCategories()
   }
 
   const handleCancelCreate = () => {
@@ -1988,6 +2397,19 @@ export default function TriggersPage(): React.ReactElement {
               >
                 <RefreshCw size={11} />
                 Refresh
+              </button>
+              <button
+                onClick={() => setShowCategories(true)}
+                className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-muted-foreground)',
+                  border: '1px solid var(--color-border)',
+                }}
+                title="Create, rename, and delete trigger categories"
+              >
+                <Tags size={11} />
+                Categories
               </button>
               {triggers.length > 0 && (
                 <button
@@ -2134,6 +2556,8 @@ export default function TriggersPage(): React.ReactElement {
               {showCreate && (
                 <TriggerForm
                   prefill={createPrefill}
+                  categories={categories}
+                  onCategoriesChanged={reloadCategories}
                   onSaved={handleCreated}
                   onCancel={handleCancelCreate}
                 />
@@ -2406,6 +2830,8 @@ export default function TriggersPage(): React.ReactElement {
                         <TriggerRow
                           key={t.id}
                           trigger={t}
+                          categories={categories}
+                          onCategoriesChanged={reloadCategories}
                           onDeleted={handleDeleted}
                           onUpdated={handleUpdated}
                         />
@@ -2426,6 +2852,14 @@ export default function TriggersPage(): React.ReactElement {
         <PacksTab
           installedPacks={new Set(triggers.map((t) => t.pack_name).filter((n): n is string => !!n))}
           onInstalled={load}
+        />
+      )}
+
+      {showCategories && (
+        <ManageCategoriesModal
+          categories={categories}
+          onClose={() => setShowCategories(false)}
+          onChanged={load}
         />
       )}
 
