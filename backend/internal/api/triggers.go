@@ -61,6 +61,10 @@ type triggerRequest struct {
 	ExcludePatterns      []string               `json:"exclude_patterns"`
 	Source               string                 `json:"source,omitempty"`
 	PipeCondition        *trigger.PipeCondition `json:"pipe_condition,omitempty"`
+	// PackName is the trigger's category. Pointer so an omitted field on
+	// update leaves the existing category untouched (a present value — even
+	// "" for Uncategorized — replaces it). nil on create defaults to "".
+	PackName *string `json:"pack_name,omitempty"`
 }
 
 // validateTriggerRequest enforces the per-source field rules: log triggers
@@ -121,12 +125,17 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 	if src == "" {
 		src = trigger.SourceLog
 	}
+	packName := ""
+	if req.PackName != nil {
+		packName = strings.TrimSpace(*req.PackName)
+	}
 	t := &trigger.Trigger{
 		ID:                   id,
 		Name:                 req.Name,
 		Enabled:              req.Enabled,
 		Pattern:              req.Pattern,
 		Actions:              req.Actions,
+		PackName:             packName,
 		CreatedAt:            time.Now().UTC(),
 		TimerType:            normalizeTimerType(req.TimerType),
 		TimerDurationSecs:    req.TimerDurationSecs,
@@ -201,6 +210,12 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	existing.ExcludePatterns = req.ExcludePatterns
 	existing.Source = src
 	existing.PipeCondition = req.PipeCondition
+	// Only touch the category when the request carries pack_name — an
+	// omitted field (older callers, edits that don't change category)
+	// leaves the existing value intact.
+	if req.PackName != nil {
+		existing.PackName = strings.TrimSpace(*req.PackName)
+	}
 	if existing.Actions == nil {
 		existing.Actions = []trigger.Action{}
 	}
@@ -438,6 +453,96 @@ func (h *triggerHandler) importGINA(w http.ResponseWriter, r *http.Request) {
 // listBuiltinPacks returns all available pre-built trigger packs.
 func (h *triggerHandler) listBuiltinPacks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, trigger.AllPacks())
+}
+
+// ── Categories ───────────────────────────────────────────────────────────────
+//
+// Categories are trigger groupings keyed off the pack_name column. Custom
+// categories persist in the trigger_categories table so an empty, freshly-
+// created group survives a restart; built-in (class) and imported packs show
+// up here too (derived from in-use pack_name values) but are flagged
+// IsBuiltin and stay read-only — they're managed from the Packs tab. Deleting
+// a category moves its triggers to Uncategorized rather than deleting them,
+// which is the key difference from uninstalling a pack (removePack).
+
+// listCategories returns all categories surfaced to the UI.
+func (h *triggerHandler) listCategories(w http.ResponseWriter, r *http.Request) {
+	cats, err := h.store.ListCategories()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if cats == nil {
+		cats = []trigger.Category{}
+	}
+	writeJSON(w, http.StatusOK, cats)
+}
+
+type categoryRequest struct {
+	Name string `json:"name"`
+}
+
+// createCategory persists a new, empty custom category.
+func (h *triggerHandler) createCategory(w http.ResponseWriter, r *http.Request) {
+	var req categoryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	cat, err := h.store.CreateCategory(req.Name)
+	if err != nil {
+		writeCategoryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, cat)
+}
+
+type renameCategoryRequest struct {
+	NewName string `json:"new_name"`
+}
+
+// renameCategory renames a custom category, cascading to its triggers.
+func (h *triggerHandler) renameCategory(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	var req renameCategoryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if err := h.store.RenameCategory(name, req.NewName); err != nil {
+		writeCategoryError(w, err)
+		return
+	}
+	h.engine.Reload()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteCategory removes a custom category, moving its triggers to
+// Uncategorized.
+func (h *triggerHandler) deleteCategory(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if err := h.store.DeleteCategory(name); err != nil {
+		writeCategoryError(w, err)
+		return
+	}
+	h.engine.Reload()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// writeCategoryError maps category sentinel errors to HTTP status codes.
+func writeCategoryError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, trigger.ErrCategoryNameEmpty), errors.Is(err, trigger.ErrCategoryReserved):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, trigger.ErrCategoryExists):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, trigger.ErrCategoryBuiltin):
+		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, trigger.ErrCategoryNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, err.Error())
+	}
 }
 
 // ── Test overlay (positioning) ───────────────────────────────────────────────

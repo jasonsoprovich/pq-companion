@@ -89,6 +89,19 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Persists user-created custom categories so an empty, freshly-created
+	// group survives a restart. The category key is the triggers.pack_name
+	// column; built-in (class) and imported packs are NOT recorded here —
+	// they're derived from in-use pack_name values. See category.go.
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS trigger_categories (
+			name       TEXT    NOT NULL PRIMARY KEY,
+			created_at INTEGER NOT NULL
+		)
+	`); err != nil {
+		return err
+	}
+
 	// Idempotently add columns for databases created before each feature.
 	addColumns := []string{
 		`ALTER TABLE triggers ADD COLUMN timer_type TEXT NOT NULL DEFAULT 'none'`,
