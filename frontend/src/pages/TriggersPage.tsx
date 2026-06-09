@@ -44,6 +44,8 @@ import {
   createTriggerCategory,
   renameTriggerCategory,
   deleteTriggerCategory,
+  reorderTriggers,
+  reorderTriggerCategories,
   type CreateTriggerRequest,
   type Character,
 } from '../services/api'
@@ -1110,6 +1112,11 @@ interface TriggerRowProps {
   onDragStart: (t: Trigger) => void
   onDragEnd: () => void
   dragging: boolean
+  // Manual-sort reorder: when manualSort is on and a same-category trigger is
+  // being dragged, this row becomes a drop target that reorders the list.
+  manualSort: boolean
+  dragTrigger: Trigger | null
+  onReorder: (targetId: string, position: 'before' | 'after') => void
 }
 
 function TriggerRow({
@@ -1121,6 +1128,9 @@ function TriggerRow({
   onDragStart,
   onDragEnd,
   dragging,
+  manualSort,
+  dragTrigger,
+  onReorder,
 }: TriggerRowProps): React.ReactElement {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -1129,6 +1139,16 @@ function TriggerRow({
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [shared, setShared] = useState(false)
+  // Insertion indicator while a sibling is dragged over this row.
+  const [overPos, setOverPos] = useState<'before' | 'after' | null>(null)
+
+  // This row accepts a reorder drop when Manual sort is active and a different
+  // trigger from the same category is being dragged.
+  const reorderable =
+    manualSort &&
+    !!dragTrigger &&
+    dragTrigger.id !== trigger.id &&
+    (dragTrigger.pack_name || '') === (trigger.pack_name || '')
   const [isEditing, setIsEditing] = useState(false)
 
   const handleShare = () => {
@@ -1202,10 +1222,45 @@ function TriggerRow({
   return (
     <div
       className="rounded-lg"
+      onDragOver={
+        reorderable
+          ? (e) => {
+              e.preventDefault()
+              e.stopPropagation() // don't let the section treat this as a move
+              const rect = e.currentTarget.getBoundingClientRect()
+              const pos = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+              setOverPos((p) => (p === pos ? p : pos))
+            }
+          : undefined
+      }
+      onDragLeave={
+        reorderable
+          ? (e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverPos(null)
+            }
+          : undefined
+      }
+      onDrop={
+        reorderable
+          ? (e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              const pos = overPos ?? 'before'
+              setOverPos(null)
+              onReorder(trigger.id, pos)
+            }
+          : undefined
+      }
       style={{
         backgroundColor: 'var(--color-surface)',
         border: `1px solid ${trigger.enabled ? 'var(--color-border)' : 'var(--color-surface-3)'}`,
         opacity: dragging ? 0.4 : trigger.enabled ? 1 : 0.65,
+        boxShadow:
+          overPos === 'before'
+            ? 'inset 0 2px 0 0 var(--color-primary)'
+            : overPos === 'after'
+              ? 'inset 0 -2px 0 0 var(--color-primary)'
+              : undefined,
       }}
     >
       <div className="flex items-center gap-3 px-3 py-2.5">
@@ -2054,7 +2109,7 @@ export default function TriggersPage(): React.ReactElement {
   const [classFilter, setClassFilter] = useState<number | null>(null)
   const [charFilter, setCharFilter] = useState<string>('')
   const [packFilter, setPackFilter] = useState<string>('')
-  const [sortMode, setSortMode] = useState<'name' | 'recent'>('name')
+  const [sortMode, setSortMode] = useState<'name' | 'recent' | 'manual'>('name')
   const [chars, setChars] = useState<Character[]>([])
   const [packClassByName, setPackClassByName] = useState<Map<string, number>>(new Map())
   // Tracks which pack sections in the grouped trigger list are collapsed.
@@ -2081,6 +2136,11 @@ export default function TriggersPage(): React.ReactElement {
   // and the category section being hovered over (for highlight).
   const [dragTrigger, setDragTrigger] = useState<Trigger | null>(null)
   const [dragOverPack, setDragOverPack] = useState<string | null>(null)
+  // Section reordering: the category header being dragged, plus the header
+  // hovered over and which edge (before/after) the drop would insert at.
+  const [dragCategory, setDragCategory] = useState<string | null>(null)
+  const [dragOverCat, setDragOverCat] = useState<string | null>(null)
+  const [dragOverCatPos, setDragOverCatPos] = useState<'before' | 'after'>('before')
 
   // Categories are partly derived from in-use pack_name values, so refresh
   // them whenever triggers change (create/move/delete) as well as after
@@ -2203,7 +2263,14 @@ export default function TriggersPage(): React.ReactElement {
       return idx === undefined ? Number.MAX_SAFE_INTEGER - 1 : idx
     }
     const sortItems = (items: Trigger[]) => {
-      if (sortMode === 'recent') {
+      if (sortMode === 'manual') {
+        items.sort(
+          (a, b) =>
+            (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+            (a.created_at ? new Date(a.created_at).getTime() : 0) -
+              (b.created_at ? new Date(b.created_at).getTime() : 0),
+        )
+      } else if (sortMode === 'recent') {
         items.sort((a, b) => {
           const aT = a.created_at ? new Date(a.created_at).getTime() : 0
           const bT = b.created_at ? new Date(b.created_at).getTime() : 0
@@ -2359,6 +2426,72 @@ export default function TriggersPage(): React.ReactElement {
     }
     // A failed move (rare local sqlite write) just leaves the list unchanged.
     updateTrigger(t.id, req).then(handleUpdated).catch(() => {})
+  }
+
+  // Reorder within a category (Manual sort mode): drop the dragged trigger
+  // before/after the target row in the same category, then persist the new
+  // order. Optimistically rewrites local sort_order so the row jumps
+  // immediately; a failed write resyncs from the server.
+  const handleReorderWithin = (targetId: string, position: 'before' | 'after') => {
+    const dragged = dragTrigger
+    setDragTrigger(null)
+    setDragOverPack(null)
+    if (!dragged || dragged.id === targetId) return
+    // Order over ALL triggers in the category (not the filtered view) so a
+    // reorder while searching can't drop hidden rows' positions.
+    const key = dragged.pack_name || ''
+    const ids = triggers
+      .filter((t) => (t.pack_name || '') === key)
+      .sort(
+        (a, b) =>
+          (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+          (a.created_at ? new Date(a.created_at).getTime() : 0) -
+            (b.created_at ? new Date(b.created_at).getTime() : 0),
+      )
+      .map((t) => t.id)
+      .filter((id) => id !== dragged.id)
+    let idx = ids.indexOf(targetId)
+    if (idx === -1) return
+    if (position === 'after') idx += 1
+    ids.splice(idx, 0, dragged.id)
+    const orderMap = new Map(ids.map((id, i) => [id, i]))
+    setTriggers((prev) =>
+      prev.map((t) =>
+        orderMap.has(t.id) ? { ...t, sort_order: orderMap.get(t.id)! } : t,
+      ),
+    )
+    reorderTriggers(ids).catch(() => load())
+  }
+
+  // ── Drag-and-drop: reorder category sections by dragging their headers ──
+  const handleSectionDragEnd = () => {
+    setDragCategory(null)
+    setDragOverCat(null)
+  }
+
+  const handleReorderCategory = (targetKey: string, position: 'before' | 'after') => {
+    const dragged = dragCategory
+    setDragCategory(null)
+    setDragOverCat(null)
+    if (!dragged || dragged === targetKey || targetKey === '__uncategorized__') return
+    // Order over ALL categories (already display-sorted), not just the visible
+    // sections, so reordering while filtered doesn't drop hidden categories.
+    const order = categories.map((c) => c.name)
+    const without = order.filter((k) => k !== dragged)
+    let idx = without.indexOf(targetKey)
+    if (idx === -1) return
+    if (position === 'after') idx += 1
+    without.splice(idx, 0, dragged)
+    // Optimistic: rewrite local category order so sections reflow immediately.
+    const orderIndex = new Map(without.map((name, i) => [name, i]))
+    setCategories((prev) => {
+      const next = prev.map((c) =>
+        orderIndex.has(c.name) ? { ...c, sort_order: orderIndex.get(c.name)! } : c,
+      )
+      next.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+      return next
+    })
+    reorderTriggerCategories(without).catch(() => load())
   }
 
   const handleCancelCreate = () => {
@@ -2663,17 +2796,20 @@ export default function TriggersPage(): React.ReactElement {
                   )}
                   <select
                     value={sortMode}
-                    onChange={(e) => setSortMode(e.target.value as 'name' | 'recent')}
+                    onChange={(e) =>
+                      setSortMode(e.target.value as 'name' | 'recent' | 'manual')
+                    }
                     className="rounded px-2 py-1.5 text-xs outline-none"
                     style={{
                       backgroundColor: 'var(--color-surface-2)',
                       border: '1px solid var(--color-border)',
                       color: 'var(--color-foreground)',
                     }}
-                    title="Sort triggers within each pack"
+                    title="Sort triggers within each category. Manual lets you drag rows into a custom order."
                   >
                     <option value="name">Sort: Name</option>
                     <option value="recent">Sort: Recent</option>
+                    <option value="manual">Sort: Manual</option>
                   </select>
                   {(search || classFilter !== null || charFilter || packFilter) && (
                     <button
@@ -2815,6 +2951,10 @@ export default function TriggersPage(): React.ReactElement {
                 const cat = categories.find((c) => c.name === group.packName)
                 const isCustom = !!cat?.custom
                 const isRenaming = renamingCategory === group.packName
+                // Section reordering: every section except Uncategorized can be
+                // dragged by its header grip.
+                const reorderableSection = group.packName !== '__uncategorized__'
+                const catDropTarget = dragOverCat === group.packName
                 return (
                   <div
                     key={group.packName}
@@ -2839,6 +2979,28 @@ export default function TriggersPage(): React.ReactElement {
                   >
                     <div
                       className="flex w-full items-center gap-2 rounded px-2 py-1.5"
+                      onDragOver={
+                        dragCategory && reorderableSection && dragCategory !== group.packName
+                          ? (e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              const rect = e.currentTarget.getBoundingClientRect()
+                              const pos =
+                                e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+                              if (dragOverCat !== group.packName) setDragOverCat(group.packName)
+                              setDragOverCatPos((p) => (p === pos ? p : pos))
+                            }
+                          : undefined
+                      }
+                      onDrop={
+                        dragCategory && reorderableSection
+                          ? (e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              handleReorderCategory(group.packName, dragOverCatPos)
+                            }
+                          : undefined
+                      }
                       style={{
                         backgroundColor: isDropTarget
                           ? 'var(--color-surface-3)'
@@ -2848,8 +3010,29 @@ export default function TriggersPage(): React.ReactElement {
                             ? 'var(--color-primary)'
                             : 'var(--color-border)'
                         }`,
+                        boxShadow:
+                          catDropTarget && dragOverCatPos === 'before'
+                            ? 'inset 0 2px 0 0 var(--color-primary)'
+                            : catDropTarget && dragOverCatPos === 'after'
+                              ? 'inset 0 -2px 0 0 var(--color-primary)'
+                              : undefined,
                       }}
                     >
+                      {reorderableSection && !isRenaming && (
+                        <div
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.effectAllowed = 'move'
+                            setDragCategory(group.packName)
+                          }}
+                          onDragEnd={handleSectionDragEnd}
+                          title="Drag to reorder category"
+                          className="shrink-0 cursor-grab active:cursor-grabbing"
+                          style={{ color: 'var(--color-muted)' }}
+                        >
+                          <GripVertical size={13} />
+                        </div>
+                      )}
                       <button
                         type="button"
                         onClick={() => togglePackCollapsed(group.packName)}
@@ -2946,6 +3129,9 @@ export default function TriggersPage(): React.ReactElement {
                           onDragStart={handleRowDragStart}
                           onDragEnd={handleRowDragEnd}
                           dragging={dragTrigger?.id === t.id}
+                          manualSort={sortMode === 'manual'}
+                          dragTrigger={dragTrigger}
+                          onReorder={handleReorderWithin}
                         />
                       ))}
                   </div>
