@@ -388,11 +388,14 @@ func SpellLevel(classLevels [15]int) int {
 //   - Bard exemption: bards never receive AA/item duration extensions on
 //     any buff they cast or click.
 //   - Off-class clicky gate: when spellClassLevels[casterClass] == 255
-//     (i.e. the caster's class cannot normally cast this spell), AA/item
-//     duration extensions are not applied. This matters for clicky items
-//     whose spell is outside the player's class spell line (e.g. Wand of
-//     Deflection on an Enchanter). Player-cast spells always pass the
-//     class check by definition.
+//     (i.e. the caster's class cannot normally cast this spell), item focus
+//     duration extensions are not applied — for SPA 134 (Limit: Max Level)
+//     purposes the clicky's effective level is 255, above the max-level cap
+//     every era item duration focus carries (e.g. the Coldain Prayer Shawl's
+//     65). AA duration extensions (Spell Casting Reinforcement) have no class
+//     or level limit, so they DO still apply to off-class clickies — e.g.
+//     Soul Energy from a resist ring picks up the +50% AA duration on a 60
+//     druid. Player-cast spells pass the class check by definition.
 //
 // spellClassLevels is the spell's classes1..classes15 array (0-indexed in our
 // Spell struct). All zeroes means "no data" — the off-class gate is skipped.
@@ -462,11 +465,23 @@ func Resolve(spellID int, spellName string, spellLevel, casterLevel, baseDuratio
 			}
 			if casterClass >= 0 && casterClass < len(spellClassLevels) &&
 				spellClassLevels[casterClass] >= classCannotCast {
-				// Off-class clicky: the spell isn't in this character's
-				// class spell line, so focus / AA duration extensions do
-				// not apply. Returns the base duration unchanged.
-				r.DurationAAPercent = 0
+				// Off-class clicky: the player's class can't cast this spell,
+				// so for SPA 134 (Limit: Max Level) purposes its effective
+				// level is 255 — above the max-level cap every era item
+				// duration focus carries (e.g. the Coldain Prayer Shawl's 65).
+				// Item focuses therefore never extend an off-class clicky. AA
+				// duration extensions have no class/level limit, so they still
+				// apply (Soul Energy from a resist ring on a 60 druid:
+				// 19m base × 1.5 AA = 28m30s, with no shawl contribution).
+				var aaOnly []Modifier
+				for _, c := range applied {
+					if c.Source == "aa" {
+						aaOnly = append(aaOnly, c)
+					}
+				}
+				r.DurationAAPercent = aaPct
 				r.DurationItemPercent = 0
+				r.Applied = append(r.Applied, aaOnly...)
 				break
 			}
 			r.DurationAAPercent = aaPct

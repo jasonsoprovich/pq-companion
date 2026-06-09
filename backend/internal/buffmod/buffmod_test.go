@@ -343,7 +343,10 @@ func TestOffClassClickyDurationGate(t *testing.T) {
 	}
 	wizOnly[11] = 60
 
-	// Caster = Enchanter (13) clicking a wizard-only spell → no extensions.
+	// Caster = Enchanter (13) clicking a wizard-only spell. Item duration
+	// focuses never apply to an off-class clicky (its effective level is 255,
+	// above every era focus's max-level cap), but AA duration extensions have
+	// no class/level limit and DO apply to clickies in-game.
 	off := buffmod.Resolve(
 		1, "Wand of Deflection (synthetic)",
 		60, 60, 600,
@@ -353,11 +356,14 @@ func TestOffClassClickyDurationGate(t *testing.T) {
 		13, // Enchanter
 		wizOnly,
 	)
-	if off.DurationAAPercent != 0 || off.DurationItemPercent != 0 {
-		t.Errorf("off-class duration: AA=%d item=%d, want 0/0", off.DurationAAPercent, off.DurationItemPercent)
+	if off.DurationAAPercent != 30 {
+		t.Errorf("off-class clicky AA duration = %d, want 30 (AAs apply to clickies)", off.DurationAAPercent)
 	}
-	if off.ExtendedDurationSec != 600 {
-		t.Errorf("off-class extended = %ds, want 600 (base)", off.ExtendedDurationSec)
+	if off.DurationItemPercent != 0 {
+		t.Errorf("off-class clicky item duration = %d, want 0 (item focus gated)", off.DurationItemPercent)
+	}
+	if off.ExtendedDurationSec != 780 {
+		t.Errorf("off-class extended = %ds, want 780 (600 × 1.30 AA)", off.ExtendedDurationSec)
 	}
 
 	// Control: same caster class casting their own in-class spell. Build a
@@ -380,15 +386,18 @@ func TestOffClassClickyDurationGate(t *testing.T) {
 		t.Errorf("in-class item duration = %d, want 15", in.DurationItemPercent)
 	}
 
-	// Regression for the Primal Avatar black-screen crash: when the off-class
-	// gate fires and no cast-time focus matches either, Applied must still be a
-	// non-nil empty slice. A nil slice marshals to JSON null, which the
-	// frontend then dereferences as r.applied.length and crashes the render.
+	// Regression for the Primal Avatar black-screen crash: Applied must never
+	// be nil (a nil slice marshals to JSON null, which the frontend then
+	// dereferences as r.applied.length and crashes the render). The off-class
+	// gate keeps the matching AA, so Applied carries exactly that one entry.
 	if off.Applied == nil {
-		t.Error("off-class Applied is nil; must be non-nil empty slice to avoid JSON null")
+		t.Error("off-class Applied is nil; must be non-nil to avoid JSON null")
 	}
-	if len(off.Applied) != 0 {
-		t.Errorf("off-class Applied count = %d, want 0", len(off.Applied))
+	if len(off.Applied) != 1 {
+		t.Errorf("off-class Applied count = %d, want 1 (the AA only)", len(off.Applied))
+	}
+	if len(off.Applied) == 1 && off.Applied[0].Source != "aa" {
+		t.Errorf("off-class Applied[0] source = %q, want \"aa\"", off.Applied[0].Source)
 	}
 }
 
