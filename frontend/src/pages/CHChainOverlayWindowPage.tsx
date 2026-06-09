@@ -71,6 +71,7 @@ function ChainRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
         padding: '3px 8px',
         borderBottom: '1px solid rgba(255,255,255,0.1)',
         overflow: 'hidden',
+        flexShrink: 0,
       }}
     >
       <div

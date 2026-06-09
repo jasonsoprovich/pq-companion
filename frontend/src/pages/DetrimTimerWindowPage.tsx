@@ -78,6 +78,7 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
         padding: '3px 8px',
         borderBottom: '1px solid rgba(255,255,255,0.1)',
         overflow: 'hidden',
+        flexShrink: 0,
       }}
     >
       {/* depleting progress bar — kept at high alpha so it stays readable even when the window opacity is low */}
