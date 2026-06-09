@@ -20,6 +20,7 @@ import {
   Users,
   Sparkles,
   Tags,
+  GripVertical,
 } from 'lucide-react'
 import { useVoices } from '../hooks/useVoices'
 import NotificationActionEditor, { NotificationTypeSelect } from '../components/NotificationActionEditor'
@@ -1104,9 +1105,23 @@ interface TriggerRowProps {
   onCategoriesChanged: () => void
   onDeleted: (id: string) => void
   onUpdated: (t: Trigger) => void
+  // Drag-and-drop: the grip handle starts a drag; the page wires drops onto
+  // category section headers. `dragging` dims the row being dragged.
+  onDragStart: (t: Trigger) => void
+  onDragEnd: () => void
+  dragging: boolean
 }
 
-function TriggerRow({ trigger, categories, onCategoriesChanged, onDeleted, onUpdated }: TriggerRowProps): React.ReactElement {
+function TriggerRow({
+  trigger,
+  categories,
+  onCategoriesChanged,
+  onDeleted,
+  onUpdated,
+  onDragStart,
+  onDragEnd,
+  dragging,
+}: TriggerRowProps): React.ReactElement {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   useEscapeToClose(() => setConfirmDelete(false), confirmDelete)
@@ -1190,10 +1205,26 @@ function TriggerRow({ trigger, categories, onCategoriesChanged, onDeleted, onUpd
       style={{
         backgroundColor: 'var(--color-surface)',
         border: `1px solid ${trigger.enabled ? 'var(--color-border)' : 'var(--color-surface-3)'}`,
-        opacity: trigger.enabled ? 1 : 0.65,
+        opacity: dragging ? 0.4 : trigger.enabled ? 1 : 0.65,
       }}
     >
       <div className="flex items-center gap-3 px-3 py-2.5">
+        {/* Drag handle — move to another category */}
+        <div
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData('text/plain', trigger.id)
+            e.dataTransfer.effectAllowed = 'move'
+            onDragStart(trigger)
+          }}
+          onDragEnd={onDragEnd}
+          title="Drag to move to another category"
+          className="shrink-0 cursor-grab active:cursor-grabbing"
+          style={{ color: 'var(--color-muted)' }}
+        >
+          <GripVertical size={14} />
+        </div>
+
         {/* Enable toggle */}
         {toggling ? (
           <RefreshCw size={14} className="animate-spin shrink-0" style={{ color: 'var(--color-muted)' }} />
@@ -2183,6 +2214,10 @@ export default function TriggersPage(): React.ReactElement {
   })
   const [categories, setCategories] = useState<TriggerCategory[]>([])
   const [showCategories, setShowCategories] = useState(false)
+  // Drag-and-drop: the trigger currently being dragged by its grip handle,
+  // and the category section being hovered over (for highlight).
+  const [dragTrigger, setDragTrigger] = useState<Trigger | null>(null)
+  const [dragOverPack, setDragOverPack] = useState<string | null>(null)
 
   // Categories are partly derived from in-use pack_name values, so refresh
   // them whenever triggers change (create/move/delete) as well as after
@@ -2346,6 +2381,56 @@ export default function TriggersPage(): React.ReactElement {
   const handleUpdated = (updated: Trigger) => {
     setTriggers((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
     reloadCategories()
+  }
+
+  // ── Drag-and-drop: move a trigger to a category by dropping on its section ──
+  const handleRowDragStart = (t: Trigger) => setDragTrigger(t)
+  const handleRowDragEnd = () => {
+    setDragTrigger(null)
+    setDragOverPack(null)
+  }
+
+  // A section keyed by packKey ('__uncategorized__' or a category name) accepts
+  // the active drag when a drag is in progress, the target isn't a built-in
+  // pack (those are managed in the Packs tab), and it isn't the trigger's
+  // current category.
+  const canDropOnPack = (packKey: string): boolean => {
+    if (!dragTrigger) return false
+    const target = packKey === '__uncategorized__' ? '' : packKey
+    if (target && categories.some((c) => c.is_builtin && c.name === target)) return false
+    return dragTrigger.pack_name !== target
+  }
+
+  const handleDropOnPack = (packKey: string) => {
+    const t = dragTrigger
+    setDragOverPack(null)
+    setDragTrigger(null)
+    if (!t) return
+    const target = packKey === '__uncategorized__' ? '' : packKey
+    if (target && categories.some((c) => c.is_builtin && c.name === target)) return
+    if (t.pack_name === target) return
+    // Re-serialize the trigger with the new category. Sending the full request
+    // (incl. source/pipe_condition) keeps pipe triggers valid; fields not in
+    // the request (cooldown_secs, dedup_key) are preserved server-side.
+    const req: CreateTriggerRequest = {
+      name: t.name,
+      enabled: t.enabled,
+      pattern: t.pattern,
+      actions: t.actions,
+      timer_type: t.timer_type,
+      timer_duration_secs: t.timer_duration_secs,
+      worn_off_pattern: t.worn_off_pattern,
+      spell_id: t.spell_id,
+      display_threshold_secs: t.display_threshold_secs,
+      characters: t.characters,
+      timer_alerts: t.timer_alerts ?? [],
+      exclude_patterns: t.exclude_patterns ?? [],
+      source: t.source,
+      pipe_condition: t.pipe_condition,
+      pack_name: target,
+    }
+    // A failed move (rare local sqlite write) just leaves the list unchanged.
+    updateTrigger(t.id, req).then(handleUpdated).catch(() => {})
   }
 
   const handleCancelCreate = () => {
@@ -2796,15 +2881,43 @@ export default function TriggersPage(): React.ReactElement {
                 const isCollapsed = collapsedPacks.has(group.packName)
                 const label =
                   group.packName === '__uncategorized__' ? 'Uncategorized' : group.packName
+                const isDropTarget = dragOverPack === group.packName
+                const dropHint = !!dragTrigger && canDropOnPack(group.packName)
                 return (
-                  <div key={group.packName} className="space-y-2">
+                  <div
+                    key={group.packName}
+                    className="space-y-2"
+                    onDragOver={(e) => {
+                      if (!canDropOnPack(group.packName)) return
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                      if (dragOverPack !== group.packName) setDragOverPack(group.packName)
+                    }}
+                    onDragLeave={(e) => {
+                      // Only clear when the cursor leaves the section entirely,
+                      // not when moving between the header and its rows.
+                      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                        setDragOverPack((p) => (p === group.packName ? null : p))
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      handleDropOnPack(group.packName)
+                    }}
+                  >
                     <button
                       type="button"
                       onClick={() => togglePackCollapsed(group.packName)}
                       className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left"
                       style={{
-                        backgroundColor: 'var(--color-surface-2)',
-                        border: '1px solid var(--color-border)',
+                        backgroundColor: isDropTarget
+                          ? 'var(--color-surface-3)'
+                          : 'var(--color-surface-2)',
+                        border: `1px ${dropHint ? 'dashed' : 'solid'} ${
+                          isDropTarget || dropHint
+                            ? 'var(--color-primary)'
+                            : 'var(--color-border)'
+                        }`,
                       }}
                     >
                       {isCollapsed ? (
@@ -2824,6 +2937,14 @@ export default function TriggersPage(): React.ReactElement {
                       >
                         {group.items.length}
                       </span>
+                      {isDropTarget && (
+                        <span
+                          className="ml-auto text-[11px] font-medium"
+                          style={{ color: 'var(--color-primary)' }}
+                        >
+                          Move here
+                        </span>
+                      )}
                     </button>
                     {!isCollapsed &&
                       group.items.map((t) => (
@@ -2834,6 +2955,9 @@ export default function TriggersPage(): React.ReactElement {
                           onCategoriesChanged={reloadCategories}
                           onDeleted={handleDeleted}
                           onUpdated={handleUpdated}
+                          onDragStart={handleRowDragStart}
+                          onDragEnd={handleRowDragEnd}
+                          dragging={dragTrigger?.id === t.id}
                         />
                       ))}
                   </div>
