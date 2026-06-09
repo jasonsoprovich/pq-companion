@@ -440,10 +440,11 @@ func main() {
 	}
 
 	// One-time additive default updates for built-in packs. Each is keyed
-	// and runs at most once, only ever appending to list-typed fields on
-	// installed pack triggers — preserves user customizations while still
-	// letting hotfixes (e.g. new exclude patterns for "Incoming Tell")
-	// reach existing installs without a destructive reinstall.
+	// and runs at most once, making only additive edits to installed pack
+	// triggers (appending exclude patterns, filling in a missing cooldown)
+	// — preserves user customizations while still letting hotfixes (e.g.
+	// new "Incoming Tell" excludes, the monk Feign Death reuse timer) reach
+	// existing installs without a destructive reinstall.
 	if mutated, err := trigger.ApplyDefaultUpdates(triggerStore, trigger.DefaultUpdates()); err != nil {
 		slog.Warn("trigger default updates failed", "err", err)
 	} else if mutated > 0 {

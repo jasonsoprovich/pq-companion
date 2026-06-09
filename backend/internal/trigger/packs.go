@@ -1314,12 +1314,18 @@ func MonkPack() TriggerPack {
 		Class:       ClassPtr(ClassMonk),
 		Description: "Feign Death alert plus spell timers for all 8 monk disciplines (Stonestance, Innerflame, Thunderkick, Ashenhand, Silentfist, Whirlwind, Voiddance, Hundred Fists) plus the shared melee disciplines Resistant and Fearless.",
 		Triggers: append([]Trigger{
-			// ── Feign Death skill (overlay alert) ────────────────────────
+			// ── Feign Death skill (overlay alert + reuse CD) ─────────────
+			// The FD skill has a 9s base reuse on Quarm (the client emits
+			// "You must wait longer before you can feign death." when used
+			// early; the Rapid Feign AA shortens it — not auto-applied here).
+			// CooldownSecs shows a brief "Feign Death CD" countdown on the
+			// buff overlay alongside the text alert, like Lay on Hands.
 			{
-				Name:     "Feign Death",
-				Enabled:  true,
-				Pattern:  `^You feign death\.$`,
-				PackName: "Monk",
+				Name:         "Feign Death",
+				Enabled:      true,
+				Pattern:      `^You feign death\.$`,
+				CooldownSecs: 9,
+				PackName:     "Monk",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "FEIGN DEATH", DurationSecs: 4, Color: "#888888"},
 				},
@@ -2261,6 +2267,10 @@ type DefaultUpdate struct {
 	PackName              string   // built-in pack the trigger belongs to
 	TriggerName           string   // trigger within the pack
 	AppendExcludePatterns []string // appended if not already present
+	// SetCooldownSecs, when > 0, sets the trigger's reuse-cooldown timer —
+	// but only if it's currently 0 (unset), so we add a missing cooldown
+	// without overwriting a value the user changed by hand. 0 = leave as-is.
+	SetCooldownSecs int
 }
 
 // DefaultUpdates is the list of one-time additive pack updates to apply on
@@ -2300,6 +2310,17 @@ func DefaultUpdates() []DefaultUpdate {
 				`tells you, 'I am unable to wake `,
 			},
 		},
+		{
+			// 2026-06-09: the monk Feign Death trigger gained a 9s reuse
+			// cooldown (it previously fired only the overlay text alert).
+			// Existing installs created the row with CooldownSecs=0; set it
+			// to 9 — only when still unset — so the "Feign Death CD"
+			// countdown shows without a destructive pack reinstall.
+			Key:             "Monk:FeignDeath:cooldown-9s-v1",
+			PackName:        "Monk",
+			TriggerName:     "Feign Death",
+			SetCooldownSecs: 9,
+		},
 	}
 }
 
@@ -2334,9 +2355,10 @@ func ApplyDefaultUpdates(store *Store, updates []DefaultUpdate) (int, error) {
 	return mutated, nil
 }
 
-// applyDefaultUpdate looks up the named trigger and appends any missing
-// AppendExcludePatterns. Returns whether the trigger was actually mutated
-// (false if the trigger doesn't exist, or all entries were already present).
+// applyDefaultUpdate looks up the named trigger and applies any additive
+// changes: appends missing AppendExcludePatterns and sets a missing
+// SetCooldownSecs. Returns whether the trigger was actually mutated (false if
+// the trigger doesn't exist, or every change was already present).
 func applyDefaultUpdate(store *Store, u DefaultUpdate) (bool, error) {
 	if u.TriggerName == "" || u.PackName == "" {
 		return false, nil
@@ -2351,6 +2373,10 @@ func applyDefaultUpdate(store *Store, u DefaultUpdate) (bool, error) {
 		slog.Info("trigger: default update target missing, skipping", "key", u.Key, "pack", u.PackName, "trigger", u.TriggerName)
 		return false, nil
 	}
+
+	changed := false
+
+	// Append any missing exclude patterns.
 	existing := make(map[string]struct{}, len(t.ExcludePatterns))
 	for _, p := range t.ExcludePatterns {
 		existing[p] = struct{}{}
@@ -2364,13 +2390,23 @@ func applyDefaultUpdate(store *Store, u DefaultUpdate) (bool, error) {
 		existing[p] = struct{}{}
 		added++
 	}
-	if added == 0 {
+	if added > 0 {
+		changed = true
+	}
+
+	// Set a missing reuse cooldown, leaving a user-customized value alone.
+	if u.SetCooldownSecs > 0 && t.CooldownSecs == 0 {
+		t.CooldownSecs = u.SetCooldownSecs
+		changed = true
+	}
+
+	if !changed {
 		return false, nil
 	}
 	if err := store.Update(t); err != nil {
 		return false, err
 	}
-	slog.Info("trigger: default update applied", "key", u.Key, "pack", u.PackName, "trigger", u.TriggerName, "added_excludes", added)
+	slog.Info("trigger: default update applied", "key", u.Key, "pack", u.PackName, "trigger", u.TriggerName, "added_excludes", added, "set_cooldown", u.SetCooldownSecs)
 	return true, nil
 }
 

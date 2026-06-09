@@ -415,6 +415,103 @@ func TestApplyDefaultUpdates_MissingTriggerSkipsAndMarks(t *testing.T) {
 	}
 }
 
+// ApplyDefaultUpdates fills in a missing reuse cooldown (monk Feign Death
+// gained a 9s CD after some installs were created). Idempotent on re-run.
+func TestApplyDefaultUpdates_SetsCooldownWhenUnset(t *testing.T) {
+	s := openTestStore(t)
+
+	// A Feign Death trigger that predates the cooldown — CooldownSecs left 0.
+	unset := &Trigger{
+		ID:        "fd-unset",
+		Name:      "Feign Death",
+		PackName:  "Monk",
+		Enabled:   true,
+		Pattern:   `^You feign death\.$`,
+		Actions:   []Action{},
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.Insert(unset); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+
+	updates := []DefaultUpdate{
+		{
+			Key:             "test:monk-fd-cd:v1",
+			PackName:        "Monk",
+			TriggerName:     "Feign Death",
+			SetCooldownSecs: 9,
+		},
+	}
+
+	mutated, err := ApplyDefaultUpdates(s, updates)
+	if err != nil {
+		t.Fatalf("ApplyDefaultUpdates: %v", err)
+	}
+	if mutated != 1 {
+		t.Errorf("mutated: got %d, want 1", mutated)
+	}
+	got, err := s.Get(unset.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.CooldownSecs != 9 {
+		t.Errorf("CooldownSecs: got %d, want 9", got.CooldownSecs)
+	}
+
+	// Idempotent: the key is recorded as applied, so a second run is a no-op.
+	mutated2, err := ApplyDefaultUpdates(s, updates)
+	if err != nil {
+		t.Fatalf("ApplyDefaultUpdates 2: %v", err)
+	}
+	if mutated2 != 0 {
+		t.Errorf("second run mutated %d; want 0", mutated2)
+	}
+}
+
+// A user who hand-tuned their Feign Death cooldown keeps it — the migration
+// only fills in an unset (0) value, never overwrites.
+func TestApplyDefaultUpdates_PreservesCustomCooldown(t *testing.T) {
+	s := openTestStore(t)
+
+	custom := &Trigger{
+		ID:           "fd-custom",
+		Name:         "Feign Death",
+		PackName:     "Monk",
+		Enabled:      true,
+		Pattern:      `^You feign death\.$`,
+		CooldownSecs: 20, // user hand-tuned
+		Actions:      []Action{},
+		CreatedAt:    time.Now().UTC(),
+	}
+	if err := s.Insert(custom); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+
+	updates := []DefaultUpdate{
+		{
+			Key:             "test:monk-fd-cd-preserve:v1",
+			PackName:        "Monk",
+			TriggerName:     "Feign Death",
+			SetCooldownSecs: 9,
+		},
+	}
+
+	mutated, err := ApplyDefaultUpdates(s, updates)
+	if err != nil {
+		t.Fatalf("ApplyDefaultUpdates: %v", err)
+	}
+	if mutated != 0 {
+		t.Errorf("mutated: got %d, want 0 (custom value must be preserved)", mutated)
+	}
+	got, err := s.Get(custom.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.CooldownSecs != 20 {
+		t.Errorf("user cooldown was overwritten: got %d, want 20", got.CooldownSecs)
+	}
+}
+
 func TestInstallPack(t *testing.T) {
 	s := openTestStore(t)
 
