@@ -1112,9 +1112,8 @@ interface TriggerRowProps {
   onDragStart: (t: Trigger) => void
   onDragEnd: () => void
   dragging: boolean
-  // Manual-sort reorder: when manualSort is on and a same-category trigger is
-  // being dragged, this row becomes a drop target that reorders the list.
-  manualSort: boolean
+  // Reorder: when a same-category trigger is being dragged, this row becomes a
+  // drop target that reorders the list (and switches the page to Manual sort).
   dragTrigger: Trigger | null
   onReorder: (targetId: string, position: 'before' | 'after') => void
 }
@@ -1128,7 +1127,6 @@ function TriggerRow({
   onDragStart,
   onDragEnd,
   dragging,
-  manualSort,
   dragTrigger,
   onReorder,
 }: TriggerRowProps): React.ReactElement {
@@ -1142,10 +1140,9 @@ function TriggerRow({
   // Insertion indicator while a sibling is dragged over this row.
   const [overPos, setOverPos] = useState<'before' | 'after' | null>(null)
 
-  // This row accepts a reorder drop when Manual sort is active and a different
-  // trigger from the same category is being dragged.
+  // This row accepts a reorder drop when a different trigger from the same
+  // category is being dragged (any sort mode — dropping switches to Manual).
   const reorderable =
-    manualSort &&
     !!dragTrigger &&
     dragTrigger.id !== trigger.id &&
     (dragTrigger.pack_name || '') === (trigger.pack_name || '')
@@ -2437,17 +2434,27 @@ export default function TriggersPage(): React.ReactElement {
     setDragTrigger(null)
     setDragOverPack(null)
     if (!dragged || dragged.id === targetId) return
-    // Order over ALL triggers in the category (not the filtered view) so a
-    // reorder while searching can't drop hidden rows' positions.
+    // Seed the new manual order from the CURRENT displayed order of the whole
+    // category (name/recent/manual) so a drag in any sort mode reorders from
+    // what the user sees. Uses all category triggers (not the filtered view)
+    // so reordering while searching can't drop hidden rows.
+    const byMode = (a: Trigger, b: Trigger): number => {
+      if (sortMode === 'recent') {
+        const aT = a.created_at ? new Date(a.created_at).getTime() : 0
+        const bT = b.created_at ? new Date(b.created_at).getTime() : 0
+        return bT - aT
+      }
+      if (sortMode === 'name') return a.name.localeCompare(b.name)
+      return (
+        (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+        (a.created_at ? new Date(a.created_at).getTime() : 0) -
+          (b.created_at ? new Date(b.created_at).getTime() : 0)
+      )
+    }
     const key = dragged.pack_name || ''
     const ids = triggers
       .filter((t) => (t.pack_name || '') === key)
-      .sort(
-        (a, b) =>
-          (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
-          (a.created_at ? new Date(a.created_at).getTime() : 0) -
-            (b.created_at ? new Date(b.created_at).getTime() : 0),
-      )
+      .sort(byMode)
       .map((t) => t.id)
       .filter((id) => id !== dragged.id)
     let idx = ids.indexOf(targetId)
@@ -2460,6 +2467,9 @@ export default function TriggersPage(): React.ReactElement {
         orderMap.has(t.id) ? { ...t, sort_order: orderMap.get(t.id)! } : t,
       ),
     )
+    // Reordering manually implies Manual sort — switch so the change sticks
+    // visibly instead of being re-sorted away by Name/Recent.
+    if (sortMode !== 'manual') setSortMode('manual')
     reorderTriggers(ids).catch(() => load())
   }
 
@@ -2958,8 +2968,34 @@ export default function TriggersPage(): React.ReactElement {
                 return (
                   <div
                     key={group.packName}
-                    className="space-y-2"
+                    className="space-y-2 rounded"
+                    style={{
+                      boxShadow:
+                        catDropTarget && dragOverCatPos === 'before'
+                          ? 'inset 0 2px 0 0 var(--color-primary)'
+                          : catDropTarget && dragOverCatPos === 'after'
+                            ? 'inset 0 -2px 0 0 var(--color-primary)'
+                            : undefined,
+                    }}
                     onDragOver={(e) => {
+                      // Category reorder: the whole section (header + body) is a
+                      // drop target so it works reliably when expanded, not just
+                      // on the thin header strip.
+                      if (
+                        dragCategory &&
+                        reorderableSection &&
+                        dragCategory !== group.packName
+                      ) {
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = 'move'
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const pos =
+                          e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+                        if (dragOverCat !== group.packName) setDragOverCat(group.packName)
+                        setDragOverCatPos((p) => (p === pos ? p : pos))
+                        return
+                      }
+                      // Trigger move onto this category.
                       if (!canDropOnPack(group.packName)) return
                       e.preventDefault()
                       e.dataTransfer.dropEffect = 'move'
@@ -2970,37 +3006,29 @@ export default function TriggersPage(): React.ReactElement {
                       // not when moving between the header and its rows.
                       if (!e.currentTarget.contains(e.relatedTarget as Node)) {
                         setDragOverPack((p) => (p === group.packName ? null : p))
+                        setDragOverCat((c) => (c === group.packName ? null : c))
                       }
                     }}
                     onDrop={(e) => {
                       e.preventDefault()
+                      if (
+                        dragCategory &&
+                        reorderableSection &&
+                        dragCategory !== group.packName
+                      ) {
+                        // Compute the edge from the event directly so a fast
+                        // drop doesn't depend on the last hover's state commit.
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const pos =
+                          e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+                        handleReorderCategory(group.packName, pos)
+                        return
+                      }
                       handleDropOnPack(group.packName)
                     }}
                   >
                     <div
                       className="flex w-full items-center gap-2 rounded px-2 py-1.5"
-                      onDragOver={
-                        dragCategory && reorderableSection && dragCategory !== group.packName
-                          ? (e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              const rect = e.currentTarget.getBoundingClientRect()
-                              const pos =
-                                e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
-                              if (dragOverCat !== group.packName) setDragOverCat(group.packName)
-                              setDragOverCatPos((p) => (p === pos ? p : pos))
-                            }
-                          : undefined
-                      }
-                      onDrop={
-                        dragCategory && reorderableSection
-                          ? (e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              handleReorderCategory(group.packName, dragOverCatPos)
-                            }
-                          : undefined
-                      }
                       style={{
                         backgroundColor: isDropTarget
                           ? 'var(--color-surface-3)'
@@ -3010,12 +3038,6 @@ export default function TriggersPage(): React.ReactElement {
                             ? 'var(--color-primary)'
                             : 'var(--color-border)'
                         }`,
-                        boxShadow:
-                          catDropTarget && dragOverCatPos === 'before'
-                            ? 'inset 0 2px 0 0 var(--color-primary)'
-                            : catDropTarget && dragOverCatPos === 'after'
-                              ? 'inset 0 -2px 0 0 var(--color-primary)'
-                              : undefined,
                       }}
                     >
                       {reorderableSection && !isRenaming && (
@@ -3036,7 +3058,9 @@ export default function TriggersPage(): React.ReactElement {
                       <button
                         type="button"
                         onClick={() => togglePackCollapsed(group.packName)}
-                        className="flex flex-1 items-center gap-2 text-left min-w-0"
+                        className={`flex items-center gap-2 text-left ${
+                          isRenaming ? 'shrink-0' : 'flex-1 min-w-0'
+                        }`}
                         style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
                       >
                         {isCollapsed ? (
@@ -3129,7 +3153,6 @@ export default function TriggersPage(): React.ReactElement {
                           onDragStart={handleRowDragStart}
                           onDragEnd={handleRowDragEnd}
                           dragging={dragTrigger?.id === t.id}
-                          manualSort={sortMode === 'manual'}
                           dragTrigger={dragTrigger}
                           onReorder={handleReorderWithin}
                         />
