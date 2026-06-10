@@ -1412,18 +1412,33 @@ export default function SettingsPage(): React.ReactElement {
               </div>
             </div>
 
-            {/* Preview swatch */}
+            {/* Preview swatch — the overlay background layered over a
+                colourful mock "game" backdrop. Without the backdrop the
+                swatch sat directly on the dark settings page, so dragging
+                the slider changed its alpha invisibly (it read as a static
+                black box). */}
             <div
               style={{
                 width: 48,
                 height: 48,
                 borderRadius: 6,
                 border: '1px solid rgba(255,255,255,0.15)',
-                backgroundColor: `rgba(10,10,12,${config.preferences.overlay_opacity})`,
+                background:
+                  'repeating-linear-gradient(45deg, #3b82f6 0 8px, #22c55e 8px 16px, #f97316 16px 24px)',
+                position: 'relative',
+                overflow: 'hidden',
                 flexShrink: 0,
               }}
-              title="Overlay background preview"
-            />
+              title="Preview: overlay background at this opacity over game content"
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  backgroundColor: `rgba(10,10,12,${config.preferences.overlay_opacity})`,
+                }}
+              />
+            </div>
           </div>
         </section>
         )}
