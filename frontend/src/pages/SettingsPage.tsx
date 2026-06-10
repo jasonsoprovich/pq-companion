@@ -4,6 +4,7 @@ import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, Re
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
+import AlertDefaultsSettings from '../components/settings/AlertDefaultsSettings'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config, DPSClassColors, NPCOverlaySections } from '../types/config'
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
@@ -1224,6 +1225,8 @@ export default function SettingsPage(): React.ReactElement {
               />
             </div>
           </div>
+
+          <AlertDefaultsSettings config={config} setConfig={setConfig} />
 
           <label className="flex cursor-pointer items-center justify-between py-1 mt-4">
             <div>

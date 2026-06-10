@@ -37,6 +37,14 @@ export interface Preferences {
   overlay_dps_enabled: boolean
   overlay_hps_enabled: boolean
   master_volume: number
+  // Voice for any text_to_speech alert whose own voice field is empty
+  // ("App default" in the editor). Empty = the OS default voice.
+  default_tts_voice?: string
+  // Anchors trigger overlay_text alerts that have no per-trigger pinned
+  // position at a fixed point (alerts stack downward from it). Coordinates
+  // are window-local pixels on the trigger overlay's chosen monitor.
+  // Null/missing = centered stack (pre-existing behaviour).
+  default_overlay_position?: { x: number; y: number } | null
   developer_mode: boolean
   npc_overlay_dashboard_sections: NPCOverlaySections
   npc_overlay_popout_sections: NPCOverlaySections

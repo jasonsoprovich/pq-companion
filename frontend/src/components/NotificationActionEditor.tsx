@@ -13,13 +13,10 @@
  * Test buttons (file browse / play / position) are left as no-op slots in
  * this initial extraction and wired up in subsequent tasks.
  */
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Volume2, FolderOpen, Play, Square, Crosshair, Check, X as XIcon } from 'lucide-react'
 import { playSoundForTest, speakTextForTest, stopTestPlayback } from '../services/audio'
-import { fireTriggerTestOverlay, endTriggerTestSession } from '../services/api'
-import { useWebSocket } from '../hooks/useWebSocket'
-import { useEscapeToClose } from '../hooks/useEscapeToClose'
-import { WSEvent } from '../lib/wsEvents'
+import { usePositioningSession } from '../hooks/usePositioningSession'
 
 export type NotificationActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
 
@@ -63,100 +60,16 @@ export function OverlayTextFields({
   position,
   onPositionChange,
 }: OverlayTextFieldsProps): React.ReactElement {
-  // A per-editor session id is round-tripped through the test endpoints so
-  // simultaneous editors don't clobber each other's position updates.
-  const [testId] = useState(() => `test-${Math.random().toString(36).slice(2)}-${Date.now()}`)
-  const [positioning, setPositioning] = useState(false)
-  // The position as it was when the session started. Drag updates are applied
-  // to the field live during a session, so cancel/Escape needs this to revert.
-  const startPosRef = useRef<{ x: number; y: number } | null>(null)
-  // Whether a positioning session was ever opened by this editor. Drives the
-  // unmount teardown independently of the `positioning` flag, so a desync can't
-  // strand the overlay card.
-  const everStartedRef = useRef(false)
-
-  useWebSocket((msg) => {
-    if (msg.type === WSEvent.TriggerTestPosition) {
-      const data = msg.data as { test_id: string; position: { x: number; y: number } }
-      if (data.test_id !== testId) return
-      onPositionChange?.(data.position)
-      return
-    }
-    if (msg.type === WSEvent.TriggerTestSessionEnded) {
-      const data = msg.data as { test_id: string; cancelled?: boolean }
-      // The session may have been ended from the overlay window (its Done /
-      // Cancel button or Escape there). Reset our button state on any
-      // session-ended while we're positioning — there's only ever one
-      // positioner at a time, so we don't need an exact id match to clear the
-      // stuck "Done" label. Revert the position only on an id match + cancel.
-      if (data.test_id === testId && data.cancelled) {
-        onPositionChange?.(startPosRef.current ?? null)
-      }
-      setPositioning(false)
-      return
-    }
+  // Session id, live drag updates, Escape/unmount teardown, and confirm /
+  // cancel semantics all live in the shared hook — the Settings page's
+  // default-position control runs the identical flow.
+  const { positioning, toggle: handlePositionButton } = usePositioningSession({
+    position,
+    onPositionChange,
+    testText: text,
+    testColor: color,
+    testDurationSecs: durationSecs,
   })
-
-  // Always end the session when this editor unmounts (e.g. the trigger modal
-  // closes / saves mid-session). This runs unconditionally — not gated on the
-  // `positioning` flag — so even if that state desynced, the desktop-spanning
-  // overlay can never be left with an orphaned input-capturing card (the cause
-  // of the "app hung, nothing clickable" reports). The backend no-ops if the
-  // id doesn't match an active session.
-  useEffect(() => {
-    return () => {
-      if (everStartedRef.current) {
-        // Force the overlay hidden from the main process so it can never be
-        // left capturing input if this editor goes away mid-session.
-        void window.electron?.overlay?.setTriggerMode?.('hidden')
-        void endTriggerTestSession(testId).catch(() => {})
-      }
-    }
-  }, [testId])
-
-  function startPositioning() {
-    startPosRef.current = position ?? null
-    everStartedRef.current = true
-    setPositioning(true)
-    void window.electron?.overlay?.openTrigger?.()
-    void fireTriggerTestOverlay({
-      test_id: testId,
-      text: text || 'Test alert',
-      color: color || '#ffffff',
-      // duration_secs is informational only — sticky session, no auto-dismiss.
-      duration_secs: Math.max(8, durationSecs || 5),
-      position: position ?? null,
-    }).catch(() => {
-      // If we can't open the session, roll the toggle back so the button
-      // doesn't get stuck in the "Done" state.
-      setPositioning(false)
-    })
-  }
-
-  // Confirm keeps the dragged position (already applied to the field live).
-  function confirmPositioning() {
-    setPositioning(false)
-    // Force the overlay hidden via the main process so input is restored even
-    // if the overlay renderer is slow to process the session-ended broadcast.
-    void window.electron?.overlay?.setTriggerMode?.('hidden')
-    void endTriggerTestSession(testId, false).catch(() => {})
-  }
-
-  // Cancel reverts the field to the position captured when the session began.
-  function cancelPositioning() {
-    setPositioning(false)
-    onPositionChange?.(startPosRef.current ?? null)
-    void window.electron?.overlay?.setTriggerMode?.('hidden')
-    void endTriggerTestSession(testId, true).catch(() => {})
-  }
-
-  // The editor's Done button confirms; Escape cancels and reverts.
-  useEscapeToClose(cancelPositioning, positioning)
-
-  function handlePositionButton() {
-    if (positioning) confirmPositioning()
-    else startPositioning()
-  }
 
   function handleClearPosition() {
     onPositionChange?.(null)
@@ -244,7 +157,7 @@ export function OverlayTextFields({
               cursor: 'pointer',
               fontFamily: 'inherit',
             }}
-            title="Clear pinned position (use default stacking)"
+            title="Clear pinned position (use the app default position)"
           >
             <XIcon size={9} />
             Reset
@@ -441,7 +354,7 @@ export function TextToSpeechFields({
               className="rounded px-2 py-0.5 text-xs outline-none flex-1 min-w-0"
               style={selectStyle}
             >
-              <option value="">System default</option>
+              <option value="">App default</option>
               {voices.map((v) => (
                 <option key={v} value={v}>{v}</option>
               ))}

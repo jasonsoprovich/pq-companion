@@ -13,7 +13,7 @@ const AUDIO_DEDUP_MS = 400
 
 // Master volume scales every playback (sound + TTS, including test previews)
 // on top of the per-action volume. Stored as 0.0–1.0; updated from
-// Preferences.master_volume by useMasterVolume(). Default 1.0 = no dampening.
+// Preferences.master_volume by useAudioPrefs(). Default 1.0 = no dampening.
 let masterVolume = 1.0
 
 /**
@@ -28,6 +28,16 @@ export function setMasterVolume(value: number): void {
 /** Returns the current master volume multiplier (0.0–1.0). */
 export function getMasterVolume(): number {
   return masterVolume
+}
+
+// Default TTS voice applied whenever an alert's own voice field is empty
+// ("App default" in the editor). Pushed from Preferences.default_tts_voice
+// by useAudioPrefs(). Empty = the OS default voice.
+let defaultTTSVoice = ''
+
+/** Set the fallback TTS voice name used when an alert has no voice of its own. */
+export function setDefaultTTSVoice(name: string): void {
+  defaultTTSVoice = typeof name === 'string' ? name : ''
 }
 
 function effectiveVolume(volume: number): number {
@@ -180,7 +190,7 @@ export function speakText(text: string, voice = '', volume = 1.0): void {
     console.warn('[audio] speakText failed', { text, voice, error: e.error })
   }
 
-  speakWithVoice(utterance, voice)
+  speakWithVoice(utterance, voice || defaultTTSVoice)
 }
 
 /**
@@ -269,8 +279,9 @@ export function speakTextForTest(
   utterance.volume = effectiveVolume(volume)
   // No deferred speak here — tests run from an editor whose voice dropdown has
   // already primed the list, and the play/stop bookkeeping wants an immediate
-  // utterance.
-  const match = resolveVoice(voice)
+  // utterance. Blank voice previews with the app default so the test matches
+  // what a real fire will sound like.
+  const match = resolveVoice(voice || defaultTTSVoice)
   if (match) utterance.voice = match
 
   let done = false

@@ -8,7 +8,7 @@ import { Check, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import type { TriggerFired } from '../types/trigger'
-import { postTriggerTestPosition, getActiveTriggerTest, endTriggerTestSession } from '../services/api'
+import { postTriggerTestPosition, getActiveTriggerTest, endTriggerTestSession, getConfig } from '../services/api'
 
 interface TestAlert {
   testId: string
@@ -245,6 +245,28 @@ const DEDUP_WINDOW_MS = 750
 export default function TriggerOverlayWindowPage(): React.ReactElement {
   const [alerts, setAlerts] = useState<AlertEntry[]>([])
   const [testAlert, setTestAlert] = useState<TestAlert | null>(null)
+  // The user's default overlay position (Settings → Preferences). Alerts with
+  // no per-trigger pinned position anchor their stack here instead of the
+  // centered column. Polled like useAudioPrefs so a Settings save is picked
+  // up without restarting the overlay window.
+  const [defaultPos, setDefaultPos] = useState<{ x: number; y: number } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    const fetch = (): void => {
+      getConfig()
+        .then((c) => {
+          if (cancelled) return
+          setDefaultPos(c.preferences?.default_overlay_position ?? null)
+        })
+        .catch(() => {})
+    }
+    fetch()
+    const id = setInterval(fetch, 3000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [])
   const gcTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastFired = useRef<Map<string, number>>(new Map())
   // Window-local center of the primary monitor, fetched from the main process.
@@ -504,16 +526,33 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
       }}
     >
       <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'center',
-          gap: 6,
-          padding: alerts.length > 0 ? '8px 8px' : 0,
-          overflow: 'hidden',
-        }}
+        style={
+          defaultPos
+            ? {
+                // Anchor the unpinned-alert stack at the user's default
+                // position, clamped onto the current overlay window the same
+                // way AlertCard clamps per-trigger positions. Pinned alerts
+                // render position:fixed from inside AlertCard, so this
+                // container doesn't affect them.
+                position: 'fixed',
+                left: Math.min(Math.max(0, defaultPos.x), Math.max(0, window.innerWidth - 40)),
+                top: Math.min(Math.max(0, defaultPos.y), Math.max(0, window.innerHeight - 24)),
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                gap: 6,
+              }
+            : {
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: 6,
+                padding: alerts.length > 0 ? '8px 8px' : 0,
+                overflow: 'hidden',
+              }
+        }
       >
         {alerts.map((entry) => (
           <AlertCard key={entry.id} entry={entry} />

@@ -238,6 +238,19 @@ type Preferences struct {
 	// 100 = no dampening (default), 0 = mute everything.
 	MasterVolume int `yaml:"master_volume" json:"master_volume"`
 
+	// DefaultTTSVoice is the voice used for any text_to_speech alert whose
+	// own voice field is empty ("App default" in the editor). It names a
+	// SpeechSynthesisVoice on the user's machine; the frontend resolves it at
+	// playback time. Empty = the OS default voice (pre-existing behaviour).
+	DefaultTTSVoice string `yaml:"default_tts_voice,omitempty" json:"default_tts_voice"`
+
+	// DefaultOverlayPosition anchors trigger overlay_text alerts that have no
+	// per-trigger pinned position at a fixed on-screen point (alerts stack
+	// downward from it). Coordinates are window-local pixels on the trigger
+	// overlay's chosen monitor, same space as trigger.ActionPosition. Nil =
+	// the pre-existing behaviour (centered stack).
+	DefaultOverlayPosition *OverlayPosition `yaml:"default_overlay_position,omitempty" json:"default_overlay_position,omitempty"`
+
 	// DeveloperMode reveals the Developer tab in the Settings page, which
 	// hosts power-user tools (SQL sandbox, schema viewer). Toggled in-app
 	// via the Ctrl+Shift+D shortcut while the Settings page is focused.
@@ -292,6 +305,14 @@ type Preferences struct {
 	// position here; keys absent from the list keep their default order after
 	// the listed ones. Empty/omitted = default order.
 	SidebarOrder []string `yaml:"sidebar_order,omitempty" json:"sidebar_order,omitempty"`
+}
+
+// OverlayPosition is an on-screen point in the trigger overlay window's
+// local pixel space (mirrors trigger.ActionPosition, but lives here so the
+// config package doesn't import the trigger package).
+type OverlayPosition struct {
+	X int `yaml:"x" json:"x"`
+	Y int `yaml:"y" json:"y"`
 }
 
 // NPCOverlaySections toggles individual NPC overlay sections on/off. All
