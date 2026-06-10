@@ -129,7 +129,14 @@ export interface CHChainSettings {
   // Regex matched against raid-chat lines; should capture named groups
   // caster, chainnum, target. Empty = backend default.
   pattern: string
-  // Per-cast countdown cadence in seconds.
+  // Secondary (ramp/split) chain: when enabled, lines matching
+  // secondary_pattern get their own ch_chain_2 timers and the overlay /
+  // metronome grow a Main/Ramp switch. The secondary pattern is tried
+  // before the primary so letter calls split off even under the
+  // catch-all primary default.
+  secondary_enabled?: boolean
+  secondary_pattern?: string
+  // Per-cast countdown cadence in seconds (fractional allowed).
   interval_secs: number
 }
 

@@ -10,6 +10,11 @@ import type { Config, DPSClassColors, NPCOverlaySections } from '../types/config
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
 import { OVERLAY_DEFS, resolveLockedMode } from '../lib/overlays'
 import type { OverlayName, LockedMode } from '../lib/overlays'
+import {
+  CH_CHAIN_DEFAULT_PATTERN,
+  CH_CHAIN_NUMERIC_PATTERN,
+  CH_CHAIN_SECONDARY_PATTERN,
+} from '../lib/chChainPatterns'
 import type { LogFileInfo } from '../types/logEvent'
 import { applyContrast } from '../hooks/useHighContrast'
 import { applyZoom } from '../hooks/useZoom'
@@ -1784,6 +1789,71 @@ export default function SettingsPage(): React.ReactElement {
                 }}
               />
             </label>
+
+            <label className="mb-3 flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.ch_chain?.secondary_enabled ?? false}
+                onChange={(e) => {
+                  // Toggling the secondary chain auto-splits / re-merges the
+                  // default regexes: the catch-all default matches both 001
+                  // and AAA markers, so when a second chain exists the
+                  // primary narrows to numbers-only and the secondary takes
+                  // letters-only. Patterns the user has hand-edited are
+                  // never touched — only exact defaults are swapped.
+                  const on = e.target.checked
+                  const ch = config.ch_chain
+                  const next = { ...ch, secondary_enabled: on }
+                  if (on) {
+                    if (!ch?.pattern || ch.pattern === CH_CHAIN_DEFAULT_PATTERN) {
+                      next.pattern = CH_CHAIN_NUMERIC_PATTERN
+                    }
+                    if (!ch?.secondary_pattern) {
+                      next.secondary_pattern = CH_CHAIN_SECONDARY_PATTERN
+                    }
+                  } else if (ch?.pattern === CH_CHAIN_NUMERIC_PATTERN) {
+                    next.pattern = CH_CHAIN_DEFAULT_PATTERN
+                  }
+                  setConfig({ ...config, ch_chain: next })
+                }}
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  Enable secondary chain (ramp / split heals)
+                </span>
+                <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Tracks a second, independent chain — e.g. AAA/BBB ramp-heal calls alongside the
+                  001/002 main tank chain. The overlay and metronome gain a Main&thinsp;/&thinsp;Ramp
+                  switch. Enabling splits the default patterns into numbers-only (main) and
+                  letters-only (ramp); disabling restores the combined default. Custom patterns are
+                  left untouched.
+                </span>
+              </span>
+            </label>
+
+            {(config.ch_chain?.secondary_enabled ?? false) && (
+              <label className="mb-3 ml-6 flex flex-col gap-1">
+                <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Secondary chain-call pattern (regex)</span>
+                <input
+                  type="text"
+                  value={config.ch_chain?.secondary_pattern ?? ''}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      ch_chain: { ...config.ch_chain, secondary_pattern: e.target.value },
+                    })
+                  }
+                  spellCheck={false}
+                  className="rounded px-2 py-1 font-mono text-xs"
+                  style={{
+                    backgroundColor: 'var(--color-surface-2)',
+                    color: 'var(--color-foreground)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                />
+              </label>
+            )}
 
             <div className="flex items-end gap-3">
               <label className="flex flex-col gap-1" style={{ maxWidth: 160 }}>

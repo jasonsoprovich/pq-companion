@@ -11,7 +11,10 @@
  * moment, flashing CAST NOW when it's time to press your heal key.
  *
  * Config (your position, the chain size, and your desired delay) lives inline
- * and persists to localStorage so it survives reopening the window.
+ * and persists to localStorage so it survives reopening the window. When the
+ * secondary (ramp/split) chain is enabled in settings, a Main/Ramp switch
+ * picks which chain's timer feed (ch_chain vs ch_chain_2) the metronome
+ * follows.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Gauge, X } from 'lucide-react'
@@ -21,6 +24,7 @@ import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
+import { useCHChainConfig } from '../hooks/useCHChainConfig'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { getTimerState } from '../services/api'
 import type { ActiveTimer, TimerState } from '../types/timer'
@@ -37,6 +41,26 @@ const ANCHOR_GRACE_SECS = 3
 type Cfg = { position: number; chainSize: number; delay: number }
 
 const DEFAULT_CFG: Cfg = { position: 2, chainSize: 3, delay: 4 }
+
+// Which chain the metronome follows. 'main' = ch_chain timers (001-style
+// calls), 'ramp' = ch_chain_2 timers (AAA-style ramp/split-chain calls).
+// Only selectable when the secondary chain is enabled in settings.
+type ChainView = 'main' | 'ramp'
+
+const CHAIN_STORAGE_KEY = 'chMetronome:chain'
+
+function loadChain(): ChainView {
+  return localStorage.getItem(CHAIN_STORAGE_KEY) === 'ramp' ? 'ramp' : 'main'
+}
+
+// posLabel renders a chain position for display: ramp chains call letters
+// (AAA = 1 → "A"), the main chain calls numbers ("#1").
+function posLabel(position: number, chain: ChainView): string {
+  if (chain === 'ramp' && position >= 1 && position <= 26) {
+    return String.fromCharCode(64 + position)
+  }
+  return `#${position}`
+}
 
 function loadCfg(): Cfg {
   // parseFloat (not parseInt): delay supports half-second values like 4.5.
@@ -128,6 +152,33 @@ function Stepper(props: {
   )
 }
 
+// ChainSwitch is a compact Main/Ramp segmented control matching the Stepper
+// layout (label above control), shown only when the secondary chain exists.
+function ChainSwitch({ chain, onChange }: { chain: ChainView; onChange: (v: ChainView) => void }): React.ReactElement {
+  const btn = (active: boolean): React.CSSProperties => ({
+    background: active ? 'rgba(255,255,255,0.12)' : 'transparent',
+    color: active ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.4)',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: 10,
+    fontWeight: 600,
+    padding: '2px 6px',
+    borderRadius: 3,
+    lineHeight: 1.4,
+  })
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+      <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+        Chain
+      </span>
+      <div style={{ display: 'inline-flex', gap: 2, backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: 4, padding: 1 }}>
+        <button style={btn(chain === 'main')} onClick={() => onChange('main')}>Main</button>
+        <button style={btn(chain === 'ramp')} onClick={() => onChange('ramp')}>Ramp</button>
+      </div>
+    </div>
+  )
+}
+
 export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
   const chrome = useOverlayChromeFade()
@@ -136,22 +187,21 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   const onDragMouseDown = useWindowDrag()
 
   const [cfg, setCfg] = useState<Cfg>(loadCfg)
+  const [chain, setChain] = useState<ChainView>(loadChain)
+  const chConfig = useCHChainConfig()
+  const secondaryEnabled = chConfig?.secondary_enabled ?? false
+  // With the secondary chain off in settings, always follow the main chain —
+  // a stale 'ramp' selection would otherwise watch a feed that never fires.
+  const activeChain: ChainView = secondaryEnabled ? chain : 'main'
   // anchorRef holds the local-clock ms at which the watched cleric's cast
   // started (their heal lands anchor + 10s). Updated from the timer feed;
   // read by the 100ms render ticker so the countdown stays smooth between the
   // 1s WebSocket pulses.
   const anchorRef = useRef<number | null>(null)
   const cfgRef = useRef(cfg)
+  const chainRef = useRef(activeChain)
   const timersRef = useRef<ActiveTimer[]>([])
   const [, setTick] = useState(0)
-
-  useEffect(() => {
-    cfgRef.current = cfg
-    saveCfg(cfg)
-    // Re-evaluate the anchor against the latest feed when config changes so
-    // switching position takes effect without waiting for the next callout.
-    recomputeAnchor(timersRef.current)
-  }, [cfg])
 
   // recomputeAnchor finds the most recent callout for the watched position and
   // re-derives the local anchor from its backend-computed remaining time. Using
@@ -159,9 +209,10 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   // between the game-log clock and the local clock.
   const recomputeAnchor = useCallback((timers: ActiveTimer[]) => {
     const watch = watchPosition(cfgRef.current)
+    const category = chainRef.current === 'ramp' ? 'ch_chain_2' : 'ch_chain'
     let best: ActiveTimer | null = null
     for (const t of timers) {
-      if (t.category !== 'ch_chain') continue
+      if (t.category !== category) continue
       if (parsePosition(t.spell_name) !== watch) continue
       if (!best || Date.parse(t.starts_at) > Date.parse(best.starts_at)) best = t
     }
@@ -169,6 +220,23 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
       anchorRef.current = Date.now() - (CH_CAST - best.remaining_seconds) * 1000
     }
   }, [])
+
+  useEffect(() => {
+    cfgRef.current = cfg
+    saveCfg(cfg)
+    // Re-evaluate the anchor against the latest feed when config changes so
+    // switching position takes effect without waiting for the next callout.
+    recomputeAnchor(timersRef.current)
+  }, [cfg, recomputeAnchor])
+
+  useEffect(() => {
+    chainRef.current = activeChain
+    localStorage.setItem(CHAIN_STORAGE_KEY, chain)
+    // Switching chains drops the old chain's anchor — a countdown keyed to
+    // the other chain's cadence would flash CAST NOW at the wrong moment.
+    anchorRef.current = null
+    recomputeAnchor(timersRef.current)
+  }, [chain, activeChain, recomputeAnchor])
 
   useEffect(() => {
     getTimerState()
@@ -210,7 +278,7 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
 
   let bigText = '—'
   let bigColor = 'rgba(255,255,255,0.25)'
-  let subText = `Waiting for #${watch}…`
+  let subText = `Waiting for ${posLabel(watch, activeChain)}…`
   if (active) {
     if (flashing) {
       bigText = 'CAST NOW'
@@ -223,7 +291,7 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
     } else {
       bigText = 'cast sent'
       bigColor = 'rgba(255,255,255,0.4)'
-      subText = `next: #${watch} calls again`
+      subText = `next: ${posLabel(watch, activeChain)} calls again`
     }
   }
 
@@ -277,7 +345,8 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
             CH Metronome
           </span>
           <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginLeft: 2 }}>
-            #{cfg.position}/{cfg.chainSize}
+            {posLabel(cfg.position, activeChain)}/{cfg.chainSize}
+            {activeChain === 'ramp' ? ' · ramp' : ''}
           </span>
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -415,6 +484,7 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
           suffix="s"
           onChange={(v) => setCfg((c) => ({ ...c, delay: v }))}
         />
+        {secondaryEnabled && <ChainSwitch chain={activeChain} onChange={setChain} />}
       </div>
     </div>
   )
