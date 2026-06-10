@@ -1738,7 +1738,8 @@ export default function SettingsPage(): React.ReactElement {
               CH Chain overlay
             </p>
             <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-              Watches raid chat for Complete-Heal chain calls and shows one bar per chain position
+              Watches chat (raid, group, guild, custom channels, shout, OOC, auction) for
+              Complete-Heal chain calls and shows one bar per chain position
               in a dedicated overlay window. Each bar runs the 10s CH cast, counting down to when
               that heal lands, and the header shows the live cadence measured between calls (turning
               red when the chain stalls). The pattern must capture the named groups
@@ -1759,7 +1760,7 @@ export default function SettingsPage(): React.ReactElement {
                 style={{ marginTop: 3 }}
               />
               <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-                Track CH chains from raid chat
+                Enable CH chain tracking
               </span>
             </label>
 
