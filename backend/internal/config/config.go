@@ -218,6 +218,12 @@ type Preferences struct {
 	// Off by default.
 	OverlayFadeEnabled bool `yaml:"overlay_fade_enabled,omitempty" json:"overlay_fade_enabled"`
 
+	// OverlayFadeDelaySecs is how long after the cursor leaves an overlay
+	// window the chrome fade kicks in, in seconds. Only meaningful while
+	// OverlayFadeEnabled is on. 0 is treated as the default (2.5) by the
+	// client, mirroring the ZoomFactor convention.
+	OverlayFadeDelaySecs float64 `yaml:"overlay_fade_delay_secs,omitempty" json:"overlay_fade_delay_secs"`
+
 	// MinimizeToTray controls whether closing the main window hides to tray.
 	MinimizeToTray bool `yaml:"minimize_to_tray" json:"minimize_to_tray"`
 
@@ -424,6 +430,7 @@ func defaults() Config {
 		CharacterClass: -1,
 		Preferences: Preferences{
 			OverlayOpacity:              0.25,
+			OverlayFadeDelaySecs:        2.5,
 			MinimizeToTray:              true,
 			ParseCombatLog:              true,
 			OverlayDPSEnabled:           true,

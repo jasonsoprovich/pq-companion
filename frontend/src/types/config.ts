@@ -34,6 +34,9 @@ export interface Preferences {
   // seconds after the cursor leaves an overlay window; content stays visible.
   // Hovering restores overlay_opacity. Off by default.
   overlay_fade_enabled?: boolean
+  // Seconds after the cursor leaves an overlay before the chrome fade kicks
+  // in. 0/missing = the default (2.5), mirroring the zoom_factor convention.
+  overlay_fade_delay_secs?: number
   minimize_to_tray: boolean
   high_contrast: boolean
   zoom_factor: number

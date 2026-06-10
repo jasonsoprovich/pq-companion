@@ -1490,6 +1490,40 @@ export default function SettingsPage(): React.ReactElement {
               />
             </div>
           </label>
+
+          {config.preferences.overlay_fade_enabled && (
+            <div className="mt-3">
+              <div className="mb-1 flex items-center justify-between">
+                <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  Fade Delay
+                </p>
+                <span className="text-xs font-mono" style={{ color: 'var(--color-muted-foreground)' }}>
+                  {(config.preferences.overlay_fade_delay_secs || 2.5).toFixed(1)}s
+                </span>
+              </div>
+              <input
+                type="range"
+                min={5}
+                max={100}
+                step={5}
+                value={Math.round((config.preferences.overlay_fade_delay_secs || 2.5) * 10)}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    preferences: {
+                      ...config.preferences,
+                      overlay_fade_delay_secs: Number(e.target.value) / 10,
+                    },
+                  })
+                }
+                style={{ width: '100%', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+              />
+              <div className="mt-1 flex justify-between text-xs" style={{ color: 'var(--color-muted)' }}>
+                <span>0.5s</span>
+                <span>10s</span>
+              </div>
+            </div>
+          )}
         </section>
         )}
 

@@ -3,8 +3,9 @@ import { getConfig } from '../services/api'
 
 const POLL_INTERVAL = 3000
 
-// Delay between the cursor leaving the overlay and the chrome fading out.
-const FADE_DELAY_MS = 2500
+// Delay between the cursor leaving the overlay and the chrome fading out,
+// used when preferences.overlay_fade_delay_secs is unset (0/missing).
+const DEFAULT_FADE_DELAY_MS = 2500
 
 /**
  * Drives the optional "fade when inactive" overlay behaviour
@@ -27,6 +28,7 @@ const FADE_DELAY_MS = 2500
  */
 export function useOverlayChromeFade(): boolean {
   const [enabled, setEnabled] = useState(false)
+  const [delayMs, setDelayMs] = useState(DEFAULT_FADE_DELAY_MS)
   const [hovered, setHovered] = useState(false)
   const [chromeVisible, setChromeVisible] = useState(true)
   const fadeTimer = useRef<number | null>(null)
@@ -38,7 +40,10 @@ export function useOverlayChromeFade(): boolean {
     const fetch = (): void => {
       getConfig()
         .then((c) => {
-          if (!cancelled) setEnabled(Boolean(c.preferences.overlay_fade_enabled))
+          if (cancelled) return
+          setEnabled(Boolean(c.preferences.overlay_fade_enabled))
+          const secs = c.preferences.overlay_fade_delay_secs
+          setDelayMs(secs && secs > 0 ? secs * 1000 : DEFAULT_FADE_DELAY_MS)
         })
         .catch(() => {})
     }
@@ -71,14 +76,14 @@ export function useOverlayChromeFade(): boolean {
     fadeTimer.current = window.setTimeout(() => {
       fadeTimer.current = null
       setChromeVisible(false)
-    }, FADE_DELAY_MS)
+    }, delayMs)
     return () => {
       if (fadeTimer.current !== null) {
         window.clearTimeout(fadeTimer.current)
         fadeTimer.current = null
       }
     }
-  }, [enabled, hovered])
+  }, [enabled, hovered, delayMs])
 
   return chromeVisible
 }
