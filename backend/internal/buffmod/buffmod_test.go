@@ -439,6 +439,87 @@ func TestBardDurationExempt(t *testing.T) {
 	}
 }
 
+// TestMultiClassSpellLevelFocusGate — Celerity (id 171) is learned at
+// different levels per class: Enchanter 39, Shaman 56, Beastlord 63. The
+// Batfang Headband's focus (Extended Enhancement II, id 2334) carries SPA 134
+// max_level=44, so in-game it extends an Enchanter's Celerity but NOT a
+// Shaman's — EQMacEmu compares spell.classes[casterClass], not the lowest
+// class level. Regression for the user report where a 60 Shaman's Celerity
+// showed +15% (4 extra minutes) it doesn't get in-game.
+func TestMultiClassSpellLevelFocusGate(t *testing.T) {
+	gameDB := openDB(t)
+	celerity, err := gameDB.GetSpell(171)
+	if err != nil {
+		t.Fatalf("GetSpell(Celerity): %v", err)
+	}
+	const (
+		shamanIdx    = 9 // 0-indexed EQ class
+		enchanterIdx = 13
+		shamanLevel  = 56
+		enchanterLvl = 39
+	)
+	if got := buffmod.SpellLevelForClass(celerity.ClassLevels, shamanIdx); got != shamanLevel {
+		t.Fatalf("SpellLevelForClass(Celerity, SHM) = %d, want %d", got, shamanLevel)
+	}
+	if got := buffmod.SpellLevelForClass(celerity.ClassLevels, enchanterIdx); got != enchanterLvl {
+		t.Fatalf("SpellLevelForClass(Celerity, ENC) = %d, want %d", got, enchanterLvl)
+	}
+	// Unknown class falls back to the lowest class level (Enchanter's 39).
+	if got := buffmod.SpellLevelForClass(celerity.ClassLevels, buffmod.CasterClassUnknown); got != enchanterLvl {
+		t.Fatalf("SpellLevelForClass(Celerity, unknown) = %d, want %d (min fallback)", got, enchanterLvl)
+	}
+
+	// Synthetic Batfang Headband contributor: EH2 = +15% duration,
+	// max_level 44, beneficial only.
+	contributors := []buffmod.Modifier{
+		{
+			Source:         "item",
+			SourceItemID:   10108,
+			SourceItemName: "Batfang Headband",
+			FocusSpellID:   2334,
+			FocusSpellName: "Extended Enhancement II",
+			SPA:            buffmod.SPADuration,
+			Percent:        15,
+			Limits: buffmod.Limits{
+				MaxLevel:  44,
+				SpellType: buffmod.SpellTypeBeneficial,
+			},
+		},
+	}
+	base := 30 * 60 // 30 min Celerity at L60, value irrelevant to the gate
+
+	// Shaman: spell level 56 > max_level 44 → focus must NOT apply.
+	shm := buffmod.Resolve(
+		celerity.ID, celerity.Name,
+		buffmod.SpellLevelForClass(celerity.ClassLevels, shamanIdx), 60,
+		base,
+		buffmod.SpellTypeBeneficial, celerity.EffectIDs[:],
+		contributors,
+		shamanIdx,
+		celerity.ClassLevels,
+	)
+	if shm.DurationItemPercent != 0 {
+		t.Errorf("Shaman Celerity item duration %% = %d, want 0 (L56 > EH2 max_level 44)", shm.DurationItemPercent)
+	}
+	if shm.ExtendedDurationSec != base {
+		t.Errorf("Shaman Celerity extended = %ds, want %ds (unchanged)", shm.ExtendedDurationSec, base)
+	}
+
+	// Enchanter: spell level 39 ≤ 44 → focus applies.
+	enc := buffmod.Resolve(
+		celerity.ID, celerity.Name,
+		buffmod.SpellLevelForClass(celerity.ClassLevels, enchanterIdx), 60,
+		base,
+		buffmod.SpellTypeBeneficial, celerity.EffectIDs[:],
+		contributors,
+		enchanterIdx,
+		celerity.ClassLevels,
+	)
+	if enc.DurationItemPercent != 15 {
+		t.Errorf("Enchanter Celerity item duration %% = %d, want 15 (L39 ≤ EH2 max_level 44)", enc.DurationItemPercent)
+	}
+}
+
 // TestExclusionFilter — Complete Heal (id 1292) is in the SPA-137 exclusion
 // list of Extended Enhancement III, so the Dragon Mask focus must not apply.
 // The two AAs have no exclude list, so 30 + 20 = 50% should still resolve.

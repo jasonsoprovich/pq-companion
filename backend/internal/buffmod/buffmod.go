@@ -353,9 +353,16 @@ func SpellHasteSources(contributors []Modifier) (item, aa int) {
 
 // SpellLevel returns the lowest non-255 class level from a spell's classes
 // array — the level at which the lowest-level class first learns the spell.
-// This is what EQEmu compares against SPA 134 (Limit: Max Level) and SPA 139
-// (Limit: Min Level) when applying focus effects. Returns 0 if all entries
-// are 255 (NPC-only or invalid).
+// Returns 0 if all entries are 255 (NPC-only or invalid).
+//
+// NOTE: this is only a fallback for callers without character context.
+// EQMacEmu's SE_LimitMaxLevel / SE_LimitMinLevel checks compare against
+// spell.classes[casterClass] — the level at which the CASTER'S class learns
+// the spell, not the minimum across classes (zone/spell_effects.cpp:
+// `spell_level = spell.classes[(GetClass()%16) - 1]`). Multi-class spells
+// like Celerity (ENC 39 / SHM 56 / BST 63) hit SPA 134 caps differently per
+// class — Extended Enhancement II (max_level 44) extends an Enchanter's cast
+// but not a Shaman's. Prefer SpellLevelForClass when the class is known.
 func SpellLevel(classLevels [15]int) int {
 	min := 0
 	for _, lvl := range classLevels {
@@ -367,6 +374,21 @@ func SpellLevel(classLevels [15]int) int {
 		}
 	}
 	return min
+}
+
+// SpellLevelForClass returns the level the caster's own class learns the
+// spell at — the value EQMacEmu compares against SPA 134 (Limit: Max Level)
+// and SPA 139 (Limit: Min Level) when applying focus effects. Falls back to
+// SpellLevel (lowest class level) when the class is unknown or cannot cast
+// the spell (off-class clickies — Resolve's off-class gate handles the item
+// focus exclusion there, so the fallback only affects display).
+func SpellLevelForClass(classLevels [15]int, casterClass int) int {
+	if casterClass >= 0 && casterClass < len(classLevels) {
+		if lvl := classLevels[casterClass]; lvl > 0 && lvl < classCannotCast {
+			return lvl
+		}
+	}
+	return SpellLevel(classLevels)
 }
 
 // Resolve computes the effective duration/cast-time % for a single spell,

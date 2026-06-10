@@ -1623,7 +1623,7 @@ func (e *Engine) applyDurationModifiers(spell *db.Spell, baseDurationSec float64
 	}
 	res := buffmod.Resolve(
 		spell.ID, spell.Name,
-		buffmod.SpellLevel(spell.ClassLevels),
+		buffmod.SpellLevelForClass(spell.ClassLevels, casterClass),
 		defaultCasterLevel,
 		int(baseDurationSec),
 		spellType,

@@ -335,7 +335,10 @@ func (h *charactersHandler) spellModifiers(w http.ResponseWriter, r *http.Reques
 		if !isBeneficialSpell(h.db, spellID) {
 			spellType = buffmod.SpellTypeDetrimental
 		}
-		spellLevel := buffmod.SpellLevel(sp.ClassLevels)
+		// Per-class spell level: SPA 134/139 limits compare against the level
+		// the caster's OWN class learns the spell, not the lowest class level
+		// (multi-class spells like Celerity: ENC 39 vs SHM 56).
+		spellLevel := buffmod.SpellLevelForClass(sp.ClassLevels, char.Class)
 		// character_aas table defaults level=1, so anything ≤ 1 likely means
 		// "not set yet" rather than literally a level-1 character. Treat that
 		// as "cast at the spell's effective level" so the duration formula
