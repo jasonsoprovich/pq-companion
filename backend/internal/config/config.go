@@ -264,6 +264,18 @@ type Preferences struct {
 	// the pre-existing behaviour (centered stack).
 	DefaultOverlayPosition *OverlayPosition `yaml:"default_overlay_position,omitempty" json:"default_overlay_position,omitempty"`
 
+	// DefaultOverlayTextColor / GlowColor / FontFamily / FontSize style every
+	// trigger overlay_text alert whose own action leaves the matching field
+	// unset ("App default" in the editor). Per-action values always win. Zero
+	// values mean "no global default" and fall back to the renderer built-ins
+	// (white text, glow derived from the text color, system-ui, 20px), which
+	// is exactly the pre-existing look — so upgrading users see no change and
+	// no migration is needed.
+	DefaultOverlayTextColor  string `yaml:"default_overlay_text_color,omitempty" json:"default_overlay_text_color"`
+	DefaultOverlayGlowColor  string `yaml:"default_overlay_glow_color,omitempty" json:"default_overlay_glow_color"`
+	DefaultOverlayFontFamily string `yaml:"default_overlay_font_family,omitempty" json:"default_overlay_font_family"`
+	DefaultOverlayFontSize   int    `yaml:"default_overlay_font_size,omitempty" json:"default_overlay_font_size"`
+
 	// DeveloperMode reveals the Developer tab in the Settings page, which
 	// hosts power-user tools (SQL sandbox, schema viewer). Toggled in-app
 	// via the Ctrl+Shift+D shortcut while the Settings page is focused.

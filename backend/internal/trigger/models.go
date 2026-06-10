@@ -59,6 +59,18 @@ type Action struct {
 	// FontSize overrides the default overlay font size in CSS pixels.
 	// 0 = use the renderer default.
 	FontSize int `json:"font_size,omitempty"`
+	// GlowColor overrides the text-glow (outer text-shadow) hex color for
+	// this overlay_text action. Empty = the global default glow color, or —
+	// when that is also unset — a glow derived from the text color (the
+	// pre-existing behaviour).
+	GlowColor string `json:"glow_color,omitempty"`
+	// FontFamily overrides the overlay font for this action. It names a font
+	// installed on the user's machine (the editor offers a curated list of
+	// fonts that ship with Windows, so a pack import can't reference a font
+	// the user doesn't have without it falling back gracefully). Empty = the
+	// global default font, or the renderer's system-ui stack when that is
+	// unset too.
+	FontFamily string `json:"font_family,omitempty"`
 }
 
 // TimerAlertType identifies the kind of audio alert fired when a timer-bound
