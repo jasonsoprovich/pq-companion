@@ -11,11 +11,11 @@ import OverlayLockButton from '../components/OverlayLockButton'
 import { ItemIcon } from '../components/Icon'
 import { ResistChip } from '../components/ResistChip'
 import NPCCasterSummarySection from '../components/overlays/NPCCasterSummarySection'
-import { getOverlayNPCTarget, getNPCLoot } from '../services/api'
+import { getOverlayNPCTarget, getNPCLoot, getNPCFaction } from '../services/api'
 import { className, bodyTypeName, npcRunSpeedPct, npcLevelLabel } from '../lib/npcHelpers'
 import { effectiveDropPct, rarityColor } from '../lib/lootHelpers'
 import type { TargetState, SpecialAbility, TargetVariant, NPCCasterSummary } from '../types/overlay'
-import type { NPC, NPCLootTable, LootDrop } from '../types/npc'
+import type { NPC, NPCLootTable, LootDrop, NPCFaction } from '../types/npc'
 import type { NPCOverlaySections } from '../types/config'
 
 // ── Ability badge colours ──────────────────────────────────────────────────────
@@ -260,6 +260,66 @@ function VariantRibbon({ variants }: { variants: TargetVariant[] }): React.React
   )
 }
 
+// FactionSection fetches and renders the targeted NPC's faction — its primary
+// (standing) faction plus the per-faction hits taken on a kill. Keyed by
+// npc_types.id, which the target already carries, so it's a simple per-id
+// fetch like LootContent. Stays silent while loading or when the NPC has no
+// faction so the overlay stays compact. Mirrors the dashboard FactionSection
+// in NPCPanel.tsx, restyled with inline styles to match this window.
+function FactionSection({ npcId }: { npcId: number }): React.ReactElement | null {
+  const [faction, setFaction] = useState<NPCFaction | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setFaction(null)
+    getNPCFaction(npcId)
+      .then((f) => { if (!cancelled) setFaction(f) })
+      .catch(() => { if (!cancelled) setFaction(null) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [npcId])
+
+  if (loading || !faction) return null
+  const hasPrimary = !!faction.primary_faction_name
+  if (!hasPrimary && faction.hits.length === 0) return null
+
+  return (
+    <div>
+      <p style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>
+        Faction
+      </p>
+      {hasPrimary && (
+        <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.9)', margin: '0 0 4px' }}>
+          {faction.primary_faction_name}
+        </p>
+      )}
+      {faction.hits.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {faction.hits.map((hit) => (
+            <span
+              key={hit.faction_id}
+              style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', fontSize: 10, borderRadius: 3, padding: '2px 6px' }}
+            >
+              {hit.faction_name}
+              <span
+                style={{
+                  marginLeft: 4,
+                  color: hit.value > 0 ? '#22c55e' : hit.value < 0 ? '#f87171' : 'rgba(255,255,255,0.4)',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {hit.value > 0 ? `+${hit.value}` : hit.value}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // StatsBody renders the stats/loot view for a single NPC. Used directly for a
 // single resolved target and looped per variant when the target name is
 // ambiguous; variantLabel (when set) prefixes the block as a divider header.
@@ -358,6 +418,8 @@ function StatsBody({
               }}
             />
           )}
+
+          {sections.faction && <FactionSection npcId={npc.id} />}
         </>
       )}
     </>
