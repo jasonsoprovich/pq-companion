@@ -21,6 +21,7 @@ import {
   Sparkles,
   Tags,
   GripVertical,
+  Check,
 } from 'lucide-react'
 import { useVoices } from '../hooks/useVoices'
 import NotificationActionEditor, { NotificationTypeSelect } from '../components/NotificationActionEditor'
@@ -3086,29 +3087,54 @@ export default function TriggersPage(): React.ReactElement {
                         )}
                       </button>
                       {isRenaming && (
-                        <input
-                          type="text"
-                          autoFocus
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault()
-                              commitRenameCategory(group.packName)
-                            } else if (e.key === 'Escape') {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              cancelRenameCategory()
-                            }
-                          }}
-                          onBlur={() => commitRenameCategory(group.packName)}
-                          className="flex-1 rounded px-2 py-0.5 text-xs outline-none min-w-0"
-                          style={{
-                            backgroundColor: 'var(--color-surface)',
-                            border: '1px solid var(--color-border)',
-                            color: 'var(--color-foreground)',
-                          }}
-                        />
+                        <>
+                          <input
+                            type="text"
+                            autoFocus
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                commitRenameCategory(group.packName)
+                              } else if (e.key === 'Escape') {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                cancelRenameCategory()
+                              }
+                            }}
+                            onBlur={() => commitRenameCategory(group.packName)}
+                            className="flex-1 rounded px-2 py-0.5 text-xs outline-none min-w-0"
+                            style={{
+                              backgroundColor: 'var(--color-surface)',
+                              border: '1px solid var(--color-border)',
+                              color: 'var(--color-foreground)',
+                            }}
+                          />
+                          {/* onMouseDown preventDefault keeps the input focused
+                              so its onBlur doesn't fire (and re-commit) before
+                              the button's onClick runs. */}
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => commitRenameCategory(group.packName)}
+                            className="p-0.5 rounded shrink-0"
+                            title="Save"
+                            style={{ color: 'var(--color-primary)', cursor: 'pointer' }}
+                          >
+                            <Check size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={cancelRenameCategory}
+                            className="p-0.5 rounded shrink-0"
+                            title="Cancel"
+                            style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
+                          >
+                            <X size={14} />
+                          </button>
+                        </>
                       )}
                       {isDropTarget && (
                         <span
@@ -3141,7 +3167,12 @@ export default function TriggersPage(): React.ReactElement {
                         </div>
                       )}
                     </div>
+                    {/* While dragging a category, collapse every section to its
+                        header so reorder targets are short and uniform (like
+                        the trigger rows) — this makes dropping above/below a
+                        section, including the top one, land reliably. */}
                     {!isCollapsed &&
+                      !dragCategory &&
                       group.items.map((t) => (
                         <TriggerRow
                           key={t.id}
