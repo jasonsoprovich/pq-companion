@@ -1928,6 +1928,13 @@ app.whenReady().then(async () => {
 
   startSidecar()
   createMainWindow()
+  // The trigger overlay window must exist for trigger alert text to render —
+  // its renderer is what subscribes to trigger:fired broadcasts. It used to be
+  // created only by a positioning session or the overlays pop-out button, so
+  // after a restart fired triggers showed no text until the user re-opened a
+  // trigger editor. Create it at startup; it stays hidden until an alert or
+  // positioning session needs it (see overlay:trigger:set-mode).
+  createTriggerOverlay()
   setupAutoUpdater()
 
   // Keep the trigger overlay pinned to its chosen monitor when the layout
