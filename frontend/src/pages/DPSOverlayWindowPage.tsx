@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Swords, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass, User } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
@@ -212,6 +213,7 @@ function FightTable({ fight, showAll, combine, mode, palette }: { fight: FightSt
 
 export default function DPSOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
+  const chrome = useOverlayChromeFade()
   const palette = useDPSClassColors()
   const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('dps')
@@ -300,8 +302,9 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
       style={{
         width: '100vw',
         height: '100vh',
-        backgroundColor: `rgba(10,10,12,${opacity})`,
-        border: '1px solid rgba(255,255,255,0.12)',
+        backgroundColor: `rgba(10,10,12,${chrome ? opacity : 0})`,
+        border: `1px solid rgba(255,255,255,${chrome ? 0.12 : 0})`,
+        transition: 'background-color 0.4s ease, border-color 0.4s ease',
         borderRadius: 8,
         display: 'flex',
         flexDirection: 'column',
@@ -324,6 +327,11 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           backgroundColor: 'rgba(255,255,255,0.04)',
           flexShrink: 0,
           userSelect: 'none',
+          // Fade-when-inactive: hide the title bar with the rest of the
+          // chrome; pointerEvents off so invisible buttons can't be clicked.
+          opacity: chrome ? 1 : 0,
+          pointerEvents: chrome ? 'auto' : 'none',
+          transition: 'opacity 0.4s ease',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>

@@ -211,6 +211,13 @@ type Preferences struct {
 	// OverlayOpacity is the transparency of overlay windows (0.0–1.0).
 	OverlayOpacity float64 `yaml:"overlay_opacity" json:"overlay_opacity"`
 
+	// OverlayFadeEnabled fades overlay chrome (background, border, title
+	// bar) to fully transparent a few seconds after the cursor leaves an
+	// overlay window, leaving only the content (timer bars, NPC stats)
+	// visible. Hovering the overlay restores OverlayOpacity instantly.
+	// Off by default.
+	OverlayFadeEnabled bool `yaml:"overlay_fade_enabled,omitempty" json:"overlay_fade_enabled"`
+
 	// MinimizeToTray controls whether closing the main window hides to tray.
 	MinimizeToTray bool `yaml:"minimize_to_tray" json:"minimize_to_tray"`
 

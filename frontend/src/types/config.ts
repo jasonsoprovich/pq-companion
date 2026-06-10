@@ -30,6 +30,10 @@ export const DEFAULT_NPC_OVERLAY_SECTIONS: NPCOverlaySections = {
 
 export interface Preferences {
   overlay_opacity: number
+  // Fade overlay chrome (background, border, title bar) to transparent a few
+  // seconds after the cursor leaves an overlay window; content stays visible.
+  // Hovering restores overlay_opacity. Off by default.
+  overlay_fade_enabled?: boolean
   minimize_to_tray: boolean
   high_contrast: boolean
   zoom_factor: number

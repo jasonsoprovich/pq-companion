@@ -1440,6 +1440,56 @@ export default function SettingsPage(): React.ReactElement {
               />
             </div>
           </div>
+
+          <label className="flex cursor-pointer items-center justify-between py-1 mt-4">
+            <div>
+              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                Fade When Inactive
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                A few seconds after the mouse leaves an overlay, its background,
+                border, and title bar fade out completely — timer bars and stats
+                stay visible. Hovering the overlay brings them back.
+              </p>
+            </div>
+            <div
+              onClick={() =>
+                setConfig({
+                  ...config,
+                  preferences: {
+                    ...config.preferences,
+                    overlay_fade_enabled: !config.preferences.overlay_fade_enabled,
+                  },
+                })
+              }
+              style={{
+                width: 40,
+                height: 22,
+                borderRadius: 11,
+                backgroundColor: config.preferences.overlay_fade_enabled
+                  ? 'var(--color-primary)'
+                  : 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+                position: 'relative',
+                flexShrink: 0,
+                transition: 'background-color 0.15s',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 2,
+                  left: config.preferences.overlay_fade_enabled ? 20 : 2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  backgroundColor: '#fff',
+                  transition: 'left 0.15s',
+                }}
+              />
+            </div>
+          </label>
         </section>
         )}
 

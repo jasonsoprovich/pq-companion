@@ -3,6 +3,7 @@ import { Crosshair, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import { useNPCOverlaySections } from '../hooks/useNPCOverlaySections'
@@ -567,6 +568,7 @@ function NPCContent({
 
 export default function NPCOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
+  const chrome = useOverlayChromeFade()
   const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('npc')
   const onDragMouseDown = useWindowDrag()
@@ -596,12 +598,13 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
         height: '100vh',
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: `rgba(10,10,12,${opacity})`,
+        backgroundColor: `rgba(10,10,12,${chrome ? opacity : 0})`,
         color: 'rgba(255,255,255,0.85)',
         fontFamily: 'system-ui, sans-serif',
         overflow: 'hidden',
         borderRadius: 8,
-        border: '1px solid rgba(255,255,255,0.1)',
+        border: `1px solid rgba(255,255,255,${chrome ? 0.1 : 0})`,
+        transition: 'background-color 0.4s ease, border-color 0.4s ease',
       }}
     >
       {/* Drag region header */}
@@ -616,6 +619,12 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
           padding: '6px 10px',
           borderBottom: '1px solid rgba(255,255,255,0.08)',
           flexShrink: 0,
+          // Fade-when-inactive: hide the title bar (tabs, lock, close) with
+          // the rest of the chrome; pointerEvents off so invisible buttons
+          // can't be clicked.
+          opacity: chrome ? 1 : 0,
+          pointerEvents: chrome ? 'auto' : 'none',
+          transition: 'opacity 0.4s ease',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
