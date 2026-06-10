@@ -730,7 +730,7 @@ func TestSubstituteCaptures(t *testing.T) {
 		{"unknown {9} and {nope} stay", "unknown {9} and {nope} stay"},
 	}
 	for _, c := range cases {
-		if got := substituteCaptures(c.in, m, names); got != c.want {
+		if got := substituteCaptures(c.in, m, names, nil); got != c.want {
 			t.Errorf("substituteCaptures(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
@@ -738,13 +738,116 @@ func TestSubstituteCaptures(t *testing.T) {
 	// Named groups.
 	reNamed := regexp.MustCompile(`^(?P<sender>.+) tells you, '(?P<message>.+)'$`)
 	mn := reNamed.FindStringSubmatch(line)
-	if got := substituteCaptures("Tell from {sender}: {message}", mn, reNamed.SubexpNames()); got != "Tell from Bob: can you rez me?" {
+	if got := substituteCaptures("Tell from {sender}: {message}", mn, reNamed.SubexpNames(), nil); got != "Tell from Bob: can you rez me?" {
 		t.Errorf("named-group substitution = %q", got)
 	}
 
 	// No match → template returned unchanged.
-	if got := substituteCaptures("Tell from {1}", nil, nil); got != "Tell from {1}" {
+	if got := substituteCaptures("Tell from {1}", nil, nil, nil); got != "Tell from {1}" {
 		t.Errorf("no-match should pass through, got %q", got)
+	}
+}
+
+func TestSubstituteCaptures_GINAAliasesAndBuiltins(t *testing.T) {
+	re := regexp.MustCompile(`^(.+) tells you, '(.+)'$`)
+	line := "Bob tells you, 'can you rez me?'"
+	m := re.FindStringSubmatch(line)
+	names := re.SubexpNames()
+	builtins := map[string]string{
+		"c": "Vortikai", "char": "Vortikai", "self": "Vortikai",
+		"target": "a gnoll", "t": "a gnoll",
+	}
+
+	cases := []struct{ in, want string }{
+		// GINA {S}/{SN} aliases for plain numbered groups.
+		{"{S} said {S2}", "Bob said can you rez me?"},
+		{"{s1} whispers", "Bob whispers"},
+		{"{S3} missing", "{S3} missing"}, // group 3 doesn't exist
+		// Built-ins, case-insensitive.
+		{"{c} kill {target}!", "Vortikai kill a gnoll!"},
+		{"{C} / {CHAR} / {self} / {T}", "Vortikai / Vortikai / Vortikai / a gnoll"},
+		// Unknown tokens untouched.
+		{"{spell} stays", "{spell} stays"},
+	}
+	for _, c := range cases {
+		if got := substituteCaptures(c.in, m, names, builtins); got != c.want {
+			t.Errorf("substituteCaptures(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+
+	// Builtins substitute even with no regex match (pipe triggers).
+	if got := substituteCaptures("{c} ready", nil, nil, builtins); got != "Vortikai ready" {
+		t.Errorf("builtin-only substitution = %q", got)
+	}
+
+	// An explicit named group shadows the same-named built-in.
+	reNamed := regexp.MustCompile(`^(?P<target>.+) hits you`)
+	mn := reNamed.FindStringSubmatch("a willowisp hits you for 10.")
+	if got := substituteCaptures("{target}", mn, reNamed.SubexpNames(), builtins); got != "a willowisp" {
+		t.Errorf("named group should shadow built-in, got %q", got)
+	}
+}
+
+func TestNormalizePattern(t *testing.T) {
+	cases := []struct{ in, char, want string }{
+		// Character tokens.
+		{`^{c} has been slain`, "Vortikai", `^Vortikai has been slain`},
+		{`^{C} begins`, "Vortikai", `^Vortikai begins`},
+		{`{char} {self}`, "Vortikai", `Vortikai Vortikai`},
+		{`^{c} stays`, "", `^{c} stays`}, // no character yet → literal
+		// GINA wildcards.
+		{`{S} tells you, '{S2}'`, "", `(?P<S>.+) tells you, '(?P<S2>.+)'`},
+		{`hits for {N} points`, "", `hits for (?P<N>[0-9]+) points`},
+		{`{N1} and {n2}`, "", `(?P<N1>[0-9]+) and (?P<N2>[0-9]+)`},
+		// .NET named groups → Go syntax.
+		{`(?<sender>.+) tells you`, "", `(?P<sender>.+) tells you`},
+		// Repetition syntax + unknown tokens untouched.
+		{`\d{2} {S10} {spell}`, "", `\d{2} {S10} {spell}`},
+	}
+	for _, c := range cases {
+		if got := normalizePattern(c.in, c.char); got != c.want {
+			t.Errorf("normalizePattern(%q, %q) = %q, want %q", c.in, c.char, got, c.want)
+		}
+		if _, err := regexp.Compile(normalizePattern(c.in, c.char)); err != nil {
+			t.Errorf("normalized %q doesn't compile: %v", c.in, err)
+		}
+	}
+}
+
+// TestEngine_CharacterTokenPattern verifies the end-to-end path: a pattern
+// using {c} compiles against the active character and matches a real line,
+// and {target}/{c} resolve in action text via the engine's providers.
+func TestEngine_CharacterTokenPattern(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	e := NewEngine(s, hub, nil, func() string { return "Vortikai" })
+	e.SetTargetProvider(func() string { return "a gnoll pup" })
+
+	tr := &Trigger{
+		ID:      "tok-1",
+		Name:    "Slain",
+		Enabled: true,
+		Pattern: `^{c} has been slain by (.+)!$`,
+		Actions: []Action{
+			{Type: ActionTextToSpeech, Text: "{c} died to {S1} while fighting {target}"},
+		},
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	e.Handle(time.Now(), "Vortikai has been slain by a gnoll guard!")
+	e.Handle(time.Now(), "Someoneelse has been slain by a gnoll guard!") // must NOT fire
+
+	hist := e.GetHistory()
+	if len(hist) != 1 {
+		t.Fatalf("expected exactly 1 fire, got %d", len(hist))
+	}
+	want := "Vortikai died to a gnoll guard while fighting a gnoll pup"
+	if got := hist[0].Actions[0].Text; got != want {
+		t.Errorf("action text = %q, want %q", got, want)
 	}
 }
 

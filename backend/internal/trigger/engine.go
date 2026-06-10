@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,6 +59,10 @@ type Engine struct {
 	hub        *ws.Hub
 	sink       TimerSink
 	activeChar func() string // returns active character name, "" if unknown
+	// currentTarget returns the inferred combat target's display name, "" when
+	// no target. Wired to overlay.NPCTracker via SetTargetProvider; nil when
+	// target integration is disabled (tests). Feeds the {target} action token.
+	currentTarget func() string
 
 	mu           sync.RWMutex
 	compiled     []compiled // Source=="log" triggers, indexed by regex
@@ -84,6 +89,13 @@ func NewEngine(store *Store, hub *ws.Hub, sink TimerSink, activeChar func() stri
 	return &Engine{store: store, hub: hub, sink: sink, activeChar: activeChar}
 }
 
+// SetTargetProvider wires a current-target lookup (overlay.NPCTracker) into
+// the engine so action text can reference {target}/{t}. Call before routing
+// lines; nil leaves the token unresolved.
+func (e *Engine) SetTargetProvider(fn func() string) {
+	e.currentTarget = fn
+}
+
 // Reload re-reads all enabled triggers from the store and recompiles their
 // patterns. Must be called after any CRUD mutation to keep the engine in sync.
 func (e *Engine) Reload() {
@@ -91,6 +103,14 @@ func (e *Engine) Reload() {
 	if err != nil {
 		slog.Error("trigger: reload failed", "err", err)
 		return
+	}
+
+	// Patterns referencing {c}/{char}/{self} expand to the active character
+	// name at compile time, so Reload must rerun when the character changes
+	// (wired via the tailer's onCharacterChange in main.go).
+	character := ""
+	if e.activeChar != nil {
+		character = e.activeChar()
 	}
 
 	var cs []compiled
@@ -109,14 +129,14 @@ func (e *Engine) Reload() {
 			pipeCs = append(pipeCs, t)
 			continue
 		}
-		re, err := regexp.Compile(t.Pattern)
+		re, err := regexp.Compile(normalizePattern(t.Pattern, character))
 		if err != nil {
 			slog.Warn("trigger: invalid pattern, skipping", "id", t.ID, "name", t.Name, "err", err)
 			continue
 		}
 		c := compiled{trigger: t, re: re}
 		if t.WornOffPattern != "" {
-			if wornRe, err := regexp.Compile(t.WornOffPattern); err == nil {
+			if wornRe, err := regexp.Compile(normalizePattern(t.WornOffPattern, character)); err == nil {
 				c.wornOff = wornRe
 			} else {
 				slog.Warn("trigger: invalid worn-off pattern", "id", t.ID, "name", t.Name, "err", err)
@@ -129,7 +149,7 @@ func (e *Engine) Reload() {
 			if p == "" {
 				continue
 			}
-			ex, err := regexp.Compile(p)
+			ex, err := regexp.Compile(normalizePattern(p, character))
 			if err != nil {
 				slog.Warn("trigger: invalid exclude pattern, skipping", "id", t.ID, "name", t.Name, "pattern", p, "err", err)
 				continue
@@ -331,11 +351,22 @@ func (e *Engine) HandlePipeReset() {
 // type. matchedLine is a synthetic human-readable description of the
 // trigger condition for the history pane.
 func (e *Engine) firePipe(t *Trigger, matchedLine string, firedAt time.Time) {
+	// Pipe triggers have no regex captures, but built-in tokens
+	// ({c}/{target}) still substitute into action text. Copy-on-write,
+	// same as fire().
+	actions := t.Actions
+	if builtins := e.builtinTokens(); len(builtins) > 0 {
+		actions = make([]Action, len(t.Actions))
+		copy(actions, t.Actions)
+		for i := range actions {
+			actions[i].Text = substituteCaptures(actions[i].Text, nil, nil, builtins)
+		}
+	}
 	event := TriggerFired{
 		TriggerID:   t.ID,
 		TriggerName: t.Name,
 		MatchedLine: matchedLine,
-		Actions:     t.Actions,
+		Actions:     actions,
 		FiredAt:     firedAt,
 	}
 	e.histMu.Lock()
@@ -381,18 +412,67 @@ var (
 	dollarCaptureRe = regexp.MustCompile(`\$(\d+)`)
 )
 
+// dotnetNamedGroupRe rewrites .NET-style (?<name>…) named groups — the syntax
+// GINA exports use — into Go's (?P<name>…). Lookbehind assertions ((?<= and
+// (?<!) don't match the alpha-first capture name so they pass through (RE2
+// rejects them either way, but the compile error should name the real issue).
+var dotnetNamedGroupRe = regexp.MustCompile(`\(\?<([A-Za-z][A-Za-z0-9_]*)>`)
+
+// patternTokenRe finds brace tokens in a trigger pattern: {C}, {S}/{S1}…,
+// {N}/{N1}…, {char}, {self}. Repetition syntax like \d{2} contains no letters
+// so it never matches.
+var patternTokenRe = regexp.MustCompile(`\{([A-Za-z][A-Za-z0-9_]*)\}`)
+
+// normalizePattern expands GINA-style convenience tokens in a trigger pattern
+// before regex compilation:
+//
+//	{c} {char} {self} {C}   the active character's name, quoted literally —
+//	                        left untouched (an unmatchable literal) until a
+//	                        character is detected; Reload reruns on change
+//	{S} {S1}…{S9}           text wildcard → (?P<SN>.+)
+//	{N} {N1}…{N9}           number wildcard → (?P<NN>[0-9]+)
+//
+// and converts .NET (?<name>…) named groups to Go (?P<name>…) syntax so raw
+// GINA regexes compile. Unrecognized brace tokens are left as-is (Go treats
+// them as literals).
+func normalizePattern(pattern, character string) string {
+	pattern = dotnetNamedGroupRe.ReplaceAllString(pattern, `(?P<$1>`)
+	return patternTokenRe.ReplaceAllStringFunc(pattern, func(tok string) string {
+		key := tok[1 : len(tok)-1]
+		switch strings.ToLower(key) {
+		case "c", "char", "self":
+			if character == "" {
+				return tok
+			}
+			return regexp.QuoteMeta(character)
+		}
+		up := strings.ToUpper(key)
+		if len(up) <= 2 && (up[0] == 'S' || up[0] == 'N') &&
+			(len(up) == 1 || (up[1] >= '1' && up[1] <= '9')) {
+			if up[0] == 'S' {
+				return "(?P<" + up + ">.+)"
+			}
+			return "(?P<" + up + ">[0-9]+)"
+		}
+		return tok
+	})
+}
+
 // substituteCaptures fills regex capture references in template using a matched
-// line's submatches (#132). Supported syntaxes:
+// line's submatches (#132) plus engine-provided built-in tokens. Supported:
 //
-//	{N} / $N   numbered group (0 = the whole matched line)
-//	{name}     named group from a (?P<name>...) pattern
+//	{N} / $N        numbered group (0 = the whole matched line)
+//	{name}          named group from a (?P<name>...) pattern
+//	{S} {S1}…{S9}   GINA-style aliases for groups 1…9 (only when the pattern
+//	                doesn't define a named group with that exact name)
+//	{c}/{char}/{self}, {target}/{t}   built-ins (case-insensitive) supplied
+//	                via builtins — active character and current combat target
 //
-// A reference that doesn't resolve to a participating group is left untouched,
-// so literal braces or dollar signs in alert text survive unchanged. The
-// trigger that produced `match` is the only source of values — there's no
-// implicit {target}/{spell}; capture those with a named group if wanted.
-func substituteCaptures(template string, match []string, names []string) string {
-	if template == "" || len(match) == 0 {
+// A reference that doesn't resolve is left untouched, so literal braces or
+// dollar signs in alert text survive unchanged. Explicit capture groups always
+// win over built-ins, so a (?P<target>…) group shadows the {target} built-in.
+func substituteCaptures(template string, match []string, names []string, builtins map[string]string) string {
+	if template == "" || (len(match) == 0 && len(builtins) == 0) {
 		return template
 	}
 	lookup := make(map[string]string, len(match)*2)
@@ -402,8 +482,31 @@ func substituteCaptures(template string, match []string, names []string) string 
 			lookup[names[i]] = v
 		}
 	}
+	resolve := func(key string) (string, bool) {
+		if v, ok := lookup[key]; ok {
+			return v, true
+		}
+		// GINA-style {S}/{SN} alias → numbered group (bare {S} = group 1).
+		if l := len(key); l <= 2 && (key[0] == 'S' || key[0] == 's') {
+			n := "1"
+			if l == 2 {
+				if key[1] < '1' || key[1] > '9' {
+					return "", false
+				}
+				n = key[1:]
+			}
+			if v, ok := lookup[n]; ok {
+				return v, true
+			}
+			return "", false
+		}
+		if v, ok := builtins[strings.ToLower(key)]; ok {
+			return v, true
+		}
+		return "", false
+	}
 	template = curlyCaptureRe.ReplaceAllStringFunc(template, func(tok string) string {
-		if v, ok := lookup[tok[1:len(tok)-1]]; ok { // strip { }
+		if v, ok := resolve(tok[1 : len(tok)-1]); ok { // strip { }
 			return v
 		}
 		return tok
@@ -415,6 +518,25 @@ func substituteCaptures(template string, match []string, names []string) string 
 		return tok
 	})
 	return template
+}
+
+// builtinTokens assembles the implicit substitution values available to every
+// action: the active character ({c}/{char}/{self}) and the current combat
+// target ({target}/{t}). Empty values are omitted so unresolved tokens stay
+// visible in the alert text rather than silently vanishing.
+func (e *Engine) builtinTokens() map[string]string {
+	b := make(map[string]string, 5)
+	if e.activeChar != nil {
+		if c := e.activeChar(); c != "" {
+			b["c"], b["char"], b["self"] = c, c, c
+		}
+	}
+	if e.currentTarget != nil {
+		if t := e.currentTarget(); t != "" {
+			b["target"], b["t"] = t, t
+		}
+	}
+	return b
 }
 
 // triggerAppliesTo reports whether the trigger should fire for the given
@@ -453,10 +575,11 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 	// Substitute regex captures into the action text on a copy — never mutate
 	// the shared trigger. Done for every fire so {1}/{name} in overlay or TTS
 	// text resolve to the matched values.
+	builtins := e.builtinTokens()
 	actions := make([]Action, len(t.Actions))
 	copy(actions, t.Actions)
 	for i := range actions {
-		actions[i].Text = substituteCaptures(actions[i].Text, match, names)
+		actions[i].Text = substituteCaptures(actions[i].Text, match, names, builtins)
 	}
 
 	event := TriggerFired{

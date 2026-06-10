@@ -458,6 +458,11 @@ func main() {
 		return cfgMgr.Get().Character
 	}
 	triggerEngine := trigger.NewEngine(triggerStore, hub, timerEngine, activeChar)
+	// {target}/{t} tokens in action text resolve to the NPC overlay's
+	// inferred combat target.
+	triggerEngine.SetTargetProvider(func() string {
+		return npcTracker.GetState().TargetName
+	})
 	triggerEngine.Reload()
 
 	if keyringStore != nil {
@@ -729,6 +734,9 @@ func main() {
 		// Active character changed — drop cached buffmod contributors so the
 		// next cast recomputes against the new character's inventory + AAs.
 		timerEngine.RefreshModifiers()
+		// Recompile trigger patterns: {c}/{char}/{self} tokens expand to the
+		// active character name at compile time.
+		triggerEngine.Reload()
 	})
 	go tailer.Start(context.Background())
 

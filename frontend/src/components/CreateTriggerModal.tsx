@@ -114,7 +114,9 @@ export default function CreateTriggerModal({
 
   const validatePattern = (p: string) => {
     try {
-      new RegExp(p)
+      // The backend accepts Go (?P<name>…) named groups; JS only knows
+      // (?<name>…). Normalize before validating so documented syntax passes.
+      new RegExp(p.replace(/\(\?P</g, '(?<'))
       setPatternError(null)
       return true
     } catch (e) {
@@ -232,9 +234,11 @@ export default function CreateTriggerModal({
           <p className="text-[10px] leading-snug" style={{ color: 'var(--color-muted)' }}>
             Reuse capture groups in the alert/TTS text below: <span className="font-mono">{'{1}'}</span>,{' '}
             <span className="font-mono">{'{2}'}</span> (or <span className="font-mono">$1</span>,{' '}
-            <span className="font-mono">$2</span>) for numbered groups,{' '}
+            GINA-style <span className="font-mono">{'{S1}'}</span>) for numbered groups,{' '}
             <span className="font-mono">{'{name}'}</span> for named groups like{' '}
-            <span className="font-mono">(?P&lt;name&gt;…)</span>.
+            <span className="font-mono">(?P&lt;name&gt;…)</span>. Built-ins:{' '}
+            <span className="font-mono">{'{c}'}</span> = your character (works in the
+            pattern too), <span className="font-mono">{'{target}'}</span> = current target.
           </p>
         </div>
 
