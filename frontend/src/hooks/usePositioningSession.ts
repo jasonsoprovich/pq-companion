@@ -19,7 +19,16 @@ export interface PositioningSessionOptions {
   onPositionChange?: (p: { x: number; y: number } | null) => void
   /** Text shown on the draggable test card. */
   testText: string
+  /**
+   * Style for the test card, making it a live preview of the alert. Pass
+   * RESOLVED values (per-action override → global default → built-in already
+   * applied) — the overlay renders them as-is. While a session is open,
+   * changing any of these (or the text) restyles the card in place.
+   */
   testColor: string
+  testGlowColor?: string
+  testFontFamily?: string
+  testFontSize?: number
   testDurationSecs: number
 }
 
@@ -37,6 +46,9 @@ export function usePositioningSession({
   onPositionChange,
   testText,
   testColor,
+  testGlowColor = '',
+  testFontFamily = '',
+  testFontSize = 0,
   testDurationSecs,
 }: PositioningSessionOptions): PositioningSession {
   // A per-editor session id is round-tripped through the test endpoints so
@@ -90,19 +102,56 @@ export function usePositioningSession({
     }
   }, [testId])
 
+  // Mirror of `position` so the restyle effect can include the current
+  // position without depending on it — drags churn position constantly and
+  // must not trigger re-fires of their own.
+  const positionRef = useRef<{ x: number; y: number } | null>(position ?? null)
+  positionRef.current = position ?? null
+
+  function buildPayload() {
+    return {
+      test_id: testId,
+      text: testText || 'Test alert',
+      color: testColor || '#ffffff',
+      glow_color: testGlowColor || undefined,
+      font_family: testFontFamily || undefined,
+      font_size: testFontSize > 0 ? testFontSize : undefined,
+      // duration_secs is informational only — sticky session, no auto-dismiss.
+      duration_secs: Math.max(8, testDurationSecs || 5),
+      position: positionRef.current,
+    }
+  }
+
+  // Live restyle: while a session is open, edits to the text or any style
+  // field re-fire the same test_id, which restyles the card in place (the
+  // backend re-broadcasts; the current position rides along so the card
+  // doesn't move). Debounced so color-picker drags don't spam the wire.
+  // lastSentStyleRef suppresses the no-op re-fire right after start().
+  const styleKey = JSON.stringify([
+    testText, testColor, testGlowColor, testFontFamily, testFontSize, testDurationSecs,
+  ])
+  const lastSentStyleRef = useRef<string | null>(null)
+  const buildPayloadRef = useRef(buildPayload)
+  buildPayloadRef.current = buildPayload
+  useEffect(() => {
+    if (!positioning) return
+    if (lastSentStyleRef.current === styleKey) return
+    const t = setTimeout(() => {
+      lastSentStyleRef.current = styleKey
+      void fireTriggerTestOverlay(buildPayloadRef.current()).catch(() => {
+        /* best-effort restyle; the card keeps its previous look */
+      })
+    }, 150)
+    return () => clearTimeout(t)
+  }, [positioning, styleKey])
+
   function start() {
     startPosRef.current = position ?? null
     everStartedRef.current = true
     setPositioning(true)
+    lastSentStyleRef.current = styleKey
     void window.electron?.overlay?.openTrigger?.()
-    void fireTriggerTestOverlay({
-      test_id: testId,
-      text: testText || 'Test alert',
-      color: testColor || '#ffffff',
-      // duration_secs is informational only — sticky session, no auto-dismiss.
-      duration_secs: Math.max(8, testDurationSecs || 5),
-      position: position ?? null,
-    }).catch(() => {
+    void fireTriggerTestOverlay(buildPayload()).catch(() => {
       // If we can't open the session, roll the toggle back so the button
       // doesn't get stuck in the "Done" state.
       setPositioning(false)

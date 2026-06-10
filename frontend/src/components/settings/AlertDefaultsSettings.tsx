@@ -64,11 +64,17 @@ export default function AlertDefaultsSettings({
     })
   }
 
+  // The positioning card carries the resolved default style, so it doubles
+  // as an on-screen preview of these settings (and restyles live while the
+  // session is open).
   const { positioning, toggle } = usePositioningSession({
     position,
     onPositionChange: setPosition,
     testText: 'TRIGGER ALERT TEXT',
     testColor: resolved.color,
+    testGlowColor: resolved.glowColor,
+    testFontFamily: resolved.fontFamily,
+    testFontSize: resolved.fontSize,
     testDurationSecs: 8,
   })
 

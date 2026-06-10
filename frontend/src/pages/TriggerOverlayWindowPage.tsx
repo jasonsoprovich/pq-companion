@@ -20,6 +20,11 @@ interface TestAlert {
   testId: string
   text: string
   color: string
+  // Resolved glow/font from the editor, so the test card is a faithful
+  // preview of the alert's final look. Empty glow falls back to the text
+  // color (the renderer's own default).
+  glowColor: string
+  fontFamily: string
   fontSize: number
   position: { x: number; y: number }
 }
@@ -30,6 +35,8 @@ interface TriggerTestPayload {
   color: string
   duration_secs: number
   font_size?: number
+  glow_color?: string
+  font_family?: string
   position?: { x: number; y: number } | null
 }
 
@@ -159,7 +166,7 @@ function TestAlertCard({ alert, onPositionCommit, onDone, onCancel }: TestAlertC
     onPositionCommit(pos)
   }
 
-  const { color, fontSize, text } = alert
+  const { color, glowColor, fontFamily, fontSize, text } = alert
 
   return (
     <div
@@ -182,13 +189,16 @@ function TestAlertCard({ alert, onPositionCommit, onDone, onCancel }: TestAlertC
         zIndex: 50,
       }}
     >
+      {/* Text styled identically to AlertCard (same shadow/font helpers) so
+          the positioning card doubles as a faithful style preview. */}
       <div
         style={{
           fontSize,
           fontWeight: 800,
           letterSpacing: '0.04em',
           color,
-          textShadow: `0 0 8px ${color}88`,
+          fontFamily: overlayFontFamilyCSS(fontFamily),
+          textShadow: overlayTextShadow(glowColor || color),
           textAlign: 'center',
         }}
       >
@@ -426,6 +436,8 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
           testId: active.test_id,
           text: active.text || '',
           color: active.color || '#ffffff',
+          glowColor: active.glow_color || '',
+          fontFamily: active.font_family || '',
           fontSize,
           position: active.position ? clampToViewport(active.position) : makeDefaultPos(),
         })
@@ -463,6 +475,8 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         testId: data.test_id,
         text: data.text || '',
         color: data.color || '#ffffff',
+        glowColor: data.glow_color || '',
+        fontFamily: data.font_family || '',
         fontSize,
         position: data.position ? clampToViewport(data.position) : makeDefaultPos(),
       })

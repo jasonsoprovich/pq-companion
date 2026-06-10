@@ -605,12 +605,18 @@ func writeCategoryError(w http.ResponseWriter, err error) {
 // regular update endpoint.
 
 type testOverlayRequest struct {
-	TestID       string                  `json:"test_id"`
-	Text         string                  `json:"text"`
-	Color        string                  `json:"color"`
-	DurationSecs int                     `json:"duration_secs"`
-	FontSize     int                     `json:"font_size,omitempty"`
-	Position     *trigger.ActionPosition `json:"position,omitempty"`
+	TestID       string `json:"test_id"`
+	Text         string `json:"text"`
+	Color        string `json:"color"`
+	DurationSecs int    `json:"duration_secs"`
+	FontSize     int    `json:"font_size,omitempty"`
+	// GlowColor / FontFamily complete the style so the positioning card
+	// doubles as a live preview. The editor sends RESOLVED values (override →
+	// global default → built-in already applied), so the overlay renders them
+	// as-is. Re-posting the same test_id restyles the card in place.
+	GlowColor  string                  `json:"glow_color,omitempty"`
+	FontFamily string                  `json:"font_family,omitempty"`
+	Position   *trigger.ActionPosition `json:"position,omitempty"`
 }
 
 func (h *triggerHandler) testOverlay(w http.ResponseWriter, r *http.Request) {

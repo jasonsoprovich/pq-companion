@@ -1343,6 +1343,10 @@ export interface TriggerTestOverlayRequest {
   color: string
   duration_secs: number
   font_size?: number
+  // Resolved glow/font so the positioning card doubles as a live style
+  // preview. Re-posting the same test_id restyles the card in place.
+  glow_color?: string
+  font_family?: string
   position?: { x: number; y: number } | null
 }
 
@@ -1367,6 +1371,8 @@ export interface ActiveTriggerTest {
   color: string
   duration_secs: number
   font_size?: number
+  glow_color?: string
+  font_family?: string
   position?: { x: number; y: number } | null
 }
 

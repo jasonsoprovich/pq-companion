@@ -152,12 +152,17 @@ export function OverlayTextFields({
 
   // Session id, live drag updates, Escape/unmount teardown, and confirm /
   // cancel semantics all live in the shared hook — the Settings page's
-  // default-position control runs the identical flow.
+  // default-position control runs the identical flow. The resolved style
+  // rides along so the positioning card doubles as a live preview that
+  // restyles as the user edits these fields.
   const { positioning, toggle: handlePositionButton } = usePositioningSession({
     position,
     onPositionChange,
     testText: text,
     testColor: resolved.color,
+    testGlowColor: resolved.glowColor,
+    testFontFamily: resolved.fontFamily,
+    testFontSize: resolved.fontSize,
     testDurationSecs: durationSecs,
   })
 
