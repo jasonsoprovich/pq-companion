@@ -7,10 +7,14 @@ import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import { useNPCOverlaySections } from '../hooks/useNPCOverlaySections'
 import { useWishlistItemIds } from '../hooks/useWishlistItemIds'
+import { useTargetTimers } from '../hooks/useTargetTimers'
+import { useTargetPlayer } from '../hooks/useTargetPlayer'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { ItemIcon } from '../components/Icon'
 import { ResistChip } from '../components/ResistChip'
 import NPCCasterSummarySection from '../components/overlays/NPCCasterSummarySection'
+import TargetTimerList from '../components/overlays/TargetTimerList'
+import TargetPlayerCard from '../components/overlays/TargetPlayerCard'
 import { getOverlayNPCTarget, getNPCLoot, getNPCFaction } from '../services/api'
 import { className, bodyTypeName, npcRunSpeedPct, npcLevelLabel } from '../lib/npcHelpers'
 import { effectiveDropPct, rarityColor } from '../lib/lootHelpers'
@@ -96,7 +100,7 @@ function Chip({ label, value, color }: { label?: string; value: string | number;
 
 // ── View toggle (Stats ↔ Loot) ────────────────────────────────────────────────
 
-type View = 'stats' | 'loot'
+type View = 'stats' | 'loot' | 'timers'
 
 function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => void }): React.ReactElement {
   const btn = (active: boolean): React.CSSProperties => ({
@@ -114,6 +118,7 @@ function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => voi
     <div className="no-drag" style={{ display: 'inline-flex', gap: 2, backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: 4, padding: 1 }}>
       <button style={btn(view === 'stats')} onClick={() => onChange('stats')}>Stats</button>
       <button style={btn(view === 'loot')} onClick={() => onChange('loot')}>Loot</button>
+      <button style={btn(view === 'timers')} onClick={() => onChange('timers')}>Timers</button>
     </div>
   )
 }
@@ -442,6 +447,11 @@ function NPCContent({
   const variants = state.variants ?? []
   const isAmbiguous = variants.length >= 2
 
+  // Timers tab works for any target (player or NPC). Player lookup only runs
+  // when there's no DB record — that's the case where the target is a player.
+  const targetTimers = useTargetTimers(state.target_name)
+  const { player, loading: playerLoading } = useTargetPlayer(state.target_name, !npc)
+
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
       {/* Target name + zone + timestamp */}
@@ -516,7 +526,9 @@ function NPCContent({
         )}
       </div>
 
-      {npc ? (
+      {view === 'timers' ? (
+        <TargetTimerList timers={targetTimers} />
+      ) : npc ? (
         isAmbiguous ? (
           variants.map((v) => (
             <StatsBody
@@ -540,10 +552,12 @@ function NPCContent({
             wishlistItemIds={wishlistItemIds}
           />
         )
-      ) : (
+      ) : view === 'loot' ? (
         <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: 0, padding: '4px 0' }}>
-          No database record found for this NPC.
+          No loot — this target isn&rsquo;t an NPC in the database.
         </p>
+      ) : (
+        <TargetPlayerCard player={player} loading={playerLoading} />
       )}
     </div>
   )

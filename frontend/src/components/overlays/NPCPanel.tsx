@@ -4,6 +4,8 @@ import { Crosshair, AlertTriangle, CheckCircle2, Circle, ExternalLink } from 'lu
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNPCOverlaySections } from '../../hooks/useNPCOverlaySections'
 import { useWishlistItemIds } from '../../hooks/useWishlistItemIds'
+import { useTargetTimers } from '../../hooks/useTargetTimers'
+import { useTargetPlayer } from '../../hooks/useTargetPlayer'
 import { WSEvent } from '../../lib/wsEvents'
 import { getOverlayNPCTarget, getLogStatus, getNPCLoot, getNPCFaction, getItem } from '../../services/api'
 import { className, bodyTypeName, npcRunSpeedPct, npcLevelLabel } from '../../lib/npcHelpers'
@@ -13,13 +15,15 @@ import ItemDetailModal from '../ItemDetailModal'
 import { ItemIcon } from '../Icon'
 import { ResistChip } from '../ResistChip'
 import NPCCasterSummarySection from './NPCCasterSummarySection'
+import TargetTimerList from './TargetTimerList'
+import TargetPlayerCard from './TargetPlayerCard'
 import type { TargetState, SpecialAbility, TargetVariant, NPCCasterSummary } from '../../types/overlay'
 import type { LogTailerStatus } from '../../types/logEvent'
 import type { NPC, NPCLootTable, LootDrop, NPCFaction } from '../../types/npc'
 import type { Item } from '../../types/item'
 import type { NPCOverlaySections } from '../../types/config'
 
-type View = 'stats' | 'loot'
+type View = 'stats' | 'loot' | 'timers'
 
 interface NPCPanelProps {
   defaultX?: number
@@ -164,6 +168,13 @@ function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => voi
         onClick={() => onChange('loot')}
       >
         Loot
+      </button>
+      <button
+        className={cls(view === 'timers')}
+        style={view === 'timers' ? { backgroundColor: 'var(--color-surface)' } : undefined}
+        onClick={() => onChange('timers')}
+      >
+        Timers
       </button>
     </div>
   )
@@ -587,6 +598,11 @@ function NPCCard({
   // rest. Filter by id rather than slice so the primary never double-renders.
   const otherVariants = npc ? variants.filter((v) => v.npc.id !== npc.id) : []
 
+  // Timers tab works for any target (player or NPC). Player lookup only runs
+  // when there's no DB record — that's the case where the target is a player.
+  const targetTimers = useTargetTimers(state.target_name)
+  const { player, loading: playerLoading } = useTargetPlayer(state.target_name, !npc)
+
   const lastUpdated = new Date(state.last_updated).toLocaleTimeString([], {
     hour: '2-digit', minute: '2-digit', second: '2-digit',
   })
@@ -630,7 +646,9 @@ function NPCCard({
 
       </div>
 
-      {npc ? (
+      {view === 'timers' ? (
+        <TargetTimerList timers={targetTimers} />
+      ) : npc ? (
         // The backend orders variants strongest-first, so npc/abilities is the
         // most boss-like row (raid_target, then HP) — headline it, and tuck any
         // remaining same-name rows under a collapsed disclosure so raids aren't
@@ -656,10 +674,12 @@ function NPCCard({
             />
           )}
         </>
-      ) : (
+      ) : view === 'loot' ? (
         <div className="rounded px-3 py-2 text-xs" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
-          No database record found for this NPC. It may be a pet, player, or unknown entity.
+          No loot — this target isn&rsquo;t an NPC in the database.
         </div>
+      ) : (
+        <TargetPlayerCard player={player} loading={playerLoading} />
       )}
     </div>
   )
