@@ -246,6 +246,30 @@ export default function AlertDefaultsSettings({
               title="Overlay font size in pixels (blank = 20)"
             />
           </div>
+          {Boolean(textColor || glowColor || fontFamily || fontSize > 0) && (
+            <button
+              type="button"
+              onClick={() =>
+                setStylePref({
+                  default_overlay_text_color: '',
+                  default_overlay_glow_color: '',
+                  default_overlay_font_family: '',
+                  default_overlay_font_size: 0,
+                })
+              }
+              className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]"
+              style={{
+                backgroundColor: 'transparent',
+                color: 'var(--color-muted)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+              }}
+              title="Reset color, glow, font, and size to the classic look (white text, matching glow, system font, 20px)"
+            >
+              <XIcon size={9} />
+              Reset Style
+            </button>
+          )}
         </div>
         {/* Live preview on a dark backdrop, rendered exactly like the overlay
             (same shadow + font fallback helpers). */}

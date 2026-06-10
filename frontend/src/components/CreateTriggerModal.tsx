@@ -346,6 +346,9 @@ export default function CreateTriggerModal({
               onFontFamilyChange={(v) => setAction((prev) => ({ ...prev, font_family: v }))}
               fontSize={action.font_size ?? 0}
               onFontSizeChange={(v) => setAction((prev) => ({ ...prev, font_size: v }))}
+              onStyleReset={() =>
+                setAction((prev) => ({ ...prev, color: '', glow_color: '', font_family: '', font_size: 0 }))
+              }
               position={action.position ?? null}
               onPositionChange={(p) => setAction((prev) => ({ ...prev, position: p }))}
               soundPath={action.sound_path}

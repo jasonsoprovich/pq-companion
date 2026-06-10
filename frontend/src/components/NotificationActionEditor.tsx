@@ -56,6 +56,13 @@ interface OverlayTextFieldsProps {
   /** Per-action font size in px; 0 = inherit the app-default style. */
   fontSize?: number
   onFontSizeChange?: (v: number) => void
+  /**
+   * Clears color/glow/font/size back to "App default" in ONE state update.
+   * A dedicated callback (rather than four onChange calls) because parents
+   * that spread a props-captured action object would clobber each other's
+   * resets if called sequentially.
+   */
+  onStyleReset?: () => void
   textPlaceholder?: string
   position?: { x: number; y: number } | null
   onPositionChange?: (p: { x: number; y: number } | null) => void
@@ -138,10 +145,12 @@ export function OverlayTextFields({
   onFontFamilyChange,
   fontSize = 0,
   onFontSizeChange,
+  onStyleReset,
   textPlaceholder = 'Display text (e.g. MEZ BROKE!)',
   position,
   onPositionChange,
 }: OverlayTextFieldsProps): React.ReactElement {
+  const hasStyleOverride = Boolean(color || glowColor || fontFamily || fontSize > 0)
   // App-default style (Settings → Preferences), fetched once so the swatches
   // and size placeholder can show what an inherited field actually renders as.
   const styleDefaults = useOverlayTextDefaults()
@@ -266,6 +275,23 @@ export function OverlayTextFields({
             title="Overlay font size in pixels (blank = app default)"
           />
         </div>
+        {hasStyleOverride && onStyleReset && (
+          <button
+            type="button"
+            onClick={onStyleReset}
+            className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]"
+            style={{
+              backgroundColor: 'transparent',
+              color: 'var(--color-muted)',
+              border: '1px solid var(--color-border)',
+              cursor: 'pointer',
+            }}
+            title="Reset color, glow, font, and size to the app-default style"
+          >
+            <XIcon size={9} />
+            Reset Style
+          </button>
+        )}
       </div>
       {position && (
         <div
@@ -570,6 +596,7 @@ interface NotificationActionEditorProps {
   onFontFamilyChange?: (v: string) => void
   fontSize?: number
   onFontSizeChange?: (v: number) => void
+  onStyleReset?: () => void
   position?: { x: number; y: number } | null
   onPositionChange?: (p: { x: number; y: number } | null) => void
 
@@ -616,6 +643,7 @@ export default function NotificationActionEditor(
         onFontFamilyChange={props.onFontFamilyChange}
         fontSize={props.fontSize}
         onFontSizeChange={props.onFontSizeChange}
+        onStyleReset={props.onStyleReset}
         textPlaceholder={props.overlayTextPlaceholder}
         position={props.position}
         onPositionChange={props.onPositionChange}
