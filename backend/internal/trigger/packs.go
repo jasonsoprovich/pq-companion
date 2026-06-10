@@ -2439,12 +2439,14 @@ func insertPackTriggers(store *Store, pack TriggerPack) error {
 			if err != nil {
 				return err
 			}
-			if existing != nil && existing.PackName != pack.PackName {
+			// Compare on SourcePack (install origin), not PackName, so a moved
+			// shared trigger is still recognized as already owned.
+			if existing != nil && existing.SourcePack != pack.PackName {
 				slog.Info("trigger: skipped duplicate",
 					"pack", pack.PackName,
 					"trigger", t.Name,
 					"dedup_key", t.DedupKey,
-					"owned_by", existing.PackName)
+					"owned_by", existing.SourcePack)
 				continue
 			}
 		}
@@ -2454,6 +2456,7 @@ func insertPackTriggers(store *Store, pack TriggerPack) error {
 		}
 		t.ID = id
 		t.CreatedAt = now
+		t.SourcePack = pack.PackName
 		if err := store.Insert(t); err != nil {
 			return err
 		}
@@ -2514,6 +2517,7 @@ func promoteOrphanedTriggers(store *Store, pack TriggerPack) error {
 		}
 		t.ID = id
 		t.CreatedAt = now
+		t.SourcePack = pack.PackName
 		if err := store.Insert(&t); err != nil {
 			return err
 		}

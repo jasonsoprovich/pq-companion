@@ -201,6 +201,13 @@ type Trigger struct {
 	// each trigger lives independently. Convention: "<slug>_<event>".
 	DedupKey string `json:"dedup_key,omitempty"`
 
+	// SourcePack records which pack this trigger was installed from, kept
+	// separate from PackName (the display category) so a pack trigger can be
+	// moved into a custom category and still be removed when its pack is
+	// deactivated. Empty for user-authored triggers. Set only by the pack
+	// install path; moves never change it.
+	SourcePack string `json:"source_pack,omitempty"`
+
 	// SortOrder is the trigger's manual position within its category, used by
 	// the Triggers page "Manual" sort mode. Lower sorts first; ties fall back
 	// to CreatedAt. Set on create/move to append at the end of the target

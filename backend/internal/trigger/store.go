@@ -73,7 +73,8 @@ func (s *Store) migrate() error {
 			pipe_condition         TEXT    NOT NULL DEFAULT '',
 			dedup_key              TEXT    NOT NULL DEFAULT '',
 			cooldown_secs          INTEGER NOT NULL DEFAULT 0,
-			sort_order             INTEGER NOT NULL DEFAULT 0
+			sort_order             INTEGER NOT NULL DEFAULT 0,
+			source_pack            TEXT    NOT NULL DEFAULT ''
 		)
 	`); err != nil {
 		return err
@@ -120,6 +121,7 @@ func (s *Store) migrate() error {
 		`ALTER TABLE triggers ADD COLUMN dedup_key TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE triggers ADD COLUMN cooldown_secs INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE triggers ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE triggers ADD COLUMN source_pack TEXT NOT NULL DEFAULT ''`,
 		// trigger_categories columns for databases created before category
 		// ordering. Existing rows were all user-created → explicit defaults 1.
 		`ALTER TABLE trigger_categories ADD COLUMN explicit INTEGER NOT NULL DEFAULT 1`,
@@ -130,7 +132,36 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("add column: %w", err)
 		}
 	}
+	if err := s.backfillSourcePack(); err != nil {
+		return err
+	}
 	return nil
+}
+
+// backfillSourcePack stamps source_pack for built-in pack triggers created
+// before the column existed (empty source_pack but a built-in pack_name).
+// One-time, ledger-guarded: it must NOT re-run, or a user trigger later
+// assigned to a built-in pack's category would be wrongly tagged as
+// pack-originated and deleted on uninstall. Going forward only the pack-install
+// path sets source_pack.
+func (s *Store) backfillSourcePack() error {
+	const key = "SourcePack:Backfill:v1"
+	applied, err := s.IsDefaultUpdateApplied(key)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+	for _, p := range AllPacks() {
+		if _, err := s.db.Exec(
+			`UPDATE triggers SET source_pack = ? WHERE source_pack = '' AND pack_name = ?`,
+			p.PackName, p.PackName,
+		); err != nil {
+			return fmt.Errorf("backfill source_pack for %s: %w", p.PackName, err)
+		}
+	}
+	return s.MarkDefaultUpdateApplied(key)
 }
 
 // MigrateGroupAwarenessToGeneralTriggers is a one-time migration that
@@ -153,7 +184,8 @@ func (s *Store) MigrateGroupAwarenessToGeneralTriggers() error {
 		return nil
 	}
 	if _, err := s.db.Exec(
-		`UPDATE triggers SET pack_name = 'General Triggers' WHERE pack_name = 'Group Awareness'`,
+		`UPDATE triggers SET pack_name = 'General Triggers', source_pack = 'General Triggers'
+		 WHERE pack_name = 'Group Awareness'`,
 	); err != nil {
 		return fmt.Errorf("rename Group Awareness pack: %w", err)
 	}
@@ -164,19 +196,21 @@ func (s *Store) MigrateGroupAwarenessToGeneralTriggers() error {
 	if hasPack {
 		additions := []Trigger{
 			{
-				Name:     "Spell Resist",
-				Enabled:  true,
-				Pattern:  `Your target resisted the (.+) spell\.`,
-				PackName: "General Triggers",
+				Name:       "Spell Resist",
+				Enabled:    true,
+				Pattern:    `Your target resisted the (.+) spell\.`,
+				PackName:   "General Triggers",
+				SourcePack: "General Triggers",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "RESISTED!", DurationSecs: 3, Color: "#ffaa00"},
 				},
 			},
 			{
-				Name:     "Spell Interrupt",
-				Enabled:  true,
-				Pattern:  `Your(?: (.+))? spell is interrupted\.`,
-				PackName: "General Triggers",
+				Name:       "Spell Interrupt",
+				Enabled:    true,
+				Pattern:    `Your(?: (.+))? spell is interrupted\.`,
+				PackName:   "General Triggers",
+				SourcePack: "General Triggers",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "INTERRUPTED!", DurationSecs: 3, Color: "#ffaa00"},
 				},
@@ -485,12 +519,12 @@ func (s *Store) Insert(t *Trigger) error {
 		`INSERT INTO triggers (id, name, enabled, pattern, actions, pack_name, created_at,
 		                       timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		                       display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		                       source, pipe_condition, dedup_key, cooldown_secs, sort_order)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName, t.CreatedAt.Unix(),
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
-		source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder,
+		source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder, t.SourcePack,
 	)
 	if err != nil {
 		return fmt.Errorf("insert trigger: %w", err)
@@ -524,7 +558,7 @@ func (s *Store) List() ([]*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key, cooldown_secs, sort_order
+		        source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack
 		 FROM triggers ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -549,7 +583,7 @@ func (s *Store) Get(id string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key, cooldown_secs, sort_order
+		        source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack
 		 FROM triggers WHERE id = ?`, id,
 	)
 	t, err := scanTrigger(row)
@@ -597,12 +631,12 @@ func (s *Store) Update(t *Trigger) error {
 		`UPDATE triggers SET name=?, enabled=?, pattern=?, actions=?, pack_name=?,
 		                     timer_type=?, timer_duration_secs=?, worn_off_pattern=?, spell_id=?,
 		                     display_threshold_secs=?, characters=?, timer_alerts=?, exclude_patterns=?,
-		                     source=?, pipe_condition=?, dedup_key=?, cooldown_secs=?, sort_order=?
+		                     source=?, pipe_condition=?, dedup_key=?, cooldown_secs=?, sort_order=?, source_pack=?
 		 WHERE id=?`,
 		t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName,
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
-		source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder,
+		source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder, t.SourcePack,
 		t.ID,
 	)
 	if err != nil {
@@ -638,7 +672,7 @@ func (s *Store) FindByPackAndName(packName, name string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key, cooldown_secs, sort_order
+		        source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack
 		 FROM triggers WHERE pack_name = ? AND name = ? LIMIT 1`,
 		packName, name,
 	)
@@ -666,7 +700,7 @@ func (s *Store) FindByDedupKey(key string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key, cooldown_secs, sort_order
+		        source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack
 		 FROM triggers WHERE dedup_key = ? LIMIT 1`, key,
 	)
 	t, err := scanTrigger(row)
@@ -705,12 +739,14 @@ func (s *Store) MarkDefaultUpdateApplied(key string) error {
 	return nil
 }
 
-// InstalledPackNames returns the set of distinct pack_name values that
-// currently have at least one trigger in the store. Empty pack_name
-// (user-authored triggers) is excluded. Used by UninstallPack to know
-// which other packs are candidates for promoting orphaned dedup_keys.
+// InstalledPackNames returns the set of distinct source_pack values that
+// currently have at least one trigger in the store. Keyed on source_pack (the
+// install origin), not pack_name (the display category), so a pack still reads
+// as installed after its triggers are moved into custom categories. Empty
+// source_pack (user-authored triggers) is excluded. Used by UninstallPack to
+// know which other packs are candidates for promoting orphaned dedup_keys.
 func (s *Store) InstalledPackNames() (map[string]bool, error) {
-	rows, err := s.db.Query(`SELECT DISTINCT pack_name FROM triggers WHERE pack_name <> ''`)
+	rows, err := s.db.Query(`SELECT DISTINCT source_pack FROM triggers WHERE source_pack <> ''`)
 	if err != nil {
 		return nil, fmt.Errorf("list installed packs: %w", err)
 	}
@@ -726,9 +762,11 @@ func (s *Store) InstalledPackNames() (map[string]bool, error) {
 	return out, rows.Err()
 }
 
-// DeleteByPack removes all triggers belonging to the named pack.
+// DeleteByPack removes every trigger installed from the named pack, keyed on
+// source_pack so triggers moved into other categories are still removed when
+// the pack is deactivated.
 func (s *Store) DeleteByPack(packName string) error {
-	_, err := s.db.Exec(`DELETE FROM triggers WHERE pack_name = ?`, packName)
+	_, err := s.db.Exec(`DELETE FROM triggers WHERE source_pack = ?`, packName)
 	if err != nil {
 		return fmt.Errorf("delete pack %s: %w", packName, err)
 	}
@@ -795,7 +833,7 @@ func scanTrigger(row scanner) (*Trigger, error) {
 		&t.ID, &t.Name, &enabledInt, &t.Pattern, &actJSON, &t.PackName, &unixSec,
 		&timerType, &t.TimerDurationSecs, &t.WornOffPattern, &t.SpellID,
 		&t.DisplayThresholdSecs, &charJSON, &alertJSON, &excludeJSON,
-		&source, &pipeJSON, &t.DedupKey, &t.CooldownSecs, &t.SortOrder,
+		&source, &pipeJSON, &t.DedupKey, &t.CooldownSecs, &t.SortOrder, &t.SourcePack,
 	); err != nil {
 		return nil, err
 	}
