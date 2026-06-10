@@ -20,7 +20,7 @@ func (f *fakeSink) StartExternal(name, category string, dur, _ int, _ time.Time,
 	f.calls = append(f.calls, capture{name, category, dur})
 }
 
-func newMatcher(s Sink, enabled bool, pattern string, interval int) *Matcher {
+func newMatcher(s Sink, enabled bool, pattern string, interval float64) *Matcher {
 	return New(s, func() config.CHChainSettings {
 		return config.CHChainSettings{Enabled: enabled, Pattern: pattern, IntervalSecs: interval}
 	})

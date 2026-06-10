@@ -364,8 +364,9 @@ type CHChainSettings struct {
 	// aiming for between consecutive casts. The overlay no longer uses it to
 	// size the countdown bars (those now run the fixed CH cast time); it's a
 	// reference baseline the overlay compares the live measured cadence
-	// against to flag a stalled chain. 0 means "use DefaultCHChainIntervalSecs".
-	IntervalSecs int `yaml:"interval_secs" json:"interval_secs"`
+	// against to flag a stalled chain. Fractional values (e.g. 4.5) are
+	// allowed. 0 means "use DefaultCHChainIntervalSecs".
+	IntervalSecs float64 `yaml:"interval_secs" json:"interval_secs"`
 }
 
 // CHCastSecs is Complete Heal's cast time in seconds. Each ch_chain countdown

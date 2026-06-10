@@ -39,9 +39,10 @@ type Cfg = { position: number; chainSize: number; delay: number }
 const DEFAULT_CFG: Cfg = { position: 2, chainSize: 3, delay: 4 }
 
 function loadCfg(): Cfg {
+  // parseFloat (not parseInt): delay supports half-second values like 4.5.
   const read = (k: string, d: number): number => {
     const raw = localStorage.getItem(`chMetronome:${k}`)
-    const n = raw == null ? NaN : parseInt(raw, 10)
+    const n = raw == null ? NaN : parseFloat(raw)
     return Number.isFinite(n) ? n : d
   }
   return {
@@ -72,6 +73,7 @@ function watchPosition(c: Cfg): number {
 }
 
 // Stepper is a small "− value +" control used for the three config fields.
+// step defaults to 1; the delay stepper passes 0.5 for finer chain spacing.
 function Stepper(props: {
   label: string
   value: number
@@ -79,8 +81,9 @@ function Stepper(props: {
   max: number
   onChange: (v: number) => void
   suffix?: string
+  step?: number
 }): React.ReactElement {
-  const { label, value, min, max, onChange, suffix } = props
+  const { label, value, min, max, onChange, suffix, step = 1 } = props
   const clamp = (v: number): number => Math.max(min, Math.min(max, v))
   const btn: React.CSSProperties = {
     width: 18,
@@ -101,7 +104,7 @@ function Stepper(props: {
         {label}
       </span>
       <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-        <button style={btn} onClick={() => onChange(clamp(value - 1))} title={`Decrease ${label}`}>
+        <button style={btn} onClick={() => onChange(clamp(value - step))} title={`Decrease ${label}`}>
           −
         </button>
         <span
@@ -117,7 +120,7 @@ function Stepper(props: {
           {value}
           {suffix ?? ''}
         </span>
-        <button style={btn} onClick={() => onChange(clamp(value + 1))} title={`Increase ${label}`}>
+        <button style={btn} onClick={() => onChange(clamp(value + step))} title={`Increase ${label}`}>
           +
         </button>
       </div>
@@ -406,8 +409,9 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
         <Stepper
           label="Delay"
           value={cfg.delay}
-          min={1}
+          min={0.5}
           max={CH_CAST - 1}
+          step={0.5}
           suffix="s"
           onChange={(v) => setCfg((c) => ({ ...c, delay: v }))}
         />

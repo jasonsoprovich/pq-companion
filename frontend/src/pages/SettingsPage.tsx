@@ -1790,7 +1790,7 @@ export default function SettingsPage(): React.ReactElement {
                 <input
                   type="number"
                   min={1}
-                  step={1}
+                  step={0.5}
                   value={config.ch_chain?.interval_secs ?? 6}
                   onChange={(e) =>
                     setConfig({
