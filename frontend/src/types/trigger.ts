@@ -139,6 +139,13 @@ export interface Trigger {
    * append at the end of the category.
    */
   sort_order: number
+  /**
+   * Which pack this trigger was installed from, independent of pack_name
+   * (its display category). Lets a pack trigger moved into a custom
+   * category still be tagged with its origin and removed on pack
+   * deactivation. Empty for user-authored triggers.
+   */
+  source_pack?: string
 }
 
 export interface TriggerFired {

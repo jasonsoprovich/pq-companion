@@ -1316,16 +1316,18 @@ function TriggerRow({
                 pipe
               </span>
             )}
-            {trigger.pack_name && (
+            {trigger.source_pack && (
               <span
-                className="text-[10px] px-1.5 py-0.5 rounded shrink-0"
+                className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded shrink-0"
                 style={{
                   backgroundColor: 'var(--color-surface-2)',
                   color: 'var(--color-muted-foreground)',
                   border: '1px solid var(--color-border)',
                 }}
+                title={`Installed from the ${trigger.source_pack} pack. Deactivating that pack removes this trigger even if you've moved it to another category.`}
               >
-                {trigger.pack_name}
+                <Package size={10} />
+                {trigger.source_pack}
               </span>
             )}
             {trigger.dedup_key && (
@@ -2384,13 +2386,13 @@ export default function TriggersPage(): React.ReactElement {
   }
 
   // A section keyed by packKey ('__uncategorized__' or a category name) accepts
-  // the active drag when a drag is in progress, the target isn't a built-in
-  // pack (those are managed in the Packs tab), and it isn't the trigger's
-  // current category.
+  // the active drag when a drag is in progress and it isn't the trigger's
+  // current category. Pack sections are valid targets too — origin is tracked
+  // by source_pack, so moving a trigger into/out of a pack category doesn't
+  // change which pack it belongs to.
   const canDropOnPack = (packKey: string): boolean => {
     if (!dragTrigger) return false
     const target = packKey === '__uncategorized__' ? '' : packKey
-    if (target && categories.some((c) => c.is_builtin && c.name === target)) return false
     return dragTrigger.pack_name !== target
   }
 
@@ -2400,7 +2402,6 @@ export default function TriggersPage(): React.ReactElement {
     setDragTrigger(null)
     if (!t) return
     const target = packKey === '__uncategorized__' ? '' : packKey
-    if (target && categories.some((c) => c.is_builtin && c.name === target)) return
     if (t.pack_name === target) return
     // Re-serialize the trigger with the new category. Sending the full request
     // (incl. source/pipe_condition) keeps pipe triggers valid; fields not in
@@ -3202,7 +3203,7 @@ export default function TriggersPage(): React.ReactElement {
       {/* Tab: Packs */}
       {tab === 'packs' && (
         <PacksTab
-          installedPacks={new Set(triggers.map((t) => t.pack_name).filter((n): n is string => !!n))}
+          installedPacks={new Set(triggers.map((t) => t.source_pack).filter((n): n is string => !!n))}
           onInstalled={load}
         />
       )}
