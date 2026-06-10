@@ -2136,11 +2136,11 @@ export default function TriggersPage(): React.ReactElement {
   // and the category section being hovered over (for highlight).
   const [dragTrigger, setDragTrigger] = useState<Trigger | null>(null)
   const [dragOverPack, setDragOverPack] = useState<string | null>(null)
-  // Section reordering: the category header being dragged, plus the header
-  // hovered over and which edge (before/after) the drop would insert at.
-  const [dragCategory, setDragCategory] = useState<string | null>(null)
+  // Section reordering. The dragged category is held in a ref (not state) so
+  // onDragStart doesn't re-render mid-drag — the same pattern the Wishlist DnD
+  // uses. dragOverCat drives only the hovered-section highlight.
+  const categoryDragSrc = useRef<string | null>(null)
   const [dragOverCat, setDragOverCat] = useState<string | null>(null)
-  const [dragOverCatPos, setDragOverCatPos] = useState<'before' | 'after'>('before')
 
   // Categories are partly derived from in-use pack_name values, so refresh
   // them whenever triggers change (create/move/delete) as well as after
@@ -2476,34 +2476,36 @@ export default function TriggersPage(): React.ReactElement {
   }
 
   // ── Drag-and-drop: reorder category sections by dragging their headers ──
-  const handleSectionDragEnd = () => {
-    setDragCategory(null)
+  // Mirrors the Wishlist card reorder: the grip sets a ref (no state change on
+  // drag start), the whole section is the drop target, and dropping on a
+  // section moves the dragged one to that section's slot (no before/after
+  // edge math). This is what makes it land reliably regardless of how tall the
+  // target section is.
+  const handleCategoryDragEnd = () => {
+    categoryDragSrc.current = null
     setDragOverCat(null)
   }
 
-  const handleReorderCategory = (targetKey: string, position: 'before' | 'after') => {
-    const dragged = dragCategory
-    setDragCategory(null)
+  const reorderCategoryTo = (targetKey: string) => {
+    const dragged = categoryDragSrc.current
+    categoryDragSrc.current = null
     setDragOverCat(null)
     if (!dragged || dragged === targetKey || targetKey === '__uncategorized__') return
-    // Order over ALL categories (already display-sorted), not just the visible
-    // sections, so reordering while filtered doesn't drop hidden categories.
+    // Order over ALL categories (already display-sorted) so reordering while
+    // filtered doesn't drop hidden ones. Move dragged to target's slot.
     const order = categories.map((c) => c.name)
-    const without = order.filter((k) => k !== dragged)
-    let idx = without.indexOf(targetKey)
-    if (idx === -1) return
-    if (position === 'after') idx += 1
-    without.splice(idx, 0, dragged)
-    // Optimistic: rewrite local category order so sections reflow immediately.
-    const orderIndex = new Map(without.map((name, i) => [name, i]))
-    setCategories((prev) => {
-      const next = prev.map((c) =>
-        orderIndex.has(c.name) ? { ...c, sort_order: orderIndex.get(c.name)! } : c,
-      )
-      next.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
-      return next
-    })
-    reorderTriggerCategories(without).catch(() => load())
+    const from = order.indexOf(dragged)
+    const to = order.indexOf(targetKey)
+    if (from === -1 || to === -1 || from === to) return
+    const next = [...order]
+    const moved = next.splice(from, 1)[0]
+    next.splice(to, 0, moved)
+    // Optimistic: rebuild categories in the new order so sections reflow.
+    const byName = new Map(categories.map((c) => [c.name, c]))
+    setCategories(
+      next.map((name, i) => ({ ...(byName.get(name) as TriggerCategory), sort_order: i })),
+    )
+    reorderTriggerCategories(next).catch(() => load())
   }
 
   const handleCancelCreate = () => {
@@ -2971,30 +2973,19 @@ export default function TriggersPage(): React.ReactElement {
                   <div
                     key={group.packName}
                     className="space-y-2 rounded"
-                    style={{
-                      boxShadow:
-                        catDropTarget && dragOverCatPos === 'before'
-                          ? 'inset 0 2px 0 0 var(--color-primary)'
-                          : catDropTarget && dragOverCatPos === 'after'
-                            ? 'inset 0 -2px 0 0 var(--color-primary)'
-                            : undefined,
-                    }}
                     onDragOver={(e) => {
-                      // Category reorder: the whole section (header + body) is a
-                      // drop target so it works reliably when expanded, not just
-                      // on the thin header strip.
+                      // Category reorder: the whole section (header + body) is the
+                      // drop target; dropping anywhere on it moves the dragged
+                      // category to this one's slot — no before/after edge math,
+                      // so it lands reliably however tall this section is.
                       if (
-                        dragCategory &&
+                        categoryDragSrc.current &&
                         reorderableSection &&
-                        dragCategory !== group.packName
+                        categoryDragSrc.current !== group.packName
                       ) {
                         e.preventDefault()
                         e.dataTransfer.dropEffect = 'move'
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        const pos =
-                          e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
                         if (dragOverCat !== group.packName) setDragOverCat(group.packName)
-                        setDragOverCatPos((p) => (p === pos ? p : pos))
                         return
                       }
                       // Trigger move onto this category.
@@ -3013,17 +3004,8 @@ export default function TriggersPage(): React.ReactElement {
                     }}
                     onDrop={(e) => {
                       e.preventDefault()
-                      if (
-                        dragCategory &&
-                        reorderableSection &&
-                        dragCategory !== group.packName
-                      ) {
-                        // Compute the edge from the event directly so a fast
-                        // drop doesn't depend on the last hover's state commit.
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        const pos =
-                          e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
-                        handleReorderCategory(group.packName, pos)
+                      if (categoryDragSrc.current) {
+                        reorderCategoryTo(group.packName)
                         return
                       }
                       handleDropOnPack(group.packName)
@@ -3032,11 +3014,12 @@ export default function TriggersPage(): React.ReactElement {
                     <div
                       className="flex w-full items-center gap-2 rounded px-2 py-1.5"
                       style={{
-                        backgroundColor: isDropTarget
-                          ? 'var(--color-surface-3)'
-                          : 'var(--color-surface-2)',
+                        backgroundColor:
+                          isDropTarget || catDropTarget
+                            ? 'var(--color-surface-3)'
+                            : 'var(--color-surface-2)',
                         border: `1px ${dropHint ? 'dashed' : 'solid'} ${
-                          isDropTarget || dropHint
+                          isDropTarget || dropHint || catDropTarget
                             ? 'var(--color-primary)'
                             : 'var(--color-border)'
                         }`,
@@ -3047,9 +3030,10 @@ export default function TriggersPage(): React.ReactElement {
                           draggable
                           onDragStart={(e) => {
                             e.dataTransfer.effectAllowed = 'move'
-                            setDragCategory(group.packName)
+                            e.dataTransfer.setData('text/plain', group.packName)
+                            categoryDragSrc.current = group.packName
                           }}
-                          onDragEnd={handleSectionDragEnd}
+                          onDragEnd={handleCategoryDragEnd}
                           title="Drag to reorder category"
                           className="shrink-0 cursor-grab active:cursor-grabbing"
                           style={{ color: 'var(--color-muted)' }}
@@ -3168,12 +3152,7 @@ export default function TriggersPage(): React.ReactElement {
                         </div>
                       )}
                     </div>
-                    {/* While dragging a category, collapse every section to its
-                        header so reorder targets are short and uniform (like
-                        the trigger rows) — this makes dropping above/below a
-                        section, including the top one, land reliably. */}
                     {!isCollapsed &&
-                      !dragCategory &&
                       group.items.map((t) => (
                         <TriggerRow
                           key={t.id}
