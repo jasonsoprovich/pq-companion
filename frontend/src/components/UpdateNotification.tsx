@@ -4,7 +4,7 @@ import { Download, RefreshCw, X } from 'lucide-react'
 type UpdateState =
   | { phase: 'idle' }
   | { phase: 'available'; version: string }
-  | { phase: 'downloading'; version: string; percent: number }
+  | { phase: 'downloading'; version: string; percent: number | null }
   | { phase: 'downloaded'; version: string; countdown: number }
   | { phase: 'installing'; version: string }
   | { phase: 'error'; message: string }
@@ -109,7 +109,14 @@ export default function UpdateNotification(): React.ReactElement | null {
           Update <span style={{ color: 'var(--color-primary)' }}>v{state.version}</span> available
         </span>
         <button
-          onClick={() => window.electron.updater.download()}
+          onClick={() => {
+            // Switch to an indeterminate downloading state immediately so the
+            // user gets instant feedback — download-progress events can be
+            // sparse or delayed (esp. fast/differential downloads), and
+            // without this the banner appears frozen after the click.
+            setState({ phase: 'downloading', version: state.version, percent: null })
+            window.electron.updater.download()
+          }}
           className="ml-2 px-3 py-0.5 rounded text-xs font-medium"
           style={{ backgroundColor: 'var(--color-primary)', color: '#0a0a0a' }}
         >
@@ -129,16 +136,21 @@ export default function UpdateNotification(): React.ReactElement | null {
         style={{ backgroundColor: 'var(--color-surface)', borderTop: '1px solid var(--color-border)' }}>
         <Download size={13} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
         <span style={{ color: 'var(--color-muted)' }}>
-          Downloading v{state.version}…
+          {state.percent === null
+            ? `Starting download of v${state.version}…`
+            : `Downloading v${state.version}…`}
         </span>
         <div className="flex-1 mx-2 rounded-full overflow-hidden" style={{ height: 4, backgroundColor: 'var(--color-border)' }}>
           <div
-            className="h-full rounded-full transition-all"
-            style={{ width: `${state.percent}%`, backgroundColor: 'var(--color-primary)' }}
+            className={`h-full rounded-full transition-all${state.percent === null ? ' animate-pulse' : ''}`}
+            style={{
+              width: state.percent === null ? '100%' : `${state.percent}%`,
+              backgroundColor: 'var(--color-primary)',
+            }}
           />
         </div>
         <span style={{ color: 'var(--color-muted)', minWidth: '2.5rem', textAlign: 'right' }}>
-          {state.percent}%
+          {state.percent === null ? '…' : `${state.percent}%`}
         </span>
       </div>
     )
