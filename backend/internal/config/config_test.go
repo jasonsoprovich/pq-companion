@@ -278,3 +278,50 @@ preferences:
 		t.Error("reload after disabling faction: must stay off (migration is one-shot)")
 	}
 }
+
+// Configs snapshot DefaultCHChainPattern at save time, so when the shipped
+// default improves, a user who never customized theirs would stay pinned to
+// the old one. applyDefaults upgrades exact matches of any legacy default to
+// the current default — and leaves hand-customized patterns alone.
+func TestLoadFrom_UpgradesLegacyCHChainPattern(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	// v1 default, as saved by configs from when the feature first shipped.
+	const old = `eq_path: /games/EQ
+ch_chain:
+  enabled: true
+  pattern: ^(?P<caster>\w+) tells the raid, '-+\s*0*(?P<chainnum>\d+)\s*-+\s*CH\s+(?P<target>\w+)
+  interval_secs: 6
+`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	cfg := m.Get()
+	if cfg.CHChain.Pattern != DefaultCHChainPattern {
+		t.Errorf("legacy default not upgraded:\ngot  %q\nwant %q", cfg.CHChain.Pattern, DefaultCHChainPattern)
+	}
+	// The secondary pattern backfills alongside it.
+	if cfg.CHChain.SecondaryPattern != DefaultCHChainSecondaryPattern {
+		t.Errorf("SecondaryPattern: got %q, want letters-only default", cfg.CHChain.SecondaryPattern)
+	}
+
+	// A customized pattern must never be rewritten.
+	custom := `^(?P<caster>\w+) yells, '(?P<chainnum>\d+) CH (?P<target>\w+)'`
+	cfg.CHChain.Pattern = custom
+	if err := m.Update(cfg); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	m2, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom (reload): %v", err)
+	}
+	if got := m2.Get().CHChain.Pattern; got != custom {
+		t.Errorf("custom pattern was rewritten: got %q, want %q", got, custom)
+	}
+}

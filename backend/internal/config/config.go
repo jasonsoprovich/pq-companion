@@ -428,6 +428,19 @@ const (
 	DefaultCHChainSecondaryPattern = chChainPatternPrefix + `[A-Za-z]{3,4}` + chChainPatternSuffix
 )
 
+// legacyCHChainPatterns lists every PREVIOUS shipped value of
+// DefaultCHChainPattern. applyDefaults upgrades a saved pattern that exactly
+// matches one of these to the current default — configs snapshot the default
+// at save time, so without this an upgrading user would stay pinned to an
+// old default forever (and the settings UI's default-detection, e.g. the
+// secondary-chain pattern swap, wouldn't recognize their pattern as a
+// default). Hand-customized patterns never match and are left alone.
+// Append the outgoing value here whenever DefaultCHChainPattern changes.
+var legacyCHChainPatterns = []string{
+	// v1 (89f3cd1): numeric-only, raid tells only, strict dash decorations.
+	`^(?P<caster>\w+) tells the raid, '-+\s*0*(?P<chainnum>\d+)\s*-+\s*CH\s+(?P<target>\w+)`,
+}
+
 // DefaultCHChainIntervalSecs is the default per-cast countdown cadence.
 const DefaultCHChainIntervalSecs = 6
 
@@ -605,6 +618,18 @@ func applyDefaults(cfg *Config) bool {
 	if cfg.CHChain.Pattern == "" {
 		cfg.CHChain.Pattern = DefaultCHChainPattern
 		changed = true
+	}
+	// Upgrade patterns pinned to an outdated default: configs save the
+	// default verbatim, so a user who never customized theirs would
+	// otherwise miss every improvement to the shipped pattern (channel
+	// coverage, letter markers, …). Exact match only — anything the user
+	// edited won't be in the legacy list and stays untouched.
+	for _, legacy := range legacyCHChainPatterns {
+		if cfg.CHChain.Pattern == legacy {
+			cfg.CHChain.Pattern = DefaultCHChainPattern
+			changed = true
+			break
+		}
 	}
 	// Backfill the secondary (ramp/split chain) pattern the same way so the
 	// letters-only default is visible in settings before the user enables it.
