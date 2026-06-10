@@ -7,6 +7,9 @@
  *   - Default Overlay Text Position: where overlay_text alerts that have no
  *     per-trigger pinned position anchor their stack, set via the same
  *     drag-to-position session the trigger editor uses.
+ *   - Default Overlay Text Style: color, glow color, font, and size used by
+ *     every overlay_text alert whose own action leaves the field on
+ *     "App default". Per-trigger overrides in the editor always win.
  *
  * Edits are staged into the page's config state; the page's Save button
  * persists them like every other preference.
@@ -16,6 +19,13 @@ import { Crosshair, Check, X as XIcon } from 'lucide-react'
 import type { Config } from '../../types/config'
 import { useVoices } from '../../hooks/useVoices'
 import { usePositioningSession } from '../../hooks/usePositioningSession'
+import { ColorOverrideField } from '../NotificationActionEditor'
+import {
+  resolveOverlayTextStyle,
+  overlayTextShadow,
+  overlayFontFamilyCSS,
+  WINDOWS_SAFE_FONTS,
+} from '../../lib/overlayTextStyle'
 
 interface AlertDefaultsSettingsProps {
   config: Config
@@ -37,11 +47,28 @@ export default function AlertDefaultsSettings({
     })
   }
 
+  // Global default overlay text style. Empty/0 = the built-in look (white,
+  // glow matching the text color, system-ui, 20px). `resolved` is what an
+  // un-customized alert will actually render as — it drives the swatches,
+  // the size placeholder, and the live preview.
+  const textColor = config.preferences.default_overlay_text_color ?? ''
+  const glowColor = config.preferences.default_overlay_glow_color ?? ''
+  const fontFamily = config.preferences.default_overlay_font_family ?? ''
+  const fontSize = config.preferences.default_overlay_font_size ?? 0
+  const resolved = resolveOverlayTextStyle(null, config.preferences)
+
+  function setStylePref(patch: Partial<Config['preferences']>): void {
+    setConfig({
+      ...config,
+      preferences: { ...config.preferences, ...patch },
+    })
+  }
+
   const { positioning, toggle } = usePositioningSession({
     position,
     onPositionChange: setPosition,
     testText: 'TRIGGER ALERT TEXT',
-    testColor: '#ffffff',
+    testColor: resolved.color,
     testDurationSecs: 8,
   })
 
@@ -140,6 +167,106 @@ export default function AlertDefaultsSettings({
             </button>
           </div>
         )}
+      </div>
+
+      <div className="mt-4">
+        <div className="mb-1">
+          <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+            Default Overlay Text Style
+          </p>
+          <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Color, glow, font, and size for every trigger alert whose own style fields are on
+            &ldquo;App default&rdquo;. Triggers customized in the editor keep their own style.
+            Fonts listed all ship with Windows. Unset = the classic look (white text, matching
+            glow, system font, 20px).
+          </p>
+        </div>
+        <div className="mt-2 flex gap-3 items-center flex-wrap">
+          <ColorOverrideField
+            label="Color"
+            value={textColor}
+            resolved={resolved.color}
+            onChange={(v) => setStylePref({ default_overlay_text_color: v })}
+            resetTitle="Reset to the built-in text color (white)"
+          />
+          <ColorOverrideField
+            label="Glow"
+            value={glowColor}
+            resolved={resolved.glowColor}
+            onChange={(v) => setStylePref({ default_overlay_glow_color: v })}
+            resetTitle="Reset to the built-in glow (matches the text color)"
+          />
+          <div className="flex items-center gap-1.5">
+            <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+              Font
+            </label>
+            <select
+              value={fontFamily}
+              onChange={(e) => setStylePref({ default_overlay_font_family: e.target.value })}
+              className="rounded px-2 py-0.5 text-xs outline-none max-w-40"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                appearance: 'none',
+                fontFamily: fontFamily ? `'${fontFamily}'` : undefined,
+              }}
+            >
+              <option value="">System default</option>
+              {WINDOWS_SAFE_FONTS.map((f) => (
+                <option key={f} value={f} style={{ fontFamily: `'${f}'` }}>{f}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+              Size
+            </label>
+            <input
+              type="number"
+              min={8}
+              max={96}
+              value={fontSize > 0 ? fontSize : ''}
+              placeholder={String(resolved.fontSize)}
+              onChange={(e) =>
+                setStylePref({ default_overlay_font_size: Math.max(0, parseInt(e.target.value) || 0) })
+              }
+              className="w-14 rounded px-2 py-0.5 text-xs outline-none text-center"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+              }}
+              title="Overlay font size in pixels (blank = 20)"
+            />
+          </div>
+        </div>
+        {/* Live preview on a dark backdrop, rendered exactly like the overlay
+            (same shadow + font fallback helpers). */}
+        <div
+          className="mt-2 rounded px-3 py-2 max-w-md flex items-center justify-center"
+          style={{
+            backgroundColor: 'rgba(10,10,12,0.9)',
+            border: '1px solid var(--color-border)',
+            minHeight: 48,
+            overflow: 'hidden',
+          }}
+        >
+          <span
+            style={{
+              fontSize: resolved.fontSize,
+              fontWeight: 800,
+              letterSpacing: '0.04em',
+              color: resolved.color,
+              fontFamily: overlayFontFamilyCSS(resolved.fontFamily),
+              textShadow: overlayTextShadow(resolved.glowColor),
+              whiteSpace: 'nowrap',
+              userSelect: 'none',
+            }}
+          >
+            MEZ BROKE!
+          </span>
+        </div>
       </div>
     </>
   )

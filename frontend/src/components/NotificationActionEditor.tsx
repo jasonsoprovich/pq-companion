@@ -17,6 +17,8 @@ import React, { useEffect, useState } from 'react'
 import { Volume2, FolderOpen, Play, Square, Crosshair, Check, X as XIcon } from 'lucide-react'
 import { playSoundForTest, speakTextForTest, stopTestPlayback } from '../services/audio'
 import { usePositioningSession } from '../hooks/usePositioningSession'
+import { useOverlayTextDefaults } from '../hooks/useOverlayTextDefaults'
+import { resolveOverlayTextStyle, WINDOWS_SAFE_FONTS } from '../lib/overlayTextStyle'
 
 export type NotificationActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
 
@@ -42,11 +44,85 @@ interface OverlayTextFieldsProps {
   onTextChange: (v: string) => void
   durationSecs: number
   onDurationSecsChange: (v: number) => void
+  /** Per-action text color; '' = inherit the app-default style. */
   color: string
   onColorChange: (v: string) => void
+  /** Per-action glow color; '' = inherit (app default → text color). */
+  glowColor?: string
+  onGlowColorChange?: (v: string) => void
+  /** Per-action font family; '' = inherit the app-default style. */
+  fontFamily?: string
+  onFontFamilyChange?: (v: string) => void
+  /** Per-action font size in px; 0 = inherit the app-default style. */
+  fontSize?: number
+  onFontSizeChange?: (v: number) => void
   textPlaceholder?: string
   position?: { x: number; y: number } | null
   onPositionChange?: (p: { x: number; y: number } | null) => void
+}
+
+/**
+ * Color swatch with override semantics: the swatch always shows the color
+ * that will actually render (the resolved value), but the field only stores
+ * an override once the user picks something. While inheriting, a muted
+ * "default" tag replaces the hex readout; an overridden field gains a tiny
+ * reset button back to "App default".
+ *
+ * Exported for the Settings page's global-default style controls, which use
+ * the same inherit-vs-override semantics against the built-in look.
+ */
+export function ColorOverrideField({
+  label,
+  value,
+  resolved,
+  onChange,
+  resetTitle,
+}: {
+  label: string
+  value: string
+  resolved: string
+  onChange: (v: string) => void
+  resetTitle: string
+}): React.ReactElement {
+  return (
+    <div className="flex items-center gap-1.5">
+      <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+        {label}
+      </label>
+      <input
+        type="color"
+        value={resolved}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-8 h-6 rounded cursor-pointer"
+        style={{ border: '1px solid var(--color-border)', padding: '1px' }}
+      />
+      {value ? (
+        <>
+          <span className="text-[11px] font-mono" style={{ color: 'var(--color-muted)' }}>
+            {value}
+          </span>
+          <button
+            type="button"
+            onClick={() => onChange('')}
+            className="flex items-center justify-center rounded p-0.5"
+            style={{
+              backgroundColor: 'transparent',
+              color: 'var(--color-muted)',
+              border: '1px solid var(--color-border)',
+              cursor: 'pointer',
+            }}
+            title={resetTitle}
+          >
+            <XIcon size={9} />
+          </button>
+        </>
+      ) : (
+        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+          default
+        </span>
+      )}
+    </div>
+  )
 }
 
 export function OverlayTextFields({
@@ -56,10 +132,24 @@ export function OverlayTextFields({
   onDurationSecsChange,
   color,
   onColorChange,
+  glowColor = '',
+  onGlowColorChange,
+  fontFamily = '',
+  onFontFamilyChange,
+  fontSize = 0,
+  onFontSizeChange,
   textPlaceholder = 'Display text (e.g. MEZ BROKE!)',
   position,
   onPositionChange,
 }: OverlayTextFieldsProps): React.ReactElement {
+  // App-default style (Settings → Preferences), fetched once so the swatches
+  // and size placeholder can show what an inherited field actually renders as.
+  const styleDefaults = useOverlayTextDefaults()
+  const resolved = resolveOverlayTextStyle(
+    { color, glow_color: glowColor, font_family: fontFamily, font_size: fontSize },
+    styleDefaults,
+  )
+
   // Session id, live drag updates, Escape/unmount teardown, and confirm /
   // cancel semantics all live in the shared hook — the Settings page's
   // default-position control runs the identical flow.
@@ -67,7 +157,7 @@ export function OverlayTextFields({
     position,
     onPositionChange,
     testText: text,
-    testColor: color,
+    testColor: resolved.color,
     testDurationSecs: durationSecs,
   })
 
@@ -100,21 +190,13 @@ export function OverlayTextFields({
             style={inputStyle}
           />
         </div>
-        <div className="flex items-center gap-1.5">
-          <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-            Color
-          </label>
-          <input
-            type="color"
-            value={color}
-            onChange={(e) => onColorChange(e.target.value)}
-            className="w-8 h-6 rounded cursor-pointer"
-            style={{ border: '1px solid var(--color-border)', padding: '1px' }}
-          />
-          <span className="text-[11px] font-mono" style={{ color: 'var(--color-muted)' }}>
-            {color}
-          </span>
-        </div>
+        <ColorOverrideField
+          label="Color"
+          value={color}
+          resolved={resolved.color}
+          onChange={onColorChange}
+          resetTitle="Reset to the app-default text color"
+        />
         <button
           type="button"
           onClick={handlePositionButton}
@@ -134,6 +216,51 @@ export function OverlayTextFields({
           {positioning ? <Check size={11} /> : <Crosshair size={11} />}
           {positioning ? 'Done — Save Position' : 'Set Trigger Position'}
         </button>
+      </div>
+      {/* Per-trigger style overrides. Every field starts on "default" (the
+          app-wide style from Settings → Triggers & Alerts); setting a value
+          here styles just this alert. */}
+      <div className="flex gap-2 items-center flex-wrap">
+        <ColorOverrideField
+          label="Glow"
+          value={glowColor}
+          resolved={resolved.glowColor}
+          onChange={(v) => onGlowColorChange?.(v)}
+          resetTitle="Reset to the app-default glow (matches the text color when unset)"
+        />
+        <div className="flex items-center gap-1.5">
+          <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+            Font
+          </label>
+          <select
+            value={fontFamily}
+            onChange={(e) => onFontFamilyChange?.(e.target.value)}
+            className="rounded px-2 py-0.5 text-xs outline-none max-w-36"
+            style={{ ...selectStyle, fontFamily: fontFamily ? `'${fontFamily}'` : undefined }}
+            title="Overlay font for this alert (fonts that ship with Windows)"
+          >
+            <option value="">App default</option>
+            {WINDOWS_SAFE_FONTS.map((f) => (
+              <option key={f} value={f} style={{ fontFamily: `'${f}'` }}>{f}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+            Size
+          </label>
+          <input
+            type="number"
+            min={8}
+            max={96}
+            value={fontSize > 0 ? fontSize : ''}
+            placeholder={String(resolved.fontSize)}
+            onChange={(e) => onFontSizeChange?.(Math.max(0, parseInt(e.target.value) || 0))}
+            className="w-14 rounded px-2 py-0.5 text-xs outline-none text-center"
+            style={inputStyle}
+            title="Overlay font size in pixels (blank = app default)"
+          />
+        </div>
       </div>
       {position && (
         <div
@@ -432,6 +559,12 @@ interface NotificationActionEditorProps {
   onDurationSecsChange?: (v: number) => void
   color?: string
   onColorChange?: (v: string) => void
+  glowColor?: string
+  onGlowColorChange?: (v: string) => void
+  fontFamily?: string
+  onFontFamilyChange?: (v: string) => void
+  fontSize?: number
+  onFontSizeChange?: (v: number) => void
   position?: { x: number; y: number } | null
   onPositionChange?: (p: { x: number; y: number } | null) => void
 
@@ -470,8 +603,14 @@ export default function NotificationActionEditor(
         onTextChange={props.onOverlayTextChange ?? noop}
         durationSecs={props.durationSecs ?? 5}
         onDurationSecsChange={props.onDurationSecsChange ?? noop}
-        color={props.color ?? '#ffffff'}
+        color={props.color ?? ''}
         onColorChange={props.onColorChange ?? noop}
+        glowColor={props.glowColor}
+        onGlowColorChange={props.onGlowColorChange}
+        fontFamily={props.fontFamily}
+        onFontFamilyChange={props.onFontFamilyChange}
+        fontSize={props.fontSize}
+        onFontSizeChange={props.onFontSizeChange}
         textPlaceholder={props.overlayTextPlaceholder}
         position={props.position}
         onPositionChange={props.onPositionChange}

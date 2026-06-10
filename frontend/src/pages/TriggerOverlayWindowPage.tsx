@@ -9,6 +9,12 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import type { TriggerFired } from '../types/trigger'
 import { postTriggerTestPosition, getActiveTriggerTest, endTriggerTestSession, getConfig } from '../services/api'
+import {
+  resolveOverlayTextStyle,
+  overlayTextShadow,
+  overlayFontFamilyCSS,
+  type OverlayTextStyleDefaults,
+} from '../lib/overlayTextStyle'
 
 interface TestAlert {
   testId: string
@@ -37,7 +43,13 @@ let nextId = 1
 
 // ── Alert card ─────────────────────────────────────────────────────────────────
 
-function AlertCard({ entry }: { entry: AlertEntry }): React.ReactElement {
+function AlertCard({
+  entry,
+  styleDefaults,
+}: {
+  entry: AlertEntry
+  styleDefaults: OverlayTextStyleDefaults | null
+}): React.ReactElement {
   const [opacity, setOpacity] = useState(1)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -55,11 +67,11 @@ function AlertCard({ entry }: { entry: AlertEntry }): React.ReactElement {
     }
   }, [entry.expiresAt])
 
-  // Show the first overlay_text action's text and color, or fall back to trigger name.
+  // Show the first overlay_text action's text, or fall back to trigger name.
+  // Style resolves per-action override → global default → built-in look.
   const overlayAction = entry.event.actions.find((a) => a.type === 'overlay_text')
   const text = overlayAction?.text || entry.event.trigger_name
-  const color = overlayAction?.color || '#ffffff'
-  const fontSize = overlayAction?.font_size && overlayAction.font_size > 0 ? overlayAction.font_size : 20
+  const { color, glowColor, fontFamily, fontSize } = resolveOverlayTextStyle(overlayAction, styleDefaults)
   const position = overlayAction?.position
 
   // Live trigger alerts render as text-only — no card background or border —
@@ -93,7 +105,8 @@ function AlertCard({ entry }: { entry: AlertEntry }): React.ReactElement {
           fontWeight: 800,
           letterSpacing: '0.04em',
           color,
-          textShadow: `0 0 8px ${color}aa, 0 0 3px rgba(0,0,0,0.95), 0 1px 2px rgba(0,0,0,0.95)`,
+          fontFamily: overlayFontFamilyCSS(fontFamily),
+          textShadow: overlayTextShadow(glowColor),
           textAlign: 'center',
           userSelect: 'none',
           whiteSpace: 'nowrap',
@@ -250,6 +263,9 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
   // centered column. Polled like useAudioPrefs so a Settings save is picked
   // up without restarting the overlay window.
   const [defaultPos, setDefaultPos] = useState<{ x: number; y: number } | null>(null)
+  // Global default text style (Settings → Preferences), same poll. Null until
+  // the first fetch resolves — alerts render with the built-in look meanwhile.
+  const [styleDefaults, setStyleDefaults] = useState<OverlayTextStyleDefaults | null>(null)
   useEffect(() => {
     let cancelled = false
     const fetch = (): void => {
@@ -257,6 +273,12 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         .then((c) => {
           if (cancelled) return
           setDefaultPos(c.preferences?.default_overlay_position ?? null)
+          setStyleDefaults({
+            default_overlay_text_color: c.preferences?.default_overlay_text_color,
+            default_overlay_glow_color: c.preferences?.default_overlay_glow_color,
+            default_overlay_font_family: c.preferences?.default_overlay_font_family,
+            default_overlay_font_size: c.preferences?.default_overlay_font_size,
+          })
         })
         .catch(() => {})
     }
@@ -555,7 +577,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         }
       >
         {alerts.map((entry) => (
-          <AlertCard key={entry.id} entry={entry} />
+          <AlertCard key={entry.id} entry={entry} styleDefaults={styleDefaults} />
         ))}
       </div>
       {testAlert && (

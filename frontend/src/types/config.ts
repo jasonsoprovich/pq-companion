@@ -52,6 +52,15 @@ export interface Preferences {
   // are window-local pixels on the trigger overlay's chosen monitor.
   // Null/missing = centered stack (pre-existing behaviour).
   default_overlay_position?: { x: number; y: number } | null
+  // Global default style for trigger overlay_text alerts. Each field applies
+  // to alerts whose own action leaves it unset ("App default" in the editor);
+  // per-action values always win. Empty/0/missing = the renderer built-ins
+  // (white, glow derived from the text color, system-ui, 20px) — the
+  // pre-existing look. See lib/overlayTextStyle.ts.
+  default_overlay_text_color?: string
+  default_overlay_glow_color?: string
+  default_overlay_font_family?: string
+  default_overlay_font_size?: number
   developer_mode: boolean
   npc_overlay_dashboard_sections: NPCOverlaySections
   npc_overlay_popout_sections: NPCOverlaySections

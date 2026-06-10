@@ -232,15 +232,9 @@ function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps):
           <NotificationTypeSelect
             value={action.type}
             onChange={(t) =>
-              onChange(index, {
-                type: t,
-                text: action.text,
-                duration_secs: action.duration_secs || 5,
-                color: action.color || '#ffffff',
-                sound_path: action.sound_path || '',
-                volume: action.volume || 0,
-                voice: action.voice || '',
-              })
+              // Spread keeps type-agnostic fields (position, style overrides)
+              // intact when the user flips the action type back and forth.
+              onChange(index, { ...action, type: t, duration_secs: action.duration_secs || 5 })
             }
           />
         </div>
@@ -261,8 +255,14 @@ function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps):
         onOverlayTextChange={(v) => onChange(index, { ...action, text: v })}
         durationSecs={action.duration_secs || 5}
         onDurationSecsChange={(v) => onChange(index, { ...action, duration_secs: v })}
-        color={action.color || '#ffffff'}
+        color={action.color ?? ''}
         onColorChange={(v) => onChange(index, { ...action, color: v })}
+        glowColor={action.glow_color ?? ''}
+        onGlowColorChange={(v) => onChange(index, { ...action, glow_color: v })}
+        fontFamily={action.font_family ?? ''}
+        onFontFamilyChange={(v) => onChange(index, { ...action, font_family: v })}
+        fontSize={action.font_size ?? 0}
+        onFontSizeChange={(v) => onChange(index, { ...action, font_size: v })}
         position={action.position ?? null}
         onPositionChange={(p) => onChange(index, { ...action, position: p })}
         soundPath={action.sound_path || ''}
@@ -314,7 +314,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
   const [pipeCommandText, setPipeCommandText] = useState<string>(initial?.pipe_condition?.text ?? '')
   const [pipeError, setPipeError] = useState<string | null>(null)
   const [actions, setActions] = useState<Action[]>(
-    initial?.actions ?? [{ type: 'overlay_text', text: prefill?.name ?? '', duration_secs: 5, color: '#ffffff', sound_path: '', volume: 0, voice: '' }],
+    initial?.actions ?? [{ type: 'overlay_text', text: prefill?.name ?? '', duration_secs: 5, color: '', sound_path: '', volume: 0, voice: '' }],
   )
   const [timerType, setTimerType] = useState<TimerType>(initial?.timer_type ?? prefill?.timerType ?? 'none')
   const [timerDuration, setTimerDuration] = useState(initial?.timer_duration_secs ?? prefill?.timerDurationSecs ?? 0)
@@ -414,7 +414,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
   }
 
   const handleAddAction = () => {
-    setActions((prev) => [...prev, { type: 'overlay_text', text: '', duration_secs: 5, color: '#ffffff', sound_path: '', volume: 0, voice: '' }])
+    setActions((prev) => [...prev, { type: 'overlay_text', text: '', duration_secs: 5, color: '', sound_path: '', volume: 0, voice: '' }])
   }
 
   const handleCategorySelect = (v: string) => {

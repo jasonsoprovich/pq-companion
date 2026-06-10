@@ -40,8 +40,14 @@ export interface Action {
   voice: string    // TTS voice name; empty = system default
   /** Pins overlay_text alerts to a fixed location; omit/null = stack. */
   position?: ActionPosition | null
-  /** Overlay font size in CSS pixels; 0/omit = renderer default. */
+  /** Overlay font size in CSS pixels; 0/omit = global default. */
   font_size?: number
+  /** Overlay text-glow hex color; empty/omit = global default, falling
+   *  back to a glow derived from the text color. */
+  glow_color?: string
+  /** Overlay font family (a font installed on the user's machine);
+   *  empty/omit = global default, falling back to the system-ui stack. */
+  font_family?: string
 }
 
 /**

@@ -41,7 +41,9 @@ function buildInitialAction(prefill: TriggerPrefill): Action {
     type: 'overlay_text',
     text: prefill.displayText ?? prefill.name,
     duration_secs: 5,
-    color: prefill.displayColor ?? '#ffffff',
+    // Empty = inherit the app-default overlay text style; only prefills with
+    // an explicit display color (e.g. spell-school colors) override it.
+    color: prefill.displayColor ?? '',
     sound_path: '',
     volume: 1,
     voice: '',
@@ -336,8 +338,14 @@ export default function CreateTriggerModal({
               onOverlayTextChange={(v) => setAction((prev) => ({ ...prev, text: v }))}
               durationSecs={action.duration_secs || 5}
               onDurationSecsChange={(v) => setAction((prev) => ({ ...prev, duration_secs: v }))}
-              color={action.color || '#ffffff'}
+              color={action.color ?? ''}
               onColorChange={(v) => setAction((prev) => ({ ...prev, color: v }))}
+              glowColor={action.glow_color ?? ''}
+              onGlowColorChange={(v) => setAction((prev) => ({ ...prev, glow_color: v }))}
+              fontFamily={action.font_family ?? ''}
+              onFontFamilyChange={(v) => setAction((prev) => ({ ...prev, font_family: v }))}
+              fontSize={action.font_size ?? 0}
+              onFontSizeChange={(v) => setAction((prev) => ({ ...prev, font_size: v }))}
               position={action.position ?? null}
               onPositionChange={(p) => setAction((prev) => ({ ...prev, position: p }))}
               soundPath={action.sound_path}
