@@ -42,6 +42,67 @@ function isDuplicate(key: string): boolean {
   return false
 }
 
+// ── TTS voice list ────────────────────────────────────────────────────────────
+//
+// Chromium loads the speech-synthesis voice list asynchronously: getVoices()
+// returns [] until the first call kicks off enumeration and `voiceschanged`
+// fires. Nothing primed that load in the main window at startup, so the first
+// in-game trigger fire resolved its saved voice name against an empty list and
+// silently fell back to the system default voice — until the user happened to
+// open the trigger editor, whose voice dropdown (useVoices) primed the list.
+// Prime it eagerly at module load and keep a cache fresh via voiceschanged.
+let cachedVoices: SpeechSynthesisVoice[] = []
+
+function refreshVoices(): void {
+  if (!window.speechSynthesis) return
+  const list = window.speechSynthesis.getVoices()
+  if (list.length > 0) cachedVoices = list
+}
+
+if (typeof window !== 'undefined' && window.speechSynthesis) {
+  refreshVoices()
+  window.speechSynthesis.addEventListener('voiceschanged', refreshVoices)
+}
+
+function resolveVoice(name: string): SpeechSynthesisVoice | null {
+  if (!name) return null
+  if (cachedVoices.length === 0) refreshVoices()
+  return cachedVoices.find((v) => v.name === name) ?? null
+}
+
+/**
+ * Speak an utterance, applying the named voice if it can be resolved. If the
+ * voice list hasn't loaded yet, hold the utterance until voiceschanged (or a
+ * short timeout) so a trigger that fires right after app launch still speaks
+ * with its configured voice instead of the system default.
+ */
+function speakWithVoice(utterance: SpeechSynthesisUtterance, voiceName: string): void {
+  const synth = window.speechSynthesis
+  const match = resolveVoice(voiceName)
+  if (match) utterance.voice = match
+
+  if (!voiceName || match || cachedVoices.length > 0) {
+    // No specific voice wanted, voice resolved, or the list IS loaded and the
+    // name just doesn't exist anymore — speak now (default voice in that case).
+    synth.speak(utterance)
+    return
+  }
+
+  // Voice list still loading: wait for it, but never hold the alert for more
+  // than a beat — a late default-voice alert beats a missing one.
+  let spoken = false
+  const speakNow = (): void => {
+    if (spoken) return
+    spoken = true
+    synth.removeEventListener('voiceschanged', speakNow)
+    const late = resolveVoice(voiceName)
+    if (late) utterance.voice = late
+    synth.speak(utterance)
+  }
+  synth.addEventListener('voiceschanged', speakNow)
+  setTimeout(speakNow, 2000)
+}
+
 /**
  * Build a renderer-loadable URL for a local audio file. Electron's default
  * webSecurity blocks file:// from non-file:// origins, so we route playback
@@ -119,13 +180,7 @@ export function speakText(text: string, voice = '', volume = 1.0): void {
     console.warn('[audio] speakText failed', { text, voice, error: e.error })
   }
 
-  if (voice) {
-    const voices = window.speechSynthesis.getVoices()
-    const match = voices.find((v) => v.name === voice)
-    if (match) utterance.voice = match
-  }
-
-  window.speechSynthesis.speak(utterance)
+  speakWithVoice(utterance, voice)
 }
 
 /**
@@ -134,10 +189,8 @@ export function speakText(text: string, voice = '', volume = 1.0): void {
  */
 export function getAvailableVoices(): string[] {
   if (!window.speechSynthesis) return []
-  return window.speechSynthesis
-    .getVoices()
-    .map((v) => v.name)
-    .sort()
+  refreshVoices()
+  return cachedVoices.map((v) => v.name).sort()
 }
 
 // ── Test playback ─────────────────────────────────────────────────────────────
@@ -214,11 +267,11 @@ export function speakTextForTest(
   }
   const utterance = new SpeechSynthesisUtterance(text)
   utterance.volume = effectiveVolume(volume)
-  if (voice) {
-    const voices = window.speechSynthesis.getVoices()
-    const match = voices.find((v) => v.name === voice)
-    if (match) utterance.voice = match
-  }
+  // No deferred speak here — tests run from an editor whose voice dropdown has
+  // already primed the list, and the play/stop bookkeeping wants an immediate
+  // utterance.
+  const match = resolveVoice(voice)
+  if (match) utterance.voice = match
 
   let done = false
   const finish = () => {
