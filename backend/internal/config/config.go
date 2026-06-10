@@ -360,6 +360,23 @@ type CHChainSettings struct {
 	// "use the built-in default" (DefaultCHChainPattern).
 	Pattern string `yaml:"pattern" json:"pattern"`
 
+	// SecondaryEnabled turns on a second, independent chain (a ramp/split
+	// chain healed alongside the main tank chain). Calls matching
+	// SecondaryPattern get their own ch_chain_2 timers, which the overlay
+	// and metronome can switch to. When enabled, the settings UI swaps the
+	// default primary pattern to its numeric-only variant and fills the
+	// secondary with the letters-only variant so AAA/BBB ramp calls split
+	// away from 001/002 main-chain calls out of the box.
+	SecondaryEnabled bool `yaml:"secondary_enabled" json:"secondary_enabled"`
+
+	// SecondaryPattern is the regex for the secondary chain, with the same
+	// named-group contract as Pattern. Empty means "use the built-in
+	// letters-only default" (DefaultCHChainSecondaryPattern). Only consulted
+	// when SecondaryEnabled is true; it is tried BEFORE Pattern so letter
+	// calls still route to the secondary chain even if the primary pattern
+	// also happens to match them.
+	SecondaryPattern string `yaml:"secondary_pattern" json:"secondary_pattern"`
+
 	// IntervalSecs is the EXPECTED chain cadence — the spacing the raid is
 	// aiming for between consecutive casts. The overlay no longer uses it to
 	// size the countdown bars (those now run the fixed CH cast time); it's a
@@ -384,10 +401,32 @@ const CHCastSecs = 10
 // feedback pattern expressed the letter-marker form as a same-letter
 // backreference ((?<letter>[A-Za-z])\k<letter>{2,3}); RE2 can't enforce
 // "same letter repeated", so chainnum's letter branch is [A-Za-z]{3,4} (the
-// surrounding CH/COMPLETE HEALING context keeps it from over-matching). The
-// numeric branch is what produces a usable position; a letter marker parses
-// to 0 via strconv.Atoi in the matcher.
-const DefaultCHChainPattern = `^(?P<caster>(You|[A-Z][a-z]{3,14})) (?:tells? (?:the (?:raid|group|guild)|your (party|raid|guild)|[A-Za-z]+(?:-[A-Za-z]+)+:\d)|says out of character|shouts|auctions?),\s+'[^a-zA-Z0-9]*\b(?P<chainnum>\d{3,4}|[A-Za-z]{3,4})[^a-zA-Z0-9]*\b(?:CH|COMPLETE HEALING)\b(?:[^a-zA-Z0-9]*(?:on|to)[^a-zA-Z0-9]*)?[^a-zA-Z0-9]*(?P<target>[A-Z][a-z]{3,14})\b(.*)$`
+// surrounding CH/COMPLETE HEALING context keeps it from over-matching).
+// Numeric markers parse to their position directly; letter markers map
+// A=1, B=2, … from the first letter in the matcher.
+//
+// The pattern is assembled from a shared prefix/suffix around the chainnum
+// branch so the single-chain default (numbers OR letters) and the split
+// numeric-only / letters-only variants used by the secondary-chain feature
+// stay in lockstep. Mirrored in frontend/src/lib/chChainPatterns.ts — keep
+// them in sync.
+const (
+	chChainPatternPrefix = `^(?P<caster>(You|[A-Z][a-z]{3,14})) (?:tells? (?:the (?:raid|group|guild)|your (party|raid|guild)|[A-Za-z]+(?:-[A-Za-z]+)+:\d)|says out of character|shouts|auctions?),\s+'[^a-zA-Z0-9]*\b(?P<chainnum>`
+	chChainPatternSuffix = `)[^a-zA-Z0-9]*\b(?:CH|COMPLETE HEALING)\b(?:[^a-zA-Z0-9]*(?:on|to)[^a-zA-Z0-9]*)?[^a-zA-Z0-9]*(?P<target>[A-Z][a-z]{3,14})\b(.*)$`
+
+	// DefaultCHChainPattern is the single-chain catch-all: numeric (001) and
+	// letter (AAA) markers both feed the one main chain.
+	DefaultCHChainPattern = chChainPatternPrefix + `\d{3,4}|[A-Za-z]{3,4}` + chChainPatternSuffix
+
+	// DefaultCHChainNumericPattern matches only numeric markers (001 002 …).
+	// The settings UI swaps the primary pattern to this when the secondary
+	// chain is enabled, so letter calls stop feeding the main chain.
+	DefaultCHChainNumericPattern = chChainPatternPrefix + `\d{3,4}` + chChainPatternSuffix
+
+	// DefaultCHChainSecondaryPattern matches only letter markers (AAA BBB …),
+	// the common ramp/split-chain calling style.
+	DefaultCHChainSecondaryPattern = chChainPatternPrefix + `[A-Za-z]{3,4}` + chChainPatternSuffix
+)
 
 // DefaultCHChainIntervalSecs is the default per-cast countdown cadence.
 const DefaultCHChainIntervalSecs = 6
@@ -395,9 +434,10 @@ const DefaultCHChainIntervalSecs = 6
 // DefaultCHChainSettings returns the on-by-default settings for fresh installs.
 func DefaultCHChainSettings() CHChainSettings {
 	return CHChainSettings{
-		Enabled:      true,
-		Pattern:      DefaultCHChainPattern,
-		IntervalSecs: DefaultCHChainIntervalSecs,
+		Enabled:          true,
+		Pattern:          DefaultCHChainPattern,
+		SecondaryPattern: DefaultCHChainSecondaryPattern,
+		IntervalSecs:     DefaultCHChainIntervalSecs,
 	}
 }
 
@@ -564,6 +604,13 @@ func applyDefaults(cfg *Config) bool {
 	// upgrading users and on by default only for fresh installs.
 	if cfg.CHChain.Pattern == "" {
 		cfg.CHChain.Pattern = DefaultCHChainPattern
+		changed = true
+	}
+	// Backfill the secondary (ramp/split chain) pattern the same way so the
+	// letters-only default is visible in settings before the user enables it.
+	// SecondaryEnabled is left as loaded — the second chain is opt-in.
+	if cfg.CHChain.SecondaryPattern == "" {
+		cfg.CHChain.SecondaryPattern = DefaultCHChainSecondaryPattern
 		changed = true
 	}
 	if cfg.CHChain.IntervalSecs <= 0 {

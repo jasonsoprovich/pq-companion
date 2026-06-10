@@ -26,6 +26,18 @@ func newMatcher(s Sink, enabled bool, pattern string, interval float64) *Matcher
 	})
 }
 
+func newSplitMatcher(s Sink, primary, secondary string) *Matcher {
+	return New(s, func() config.CHChainSettings {
+		return config.CHChainSettings{
+			Enabled:          true,
+			Pattern:          primary,
+			SecondaryEnabled: true,
+			SecondaryPattern: secondary,
+			IntervalSecs:     6,
+		}
+	})
+}
+
 func TestMatcher_DefaultPattern(t *testing.T) {
 	s := &fakeSink{}
 	m := newMatcher(s, true, config.DefaultCHChainPattern, 6)
@@ -97,6 +109,103 @@ func TestMatcher_DisabledAndNonMatching(t *testing.T) {
 	}
 	if len(s.calls) != 0 {
 		t.Errorf("non-chain lines fired %d times, want 0", len(s.calls))
+	}
+}
+
+// TestMatcher_LetterMarkersSingleChain: with the secondary chain disabled,
+// the catch-all default routes letter calls to the main chain, and the first
+// letter maps to a real position (A=1, B=2, …).
+func TestMatcher_LetterMarkersSingleChain(t *testing.T) {
+	s := &fakeSink{}
+	m := newMatcher(s, true, config.DefaultCHChainPattern, 6)
+
+	lines := []struct {
+		in       string
+		want     string
+		category string
+	}{
+		{"Luna tells the raid, '--- AAA --- CH Krayziefoo'", "#1  Krayziefoo  ← Luna", "ch_chain"},
+		{"Koramak tells the raid, '--- BBB --- CH Krayziefoo'", "#2  Krayziefoo  ← Koramak", "ch_chain"},
+		{"Theofonias tells the raid, '--- ccc --- CH Krayziefoo'", "#3  Krayziefoo  ← Theofonias", "ch_chain"},
+	}
+	for _, tc := range lines {
+		s.calls = nil
+		m.HandleLine(time.Unix(1, 0), tc.in)
+		if len(s.calls) != 1 {
+			t.Fatalf("%q: got %d calls, want 1", tc.in, len(s.calls))
+		}
+		if s.calls[0].name != tc.want || s.calls[0].category != tc.category {
+			t.Errorf("%q: got (%q, %q), want (%q, %q)",
+				tc.in, s.calls[0].name, s.calls[0].category, tc.want, tc.category)
+		}
+	}
+}
+
+// TestMatcher_SecondaryChainRouting: with the secondary chain enabled and the
+// split defaults (numeric-only primary, letters-only secondary), numeric
+// calls land in ch_chain and letter calls in ch_chain_2 — exactly one timer
+// per line, never both.
+func TestMatcher_SecondaryChainRouting(t *testing.T) {
+	s := &fakeSink{}
+	m := newSplitMatcher(s, config.DefaultCHChainNumericPattern, config.DefaultCHChainSecondaryPattern)
+
+	lines := []struct {
+		in       string
+		want     string
+		category string
+	}{
+		{"Luna tells the raid, '--- 001 --- CH Krayziefoo'", "#1  Krayziefoo  ← Luna", "ch_chain"},
+		{"Koramak tells the raid, '--- 002 --- CH Krayziefoo'", "#2  Krayziefoo  ← Koramak", "ch_chain"},
+		{"Dridelve tells the raid, '--- AAA --- CH Rampguy'", "#1  Rampguy  ← Dridelve", "ch_chain_2"},
+		{"Theofonias tells the raid, '--- BBB --- CH Rampguy'", "#2  Rampguy  ← Theofonias", "ch_chain_2"},
+	}
+	for _, tc := range lines {
+		s.calls = nil
+		m.HandleLine(time.Unix(1, 0), tc.in)
+		if len(s.calls) != 1 {
+			t.Fatalf("%q: got %d calls, want 1", tc.in, len(s.calls))
+		}
+		if s.calls[0].name != tc.want || s.calls[0].category != tc.category {
+			t.Errorf("%q: got (%q, %q), want (%q, %q)",
+				tc.in, s.calls[0].name, s.calls[0].category, tc.want, tc.category)
+		}
+	}
+}
+
+// TestMatcher_SecondaryClaimsLettersFirst: even if the user keeps the
+// catch-all primary pattern (which matches letters too), the secondary
+// pattern is tried first, so letter calls still split off to ch_chain_2.
+func TestMatcher_SecondaryClaimsLettersFirst(t *testing.T) {
+	s := &fakeSink{}
+	m := newSplitMatcher(s, config.DefaultCHChainPattern, config.DefaultCHChainSecondaryPattern)
+
+	m.HandleLine(time.Unix(1, 0), "Luna tells the raid, '--- AAA --- CH Rampguy'")
+	if len(s.calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(s.calls))
+	}
+	if s.calls[0].category != "ch_chain_2" {
+		t.Errorf("category = %q, want ch_chain_2", s.calls[0].category)
+	}
+
+	// And a numeric call still falls through to the primary chain.
+	s.calls = nil
+	m.HandleLine(time.Unix(1, 0), "Luna tells the raid, '--- 001 --- CH Krayziefoo'")
+	if len(s.calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(s.calls))
+	}
+	if s.calls[0].category != "ch_chain" {
+		t.Errorf("category = %q, want ch_chain", s.calls[0].category)
+	}
+}
+
+// TestMatcher_NumericPrimaryIgnoresLetters: with the split numeric-only
+// primary and the secondary disabled, letter calls don't match at all.
+func TestMatcher_NumericPrimaryIgnoresLetters(t *testing.T) {
+	s := &fakeSink{}
+	m := newMatcher(s, true, config.DefaultCHChainNumericPattern, 6)
+	m.HandleLine(time.Unix(1, 0), "Luna tells the raid, '--- AAA --- CH Rampguy'")
+	if len(s.calls) != 0 {
+		t.Errorf("letter call matched numeric-only pattern %d times, want 0", len(s.calls))
 	}
 }
 

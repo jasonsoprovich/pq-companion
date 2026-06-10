@@ -32,6 +32,10 @@ const (
 	// CategoryCHChain is for Complete-Heal-chain countdown bars driven by the
 	// CH-chain matcher off raid chat, shown in the dedicated CH Chain overlay.
 	CategoryCHChain Category = "ch_chain"
+	// CategoryCHChain2 is the secondary (ramp/split) heal chain — calls
+	// matching the user's secondary pattern, viewable in the CH Chain
+	// overlay's second tab and watchable by the metronome.
+	CategoryCHChain2 Category = "ch_chain_2"
 )
 
 // ActiveTimer represents one spell that is currently ticking down.
