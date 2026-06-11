@@ -160,7 +160,16 @@ func TestCommunityPackPatterns(t *testing.T) {
 		{"Misc Alerts", "Feign Death Failed", "Somebodyelse has fallen to the ground.", false, "", 0},
 		{"Misc Alerts", "Stunned", "You are stunned!", true, "", 0},
 		{"Misc Alerts", "Unstunned", "You are unstunned.", true, "", 0},
+		// MGB announcements need a time component near the mention…
 		{"Misc Alerts", "MGB Announcement", "Soandso tells general:1, 'mgb aego at top of the hour'", true, "", 0},
+		{"Misc Alerts", "MGB Announcement", "Soandso tells general:1, 'MGB KEI at 3:15'", true, "", 0},
+		{"Misc Alerts", "MGB Announcement", "Soandso tells general:1, 'mgb in 30 min nexus'", true, "", 0},
+		{"Misc Alerts", "MGB Announcement", "Soandso tells general:1, '3:18 mgb nexus'", true, "", 0},
+		{"Misc Alerts", "MGB Announcement", "Soandso tells general:1, 'MGB aego going out now'", true, "", 0},
+		// …so plain chatter about MGBs stays quiet.
+		{"Misc Alerts", "MGB Announcement", "Soandso tells general:1, 'mgb when?'", false, "", 0},
+		{"Misc Alerts", "MGB Announcement", "Soandso tells general:1, 'any mgbs today?'", false, "", 0},
+		{"Misc Alerts", "MGB Announcement", "Soandso tells general:1, 'damn I missed MGB'", false, "", 0},
 		{"Misc Alerts", "MGB Announcement", "Soandso tells general:1, 'selling fine steel'", false, "", 0},
 	}
 

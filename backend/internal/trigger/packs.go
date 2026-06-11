@@ -2420,12 +2420,19 @@ func MiscAlertsPack() TriggerPack {
 				},
 			},
 			{
-				// Any general-channel message mentioning MGB, shown verbatim
-				// via {0} (the whole matched line) — the message itself names
-				// the spell and time, so no need to parse them out.
+				// General-channel MGB announcements, shown verbatim via {0}
+				// (the whole matched line) — the message itself names the
+				// spell and time, so no need to parse them out.
+				//
+				// Real announcements carry a time component ("MGB KEI at
+				// 3:15", "mgb in 30 min nexus", "mgb at top of the hour"),
+				// so the pattern requires a digit / hour / min / now / soon
+				// near the mention. Plain chatter ("mgb when?", "any mgbs?",
+				// "damn I missed MGB") stays quiet. RE2 has no lookahead, so
+				// the time token is an alternation on either side of "mgb".
 				Name:     "MGB Announcement",
 				Enabled:  true,
-				Pattern:  `(?i)^\w+ tells general:\d+, '.*mgb.*'$`,
+				Pattern:  `(?i)^\w+ tells general:\d+, '.*(?:mgb.*(?:\d|hour|min|now|soon)|\d.*mgb).*'$`,
 				PackName: "Misc Alerts",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "{0}", DurationSecs: 10, Color: "#44ddff"},
