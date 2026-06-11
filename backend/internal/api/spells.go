@@ -9,7 +9,9 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/era"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/shoproute"
 )
 
@@ -41,7 +43,8 @@ func (h *spellsHandler) byClass(w http.ResponseWriter, r *http.Request) {
 		limit = 1000
 	}
 	offset := queryInt(r, "offset", 0)
-	result, err := h.db.GetSpellsByClass(classIndex, limit, offset)
+	maxLevel := era.MaxLevel(h.cfgMgr.Get().Preferences.PoPEnabled)
+	result, err := h.db.GetSpellsByClass(classIndex, maxLevel, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -49,7 +52,10 @@ func (h *spellsHandler) byClass(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-type spellsHandler struct{ db *db.DB }
+type spellsHandler struct {
+	db     *db.DB
+	cfgMgr *config.Manager
+}
 
 func (h *spellsHandler) get(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
@@ -234,10 +240,11 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Plane of Knowledge is dropped as a source because its expansion isn't live
-	// on this server yet (the PoP book hub sells a huge slice of the spell list,
-	// so leaving it in would route everyone there); it's opt-in via include_pok.
-	pokExcluded := !body.IncludePoK
+	// Plane of Knowledge is dropped as a source while Planes of Power isn't
+	// live on this server (the PoP book hub sells a huge slice of the spell
+	// list, so leaving it in would route everyone there); pre-PoP it's opt-in
+	// via include_pok. Once the era flag is on, PoK is a normal source.
+	pokExcluded := !body.IncludePoK && !h.cfgMgr.Get().Preferences.PoPEnabled
 
 	// Zones the player chose to skip. Their spells re-route elsewhere.
 	userExcluded := make(map[string]bool, len(body.ExcludeZones))

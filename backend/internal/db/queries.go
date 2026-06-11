@@ -1584,14 +1584,15 @@ func collectSpells(rows *sql.Rows) ([]Spell, error) {
 // GetSpellsByClass returns all spells castable by the given class index (0-based:
 // 0=Warrior, 1=Cleric, ..., 14=Beastlord), ordered by that class's required level
 // then by spell ID. Empty-name spells are excluded. Disciplines (a LoY-era
-// concept) and spells gated above Project Quarm's level-60 cap are also
-// excluded, since neither is obtainable on Quarm.
-func (db *DB) GetSpellsByClass(classIndex, limit, offset int) (*SearchResult[Spell], error) {
+// concept) and spells gated above maxLevel — the era's level cap, 60 until
+// Planes of Power launches (see internal/era) — are also excluded, since
+// neither is obtainable on Quarm.
+func (db *DB) GetSpellsByClass(classIndex, maxLevel, limit, offset int) (*SearchResult[Spell], error) {
 	if classIndex < 0 || classIndex > 14 {
 		return nil, fmt.Errorf("class index %d out of range [0,14]", classIndex)
 	}
 	col := fmt.Sprintf("s.classes%d", classIndex+1)
-	whereClause := fmt.Sprintf("%s BETWEEN 1 AND 60 AND s.IsDiscipline = 0 AND s.name != ''", col)
+	whereClause := fmt.Sprintf("%s BETWEEN 1 AND %d AND s.IsDiscipline = 0 AND s.name != ''", col, maxLevel)
 
 	// Collapse duplicate-name rows to the canonical one (see variants.go).
 	db.ensureVariants()

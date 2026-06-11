@@ -282,6 +282,14 @@ type Preferences struct {
 	// Off by default so casual users don't stumble into raw-DB territory.
 	DeveloperMode bool `yaml:"developer_mode,omitempty" json:"developer_mode"`
 
+	// PoPEnabled switches the app into Planes of Power era: level cap 65
+	// instead of 60, PoP spells in the class spell lists, the PoP AA tabs,
+	// and Plane of Knowledge as a shopping-route source. Off by default
+	// because the expansion isn't live on Project Quarm yet — until launch
+	// it's a preview toggle in the Developer tab (see internal/era). When
+	// PoP launches the default flips in a release and this becomes a no-op.
+	PoPEnabled bool `yaml:"pop_enabled,omitempty" json:"pop_enabled"`
+
 	// NPCOverlayDashboardSections controls which optional sections of the
 	// NPC overlay are visible in the dashboard panel. Name, zone, pet
 	// owner, raid/rare badges, and the HP bar are always shown regardless

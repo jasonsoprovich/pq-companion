@@ -13,6 +13,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/eqstat"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/era"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
@@ -348,7 +349,7 @@ func (h *charactersHandler) spellModifiers(w http.ResponseWriter, r *http.Reques
 			casterLevel = spellLevel
 		}
 		if casterLevel < 1 {
-			casterLevel = 60
+			casterLevel = era.MaxLevel(h.mgr.Get().Preferences.PoPEnabled)
 		}
 		baseTicks := spelltimer.CalcDurationTicks(sp.BuffDurationFormula, sp.BuffDuration, casterLevel)
 		resolution := buffmod.Resolve(

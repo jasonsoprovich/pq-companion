@@ -369,6 +369,41 @@ func TestSearchSpells(t *testing.T) {
 	}
 }
 
+// TestGetSpellsByClass_EraLevelCap drives the era-dependent level cap (see
+// internal/era): pre-PoP the enchanter list stops at 60; with the PoP cap of
+// 65 the list grows and includes 61+ spells (e.g. Greater Fetter at 61).
+func TestGetSpellsByClass_EraLevelCap(t *testing.T) {
+	d := openTestDB(t)
+	const enchanter = 13 // 0-based class index
+
+	pre, err := d.GetSpellsByClass(enchanter, 60, 2000, 0)
+	if err != nil {
+		t.Fatalf("GetSpellsByClass(maxLevel=60): %v", err)
+	}
+	pop, err := d.GetSpellsByClass(enchanter, 65, 2000, 0)
+	if err != nil {
+		t.Fatalf("GetSpellsByClass(maxLevel=65): %v", err)
+	}
+	if pop.Total <= pre.Total {
+		t.Errorf("PoP total=%d, want > pre-PoP total=%d", pop.Total, pre.Total)
+	}
+	for _, sp := range pre.Items {
+		if lvl := sp.ClassLevels[enchanter]; lvl > 60 {
+			t.Errorf("pre-PoP list contains %q at level %d", sp.Name, lvl)
+		}
+	}
+	found61Plus := false
+	for _, sp := range pop.Items {
+		if lvl := sp.ClassLevels[enchanter]; lvl > 60 && lvl <= 65 {
+			found61Plus = true
+			break
+		}
+	}
+	if !found61Plus {
+		t.Error("PoP list has no spells between 61 and 65")
+	}
+}
+
 // ─── Zones ────────────────────────────────────────────────────────────────────
 
 func TestGetZoneByShortName(t *testing.T) {
