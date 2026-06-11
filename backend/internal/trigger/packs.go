@@ -381,82 +381,61 @@ func EnchanterPack() TriggerPack {
 				Actions:           []Action{},
 			},
 
-			// ── Root (timers) ────────────────────────────────────────────
+			// ── Root (merged timer) ──────────────────────────────────────
 			// All three enchanter roots share "<name> adheres to the ground."
-			// land text, so each is matched on "You begin casting <SpellName>."
-			// to disambiguate. Resists clear via the spell-specific resist line.
+			// land text, so the merged trigger matches "You begin casting
+			// <SpellName>." — one pattern row per spell, each carrying its
+			// own duration/spell-id override. TimerKeyCapture keys the
+			// countdown by the captured spell name, so each root runs an
+			// independent timer; the worn-off pattern captures the same name
+			// (one group covering both the worn-off and resist forms) to
+			// clear the right one.
 			{
-				Name:              "Root",
-				Enabled:           true,
-				Pattern:           `^You begin casting Root\.$`,
-				WornOffPattern:    `^(?:Your Root spell has worn off\.|Your target resisted the Root spell\.)$`,
+				Name:    "Root",
+				Enabled: true,
+				Pattern: `^You begin casting (Root)\.$`,
+				ExtraPatterns: []ExtraPattern{
+					{Pattern: `^You begin casting (Fetter)\.$`, Enabled: true, TimerDurationSecs: 180, SpellID: 1633},
+					{Pattern: `^You begin casting (Greater Fetter)\.$`, Enabled: true, TimerDurationSecs: 180, SpellID: 3194},
+				},
+				WornOffPattern:    `^Your (?:target resisted the )?(Greater Fetter|Fetter|Root) spell(?: has worn off)?\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 48,
 				SpellID:           230,
-				PackName:          "Enchanter",
-				Actions:           []Action{},
-			},
-			{
-				Name:              "Fetter",
-				Enabled:           true,
-				Pattern:           `^You begin casting Fetter\.$`,
-				WornOffPattern:    `^(?:Your Fetter spell has worn off\.|Your target resisted the Fetter spell\.)$`,
-				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 180,
-				SpellID:           1633,
-				PackName:          "Enchanter",
-				Actions:           []Action{},
-			},
-			{
-				Name:              "Greater Fetter",
-				Enabled:           true,
-				Pattern:           `^You begin casting Greater Fetter\.$`,
-				WornOffPattern:    `^(?:Your Greater Fetter spell has worn off\.|Your target resisted the Greater Fetter spell\.)$`,
-				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 180,
-				SpellID:           3194,
+				TimerKeyCapture:   "1",
 				PackName:          "Enchanter",
 				Actions:           []Action{},
 			},
 
-			// ── Mez (timers) ─────────────────────────────────────────────
+			// ── Mez (merged timer) ───────────────────────────────────────
 			// Mesmerize / Mesmerization / Dazzle share the "<name> has been
-			// mesmerized." land text but have three different base durations
-			// (24 / 24 / 96 s), so they're matched on "You begin casting
-			// <SpellName>." instead — the cast-begin message uniquely names
-			// each spell. The trade-off is that the timer starts ~2-3 s before
-			// the spell actually lands; on a resist the WornOffPattern catches
-			// it via the spell-specific resist line so the stale timer clears.
+			// mesmerized." land text but have different base durations
+			// (24 / 24 / 96 s), so the merged trigger matches "You begin
+			// casting <SpellName>." — one pattern row per spell with its own
+			// duration/spell-id. The trade-off is that the timer starts
+			// ~2-3 s before the spell actually lands; on a resist the
+			// WornOffPattern catches it via the spell-specific resist line so
+			// the stale timer clears. TimerKeyCapture keys each countdown by
+			// the captured spell name — which also keeps the spelltimer
+			// engine's deferred-render handling for these three spells
+			// working (it's keyed by spell name).
+			//
+			// Enthrall / Entrance / Glamour of Kintaz / Rapture stay separate
+			// below: they match on unique land text, which doesn't contain
+			// the spell name to capture.
 			{
-				Name:              "Mesmerize",
-				Enabled:           true,
-				Pattern:           `^You begin casting Mesmerize\.$`,
-				WornOffPattern:    `^(?:Your Mesmerize spell has worn off\.|Your target resisted the Mesmerize spell\.)$`,
+				Name:    "Mez",
+				Enabled: true,
+				Pattern: `^You begin casting (Mesmerize)\.$`,
+				ExtraPatterns: []ExtraPattern{
+					{Pattern: `^You begin casting (Mesmerization)\.$`, Enabled: true, TimerDurationSecs: 24, SpellID: 307},
+					{Pattern: `^You begin casting (Dazzle)\.$`, Enabled: true, TimerDurationSecs: 96, SpellID: 190},
+				},
+				WornOffPattern:    `^Your (?:target resisted the )?(Mesmerization|Mesmerize|Dazzle) spell(?: has worn off)?\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 24,
 				SpellID:           292,
-				PackName:          "Enchanter",
-				Actions:           []Action{},
-			},
-			{
-				Name:              "Mesmerization",
-				Enabled:           true,
-				Pattern:           `^You begin casting Mesmerization\.$`,
-				WornOffPattern:    `^(?:Your Mesmerization spell has worn off\.|Your target resisted the Mesmerization spell\.)$`,
-				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 24,
-				SpellID:           307,
-				PackName:          "Enchanter",
-				Actions:           []Action{},
-			},
-			{
-				Name:              "Dazzle",
-				Enabled:           true,
-				Pattern:           `^You begin casting Dazzle\.$`,
-				WornOffPattern:    `^(?:Your Dazzle spell has worn off\.|Your target resisted the Dazzle spell\.)$`,
-				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 96,
-				SpellID:           190,
+				TimerKeyCapture:   "1",
 				PackName:          "Enchanter",
 				Actions:           []Action{},
 			},
@@ -509,61 +488,42 @@ func EnchanterPack() TriggerPack {
 				Actions:           []Action{},
 			},
 
-			// ── Charm (timers) ───────────────────────────────────────────
+			// ── Charm (merged timer) ─────────────────────────────────────
 			// Every enchanter charm has an empty cast_on_other (the caster
 			// never sees a "<name> has been charmed." line in their log) and
 			// the charm line shares "You have been charmed." / "You are no
 			// longer charmed." across spells with very different durations,
-			// so each trigger matches on "You begin casting <SpellName>."
-			// instead. Resists clear the stale timer via the spell-specific
-			// resist line.
+			// so the merged trigger matches on "You begin casting
+			// <SpellName>.". Resists clear the stale timer via the
+			// spell-specific resist line.
 			// Charm/Beguile/Cajoling Whispers/Allure/Boltran's Agacerie all
 			// share spells_new buffduration=205 / buffdurationformula=10. With
 			// formula 10 = min(level*3 + 10, base), level 60 yields 190 ticks
 			// = 1140s. Old formula 10 (`min(level, base)`) returned 60 ticks
 			// = 360s, which is what these were calibrated against; updated in
 			// lockstep with the duration.go fix.
+			// One merged trigger covers the five standard charms;
+			// TimerKeyCapture keys each countdown by the captured spell name.
+			// Dictate stays separate below — its reuse cooldown (CooldownSecs)
+			// is trigger-level and would otherwise be shared by the whole line.
 			{
-				Name:              "Charm",
-				Enabled:           true,
-				Pattern:           `^You begin casting Charm\.$`,
-				WornOffPattern:    `^(?:Your Charm spell has worn off\.|Your target resisted the Charm spell\.)$`,
+				Name:    "Charm",
+				Enabled: true,
+				Pattern: `^You begin casting (Charm)\.$`,
+				ExtraPatterns: []ExtraPattern{
+					{Pattern: `^You begin casting (Beguile)\.$`, Enabled: true, TimerDurationSecs: 1140, SpellID: 182},
+					{Pattern: `^You begin casting (Cajoling Whispers)\.$`, Enabled: true, TimerDurationSecs: 1140, SpellID: 183},
+					{Pattern: `^You begin casting (Allure)\.$`, Enabled: true, TimerDurationSecs: 1140, SpellID: 184},
+					// quarm.db carries both apostrophe spellings (1705 backtick,
+					// 1706 ASCII); accept either so the captured key always matches
+					// what the log emits. Double-quoted for the backtick.
+					{Pattern: "^You begin casting (Boltran[`']s Agacerie)\\.$", Enabled: true, TimerDurationSecs: 1140, SpellID: 1706},
+				},
+				WornOffPattern:    "^Your (?:target resisted the )?(Cajoling Whispers|Boltran[`']s Agacerie|Beguile|Allure|Charm) spell(?: has worn off)?\\.$",
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 1140,
 				SpellID:           300,
-				PackName:          "Enchanter",
-				Actions:           []Action{},
-			},
-			{
-				Name:              "Beguile",
-				Enabled:           true,
-				Pattern:           `^You begin casting Beguile\.$`,
-				WornOffPattern:    `^(?:Your Beguile spell has worn off\.|Your target resisted the Beguile spell\.)$`,
-				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 1140,
-				SpellID:           182,
-				PackName:          "Enchanter",
-				Actions:           []Action{},
-			},
-			{
-				Name:              "Cajoling Whispers",
-				Enabled:           true,
-				Pattern:           `^You begin casting Cajoling Whispers\.$`,
-				WornOffPattern:    `^(?:Your Cajoling Whispers spell has worn off\.|Your target resisted the Cajoling Whispers spell\.)$`,
-				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 1140,
-				SpellID:           183,
-				PackName:          "Enchanter",
-				Actions:           []Action{},
-			},
-			{
-				Name:              "Allure",
-				Enabled:           true,
-				Pattern:           `^You begin casting Allure\.$`,
-				WornOffPattern:    `^(?:Your Allure spell has worn off\.|Your target resisted the Allure spell\.)$`,
-				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 1140,
-				SpellID:           184,
+				TimerKeyCapture:   "1",
 				PackName:          "Enchanter",
 				Actions:           []Action{},
 			},
@@ -579,81 +539,34 @@ func EnchanterPack() TriggerPack {
 				PackName:          "Enchanter",
 				Actions:           []Action{},
 			},
-			{
-				Name:              "Boltran's Agacerie",
-				Enabled:           true,
-				Pattern:           `^You begin casting Boltran's Agacerie\.$`,
-				WornOffPattern:    `^(?:Your Boltran's Agacerie spell has worn off\.|Your target resisted the Boltran's Agacerie spell\.)$`,
-				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 1140,
-				SpellID:           1706,
-				PackName:          "Enchanter",
-				Actions:           []Action{},
-			},
 
-			// ── Pacify line (timers) ─────────────────────────────────────
+			// ── Pacify line (merged timer) ───────────────────────────────
 			// Lull / Calm / Soothe / Pacify / Wake of Tranquility share most
-			// of their cast text and have empty spell_fades, so each trigger
-			// matches on "You begin casting <SpellName>." to get the right
-			// per-spell duration. WornOffPattern uses the caster's
-			// "Your <SpellName> spell has worn off." line plus the
-			// spell-specific resist line so the timer clears on resist.
+			// of their cast text and have empty spell_fades, so the merged
+			// trigger matches "You begin casting <SpellName>." with one
+			// pattern row per spell. TimerKeyCapture keys each countdown by
+			// the captured spell name; the worn-off pattern captures the same
+			// name from the caster's worn-off line or the spell-specific
+			// resist line.
+			// Pacify's 360s = 6 minutes per PQDI (spell 45, buffduration=60
+			// ticks). EQMac formula 8 = min(level+10, base); at level 60
+			// that's the full 60-tick base. Was 720 (from the modern-EQEmu
+			// reading); kept in lockstep with spelltimer.CalcDurationTicks.
 			{
-				Name:              "Lull",
-				Enabled:           true,
-				Pattern:           `^You begin casting Lull\.$`,
-				WornOffPattern:    `^(?:Your Lull spell has worn off\.|Your target resisted the Lull spell\.)$`,
+				Name:    "Pacify",
+				Enabled: true,
+				Pattern: `^You begin casting (Lull)\.$`,
+				ExtraPatterns: []ExtraPattern{
+					{Pattern: `^You begin casting (Calm)\.$`, Enabled: true, TimerDurationSecs: 126, SpellID: 47},
+					{Pattern: `^You begin casting (Soothe)\.$`, Enabled: true, TimerDurationSecs: 450, SpellID: 501},
+					{Pattern: `^You begin casting (Pacify)\.$`, Enabled: true, TimerDurationSecs: 360, SpellID: 45},
+					{Pattern: `^You begin casting (Wake of Tranquility)\.$`, Enabled: true, TimerDurationSecs: 126, SpellID: 1541},
+				},
+				WornOffPattern:    `^Your (?:target resisted the )?(Wake of Tranquility|Soothe|Pacify|Lull|Calm) spell(?: has worn off)?\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 120,
 				SpellID:           208,
-				PackName:          "Enchanter",
-				Actions:           []Action{},
-			},
-			{
-				Name:              "Calm",
-				Enabled:           true,
-				Pattern:           `^You begin casting Calm\.$`,
-				WornOffPattern:    `^(?:Your Calm spell has worn off\.|Your target resisted the Calm spell\.)$`,
-				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 126,
-				SpellID:           47,
-				PackName:          "Enchanter",
-				Actions:           []Action{},
-			},
-			{
-				Name:              "Soothe",
-				Enabled:           true,
-				Pattern:           `^You begin casting Soothe\.$`,
-				WornOffPattern:    `^(?:Your Soothe spell has worn off\.|Your target resisted the Soothe spell\.)$`,
-				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 450,
-				SpellID:           501,
-				PackName:          "Enchanter",
-				Actions:           []Action{},
-			},
-			{
-				Name:           "Pacify",
-				Enabled:        true,
-				Pattern:        `^You begin casting Pacify\.$`,
-				WornOffPattern: `^(?:Your Pacify spell has worn off\.|Your target resisted the Pacify spell\.)$`,
-				TimerType:      TimerTypeDetrimental,
-				// 360s = 6 minutes per PQDI (spell 45, buffduration=60 ticks).
-				// EQMac formula 8 = min(level+10, base); at level 60 that's the
-				// full 60-tick base. Was 720 (from the modern-EQEmu reading);
-				// kept in lockstep with the spelltimer.CalcDurationTicks port.
-				TimerDurationSecs: 360,
-				SpellID:           45,
-				PackName:          "Enchanter",
-				Actions:           []Action{},
-			},
-			{
-				Name:              "Wake of Tranquility",
-				Enabled:           true,
-				Pattern:           `^You begin casting Wake of Tranquility\.$`,
-				WornOffPattern:    `^(?:Your Wake of Tranquility spell has worn off\.|Your target resisted the Wake of Tranquility spell\.)$`,
-				TimerType:         TimerTypeDetrimental,
-				TimerDurationSecs: 126,
-				SpellID:           1541,
+				TimerKeyCapture:   "1",
 				PackName:          "Enchanter",
 				Actions:           []Action{},
 			},

@@ -3,6 +3,9 @@ package trigger
 import (
 	"regexp"
 	"testing"
+	"time"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
 // TestAllPacks_PatternsCompile walks every built-in pack and compiles every
@@ -179,6 +182,79 @@ func TestCommunityPackPatterns(t *testing.T) {
 				t.Errorf("%s / %s vs %q: capture[%d]=%q, want %q",
 					tc.pack, tc.trigger, tc.line, idx, m[idx], tc.wantCapture)
 			}
+		}
+	}
+}
+
+// TestEnchanterMergedTriggers drives the merged Mez/Charm/Pacify/Root
+// triggers from the Enchanter pack through the engine and asserts each
+// spell's cast line starts a timer under its own name with its own
+// duration and spell id, and that worn-off/resist lines clear the right
+// timer.
+func TestEnchanterMergedTriggers(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	sink := &captureSink{}
+	e := NewEngine(s, hub, sink, nil)
+
+	if err := InstallPack(s, applyDefaultTimerAlerts(EnchanterPack())); err != nil {
+		t.Fatalf("InstallPack: %v", err)
+	}
+	e.Reload()
+
+	starts := []struct {
+		line     string
+		key      string
+		duration int
+		spellID  int
+	}{
+		{"You begin casting Mesmerize.", "Mesmerize", 24, 292},
+		{"You begin casting Mesmerization.", "Mesmerization", 24, 307},
+		{"You begin casting Dazzle.", "Dazzle", 96, 190},
+		{"You begin casting Charm.", "Charm", 1140, 300},
+		{"You begin casting Cajoling Whispers.", "Cajoling Whispers", 1140, 183},
+		{"You begin casting Boltran`s Agacerie.", "Boltran`s Agacerie", 1140, 1706},
+		{"You begin casting Boltran's Agacerie.", "Boltran's Agacerie", 1140, 1706},
+		{"You begin casting Lull.", "Lull", 120, 208},
+		{"You begin casting Wake of Tranquility.", "Wake of Tranquility", 126, 1541},
+		{"You begin casting Soothe.", "Soothe", 450, 501},
+		{"You begin casting Root.", "Root", 48, 230},
+		{"You begin casting Greater Fetter.", "Greater Fetter", 180, 3194},
+	}
+	for _, c := range starts {
+		before := sink.calls
+		e.Handle(time.Now(), c.line)
+		if sink.calls != before+1 {
+			t.Errorf("%q: expected 1 timer start, got %d", c.line, sink.calls-before)
+			continue
+		}
+		if sink.name != c.key || sink.duration != c.duration || sink.spellID != c.spellID {
+			t.Errorf("%q: started %s/%d/%d, want %s/%d/%d",
+				c.line, sink.name, sink.duration, sink.spellID, c.key, c.duration, c.spellID)
+		}
+	}
+
+	stops := []struct {
+		line string
+		key  string
+	}{
+		{"Your Dazzle spell has worn off.", "Dazzle"},
+		{"Your target resisted the Mesmerization spell.", "Mesmerization"},
+		{"Your target resisted the Greater Fetter spell.", "Greater Fetter"},
+		{"Your Soothe spell has worn off.", "Soothe"},
+		{"Your target resisted the Beguile spell.", "Beguile"},
+	}
+	for _, c := range stops {
+		before := sink.stops
+		e.Handle(time.Now(), c.line)
+		if sink.stops != before+1 {
+			t.Errorf("%q: expected 1 timer stop, got %d", c.line, sink.stops-before)
+			continue
+		}
+		// Capture-resolved stops must pass spellID 0 so the trigger-level
+		// SpellID (the primary spell's) can't remove a sibling's timer.
+		if sink.stopName != c.key || sink.stopSpellID != 0 {
+			t.Errorf("%q: stopped %s/%d, want %s/0", c.line, sink.stopName, sink.stopSpellID, c.key)
 		}
 	}
 }
