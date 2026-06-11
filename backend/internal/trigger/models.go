@@ -97,6 +97,17 @@ type TimerAlert struct {
 	TTSVolume   int            `json:"tts_volume"` // 0–100
 }
 
+// ExtraPattern is one additional match pattern on a log-source trigger,
+// individually toggleable without being deleted. The trigger fires when the
+// primary Pattern OR any enabled extra pattern matches ("any" semantics) —
+// the matching pattern's capture groups feed the action text, so several
+// related captures (e.g. a tracking trigger's "X is ahead / behind / left")
+// can share one trigger's actions and category.
+type ExtraPattern struct {
+	Pattern string `json:"pattern"`
+	Enabled bool   `json:"enabled"`
+}
+
 // SourceLog and SourcePipe are the legal values for Trigger.Source.
 const (
 	SourceLog  = "log"
@@ -196,12 +207,20 @@ type Trigger struct {
 	// fading notification (the timer still counts down silently).
 	TimerAlerts []TimerAlert `json:"timer_alerts"`
 
+	// ExtraPatterns are additional regexes matched alongside Pattern — the
+	// trigger fires when ANY enabled pattern (primary or extra) matches, and
+	// the matching pattern's capture groups substitute into the actions.
+	// Each entry toggles independently in the editor. Empty = classic
+	// single-pattern trigger.
+	ExtraPatterns []ExtraPattern `json:"extra_patterns"`
+
 	// ExcludePatterns are regexes that suppress the trigger when any of them
 	// also match the same log line. The intended use is filtering a broad
 	// primary pattern: e.g. an "incoming tell" trigger whose pattern is
 	// `\w+ tells you,` excludes pet responses (, Master.') and NPC merchant
 	// canned phrases (That'll be, I'll give you, etc.) so genuine player
-	// tells are the only matches that fire actions.
+	// tells are the only matches that fire actions. Excludes apply to extra
+	// pattern matches too.
 	ExcludePatterns []string `json:"exclude_patterns"`
 
 	// DedupKey identifies the conceptual spell/discipline/skill this trigger

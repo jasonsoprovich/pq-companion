@@ -814,6 +814,62 @@ func TestNormalizePattern(t *testing.T) {
 	}
 }
 
+// TestEngine_ExtraPatterns verifies any-pattern semantics: a trigger fires
+// when the primary OR any enabled extra pattern matches, the matching
+// pattern's captures feed the actions, disabled extras are ignored, and
+// excludes suppress extra-pattern matches too.
+func TestEngine_ExtraPatterns(t *testing.T) {
+	s, e := openTestEngine(t)
+
+	tr := &Trigger{
+		ID:      "multi1",
+		Name:    "Tracking",
+		Enabled: true,
+		Pattern: `^(.+) is ahead and to the left\.$`,
+		ExtraPatterns: []ExtraPattern{
+			{Pattern: `^(.+) is behind you\.$`, Enabled: true},
+			{Pattern: `^(.+) is straight ahead\.$`, Enabled: true},
+			{Pattern: `^(.+) is to the right\.$`, Enabled: false}, // toggled off
+		},
+		ExcludePatterns: []string{`a skeleton`},
+		Actions: []Action{
+			{Type: ActionOverlayText, Text: "Track: {1}", DurationSecs: 5},
+		},
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	e.Handle(time.Now(), "a gnoll is ahead and to the left.")  // primary
+	e.Handle(time.Now(), "a wolf is behind you.")              // extra 1
+	e.Handle(time.Now(), "a bear is straight ahead.")          // extra 2
+	e.Handle(time.Now(), "a lion is to the right.")            // disabled extra → no fire
+	e.Handle(time.Now(), "a skeleton is behind you.")          // excluded → no fire
+	e.Handle(time.Now(), "You have entered The North Karana.") // no match
+
+	hist := e.GetHistory()
+	if len(hist) != 3 {
+		t.Fatalf("expected 3 fires, got %d: %+v", len(hist), hist)
+	}
+	want := []string{"Track: a gnoll", "Track: a wolf", "Track: a bear"}
+	for i, w := range want {
+		if got := hist[i].Actions[0].Text; got != w {
+			t.Errorf("fire %d action text = %q, want %q", i, got, w)
+		}
+	}
+
+	// Round-trip: extra patterns survive store persistence.
+	stored, err := s.Get("multi1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(stored.ExtraPatterns) != 3 || stored.ExtraPatterns[2].Enabled {
+		t.Errorf("extra patterns not persisted faithfully: %+v", stored.ExtraPatterns)
+	}
+}
+
 // TestEngine_CharacterTokenPattern verifies the end-to-end path: a pattern
 // using {c} compiles against the active character and matches a real line,
 // and {target}/{c} resolve in action text via the engine's providers.

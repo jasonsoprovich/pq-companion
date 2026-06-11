@@ -46,6 +46,10 @@ type compiled struct {
 	re       *regexp.Regexp
 	wornOff  *regexp.Regexp // non-nil only when the trigger has a worn-off pattern
 	timerKey string         // cached spelltimer key when timer_type != none
+	// extras are the precompiled enabled ExtraPatterns. The trigger fires
+	// when the primary pattern OR any extra matches; the first matching
+	// pattern's capture groups feed the actions.
+	extras []*regexp.Regexp
 	// excludes are precompiled ExcludePatterns; if any match the same line
 	// the primary match is suppressed. Lets a broad pattern (e.g. "incoming
 	// tell") filter pet/merchant lines without needing RE2 lookbehind.
@@ -135,6 +139,17 @@ func (e *Engine) Reload() {
 			continue
 		}
 		c := compiled{trigger: t, re: re}
+		for _, ep := range t.ExtraPatterns {
+			if !ep.Enabled || ep.Pattern == "" {
+				continue
+			}
+			ex, err := regexp.Compile(normalizePattern(ep.Pattern, character))
+			if err != nil {
+				slog.Warn("trigger: invalid extra pattern, skipping", "id", t.ID, "name", t.Name, "pattern", ep.Pattern, "err", err)
+				continue
+			}
+			c.extras = append(c.extras, ex)
+		}
 		if t.WornOffPattern != "" {
 			if wornRe, err := regexp.Compile(normalizePattern(t.WornOffPattern, character)); err == nil {
 				c.wornOff = wornRe
@@ -184,8 +199,15 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 		if !triggerAppliesTo(c.trigger, active) {
 			continue
 		}
-		if m := c.re.FindStringSubmatch(message); m != nil && !matchesAny(c.excludes, message) {
-			e.fire(c, message, timestamp, m, c.re.SubexpNames())
+		// Any-pattern semantics: try the primary pattern first, then each
+		// enabled extra. The first match wins and supplies the capture
+		// groups; excludes suppress regardless of which pattern matched.
+		m, names := c.re.FindStringSubmatch(message), c.re.SubexpNames()
+		for i := 0; m == nil && i < len(c.extras); i++ {
+			m, names = c.extras[i].FindStringSubmatch(message), c.extras[i].SubexpNames()
+		}
+		if m != nil && !matchesAny(c.excludes, message) {
+			e.fire(c, message, timestamp, m, names)
 		}
 		if c.wornOff != nil && c.wornOff.MatchString(message) {
 			if e.sink != nil && c.timerKey != "" {

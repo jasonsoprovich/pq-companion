@@ -65,6 +65,7 @@ import type {
   TriggerSource,
   PipeConditionKind,
   PipeCondition,
+  ExtraPattern,
 } from '../types/trigger'
 
 const CLASS_NAMES = [
@@ -333,6 +334,12 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
     (initial?.exclude_patterns ?? []).join('\n'),
   )
   const [excludeErrors, setExcludeErrors] = useState<string[]>([])
+  // Additional match patterns — per-row controls (unlike excludes) because
+  // each carries its own enabled toggle. Empty rows are dropped on save.
+  const [extraPatterns, setExtraPatterns] = useState<ExtraPattern[]>(
+    initial?.extra_patterns ?? [],
+  )
+  const [extraErrors, setExtraErrors] = useState<string[]>([])
   const voices = useVoices()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -474,6 +481,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
 
     let pipeCondition: PipeCondition | undefined
     let excludeList: string[] = []
+    let extraList: ExtraPattern[] = []
     if (source === 'pipe') {
       const pc = buildPipeCondition()
       if (!pc) {
@@ -499,6 +507,23 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
         return
       }
       setExcludeErrors([])
+
+      extraList = extraPatterns
+        .map((ep) => ({ ...ep, pattern: ep.pattern.trim() }))
+        .filter((ep) => ep.pattern.length > 0)
+      const extraErrs: string[] = []
+      for (const ep of extraList) {
+        try {
+          new RegExp(ep.pattern.replace(/\(\?P</g, '(?<'))
+        } catch (e) {
+          extraErrs.push(`${ep.pattern} — ${(e as Error).message}`)
+        }
+      }
+      if (extraErrs.length > 0) {
+        setExtraErrors(extraErrs)
+        return
+      }
+      setExtraErrors([])
     }
 
     const req: CreateTriggerRequest = {
@@ -516,6 +541,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
       characters: Array.from(selectedChars),
       timer_alerts: timerType === 'none' ? [] : timerAlerts,
       exclude_patterns: source === 'pipe' ? [] : excludeList,
+      extra_patterns: source === 'pipe' ? [] : extraList,
       source,
       pipe_condition: pipeCondition,
       pack_name: packName,
@@ -729,6 +755,70 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
             <span className="font-mono">{'{c}'}</span> = your character (works in the
             pattern too), <span className="font-mono">{'{target}'}</span> = current target.
           </p>
+
+          {/* Additional patterns — any enabled pattern fires the trigger. */}
+          <div className="space-y-1 pt-1">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+                Additional patterns
+              </label>
+              <button
+                type="button"
+                onClick={() => setExtraPatterns((prev) => [...prev, { pattern: '', enabled: true }])}
+                className="text-[11px] rounded px-2 py-0.5"
+                style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-muted-foreground)' }}
+                disabled={submitting}
+              >
+                + Add pattern
+              </button>
+            </div>
+            {extraPatterns.length > 0 && (
+              <p className="text-[10px] leading-snug" style={{ color: 'var(--color-muted)' }}>
+                The trigger fires when the main pattern <em>or</em> any enabled pattern below
+                matches; the matching pattern's capture groups fill the alert text. Uncheck a
+                row to disable it without deleting.
+              </p>
+            )}
+            {extraPatterns.map((ep, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={ep.enabled}
+                  onChange={(e) => {
+                    const v = e.target.checked
+                    setExtraPatterns((prev) => prev.map((p, j) => (j === i ? { ...p, enabled: v } : p)))
+                  }}
+                  disabled={submitting}
+                />
+                <input
+                  type="text"
+                  value={ep.pattern}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setExtraPatterns((prev) => prev.map((p, j) => (j === i ? { ...p, pattern: v } : p)))
+                    if (extraErrors.length > 0) setExtraErrors([])
+                  }}
+                  className="flex-1 rounded px-3 py-1.5 text-sm outline-none font-mono"
+                  style={{ ...inputStyle, opacity: ep.enabled ? 1 : 0.5 }}
+                  placeholder="^(.+) is behind you\.$"
+                  disabled={submitting}
+                />
+                <button
+                  type="button"
+                  onClick={() => setExtraPatterns((prev) => prev.filter((_, j) => j !== i))}
+                  style={{ color: 'var(--color-muted-foreground)' }}
+                  disabled={submitting}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            ))}
+            {extraErrors.map((msg, i) => (
+              <p key={i} className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
+                {msg}
+              </p>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1185,6 +1275,8 @@ function TriggerRow({
 
   const handleToggle = (v: boolean) => {
     setToggling(true)
+    // Full update — the backend replaces list fields with what's sent, so
+    // every list must be passed through or toggling would wipe it.
     const req: CreateTriggerRequest = {
       name: trigger.name,
       enabled: v,
@@ -1197,6 +1289,10 @@ function TriggerRow({
       display_threshold_secs: trigger.display_threshold_secs,
       characters: trigger.characters,
       timer_alerts: trigger.timer_alerts ?? [],
+      exclude_patterns: trigger.exclude_patterns ?? [],
+      extra_patterns: trigger.extra_patterns ?? [],
+      source: trigger.source,
+      pipe_condition: trigger.pipe_condition,
     }
     updateTrigger(trigger.id, req)
       .then((updated) => {
@@ -2426,6 +2522,7 @@ export default function TriggersPage(): React.ReactElement {
       characters: t.characters,
       timer_alerts: t.timer_alerts ?? [],
       exclude_patterns: t.exclude_patterns ?? [],
+      extra_patterns: t.extra_patterns ?? [],
       source: t.source,
       pipe_condition: t.pipe_condition,
       pack_name: target,

@@ -69,6 +69,7 @@ func (s *Store) migrate() error {
 			characters             TEXT    NOT NULL DEFAULT '[]',
 			timer_alerts           TEXT    NOT NULL DEFAULT '[]',
 			exclude_patterns       TEXT    NOT NULL DEFAULT '[]',
+			extra_patterns         TEXT    NOT NULL DEFAULT '[]',
 			source                 TEXT    NOT NULL DEFAULT 'log',
 			pipe_condition         TEXT    NOT NULL DEFAULT '',
 			dedup_key              TEXT    NOT NULL DEFAULT '',
@@ -116,6 +117,7 @@ func (s *Store) migrate() error {
 		`ALTER TABLE triggers ADD COLUMN characters TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE triggers ADD COLUMN timer_alerts TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE triggers ADD COLUMN exclude_patterns TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE triggers ADD COLUMN extra_patterns TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE triggers ADD COLUMN source TEXT NOT NULL DEFAULT 'log'`,
 		`ALTER TABLE triggers ADD COLUMN pipe_condition TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE triggers ADD COLUMN dedup_key TEXT NOT NULL DEFAULT ''`,
@@ -511,6 +513,13 @@ func (s *Store) Insert(t *Trigger) error {
 	if err != nil {
 		return fmt.Errorf("marshal exclude_patterns: %w", err)
 	}
+	if t.ExtraPatterns == nil {
+		t.ExtraPatterns = []ExtraPattern{}
+	}
+	extraJSON, err := json.Marshal(t.ExtraPatterns)
+	if err != nil {
+		return fmt.Errorf("marshal extra_patterns: %w", err)
+	}
 	if t.TimerType == "" {
 		t.TimerType = TimerTypeNone
 	}
@@ -519,12 +528,13 @@ func (s *Store) Insert(t *Trigger) error {
 		`INSERT INTO triggers (id, name, enabled, pattern, actions, pack_name, created_at,
 		                       timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		                       display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		                       source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       extra_patterns, source, pipe_condition, dedup_key, cooldown_secs,
+		                       sort_order, source_pack)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName, t.CreatedAt.Unix(),
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
-		source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder, t.SourcePack,
+		string(extraJSON), source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder, t.SourcePack,
 	)
 	if err != nil {
 		return fmt.Errorf("insert trigger: %w", err)
@@ -558,7 +568,7 @@ func (s *Store) List() ([]*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack
+		        extra_patterns, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack
 		 FROM triggers ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -583,7 +593,7 @@ func (s *Store) Get(id string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack
+		        extra_patterns, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack
 		 FROM triggers WHERE id = ?`, id,
 	)
 	t, err := scanTrigger(row)
@@ -623,6 +633,13 @@ func (s *Store) Update(t *Trigger) error {
 	if err != nil {
 		return fmt.Errorf("marshal exclude_patterns: %w", err)
 	}
+	if t.ExtraPatterns == nil {
+		t.ExtraPatterns = []ExtraPattern{}
+	}
+	extraJSON, err := json.Marshal(t.ExtraPatterns)
+	if err != nil {
+		return fmt.Errorf("marshal extra_patterns: %w", err)
+	}
 	if t.TimerType == "" {
 		t.TimerType = TimerTypeNone
 	}
@@ -631,12 +648,13 @@ func (s *Store) Update(t *Trigger) error {
 		`UPDATE triggers SET name=?, enabled=?, pattern=?, actions=?, pack_name=?,
 		                     timer_type=?, timer_duration_secs=?, worn_off_pattern=?, spell_id=?,
 		                     display_threshold_secs=?, characters=?, timer_alerts=?, exclude_patterns=?,
-		                     source=?, pipe_condition=?, dedup_key=?, cooldown_secs=?, sort_order=?, source_pack=?
+		                     extra_patterns=?, source=?, pipe_condition=?, dedup_key=?, cooldown_secs=?,
+		                     sort_order=?, source_pack=?
 		 WHERE id=?`,
 		t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName,
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
-		source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder, t.SourcePack,
+		string(extraJSON), source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder, t.SourcePack,
 		t.ID,
 	)
 	if err != nil {
@@ -672,7 +690,7 @@ func (s *Store) FindByPackAndName(packName, name string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack
+		        extra_patterns, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack
 		 FROM triggers WHERE pack_name = ? AND name = ? LIMIT 1`,
 		packName, name,
 	)
@@ -700,7 +718,7 @@ func (s *Store) FindByDedupKey(key string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack
+		        extra_patterns, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack
 		 FROM triggers WHERE dedup_key = ? LIMIT 1`, key,
 	)
 	t, err := scanTrigger(row)
@@ -826,14 +844,14 @@ type scanner interface {
 func scanTrigger(row scanner) (*Trigger, error) {
 	var t Trigger
 	var enabledInt int
-	var actJSON, charJSON, alertJSON, excludeJSON, source, pipeJSON string
+	var actJSON, charJSON, alertJSON, excludeJSON, extraJSON, source, pipeJSON string
 	var unixSec int64
 	var timerType string
 	if err := row.Scan(
 		&t.ID, &t.Name, &enabledInt, &t.Pattern, &actJSON, &t.PackName, &unixSec,
 		&timerType, &t.TimerDurationSecs, &t.WornOffPattern, &t.SpellID,
 		&t.DisplayThresholdSecs, &charJSON, &alertJSON, &excludeJSON,
-		&source, &pipeJSON, &t.DedupKey, &t.CooldownSecs, &t.SortOrder, &t.SourcePack,
+		&extraJSON, &source, &pipeJSON, &t.DedupKey, &t.CooldownSecs, &t.SortOrder, &t.SourcePack,
 	); err != nil {
 		return nil, err
 	}
@@ -882,6 +900,14 @@ func scanTrigger(row scanner) (*Trigger, error) {
 	}
 	if t.ExcludePatterns == nil {
 		t.ExcludePatterns = []string{}
+	}
+	if extraJSON != "" {
+		if err := json.Unmarshal([]byte(extraJSON), &t.ExtraPatterns); err != nil {
+			t.ExtraPatterns = []ExtraPattern{}
+		}
+	}
+	if t.ExtraPatterns == nil {
+		t.ExtraPatterns = []ExtraPattern{}
 	}
 	return &t, nil
 }

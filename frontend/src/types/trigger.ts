@@ -85,6 +85,17 @@ export interface PipeCondition {
   text?: string
 }
 
+/**
+ * One additional match pattern on a log-source trigger, individually
+ * toggleable without being deleted. The trigger fires when the primary
+ * pattern OR any enabled extra pattern matches; the matching pattern's
+ * capture groups feed the action text.
+ */
+export interface ExtraPattern {
+  pattern: string
+  enabled: boolean
+}
+
 export interface Trigger {
   id: string
   name: string
@@ -132,6 +143,12 @@ export interface Trigger {
    * tested independently — empty list = no exclusions.
    */
   exclude_patterns: string[]
+  /**
+   * Additional regexes matched alongside the primary pattern — the trigger
+   * fires when ANY enabled pattern matches ("any" semantics). Each entry
+   * toggles independently in the editor. Empty = single-pattern trigger.
+   */
+  extra_patterns: ExtraPattern[]
   /**
    * Identifies the conceptual spell/discipline/skill this trigger
    * represents, independent of which class pack ships it. When two

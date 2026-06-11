@@ -28,7 +28,7 @@ import type { TargetState } from '../types/overlay'
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { RespawnState } from '../types/respawn'
-import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition } from '../types/trigger'
+import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
 import type { RecipeSummary, RecipeDetail, RecipeTradeskillCount } from '../types/recipe'
@@ -1254,6 +1254,12 @@ export interface CreateTriggerRequest {
   characters?: string[]
   timer_alerts?: TimerAlertThreshold[]
   exclude_patterns?: string[]
+  /**
+   * Additional patterns matched alongside `pattern` (any-match semantics).
+   * NOTE: the backend replaces the stored list with this value on update —
+   * full-update call sites must pass the trigger's current list through.
+   */
+  extra_patterns?: ExtraPattern[]
   /** Match source. Omitted = 'log' (backwards-compatible). */
   source?: TriggerSource
   /** Typed match definition for pipe-source triggers. */

@@ -59,6 +59,7 @@ type triggerRequest struct {
 	Characters           []string               `json:"characters"`
 	TimerAlerts          []trigger.TimerAlert   `json:"timer_alerts"`
 	ExcludePatterns      []string               `json:"exclude_patterns"`
+	ExtraPatterns        []trigger.ExtraPattern `json:"extra_patterns"`
 	Source               string                 `json:"source,omitempty"`
 	PipeCondition        *trigger.PipeCondition `json:"pipe_condition,omitempty"`
 	// PackName is the trigger's category. Pointer so an omitted field on
@@ -145,6 +146,7 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 		Characters:           req.Characters,
 		TimerAlerts:          req.TimerAlerts,
 		ExcludePatterns:      req.ExcludePatterns,
+		ExtraPatterns:        req.ExtraPatterns,
 		Source:               src,
 		PipeCondition:        req.PipeCondition,
 	}
@@ -159,6 +161,9 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	if t.ExcludePatterns == nil {
 		t.ExcludePatterns = []string{}
+	}
+	if t.ExtraPatterns == nil {
+		t.ExtraPatterns = []trigger.ExtraPattern{}
 	}
 	// Append the new trigger to the end of its category's manual order.
 	if order, err := h.store.NextTriggerSortOrder(t.PackName); err == nil {
@@ -212,6 +217,7 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	existing.Characters = req.Characters
 	existing.TimerAlerts = req.TimerAlerts
 	existing.ExcludePatterns = req.ExcludePatterns
+	existing.ExtraPatterns = req.ExtraPatterns
 	existing.Source = src
 	existing.PipeCondition = req.PipeCondition
 	// Only touch the category when the request carries pack_name — an
@@ -238,6 +244,9 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing.ExcludePatterns == nil {
 		existing.ExcludePatterns = []string{}
+	}
+	if existing.ExtraPatterns == nil {
+		existing.ExtraPatterns = []trigger.ExtraPattern{}
 	}
 
 	if err := h.store.Update(existing); err != nil {
