@@ -62,6 +62,10 @@ export interface Preferences {
   default_overlay_font_family?: string
   default_overlay_font_size?: number
   developer_mode: boolean
+  // Planes of Power era switch: level cap 65, PoP spells/AA tabs, PoK as a
+  // shopping source. Off until the expansion launches on Quarm; until then
+  // it's a preview toggle in the Developer tab. See lib/era.ts.
+  pop_enabled?: boolean
   npc_overlay_dashboard_sections: NPCOverlaySections
   npc_overlay_popout_sections: NPCOverlaySections
   // Per-overlay locked behaviour, keyed by canonical overlay name. Missing

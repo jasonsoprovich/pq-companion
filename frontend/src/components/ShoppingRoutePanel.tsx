@@ -4,6 +4,7 @@ import { Map as MapIcon, MapPin, RefreshCw, AlertCircle, X, Navigation, BookOpen
 import { getShoppingRoute } from '../services/api'
 import type { ShoppingRoute, ShoppingStop, ShoppingSpell, ShoppingCandidateZone, ZoneAlignment } from '../types/spell'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
+import { usePoPEnabled } from '../hooks/usePoPEnabled'
 import { formatNPCName } from './SourceNPCLink'
 
 interface Props {
@@ -174,6 +175,10 @@ function StopCard({
 export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }: Props): React.ReactElement {
   useEscapeToClose(onClose)
 
+  // Once the Planes of Power era flag is on, PoK is a normal source (the
+  // backend ignores include_pok) and the opt-in toggle below is hidden.
+  const popEnabled = usePoPEnabled()
+
   const [excludeAlignments, setExcludeAlignments] = useState<ZoneAlignment[]>(() => loadJSON(LS_ALIGN, []))
   // Default to the Nexus: it's the common bind point and the teleport hub, so
   // out of the box the route reflects easy travel from there.
@@ -322,8 +327,9 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
           </div>
 
           {/* Plane of Knowledge source toggle (off by default — not on this
-              server's timeline yet) */}
-          <button
+              server's timeline yet). Once the PoP era flag is on, PoK is a
+              normal source server-side, so the opt-in toggle disappears. */}
+          {!popEnabled && <button
             onClick={() => setIncludePoK((v) => !v)}
             className="flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] transition-colors"
             style={{
@@ -337,7 +343,7 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
           >
             <BookOpen size={11} />
             Plane of Knowledge
-          </button>
+          </button>}
 
           {/* Skip-towns picker toggle */}
           <button

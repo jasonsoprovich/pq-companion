@@ -10,6 +10,8 @@ import {
   type Character,
 } from '../services/api'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
+import { usePoPEnabled } from '../hooks/usePoPEnabled'
+import { maxLevel } from '../lib/era'
 import {
   charClassLabel,
   charClassOptions,
@@ -106,6 +108,8 @@ interface CharacterFormProps {
 
 function CharacterForm({ initial, onSave, onCancel, saving, error }: CharacterFormProps): React.ReactElement {
   const [form, setForm] = useState<FormState>(initial)
+  // Level cap follows the expansion era (60 pre-PoP, 65 once PoP is live).
+  const levelCap = maxLevel(usePoPEnabled())
 
   return (
     <div
@@ -129,10 +133,10 @@ function CharacterForm({ initial, onSave, onCancel, saving, error }: CharacterFo
         <input
           type="number"
           min={1}
-          max={60}
+          max={levelCap}
           value={form.level}
           onChange={(e) =>
-            setForm({ ...form, level: Math.max(1, Math.min(60, Number(e.target.value))) })
+            setForm({ ...form, level: Math.max(1, Math.min(levelCap, Number(e.target.value))) })
           }
           className="w-20 rounded px-3 py-2 text-sm"
           style={{

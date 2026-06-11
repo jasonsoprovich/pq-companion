@@ -1,14 +1,16 @@
-import React, { useState } from 'react'
-import { Code2, AlertTriangle, FileText, Database, Network } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { Code2, AlertTriangle, FileText, Database, Network, FlaskConical } from 'lucide-react'
 import SqlSandboxPanel from './SqlSandboxPanel'
 import SchemaGraphPanel from './SchemaGraphPanel'
+import { getConfig, updateConfig } from '../services/api'
+import type { Config } from '../types/config'
 
 // DeveloperTab hosts power-user tools that don't belong in the regular UI.
 // Only visible when Preferences.DeveloperMode is true; toggled by
 // Ctrl+Shift+D while the Settings page is focused. Each sub-tool gets its
 // own sub-tab so we don't pile three large panels onto one scroll-strip.
 
-type SubTab = 'notes' | 'sandbox' | 'graph'
+type SubTab = 'notes' | 'sandbox' | 'graph' | 'flags'
 
 interface SubTabDef {
   id: SubTab
@@ -20,6 +22,7 @@ const SUB_TABS: SubTabDef[] = [
   { id: 'notes', label: 'Notes', icon: <FileText size={13} /> },
   { id: 'sandbox', label: 'SQL Sandbox', icon: <Database size={13} /> },
   { id: 'graph', label: 'Schema Graph', icon: <Network size={13} /> },
+  { id: 'flags', label: 'Flags', icon: <FlaskConical size={13} /> },
 ]
 
 export default function DeveloperTab(): React.ReactElement {
@@ -67,7 +70,92 @@ export default function DeveloperTab(): React.ReactElement {
         {sub === 'notes' && <NotesPanel />}
         {sub === 'sandbox' && <SqlSandboxPanel />}
         {sub === 'graph' && <SchemaGraphPanel />}
+        {sub === 'flags' && <FlagsPanel />}
       </div>
+    </div>
+  )
+}
+
+// FlagsPanel hosts experimental era/feature switches. Currently just the
+// Planes of Power preview: flipping it raises the level cap to 65 and
+// reveals PoP spells, AA tabs, and Plane of Knowledge shopping app-wide
+// (see backend internal/era). Stored in config.yaml so it survives
+// restarts; consumers track changes live via the config:updated broadcast.
+function FlagsPanel(): React.ReactElement {
+  const [config, setConfig] = useState<Config | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    getConfig()
+      .then(setConfig)
+      .catch((err: Error) => setError(err.message))
+  }, [])
+
+  const popEnabled = Boolean(config?.preferences?.pop_enabled)
+
+  const togglePoP = (): void => {
+    if (!config || saving) return
+    setSaving(true)
+    setError(null)
+    updateConfig({
+      ...config,
+      preferences: { ...config.preferences, pop_enabled: !popEnabled },
+    })
+      .then(setConfig)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setSaving(false))
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <section
+        className="rounded-lg p-4"
+        style={{
+          backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+        }}
+      >
+        <div className="mb-3 flex items-center gap-2">
+          <FlaskConical size={14} style={{ color: 'var(--color-primary)' }} />
+          <h2
+            className="text-sm font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            Planes of Power preview
+          </h2>
+        </div>
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+            Switches the app into Planes of Power era before the expansion
+            launches on Project Quarm: level cap 65 instead of 60, PoP spells
+            in the class spell lists, the PoP AA tabs, and Plane of Knowledge
+            as a shopping-route source. The server itself is still pre-PoP, so
+            leave this off for normal play — it exists so PoP support can be
+            tested ahead of launch.
+          </p>
+          <button
+            type="button"
+            onClick={togglePoP}
+            disabled={!config || saving}
+            className="shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors"
+            style={{
+              backgroundColor: popEnabled ? 'var(--color-primary)' : 'var(--color-surface-2)',
+              color: popEnabled ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+              cursor: !config || saving ? 'default' : 'pointer',
+              opacity: !config || saving ? 0.6 : 1,
+            }}
+          >
+            {popEnabled ? 'Enabled' : 'Disabled'}
+          </button>
+        </div>
+        {error && (
+          <p className="mt-2 text-xs" style={{ color: '#f87171' }}>
+            {error}
+          </p>
+        )}
+      </section>
     </div>
   )
 }
