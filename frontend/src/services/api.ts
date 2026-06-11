@@ -745,6 +745,58 @@ export function cleanupLog(): Promise<{ backup_path: string }> {
   return post<{ backup_path: string }>('/api/log/cleanup', {})
 }
 
+// ── Log Replay ─────────────────────────────────────────────────────────────────
+
+export interface ReplayFile {
+  name: string
+  character: string
+  size_bytes: number
+  modified: string
+}
+
+export interface ReplayStatus {
+  state: 'idle' | 'playing' | 'paused'
+  file?: string
+  from?: string
+  to?: string
+  position?: string
+  speed?: number
+  lines_emitted: number
+}
+
+export function listReplayFiles(): Promise<ReplayFile[]> {
+  return get<ReplayFile[]>('/api/replay/files')
+}
+
+export function getReplayInfo(file: string): Promise<{ first: string; last: string }> {
+  return get<{ first: string; last: string }>(`/api/replay/info?file=${encodeURIComponent(file)}`)
+}
+
+export function getReplayStatus(): Promise<ReplayStatus> {
+  return get<ReplayStatus>('/api/replay/status')
+}
+
+export function startReplay(req: {
+  file: string
+  from?: string
+  to?: string
+  speed?: number
+}): Promise<ReplayStatus> {
+  return post<ReplayStatus>('/api/replay/start', req)
+}
+
+export function pauseReplay(): Promise<ReplayStatus> {
+  return post<ReplayStatus>('/api/replay/pause')
+}
+
+export function resumeReplay(): Promise<ReplayStatus> {
+  return post<ReplayStatus>('/api/replay/resume')
+}
+
+export function stopReplay(): Promise<ReplayStatus> {
+  return post<ReplayStatus>('/api/replay/stop')
+}
+
 // ── Overlay ────────────────────────────────────────────────────────────────────
 
 export function getOverlayNPCTarget(): Promise<TargetState> {

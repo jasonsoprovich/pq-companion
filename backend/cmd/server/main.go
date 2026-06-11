@@ -678,10 +678,10 @@ func main() {
 	// broadcasts overlay:rolls WebSocket events. Stateless across restarts.
 	rollTracker := rolltracker.New(hub)
 
-	// Log tailer: reads new lines from the EQ log file and broadcasts parsed
-	// events to all connected WebSocket clients. Also feeds overlay trackers
-	// and the trigger engine.
-	tailer = logparser.NewTailer(cfgMgr, func(ev logparser.LogEvent) {
+	// Central dispatch callbacks, shared by the live tailer and the log
+	// replayer so a replayed line drives exactly the same consumers as a
+	// live one.
+	dispatchEvent := func(ev logparser.LogEvent) {
 		hub.Broadcast(ws.Event{Type: string(ev.Type), Data: ev})
 		npcTracker.Handle(ev)
 		combatTracker.Handle(ev)
@@ -700,7 +700,8 @@ func main() {
 		if skillsConsumer != nil {
 			skillsConsumer.Handle(ev)
 		}
-	}, func(ts time.Time, msg string) {
+	}
+	dispatchLine := func(ts time.Time, msg string) {
 		triggerEngine.Handle(ts, msg)
 		chChainMatcher.HandleLine(ts, msg)
 		if keyringConsumer != nil {
@@ -715,7 +716,12 @@ func main() {
 		if lootConsumer != nil {
 			lootConsumer.HandleLine(ts, msg)
 		}
-	}, func(character string) {
+	}
+
+	// Log tailer: reads new lines from the EQ log file and broadcasts parsed
+	// events to all connected WebSocket clients. Also feeds overlay trackers
+	// and the trigger engine.
+	tailer = logparser.NewTailer(cfgMgr, dispatchEvent, dispatchLine, func(character string) {
 		slog.Info("logparser: auto-detected active character", "character", character)
 		// If the player switched to a character that doesn't match the
 		// configured manual override, drop the override so the new in-game
@@ -739,6 +745,22 @@ func main() {
 		triggerEngine.Reload()
 	})
 	go tailer.Start(context.Background())
+
+	// Log replayer: streams a historical log segment through the same
+	// dispatch callbacks at log-timestamp pace, so triggers, timers, and the
+	// combat meter behave as if the session were live — for testing and
+	// debugging trigger setups against real gameplay. Live tailing pauses
+	// for the duration of a session; replay-driven state (timers, current
+	// fight) is cleared when the session ends so ghosts don't linger.
+	replayer := logparser.NewReplayer(dispatchEvent, dispatchLine, func(active bool) {
+		tailer.SetPaused(active)
+		if !active {
+			timerEngine.ClearAll()
+			combatTracker.Reset()
+		}
+	}, func(st logparser.ReplayStatus) {
+		hub.Broadcast(ws.Event{Type: "replay:status", Data: st})
+	})
 
 	// Always bind to 127.0.0.1 explicitly — the API is consumed by the
 	// local renderer only, so there's no reason to listen on every
@@ -812,7 +834,7 @@ func main() {
 		defer savedQueryStore.Close()
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

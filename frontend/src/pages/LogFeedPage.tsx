@@ -1,9 +1,20 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Activity, Trash2, AlertTriangle, CheckCircle2, Circle, Search } from 'lucide-react'
+import { Activity, Trash2, AlertTriangle, CheckCircle2, Circle, Search, Film, Play, Pause, Square } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useLogFeed, clearLogFeed, LOG_FEED_MAX } from '../hooks/useLogFeed'
-import { getLogStatus } from '../services/api'
+import {
+  getLogStatus,
+  listReplayFiles,
+  getReplayInfo,
+  getReplayStatus,
+  startReplay,
+  pauseReplay,
+  resumeReplay,
+  stopReplay,
+  type ReplayFile,
+  type ReplayStatus,
+} from '../services/api'
 import type { LogEvent, LogTailerStatus } from '../types/logEvent'
 
 // ── Event badge colours ────────────────────────────────────────────────────────
@@ -127,6 +138,224 @@ function ConnPill({
   )
 }
 
+// ── Replay panel ───────────────────────────────────────────────────────────────
+
+/** Convert an ISO timestamp into a datetime-local input value (local time). */
+function toLocalInput(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+function fmtBytes(n: number): string {
+  if (n >= 1 << 30) return `${(n / (1 << 30)).toFixed(1)} GB`
+  if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(1)} MB`
+  return `${Math.max(1, Math.round(n / 1024))} KB`
+}
+
+/**
+ * ReplayPanel — pick a log file, a start/end point, and play the segment
+ * through the app's full pipeline (triggers, timers, combat meter, overlays)
+ * as if the session were live. Live tailing pauses for the duration; the
+ * file is read strictly read-only.
+ */
+function ReplayPanel({ status }: { status: ReplayStatus }): React.ReactElement {
+  const [files, setFiles] = useState<ReplayFile[]>([])
+  const [file, setFile] = useState('')
+  const [fromStr, setFromStr] = useState('')
+  const [toStr, setToStr] = useState('')
+  const [speed, setSpeed] = useState(1)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    listReplayFiles()
+      .then(setFiles)
+      .catch((err: Error) => setError(err.message))
+  }, [])
+
+  // Selecting a file probes its first/last timestamps and pre-fills the range.
+  const handleFileChange = (name: string): void => {
+    setFile(name)
+    setError(null)
+    if (!name) return
+    getReplayInfo(name)
+      .then((info) => {
+        setFromStr(toLocalInput(info.first))
+        setToStr(toLocalInput(info.last))
+      })
+      .catch((err: Error) => setError(err.message))
+  }
+
+  const handleStart = (): void => {
+    if (!file) return
+    setError(null)
+    startReplay({
+      file,
+      from: fromStr ? new Date(fromStr).toISOString() : undefined,
+      to: toStr ? new Date(toStr).toISOString() : undefined,
+      speed,
+    }).catch((err: Error) => setError(err.message))
+  }
+
+  const active = status.state !== 'idle'
+  const inputStyle: React.CSSProperties = {
+    background: 'var(--color-background)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 4,
+    color: 'var(--color-foreground)',
+    fontSize: 11,
+    padding: '3px 6px',
+    outline: 'none',
+  }
+
+  // Progress within the requested window.
+  let progress = 0
+  if (active && status.from && status.to) {
+    const fromMs = new Date(status.from).getTime()
+    const toMs = new Date(status.to).getTime()
+    const posMs = status.position ? new Date(status.position).getTime() : fromMs
+    if (toMs > fromMs) progress = Math.max(0, Math.min(1, (posMs - fromMs) / (toMs - fromMs)))
+  }
+
+  return (
+    <div
+      className="shrink-0 border-b px-4 py-2 space-y-2"
+      style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Film size={12} style={{ color: 'var(--color-primary)' }} />
+        <span className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
+          Replay
+        </span>
+        <select
+          value={file}
+          onChange={(e) => handleFileChange(e.target.value)}
+          disabled={active}
+          style={{ ...inputStyle, maxWidth: 260 }}
+        >
+          <option value="">Select a log file…</option>
+          {files.map((f) => (
+            <option key={f.name} value={f.name}>
+              {f.character} ({fmtBytes(f.size_bytes)})
+            </option>
+          ))}
+        </select>
+        <input
+          type="datetime-local"
+          step={1}
+          value={fromStr}
+          onChange={(e) => setFromStr(e.target.value)}
+          disabled={active || !file}
+          title="Replay start point"
+          style={inputStyle}
+        />
+        <span className="text-xs" style={{ color: 'var(--color-muted)' }}>→</span>
+        <input
+          type="datetime-local"
+          step={1}
+          value={toStr}
+          onChange={(e) => setToStr(e.target.value)}
+          disabled={active || !file}
+          title="Replay end point"
+          style={inputStyle}
+        />
+        <select
+          value={speed}
+          onChange={(e) => setSpeed(Number(e.target.value))}
+          disabled={active}
+          title="Playback speed"
+          style={inputStyle}
+        >
+          {[1, 2, 5, 10, 25].map((s) => (
+            <option key={s} value={s}>{s}×</option>
+          ))}
+        </select>
+        {!active && (
+          <button
+            onClick={handleStart}
+            disabled={!file}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs"
+            style={{
+              backgroundColor: file ? 'var(--color-primary)' : 'var(--color-surface-2)',
+              color: file ? 'var(--color-background)' : 'var(--color-muted)',
+            }}
+          >
+            <Play size={11} />
+            Play
+          </button>
+        )}
+        {status.state === 'playing' && (
+          <button
+            onClick={() => pauseReplay().catch(() => {})}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs"
+            style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-foreground)', border: '1px solid var(--color-border)' }}
+          >
+            <Pause size={11} />
+            Pause
+          </button>
+        )}
+        {status.state === 'paused' && (
+          <button
+            onClick={() => resumeReplay().catch(() => {})}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs"
+            style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-background)' }}
+          >
+            <Play size={11} />
+            Resume
+          </button>
+        )}
+        {active && (
+          <button
+            onClick={() => stopReplay().catch(() => {})}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs"
+            style={{ backgroundColor: 'var(--color-surface-2)', color: '#f87171', border: '1px solid var(--color-border)' }}
+          >
+            <Square size={11} />
+            Stop
+          </button>
+        )}
+      </div>
+
+      {active && (
+        <div className="space-y-1">
+          <div
+            style={{
+              height: 5,
+              borderRadius: 3,
+              backgroundColor: 'var(--color-surface-2)',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                height: '100%',
+                width: `${progress * 100}%`,
+                backgroundColor: 'var(--color-primary)',
+                transition: 'width 1s linear',
+              }}
+            />
+          </div>
+          <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+            {status.state === 'paused' ? 'Paused' : 'Replaying'} {status.file}
+            {status.position && ` — ${new Date(status.position).toLocaleString()}`}
+            {` · ${status.lines_emitted} lines · ${status.speed ?? 1}× — live log parsing is paused`}
+          </p>
+        </div>
+      )}
+      {!active && (
+        <p className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+          Plays a historical log segment through the whole app — triggers, spell timers, combat
+          meter, and overlays react as if live. Use it to test and debug triggers against real
+          gameplay (best while not in game; live parsing pauses during playback). Files are never modified.
+        </p>
+      )}
+      {error && (
+        <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>{error}</p>
+      )}
+    </div>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function LogFeedPage(): React.ReactElement {
@@ -137,19 +366,33 @@ export default function LogFeedPage(): React.ReactElement {
   const events = useLogFeed()
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
   const [search, setSearch] = useState('')
+  const [showReplay, setShowReplay] = useState(false)
+  const [replayStatus, setReplayStatus] = useState<ReplayStatus>({ state: 'idle', lines_emitted: 0 })
   const feedRef = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
 
-  // Load tailer status once on mount.
+  // Load tailer + replay status once on mount.
   useEffect(() => {
     getLogStatus()
       .then(setStatus)
       .catch(() => setStatus(null))
+    getReplayStatus()
+      .then((st) => {
+        setReplayStatus(st)
+        if (st.state !== 'idle') setShowReplay(true)
+      })
+      .catch(() => {})
   }, [])
 
-  // Subscribe to WS only for the connection-state pill — log events themselves
-  // are handled by the top-level subscriber, so we don't need a handler here.
-  const wsState = useWebSocket()
+  // Log events themselves are handled by the top-level subscriber; this
+  // handler only tracks replay status pushes (and the hook supplies the
+  // connection-state pill).
+  const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
+    if (msg.type === 'replay:status') {
+      setReplayStatus(msg.data as ReplayStatus)
+    }
+  }, [])
+  const wsState = useWebSocket(handleMessage)
 
   const visibleEvents = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -228,6 +471,18 @@ export default function LogFeedPage(): React.ReactElement {
           </div>
           <ConnPill state={wsState} status={status} />
           <button
+            onClick={() => setShowReplay((v) => !v)}
+            className="flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
+            style={{
+              color: showReplay || replayStatus.state !== 'idle' ? 'var(--color-primary)' : 'var(--color-muted)',
+              border: '1px solid var(--color-border)',
+            }}
+            title="Replay a historical log segment through the whole app (triggers, timers, combat)"
+          >
+            <Film size={12} />
+            Replay
+          </button>
+          <button
             onClick={() => { clearLogFeed(); setSearch('') }}
             className="flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
             style={{ color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}
@@ -243,6 +498,9 @@ export default function LogFeedPage(): React.ReactElement {
       <div className="shrink-0 border-b px-4 py-2" style={{ borderColor: 'var(--color-border)' }}>
         <StatusBar status={status} />
       </div>
+
+      {/* Replay controls */}
+      {showReplay && <ReplayPanel status={replayStatus} />}
 
       {/* Event feed */}
       <div

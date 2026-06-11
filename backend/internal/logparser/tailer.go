@@ -53,6 +53,7 @@ type Tailer struct {
 	offset            int64
 	remainder         []byte // incomplete line fragment from the previous read
 	detectedCharacter string // last auto-detected character name (empty when manually configured)
+	paused            bool   // true while a log replay session owns the dispatch pipeline
 }
 
 // NewTailer creates a Tailer. Call Start in a goroutine to begin tailing.
@@ -133,6 +134,24 @@ func (t *Tailer) ActiveCharacter() string {
 	return ResolveActiveCharacter(cfg.EQPath)
 }
 
+// SetPaused suspends (true) or resumes (false) live log tailing. Used by the
+// replay pipeline so historical lines don't interleave with live ones. While
+// paused the file handle is closed; on resume the tailer reopens it and seeks
+// to EOF, so lines appended during the pause are NOT replayed (consistent
+// with the first-open behavior).
+func (t *Tailer) SetPaused(paused bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.paused == paused {
+		return
+	}
+	t.paused = paused
+	if paused {
+		t.closeFile()
+	}
+	slog.Info("logparser: live tailing", "paused", paused)
+}
+
 // rawLine holds the timestamp and message extracted from a raw EQ log line.
 type rawLine struct {
 	ts  time.Time
@@ -143,6 +162,12 @@ type rawLine struct {
 func (t *Tailer) tick() {
 	cfg := t.cfgMgr.Get()
 	if !cfg.Preferences.ParseCombatLog || cfg.EQPath == "" {
+		return
+	}
+	t.mu.Lock()
+	paused := t.paused
+	t.mu.Unlock()
+	if paused {
 		return
 	}
 
