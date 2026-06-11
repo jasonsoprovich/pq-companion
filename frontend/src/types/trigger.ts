@@ -94,6 +94,15 @@ export interface PipeCondition {
 export interface ExtraPattern {
   pattern: string
   enabled: boolean
+  /**
+   * Per-pattern timer overrides for merged spell-line triggers (one "Mez"
+   * trigger covering several spells with different durations). When this
+   * pattern is the one that matched, a non-zero duration replaces the
+   * trigger's timer_duration_secs and a non-zero spell_id replaces its
+   * spell link. Zero/omitted = inherit from the trigger.
+   */
+  timer_duration_secs?: number
+  spell_id?: number
 }
 
 export interface Trigger {
@@ -112,6 +121,14 @@ export interface Trigger {
    * line. Empty = use the fixed timer_duration_secs.
    */
   timer_duration_capture?: string
+  /**
+   * Capture group ("1", "2", or a named group) whose matched text becomes
+   * the spell-timer key instead of the trigger name. Lets a merged trigger
+   * (one pattern per spell, each capturing the spell name) run an
+   * independent countdown per captured value. The worn-off pattern must
+   * capture the same value for early clear. Empty = key by trigger name.
+   */
+  timer_key_capture?: string
   worn_off_pattern: string
   spell_id: number
   /**

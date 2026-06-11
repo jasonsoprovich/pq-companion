@@ -1307,6 +1307,8 @@ export interface CreateTriggerRequest {
   timer_duration_secs?: number
   /** Capture group supplying a dynamic timer duration ("" = fixed). */
   timer_duration_capture?: string
+  /** Capture group naming the timer (one countdown per captured value). */
+  timer_key_capture?: string
   worn_off_pattern?: string
   spell_id?: number
   display_threshold_secs?: number

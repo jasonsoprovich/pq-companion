@@ -40,6 +40,14 @@ type TimerSink interface {
 	StopExternal(name string, spellID int)
 }
 
+// compiledExtra pairs one enabled ExtraPattern's compiled regex with its
+// per-pattern timer overrides, so a match knows which row's duration/spell
+// to apply.
+type compiledExtra struct {
+	re   *regexp.Regexp
+	meta ExtraPattern
+}
+
 // compiled pairs a Trigger with its pre-compiled patterns for efficient matching.
 type compiled struct {
 	trigger  *Trigger
@@ -48,8 +56,9 @@ type compiled struct {
 	timerKey string         // cached spelltimer key when timer_type != none
 	// extras are the precompiled enabled ExtraPatterns. The trigger fires
 	// when the primary pattern OR any extra matches; the first matching
-	// pattern's capture groups feed the actions.
-	extras []*regexp.Regexp
+	// pattern's capture groups feed the actions and its timer overrides
+	// (duration, spell id) replace the trigger-level values.
+	extras []compiledExtra
 	// excludes are precompiled ExcludePatterns; if any match the same line
 	// the primary match is suppressed. Lets a broad pattern (e.g. "incoming
 	// tell") filter pet/merchant lines without needing RE2 lookbehind.
@@ -148,7 +157,7 @@ func (e *Engine) Reload() {
 				slog.Warn("trigger: invalid extra pattern, skipping", "id", t.ID, "name", t.Name, "pattern", ep.Pattern, "err", err)
 				continue
 			}
-			c.extras = append(c.extras, ex)
+			c.extras = append(c.extras, compiledExtra{re: ex, meta: ep})
 		}
 		if t.WornOffPattern != "" {
 			if wornRe, err := regexp.Compile(normalizePattern(t.WornOffPattern, character)); err == nil {
@@ -200,18 +209,32 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 			continue
 		}
 		// Any-pattern semantics: try the primary pattern first, then each
-		// enabled extra. The first match wins and supplies the capture
-		// groups; excludes suppress regardless of which pattern matched.
+		// enabled extra. The first match wins — it supplies the capture
+		// groups and (for extras) its per-pattern timer overrides; excludes
+		// suppress regardless of which pattern matched.
 		m, names := c.re.FindStringSubmatch(message), c.re.SubexpNames()
+		var extra *ExtraPattern
 		for i := 0; m == nil && i < len(c.extras); i++ {
-			m, names = c.extras[i].FindStringSubmatch(message), c.extras[i].SubexpNames()
+			m, names = c.extras[i].re.FindStringSubmatch(message), c.extras[i].re.SubexpNames()
+			if m != nil {
+				extra = &c.extras[i].meta
+			}
 		}
 		if m != nil && !matchesAny(c.excludes, message) {
-			e.fire(c, message, timestamp, m, names)
+			e.fire(c, message, timestamp, m, names, extra)
 		}
-		if c.wornOff != nil && c.wornOff.MatchString(message) {
-			if e.sink != nil && c.timerKey != "" {
-				e.sink.StopExternal(c.timerKey, c.trigger.SpellID)
+		if c.wornOff != nil && e.sink != nil && c.timerKey != "" {
+			if wm := c.wornOff.FindStringSubmatch(message); wm != nil {
+				key := resolveTimerKey(c.trigger, c.timerKey, wm, c.wornOff.SubexpNames())
+				// When the key came from a worn-off capture (merged
+				// triggers), stop by name only: the trigger-level SpellID
+				// belongs to the primary spell and would wrongly remove a
+				// sibling spell's timer by ID.
+				spellID := c.trigger.SpellID
+				if key != c.timerKey {
+					spellID = 0
+				}
+				e.sink.StopExternal(key, spellID)
 			}
 		}
 	}
@@ -589,8 +612,11 @@ func (e *Engine) GetHistory() []TriggerFired {
 
 // fire emits a trigger's actions. match/names are the regex submatches and
 // their names from the line that matched, used to substitute capture
-// references ({1}, $1, {name}) into the action text (#132).
-func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match []string, names []string) {
+// references ({1}, $1, {name}) into the action text (#132). extra is the
+// matched ExtraPattern's metadata when an extra (not the primary pattern)
+// matched — its non-zero duration/spell-id override the trigger's; nil when
+// the primary matched.
+func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match []string, names []string, extra *ExtraPattern) {
 	t := c.trigger
 
 	// Substitute regex captures into the action text on a copy — never mutate
@@ -622,17 +648,40 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 	slog.Debug("trigger fired", "trigger", t.Name, "line", matchedLine)
 
 	if e.sink != nil && c.timerKey != "" {
-		if durationSecs := resolveTimerDuration(t, match, names); durationSecs > 0 {
+		if durationSecs := resolveTimerDuration(t, extra, match, names); durationSecs > 0 {
 			var alertJSON json.RawMessage
 			if len(t.TimerAlerts) > 0 {
 				if buf, err := json.Marshal(t.TimerAlerts); err == nil {
 					alertJSON = buf
 				}
 			}
-			e.sink.StartExternal(c.timerKey, timerCategory(t.TimerType), durationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID)
+			key := resolveTimerKey(t, c.timerKey, match, names)
+			spellID := t.SpellID
+			if extra != nil && extra.SpellID > 0 {
+				spellID = extra.SpellID
+			}
+			e.sink.StartExternal(key, timerCategory(t.TimerType), durationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, spellID)
 		}
 	}
 	e.startCooldownTimer(t, firedAt)
+}
+
+// resolveTimerKey returns the spelltimer key for one firing. When the
+// trigger sets TimerKeyCapture and that group participated in the match,
+// the captured text (typically the spell name) becomes the key so each
+// captured value runs its own countdown; otherwise fallback (the cached
+// trigger-name key) is used.
+func resolveTimerKey(t *Trigger, fallback string, match []string, names []string) string {
+	if t.TimerKeyCapture == "" || len(match) == 0 {
+		return fallback
+	}
+	ref := "{" + t.TimerKeyCapture + "}"
+	if v := substituteCaptures(ref, match, names, nil); v != ref {
+		if v = strings.TrimSpace(v); v != "" {
+			return v
+		}
+	}
+	return fallback
 }
 
 // timerKeyFor returns the spelltimer key for a trigger. Prefers the trigger
@@ -736,10 +785,14 @@ func ParseDurationText(s string) int {
 	return atoi(m[1])*3600 + atoi(m[2])*60 + atoi(m[3])
 }
 
-// resolveTimerDuration returns the timer duration for a fire: the text
-// captured by TimerDurationCapture when configured and parseable, otherwise
-// the trigger's fixed TimerDurationSecs.
-func resolveTimerDuration(t *Trigger, match []string, names []string) int {
+// resolveTimerDuration returns the timer duration for a fire, in priority
+// order: the matched extra pattern's per-row override, the text captured by
+// TimerDurationCapture when configured and parseable, and finally the
+// trigger's fixed TimerDurationSecs.
+func resolveTimerDuration(t *Trigger, extra *ExtraPattern, match []string, names []string) int {
+	if extra != nil && extra.TimerDurationSecs > 0 {
+		return extra.TimerDurationSecs
+	}
 	if t.TimerDurationCapture != "" && len(match) > 0 {
 		ref := "{" + t.TimerDurationCapture + "}"
 		if v := substituteCaptures(ref, match, names, nil); v != ref {

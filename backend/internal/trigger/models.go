@@ -109,6 +109,15 @@ type TimerAlert struct {
 type ExtraPattern struct {
 	Pattern string `json:"pattern"`
 	Enabled bool   `json:"enabled"`
+
+	// Per-pattern timer overrides for merged spell-line triggers (one "Mez"
+	// trigger covering several spells with different durations). When this
+	// pattern is the one that matched, a non-zero TimerDurationSecs replaces
+	// the trigger's duration and a non-zero SpellID replaces the trigger's
+	// spell link (for icon + item/AA duration-focus resolution). Zero values
+	// inherit from the trigger. Meaningless on alert-only triggers.
+	TimerDurationSecs int `json:"timer_duration_secs,omitempty"`
+	SpellID           int `json:"spell_id,omitempty"`
 }
 
 // SourceLog and SourcePipe are the legal values for Trigger.Source.
@@ -190,6 +199,18 @@ type Trigger struct {
 	// unit notation ("6m40s", "2h", "90s"). When unset, or when the captured
 	// text doesn't parse, TimerDurationSecs is used as-is.
 	TimerDurationCapture string `json:"timer_duration_capture,omitempty"`
+
+	// TimerKeyCapture names a capture group ("1", "2", or a named group)
+	// whose matched text becomes the spell-timer key instead of the trigger
+	// name. Lets a merged trigger (one "Mez" trigger with one pattern per
+	// spell, each capturing the spell name) run an independent countdown per
+	// captured value — and, because the key is the real spell name, the
+	// spelltimer engine's same-name dedup against the spell-landed pipeline
+	// and its deferred-render mez handling keep working. The worn-off
+	// pattern must capture the same value (same group number/name) for early
+	// clear to find the right timer. When unset, or when the group doesn't
+	// participate in the match, the trigger name is used as before.
+	TimerKeyCapture string `json:"timer_key_capture,omitempty"`
 
 	// CooldownSecs spawns a second timer alongside the buff/duration timer to
 	// track the spell or discipline's reuse cooldown (recast_time in

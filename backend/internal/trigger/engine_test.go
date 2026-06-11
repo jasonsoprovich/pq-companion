@@ -842,19 +842,28 @@ func TestParseDurationText(t *testing.T) {
 	}
 }
 
-// captureSink records StartExternal calls for asserting timer dispatch.
+// captureSink records StartExternal/StopExternal calls for asserting timer
+// dispatch. The scalar fields hold the most recent StartExternal call.
 type captureSink struct {
 	name     string
 	category string
 	duration int
+	spellID  int
 	calls    int
+
+	stopName    string
+	stopSpellID int
+	stops       int
 }
 
 func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int) {
-	s.name, s.category, s.duration = name, category, durationSecs
+	s.name, s.category, s.duration, s.spellID = name, category, durationSecs, spellID
 	s.calls++
 }
-func (s *captureSink) StopExternal(name string, spellID int) {}
+func (s *captureSink) StopExternal(name string, spellID int) {
+	s.stopName, s.stopSpellID = name, spellID
+	s.stops++
+}
 
 // TestEngine_CustomTimerWithCaptureDuration verifies timer_type "custom"
 // dispatches to the custom category and that timer_duration_capture parses
@@ -1029,5 +1038,106 @@ func TestEngine_CaptureSubstitutionInActions(t *testing.T) {
 	stored, _ := s.Get("tell1")
 	if stored.Actions[0].Text != "Tell from {1}: {2}" {
 		t.Errorf("stored trigger action text was mutated: %q", stored.Actions[0].Text)
+	}
+}
+
+// TestEngine_MergedTriggerPerPatternTimers verifies a merged spell-line
+// trigger: one trigger with one pattern per spell, per-pattern duration and
+// spell-id overrides, and timer_key_capture keying the timer by the captured
+// spell name so each spell runs an independent countdown and the worn-off
+// pattern clears the right one.
+func TestEngine_MergedTriggerPerPatternTimers(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	sink := &captureSink{}
+	e := NewEngine(s, hub, sink, nil)
+
+	tr := &Trigger{
+		ID: "mez-1", Name: "Mez", Enabled: true,
+		Pattern:           `^You begin casting (Mesmerize)\.$`,
+		TimerType:         TimerTypeDetrimental,
+		TimerDurationSecs: 24, // primary pattern's spell
+		SpellID:           292,
+		TimerKeyCapture:   "1",
+		WornOffPattern:    `^Your (Mesmerize|Dazzle|Enthrall) spell has worn off\.$`,
+		ExtraPatterns: []ExtraPattern{
+			{Pattern: `^You begin casting (Dazzle)\.$`, Enabled: true, TimerDurationSecs: 96, SpellID: 4954},
+			{Pattern: `^You begin casting (Enthrall)\.$`, Enabled: true, TimerDurationSecs: 144, SpellID: 367},
+		},
+		Actions:   []Action{},
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	// Primary pattern: trigger-level duration/spell, key from capture.
+	e.Handle(time.Now(), "You begin casting Mesmerize.")
+	if sink.calls != 1 || sink.name != "Mesmerize" || sink.duration != 24 || sink.spellID != 292 {
+		t.Errorf("primary dispatch = %+v, want Mesmerize/24/292", sink)
+	}
+
+	// Extra pattern: per-row duration and spell id override the trigger's.
+	e.Handle(time.Now(), "You begin casting Dazzle.")
+	if sink.calls != 2 || sink.name != "Dazzle" || sink.duration != 96 || sink.spellID != 4954 {
+		t.Errorf("extra dispatch = %+v, want Dazzle/96/4954", sink)
+	}
+
+	e.Handle(time.Now(), "You begin casting Enthrall.")
+	if sink.calls != 3 || sink.name != "Enthrall" || sink.duration != 144 || sink.spellID != 367 {
+		t.Errorf("extra dispatch = %+v, want Enthrall/144/367", sink)
+	}
+
+	// Worn-off resolves the same capture into the stop key, and passes
+	// spellID 0 — the trigger-level SpellID belongs to the primary spell
+	// and must not remove a sibling's timer by ID.
+	e.Handle(time.Now(), "Your Dazzle spell has worn off.")
+	if sink.stops != 1 || sink.stopName != "Dazzle" || sink.stopSpellID != 0 {
+		t.Errorf("worn-off stop = %+v, want Dazzle/0", sink)
+	}
+
+	// Per-row overrides and the key capture round-trip through the store.
+	stored, err := s.Get("mez-1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if stored.TimerKeyCapture != "1" {
+		t.Errorf("TimerKeyCapture = %q, want \"1\"", stored.TimerKeyCapture)
+	}
+	if len(stored.ExtraPatterns) != 2 ||
+		stored.ExtraPatterns[0].TimerDurationSecs != 96 || stored.ExtraPatterns[0].SpellID != 4954 ||
+		stored.ExtraPatterns[1].TimerDurationSecs != 144 || stored.ExtraPatterns[1].SpellID != 367 {
+		t.Errorf("ExtraPatterns round-trip = %+v", stored.ExtraPatterns)
+	}
+}
+
+// TestEngine_WornOffWithoutKeyCapture preserves the legacy clear path: no
+// timer_key_capture means the worn-off stops the trigger-name key with the
+// trigger's SpellID (which also clears merged spell-landed timers by ID).
+func TestEngine_WornOffWithoutKeyCapture(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	sink := &captureSink{}
+	e := NewEngine(s, hub, sink, nil)
+
+	tr := &Trigger{
+		ID: "haste-1", Name: "Speed of the Shissar", Enabled: true,
+		Pattern:           `^You feel fast\.$`,
+		TimerType:         TimerTypeBuff,
+		TimerDurationSecs: 600,
+		SpellID:           1709,
+		WornOffPattern:    `^Your body slows\.$`,
+		Actions:           []Action{},
+		CreatedAt:         time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	e.Handle(time.Now(), "Your body slows.")
+	if sink.stops != 1 || sink.stopName != "Speed of the Shissar" || sink.stopSpellID != 1709 {
+		t.Errorf("legacy worn-off stop = %+v, want Speed of the Shissar/1709", sink)
 	}
 }

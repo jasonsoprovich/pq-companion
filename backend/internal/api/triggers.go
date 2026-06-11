@@ -54,6 +54,7 @@ type triggerRequest struct {
 	TimerType            trigger.TimerType      `json:"timer_type"`
 	TimerDurationSecs    int                    `json:"timer_duration_secs"`
 	TimerDurationCapture string                 `json:"timer_duration_capture"`
+	TimerKeyCapture      string                 `json:"timer_key_capture"`
 	WornOffPattern       string                 `json:"worn_off_pattern"`
 	SpellID              int                    `json:"spell_id"`
 	DisplayThresholdSecs int                    `json:"display_threshold_secs"`
@@ -142,6 +143,7 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 		TimerType:            normalizeTimerType(req.TimerType),
 		TimerDurationSecs:    req.TimerDurationSecs,
 		TimerDurationCapture: strings.TrimSpace(req.TimerDurationCapture),
+		TimerKeyCapture:      strings.TrimSpace(req.TimerKeyCapture),
 		WornOffPattern:       req.WornOffPattern,
 		SpellID:              req.SpellID,
 		DisplayThresholdSecs: req.DisplayThresholdSecs,
@@ -214,6 +216,7 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	existing.TimerType = normalizeTimerType(req.TimerType)
 	existing.TimerDurationSecs = req.TimerDurationSecs
 	existing.TimerDurationCapture = strings.TrimSpace(req.TimerDurationCapture)
+	existing.TimerKeyCapture = strings.TrimSpace(req.TimerKeyCapture)
 	existing.WornOffPattern = req.WornOffPattern
 	existing.SpellID = req.SpellID
 	existing.DisplayThresholdSecs = req.DisplayThresholdSecs

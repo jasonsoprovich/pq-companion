@@ -323,6 +323,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
   const [timerType, setTimerType] = useState<TimerType>(initial?.timer_type ?? prefill?.timerType ?? 'none')
   const [timerDuration, setTimerDuration] = useState(initial?.timer_duration_secs ?? prefill?.timerDurationSecs ?? 0)
   const [timerDurationCapture, setTimerDurationCapture] = useState(initial?.timer_duration_capture ?? '')
+  const [timerKeyCapture, setTimerKeyCapture] = useState(initial?.timer_key_capture ?? '')
   const [wornOffPattern, setWornOffPattern] = useState(initial?.worn_off_pattern ?? prefill?.wornOffPattern ?? '')
   const [displayThreshold, setDisplayThreshold] = useState(initial?.display_threshold_secs ?? 0)
   const [timerAlerts, setTimerAlerts] = useState<TimerAlertThreshold[]>(
@@ -538,6 +539,8 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
       timer_duration_secs: timerType === 'none' ? 0 : Math.max(0, timerDuration),
       timer_duration_capture:
         source === 'pipe' || timerType === 'none' ? '' : timerDurationCapture.trim(),
+      timer_key_capture:
+        source === 'pipe' || timerType === 'none' ? '' : timerKeyCapture.trim(),
       worn_off_pattern: source === 'pipe' || timerType === 'none' ? '' : wornOffPattern.trim(),
       spell_id: initial?.spell_id ?? prefill?.spellId ?? 0,
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
@@ -806,6 +809,21 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
                   placeholder="^(.+) is behind you\.$"
                   disabled={submitting}
                 />
+                {timerType !== 'none' && (
+                  <input
+                    type="number"
+                    min={0}
+                    value={ep.timer_duration_secs ?? 0}
+                    onChange={(e) => {
+                      const v = Math.max(0, parseInt(e.target.value) || 0)
+                      setExtraPatterns((prev) => prev.map((p, j) => (j === i ? { ...p, timer_duration_secs: v } : p)))
+                    }}
+                    className="w-16 rounded px-2 py-1.5 text-xs outline-none text-center"
+                    style={{ ...inputStyle, opacity: ep.enabled ? 1 : 0.5 }}
+                    disabled={submitting}
+                    title="Timer duration override (seconds) when THIS pattern matches. 0 = use the trigger's duration above."
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => setExtraPatterns((prev) => prev.filter((_, j) => j !== i))}
@@ -1082,6 +1100,26 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
                 </span>
               </div>
             )}
+            {source === 'log' && (
+              <div className="flex items-center gap-1.5">
+                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Timer name from capture
+                </label>
+                <input
+                  type="text"
+                  value={timerKeyCapture}
+                  onChange={(e) => setTimerKeyCapture(e.target.value)}
+                  placeholder="e.g. 1"
+                  className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center font-mono"
+                  style={inputStyle}
+                  disabled={submitting}
+                  title="Capture group number or name whose text names the timer (e.g. the spell name) — each captured value runs its own countdown. The worn-off pattern must capture the same value. Empty = use the trigger name."
+                />
+                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                  one timer per captured spell name; empty = trigger name
+                </span>
+              </div>
+            )}
             <div className="flex items-center gap-1.5">
               <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
                 Display threshold (s)
@@ -1309,6 +1347,7 @@ function TriggerRow({
       timer_type: trigger.timer_type,
       timer_duration_secs: trigger.timer_duration_secs,
       timer_duration_capture: trigger.timer_duration_capture ?? '',
+      timer_key_capture: trigger.timer_key_capture ?? '',
       worn_off_pattern: trigger.worn_off_pattern,
       spell_id: trigger.spell_id,
       display_threshold_secs: trigger.display_threshold_secs,
@@ -2542,6 +2581,7 @@ export default function TriggersPage(): React.ReactElement {
       timer_type: t.timer_type,
       timer_duration_secs: t.timer_duration_secs,
       timer_duration_capture: t.timer_duration_capture ?? '',
+      timer_key_capture: t.timer_key_capture ?? '',
       worn_off_pattern: t.worn_off_pattern,
       spell_id: t.spell_id,
       display_threshold_secs: t.display_threshold_secs,
