@@ -154,13 +154,26 @@ func meleeSharedDisciplines(packName string) []Trigger {
 // ASCII apostrophe across rows (it carries both "Boltran`s Agacerie" and
 // "Boltran's Agacerie"). Defined as double-quoted consts because of the
 // backtick.
+// Each list is the full set of player-castable spells with that effect in
+// quarm.db (SPA 22 charm / 99 root / 3 snare / 31 mez, any class level
+// 1–60), audited 2026-06-11. Self-only root buffs (Treeform, Illusion:
+// Tree, Spirit of Ash/Oak) are deliberately absent — their fade is not a
+// loose mob. Greater Fetter (61) and Word of Terris (65) are PoP spells
+// included ahead of the expansion launch; Dominating Gaze is the level-254
+// spell the Dire Charm AA casts. Undead Pact / Entrancing Lights /
+// Elnerick's Entombment of Ice / Insidious Retrogression are Quarm-custom
+// spells.
 const (
-	charmBreakPattern = "^Your (?:charm|Charm|Beguile|Cajoling Whispers|Allure|Boltran[`']s Agacerie|Dictate|Befriend Animal|Charm Animals|Beguile Plants|Beguile Animals|Allure of the Wild|Call of Karana|Tunare[`']s Request|Dominate Undead|Beguile Undead|Cajole Undead|Thrall of Bones|Enslave Death|Word of Terris|Solon[`']s Bewitching Bravura) spell has worn off\\.$"
-	rootBreakPattern  = `^Your (?:Root|Instill|Fetter|Greater Fetter|Paralyzing Earth|Immobilize|Grasping Roots|Ensnaring Roots|Enveloping Roots|Engulfing Roots|Engorging Roots|Entrapping Roots|Hungry Earth) spell has worn off\.$`
-	snareBreakPattern = "^Your (?:Snare|Ensnare|Atol[`']s Spectral Shackles|Engulfing Darkness|Dooming Darkness|Cascading Darkness|Clinging Darkness|Bonds of Force|Largo[`']s Absonant Binding) spell has worn off\\.$"
+	charmBreakPattern = "^Your (?:charm|Charm|Beguile|Cajoling Whispers|Allure|Boltran[`']s Agacerie|Dictate|Befriend Animal|Charm Animals|Beguile Plants|Beguile Animals|Allure of the Wild|Call of Karana|Tunare[`']s Request|Dominate Undead|Beguile Undead|Cajole Undead|Thrall of Bones|Enslave Death|Word of Terris|Undead Pact|Dominating Gaze|Solon[`']s Bewitching Bravura|Solon[`']s Song of the Sirens) spell has worn off\\.$"
+	rootBreakPattern  = "^Your (?:Root|Instill|Fetter|Greater Fetter|Paralyzing Earth|Immobilize|Grasping Roots|Ensnaring Roots|Enveloping Roots|Engulfing Roots|Engorging Roots|Entrapping Roots|Hungry Earth|Elnerick[`']s Entombment of Ice) spell has worn off\\.$"
+	snareBreakPattern = "^Your (?:Snare|Ensnare|Tangling Weeds|Atol[`']s Spectral Shackles|Engulfing Darkness|Dooming Darkness|Cascading Darkness|Clinging Darkness|Devouring Darkness|Bonds of Force|Bonds of Tunare|Insidious Retrogression|Largo[`']s Absonant Binding|Selo[`']s Consonant Chain|Selo[`']s Assonant Strane|Song of Midnight) spell has worn off\\.$"
 	// mezWornOffPattern is only used as an ExcludePattern on the Spell Breaks
-	// catch-all — mez break alerts stay class-specific (Enchanter, Bard).
-	mezWornOffPattern = "^Your (?:Mesmerize|Mesmerization|Enthrall|Entrance|Dazzle|Mesmerizing Breath|Wake of Tranquility|Glamour of Kintaz|Rapture|Ancient: Eternal Rapture|Kelin[`']s Lucid Lullaby|Lugubrious Lament) spell has worn off\\.$"
+	// catch-all — mez break alerts stay class-specific (Enchanter, Bard,
+	// Necromancer). Kept in sync with the union of those packs' Mez Broke
+	// patterns so a line is suppressed here exactly when a class alert
+	// covers it; lull-type spells (Wake of Tranquility, Lugubrious Lament)
+	// are not mezzes and fall through to the generic worn-off overlay.
+	mezWornOffPattern = "^Your (?:Mesmerize|Mesmerization|Enthrall|Entrance|Dazzle|Fascination|Entrancing Lights|Glamour of Kintaz|Rapture|Ancient: Eternal Rapture|Screaming Terror|Kelin[`']s Lucid Lullaby|Crission[`']s Pixie Strike|Sionachie[`']s Dreams|Song of Twilight|Dreams of Ayonae|Ancient: Lullaby of Shadow) spell has worn off\\.$"
 )
 
 // sharedCharmBreak returns the shared charm-break alert. Pack name is
@@ -231,9 +244,14 @@ func EnchanterPack() TriggerPack {
 		Triggers: []Trigger{
 			// ── Crowd-control breaks ─────────────────────────────────────
 			{
+				// Mezzes only: Instill is a root (sharedRootBreak covers it —
+				// listing it here double-fired MEZ BROKE on top of ROOT
+				// BROKE) and Wake of Tranquility is a lull, not a mez.
+				// Fascination and Entrancing Lights (Quarm-custom) are the
+				// enchanter AE mezzes.
 				Name:     "Mez Broke",
 				Enabled:  true,
-				Pattern:  `Your (?:Mesmerize|Mesmerization|Enthrall|Entrance|Dazzle|Wake of Tranquility|Glamour of Kintaz|Instill|Rapture|Ancient: Eternal Rapture) spell has worn off\.`,
+				Pattern:  `Your (?:Mesmerize|Mesmerization|Enthrall|Entrance|Dazzle|Fascination|Entrancing Lights|Glamour of Kintaz|Rapture|Ancient: Eternal Rapture) spell has worn off\.`,
 				PackName: "Enchanter",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "MEZ BROKE!", DurationSecs: 5, Color: "#ff4444"},
@@ -1582,9 +1600,12 @@ func BardPack() TriggerPack {
 			// once the bard stops singing (or the song's natural duration
 			// elapses post-stop). Either case means the mez/charm is gone.
 			{
+				// All bard mez songs. Apostrophes are [`'] — the log emits
+				// the backtick form (Kelin`s), so a plain ASCII apostrophe
+				// here never matches. Double-quoted for the backtick.
 				Name:     "Mez Broke",
 				Enabled:  true,
-				Pattern:  `Your Kelin's Lucid Lullaby spell has worn off\.`,
+				Pattern:  "Your (?:Kelin[`']s Lucid Lullaby|Crission[`']s Pixie Strike|Sionachie[`']s Dreams|Song of Twilight|Dreams of Ayonae|Ancient: Lullaby of Shadow) spell has worn off\\.",
 				PackName: "Bard",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "MEZ BROKE!", DurationSecs: 5, Color: "#ff4444"},
@@ -1802,8 +1823,25 @@ func NecromancerPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Necromancer",
 		Class:       ClassPtr(ClassNecromancer),
-		Description: "Spell timers for Arch Lich, Splurt, Ignite Blood, Pyrocruor, Bond of Death, and Harmshield.",
+		Description: "Mez break alert (Screaming Terror) plus spell timers for Arch Lich, Splurt, Ignite Blood, Pyrocruor, Bond of Death, and Harmshield.",
 		Triggers: []Trigger{
+			// ── Crowd-control break ──────────────────────────────────────
+			// Screaming Terror is the necro single-target mez; mirrors the
+			// Enchanter/Bard packs' Mez Broke alert (and is excluded from
+			// the Spell Breaks catch-all via mezWornOffPattern).
+			{
+				Name:     "Mez Broke",
+				Enabled:  true,
+				Pattern:  `Your Screaming Terror spell has worn off\.`,
+				PackName: "Necromancer",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "MEZ BROKE!", DurationSecs: 5, Color: "#ff4444"},
+					// "Mezz" (not "Mez") so Windows SAPI pronounces it as the EQ term
+					// instead of the prefix "mehz-". Pattern and overlay text remain "Mez".
+					{Type: ActionTextToSpeech, Text: "Mezz broke", Volume: 1.0},
+				},
+			},
+
 			// ── Self buff (timer) ───────────────────────────────────────
 			{
 				Name:              "Arch Lich",

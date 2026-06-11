@@ -123,6 +123,32 @@ func TestCommunityPackPatterns(t *testing.T) {
 		{"Spell Breaks", "Spell Worn Off", "Your Paralyzing Earth spell has worn off.", false, "", 0},
 		{"Spell Breaks", "Spell Worn Off", "Your Ensnare spell has worn off.", false, "", 0},
 		{"Spell Breaks", "Spell Worn Off", "Your Dazzle spell has worn off.", false, "", 0},
+		{"Spell Breaks", "Spell Worn Off", "Your Screaming Terror spell has worn off.", false, "", 0},
+		// Lulls aren't mezzes — they fall through to the generic overlay.
+		{"Spell Breaks", "Spell Worn Off", "Your Wake of Tranquility spell has worn off.", true, "Wake of Tranquility", 0},
+
+		// ── CC break completeness (2026-06-11 quarm.db audit) ───────────
+		{"Spell Breaks", "Charm Broke", "Your Dominating Gaze spell has worn off.", true, "", 0},
+		{"Spell Breaks", "Charm Broke", "Your Solon`s Song of the Sirens spell has worn off.", true, "", 0},
+		{"Spell Breaks", "Root Broke", "Your Elnerick's Entombment of Ice spell has worn off.", true, "", 0},
+		{"Spell Breaks", "Snare Broke", "Your Tangling Weeds spell has worn off.", true, "", 0},
+		{"Spell Breaks", "Snare Broke", "Your Selo`s Consonant Chain spell has worn off.", true, "", 0},
+		{"Spell Breaks", "Snare Broke", "Your Devouring Darkness spell has worn off.", true, "", 0},
+		{"Spell Breaks", "Snare Broke", "Your Bonds of Tunare spell has worn off.", true, "", 0},
+
+		// ── Class-pack mez breaks ────────────────────────────────────────
+		// Enchanter: AE mezzes fire; Instill (a root — ROOT BROKE covers
+		// it) and Wake of Tranquility (a lull) no longer mislabel as mez.
+		{"Enchanter", "Mez Broke", "Your Fascination spell has worn off.", true, "", 0},
+		{"Enchanter", "Mez Broke", "Your Entrancing Lights spell has worn off.", true, "", 0},
+		{"Enchanter", "Mez Broke", "Your Instill spell has worn off.", false, "", 0},
+		{"Enchanter", "Mez Broke", "Your Wake of Tranquility spell has worn off.", false, "", 0},
+		{"Enchanter", "Root Broke", "Your Instill spell has worn off.", true, "", 0},
+		// Bard: the log emits backtick apostrophes (Kelin`s) — the old
+		// ASCII-apostrophe pattern never fired.
+		{"Bard", "Mez Broke", "Your Kelin`s Lucid Lullaby spell has worn off.", true, "", 0},
+		{"Bard", "Mez Broke", "Your Ancient: Lullaby of Shadow spell has worn off.", true, "", 0},
+		{"Necromancer", "Mez Broke", "Your Screaming Terror spell has worn off.", true, "", 0},
 
 		// ── Caster Alerts ───────────────────────────────────────────────
 		{"Caster Alerts", "Insufficient Mana", "Insufficient Mana to cast this spell!", true, "", 0},
