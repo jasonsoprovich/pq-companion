@@ -137,6 +137,81 @@ func meleeSharedDisciplines(packName string) []Trigger {
 	}
 }
 
+// Shared crowd-control break alert patterns. EQ's worn-off lines read the
+// same for every class, so the break alerts are defined once and shipped by
+// every pack that wants them (class packs + the Spell Breaks pack), each
+// carrying a stable dedup_key like the shared melee disciplines — install
+// any combination of those packs and exactly one copy exists; uninstalling
+// one promotes a copy from another still-installed pack.
+//
+// Charm is special: EQ emits the same generic line for every charm spell —
+// "Your charm spell has worn off." (lowercase 'charm', regardless of whether
+// the underlying spell was Charm, Beguile, Boltran`s Agacerie, etc.). The
+// per-name alternates are kept as a defensive tail for any charm that does
+// log under its own name (e.g. bard song charms).
+//
+// Spell-name apostrophes are matched as [`'] — quarm.db mixes backtick and
+// ASCII apostrophe across rows (it carries both "Boltran`s Agacerie" and
+// "Boltran's Agacerie"). Defined as double-quoted consts because of the
+// backtick.
+const (
+	charmBreakPattern = "^Your (?:charm|Charm|Beguile|Cajoling Whispers|Allure|Boltran[`']s Agacerie|Dictate|Befriend Animal|Charm Animals|Beguile Plants|Beguile Animals|Allure of the Wild|Call of Karana|Tunare[`']s Request|Dominate Undead|Beguile Undead|Cajole Undead|Thrall of Bones|Enslave Death|Word of Terris|Solon[`']s Bewitching Bravura) spell has worn off\\.$"
+	rootBreakPattern  = `^Your (?:Root|Instill|Fetter|Greater Fetter|Paralyzing Earth|Immobilize|Grasping Roots|Ensnaring Roots|Enveloping Roots|Engulfing Roots|Engorging Roots|Entrapping Roots|Hungry Earth) spell has worn off\.$`
+	snareBreakPattern = "^Your (?:Snare|Ensnare|Atol[`']s Spectral Shackles|Engulfing Darkness|Dooming Darkness|Cascading Darkness|Clinging Darkness|Bonds of Force|Largo[`']s Absonant Binding) spell has worn off\\.$"
+	// mezWornOffPattern is only used as an ExcludePattern on the Spell Breaks
+	// catch-all — mez break alerts stay class-specific (Enchanter, Bard).
+	mezWornOffPattern = "^Your (?:Mesmerize|Mesmerization|Enthrall|Entrance|Dazzle|Mesmerizing Breath|Wake of Tranquility|Glamour of Kintaz|Rapture|Ancient: Eternal Rapture|Kelin[`']s Lucid Lullaby|Lugubrious Lament) spell has worn off\\.$"
+)
+
+// sharedCharmBreak returns the shared charm-break alert. Pack name is
+// parameterized so the trigger row records which pack installed it (used by
+// promote-on-uninstall to find a fallback).
+func sharedCharmBreak(packName string) Trigger {
+	return Trigger{
+		Name:     "Charm Broke",
+		Enabled:  true,
+		Pattern:  charmBreakPattern,
+		DedupKey: "charm_broke",
+		PackName: packName,
+		Actions: []Action{
+			{Type: ActionOverlayText, Text: "CHARM BROKE!", DurationSecs: 6, Color: "#ff0000"},
+			{Type: ActionTextToSpeech, Text: "Charm broke", Volume: 1.0},
+		},
+	}
+}
+
+// sharedRootBreak returns the shared root-break alert. The worn-off line
+// fires both on damage-induced break and on natural expiry — either way the
+// mob is loose.
+func sharedRootBreak(packName string) Trigger {
+	return Trigger{
+		Name:     "Root Broke",
+		Enabled:  true,
+		Pattern:  rootBreakPattern,
+		DedupKey: "root_broke",
+		PackName: packName,
+		Actions: []Action{
+			{Type: ActionOverlayText, Text: "ROOT BROKE!", DurationSecs: 5, Color: "#ff6633"},
+			{Type: ActionTextToSpeech, Text: "Root broke", Volume: 1.0},
+		},
+	}
+}
+
+// sharedSnareBreak returns the shared snare-break alert.
+func sharedSnareBreak(packName string) Trigger {
+	return Trigger{
+		Name:     "Snare Broke",
+		Enabled:  true,
+		Pattern:  snareBreakPattern,
+		DedupKey: "snare_broke",
+		PackName: packName,
+		Actions: []Action{
+			{Type: ActionOverlayText, Text: "SNARE BROKE!", DurationSecs: 5, Color: "#ff8833"},
+			{Type: ActionTextToSpeech, Text: "Snare broke", Volume: 1.0},
+		},
+	}
+}
+
 // EnchanterPack returns the pre-built enchanter trigger pack: critical
 // crowd-control break alerts (mez/charm/root), mez/charm immunity alerts,
 // and timer-creating triggers for the standard enchanter
@@ -167,33 +242,11 @@ func EnchanterPack() TriggerPack {
 					{Type: ActionTextToSpeech, Text: "Mezz broke", Volume: 1.0},
 				},
 			},
-			{
-				Name:    "Charm Broke",
-				Enabled: true,
-				// EQ emits the same generic line for every charm spell:
-				// "Your charm spell has worn off." (lowercase 'charm',
-				// regardless of whether the underlying spell was Charm,
-				// Beguile, Cajoling Whispers, Boltran's Agacerie, etc.).
-				// The previous per-name alternation never matched anything
-				// in real logs and was the reason charm-break alerts never
-				// fired for the user.
-				Pattern:  `^Your charm spell has worn off\.$`,
-				PackName: "Enchanter",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "CHARM BROKE!", DurationSecs: 6, Color: "#ff0000"},
-					{Type: ActionTextToSpeech, Text: "Charm broke", Volume: 1.0},
-				},
-			},
-			{
-				Name:     "Root Broke",
-				Enabled:  true,
-				Pattern:  `Your (?:Root|Engulfing Roots|Engulfing Darkness|Fetter|Greater Fetter) spell has worn off\.`,
-				PackName: "Enchanter",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "ROOT BROKE!", DurationSecs: 5, Color: "#ff6633"},
-					{Type: ActionTextToSpeech, Text: "Root broke", Volume: 1.0},
-				},
-			},
+			// Charm/root breaks are the shared cross-pack alerts (see
+			// sharedCharmBreak for why charm matches the generic lowercase
+			// "Your charm spell has worn off." line).
+			sharedCharmBreak("Enchanter"),
+			sharedRootBreak("Enchanter"),
 
 			// ── Immunities ──────────────────────────────────────────────
 			// Generic Spell Resisted / Spell Interrupted overlays live in
@@ -735,26 +788,8 @@ func DruidPack() TriggerPack {
 			// Caster's "Your <SpellName> spell has worn off." line fires both
 			// on damage-induced break and on natural expiry — either way the
 			// druid needs to know the mob is loose.
-			{
-				Name:     "Root Broke",
-				Enabled:  true,
-				Pattern:  `Your Entrapping Roots spell has worn off\.`,
-				PackName: "Druid",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "ROOT BROKE!", DurationSecs: 5, Color: "#ff6633"},
-					{Type: ActionTextToSpeech, Text: "Root broke", Volume: 1.0},
-				},
-			},
-			{
-				Name:     "Snare Broke",
-				Enabled:  true,
-				Pattern:  `Your Ensnare spell has worn off\.`,
-				PackName: "Druid",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "SNARE BROKE!", DurationSecs: 5, Color: "#ff8833"},
-					{Type: ActionTextToSpeech, Text: "Snare broke", Volume: 1.0},
-				},
-			},
+			sharedRootBreak("Druid"),
+			sharedSnareBreak("Druid"),
 
 			// ── Self / group buffs (timers) ──────────────────────────────
 			{
@@ -1000,16 +1035,7 @@ func PaladinPack() TriggerPack {
 			},
 
 			// ── Crowd-control break ──────────────────────────────────────
-			{
-				Name:     "Root Broke",
-				Enabled:  true,
-				Pattern:  `Your Immobilize spell has worn off\.`,
-				PackName: "Paladin",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "ROOT BROKE!", DurationSecs: 5, Color: "#ff6633"},
-					{Type: ActionTextToSpeech, Text: "Root broke", Volume: 1.0},
-				},
-			},
+			sharedRootBreak("Paladin"),
 
 			// ── Root (timer) ────────────────────────────────────────────
 			{
@@ -1654,16 +1680,9 @@ func BardPack() TriggerPack {
 					{Type: ActionTextToSpeech, Text: "Mezz broke", Volume: 1.0},
 				},
 			},
-			{
-				Name:     "Charm Broke",
-				Enabled:  true,
-				Pattern:  `Your Solon's Bewitching Bravura spell has worn off\.`,
-				PackName: "Bard",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "CHARM BROKE!", DurationSecs: 6, Color: "#ff0000"},
-					{Type: ActionTextToSpeech, Text: "Charm broke", Volume: 1.0},
-				},
-			},
+			// Shared charm break — covers the generic charm worn-off line
+			// plus Solon's Bewitching Bravura by name (see sharedCharmBreak).
+			sharedCharmBreak("Bard"),
 
 			// ── Group buff songs (timers, self-only land) ────────────────
 			// These songs have empty cast_on_other in spells_new, so only
@@ -1970,16 +1989,7 @@ func WizardPack() TriggerPack {
 			// Atol's Spectral Shackles is a snare (SPA 3 movement-speed
 			// -35%), not a root — despite the flavour text about feet
 			// being bound. Label the break accordingly.
-			{
-				Name:     "Snare Broke",
-				Enabled:  true,
-				Pattern:  `Your Atol's Spectral Shackles spell has worn off\.`,
-				PackName: "Wizard",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "SNARE BROKE!", DurationSecs: 5, Color: "#ff8833"},
-					{Type: ActionTextToSpeech, Text: "Snare broke", Volume: 1.0},
-				},
-			},
+			sharedSnareBreak("Wizard"),
 
 			// ── Mana tool (overlay alert) ────────────────────────────────
 			// Harvest is instant with a 10-minute recast; the cast message
@@ -2222,10 +2232,301 @@ func GeneralTriggersPack() TriggerPack {
 	}
 }
 
+// CasterAlertsPack returns cast-failure alerts useful to every casting
+// class. Community-submitted (Vortikai); patterns verified against live
+// Quarm logs by the submitter.
+func CasterAlertsPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Caster Alerts",
+		Description: "Cast-failure alerts for any casting class: insufficient mana, must stand to cast, and target unaffected.",
+		Triggers: []Trigger{
+			{
+				Name:     "Insufficient Mana",
+				Enabled:  true,
+				Pattern:  `^Insufficient Mana to cast this spell!$`,
+				PackName: "Caster Alerts",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "INSUFFICIENT MANA", DurationSecs: 3, Color: "#ffaa00"},
+				},
+			},
+			{
+				Name:     "Stand to Cast",
+				Enabled:  true,
+				Pattern:  `^You must be standing to cast a spell\.$`,
+				PackName: "Caster Alerts",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "STAND TO CAST", DurationSecs: 3, Color: "#ffaa00"},
+				},
+			},
+			{
+				// Spell took hold but did nothing (e.g. debuff on an immune
+				// target, stacking-blocked buff).
+				Name:     "Target Unaffected",
+				Enabled:  true,
+				Pattern:  `^Your target looks unaffected\.$`,
+				PackName: "Caster Alerts",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "TARGET UNAFFECTED", DurationSecs: 3, Color: "#ffaa00"},
+				},
+			},
+		},
+	}
+}
+
+// CritAlertsPack returns crit announcement overlays with the damage/heal
+// amount spliced in via the {1} capture token.
+func CritAlertsPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Crit Alerts",
+		Description: "Crit overlays with the amount shown: critical blast (caster), exceptional heal, and melee critical hits.",
+		Triggers: []Trigger{
+			{
+				Name:     "Critical Blast",
+				Enabled:  true,
+				Pattern:  `^You deliver a critical blast! \((\d+)\)$`,
+				PackName: "Crit Alerts",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "CRITICAL BLAST ({1})", DurationSecs: 3, Color: "#ff5555"},
+				},
+			},
+			{
+				Name:     "Exceptional Heal",
+				Enabled:  true,
+				Pattern:  `^You perform an exceptional heal! \((\d+)\)$`,
+				PackName: "Crit Alerts",
+				Actions: []Action{
+					// EQ healing-text blue.
+					{Type: ActionOverlayText, Text: "EXCEPTIONAL HEAL ({1})", DurationSecs: 3, Color: "#4499ff"},
+				},
+			},
+			{
+				// Quarm logs melee crits in the PQ standalone form
+				// "<Name> Scores a critical hit!(62)" — capital S, no space
+				// before the parens (see logparser reCritHit). {C} expands to
+				// the active character so other melees' crits stay quiet.
+				Name:     "Critical Hit",
+				Enabled:  true,
+				Pattern:  `^{C} Scores a critical hit!\((\d+)\)$`,
+				PackName: "Crit Alerts",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "CRIT ({1})", DurationSecs: 2, Color: "#ff5555"},
+				},
+			},
+		},
+	}
+}
+
+// SpellBreaksPack returns the shared crowd-control break alerts plus a
+// catch-all "<spell> has worn off" overlay for everything that isn't CC.
+// The CC breaks carry the same dedup keys the class packs ship, so
+// installing this alongside a class pack never double-fires.
+func SpellBreaksPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Spell Breaks",
+		Description: "Charm/root/snare break alerts (shared with the class packs) plus a catch-all worn-off overlay for DoTs, debuffs, and buffs you cast.",
+		Triggers: []Trigger{
+			sharedCharmBreak("Spell Breaks"),
+			sharedRootBreak("Spell Breaks"),
+			sharedSnareBreak("Spell Breaks"),
+			{
+				// Go's regexp has no negative lookahead, so the CC spells are
+				// carved out with ExcludePatterns instead: the broad pattern
+				// matches every worn-off line, and any line the CC break
+				// alerts (or the class packs' mez alerts) already cover is
+				// suppressed here.
+				Name:     "Spell Worn Off",
+				Enabled:  true,
+				Pattern:  `^Your (.+) spell has worn off\.$`,
+				PackName: "Spell Breaks",
+				ExcludePatterns: []string{
+					charmBreakPattern,
+					rootBreakPattern,
+					snareBreakPattern,
+					mezWornOffPattern,
+				},
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "{1} has worn off", DurationSecs: 4, Color: "#cccccc"},
+				},
+			},
+		},
+	}
+}
+
+// GroupAlertsPack returns group-management overlays.
+func GroupAlertsPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Group Alerts",
+		Description: "Group invites and leadership changes.",
+		Triggers: []Trigger{
+			{
+				Name:     "Group Invite",
+				Enabled:  true,
+				Pattern:  `^(\w+) invites you to join a group\.$`,
+				PackName: "Group Alerts",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "{1} invites you to a group", DurationSecs: 6, Color: "#44aaff"},
+				},
+			},
+			{
+				Name:     "New Group Leader",
+				Enabled:  true,
+				Pattern:  `^(\w+) is now the leader of your group\.$`,
+				PackName: "Group Alerts",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "{1} is now the group leader", DurationSecs: 5, Color: "#44aaff"},
+				},
+			},
+		},
+	}
+}
+
+// RaidAlertsPack returns raid-event overlays: Divine Intervention procs,
+// mobs gating away, and assist calls in raid chat.
+func RaidAlertsPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Raid Alerts",
+		Description: "Divine Intervention procs, mobs casting gate, and assist calls in raid chat.",
+		Triggers: []Trigger{
+			{
+				// The DI proc line — complementary to the Cleric pack's
+				// Divine Intervention buff timer (which this same line clears).
+				Name:     "Divine Intervention",
+				Enabled:  true,
+				Pattern:  `^(\w+) has been rescued by divine intervention!$`,
+				PackName: "Raid Alerts",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "DIVINE INTERVENTION — {1}", DurationSecs: 8, Color: "#ffd700"},
+					{Type: ActionTextToSpeech, Text: "Divine intervention on {1}", Volume: 1.0},
+				},
+			},
+			{
+				Name:     "Mob Gating",
+				Enabled:  true,
+				Pattern:  `^(.+) begins to cast the gate spell\.$`,
+				PackName: "Raid Alerts",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "GATE: {1}", DurationSecs: 6, Color: "#ff8800"},
+					{Type: ActionTextToSpeech, Text: "{1} is gating", Volume: 1.0},
+				},
+			},
+			{
+				// "Krazak tells the raid,  'ASSIST Vox >>>'" → "ASSIST Vox".
+				// The keyword match is case-insensitive; the target capture
+				// runs from the first letter after "assist" up to a decoration
+				// character (>, |, <, !) or the closing quote. Double-quoted
+				// for the backtick in the mob-name class.
+				Name:     "Raid Assist Call",
+				Enabled:  true,
+				Pattern:  "(?i)^(\\w+) tells the raid,\\s*'.*?assist\\W*([A-Za-z][A-Za-z`' ]*?)(?:\\s*[>|<!']|$)",
+				PackName: "Raid Alerts",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "ASSIST {2}", DurationSecs: 5, Color: "#ff4444"},
+				},
+			},
+		},
+	}
+}
+
+// TrackingPack returns direction-arrow overlays for the tracking skill.
+// Each bearing update flashes the target name with an arrow; the short
+// 2-second duration keeps stale bearings from lingering between updates.
+func TrackingPack() TriggerPack {
+	bearing := func(name, suffix, arrow string) Trigger {
+		return Trigger{
+			Name:     name,
+			Enabled:  true,
+			Pattern:  `^(.+) is ` + suffix + `\.$`,
+			PackName: "Tracking",
+			Actions: []Action{
+				{Type: ActionOverlayText, Text: "{1}: " + arrow, DurationSecs: 2, Color: "#ffffff"},
+			},
+		}
+	}
+	return TriggerPack{
+		PackName:    "Tracking",
+		Description: "Direction arrows for the tracking skill — shows your tracked target's bearing (↑ ↗ → …) on each update, plus a lost-target alert.",
+		Triggers: []Trigger{
+			bearing("Ahead", "straight ahead", "↑"),
+			bearing("Ahead Left", "ahead and to the left", "↖"),
+			bearing("Ahead Right", "ahead and to the right", "↗"),
+			bearing("Left", "to the left", "←"),
+			bearing("Right", "to the right", "→"),
+			bearing("Behind", "behind you", "↓"),
+			bearing("Behind Left", "behind and to the left", "↙"),
+			bearing("Behind Right", "behind and to the right", "↘"),
+			{
+				Name:     "Lost Target",
+				Enabled:  true,
+				Pattern:  `^You have lost your target\.$`,
+				PackName: "Tracking",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "Lost tracking target", DurationSecs: 5, Color: "#ffaa00"},
+				},
+			},
+		},
+	}
+}
+
+// MiscAlertsPack returns odds and ends that don't fit a class pack: feign
+// death failure, stun state, and MGB announcements in the general channel.
+func MiscAlertsPack() TriggerPack {
+	return TriggerPack{
+		PackName:    "Misc Alerts",
+		Description: "Feign death failure, stun/unstun alerts, and MGB announcements in the general channel.",
+		Triggers: []Trigger{
+			{
+				// {C} expands to the active character, so only YOUR failed FD
+				// fires — other players (or your own success) stay quiet.
+				// Complements the Monk/SK packs' success alert ("You feign
+				// death.").
+				Name:     "Feign Death Failed",
+				Enabled:  true,
+				Pattern:  `^{C} has fallen to the ground\.$`,
+				PackName: "Misc Alerts",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "FEIGN DEATH FAILED", DurationSecs: 5, Color: "#ff0000"},
+					{Type: ActionTextToSpeech, Text: "Feign death failed", Volume: 1.0},
+				},
+			},
+			{
+				Name:     "Stunned",
+				Enabled:  true,
+				Pattern:  `^You are stunned!$`,
+				PackName: "Misc Alerts",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "STUNNED", DurationSecs: 3, Color: "#ff4444"},
+				},
+			},
+			{
+				Name:     "Unstunned",
+				Enabled:  true,
+				Pattern:  `^You are unstunned\.$`,
+				PackName: "Misc Alerts",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "NO LONGER STUNNED", DurationSecs: 2, Color: "#44ff88"},
+				},
+			},
+			{
+				// Any general-channel message mentioning MGB, shown verbatim
+				// via {0} (the whole matched line) — the message itself names
+				// the spell and time, so no need to parse them out.
+				Name:     "MGB Announcement",
+				Enabled:  true,
+				Pattern:  `(?i)^\w+ tells general:\d+, '.*mgb.*'$`,
+				PackName: "Misc Alerts",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "{0}", DurationSecs: 10, Color: "#44ddff"},
+				},
+			},
+		},
+	}
+}
+
 // AllPacks returns all built-in trigger packs with default audio alerts
 // applied. Class packs run through applyDefaultTimerAlerts so every timer
 // trigger gets a fading/expiring TTS without each pack having to spell it
-// out per-spell. GeneralTriggers has no timers and is returned as-is.
+// out per-spell. The class-agnostic packs have no timers and are returned
+// as-is.
 func AllPacks() []TriggerPack {
 	classPacks := []TriggerPack{
 		EnchanterPack(),
@@ -2244,12 +2545,21 @@ func AllPacks() []TriggerPack {
 		WizardPack(),
 		BeastlordPack(),
 	}
-	out := make([]TriggerPack, 0, len(classPacks)+1)
+	generalPacks := []TriggerPack{
+		GeneralTriggersPack(),
+		CasterAlertsPack(),
+		CritAlertsPack(),
+		SpellBreaksPack(),
+		GroupAlertsPack(),
+		RaidAlertsPack(),
+		TrackingPack(),
+		MiscAlertsPack(),
+	}
+	out := make([]TriggerPack, 0, len(classPacks)+len(generalPacks))
 	for _, p := range classPacks {
 		out = append(out, applyDefaultTimerAlerts(p))
 	}
-	out = append(out, GeneralTriggersPack())
-	return out
+	return append(out, generalPacks...)
 }
 
 // DefaultUpdate is a one-time additive change to an installed built-in
