@@ -1501,8 +1501,13 @@ func RangerPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Ranger",
 		Class:       ClassPtr(ClassRanger),
-		Description: "Spell timers for Trueshot Discipline, Weapon Shield Discipline, Call of Sky, Call of Fire, Flame Lick, plus the shared melee disciplines Resistant and Fearless.",
+		Description: "Snare break alert plus spell timers for Trueshot Discipline, Weapon Shield Discipline, Call of Sky, Call of Fire, Flame Lick, plus the shared melee disciplines Resistant and Fearless.",
 		Triggers: append([]Trigger{
+			// ── Crowd-control break ──────────────────────────────────────
+			// Covers the ranger snare line (Snare, Ensnare, Tangling
+			// Weeds, Bonds of Tunare).
+			sharedSnareBreak("Ranger"),
+
 			// ── Disciplines (timers) ────────────────────────────────────
 			{
 				Name:              "Trueshot Discipline",
@@ -1593,7 +1598,7 @@ func BardPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Bard",
 		Class:       ClassPtr(ClassBard),
-		Description: "Crowd-control break alerts (mez, charm) plus spell timers for Cantata of Replenishment, Warsong of Zek, Niv's Melody of Preservation, Psalm of Veeshan, Elemental Rhythms, Guardian Rhythms, Kelin's Lucid Lullaby / Lugubrious Lament, Solon's Bewitching Bravura, Largo's Absonant Binding, and the Tiny Cloak of Darkest Night clicky (Shroud of Stealth).",
+		Description: "Crowd-control break alerts (mez, charm, snare) plus spell timers for Cantata of Replenishment, Warsong of Zek, Niv's Melody of Preservation, Psalm of Veeshan, Elemental Rhythms, Guardian Rhythms, Kelin's Lucid Lullaby / Lugubrious Lament, Solon's Bewitching Bravura, Largo's Absonant Binding, and the Tiny Cloak of Darkest Night clicky (Shroud of Stealth).",
 		Triggers: []Trigger{
 			// ── Crowd-control breaks ─────────────────────────────────────
 			// Bard songs pulse every tick, so the worn-off line only fires
@@ -1615,8 +1620,13 @@ func BardPack() TriggerPack {
 				},
 			},
 			// Shared charm break — covers the generic charm worn-off line
-			// plus Solon's Bewitching Bravura by name (see sharedCharmBreak).
+			// plus the bard charm songs by name (see sharedCharmBreak).
 			sharedCharmBreak("Bard"),
+			// Shared snare break — covers the bard snare songs (Selo's
+			// Consonant Chain / Assonant Strane, Song of Midnight, Largo's
+			// Absonant Binding). Like the mez/charm breaks above, the
+			// worn-off line only fires once the song actually fades.
+			sharedSnareBreak("Bard"),
 
 			// ── Group buff songs (timers, self-only land) ────────────────
 			// These songs have empty cast_on_other in spells_new, so only
@@ -1823,9 +1833,14 @@ func NecromancerPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Necromancer",
 		Class:       ClassPtr(ClassNecromancer),
-		Description: "Mez break alert (Screaming Terror) plus spell timers for Arch Lich, Splurt, Ignite Blood, Pyrocruor, Bond of Death, and Harmshield.",
+		Description: "Mez/charm/snare break alerts plus spell timers for Arch Lich, Splurt, Ignite Blood, Pyrocruor, Bond of Death, and Harmshield.",
 		Triggers: []Trigger{
-			// ── Crowd-control break ──────────────────────────────────────
+			// ── Crowd-control breaks ─────────────────────────────────────
+			// Charm covers the undead-charm line (Dominate/Beguile/Cajole
+			// Undead, Thrall of Bones, Enslave Death); snare covers the
+			// darkness DoT-snares (Clinging through Devouring Darkness).
+			sharedCharmBreak("Necromancer"),
+			sharedSnareBreak("Necromancer"),
 			// Screaming Terror is the necro single-target mez; mirrors the
 			// Enchanter/Bard packs' Mez Broke alert (and is excluded from
 			// the Spell Breaks catch-all via mezWornOffPattern).
@@ -1934,13 +1949,16 @@ func WizardPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Wizard",
 		Class:       ClassPtr(ClassWizard),
-		Description: "Harvest alert, snare break alert, and spell timers for Manaskin and Atol's Spectral Shackles.",
+		Description: "Harvest alert, root/snare break alerts, and spell timers for Manaskin and Atol's Spectral Shackles.",
 		Triggers: []Trigger{
-			// ── Crowd-control break ──────────────────────────────────────
+			// ── Crowd-control breaks ─────────────────────────────────────
 			// Atol's Spectral Shackles is a snare (SPA 3 movement-speed
 			// -35%), not a root — despite the flavour text about feet
-			// being bound. Label the break accordingly.
+			// being bound. Label the break accordingly. The root break
+			// covers the wizard root line (Root, Instill, Fetter,
+			// Paralyzing Earth, Elnerick's Entombment of Ice).
 			sharedSnareBreak("Wizard"),
+			sharedRootBreak("Wizard"),
 
 			// ── Mana tool (overlay alert) ────────────────────────────────
 			// Harvest is instant with a 10-minute recast; the cast message
