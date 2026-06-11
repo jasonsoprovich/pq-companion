@@ -798,12 +798,17 @@ export function getTimerState(): Promise<TimerState> {
   return get<TimerState>('/api/overlay/timers')
 }
 
-export function clearTimers(category: 'buff' | 'detrimental' | 'ch_chain' | 'ch_chain_2' | 'all'): Promise<void> {
+export function clearTimers(category: 'buff' | 'detrimental' | 'custom' | 'ch_chain' | 'ch_chain_2' | 'all'): Promise<void> {
   return post<void>(`/api/overlay/timers/clear?category=${category}`)
 }
 
 export function removeTimer(id: string): Promise<void> {
   return del(`/api/overlay/timers/${encodeURIComponent(id)}`)
+}
+
+/** Start a manual countdown on the Custom Timers overlay (no trigger needed). */
+export function startCustomTimer(name: string, durationSecs: number): Promise<void> {
+  return post<void>('/api/overlay/timers/custom', { name, duration_secs: durationSecs })
 }
 
 export function getRespawnState(): Promise<RespawnState> {
@@ -1248,6 +1253,8 @@ export interface CreateTriggerRequest {
   actions: Action[]
   timer_type?: TimerType
   timer_duration_secs?: number
+  /** Capture group supplying a dynamic timer duration ("" = fixed). */
+  timer_duration_capture?: string
   worn_off_pattern?: string
   spell_id?: number
   display_threshold_secs?: number

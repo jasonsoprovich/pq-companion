@@ -1,8 +1,11 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
@@ -19,19 +22,47 @@ func (h *timerHandler) state(w http.ResponseWriter, r *http.Request) {
 
 // clear handles POST /api/overlay/timers/clear — removes active timers in the
 // given category group. The ?category= query parameter accepts "buff",
-// "detrimental", "ch_chain", "ch_chain_2", "all", or empty (treated as "all").
+// "detrimental", "custom", "ch_chain", "ch_chain_2", "all", or empty
+// (treated as "all").
 func (h *timerHandler) clear(w http.ResponseWriter, r *http.Request) {
 	group := r.URL.Query().Get("category")
 	switch group {
-	case "", "all", "buff", "detrimental", "ch_chain", "ch_chain_2":
+	case "", "all", "buff", "detrimental", "custom", "ch_chain", "ch_chain_2":
 		// accepted
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "category must be one of: buff, detrimental, ch_chain, ch_chain_2, all",
+			"error": "category must be one of: buff, detrimental, custom, ch_chain, ch_chain_2, all",
 		})
 		return
 	}
 	h.engine.ClearCategory(group)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// startCustom handles POST /api/overlay/timers/custom — starts a manual
+// countdown timer on the Custom Timers overlay without needing a trigger.
+// Body: {"name": "Break over", "duration_secs": 300}.
+func (h *timerHandler) startCustom(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name         string `json:"name"`
+		DurationSecs int    `json:"duration_secs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if req.DurationSecs <= 0 {
+		writeError(w, http.StatusBadRequest, "duration_secs must be > 0")
+		return
+	}
+	// spellID 0 — manual timers have no spell, so no duration focuses apply.
+	h.engine.StartExternal(req.Name, string(spelltimer.CategoryCustom),
+		req.DurationSecs, 0, time.Now(), nil, 0)
 	w.WriteHeader(http.StatusNoContent)
 }
 

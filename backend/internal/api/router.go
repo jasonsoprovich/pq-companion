@@ -259,6 +259,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/combat", combatH.state)
 			r.Get("/timers", timerH.state)
 			r.Post("/timers/clear", timerH.clear)
+			r.Post("/timers/custom", timerH.startCustom)
 			r.Delete("/timers/{id}", timerH.remove)
 			r.Get("/respawns", respawnH.state)
 			r.Delete("/respawns", respawnH.clear)

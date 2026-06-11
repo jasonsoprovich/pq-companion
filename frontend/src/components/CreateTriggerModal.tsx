@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { X, Zap, RefreshCw, Shield, Skull, Bell as BellIcon } from 'lucide-react'
+import { X, Zap, RefreshCw, Shield, Skull, Hourglass, Bell as BellIcon } from 'lucide-react'
 import { createTrigger, type CreateTriggerRequest } from '../services/api'
 import type { Action, TimerType, Trigger } from '../types/trigger'
 import NotificationActionEditor, { NotificationTypeSelect } from './NotificationActionEditor'
@@ -246,9 +246,13 @@ export default function CreateTriggerModal({
         <div className="space-y-1">
           <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>Timer</label>
           <div className="flex gap-1">
-            {(['none', 'buff', 'detrimental'] as TimerType[]).map((tt) => {
+            {(['none', 'buff', 'detrimental', 'custom'] as TimerType[]).map((tt) => {
               const active = timerType === tt
-              const icon = tt === 'buff' ? <Shield size={11} /> : tt === 'detrimental' ? <Skull size={11} /> : <BellIcon size={11} />
+              const icon =
+                tt === 'buff' ? <Shield size={11} /> :
+                tt === 'detrimental' ? <Skull size={11} /> :
+                tt === 'custom' ? <Hourglass size={11} /> :
+                <BellIcon size={11} />
               return (
                 <button
                   key={tt}
@@ -260,9 +264,10 @@ export default function CreateTriggerModal({
                     color: active ? 'var(--color-background)' : 'var(--color-muted-foreground)',
                     border: '1px solid transparent',
                   }}
+                  title={tt === 'custom' ? 'Counts down on the Custom Timers overlay' : undefined}
                 >
                   {icon}
-                  {tt === 'none' ? 'No timer' : tt === 'buff' ? 'Buff' : 'Detrimental'}
+                  {tt === 'none' ? 'No timer' : tt === 'buff' ? 'Buff' : tt === 'detrimental' ? 'Detrimental' : 'Custom'}
                 </button>
               )
             })}

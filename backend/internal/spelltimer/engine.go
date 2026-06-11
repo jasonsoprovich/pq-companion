@@ -644,7 +644,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 	}
 	cat := Category(category)
 	switch cat {
-	case CategoryBuff, CategoryDebuff, CategoryMez, CategoryDot, CategoryStun, CategoryCHChain, CategoryCHChain2:
+	case CategoryBuff, CategoryDebuff, CategoryMez, CategoryDot, CategoryStun, CategoryCHChain, CategoryCHChain2, CategoryCustom:
 	default:
 		cat = CategoryDebuff
 	}
@@ -828,6 +828,8 @@ func categoryMatchesGroup(cat Category, group string) bool {
 		return cat == CategoryCHChain
 	case "ch_chain_2":
 		return cat == CategoryCHChain2
+	case "custom":
+		return cat == CategoryCustom
 	}
 	return false
 }

@@ -41,6 +41,9 @@ export interface ElectronAPI {
     openDetrimTimer: () => Promise<void>
     closeDetrimTimer: () => Promise<void>
     toggleDetrimTimer: () => Promise<void>
+    openCustomTimer: () => Promise<void>
+    closeCustomTimer: () => Promise<void>
+    toggleCustomTimer: () => Promise<void>
     openTrigger: () => Promise<void>
     closeTrigger: () => Promise<void>
     toggleTrigger: () => Promise<void>

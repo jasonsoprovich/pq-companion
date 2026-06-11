@@ -32,6 +32,9 @@ const (
 	TimerTypeBuff TimerType = "buff"
 	// TimerTypeDetrimental starts a timer on the Detrimental overlay.
 	TimerTypeDetrimental TimerType = "detrimental"
+	// TimerTypeCustom starts a timer on the Custom Timers overlay — generic
+	// countdowns that aren't buffs or detrimental spells.
+	TimerTypeCustom TimerType = "custom"
 )
 
 // ActionPosition is the on-screen placement of an overlay_text alert.
@@ -172,13 +175,21 @@ type Trigger struct {
 	// buff_faded / pipe_command. Empty for log-source triggers.
 	PipeCondition *PipeCondition `json:"pipe_condition,omitempty"`
 
-	// Timer integration — when TimerType is buff or detrimental, a match starts
-	// a countdown timer on the corresponding overlay. WornOffPattern optionally
-	// clears the timer before its natural expiry.
+	// Timer integration — when TimerType is buff, detrimental, or custom, a
+	// match starts a countdown timer on the corresponding overlay.
+	// WornOffPattern optionally clears the timer before its natural expiry.
 	TimerType         TimerType `json:"timer_type"`
 	TimerDurationSecs int       `json:"timer_duration_secs"`
 	WornOffPattern    string    `json:"worn_off_pattern"`
 	SpellID           int       `json:"spell_id"` // optional — 0 means not linked to a specific DB spell
+
+	// TimerDurationCapture names a capture group ("1", "2", or a named group)
+	// whose matched text supplies the timer duration dynamically — e.g. a
+	// pattern capturing "6m40s" from "Vortikai sets a 6m40s timer". Accepted
+	// formats: plain seconds ("400"), colon notation ("6:40", "1:02:03"), and
+	// unit notation ("6m40s", "2h", "90s"). When unset, or when the captured
+	// text doesn't parse, TimerDurationSecs is used as-is.
+	TimerDurationCapture string `json:"timer_duration_capture,omitempty"`
 
 	// CooldownSecs spawns a second timer alongside the buff/duration timer to
 	// track the spell or discipline's reuse cooldown (recast_time in

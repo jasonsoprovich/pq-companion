@@ -88,7 +88,7 @@ function audioMimeType(ext: string): string {
 
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
-type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'trigger' | 'npc' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome'
+type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome'
 type Bounds = { x: number; y: number; width: number; height: number }
 
 type BoundsStore = Partial<Record<OverlayName, Bounds>>
@@ -325,6 +325,7 @@ let buffTimerWindow: BrowserWindow | null = null
 let chChainWindow: BrowserWindow | null = null
 let chMetronomeWindow: BrowserWindow | null = null
 let detrimTimerWindow: BrowserWindow | null = null
+let customTimerWindow: BrowserWindow | null = null
 let triggerOverlayWindow: BrowserWindow | null = null
 let npcOverlayWindow: BrowserWindow | null = null
 let rollTrackerWindow: BrowserWindow | null = null
@@ -634,7 +635,7 @@ function setupAutoUpdater(): void {
 // ── Window management ─────────────────────────────────────────────────────────
 
 function closeAllOverlays(): void {
-  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, triggerOverlayWindow, npcOverlayWindow, rollTrackerWindow, respawnTimerWindow, chChainWindow, chMetronomeWindow]) {
+  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, customTimerWindow, triggerOverlayWindow, npcOverlayWindow, rollTrackerWindow, respawnTimerWindow, chChainWindow, chMetronomeWindow]) {
     if (win && !win.isDestroyed()) win.destroy()
   }
 }
@@ -1041,6 +1042,65 @@ function createDetrimTimerOverlay(): void {
 
   detrimTimerWindow.on('closed', () => {
     detrimTimerWindow = null
+  })
+}
+
+// ── Custom Timer overlay window ──────────────────────────────────────────────
+
+function createCustomTimerOverlay(): void {
+  if (customTimerWindow && !customTimerWindow.isDestroyed()) {
+    customTimerWindow.focus()
+    return
+  }
+
+  const { x, y, width, height } = getRestoredBounds('customTimer', { x: 0, y: 0, width: 280, height: 280 })
+  customTimerWindow = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    minWidth: 200,
+    minHeight: 140,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    },
+  })
+
+  customTimerWindow.once('ready-to-show', () => {
+    customTimerWindow?.show()
+  })
+
+  customTimerWindow.setAlwaysOnTop(true, 'screen-saver')
+  customTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  windowToOverlayName.set(customTimerWindow, 'customTimer')
+  if (getOverlayLocked('customTimer')) {
+    customTimerWindow.setIgnoreMouseEvents(true, { forward: true })
+    customTimerWindow.setResizable(false)
+  }
+  trackOverlayBounds('customTimer', customTimerWindow)
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    customTimerWindow.loadURL(`${rendererUrl}/#/custom-timer-window`)
+  } else {
+    customTimerWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/custom-timer-window',
+    })
+  }
+
+  customTimerWindow.on('closed', () => {
+    customTimerWindow = null
   })
 }
 
@@ -1529,6 +1589,24 @@ ipcMain.handle('overlay:detrimtimer:toggle', () => {
   }
 })
 
+ipcMain.handle('overlay:customtimer:open', () => {
+  createCustomTimerOverlay()
+})
+
+ipcMain.handle('overlay:customtimer:close', () => {
+  if (customTimerWindow && !customTimerWindow.isDestroyed()) {
+    customTimerWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:customtimer:toggle', () => {
+  if (customTimerWindow && !customTimerWindow.isDestroyed()) {
+    customTimerWindow.close()
+  } else {
+    createCustomTimerOverlay()
+  }
+})
+
 ipcMain.handle('overlay:respawntimer:open', () => {
   createRespawnTimerOverlay()
 })
@@ -1680,6 +1758,7 @@ function popoutWindows(): BrowserWindow[] {
     hpsOverlayWindow,
     buffTimerWindow,
     detrimTimerWindow,
+    customTimerWindow,
     triggerOverlayWindow,
     npcOverlayWindow,
     rollTrackerWindow,
@@ -1703,6 +1782,7 @@ ipcMain.handle('overlay:popouts:open-all', (_event, panels?: string[]) => {
   if (wants('dps') && (!dpsOverlayWindow || dpsOverlayWindow.isDestroyed())) createDPSOverlay()
   if (wants('buff') && (!buffTimerWindow || buffTimerWindow.isDestroyed())) createBuffTimerOverlay()
   if (wants('detrim') && (!detrimTimerWindow || detrimTimerWindow.isDestroyed())) createDetrimTimerOverlay()
+  if (wants('custom') && (!customTimerWindow || customTimerWindow.isDestroyed())) createCustomTimerOverlay()
   if (wants('npc') && (!npcOverlayWindow || npcOverlayWindow.isDestroyed())) createNPCOverlay()
   if (wants('rolls') && (!rollTrackerWindow || rollTrackerWindow.isDestroyed())) createRollTrackerOverlay()
   if (wants('respawn') && (!respawnTimerWindow || respawnTimerWindow.isDestroyed())) createRespawnTimerOverlay()

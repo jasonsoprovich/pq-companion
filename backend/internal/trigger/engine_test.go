@@ -1,6 +1,7 @@
 package trigger
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"regexp"
 	"testing"
@@ -811,6 +812,92 @@ func TestNormalizePattern(t *testing.T) {
 		if _, err := regexp.Compile(normalizePattern(c.in, c.char)); err != nil {
 			t.Errorf("normalized %q doesn't compile: %v", c.in, err)
 		}
+	}
+}
+
+func TestParseDurationText(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+	}{
+		{"400", 400},
+		{"6:40", 400},
+		{"1:02:03", 3723},
+		{"6m40s", 400},
+		{"6M40S", 400},
+		{"2h", 7200},
+		{"90s", 90},
+		{"5m", 300},
+		{"1h2m3s", 3723},
+		{" 300 ", 300},
+		{"", 0},
+		{"abc", 0},
+		{"-5", 0},
+		{"6:xx", 0},
+	}
+	for _, c := range cases {
+		if got := ParseDurationText(c.in); got != c.want {
+			t.Errorf("ParseDurationText(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}
+
+// captureSink records StartExternal calls for asserting timer dispatch.
+type captureSink struct {
+	name     string
+	category string
+	duration int
+	calls    int
+}
+
+func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int) {
+	s.name, s.category, s.duration = name, category, durationSecs
+	s.calls++
+}
+func (s *captureSink) StopExternal(name string, spellID int) {}
+
+// TestEngine_CustomTimerWithCaptureDuration verifies timer_type "custom"
+// dispatches to the custom category and that timer_duration_capture parses
+// the captured text into the timer duration, falling back to the fixed
+// duration when the capture doesn't parse.
+func TestEngine_CustomTimerWithCaptureDuration(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	sink := &captureSink{}
+	e := NewEngine(s, hub, sink, nil)
+
+	tr := &Trigger{
+		ID: "ct-1", Name: "Manual Timer", Enabled: true,
+		Pattern:              `^(.+) sets a (.+) timer\.$`,
+		TimerType:            TimerTypeCustom,
+		TimerDurationSecs:    60, // fallback
+		TimerDurationCapture: "2",
+		Actions:              []Action{{Type: ActionOverlayText, Text: "timer set"}},
+		CreatedAt:            time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	e.Handle(time.Now(), "Vortikai sets a 6m40s timer.")
+	if sink.calls != 1 || sink.category != "custom" || sink.duration != 400 {
+		t.Errorf("capture duration dispatch = %+v, want custom/400", sink)
+	}
+
+	// Unparseable capture falls back to the fixed duration.
+	e.Handle(time.Now(), "Vortikai sets a banana timer.")
+	if sink.calls != 2 || sink.duration != 60 {
+		t.Errorf("fallback dispatch = %+v, want duration 60", sink)
+	}
+
+	// timer_duration_capture round-trips through the store.
+	stored, err := s.Get("ct-1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if stored.TimerDurationCapture != "2" || stored.TimerType != TimerTypeCustom {
+		t.Errorf("persisted trigger = capture %q type %q", stored.TimerDurationCapture, stored.TimerType)
 	}
 }
 

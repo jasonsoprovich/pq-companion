@@ -30,6 +30,7 @@ import BuffTimerWindowPage from './pages/BuffTimerWindowPage'
 import CHChainOverlayWindowPage from './pages/CHChainOverlayWindowPage'
 import CHMetronomeOverlayWindowPage from './pages/CHMetronomeOverlayWindowPage'
 import DetrimTimerWindowPage from './pages/DetrimTimerWindowPage'
+import CustomTimerWindowPage from './pages/CustomTimerWindowPage'
 import OverlaysDashboard from './pages/OverlaysDashboard'
 import CombatLogPage from './pages/CombatLogPage'
 import CombatHistoryPage from './pages/CombatHistoryPage'
@@ -136,6 +137,7 @@ export default function App(): React.ReactElement {
         {DEV_HPS && <Route path="hps-overlay-window" element={<OverlayPage><HPSOverlayWindowPage /></OverlayPage>} />}
         <Route path="buff-timer-window" element={<OverlayPage><BuffTimerWindowPage /></OverlayPage>} />
         <Route path="detrim-timer-window" element={<OverlayPage><DetrimTimerWindowPage /></OverlayPage>} />
+        <Route path="custom-timer-window" element={<OverlayPage><CustomTimerWindowPage /></OverlayPage>} />
         <Route path="trigger-overlay-window" element={<OverlayPage><TriggerOverlayWindowPage /></OverlayPage>} />
         <Route path="npc-overlay-window" element={<OverlayPage><NPCOverlayWindowPage /></OverlayPage>} />
         <Route path="roll-tracker-window" element={<OverlayPage><RollTrackerWindowPage /></OverlayPage>} />

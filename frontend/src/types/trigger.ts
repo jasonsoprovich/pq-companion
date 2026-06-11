@@ -1,6 +1,6 @@
 export type ActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
 
-export type TimerType = 'none' | 'buff' | 'detrimental'
+export type TimerType = 'none' | 'buff' | 'detrimental' | 'custom'
 
 export type TimerAlertType = 'play_sound' | 'text_to_speech'
 
@@ -106,6 +106,12 @@ export interface Trigger {
   created_at: string
   timer_type: TimerType
   timer_duration_secs: number
+  /**
+   * Capture group ("1", "2", or a named group) whose matched text supplies
+   * the timer duration dynamically — e.g. capturing "6m40s" from the log
+   * line. Empty = use the fixed timer_duration_secs.
+   */
+  timer_duration_capture?: string
   worn_off_pattern: string
   spell_id: number
   /**

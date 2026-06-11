@@ -16,6 +16,7 @@ export type OverlayName =
   | 'hps'
   | 'buffTimer'
   | 'detrimTimer'
+  | 'customTimer'
   | 'npc'
   | 'rollTracker'
   | 'respawnTimer'
@@ -38,6 +39,7 @@ export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'hps', label: 'HPS Meter' },
   { name: 'buffTimer', label: 'Buff Timers' },
   { name: 'detrimTimer', label: 'Detrimental Timers' },
+  { name: 'customTimer', label: 'Custom Timers' },
   { name: 'npc', label: 'NPC Info' },
   { name: 'rollTracker', label: 'Roll Tracker' },
   { name: 'respawnTimer', label: 'Respawn Timers' },

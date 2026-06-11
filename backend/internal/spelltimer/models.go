@@ -36,6 +36,11 @@ const (
 	// matching the user's secondary pattern, viewable in the CH Chain
 	// overlay's second tab and watchable by the metronome.
 	CategoryCHChain2 Category = "ch_chain_2"
+	// CategoryCustom is for generic user timers that aren't buffs or
+	// detrimental spells — manual countdowns started from the Custom Timers
+	// panel and trigger-driven timers with timer_type "custom". Shown in
+	// the dedicated Custom Timers overlay.
+	CategoryCustom Category = "custom"
 )
 
 // ActiveTimer represents one spell that is currently ticking down.

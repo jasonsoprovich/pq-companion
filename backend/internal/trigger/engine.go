@@ -157,7 +157,7 @@ func (e *Engine) Reload() {
 				slog.Warn("trigger: invalid worn-off pattern", "id", t.ID, "name", t.Name, "err", err)
 			}
 		}
-		if t.TimerType == TimerTypeBuff || t.TimerType == TimerTypeDetrimental {
+		if timerCategory(t.TimerType) != "" {
 			c.timerKey = timerKeyFor(t)
 		}
 		for _, p := range t.ExcludePatterns {
@@ -401,8 +401,7 @@ func (e *Engine) firePipe(t *Trigger, matchedLine string, firedAt time.Time) {
 	e.hub.Broadcast(ws.Event{Type: WSEventTriggerFired, Data: event})
 	slog.Debug("trigger fired (pipe)", "trigger", t.Name, "match", matchedLine)
 
-	if e.sink != nil && t.TimerDurationSecs > 0 &&
-		(t.TimerType == TimerTypeBuff || t.TimerType == TimerTypeDetrimental) {
+	if e.sink != nil && t.TimerDurationSecs > 0 && timerCategory(t.TimerType) != "" {
 		var alertJSON json.RawMessage
 		if len(t.TimerAlerts) > 0 {
 			if buf, err := json.Marshal(t.TimerAlerts); err == nil {
@@ -622,14 +621,16 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 	e.hub.Broadcast(ws.Event{Type: WSEventTriggerFired, Data: event})
 	slog.Debug("trigger fired", "trigger", t.Name, "line", matchedLine)
 
-	if e.sink != nil && c.timerKey != "" && t.TimerDurationSecs > 0 {
-		var alertJSON json.RawMessage
-		if len(t.TimerAlerts) > 0 {
-			if buf, err := json.Marshal(t.TimerAlerts); err == nil {
-				alertJSON = buf
+	if e.sink != nil && c.timerKey != "" {
+		if durationSecs := resolveTimerDuration(t, match, names); durationSecs > 0 {
+			var alertJSON json.RawMessage
+			if len(t.TimerAlerts) > 0 {
+				if buf, err := json.Marshal(t.TimerAlerts); err == nil {
+					alertJSON = buf
+				}
 			}
+			e.sink.StartExternal(c.timerKey, timerCategory(t.TimerType), durationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID)
 		}
-		e.sink.StartExternal(c.timerKey, timerCategory(t.TimerType), t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID)
 	}
 	e.startCooldownTimer(t, firedAt)
 }
@@ -679,14 +680,75 @@ func (e *Engine) startCooldownTimer(t *Trigger, firedAt time.Time) {
 
 // timerCategory maps a trigger's TimerType onto a spelltimer category string.
 // Kept in string form to avoid depending on the spelltimer package here.
+// Empty string = the timer type starts no timer.
 func timerCategory(tt TimerType) string {
 	switch tt {
 	case TimerTypeBuff:
 		return "buff"
 	case TimerTypeDetrimental:
 		return "debuff"
+	case TimerTypeCustom:
+		return "custom"
 	}
 	return ""
+}
+
+// durationUnitsRe parses "2h30m", "6m40s", "90s", "5m"-style durations.
+var durationUnitsRe = regexp.MustCompile(`^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$`)
+
+// ParseDurationText converts a human duration string captured from a log line
+// into seconds. Accepted: plain seconds ("400"), colon notation ("6:40",
+// "1:02:03"), and unit notation ("6m40s", "2h", "90s"). Returns 0 when the
+// text doesn't parse.
+func ParseDurationText(s string) int {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return 0
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		if n < 0 {
+			return 0
+		}
+		return n
+	}
+	if strings.Contains(s, ":") { // MM:SS or HH:MM:SS
+		total := 0
+		for _, p := range strings.Split(s, ":") {
+			n, err := strconv.Atoi(strings.TrimSpace(p))
+			if err != nil || n < 0 {
+				return 0
+			}
+			total = total*60 + n
+		}
+		return total
+	}
+	m := durationUnitsRe.FindStringSubmatch(s)
+	if m == nil {
+		return 0
+	}
+	atoi := func(v string) int {
+		if v == "" {
+			return 0
+		}
+		n, _ := strconv.Atoi(v)
+		return n
+	}
+	return atoi(m[1])*3600 + atoi(m[2])*60 + atoi(m[3])
+}
+
+// resolveTimerDuration returns the timer duration for a fire: the text
+// captured by TimerDurationCapture when configured and parseable, otherwise
+// the trigger's fixed TimerDurationSecs.
+func resolveTimerDuration(t *Trigger, match []string, names []string) int {
+	if t.TimerDurationCapture != "" && len(match) > 0 {
+		ref := "{" + t.TimerDurationCapture + "}"
+		if v := substituteCaptures(ref, match, names, nil); v != ref {
+			if secs := ParseDurationText(v); secs > 0 {
+				return secs
+			}
+		}
+	}
+	return t.TimerDurationSecs
 }
 
 // NewID generates a short random hex identifier suitable for trigger IDs.
