@@ -1,0 +1,135 @@
+{
+  "pack_name": "Wizard",
+  "description": "Harvest alert, snare break alert, and spell timers for Manaskin and Atol's Spectral Shackles.",
+  "class": 11,
+  "triggers": [
+    {
+      "id": "",
+      "name": "Snare Broke",
+      "enabled": true,
+      "pattern": "Your Atol's Spectral Shackles spell has worn off\\.",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "SNARE BROKE!",
+          "duration_secs": 5,
+          "color": "#ff8833",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        },
+        {
+          "type": "text_to_speech",
+          "text": "Snare broke",
+          "duration_secs": 0,
+          "color": "",
+          "sound_path": "",
+          "volume": 1,
+          "voice": ""
+        }
+      ],
+      "pack_name": "Wizard",
+      "created_at": "0001-01-01T00:00:00Z",
+      "timer_type": "",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": null,
+      "timer_alerts": null,
+      "extra_patterns": null,
+      "exclude_patterns": null,
+      "sort_order": 0
+    },
+    {
+      "id": "",
+      "name": "Harvest",
+      "enabled": true,
+      "pattern": "^You gather mana from your surroundings\\.$",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "HARVEST",
+          "duration_secs": 4,
+          "color": "#33ccff",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        }
+      ],
+      "pack_name": "Wizard",
+      "created_at": "0001-01-01T00:00:00Z",
+      "timer_type": "",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "cooldown_secs": 600,
+      "display_threshold_secs": 0,
+      "characters": null,
+      "timer_alerts": null,
+      "extra_patterns": null,
+      "exclude_patterns": null,
+      "sort_order": 0
+    },
+    {
+      "id": "",
+      "name": "Manaskin",
+      "enabled": true,
+      "pattern": "^(?:Your skin gleams with an incandescent glow\\.|[A-Z][a-zA-Z']{2,14}'s skin gleams with an incandescent glow\\.)$",
+      "actions": [],
+      "pack_name": "Wizard",
+      "created_at": "0001-01-01T00:00:00Z",
+      "timer_type": "buff",
+      "timer_duration_secs": 7200,
+      "worn_off_pattern": "^Your skin returns to normal\\.$",
+      "spell_id": 1609,
+      "display_threshold_secs": 0,
+      "characters": null,
+      "timer_alerts": [
+        {
+          "id": "pack-fade-300s",
+          "seconds": 300,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} fading soon",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": null,
+      "exclude_patterns": null,
+      "sort_order": 0
+    },
+    {
+      "id": "",
+      "name": "Atol's Spectral Shackles",
+      "enabled": true,
+      "pattern": "^(?:Spectral shackles bind your feet to the ground\\.|[a-zA-Z][a-zA-Z' `]{2,29} is shackled to the ground\\.)$",
+      "actions": [],
+      "pack_name": "Wizard",
+      "created_at": "0001-01-01T00:00:00Z",
+      "timer_type": "detrimental",
+      "timer_duration_secs": 150,
+      "worn_off_pattern": "^(?:Your feet come free\\.|Your Atol's Spectral Shackles spell has worn off\\.|Your target resisted the Atol's Spectral Shackles spell\\.)$",
+      "spell_id": 1631,
+      "display_threshold_secs": 0,
+      "characters": null,
+      "timer_alerts": [
+        {
+          "id": "pack-expire-10s",
+          "seconds": 10,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} expiring",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": null,
+      "exclude_patterns": null,
+      "sort_order": 0
+    }
+  ]
+}

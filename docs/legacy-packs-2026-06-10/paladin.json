@@ -1,0 +1,209 @@
+{
+  "pack_name": "Paladin",
+  "description": "Lay on Hands alert, root break alert, and spell timers for Immobilize, Holyforge Discipline, Sanctification Discipline, plus the shared melee disciplines Resistant and Fearless.",
+  "class": 2,
+  "triggers": [
+    {
+      "id": "",
+      "name": "Lay on Hands",
+      "enabled": true,
+      "pattern": "^Your hands shimmer with holy light\\.$",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "LAY ON HANDS!",
+          "duration_secs": 5,
+          "color": "#ffdd33",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        }
+      ],
+      "pack_name": "Paladin",
+      "created_at": "0001-01-01T00:00:00Z",
+      "timer_type": "",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "cooldown_secs": 4320,
+      "display_threshold_secs": 0,
+      "characters": null,
+      "timer_alerts": null,
+      "extra_patterns": null,
+      "exclude_patterns": null,
+      "sort_order": 0
+    },
+    {
+      "id": "",
+      "name": "Root Broke",
+      "enabled": true,
+      "pattern": "Your Immobilize spell has worn off\\.",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "ROOT BROKE!",
+          "duration_secs": 5,
+          "color": "#ff6633",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        },
+        {
+          "type": "text_to_speech",
+          "text": "Root broke",
+          "duration_secs": 0,
+          "color": "",
+          "sound_path": "",
+          "volume": 1,
+          "voice": ""
+        }
+      ],
+      "pack_name": "Paladin",
+      "created_at": "0001-01-01T00:00:00Z",
+      "timer_type": "",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": null,
+      "timer_alerts": null,
+      "extra_patterns": null,
+      "exclude_patterns": null,
+      "sort_order": 0
+    },
+    {
+      "id": "",
+      "name": "Immobilize",
+      "enabled": true,
+      "pattern": "^(?:Your feet adhere to the ground\\.|[a-zA-Z][a-zA-Z' `]{2,29} adheres to the ground\\.)$",
+      "actions": [],
+      "pack_name": "Paladin",
+      "created_at": "0001-01-01T00:00:00Z",
+      "timer_type": "detrimental",
+      "timer_duration_secs": 180,
+      "worn_off_pattern": "^(?:Your feet come free\\.|Your Immobilize spell has worn off\\.|Your target resisted the Immobilize spell\\.)$",
+      "spell_id": 132,
+      "display_threshold_secs": 0,
+      "characters": null,
+      "timer_alerts": [
+        {
+          "id": "pack-expire-10s",
+          "seconds": 10,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} expiring",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": null,
+      "exclude_patterns": null,
+      "sort_order": 0
+    },
+    {
+      "id": "",
+      "name": "Holyforge Discipline",
+      "enabled": true,
+      "pattern": "^(?:Your weapon is bathed in a holy light\\.|[A-Z][a-zA-Z']{2,14}'s weapon is bathed in a holy light\\.)$",
+      "actions": [],
+      "pack_name": "Paladin",
+      "created_at": "0001-01-01T00:00:00Z",
+      "timer_type": "buff",
+      "timer_duration_secs": 300,
+      "worn_off_pattern": "^The holy light fades from your weapon\\.$",
+      "spell_id": 4500,
+      "cooldown_secs": 4050,
+      "display_threshold_secs": 0,
+      "characters": null,
+      "timer_alerts": [
+        {
+          "id": "pack-fade-60s",
+          "seconds": 60,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} fading soon",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": null,
+      "exclude_patterns": null,
+      "sort_order": 0
+    },
+    {
+      "id": "",
+      "name": "Sanctification Discipline",
+      "enabled": true,
+      "pattern": "^(?:Your body is surrounded in an aura of sanctification\\.|[A-Z][a-zA-Z']{2,14} is surrounded in an aura of sanctification\\.)$",
+      "actions": [],
+      "pack_name": "Paladin",
+      "created_at": "0001-01-01T00:00:00Z",
+      "timer_type": "buff",
+      "timer_duration_secs": 18,
+      "worn_off_pattern": "^Your sanctification fades\\.$",
+      "spell_id": 4518,
+      "cooldown_secs": 4050,
+      "display_threshold_secs": 0,
+      "characters": null,
+      "timer_alerts": null,
+      "extra_patterns": null,
+      "exclude_patterns": null,
+      "sort_order": 0
+    },
+    {
+      "id": "",
+      "name": "Resistant Discipline",
+      "enabled": true,
+      "pattern": "^(?:You channel your will into magical resistance\\.|[A-Z][a-zA-Z']{2,14} has become more resistant\\.)$",
+      "actions": [],
+      "pack_name": "Paladin",
+      "created_at": "0001-01-01T00:00:00Z",
+      "timer_type": "buff",
+      "timer_duration_secs": 300,
+      "worn_off_pattern": "^Your resistance fades\\.$",
+      "spell_id": 4585,
+      "cooldown_secs": 1800,
+      "display_threshold_secs": 0,
+      "characters": null,
+      "timer_alerts": [
+        {
+          "id": "pack-fade-60s",
+          "seconds": 60,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} fading soon",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": null,
+      "exclude_patterns": null,
+      "dedup_key": "disc_resistant",
+      "sort_order": 0
+    },
+    {
+      "id": "",
+      "name": "Fearless Discipline",
+      "enabled": true,
+      "pattern": "^(?:Your will drives fear from your mind\\.|[A-Z][a-zA-Z']{2,14}'s eyes gleam with iron will\\.)$",
+      "actions": [],
+      "pack_name": "Paladin",
+      "created_at": "0001-01-01T00:00:00Z",
+      "timer_type": "buff",
+      "timer_duration_secs": 60,
+      "worn_off_pattern": "^The specter of fear returns to your mind\\.$",
+      "spell_id": 4587,
+      "cooldown_secs": 1800,
+      "display_threshold_secs": 0,
+      "characters": null,
+      "timer_alerts": null,
+      "extra_patterns": null,
+      "exclude_patterns": null,
+      "dedup_key": "disc_fearless",
+      "sort_order": 0
+    }
+  ]
+}
