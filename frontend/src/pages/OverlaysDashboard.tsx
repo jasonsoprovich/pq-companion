@@ -8,7 +8,7 @@
  * restored on next mount. Drag/resize snaps to a 16px grid.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, HeartPulse, Hourglass, ExternalLink, Layers, X } from 'lucide-react'
+import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, HeartPulse, ExternalLink, Layers, X } from 'lucide-react'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
@@ -18,6 +18,7 @@ import RollTrackerPanel from '../components/overlays/RollTrackerPanel'
 import RespawnTimerPanel from '../components/overlays/RespawnTimerPanel'
 import CHChainPanel from '../components/overlays/CHChainPanel'
 import CHMetronomePanel from '../components/overlays/CHMetronomePanel'
+import CustomTimerPanel from '../components/overlays/CustomTimerPanel'
 import {
   DASHBOARD_PANEL_KEYS,
   DASHBOARD_PANEL_LABELS,
@@ -261,23 +262,6 @@ export default function OverlaysDashboard(): React.ReactElement {
               <ExternalLink size={9} style={{ opacity: 0.6 }} />
             </button>
           )}
-          {/* Custom Timers has no in-dashboard panel — pop it out as a
-              floating window. Generic countdowns (manual or trigger-driven
-              with timer type "custom") live there. */}
-          <button
-            onClick={() => window.electron?.overlay?.toggleCustomTimer()}
-            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-            style={{
-              backgroundColor: 'var(--color-surface-2)',
-              color: 'var(--color-muted-foreground)',
-              border: '1px solid var(--color-border)',
-            }}
-            title="Toggle the Custom Timers overlay window — generic countdowns with a quick-add form"
-          >
-            <Hourglass size={11} />
-            Custom Timers
-            <ExternalLink size={9} style={{ opacity: 0.6 }} />
-          </button>
           {typeof window.electron?.overlay?.anyPopoutOpen === 'function' && (
             <button
               onClick={handleTogglePopouts}
@@ -442,6 +426,17 @@ export default function OverlaysDashboard(): React.ReactElement {
             defaultHeight={layout.chMetronome.height}
             snapGridSize={SNAP_GRID}
             onLayoutChange={handleLayoutChange('chMetronome')}
+          />
+        )}
+        {layout.custom.visible && (
+          <CustomTimerPanel
+            key={`custom-${layoutVersion}`}
+            defaultX={layout.custom.x}
+            defaultY={layout.custom.y}
+            defaultWidth={layout.custom.width}
+            defaultHeight={layout.custom.height}
+            snapGridSize={SNAP_GRID}
+            onLayoutChange={handleLayoutChange('custom')}
           />
         )}
       </div>

@@ -1772,7 +1772,8 @@ ipcMain.handle('overlay:popouts:any-open', () => popoutWindows().length > 0)
 
 ipcMain.handle('overlay:popouts:open-all', (_event, panels?: string[]) => {
   // `panels` is the set of dashboard panel keys the user has toggled visible
-  // (buff/detrim/dps/npc/rolls/respawn). Only those overlays pop out, so the
+  // (buff/detrim/dps/npc/rolls/respawn/chChain/chMetronome/custom). Only those
+  // overlays pop out, so the
   // button respects the dashboard view instead of opening everything. When the
   // argument is omitted (legacy callers), fall back to opening all panels.
   const all = !Array.isArray(panels)

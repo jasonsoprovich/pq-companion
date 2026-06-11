@@ -16,6 +16,7 @@ export type DashboardPanelKey =
   | 'respawn'
   | 'chChain'
   | 'chMetronome'
+  | 'custom'
 
 export interface PanelLayout {
   x: number
@@ -39,10 +40,11 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayout = {
   respawn: { x: 336, y: 416, width: 304, height: 384, visible: false },
   chChain:     { x: 656, y: 416, width: 304, height: 336, visible: false },
   chMetronome: { x: 976, y: 416, width: 240, height: 272, visible: false },
+  custom:      { x: 976, y: 16,  width: 304, height: 336, visible: false },
 }
 
 export const DASHBOARD_PANEL_KEYS: DashboardPanelKey[] =
-  ['buff', 'detrim', 'dps', 'npc', 'hps', 'rolls', 'respawn', 'chChain', 'chMetronome']
+  ['buff', 'detrim', 'dps', 'npc', 'hps', 'rolls', 'respawn', 'chChain', 'chMetronome', 'custom']
 
 export const DASHBOARD_PANEL_LABELS: Record<DashboardPanelKey, string> = {
   buff: 'Buff Timers',
@@ -54,6 +56,7 @@ export const DASHBOARD_PANEL_LABELS: Record<DashboardPanelKey, string> = {
   respawn: 'Respawn Timers',
   chChain: 'CH Chain',
   chMetronome: 'CH Metronome',
+  custom: 'Custom Timers',
 }
 
 function isPanelLayout(v: unknown): v is PanelLayout {
