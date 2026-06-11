@@ -2,7 +2,15 @@
 
 import type { TimerAlertThreshold } from './trigger'
 
-export type TimerCategory = 'buff' | 'debuff' | 'mez' | 'dot' | 'stun' | 'ch_chain'
+export type TimerCategory =
+  | 'buff'
+  | 'debuff'
+  | 'mez'
+  | 'dot'
+  | 'stun'
+  | 'ch_chain'
+  | 'ch_chain_2'
+  | 'custom'
 
 export interface ActiveTimer {
   id: string

@@ -30,6 +30,8 @@ const CATEGORY_COLORS: Record<TimerCategory, string> = {
   mez: '#a855f7',
   stun: '#eab308',
   ch_chain: '#3b82f6',
+  ch_chain_2: '#3b82f6',
+  custom: '#38bdf8',
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
