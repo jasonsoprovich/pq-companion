@@ -7,6 +7,12 @@ import type { Item } from '../types/item'
 import ItemDetailModal from '../components/ItemDetailModal'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import { ItemIcon } from '../components/Icon'
+import {
+  bagContainerInfo,
+  bagSlotInfo,
+  describeLocation,
+  isEquipmentSlot,
+} from '../lib/inventoryLocations'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -16,35 +22,11 @@ interface TaggedEntry extends InventoryEntry {
 
 // ── Entry classifiers ──────────────────────────────────────────────────────────
 
-// Bag containers and slots use either ":" or "-" as separator depending on the
-// Zeal version. Treat both consistently.
-const BAG_SLOT_RE = /^(General|Bank|SharedBank)(\d+)[:\-]Slot(\d+)$/
-const BAG_CONTAINER_RE = /^(General|Bank|SharedBank)(\d+)$/
-
-function bagSlotInfo(location: string): { kind: string; bag: number; slot: number } | null {
-  const m = location.match(BAG_SLOT_RE)
-  if (!m) return null
-  return { kind: m[1], bag: parseInt(m[2], 10), slot: parseInt(m[3], 10) }
-}
-
-function bagContainerInfo(location: string): { kind: string; bag: number } | null {
-  const m = location.match(BAG_CONTAINER_RE)
-  if (!m) return null
-  return { kind: m[1], bag: parseInt(m[2], 10) }
-}
-
 function isBagOrBank(location: string, kind: string): boolean {
   const slot = bagSlotInfo(location)
   if (slot) return slot.kind === kind
   const cont = bagContainerInfo(location)
   return cont?.kind === kind
-}
-
-function isEquipmentSlot(location: string): boolean {
-  if (bagSlotInfo(location) || bagContainerInfo(location)) return false
-  if (location === 'Cursor' || location === 'Held') return false
-  if (location === 'General-Coin' || location.endsWith('-Coin')) return false
-  return true
 }
 
 // ── Grouping ───────────────────────────────────────────────────────────────────
@@ -90,12 +72,6 @@ function tagEntries(inv: Inventory): TaggedEntry[] {
   return inv.entries.map((e) => ({ ...e, character: inv.character }))
 }
 
-function filterByQuery<T extends { name: string }>(entries: T[], query: string): T[] {
-  if (!query) return entries
-  const q = query.toLowerCase()
-  return entries.filter((e) => e.name.toLowerCase().includes(q))
-}
-
 function isEmptyEntry(e: InventoryEntry): boolean {
   return e.id === 0 || e.name.toLowerCase() === 'empty'
 }
@@ -126,15 +102,12 @@ function writeStoredBool(key: string, value: boolean): void {
 interface BagCardProps {
   group: BagGroup
   showCharBadge: boolean
-  query: string
   onLookup: (id: number) => void
 }
 
-function BagCard({ group, showCharBadge, query, onLookup }: BagCardProps): React.ReactElement {
+function BagCard({ group, showCharBadge, onLookup }: BagCardProps): React.ReactElement {
   const [open, setOpen] = useState(true)
-  const q = query.trim().toLowerCase()
-  const filledSlots = group.slots.filter((s) => !isEmptyEntry(s))
-  const visibleSlots = q ? filledSlots.filter((s) => s.name.toLowerCase().includes(q)) : filledSlots
+  const visibleSlots = group.slots.filter((s) => !isEmptyEntry(s))
   const bagName = group.bag && !isEmptyEntry(group.bag) ? group.bag.name : '(empty bag)'
   const label = group.kind === 'General' ? `Bag ${group.num}` : `${group.kind} ${group.num}`
 
@@ -177,7 +150,7 @@ function BagCard({ group, showCharBadge, query, onLookup }: BagCardProps): React
         >
           {visibleSlots.length === 0 ? (
             <p className="text-[11px] italic col-span-full" style={{ color: 'var(--color-muted)' }}>
-              {q ? 'No matches' : 'Empty'}
+              Empty
             </p>
           ) : (
             visibleSlots.map((s, i) => (
@@ -342,18 +315,38 @@ export default function InventoryTrackerPage(): React.ReactElement {
     return groupBags(tagged.filter((e) => isBagOrBank(e.location, 'SharedBank')), 'SharedBank')
   }, [data])
 
-  // Equipped items render as flat slot tiles (the in-game paper-doll grid lives
-  // on Character Info → Gear), so a single filtered list serves every view.
-  const equippedFiltered = useMemo(() => filterByQuery(equipped, query), [equipped, query])
-
   // Rechargeable items: limited-charge clickies the character holds anywhere
   // (equipped, bags, or bank). The API flags these by setting max_charges (only
   // for clickeffect>0, maxcharges>1); when set, `count` is the current charge
   // count, so we show current/max. Multiple copies appear as separate rows.
-  const rechargeables = useMemo<TaggedEntry[]>(() => {
-    const list = allTagged.filter((e) => !isEmptyEntry(e) && (e.max_charges ?? 0) > 1)
-    return filterByQuery(list, query).sort((a, b) => a.name.localeCompare(b.name))
-  }, [allTagged, query])
+  const rechargeables = useMemo<TaggedEntry[]>(
+    () =>
+      allTagged
+        .filter((e) => !isEmptyEntry(e) && (e.max_charges ?? 0) > 1)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [allTagged],
+  )
+
+  // A search term switches the page to a flat result list instead of filtering
+  // the bag grid in place — no more scrolling past "No matches" cards. Matches
+  // cover everything held: equipment, bag contents, the bags themselves, bank,
+  // shared bank (tagged with an empty character), and cursor.
+  const searchActive = query.trim().length > 0
+
+  const flatMatches = useMemo<TaggedEntry[]>(() => {
+    if (!searchActive || !data) return []
+    const q = query.trim().toLowerCase()
+    const sharedTagged: TaggedEntry[] = data.shared_bank.map((e) => ({ ...e, character: '' }))
+    return [...allTagged, ...sharedTagged]
+      .filter((e) => !isEmptyEntry(e) && !e.location.endsWith('-Coin'))
+      .filter((e) => e.name.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.character.localeCompare(b.character))
+  }, [allTagged, data, query, searchActive])
+
+  const matchHolderCount = useMemo(
+    () => new Set(flatMatches.map((e) => e.character || 'Shared Bank')).size,
+    [flatMatches],
+  )
 
   const hasEmptyBag = useMemo(
     () =>
@@ -547,7 +540,7 @@ export default function InventoryTrackerPage(): React.ReactElement {
               Show unimported ({unimportedNames.length})
             </label>
           )}
-          {hasEmptyBag && (
+          {!searchActive && hasEmptyBag && (
             <label
               className="flex items-center gap-1.5 text-xs px-2 py-1 rounded cursor-pointer select-none"
               style={{
@@ -604,6 +597,53 @@ export default function InventoryTrackerPage(): React.ReactElement {
               Enable "Show unimported" above, or add them on the Characters page.
             </p>
           </div>
+        ) : searchActive ? (
+          <div>
+            <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              {flatMatches.length === 0
+                ? `No items matching "${query.trim()}"`
+                : `${flatMatches.length} ${flatMatches.length === 1 ? 'match' : 'matches'} across ${matchHolderCount} ${matchHolderCount === 1 ? 'character' : 'characters'}`}
+            </p>
+            <div className="flex flex-col gap-1.5" style={{ maxWidth: 560 }}>
+              {flatMatches.map((e, i) => (
+                <button
+                  key={`fm-${e.character}-${e.location}-${i}`}
+                  onClick={() => handleLookup(e.id)}
+                  className="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs"
+                  style={{
+                    backgroundColor: 'var(--color-surface-2)',
+                    border: '1px solid var(--color-border)',
+                    color: 'var(--color-foreground)',
+                  }}
+                  title={e.name}
+                >
+                  <ItemIcon id={e.icon} name={e.name} size={18} />
+                  <span className="truncate">{e.name}</span>
+                  {e.count > 1 && (
+                    <span className="shrink-0 text-[10px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                      ×{e.count}
+                    </span>
+                  )}
+                  <span
+                    className="ml-auto shrink-0 text-[10px] px-1.5 py-0.5 rounded"
+                    style={{
+                      backgroundColor: 'var(--color-surface-3)',
+                      color: 'var(--color-muted-foreground)',
+                      border: '1px solid var(--color-border)',
+                    }}
+                  >
+                    {e.character || 'Shared Bank'}
+                  </span>
+                  <span
+                    className="shrink-0 text-[10px]"
+                    style={{ color: 'var(--color-muted-foreground)', minWidth: 110 }}
+                  >
+                    {describeLocation(e.location)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         ) : (
           <>
             {/* Rechargeable — limited-charge clickies, current/max charges. Hidden
@@ -657,17 +697,17 @@ export default function InventoryTrackerPage(): React.ReactElement {
             {/* Equipped — flat slot tiles, matching the bag-slot layout below. The
                 in-game equipment grid lives on Character Info → Gear instead. */}
             <div>
-              <SectionTitle label="Equipped" count={equippedFiltered.length} />
-              {equippedFiltered.length === 0 ? (
+              <SectionTitle label="Equipped" count={equipped.length} />
+              {equipped.length === 0 ? (
                 <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
-                  {query ? `No equipped items matching "${query}"` : 'No equipped items'}
+                  No equipped items
                 </p>
               ) : (
                 <div
                   className="grid gap-1.5"
                   style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}
                 >
-                  {equippedFiltered.map((e, i) => (
+                  {equipped.map((e, i) => (
                     <button
                       key={`eq-${i}`}
                       onClick={() => handleLookup(e.id)}
@@ -700,7 +740,6 @@ export default function InventoryTrackerPage(): React.ReactElement {
                       key={`bag-${g.character}-${g.num}`}
                       group={g}
                       showCharBadge={showCharBadge}
-                      query={query}
                       onLookup={handleLookup}
                     />
                   ))}
@@ -718,7 +757,6 @@ export default function InventoryTrackerPage(): React.ReactElement {
                       key={`bank-${g.character}-${g.num}`}
                       group={g}
                       showCharBadge={showCharBadge}
-                      query={query}
                       onLookup={handleLookup}
                     />
                   ))}
@@ -736,7 +774,6 @@ export default function InventoryTrackerPage(): React.ReactElement {
                       key={`sb-${g.num}`}
                       group={g}
                       showCharBadge={false}
-                      query={query}
                       onLookup={handleLookup}
                     />
                   ))}
