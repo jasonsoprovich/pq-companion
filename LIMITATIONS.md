@@ -432,6 +432,50 @@ These are inherent to log-file parsing and affect multiple features:
 
 ---
 
+## 11. Buff duration modeling
+
+### 11.1 Quarm's `spell_modifiers` table is not in the public dumps
+
+- **Limitation:** Buff timer durations can be wrong for any spell Quarm has
+  tuned via its server-side `spell_modifiers` table (per-spell or per-zone
+  fixed tick counts, multipliers, and additive tick adjustments applied in
+  `CalcBuffDuration_modification`, EQMacEmu `zone/spells.cpp`). The rule
+  `Quarm:ClientBeneficialSpellDurationModifier` is **true** in the dumped
+  `rule_values`, so the path is live for client-cast beneficial buffs.
+- **Root cause:** The public Quarm MySQL dumps we convert into `quarm.db`
+  do not include the `spell_modifiers` table, so we cannot see which spells
+  (if any) carry overrides. All durations we have verified against in-game
+  observations (KEI, Aegolism, Soul Energy, Forlorn Deeds, …) match the plain
+  formula + AA + focus math, so the table appears to be sparse — but any
+  mismatch reported by users that survives the AA/focus math should be
+  checked against this first.
+- **Sources checked:** DB (`rule_values` confirms the rule is enabled; table
+  absent from `sql/` dumps); EQMacEmu source (`CalcBuffDuration_modification`
+  reads `spell_modifiers` at zone boot); Log/Zeal (no duration feedback).
+- **Could a future data source fix this?** **Yes** — the table being added to
+  the public dump, or a one-off export from the Quarm team, would let the
+  timer engine apply the same overrides.
+
+### 11.2 Buffs received from other players use the *caster's* AAs/focuses
+
+- **Limitation:** When another player buffs the active character (e.g. a
+  cleric casting Aegolism on you), the real duration depends on the caster's
+  Spell Casting Reinforcement ranks and worn duration focus — none of which
+  are knowable from the recipient's side. The timer engine applies the active
+  character's own modifiers, which is only correct for self-cast/self-clicked
+  buffs.
+- **Root cause:** EQMacEmu computes duration on the caster
+  (`CalcBuffDuration` uses `caster->GetAA(...)`, `ApplyDurationFocus` walks
+  the caster's worn slots); the log line on the recipient's side carries no
+  caster identity or AA/gear state.
+- **Sources checked:** Log (land messages don't name the caster); DB (no
+  per-character data); Zeal (pipe reports buff slots but not durations).
+- **Could a future data source fix this?** **Partially** — a future Zeal
+  build exposing the client's real per-slot buff tick counts would make all
+  received-buff timers exact regardless of caster.
+
+---
+
 ## Template for new entries
 
 ```
