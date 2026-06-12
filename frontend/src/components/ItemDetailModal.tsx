@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Check, Copy, X } from 'lucide-react'
 import { getItemSources } from '../services/api'
+import { findItemHoldings, type ItemHolding } from '../services/itemHoldings'
+import ItemCharactersTab from './ItemCharactersTab'
 import WishlistStarButton from './WishlistStarButton'
 import VariantLinks from './VariantLinks'
 import type { Item, ItemForageZone, ItemGroundSpawnZone, ItemSourceNPC, ItemSources } from '../types/item'
@@ -259,7 +261,7 @@ function GroundSpawnsTab({ spawns }: { spawns: ItemGroundSpawnZone[] }): React.R
 
 // ── Modal ──────────────────────────────────────────────────────────────────────
 
-type TabKey = 'overview' | 'drops' | 'merchants' | 'forage' | 'ground-spawns' | 'tradeskills'
+type TabKey = 'overview' | 'drops' | 'merchants' | 'forage' | 'ground-spawns' | 'tradeskills' | 'characters'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'overview', label: 'Overview' },
@@ -268,18 +270,19 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'forage', label: 'Foraged From' },
   { key: 'ground-spawns', label: 'Ground Spawns' },
   { key: 'tradeskills', label: 'Tradeskills' },
+  { key: 'characters', label: 'Characters' },
 ]
 
-function visibleTabs(sources: ItemSources | null): { key: TabKey; label: string }[] {
-  if (!sources) return [TABS[0]]
+function visibleTabs(sources: ItemSources | null, holdings: ItemHolding[]): { key: TabKey; label: string }[] {
   return TABS.filter((tab) => {
     switch (tab.key) {
       case 'overview': return true
-      case 'drops': return (sources.drops?.length ?? 0) > 0
-      case 'merchants': return (sources.merchants?.length ?? 0) > 0
-      case 'forage': return (sources.forage_zones?.length ?? 0) > 0
-      case 'ground-spawns': return (sources.ground_spawns?.length ?? 0) > 0
-      case 'tradeskills': return (sources.tradeskills?.length ?? 0) > 0
+      case 'drops': return (sources?.drops?.length ?? 0) > 0
+      case 'merchants': return (sources?.merchants?.length ?? 0) > 0
+      case 'forage': return (sources?.forage_zones?.length ?? 0) > 0
+      case 'ground-spawns': return (sources?.ground_spawns?.length ?? 0) > 0
+      case 'tradeskills': return (sources?.tradeskills?.length ?? 0) > 0
+      case 'characters': return holdings.length > 0
     }
   })
 }
@@ -293,16 +296,21 @@ interface ItemDetailModalProps {
 export default function ItemDetailModal({ item, open, onClose }: ItemDetailModalProps): React.ReactElement | null {
   const navigate = useNavigate()
   const [sources, setSources] = useState<ItemSources | null>(null)
+  const [holdings, setHoldings] = useState<ItemHolding[]>([])
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     setActiveTab('overview')
     setSources(null)
+    setHoldings([])
     if (!item) return
     getItemSources(item.id)
       .then(setSources)
       .catch(() => setSources({ drops: [], merchants: [], forage_zones: [], ground_spawns: [], tradeskills: [] }))
+    findItemHoldings(item.id)
+      .then(setHoldings)
+      .catch(() => setHoldings([]))
   }, [item?.id])
 
   useEffect(() => {
@@ -361,7 +369,7 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
           </div>
           {/* Tabs */}
           <div className="flex gap-0 overflow-x-auto">
-            {visibleTabs(sources).map((tab) => (
+            {visibleTabs(sources, holdings).map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
@@ -385,6 +393,7 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
           {activeTab === 'forage' && <ForagedFromTab zones={sources?.forage_zones ?? []} />}
           {activeTab === 'ground-spawns' && <GroundSpawnsTab spawns={sources?.ground_spawns ?? []} />}
           {activeTab === 'tradeskills' && <ItemTradeskillsTab entries={sources?.tradeskills ?? []} onNavigate={onClose} />}
+          {activeTab === 'characters' && <ItemCharactersTab holdings={holdings} />}
         </div>
       </div>
     </div>

@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Filter, Search, X } from 'lucide-react'
 import { searchItems, getItem, getItemSources, getItemRaw } from '../services/api'
 import type { ItemSearchFilter } from '../services/api'
+import { findItemHoldings, type ItemHolding } from '../services/itemHoldings'
 import type { Item, ItemSourceNPC, ItemSources, ItemForageZone, ItemGroundSpawnZone } from '../types/item'
 import {
   baneBodyLabel,
@@ -25,6 +26,7 @@ import RawDataModal from '../components/RawDataModal'
 import WishlistStarButton from '../components/WishlistStarButton'
 import VariantLinks from '../components/VariantLinks'
 import { ItemTradeskillsTab } from '../components/RecipeView'
+import ItemCharactersTab from '../components/ItemCharactersTab'
 
 // ── Filter definitions ─────────────────────────────────────────────────────────
 
@@ -976,7 +978,7 @@ function GroundSpawnsTab({ spawns }: { spawns: ItemGroundSpawnZone[] }): React.R
 
 // ── Detail panel ───────────────────────────────────────────────────────────────
 
-type ItemTabKey = 'overview' | 'drops' | 'merchants' | 'forage' | 'ground-spawns' | 'tradeskills'
+type ItemTabKey = 'overview' | 'drops' | 'merchants' | 'forage' | 'ground-spawns' | 'tradeskills' | 'characters'
 
 const ITEM_TABS: { key: ItemTabKey; label: string }[] = [
   { key: 'overview', label: 'Overview' },
@@ -985,18 +987,19 @@ const ITEM_TABS: { key: ItemTabKey; label: string }[] = [
   { key: 'forage', label: 'Foraged From' },
   { key: 'ground-spawns', label: 'Ground Spawns' },
   { key: 'tradeskills', label: 'Tradeskills' },
+  { key: 'characters', label: 'Characters' },
 ]
 
-function visibleItemTabs(sources: ItemSources | null): { key: ItemTabKey; label: string }[] {
-  if (!sources) return [ITEM_TABS[0]]
+function visibleItemTabs(sources: ItemSources | null, holdings: ItemHolding[]): { key: ItemTabKey; label: string }[] {
   return ITEM_TABS.filter((tab) => {
     switch (tab.key) {
       case 'overview': return true
-      case 'drops': return (sources.drops?.length ?? 0) > 0
-      case 'merchants': return (sources.merchants?.length ?? 0) > 0
-      case 'forage': return (sources.forage_zones?.length ?? 0) > 0
-      case 'ground-spawns': return (sources.ground_spawns?.length ?? 0) > 0
-      case 'tradeskills': return (sources.tradeskills?.length ?? 0) > 0
+      case 'drops': return (sources?.drops?.length ?? 0) > 0
+      case 'merchants': return (sources?.merchants?.length ?? 0) > 0
+      case 'forage': return (sources?.forage_zones?.length ?? 0) > 0
+      case 'ground-spawns': return (sources?.ground_spawns?.length ?? 0) > 0
+      case 'tradeskills': return (sources?.tradeskills?.length ?? 0) > 0
+      case 'characters': return holdings.length > 0
     }
   })
 }
@@ -1007,6 +1010,7 @@ interface DetailPanelProps {
 
 function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
   const [sources, setSources] = useState<ItemSources | null>(null)
+  const [holdings, setHoldings] = useState<ItemHolding[]>([])
   const [activeTab, setActiveTab] = useState<ItemTabKey>('overview')
   const [copied, setCopied] = useState(false)
   const [rawOpen, setRawOpen] = useState(false)
@@ -1014,11 +1018,15 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
 
   useEffect(() => {
     setActiveTab('overview')
+    setHoldings([])
     if (!item) { setSources(null); return }
     let cancelled = false
     getItemSources(item.id)
       .then((s) => { if (!cancelled) setSources(s) })
       .catch(() => { if (!cancelled) setSources({ drops: [], merchants: [], forage_zones: [], ground_spawns: [], tradeskills: [] }) })
+    findItemHoldings(item.id)
+      .then((h) => { if (!cancelled) setHoldings(h) })
+      .catch(() => { if (!cancelled) setHoldings([]) })
     return () => { cancelled = true }
   }, [item?.id])
 
@@ -1069,7 +1077,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
 
         {/* Tabs */}
         <div className="mt-3 flex gap-0 overflow-x-auto">
-          {visibleItemTabs(sources).map((tab) => (
+          {visibleItemTabs(sources, holdings).map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
@@ -1107,6 +1115,9 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
         )}
         {activeTab === 'tradeskills' && (
           <ItemTradeskillsTab entries={sources?.tradeskills ?? []} />
+        )}
+        {activeTab === 'characters' && (
+          <ItemCharactersTab holdings={holdings} />
         )}
       </div>
 
