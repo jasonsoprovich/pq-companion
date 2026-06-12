@@ -252,9 +252,10 @@ type Engine struct {
 	// modifier cache: keeps the last-computed contributors per character so
 	// the engine doesn't re-parse the Quarmy export on every cast. Invalidated
 	// by character change or RefreshModifiers().
-	modMu       sync.Mutex
-	modCharName string
-	modContribs []buffmod.Modifier
+	modMu           sync.Mutex
+	modCharName     string
+	modContribs     []buffmod.Modifier
+	modPermIllusion bool
 
 	// pipeCasting is the spell name most recently reported by the Zeal pipe
 	// (LabelCastingName, id 134). Empty when the player isn't casting. Used
@@ -343,6 +344,7 @@ func (e *Engine) RefreshModifiers() {
 	e.modMu.Lock()
 	e.modCharName = ""
 	e.modContribs = nil
+	e.modPermIllusion = false
 	e.modMu.Unlock()
 }
 
@@ -1616,9 +1618,21 @@ func (e *Engine) applyDurationModifiers(spell *db.Spell, baseDurationSec float64
 		return baseDurationSec
 	}
 
-	contribs, ok := e.contributorsFor(eqPath, charName)
+	contribs, permIllusion, ok := e.contributorsFor(eqPath, charName)
 	if !ok {
 		return baseDurationSec
+	}
+
+	// Permanent Illusion AA: EQMacEmu overrides the duration of any self-cast
+	// illusion (SPA 58) to a flat 10000 ticks (~16h40m) — the formula duration
+	// and AA/item focus percentages never enter into it.
+	if permIllusion && buffmod.HasIllusionEffect(spell.EffectIDs[:]) {
+		slog.Info("timer-debug: permanent illusion override",
+			"name", spell.Name,
+			"base_sec", int(baseDurationSec),
+			"override_sec", buffmod.PermanentIllusionDurationSec,
+		)
+		return float64(buffmod.PermanentIllusionDurationSec)
 	}
 
 	spellType := buffmod.SpellTypeBeneficial
@@ -1649,16 +1663,17 @@ func (e *Engine) applyDurationModifiers(spell *db.Spell, baseDurationSec float64
 	return float64(res.ExtendedDurationSec)
 }
 
-// contributorsFor returns the cached buffmod contributors for charName,
-// recomputing from the Quarmy export if the cache is empty or stale.
-// The bool is false when computation failed (e.g. no export yet) — callers
-// should fall back to the unextended duration.
-func (e *Engine) contributorsFor(eqPath, charName string) ([]buffmod.Modifier, bool) {
+// contributorsFor returns the cached buffmod contributors for charName plus
+// whether the character has the Permanent Illusion AA, recomputing from the
+// Quarmy export if the cache is empty or stale. The final bool is false when
+// computation failed (e.g. no export yet) — callers should fall back to the
+// unextended duration.
+func (e *Engine) contributorsFor(eqPath, charName string) ([]buffmod.Modifier, bool, bool) {
 	e.modMu.Lock()
 	if e.modCharName == charName && e.modContribs != nil {
-		c := e.modContribs
+		c, p := e.modContribs, e.modPermIllusion
 		e.modMu.Unlock()
-		return c, true
+		return c, p, true
 	}
 	e.modMu.Unlock()
 
@@ -1666,15 +1681,16 @@ func (e *Engine) contributorsFor(eqPath, charName string) ([]buffmod.Modifier, b
 	if err != nil {
 		slog.Info("timer-debug: buffmod.Compute failed (using base duration)",
 			"character", charName, "err", err)
-		return nil, false
+		return nil, false, false
 	}
 
 	e.modMu.Lock()
 	e.modCharName = charName
 	e.modContribs = res.Contributors
-	c := e.modContribs
+	e.modPermIllusion = res.PermanentIllusion
+	c, p := e.modContribs, e.modPermIllusion
 	e.modMu.Unlock()
-	return c, true
+	return c, p, true
 }
 
 // categorize determines the timer category from a spell's effect IDs and the

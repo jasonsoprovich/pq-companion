@@ -360,6 +360,16 @@ func (h *charactersHandler) spellModifiers(w http.ResponseWriter, r *http.Reques
 			char.Class,
 			sp.ClassLevels,
 		)
+		// Permanent Illusion AA: self-cast illusions (SPA 58) last a flat
+		// 10000 ticks (~16h40m) on EQMacEmu — the formula duration and focus
+		// percentages are replaced wholesale.
+		if res.PermanentIllusion && buffmod.HasIllusionEffect(sp.EffectIDs[:]) {
+			resolution.ExtendedDurationSec = buffmod.PermanentIllusionDurationSec
+			resolution.PermanentIllusion = true
+			if resolution.BaseDurationSec > 0 {
+				resolution.DurationPercent = (resolution.ExtendedDurationSec - resolution.BaseDurationSec) * 100 / resolution.BaseDurationSec
+			}
+		}
 		resp["resolution"] = resolution
 	}
 

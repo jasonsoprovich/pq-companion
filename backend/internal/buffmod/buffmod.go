@@ -22,14 +22,14 @@ import (
 
 // SPA codes we care about. Other SPAs in a focus spell are treated as limits.
 const (
-	SPACastTime           = 127 // SE_IncreaseSpellHaste
-	SPADuration           = 128 // SE_IncreaseSpellDuration
-	SPALimitMaxLevel      = 134
-	SPALimitTargetExclude = 137 // negative base = exclude effect ID; positive = target type
-	SPALimitSpellType     = 138 // 0 = detrimental, 1 = beneficial, 2 = any
-	SPALimitMinLevel      = 139
-	SPALimitMinDuration   = 140 // value × 6 sec (ticks)
-	SPALimitSpellID       = 141
+	SPACastTime         = 127 // SE_IncreaseSpellHaste
+	SPADuration         = 128 // SE_IncreaseSpellDuration
+	SPALimitMaxLevel    = 134
+	SPALimitEffect      = 137 // SE_LimitEffect: base is an SPA code; negative = exclude, positive = require
+	SPALimitSpellType   = 138 // 0 = detrimental, 1 = beneficial, 2 = any
+	SPALimitMinLevel    = 139
+	SPALimitMinDuration = 140 // value × 6 sec (ticks)
+	SPALimitSpellID     = 141 // SE_LimitSpell: negative = exclude spell ID, positive = whitelist
 )
 
 // Spell-type filter values for SPA 138.
@@ -66,6 +66,30 @@ const SpellHasteCapPercent = 50
 // spelltimer package constant to avoid a circular import.
 const classCannotCast = 255
 
+// Permanent Illusion (altadv_vars.eqmacid 55, Enchanter-only): EQMacEmu's
+// CalcBuffDuration (zone/spells.cpp) overrides the duration of any SELF-cast
+// spell containing SPA 58 (SE_Illusion) to a flat 10000 ticks (~16h40m) when
+// the caster has this AA — the illusion effectively lasts until death or
+// dispel. The override replaces the formula duration entirely; AA/item focus
+// percentages are irrelevant at that magnitude, so callers should return
+// PermanentIllusionDurationSec directly instead of running Resolve math.
+const (
+	PermanentIllusionEqmacID     = 55
+	PermanentIllusionDurationSec = 10000 * 6
+	spaIllusion                  = 58
+)
+
+// HasIllusionEffect reports whether a spell's effect slots include SPA 58
+// (SE_Illusion) — the trigger condition for the Permanent Illusion override.
+func HasIllusionEffect(effectIDs []int) bool {
+	for _, e := range effectIDs {
+		if e == spaIllusion {
+			return true
+		}
+	}
+	return false
+}
+
 // Limits is the parsed set of constraints attached to a focus modifier.
 // Zero/empty fields mean "no limit on this dimension".
 type Limits struct {
@@ -74,8 +98,9 @@ type Limits struct {
 	SpellType      int   `json:"spell_type"`                 // SPA 138; SpellTypeUnset/0/1/2
 	MinDurationSec int   `json:"min_duration_sec,omitempty"` // SPA 140 × 6
 	ExcludeEffects []int `json:"exclude_effects,omitempty"`  // SPA 137 with negative base
-	IncludeSpells  []int `json:"include_spells,omitempty"`   // SPA 141
-	TargetTypes    []int `json:"target_types,omitempty"`     // SPA 137 with positive base
+	IncludeEffects []int `json:"include_effects,omitempty"`  // SPA 137 with positive base; spell must contain one
+	IncludeSpells  []int `json:"include_spells,omitempty"`   // SPA 141 with positive base; spell ID whitelist
+	ExcludeSpells  []int `json:"exclude_spells,omitempty"`   // SPA 141 with negative base
 }
 
 // Modifier is one focus contribution from either an equipped item or a trained
@@ -140,6 +165,10 @@ var equipSlots = map[string]bool{
 type Result struct {
 	Character    string     `json:"character"`
 	Contributors []Modifier `json:"contributors"`
+	// PermanentIllusion is true when the character has the Permanent
+	// Illusion AA (eqmacid 55) — self-cast illusions (SPA 58) then last
+	// PermanentIllusionDurationSec instead of their formula duration.
+	PermanentIllusion bool `json:"permanent_illusion,omitempty"`
 }
 
 // Compute walks the character's most recent Quarmy export (equipped items +
@@ -186,6 +215,9 @@ func Compute(eqPath, charName string, gameDB *db.DB) (*Result, error) {
 	}
 
 	for _, aa := range q.AAs {
+		if aa.ID == PermanentIllusionEqmacID && aa.Rank > 0 {
+			res.PermanentIllusion = true
+		}
 		entry, ok := aaTable[aa.ID]
 		if !ok || aa.Rank <= 0 || aa.Rank > len(entry.PerRank) {
 			continue
@@ -227,14 +259,18 @@ func parseFocusSpell(s *db.Spell) []Modifier {
 			limits.SpellType = base
 		case SPALimitMinDuration:
 			limits.MinDurationSec = base * 6
-		case SPALimitTargetExclude:
+		case SPALimitEffect:
 			if base < 0 {
 				limits.ExcludeEffects = append(limits.ExcludeEffects, -base)
 			} else if base > 0 {
-				limits.TargetTypes = append(limits.TargetTypes, base)
+				limits.IncludeEffects = append(limits.IncludeEffects, base)
 			}
 		case SPALimitSpellID:
-			limits.IncludeSpells = append(limits.IncludeSpells, base)
+			if base < 0 {
+				limits.ExcludeSpells = append(limits.ExcludeSpells, -base)
+			} else if base > 0 {
+				limits.IncludeSpells = append(limits.IncludeSpells, base)
+			}
 		}
 	}
 
@@ -253,7 +289,7 @@ func parseFocusSpell(s *db.Spell) []Modifier {
 
 // Match reports whether m applies to a spell with the given properties.
 // casterLevel = 0 means caller does not want a level filter applied.
-func (m Modifier) Match(spellLevel, durationSec, spellType int, effectIDs []int) bool {
+func (m Modifier) Match(spellID, spellLevel, durationSec, spellType int, effectIDs []int) bool {
 	l := m.Limits
 	if l.MaxLevel > 0 && spellLevel > l.MaxLevel {
 		return false
@@ -272,6 +308,40 @@ func (m Modifier) Match(spellLevel, durationSec, spellType int, effectIDs []int)
 			if ex == e {
 				return false
 			}
+		}
+	}
+	// SPA 137 with positive base: the spell must contain at least one of the
+	// required effects (EQMacEmu's SE_LimitEffect include semantics — e.g.
+	// Summoning Haste only hastens spells with SPA 33, Summon Pet).
+	if len(l.IncludeEffects) > 0 {
+		found := false
+		for _, inc := range l.IncludeEffects {
+			for _, e := range effectIDs {
+				if inc == e {
+					found = true
+					break
+				}
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	for _, ex := range l.ExcludeSpells {
+		if spellID == ex {
+			return false
+		}
+	}
+	if len(l.IncludeSpells) > 0 {
+		found := false
+		for _, inc := range l.IncludeSpells {
+			if spellID == inc {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
 		}
 	}
 	return true
@@ -298,6 +368,11 @@ type Resolution struct {
 	DurationPercent     int        `json:"duration_percent"`      // combined effective %, for display
 	CastTimePercent     int        `json:"cast_time_percent"`     // total cast-time reduction %
 	Applied             []Modifier `json:"applied"`               // contributors that hit
+	// PermanentIllusion is set by callers (not Resolve) when the Permanent
+	// Illusion AA override replaced ExtendedDurationSec — the percent fields
+	// are meaningless in that case and the UI should label the duration as
+	// "until death/dispel" (~16h40m).
+	PermanentIllusion bool `json:"permanent_illusion,omitempty"`
 }
 
 // SpellHasteSummary returns the character's theoretical maximum spell haste
@@ -443,7 +518,7 @@ func Resolve(spellID int, spellName string, spellLevel, casterLevel, baseDuratio
 		var matched []Modifier
 		for i := range contributors {
 			c := contributors[i]
-			if c.SPA != spa || !c.Match(spellLevel, baseDurationSec, spellType, effectIDs) {
+			if c.SPA != spa || !c.Match(spellID, spellLevel, baseDurationSec, spellType, effectIDs) {
 				continue
 			}
 			matched = append(matched, c)

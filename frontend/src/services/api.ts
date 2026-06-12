@@ -1039,8 +1039,9 @@ export interface SpellModifierLimits {
   spell_type: number // -1 unset, 0 detrimental, 1 beneficial, 2 any
   min_duration_sec?: number
   exclude_effects?: number[]
+  include_effects?: number[]
   include_spells?: number[]
-  target_types?: number[]
+  exclude_spells?: number[]
 }
 
 export interface SpellModifier {
@@ -1073,6 +1074,9 @@ export interface SpellModifierResolution {
   // May be null over the wire if the backend ever emits a nil slice — always
   // null-coalesce before reading .length / .map (see ResolutionDisplay).
   applied: SpellModifier[] | null
+  // True when the Permanent Illusion AA replaced the duration outright
+  // (self-cast illusion, ~16h40m); the percent fields are meaningless then.
+  permanent_illusion?: boolean
 }
 
 export interface SpellModifiersResponse {

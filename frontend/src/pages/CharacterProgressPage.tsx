@@ -1687,6 +1687,9 @@ function ModifierRow({ m }: { m: SpellModifier }): React.ReactElement {
         {m.limits.exclude_effects && m.limits.exclude_effects.length > 0 ? (
           <FilterTag label={`excl. ${m.limits.exclude_effects.length} effect${m.limits.exclude_effects.length > 1 ? 's' : ''}`} />
         ) : null}
+        {m.limits.include_effects && m.limits.include_effects.length > 0 ? (
+          <FilterTag label={`req. effect${m.limits.include_effects.length > 1 ? 's' : ''} ${m.limits.include_effects.join('/')}`} />
+        ) : null}
       </div>
     </div>
   )

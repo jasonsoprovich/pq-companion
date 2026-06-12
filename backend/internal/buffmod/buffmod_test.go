@@ -550,3 +550,124 @@ func TestExclusionFilter(t *testing.T) {
 		t.Errorf("Complete Heal item duration %% = %d, want 0 (mask excluded)", r.DurationItemPercent)
 	}
 }
+
+// TestIncludeEffectLimit — focuses with a positive SPA-137 base only apply to
+// spells that CONTAIN that effect (EQMacEmu SE_LimitEffect include semantics).
+// Summoning Haste (Encyclopedia Necrotheurgia line) carries 137:33, so its 30%
+// cast-time reduction applies to pet summons (SPA 33) and nothing else.
+func TestIncludeEffectLimit(t *testing.T) {
+	contributors := []buffmod.Modifier{
+		{
+			Source:         "item",
+			SourceItemID:   9002,
+			SourceItemName: "Synthetic Summoning Haste Item",
+			FocusSpellID:   2352,
+			FocusSpellName: "Summoning Haste II",
+			SPA:            buffmod.SPACastTime,
+			Percent:        30,
+			Limits: buffmod.Limits{
+				SpellType:      buffmod.SpellTypeUnset,
+				MaxLevel:       44,
+				IncludeEffects: []int{33}, // SE_SummonPet
+			},
+		},
+	}
+
+	pet := buffmod.Resolve(
+		1, "Synthetic Pet Summon",
+		40, 60, 0,
+		buffmod.SpellTypeBeneficial,
+		[]int{33, 254, 254, 254},
+		contributors,
+		buffmod.CasterClassUnknown, [15]int{},
+	)
+	if pet.CastTimePercent != 30 {
+		t.Errorf("pet summon cast time %% = %d, want 30 (include-effect matched)", pet.CastTimePercent)
+	}
+
+	nonPet := buffmod.Resolve(
+		2, "Synthetic Nuke",
+		40, 60, 0,
+		buffmod.SpellTypeDetrimental,
+		[]int{0, 254, 254, 254},
+		contributors,
+		buffmod.CasterClassUnknown, [15]int{},
+	)
+	if nonPet.CastTimePercent != 0 {
+		t.Errorf("non-pet cast time %% = %d, want 0 (include-effect 33 not present)", nonPet.CastTimePercent)
+	}
+}
+
+// TestIncludeSpellLimit — SPA 141 with a positive base whitelists specific
+// spell IDs; a negative base excludes that spell ID.
+func TestIncludeSpellLimit(t *testing.T) {
+	whitelist := []buffmod.Modifier{
+		{
+			Source:  "item",
+			SPA:     buffmod.SPADuration,
+			Percent: 20,
+			Limits: buffmod.Limits{
+				SpellType:     buffmod.SpellTypeUnset,
+				IncludeSpells: []int{1447}, // Aegolism only
+			},
+		},
+	}
+	hit := buffmod.Resolve(
+		1447, "Aegolism", 60, 60, 600,
+		buffmod.SpellTypeBeneficial, []int{},
+		whitelist, buffmod.CasterClassUnknown, [15]int{},
+	)
+	if hit.DurationItemPercent != 20 {
+		t.Errorf("whitelisted spell item duration %% = %d, want 20", hit.DurationItemPercent)
+	}
+	miss := buffmod.Resolve(
+		2570, "Koadic's Endless Intellect", 60, 60, 600,
+		buffmod.SpellTypeBeneficial, []int{},
+		whitelist, buffmod.CasterClassUnknown, [15]int{},
+	)
+	if miss.DurationItemPercent != 0 {
+		t.Errorf("non-whitelisted spell item duration %% = %d, want 0", miss.DurationItemPercent)
+	}
+
+	exclude := []buffmod.Modifier{
+		{
+			Source:  "item",
+			SPA:     buffmod.SPADuration,
+			Percent: 20,
+			Limits: buffmod.Limits{
+				SpellType:     buffmod.SpellTypeUnset,
+				ExcludeSpells: []int{1292}, // never Complete Heal
+			},
+		},
+	}
+	blocked := buffmod.Resolve(
+		1292, "Complete Heal", 60, 60, 600,
+		buffmod.SpellTypeBeneficial, []int{},
+		exclude, buffmod.CasterClassUnknown, [15]int{},
+	)
+	if blocked.DurationItemPercent != 0 {
+		t.Errorf("excluded spell item duration %% = %d, want 0", blocked.DurationItemPercent)
+	}
+}
+
+// TestPermanentIllusionFlag — Osui has the Permanent Illusion AA (eqmacid 55)
+// in the fixture export, so Compute must surface it; HasIllusionEffect gates
+// the override to spells that actually contain SPA 58 (SE_Illusion).
+func TestPermanentIllusionFlag(t *testing.T) {
+	requireTestdata(t, "Osui-Quarmy.txt")
+	gameDB := openDB(t)
+	eqPath := filepath.Join(repoRoot(t), "testdata")
+	res, err := buffmod.Compute(eqPath, "Osui", gameDB)
+	if err != nil {
+		t.Fatalf("Compute: %v", err)
+	}
+	if !res.PermanentIllusion {
+		t.Error("Compute(Osui).PermanentIllusion = false, want true (AA 55 rank 1 in fixture)")
+	}
+	if !buffmod.HasIllusionEffect([]int{58, 254, 254}) {
+		t.Error("HasIllusionEffect([58 ...]) = false, want true")
+	}
+	if buffmod.HasIllusionEffect([]int{86, 254, 254}) {
+		t.Error("HasIllusionEffect without SPA 58 = true, want false")
+	}
+}
