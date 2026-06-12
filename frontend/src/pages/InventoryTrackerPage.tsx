@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Package, RefreshCw, AlertCircle, Search, X, ChevronRight, ChevronDown } from 'lucide-react'
-import { getAllInventories, getItem } from '../services/api'
+import { getAllInventories, getItem, listCharacters } from '../services/api'
 import type { AllInventoriesResponse, Inventory, InventoryEntry } from '../types/zeal'
 import type { Item } from '../types/item'
 import ItemDetailModal from '../components/ItemDetailModal'
@@ -102,6 +102,7 @@ function isEmptyEntry(e: InventoryEntry): boolean {
 
 // Persisted view preferences. Survive app restarts (unlike useCachedState).
 const HIDE_EMPTY_BAGS_KEY = 'pq-invtracker-hide-empty-bags'
+const SHOW_UNIMPORTED_KEY = 'pq-invtracker-show-unimported'
 
 function readStoredBool(key: string, fallback: boolean): boolean {
   try {
@@ -238,6 +239,10 @@ export default function InventoryTrackerPage(): React.ReactElement {
   const [selectedChar, setSelectedChar] = useState<string>('')
   const [query, setQuery] = useState('')
   const [hideEmptyBags, setHideEmptyBags] = useState(() => readStoredBool(HIDE_EMPTY_BAGS_KEY, true))
+  const [showUnimported, setShowUnimported] = useState(() => readStoredBool(SHOW_UNIMPORTED_KEY, false))
+  // Lowercased names of characters stored on the Characters page. null until
+  // loaded (or on failure), which falls back to showing every export.
+  const [importedNames, setImportedNames] = useState<Set<string> | null>(null)
   const [modalItem, setModalItem] = useState<Item | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -247,21 +252,18 @@ export default function InventoryTrackerPage(): React.ReactElement {
     setLoading(true)
     setError(null)
     getAllInventories()
-      .then((res) => {
-        setData(res)
-        setSelectedChar((prev) => {
-          // CharacterSubTabs handles validation when characters are loaded; we
-          // only collapse to a single character when there's exactly one.
-          if (res.characters.length === 1) return res.characters[0].character
-          if (prev === '') return ''
-          return res.characters.some((c) => c.character === prev) ? prev : ''
-        })
-      })
+      .then(setData)
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    listCharacters()
+      .then((res) => setImportedNames(new Set(res.characters.map((c) => c.name.toLowerCase()))))
+      .catch(() => setImportedNames(null))
+  }, [])
 
   function handleLookup(id: number) {
     if (id === 0) return
@@ -277,14 +279,47 @@ export default function InventoryTrackerPage(): React.ReactElement {
 
   // ── Derived data ─────────────────────────────────────────────────────────────
 
-  const allTagged = useMemo<TaggedEntry[]>(() => {
+  // Exports from characters not imported on the Characters page are hidden
+  // unless the user opts in via "Show unimported".
+  const inventories = useMemo<Inventory[]>(() => {
     if (!data) return []
-    if (selectedChar === '') return data.characters.flatMap(tagEntries)
-    const inv = data.characters.find((c) => c.character === selectedChar)
-    return inv ? tagEntries(inv) : []
-  }, [data, selectedChar])
+    if (showUnimported || importedNames === null) return data.characters
+    return data.characters.filter((c) => importedNames.has(c.character.toLowerCase()))
+  }, [data, importedNames, showUnimported])
 
-  const showCharBadge = selectedChar === '' && (data?.characters.length ?? 0) > 1
+  const unimportedNames = useMemo<string[]>(() => {
+    if (!data || importedNames === null) return []
+    return data.characters
+      .filter((c) => !importedNames.has(c.character.toLowerCase()))
+      .map((c) => c.character)
+  }, [data, importedNames])
+
+  // CharacterSubTabs only lists stored characters; unimported ones become
+  // extra tabs while the toggle is on.
+  const extraTabNames = useMemo<string[]>(
+    () => (showUnimported ? unimportedNames : []),
+    [showUnimported, unimportedNames],
+  )
+
+  // Collapse to the single character when only one export is visible; clear a
+  // selection that disappeared (e.g. its unimported tab was just toggled off).
+  useEffect(() => {
+    if (inventories.length === 1) {
+      setSelectedChar(inventories[0].character)
+      return
+    }
+    setSelectedChar((prev) =>
+      prev === '' || inventories.some((c) => c.character === prev) ? prev : '',
+    )
+  }, [inventories])
+
+  const allTagged = useMemo<TaggedEntry[]>(() => {
+    if (selectedChar === '') return inventories.flatMap(tagEntries)
+    const inv = inventories.find((c) => c.character === selectedChar)
+    return inv ? tagEntries(inv) : []
+  }, [inventories, selectedChar])
+
+  const showCharBadge = selectedChar === '' && inventories.length > 1
 
   const equipped = useMemo(
     () => allTagged.filter((e) => isEquipmentSlot(e.location) && !isEmptyEntry(e)),
@@ -490,6 +525,28 @@ export default function InventoryTrackerPage(): React.ReactElement {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          {unimportedNames.length > 0 && (
+            <label
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded cursor-pointer select-none"
+              style={{
+                backgroundColor: showUnimported ? 'var(--color-surface-3)' : 'var(--color-surface-2)',
+                color: 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+              title="Include inventory exports from characters not imported on the Characters page"
+            >
+              <input
+                type="checkbox"
+                checked={showUnimported}
+                onChange={(e) => {
+                  setShowUnimported(e.target.checked)
+                  writeStoredBool(SHOW_UNIMPORTED_KEY, e.target.checked)
+                }}
+                className="h-3 w-3"
+              />
+              Show unimported ({unimportedNames.length})
+            </label>
+          )}
           {hasEmptyBag && (
             <label
               className="flex items-center gap-1.5 text-xs px-2 py-1 rounded cursor-pointer select-none"
@@ -532,145 +589,160 @@ export default function InventoryTrackerPage(): React.ReactElement {
         value={selectedChar}
         onChange={setSelectedChar}
         allowAll
+        extraNames={extraTabNames}
       />
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
-        {/* Rechargeable — limited-charge clickies, current/max charges. Hidden
-            entirely when the held set has none (or none match the search). */}
-        {rechargeables.length > 0 && (
-          <div>
-            <SectionTitle label="Rechargeable" count={rechargeables.length} />
-            <div
-              className="grid gap-1.5"
-              style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}
-            >
-              {rechargeables.map((e, i) => {
-                const max = e.max_charges ?? 0
-                const current = e.count
-                const below = current < max
-                return (
-                  <button
-                    key={`rc-${e.character}-${e.location}-${i}`}
-                    onClick={() => handleLookup(e.id)}
-                    className="flex items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs"
-                    style={{
-                      backgroundColor: 'var(--color-surface-2)',
-                      border: '1px solid var(--color-border)',
-                      color: 'var(--color-foreground)',
-                    }}
-                    title={`${e.name} — ${current} of ${max} charges${showCharBadge ? ` (${e.character})` : ''}`}
-                  >
-                    <ItemIcon id={e.icon} name={e.name} size={18} />
-                    <span className="truncate flex-1">{e.name}</span>
-                    {showCharBadge && (
-                      <span className="shrink-0 text-[10px]" style={{ color: 'var(--color-muted-foreground)' }}>
-                        {e.character}
-                      </span>
-                    )}
-                    <span
-                      className="shrink-0 tabular-nums font-semibold rounded px-1.5 py-0.5 text-[10px]"
-                      style={{
-                        color: below ? 'var(--color-warning)' : 'var(--color-success)',
-                        backgroundColor: 'var(--color-surface-3)',
-                      }}
-                    >
-                      {current} / {max}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Equipped — flat slot tiles, matching the bag-slot layout below. The
-            in-game equipment grid lives on Character Info → Gear instead. */}
-        <div>
-          <SectionTitle label="Equipped" count={equippedFiltered.length} />
-          {equippedFiltered.length === 0 ? (
-            <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
-              {query ? `No equipped items matching "${query}"` : 'No equipped items'}
+        {inventories.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 p-8 text-center">
+            <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              All {data.characters.length} inventory exports belong to characters that
+              haven't been imported yet.
             </p>
-          ) : (
-            <div
-              className="grid gap-1.5"
-              style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}
-            >
-              {equippedFiltered.map((e, i) => (
-                <button
-                  key={`eq-${i}`}
-                  onClick={() => handleLookup(e.id)}
-                  className="flex items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs"
-                  style={{
-                    backgroundColor: 'var(--color-surface-2)',
-                    border: '1px solid var(--color-border)',
-                    color: 'var(--color-foreground)',
-                  }}
-                  title={e.name}
+            <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+              Enable "Show unimported" above, or add them on the Characters page.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Rechargeable — limited-charge clickies, current/max charges. Hidden
+                entirely when the held set has none (or none match the search). */}
+            {rechargeables.length > 0 && (
+              <div>
+                <SectionTitle label="Rechargeable" count={rechargeables.length} />
+                <div
+                  className="grid gap-1.5"
+                  style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}
                 >
-                  <ItemIcon id={e.icon} name={e.name} size={18} />
-                  <span className="truncate flex-1">{e.name}</span>
-                  <span className="shrink-0 text-[10px]" style={{ color: 'var(--color-muted-foreground)' }}>
-                    {showCharBadge ? e.character : e.location}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+                  {rechargeables.map((e, i) => {
+                    const max = e.max_charges ?? 0
+                    const current = e.count
+                    const below = current < max
+                    return (
+                      <button
+                        key={`rc-${e.character}-${e.location}-${i}`}
+                        onClick={() => handleLookup(e.id)}
+                        className="flex items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs"
+                        style={{
+                          backgroundColor: 'var(--color-surface-2)',
+                          border: '1px solid var(--color-border)',
+                          color: 'var(--color-foreground)',
+                        }}
+                        title={`${e.name} — ${current} of ${max} charges${showCharBadge ? ` (${e.character})` : ''}`}
+                      >
+                        <ItemIcon id={e.icon} name={e.name} size={18} />
+                        <span className="truncate flex-1">{e.name}</span>
+                        {showCharBadge && (
+                          <span className="shrink-0 text-[10px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                            {e.character}
+                          </span>
+                        )}
+                        <span
+                          className="shrink-0 tabular-nums font-semibold rounded px-1.5 py-0.5 text-[10px]"
+                          style={{
+                            color: below ? 'var(--color-warning)' : 'var(--color-success)',
+                            backgroundColor: 'var(--color-surface-3)',
+                          }}
+                        >
+                          {current} / {max}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
-        {/* Bags */}
-        {visibleBagGroups.length > 0 && (
-          <>
-            <SectionTitle label="Bags" count={totalBagItems} />
-            <div className="flex flex-col gap-2">
-              {visibleBagGroups.map((g) => (
-                <BagCard
-                  key={`bag-${g.character}-${g.num}`}
-                  group={g}
-                  showCharBadge={showCharBadge}
-                  query={query}
-                  onLookup={handleLookup}
-                />
-              ))}
+            {/* Equipped — flat slot tiles, matching the bag-slot layout below. The
+                in-game equipment grid lives on Character Info → Gear instead. */}
+            <div>
+              <SectionTitle label="Equipped" count={equippedFiltered.length} />
+              {equippedFiltered.length === 0 ? (
+                <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+                  {query ? `No equipped items matching "${query}"` : 'No equipped items'}
+                </p>
+              ) : (
+                <div
+                  className="grid gap-1.5"
+                  style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}
+                >
+                  {equippedFiltered.map((e, i) => (
+                    <button
+                      key={`eq-${i}`}
+                      onClick={() => handleLookup(e.id)}
+                      className="flex items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs"
+                      style={{
+                        backgroundColor: 'var(--color-surface-2)',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-foreground)',
+                      }}
+                      title={e.name}
+                    >
+                      <ItemIcon id={e.icon} name={e.name} size={18} />
+                      <span className="truncate flex-1">{e.name}</span>
+                      <span className="shrink-0 text-[10px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                        {showCharBadge ? e.character : e.location}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          </>
-        )}
 
-        {/* Bank */}
-        {visibleBankGroups.length > 0 && (
-          <>
-            <SectionTitle label="Bank" count={totalBankItems} />
-            <div className="flex flex-col gap-2">
-              {visibleBankGroups.map((g) => (
-                <BagCard
-                  key={`bank-${g.character}-${g.num}`}
-                  group={g}
-                  showCharBadge={showCharBadge}
-                  query={query}
-                  onLookup={handleLookup}
-                />
-              ))}
-            </div>
-          </>
-        )}
+            {/* Bags */}
+            {visibleBagGroups.length > 0 && (
+              <>
+                <SectionTitle label="Bags" count={totalBagItems} />
+                <div className="flex flex-col gap-2">
+                  {visibleBagGroups.map((g) => (
+                    <BagCard
+                      key={`bag-${g.character}-${g.num}`}
+                      group={g}
+                      showCharBadge={showCharBadge}
+                      query={query}
+                      onLookup={handleLookup}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
 
-        {/* Shared Bank */}
-        {visibleSharedBankGroups.length > 0 && (
-          <>
-            <SectionTitle label="Shared Bank" count={totalSharedBankItems} />
-            <div className="flex flex-col gap-2">
-              {visibleSharedBankGroups.map((g) => (
-                <BagCard
-                  key={`sb-${g.num}`}
-                  group={g}
-                  showCharBadge={false}
-                  query={query}
-                  onLookup={handleLookup}
-                />
-              ))}
-            </div>
+            {/* Bank */}
+            {visibleBankGroups.length > 0 && (
+              <>
+                <SectionTitle label="Bank" count={totalBankItems} />
+                <div className="flex flex-col gap-2">
+                  {visibleBankGroups.map((g) => (
+                    <BagCard
+                      key={`bank-${g.character}-${g.num}`}
+                      group={g}
+                      showCharBadge={showCharBadge}
+                      query={query}
+                      onLookup={handleLookup}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Shared Bank */}
+            {visibleSharedBankGroups.length > 0 && (
+              <>
+                <SectionTitle label="Shared Bank" count={totalSharedBankItems} />
+                <div className="flex flex-col gap-2">
+                  {visibleSharedBankGroups.map((g) => (
+                    <BagCard
+                      key={`sb-${g.num}`}
+                      group={g}
+                      showCharBadge={false}
+                      query={query}
+                      onLookup={handleLookup}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

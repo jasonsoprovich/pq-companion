@@ -8,6 +8,11 @@ interface CharacterSubTabsProps {
   onChange: (next: string) => void
   /** When true, prepends an "All" tab whose value is the empty string. */
   allowAll?: boolean
+  /**
+   * Extra tab names appended after the stored characters (e.g. unimported
+   * characters whose Zeal exports were found on disk). Pass a memoized array.
+   */
+  extraNames?: string[]
   /** Optional right-aligned content (e.g. a refresh button). */
   rightSlot?: React.ReactNode
 }
@@ -21,6 +26,7 @@ export default function CharacterSubTabs({
   value,
   onChange,
   allowAll = false,
+  extraNames = [],
   rightSlot,
 }: CharacterSubTabsProps): React.ReactElement {
   const { active } = useActiveCharacter()
@@ -35,19 +41,21 @@ export default function CharacterSubTabs({
   // If the viewed value isn't valid for the current character set, fall back to
   // the active character (or All when allowed).
   useEffect(() => {
-    if (characters.length === 0) return
+    if (characters.length === 0 && extraNames.length === 0) return
     if (allowAll && value === '') return
-    const exists = characters.some((c) => c.name === value)
+    const exists = characters.some((c) => c.name === value) || extraNames.includes(value)
     if (exists) return
-    const fallback = characters.find((c) => c.name === active)?.name ?? characters[0].name
+    const fallback =
+      characters.find((c) => c.name === active)?.name ?? characters[0]?.name ?? extraNames[0]
     onChange(allowAll && !active ? '' : fallback)
-  }, [characters, value, active, allowAll, onChange])
+  }, [characters, value, active, allowAll, extraNames, onChange])
 
-  if (characters.length === 0) return <div />
+  if (characters.length === 0 && extraNames.length === 0) return <div />
 
-  const tabs: Array<{ label: string; value: string }> = []
+  const tabs: Array<{ label: string; value: string; unimported?: boolean }> = []
   if (allowAll) tabs.push({ label: 'All', value: '' })
   for (const c of characters) tabs.push({ label: c.name, value: c.name })
+  for (const name of extraNames) tabs.push({ label: name, value: name, unimported: true })
 
   return (
     <div
@@ -57,7 +65,7 @@ export default function CharacterSubTabs({
         backgroundColor: 'var(--color-surface)',
       }}
     >
-      {tabs.map(({ label, value: v }) => {
+      {tabs.map(({ label, value: v, unimported }) => {
         const activeTab = v === value
         const isActiveCharacter = v !== '' && v === active
         return (
@@ -70,8 +78,15 @@ export default function CharacterSubTabs({
               borderBottom: activeTab
                 ? '2px solid var(--color-primary)'
                 : '2px solid transparent',
+              fontStyle: unimported ? 'italic' : undefined,
             }}
-            title={isActiveCharacter ? `${label} (active character)` : label}
+            title={
+              isActiveCharacter
+                ? `${label} (active character)`
+                : unimported
+                  ? `${label} (not imported)`
+                  : label
+            }
           >
             {label}
             {isActiveCharacter && (
