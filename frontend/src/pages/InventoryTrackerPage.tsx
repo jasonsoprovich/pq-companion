@@ -100,6 +100,26 @@ function isEmptyEntry(e: InventoryEntry): boolean {
   return e.id === 0 || e.name.toLowerCase() === 'empty'
 }
 
+// Persisted view preferences. Survive app restarts (unlike useCachedState).
+const HIDE_EMPTY_BAGS_KEY = 'pq-invtracker-hide-empty-bags'
+
+function readStoredBool(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key)
+    return v === null ? fallback : v === 'true'
+  } catch {
+    return fallback
+  }
+}
+
+function writeStoredBool(key: string, value: boolean): void {
+  try {
+    localStorage.setItem(key, String(value))
+  } catch {
+    // Persistence is best-effort; the in-memory state still applies.
+  }
+}
+
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
 interface BagCardProps {
@@ -217,7 +237,7 @@ export default function InventoryTrackerPage(): React.ReactElement {
   // Empty string = "All"; a name = single-character view. Matches CharacterSubTabs.
   const [selectedChar, setSelectedChar] = useState<string>('')
   const [query, setQuery] = useState('')
-  const [hideEmptyBags, setHideEmptyBags] = useState(false)
+  const [hideEmptyBags, setHideEmptyBags] = useState(() => readStoredBool(HIDE_EMPTY_BAGS_KEY, true))
   const [modalItem, setModalItem] = useState<Item | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -483,7 +503,10 @@ export default function InventoryTrackerPage(): React.ReactElement {
               <input
                 type="checkbox"
                 checked={hideEmptyBags}
-                onChange={(e) => setHideEmptyBags(e.target.checked)}
+                onChange={(e) => {
+                  setHideEmptyBags(e.target.checked)
+                  writeStoredBool(HIDE_EMPTY_BAGS_KEY, e.target.checked)
+                }}
                 className="h-3 w-3"
               />
               Hide empty bags
