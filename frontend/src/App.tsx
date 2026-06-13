@@ -47,6 +47,7 @@ import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
 import CharactersPage from './pages/CharactersPage'
 import CharacterProgressPage from './pages/CharacterProgressPage'
 import CharacterTasksPage from './pages/CharacterTasksPage'
+import GearUpgradeFinderPage from './pages/GearUpgradeFinderPage'
 import CharacterSpellsetsPage from './pages/CharacterSpellsetsPage'
 import CharactersLayout from './components/CharactersLayout'
 import { ActiveCharacterProvider } from './contexts/ActiveCharacterContext'
@@ -185,6 +186,7 @@ export default function App(): React.ReactElement {
             <Route path="keys" element={<KeyTrackerPage />} />
             <Route path="lockouts" element={<LockoutTrackerPage />} />
             <Route path="wishlist" element={<WishlistPage />} />
+            <Route path="upgrades" element={<GearUpgradeFinderPage />} />
             <Route path="tasks" element={<CharacterTasksPage />} />
           </Route>
           <Route path="character-progress" element={<Navigate to="/characters/progress" replace />} />

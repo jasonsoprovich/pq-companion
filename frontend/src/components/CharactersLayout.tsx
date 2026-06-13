@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { Users, TrendingUp, Package, BookOpen, Library, KeyRound, ListChecks, Star, Hourglass } from 'lucide-react'
+import { Users, TrendingUp, Package, BookOpen, Library, KeyRound, ListChecks, Star, Hourglass, Wand2 } from 'lucide-react'
 
 interface CharactersTab {
   to: string
@@ -17,6 +17,7 @@ const TABS: CharactersTab[] = [
   { to: '/characters/keys', label: 'Keys', icon: <KeyRound size={14} /> },
   { to: '/characters/lockouts', label: 'Lockouts', icon: <Hourglass size={14} /> },
   { to: '/characters/wishlist', label: 'Wishlist', icon: <Star size={14} /> },
+  { to: '/characters/upgrades', label: 'Gear Upgrades', icon: <Wand2 size={14} /> },
   { to: '/characters/tasks', label: 'Tasks', icon: <ListChecks size={14} /> },
 ]
 

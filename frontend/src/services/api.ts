@@ -1072,6 +1072,106 @@ export function getCharacterAAs(id: number): Promise<CharacterAAsResponse> {
   return get<CharacterAAsResponse>(`/api/characters/${id}/aas`)
 }
 
+// ── Gear Upgrade Finder ───────────────────────────────────────────────────────
+
+// UpgradeWeights mirrors backend internal/upgrade.Weights — a per-stat scoring
+// weight on an HP-equivalent scale (e.g. ac: 5 means 1 AC = 5 HP).
+export interface UpgradeWeights {
+  hp: number
+  mana: number
+  ac: number
+  str: number
+  sta: number
+  agi: number
+  dex: number
+  wis: number
+  int: number
+  cha: number
+  mr: number
+  fr: number
+  cr: number
+  dr: number
+  pr: number
+}
+
+export interface UpgradeStatDelta {
+  stat: string
+  cand: number
+  current: number
+  effective: number
+  weight: number
+  weighted: number
+  capped: boolean
+}
+
+export interface UpgradeCurrentItem {
+  id: number
+  name: string
+  icon: number
+  stats: Record<string, number>
+  focus_effect: number
+  focus_name: string
+}
+
+export interface UpgradeCandidate {
+  id: number
+  name: string
+  icon: number
+  slots: number
+  nodrop: number
+  req_level: number
+  rec_level: number
+  focus_effect: number
+  focus_name: string
+  score: number
+  deltas: UpgradeStatDelta[]
+}
+
+export interface UpgradesResponse {
+  slot: string
+  slot_label: string
+  class: number
+  level: number
+  weights: UpgradeWeights
+  current_items: UpgradeCurrentItem[]
+  baseline_item_id: number
+  candidates: UpgradeCandidate[]
+  considered: number
+  has_current_gear: boolean
+}
+
+export interface UpgradeWeightsResponse {
+  weights: UpgradeWeights
+  is_custom: boolean
+  archetype: string
+}
+
+export function getCharacterUpgrades(
+  id: number,
+  opts: { slot: string; showAll?: boolean; limit?: number; weights?: UpgradeWeights },
+): Promise<UpgradesResponse> {
+  const p = new URLSearchParams({ slot: opts.slot })
+  if (opts.showAll) p.set('show_all', '1')
+  if (opts.limit) p.set('limit', String(opts.limit))
+  if (opts.weights) p.set('weights', JSON.stringify(opts.weights))
+  return get<UpgradesResponse>(`/api/characters/${id}/upgrades?${p.toString()}`)
+}
+
+export function getCharacterUpgradeWeights(id: number): Promise<UpgradeWeightsResponse> {
+  return get<UpgradeWeightsResponse>(`/api/characters/${id}/upgrade-weights`)
+}
+
+export function setCharacterUpgradeWeights(
+  id: number,
+  weights: UpgradeWeights,
+): Promise<UpgradeWeights> {
+  return put<UpgradeWeights>(`/api/characters/${id}/upgrade-weights`, weights)
+}
+
+export function resetCharacterUpgradeWeights(id: number): Promise<UpgradeWeights> {
+  return del<UpgradeWeights>(`/api/characters/${id}/upgrade-weights`)
+}
+
 // ── Spell modifiers (focus extensions from items + AAs) ───────────────────────
 
 export interface SpellModifierLimits {
