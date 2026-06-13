@@ -5,6 +5,21 @@ import type {
   HealerStats,
 } from '../types/combat'
 
+// AggregatableFight is the structural subset aggregateRecentFights reads. Both
+// FightSummary (live combat log / overlay) and StoredFight (persisted history)
+// satisfy it, so the same pooling powers all three surfaces.
+export type AggregatableFight = Pick<
+  FightSummary,
+  | 'start_time'
+  | 'duration_seconds'
+  | 'total_damage'
+  | 'you_damage'
+  | 'total_heal'
+  | 'you_heal'
+  | 'combatants'
+  | 'healers'
+>
+
 // ROLLING_WINDOW_SIZE is how many recent completed fights the "Last N mobs"
 // meter scope pools over. It is deliberately a separate constant from the
 // backend's maxRecentFights (the in-memory fight scrollback cap, currently
@@ -51,7 +66,7 @@ interface HealAccum {
 // they are within one fight), so bar % and ranking still line up; Personal
 // stays per-entity and fair to a late-joiner or OOM caster.
 export function aggregateRecentFights(
-  fights: FightSummary[],
+  fights: AggregatableFight[],
   windowSize: number = ROLLING_WINDOW_SIZE,
 ): FightState | null {
   if (!fights || fights.length === 0) return null

@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Hourglass,
   Search,
+  Sigma,
   Trash2,
   RefreshCw,
   User,
@@ -20,15 +21,17 @@ import {
   clearCombatHistory,
   getCombatHistoryFacets,
 } from '../services/api'
-import type { EntityStats, HealerStats, HistoryFacets, HistoryListResponse, StoredFight } from '../types/combat'
+import type { EntityStats, FightState, HealerStats, HistoryFacets, HistoryListResponse, StoredFight } from '../types/combat'
 import { groupByEventSession, fmtSessionGap, type SessionBreakReason } from '../lib/sessionGrouping'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
+import { aggregateRecentFights } from '../lib/rollingWindow'
 import {
   useDPSMode,
   dpsForMode,
   dpsModeAbbrev,
   dpsModeLabel,
   fightAggregateDPS,
+  playerAggregateDPS,
   type DPSMode,
 } from '../hooks/useDPSMode'
 
@@ -196,6 +199,8 @@ function FilterBar({
   onToggleDPSMode,
   sessionGrouping,
   onToggleSessionGrouping,
+  combinedView,
+  onToggleCombinedView,
 }: {
   filter: UIFilter
   facets: HistoryFacets
@@ -212,6 +217,8 @@ function FilterBar({
   onToggleDPSMode: () => void
   sessionGrouping: boolean
   onToggleSessionGrouping: () => void
+  combinedView: boolean
+  onToggleCombinedView: () => void
 }): React.ReactElement {
   const inputStyle: React.CSSProperties = {
     padding: '4px 8px',
@@ -473,6 +480,29 @@ function FilterBar({
         >
           {dpsModeIcon(dpsMode)}
           {dpsModeLabel(dpsMode)}
+        </button>
+        <button
+          onClick={onToggleCombinedView}
+          title={
+            combinedView
+              ? 'Showing a pooled breakdown across the loaded fights — click for the per-fight list'
+              : 'Pool the loaded fights into one combined breakdown (group performance across these mobs)'
+          }
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 8px',
+            fontSize: 11,
+            background: combinedView ? 'var(--color-primary)' : 'var(--color-background)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4,
+            color: combinedView ? '#000' : 'var(--color-foreground)',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <Sigma size={11} /> Combined
         </button>
         <button
           onClick={onToggleMeOnly}
@@ -1003,6 +1033,83 @@ type ConfirmAction =
 
 // ── page ──────────────────────────────────────────────────────────────────────
 
+// CombinedView pools the loaded page of saved fights into one breakdown so a
+// user can review group performance across a span of mobs instead of opening
+// each fight. Scope follows the current filters + the loaded page (PAGE_SIZE),
+// so narrowing by NPC/zone/character/date answers "how did the group do across
+// these fights". Reuses CombatantTable/HealerTable for identical rendering.
+function CombinedView({
+  fights,
+  combine,
+  mode,
+}: {
+  fights: StoredFight[]
+  combine: boolean
+  mode: DPSMode
+}): React.ReactElement {
+  const agg: FightState | null = useMemo(
+    () => aggregateRecentFights(fights, fights.length),
+    [fights],
+  )
+
+  if (!agg || agg.combatants.length === 0) {
+    return (
+      <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-muted)', fontSize: 12 }}>
+        No combatant data to combine.
+      </div>
+    )
+  }
+
+  const totalDPS = mode === 'encounter'
+    ? agg.total_dps
+    : fightAggregateDPS(agg.total_damage, agg.duration_seconds, agg.combatants, mode)
+  const youDPS = playerAggregateDPS(agg.you_damage, agg.duration_seconds, agg.combatants, 'You', mode)
+
+  return (
+    <div style={{ padding: '10px 14px' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap',
+          padding: '8px 10px',
+          marginBottom: 10,
+          fontSize: 12,
+          borderRadius: 6,
+          backgroundColor: 'rgba(129,140,248,0.10)',
+          border: '1px solid var(--color-border)',
+          color: '#a5b4fc',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+          <Sigma size={13} /> Combined
+        </span>
+        <span style={{ color: 'var(--color-muted)' }}>
+          {fights.length} fight{fights.length !== 1 ? 's' : ''} on this page
+        </span>
+        <span style={{ color: 'var(--color-muted)' }}>·</span>
+        <span style={{ color: 'var(--color-muted)' }}>{fmtDuration(agg.duration_seconds)} total</span>
+        <span style={{ color: 'var(--color-muted)' }}>·</span>
+        <span style={{ color: 'var(--color-foreground)' }}>{fmt(agg.total_damage)} dmg</span>
+        <span style={{ color: 'var(--color-muted)' }}>·</span>
+        <span style={{ color: '#f97316' }}>{fmtDPS(totalDPS)} {dpsModeAbbrev(mode)}</span>
+        {agg.you_damage > 0 && (
+          <span style={{ color: 'var(--color-primary)' }}>{fmtDPS(youDPS)} me</span>
+        )}
+      </div>
+      <CombatantTable
+        combatants={agg.combatants}
+        totalDamage={agg.total_damage}
+        mode={mode}
+        combine={combine}
+        fightDuration={agg.duration_seconds}
+      />
+      <HealerTable healers={agg.healers} />
+    </div>
+  )
+}
+
 export default function CombatHistoryPage(): React.ReactElement {
   const [filter, setFilter] = useState<UIFilter>(EMPTY_FILTER)
   // appliedFilter is what's in flight to the backend; filter tracks the form
@@ -1017,6 +1124,7 @@ export default function CombatHistoryPage(): React.ReactElement {
   const [confirm, setConfirm] = useState<ConfirmAction>(null)
   const { mode: dpsMode, toggle: toggleDPSMode } = useDPSMode()
   const [combine, setCombine] = useCombinePetWithOwner()
+  const [combinedView, setCombinedView] = useState(false)
   const [meOnly, setMeOnly] = useState(false)
   const [sessionGrouping, setSessionGroupingState] = useState<boolean>(() => getSessionGroupingEnabled())
   const toggleSessionGrouping = useCallback(() => {
@@ -1162,6 +1270,8 @@ export default function CombatHistoryPage(): React.ReactElement {
         onToggleDPSMode={toggleDPSMode}
         sessionGrouping={sessionGrouping}
         onToggleSessionGrouping={toggleSessionGrouping}
+        combinedView={combinedView}
+        onToggleCombinedView={() => setCombinedView((v) => !v)}
       />
 
       {error && (
@@ -1178,30 +1288,32 @@ export default function CombatHistoryPage(): React.ReactElement {
         </div>
       )}
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '20px 140px 60px 90px 90px 1fr 24px',
-          gap: '0 12px',
-          padding: '5px 14px',
-          fontSize: 10,
-          fontWeight: 600,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          color: 'var(--color-muted)',
-          borderBottom: '1px solid var(--color-border)',
-          backgroundColor: 'var(--color-surface-2)',
-          flexShrink: 0,
-        }}
-      >
-        <span />
-        <span>Date</span>
-        <span style={{ textAlign: 'right' }}>Length</span>
-        <span style={{ textAlign: 'right' }}>Total Dmg</span>
-        <span style={{ textAlign: 'right' }}>DPS</span>
-        <span>NPC · Zone · Character</span>
-        <span />
-      </div>
+      {!combinedView && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '20px 140px 60px 90px 90px 1fr 24px',
+            gap: '0 12px',
+            padding: '5px 14px',
+            fontSize: 10,
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            color: 'var(--color-muted)',
+            borderBottom: '1px solid var(--color-border)',
+            backgroundColor: 'var(--color-surface-2)',
+            flexShrink: 0,
+          }}
+        >
+          <span />
+          <span>Date</span>
+          <span style={{ textAlign: 'right' }}>Length</span>
+          <span style={{ textAlign: 'right' }}>Total Dmg</span>
+          <span style={{ textAlign: 'right' }}>DPS</span>
+          <span>NPC · Zone · Character</span>
+          <span />
+        </div>
+      )}
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {loading && fights.length === 0 ? (
@@ -1232,6 +1344,8 @@ export default function CombatHistoryPage(): React.ReactElement {
           >
             {empty}
           </div>
+        ) : combinedView ? (
+          <CombinedView fights={fights} combine={combine} mode={dpsMode} />
         ) : (
           groupByEventSession(
             fights,

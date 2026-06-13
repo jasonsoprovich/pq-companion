@@ -16,13 +16,15 @@ import {
   Activity,
   Hourglass,
   User,
+  Sigma,
 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getCombatState, getLogStatus, resetCombatState } from '../services/api'
-import type { CombatState, DeathRecord, EntityStats, FightSummary } from '../types/combat'
+import type { CombatState, DeathRecord, EntityStats, FightState, FightSummary } from '../types/combat'
 import type { LogTailerStatus } from '../types/logEvent'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
 import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, playerAggregateDPS, type DPSMode } from '../hooks/useDPSMode'
+import { aggregateRecentFights } from '../lib/rollingWindow'
 import { groupBySession, fmtSessionGap } from '../lib/sessionGrouping'
 import { WSEvent } from '../lib/wsEvents'
 
@@ -585,6 +587,8 @@ function FilterBar({
   onToggleCombine,
   dpsMode,
   onToggleDPSMode,
+  combinedView,
+  onToggleCombinedView,
 }: {
   filters: FilterState
   onChange: (f: FilterState) => void
@@ -596,6 +600,8 @@ function FilterBar({
   onToggleCombine: () => void
   dpsMode: DPSMode
   onToggleDPSMode: () => void
+  combinedView: boolean
+  onToggleCombinedView: () => void
 }): React.ReactElement {
   return (
     <div
@@ -707,6 +713,31 @@ function FilterBar({
       >
         {dpsModeIcon(dpsMode)}
         {dpsModeLabel(dpsMode)}
+      </button>
+
+      {/* Combined view toggle: pool all visible fights into one breakdown. */}
+      <button
+        onClick={onToggleCombinedView}
+        title={
+          combinedView
+            ? 'Showing a pooled breakdown across all visible fights — click for the per-fight list'
+            : 'Pool all visible fights into one combined breakdown (rolling average over these mobs)'
+        }
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '4px 8px',
+          fontSize: 11,
+          background: combinedView ? 'var(--color-primary)' : 'var(--color-background)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 4,
+          color: combinedView ? '#000' : 'var(--color-foreground)',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <Sigma size={11} /> Combined
       </button>
 
       {/* Me only toggle */}
@@ -873,12 +904,90 @@ function exportFightsCSV(fights: FightSummary[]): void {
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
+// CombinedView pools the currently-visible fights into a single damage
+// breakdown — the "last N mobs" rolling average, but for after-the-fact
+// review. Reuses CombatantTable so the per-mode/pet-rollup behaviour matches
+// the per-fight rows exactly. The number pooled follows the active filters,
+// so "Me only" + a search + Combined answers "how did X do across these mobs".
+function CombinedView({
+  fights,
+  combine,
+  mode,
+}: {
+  fights: FightSummary[]
+  combine: boolean
+  mode: DPSMode
+}): React.ReactElement {
+  const agg: FightState | null = useMemo(
+    () => aggregateRecentFights(fights, fights.length),
+    [fights],
+  )
+
+  if (!agg || agg.combatants.length === 0) {
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--color-muted)' }}>
+        <Sigma size={32} style={{ opacity: 0.3 }} />
+        <p style={{ fontSize: 12, margin: 0 }}>No combatant data to combine</p>
+      </div>
+    )
+  }
+
+  const totalDPS = mode === 'encounter'
+    ? agg.total_dps
+    : fightAggregateDPS(agg.total_damage, agg.duration_seconds, agg.combatants, mode)
+  const youDPS = playerAggregateDPS(agg.you_damage, agg.duration_seconds, agg.combatants, 'You', mode)
+
+  return (
+    <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap',
+          padding: '8px 14px',
+          fontSize: 12,
+          borderBottom: '1px solid var(--color-border)',
+          backgroundColor: 'rgba(129,140,248,0.10)',
+          color: '#a5b4fc',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+          <Sigma size={13} /> Combined
+        </span>
+        <span style={{ color: 'var(--color-muted)' }}>
+          {fights.length} fight{fights.length !== 1 ? 's' : ''}
+        </span>
+        <span style={{ color: 'var(--color-muted)' }}>·</span>
+        <span style={{ color: 'var(--color-muted)' }}>{fmtDuration(agg.duration_seconds)} total</span>
+        <span style={{ color: 'var(--color-muted)' }}>·</span>
+        <span style={{ color: 'var(--color-foreground)' }}>{fmt(agg.total_damage)} dmg</span>
+        <span style={{ color: 'var(--color-muted)' }}>·</span>
+        <span style={{ color: '#f97316' }}>{fmtDPS(totalDPS)} {dpsModeAbbrev(mode)}</span>
+        {agg.you_damage > 0 && (
+          <span style={{ color: 'var(--color-primary)' }}>{fmtDPS(youDPS)} me</span>
+        )}
+      </div>
+      <div style={{ padding: '8px 14px' }}>
+        <CombatantTable
+          combatants={agg.combatants}
+          totalDamage={agg.total_damage}
+          combine={combine}
+          fightDuration={agg.duration_seconds}
+          mode={mode}
+        />
+      </div>
+    </div>
+  )
+}
+
 export default function CombatLogPage(): React.ReactElement {
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
   const [filters, setFilters] = useState<FilterState>({ search: '', timeRange: 'all', meOnly: false })
   const [sessionCopied, setSessionCopied] = useState(false)
   const [combine, setCombine] = useCombinePetWithOwner()
+  const [combinedView, setCombinedView] = useState(false)
   const { mode: dpsMode, toggle: toggleDPSMode } = useDPSMode()
 
   useEffect(() => {
@@ -957,6 +1066,8 @@ export default function CombatLogPage(): React.ReactElement {
         onToggleCombine={() => setCombine(!combine)}
         dpsMode={dpsMode}
         onToggleDPSMode={toggleDPSMode}
+        combinedView={combinedView}
+        onToggleCombinedView={() => setCombinedView((v) => !v)}
       />
 
       {combat === null ? (
@@ -993,6 +1104,12 @@ export default function CombatLogPage(): React.ReactElement {
                 : 'Fight history will appear here as you engage enemies'}
             </p>
           </div>
+          {deaths.length > 0 && <DeathLogSection deaths={deaths} />}
+        </>
+      ) : combinedView ? (
+        <>
+          <CombinedView fights={visibleFights} combine={combine} mode={dpsMode} />
+          <SessionFooter combat={combat} />
           {deaths.length > 0 && <DeathLogSection deaths={deaths} />}
         </>
       ) : (
