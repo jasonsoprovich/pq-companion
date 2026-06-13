@@ -142,17 +142,116 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := upgrade.Context{Level: char.Level, Current: statLineFromBlock(h.currentTotals(char))}
 
-	// Items currently worn in this slot (0, 1, or 2 for dual slots).
-	currentItems, hasGear := h.equippedInSlot(cfg.EQPath, char.Name, slot)
+	byLoc, hasGear := h.loadEquipped(cfg.EQPath, char.Name)
+	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, limit)
 
-	// Baseline = the worn item we'd actually replace: the lowest-scoring one in
-	// the slot (you upgrade your weakest ring first). Empty when slot is bare.
+	writeJSON(w, http.StatusOK, upgradesResponse{
+		Slot:           slot.Key,
+		SlotLabel:      slot.Label,
+		Class:          char.Class,
+		Level:          char.Level,
+		Weights:        weights,
+		CurrentItems:   current,
+		BaselineItemID: baselineID,
+		Candidates:     results,
+		Considered:     considered,
+		HasCurrentGear: hasGear,
+	})
+}
+
+// overviewSlot is one slot's best upgrade in the all-slots overview.
+type overviewSlot struct {
+	Slot         string               `json:"slot"`
+	SlotLabel    string               `json:"slot_label"`
+	CurrentItems []upgradeCurrentItem `json:"current_items"`
+	Best         *upgradeResult       `json:"best"`
+	Considered   int                  `json:"considered"`
+}
+
+type overviewResponse struct {
+	Class          int             `json:"class"`
+	Level          int             `json:"level"`
+	Weights        upgrade.Weights `json:"weights"`
+	Slots          []overviewSlot  `json:"slots"`
+	HasCurrentGear bool            `json:"has_current_gear"`
+}
+
+// upgradesOverview handles GET /api/characters/{id}/upgrades/overview — the
+// single best upgrade per slot. It parses the Quarmy export and computes the
+// character's totals once, then scores every slot, so the whole sweep is one
+// request instead of ~19 round trips.
+func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	char, ok, err := h.store.Get(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+	cfg := h.mgr.Get()
+	if cfg.EQPath == "" {
+		writeError(w, http.StatusBadRequest, "eq_path not configured")
+		return
+	}
+
+	weights := h.resolveWeights(char)
+	if raw := r.URL.Query().Get("weights"); raw != "" {
+		var override upgrade.Weights
+		if err := json.Unmarshal([]byte(raw), &override); err == nil {
+			weights = override
+		}
+	}
+	ctx := upgrade.Context{Level: char.Level, Current: statLineFromBlock(h.currentTotals(char))}
+	byLoc, hasGear := h.loadEquipped(cfg.EQPath, char.Name)
+
+	slots := make([]overviewSlot, 0, len(upgradeSlots))
+	for _, s := range upgradeSlots {
+		current, _, results, considered := h.scoreSlot(char, ctx, weights, s, byLoc, false, 1)
+		var best *upgradeResult
+		if len(results) > 0 {
+			best = &results[0]
+		}
+		slots = append(slots, overviewSlot{
+			Slot:         s.Key,
+			SlotLabel:    s.Label,
+			CurrentItems: current,
+			Best:         best,
+			Considered:   considered,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, overviewResponse{
+		Class:          char.Class,
+		Level:          char.Level,
+		Weights:        weights,
+		Slots:          slots,
+		HasCurrentGear: hasGear,
+	})
+}
+
+// scoreSlot ranks candidates for one slot against the worn baseline (the
+// lowest-scoring item in the slot — you upgrade your weakest ring first). It
+// takes a pre-parsed equipped map so a multi-slot sweep parses the Quarmy
+// export only once. Returns the worn items, the baseline item id, the ranked
+// results (truncated to limit), and how many candidates were considered.
+func (h *charactersHandler) scoreSlot(
+	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
+	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll bool, limit int,
+) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int) {
+	current = h.equippedItemsForSlot(byLoc, slot)
+
 	baseline := upgrade.StatLine{}
-	baselineID := 0
-	if len(currentItems) > 0 {
-		worst := currentItems[0]
+	if len(current) > 0 {
+		worst := current[0]
 		worstScore := upgrade.Score(ctx, weights, upgrade.StatLine{}, worst.Stats).Score
-		for _, ci := range currentItems[1:] {
+		for _, ci := range current[1:] {
 			if s := upgrade.Score(ctx, weights, upgrade.StatLine{}, ci.Stats).Score; s < worstScore {
 				worst, worstScore = ci, s
 			}
@@ -172,16 +271,15 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 		MaxLevel: char.Level,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return current, baselineID, nil, 0
 	}
+	considered = len(cands)
 
-	worn := make(map[int]bool, len(currentItems))
-	for _, ci := range currentItems {
+	worn := make(map[int]bool, len(current))
+	for _, ci := range current {
 		worn[ci.ID] = true
 	}
-
-	results := make([]upgradeResult, 0, len(cands))
+	results = make([]upgradeResult, 0, len(cands))
 	for _, c := range cands {
 		if worn[c.ID] {
 			continue // don't suggest what's already equipped in this slot
@@ -208,19 +306,7 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	if len(results) > limit {
 		results = results[:limit]
 	}
-
-	writeJSON(w, http.StatusOK, upgradesResponse{
-		Slot:           slot.Key,
-		SlotLabel:      slot.Label,
-		Class:          char.Class,
-		Level:          char.Level,
-		Weights:        weights,
-		CurrentItems:   currentItems,
-		BaselineItemID: baselineID,
-		Candidates:     results,
-		Considered:     len(cands),
-		HasCurrentGear: hasGear,
-	})
+	return current, baselineID, results, considered
 }
 
 // resolveWeights returns the character's saved upgrade weights, falling back to
@@ -351,11 +437,11 @@ func (h *charactersHandler) currentTotals(char character.Character) statBlock {
 	return h.deriveBlock(char, aa, spellHasteSplit{}, skills, itemBlock, itemHaste, nil)
 }
 
-// equippedInSlot returns the items currently worn in a logical slot, parsed
-// from the character's Quarmy export. hasGear is false when no export exists,
-// so callers can disable current-item deltas. A dual slot (Ear/Wrist/Fingers)
-// may return two items.
-func (h *charactersHandler) equippedInSlot(eqPath, charName string, slot upgradeSlot) (items []upgradeCurrentItem, hasGear bool) {
+// loadEquipped parses the character's Quarmy export once into a location →
+// worn-entries map. ok is false when no export exists, so callers can disable
+// current-item comparison. Dual slots (Ear/Wrist/Fingers) collect under one
+// canonical location, so a location may hold two entries.
+func (h *charactersHandler) loadEquipped(eqPath, charName string) (byLoc map[string][]zeal.InventoryEntry, ok bool) {
 	path := zeal.FindQuarmyFile(eqPath, charName)
 	if path == "" {
 		return nil, false
@@ -364,10 +450,20 @@ func (h *charactersHandler) equippedInSlot(eqPath, charName string, slot upgrade
 	if err != nil || q == nil {
 		return nil, false
 	}
-	for _, entry := range q.Inventory {
-		if entry.Location != slot.Location || entry.ID <= 0 {
-			continue
+	byLoc = make(map[string][]zeal.InventoryEntry)
+	for _, e := range q.Inventory {
+		if e.ID > 0 {
+			byLoc[e.Location] = append(byLoc[e.Location], e)
 		}
+	}
+	return byLoc, true
+}
+
+// equippedItemsForSlot resolves the worn items in a logical slot from a
+// pre-parsed equipped map.
+func (h *charactersHandler) equippedItemsForSlot(byLoc map[string][]zeal.InventoryEntry, slot upgradeSlot) []upgradeCurrentItem {
+	var items []upgradeCurrentItem
+	for _, entry := range byLoc[slot.Location] {
 		item, err := h.db.GetItem(entry.ID)
 		if err != nil || item == nil {
 			continue
@@ -381,7 +477,7 @@ func (h *charactersHandler) equippedInSlot(eqPath, charName string, slot upgrade
 			FocusName:   item.FocusName,
 		})
 	}
-	return items, true
+	return items
 }
 
 // statLineFromBlock copies the capped attribute/resist totals from a derived

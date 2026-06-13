@@ -162,6 +162,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/{id}/equipped-stats", charactersH.equippedStats)
 			r.Post("/{id}/derived-stats", charactersH.derivedStats)
 			r.Get("/{id}/upgrades", charactersH.upgrades)
+			r.Get("/{id}/upgrades/overview", charactersH.upgradesOverview)
 			r.Get("/{id}/upgrade-weights", charactersH.upgradeWeights)
 			r.Put("/{id}/upgrade-weights", charactersH.updateUpgradeWeights)
 			r.Delete("/{id}/upgrade-weights", charactersH.resetUpgradeWeights)
