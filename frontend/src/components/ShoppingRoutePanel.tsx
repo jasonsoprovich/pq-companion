@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Map as MapIcon, MapPin, RefreshCw, AlertCircle, X, Navigation, BookOpen, Ban, ChevronDown } from 'lucide-react'
 import { getShoppingRoute } from '../services/api'
-import type { ShoppingRoute, ShoppingStop, ShoppingSpell, ShoppingCandidateZone, ZoneAlignment } from '../types/spell'
+import type { ShoppingRoute, ShoppingStop, ShoppingSpell, ShoppingVendor, ShoppingCandidateZone, ZoneAlignment } from '../types/spell'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { usePoPEnabled } from '../hooks/usePoPEnabled'
 import { formatNPCName } from './SourceNPCLink'
@@ -65,6 +65,67 @@ const alignmentColor: Record<ZoneAlignment, string> = {
   evil: '#f87171',
 }
 
+// groupVendors assigns each spell at a stop to exactly one vendor so the buy
+// list is unambiguous ("grab these from this merchant"). Vendors are tried in
+// order of how many of the needed spells they carry (most first), so the
+// merchant with the deepest selection gets credited before the stragglers —
+// prices are roughly uniform per town, so concentration is what saves walking.
+// Any spell not claimed by a vendor (shouldn't happen, but be safe) is returned
+// as leftover rather than silently dropped.
+function groupVendors(stop: ShoppingStop): {
+  groups: { vendor: ShoppingVendor; spells: ShoppingSpell[] }[]
+  leftover: ShoppingSpell[]
+} {
+  const byId = new Map(stop.spells.map((s) => [s.id, s]))
+  const ordered = [...stop.vendors].sort(
+    (a, b) =>
+      b.spell_ids.length - a.spell_ids.length ||
+      formatNPCName(a.name).localeCompare(formatNPCName(b.name)),
+  )
+  const assigned = new Set<number>()
+  const groups: { vendor: ShoppingVendor; spells: ShoppingSpell[] }[] = []
+  for (const v of ordered) {
+    const spells: ShoppingSpell[] = []
+    for (const id of v.spell_ids) {
+      if (assigned.has(id)) continue
+      const s = byId.get(id)
+      if (s) {
+        spells.push(s)
+        assigned.add(id)
+      }
+    }
+    if (spells.length > 0) {
+      spells.sort((a, b) => a.name.localeCompare(b.name))
+      groups.push({ vendor: v, spells })
+    }
+  }
+  const leftover = stop.spells.filter((s) => !assigned.has(s.id))
+  return { groups, leftover }
+}
+
+// dropSpellFromRoute removes one spell from an already-solved route in place,
+// without re-solving. This keeps the itinerary frozen as the player shops:
+// checking a spell off drops it (and any vendor/stop it empties) but never
+// reshuffles which towns the rest of the run visits. Re-optimizing is an
+// explicit action (the Re-plan button).
+function dropSpellFromRoute(route: ShoppingRoute, id: number): ShoppingRoute {
+  const stops = route.stops
+    .map((s) => ({
+      ...s,
+      spells: s.spells.filter((sp) => sp.id !== id),
+      vendors: s.vendors
+        .map((v) => ({ ...v, spell_ids: v.spell_ids.filter((x) => x !== id) }))
+        .filter((v) => v.spell_ids.length > 0),
+    }))
+    .filter((s) => s.spells.length > 0)
+  return {
+    ...route,
+    stops,
+    total_zones: stops.length,
+    total_spells: stops.reduce((n, s) => n + s.spells.length, 0),
+  }
+}
+
 // StopCard renders one zone in the itinerary.
 function StopCard({
   stop, index, onExcludeSpell, onExcludeZone,
@@ -75,6 +136,7 @@ function StopCard({
   onExcludeZone: (zoneShort: string) => void
 }): React.ReactElement {
   const navigate = useNavigate()
+  const { groups, leftover } = groupVendors(stop)
   return (
     <div
       className="rounded border px-3 py-2"
@@ -124,37 +186,22 @@ function StopCard({
         </button>
       </div>
 
-      {/* Spells covered at this stop — each removable */}
-      <div className="mt-1.5 flex flex-wrap gap-1">
-        {stop.spells.map((s) => (
-          <span
-            key={s.id}
-            className="group flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]"
-            style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-foreground)' }}
+      {/* Vendors, each with the spells to grab from them as children. The
+          merchant carrying the most of your list is listed first. */}
+      <div className="mt-2 flex flex-col gap-2">
+        {groups.map(({ vendor, spells }) => (
+          <div
+            key={vendor.id}
+            className="pl-2"
+            style={{ borderLeft: '2px solid var(--color-border)' }}
           >
-            {s.name}
-            <button
-              onClick={() => onExcludeSpell(s)}
-              className="opacity-40 transition-opacity hover:opacity-100"
-              title="Remove this spell from the route"
-            >
-              <X size={10} />
-            </button>
-          </span>
-        ))}
-      </div>
-
-      {/* Vendors */}
-      {stop.vendors.length > 0 && (
-        <div className="mt-2 flex flex-col gap-0.5">
-          {stop.vendors.map((v) => (
-            <div key={v.id} className="flex items-center justify-between gap-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
               <button
-                onClick={() => navigate(`/npcs?select=${v.id}`)}
-                className="min-w-0 truncate text-left underline decoration-dotted"
+                onClick={() => navigate(`/npcs?select=${vendor.id}`)}
+                className="min-w-0 truncate text-left text-sm font-medium underline decoration-dotted"
                 style={{ color: 'var(--color-primary)' }}
               >
-                {formatNPCName(v.name)}
+                {formatNPCName(vendor.name)}
               </button>
               <span
                 className="flex shrink-0 items-center gap-1 text-xs tabular-nums"
@@ -162,12 +209,57 @@ function StopCard({
                 title="In-game location (X, Y)"
               >
                 <MapPin size={10} />
-                {Math.round(v.x)}, {Math.round(v.y)}
+                {Math.round(vendor.x)}, {Math.round(vendor.y)}
               </span>
             </div>
-          ))}
-        </div>
-      )}
+            <div className="mt-1 flex flex-wrap gap-1">
+              {spells.map((s) => (
+                <span
+                  key={s.id}
+                  className="group flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]"
+                  style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-foreground)' }}
+                >
+                  {s.name}
+                  <button
+                    onClick={() => onExcludeSpell(s)}
+                    className="opacity-40 transition-opacity hover:opacity-100"
+                    title="Mark as bought — drops it from the run"
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {/* Defensive: spells with no resolvable vendor at this stop. */}
+        {leftover.length > 0 && (
+          <div className="pl-2" style={{ borderLeft: '2px solid var(--color-border)' }}>
+            <div className="text-xs font-medium" style={{ color: 'var(--color-muted)' }}>
+              Other vendor
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {leftover.map((s) => (
+                <span
+                  key={s.id}
+                  className="group flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]"
+                  style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-foreground)' }}
+                >
+                  {s.name}
+                  <button
+                    onClick={() => onExcludeSpell(s)}
+                    className="opacity-40 transition-opacity hover:opacity-100"
+                    title="Mark as bought — drops it from the run"
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -193,6 +285,11 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
   const [route, setRoute] = useState<ShoppingRoute | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // The route is frozen once solved: checking spells off updates it locally
+  // (see removeSpell) but never re-solves. `replan` is bumped to force a fresh
+  // solve, and `stale` tracks whether anything's been checked off since.
+  const [replan, setReplan] = useState(0)
+  const [stale, setStale] = useState(false)
 
   // Persist preferences. (The spell selection itself is owned and persisted by
   // the checklist page, per character.)
@@ -202,27 +299,41 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
   useEffect(() => { saveJSON(LS_ZONES, excludeZones) }, [excludeZones])
 
   // Stable dependency keys so the fetch only re-runs on real changes.
-  const activeKey = spellIds.join(',')
   const alignKey = [...excludeAlignments].sort().join(',')
   const zonesKey = [...excludeZones].sort().join(',')
 
+  // A fresh solve runs only on intentional changes — a filter toggle or an
+  // explicit Re-plan. Checking spells off (the spellIds prop shrinking) does
+  // NOT re-solve; removeSpell updates the frozen route locally instead. The
+  // fetch always reads the current spellIds, so Re-plan optimizes for whatever
+  // is still left to buy.
   useEffect(() => {
     let cancelled = false
     if (spellIds.length === 0) {
       setRoute(EMPTY_ROUTE)
       setLoading(false)
       setError(null)
+      setStale(false)
       return
     }
     setLoading(true)
     setError(null)
     getShoppingRoute(spellIds, { excludeAlignments, startZone, includePoK, excludeZones })
-      .then((r) => { if (!cancelled) setRoute(r) })
+      .then((r) => { if (!cancelled) { setRoute(r); setStale(false) } })
       .catch((err: Error) => { if (!cancelled) setError(err.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey, alignKey, startZone, includePoK, zonesKey])
+  }, [alignKey, startZone, includePoK, zonesKey, replan])
+
+  // Check a spell off the run: drop it from the frozen route locally and tell
+  // the page (which persists the per-character selection), but leave the rest
+  // of the itinerary untouched. The route is now stale vs. a fresh solve.
+  const removeSpell = (id: number) => {
+    setRoute((r) => (r ? dropSpellFromRoute(r, id) : r))
+    setStale(true)
+    onRemoveSpell(id)
+  }
 
   const toggleAlignment = (a: ZoneAlignment) =>
     setExcludeAlignments((prev) => (prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]))
@@ -360,6 +471,22 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
             Skip towns{excludeZones.length > 0 ? ` (${excludeZones.length})` : ''}
             <ChevronDown size={11} style={{ transform: showZonePicker ? 'rotate(180deg)' : 'none' }} />
           </button>
+
+          {/* Re-plan: re-solve for the spells still on the list. Highlighted
+              once the frozen route has gone stale from checking spells off. */}
+          <button
+            onClick={() => setReplan((n) => n + 1)}
+            className="flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] transition-colors"
+            style={{
+              backgroundColor: stale ? 'var(--color-primary)' : 'transparent',
+              color: stale ? 'var(--color-background)' : 'var(--color-muted)',
+              border: '1px solid var(--color-border)',
+            }}
+            title="Re-optimize the route for the spells you still need"
+          >
+            <RefreshCw size={11} />
+            Re-plan
+          </button>
         </div>
 
         {/* Skip-towns picker: every candidate source town, checkable */}
@@ -453,12 +580,26 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
             </p>
           )}
 
+          {/* The route stays put as you shop; checked-off spells just drop
+              out. Nudge toward a re-solve once that's happened. */}
+          {!loading && !error && stale && route && route.stops.length > 0 && (
+            <div
+              className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[11px]"
+              style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-muted-foreground)' }}
+            >
+              <AlertCircle size={12} style={{ color: 'var(--color-primary)' }} />
+              Route is frozen while you shop — checked-off spells drop out but the
+              stops stay put. Hit <span className="font-semibold">Re-plan</span> to
+              re-optimize for what's left.
+            </div>
+          )}
+
           {!loading && !error && route && route.stops.map((stop, i) => (
             <StopCard
               key={stop.zone_short}
               stop={stop}
               index={i}
-              onExcludeSpell={(s) => onRemoveSpell(s.id)}
+              onExcludeSpell={(s) => removeSpell(s.id)}
               onExcludeZone={toggleZone}
             />
           ))}
