@@ -25,6 +25,7 @@ import type { EntityStats, FightState, HealerStats, HistoryFacets, HistoryListRe
 import { groupByEventSession, fmtSessionGap, type SessionBreakReason } from '../lib/sessionGrouping'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
 import { aggregateRecentFights } from '../lib/rollingWindow'
+import { FightViewToggle } from '../components/FightViewToggle'
 import {
   useDPSMode,
   dpsForMode,
@@ -200,7 +201,8 @@ function FilterBar({
   sessionGrouping,
   onToggleSessionGrouping,
   combinedView,
-  onToggleCombinedView,
+  combinedCount,
+  onChangeCombinedView,
 }: {
   filter: UIFilter
   facets: HistoryFacets
@@ -218,7 +220,8 @@ function FilterBar({
   sessionGrouping: boolean
   onToggleSessionGrouping: () => void
   combinedView: boolean
-  onToggleCombinedView: () => void
+  combinedCount: number
+  onChangeCombinedView: (next: boolean) => void
 }): React.ReactElement {
   const inputStyle: React.CSSProperties = {
     padding: '4px 8px',
@@ -481,29 +484,11 @@ function FilterBar({
           {dpsModeIcon(dpsMode)}
           {dpsModeLabel(dpsMode)}
         </button>
-        <button
-          onClick={onToggleCombinedView}
-          title={
-            combinedView
-              ? 'Showing a pooled breakdown across the loaded fights — click for the per-fight list'
-              : 'Pool the loaded fights into one combined breakdown (group performance across these mobs)'
-          }
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '4px 8px',
-            fontSize: 11,
-            background: combinedView ? 'var(--color-primary)' : 'var(--color-background)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 4,
-            color: combinedView ? '#000' : 'var(--color-foreground)',
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <Sigma size={11} /> Combined
-        </button>
+        <FightViewToggle
+          combined={combinedView}
+          count={combinedCount}
+          onChange={onChangeCombinedView}
+        />
         <button
           onClick={onToggleMeOnly}
           title="Show only fights you participated in (damage or healing)"
@@ -1083,7 +1068,7 @@ function CombinedView({
         }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-          <Sigma size={13} /> Combined
+          <Sigma size={13} /> All Fights
         </span>
         <span style={{ color: 'var(--color-muted)' }}>
           {fights.length} fight{fights.length !== 1 ? 's' : ''} on this page
@@ -1271,7 +1256,8 @@ export default function CombatHistoryPage(): React.ReactElement {
         sessionGrouping={sessionGrouping}
         onToggleSessionGrouping={toggleSessionGrouping}
         combinedView={combinedView}
-        onToggleCombinedView={() => setCombinedView((v) => !v)}
+        combinedCount={fights.length}
+        onChangeCombinedView={setCombinedView}
       />
 
       {error && (

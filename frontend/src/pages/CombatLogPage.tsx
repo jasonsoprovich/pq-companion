@@ -25,6 +25,7 @@ import type { LogTailerStatus } from '../types/logEvent'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
 import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, playerAggregateDPS, type DPSMode } from '../hooks/useDPSMode'
 import { aggregateRecentFights } from '../lib/rollingWindow'
+import { FightViewToggle } from '../components/FightViewToggle'
 import { groupBySession, fmtSessionGap } from '../lib/sessionGrouping'
 import { WSEvent } from '../lib/wsEvents'
 
@@ -588,7 +589,8 @@ function FilterBar({
   dpsMode,
   onToggleDPSMode,
   combinedView,
-  onToggleCombinedView,
+  combinedCount,
+  onChangeCombinedView,
 }: {
   filters: FilterState
   onChange: (f: FilterState) => void
@@ -601,7 +603,8 @@ function FilterBar({
   dpsMode: DPSMode
   onToggleDPSMode: () => void
   combinedView: boolean
-  onToggleCombinedView: () => void
+  combinedCount: number
+  onChangeCombinedView: (next: boolean) => void
 }): React.ReactElement {
   return (
     <div
@@ -715,30 +718,12 @@ function FilterBar({
         {dpsModeLabel(dpsMode)}
       </button>
 
-      {/* Combined view toggle: pool all visible fights into one breakdown. */}
-      <button
-        onClick={onToggleCombinedView}
-        title={
-          combinedView
-            ? 'Showing a pooled breakdown across all visible fights — click for the per-fight list'
-            : 'Pool all visible fights into one combined breakdown (rolling average over these mobs)'
-        }
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          padding: '4px 8px',
-          fontSize: 11,
-          background: combinedView ? 'var(--color-primary)' : 'var(--color-background)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 4,
-          color: combinedView ? '#000' : 'var(--color-foreground)',
-          cursor: 'pointer',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        <Sigma size={11} /> Combined
-      </button>
+      {/* Per-fight list vs pooled breakdown across the visible fights. */}
+      <FightViewToggle
+        combined={combinedView}
+        count={combinedCount}
+        onChange={onChangeCombinedView}
+      />
 
       {/* Me only toggle */}
       <button
@@ -953,10 +938,10 @@ function CombinedView({
         }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-          <Sigma size={13} /> Combined
+          <Sigma size={13} /> All Fights
         </span>
         <span style={{ color: 'var(--color-muted)' }}>
-          {fights.length} fight{fights.length !== 1 ? 's' : ''}
+          {fights.length} fight{fights.length !== 1 ? 's' : ''} combined
         </span>
         <span style={{ color: 'var(--color-muted)' }}>·</span>
         <span style={{ color: 'var(--color-muted)' }}>{fmtDuration(agg.duration_seconds)} total</span>
@@ -1067,7 +1052,8 @@ export default function CombatLogPage(): React.ReactElement {
         dpsMode={dpsMode}
         onToggleDPSMode={toggleDPSMode}
         combinedView={combinedView}
-        onToggleCombinedView={() => setCombinedView((v) => !v)}
+        combinedCount={visibleFights.length}
+        onChangeCombinedView={setCombinedView}
       />
 
       {combat === null ? (
