@@ -7,8 +7,8 @@
  * header strip — hovering the header temporarily disables passthrough so its
  * buttons (clear, lock, close, etc.) stay clickable.
  */
-import React, { useCallback, useEffect, useState } from 'react'
-import { Swords, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass, User } from 'lucide-react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Swords, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass, User, History, Crosshair } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
@@ -22,6 +22,8 @@ import { combatantBarColor } from '../lib/combatantColor'
 import { useDPSClassColors } from '../hooks/useDPSClassColors'
 import type { DPSClassColors } from '../types/config'
 import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, playerAggregateDPS, type DPSMode } from '../hooks/useDPSMode'
+import { useDPSScope, dpsScopeLabel } from '../hooks/useDPSScope'
+import { aggregateRecentFights } from '../lib/rollingWindow'
 import { WSEvent } from '../lib/wsEvents'
 
 // dpsModeIcon picks an icon matching the metric's intuition.
@@ -222,6 +224,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   const [showAll, setShowAll] = useState(true)
   const [combine, setCombine] = useCombinePetWithOwner()
   const { mode: dpsMode, toggle: toggleDPSMode } = useDPSMode()
+  const { scope, toggle: toggleScope } = useDPSScope()
   const [now, setNow] = useState(() => Date.now())
   const [copied, setCopied] = useState(false)
 
@@ -274,13 +277,29 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
 
   useWebSocket(handleMessage)
 
-  const showingPostFight = !inCombat && frozenFight !== null
-  const fight = inCombat ? combat?.current_fight : showingPostFight ? frozenFight : null
+  // Pooled "last N mobs" fight — a synthetic FightState rendered by the same
+  // FightTable as a real fight. Stable/historical, so no freeze handling.
+  const windowMode = scope === 'window'
+  const windowFight = useMemo(
+    () => aggregateRecentFights(combat?.recent_fights ?? []),
+    [combat?.recent_fights],
+  )
 
+  const showingPostFight = !windowMode && !inCombat && frozenFight !== null
+  const fight = windowMode
+    ? windowFight
+    : inCombat
+      ? combat?.current_fight
+      : showingPostFight
+        ? frozenFight
+        : null
+
+  // In window scope the duration is the pooled wall-clock; otherwise it ticks
+  // live while in combat and freezes to the fight's own duration afterwards.
   const liveSecs = fight
-    ? inCombat
-      ? Math.max((now - new Date(fight.start_time).getTime()) / 1000, fight.duration_seconds)
-      : fight.duration_seconds
+    ? windowMode || !inCombat
+      ? fight.duration_seconds
+      : Math.max((now - new Date(fight.start_time).getTime()) / 1000, fight.duration_seconds)
     : 0
   // Aggregate DPS respects the current mode. Encounter uses the wall-
   // clock liveSecs; Personal and Raid use the fight-level helpers.
@@ -385,6 +404,32 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           >
             <Users size={11} />
           </button>
+          {/* Scope toggle: current fight ↔ pooled last-20-mobs average. */}
+          <button
+            onClick={toggleScope}
+            title={
+              windowMode
+                ? 'Showing a pooled average over the last 20 completed fights — click for the current fight only'
+                : 'Showing the current fight — click for a pooled average over the last 20 mobs'
+            }
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 3,
+              background: 'none',
+              border: 'none',
+              padding: '1px 4px',
+              cursor: 'pointer',
+              color: windowMode ? '#a5b4fc' : 'rgba(255,255,255,0.4)',
+              fontSize: 9,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              fontWeight: 600,
+            }}
+          >
+            {windowMode ? <History size={11} /> : <Crosshair size={11} />}
+            {dpsScopeLabel(scope)}
+          </button>
           {/* DPS mode toggle: cycles Personal → Raid → Encounter. */}
           <button
             onClick={toggleDPSMode}
@@ -484,7 +529,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           gap: 6,
           borderBottom: '1px solid rgba(255,255,255,0.06)',
           flexShrink: 0,
-          color: inCombat ? '#f87171' : showingPostFight ? '#fb923c' : 'rgba(255,255,255,0.3)',
+          color: windowMode ? '#a5b4fc' : inCombat ? '#f87171' : showingPostFight ? '#fb923c' : 'rgba(255,255,255,0.3)',
         }}
       >
         <span
@@ -492,7 +537,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
             width: 6,
             height: 6,
             borderRadius: '50%',
-            backgroundColor: inCombat ? '#ef4444' : showingPostFight ? '#fb923c' : 'rgba(255,255,255,0.2)',
+            backgroundColor: windowMode ? '#818cf8' : inCombat ? '#ef4444' : showingPostFight ? '#fb923c' : 'rgba(255,255,255,0.2)',
             display: 'inline-block',
           }}
         />
@@ -525,8 +570,10 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
         <FightTable fight={fight} showAll={showAll} combine={combine} mode={dpsMode} palette={palette} />
       ) : (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-          <Swords size={24} style={{ opacity: 0.15 }} />
-          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: 0 }}>Not in combat</p>
+          {windowMode ? <History size={24} style={{ opacity: 0.15 }} /> : <Swords size={24} style={{ opacity: 0.15 }} />}
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: 0 }}>
+            {windowMode ? 'No completed fights yet' : 'Not in combat'}
+          </p>
         </div>
       )}
 

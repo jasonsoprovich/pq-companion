@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react'
-import { Swords, Circle, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users, Trash2, Activity, Hourglass, User } from 'lucide-react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Swords, Circle, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users, Trash2, Activity, Hourglass, User, History, Crosshair } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import { getCombatState, getLogStatus, resetCombatState } from '../../services/api'
@@ -11,6 +11,8 @@ import { combatantBarColor } from '../../lib/combatantColor'
 import { useDPSClassColors } from '../../hooks/useDPSClassColors'
 import type { DPSClassColors } from '../../types/config'
 import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, type DPSMode } from '../../hooks/useDPSMode'
+import { useDPSScope, dpsScopeLabel, type DPSScope } from '../../hooks/useDPSScope'
+import { aggregateRecentFights } from '../../lib/rollingWindow'
 
 // dpsModeIcon picks an icon for the current DPS mode that matches the
 // metric's intuition: a single User for Personal, Users for Raid, an
@@ -207,6 +209,42 @@ function CombatStrip({ combat, now, mode }: { combat: CombatState; now: number; 
   )
 }
 
+// WindowStrip is the "Last N mobs" analogue of CombatStrip: a static summary
+// of the pooled window rather than a live in-combat readout.
+function WindowStrip({ fight, mode }: { fight: FightState | null; mode: DPSMode }): React.ReactElement {
+  // Encounter pools over total wall-clock (fight.total_dps already is that);
+  // Raid/Personal use the shared fight-aggregate denominator.
+  const totalDPS = fight
+    ? mode === 'encounter'
+      ? fight.total_dps
+      : fightAggregateDPS(fight.total_damage, fight.duration_seconds, fight.combatants ?? [], mode)
+    : 0
+  return (
+    <div
+      style={{
+        padding: '4px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 8,
+        borderBottom: '1px solid var(--color-border)', flexShrink: 0,
+        backgroundColor: 'rgba(129,140,248,0.12)', color: '#a5b4fc',
+      }}
+    >
+      <History size={12} style={{ flexShrink: 0 }} />
+      {fight ? (
+        <>
+          <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+            {fight.primary_target}
+          </span>
+          <span style={{ color: 'var(--color-muted)' }}>·</span>
+          <span>{fmtDuration(fight.duration_seconds)} total</span>
+          <span style={{ color: 'var(--color-muted)' }}>·</span>
+          <span style={{ color: '#f97316' }}>{fmtRate(totalDPS)} {dpsModeAbbrev(mode)}</span>
+        </>
+      ) : (
+        <span>No completed fights yet</span>
+      )}
+    </div>
+  )
+}
+
 function ColHeaders(): React.ReactElement {
   return (
     <div
@@ -328,6 +366,39 @@ function NotInCombat(): React.ReactElement {
   )
 }
 
+function NoWindowData(): React.ReactElement {
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--color-muted)' }}>
+      <History size={32} style={{ opacity: 0.3 }} />
+      <p style={{ fontSize: 12, margin: 0 }}>No completed fights yet</p>
+      <p style={{ fontSize: 11, margin: 0, opacity: 0.7 }}>Kill a few mobs to build the average</p>
+    </div>
+  )
+}
+
+function ScopeButton({ scope, onToggle }: { scope: DPSScope; onToggle: () => void }): React.ReactElement {
+  const isWindow = scope === 'window'
+  return (
+    <button
+      onClick={onToggle}
+      title={
+        isWindow
+          ? 'Showing a pooled average over the last 20 completed fights — click for the current fight only'
+          : 'Showing the current fight — click for a pooled average over the last 20 mobs'
+      }
+      style={{
+        background: 'none', border: 'none', cursor: 'pointer',
+        padding: '1px 4px', display: 'flex', alignItems: 'center', gap: 3,
+        color: isWindow ? '#a5b4fc' : 'var(--color-muted)',
+        fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600,
+      }}
+    >
+      {isWindow ? <History size={12} /> : <Crosshair size={12} />}
+      {dpsScopeLabel(scope)}
+    </button>
+  )
+}
+
 function SessionBar({ combat }: { combat: CombatState }): React.ReactElement {
   const fights = (combat.recent_fights ?? []).length
   return (
@@ -359,8 +430,17 @@ export default function DPSPanel({
   const [showAll, setShowAll] = useState(true)
   const [combine, setCombine] = useCombinePetWithOwner()
   const { mode: dpsMode, toggle: toggleDPSMode } = useDPSMode()
+  const { scope, toggle: toggleScope } = useDPSScope()
   const [now, setNow] = useState(() => Date.now())
   const palette = useDPSClassColors()
+
+  // Pooled "last N mobs" fight, recomputed when the recent-fights list moves.
+  // A synthetic FightState so DPSContent renders it with the same row/rollup/
+  // mode code as a real fight.
+  const windowFight = useMemo(
+    () => aggregateRecentFights(combat?.recent_fights ?? []),
+    [combat?.recent_fights],
+  )
 
   useEffect(() => {
     getCombatState().then(setCombat).catch(() => {})
@@ -401,6 +481,7 @@ export default function DPSPanel({
           >
             <Users size={12} />
           </button>
+          <ScopeButton scope={scope} onToggle={toggleScope} />
           <button
             onClick={toggleDPSMode}
             title={dpsModeTooltip(dpsMode)}
@@ -414,7 +495,7 @@ export default function DPSPanel({
             {dpsModeIcon(dpsMode)}
             {dpsModeLabel(dpsMode)}
           </button>
-          <CopyFightButton fight={combat?.current_fight ?? null} combine={combine} mode={dpsMode} />
+          <CopyFightButton fight={scope === 'window' ? windowFight : combat?.current_fight ?? null} combine={combine} mode={dpsMode} />
           <button
             onClick={() => resetCombatState().catch(() => {})}
             title="Clear DPS — reset session damage, fight history, and the meter"
@@ -455,11 +536,24 @@ export default function DPSPanel({
         </div>
       ) : (
         <>
-          <CombatStrip combat={combat} now={now} mode={dpsMode} />
-          {combat.in_combat && combat.current_fight ? (
-            <DPSContent fight={combat.current_fight} showAll={showAll} combine={combine} mode={dpsMode} palette={palette} />
+          {scope === 'window' ? (
+            <>
+              <WindowStrip fight={windowFight} mode={dpsMode} />
+              {windowFight ? (
+                <DPSContent fight={windowFight} showAll={showAll} combine={combine} mode={dpsMode} palette={palette} />
+              ) : (
+                <NoWindowData />
+              )}
+            </>
           ) : (
-            <NotInCombat />
+            <>
+              <CombatStrip combat={combat} now={now} mode={dpsMode} />
+              {combat.in_combat && combat.current_fight ? (
+                <DPSContent fight={combat.current_fight} showAll={showAll} combine={combine} mode={dpsMode} palette={palette} />
+              ) : (
+                <NotInCombat />
+              )}
+            </>
           )}
           <SessionBar combat={combat} />
         </>
