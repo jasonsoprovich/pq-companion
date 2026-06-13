@@ -751,6 +751,41 @@ export function cleanupLog(): Promise<{ backup_path: string }> {
   return post<{ backup_path: string }>('/api/log/cleanup', {})
 }
 
+// ── Log Browse (out-of-game viewer) ──────────────────────────────────────────
+
+// One line from the log browser: the same shape as a live LogEvent plus the
+// byte offset used as the pagination cursor. `type` is widened to string —
+// browse surfaces every event type plus the 'log:raw' fallback, not just the
+// live-feed subset.
+export interface LogBrowseLine {
+  type: string
+  timestamp: string
+  message: string
+  data?: unknown
+  offset: number
+}
+
+export interface LogBrowseResult {
+  lines: LogBrowseLine[]
+  // Cursor for the next (older) page, or null at the start of the file.
+  next_offset: number | null
+}
+
+export function browseLog(req: {
+  file: string
+  q?: string
+  type?: string
+  beforeOffset?: number
+  limit?: number
+}): Promise<LogBrowseResult> {
+  const p = new URLSearchParams({ file: req.file })
+  if (req.q) p.set('q', req.q)
+  if (req.type) p.set('type', req.type)
+  if (req.beforeOffset) p.set('before_offset', String(req.beforeOffset))
+  if (req.limit) p.set('limit', String(req.limit))
+  return get<LogBrowseResult>(`/api/log/browse?${p.toString()}`)
+}
+
 // ── Log Replay ─────────────────────────────────────────────────────────────────
 
 export interface ReplayFile {

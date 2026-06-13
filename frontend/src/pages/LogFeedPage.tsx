@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Activity, Trash2, AlertTriangle, CheckCircle2, Circle, Search, Film, Play, Pause, Square } from 'lucide-react'
+import { Activity, Trash2, AlertTriangle, CheckCircle2, Circle, Search, Film, Play, Pause, Square, FolderOpen, Loader2 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useLogFeed, clearLogFeed, LOG_FEED_MAX } from '../hooks/useLogFeed'
 import {
@@ -12,10 +12,31 @@ import {
   pauseReplay,
   resumeReplay,
   stopReplay,
+  browseLog,
   type ReplayFile,
   type ReplayStatus,
+  type LogBrowseLine,
 } from '../services/api'
-import type { LogEvent, LogTailerStatus } from '../types/logEvent'
+import type { LogTailerStatus } from '../types/logEvent'
+
+// Page size for the out-of-game log browser.
+const BROWSE_LIMIT = 300
+
+// Event-type options for the browse filter. Values are exact backend event
+// types; 'log:raw' is the catch-all for lines that match no known pattern.
+const BROWSE_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'All types' },
+  { value: 'log:combat_hit', label: 'Hits' },
+  { value: 'log:combat_miss', label: 'Misses' },
+  { value: 'log:spell_cast', label: 'Casts' },
+  { value: 'log:spell_landed', label: 'Spell landed' },
+  { value: 'log:spell_resist', label: 'Resists' },
+  { value: 'log:spell_fade', label: 'Fades' },
+  { value: 'log:heal', label: 'Heals' },
+  { value: 'log:death', label: 'Deaths' },
+  { value: 'log:zone', label: 'Zones' },
+  { value: 'log:raw', label: 'Other / chat' },
+]
 
 // ── Event badge colours ────────────────────────────────────────────────────────
 
@@ -32,6 +53,8 @@ const TYPE_META: Record<
   'log:spell_fade':      { label: 'Fade',      color: '#14b8a6' }, // teal
   'log:death':           { label: 'Death',     color: '#dc2626' }, // dark red
   'log:heal':            { label: 'Heal',      color: '#22c55e' }, // green
+  'log:spell_landed':    { label: 'Landed',    color: '#8b5cf6' }, // violet
+  'log:raw':             { label: 'Log',       color: '#475569' }, // slate
 }
 
 function EventBadge({ type }: { type: string }): React.ReactElement {
@@ -356,6 +379,87 @@ function ReplayPanel({ status }: { status: ReplayStatus }): React.ReactElement {
   )
 }
 
+// ── Browse panel ─────────────────────────────────────────────────────────────
+
+/**
+ * BrowsePanel — file + event-type selectors for the out-of-game log viewer.
+ * The header search box drives the text filter; this strip picks which log
+ * file to read and (optionally) narrows to one event type. Read-only: it never
+ * touches the live pipeline or the file.
+ */
+function BrowsePanel({
+  files,
+  file,
+  onFileChange,
+  type,
+  onTypeChange,
+  count,
+  loading,
+}: {
+  files: ReplayFile[]
+  file: string
+  onFileChange: (name: string) => void
+  type: string
+  onTypeChange: (t: string) => void
+  count: number
+  loading: boolean
+}): React.ReactElement {
+  const inputStyle: React.CSSProperties = {
+    background: 'var(--color-background)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 4,
+    color: 'var(--color-foreground)',
+    fontSize: 11,
+    padding: '3px 6px',
+    outline: 'none',
+  }
+  return (
+    <div
+      className="shrink-0 border-b px-4 py-2"
+      style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <FolderOpen size={12} style={{ color: 'var(--color-primary)' }} />
+        <span className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
+          Browse
+        </span>
+        <select
+          value={file}
+          onChange={(e) => onFileChange(e.target.value)}
+          style={{ ...inputStyle, maxWidth: 260 }}
+        >
+          <option value="">Select a character log…</option>
+          {files.map((f) => (
+            <option key={f.name} value={f.name}>
+              {f.character} ({fmtBytes(f.size_bytes)})
+            </option>
+          ))}
+        </select>
+        <select
+          value={type}
+          onChange={(e) => onTypeChange(e.target.value)}
+          disabled={!file}
+          title="Filter by event type"
+          style={inputStyle}
+        >
+          {BROWSE_TYPE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        {loading && <Loader2 size={12} className="animate-spin" style={{ color: 'var(--color-muted)' }} />}
+        {file && !loading && (
+          <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+            {count} line{count === 1 ? '' : 's'} loaded
+          </span>
+        )}
+      </div>
+      <p className="mt-1 text-[10px]" style={{ color: 'var(--color-muted)' }}>
+        Read any saved character log while the game is closed. Type in the search box to filter, scroll to load older lines. Files are never modified.
+      </p>
+    </div>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function LogFeedPage(): React.ReactElement {
@@ -370,6 +474,19 @@ export default function LogFeedPage(): React.ReactElement {
   const [replayStatus, setReplayStatus] = useState<ReplayStatus>({ state: 'idle', lines_emitted: 0 })
   const feedRef = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
+
+  // Live feed vs. out-of-game browser. Browse reads a chosen saved log file on
+  // demand via /api/log/browse; the live feed is fed only by the WebSocket.
+  const [mode, setMode] = useState<'live' | 'browse'>('live')
+  const [browseFiles, setBrowseFiles] = useState<ReplayFile[]>([])
+  const [browseFile, setBrowseFile] = useState('')
+  const [browseType, setBrowseType] = useState('')
+  const [browseLines, setBrowseLines] = useState<LogBrowseLine[]>([])
+  const [browseNext, setBrowseNext] = useState<number | null>(null)
+  const [browseLoading, setBrowseLoading] = useState(false)
+  const [browseError, setBrowseError] = useState<string | null>(null)
+  // Debounced search term so typing doesn't fire a request per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
 
   // Load tailer + replay status once on mount.
   useEffect(() => {
@@ -404,15 +521,93 @@ export default function LogFeedPage(): React.ReactElement {
     )
   }, [events, search])
 
-  // Auto-scroll to top when new events arrive (feed is newest-first).
+  // Auto-scroll to top when new events arrive (live feed is newest-first).
   useEffect(() => {
-    if (feedRef.current && atBottomRef.current) {
+    if (mode === 'live' && feedRef.current && atBottomRef.current) {
       feedRef.current.scrollTop = 0
     }
-  }, [events])
+  }, [events, mode])
+
+  // Debounce the search box (drives the browse query and live filter).
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(search.trim()), 250)
+    return () => clearTimeout(id)
+  }, [search])
+
+  // Load the candidate file list the first time Browse is opened, defaulting
+  // to the most recently played character.
+  useEffect(() => {
+    if (mode !== 'browse' || browseFiles.length > 0) return
+    listReplayFiles()
+      .then((fs) => {
+        setBrowseFiles(fs)
+        setBrowseFile((cur) => cur || (fs[0]?.name ?? ''))
+      })
+      .catch((err: Error) => setBrowseError(err.message))
+  }, [mode, browseFiles.length])
+
+  // (Re)load the first page whenever the file, type filter, or search changes.
+  useEffect(() => {
+    if (mode !== 'browse' || !browseFile) {
+      setBrowseLines([])
+      setBrowseNext(null)
+      return
+    }
+    let cancelled = false
+    setBrowseLoading(true)
+    setBrowseError(null)
+    browseLog({
+      file: browseFile,
+      q: debouncedSearch || undefined,
+      type: browseType || undefined,
+      limit: BROWSE_LIMIT,
+    })
+      .then((res) => {
+        if (cancelled) return
+        setBrowseLines(res.lines)
+        setBrowseNext(res.next_offset)
+        if (feedRef.current) feedRef.current.scrollTop = 0
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setBrowseError(err.message)
+      })
+      .finally(() => {
+        if (!cancelled) setBrowseLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [mode, browseFile, browseType, debouncedSearch])
+
+  // Fetch the next (older) page and append. Called on scroll near the bottom.
+  const loadMoreBrowse = useCallback(() => {
+    if (browseLoading || browseNext == null || !browseFile) return
+    setBrowseLoading(true)
+    browseLog({
+      file: browseFile,
+      q: debouncedSearch || undefined,
+      type: browseType || undefined,
+      beforeOffset: browseNext,
+      limit: BROWSE_LIMIT,
+    })
+      .then((res) => {
+        setBrowseLines((prev) => [...prev, ...res.lines])
+        setBrowseNext(res.next_offset)
+      })
+      .catch((err: Error) => setBrowseError(err.message))
+      .finally(() => setBrowseLoading(false))
+  }, [browseLoading, browseNext, browseFile, debouncedSearch, browseType])
 
   function handleScroll(): void {
     if (!feedRef.current) return
+    if (mode === 'browse') {
+      // Older lines load at the bottom; fetch more as the user nears it.
+      const el = feedRef.current
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
+        loadMoreBrowse()
+      }
+      return
+    }
     atBottomRef.current = feedRef.current.scrollTop < 40
   }
 
@@ -432,10 +627,34 @@ export default function LogFeedPage(): React.ReactElement {
             className="rounded px-1.5 py-0.5 text-[10px]"
             style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}
           >
-            {search ? `${visibleEvents.length} / ${events.length}` : `${events.length} / ${LOG_FEED_MAX}`}
+            {mode === 'browse'
+              ? `${browseLines.length}${browseNext != null ? '+' : ''} lines`
+              : search
+              ? `${visibleEvents.length} / ${events.length}`
+              : `${events.length} / ${LOG_FEED_MAX}`}
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {/* Live / Browse mode toggle */}
+          <div
+            className="flex items-center rounded text-xs"
+            style={{ border: '1px solid var(--color-border)', overflow: 'hidden' }}
+          >
+            {(['live', 'browse'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className="px-2 py-1 transition-colors"
+                style={{
+                  backgroundColor: mode === m ? 'var(--color-primary)' : 'transparent',
+                  color: mode === m ? 'var(--color-background)' : 'var(--color-muted)',
+                }}
+                title={m === 'live' ? 'Live log feed (game running)' : 'Browse a saved log file (game closed)'}
+              >
+                {m === 'live' ? 'Live' : 'Browse'}
+              </button>
+            ))}
+          </div>
           {/* Search input */}
           <div style={{ position: 'relative' }}>
             <Search
@@ -451,7 +670,7 @@ export default function LogFeedPage(): React.ReactElement {
             />
             <input
               type="text"
-              placeholder="Filter events…"
+              placeholder={mode === 'browse' ? 'Search log…' : 'Filter events…'}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{
@@ -469,38 +688,57 @@ export default function LogFeedPage(): React.ReactElement {
               }}
             />
           </div>
-          <ConnPill state={wsState} status={status} />
-          <button
-            onClick={() => setShowReplay((v) => !v)}
-            className="flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
-            style={{
-              color: showReplay || replayStatus.state !== 'idle' ? 'var(--color-primary)' : 'var(--color-muted)',
-              border: '1px solid var(--color-border)',
-            }}
-            title="Replay a historical log segment through the whole app (triggers, timers, combat)"
-          >
-            <Film size={12} />
-            Replay
-          </button>
-          <button
-            onClick={() => { clearLogFeed(); setSearch('') }}
-            className="flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
-            style={{ color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}
-            title="Clear events"
-          >
-            <Trash2 size={12} />
-            Clear
-          </button>
+          {mode === 'live' && <ConnPill state={wsState} status={status} />}
+          {mode === 'live' && (
+            <button
+              onClick={() => setShowReplay((v) => !v)}
+              className="flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
+              style={{
+                color: showReplay || replayStatus.state !== 'idle' ? 'var(--color-primary)' : 'var(--color-muted)',
+                border: '1px solid var(--color-border)',
+              }}
+              title="Replay a historical log segment through the whole app (triggers, timers, combat)"
+            >
+              <Film size={12} />
+              Replay
+            </button>
+          )}
+          {mode === 'live' && (
+            <button
+              onClick={() => { clearLogFeed(); setSearch('') }}
+              className="flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
+              style={{ color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}
+              title="Clear events"
+            >
+              <Trash2 size={12} />
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Tailer status */}
-      <div className="shrink-0 border-b px-4 py-2" style={{ borderColor: 'var(--color-border)' }}>
-        <StatusBar status={status} />
-      </div>
+      {/* Tailer status (live only) */}
+      {mode === 'live' && (
+        <div className="shrink-0 border-b px-4 py-2" style={{ borderColor: 'var(--color-border)' }}>
+          <StatusBar status={status} />
+        </div>
+      )}
 
-      {/* Replay controls */}
-      {showReplay && <ReplayPanel status={replayStatus} />}
+      {/* Replay controls (live only) */}
+      {mode === 'live' && showReplay && <ReplayPanel status={replayStatus} />}
+
+      {/* Browse controls */}
+      {mode === 'browse' && (
+        <BrowsePanel
+          files={browseFiles}
+          file={browseFile}
+          onFileChange={setBrowseFile}
+          type={browseType}
+          onTypeChange={setBrowseType}
+          count={browseLines.length}
+          loading={browseLoading}
+        />
+      )}
 
       {/* Event feed */}
       <div
@@ -509,7 +747,17 @@ export default function LogFeedPage(): React.ReactElement {
         onScroll={handleScroll}
         style={{ backgroundColor: 'var(--color-background)' }}
       >
-        {events.length === 0 ? (
+        {mode === 'browse' ? (
+          <BrowseBody
+            file={browseFile}
+            lines={browseLines}
+            loading={browseLoading}
+            error={browseError}
+            hasMore={browseNext != null}
+            search={debouncedSearch}
+            onPickLive={() => setMode('live')}
+          />
+        ) : events.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-20">
             <Activity size={32} style={{ color: 'var(--color-muted)' }} />
             <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
@@ -518,6 +766,14 @@ export default function LogFeedPage(): React.ReactElement {
             <p className="max-w-xs text-center text-xs" style={{ color: 'var(--color-muted)' }}>
               Make sure <strong>Parse Combat Log</strong> is enabled in Settings and EQ is running.
             </p>
+            <button
+              onClick={() => setMode('browse')}
+              className="mt-1 flex items-center gap-1.5 rounded px-3 py-1.5 text-xs"
+              style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-foreground)', border: '1px solid var(--color-border)' }}
+            >
+              <FolderOpen size={12} />
+              Browse a saved log instead
+            </button>
           </div>
         ) : visibleEvents.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-20">
@@ -541,7 +797,93 @@ export default function LogFeedPage(): React.ReactElement {
   )
 }
 
-function EventRow({ ev }: { ev: LogEvent }): React.ReactElement {
+// BrowseBody renders the out-of-game browse results, empty states, and the
+// end-of-file / loading indicators.
+function BrowseBody({
+  file,
+  lines,
+  loading,
+  error,
+  hasMore,
+  search,
+  onPickLive,
+}: {
+  file: string
+  lines: LogBrowseLine[]
+  loading: boolean
+  error: string | null
+  hasMore: boolean
+  search: string
+  onPickLive: () => void
+}): React.ReactElement {
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-20">
+        <AlertTriangle size={28} style={{ color: 'var(--color-danger)' }} />
+        <p className="text-sm" style={{ color: 'var(--color-danger)' }}>{error}</p>
+      </div>
+    )
+  }
+  if (!file) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-20">
+        <FolderOpen size={32} style={{ color: 'var(--color-muted)' }} />
+        <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
+          Pick a character log above to start browsing.
+        </p>
+        <button onClick={onPickLive} className="text-xs underline" style={{ color: 'var(--color-primary)' }}>
+          Back to live feed
+        </button>
+      </div>
+    )
+  }
+  if (lines.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-20">
+        {loading ? (
+          <>
+            <Loader2 size={28} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
+            <p className="text-sm" style={{ color: 'var(--color-muted)' }}>Reading log…</p>
+          </>
+        ) : (
+          <>
+            <Search size={28} style={{ color: 'var(--color-muted)' }} />
+            <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
+              {search ? `No lines match "${search}"` : 'No readable lines in this log.'}
+            </p>
+          </>
+        )}
+      </div>
+    )
+  }
+  return (
+    <>
+      <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
+        <tbody>
+          {lines.map((ev, i) => (
+            <EventRow key={i} ev={ev} />
+          ))}
+        </tbody>
+      </table>
+      <div className="flex items-center justify-center gap-2 py-3 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+        {loading ? (
+          <>
+            <Loader2 size={12} className="animate-spin" />
+            Loading older lines…
+          </>
+        ) : hasMore ? (
+          'Scroll for older lines'
+        ) : (
+          'Start of log reached'
+        )}
+      </div>
+    </>
+  )
+}
+
+// EventRow renders one line for both the live feed and the browse view, so it
+// accepts the minimal shared shape rather than the narrow LogEvent union.
+function EventRow({ ev }: { ev: { type: string; timestamp: string; message: string } }): React.ReactElement {
   const ts = new Date(ev.timestamp)
   const timeStr = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
