@@ -28,6 +28,9 @@ export interface PlayerLevelHistoryEntry {
 
 export interface PlayerListResponse {
   players: PlayerSighting[]
+  // Total rows matching the filters, ignoring limit/offset — drives the
+  // header count and the "Show more" button.
+  total: number
 }
 
 export interface PlayerHistoryResponse {

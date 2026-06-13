@@ -516,22 +516,25 @@ type SearchFilters struct {
 	Class        string
 	Zone         string
 	Guild        string
+	PVPOnly      bool
 	Limit        int
 	Offset       int
 }
 
-// Search returns sightings matching the filters, newest-first.
-func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
-	q := `SELECT s.name, s.class, s.race, s.guild, s.last_seen_level, s.last_seen_zone,
-	             s.last_seen_at, s.first_seen_at, s.last_anonymous, s.sightings_count,
-	             COALESCE(n.note, ''), COALESCE(n.pvp, 0),
-	             COALESCE(ti.count, 0), COALESCE(ti.last_at, 0),
-	             COALESCE(gi.count, 0), COALESCE(gi.last_at, 0)
+// sightingJoins is the FROM clause shared by Search and Count — sightings
+// with the user's note + per-kind interaction rollups attached.
+const sightingJoins = `
 	      FROM player_sightings s
 	      LEFT JOIN player_notes n ON n.name = s.name COLLATE NOCASE
 	      LEFT JOIN player_interactions ti ON ti.name = s.name AND ti.kind = 'tell'
 	      LEFT JOIN player_interactions gi ON gi.name = s.name AND gi.kind = 'group'
 	      WHERE 1=1`
+
+// buildFilterClause renders the WHERE conditions for f against the
+// sightingJoins aliases. Shared by Search and Count so the total always
+// matches the rows a paged fetch walks through.
+func buildFilterClause(f SearchFilters) (string, []any) {
+	q := ``
 	args := []any{}
 	if f.NameContains != "" {
 		q += ` AND s.name LIKE ? COLLATE NOCASE`
@@ -564,6 +567,21 @@ func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
 		q += ` AND s.guild = ? COLLATE NOCASE`
 		args = append(args, f.Guild)
 	}
+	if f.PVPOnly {
+		q += ` AND COALESCE(n.pvp, 0) = 1`
+	}
+	return q, args
+}
+
+// Search returns sightings matching the filters, newest-first.
+func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
+	q := `SELECT s.name, s.class, s.race, s.guild, s.last_seen_level, s.last_seen_zone,
+	             s.last_seen_at, s.first_seen_at, s.last_anonymous, s.sightings_count,
+	             COALESCE(n.note, ''), COALESCE(n.pvp, 0),
+	             COALESCE(ti.count, 0), COALESCE(ti.last_at, 0),
+	             COALESCE(gi.count, 0), COALESCE(gi.last_at, 0)` + sightingJoins
+	clause, args := buildFilterClause(f)
+	q += clause
 	q += ` ORDER BY s.last_seen_at DESC`
 	if f.Limit > 0 {
 		q += ` LIMIT ?`
@@ -592,6 +610,19 @@ func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+// Count returns how many sightings match the filters, ignoring Limit/Offset
+// — the "N tracked" total a paged Search walks through.
+func (s *Store) Count(f SearchFilters) (int, error) {
+	q := `SELECT COUNT(*)` + sightingJoins
+	clause, args := buildFilterClause(f)
+	q += clause
+	var n int
+	if err := s.db.QueryRow(q, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // Get returns a single sighting by name, or (nil, nil) if not found.

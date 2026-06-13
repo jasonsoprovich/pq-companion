@@ -48,7 +48,7 @@ function PlayerDetail({
   player: PlayerSighting
   onClose: () => void
   onDeleted: () => void
-  onChanged: () => void
+  onChanged: (note: string, pvp: boolean) => void
 }): React.ReactElement {
   const [history, setHistory] = useState<PlayerLevelHistoryEntry[] | null>(null)
   const [historyErr, setHistoryErr] = useState<string | null>(null)
@@ -70,7 +70,7 @@ function PlayerDetail({
     try {
       await updatePlayerNote(player.name, nextNote, nextPvp)
       setSaveState('saved')
-      onChanged()
+      onChanged(nextNote, nextPvp)
     } catch {
       setSaveState('error')
     }
@@ -254,9 +254,17 @@ function PlayerDetail({
 type SortField = 'none' | 'name' | 'level' | 'class' | 'guild' | 'zone' | 'sightings' | 'seen'
 type SortDir = 'asc' | 'desc'
 
+// PLAYER_PAGE_SIZE rows per fetch — the list paginates with a "Show more"
+// button (like the items search pane) instead of silently capping. Search
+// and all filters run server-side over the whole database regardless of how
+// many rows are loaded.
+const PLAYER_PAGE_SIZE = 500
+
 export default function PlayersPage(): React.ReactElement {
   const [players, setPlayers] = useState<PlayerSighting[]>([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [classFilter, setClassFilter] = useState<string>('')
@@ -304,11 +312,33 @@ export default function PlayersPage(): React.ReactElement {
   const load = useCallback(() => {
     setLoading(true)
     setError(null)
-    listPlayers({ search, class: classFilter, zone: zoneFilter, guild: guildFilter, limit: 500 })
-      .then((r) => setPlayers(r.players))
+    listPlayers({ search, class: classFilter, zone: zoneFilter, guild: guildFilter, pvp: pvpOnly, limit: PLAYER_PAGE_SIZE })
+      .then((r) => {
+        setPlayers(r.players)
+        setTotal(r.total)
+      })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [search, classFilter, zoneFilter, guildFilter])
+  }, [search, classFilter, zoneFilter, guildFilter, pvpOnly])
+
+  const loadMore = useCallback(() => {
+    setLoadingMore(true)
+    listPlayers({
+      search,
+      class: classFilter,
+      zone: zoneFilter,
+      guild: guildFilter,
+      pvp: pvpOnly,
+      limit: PLAYER_PAGE_SIZE,
+      offset: players.length,
+    })
+      .then((r) => {
+        setPlayers((prev) => [...prev, ...r.players])
+        setTotal(r.total)
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoadingMore(false))
+  }, [search, classFilter, zoneFilter, guildFilter, pvpOnly, players.length])
 
   useEffect(() => {
     load()
@@ -327,11 +357,11 @@ export default function PlayersPage(): React.ReactElement {
     return Array.from(guilds).sort()
   }, [players])
 
-  // Apply the client-side PVP filter + sort on top of the fetched list. When
-  // sortField is 'none' the API's default last-seen ordering wins.
+  // Apply client-side sort on top of the loaded rows (the PVP filter runs
+  // server-side with the other filters). When sortField is 'none' the API's
+  // default last-seen ordering wins.
   const sortedPlayers = useMemo(() => {
-    const filtered = pvpOnly ? players.filter((p) => p.pvp) : players
-    if (sortField === 'none') return filtered
+    if (sortField === 'none') return players
     const direction = sortDir === 'asc' ? 1 : -1
     const cmp = (a: PlayerSighting, b: PlayerSighting): number => {
       switch (sortField) {
@@ -353,8 +383,8 @@ export default function PlayersPage(): React.ReactElement {
           return 0
       }
     }
-    return [...filtered].sort(cmp)
-  }, [players, pvpOnly, sortField, sortDir])
+    return [...players].sort(cmp)
+  }, [players, sortField, sortDir])
 
   function handleSort(field: SortField): void {
     if (sortField === field) {
@@ -397,7 +427,8 @@ export default function PlayersPage(): React.ReactElement {
           Player Tracker
         </span>
         <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-          {players.length} tracked
+          {total.toLocaleString()} tracked
+          {players.length < total && ` · showing ${players.length.toLocaleString()}`}
         </span>
         <div className="ml-auto flex items-center gap-2">
           {pvpWarningOn !== null && (
@@ -571,8 +602,18 @@ export default function PlayersPage(): React.ReactElement {
             <PlayerDetail
               player={selected}
               onClose={() => setSelected(null)}
-              onDeleted={() => load()}
-              onChanged={() => load()}
+              onDeleted={() => {
+                // Patch locally instead of reloading so any extra "Show
+                // more" pages the user loaded stay loaded.
+                setPlayers((prev) => prev.filter((pl) => pl.name !== selected.name))
+                setTotal((t) => Math.max(0, t - 1))
+              }}
+              onChanged={(note, pvp) => {
+                setPlayers((prev) =>
+                  prev.map((pl) => (pl.name === selected.name ? { ...pl, note, pvp } : pl))
+                )
+                setSelected((prev) => (prev ? { ...prev, note, pvp } : prev))
+              }}
             />
           </div>
         )}
@@ -590,7 +631,16 @@ export default function PlayersPage(): React.ReactElement {
           </div>
         )}
 
-        {!loading && !error && players.length === 0 && (
+        {!loading && !error && players.length === 0 && (search || classFilter || zoneFilter || guildFilter || pvpOnly) && (
+          <div className="flex flex-col items-center justify-center gap-2 py-12">
+            <UserSearch size={32} style={{ color: 'var(--color-muted)' }} />
+            <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              No players match the current filters.
+            </p>
+          </div>
+        )}
+
+        {!loading && !error && players.length === 0 && !search && !classFilter && !zoneFilter && !guildFilter && !pvpOnly && (
           <div className="flex flex-col items-center justify-center gap-2 py-12">
             <UserSearch size={32} style={{ color: 'var(--color-muted)' }} />
             <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
@@ -640,6 +690,25 @@ export default function PlayersPage(): React.ReactElement {
                 <span className="py-1 text-right tabular-nums">{formatRelative(p.last_seen_at)}</span>
               </React.Fragment>
             ))}
+          </div>
+        )}
+
+        {!loading && !error && players.length < total && (
+          <div className="flex justify-center py-3">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="text-xs px-3 py-1.5 rounded disabled:opacity-50"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                color: 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+            >
+              {loadingMore
+                ? 'Loading…'
+                : `Show more (${(total - players.length).toLocaleString()} remaining)`}
+            </button>
           </div>
         )}
       </div>

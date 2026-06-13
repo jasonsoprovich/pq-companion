@@ -418,3 +418,36 @@ func TestTouchInteraction_CreatesRowAndAccumulates(t *testing.T) {
 		t.Errorf("who upgrade lost data: %+v", got)
 	}
 }
+
+func TestSearch_PVPOnlyAndCount(t *testing.T) {
+	s := openTest(t)
+	now := time.Unix(1_700_000_000, 0)
+	for i, name := range []string{"Aaa", "Bbb", "Ccc"} {
+		if err := s.Upsert(SightingInput{Name: name, Level: 10 + i, Class: "Warrior", Zone: "Oasis", ObservedAt: now.Add(time.Duration(i) * time.Minute)}); err != nil {
+			t.Fatalf("Upsert %s: %v", name, err)
+		}
+	}
+	if err := s.UpsertNote("Bbb", "", true); err != nil {
+		t.Fatalf("UpsertNote: %v", err)
+	}
+
+	// Count ignores Limit/Offset; Search honours them.
+	total, err := s.Count(SearchFilters{Limit: 1})
+	if err != nil || total != 3 {
+		t.Fatalf("Count = %d, %v; want 3", total, err)
+	}
+	page, err := s.Search(SearchFilters{Limit: 2, Offset: 2})
+	if err != nil || len(page) != 1 {
+		t.Fatalf("paged Search = %d rows, %v; want 1", len(page), err)
+	}
+
+	// PVPOnly filters server-side across the whole table.
+	rows, err := s.Search(SearchFilters{PVPOnly: true})
+	if err != nil || len(rows) != 1 || rows[0].Name != "Bbb" {
+		t.Fatalf("PVPOnly Search = %+v, %v; want only Bbb", rows, err)
+	}
+	total, err = s.Count(SearchFilters{PVPOnly: true})
+	if err != nil || total != 1 {
+		t.Errorf("PVPOnly Count = %d, %v; want 1", total, err)
+	}
+}

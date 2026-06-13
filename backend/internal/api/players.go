@@ -12,7 +12,9 @@ type playersHandler struct {
 	store *players.Store
 }
 
-// list handles GET /api/players?search=&class=&zone=&limit=&offset=
+// list handles GET /api/players?search=&class=&zone=&pvp=&limit=&offset=
+// The response carries the filter-matching total alongside the page so the
+// client can render an accurate count and a "show more" affordance.
 func (h *playersHandler) list(w http.ResponseWriter, r *http.Request) {
 	limit := queryInt(r, "limit", 200)
 	if limit > 1000 {
@@ -23,6 +25,7 @@ func (h *playersHandler) list(w http.ResponseWriter, r *http.Request) {
 		Class:        r.URL.Query().Get("class"),
 		Zone:         r.URL.Query().Get("zone"),
 		Guild:        r.URL.Query().Get("guild"),
+		PVPOnly:      r.URL.Query().Get("pvp") == "1",
 		Limit:        limit,
 		Offset:       queryInt(r, "offset", 0),
 	}
@@ -34,7 +37,12 @@ func (h *playersHandler) list(w http.ResponseWriter, r *http.Request) {
 	if out == nil {
 		out = []players.Sighting{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"players": out})
+	total, err := h.store.Count(filters)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"players": out, "total": total})
 }
 
 // get handles GET /api/players/{name}
