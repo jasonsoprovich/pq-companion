@@ -287,3 +287,90 @@ func TestSearch_ClassFilterDirectTitleStillExactMatches(t *testing.T) {
 		t.Errorf("specific-title filter should match exactly; got %+v", got)
 	}
 }
+
+func TestUpsertNote_RoundTripAndPVPFlag(t *testing.T) {
+	s := openTest(t)
+	now := time.Unix(1_700_000_000, 0)
+	if err := s.Upsert(SightingInput{Name: "Foo", Level: 60, Class: "Rogue", Zone: "Oasis", ObservedAt: now}); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	if err := s.UpsertNote("Foo", "gave him a dagger at lvl 5", true); err != nil {
+		t.Fatalf("UpsertNote: %v", err)
+	}
+	got, err := s.Get("Foo")
+	if err != nil || got == nil {
+		t.Fatalf("Get: %v got=%v", err, got)
+	}
+	if got.Note != "gave him a dagger at lvl 5" || !got.PVP {
+		t.Errorf("note round trip wrong: %+v", got)
+	}
+
+	rows, err := s.Search(SearchFilters{})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("Search: %v rows=%d", err, len(rows))
+	}
+	if rows[0].Note == "" || !rows[0].PVP {
+		t.Errorf("Search missing note/pvp: %+v", rows[0])
+	}
+
+	pvp, err := s.PVPNames()
+	if err != nil {
+		t.Fatalf("PVPNames: %v", err)
+	}
+	if !pvp["foo"] {
+		t.Errorf("PVPNames missing lowercased foo: %v", pvp)
+	}
+}
+
+func TestUpsertNote_EmptyNoteNoPVPDeletesRow(t *testing.T) {
+	s := openTest(t)
+	if err := s.UpsertNote("Bar", "cool cat", false); err != nil {
+		t.Fatalf("UpsertNote: %v", err)
+	}
+	if err := s.UpsertNote("Bar", "", false); err != nil {
+		t.Fatalf("clear note: %v", err)
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM player_notes`).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("expected note row deleted, found %d", n)
+	}
+}
+
+func TestClear_KeepsNotes_DeleteRemovesThem(t *testing.T) {
+	s := openTest(t)
+	now := time.Unix(1_700_000_000, 0)
+	if err := s.Upsert(SightingInput{Name: "Baz", Level: 50, Class: "Monk", Zone: "Oasis", ObservedAt: now}); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	if err := s.UpsertNote("Baz", "pvp bastard", true); err != nil {
+		t.Fatalf("UpsertNote: %v", err)
+	}
+
+	// Clear all wipes sightings but the note survives and re-attaches on the
+	// next sighting.
+	if _, err := s.Clear(); err != nil {
+		t.Fatalf("Clear: %v", err)
+	}
+	if err := s.Upsert(SightingInput{Name: "Baz", Level: 51, Class: "Monk", Zone: "Oasis", ObservedAt: now.Add(time.Hour)}); err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+	got, _ := s.Get("Baz")
+	if got == nil || got.Note != "pvp bastard" || !got.PVP {
+		t.Errorf("note should survive Clear: %+v", got)
+	}
+
+	// Explicit per-player delete removes the note too.
+	if err := s.Delete("Baz"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM player_notes`).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("Delete should remove the note row, found %d", n)
+	}
+}

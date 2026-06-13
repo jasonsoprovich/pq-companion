@@ -9,6 +9,8 @@ export interface PlayerSighting {
   first_seen_at: number
   last_anonymous: boolean
   sightings_count: number
+  note: string
+  pvp: boolean
 }
 
 export interface PlayerLevelHistoryEntry {

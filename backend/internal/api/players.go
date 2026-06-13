@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -71,6 +72,29 @@ func (h *playersHandler) history(w http.ResponseWriter, r *http.Request) {
 		rows = []players.LevelHistoryEntry{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"history": rows})
+}
+
+// upsertNote handles PUT /api/players/{name}/note — saves the user's note
+// text and PVP flag for a player.
+func (h *playersHandler) upsertNote(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "name required")
+		return
+	}
+	var req struct {
+		Note string `json:"note"`
+		PVP  bool   `json:"pvp"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := h.store.UpsertNote(name, req.Note, req.PVP); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // delete handles DELETE /api/players/{name}

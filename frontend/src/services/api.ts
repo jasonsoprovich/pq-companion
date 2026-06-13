@@ -569,6 +569,10 @@ export function getPlayerHistory(name: string): Promise<import('../types/player'
   return get<import('../types/player').PlayerHistoryResponse>(`/api/players/${encodeURIComponent(name)}/history`)
 }
 
+export function updatePlayerNote(name: string, note: string, pvp: boolean): Promise<{ ok: boolean }> {
+  return put<{ ok: boolean }>(`/api/players/${encodeURIComponent(name)}/note`, { note, pvp })
+}
+
 export function deletePlayer(name: string): Promise<{ ok: boolean }> {
   return del<{ ok: boolean }>(`/api/players/${encodeURIComponent(name)}`)
 }

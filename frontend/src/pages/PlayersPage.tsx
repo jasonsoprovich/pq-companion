@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
-import { UserSearch, RefreshCw, Trash2, AlertCircle, EyeOff, X, ArrowUp, ArrowDown } from 'lucide-react'
-import { listPlayers, deletePlayer, clearPlayers, getPlayerHistory } from '../services/api'
+import { UserSearch, RefreshCw, Trash2, AlertCircle, EyeOff, X, ArrowUp, ArrowDown, Swords, StickyNote } from 'lucide-react'
+import { listPlayers, deletePlayer, clearPlayers, getPlayerHistory, updatePlayerNote } from '../services/api'
 import type { PlayerSighting, PlayerLevelHistoryEntry } from '../types/player'
 import MissingLogNotice from '../components/MissingLogNotice'
 import BackfillLink from '../components/BackfillLink'
@@ -43,15 +43,44 @@ function PlayerDetail({
   player,
   onClose,
   onDeleted,
+  onChanged,
 }: {
   player: PlayerSighting
   onClose: () => void
   onDeleted: () => void
+  onChanged: () => void
 }): React.ReactElement {
   const [history, setHistory] = useState<PlayerLevelHistoryEntry[] | null>(null)
   const [historyErr, setHistoryErr] = useState<string | null>(null)
+  const [note, setNote] = useState(player.note)
+  const [pvp, setPvp] = useState(player.pvp)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEscapeToClose(onClose)
+
+  // Re-seed the editor when the user clicks a different player row.
+  useEffect(() => {
+    setNote(player.note)
+    setPvp(player.pvp)
+    setSaveState('idle')
+  }, [player.name]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function saveNote(nextNote: string, nextPvp: boolean) {
+    setSaveState('saving')
+    try {
+      await updatePlayerNote(player.name, nextNote, nextPvp)
+      setSaveState('saved')
+      onChanged()
+    } catch {
+      setSaveState('error')
+    }
+  }
+
+  function togglePvp() {
+    const next = !pvp
+    setPvp(next)
+    void saveNote(note, next)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -89,6 +118,7 @@ function PlayerDetail({
             {player.last_anonymous && (
               <EyeOff size={12} className="inline-block ml-2" style={{ color: 'var(--color-muted)' }} />
             )}
+            {pvp && <PvpBadge className="ml-2 align-middle" />}
           </h2>
           <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
             {player.last_seen_level > 0 ? `Level ${player.last_seen_level}` : 'Level unknown'}
@@ -115,6 +145,50 @@ function PlayerDetail({
             <X size={14} />
           </button>
         </div>
+      </div>
+
+      {/* Notes + PVP flag */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
+            Notes
+            {saveState === 'saving' && <span className="ml-2 normal-case tracking-normal font-normal">saving…</span>}
+            {saveState === 'saved' && <span className="ml-2 normal-case tracking-normal font-normal">saved</span>}
+            {saveState === 'error' && (
+              <span className="ml-2 normal-case tracking-normal font-normal" style={{ color: 'var(--color-danger)' }}>
+                save failed
+              </span>
+            )}
+          </p>
+          <button
+            onClick={togglePvp}
+            title="Flag this player as PVP — you'll get a sound and on-screen warning whenever they show up in a /who"
+            className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded"
+            style={{
+              backgroundColor: pvp ? 'rgba(239, 68, 68, 0.15)' : 'var(--color-surface-2)',
+              color: pvp ? 'var(--color-danger)' : 'var(--color-muted)',
+              border: `1px solid ${pvp ? 'var(--color-danger)' : 'var(--color-border)'}`,
+            }}
+          >
+            <Swords size={11} />
+            {pvp ? 'PVP flagged' : 'Flag as PVP'}
+          </button>
+        </div>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          onBlur={() => {
+            if (note !== player.note) void saveNote(note, pvp)
+          }}
+          rows={2}
+          placeholder="Cool cat, new to EQ, gave him a dagger at level 5…"
+          className="w-full text-xs rounded px-2 py-1.5 outline-none resize-y"
+          style={{
+            backgroundColor: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-foreground)',
+          }}
+        />
       </div>
 
       <p className="text-[10px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: 'var(--color-muted)' }}>
@@ -171,6 +245,7 @@ export default function PlayersPage(): React.ReactElement {
   const [classFilter, setClassFilter] = useState<string>('')
   const [zoneFilter, setZoneFilter] = useState<string>('')
   const [guildFilter, setGuildFilter] = useState<string>('')
+  const [pvpOnly, setPvpOnly] = useState(false)
   const [selected, setSelected] = useState<PlayerSighting | null>(null)
   const [sortField, setSortField] = useState<SortField>('none')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
@@ -201,10 +276,11 @@ export default function PlayersPage(): React.ReactElement {
     return Array.from(guilds).sort()
   }, [players])
 
-  // Apply client-side sort on top of the filtered list. When sortField is
-  // 'none' the API's default last-seen ordering wins.
+  // Apply the client-side PVP filter + sort on top of the fetched list. When
+  // sortField is 'none' the API's default last-seen ordering wins.
   const sortedPlayers = useMemo(() => {
-    if (sortField === 'none') return players
+    const filtered = pvpOnly ? players.filter((p) => p.pvp) : players
+    if (sortField === 'none') return filtered
     const direction = sortDir === 'asc' ? 1 : -1
     const cmp = (a: PlayerSighting, b: PlayerSighting): number => {
       switch (sortField) {
@@ -226,8 +302,8 @@ export default function PlayersPage(): React.ReactElement {
           return 0
       }
     }
-    return [...players].sort(cmp)
-  }, [players, sortField, sortDir])
+    return [...filtered].sort(cmp)
+  }, [players, pvpOnly, sortField, sortDir])
 
   function handleSort(field: SortField): void {
     if (sortField === field) {
@@ -365,13 +441,27 @@ export default function PlayersPage(): React.ReactElement {
             <option key={g} value={g}>{g}</option>
           ))}
         </select>
-        {(search || classFilter || zoneFilter || guildFilter || sortField !== 'none') && (
+        <button
+          onClick={() => setPvpOnly((v) => !v)}
+          title="Show only players flagged as PVP"
+          className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+          style={{
+            backgroundColor: pvpOnly ? 'rgba(239, 68, 68, 0.15)' : 'var(--color-surface-2)',
+            color: pvpOnly ? 'var(--color-danger)' : 'var(--color-muted-foreground)',
+            border: `1px solid ${pvpOnly ? 'var(--color-danger)' : 'var(--color-border)'}`,
+          }}
+        >
+          <Swords size={11} />
+          PVP only
+        </button>
+        {(search || classFilter || zoneFilter || guildFilter || pvpOnly || sortField !== 'none') && (
           <button
             onClick={() => {
               setSearch('')
               setClassFilter('')
               setZoneFilter('')
               setGuildFilter('')
+              setPvpOnly(false)
               setSortField('none')
               setSortDir('desc')
             }}
@@ -412,6 +502,7 @@ export default function PlayersPage(): React.ReactElement {
               player={selected}
               onClose={() => setSelected(null)}
               onDeleted={() => load()}
+              onChanged={() => load()}
             />
           </div>
         )}
@@ -464,6 +555,12 @@ export default function PlayersPage(): React.ReactElement {
                   {p.last_anonymous && (
                     <EyeOff size={10} className="inline-block ml-1.5" style={{ color: 'var(--color-muted)' }} />
                   )}
+                  {p.pvp && <PvpBadge className="ml-1.5 align-middle" />}
+                  {p.note && (
+                    <span title={p.note}>
+                      <StickyNote size={10} className="inline-block ml-1.5" style={{ color: 'var(--color-muted)' }} />
+                    </span>
+                  )}
                 </button>
                 <span className="py-1 tabular-nums">{p.last_seen_level > 0 ? p.last_seen_level : '—'}</span>
                 <span className="py-1 truncate">{p.class || '—'}</span>
@@ -480,13 +577,32 @@ export default function PlayersPage(): React.ReactElement {
       {confirmClearOpen && (
         <ConfirmModal
           title="Clear player tracker?"
-          body="Wipe every tracked player and their sighting history. This cannot be undone."
+          body="Wipe every tracked player and their sighting history. Notes and PVP flags are kept and re-attach when a player is next seen. This cannot be undone."
           confirmLabel="Clear all"
           onCancel={() => setConfirmClearOpen(false)}
           onConfirm={doClearAll}
         />
       )}
     </div>
+  )
+}
+
+// PvpBadge is the small red "PVP" chip shown wherever a flagged player's
+// name appears.
+function PvpBadge({ className = '' }: { className?: string }): React.ReactElement {
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 rounded px-1 text-[9px] font-bold leading-4 ${className}`}
+      style={{
+        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+        color: 'var(--color-danger)',
+        border: '1px solid var(--color-danger)',
+      }}
+      title="Flagged as PVP"
+    >
+      <Swords size={8} />
+      PVP
+    </span>
   )
 }
 

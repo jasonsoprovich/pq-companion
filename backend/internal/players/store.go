@@ -26,6 +26,8 @@ type Sighting struct {
 	FirstSeenAt    int64  `json:"first_seen_at"`
 	LastAnonymous  bool   `json:"last_anonymous"`
 	SightingsCount int    `json:"sightings_count"`
+	Note           string `json:"note"`
+	PVP            bool   `json:"pvp"`
 }
 
 // LevelHistoryEntry is one row in player_level_history — recorded only when
@@ -112,6 +114,19 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if _, err := s.db.Exec(`CREATE INDEX IF NOT EXISTS player_level_history_name ON player_level_history(name)`); err != nil {
+		return err
+	}
+	// User-authored notes + PVP flags live apart from sightings so the user's
+	// curated intel survives a tracker "Clear all" — the note re-attaches the
+	// next time the player shows up in a /who.
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS player_notes (
+			name        TEXT    NOT NULL PRIMARY KEY,
+			note        TEXT    NOT NULL DEFAULT '',
+			pvp         INTEGER NOT NULL DEFAULT 0,
+			updated_at  INTEGER NOT NULL
+		)
+	`); err != nil {
 		return err
 	}
 	return nil
@@ -436,13 +451,15 @@ type SearchFilters struct {
 
 // Search returns sightings matching the filters, newest-first.
 func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
-	q := `SELECT name, class, race, guild, last_seen_level, last_seen_zone,
-	             last_seen_at, first_seen_at, last_anonymous, sightings_count
-	      FROM player_sightings
+	q := `SELECT s.name, s.class, s.race, s.guild, s.last_seen_level, s.last_seen_zone,
+	             s.last_seen_at, s.first_seen_at, s.last_anonymous, s.sightings_count,
+	             COALESCE(n.note, ''), COALESCE(n.pvp, 0)
+	      FROM player_sightings s
+	      LEFT JOIN player_notes n ON n.name = s.name COLLATE NOCASE
 	      WHERE 1=1`
 	args := []any{}
 	if f.NameContains != "" {
-		q += ` AND name LIKE ? COLLATE NOCASE`
+		q += ` AND s.name LIKE ? COLLATE NOCASE`
 		args = append(args, "%"+f.NameContains+"%")
 	}
 	if f.Class != "" {
@@ -453,26 +470,26 @@ func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
 		// work.
 		titles := expandClassFilter(f.Class)
 		if len(titles) == 1 {
-			q += ` AND class = ? COLLATE NOCASE`
+			q += ` AND s.class = ? COLLATE NOCASE`
 			args = append(args, titles[0])
 		} else {
 			placeholders := strings.Repeat("?,", len(titles))
 			placeholders = placeholders[:len(placeholders)-1]
-			q += ` AND class IN (` + placeholders + `) COLLATE NOCASE`
+			q += ` AND s.class IN (` + placeholders + `) COLLATE NOCASE`
 			for _, t := range titles {
 				args = append(args, t)
 			}
 		}
 	}
 	if f.Zone != "" {
-		q += ` AND last_seen_zone = ? COLLATE NOCASE`
+		q += ` AND s.last_seen_zone = ? COLLATE NOCASE`
 		args = append(args, f.Zone)
 	}
 	if f.Guild != "" {
-		q += ` AND guild = ? COLLATE NOCASE`
+		q += ` AND s.guild = ? COLLATE NOCASE`
 		args = append(args, f.Guild)
 	}
-	q += ` ORDER BY last_seen_at DESC`
+	q += ` ORDER BY s.last_seen_at DESC`
 	if f.Limit > 0 {
 		q += ` LIMIT ?`
 		args = append(args, f.Limit)
@@ -489,12 +506,14 @@ func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
 	var out []Sighting
 	for rows.Next() {
 		var v Sighting
-		var lastAnon int
+		var lastAnon, pvp int
 		if err := rows.Scan(&v.Name, &v.Class, &v.Race, &v.Guild, &v.LastSeenLevel,
-			&v.LastSeenZone, &v.LastSeenAt, &v.FirstSeenAt, &lastAnon, &v.SightingsCount); err != nil {
+			&v.LastSeenZone, &v.LastSeenAt, &v.FirstSeenAt, &lastAnon, &v.SightingsCount,
+			&v.Note, &pvp); err != nil {
 			return nil, err
 		}
 		v.LastAnonymous = lastAnon != 0
+		v.PVP = pvp != 0
 		out = append(out, v)
 	}
 	return out, rows.Err()
@@ -503,21 +522,67 @@ func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
 // Get returns a single sighting by name, or (nil, nil) if not found.
 func (s *Store) Get(name string) (*Sighting, error) {
 	row := s.db.QueryRow(`
-		SELECT name, class, race, guild, last_seen_level, last_seen_zone,
-		       last_seen_at, first_seen_at, last_anonymous, sightings_count
-		FROM player_sightings WHERE name = ? COLLATE NOCASE
+		SELECT s.name, s.class, s.race, s.guild, s.last_seen_level, s.last_seen_zone,
+		       s.last_seen_at, s.first_seen_at, s.last_anonymous, s.sightings_count,
+		       COALESCE(n.note, ''), COALESCE(n.pvp, 0)
+		FROM player_sightings s
+		LEFT JOIN player_notes n ON n.name = s.name COLLATE NOCASE
+		WHERE s.name = ? COLLATE NOCASE
 	`, name)
 	var v Sighting
-	var lastAnon int
+	var lastAnon, pvp int
 	if err := row.Scan(&v.Name, &v.Class, &v.Race, &v.Guild, &v.LastSeenLevel,
-		&v.LastSeenZone, &v.LastSeenAt, &v.FirstSeenAt, &lastAnon, &v.SightingsCount); err != nil {
+		&v.LastSeenZone, &v.LastSeenAt, &v.FirstSeenAt, &lastAnon, &v.SightingsCount,
+		&v.Note, &pvp); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, err
 	}
 	v.LastAnonymous = lastAnon != 0
+	v.PVP = pvp != 0
 	return &v, nil
+}
+
+// UpsertNote saves the user's note text + PVP flag for a player. An empty
+// note with pvp=false deletes the row so the table only holds real intel.
+func (s *Store) UpsertNote(name, note string, pvp bool) error {
+	if name == "" {
+		return fmt.Errorf("name required")
+	}
+	if note == "" && !pvp {
+		_, err := s.db.Exec(`DELETE FROM player_notes WHERE name = ? COLLATE NOCASE`, name)
+		return err
+	}
+	pvpInt := 0
+	if pvp {
+		pvpInt = 1
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO player_notes (name, note, pvp, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(name) DO UPDATE SET note = excluded.note, pvp = excluded.pvp, updated_at = excluded.updated_at
+	`, name, note, pvpInt, time.Now().Unix())
+	return err
+}
+
+// PVPNames returns every PVP-flagged player name, lowercased for
+// case-insensitive matching against incoming /who entries.
+func (s *Store) PVPNames() (map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT name FROM player_notes WHERE pvp = 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out[strings.ToLower(name)] = true
+	}
+	return out, rows.Err()
 }
 
 // LevelHistory returns the level-progression rows for a player, oldest-first.
@@ -543,7 +608,8 @@ func (s *Store) LevelHistory(name string) ([]LevelHistoryEntry, error) {
 	return out, rows.Err()
 }
 
-// Delete removes a single player.
+// Delete removes a single player, including any note — an explicit
+// per-player removal means "forget this person entirely".
 func (s *Store) Delete(name string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -556,11 +622,16 @@ func (s *Store) Delete(name string) error {
 	if _, err := tx.Exec(`DELETE FROM player_level_history WHERE name = ? COLLATE NOCASE`, name); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM player_notes WHERE name = ? COLLATE NOCASE`, name); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
-// Clear wipes both tables. Returns number of sightings deleted (level
-// history rows are deleted in the same transaction).
+// Clear wipes the sighting tables but keeps player_notes — notes and PVP
+// flags are user-curated and re-attach when a player is next seen. Returns
+// number of sightings deleted (level history rows are deleted in the same
+// transaction).
 func (s *Store) Clear() (int, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
