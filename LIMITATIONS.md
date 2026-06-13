@@ -476,6 +476,74 @@ These are inherent to log-file parsing and affect multiple features:
 
 ---
 
+## 12. Gear upgrade finder
+
+### 12.1 No quest-reward sourcing
+
+- **Limitation:** The finder can rank a quest-reward item if it exists in the
+  catalog, but cannot tell you it comes from a quest, and the "where it drops"
+  panel shows nothing for quest-only items.
+- **Root cause:** `quarm.db` has no quest→item reward mapping. Item sourcing is
+  derived from loot tables, merchants, forage, ground spawns, and tradeskill
+  recipes only.
+- **Sources checked:** DB (no quest reward tables); Log/Zeal (irrelevant).
+- **Could a future data source fix this?** **Partially** — only a curated
+  quest-reward dataset (hand-maintained or imported) would add this.
+
+### 12.2 No "keyed / flagged / leveled-for" gating
+
+- **Limitation:** Cannot filter to "only items I'm keyed or flagged for."
+  Level usability *is* honored (an item's required level), but access gating
+  (keys, flags, lockouts) is not.
+- **Root cause:** No per-character key/flag/lockout state is stored, and the DB
+  doesn't model item access requirements beyond class/race/level.
+- **Sources checked:** DB (class/race/`reqlevel` only); user.db (no key/flag
+  state).
+- **Could a future data source fix this?** **Partially** — would need both a
+  per-character flag/key record and item access metadata.
+
+### 12.3 No clean raid-vs-group or zone/source filtering of results
+
+- **Limitation:** Results can't be filtered to "group-obtainable only,"
+  "raid only," or "drops in zone X." Only class/race/level usability,
+  tradeable-vs-nodrop, and focus presence filter the list.
+- **Root cause:** There is no raid/group flag on items or NPCs to gate on, and
+  resolving the drop source for *every* candidate before ranking is too slow
+  (`GetItemSources` is ~39 ms/item — multiple seconds for a full slot). Source
+  is therefore loaded lazily per row, after ranking.
+- **Sources checked:** DB (no raid/group marker; sourcing is an expensive
+  multi-table join).
+- **Could a future data source fix this?** **Partially** — a precomputed
+  item→source/zone index (built offline during the data-release workflow)
+  would make source/zone filtering affordable.
+
+### 12.4 Scoring uses raw item stats, not all derived effects
+
+- **Limitation:** The upgrade score weights flat item stats (HP, mana, AC, the
+  seven attributes, resists). It does **not** score ATK, worn haste, weapon
+  ratio/procs, or click/proc effects, and AC is scored on raw item AC without
+  the class/level mitigation softcap.
+- **Root cause:** ATK and worn haste are derived from worn-effect spells, not
+  flat columns, and weapon value (ratio/proc) is a different model than armor
+  stat-stacking. These were scoped out of phase 1.
+- **Sources checked:** DB (items carry no flat ATK/haste column).
+- **Could a future data source fix this?** **N/A (design choice)** — these can
+  be added to the scoring model later; the data exists, it's just not wired in.
+
+### 12.5 Focus effects are surfaced, not scored
+
+- **Limitation:** A focus effect shows as a badge and can be filtered on, but
+  does not contribute to the numeric upgrade score, so a focus item may rank
+  below a higher-stat item.
+- **Root cause:** Deliberate — focus effects don't stack (only the best of each
+  type applies), so summing them into a per-item stat score is incorrect.
+  Whether a focus is worth keeping is a loadout-level, playstyle judgment.
+- **Sources checked:** DB (focus spell id/name available per item).
+- **Could a future data source fix this?** **N/A (design choice)** — a future
+  pass could add loadout-aware focus expected-value as a separate ranked axis.
+
+---
+
 ## Template for new entries
 
 ```
