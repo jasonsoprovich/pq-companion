@@ -66,7 +66,14 @@ func (h *replayHandler) files(w http.ResponseWriter, r *http.Request) {
 // path inside the configured EQ dir. Rejects anything that isn't a plain
 // eqlog file name (no separators, no traversal).
 func (h *replayHandler) resolveLogFile(name string) (string, string) {
-	eqPath := h.mgr.Get().EQPath
+	return resolveLogFile(h.mgr, name)
+}
+
+// resolveLogFile is the shared name validator used by both the replay and log
+// browse handlers. It rejects anything that isn't a plain eqlog file name (no
+// separators, no traversal) and confirms the file exists inside the EQ dir.
+func resolveLogFile(mgr *config.Manager, name string) (string, string) {
+	eqPath := mgr.Get().EQPath
 	if eqPath == "" {
 		return "", "EQ path is not configured"
 	}

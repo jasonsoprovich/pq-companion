@@ -3,12 +3,15 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 )
 
 type logHandler struct {
 	tailer *logparser.Tailer
+	mgr    *config.Manager
 }
 
 // status handles GET /api/log/status — returns the current tailer state plus
@@ -61,6 +64,36 @@ func (h *logHandler) info(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(fi)
+}
+
+// browse handles GET /api/log/browse — reads a chosen log file backward from
+// the tail and returns a page of lines, newest-first. Unlike the live feed
+// (fed only by the tailer) this works while the game is closed, and unlike
+// replay it does not drive the app pipeline — it is a read-only viewer.
+//
+// Query params:
+//
+//	file          eqlog base name (required)
+//	q             case-insensitive message filter (optional)
+//	type          exact event type filter, e.g. "log:combat_hit" (optional)
+//	before_offset byte cursor from a prior page's next_offset (optional)
+//	limit         max lines to return (optional, default 300)
+func (h *logHandler) browse(w http.ResponseWriter, r *http.Request) {
+	full, errMsg := resolveLogFile(h.mgr, r.URL.Query().Get("file"))
+	if errMsg != "" {
+		writeError(w, http.StatusBadRequest, errMsg)
+		return
+	}
+	q := r.URL.Query()
+	beforeOffset, _ := strconv.ParseInt(q.Get("before_offset"), 10, 64)
+	limit, _ := strconv.Atoi(q.Get("limit"))
+
+	res, err := logparser.BrowseLines(full, beforeOffset, q.Get("q"), q.Get("type"), limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 // cleanup handles POST /api/log/cleanup — backs up the log file and purges

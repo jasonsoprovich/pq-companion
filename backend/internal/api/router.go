@@ -73,7 +73,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	backfillH := &backfillHandler{registry: backfillRegistry, mgr: cfgMgr, tailer: tailer, hub: hub}
 	keyringH := &keyringHandler{store: keyringStore, master: keyringMaster}
 	lockoutsH := &lockoutsHandler{store: lockoutStore}
-	logH := &logHandler{tailer: tailer}
+	logH := &logHandler{tailer: tailer, mgr: cfgMgr}
 	replayH := &replayHandler{mgr: cfgMgr, replayer: replayer}
 	overlayH := &overlayHandler{npcTracker: npcTracker}
 	combatH := &combatHandler{tracker: combatTracker, historyStore: combatHistory}
@@ -254,6 +254,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		r.Route("/log", func(r chi.Router) {
 			r.Get("/status", logH.status)
 			r.Get("/info", logH.info)
+			r.Get("/browse", logH.browse)
 			r.Post("/cleanup", logH.cleanup)
 		})
 		r.Route("/replay", func(r chi.Router) {

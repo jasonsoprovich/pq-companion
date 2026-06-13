@@ -10,6 +10,13 @@ import "time"
 type EventType string
 
 const (
+	// EventRaw is a fallback type for a log line that carries a valid EQ
+	// timestamp but matches no known event pattern. It is never produced by
+	// the live tailer (which only emits classified events) — it exists so the
+	// out-of-game log browser can surface every line of a file (chat, system
+	// messages, emotes, etc.), not just the classified subset.
+	EventRaw EventType = "log:raw"
+
 	// EventZone is emitted when the player changes zones.
 	EventZone EventType = "log:zone"
 
