@@ -22,6 +22,25 @@ if (loggerInit.error) {
 }
 app.on('before-quit', () => closeLogger())
 
+// Mirror renderer console warnings/errors from every window (main + all
+// overlays) into electron.log. DevTools only shows them per-window and only
+// while open; this gives one persistent stream that survives into packaged
+// builds (where there is no DevTools at all) and can be read after the fact.
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('console-message', (details) => {
+    if (details.level !== 'warning' && details.level !== 'error') return
+    const win = BrowserWindow.fromWebContents(contents)
+    const title = win && !win.isDestroyed() ? win.getTitle() : `webcontents-${contents.id}`
+    const where = details.sourceId ? ` (${details.sourceId}:${details.lineNumber})` : ''
+    appendLine(details.level === 'error' ? 'RENDERER-ERR' : 'RENDERER-WARN', `[${title}] ${details.message}${where}`)
+  })
+  contents.on('render-process-gone', (_e, details) => {
+    const win = BrowserWindow.fromWebContents(contents)
+    const title = win && !win.isDestroyed() ? win.getTitle() : `webcontents-${contents.id}`
+    appendLine('RENDERER-ERR', `[${title}] render process gone: ${details.reason} (exitCode=${details.exitCode})`)
+  })
+})
+
 // pq-audio:// is a custom protocol used by the renderer's Audio elements to
 // load arbitrary local sound files (trigger sounds, alert sounds, etc.) under
 // the default webSecurity:true sandbox. file:// is blocked from non-file://

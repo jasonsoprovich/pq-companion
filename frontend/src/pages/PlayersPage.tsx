@@ -315,7 +315,9 @@ export default function PlayersPage(): React.ReactElement {
     listPlayers({ search, class: classFilter, zone: zoneFilter, guild: guildFilter, pvp: pvpOnly, limit: PLAYER_PAGE_SIZE })
       .then((r) => {
         setPlayers(r.players)
-        setTotal(r.total)
+        // Fall back to the page length when talking to a backend that
+        // predates the total field (stale dev sidecar).
+        setTotal(r.total ?? r.players.length)
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
@@ -334,7 +336,7 @@ export default function PlayersPage(): React.ReactElement {
     })
       .then((r) => {
         setPlayers((prev) => [...prev, ...r.players])
-        setTotal(r.total)
+        setTotal((t) => r.total ?? t)
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoadingMore(false))
