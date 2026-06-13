@@ -36,3 +36,19 @@ var charRaces = map[int]string{
 func CharRaceName(id int) string {
 	return charRaces[id]
 }
+
+// charRaceToItemBit maps a raw EQ PC race id to the bit it occupies in an
+// item's items.races bitmask. The 12 original races share id == bit-position+1
+// in order; Iksar/Vah Shir use raw ids 128/130 but bits 0x1000/0x2000.
+// Froglok (330) has no Quarm-era item race bit and maps to 0 (no restriction).
+var charRaceToItemBit = map[int]int{
+	1: 0x0001, 2: 0x0002, 3: 0x0004, 4: 0x0008, 5: 0x0010,
+	6: 0x0020, 7: 0x0040, 8: 0x0080, 9: 0x0100, 10: 0x0200,
+	11: 0x0400, 12: 0x0800, 128: 0x1000, 130: 0x2000,
+}
+
+// RaceBitForCharRace returns the items.races bitmask bit for a PC race id, or
+// 0 when the race has no era-relevant bit (treat as unrestricted).
+func RaceBitForCharRace(id int) int {
+	return charRaceToItemBit[id]
+}
