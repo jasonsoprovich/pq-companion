@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Wand2, ChevronDown, ChevronRight, Star, Loader2, AlertTriangle, Sliders, RotateCcw, Save } from 'lucide-react'
+import { Wand2, ChevronDown, ChevronRight, Star, Loader2, AlertTriangle, Sliders, RotateCcw, Save, LayoutGrid, List } from 'lucide-react'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import { ItemIcon } from '../components/Icon'
 import { SourceNPCLink } from '../components/SourceNPCLink'
@@ -9,38 +9,50 @@ import {
   getItem,
   getItemSources,
   getCharacterUpgrades,
+  getCharacterUpgradesOverview,
   getCharacterUpgradeWeights,
   setCharacterUpgradeWeights,
   resetCharacterUpgradeWeights,
+  listWishlist,
+  addWishlistEntries,
+  deleteWishlistEntry,
   type Character,
   type UpgradeWeights,
   type UpgradeCandidate,
   type UpgradesResponse,
+  type UpgradesOverviewResponse,
 } from '../services/api'
 import type { Item, ItemSources } from '../types/item'
+import type { WishlistEntry } from '../types/wishlist'
 
-// Logical worn slots, keyed to the backend slot keys.
-const SLOTS: { key: string; label: string }[] = [
-  { key: 'ear', label: 'Ear' },
-  { key: 'head', label: 'Head' },
-  { key: 'face', label: 'Face' },
-  { key: 'neck', label: 'Neck' },
-  { key: 'shoulders', label: 'Shoulders' },
-  { key: 'arms', label: 'Arms' },
-  { key: 'back', label: 'Back' },
-  { key: 'wrist', label: 'Wrist' },
-  { key: 'hands', label: 'Hands' },
-  { key: 'fingers', label: 'Fingers' },
-  { key: 'chest', label: 'Chest' },
-  { key: 'legs', label: 'Legs' },
-  { key: 'feet', label: 'Feet' },
-  { key: 'waist', label: 'Waist' },
-  { key: 'primary', label: 'Primary' },
-  { key: 'secondary', label: 'Secondary' },
-  { key: 'range', label: 'Range' },
-  { key: 'charm', label: 'Charm' },
-  { key: 'ammo', label: 'Ammo' },
+// Logical worn slots, keyed to the backend slot keys. `bucket` is the wishlist
+// slot-bucket name (singular Shoulder/Finger) that an item from this slot is
+// wishlisted under — see lib/wishlistSlots WISHLIST_SLOT_ORDER.
+const SLOTS: { key: string; label: string; bucket: string }[] = [
+  { key: 'ear', label: 'Ear', bucket: 'Ear' },
+  { key: 'head', label: 'Head', bucket: 'Head' },
+  { key: 'face', label: 'Face', bucket: 'Face' },
+  { key: 'neck', label: 'Neck', bucket: 'Neck' },
+  { key: 'shoulders', label: 'Shoulders', bucket: 'Shoulder' },
+  { key: 'arms', label: 'Arms', bucket: 'Arms' },
+  { key: 'back', label: 'Back', bucket: 'Back' },
+  { key: 'wrist', label: 'Wrist', bucket: 'Wrist' },
+  { key: 'hands', label: 'Hands', bucket: 'Hands' },
+  { key: 'fingers', label: 'Fingers', bucket: 'Finger' },
+  { key: 'chest', label: 'Chest', bucket: 'Chest' },
+  { key: 'legs', label: 'Legs', bucket: 'Legs' },
+  { key: 'feet', label: 'Feet', bucket: 'Feet' },
+  { key: 'waist', label: 'Waist', bucket: 'Waist' },
+  { key: 'primary', label: 'Primary', bucket: 'Primary' },
+  { key: 'secondary', label: 'Secondary', bucket: 'Secondary' },
+  { key: 'range', label: 'Range', bucket: 'Range' },
+  { key: 'charm', label: 'Charm', bucket: 'Charm' },
+  { key: 'ammo', label: 'Ammo', bucket: 'Ammo' },
 ]
+
+const BUCKET_FOR_SLOT: Record<string, string> = Object.fromEntries(
+  SLOTS.map((s) => [s.key, s.bucket]),
+)
 
 const CLASS_NAMES = [
   'Warrior', 'Cleric', 'Paladin', 'Ranger', 'Shadow Knight', 'Druid', 'Monk',
@@ -91,6 +103,13 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
   const [showWeights, setShowWeights] = useState(false)
 
   const [modalItem, setModalItem] = useState<Item | null>(null)
+
+  const [mode, setMode] = useState<'slot' | 'overview'>('slot')
+  const [overview, setOverview] = useState<UpgradesOverviewResponse | null>(null)
+  const [overviewLoading, setOverviewLoading] = useState(false)
+
+  // The viewed character's wishlist (all buckets), for the star toggles.
+  const [wishlist, setWishlist] = useState<WishlistEntry[]>([])
 
   useEffect(() => {
     listCharacters().then((r) => setCharacters(r.characters)).catch(() => {})
@@ -143,6 +162,59 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
     }
   }, [selected, slot, showAll, weights])
 
+  // Fetch the all-slots overview on demand (entering overview mode, or weights
+  // change while in it).
+  useEffect(() => {
+    if (mode !== 'overview' || !selected || !weights) return
+    let cancelled = false
+    const id = setTimeout(() => {
+      setOverviewLoading(true)
+      getCharacterUpgradesOverview(selected.id, weights)
+        .then((r) => {
+          if (!cancelled) setOverview(r)
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setOverviewLoading(false)
+        })
+    }, 200)
+    return () => {
+      cancelled = true
+      clearTimeout(id)
+    }
+  }, [mode, selected, weights])
+
+  // Load the viewed character's wishlist for the star toggles.
+  const refreshWishlist = useCallback((charID: number) => {
+    listWishlist(charID).then((r) => setWishlist(r.entries)).catch(() => {})
+  }, [])
+  useEffect(() => {
+    if (!selected) {
+      setWishlist([])
+      return
+    }
+    refreshWishlist(selected.id)
+  }, [selected, refreshWishlist])
+
+  const wishEntry = useCallback(
+    (itemID: number, bucket: string): WishlistEntry | undefined =>
+      wishlist.find((e) => e.item_id === itemID && e.slot_bucket === bucket),
+    [wishlist],
+  )
+
+  // Toggle an item on/off the viewed character's wishlist under one slot bucket.
+  const toggleWish = useCallback(
+    (itemID: number, bucket: string) => {
+      if (!selected) return
+      const existing = wishEntry(itemID, bucket)
+      const op = existing
+        ? deleteWishlistEntry(selected.id, existing.id)
+        : addWishlistEntries(selected.id, itemID, [bucket])
+      op.then(() => refreshWishlist(selected.id)).catch(() => {})
+    },
+    [selected, wishEntry, refreshWishlist],
+  )
+
   const openItem = useCallback((id: number) => {
     getItem(id).then(setModalItem).catch(() => {})
   }, [])
@@ -189,6 +261,23 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
               {selected.level} {CLASS_NAMES[selected.class] ?? '—'}
             </span>
           )}
+          {selected && (
+            <div className="ml-auto flex items-center rounded text-xs"
+              style={{ border: '1px solid var(--color-border)', overflow: 'hidden' }}>
+              <button onClick={() => setMode('slot')}
+                className="flex items-center gap-1 px-2 py-1"
+                style={{ backgroundColor: mode === 'slot' ? 'var(--color-primary)' : 'transparent',
+                  color: mode === 'slot' ? 'var(--color-background)' : 'var(--color-muted)' }}>
+                <List size={12} /> By slot
+              </button>
+              <button onClick={() => setMode('overview')}
+                className="flex items-center gap-1 px-2 py-1"
+                style={{ backgroundColor: mode === 'overview' ? 'var(--color-primary)' : 'transparent',
+                  color: mode === 'overview' ? 'var(--color-background)' : 'var(--color-muted)' }}>
+                <LayoutGrid size={12} /> Overview
+              </button>
+            </div>
+          )}
         </div>
         <CharacterSubTabs value={viewed} onChange={setViewed} />
       </div>
@@ -202,6 +291,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
       ) : (
         <div className="flex flex-1 min-h-0 flex-col">
           {/* Slot selector */}
+          {mode === 'slot' && (
           <div className="shrink-0 flex flex-wrap gap-1 border-b px-6 py-2"
             style={{ borderColor: 'var(--color-border)' }}>
             {SLOTS.map((s) => (
@@ -218,8 +308,10 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
               </button>
             ))}
           </div>
+          )}
 
           {/* Controls + current item */}
+          {mode === 'slot' && (
           <div className="shrink-0 flex flex-wrap items-center gap-3 border-b px-6 py-2"
             style={{ borderColor: 'var(--color-border)' }}>
             {data && (
@@ -263,6 +355,20 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
               </button>
             </div>
           </div>
+          )}
+
+          {/* Weights toggle when in overview mode (no per-slot control bar) */}
+          {mode === 'overview' && (
+            <div className="shrink-0 flex items-center justify-end border-b px-6 py-2"
+              style={{ borderColor: 'var(--color-border)' }}>
+              <button onClick={() => setShowWeights((v) => !v)}
+                className="flex items-center gap-1 rounded px-2 py-1 text-xs"
+                style={{ border: '1px solid var(--color-border)',
+                  color: showWeights ? 'var(--color-primary)' : 'var(--color-muted)' }}>
+                <Sliders size={12} /> Weights{weightsCustom ? ' *' : ''}
+              </button>
+            </div>
+          )}
 
           {showWeights && weights && (
             <WeightsEditor
@@ -274,7 +380,17 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
             />
           )}
 
-          {/* Results */}
+          {mode === 'overview' ? (
+            <OverviewView
+              overview={overview}
+              loading={overviewLoading}
+              onOpen={openItem}
+              onPickSlot={(key) => { setSlot(key); setMode('slot') }}
+              isWishlisted={(id, bucket) => wishEntry(id, bucket) !== undefined}
+              onToggleWish={toggleWish}
+            />
+          ) : (
+          /* Results */
           <div className="flex-1 overflow-y-auto px-6 py-2">
             {!data?.has_current_gear && (
               <div className="mb-2 flex items-center gap-2 rounded px-3 py-1.5 text-xs"
@@ -311,7 +427,9 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                 </thead>
                 <tbody>
                   {visible.map((c, i) => (
-                    <ResultRow key={c.id} rank={i + 1} cand={c} onOpen={openItem} />
+                    <ResultRow key={c.id} rank={i + 1} cand={c} onOpen={openItem}
+                      wishlisted={wishEntry(c.id, BUCKET_FOR_SLOT[slot]) !== undefined}
+                      onStar={() => toggleWish(c.id, BUCKET_FOR_SLOT[slot])} />
                   ))}
                 </tbody>
               </table>
@@ -322,6 +440,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
               </div>
             )}
           </div>
+          )}
         </div>
       )}
 
@@ -381,11 +500,13 @@ function WeightsEditor({
 // ── Result row ─────────────────────────────────────────────────────────────────
 
 function ResultRow({
-  rank, cand, onOpen,
+  rank, cand, onOpen, wishlisted, onStar,
 }: {
   rank: number
   cand: UpgradeCandidate
   onOpen: (id: number) => void
+  wishlisted: boolean
+  onStar: () => void
 }): React.ReactElement {
   const [open, setOpen] = useState(false)
   const [sources, setSources] = useState<ItemSources | null>(null)
@@ -412,6 +533,7 @@ function ResultRow({
             <button onClick={toggle} style={{ color: 'var(--color-muted)' }}>
               {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             </button>
+            <WishStar on={wishlisted} onClick={onStar} />
             <button onClick={() => onOpen(cand.id)}
               className="flex items-center gap-1.5 underline decoration-dotted"
               style={{ color: 'var(--color-primary)' }}>
@@ -530,6 +652,131 @@ function SourcesPanel({ sources }: { sources: ItemSources | null }): React.React
           Tradeskill: {tradeskills.map((t) => t.recipe_name).join(', ')}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Wishlist star ──────────────────────────────────────────────────────────────
+
+// WishStar is a slot-scoped wishlist toggle: it adds/removes the item for the
+// *viewed* character under the current slot's bucket. (The shared
+// WishlistStarButton targets the global active character, which isn't the
+// character being viewed here, so the finder manages its own toggle.)
+function WishStar({ on, onClick }: { on: boolean; onClick: () => void }): React.ReactElement {
+  return (
+    <button onClick={onClick} className="shrink-0"
+      title={on ? 'Remove from wishlist' : 'Add to wishlist'}>
+      <Star size={15} fill={on ? '#eab308' : 'none'}
+        style={{ color: on ? '#eab308' : 'var(--color-muted)' }} />
+    </button>
+  )
+}
+
+// ── All-slots overview ─────────────────────────────────────────────────────────
+
+function OverviewView({
+  overview, loading, onOpen, onPickSlot, isWishlisted, onToggleWish,
+}: {
+  overview: UpgradesOverviewResponse | null
+  loading: boolean
+  onOpen: (id: number) => void
+  onPickSlot: (key: string) => void
+  isWishlisted: (id: number, bucket: string) => boolean
+  onToggleWish: (id: number, bucket: string) => void
+}): React.ReactElement {
+  if (loading && !overview) {
+    return (
+      <div className="flex flex-1 items-center justify-center gap-2 py-10 text-sm"
+        style={{ color: 'var(--color-muted)' }}>
+        <Loader2 size={16} className="animate-spin" /> Scanning all slots…
+      </div>
+    )
+  }
+  if (!overview) return <div className="flex-1" />
+  return (
+    <div className="flex-1 overflow-y-auto px-6 py-2">
+      {!overview.has_current_gear && (
+        <div className="mb-2 flex items-center gap-2 rounded px-3 py-1.5 text-xs"
+          style={{ backgroundColor: 'var(--color-surface-2)', color: '#f59e0b' }}>
+          <AlertTriangle size={12} />
+          No Quarmy export found — ranking by stats only. Export via Zeal to compare against your gear.
+        </div>
+      )}
+      <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+        <thead>
+          <tr className="text-left text-xs" style={{ color: 'var(--color-muted)' }}>
+            <th className="w-24 px-2 py-1">Slot</th>
+            <th className="px-2 py-1">Current</th>
+            <th className="px-2 py-1">Best upgrade</th>
+            <th className="w-16 px-2 py-1 text-right">Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          {overview.slots.map((s) => {
+            const bucket = BUCKET_FOR_SLOT[s.slot]
+            const best = s.best
+            return (
+              <tr key={s.slot} className="border-b align-top" style={{ borderColor: 'var(--color-border)' }}>
+                <td className="px-2 py-1.5">
+                  <button onClick={() => onPickSlot(s.slot)} className="underline decoration-dotted"
+                    style={{ color: 'var(--color-primary)' }}>{s.slot_label}</button>
+                </td>
+                <td className="px-2 py-1.5">
+                  {s.current_items.length === 0 ? (
+                    <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
+                      {overview.has_current_gear ? '(empty)' : '—'}
+                    </span>
+                  ) : (
+                    <div className="flex flex-col gap-0.5">
+                      {s.current_items.map((ci) => (
+                        <button key={ci.id} onClick={() => onOpen(ci.id)}
+                          className="flex items-center gap-1 text-xs underline decoration-dotted"
+                          style={{ color: 'var(--color-muted-foreground)' }}>
+                          <ItemIcon id={ci.icon} name={ci.name} size={14} /> {ci.name}
+                          {ci.focus_name && <Star size={9} style={{ color: '#eab308' }} />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </td>
+                <td className="px-2 py-1.5">
+                  {best ? (
+                    <div className="flex items-center gap-2">
+                      <WishStar on={isWishlisted(best.id, bucket)} onClick={() => onToggleWish(best.id, bucket)} />
+                      <button onClick={() => onOpen(best.id)}
+                        className="flex items-center gap-1.5 underline decoration-dotted"
+                        style={{ color: 'var(--color-primary)' }}>
+                        <ItemIcon id={best.icon} name={best.name} size={16} /> {best.name}
+                      </button>
+                      {best.focus_name && (
+                        <span className="flex items-center gap-0.5 rounded px-1 text-[10px]"
+                          style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }}
+                          title={`Focus: ${best.focus_name}`}>
+                          <Star size={9} /> {best.focus_name}
+                        </span>
+                      )}
+                      {best.nodrop !== 0 && (
+                        <span className="rounded px-1 text-[10px]"
+                          style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
+                          NO DROP
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
+                      {s.considered === 0 ? 'no usable items' : 'no upgrade'}
+                    </span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5 text-right font-mono text-xs"
+                  style={{ color: best ? '#22c55e' : 'var(--color-muted)' }}>
+                  {best ? `+${best.score.toFixed(0)}` : ''}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }

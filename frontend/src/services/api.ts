@@ -1172,6 +1172,32 @@ export function resetCharacterUpgradeWeights(id: number): Promise<UpgradeWeights
   return del<UpgradeWeights>(`/api/characters/${id}/upgrade-weights`)
 }
 
+export interface UpgradeOverviewSlot {
+  slot: string
+  slot_label: string
+  current_items: UpgradeCurrentItem[]
+  best: UpgradeCandidate | null
+  considered: number
+}
+
+export interface UpgradesOverviewResponse {
+  class: number
+  level: number
+  weights: UpgradeWeights
+  slots: UpgradeOverviewSlot[]
+  has_current_gear: boolean
+}
+
+export function getCharacterUpgradesOverview(
+  id: number,
+  weights?: UpgradeWeights,
+): Promise<UpgradesOverviewResponse> {
+  const p = new URLSearchParams()
+  if (weights) p.set('weights', JSON.stringify(weights))
+  const qs = p.toString()
+  return get<UpgradesOverviewResponse>(`/api/characters/${id}/upgrades/overview${qs ? `?${qs}` : ''}`)
+}
+
 // ── Spell modifiers (focus extensions from items + AAs) ───────────────────────
 
 export interface SpellModifierLimits {
