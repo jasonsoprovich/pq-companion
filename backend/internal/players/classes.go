@@ -16,21 +16,21 @@ import "strings"
 // Berserker (PoP-and-later) is not present in Quarm and is intentionally
 // excluded; if it lands later, add an entry following the same shape.
 var ClassTitles = map[string][]string{
-	"Bard":         {"Bard", "Minstrel", "Troubador", "Virtuoso", "Maestro"},
-	"Beastlord":    {"Beastlord", "Primalist", "Animist", "Savage Lord", "Feral Lord"},
-	"Cleric":       {"Cleric", "Vicar", "Templar", "High Priest", "Archon"},
-	"Druid":        {"Druid", "Wanderer", "Preserver", "Hierophant", "Storm Warden"},
-	"Enchanter":    {"Enchanter", "Illusionist", "Beguiler", "Phantasmist", "Coercer"},
-	"Magician":     {"Magician", "Elementalist", "Conjurer", "Arch Mage", "Arch Convoker"},
-	"Monk":         {"Monk", "Disciple", "Master", "Grandmaster", "Transcendant"},
-	"Necromancer":  {"Necromancer", "Heretic", "Defiler", "Warlock", "Arch Lich"},
-	"Paladin":      {"Paladin", "Cavalier", "Knight", "Crusader", "Lord Protector"},
-	"Ranger":       {"Ranger", "Pathfinder", "Outrider", "Warder", "Forest Stalker"},
-	"Rogue":        {"Rogue", "Rake", "Blackguard", "Assassin", "Deceiver"},
+	"Bard":          {"Bard", "Minstrel", "Troubador", "Virtuoso", "Maestro"},
+	"Beastlord":     {"Beastlord", "Primalist", "Animist", "Savage Lord", "Feral Lord"},
+	"Cleric":        {"Cleric", "Vicar", "Templar", "High Priest", "Archon"},
+	"Druid":         {"Druid", "Wanderer", "Preserver", "Hierophant", "Storm Warden"},
+	"Enchanter":     {"Enchanter", "Illusionist", "Beguiler", "Phantasmist", "Coercer"},
+	"Magician":      {"Magician", "Elementalist", "Conjurer", "Arch Mage", "Arch Convoker"},
+	"Monk":          {"Monk", "Disciple", "Master", "Grandmaster", "Transcendant"},
+	"Necromancer":   {"Necromancer", "Heretic", "Defiler", "Warlock", "Arch Lich"},
+	"Paladin":       {"Paladin", "Cavalier", "Knight", "Crusader", "Lord Protector"},
+	"Ranger":        {"Ranger", "Pathfinder", "Outrider", "Warder", "Forest Stalker"},
+	"Rogue":         {"Rogue", "Rake", "Blackguard", "Assassin", "Deceiver"},
 	"Shadow Knight": {"Shadow Knight", "Reaver", "Revenant", "Grave Lord", "Dread Lord"},
-	"Shaman":       {"Shaman", "Mystic", "Luminary", "Oracle", "Prophet"},
-	"Warrior":      {"Warrior", "Champion", "Myrmidon", "Warlord", "Overlord"},
-	"Wizard":       {"Wizard", "Channeler", "Evoker", "Sorcerer", "Arcanist"},
+	"Shaman":        {"Shaman", "Mystic", "Luminary", "Oracle", "Prophet"},
+	"Warrior":       {"Warrior", "Champion", "Myrmidon", "Warlord", "Overlord"},
+	"Wizard":        {"Wizard", "Channeler", "Evoker", "Sorcerer", "Arcanist"},
 }
 
 // classIndexNames maps the 0-indexed EQ class id (0=WAR … 14=BST) to its
