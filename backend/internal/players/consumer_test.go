@@ -108,3 +108,61 @@ func TestConsumer_GuildStatPreservesOtherFields(t *testing.T) {
 		t.Errorf("/guildstat clobbered prior fields: level=%d class=%q", got.LastSeenLevel, got.Class)
 	}
 }
+
+// TestConsumer_PVPSightingFiresAlertWithCooldown verifies a /who entry for a
+// PVP-flagged player fires the alert callback once, case-insensitively, and
+// that the cooldown suppresses an immediate repeat.
+func TestConsumer_PVPSightingFiresAlertWithCooldown(t *testing.T) {
+	s := openTest(t)
+	if err := s.UpsertNote("Ganker", "kos", true); err != nil {
+		t.Fatalf("UpsertNote: %v", err)
+	}
+	c := NewConsumer(s)
+	type alert struct{ name, zone, source string }
+	var alerts []alert
+	c.SetOnPVPSighting(func(name, zone, source string) {
+		alerts = append(alerts, alert{name, zone, source})
+	})
+	ts := time.Unix(1_700_000_000, 0)
+
+	whoBlock := func() {
+		c.Handle(logparser.LogEvent{
+			Type:      logparser.EventWhoEntry,
+			Timestamp: ts,
+			Data:      logparser.WhoEntryData{Name: "GANKER", Level: 60, Class: "Rogue"},
+		})
+		c.Handle(logparser.LogEvent{
+			Type:      logparser.EventWhoEntry,
+			Timestamp: ts,
+			Data:      logparser.WhoEntryData{Name: "Friendly", Level: 10, Class: "Cleric"},
+		})
+		c.Handle(logparser.LogEvent{
+			Type:      logparser.EventWhoSummary,
+			Timestamp: ts,
+			Data:      logparser.WhoSummaryData{Zone: "East Commonlands"},
+		})
+	}
+
+	whoBlock()
+	if len(alerts) != 1 {
+		t.Fatalf("alerts = %d, want 1 (%+v)", len(alerts), alerts)
+	}
+	if alerts[0].name != "GANKER" || alerts[0].zone != "East Commonlands" || alerts[0].source != "who" {
+		t.Errorf("alert = %+v", alerts[0])
+	}
+
+	// A second /who inside the cooldown stays quiet.
+	whoBlock()
+	if len(alerts) != 1 {
+		t.Errorf("cooldown failed: alerts = %d, want 1", len(alerts))
+	}
+
+	// Expiring the cooldown re-arms the warning.
+	c.mu.Lock()
+	c.lastPVPAlert["ganker"] = time.Now().Add(-2 * pvpAlertCooldown)
+	c.mu.Unlock()
+	whoBlock()
+	if len(alerts) != 2 {
+		t.Errorf("re-arm failed: alerts = %d, want 2", len(alerts))
+	}
+}

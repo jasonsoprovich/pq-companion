@@ -492,6 +492,34 @@ func main() {
 		})
 	}
 
+	// PVP warning: when a PVP-flagged player shows up in a live /who, fire a
+	// synthetic trigger:fired event so the existing trigger overlay + audio
+	// engine handle the visual and TTS warning — no trigger pack or regex
+	// upkeep, the consumer matches flagged names exactly.
+	if playersConsumer != nil {
+		playersConsumer.SetOnPVPSighting(func(name, zone, source string) {
+			where := "in /who"
+			if source == "group" {
+				where = "joined your group"
+			}
+			text := fmt.Sprintf("PVP: %s %s", name, where)
+			if zone != "" && source == "who" {
+				text += " — " + zone
+			}
+			hub.Broadcast(ws.Event{Type: trigger.WSEventTriggerFired, Data: trigger.TriggerFired{
+				TriggerID:   "system:pvp-warning",
+				TriggerName: "PVP Warning",
+				MatchedLine: text,
+				Actions: []trigger.Action{
+					{Type: trigger.ActionOverlayText, Text: "⚔ " + text, DurationSecs: 8, Color: "#ef4444"},
+					{Type: trigger.ActionTextToSpeech, Text: fmt.Sprintf("P V P warning: %s", name)},
+				},
+				FiredAt: time.Now(),
+			}})
+			slog.Info("pvp warning fired", "name", name, "zone", zone, "source", source)
+		})
+	}
+
 	if lootStore != nil {
 		lootConsumer = loot.NewConsumer(lootStore, activeChar)
 		lootConsumer.SetOnInsert(func(e loot.Entry) {

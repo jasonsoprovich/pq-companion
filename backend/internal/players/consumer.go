@@ -2,10 +2,16 @@ package players
 
 import (
 	"log/slog"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 )
+
+// pvpAlertCooldown suppresses repeat warnings for the same player — spamming
+// /who shouldn't re-announce a name the user was just warned about.
+const pvpAlertCooldown = 60 * time.Second
 
 // Consumer turns log events into Sighting upserts. /who entries are buffered
 // until the trailing summary line ("There are N players in <Zone>.") so each
@@ -18,11 +24,24 @@ type Consumer struct {
 	mu      sync.Mutex
 	zone    string // last-known zone from EventZone / EventWhoSummary
 	pending []SightingInput
+
+	onPVP        func(name, zone, source string)
+	lastPVPAlert map[string]time.Time // lowercased name → wall-clock time of last alert
 }
 
 // NewConsumer constructs a consumer wired to the given store.
 func NewConsumer(store *Store) *Consumer {
-	return &Consumer{store: store}
+	return &Consumer{store: store, lastPVPAlert: map[string]time.Time{}}
+}
+
+// SetOnPVPSighting registers a callback fired (outside any replay/backfill
+// path) when a PVP-flagged player shows up live. source is "who" for /who
+// entries; future sources (group joins…) pass their own tag so the alert
+// text can say what happened.
+func (c *Consumer) SetOnPVPSighting(fn func(name, zone, source string)) {
+	c.mu.Lock()
+	c.onPVP = fn
+	c.mu.Unlock()
 }
 
 // Handle is the entry point for the shared logparser event stream.
@@ -86,7 +105,8 @@ func (c *Consumer) Handle(ev logparser.LogEvent) {
 }
 
 // flushLocked drains the pending buffer, upserting each entry under the
-// supplied zone. Caller must hold c.mu.
+// supplied zone, then fires PVP warnings for any flagged names in the batch.
+// Caller must hold c.mu.
 func (c *Consumer) flushLocked(zone string) {
 	if len(c.pending) == 0 {
 		return
@@ -97,5 +117,30 @@ func (c *Consumer) flushLocked(zone string) {
 			slog.Warn("players: upsert failed", "name", in.Name, "err", err)
 		}
 	}
+	if c.onPVP != nil {
+		flagged, err := c.store.PVPNames()
+		if err != nil {
+			slog.Warn("players: pvp flag lookup failed", "err", err)
+		} else if len(flagged) > 0 {
+			for _, in := range c.pending {
+				if flagged[strings.ToLower(in.Name)] {
+					c.alertPVPLocked(in.Name, zone, "who")
+				}
+			}
+		}
+	}
 	c.pending = c.pending[:0]
+}
+
+// alertPVPLocked fires the PVP callback for a flagged name unless one was
+// already fired for that name inside the cooldown window. Caller must hold
+// c.mu.
+func (c *Consumer) alertPVPLocked(name, zone, source string) {
+	key := strings.ToLower(name)
+	now := time.Now()
+	if last, ok := c.lastPVPAlert[key]; ok && now.Sub(last) < pvpAlertCooldown {
+		return
+	}
+	c.lastPVPAlert[key] = now
+	c.onPVP(name, zone, source)
 }
