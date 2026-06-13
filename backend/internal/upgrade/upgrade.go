@@ -1,0 +1,201 @@
+// Package upgrade scores candidate gear against a character's currently-worn
+// item in a slot, producing a cap-aware "is this actually an upgrade" ranking.
+//
+// The model is deliberately transparent and matches how players reason about
+// gear: each scorable stat carries a weight, and the score of swapping the
+// current slot item for a candidate is the weighted sum of the *effective*
+// stat deltas. "Effective" is the key word — a stat that is already at its cap
+// contributes nothing further, so an item's +20 STR is worth zero when the
+// character is already at the 255 attribute cap. HP, mana, and AC are treated
+// as uncapped primary value; the seven attributes respect eqstat.MaxStat; the
+// five resists respect eqstat.ResistCap.
+//
+// Focus effects are intentionally NOT scored here — they do not stack (only the
+// best focus of a type applies), so summing them into a raw stat score is
+// wrong. The API surfaces focus as a separate axis instead.
+//
+// ATK and worn haste are effect-derived (not flat item columns) and are left
+// out of phase-1 scoring; they can be layered on later as additional weights.
+package upgrade
+
+import (
+	"github.com/jasonsoprovich/pq-companion/backend/internal/eqstat"
+)
+
+// StatLine is the flat, scorable stat contribution of a single item, or the
+// summed total of a whole loadout. Only stats that exist as flat item columns
+// appear here.
+type StatLine struct {
+	HP   int `json:"hp"`
+	Mana int `json:"mana"`
+	AC   int `json:"ac"`
+	STR  int `json:"str"`
+	STA  int `json:"sta"`
+	AGI  int `json:"agi"`
+	DEX  int `json:"dex"`
+	WIS  int `json:"wis"`
+	INT  int `json:"int"`
+	CHA  int `json:"cha"`
+	MR   int `json:"mr"`
+	FR   int `json:"fr"`
+	CR   int `json:"cr"`
+	DR   int `json:"dr"`
+	PR   int `json:"pr"`
+}
+
+// Weights assigns a per-stat scoring weight. Values are on an arbitrary common
+// axis (defaults use an HP-equivalent scale where wHP = 1.0), so "1 AC = 5 HP"
+// is simply wAC = 5 with wHP = 1. Editing is per character; DefaultWeights
+// seeds sensible per-class starting points.
+type Weights struct {
+	HP   float64 `json:"hp"`
+	Mana float64 `json:"mana"`
+	AC   float64 `json:"ac"`
+	STR  float64 `json:"str"`
+	STA  float64 `json:"sta"`
+	AGI  float64 `json:"agi"`
+	DEX  float64 `json:"dex"`
+	WIS  float64 `json:"wis"`
+	INT  float64 `json:"int"`
+	CHA  float64 `json:"cha"`
+	MR   float64 `json:"mr"`
+	FR   float64 `json:"fr"`
+	CR   float64 `json:"cr"`
+	DR   float64 `json:"dr"`
+	PR   float64 `json:"pr"`
+}
+
+// Context carries the character state needed for cap-aware scoring.
+type Context struct {
+	// Level drives the attribute cap (eqstat.MaxStat).
+	Level int
+	// CapMod is an AA stat-cap raise (SE_RaiseStatCap); 0 for the common case.
+	CapMod int
+	// Current is the character's full current attribute/resist totals
+	// (base + all worn items + AA + buffs). It is the reference for how much
+	// headroom remains under each cap. HP/mana/AC are not read from here.
+	Current StatLine
+}
+
+// statKind classifies how a stat's effective value is computed.
+type statKind int
+
+const (
+	uncapped   statKind = iota // HP, mana, AC — full value, no cap
+	attrCapped                 // the seven attributes — eqstat.MaxStat
+	resistCap                  // the five resists — eqstat.ResistCap
+)
+
+// statDef describes one scorable stat: how to read it from a StatLine, its
+// weight from Weights, and its cap behaviour.
+type statDef struct {
+	Key  string
+	get  func(StatLine) int
+	wget func(Weights) float64
+	kind statKind
+}
+
+// statDefs is the canonical ordered list of scorable stats. The order is the
+// display order used by the API/UI.
+var statDefs = []statDef{
+	{"hp", func(s StatLine) int { return s.HP }, func(w Weights) float64 { return w.HP }, uncapped},
+	{"mana", func(s StatLine) int { return s.Mana }, func(w Weights) float64 { return w.Mana }, uncapped},
+	{"ac", func(s StatLine) int { return s.AC }, func(w Weights) float64 { return w.AC }, uncapped},
+	{"str", func(s StatLine) int { return s.STR }, func(w Weights) float64 { return w.STR }, attrCapped},
+	{"sta", func(s StatLine) int { return s.STA }, func(w Weights) float64 { return w.STA }, attrCapped},
+	{"agi", func(s StatLine) int { return s.AGI }, func(w Weights) float64 { return w.AGI }, attrCapped},
+	{"dex", func(s StatLine) int { return s.DEX }, func(w Weights) float64 { return w.DEX }, attrCapped},
+	{"wis", func(s StatLine) int { return s.WIS }, func(w Weights) float64 { return w.WIS }, attrCapped},
+	{"int", func(s StatLine) int { return s.INT }, func(w Weights) float64 { return w.INT }, attrCapped},
+	{"cha", func(s StatLine) int { return s.CHA }, func(w Weights) float64 { return w.CHA }, attrCapped},
+	{"mr", func(s StatLine) int { return s.MR }, func(w Weights) float64 { return w.MR }, resistCap},
+	{"fr", func(s StatLine) int { return s.FR }, func(w Weights) float64 { return w.FR }, resistCap},
+	{"cr", func(s StatLine) int { return s.CR }, func(w Weights) float64 { return w.CR }, resistCap},
+	{"dr", func(s StatLine) int { return s.DR }, func(w Weights) float64 { return w.DR }, resistCap},
+	{"pr", func(s StatLine) int { return s.PR }, func(w Weights) float64 { return w.PR }, resistCap},
+}
+
+// StatDelta is the per-stat effective comparison between a candidate item and
+// the item currently in the slot.
+type StatDelta struct {
+	Stat string `json:"stat"`
+	// Cand and Current are the raw stat values on each item.
+	Cand    int `json:"cand"`
+	Current int `json:"current"`
+	// Effective is the cap-aware delta that actually feeds the score — it can
+	// be smaller than Cand-Current when the stat is at/over its cap.
+	Effective int     `json:"effective"`
+	Weight    float64 `json:"weight"`
+	Weighted  float64 `json:"weighted"`
+	// Capped flags a stat whose effective value was clipped by a cap, so the
+	// UI can explain why a "better" number scored less than expected.
+	Capped bool `json:"capped"`
+}
+
+// Result is the scored comparison of one candidate against the current item.
+type Result struct {
+	Score  float64     `json:"score"`
+	Deltas []StatDelta `json:"deltas"`
+}
+
+func clamp(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+// effective returns how much of itemVal does useful work, given the loadout's
+// value for this stat excluding the slot being compared (base).
+func (d statDef) effective(ctx Context, base, itemVal int) (eff int, capped bool) {
+	switch d.kind {
+	case attrCapped:
+		cap := eqstat.MaxStat(ctx.Level, ctx.CapMod)
+		eff = clamp(base+itemVal, 0, cap) - clamp(base, 0, cap)
+	case resistCap:
+		cap := eqstat.ResistCap
+		eff = clamp(base+itemVal, 0, cap) - clamp(base, 0, cap)
+	default: // uncapped
+		return itemVal, false
+	}
+	return eff, eff != itemVal
+}
+
+// Score computes the weighted marginal value of replacing the slot's current
+// item (slotCur) with a candidate (cand). A positive score means the candidate
+// is a net upgrade under the given weights. Per-stat deltas are returned for
+// display; stats with zero weight and zero effect are omitted.
+func Score(ctx Context, w Weights, slotCur, cand StatLine) Result {
+	res := Result{Deltas: make([]StatDelta, 0, len(statDefs))}
+	for _, d := range statDefs {
+		curVal := d.get(slotCur)
+		candVal := d.get(cand)
+		weight := d.wget(w)
+
+		// base = this stat across the whole loadout EXCEPT the slot item, so
+		// the candidate is compared apples-to-apples against what it replaces.
+		base := d.get(ctx.Current) - curVal
+
+		effCur, _ := d.effective(ctx, base, curVal)
+		effCand, candCapped := d.effective(ctx, base, candVal)
+		eff := effCand - effCur
+		if eff == 0 && curVal == candVal {
+			continue // nothing to show for this stat
+		}
+		weighted := weight * float64(eff)
+		res.Score += weighted
+		res.Deltas = append(res.Deltas, StatDelta{
+			Stat:      d.Key,
+			Cand:      candVal,
+			Current:   curVal,
+			Effective: eff,
+			Weight:    weight,
+			Weighted:  weighted,
+			Capped:    candCapped && candVal > curVal,
+		})
+	}
+	return res
+}
