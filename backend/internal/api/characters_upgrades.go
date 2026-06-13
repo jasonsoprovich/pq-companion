@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"sort"
 	"strconv"
@@ -130,7 +131,15 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 		limit = v
 	}
 
-	weights := upgrade.DefaultWeights(char.Class)
+	// Weights: an inline ?weights=<json> override (live slider preview) wins;
+	// otherwise the character's saved tuning; otherwise the class default.
+	weights := h.resolveWeights(char)
+	if raw := r.URL.Query().Get("weights"); raw != "" {
+		var override upgrade.Weights
+		if err := json.Unmarshal([]byte(raw), &override); err == nil {
+			weights = override
+		}
+	}
 	ctx := upgrade.Context{Level: char.Level, Current: statLineFromBlock(h.currentTotals(char))}
 
 	// Items currently worn in this slot (0, 1, or 2 for dual slots).
@@ -212,6 +221,112 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 		Considered:     len(cands),
 		HasCurrentGear: hasGear,
 	})
+}
+
+// resolveWeights returns the character's saved upgrade weights, falling back to
+// the class default preset when none are saved or the stored JSON is corrupt.
+func (h *charactersHandler) resolveWeights(char character.Character) upgrade.Weights {
+	if raw, ok, err := h.store.GetUpgradeWeights(char.ID); err == nil && ok {
+		var wts upgrade.Weights
+		if json.Unmarshal([]byte(raw), &wts) == nil {
+			return wts
+		}
+	}
+	return upgrade.DefaultWeights(char.Class)
+}
+
+// upgradeWeights handles GET /api/characters/{id}/upgrade-weights — the
+// character's tuned weights, or the class default when none are saved. The
+// response flags which it is so the UI can show a "reset to default" affordance.
+func (h *charactersHandler) upgradeWeights(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	char, ok, err := h.store.Get(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+	raw, custom, err := h.store.GetUpgradeWeights(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	weights := upgrade.DefaultWeights(char.Class)
+	if custom {
+		var wts upgrade.Weights
+		if json.Unmarshal([]byte(raw), &wts) == nil {
+			weights = wts
+		} else {
+			custom = false // corrupt row — present the default
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"weights":   weights,
+		"is_custom": custom,
+		"archetype": upgrade.ArchetypeFor(char.Class),
+	})
+}
+
+// updateUpgradeWeights handles PUT /api/characters/{id}/upgrade-weights.
+func (h *charactersHandler) updateUpgradeWeights(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if _, ok, err := h.store.Get(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	} else if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+	var wts upgrade.Weights
+	if err := json.NewDecoder(r.Body).Decode(&wts); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid weights JSON")
+		return
+	}
+	raw, err := json.Marshal(wts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := h.store.SetUpgradeWeights(id, string(raw)); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, wts)
+}
+
+// resetUpgradeWeights handles DELETE /api/characters/{id}/upgrade-weights —
+// clears the tuning so the class default applies again.
+func (h *charactersHandler) resetUpgradeWeights(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	char, ok, err := h.store.Get(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+	if err := h.store.DeleteUpgradeWeights(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, upgrade.DefaultWeights(char.Class))
 }
 
 // currentTotals returns the character's Equipped stat layer (base + worn items
