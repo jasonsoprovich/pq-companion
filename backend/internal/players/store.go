@@ -28,7 +28,17 @@ type Sighting struct {
 	SightingsCount int    `json:"sightings_count"`
 	Note           string `json:"note"`
 	PVP            bool   `json:"pvp"`
+	TellCount      int    `json:"tell_count"`
+	LastTellAt     int64  `json:"last_tell_at"`
+	GroupCount     int    `json:"group_count"`
+	LastGroupedAt  int64  `json:"last_grouped_at"`
 }
+
+// Interaction kinds recorded by TouchInteraction.
+const (
+	InteractionTell  = "tell"
+	InteractionGroup = "group"
+)
 
 // LevelHistoryEntry is one row in player_level_history — recorded only when
 // a non-anonymous sighting differs from the previously-known level.
@@ -129,7 +139,68 @@ func (s *Store) migrate() error {
 	`); err != nil {
 		return err
 	}
+	// Direct interactions (tells exchanged, group joins) — auto-tracked so
+	// the tracker shows who the user has actually played with, not just who
+	// walked past a /who.
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS player_interactions (
+			name      TEXT    NOT NULL COLLATE NOCASE,
+			kind      TEXT    NOT NULL,
+			first_at  INTEGER NOT NULL,
+			last_at   INTEGER NOT NULL,
+			count     INTEGER NOT NULL DEFAULT 1,
+			PRIMARY KEY (name, kind)
+		)
+	`); err != nil {
+		return err
+	}
 	return nil
+}
+
+// TouchInteraction records one direct interaction (a tell exchanged or a
+// group join) for a player, creating a minimal tracker row when the player
+// has never appeared in a /who — that's the "auto track who I play with"
+// behaviour. The minimal row carries sightings_count 0 so /who statistics
+// stay truthful.
+func (s *Store) TouchInteraction(name, kind string, at time.Time) error {
+	if name == "" || kind == "" {
+		return fmt.Errorf("name and kind required")
+	}
+	if at.IsZero() {
+		at = time.Now()
+	}
+	ts := at.Unix()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var sentinel int
+	err = tx.QueryRow(`SELECT 1 FROM player_sightings WHERE name = ? COLLATE NOCASE`, name).Scan(&sentinel)
+	if err == sql.ErrNoRows {
+		if _, err := tx.Exec(`
+			INSERT INTO player_sightings (name, last_seen_at, first_seen_at, last_anonymous, sightings_count)
+			VALUES (?, ?, ?, 1, 0)
+		`, name, ts, ts); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+		INSERT INTO player_interactions (name, kind, first_at, last_at, count)
+		VALUES (?, ?, ?, ?, 1)
+		ON CONFLICT(name, kind) DO UPDATE SET
+			first_at = MIN(excluded.first_at, first_at),
+			last_at  = MAX(excluded.last_at, last_at),
+			count    = count + 1
+	`, name, kind, ts, ts); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Sighting input represents a single observed /who row plus the active zone
@@ -453,9 +524,13 @@ type SearchFilters struct {
 func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
 	q := `SELECT s.name, s.class, s.race, s.guild, s.last_seen_level, s.last_seen_zone,
 	             s.last_seen_at, s.first_seen_at, s.last_anonymous, s.sightings_count,
-	             COALESCE(n.note, ''), COALESCE(n.pvp, 0)
+	             COALESCE(n.note, ''), COALESCE(n.pvp, 0),
+	             COALESCE(ti.count, 0), COALESCE(ti.last_at, 0),
+	             COALESCE(gi.count, 0), COALESCE(gi.last_at, 0)
 	      FROM player_sightings s
 	      LEFT JOIN player_notes n ON n.name = s.name COLLATE NOCASE
+	      LEFT JOIN player_interactions ti ON ti.name = s.name AND ti.kind = 'tell'
+	      LEFT JOIN player_interactions gi ON gi.name = s.name AND gi.kind = 'group'
 	      WHERE 1=1`
 	args := []any{}
 	if f.NameContains != "" {
@@ -509,7 +584,7 @@ func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
 		var lastAnon, pvp int
 		if err := rows.Scan(&v.Name, &v.Class, &v.Race, &v.Guild, &v.LastSeenLevel,
 			&v.LastSeenZone, &v.LastSeenAt, &v.FirstSeenAt, &lastAnon, &v.SightingsCount,
-			&v.Note, &pvp); err != nil {
+			&v.Note, &pvp, &v.TellCount, &v.LastTellAt, &v.GroupCount, &v.LastGroupedAt); err != nil {
 			return nil, err
 		}
 		v.LastAnonymous = lastAnon != 0
@@ -524,16 +599,20 @@ func (s *Store) Get(name string) (*Sighting, error) {
 	row := s.db.QueryRow(`
 		SELECT s.name, s.class, s.race, s.guild, s.last_seen_level, s.last_seen_zone,
 		       s.last_seen_at, s.first_seen_at, s.last_anonymous, s.sightings_count,
-		       COALESCE(n.note, ''), COALESCE(n.pvp, 0)
+		       COALESCE(n.note, ''), COALESCE(n.pvp, 0),
+		       COALESCE(ti.count, 0), COALESCE(ti.last_at, 0),
+		       COALESCE(gi.count, 0), COALESCE(gi.last_at, 0)
 		FROM player_sightings s
 		LEFT JOIN player_notes n ON n.name = s.name COLLATE NOCASE
+		LEFT JOIN player_interactions ti ON ti.name = s.name AND ti.kind = 'tell'
+		LEFT JOIN player_interactions gi ON gi.name = s.name AND gi.kind = 'group'
 		WHERE s.name = ? COLLATE NOCASE
 	`, name)
 	var v Sighting
 	var lastAnon, pvp int
 	if err := row.Scan(&v.Name, &v.Class, &v.Race, &v.Guild, &v.LastSeenLevel,
 		&v.LastSeenZone, &v.LastSeenAt, &v.FirstSeenAt, &lastAnon, &v.SightingsCount,
-		&v.Note, &pvp); err != nil {
+		&v.Note, &pvp, &v.TellCount, &v.LastTellAt, &v.GroupCount, &v.LastGroupedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -625,6 +704,9 @@ func (s *Store) Delete(name string) error {
 	if _, err := tx.Exec(`DELETE FROM player_notes WHERE name = ? COLLATE NOCASE`, name); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM player_interactions WHERE name = ? COLLATE NOCASE`, name); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -644,6 +726,9 @@ func (s *Store) Clear() (int, error) {
 	}
 	deleted, _ := res.RowsAffected()
 	if _, err := tx.Exec(`DELETE FROM player_level_history`); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(`DELETE FROM player_interactions`); err != nil {
 		return 0, err
 	}
 	return int(deleted), tx.Commit()

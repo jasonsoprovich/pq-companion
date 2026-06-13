@@ -374,3 +374,47 @@ func TestClear_KeepsNotes_DeleteRemovesThem(t *testing.T) {
 		t.Errorf("Delete should remove the note row, found %d", n)
 	}
 }
+
+func TestTouchInteraction_CreatesRowAndAccumulates(t *testing.T) {
+	s := openTest(t)
+	t0 := time.Unix(1_700_000_000, 0)
+
+	// First tell from a never-/who'd player creates a minimal tracker row.
+	if err := s.TouchInteraction("Stranger", InteractionTell, t0); err != nil {
+		t.Fatalf("TouchInteraction: %v", err)
+	}
+	got, err := s.Get("Stranger")
+	if err != nil || got == nil {
+		t.Fatalf("Get: %v got=%v", err, got)
+	}
+	if got.SightingsCount != 0 || !got.LastAnonymous {
+		t.Errorf("minimal row wrong: %+v", got)
+	}
+	if got.TellCount != 1 || got.LastTellAt != t0.Unix() {
+		t.Errorf("tell interaction wrong: %+v", got)
+	}
+
+	// Repeat tells accumulate; group joins track separately.
+	if err := s.TouchInteraction("Stranger", InteractionTell, t0.Add(time.Hour)); err != nil {
+		t.Fatalf("second tell: %v", err)
+	}
+	if err := s.TouchInteraction("Stranger", InteractionGroup, t0.Add(2*time.Hour)); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	got, _ = s.Get("Stranger")
+	if got.TellCount != 2 || got.LastTellAt != t0.Add(time.Hour).Unix() {
+		t.Errorf("tell accumulation wrong: %+v", got)
+	}
+	if got.GroupCount != 1 || got.LastGroupedAt != t0.Add(2*time.Hour).Unix() {
+		t.Errorf("group interaction wrong: %+v", got)
+	}
+
+	// A later /who upgrades the minimal row without losing interactions.
+	if err := s.Upsert(SightingInput{Name: "Stranger", Level: 30, Class: "Druid", Zone: "Oasis", ObservedAt: t0.Add(3 * time.Hour)}); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	got, _ = s.Get("Stranger")
+	if got.Class != "Druid" || got.TellCount != 2 || got.GroupCount != 1 {
+		t.Errorf("who upgrade lost data: %+v", got)
+	}
+}

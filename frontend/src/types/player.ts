@@ -11,6 +11,10 @@ export interface PlayerSighting {
   sightings_count: number
   note: string
   pvp: boolean
+  tell_count: number
+  last_tell_at: number
+  group_count: number
+  last_grouped_at: number
 }
 
 export interface PlayerLevelHistoryEntry {

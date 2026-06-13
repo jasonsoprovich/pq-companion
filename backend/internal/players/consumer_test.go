@@ -166,3 +166,36 @@ func TestConsumer_PVPSightingFiresAlertWithCooldown(t *testing.T) {
 		t.Errorf("re-arm failed: alerts = %d, want 2", len(alerts))
 	}
 }
+
+// TestConsumer_GroupJoinRecordsInteractionAndPVPAlert verifies the raw-line
+// path: "X has joined the group." records a group interaction, "You have
+// joined the group." is ignored, and a flagged groupmate fires the PVP alert
+// with source "group".
+func TestConsumer_GroupJoinRecordsInteractionAndPVPAlert(t *testing.T) {
+	s := openTest(t)
+	if err := s.UpsertNote("Ganker", "", true); err != nil {
+		t.Fatalf("UpsertNote: %v", err)
+	}
+	c := NewConsumer(s)
+	var alerts []string
+	c.SetOnPVPSighting(func(name, zone, source string) {
+		alerts = append(alerts, name+"|"+source)
+	})
+	ts := time.Unix(1_700_000_000, 0)
+
+	c.HandleLine(ts, "You have joined the group.")
+	c.HandleLine(ts, "Tiliki has joined the group.")
+	c.HandleLine(ts, "Ganker has joined the group.")
+	c.HandleLine(ts, "Tiliki has left the group.")
+
+	if got, _ := s.Get("You"); got != nil {
+		t.Error("'You have joined' should not create a row")
+	}
+	tiliki, _ := s.Get("Tiliki")
+	if tiliki == nil || tiliki.GroupCount != 1 {
+		t.Errorf("Tiliki group interaction missing: %+v", tiliki)
+	}
+	if len(alerts) != 1 || alerts[0] != "Ganker|group" {
+		t.Errorf("alerts = %v, want [Ganker|group]", alerts)
+	}
+}

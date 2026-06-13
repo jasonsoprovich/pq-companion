@@ -2,12 +2,18 @@ package players
 
 import (
 	"log/slog"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 )
+
+// reGroupJoined matches "Soandso has joined the group." — someone joining the
+// local character's group. "You have joined the group." is deliberately not
+// captured (no other player named on that line).
+var reGroupJoined = regexp.MustCompile(`^(\w+) has joined the group\.$`)
 
 // pvpAlertCooldown suppresses repeat warnings for the same player — spamming
 // /who shouldn't re-announce a name the user was just warned about.
@@ -101,6 +107,49 @@ func (c *Consumer) Handle(ev logparser.LogEvent) {
 		if err := c.store.UpdateGuild(gs.Player, gs.Guild, zone, ev.Timestamp); err != nil {
 			slog.Warn("players: guildstat update failed", "name", gs.Player, "err", err)
 		}
+	}
+}
+
+// HandleLine watches the raw log line stream for group-join messages and
+// records them as interactions, so groupmates show up in the tracker even if
+// they never appear in a /who. A flagged player joining the group also fires
+// the PVP warning.
+func (c *Consumer) HandleLine(ts time.Time, msg string) {
+	m := reGroupJoined.FindStringSubmatch(strings.TrimRight(msg, "\r\n"))
+	if m == nil {
+		return
+	}
+	name := m[1]
+	if name == "You" {
+		return
+	}
+	if err := c.store.TouchInteraction(name, InteractionGroup, ts); err != nil {
+		slog.Warn("players: group interaction failed", "name", name, "err", err)
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.onPVP == nil {
+		return
+	}
+	flagged, err := c.store.PVPNames()
+	if err != nil {
+		slog.Warn("players: pvp flag lookup failed", "err", err)
+		return
+	}
+	if flagged[strings.ToLower(name)] {
+		c.alertPVPLocked(name, c.zone, "group")
+	}
+}
+
+// RecordTell records a direct tell exchanged with another player (either
+// direction). Wired from the chat consumer's insert hook in main.
+func (c *Consumer) RecordTell(peer string, ts time.Time) {
+	if peer == "" {
+		return
+	}
+	if err := c.store.TouchInteraction(peer, InteractionTell, ts); err != nil {
+		slog.Warn("players: tell interaction failed", "name", peer, "err", err)
 	}
 }
 

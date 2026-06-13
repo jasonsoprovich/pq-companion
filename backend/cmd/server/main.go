@@ -489,6 +489,12 @@ func main() {
 		chatConsumer = chat.NewConsumer(chatStore, activeChar)
 		chatConsumer.SetOnInsert(func(m chat.Message) {
 			hub.Broadcast(ws.Event{Type: "chat:new", Data: m})
+			// Direct tells double as player-tracker interactions, so people
+			// the user actually talks to show up in the tracker even if they
+			// never appear in a /who.
+			if playersConsumer != nil && m.Channel == chat.ChannelTell {
+				playersConsumer.RecordTell(m.Peer, time.Unix(m.TS, 0))
+			}
 		})
 	}
 
@@ -743,6 +749,9 @@ func main() {
 		}
 		if lootConsumer != nil {
 			lootConsumer.HandleLine(ts, msg)
+		}
+		if playersConsumer != nil {
+			playersConsumer.HandleLine(ts, msg)
 		}
 	}
 

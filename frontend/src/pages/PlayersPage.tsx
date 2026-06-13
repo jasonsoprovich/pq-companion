@@ -131,6 +131,23 @@ function PlayerDetail({
             <span style={{ color: 'var(--color-foreground)' }}>{player.last_seen_zone || 'unknown zone'}</span>{' '}
             {formatRelative(player.last_seen_at)}
           </p>
+          {(player.tell_count > 0 || player.group_count > 0) && (
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-muted)' }}>
+              {player.group_count > 0 && (
+                <>
+                  Grouped {player.group_count} time{player.group_count === 1 ? '' : 's'} ·{' '}
+                  last {formatRelative(player.last_grouped_at)}
+                </>
+              )}
+              {player.group_count > 0 && player.tell_count > 0 && ' · '}
+              {player.tell_count > 0 && (
+                <>
+                  {player.tell_count} tell{player.tell_count === 1 ? '' : 's'} ·{' '}
+                  last {formatRelative(player.last_tell_at)}
+                </>
+              )}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -527,7 +544,7 @@ export default function PlayersPage(): React.ReactElement {
               No players tracked yet.
             </p>
             <p className="text-[11px] max-w-md text-center" style={{ color: 'var(--color-muted)' }}>
-              Type <code className="font-mono">/who</code> or <code className="font-mono">/who all</code> in EverQuest and the players in your zone will appear here. The list persists across restarts and merges anonymous sightings into the last-known class/level.
+              Type <code className="font-mono">/who</code> or <code className="font-mono">/who all</code> in EverQuest and the players in your zone will appear here. Players you exchange tells with or group up with are tracked automatically too. The list persists across restarts and merges anonymous sightings into the last-known class/level.
             </p>
           </div>
         )}
