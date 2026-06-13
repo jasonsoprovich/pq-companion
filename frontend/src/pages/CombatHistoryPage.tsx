@@ -22,7 +22,7 @@ import {
 } from '../services/api'
 import type { EntityStats, HealerStats, HistoryFacets, HistoryListResponse, StoredFight } from '../types/combat'
 import { groupByEventSession, fmtSessionGap, type SessionBreakReason } from '../lib/sessionGrouping'
-import { rollupCombatants, useCombinePetWithOwner, petBadge } from '../lib/dpsRollup'
+import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
 import {
   useDPSMode,
   dpsForMode,
@@ -517,6 +517,17 @@ function FilterBar({
 
 // ── combatant breakdown table (collapsed view) ────────────────────────────────
 
+// Shared column track for the combatant breakdown. The name column is a fixed
+// width and a trailing 1fr spacer absorbs slack, so the numeric columns sit
+// tight against the name instead of being pushed to the far right (the gap the
+// old `1fr`-name layout produced on short names).
+const COMBATANT_COLS = '170px 76px 64px 44px 48px 48px 60px 56px 1fr'
+
+const numCell: React.CSSProperties = {
+  textAlign: 'right',
+  fontVariantNumeric: 'tabular-nums',
+}
+
 function CombatantTable({
   combatants,
   totalDamage,
@@ -543,7 +554,7 @@ function CombatantTable({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 48px 80px 70px 60px',
+          gridTemplateColumns: COMBATANT_COLS,
           gap: '0 8px',
           fontSize: 10,
           fontWeight: 600,
@@ -555,40 +566,95 @@ function CombatantTable({
         }}
       >
         <span>Name</span>
-        <span style={{ textAlign: 'right' }}>%</span>
         <span style={{ textAlign: 'right' }}>Damage</span>
         <span style={{ textAlign: 'right' }}>{dpsModeAbbrev(mode)}</span>
+        <span style={{ textAlign: 'right' }}>%</span>
         <span style={{ textAlign: 'right' }}>Crits</span>
+        <span style={{ textAlign: 'right' }}>Hits</span>
+        <span style={{ textAlign: 'right' }}>Max</span>
+        <span style={{ textAlign: 'right' }}>Time</span>
+        <span />
       </div>
       {rolled.map((c) => (
-        <div
-          key={c.name}
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 48px 80px 70px 60px',
-            gap: '0 8px',
-            padding: '3px 0',
-            fontSize: 11,
-            borderBottom: '1px solid rgba(255,255,255,0.03)',
-          }}
-        >
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {c.name}
-            {c.pets.length > 0 && (
-              <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{petBadge(c.pets)}</span>
-            )}
-          </span>
-          <span style={{ textAlign: 'right', color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>
-            {pct(c.total_damage, totalDamage)}
-          </span>
-          <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(c.total_damage)}</span>
-          <span style={{ textAlign: 'right', color: '#f97316', fontVariantNumeric: 'tabular-nums' }}>{fmtDPS(dpsForMode(c, mode))}</span>
-          <span style={{ textAlign: 'right', color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>
-            {c.crit_count > 0 ? c.crit_count : '—'}
-          </span>
-        </div>
+        <CombatantRow key={c.name} c={c} totalDamage={totalDamage} mode={mode} />
       ))}
     </div>
+  )
+}
+
+// CombatantRow renders one owner/standalone row plus, when it has pets folded
+// in, an expander that reveals each pet's own damage breakdown.
+function CombatantRow({
+  c,
+  totalDamage,
+  mode,
+}: {
+  c: RolledUpEntity
+  totalDamage: number
+  mode: DPSMode
+}): React.ReactElement {
+  const [expanded, setExpanded] = useState(false)
+  const hasPets = c.pets.length > 0
+  return (
+    <>
+      <div
+        onClick={hasPets ? () => setExpanded((v) => !v) : undefined}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: COMBATANT_COLS,
+          gap: '0 8px',
+          padding: '3px 0',
+          fontSize: 11,
+          borderBottom: '1px solid rgba(255,255,255,0.03)',
+          cursor: hasPets ? 'pointer' : 'default',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 3 }}>
+          {hasPets ? (
+            expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />
+          ) : null}
+          {c.name}
+          {hasPets && (
+            <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{petBadge(c.pets)}</span>
+          )}
+        </span>
+        <span style={numCell}>{fmt(c.total_damage)}</span>
+        <span style={{ ...numCell, color: '#f97316' }}>{fmtDPS(dpsForMode(c, mode))}</span>
+        <span style={{ ...numCell, color: 'var(--color-muted)' }}>{pct(c.total_damage, totalDamage)}</span>
+        <span style={{ ...numCell, color: 'var(--color-muted)' }}>{c.crit_count > 0 ? c.crit_count : '—'}</span>
+        <span style={{ ...numCell, color: 'var(--color-muted)' }}>{c.hit_count > 0 ? fmt(c.hit_count) : '—'}</span>
+        <span style={{ ...numCell, color: 'var(--color-muted)' }}>{c.max_hit > 0 ? fmt(c.max_hit) : '—'}</span>
+        <span style={{ ...numCell, color: 'var(--color-muted)' }}>{fmtDuration(c.active_seconds)}</span>
+        <span />
+      </div>
+      {expanded &&
+        c.pets.map((p) => (
+          <div
+            key={p.name}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: COMBATANT_COLS,
+              gap: '0 8px',
+              padding: '2px 0',
+              fontSize: 10,
+              color: 'var(--color-muted)',
+              backgroundColor: 'rgba(255,255,255,0.02)',
+            }}
+          >
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 18 }}>
+              ↳ {p.name}
+            </span>
+            <span style={numCell}>{fmt(p.total_damage)}</span>
+            <span style={numCell}>{fmtDPS(dpsForMode(p, mode))}</span>
+            <span style={numCell}>{pct(p.total_damage, totalDamage)}</span>
+            <span style={numCell}>{p.crit_count > 0 ? p.crit_count : '—'}</span>
+            <span style={numCell}>{p.hit_count > 0 ? fmt(p.hit_count) : '—'}</span>
+            <span style={numCell}>{p.max_hit > 0 ? fmt(p.max_hit) : '—'}</span>
+            <span style={numCell}>{fmtDuration(p.active_seconds)}</span>
+            <span />
+          </div>
+        ))}
+    </>
   )
 }
 
@@ -649,7 +715,7 @@ function FightRow({
         onClick={() => setExpanded((v) => !v)}
         style={{
           display: 'grid',
-          gridTemplateColumns: '20px 140px 1fr 60px 90px 90px 24px',
+          gridTemplateColumns: '20px 140px 60px 90px 90px 1fr 24px',
           gap: '0 12px',
           alignItems: 'center',
           padding: '7px 14px',
@@ -662,6 +728,13 @@ function FightRow({
         </span>
         <span style={{ color: 'var(--color-muted)', fontSize: 11, whiteSpace: 'nowrap' }}>
           {fmtDateTime(fight.start_time)}
+        </span>
+        <span style={{ color: 'var(--color-muted)', fontSize: 11, textAlign: 'right' }}>
+          {fmtDuration(fight.duration_seconds)}
+        </span>
+        <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(fight.total_damage)}</span>
+        <span style={{ textAlign: 'right', color: '#f97316', fontVariantNumeric: 'tabular-nums' }}>
+          {fmtDPS(fightAggregateDPS(fight.total_damage, fight.duration_seconds, fight.combatants, mode))} {dpsModeAbbrev(mode)}
         </span>
         <span
           style={{
@@ -684,13 +757,6 @@ function FightRow({
               {fight.character_name}
             </span>
           )}
-        </span>
-        <span style={{ color: 'var(--color-muted)', fontSize: 11, textAlign: 'right' }}>
-          {fmtDuration(fight.duration_seconds)}
-        </span>
-        <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(fight.total_damage)}</span>
-        <span style={{ textAlign: 'right', color: '#f97316', fontVariantNumeric: 'tabular-nums' }}>
-          {fmtDPS(fightAggregateDPS(fight.total_damage, fight.duration_seconds, fight.combatants, mode))} {dpsModeAbbrev(mode)}
         </span>
         <button
           onClick={(e) => {
@@ -1115,7 +1181,7 @@ export default function CombatHistoryPage(): React.ReactElement {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '20px 140px 1fr 60px 90px 90px 24px',
+          gridTemplateColumns: '20px 140px 60px 90px 90px 1fr 24px',
           gap: '0 12px',
           padding: '5px 14px',
           fontSize: 10,
@@ -1130,10 +1196,10 @@ export default function CombatHistoryPage(): React.ReactElement {
       >
         <span />
         <span>Date</span>
-        <span>NPC · Zone · Character</span>
         <span style={{ textAlign: 'right' }}>Length</span>
         <span style={{ textAlign: 'right' }}>Total Dmg</span>
         <span style={{ textAlign: 'right' }}>DPS</span>
+        <span>NPC · Zone · Character</span>
         <span />
       </div>
 
