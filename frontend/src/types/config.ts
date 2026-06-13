@@ -37,6 +37,9 @@ export interface Preferences {
   // Seconds after the cursor leaves an overlay before the chrome fade kicks
   // in. 0/missing = the default (2.5), mirroring the zoom_factor convention.
   overlay_fade_delay_secs?: number
+  // Mutes the sound + on-screen warning when a PVP-flagged player shows up
+  // in a /who or joins the group. Inverted so missing/false = warning on.
+  pvp_warning_disabled?: boolean
   minimize_to_tray: boolean
   high_contrast: boolean
   zoom_factor: number

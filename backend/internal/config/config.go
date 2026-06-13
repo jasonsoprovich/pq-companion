@@ -224,6 +224,14 @@ type Preferences struct {
 	// client, mirroring the ZoomFactor convention.
 	OverlayFadeDelaySecs float64 `yaml:"overlay_fade_delay_secs,omitempty" json:"overlay_fade_delay_secs"`
 
+	// PVPWarningDisabled mutes the sound + on-screen warning fired when a
+	// PVP-flagged player shows up in a /who or joins the group. Stored
+	// inverted so the zero value means "warning on" — flagging a player is
+	// already opt-in, so the warning defaults to enabled without needing a
+	// default-true migration in applyDefaults. Flags in the tracker are
+	// unaffected; only the alert is muted.
+	PVPWarningDisabled bool `yaml:"pvp_warning_disabled,omitempty" json:"pvp_warning_disabled"`
+
 	// MinimizeToTray controls whether closing the main window hides to tray.
 	MinimizeToTray bool `yaml:"minimize_to_tray" json:"minimize_to_tray"`
 

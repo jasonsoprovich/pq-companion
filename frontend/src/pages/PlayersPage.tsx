@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
-import { UserSearch, RefreshCw, Trash2, AlertCircle, EyeOff, X, ArrowUp, ArrowDown, Swords, StickyNote } from 'lucide-react'
-import { listPlayers, deletePlayer, clearPlayers, getPlayerHistory, updatePlayerNote } from '../services/api'
+import { UserSearch, RefreshCw, Trash2, AlertCircle, EyeOff, X, ArrowUp, ArrowDown, Swords, StickyNote, Bell, BellOff } from 'lucide-react'
+import { listPlayers, deletePlayer, clearPlayers, getPlayerHistory, updatePlayerNote, getConfig, updateConfig } from '../services/api'
 import type { PlayerSighting, PlayerLevelHistoryEntry } from '../types/player'
 import MissingLogNotice from '../components/MissingLogNotice'
 import BackfillLink from '../components/BackfillLink'
@@ -267,6 +267,40 @@ export default function PlayersPage(): React.ReactElement {
   const [sortField, setSortField] = useState<SortField>('none')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
+  // PVP warning toggle — backed by preferences.pvp_warning_disabled in
+  // config.yaml; the backend checks it at fire time so flipping it here
+  // takes effect immediately. null until the config loads.
+  const [pvpWarningOn, setPvpWarningOn] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getConfig()
+      .then((cfg) => {
+        if (!cancelled) setPvpWarningOn(!cfg.preferences.pvp_warning_disabled)
+      })
+      .catch(() => {
+        // Leave the toggle hidden; the warning itself still follows config.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function togglePvpWarning() {
+    if (pvpWarningOn === null) return
+    const next = !pvpWarningOn
+    setPvpWarningOn(next)
+    try {
+      const cfg = await getConfig()
+      await updateConfig({
+        ...cfg,
+        preferences: { ...cfg.preferences, pvp_warning_disabled: !next },
+      })
+    } catch {
+      setPvpWarningOn(!next) // revert on failure
+    }
+  }
+
   const load = useCallback(() => {
     setLoading(true)
     setError(null)
@@ -366,6 +400,25 @@ export default function PlayersPage(): React.ReactElement {
           {players.length} tracked
         </span>
         <div className="ml-auto flex items-center gap-2">
+          {pvpWarningOn !== null && (
+            <button
+              onClick={() => void togglePvpWarning()}
+              title={
+                pvpWarningOn
+                  ? 'PVP warning is ON — flagged players appearing in a /who or joining your group fire a sound + on-screen alert. Click to disable.'
+                  : 'PVP warning is OFF — no alert fires for flagged players. Click to enable.'
+              }
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                color: pvpWarningOn ? 'var(--color-danger)' : 'var(--color-muted)',
+                border: `1px solid ${pvpWarningOn ? 'var(--color-danger)' : 'var(--color-border)'}`,
+              }}
+            >
+              {pvpWarningOn ? <Bell size={11} /> : <BellOff size={11} />}
+              PVP warning {pvpWarningOn ? 'on' : 'off'}
+            </button>
+          )}
           <BackfillLink />
           <button
             onClick={load}

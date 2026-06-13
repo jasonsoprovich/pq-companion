@@ -504,6 +504,11 @@ func main() {
 	// upkeep, the consumer matches flagged names exactly.
 	if playersConsumer != nil {
 		playersConsumer.SetOnPVPSighting(func(name, zone, source string) {
+			// Checked at fire time (not wiring time) so the Players page
+			// toggle takes effect without a restart.
+			if cfgMgr.Get().Preferences.PVPWarningDisabled {
+				return
+			}
 			where := "in /who"
 			if source == "group" {
 				where = "joined your group"
