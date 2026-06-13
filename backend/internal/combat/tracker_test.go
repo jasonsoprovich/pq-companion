@@ -1284,6 +1284,32 @@ func TestCritMatchesPerActor(t *testing.T) {
 	}
 }
 
+// TestPlayerOwnMeleeCritMatched verifies the player's own melee crit is
+// counted even though the announcement names them by character name ("Osui
+// Scores a critical hit!") while their damage line is keyed as "You". The
+// tracker normalises the announcement actor to "You" via the player-name
+// provider so the two correlate.
+func TestPlayerOwnMeleeCritMatched(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Osui" })
+	now := time.Now()
+
+	// Crit announced under the character name; damage dealt as "You".
+	tr.Handle(critEvent("Osui", 201, now))
+	tr.Handle(hitEvent("You", "a gnoll", 201, now))
+
+	st := tr.GetState()
+	// "You" rows are relabelled to the character name on the wire.
+	c := requireCombatant(t, st, "Osui")
+	if c.CritCount != 1 {
+		t.Fatalf("CritCount = %d, want 1 (player self-crit must match)", c.CritCount)
+	}
+	if c.CritDamage != 201 {
+		t.Fatalf("CritDamage = %d, want 201", c.CritDamage)
+	}
+}
+
 // TestPendingCritsBounded confirms the per-actor pending-crit queue is capped
 // so a stream of unmatched crits can't grow without bound.
 func TestPendingCritsBounded(t *testing.T) {

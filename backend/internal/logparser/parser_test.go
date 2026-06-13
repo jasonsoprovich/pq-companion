@@ -306,6 +306,23 @@ func TestParseLine(t *testing.T) {
 			wantData: CritHitData{Actor: "Sandrian", Damage: 62},
 		},
 
+		// --- Combat: critical spell hit (blast) announcement ---
+		// The spell-damage analogue, preceding the matching non-melee hit.
+		{
+			name:     "combat: critical spell blast (other actor)",
+			line:     "[Mon Apr 13 06:00:00 2026] Narya delivers a critical blast! (274)",
+			wantOK:   true,
+			wantType: EventCritHit,
+			wantData: CritHitData{Actor: "Narya", Damage: 274},
+		},
+		{
+			name:     "combat: critical spell blast (self)",
+			line:     "[Mon Apr 13 06:00:00 2026] You deliver a critical blast! (1558)",
+			wantOK:   true,
+			wantType: EventCritHit,
+			wantData: CritHitData{Actor: "You", Damage: 1558},
+		},
+
 		// --- Charmed pet: "tells you, 'Attacking X Master.'" ---
 		// The canonical EQ charmed-pet attack tell, sent only to the
 		// charmer. We extract the pet name; the owner is always the active
@@ -911,8 +928,10 @@ func TestRealOsuiLogPhase1Coverage(t *testing.T) {
 		// Counts established by `grep -c ... testdata/eqlog_Osui_pq.proj.txt`.
 		// Updated 2026-05-11 after the testdata fixture was extended with
 		// the Sun May 10 raid session (Zlandicar, Plane of Fear, etc.).
+		// wantCritEvents = 6546 melee ("Scores a critical hit!") + 1001 spell
+		// ("delivers a critical blast!"); spell crits were added 2026-06-12.
 		wantDoTTicks   = 138
-		wantCritEvents = 6546
+		wantCritEvents = 7547
 	)
 
 	dotCount, critCount := 0, 0

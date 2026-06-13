@@ -75,12 +75,14 @@ const (
 	// remove every active "Illusion: …" timer on the active player.
 	EventIllusionFade EventType = "log:illusion_fade"
 
-	// EventCritHit is emitted when an actor scores a critical hit. Project
-	// Quarm / EQMac log this on a separate line preceding the actual damage
-	// line ("Sandrian Scores a critical hit!(62)" → "Sandrian slashes Zun
-	// Thall for 62 points of damage."). Consumers correlate by actor + amount
-	// to flag the matching CombatHit as a crit; a standalone count of crits
-	// per actor is also useful for Phase 1 stats.
+	// EventCritHit is emitted when an actor scores a critical hit — melee
+	// ("Sandrian Scores a critical hit!(62)" → "Sandrian slashes Zun Thall
+	// for 62 points of damage.") or spell ("Narya delivers a critical blast!
+	// (274)" → "Narya hit Zun Thall for 274 points of non-melee damage.").
+	// Project Quarm / EQMac log the announcement on its own line preceding the
+	// damage line. Consumers correlate by actor + amount to flag the matching
+	// CombatHit as a crit; a standalone count of crits per actor is also useful
+	// for stats.
 	EventCritHit EventType = "log:crit_hit"
 
 	// EventCharmedPet is emitted when a charmed NPC sends a tell to its

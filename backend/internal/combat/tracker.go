@@ -525,7 +525,15 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 		if !ok {
 			return
 		}
-		t.queuePendingCrit(data.Actor, data.Damage)
+		// Melee crit lines name the actor by character name ("Osui Scores a
+		// critical hit!"), but the player's own damage is keyed internally
+		// under "You". Normalise so the crit matches the damage row. (Spell
+		// crit self-lines already arrive as "You".)
+		actor := data.Actor
+		if actor == t.playerName() {
+			actor = "You"
+		}
+		t.queuePendingCrit(actor, data.Damage)
 
 	case logparser.EventCharmedPet:
 		data, ok := ev.Data.(logparser.CharmedPetData)

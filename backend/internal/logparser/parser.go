@@ -107,6 +107,17 @@ var (
 	// Consumers correlate by actor name and amount.
 	reCritHit = regexp.MustCompile(`^(\w+) Scores a critical hit!\((\d+)\)$`)
 
+	// Critical spell hit announcement — the spell-damage analogue of the melee
+	// crit line. Emitted immediately before the matching non-melee damage line:
+	//   "Narya delivers a critical blast! (274)"
+	//   "Narya hit Zun Thall for 274 points of non-melee damage."
+	// The self form uses a different verb conjugation:
+	//   "You deliver a critical blast! (274)"
+	//   "You hit Zun Thall for 274 points of non-melee damage."
+	// Both correlate with the next non-melee CombatHit from the same actor.
+	reCritBlast     = regexp.MustCompile(`^(\w+) delivers a critical blast! \((\d+)\)$`)
+	reCritBlastSelf = regexp.MustCompile(`^You deliver a critical blast! \((\d+)\)$`)
+
 	// Charmed pet tell — the canonical EQ pattern where a charmed pet
 	// reports its current attack target back to its charmer. Universal
 	// phrasing on Project Quarm: "<pet> tells you, 'Attacking <target>
@@ -444,6 +455,24 @@ func classifyMessage(msg string) (LogEvent, bool) {
 	// Emitted before the matching damage line; we surface it as its own event
 	// so the tracker can correlate with the next CombatHit from this actor.
 	if m := reCritHit.FindStringSubmatch(msg); m != nil {
+		dmg, _ := strconv.Atoi(m[2])
+		return LogEvent{
+			Type: EventCritHit,
+			Data: CritHitData{Actor: m[1], Damage: dmg},
+		}, true
+	}
+
+	// --- Critical spell hit announcement (self form) ---
+	if m := reCritBlastSelf.FindStringSubmatch(msg); m != nil {
+		dmg, _ := strconv.Atoi(m[1])
+		return LogEvent{
+			Type: EventCritHit,
+			Data: CritHitData{Actor: "You", Damage: dmg},
+		}, true
+	}
+
+	// --- Critical spell hit announcement (other actors) ---
+	if m := reCritBlast.FindStringSubmatch(msg); m != nil {
 		dmg, _ := strconv.Atoi(m[2])
 		return LogEvent{
 			Type: EventCritHit,
