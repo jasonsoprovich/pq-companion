@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Wand2, ChevronDown, ChevronRight, Star, Loader2, AlertTriangle, Sliders, RotateCcw, Save, LayoutGrid, List } from 'lucide-react'
+import { Wand2, ChevronDown, ChevronRight, Star, Loader2, AlertTriangle, Sliders, RotateCcw, Save, LayoutGrid, List, Target, Search } from 'lucide-react'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import { ItemIcon } from '../components/Icon'
 import { SourceNPCLink } from '../components/SourceNPCLink'
@@ -13,6 +13,9 @@ import {
   getCharacterUpgradeWeights,
   setCharacterUpgradeWeights,
   resetCharacterUpgradeWeights,
+  getCharacterFocusOptions,
+  getCharacterPriorityFocus,
+  setCharacterPriorityFocus,
   listWishlist,
   addWishlistEntries,
   deleteWishlistEntry,
@@ -21,6 +24,7 @@ import {
   type UpgradeCandidate,
   type UpgradesResponse,
   type UpgradesOverviewResponse,
+  type FocusOption,
 } from '../services/api'
 import type { Item, ItemSources } from '../types/item'
 import type { WishlistEntry } from '../types/wishlist'
@@ -111,6 +115,14 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
   // The viewed character's wishlist (all buckets), for the star toggles.
   const [wishlist, setWishlist] = useState<WishlistEntry[]>([])
 
+  // Priority focus effects (per character): boost items carrying them.
+  const [focusOptions, setFocusOptions] = useState<FocusOption[]>([])
+  const [priorityFocus, setPriorityFocus] = useState<number[]>([])
+  const [showFocus, setShowFocus] = useState(false)
+  // Bumped after a priority-focus change to force a re-rank (scoring reads the
+  // stored set, so we refetch once the PUT lands).
+  const [reload, setReload] = useState(0)
+
   useEffect(() => {
     listCharacters().then((r) => setCharacters(r.characters)).catch(() => {})
   }, [])
@@ -160,7 +172,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
       cancelled = true
       clearTimeout(id)
     }
-  }, [selected, slot, showAll, weights])
+  }, [selected, slot, showAll, weights, reload])
 
   // Fetch the all-slots overview on demand (entering overview mode, or weights
   // change while in it).
@@ -182,7 +194,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
       cancelled = true
       clearTimeout(id)
     }
-  }, [mode, selected, weights])
+  }, [mode, selected, weights, reload])
 
   // Load the viewed character's wishlist for the star toggles.
   const refreshWishlist = useCallback((charID: number) => {
@@ -195,6 +207,34 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
     }
     refreshWishlist(selected.id)
   }, [selected, refreshWishlist])
+
+  // Load focus options + the saved priority set when the character changes.
+  useEffect(() => {
+    if (!selected) {
+      setFocusOptions([])
+      setPriorityFocus([])
+      return
+    }
+    getCharacterFocusOptions(selected.id).then(setFocusOptions).catch(() => setFocusOptions([]))
+    getCharacterPriorityFocus(selected.id).then((r) => setPriorityFocus(r.spell_ids)).catch(() => setPriorityFocus([]))
+  }, [selected])
+
+  // Toggle a focus effect in the character's priority set, persist, and re-rank.
+  const togglePriorityFocus = useCallback(
+    (spellID: number) => {
+      if (!selected) return
+      setPriorityFocus((prev) => {
+        const next = prev.includes(spellID)
+          ? prev.filter((x) => x !== spellID)
+          : [...prev, spellID]
+        setCharacterPriorityFocus(selected.id, next)
+          .then(() => setReload((n) => n + 1))
+          .catch(() => {})
+        return next
+      })
+    },
+    [selected],
+  )
 
   const wishEntry = useCallback(
     (itemID: number, bucket: string): WishlistEntry | undefined =>
@@ -347,6 +387,12 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                 <input type="checkbox" checked={hideNoDrop} onChange={(e) => setHideNoDrop(e.target.checked)} />
                 Tradeable only
               </label>
+              <button onClick={() => setShowFocus((v) => !v)}
+                className="flex items-center gap-1 rounded px-2 py-1"
+                style={{ border: '1px solid var(--color-border)',
+                  color: showFocus || priorityFocus.length ? 'var(--color-primary)' : 'var(--color-muted)' }}>
+                <Target size={12} /> Focus{priorityFocus.length ? ` (${priorityFocus.length})` : ''}
+              </button>
               <button onClick={() => setShowWeights((v) => !v)}
                 className="flex items-center gap-1 rounded px-2 py-1"
                 style={{ border: '1px solid var(--color-border)',
@@ -357,17 +403,31 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
           </div>
           )}
 
-          {/* Weights toggle when in overview mode (no per-slot control bar) */}
+          {/* Weights/focus toggles when in overview mode (no per-slot bar) */}
           {mode === 'overview' && (
-            <div className="shrink-0 flex items-center justify-end border-b px-6 py-2"
+            <div className="shrink-0 flex items-center justify-end gap-2 border-b px-6 py-2 text-xs"
               style={{ borderColor: 'var(--color-border)' }}>
+              <button onClick={() => setShowFocus((v) => !v)}
+                className="flex items-center gap-1 rounded px-2 py-1"
+                style={{ border: '1px solid var(--color-border)',
+                  color: showFocus || priorityFocus.length ? 'var(--color-primary)' : 'var(--color-muted)' }}>
+                <Target size={12} /> Focus{priorityFocus.length ? ` (${priorityFocus.length})` : ''}
+              </button>
               <button onClick={() => setShowWeights((v) => !v)}
-                className="flex items-center gap-1 rounded px-2 py-1 text-xs"
+                className="flex items-center gap-1 rounded px-2 py-1"
                 style={{ border: '1px solid var(--color-border)',
                   color: showWeights ? 'var(--color-primary)' : 'var(--color-muted)' }}>
                 <Sliders size={12} /> Weights{weightsCustom ? ' *' : ''}
               </button>
             </div>
+          )}
+
+          {showFocus && (
+            <FocusPanel
+              options={focusOptions}
+              selected={priorityFocus}
+              onToggle={togglePriorityFocus}
+            />
           )}
 
           {showWeights && weights && (
@@ -493,6 +553,74 @@ function WeightsEditor({
           </label>
         ))}
       </div>
+      <label className="mt-2 flex items-center gap-2 text-xs"
+        style={{ color: 'var(--color-muted-foreground)' }}>
+        <span>Priority focus bonus</span>
+        <input type="number" step={10} min={0}
+          value={weights.focus_bonus}
+          onChange={(e) => onChange('focus_bonus', Number(e.target.value))}
+          style={{ ...inputStyle(), width: 70 }} />
+        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+          score boost for a wanted focus you don't already have (HP-equivalent)
+        </span>
+      </label>
+    </div>
+  )
+}
+
+// ── Priority focus picker ──────────────────────────────────────────────────────
+
+function FocusPanel({
+  options, selected, onToggle,
+}: {
+  options: FocusOption[]
+  selected: number[]
+  onToggle: (spellID: number) => void
+}): React.ReactElement {
+  const [filter, setFilter] = useState('')
+  const sel = new Set(selected)
+  const q = filter.trim().toLowerCase()
+  const shown = q ? options.filter((o) => o.name.toLowerCase().includes(q)) : options
+  return (
+    <div className="shrink-0 border-b px-6 py-2"
+      style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <Target size={12} style={{ color: 'var(--color-primary)' }} />
+        <span className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
+          Priority focus effects
+        </span>
+        <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+          An item with one of these you don't already have equipped is boosted and flagged.
+        </span>
+        <div className="ml-auto" style={{ position: 'relative' }}>
+          <Search size={11} style={{ position: 'absolute', left: 7, top: '50%',
+            transform: 'translateY(-50%)', color: 'var(--color-muted)', pointerEvents: 'none' }} />
+          <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter focuses…"
+            style={{ ...inputStyle(), paddingLeft: 22, width: 180 }} />
+        </div>
+      </div>
+      {options.length === 0 ? (
+        <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+          No focus effects found on this class's gear.
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-1" style={{ maxHeight: 150, overflowY: 'auto' }}>
+          {shown.map((o) => {
+            const on = sel.has(o.spell_id)
+            return (
+              <button key={o.spell_id} onClick={() => onToggle(o.spell_id)}
+                className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px]"
+                style={{ border: '1px solid var(--color-border)',
+                  backgroundColor: on ? 'rgba(234,179,8,0.18)' : 'var(--color-surface-2)',
+                  color: on ? '#eab308' : 'var(--color-muted-foreground)' }}>
+                {on && <Star size={9} fill="#eab308" />}
+                {o.name}
+                <span style={{ color: 'var(--color-muted)' }}>·{o.count}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -542,9 +670,14 @@ function ResultRow({
             </button>
             {cand.focus_name && (
               <span className="flex items-center gap-0.5 rounded px-1 text-[10px]"
-                style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }}
-                title={`Focus: ${cand.focus_name}`}>
-                <Star size={9} /> {cand.focus_name}
+                style={{
+                  backgroundColor: cand.priority_focus ? '#eab308' : 'rgba(234,179,8,0.15)',
+                  color: cand.priority_focus ? '#1a1a1a' : '#eab308',
+                  fontWeight: cand.priority_focus ? 600 : 400,
+                }}
+                title={cand.priority_focus ? `Priority focus: ${cand.focus_name}` : `Focus: ${cand.focus_name}`}>
+                <Star size={9} fill={cand.priority_focus ? '#1a1a1a' : 'none'} />
+                {cand.priority_focus ? `Priority: ${cand.focus_name}` : cand.focus_name}
               </span>
             )}
             {cand.nodrop !== 0 && (
@@ -750,9 +883,14 @@ function OverviewView({
                       </button>
                       {best.focus_name && (
                         <span className="flex items-center gap-0.5 rounded px-1 text-[10px]"
-                          style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }}
-                          title={`Focus: ${best.focus_name}`}>
-                          <Star size={9} /> {best.focus_name}
+                          style={{
+                            backgroundColor: best.priority_focus ? '#eab308' : 'rgba(234,179,8,0.15)',
+                            color: best.priority_focus ? '#1a1a1a' : '#eab308',
+                            fontWeight: best.priority_focus ? 600 : 400,
+                          }}
+                          title={best.priority_focus ? `Priority focus: ${best.focus_name}` : `Focus: ${best.focus_name}`}>
+                          <Star size={9} fill={best.priority_focus ? '#1a1a1a' : 'none'} />
+                          {best.priority_focus ? `Priority: ${best.focus_name}` : best.focus_name}
                         </span>
                       )}
                       {best.nodrop !== 0 && (

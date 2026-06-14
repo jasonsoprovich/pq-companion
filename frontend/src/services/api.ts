@@ -1092,6 +1092,7 @@ export interface UpgradeWeights {
   cr: number
   dr: number
   pr: number
+  focus_bonus: number
 }
 
 export interface UpgradeStatDelta {
@@ -1125,6 +1126,7 @@ export interface UpgradeCandidate {
   focus_name: string
   score: number
   deltas: UpgradeStatDelta[]
+  priority_focus: boolean
 }
 
 export interface UpgradesResponse {
@@ -1196,6 +1198,27 @@ export function getCharacterUpgradesOverview(
   if (weights) p.set('weights', JSON.stringify(weights))
   const qs = p.toString()
   return get<UpgradesOverviewResponse>(`/api/characters/${id}/upgrades/overview${qs ? `?${qs}` : ''}`)
+}
+
+export interface FocusOption {
+  spell_id: number
+  name: string
+  count: number
+}
+
+export function getCharacterFocusOptions(id: number): Promise<FocusOption[]> {
+  return get<FocusOption[]>(`/api/characters/${id}/focus-options`)
+}
+
+export function getCharacterPriorityFocus(id: number): Promise<{ spell_ids: number[] }> {
+  return get<{ spell_ids: number[] }>(`/api/characters/${id}/priority-focus`)
+}
+
+export function setCharacterPriorityFocus(
+  id: number,
+  spellIds: number[],
+): Promise<{ spell_ids: number[] }> {
+  return put<{ spell_ids: number[] }>(`/api/characters/${id}/priority-focus`, { spell_ids: spellIds })
 }
 
 // ── Spell modifiers (focus extensions from items + AAs) ───────────────────────
