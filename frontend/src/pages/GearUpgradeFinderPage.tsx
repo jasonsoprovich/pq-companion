@@ -317,12 +317,12 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
             {data && (
               <div className="flex items-center gap-2 text-xs">
                 <span style={{ color: 'var(--color-muted)' }}>Current:</span>
-                {data.current_items.length === 0 ? (
+                {(data.current_items ?? []).length === 0 ? (
                   <span style={{ color: 'var(--color-muted-foreground)' }}>
                     {data.has_current_gear ? '(empty)' : 'unknown'}
                   </span>
                 ) : (
-                  data.current_items.map((ci) => (
+                  (data.current_items ?? []).map((ci) => (
                     <button key={ci.id} onClick={() => openItem(ci.id)}
                       className="flex items-center gap-1 underline decoration-dotted"
                       style={{ color: 'var(--color-primary)' }}>
@@ -722,13 +722,13 @@ function OverviewView({
                     style={{ color: 'var(--color-primary)' }}>{s.slot_label}</button>
                 </td>
                 <td className="px-2 py-1.5">
-                  {s.current_items.length === 0 ? (
+                  {(s.current_items ?? []).length === 0 ? (
                     <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
                       {overview.has_current_gear ? '(empty)' : '—'}
                     </span>
                   ) : (
                     <div className="flex flex-col gap-0.5">
-                      {s.current_items.map((ci) => (
+                      {(s.current_items ?? []).map((ci) => (
                         <button key={ci.id} onClick={() => onOpen(ci.id)}
                           className="flex items-center gap-1 text-xs underline decoration-dotted"
                           style={{ color: 'var(--color-muted-foreground)' }}>

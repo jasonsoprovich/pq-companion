@@ -271,7 +271,7 @@ func (h *charactersHandler) scoreSlot(
 		MaxLevel: char.Level,
 	})
 	if err != nil {
-		return current, baselineID, nil, 0
+		return current, baselineID, []upgradeResult{}, 0
 	}
 	considered = len(cands)
 
@@ -462,7 +462,9 @@ func (h *charactersHandler) loadEquipped(eqPath, charName string) (byLoc map[str
 // equippedItemsForSlot resolves the worn items in a logical slot from a
 // pre-parsed equipped map.
 func (h *charactersHandler) equippedItemsForSlot(byLoc map[string][]zeal.InventoryEntry, slot upgradeSlot) []upgradeCurrentItem {
-	var items []upgradeCurrentItem
+	// Always a non-nil slice so it marshals to [] not null — the frontend
+	// reads .length/.map on it directly.
+	items := make([]upgradeCurrentItem, 0)
 	for _, entry := range byLoc[slot.Location] {
 		item, err := h.db.GetItem(entry.ID)
 		if err != nil || item == nil {
