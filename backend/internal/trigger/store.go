@@ -452,6 +452,54 @@ func (s *Store) MigrateBroadenDebuffPatternsAndBardDurations() error {
 	return s.MarkDefaultUpdateApplied(key)
 }
 
+// MigrateAddBuffTargetCapture upgrades buff triggers installed before the
+// target-capture feature so they show the "on <target>" overlay suffix when a
+// group buff lands on someone. The current built-in pattern (from AllPacks,
+// post-applyBuffTargetCapture) wraps the cast-on-other name in a (?P<target>…)
+// group and sets timer_target_capture="target"; the pre-feature row has the
+// same pattern with the bare name class and an empty capture. We derive that
+// old form by unwrapping and patch only rows that still hold it (and haven't
+// already got a target capture), so a user's customized pattern is left alone.
+// Idempotent via the pack_default_updates ledger.
+func (s *Store) MigrateAddBuffTargetCapture() error {
+	const key = "Packs:BuffTargetCapture:v1"
+	applied, err := s.IsDefaultUpdateApplied(key)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+
+	for _, pack := range AllPacks() {
+		for _, tr := range pack.Triggers {
+			if tr.TimerTargetCapture == "" || !strings.Contains(tr.Pattern, targetCaptureGroup) {
+				continue
+			}
+			oldPattern := strings.Replace(tr.Pattern, targetCaptureGroup, playerNameClass, 1)
+			installed, err := s.FindByPackAndName(pack.PackName, tr.Name)
+			if err != nil {
+				return err
+			}
+			if installed == nil {
+				continue // pack not installed or trigger removed
+			}
+			// Only touch an untouched built-in row: still the pre-feature
+			// pattern, no target capture yet. A user-edited pattern or an
+			// already-set capture is left alone.
+			if installed.Pattern != oldPattern || installed.TimerTargetCapture != "" {
+				continue
+			}
+			installed.Pattern = tr.Pattern
+			installed.TimerTargetCapture = "target"
+			if err := s.Update(installed); err != nil {
+				return fmt.Errorf("update %s/%s: %w", pack.PackName, tr.Name, err)
+			}
+		}
+	}
+	return s.MarkDefaultUpdateApplied(key)
+}
+
 func (s *Store) packHasAnyTrigger(pack string) (bool, error) {
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM triggers WHERE pack_name = ?`, pack).Scan(&n); err != nil {

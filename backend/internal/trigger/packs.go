@@ -3,6 +3,7 @@ package trigger
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -71,6 +72,47 @@ func detrimentalExpiringAlert() TimerAlert {
 // short for the chosen threshold to ever fire (e.g. a 12-second discipline
 // vs. a 60-second buff threshold) are left untouched — the threshold would
 // trip on the first tick and produce a useless alert.
+// playerNameClass matches a player (or single-word named) character at the
+// start of a buff's "lands on other" branch — the name shown after the
+// alternation pipe in patterns like
+// `^(?:You feel X\.|<name> feels X\.)$`. Kept as a const so the same literal
+// drives both applyBuffTargetCapture and its migration.
+const playerNameClass = `[A-Z][a-zA-Z']{2,14}`
+
+// targetCaptureGroup wraps playerNameClass in a named group so the trigger
+// engine's TimerTargetCapture="target" can pull the recipient out.
+const targetCaptureGroup = `(?P<target>` + playerNameClass + `)`
+
+// applyBuffTargetCapture turns every built-in BUFF trigger whose pattern has a
+// "lands on other" branch (a player name right after the alternation pipe)
+// into one that captures that name as the timer's target — so the buff overlay
+// shows the grey "on <target>" suffix when you cast a group buff on someone,
+// exactly like the spell-landed pipeline does. The self-cast branch ("You
+// feel…") carries no name, so casting on yourself shows no suffix.
+//
+// Done generically (one transform, applied in AllPacks) rather than editing
+// ~50 pattern literals by hand: the cast-on-other branch is uniformly shaped
+// `|<playerNameClass>…`, so wrapping the single occurrence that follows a pipe
+// is safe and consistent. Triggers that already set TimerTargetCapture, or
+// whose pattern has no such branch, are left untouched.
+func applyBuffTargetCapture(p TriggerPack) TriggerPack {
+	marker := "|" + playerNameClass
+	for i := range p.Triggers {
+		t := &p.Triggers[i]
+		if t.TimerType != TimerTypeBuff || t.TimerTargetCapture != "" {
+			continue
+		}
+		if !strings.Contains(t.Pattern, marker) {
+			continue
+		}
+		// Wrap only the first pipe-prefixed name (the cast-on-other branch);
+		// Go regexp forbids duplicate group names, so never wrap twice.
+		t.Pattern = strings.Replace(t.Pattern, marker, "|"+targetCaptureGroup, 1)
+		t.TimerTargetCapture = "target"
+	}
+	return p
+}
+
 func applyDefaultTimerAlerts(p TriggerPack) TriggerPack {
 	for i := range p.Triggers {
 		t := &p.Triggers[i]
@@ -2533,7 +2575,7 @@ func AllPacks() []TriggerPack {
 	}
 	out := make([]TriggerPack, 0, len(classPacks)+len(generalPacks))
 	for _, p := range classPacks {
-		out = append(out, applyDefaultTimerAlerts(p))
+		out = append(out, applyBuffTargetCapture(applyDefaultTimerAlerts(p)))
 	}
 	return append(out, generalPacks...)
 }

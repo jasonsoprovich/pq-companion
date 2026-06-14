@@ -442,6 +442,13 @@ func main() {
 	if err := triggerStore.MigrateBroadenDebuffPatternsAndBardDurations(); err != nil {
 		slog.Warn("trigger debuff-pattern/bard-duration migration failed", "err", err)
 	}
+	// In-place upgrade for buff triggers imported before target capture: wraps
+	// the cast-on-other branch's name in a capture group and sets the target
+	// field so group buffs show the "on <target>" overlay suffix. Only patches
+	// un-customized built-in rows.
+	if err := triggerStore.MigrateAddBuffTargetCapture(); err != nil {
+		slog.Warn("trigger buff-target-capture migration failed", "err", err)
+	}
 
 	// One-time additive default updates for built-in packs. Each is keyed
 	// and runs at most once, making only additive edits to installed pack
