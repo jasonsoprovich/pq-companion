@@ -19,6 +19,7 @@ import RespawnTimerPanel from '../components/overlays/RespawnTimerPanel'
 import CHChainPanel from '../components/overlays/CHChainPanel'
 import CHMetronomePanel from '../components/overlays/CHMetronomePanel'
 import CustomTimerPanel from '../components/overlays/CustomTimerPanel'
+import { ConfirmModal } from '../components/ConfirmModal'
 import {
   DASHBOARD_PANEL_KEYS,
   DASHBOARD_PANEL_LABELS,
@@ -111,13 +112,13 @@ export default function OverlaysDashboard(): React.ReactElement {
   // them. This is the recovery path for an overlay that's drifted off-screen
   // (where a locked window can't reach its own unlock button). Distinct from
   // Reset Dashboard Layout above, which only affects the in-app docked panels.
-  const handleResetPositions = useCallback(() => {
-    if (!window.electron?.overlay?.resetAllPositions) return
-    const ok = window.confirm(
-      'Recenter all pop-out overlay windows on your primary monitor and unlock them?',
-    )
-    if (!ok) return
-    window.electron.overlay.resetAllPositions().catch(() => {})
+  // Gated behind the shared themed ConfirmModal (not window.confirm) so it
+  // matches the rest of the app's dialogs.
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+
+  const confirmResetPositions = useCallback(() => {
+    setShowResetConfirm(false)
+    window.electron?.overlay?.resetAllPositions?.().catch(() => {})
   }, [])
 
   // Tracks whether any standalone popout window is currently open. Polled
@@ -296,7 +297,7 @@ export default function OverlaysDashboard(): React.ReactElement {
           )}
           {typeof window.electron?.overlay?.resetAllPositions === 'function' && (
             <button
-              onClick={handleResetPositions}
+              onClick={() => setShowResetConfirm(true)}
               className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
               style={{
                 backgroundColor: 'var(--color-surface)',
@@ -468,6 +469,16 @@ export default function OverlaysDashboard(): React.ReactElement {
           />
         )}
       </div>
+
+      {showResetConfirm && (
+        <ConfirmModal
+          title="Reset Window Positions"
+          message="Recenter all pop-out overlay windows on your primary monitor and unlock them? This is the recovery path for an overlay that has drifted off-screen."
+          confirmLabel="Reset Positions"
+          onConfirm={confirmResetPositions}
+          onCancel={() => setShowResetConfirm(false)}
+        />
+      )}
     </div>
   )
 }
