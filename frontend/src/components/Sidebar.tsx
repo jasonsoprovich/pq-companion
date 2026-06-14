@@ -136,8 +136,11 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
       </div>
 
       {/* Scrollable nav — hidden scrollbar. Sections, their visible items, and
-          their order all come from the user's navigation preferences. */}
-      <div className="scrollbar-hidden flex-1 overflow-y-auto">
+          their order all come from the user's navigation preferences.
+          `no-drag` is required: the parent <aside> is a window drag region, and
+          a scroll viewport that's also a drag region gets flaky/unresponsive
+          wheel scrolling in Chromium. Opting out restores smooth scrolling. */}
+      <div className="no-drag scrollbar-hidden flex-1 overflow-y-auto">
         {sections.map((section) => {
           const isCollapsed = collapsed[section.id]
           return (
