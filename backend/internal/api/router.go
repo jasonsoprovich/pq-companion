@@ -98,6 +98,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/", items.search)
 			r.Get("/{id}", items.get)
 			r.Get("/{id}/sources", items.sources)
+			r.Get("/{id}/quests", items.quests)
 			r.Get("/{id}/raw", raw.rowFromTable("items", "id"))
 		})
 		r.Route("/spells", func(r chi.Router) {

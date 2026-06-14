@@ -54,3 +54,29 @@ func TestQuestsForItem(t *testing.T) {
 		t.Errorf("expected Signet Earring (29860) to be used as a quest turn-in")
 	}
 }
+
+// TestGetItemQuests checks the display-resolved Quests payload: zone long-name
+// and related turn-in item names are filled in, and the item itself is not
+// listed as its own prerequisite.
+func TestGetItemQuests(t *testing.T) {
+	d := openTestDB(t)
+	q, err := d.GetItemQuests(29861) // Sigil Earring of Veracity
+	if err != nil {
+		t.Fatalf("GetItemQuests: %v", err)
+	}
+	if len(q.RewardedBy) == 0 {
+		t.Fatal("expected at least one rewarding quest")
+	}
+	ref := q.RewardedBy[0]
+	if ref.ZoneName == "" || ref.ZoneName == ref.ZoneShortName {
+		t.Errorf("zone long-name not resolved: %+v", ref)
+	}
+	for _, ri := range ref.RelatedItems {
+		if ri.ID == 29861 {
+			t.Error("item listed as its own turn-in")
+		}
+		if ri.Name == "" {
+			t.Errorf("related item %d name not resolved", ri.ID)
+		}
+	}
+}
