@@ -173,21 +173,33 @@ export default function SettingsPage(): React.ReactElement {
   })
   const [config, setConfig] = useState<Config | null>(null)
   const [originalConfig, setOriginalConfig] = useState<Config | null>(null)
-  // Latest saved config, mirrored into a ref so the unmount cleanup below can
-  // read it without re-subscribing.
+  // Latest config / last-saved config mirrored into refs so the unmount flush
+  // can read them without re-subscribing.
   const originalConfigRef = useRef<Config | null>(null)
   useEffect(() => {
     originalConfigRef.current = originalConfig
   }, [originalConfig])
-  // Leaving Settings discards unsaved changes; revert any unsaved high-contrast
-  // or zoom preview to the saved value so the preview doesn't leak past this
-  // page.
+  const configRef = useRef<Config | null>(null)
+  useEffect(() => {
+    configRef.current = config
+  }, [config])
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Always-latest persist fn, kept in a ref so the debounce effect needn't list
+  // it as a dependency.
+  const persistRef = useRef<(c: Config) => void>(() => {})
+  // Settings autosave: edits persist automatically. The UI reflects changes
+  // immediately (local state); the PUT is debounced so dragging a slider or
+  // typing doesn't spam the backend. No config field triggers an expensive
+  // backend side effect, so a single whole-config debounce is safe. On leaving
+  // Settings, any pending change is flushed (and high-contrast/zoom previews are
+  // now permanent, so there's nothing to revert).
   useEffect(() => {
     return () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+      const c = configRef.current
       const oc = originalConfigRef.current
-      if (oc) {
-        applyContrast(Boolean(oc.preferences.high_contrast))
-        applyZoom(oc.preferences.zoom_factor)
+      if (c && oc && JSON.stringify(c) !== JSON.stringify(oc)) {
+        void updateConfig(c)
       }
     }
   }, [])
@@ -379,31 +391,41 @@ export default function SettingsPage(): React.ReactElement {
     }
   }
 
-  function handleCancel(): void {
-    if (originalConfig) {
-      setConfig(originalConfig)
-      // Revert any optimistic high-contrast / zoom preview.
-      applyContrast(Boolean(originalConfig.preferences.high_contrast))
-      applyZoom(originalConfig.preferences.zoom_factor)
-    }
-    flashSaveState('discarded')
-  }
-
-  async function handleSave(): Promise<void> {
-    if (!config) return
+  // persist writes the given config now. Used by both autosave and the explicit
+  // Advanced-tab apply button. It does NOT setConfig(saved) so an in-flight save
+  // can't clobber edits the user makes while it's running; only the saved
+  // baseline (originalConfig) is updated.
+  function persist(c: Config): void {
     if (saveStateClearRef.current) clearTimeout(saveStateClearRef.current)
     setSaveState('saving')
     setSaveError(null)
-    try {
-      const saved = await updateConfig(config)
-      setConfig(saved)
-      setOriginalConfig(saved)
-      flashSaveState('saved')
-    } catch (err) {
-      setSaveError((err as Error).message)
-      setSaveState('error')
-    }
+    updateConfig(c)
+      .then((saved) => {
+        setOriginalConfig(saved)
+        flashSaveState('saved')
+      })
+      .catch((err: Error) => {
+        setSaveError(err.message)
+        setSaveState('error')
+      })
   }
+  persistRef.current = persist
+
+  function handleSave(): void {
+    if (config) persist(config)
+  }
+
+  // Debounced autosave: schedule a save whenever the draft differs from the
+  // last-saved config.
+  useEffect(() => {
+    if (!config || !originalConfig) return
+    if (JSON.stringify(config) === JSON.stringify(originalConfig)) return
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+    autosaveTimer.current = setTimeout(() => persistRef.current(config), 600)
+    return () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+    }
+  }, [config, originalConfig])
 
   async function handleCheckForUpdates(): Promise<void> {
     if (!window.electron?.updater) return
@@ -2083,62 +2105,23 @@ export default function SettingsPage(): React.ReactElement {
         {/* ── Chat retention + Log Backfill (merged into the Logs tab) ─────── */}
         {tab === 'logs' && <BackfillPanel />}
 
-        {/* ── Save / Discard buttons ─────────────────────────────────────── */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleSave}
-            disabled={saveState === 'saving'}
-            className="flex items-center gap-2 rounded px-4 py-2 text-sm font-semibold"
-            style={{
-              backgroundColor: 'var(--color-primary)',
-              color: '#fff',
-              border: 'none',
-              cursor: saveState === 'saving' ? 'not-allowed' : 'pointer',
-              opacity: saveState === 'saving' ? 0.7 : 1,
-            }}
-          >
-            {saveState === 'saving' ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Save size={14} />
-            )}
-            {saveState === 'saving' ? 'Saving…' : 'Save Settings'}
-          </button>
-
-          <button
-            onClick={handleCancel}
-            disabled={saveState === 'saving'}
-            className="flex items-center gap-2 rounded px-4 py-2 text-sm font-semibold"
-            style={{
-              backgroundColor: 'var(--color-surface-2)',
-              color: 'var(--color-foreground)',
-              border: '1px solid var(--color-border)',
-              cursor: saveState === 'saving' ? 'not-allowed' : 'pointer',
-              opacity: saveState === 'saving' ? 0.7 : 1,
-            }}
-          >
-            <X size={14} />
-            Discard
-          </button>
-
-          {saveState === 'saved' && (
-            <span className="flex items-center gap-1.5 text-sm" style={{ color: '#22c55e' }}>
-              <CheckCircle2 size={14} />
-              Settings saved
+        {/* ── Autosave status ────────────────────────────────────────────── */}
+        <div className="flex items-center gap-1.5 text-sm">
+          {saveState === 'saving' ? (
+            <span className="flex items-center gap-1.5" style={{ color: 'var(--color-muted-foreground)' }}>
+              <Loader2 size={14} className="animate-spin" /> Saving…
             </span>
-          )}
-
-          {saveState === 'discarded' && (
-            <span className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-              <X size={14} />
-              Changes discarded
+          ) : saveState === 'error' && saveError ? (
+            <span className="flex items-center gap-1.5" style={{ color: '#f87171' }}>
+              <AlertTriangle size={14} /> {saveError}
             </span>
-          )}
-
-          {saveState === 'error' && saveError && (
-            <span className="flex items-center gap-1.5 text-sm" style={{ color: '#f87171' }}>
-              <AlertTriangle size={14} />
-              {saveError}
+          ) : saveState === 'saved' ? (
+            <span className="flex items-center gap-1.5" style={{ color: '#22c55e' }}>
+              <CheckCircle2 size={14} /> Saved
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5" style={{ color: 'var(--color-muted)' }}>
+              <CheckCircle2 size={14} /> Changes save automatically
             </span>
           )}
         </div>
