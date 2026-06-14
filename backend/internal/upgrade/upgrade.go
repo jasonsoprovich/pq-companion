@@ -41,6 +41,20 @@ type StatLine struct {
 	CR   int `json:"cr"`
 	DR   int `json:"dr"`
 	PR   int `json:"pr"`
+	// Damage/Delay are the weapon fields used to score weapon ratio (DPS) in
+	// the Primary/Secondary/Range slots. Zero for non-weapons (so a shield or
+	// book has ratio 0 — swapping a weapon for one is a DPS loss). See Score.
+	Damage int `json:"damage"`
+	Delay  int `json:"delay"`
+}
+
+// ratio is a weapon's damage/delay — the standard EQ DPS-comparison metric
+// (higher is better). Zero for anything without both a damage and a delay.
+func ratio(s StatLine) float64 {
+	if s.Damage <= 0 || s.Delay <= 0 {
+		return 0
+	}
+	return float64(s.Damage) / float64(s.Delay)
 }
 
 // Weights assigns a per-stat scoring weight. Values are on an arbitrary common
@@ -63,6 +77,11 @@ type Weights struct {
 	CR   float64 `json:"cr"`
 	DR   float64 `json:"dr"`
 	PR   float64 `json:"pr"`
+	// DPS weights weapon ratio (damage/delay) in weapon slots. It's the score
+	// per +1.0 of ratio, so a melee DPS class values an offhand/main-hand weapon
+	// far above a shield or stat-stick, while a tank (low DPS, high AC) still
+	// prefers a shield offhand. Zero for casters. Applied in Score.
+	DPS float64 `json:"dps"`
 	// FocusBonus is the score bump (on the same HP-equivalent axis) given to a
 	// candidate that carries one of the character's priority focus effects which
 	// they don't already have equipped. Applied by the API layer, not Score —
@@ -209,5 +228,34 @@ func Score(ctx Context, w Weights, slotCur, cand StatLine) Result {
 			Capped:    candCapped && candVal > curVal,
 		})
 	}
+
+	// Weapon ratio (DPS) — only meaningful in weapon slots, where it's the
+	// dominant value for a melee class. Scored as a delta vs the worn weapon, so
+	// swapping a weapon for a shield/stat-stick (ratio 0) is a DPS loss. Ratios
+	// are carried at x100 in the int delta fields for display (e.g. 185 = 1.85);
+	// Weighted uses the true ratio delta so it matches the score contribution.
+	if w.DPS != 0 {
+		curR, candR := ratio(slotCur), ratio(cand)
+		if curR != 0 || candR != 0 {
+			deltaR := candR - curR
+			weighted := w.DPS * deltaR
+			res.Score += weighted
+			res.Deltas = append(res.Deltas, StatDelta{
+				Stat:      "dps",
+				Cand:      int(candR*100 + 0.5),
+				Current:   int(curR*100 + 0.5),
+				Effective: int(deltaR*100 + 0.5*sign(deltaR)),
+				Weight:    w.DPS,
+				Weighted:  weighted,
+			})
+		}
+	}
 	return res
+}
+
+func sign(f float64) float64 {
+	if f < 0 {
+		return -1
+	}
+	return 1
 }

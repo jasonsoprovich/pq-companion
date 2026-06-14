@@ -141,6 +141,43 @@ func TestScore_RankingOrdersByScore(t *testing.T) {
 	}
 }
 
+func TestScore_WeaponDPS(t *testing.T) {
+	ctx := Context{Level: 60}
+	melee := DefaultWeights(classRogue)
+
+	// Current offhand: damage 10 / delay 20 -> ratio 0.5.
+	cur := StatLine{Damage: 10, Delay: 20}
+
+	// A faster, harder offhand: damage 18 / delay 18 -> ratio 1.0. dps delta
+	// +0.5 * 150 = +75 (plus zero stat delta).
+	weapon := Score(ctx, melee, cur, StatLine{Damage: 18, Delay: 18})
+	dps, ok := findDelta(weapon, "dps")
+	if !ok {
+		t.Fatal("expected a dps delta for a weapon swap")
+	}
+	if weapon.Score <= 0 {
+		t.Fatalf("a better offhand weapon should be an upgrade, got %v", weapon.Score)
+	}
+
+	// A shield (no damage/delay) with a big AC block, replacing the weapon: it
+	// LOSES all offhand ratio, which for a rogue must outweigh the AC gain.
+	shield := Score(ctx, melee, cur, StatLine{AC: 40})
+	if shield.Score >= 0 {
+		t.Fatalf("a shield in a rogue offhand should score negative, got %v", shield.Score)
+	}
+	if weapon.Score <= shield.Score {
+		t.Fatalf("weapon (%v) should outrank shield (%v) for melee", weapon.Score, shield.Score)
+	}
+
+	// For a tank, the same shield's AC should win over the lost ratio.
+	tank := DefaultWeights(classWarrior)
+	tankShield := Score(ctx, tank, cur, StatLine{AC: 40})
+	if tankShield.Score <= 0 {
+		t.Fatalf("a 40-AC shield should be an upgrade for a tank, got %v", tankShield.Score)
+	}
+	_ = dps
+}
+
 func TestDefaultWeights_Archetypes(t *testing.T) {
 	// Tanks value AC heavily and mana not at all.
 	tank := DefaultWeights(classWarrior)

@@ -68,26 +68,34 @@ var archetypeWeights = map[Archetype]Weights{
 		HP: 1.0, Mana: 0, AC: 5.0,
 		STR: 0.2, STA: 0.5, AGI: 0.2, DEX: 0.1, WIS: 0, INT: 0, CHA: 0,
 		MR: 0.3, FR: 0.3, CR: 0.3, DR: 0.3, PR: 0.3,
+		// Tanks value a weapon some, but a shield offhand (high AC) usually wins.
+		DPS: 40,
 	},
 	ArchMelee: {
 		HP: 0.6, Mana: 0, AC: 3.0,
 		STR: 0.8, STA: 0.6, AGI: 0.4, DEX: 0.8, WIS: 0, INT: 0, CHA: 0,
 		MR: 0.2, FR: 0.2, CR: 0.2, DR: 0.2, PR: 0.2,
+		// DPS is the whole point: a weapon dominates the offhand/main-hand, so
+		// losing weapon ratio to a shield/stat-stick is a clear downgrade.
+		DPS: 250,
 	},
 	ArchHybrid: {
 		HP: 0.7, Mana: 0.4, AC: 2.0,
 		STR: 0.6, STA: 0.5, AGI: 0.3, DEX: 0.5, WIS: 0.3, INT: 0, CHA: 0,
 		MR: 0.2, FR: 0.2, CR: 0.2, DR: 0.2, PR: 0.2,
+		DPS: 180,
 	},
 	ArchWisCaster: {
 		HP: 0.5, Mana: 1.0, AC: 1.0,
 		STR: 0, STA: 0.2, AGI: 0, DEX: 0, WIS: 1.0, INT: 0, CHA: 0,
 		MR: 0.2, FR: 0.2, CR: 0.2, DR: 0.2, PR: 0.2,
+		DPS: 0,
 	},
 	ArchIntCaster: {
 		HP: 0.4, Mana: 1.0, AC: 0.3,
 		STR: 0, STA: 0.1, AGI: 0, DEX: 0, WIS: 0, INT: 1.0, CHA: 0,
 		MR: 0.2, FR: 0.2, CR: 0.2, DR: 0.2, PR: 0.2,
+		DPS: 0,
 	},
 }
 

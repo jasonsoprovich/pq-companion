@@ -20,6 +20,9 @@ type UpgradeCandidate struct {
 	NoRent   int    `json:"norent"`
 	ItemType int    `json:"item_type"`
 
+	Damage int `json:"damage"`
+	Delay  int `json:"delay"`
+
 	HP   int `json:"hp"`
 	Mana int `json:"mana"`
 	AC   int `json:"ac"`
@@ -142,6 +145,7 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 
 	q := `SELECT i.id, i.Name, i.icon, i.slots, i.classes, i.races,
 	  i.reqlevel, i.reclevel, i.nodrop, i.norent, i.itemtype,
+	  i.damage, i.delay,
 	  i.hp, i.mana, i.ac, i.astr, i.asta, i.aagi, i.adex, i.awis, i.aint, i.acha,
 	  i.mr, i.fr, i.cr, i.dr, i.pr,
 	  i.focuseffect,
@@ -160,6 +164,7 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 		if err := rows.Scan(
 			&c.ID, &c.Name, &c.Icon, &c.Slots, &c.Classes, &c.Races,
 			&c.ReqLevel, &c.RecLevel, &c.NoDrop, &c.NoRent, &c.ItemType,
+			&c.Damage, &c.Delay,
 			&c.HP, &c.Mana, &c.AC, &c.STR, &c.STA, &c.AGI, &c.DEX, &c.WIS, &c.INT, &c.CHA,
 			&c.MR, &c.FR, &c.CR, &c.DR, &c.PR,
 			&c.FocusEffect, &c.FocusName,

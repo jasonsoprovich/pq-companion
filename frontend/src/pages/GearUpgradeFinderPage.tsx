@@ -567,7 +567,18 @@ function WeightsEditor({
       </div>
       <label className="mt-2 flex items-center gap-2 text-xs"
         style={{ color: 'var(--color-muted-foreground)' }}>
-        <span>Priority focus bonus</span>
+        <span className="w-28">Weapon DPS</span>
+        <input type="number" step={10} min={0}
+          value={weights.dps}
+          onChange={(e) => onChange('dps', Number(e.target.value))}
+          style={{ ...inputStyle(), width: 70 }} />
+        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+          value per +1.0 weapon ratio (damage/delay) — keep high for melee, 0 for casters
+        </span>
+      </label>
+      <label className="mt-1 flex items-center gap-2 text-xs"
+        style={{ color: 'var(--color-muted-foreground)' }}>
+        <span className="w-28">Priority focus bonus</span>
         <input type="number" step={10} min={0}
           value={weights.focus_bonus}
           onChange={(e) => onChange('focus_bonus', Number(e.target.value))}
@@ -745,6 +756,19 @@ function DeltaChips({ cand }: { cand: UpgradeCandidate }): React.ReactElement {
         const up = d.effective > 0
         const flat = d.effective === 0
         const color = flat ? 'var(--color-muted)' : up ? '#22c55e' : '#ef4444'
+        // The dps delta carries weapon ratio (damage/delay) at x100 in the int
+        // fields, so render it as a ratio with two decimals; everything else is
+        // a plain integer stat delta.
+        if (d.stat === 'dps') {
+          const r = (d.cand - d.current) / 100
+          return (
+            <span key={d.stat} className="rounded px-1 text-[10px]"
+              style={{ backgroundColor: 'var(--color-surface-2)', color }}
+              title={`weapon ratio ${(d.current / 100).toFixed(2)} → ${(d.cand / 100).toFixed(2)}`}>
+              Ratio {r > 0 ? '+' : ''}{r.toFixed(2)}
+            </span>
+          )
+        }
         const raw = d.cand - d.current
         return (
           <span key={d.stat} className="rounded px-1 text-[10px]"

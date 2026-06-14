@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -338,13 +339,23 @@ func (h *charactersHandler) scoreSlot(
 // resolveWeights returns the character's saved upgrade weights, falling back to
 // the class default preset when none are saved or the stored JSON is corrupt.
 func (h *charactersHandler) resolveWeights(char character.Character) upgrade.Weights {
+	def := upgrade.DefaultWeights(char.Class)
 	if raw, ok, err := h.store.GetUpgradeWeights(char.ID); err == nil && ok {
 		var wts upgrade.Weights
 		if json.Unmarshal([]byte(raw), &wts) == nil {
+			// Backfill weights added after this profile was saved, so an older
+			// saved set picks up DPS/focus scoring instead of silently using 0
+			// (JSON can't distinguish a missing key from an intentional 0).
+			if !strings.Contains(raw, `"dps"`) {
+				wts.DPS = def.DPS
+			}
+			if !strings.Contains(raw, `"focus_bonus"`) {
+				wts.FocusBonus = def.FocusBonus
+			}
 			return wts
 		}
 	}
-	return upgrade.DefaultWeights(char.Class)
+	return def
 }
 
 // upgradeWeights handles GET /api/characters/{id}/upgrade-weights — the
@@ -365,22 +376,15 @@ func (h *charactersHandler) upgradeWeights(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusNotFound, "character not found")
 		return
 	}
-	raw, custom, err := h.store.GetUpgradeWeights(id)
+	_, custom, err := h.store.GetUpgradeWeights(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	weights := upgrade.DefaultWeights(char.Class)
-	if custom {
-		var wts upgrade.Weights
-		if json.Unmarshal([]byte(raw), &wts) == nil {
-			weights = wts
-		} else {
-			custom = false // corrupt row — present the default
-		}
-	}
+	// resolveWeights returns the effective set with any newly-added weights
+	// (DPS, focus bonus) backfilled, so the editor shows real values.
 	writeJSON(w, http.StatusOK, map[string]any{
-		"weights":   weights,
+		"weights":   h.resolveWeights(char),
 		"is_custom": custom,
 		"archetype": upgrade.ArchetypeFor(char.Class),
 	})
@@ -617,6 +621,7 @@ func statLineFromCandidate(c db.UpgradeCandidate) upgrade.StatLine {
 		STR: c.STR, STA: c.STA, AGI: c.AGI, DEX: c.DEX,
 		WIS: c.WIS, INT: c.INT, CHA: c.CHA,
 		MR: c.MR, FR: c.FR, CR: c.CR, DR: c.DR, PR: c.PR,
+		Damage: c.Damage, Delay: c.Delay,
 	}
 }
 
@@ -627,5 +632,6 @@ func statLineFromItem(it *db.Item) upgrade.StatLine {
 		WIS: it.Wisdom, INT: it.Intelligence, CHA: it.Charisma,
 		MR: it.MagicResist, FR: it.FireResist, CR: it.ColdResist,
 		DR: it.DiseaseResist, PR: it.PoisonResist,
+		Damage: it.Damage, Delay: it.Delay,
 	}
 }

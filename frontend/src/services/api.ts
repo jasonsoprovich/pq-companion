@@ -1092,6 +1092,7 @@ export interface UpgradeWeights {
   cr: number
   dr: number
   pr: number
+  dps: number
   focus_bonus: number
 }
 
