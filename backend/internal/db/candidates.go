@@ -85,6 +85,14 @@ func (db *DB) FocusOptions(classBit, maxLevel int) ([]FocusOption, error) {
 	return out, rows.Err()
 }
 
+// excludedGearItems are items the upgrade finder must never suggest even though
+// quarm.db marks them as equippable with normal class/race masks: GM/dev-only
+// items and other non-obtainable specials. There's no data flag distinguishing
+// these, so they're listed explicitly — extend as more are found.
+var excludedGearItems = map[int]bool{
+	2660: true, // Ban Hammer — GM-only, not obtainable by players
+}
+
 // CandidateFilter selects items usable in a slot by a character. A zero
 // ClassBit/RaceBit/MaxLevel means "don't filter on that axis".
 type CandidateFilter struct {
@@ -103,11 +111,15 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 	if f.SlotMask == 0 {
 		return nil, fmt.Errorf("upgrade candidates: slot mask required")
 	}
-	where := "(i.slots & ?) != 0 AND i.itemclass = 0"
+	// classes <> 0: real gear always carries an explicit class mask (or the
+	// all-class sentinel >= 32767). In this dataset every classes=0 equippable
+	// row is a non-wearable special (quest/GM/book — e.g. Sword of Truth), so
+	// classes=0 means "no class can equip", NOT "all".
+	where := "(i.slots & ?) != 0 AND i.itemclass = 0 AND i.classes <> 0"
 	args := []any{f.SlotMask}
 
 	if f.ClassBit > 0 {
-		where += " AND (i.classes = 0 OR i.classes >= 32767 OR (i.classes & ?) != 0)"
+		where += " AND (i.classes >= 32767 OR (i.classes & ?) != 0)"
 		args = append(args, f.ClassBit)
 	}
 	if f.RaceBit > 0 {
@@ -153,6 +165,9 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 			&c.FocusEffect, &c.FocusName,
 		); err != nil {
 			return nil, fmt.Errorf("upgrade candidates scan: %w", err)
+		}
+		if excludedGearItems[c.ID] {
+			continue // GM/non-obtainable special
 		}
 		if f.ExcludePoP && db.IsPoPGated(c.ID) {
 			continue // not yet obtainable on Project Quarm

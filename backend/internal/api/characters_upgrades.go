@@ -130,6 +130,9 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	showAll := r.URL.Query().Get("show_all") == "1" || r.URL.Query().Get("show_all") == "true"
+	// PoP gear is hidden unless explicitly requested (independent of the global
+	// pop_enabled era flag, so the finder is predictable).
+	excludePoP := !(r.URL.Query().Get("show_pop") == "1" || r.URL.Query().Get("show_pop") == "true")
 	limit := 75
 	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 500 {
 		limit = v
@@ -149,7 +152,7 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	byLoc, hasGear := h.loadEquipped(cfg.EQPath, char.Name)
 	prioritySet := h.priorityFocusSet(id)
 	equippedFocus := h.equippedFocusSet(byLoc)
-	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, limit, prioritySet, equippedFocus)
+	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, excludePoP, limit, prioritySet, equippedFocus)
 
 	writeJSON(w, http.StatusOK, upgradesResponse{
 		Slot:           slot.Key,
@@ -218,10 +221,11 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 	byLoc, hasGear := h.loadEquipped(cfg.EQPath, char.Name)
 	prioritySet := h.priorityFocusSet(id)
 	equippedFocus := h.equippedFocusSet(byLoc)
+	excludePoP := !(r.URL.Query().Get("show_pop") == "1" || r.URL.Query().Get("show_pop") == "true")
 
 	slots := make([]overviewSlot, 0, len(upgradeSlots))
 	for _, s := range upgradeSlots {
-		current, _, results, considered := h.scoreSlot(char, ctx, weights, s, byLoc, false, 1, prioritySet, equippedFocus)
+		current, _, results, considered := h.scoreSlot(char, ctx, weights, s, byLoc, false, excludePoP, 1, prioritySet, equippedFocus)
 		var best *upgradeResult
 		if len(results) > 0 {
 			best = &results[0]
@@ -251,7 +255,7 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 // results (truncated to limit), and how many candidates were considered.
 func (h *charactersHandler) scoreSlot(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
-	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll bool, limit int,
+	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll, excludePoP bool, limit int,
 	prioritySet, equippedFocus map[int]bool,
 ) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int) {
 	focusBonus := weights.FocusBonus
@@ -278,13 +282,11 @@ func (h *charactersHandler) scoreSlot(
 		classBit = 1 << char.Class
 	}
 	cands, err := h.db.UpgradeCandidates(db.CandidateFilter{
-		SlotMask: slot.Mask,
-		ClassBit: classBit,
-		RaceBit:  enums.RaceBitForCharRace(char.Race),
-		MaxLevel: char.Level,
-		// Hide not-yet-available Planes of Power gear unless the PoP-era flag
-		// is on (Dev panel → Flags), mirroring how spells/AAs are gated.
-		ExcludePoP: !h.mgr.Get().Preferences.PoPEnabled,
+		SlotMask:   slot.Mask,
+		ClassBit:   classBit,
+		RaceBit:    enums.RaceBitForCharRace(char.Race),
+		MaxLevel:   char.Level,
+		ExcludePoP: excludePoP, // finder-local "Show PoP gear" toggle (default hide)
 	})
 	if err != nil {
 		return current, baselineID, []upgradeResult{}, 0

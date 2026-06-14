@@ -101,6 +101,8 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
   const [showAll, setShowAll] = useState(false)
   const [focusOnly, setFocusOnly] = useState(false)
   const [hideNoDrop, setHideNoDrop] = useState(false)
+  // Planes of Power gear is hidden by default (not yet obtainable on Quarm).
+  const [showPoP, setShowPoP] = useState(false)
 
   const [weights, setWeights] = useState<UpgradeWeights | null>(null)
   const [weightsCustom, setWeightsCustom] = useState(false)
@@ -157,7 +159,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
     const id = setTimeout(() => {
       setLoading(true)
       setError(null)
-      getCharacterUpgrades(selected.id, { slot, showAll, weights, limit: 100 })
+      getCharacterUpgrades(selected.id, { slot, showAll, showPoP, weights, limit: 100 })
         .then((r) => {
           if (!cancelled) setData(r)
         })
@@ -172,7 +174,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
       cancelled = true
       clearTimeout(id)
     }
-  }, [selected, slot, showAll, weights, reload])
+  }, [selected, slot, showAll, showPoP, weights, reload])
 
   // Fetch the all-slots overview on demand (entering overview mode, or weights
   // change while in it).
@@ -181,7 +183,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
     let cancelled = false
     const id = setTimeout(() => {
       setOverviewLoading(true)
-      getCharacterUpgradesOverview(selected.id, weights)
+      getCharacterUpgradesOverview(selected.id, weights, showPoP)
         .then((r) => {
           if (!cancelled) setOverview(r)
         })
@@ -194,7 +196,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
       cancelled = true
       clearTimeout(id)
     }
-  }, [mode, selected, weights, reload])
+  }, [mode, selected, weights, showPoP, reload])
 
   // Load the viewed character's wishlist for the star toggles.
   const refreshWishlist = useCallback((charID: number) => {
@@ -387,6 +389,11 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                 <input type="checkbox" checked={hideNoDrop} onChange={(e) => setHideNoDrop(e.target.checked)} />
                 Tradeable only
               </label>
+              <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
+                title="Planes of Power gear isn't obtainable on Quarm yet">
+                <input type="checkbox" checked={showPoP} onChange={(e) => setShowPoP(e.target.checked)} />
+                Show PoP gear
+              </label>
               <button onClick={() => setShowFocus((v) => !v)}
                 className="flex items-center gap-1 rounded px-2 py-1"
                 style={{ border: '1px solid var(--color-border)',
@@ -407,6 +414,11 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
           {mode === 'overview' && (
             <div className="shrink-0 flex items-center justify-end gap-2 border-b px-6 py-2 text-xs"
               style={{ borderColor: 'var(--color-border)' }}>
+              <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
+                title="Planes of Power gear isn't obtainable on Quarm yet">
+                <input type="checkbox" checked={showPoP} onChange={(e) => setShowPoP(e.target.checked)} />
+                Show PoP gear
+              </label>
               <button onClick={() => setShowFocus((v) => !v)}
                 className="flex items-center gap-1 rounded px-2 py-1"
                 style={{ border: '1px solid var(--color-border)',

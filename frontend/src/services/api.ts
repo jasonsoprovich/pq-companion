@@ -1150,10 +1150,11 @@ export interface UpgradeWeightsResponse {
 
 export function getCharacterUpgrades(
   id: number,
-  opts: { slot: string; showAll?: boolean; limit?: number; weights?: UpgradeWeights },
+  opts: { slot: string; showAll?: boolean; showPoP?: boolean; limit?: number; weights?: UpgradeWeights },
 ): Promise<UpgradesResponse> {
   const p = new URLSearchParams({ slot: opts.slot })
   if (opts.showAll) p.set('show_all', '1')
+  if (opts.showPoP) p.set('show_pop', '1')
   if (opts.limit) p.set('limit', String(opts.limit))
   if (opts.weights) p.set('weights', JSON.stringify(opts.weights))
   return get<UpgradesResponse>(`/api/characters/${id}/upgrades?${p.toString()}`)
@@ -1193,9 +1194,11 @@ export interface UpgradesOverviewResponse {
 export function getCharacterUpgradesOverview(
   id: number,
   weights?: UpgradeWeights,
+  showPoP?: boolean,
 ): Promise<UpgradesOverviewResponse> {
   const p = new URLSearchParams()
   if (weights) p.set('weights', JSON.stringify(weights))
+  if (showPoP) p.set('show_pop', '1')
   const qs = p.toString()
   return get<UpgradesOverviewResponse>(`/api/characters/${id}/upgrades/overview${qs ? `?${qs}` : ''}`)
 }
