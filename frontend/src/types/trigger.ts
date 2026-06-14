@@ -129,6 +129,15 @@ export interface Trigger {
    * capture the same value for early clear. Empty = key by trigger name.
    */
   timer_key_capture?: string
+  /**
+   * Capture group ("1", "2", or a named group) whose matched text becomes the
+   * timer's target name — the grey "on <target>" suffix the buff/detrimental
+   * overlays show for spells cast on others. Use it on a "lands on other"
+   * pattern that includes the target, e.g. capture the name in
+   * `(?P<target>[A-Z][a-zA-Z']{2,14}) experiences visions of grandeur\.`.
+   * Empty (or a group that didn't match, e.g. a self-cast branch) = no suffix.
+   */
+  timer_target_capture?: string
   worn_off_pattern: string
   spell_id: number
   /**

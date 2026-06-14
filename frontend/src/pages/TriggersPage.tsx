@@ -324,6 +324,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
   const [timerDuration, setTimerDuration] = useState(initial?.timer_duration_secs ?? prefill?.timerDurationSecs ?? 0)
   const [timerDurationCapture, setTimerDurationCapture] = useState(initial?.timer_duration_capture ?? '')
   const [timerKeyCapture, setTimerKeyCapture] = useState(initial?.timer_key_capture ?? '')
+  const [timerTargetCapture, setTimerTargetCapture] = useState(initial?.timer_target_capture ?? '')
   const [wornOffPattern, setWornOffPattern] = useState(initial?.worn_off_pattern ?? prefill?.wornOffPattern ?? '')
   const [displayThreshold, setDisplayThreshold] = useState(initial?.display_threshold_secs ?? 0)
   const [timerAlerts, setTimerAlerts] = useState<TimerAlertThreshold[]>(
@@ -541,6 +542,8 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
         source === 'pipe' || timerType === 'none' ? '' : timerDurationCapture.trim(),
       timer_key_capture:
         source === 'pipe' || timerType === 'none' ? '' : timerKeyCapture.trim(),
+      timer_target_capture:
+        source === 'pipe' || timerType === 'none' ? '' : timerTargetCapture.trim(),
       worn_off_pattern: source === 'pipe' || timerType === 'none' ? '' : wornOffPattern.trim(),
       spell_id: initial?.spell_id ?? prefill?.spellId ?? 0,
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
@@ -1120,6 +1123,26 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
                 </span>
               </div>
             )}
+            {source === 'log' && (
+              <div className="flex items-center gap-1.5">
+                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Target from capture
+                </label>
+                <input
+                  type="text"
+                  value={timerTargetCapture}
+                  onChange={(e) => setTimerTargetCapture(e.target.value)}
+                  placeholder="e.g. target"
+                  className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center font-mono"
+                  style={inputStyle}
+                  disabled={submitting}
+                  title="Capture group number or name whose text is the spell's target — shown as the grey 'on <target>' suffix in the buff/detrim overlay. Capture it from a 'lands on other' pattern, e.g. (?P<target>[A-Z][a-zA-Z']{2,14}) experiences visions of grandeur. Empty (or an unmatched group, like a self-cast branch) = no suffix."
+                />
+                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                  shows “on &lt;name&gt;”; capture from the lands-on-other line
+                </span>
+              </div>
+            )}
             <div className="flex items-center gap-1.5">
               <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
                 Display threshold (s)
@@ -1348,6 +1371,7 @@ function TriggerRow({
       timer_duration_secs: trigger.timer_duration_secs,
       timer_duration_capture: trigger.timer_duration_capture ?? '',
       timer_key_capture: trigger.timer_key_capture ?? '',
+      timer_target_capture: trigger.timer_target_capture ?? '',
       worn_off_pattern: trigger.worn_off_pattern,
       spell_id: trigger.spell_id,
       display_threshold_secs: trigger.display_threshold_secs,
@@ -2582,6 +2606,7 @@ export default function TriggersPage(): React.ReactElement {
       timer_duration_secs: t.timer_duration_secs,
       timer_duration_capture: t.timer_duration_capture ?? '',
       timer_key_capture: t.timer_key_capture ?? '',
+      timer_target_capture: t.timer_target_capture ?? '',
       worn_off_pattern: t.worn_off_pattern,
       spell_id: t.spell_id,
       display_threshold_secs: t.display_threshold_secs,

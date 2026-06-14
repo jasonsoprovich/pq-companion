@@ -1510,6 +1510,8 @@ export interface CreateTriggerRequest {
   timer_duration_capture?: string
   /** Capture group naming the timer (one countdown per captured value). */
   timer_key_capture?: string
+  /** Capture group naming the timer's target (the "on <target>" suffix). */
+  timer_target_capture?: string
   worn_off_pattern?: string
   spell_id?: number
   display_threshold_secs?: number
