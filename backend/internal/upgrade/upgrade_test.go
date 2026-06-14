@@ -219,6 +219,48 @@ func TestScore_WornHasteCapAware(t *testing.T) {
 	}
 }
 
+func TestScore_ManaRegenFTCap(t *testing.T) {
+	w := Weights{ManaRegen: 25}
+	// From zero, a +10 FT item gives full credit.
+	gain := Score(Context{Level: 60}, w, StatLine{}, StatLine{ManaRegen: 10})
+	if d, _ := findDelta(gain, "mana_regen"); d.Effective != 10 {
+		t.Fatalf("FT gain effective = %d, want 10", d.Effective)
+	}
+	// Already at the 15 cap (from other items): swapping a 5-FT slot item for an
+	// 8-FT one adds no score (effective 0, flagged capped).
+	capped := Score(Context{Level: 60, Current: StatLine{ManaRegen: 15}},
+		w, StatLine{ManaRegen: 5}, StatLine{ManaRegen: 8})
+	if capped.Score != 0 {
+		t.Fatalf("expected no FT credit at cap, score %v", capped.Score)
+	}
+	if d, _ := findDelta(capped, "mana_regen"); d.Effective != 0 || !d.Capped {
+		t.Fatalf("capped FT delta = %+v, want effective 0 + capped", d)
+	}
+}
+
+func TestDefaultWeights_ClassTweaks(t *testing.T) {
+	if DefaultWeights(classWarrior).DEX < 0.4 {
+		t.Error("warrior should weight DEX (proc rate)")
+	}
+	pal := DefaultWeights(classPaladin)
+	if pal.Mana == 0 || pal.ManaRegen == 0 || pal.AC < pal.HP {
+		t.Errorf("paladin should be tank + some mana/regen: %+v", pal)
+	}
+	sk := DefaultWeights(classShadowKnight)
+	if sk.INT == 0 || sk.ManaRegen == 0 {
+		t.Errorf("shadow knight should value INT + mana regen: %+v", sk)
+	}
+	bard := DefaultWeights(classBard)
+	if bard.AC < bard.DPS/20 || bard.DPS >= 250 {
+		t.Errorf("bard should be AC-leaning with lower weapon-DPS weight: %+v", bard)
+	}
+	for _, c := range []int{classCleric, classWizard, classEnchanter} {
+		if DefaultWeights(c).ManaRegen < 10 {
+			t.Errorf("caster class %d should weight mana regen highly", c)
+		}
+	}
+}
+
 func TestDefaultWeights_Archetypes(t *testing.T) {
 	// Tanks value AC heavily and mana not at all.
 	tank := DefaultWeights(classWarrior)

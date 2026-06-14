@@ -46,14 +46,28 @@ type StatLine struct {
 	// book has ratio 0 — swapping a weapon for one is a DPS loss). See Score.
 	Damage int `json:"damage"`
 	Delay  int `json:"delay"`
-	// Attack is the item's worn ATK bonus (SPA 2). It stacks additively and is
-	// effectively uncapped, so it's scored as a normal flat stat.
+	// Attack is the item's worn ATK bonus (SPA 2). It stacks additively; scored
+	// with a soft cap (ATKSoftCap) since worn ATK past the practical ~250 target
+	// has little marginal value.
 	Attack int `json:"attack"`
+	// ManaRegen is the item's worn mana regen (Flowing Thought). Additive but
+	// item-capped at ItemFTCap (15), so it's scored cap-aware — a top caster
+	// priority until capped, then worthless.
+	ManaRegen int `json:"mana_regen"`
 	// Haste is the item's worn melee-haste percent. Worn haste does NOT stack
 	// (only the single highest item applies) and is level-capped, so it's scored
 	// as a separate loadout-aware term, not summed. See Score + Context.
 	Haste int `json:"haste"`
 }
+
+// Scoring caps for the two soft-capped worn stats.
+const (
+	// ATKSoftCap is the practical worn-attack ceiling (the BiS guides target
+	// ~250); worn ATK past it scores nothing.
+	ATKSoftCap = 250
+	// ItemFTCap is EQ's worn mana-regen (Flowing Thought) item cap.
+	ItemFTCap = 15
+)
 
 // ratio is a weapon's damage/delay — the standard EQ DPS-comparison metric
 // (higher is better). Zero for anything without both a damage and a delay.
@@ -84,9 +98,13 @@ type Weights struct {
 	CR   float64 `json:"cr"`
 	DR   float64 `json:"dr"`
 	PR   float64 `json:"pr"`
-	// ATK weights the worn attack bonus (additive, uncapped) — meaningful for
-	// melee/tank, zero for casters.
+	// ATK weights the worn attack bonus (soft-capped at ATKSoftCap) — meaningful
+	// for melee/tank, zero for casters.
 	ATK float64 `json:"atk"`
+	// ManaRegen weights worn mana regen (Flowing Thought, cap-aware at
+	// ItemFTCap). A top-tier caster priority; small for tank-casters; 0 for
+	// pure melee.
+	ManaRegen float64 `json:"mana_regen"`
 	// Haste weights worn melee-haste, scored per effective %-point gained toward
 	// the level cap. Worn haste doesn't stack, so reaching the cap is a top
 	// melee/tank priority and extra haste past it (or beyond the best item) is
@@ -136,6 +154,8 @@ const (
 	uncapped   statKind = iota // HP, mana, AC — full value, no cap
 	attrCapped                 // the seven attributes — eqstat.MaxStat
 	resistCap                  // the five resists — eqstat.ResistCap
+	atkCapped                  // worn ATK — soft cap ATKSoftCap
+	ftCapped                   // worn mana regen — item cap ItemFTCap
 )
 
 // statDef describes one scorable stat: how to read it from a StatLine, its
@@ -152,7 +172,8 @@ type statDef struct {
 var statDefs = []statDef{
 	{"hp", func(s StatLine) int { return s.HP }, func(w Weights) float64 { return w.HP }, uncapped},
 	{"mana", func(s StatLine) int { return s.Mana }, func(w Weights) float64 { return w.Mana }, uncapped},
-	{"atk", func(s StatLine) int { return s.Attack }, func(w Weights) float64 { return w.ATK }, uncapped},
+	{"mana_regen", func(s StatLine) int { return s.ManaRegen }, func(w Weights) float64 { return w.ManaRegen }, ftCapped},
+	{"atk", func(s StatLine) int { return s.Attack }, func(w Weights) float64 { return w.ATK }, atkCapped},
 	{"ac", func(s StatLine) int { return s.AC }, func(w Weights) float64 { return w.AC }, uncapped},
 	{"str", func(s StatLine) int { return s.STR }, func(w Weights) float64 { return w.STR }, attrCapped},
 	{"sta", func(s StatLine) int { return s.STA }, func(w Weights) float64 { return w.STA }, attrCapped},
@@ -211,6 +232,10 @@ func (d statDef) effective(ctx Context, base, itemVal int) (eff int, capped bool
 	case resistCap:
 		cap := eqstat.ResistCap
 		eff = clamp(base+itemVal, 0, cap) - clamp(base, 0, cap)
+	case atkCapped:
+		eff = clamp(base+itemVal, 0, ATKSoftCap) - clamp(base, 0, ATKSoftCap)
+	case ftCapped:
+		eff = clamp(base+itemVal, 0, ItemFTCap) - clamp(base, 0, ItemFTCap)
 	default: // uncapped
 		return itemVal, false
 	}

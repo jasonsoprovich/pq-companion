@@ -90,19 +90,52 @@ var archetypeWeights = map[Archetype]Weights{
 		HP: 0.5, Mana: 1.0, AC: 1.0,
 		STR: 0, STA: 0.2, AGI: 0, DEX: 0, WIS: 1.0, INT: 0, CHA: 0,
 		MR: 0.2, FR: 0.2, CR: 0.2, DR: 0.2, PR: 0.2,
-		ATK: 0, Haste: 0, DPS: 0,
+		// Mana regen (Flowing Thought) is the guides' #2 priority for every
+		// caster, right after focus items — high weight, caps at 15.
+		ManaRegen: 25, ATK: 0, Haste: 0, DPS: 0,
 	},
 	ArchIntCaster: {
 		HP: 0.4, Mana: 1.0, AC: 0.3,
 		STR: 0, STA: 0.1, AGI: 0, DEX: 0, WIS: 0, INT: 1.0, CHA: 0,
 		MR: 0.2, FR: 0.2, CR: 0.2, DR: 0.2, PR: 0.2,
-		ATK: 0, Haste: 0, DPS: 0,
+		ManaRegen: 25, ATK: 0, Haste: 0, DPS: 0,
 	},
+}
+
+// applyClassTweaks layers per-class adjustments over the archetype base, for
+// classes the eqprogression SoL guides treat distinctly from their archetype.
+func applyClassTweaks(class int, w *Weights) {
+	switch class {
+	case classWarrior:
+		// "max Dexterity to help our proc rate".
+		w.DEX = 0.5
+	case classPaladin:
+		// Tank first, but Mana/WIS rank third and +8 mana regen is called out.
+		w.Mana = 0.3
+		w.WIS = 0.4
+		w.ManaRegen = 8
+	case classShadowKnight:
+		w.Mana = 0.3
+		w.INT = 0.4
+		w.ManaRegen = 8
+	case classRanger, classBeastlord:
+		// Melee first, but they cast/buff — modest mana regen value.
+		w.ManaRegen = 5
+	case classBard:
+		// "prioritize AC and +Attack"; not a weapon-ratio DPS class (twists
+		// songs), so AC-leaning with lower weapon-DPS weight + some mana regen.
+		w.AC = 4.0
+		w.HP = 0.8
+		w.ATK = 1.2
+		w.DPS = 80
+		w.ManaRegen = 6
+	}
 }
 
 // DefaultWeights returns the starting weight set for a 0-indexed class.
 func DefaultWeights(class int) Weights {
 	w := archetypeWeights[ArchetypeFor(class)]
 	w.FocusBonus = DefaultFocusBonus
+	applyClassTweaks(class, &w)
 	return w
 }

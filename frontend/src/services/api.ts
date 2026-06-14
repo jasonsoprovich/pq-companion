@@ -1094,6 +1094,7 @@ export interface UpgradeWeights {
   pr: number
   atk: number
   haste: number
+  mana_regen: number
   dps: number
   focus_bonus: number
 }

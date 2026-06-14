@@ -367,6 +367,15 @@ func (h *charactersHandler) resolveWeights(char character.Character) upgrade.Wei
 			if !strings.Contains(raw, `"focus_bonus"`) {
 				wts.FocusBonus = def.FocusBonus
 			}
+			if !strings.Contains(raw, `"atk"`) {
+				wts.ATK = def.ATK
+			}
+			if !strings.Contains(raw, `"haste"`) {
+				wts.Haste = def.Haste
+			}
+			if !strings.Contains(raw, `"mana_regen"`) {
+				wts.ManaRegen = def.ManaRegen
+			}
 			return wts
 		}
 	}
@@ -627,6 +636,9 @@ func statLineFromBlock(b statBlock) upgrade.StatLine {
 		STR: b.STR, STA: b.STA, AGI: b.AGI, DEX: b.DEX,
 		WIS: b.WIS, INT: b.INT, CHA: b.CHA,
 		MR: b.MR, FR: b.FR, CR: b.CR, DR: b.DR, PR: b.PR,
+		// Attack and mana regen are the headroom references for the soft-capped
+		// ATK (250) and Flowing Thought (15) scoring terms.
+		Attack: b.Attack, ManaRegen: b.FT + b.ManaRegen,
 	}
 }
 
@@ -663,7 +675,7 @@ func (wc *wornCache) contribution(wornEffect, wornLevel int) upgrade.StatLine {
 			STR: blk.STR, STA: blk.STA, AGI: blk.AGI, DEX: blk.DEX,
 			WIS: blk.WIS, INT: blk.INT, CHA: blk.CHA,
 			MR: blk.MR, FR: blk.FR, CR: blk.CR, DR: blk.DR, PR: blk.PR,
-			Attack: blk.Attack, Haste: haste,
+			Attack: blk.Attack, ManaRegen: blk.FT + blk.ManaRegen, Haste: haste,
 		}
 	}
 	wc.m[key] = sl
@@ -690,6 +702,7 @@ func addWorn(base, worn upgrade.StatLine) upgrade.StatLine {
 	base.DR += worn.DR
 	base.PR += worn.PR
 	base.Attack += worn.Attack
+	base.ManaRegen += worn.ManaRegen
 	if worn.Haste > base.Haste {
 		base.Haste = worn.Haste
 	}

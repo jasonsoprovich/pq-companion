@@ -72,6 +72,7 @@ const STAT_KEYS: { key: keyof UpgradeWeights; label: string }[] = [
   { key: 'cha', label: 'CHA' }, { key: 'mr', label: 'MR' }, { key: 'fr', label: 'FR' },
   { key: 'cr', label: 'CR' }, { key: 'dr', label: 'DR' }, { key: 'pr', label: 'PR' },
   { key: 'atk', label: 'ATK' }, { key: 'haste', label: 'Haste' },
+  { key: 'mana_regen', label: 'ManaReg' },
 ]
 
 const STAT_LABEL: Record<string, string> = Object.fromEntries(
