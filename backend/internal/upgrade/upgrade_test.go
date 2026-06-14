@@ -178,6 +178,47 @@ func TestScore_WeaponDPS(t *testing.T) {
 	_ = dps
 }
 
+func TestScore_ATKIsFlatUncapped(t *testing.T) {
+	ctx := Context{Level: 60}
+	w := Weights{ATK: 1.0}
+	res := Score(ctx, w, StatLine{Attack: 10}, StatLine{Attack: 30})
+	atk, ok := findDelta(res, "atk")
+	if !ok || atk.Effective != 20 || res.Score != 20 {
+		t.Fatalf("atk delta = %+v, score %v (want +20)", atk, res.Score)
+	}
+}
+
+func TestScore_WornHasteCapAware(t *testing.T) {
+	w := Weights{Haste: 12}
+
+	// No haste elsewhere; a 36% haste item where the slot had none → +36% gained.
+	gain := Score(Context{Level: 60}, w, StatLine{}, StatLine{Haste: 36})
+	if h, _ := findDelta(gain, "haste"); h.Effective != 36 {
+		t.Fatalf("haste gain effective = %d, want 36", h.Effective)
+	}
+
+	// Already capped from another slot (41%): a 36% item adds nothing.
+	none := Score(Context{Level: 60, OtherHaste: 41}, w, StatLine{}, StatLine{Haste: 36})
+	if _, ok := findDelta(none, "haste"); ok {
+		t.Fatalf("expected no haste delta when better haste already equipped, got %v", none.Score)
+	}
+
+	// Swapping AWAY the only haste source (slot had 36%, nothing elsewhere) for a
+	// non-haste item is a loss.
+	loss := Score(Context{Level: 60}, w, StatLine{Haste: 36}, StatLine{})
+	if h, _ := findDelta(loss, "haste"); h.Effective != -36 || loss.Score >= 0 {
+		t.Fatalf("haste loss = %+v score %v (want -36, negative)", h, loss.Score)
+	}
+
+	// Over-cap is clamped: at level 60 the cap is 100, so a 120% item from zero
+	// only counts 100 and is flagged capped.
+	over := Score(Context{Level: 60}, w, StatLine{}, StatLine{Haste: 120})
+	h, _ := findDelta(over, "haste")
+	if h.Effective != 100 || !h.Capped {
+		t.Fatalf("over-cap haste = %+v, want effective 100 + capped", h)
+	}
+}
+
 func TestDefaultWeights_Archetypes(t *testing.T) {
 	// Tanks value AC heavily and mana not at all.
 	tank := DefaultWeights(classWarrior)

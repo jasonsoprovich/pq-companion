@@ -153,7 +153,9 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	byLoc, hasGear := h.loadEquipped(cfg.EQPath, char.Name)
 	prioritySet := h.priorityFocusSet(id)
 	equippedFocus := h.equippedFocusSet(byLoc)
-	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, excludePoP, limit, prioritySet, equippedFocus)
+	wc := h.newWornCache()
+	hasteByLoc := h.hasteByLocation(byLoc, wc)
+	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, excludePoP, limit, prioritySet, equippedFocus, wc, hasteByLoc)
 
 	writeJSON(w, http.StatusOK, upgradesResponse{
 		Slot:           slot.Key,
@@ -222,11 +224,13 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 	byLoc, hasGear := h.loadEquipped(cfg.EQPath, char.Name)
 	prioritySet := h.priorityFocusSet(id)
 	equippedFocus := h.equippedFocusSet(byLoc)
+	wc := h.newWornCache()
+	hasteByLoc := h.hasteByLocation(byLoc, wc)
 	excludePoP := !(r.URL.Query().Get("show_pop") == "1" || r.URL.Query().Get("show_pop") == "true")
 
 	slots := make([]overviewSlot, 0, len(upgradeSlots))
 	for _, s := range upgradeSlots {
-		current, _, results, considered := h.scoreSlot(char, ctx, weights, s, byLoc, false, excludePoP, 1, prioritySet, equippedFocus)
+		current, _, results, considered := h.scoreSlot(char, ctx, weights, s, byLoc, false, excludePoP, 1, prioritySet, equippedFocus, wc, hasteByLoc)
 		var best *upgradeResult
 		if len(results) > 0 {
 			best = &results[0]
@@ -257,13 +261,24 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 func (h *charactersHandler) scoreSlot(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
 	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll, excludePoP bool, limit int,
-	prioritySet, equippedFocus map[int]bool,
+	prioritySet, equippedFocus map[int]bool, wc *wornCache, hasteByLoc map[string]int,
 ) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int) {
 	focusBonus := weights.FocusBonus
 	if focusBonus <= 0 {
 		focusBonus = upgrade.DefaultFocusBonus
 	}
-	current = h.equippedItemsForSlot(byLoc, slot)
+
+	// Worn haste is best-of-type: a candidate only gains haste if it beats the
+	// best the character already wears in OTHER slots (toward the level cap).
+	otherHaste := 0
+	for loc, hv := range hasteByLoc {
+		if loc != slot.Location && hv > otherHaste {
+			otherHaste = hv
+		}
+	}
+	ctx.OtherHaste = otherHaste
+
+	current = h.equippedItemsForSlot(byLoc, slot, wc)
 
 	baseline := upgrade.StatLine{}
 	if len(current) > 0 {
@@ -303,7 +318,7 @@ func (h *charactersHandler) scoreSlot(
 		if worn[c.ID] {
 			continue // don't suggest what's already equipped in this slot
 		}
-		res := upgrade.Score(ctx, weights, baseline, statLineFromCandidate(c))
+		res := upgrade.Score(ctx, weights, baseline, h.candStatLine(c, wc))
 		score := res.Score
 		// Priority focus the character wants but doesn't already have equipped
 		// gets a bonus so a focus item floats up over modest stat upgrades.
@@ -582,7 +597,7 @@ func (h *charactersHandler) loadEquipped(eqPath, charName string) (byLoc map[str
 
 // equippedItemsForSlot resolves the worn items in a logical slot from a
 // pre-parsed equipped map.
-func (h *charactersHandler) equippedItemsForSlot(byLoc map[string][]zeal.InventoryEntry, slot upgradeSlot) []upgradeCurrentItem {
+func (h *charactersHandler) equippedItemsForSlot(byLoc map[string][]zeal.InventoryEntry, slot upgradeSlot, wc *wornCache) []upgradeCurrentItem {
 	// Always a non-nil slice so it marshals to [] not null — the frontend
 	// reads .length/.map on it directly.
 	items := make([]upgradeCurrentItem, 0)
@@ -595,7 +610,7 @@ func (h *charactersHandler) equippedItemsForSlot(byLoc map[string][]zeal.Invento
 			ID:          item.ID,
 			Name:        item.Name,
 			Icon:        item.Icon,
-			Stats:       statLineFromItem(item),
+			Stats:       h.itemStatLine(item, wc),
 			FocusEffect: item.FocusEffect,
 			FocusName:   item.FocusName,
 		})
@@ -613,6 +628,99 @@ func statLineFromBlock(b statBlock) upgrade.StatLine {
 		WIS: b.WIS, INT: b.INT, CHA: b.CHA,
 		MR: b.MR, FR: b.FR, CR: b.CR, DR: b.DR, PR: b.PR,
 	}
+}
+
+// wornCache memoizes worn-effect spell contributions within one request. A
+// worn effect can grant ATK, melee haste, and assorted stats; parsing the spell
+// once per distinct (worneffect, wornlevel) keeps the cost bounded even when a
+// slot has thousands of candidates.
+type wornCache struct {
+	h *charactersHandler
+	m map[[2]int]upgrade.StatLine
+}
+
+func (h *charactersHandler) newWornCache() *wornCache {
+	return &wornCache{h: h, m: map[[2]int]upgrade.StatLine{}}
+}
+
+// contribution returns the StatLine a worn effect adds (zero when there's no
+// worn effect). Reuses parseWornEffect so the finder matches the char-stats
+// engine's notion of what a worn effect grants.
+func (wc *wornCache) contribution(wornEffect, wornLevel int) upgrade.StatLine {
+	if wornEffect <= 0 {
+		return upgrade.StatLine{}
+	}
+	key := [2]int{wornEffect, wornLevel}
+	if v, ok := wc.m[key]; ok {
+		return v
+	}
+	var sl upgrade.StatLine
+	if sp, err := wc.h.db.GetSpell(wornEffect); err == nil && sp != nil {
+		var blk statBlock
+		haste := parseWornEffect(sp, wornLevel, &blk)
+		sl = upgrade.StatLine{
+			HP: blk.HP, Mana: blk.Mana, AC: blk.AC,
+			STR: blk.STR, STA: blk.STA, AGI: blk.AGI, DEX: blk.DEX,
+			WIS: blk.WIS, INT: blk.INT, CHA: blk.CHA,
+			MR: blk.MR, FR: blk.FR, CR: blk.CR, DR: blk.DR, PR: blk.PR,
+			Attack: blk.Attack, Haste: haste,
+		}
+	}
+	wc.m[key] = sl
+	return sl
+}
+
+// addWorn merges a worn-effect contribution into a base (flat-column) stat line.
+// Most fields add; Haste is best-of (worn haste doesn't stack), and the item's
+// flat Damage/Delay are preserved (worn effects carry neither).
+func addWorn(base, worn upgrade.StatLine) upgrade.StatLine {
+	base.HP += worn.HP
+	base.Mana += worn.Mana
+	base.AC += worn.AC
+	base.STR += worn.STR
+	base.STA += worn.STA
+	base.AGI += worn.AGI
+	base.DEX += worn.DEX
+	base.WIS += worn.WIS
+	base.INT += worn.INT
+	base.CHA += worn.CHA
+	base.MR += worn.MR
+	base.FR += worn.FR
+	base.CR += worn.CR
+	base.DR += worn.DR
+	base.PR += worn.PR
+	base.Attack += worn.Attack
+	if worn.Haste > base.Haste {
+		base.Haste = worn.Haste
+	}
+	return base
+}
+
+func (h *charactersHandler) candStatLine(c db.UpgradeCandidate, wc *wornCache) upgrade.StatLine {
+	return addWorn(statLineFromCandidate(c), wc.contribution(c.WornEffect, c.WornLevel))
+}
+
+func (h *charactersHandler) itemStatLine(it *db.Item, wc *wornCache) upgrade.StatLine {
+	return addWorn(statLineFromItem(it), wc.contribution(it.WornEffect, it.WornLevel))
+}
+
+// hasteByLocation returns the best worn melee-haste percent equipped in each
+// worn location, so scoreSlot can derive the "other slots" haste a candidate
+// must beat (worn haste is best-of-type).
+func (h *charactersHandler) hasteByLocation(byLoc map[string][]zeal.InventoryEntry, wc *wornCache) map[string]int {
+	out := make(map[string]int, len(byLoc))
+	for loc, entries := range byLoc {
+		best := 0
+		for _, e := range entries {
+			if item, err := h.db.GetItem(e.ID); err == nil && item != nil {
+				if hv := wc.contribution(item.WornEffect, item.WornLevel).Haste; hv > best {
+					best = hv
+				}
+			}
+		}
+		out[loc] = best
+	}
+	return out
 }
 
 func statLineFromCandidate(c db.UpgradeCandidate) upgrade.StatLine {

@@ -71,6 +71,7 @@ const STAT_KEYS: { key: keyof UpgradeWeights; label: string }[] = [
   { key: 'dex', label: 'DEX' }, { key: 'wis', label: 'WIS' }, { key: 'int', label: 'INT' },
   { key: 'cha', label: 'CHA' }, { key: 'mr', label: 'MR' }, { key: 'fr', label: 'FR' },
   { key: 'cr', label: 'CR' }, { key: 'dr', label: 'DR' }, { key: 'pr', label: 'PR' },
+  { key: 'atk', label: 'ATK' }, { key: 'haste', label: 'Haste' },
 ]
 
 const STAT_LABEL: Record<string, string> = Object.fromEntries(
@@ -766,6 +767,18 @@ function DeltaChips({ cand }: { cand: UpgradeCandidate }): React.ReactElement {
               style={{ backgroundColor: 'var(--color-surface-2)', color }}
               title={`weapon ratio ${(d.current / 100).toFixed(2)} → ${(d.cand / 100).toFixed(2)}`}>
               Ratio {r > 0 ? '+' : ''}{r.toFixed(2)}
+            </span>
+          )
+        }
+        if (d.stat === 'haste') {
+          // Worn haste is best-of/capped: show the EFFECTIVE % gained, not the
+          // item's raw haste (which can differ from what actually helps).
+          return (
+            <span key={d.stat} className="rounded px-1 text-[10px]"
+              style={{ backgroundColor: 'var(--color-surface-2)', color }}
+              title={d.capped ? 'clipped at the melee haste cap' : "worn haste (best-of — only your highest item counts)"}>
+              Haste {d.effective > 0 ? '+' : ''}{d.effective}%
+              {d.capped && <span style={{ color: 'var(--color-muted)' }}> (cap)</span>}
             </span>
           )
         }

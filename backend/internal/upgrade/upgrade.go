@@ -46,6 +46,13 @@ type StatLine struct {
 	// book has ratio 0 — swapping a weapon for one is a DPS loss). See Score.
 	Damage int `json:"damage"`
 	Delay  int `json:"delay"`
+	// Attack is the item's worn ATK bonus (SPA 2). It stacks additively and is
+	// effectively uncapped, so it's scored as a normal flat stat.
+	Attack int `json:"attack"`
+	// Haste is the item's worn melee-haste percent. Worn haste does NOT stack
+	// (only the single highest item applies) and is level-capped, so it's scored
+	// as a separate loadout-aware term, not summed. See Score + Context.
+	Haste int `json:"haste"`
 }
 
 // ratio is a weapon's damage/delay — the standard EQ DPS-comparison metric
@@ -77,6 +84,15 @@ type Weights struct {
 	CR   float64 `json:"cr"`
 	DR   float64 `json:"dr"`
 	PR   float64 `json:"pr"`
+	// ATK weights the worn attack bonus (additive, uncapped) — meaningful for
+	// melee/tank, zero for casters.
+	ATK float64 `json:"atk"`
+	// Haste weights worn melee-haste, scored per effective %-point gained toward
+	// the level cap. Worn haste doesn't stack, so reaching the cap is a top
+	// melee/tank priority and extra haste past it (or beyond the best item) is
+	// worth nothing — a high weight here pushes "cap your haste first". Zero for
+	// casters (melee haste doesn't help them).
+	Haste float64 `json:"haste"`
 	// DPS weights weapon ratio (damage/delay) in weapon slots. It's the score
 	// per +1.0 of ratio, so a melee DPS class values an offhand/main-hand weapon
 	// far above a shield or stat-stick, while a tank (low DPS, high AC) still
@@ -106,6 +122,11 @@ type Context struct {
 	// (base + all worn items + AA + buffs). It is the reference for how much
 	// headroom remains under each cap. HP/mana/AC are not read from here.
 	Current StatLine
+	// OtherHaste is the best worn melee-haste percent the character has equipped
+	// in OTHER slots (excluding the slot being evaluated). Worn haste is
+	// best-of-type, so a candidate's haste only helps if it beats this, and only
+	// up to the level cap (eqstat.MeleeHasteCap(Level)).
+	OtherHaste int
 }
 
 // statKind classifies how a stat's effective value is computed.
@@ -131,6 +152,7 @@ type statDef struct {
 var statDefs = []statDef{
 	{"hp", func(s StatLine) int { return s.HP }, func(w Weights) float64 { return w.HP }, uncapped},
 	{"mana", func(s StatLine) int { return s.Mana }, func(w Weights) float64 { return w.Mana }, uncapped},
+	{"atk", func(s StatLine) int { return s.Attack }, func(w Weights) float64 { return w.ATK }, uncapped},
 	{"ac", func(s StatLine) int { return s.AC }, func(w Weights) float64 { return w.AC }, uncapped},
 	{"str", func(s StatLine) int { return s.STR }, func(w Weights) float64 { return w.STR }, attrCapped},
 	{"sta", func(s StatLine) int { return s.STA }, func(w Weights) float64 { return w.STA }, attrCapped},
@@ -229,6 +251,31 @@ func Score(ctx Context, w Weights, slotCur, cand StatLine) Result {
 		})
 	}
 
+	// Worn melee haste — best-of-type and level-capped, so it's scored on the
+	// EFFECTIVE percent gained: the candidate only helps if it raises the
+	// character's best haste (vs other slots) toward the cap. Reaching the cap
+	// is a top melee priority; past it, or below your existing best, a haste
+	// item adds nothing (and swapping away your only haste source is a loss).
+	if w.Haste != 0 {
+		cap := eqstat.MeleeHasteCap(ctx.Level)
+		curEff := clamp(maxInt(ctx.OtherHaste, slotCur.Haste), 0, cap)
+		candEff := clamp(maxInt(ctx.OtherHaste, cand.Haste), 0, cap)
+		eff := candEff - curEff
+		if eff != 0 {
+			weighted := w.Haste * float64(eff)
+			res.Score += weighted
+			res.Deltas = append(res.Deltas, StatDelta{
+				Stat:      "haste",
+				Cand:      cand.Haste,
+				Current:   slotCur.Haste,
+				Effective: eff,
+				Weight:    w.Haste,
+				Weighted:  weighted,
+				Capped:    cand.Haste > slotCur.Haste && candEff == cap && maxInt(ctx.OtherHaste, cand.Haste) > cap,
+			})
+		}
+	}
+
 	// Weapon ratio (DPS) — only meaningful in weapon slots, where it's the
 	// dominant value for a melee class. Scored as a delta vs the worn weapon, so
 	// swapping a weapon for a shield/stat-stick (ratio 0) is a DPS loss. Ratios
@@ -258,4 +305,11 @@ func sign(f float64) float64 {
 		return -1
 	}
 	return 1
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

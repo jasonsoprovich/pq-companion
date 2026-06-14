@@ -41,6 +41,10 @@ type UpgradeCandidate struct {
 
 	FocusEffect int    `json:"focus_effect"`
 	FocusName   string `json:"focus_name"`
+	// WornEffect/WornLevel identify the item's worn-effect spell, from which the
+	// finder derives worn ATK and melee haste.
+	WornEffect int `json:"worn_effect"`
+	WornLevel  int `json:"worn_level"`
 }
 
 // FocusOption is a distinct focus effect found on a class's usable gear, for
@@ -149,7 +153,8 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 	  i.hp, i.mana, i.ac, i.astr, i.asta, i.aagi, i.adex, i.awis, i.aint, i.acha,
 	  i.mr, i.fr, i.cr, i.dr, i.pr,
 	  i.focuseffect,
-	  COALESCE(NULLIF(i.focusname, ''), (SELECT s.name FROM spells_new s WHERE s.id = i.focuseffect), '') AS focusname
+	  COALESCE(NULLIF(i.focusname, ''), (SELECT s.name FROM spells_new s WHERE s.id = i.focuseffect), '') AS focusname,
+	  i.worneffect, i.wornlevel
 	  FROM items i WHERE ` + where
 
 	rows, err := db.Query(q, args...)
@@ -168,6 +173,7 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 			&c.HP, &c.Mana, &c.AC, &c.STR, &c.STA, &c.AGI, &c.DEX, &c.WIS, &c.INT, &c.CHA,
 			&c.MR, &c.FR, &c.CR, &c.DR, &c.PR,
 			&c.FocusEffect, &c.FocusName,
+			&c.WornEffect, &c.WornLevel,
 		); err != nil {
 			return nil, fmt.Errorf("upgrade candidates scan: %w", err)
 		}
