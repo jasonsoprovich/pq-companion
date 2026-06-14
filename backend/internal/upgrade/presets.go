@@ -93,5 +93,7 @@ var archetypeWeights = map[Archetype]Weights{
 
 // DefaultWeights returns the starting weight set for a 0-indexed class.
 func DefaultWeights(class int) Weights {
-	return archetypeWeights[ArchetypeFor(class)]
+	w := archetypeWeights[ArchetypeFor(class)]
+	w.FocusBonus = DefaultFocusBonus
+	return w
 }

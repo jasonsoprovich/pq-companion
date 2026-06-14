@@ -40,6 +40,51 @@ type UpgradeCandidate struct {
 	FocusName   string `json:"focus_name"`
 }
 
+// FocusOption is a distinct focus effect found on a class's usable gear, for
+// the upgrade finder's "priority focus" picker. Count is how many usable items
+// carry it (a rough popularity signal for ordering).
+type FocusOption struct {
+	SpellID int    `json:"spell_id"`
+	Name    string `json:"name"`
+	Count   int    `json:"count"`
+}
+
+// FocusOptions returns the distinct, named focus effects carried by items
+// usable by the given class at or below the level. classBit/maxLevel of 0 mean
+// "don't filter on that axis".
+func (db *DB) FocusOptions(classBit, maxLevel int) ([]FocusOption, error) {
+	where := "i.focuseffect > 0 AND i.itemclass = 0"
+	args := []any{}
+	if classBit > 0 {
+		where += " AND (i.classes = 0 OR i.classes >= 32767 OR (i.classes & ?) != 0)"
+		args = append(args, classBit)
+	}
+	if maxLevel > 0 {
+		where += " AND (i.reqlevel = 0 OR i.reqlevel <= ?)"
+		args = append(args, maxLevel)
+	}
+	q := `SELECT i.focuseffect,
+	  COALESCE(NULLIF(i.focusname, ''), (SELECT s.name FROM spells_new s WHERE s.id = i.focuseffect), '') AS focusname,
+	  COUNT(*) AS cnt
+	  FROM items i WHERE ` + where + `
+	  GROUP BY i.focuseffect HAVING focusname != ''
+	  ORDER BY cnt DESC, focusname`
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("focus options: %w", err)
+	}
+	defer rows.Close()
+	out := []FocusOption{}
+	for rows.Next() {
+		var o FocusOption
+		if err := rows.Scan(&o.SpellID, &o.Name, &o.Count); err != nil {
+			return nil, fmt.Errorf("focus options scan: %w", err)
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
 // CandidateFilter selects items usable in a slot by a character. A zero
 // ClassBit/RaceBit/MaxLevel means "don't filter on that axis".
 type CandidateFilter struct {

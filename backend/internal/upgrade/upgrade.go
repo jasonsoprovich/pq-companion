@@ -63,7 +63,19 @@ type Weights struct {
 	CR   float64 `json:"cr"`
 	DR   float64 `json:"dr"`
 	PR   float64 `json:"pr"`
+	// FocusBonus is the score bump (on the same HP-equivalent axis) given to a
+	// candidate that carries one of the character's priority focus effects which
+	// they don't already have equipped. Applied by the API layer, not Score —
+	// focus is a separate axis from raw stats. See DefaultFocusBonus.
+	FocusBonus float64 `json:"focus_bonus"`
 }
+
+// DefaultFocusBonus is the fallback priority-focus bonus when a weight set
+// doesn't specify one (e.g. profiles saved before the field existed). On the
+// HP-equivalent scale, ~100 means a wanted, not-yet-equipped focus is worth
+// about 100 HP of ranking — enough to float a focus item over a modest stat
+// upgrade without burying large ones.
+const DefaultFocusBonus = 100
 
 // Context carries the character state needed for cap-aware scoring.
 type Context struct {

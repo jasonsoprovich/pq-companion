@@ -55,3 +55,63 @@ func (s *Store) DeleteUpgradeWeights(characterID int) error {
 	)
 	return err
 }
+
+// migrateUpgradeFocus creates the per-character priority-focus table. Each row
+// is a focus-effect spell id the character wants to prioritise in the upgrade
+// finder (a candidate carrying one it doesn't already have equipped is boosted).
+func (s *Store) migrateUpgradeFocus() error {
+	_, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS character_upgrade_focus (
+			character_id INTEGER NOT NULL,
+			spell_id     INTEGER NOT NULL,
+			PRIMARY KEY (character_id, spell_id),
+			FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+		)
+	`)
+	return err
+}
+
+// GetPriorityFocus returns the character's priority focus-effect spell ids.
+func (s *Store) GetPriorityFocus(characterID int) ([]int, error) {
+	rows, err := s.db.Query(
+		`SELECT spell_id FROM character_upgrade_focus WHERE character_id = ? ORDER BY spell_id`,
+		characterID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []int{}
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// SetPriorityFocus replaces the character's priority focus-effect set.
+func (s *Store) SetPriorityFocus(characterID int, spellIDs []int) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM character_upgrade_focus WHERE character_id = ?`, characterID); err != nil {
+		return err
+	}
+	for _, id := range spellIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, err := tx.Exec(
+			`INSERT OR IGNORE INTO character_upgrade_focus (character_id, spell_id) VALUES (?, ?)`,
+			characterID, id,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}

@@ -80,6 +80,10 @@ type upgradeResult struct {
 	FocusName   string              `json:"focus_name"`
 	Score       float64             `json:"score"`
 	Deltas      []upgrade.StatDelta `json:"deltas"`
+	// PriorityFocus is true when this candidate carries one of the character's
+	// priority focus effects that they don't already have equipped — the score
+	// includes the focus bonus and the UI flags it.
+	PriorityFocus bool `json:"priority_focus"`
 }
 
 type upgradesResponse struct {
@@ -143,7 +147,9 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	ctx := upgrade.Context{Level: char.Level, Current: statLineFromBlock(h.currentTotals(char))}
 
 	byLoc, hasGear := h.loadEquipped(cfg.EQPath, char.Name)
-	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, limit)
+	prioritySet := h.priorityFocusSet(id)
+	equippedFocus := h.equippedFocusSet(byLoc)
+	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, limit, prioritySet, equippedFocus)
 
 	writeJSON(w, http.StatusOK, upgradesResponse{
 		Slot:           slot.Key,
@@ -210,10 +216,12 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 	}
 	ctx := upgrade.Context{Level: char.Level, Current: statLineFromBlock(h.currentTotals(char))}
 	byLoc, hasGear := h.loadEquipped(cfg.EQPath, char.Name)
+	prioritySet := h.priorityFocusSet(id)
+	equippedFocus := h.equippedFocusSet(byLoc)
 
 	slots := make([]overviewSlot, 0, len(upgradeSlots))
 	for _, s := range upgradeSlots {
-		current, _, results, considered := h.scoreSlot(char, ctx, weights, s, byLoc, false, 1)
+		current, _, results, considered := h.scoreSlot(char, ctx, weights, s, byLoc, false, 1, prioritySet, equippedFocus)
 		var best *upgradeResult
 		if len(results) > 0 {
 			best = &results[0]
@@ -244,7 +252,12 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 func (h *charactersHandler) scoreSlot(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
 	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll bool, limit int,
+	prioritySet, equippedFocus map[int]bool,
 ) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int) {
+	focusBonus := weights.FocusBonus
+	if focusBonus <= 0 {
+		focusBonus = upgrade.DefaultFocusBonus
+	}
 	current = h.equippedItemsForSlot(byLoc, slot)
 
 	baseline := upgrade.StatLine{}
@@ -288,21 +301,29 @@ func (h *charactersHandler) scoreSlot(
 			continue // don't suggest what's already equipped in this slot
 		}
 		res := upgrade.Score(ctx, weights, baseline, statLineFromCandidate(c))
-		if !showAll && res.Score <= 0 {
+		score := res.Score
+		// Priority focus the character wants but doesn't already have equipped
+		// gets a bonus so a focus item floats up over modest stat upgrades.
+		priority := c.FocusEffect > 0 && prioritySet[c.FocusEffect] && !equippedFocus[c.FocusEffect]
+		if priority {
+			score += focusBonus
+		}
+		if !showAll && score <= 0 {
 			continue
 		}
 		results = append(results, upgradeResult{
-			ID:          c.ID,
-			Name:        c.Name,
-			Icon:        c.Icon,
-			Slots:       c.Slots,
-			NoDrop:      c.NoDrop,
-			ReqLevel:    c.ReqLevel,
-			RecLevel:    c.RecLevel,
-			FocusEffect: c.FocusEffect,
-			FocusName:   c.FocusName,
-			Score:       res.Score,
-			Deltas:      res.Deltas,
+			ID:            c.ID,
+			Name:          c.Name,
+			Icon:          c.Icon,
+			Slots:         c.Slots,
+			NoDrop:        c.NoDrop,
+			ReqLevel:      c.ReqLevel,
+			RecLevel:      c.RecLevel,
+			FocusEffect:   c.FocusEffect,
+			FocusName:     c.FocusName,
+			Score:         score,
+			Deltas:        res.Deltas,
+			PriorityFocus: priority,
 		})
 	}
 	sort.SliceStable(results, func(i, j int) bool { return results[i].Score > results[j].Score })
@@ -416,6 +437,97 @@ func (h *charactersHandler) resetUpgradeWeights(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, http.StatusOK, upgrade.DefaultWeights(char.Class))
+}
+
+// priorityFocusSet returns the character's priority focus-effect spell ids.
+func (h *charactersHandler) priorityFocusSet(charID int) map[int]bool {
+	set := map[int]bool{}
+	if ids, err := h.store.GetPriorityFocus(charID); err == nil {
+		for _, id := range ids {
+			set[id] = true
+		}
+	}
+	return set
+}
+
+// equippedFocusSet returns the focus effects the character already has equipped
+// (any slot). A priority focus already in this set earns no bonus — only the
+// best of a focus type matters, so getting another copy is not an upgrade.
+func (h *charactersHandler) equippedFocusSet(byLoc map[string][]zeal.InventoryEntry) map[int]bool {
+	set := map[int]bool{}
+	for _, entries := range byLoc {
+		for _, e := range entries {
+			if item, err := h.db.GetItem(e.ID); err == nil && item != nil && item.FocusEffect > 0 {
+				set[item.FocusEffect] = true
+			}
+		}
+	}
+	return set
+}
+
+// focusOptions handles GET /api/characters/{id}/focus-options — the distinct
+// focus effects available on the character's class gear, for the priority picker.
+func (h *charactersHandler) focusOptions(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	char, ok, err := h.store.Get(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+	classBit := 0
+	if char.Class >= 0 {
+		classBit = 1 << char.Class
+	}
+	opts, err := h.db.FocusOptions(classBit, char.Level)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, opts)
+}
+
+// priorityFocus handles GET /api/characters/{id}/priority-focus.
+func (h *charactersHandler) priorityFocus(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	ids, err := h.store.GetPriorityFocus(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string][]int{"spell_ids": ids})
+}
+
+// updatePriorityFocus handles PUT /api/characters/{id}/priority-focus.
+func (h *charactersHandler) updatePriorityFocus(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var req struct {
+		SpellIDs []int `json:"spell_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if err := h.store.SetPriorityFocus(id, req.SpellIDs); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string][]int{"spell_ids": req.SpellIDs})
 }
 
 // currentTotals returns the character's Equipped stat layer (base + worn items

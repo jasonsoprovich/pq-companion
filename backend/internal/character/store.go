@@ -129,6 +129,9 @@ func (s *Store) migrate() error {
 	if err := s.migrateUpgradeWeights(); err != nil {
 		return err
 	}
+	if err := s.migrateUpgradeFocus(); err != nil {
+		return err
+	}
 	return nil
 }
 
