@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Settings, Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import CharacterSwitcher from './CharacterSwitcher'
 import { useHistoryNav } from '../hooks/useHistoryNav'
@@ -27,6 +27,19 @@ function SidebarLink({ to, label, icon }: NavItem): React.ReactElement {
   )
 }
 
+// Section collapse state lives in localStorage (a pure UI preference, no need
+// to round-trip through the backend config).
+const COLLAPSE_KEY = 'sidebar_collapsed_sections'
+
+function loadCollapsed(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(COLLAPSE_KEY)
+    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {}
+  } catch {
+    return {}
+  }
+}
+
 interface SidebarProps {
   onSearchClick: () => void
 }
@@ -37,6 +50,19 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   const { canGoBack, canGoForward, goBack, goForward } = useHistoryNav()
   const onDragMouseDown = useWindowDrag()
   const { hidden, order } = useSidebarPrefs()
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed)
+
+  const toggleSection = (id: string): void => {
+    setCollapsed((prev) => {
+      const next = { ...prev, [id]: !prev[id] }
+      try {
+        localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next))
+      } catch {
+        /* ignore quota/availability errors — collapse is best-effort */
+      }
+      return next
+    })
+  }
 
   // Apply the user's hide/order prefs to each section; drop sections that end
   // up empty so their header doesn't dangle.
@@ -112,23 +138,37 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
       {/* Scrollable nav — hidden scrollbar. Sections, their visible items, and
           their order all come from the user's navigation preferences. */}
       <div className="scrollbar-hidden flex-1 overflow-y-auto">
-        {sections.map((section) => (
-          <React.Fragment key={section.id}>
-            <div className="px-4 pb-1 pt-3">
-              <span
-                className="text-[10px] font-semibold uppercase tracking-widest"
+        {sections.map((section) => {
+          const isCollapsed = collapsed[section.id]
+          return (
+            <React.Fragment key={section.id}>
+              <button
+                onClick={() => toggleSection(section.id)}
+                className="no-drag flex w-full items-center gap-1 px-3 pb-1 pt-3 text-left transition-colors hover:text-(--color-foreground)"
                 style={{ color: 'var(--color-muted)' }}
+                title={isCollapsed ? `Expand ${section.label}` : `Collapse ${section.label}`}
               >
-                {section.label}
-              </span>
-            </div>
-            <nav className="space-y-0.5 px-2 py-1">
-              {section.items.map((item) => (
-                <SidebarLink key={item.to} {...item} />
-              ))}
-            </nav>
-          </React.Fragment>
-        ))}
+                <ChevronDown
+                  size={12}
+                  style={{
+                    transition: 'transform 0.15s',
+                    transform: isCollapsed ? 'rotate(-90deg)' : 'none',
+                  }}
+                />
+                <span className="text-[10px] font-semibold uppercase tracking-widest">
+                  {section.label}
+                </span>
+              </button>
+              {!isCollapsed && (
+                <nav className="space-y-0.5 px-2 py-1">
+                  {section.items.map((item) => (
+                    <SidebarLink key={item.to} {...item} />
+                  ))}
+                </nav>
+              )}
+            </React.Fragment>
+          )
+        })}
       </div>
 
       {/* Bottom — Settings (always visible) */}

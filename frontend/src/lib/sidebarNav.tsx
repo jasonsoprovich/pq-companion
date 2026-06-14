@@ -1,7 +1,8 @@
 import React from 'react'
 import {
   Sword, Sparkles, Skull, Map, Hammer, Activity, Layers, ScrollText, Zap,
-  Users, Dice5, UserSearch, MessageSquare, Package,
+  Users, Dice5, UserSearch, MessageSquare, Package, TrendingUp, BookOpen,
+  Library, KeyRound, Hourglass, Star, Wand2, ListChecks,
 } from 'lucide-react'
 
 // A single navigable side-tab. `to` doubles as the stable key used for
@@ -38,10 +39,19 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    id: 'zeal',
-    label: 'Zeal',
+    id: 'characters',
+    label: 'Characters',
     items: [
-      { to: '/characters', label: 'Characters', icon: <Users size={16} /> },
+      { to: '/characters/overview', label: 'Active Character', icon: <Users size={16} /> },
+      { to: '/characters/progress', label: 'Character Info', icon: <TrendingUp size={16} /> },
+      { to: '/characters/inventory', label: 'Inventory', icon: <Package size={16} /> },
+      { to: '/characters/spells', label: 'Spells', icon: <BookOpen size={16} /> },
+      { to: '/characters/spellsets', label: 'Spellsets', icon: <Library size={16} /> },
+      { to: '/characters/keys', label: 'Keys', icon: <KeyRound size={16} /> },
+      { to: '/characters/lockouts', label: 'Lockouts', icon: <Hourglass size={16} /> },
+      { to: '/characters/wishlist', label: 'Wishlist', icon: <Star size={16} /> },
+      { to: '/characters/upgrades', label: 'Gear Upgrades', icon: <Wand2 size={16} /> },
+      { to: '/characters/tasks', label: 'Tasks', icon: <ListChecks size={16} /> },
     ],
   },
   {
