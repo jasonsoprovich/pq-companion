@@ -40,10 +40,17 @@ func (db *DB) ensurePoPIndex() {
 //
 //   - explicitly tagged items (items.min_expansion >= 4), to catch PoP items
 //     with no recorded source (e.g. quest rewards), and
-//   - items whose every known source zone (drop, vendor, forage, ground spawn)
-//     is a PoP zone per the curated zoneCatalog.
+//   - items whose every known source zone (drop, vendor, forage, ground spawn,
+//     or quest reward) is a PoP zone per the curated zoneCatalog.
 //
 // An item with at least one pre-PoP source is kept (it's obtainable now).
+//
+// Quest rewards are essential here: EQEmu scripts quests in Lua/Perl, not DB
+// tables, so a quest-reward item has no drop/vendor/forage row and would
+// otherwise be unclassifiable. Folding the quest-source zones in both keeps
+// current-era quest gear visible (Sigil Earring of Veracity → Katta/Luclin)
+// and correctly hides PoP-era quest rewards (Jade Hoop of Speed → Plane of
+// Knowledge). See quest_sources.go.
 func (db *DB) buildPoPGated() (map[int]bool, error) {
 	gated := map[int]bool{}
 
@@ -114,6 +121,15 @@ func (db *DB) buildPoPGated() (map[int]bool, error) {
 			}
 		}
 		rows.Close()
+	}
+
+	// Quest-reward sources (from the embedded quest scripts, not the DB). An
+	// item rewarded by a quest is obtainable wherever that quest's NPC lives.
+	loadQuestSources()
+	for itemID, zones := range questRewardZoneSet {
+		for zone := range zones {
+			classify(itemID, zone)
+		}
 	}
 
 	// Gate items whose every known source is a PoP zone.
