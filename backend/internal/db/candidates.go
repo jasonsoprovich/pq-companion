@@ -43,10 +43,11 @@ type UpgradeCandidate struct {
 // CandidateFilter selects items usable in a slot by a character. A zero
 // ClassBit/RaceBit/MaxLevel means "don't filter on that axis".
 type CandidateFilter struct {
-	SlotMask int // required: items whose slots bitmask intersects this
-	ClassBit int // items.classes bit for the character's class
-	RaceBit  int // items.races bit for the character's race
-	MaxLevel int // character level; items requiring a higher level are excluded
+	SlotMask   int  // required: items whose slots bitmask intersects this
+	ClassBit   int  // items.classes bit for the character's class
+	RaceBit    int  // items.races bit for the character's race
+	MaxLevel   int  // character level; items requiring a higher level are excluded
+	ExcludePoP bool // drop Planes-of-Power-gated items (not yet obtainable)
 }
 
 // UpgradeCandidates returns every equippable item that fits the slot and is
@@ -107,6 +108,9 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 			&c.FocusEffect, &c.FocusName,
 		); err != nil {
 			return nil, fmt.Errorf("upgrade candidates scan: %w", err)
+		}
+		if f.ExcludePoP && db.IsPoPGated(c.ID) {
+			continue // not yet obtainable on Project Quarm
 		}
 		out = append(out, c)
 	}

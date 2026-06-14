@@ -121,6 +121,10 @@ func main() {
 	}
 	defer database.Close()
 
+	// Warm the PoP item index in the background so the first gear-upgrade
+	// request doesn't pay the one-time build cost.
+	go database.WarmPoPIndex()
+
 	hub := ws.NewHub()
 	go hub.Run()
 

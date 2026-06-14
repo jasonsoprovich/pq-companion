@@ -269,6 +269,9 @@ func (h *charactersHandler) scoreSlot(
 		ClassBit: classBit,
 		RaceBit:  enums.RaceBitForCharRace(char.Race),
 		MaxLevel: char.Level,
+		// Hide not-yet-available Planes of Power gear unless the PoP-era flag
+		// is on (Dev panel → Flags), mirroring how spells/AAs are gated.
+		ExcludePoP: !h.mgr.Get().Preferences.PoPEnabled,
 	})
 	if err != nil {
 		return current, baselineID, []upgradeResult{}, 0

@@ -22,6 +22,14 @@ type DB struct {
 	variantsOnce  sync.Once
 	itemVariants  *variantIndex
 	spellVariants *variantIndex
+
+	// Planes-of-Power item gate, computed once on first use (see pop_index.go).
+	// quarm.db's per-item/zone expansion columns are unreliable (PoP items are
+	// often left at the -1 default), so PoP membership is derived from the
+	// curated zone catalog applied to each item's drop/vendor/forage/ground
+	// sources. Used to hide not-yet-available PoP gear from the upgrade finder.
+	popOnce  sync.Once
+	popGated map[int]bool
 }
 
 // Open opens the SQLite database at the given path in read-only mode.
