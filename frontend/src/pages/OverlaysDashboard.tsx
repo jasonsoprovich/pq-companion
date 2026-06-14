@@ -8,7 +8,7 @@
  * restored on next mount. Drag/resize snaps to a 16px grid.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, HeartPulse, ExternalLink, Layers, X } from 'lucide-react'
+import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, HeartPulse, ExternalLink, Layers, X, Crosshair } from 'lucide-react'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
@@ -105,6 +105,19 @@ export default function OverlaysDashboard(): React.ReactElement {
   const handleReset = useCallback(() => {
     setLayout({ ...DEFAULT_DASHBOARD_LAYOUT })
     setLayoutVersion((v) => v + 1)
+  }, [])
+
+  // Recenter every popped-out overlay window on the primary monitor and unlock
+  // them. This is the recovery path for an overlay that's drifted off-screen
+  // (where a locked window can't reach its own unlock button). Distinct from
+  // Reset Dashboard Layout above, which only affects the in-app docked panels.
+  const handleResetPositions = useCallback(() => {
+    if (!window.electron?.overlay?.resetAllPositions) return
+    const ok = window.confirm(
+      'Recenter all pop-out overlay windows on your primary monitor and unlock them?',
+    )
+    if (!ok) return
+    window.electron.overlay.resetAllPositions().catch(() => {})
   }, [])
 
   // Tracks whether any standalone popout window is currently open. Polled
@@ -281,6 +294,21 @@ export default function OverlaysDashboard(): React.ReactElement {
               {anyPopoutOpen ? 'Close All Popouts' : 'Pop Out All'}
             </button>
           )}
+          {typeof window.electron?.overlay?.resetAllPositions === 'function' && (
+            <button
+              onClick={handleResetPositions}
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                color: 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+              title="Recenter all pop-out overlay windows on the primary monitor and unlock them — use this if an overlay has drifted off-screen"
+            >
+              <Crosshair size={11} />
+              Reset Window Positions
+            </button>
+          )}
           <button
             onClick={handleReset}
             className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
@@ -289,10 +317,10 @@ export default function OverlaysDashboard(): React.ReactElement {
               color: 'var(--color-muted-foreground)',
               border: '1px solid var(--color-border)',
             }}
-            title="Reset all panel positions, sizes, and visibility to defaults"
+            title="Reset the in-app dashboard panel positions, sizes, and visibility to defaults (does not affect pop-out windows)"
           >
             <RotateCcw size={11} />
-            Reset Layout
+            Reset Dashboard Layout
           </button>
         </div>
       </div>

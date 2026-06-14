@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
@@ -2597,7 +2597,9 @@ function OverlayLockModeCard({
       </h2>
       <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
         When an overlay is locked it can&rsquo;t be moved or resized. Choose how
-        each one reacts to the mouse while locked:
+        each one reacts to the mouse while locked. If an overlay has drifted
+        off-screen, use its <span style={{ color: 'var(--color-foreground)' }}>Reset position</span>{' '}
+        button to recenter it on your primary monitor and unlock it.
       </p>
 
       {/* Mode legend */}
@@ -2647,10 +2649,26 @@ function OverlayLockModeCard({
               <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
                 {def.label}
               </span>
-              <LockModeToggle
-                value={mode}
-                onChange={(next) => onChange({ ...modes, [def.name]: next })}
-              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.electron?.overlay?.resetPosition?.(def.name)}
+                  className="flex items-center gap-1 rounded px-2 py-1 text-xs"
+                  style={{
+                    backgroundColor: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                    color: 'var(--color-muted-foreground)',
+                    cursor: 'pointer',
+                  }}
+                  title={`Recenter the ${def.label} overlay on the primary monitor and unlock it`}
+                >
+                  <Crosshair size={11} />
+                  Reset position
+                </button>
+                <LockModeToggle
+                  value={mode}
+                  onChange={(next) => onChange({ ...modes, [def.name]: next })}
+                />
+              </div>
             </div>
           )
         })}

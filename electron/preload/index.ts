@@ -75,6 +75,21 @@ contextBridge.exposeInMainWorld('electron', {
     getLocked: (): Promise<boolean> => ipcRenderer.invoke('overlay:lock:get'),
     setLocked: (locked: boolean): Promise<void> =>
       ipcRenderer.invoke('overlay:lock:set', locked),
+    // Fired by the main process when an overlay's lock state is changed from
+    // outside its own window (e.g. a position reset auto-unlocks it), so the
+    // padlock button can stay in sync without a reload.
+    onLockChanged: (cb: (locked: boolean) => void): (() => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, locked: boolean): void => cb(locked)
+      ipcRenderer.on('overlay:lock-changed', listener)
+      return () => ipcRenderer.removeListener('overlay:lock-changed', listener)
+    },
+    // Recenter overlays on the primary monitor at default size and unlock them.
+    // Driven from the main app window so an off-screen/locked overlay is still
+    // recoverable.
+    resetPosition: (name: string): Promise<void> =>
+      ipcRenderer.invoke('overlay:reset-position', name),
+    resetAllPositions: (): Promise<void> =>
+      ipcRenderer.invoke('overlay:reset-all-positions'),
     // Pin trigger alert text (and the positioning card) to one monitor.
     setDisplay: (id: number): Promise<void> =>
       ipcRenderer.invoke('overlay:set-display', id),

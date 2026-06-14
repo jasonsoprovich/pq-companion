@@ -55,8 +55,15 @@ export function useOverlayLock(name: OverlayName): {
     window.electron?.overlay?.getLocked().then((value) => {
       if (!cancelled) setLocked(value)
     }).catch(() => {})
+    // The main process can clear the lock from outside this window (a position
+    // reset auto-unlocks the overlay so a stuck off-screen window is movable
+    // again). Subscribe so the padlock button reflects that without a reload.
+    const off = window.electron?.overlay?.onLockChanged?.((value) => {
+      if (!cancelled) setLocked(value)
+    })
     return () => {
       cancelled = true
+      off?.()
     }
   }, [])
 

@@ -113,6 +113,24 @@ type Bounds = { x: number; y: number; width: number; height: number }
 type BoundsStore = Partial<Record<OverlayName, Bounds>>
 type LockStore = Partial<Record<OverlayName, boolean>>
 
+// Default bounds for each popout overlay — used both when an overlay first
+// opens with no saved position and when the user resets an overlay's position.
+// The screen-spanning "trigger" overlay computes its own bounds and so is
+// excluded. Keep this the single source of truth: the create*Overlay functions
+// pass these straight into getRestoredBounds().
+const OVERLAY_DEFAULTS: Record<Exclude<OverlayName, 'trigger'>, Bounds> = {
+  dps: { x: 0, y: 0, width: 420, height: 460 },
+  hps: { x: 0, y: 0, width: 420, height: 460 },
+  buffTimer: { x: 0, y: 0, width: 280, height: 380 },
+  detrimTimer: { x: 0, y: 0, width: 300, height: 320 },
+  customTimer: { x: 0, y: 0, width: 280, height: 280 },
+  npc: { x: 0, y: 0, width: 360, height: 480 },
+  rollTracker: { x: 0, y: 0, width: 320, height: 360 },
+  respawnTimer: { x: 0, y: 0, width: 300, height: 320 },
+  chChain: { x: 0, y: 0, width: 260, height: 320 },
+  chMetronome: { x: 0, y: 0, width: 220, height: 220 },
+}
+
 function boundsFilePath(): string {
   return join(app.getPath('userData'), 'overlayBounds.json')
 }
@@ -721,7 +739,7 @@ function createDPSOverlay(): void {
     return
   }
 
-  const { x, y, width, height } = getRestoredBounds('dps', { x: 0, y: 0, width: 420, height: 460 })
+  const { x, y, width, height } = getRestoredBounds('dps', OVERLAY_DEFAULTS.dps)
   dpsOverlayWindow = new BrowserWindow({
     x,
     y,
@@ -781,7 +799,7 @@ function createHPSOverlay(): void {
     return
   }
 
-  const { x, y, width, height } = getRestoredBounds('hps', { x: 0, y: 0, width: 420, height: 460 })
+  const { x, y, width, height } = getRestoredBounds('hps', OVERLAY_DEFAULTS.hps)
   hpsOverlayWindow = new BrowserWindow({
     x,
     y,
@@ -840,7 +858,7 @@ function createBuffTimerOverlay(): void {
     return
   }
 
-  const { x, y, width, height } = getRestoredBounds('buffTimer', { x: 0, y: 0, width: 280, height: 380 })
+  const { x, y, width, height } = getRestoredBounds('buffTimer', OVERLAY_DEFAULTS.buffTimer)
   buffTimerWindow = new BrowserWindow({
     x,
     y,
@@ -897,7 +915,7 @@ function createCHChainOverlay(): void {
     return
   }
 
-  const { x, y, width, height } = getRestoredBounds('chChain', { x: 0, y: 0, width: 260, height: 320 })
+  const { x, y, width, height } = getRestoredBounds('chChain', OVERLAY_DEFAULTS.chChain)
   chChainWindow = new BrowserWindow({
     x,
     y,
@@ -954,7 +972,7 @@ function createCHMetronomeOverlay(): void {
     return
   }
 
-  const { x, y, width, height } = getRestoredBounds('chMetronome', { x: 0, y: 0, width: 220, height: 220 })
+  const { x, y, width, height } = getRestoredBounds('chMetronome', OVERLAY_DEFAULTS.chMetronome)
   chMetronomeWindow = new BrowserWindow({
     x,
     y,
@@ -1013,7 +1031,7 @@ function createDetrimTimerOverlay(): void {
     return
   }
 
-  const { x, y, width, height } = getRestoredBounds('detrimTimer', { x: 0, y: 0, width: 300, height: 320 })
+  const { x, y, width, height } = getRestoredBounds('detrimTimer', OVERLAY_DEFAULTS.detrimTimer)
   detrimTimerWindow = new BrowserWindow({
     x,
     y,
@@ -1072,7 +1090,7 @@ function createCustomTimerOverlay(): void {
     return
   }
 
-  const { x, y, width, height } = getRestoredBounds('customTimer', { x: 0, y: 0, width: 280, height: 280 })
+  const { x, y, width, height } = getRestoredBounds('customTimer', OVERLAY_DEFAULTS.customTimer)
   customTimerWindow = new BrowserWindow({
     x,
     y,
@@ -1131,7 +1149,7 @@ function createRespawnTimerOverlay(): void {
     return
   }
 
-  const { x, y, width, height } = getRestoredBounds('respawnTimer', { x: 0, y: 0, width: 300, height: 320 })
+  const { x, y, width, height } = getRestoredBounds('respawnTimer', OVERLAY_DEFAULTS.respawnTimer)
   respawnTimerWindow = new BrowserWindow({
     x,
     y,
@@ -1276,7 +1294,7 @@ function createNPCOverlay(): void {
     return
   }
 
-  const { x, y, width, height } = getRestoredBounds('npc', { x: 0, y: 0, width: 360, height: 480 })
+  const { x, y, width, height } = getRestoredBounds('npc', OVERLAY_DEFAULTS.npc)
   npcOverlayWindow = new BrowserWindow({
     x,
     y,
@@ -1335,7 +1353,7 @@ function createRollTrackerOverlay(): void {
     return
   }
 
-  const { x, y, width, height } = getRestoredBounds('rollTracker', { x: 0, y: 0, width: 320, height: 360 })
+  const { x, y, width, height } = getRestoredBounds('rollTracker', OVERLAY_DEFAULTS.rollTracker)
   rollTrackerWindow = new BrowserWindow({
     x,
     y,
@@ -1818,6 +1836,81 @@ ipcMain.handle('overlay:popouts:open-all', (_event, panels?: string[]) => {
 ipcMain.handle('overlay:popouts:close-all', () => {
   // Use close() (not destroy()) so each window's 'close' handler persists its bounds.
   for (const win of popoutWindows()) win.close()
+})
+
+// ── IPC handlers — overlay position reset ────────────────────────────────────
+// Recovers an overlay that has wandered (or been pushed by a layout/update)
+// off-screen. Because a locked overlay is click-through and its unlock button
+// may be off-screen, the reset is driven from the main app window — never from
+// the stuck overlay itself.
+
+// Every overlay with a saved/movable position. Excludes the screen-spanning
+// "trigger" overlay, which has no free position to reset.
+const RESETTABLE_OVERLAYS = Object.keys(OVERLAY_DEFAULTS) as Array<Exclude<OverlayName, 'trigger'>>
+
+function overlayWindowByName(name: OverlayName): BrowserWindow | null {
+  switch (name) {
+    case 'dps': return dpsOverlayWindow
+    case 'hps': return hpsOverlayWindow
+    case 'buffTimer': return buffTimerWindow
+    case 'detrimTimer': return detrimTimerWindow
+    case 'customTimer': return customTimerWindow
+    case 'trigger': return triggerOverlayWindow
+    case 'npc': return npcOverlayWindow
+    case 'rollTracker': return rollTrackerWindow
+    case 'respawnTimer': return respawnTimerWindow
+    case 'chChain': return chChainWindow
+    case 'chMetronome': return chMetronomeWindow
+    default: return null
+  }
+}
+
+// Center a window of the given size on the PRIMARY display's work area. We
+// deliberately use the primary monitor (not the overlay's last-known monitor,
+// which may be the very screen it disappeared off of) so a reset always lands
+// somewhere visible.
+function centeredOnPrimary(size: Bounds): Bounds {
+  const wa = screen.getPrimaryDisplay().workArea
+  return {
+    x: Math.round(wa.x + (wa.width - size.width) / 2),
+    y: Math.round(wa.y + (wa.height - size.height) / 2),
+    width: size.width,
+    height: size.height,
+  }
+}
+
+// Recenter one overlay on the primary monitor at its default size AND clear its
+// locked state, so a stuck "locked + off-screen" overlay becomes immediately
+// movable again. Updates the saved bounds too, so an overlay that's currently
+// closed also re-opens centered.
+function resetOverlayPosition(name: Exclude<OverlayName, 'trigger'>): void {
+  const target = centeredOnPrimary(OVERLAY_DEFAULTS[name])
+
+  // Persist centered bounds and clear the lock regardless of open/closed state.
+  const store = loadBoundsStore()
+  store[name] = target
+  saveBoundsStore(store)
+  setOverlayLocked(name, false)
+
+  const win = overlayWindowByName(name)
+  if (win && !win.isDestroyed()) {
+    win.setResizable(true)
+    win.setIgnoreMouseEvents(false)
+    win.setBounds(target)
+    // The lock hook only reads lock state on mount, so push the cleared state
+    // to the overlay's renderer to keep its padlock button in sync.
+    win.webContents.send('overlay:lock-changed', false)
+  }
+}
+
+ipcMain.handle('overlay:reset-position', (_event, name: string) => {
+  if ((RESETTABLE_OVERLAYS as string[]).includes(name)) {
+    resetOverlayPosition(name as Exclude<OverlayName, 'trigger'>)
+  }
+})
+
+ipcMain.handle('overlay:reset-all-positions', () => {
+  for (const name of RESETTABLE_OVERLAYS) resetOverlayPosition(name)
 })
 
 // ── IPC handlers — click-through ─────────────────────────────────────────────

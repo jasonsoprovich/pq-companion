@@ -64,6 +64,9 @@ export interface ElectronAPI {
     onTriggerEscape: (cb: () => void) => () => void
     getLocked: () => Promise<boolean>
     setLocked: (locked: boolean) => Promise<void>
+    onLockChanged: (cb: (locked: boolean) => void) => () => void
+    resetPosition: (name: string) => Promise<void>
+    resetAllPositions: () => Promise<void>
     setDisplay: (id: number) => Promise<void>
   }
   screen: {
