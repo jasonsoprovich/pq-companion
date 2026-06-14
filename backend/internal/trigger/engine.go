@@ -36,7 +36,7 @@ const historyMaxSize = 200
 // trigger-driven timer extends to the same length as the spell-landed
 // pipeline would produce. 0 = use durationSecs as given.
 type TimerSink interface {
-	StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int)
+	StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName string)
 	StopExternal(name string, spellID int)
 }
 
@@ -432,7 +432,7 @@ func (e *Engine) firePipe(t *Trigger, matchedLine string, firedAt time.Time) {
 			}
 		}
 		e.sink.StartExternal(timerKeyFor(t), timerCategory(t.TimerType),
-			t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID)
+			t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID, "")
 	}
 	e.startCooldownTimer(t, firedAt)
 }
@@ -656,11 +656,12 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 				}
 			}
 			key := resolveTimerKey(t, c.timerKey, match, names)
+			target := resolveTimerTarget(t, match, names)
 			spellID := t.SpellID
 			if extra != nil && extra.SpellID > 0 {
 				spellID = extra.SpellID
 			}
-			e.sink.StartExternal(key, timerCategory(t.TimerType), durationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, spellID)
+			e.sink.StartExternal(key, timerCategory(t.TimerType), durationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, spellID, target)
 		}
 	}
 	e.startCooldownTimer(t, firedAt)
@@ -682,6 +683,24 @@ func resolveTimerKey(t *Trigger, fallback string, match []string, names []string
 		}
 	}
 	return fallback
+}
+
+// resolveTimerTarget returns the target name for one firing — the grey "on
+// <target>" suffix the buff/detrimental overlays show. When the trigger sets
+// TimerTargetCapture and that group participated in the match, the captured
+// text becomes the target; otherwise the target is empty (no suffix). Only
+// real capture groups are consulted (no built-ins), so a self-cast branch of
+// an alternation that doesn't fill the group yields no target — which is what
+// we want, since a buff on yourself shows no "on <name>".
+func resolveTimerTarget(t *Trigger, match []string, names []string) string {
+	if t.TimerTargetCapture == "" || len(match) == 0 {
+		return ""
+	}
+	ref := "{" + t.TimerTargetCapture + "}"
+	if v := substituteCaptures(ref, match, names, nil); v != ref {
+		return strings.TrimSpace(v)
+	}
+	return ""
 }
 
 // timerKeyFor returns the spelltimer key for a trigger. Prefers the trigger
@@ -724,7 +743,7 @@ func (e *Engine) startCooldownTimer(t *Trigger, firedAt time.Time) {
 	if buf, err := json.Marshal([]TimerAlert{readyAlert}); err == nil {
 		alertJSON = buf
 	}
-	e.sink.StartExternal(cooldownKeyFor(t), "buff", t.CooldownSecs, 0, firedAt, alertJSON, 0)
+	e.sink.StartExternal(cooldownKeyFor(t), "buff", t.CooldownSecs, 0, firedAt, alertJSON, 0, "")
 }
 
 // timerCategory maps a trigger's TimerType onto a spelltimer category string.

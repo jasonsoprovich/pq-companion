@@ -849,6 +849,7 @@ type captureSink struct {
 	category string
 	duration int
 	spellID  int
+	target   string
 	calls    int
 
 	stopName    string
@@ -856,8 +857,8 @@ type captureSink struct {
 	stops       int
 }
 
-func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int) {
-	s.name, s.category, s.duration, s.spellID = name, category, durationSecs, spellID
+func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName string) {
+	s.name, s.category, s.duration, s.spellID, s.target = name, category, durationSecs, spellID, targetName
 	s.calls++
 }
 func (s *captureSink) StopExternal(name string, spellID int) {
@@ -907,6 +908,54 @@ func TestEngine_CustomTimerWithCaptureDuration(t *testing.T) {
 	}
 	if stored.TimerDurationCapture != "2" || stored.TimerType != TimerTypeCustom {
 		t.Errorf("persisted trigger = capture %q type %q", stored.TimerDurationCapture, stored.TimerType)
+	}
+}
+
+// TestEngine_TimerTargetCapture verifies a buff trigger captures the target
+// name into the timer (the "on <target>" overlay suffix) when its "lands on
+// other" branch matches, and leaves the target empty for the self-cast branch
+// of the same alternation. Mirrors how the built-in Visions of Grandeur pack
+// trigger is shaped.
+func TestEngine_TimerTargetCapture(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	sink := &captureSink{}
+	e := NewEngine(s, hub, sink, nil)
+
+	tr := &Trigger{
+		ID: "vog-1", Name: "Visions of Grandeur", Enabled: true,
+		Pattern: `^(?:You experience visions of grandeur\.|` +
+			`(?P<target>[A-Z][a-zA-Z']{2,14}) experiences visions of grandeur\.)$`,
+		TimerType:          TimerTypeBuff,
+		TimerDurationSecs:  2520,
+		TimerTargetCapture: "target",
+		Actions:            []Action{},
+		CreatedAt:          time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	// Cast on another player — the named group captures them as the target.
+	e.Handle(time.Now(), "Soandso experiences visions of grandeur.")
+	if sink.calls != 1 || sink.target != "Soandso" {
+		t.Errorf("cast-on-other dispatch = %+v, want target Soandso", sink)
+	}
+
+	// Self-cast branch leaves the target group empty → no target suffix.
+	e.Handle(time.Now(), "You experience visions of grandeur.")
+	if sink.calls != 2 || sink.target != "" {
+		t.Errorf("self-cast dispatch = %+v, want empty target", sink)
+	}
+
+	// timer_target_capture round-trips through the store.
+	stored, err := s.Get("vog-1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if stored.TimerTargetCapture != "target" {
+		t.Errorf("persisted target capture = %q, want \"target\"", stored.TimerTargetCapture)
 	}
 }
 

@@ -61,8 +61,9 @@ func (h *timerHandler) startCustom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// spellID 0 — manual timers have no spell, so no duration focuses apply.
+	// targetName "" — a manually-added timer has no captured target.
 	h.engine.StartExternal(req.Name, string(spelltimer.CategoryCustom),
-		req.DurationSecs, 0, time.Now(), nil, 0)
+		req.DurationSecs, 0, time.Now(), nil, 0, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 

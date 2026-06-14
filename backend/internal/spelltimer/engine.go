@@ -640,7 +640,7 @@ func divergenceKey(names []string) string {
 // apply the active character's item/AA duration focuses to durationSecs —
 // matching the spell-landed pipeline. 0 means "use durationSecs as given"
 // (custom triggers without a spell anchor, tests).
-func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int) {
+func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName string) {
 	if name == "" || durationSecs <= 0 {
 		return
 	}
@@ -662,13 +662,15 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 		}
 	}
 
-	// Custom triggers don't carry a target. The composite key still
-	// namespaces them so a trigger named "Visions of Grandeur" can't collide
-	// with the per-target spell-landed entries, but we additionally dedup
-	// against any same-spell-name timer to avoid the user seeing two rows
-	// for the same buff (one from the spell-landed pipeline, one from a
-	// custom trigger they configured before the pipeline existed).
-	key := timerKey(name, "")
+	// targetName is non-empty only when the firing trigger captured a target
+	// (TimerTargetCapture) — e.g. a group buff landing on a party member. It
+	// becomes part of the composite key so casting the same buff on several
+	// people tracks one row each, exactly like the spell-landed pipeline. When
+	// empty (most custom triggers, self-buffs, the self-cast branch of an
+	// alternation) the key namespaces by name alone; the same-spell-name dedup
+	// below still avoids a duplicate row when the spell-landed pipeline already
+	// created one for the same buff.
+	key := timerKey(name, targetName)
 
 	e.mu.Lock()
 	e.gcPendingArmsLocked(time.Now())
@@ -727,6 +729,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 		ID:                   key,
 		SpellName:            name,
 		SpellID:              spellID,
+		TargetName:           targetName,
 		Icon:                 resolvedIcon,
 		Category:             cat,
 		CastAt:               startedAt,

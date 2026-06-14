@@ -212,6 +212,18 @@ type Trigger struct {
 	// participate in the match, the trigger name is used as before.
 	TimerKeyCapture string `json:"timer_key_capture,omitempty"`
 
+	// TimerTargetCapture names a capture group ("1", "2", or a named group)
+	// whose matched text becomes the timer's target name — the grey "on
+	// <target>" suffix the buff/detrimental overlays render for spells cast on
+	// others. Use it on a "lands on other" pattern that includes the target,
+	// e.g. capture the name in `(?P<target>[A-Z][a-zA-Z']{2,14}) experiences
+	// visions of grandeur\.` and set TimerTargetCapture="target". The target
+	// also becomes part of the timer key, so casting the same buff on several
+	// people tracks one row each (matching the built-in spell-landed timers).
+	// When the group doesn't participate in the match (e.g. the self-cast
+	// branch of an alternation), the target is empty and no suffix shows.
+	TimerTargetCapture string `json:"timer_target_capture,omitempty"`
+
 	// CooldownSecs spawns a second timer alongside the buff/duration timer to
 	// track the spell or discipline's reuse cooldown (recast_time in
 	// spells_new). Counts down on the buff overlay with a " CD" suffix in the
