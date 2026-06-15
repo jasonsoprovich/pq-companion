@@ -8,9 +8,11 @@
  * window.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Hourglass, Trash2, ExternalLink, X } from 'lucide-react'
+import { Bell, BellOff, Hourglass, Trash2, ExternalLink, X } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useDisplayThresholds, passesThreshold } from '../../hooks/useDisplayThresholds'
+import { useCustomTimerAlertPref } from '../../hooks/useCustomTimerAlertPref'
+import { customAlertThresholds, defaultTimerAlertPref } from '../../lib/timerAlerts'
 import { WSEvent } from '../../lib/wsEvents'
 import { clearTimers, getTimerState, removeTimer, startCustomTimer } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
@@ -126,6 +128,11 @@ export default function CustomTimerPanel({
   const [newName, setNewName] = useState('')
   const [newDuration, setNewDuration] = useState('')
   const [addError, setAddError] = useState(false)
+  // Per-add alert toggle. null = follow the global default; once the user
+  // clicks the bell it holds their explicit choice for subsequent adds.
+  const alertPref = useCustomTimerAlertPref()
+  const [alertOverride, setAlertOverride] = useState<boolean | null>(null)
+  const bellOn = alertOverride ?? (alertPref?.enabled ?? false)
 
   useEffect(() => {
     getTimerState().then(setState).catch(() => {})
@@ -148,7 +155,12 @@ export default function CustomTimerPanel({
       return
     }
     setAddError(false)
-    startCustomTimer(newName.trim(), secs)
+    // When the bell is lit, arm this timer with the global alert config (or a
+    // sensible built-in default if none is configured); otherwise stay silent.
+    const alerts = bellOn
+      ? customAlertThresholds({ ...(alertPref ?? defaultTimerAlertPref('custom')), enabled: true })
+      : undefined
+    startCustomTimer(newName.trim(), secs, alerts)
       .then(() => {
         setNewName('')
         setNewDuration('')
@@ -250,6 +262,25 @@ export default function CustomTimerPanel({
           title="Duration: seconds (300), colon notation (6:40), or units (6m40s)"
           style={{ ...quickInputStyle, width: 78 }}
         />
+        <button
+          type="button"
+          onClick={() => setAlertOverride(!bellOn)}
+          title={bellOn ? 'Alert when this timer finishes (click to mute)' : 'No alert for new timers (click to enable)'}
+          aria-pressed={bellOn}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '2px 6px',
+            borderRadius: 3,
+            border: '1px solid var(--color-border)',
+            backgroundColor: bellOn ? 'rgba(56,189,248,0.2)' : 'var(--color-surface)',
+            color: bellOn ? 'var(--color-foreground)' : 'var(--color-muted)',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          {bellOn ? <Bell size={12} /> : <BellOff size={12} />}
+        </button>
         <button
           type="submit"
           style={{
