@@ -38,24 +38,29 @@ import (
 	"strings"
 )
 
-// questEntry is one NPC's quest item activity. Rewards are items the NPC gives
-// out (quest rewards + cursor-summoned items); TurnIns are items it requires;
-// Steps pair them (turn in Requires → receive Grants) so a multi-NPC questline
-// can be reconstructed by chaining steps through their shared items.
+// questEntry is one NPC's quest activity. Rewards/TurnIns are the aggregate
+// item ids (used for era classification and search); Dialogue is the ordered
+// walkthrough — each branch is something the player does (hail, say a keyword,
+// or turn in items) and what the NPC does in response (its text + any items it
+// grants). The per-step turn-in→reward pairings used to chain a multi-NPC
+// questline are derived from the trade/grant branches.
 type questEntry struct {
-	Zone    string      `json:"zone"`
-	NPC     string      `json:"npc"`
-	Rewards []int       `json:"rewards,omitempty"`
-	TurnIns []int       `json:"turnins,omitempty"`
-	Steps   []questStep `json:"steps,omitempty"`
+	Zone     string           `json:"zone"`
+	NPC      string           `json:"npc"`
+	Rewards  []int            `json:"rewards,omitempty"`
+	TurnIns  []int            `json:"turnins,omitempty"`
+	Dialogue []dialogueBranch `json:"dialogue,omitempty"`
 }
 
-// questStep is one turn-in→reward exchange at an NPC. Requires is empty for a
-// reward granted without a turn-in (e.g. a quest-start item handed out in
-// dialogue).
-type questStep struct {
-	Requires []int `json:"requires,omitempty"`
-	Grants   []int `json:"grants,omitempty"`
+// dialogueBranch is one conditional branch of an NPC's quest handlers: the
+// player action that triggers it (Triggers = say keywords, or TurnIn = items
+// handed over; both empty = an unconditional/hail response), the NPC's spoken
+// Text, and any items it Grants.
+type dialogueBranch struct {
+	Triggers []string `json:"triggers,omitempty"`
+	TurnIn   []int    `json:"turnin,omitempty"`
+	Text     string   `json:"text,omitempty"`
+	Grants   []int    `json:"grants,omitempty"`
 }
 
 var (
@@ -133,7 +138,7 @@ func parseTree(root string) ([]questEntry, parseStats) {
 		if err != nil {
 			return nil
 		}
-		rewards, turnins, steps := parseScript(string(src))
+		rewards, turnins, dialogue := parseScript(string(src))
 		if len(rewards) == 0 && len(turnins) == 0 {
 			return nil
 		}
@@ -142,7 +147,7 @@ func parseTree(root string) ([]questEntry, parseStats) {
 		stats.turnins += len(turnins)
 		entries = append(entries, questEntry{
 			Zone: zone, NPC: npc,
-			Rewards: rewards, TurnIns: turnins, Steps: steps,
+			Rewards: rewards, TurnIns: turnins, Dialogue: dialogue,
 		})
 		return nil
 	})
@@ -150,104 +155,153 @@ func parseTree(root string) ([]questEntry, parseStats) {
 	return entries, stats
 }
 
-// parseScript extracts reward and turn-in item IDs from one quest script plus
-// the per-step turn-in→reward pairings. It uses balanced-paren extraction (not
-// line regexes) so multi-line calls and nested parens like math.random(0,5)
-// don't derail the arg parsing.
-//
-// Step pairing is positional: quest scripts are structured as a chain of
-//
-//	if(check_turn_in(...{item1=A}...)) then ... QuestReward(...,B) end
-//	elseif(check_turn_in(...{item1=C}...)) then ... QuestReward(...,D) end
-//
-// so the reward calls that sit between one check_turn_in and the next belong to
-// that turn-in. Reward calls before the first turn-in are standalone grants
-// (e.g. a quest-start item handed out in dialogue) with no requirement.
-func parseScript(src string) (rewards, turnins []int, steps []questStep) {
-	rewardSet := map[int]bool{}
-	turnInSet := map[int]bool{}
+// dialogue token kinds, ordered by file position to drive the branch builder.
+const (
+	tokKeyword = iota // a findi("...") condition on a say handler
+	tokTurnIn         // a check_turn_in({...}) condition on a trade handler
+	tokText           // an NPC Say/Emote line
+	tokGrant          // an item handed to the player
+)
 
-	// Reward calls with their positions and granted items.
-	type grantCall struct {
-		pos    int
-		grants []int
-	}
-	var grantCalls []grantCall
-	for _, c := range callMatches(src, "QuestReward") {
-		ids := rewardItemsFromQuestReward(c.args)
-		if len(ids) > 0 {
-			grantCalls = append(grantCalls, grantCall{c.pos, ids})
-		}
-	}
-	for _, fn := range []string{"SummonItem", "SummonCursorItem"} {
-		for _, c := range callMatches(src, fn) {
-			if id := firstInt(c.args); id > 0 {
-				grantCalls = append(grantCalls, grantCall{c.pos, []int{id}})
-			}
-		}
-	}
-	for _, g := range grantCalls {
-		for _, id := range g.grants {
-			rewardSet[id] = true
-		}
-	}
+type dlgToken struct {
+	pos     int
+	kind    int
+	keyword string
+	items   []int
+	text    string
+}
 
-	// Turn-in calls with their positions and required items.
-	type turnInCall struct {
-		pos      int
-		requires []int
+// reQuoted matches a Lua double-quoted string literal (with \" escapes).
+var reQuoted = regexp.MustCompile(`"((?:[^"\\]|\\.)*)"`)
+
+// parseScript extracts an NPC's quest walkthrough from one script: the ordered
+// dialogue branches (say keyword / turn-in → NPC text + granted items), plus
+// the aggregate reward and turn-in item sets derived from them. Uses balanced-
+// paren extraction so multi-line calls and nested parens don't derail parsing.
+//
+// Branch grouping is positional: a script is a chain of
+//
+//	if(<cond>) then <body> elseif(<cond>) then <body> ... end
+//
+// so in file order a condition's tokens (findi / check_turn_in) precede that
+// branch's body tokens (Say/Emote text, item grants). A new branch begins at a
+// condition token once the current branch's body has started; consecutive
+// condition tokens (e.g. `findi("a") or findi("b")`) merge into one branch.
+func parseScript(src string) (rewards, turnins []int, dialogue []dialogueBranch) {
+	var toks []dlgToken
+	for _, c := range callMatches(src, "findi") {
+		if s := firstString(c.args); s != "" {
+			toks = append(toks, dlgToken{pos: c.pos, kind: tokKeyword, keyword: s})
+		}
 	}
-	var turnInCalls []turnInCall
 	for _, c := range callMatches(src, "check_turn_in") {
 		var reqs []int
 		for _, m := range reTurnInItem.FindAllStringSubmatch(c.args, -1) {
 			if id, _ := strconv.Atoi(m[1]); id > 0 {
 				reqs = append(reqs, id)
-				turnInSet[id] = true
 			}
 		}
 		if len(reqs) > 0 {
-			turnInCalls = append(turnInCalls, turnInCall{c.pos, reqs})
+			toks = append(toks, dlgToken{pos: c.pos, kind: tokTurnIn, items: reqs})
 		}
 	}
-
-	sort.Slice(grantCalls, func(i, j int) bool { return grantCalls[i].pos < grantCalls[j].pos })
-	sort.Slice(turnInCalls, func(i, j int) bool { return turnInCalls[i].pos < turnInCalls[j].pos })
-
-	// Pair each turn-in with the grants that follow it, up to the next turn-in.
-	for i, ti := range turnInCalls {
-		next := len(src)
-		if i+1 < len(turnInCalls) {
-			next = turnInCalls[i+1].pos
+	for _, fn := range []string{"Say", "Emote", "Shout"} {
+		for _, c := range callMatches(src, fn) {
+			if t := joinStrings(c.args); t != "" {
+				toks = append(toks, dlgToken{pos: c.pos, kind: tokText, text: t})
+			}
 		}
-		grants := map[int]bool{}
-		for _, g := range grantCalls {
-			if g.pos >= ti.pos && g.pos < next {
-				for _, id := range g.grants {
-					grants[id] = true
+	}
+	for _, c := range callMatches(src, "QuestReward") {
+		if ids := rewardItemsFromQuestReward(c.args); len(ids) > 0 {
+			toks = append(toks, dlgToken{pos: c.pos, kind: tokGrant, items: ids})
+		}
+	}
+	for _, fn := range []string{"SummonItem", "SummonCursorItem"} {
+		for _, c := range callMatches(src, fn) {
+			if id := firstInt(c.args); id > 0 {
+				toks = append(toks, dlgToken{pos: c.pos, kind: tokGrant, items: []int{id}})
+			}
+		}
+	}
+	sort.Slice(toks, func(i, j int) bool { return toks[i].pos < toks[j].pos })
+
+	rewardSet := map[int]bool{}
+	turnInSet := map[int]bool{}
+	var cur dialogueBranch
+	has := false
+	bodyStarted := false
+	flush := func() {
+		if has && !branchEmpty(cur) {
+			dialogue = append(dialogue, cur)
+		}
+		cur = dialogueBranch{}
+		has = false
+		bodyStarted = false
+	}
+	for _, t := range toks {
+		switch t.kind {
+		case tokKeyword, tokTurnIn:
+			if has && bodyStarted {
+				flush()
+			}
+			has = true
+			if t.kind == tokKeyword {
+				cur.Triggers = append(cur.Triggers, t.keyword)
+			} else {
+				cur.TurnIn = append(cur.TurnIn, t.items...)
+				for _, id := range t.items {
+					turnInSet[id] = true
 				}
 			}
-		}
-		steps = append(steps, questStep{Requires: ti.requires, Grants: sortedKeys(grants)})
-	}
-	// Grants before the first turn-in are standalone (no requirement).
-	firstTurnIn := len(src)
-	if len(turnInCalls) > 0 {
-		firstTurnIn = turnInCalls[0].pos
-	}
-	standalone := map[int]bool{}
-	for _, g := range grantCalls {
-		if g.pos < firstTurnIn {
-			for _, id := range g.grants {
-				standalone[id] = true
+		case tokText:
+			has = true
+			if cur.Text != "" {
+				cur.Text += " "
 			}
+			cur.Text += t.text
+			bodyStarted = true
+		case tokGrant:
+			has = true
+			cur.Grants = append(cur.Grants, t.items...)
+			for _, id := range t.items {
+				rewardSet[id] = true
+			}
+			bodyStarted = true
 		}
 	}
-	if len(standalone) > 0 {
-		steps = append([]questStep{{Grants: sortedKeys(standalone)}}, steps...)
-	}
+	flush()
 
-	return sortedKeys(rewardSet), sortedKeys(turnInSet), steps
+	return sortedKeys(rewardSet), sortedKeys(turnInSet), dialogue
+}
+
+func branchEmpty(b dialogueBranch) bool {
+	return len(b.Triggers) == 0 && len(b.TurnIn) == 0 && b.Text == "" && len(b.Grants) == 0
+}
+
+// firstString returns the first double-quoted literal in args, unescaped.
+func firstString(args string) string {
+	if m := reQuoted.FindStringSubmatch(args); m != nil {
+		return unescape(m[1])
+	}
+	return ""
+}
+
+// joinStrings concatenates every double-quoted literal in args (Lua `..`
+// concatenation with variables like player names is dropped), so a Say built
+// from several pieces still yields readable text.
+func joinStrings(args string) string {
+	var parts []string
+	for _, m := range reQuoted.FindAllStringSubmatch(args, -1) {
+		if s := strings.TrimSpace(unescape(m[1])); s != "" {
+			parts = append(parts, unescape(m[1]))
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, ""))
+}
+
+func unescape(s string) string {
+	return strings.NewReplacer(`\"`, `"`, `\n`, " ", `\t`, " ", `\\`, `\`).Replace(s)
 }
 
 // rewardItemsFromQuestReward pulls item IDs out of one QuestReward(...) arg

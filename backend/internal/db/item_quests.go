@@ -23,45 +23,53 @@ type ItemQuestRef struct {
 	RelatedItems  []ItemRef `json:"related_items,omitempty"`
 }
 
-// ItemQuestStep is one resolved step in the questline that yields an item:
-// turn in Requires to NPC (in zone) → receive Grants. Ordered prerequisite-
-// first by GetItemQuests.
-type ItemQuestStep struct {
-	NPC           string    `json:"npc"`
-	ZoneShortName string    `json:"zone_short_name"`
-	ZoneName      string    `json:"zone_name"`
-	Requires      []ItemRef `json:"requires,omitempty"`
-	Grants        []ItemRef `json:"grants,omitempty"`
+// QuestDialogueLine is one resolved branch of a quest walkthrough: the player
+// action that triggers it (Triggers = say keywords, TurnIn = items handed in;
+// both empty = hail/unconditional), the NPC's spoken Text, and any Grants.
+type QuestDialogueLine struct {
+	Triggers []string  `json:"triggers,omitempty"`
+	TurnIn   []ItemRef `json:"turnin,omitempty"`
+	Text     string    `json:"text,omitempty"`
+	Grants   []ItemRef `json:"grants,omitempty"`
 }
 
-// ItemQuests backs the item page's Quests tab. Chain is the full questline to
-// obtain the item (prerequisite-first); UsedIn lists quests that consume the
-// item as a turn-in. Data comes from the embedded quest-script facts
+// WalkthroughQuest is one NPC's full quest walkthrough, resolved for display.
+type WalkthroughQuest struct {
+	NPC           string              `json:"npc"`
+	ZoneShortName string              `json:"zone_short_name"`
+	ZoneName      string              `json:"zone_name"`
+	Dialogue      []QuestDialogueLine `json:"dialogue"`
+}
+
+// ItemQuests backs the item page's Quests tab. Walkthrough is the full,
+// self-contained dialogue of the NPC(s) that reward the item (say a keyword /
+// turn in items → NPC response + items); UsedIn lists quests that consume the
+// item as a turn-in. Data comes from the embedded quest-script walkthrough
 // (quest_sources.go), with zone long-names and item names resolved from
 // quarm.db.
 type ItemQuests struct {
-	Chain  []ItemQuestStep `json:"chain"`
-	UsedIn []ItemQuestRef  `json:"used_in"`
+	Walkthrough []WalkthroughQuest `json:"walkthrough"`
+	UsedIn      []ItemQuestRef     `json:"used_in"`
 }
 
-// GetItemQuests resolves an item's questline and turn-in usages for display.
+// GetItemQuests resolves an item's quest walkthroughs and turn-in usages.
 func (db *DB) GetItemQuests(itemID int) (*ItemQuests, error) {
-	chain := QuestChainForItem(itemID)
-	_, usedIn := QuestsForItem(itemID)
-	out := &ItemQuests{Chain: []ItemQuestStep{}, UsedIn: []ItemQuestRef{}}
-	if len(chain) == 0 && len(usedIn) == 0 {
+	rewardedBy, usedIn := QuestsForItem(itemID)
+	out := &ItemQuests{Walkthrough: []WalkthroughQuest{}, UsedIn: []ItemQuestRef{}}
+	if len(rewardedBy) == 0 && len(usedIn) == 0 {
 		return out, nil
 	}
 
-	// Collect every referenced item id across the chain + turn-in usages for
-	// one batch name lookup.
+	// Collect every referenced item id for one batch name lookup.
 	idSet := map[int]bool{}
-	for _, s := range chain {
-		for _, id := range s.Requires {
-			idSet[id] = true
-		}
-		for _, id := range s.Grants {
-			idSet[id] = true
+	for _, q := range rewardedBy {
+		for _, b := range q.Dialogue {
+			for _, id := range b.TurnIn {
+				idSet[id] = true
+			}
+			for _, id := range b.Grants {
+				idSet[id] = true
+			}
 		}
 	}
 	for _, q := range usedIn {
@@ -73,50 +81,80 @@ func (db *DB) GetItemQuests(itemID int) (*ItemQuests, error) {
 	if err != nil {
 		return nil, err
 	}
-	zoneNames := map[string]string{} // short -> long, cached across quests
+	ref := refItemsFunc(names)
+	resolveZone := db.zoneResolver()
 
-	refItems := func(ids []int, excludeSelf bool) []ItemRef {
+	for _, q := range rewardedBy {
+		out.Walkthrough = append(out.Walkthrough, WalkthroughQuest{
+			NPC:           q.NPC,
+			ZoneShortName: q.Zone,
+			ZoneName:      resolveZone(q.Zone),
+			Dialogue:      resolveDialogue(q.Dialogue, ref),
+		})
+	}
+	for _, q := range usedIn {
+		refs := ref(q.Rewards)
+		// Don't list the item as its own reward.
+		filtered := refs[:0]
+		for _, r := range refs {
+			if r.ID != itemID {
+				filtered = append(filtered, r)
+			}
+		}
+		out.UsedIn = append(out.UsedIn, ItemQuestRef{
+			NPC:           q.NPC,
+			ZoneShortName: q.Zone,
+			ZoneName:      resolveZone(q.Zone),
+			RelatedItems:  filtered,
+		})
+	}
+	sortQuestRefs(out.UsedIn)
+	return out, nil
+}
+
+// resolveDialogue turns raw quest dialogue branches into display-ready lines,
+// resolving the turn-in and granted item ids to refs via ref.
+func resolveDialogue(lines []QuestDialogue, ref func([]int) []ItemRef) []QuestDialogueLine {
+	out := make([]QuestDialogueLine, 0, len(lines))
+	for _, b := range lines {
+		out = append(out, QuestDialogueLine{
+			Triggers: b.Triggers,
+			TurnIn:   ref(b.TurnIn),
+			Text:     b.Text,
+			Grants:   ref(b.Grants),
+		})
+	}
+	return out
+}
+
+// refItemsFunc returns a resolver mapping item ids to refs (preserving order).
+func refItemsFunc(names map[int]string) func([]int) []ItemRef {
+	return func(ids []int) []ItemRef {
+		if len(ids) == 0 {
+			return nil
+		}
 		refs := make([]ItemRef, 0, len(ids))
 		for _, id := range ids {
-			if excludeSelf && id == itemID {
-				continue
-			}
 			refs = append(refs, ItemRef{ID: id, Name: names[id]})
 		}
-		sort.Slice(refs, func(i, j int) bool { return refs[i].Name < refs[j].Name })
 		return refs
 	}
-	resolveZone := func(short string) string {
-		if long, ok := zoneNames[short]; ok {
+}
+
+// zoneResolver returns a short→long zone-name resolver that caches lookups.
+func (db *DB) zoneResolver() func(string) string {
+	cache := map[string]string{}
+	return func(short string) string {
+		if long, ok := cache[short]; ok {
 			return long
 		}
 		long := short
 		if z, err := db.GetZoneByShortName(short); err == nil && z != nil && z.LongName != "" {
 			long = z.LongName
 		}
-		zoneNames[short] = long
+		cache[short] = long
 		return long
 	}
-
-	for _, s := range chain {
-		out.Chain = append(out.Chain, ItemQuestStep{
-			NPC:           s.NPC,
-			ZoneShortName: s.Zone,
-			ZoneName:      resolveZone(s.Zone),
-			Requires:      refItems(s.Requires, false),
-			Grants:        refItems(s.Grants, false),
-		})
-	}
-	for _, q := range usedIn {
-		out.UsedIn = append(out.UsedIn, ItemQuestRef{
-			NPC:           q.NPC,
-			ZoneShortName: q.Zone,
-			ZoneName:      resolveZone(q.Zone),
-			RelatedItems:  refItems(q.Rewards, true),
-		})
-	}
-	sortQuestRefs(out.UsedIn)
-	return out, nil
 }
 
 func sortQuestRefs(refs []ItemQuestRef) {

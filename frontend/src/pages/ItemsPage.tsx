@@ -1035,7 +1035,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
       .catch(() => { if (!cancelled) setSources({ drops: [], merchants: [], forage_zones: [], ground_spawns: [], tradeskills: [] }) })
     getItemQuests(item.id)
       .then((q) => { if (!cancelled) setQuests(q) })
-      .catch(() => { if (!cancelled) setQuests({ chain: [], used_in: [] }) })
+      .catch(() => { if (!cancelled) setQuests({ walkthrough: [], used_in: [] }) })
     findItemHoldings(item.id)
       .then((h) => { if (!cancelled) setHoldings(h) })
       .catch(() => { if (!cancelled) setHoldings([]) })
@@ -1129,7 +1129,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
           <ItemTradeskillsTab entries={sources?.tradeskills ?? []} />
         )}
         {activeTab === 'quests' && (
-          <ItemQuestsTab itemId={item.id} quests={quests} />
+          <ItemQuestsTab quests={quests} />
         )}
         {activeTab === 'characters' && (
           <ItemCharactersTab holdings={holdings} />

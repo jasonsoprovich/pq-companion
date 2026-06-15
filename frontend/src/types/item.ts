@@ -144,30 +144,39 @@ export interface ItemQuestRef {
   related_items?: ItemRef[]
 }
 
-// ItemQuestStep is one step of the questline to obtain an item: turn in
-// `requires` to `npc` (in zone) → receive `grants`. Steps are ordered
-// prerequisite-first.
-export interface ItemQuestStep {
-  npc: string
-  zone_short_name: string
-  zone_name: string
-  requires?: ItemRef[]
+// QuestDialogueLine is one branch of a quest walkthrough: the player action
+// that triggers it (say `triggers` keywords, or turn in `turnin` items; both
+// empty = hail/unconditional), the NPC's `text`, and any items it `grants`.
+export interface QuestDialogueLine {
+  triggers?: string[]
+  turnin?: ItemRef[]
+  text?: string
   grants?: ItemRef[]
 }
 
+// WalkthroughQuest is one NPC's full quest walkthrough.
+export interface WalkthroughQuest {
+  npc: string
+  zone_short_name: string
+  zone_name: string
+  dialogue: QuestDialogueLine[]
+}
+
 export interface ItemQuests {
-  chain: ItemQuestStep[]
+  walkthrough: WalkthroughQuest[]
   used_in: ItemQuestRef[]
 }
 
 // QuestSummary is one browsable quest (by giver NPC + zone) for the database
-// explorer's Quests section.
+// explorer's Quests section. Dialogue is the full walkthrough for the expanded
+// card view.
 export interface QuestSummary {
   npc: string
   zone_short_name: string
   zone_name: string
   rewards: ItemRef[]
   turnins: ItemRef[]
+  dialogue?: QuestDialogueLine[]
 }
 
 export interface SearchResult<T> {

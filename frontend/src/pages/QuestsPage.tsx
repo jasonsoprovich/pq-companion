@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ScrollText, Search } from 'lucide-react'
+import { ScrollText, Search, ChevronRight, ChevronDown } from 'lucide-react'
 import { searchQuests } from '../services/api'
+import QuestWalkthrough from '../components/QuestWalkthrough'
 import type { QuestSummary, ItemRef } from '../types/item'
 
 const PAGE_SIZE = 50
@@ -29,15 +30,29 @@ function ItemLinks({ items }: { items: ItemRef[] }): React.ReactElement {
 
 function QuestCard({ quest }: { quest: QuestSummary }): React.ReactElement {
   const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+  const hasWalkthrough = (quest.dialogue?.length ?? 0) > 0
   return (
     <div
       className="rounded-lg p-3"
       style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
     >
       <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
-          {quest.npc}
-        </span>
+        <button
+          onClick={() => hasWalkthrough && setOpen((o) => !o)}
+          className="flex min-w-0 items-center gap-1.5 text-left"
+          style={{ cursor: hasWalkthrough ? 'pointer' : 'default' }}
+        >
+          {hasWalkthrough &&
+            (open ? (
+              <ChevronDown size={13} style={{ color: 'var(--color-muted)' }} />
+            ) : (
+              <ChevronRight size={13} style={{ color: 'var(--color-muted)' }} />
+            ))}
+          <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+            {quest.npc}
+          </span>
+        </button>
         <button
           onClick={() => navigate(`/zones?select=${quest.zone_short_name}`)}
           className="shrink-0 text-xs underline decoration-dotted"
@@ -46,14 +61,19 @@ function QuestCard({ quest }: { quest: QuestSummary }): React.ReactElement {
           {quest.zone_name || quest.zone_short_name}
         </button>
       </div>
-      {quest.rewards.length > 0 && (
+      {!open && quest.rewards.length > 0 && (
         <div className="mt-1 text-xs" style={{ color: 'var(--color-muted)' }}>
           Rewards: <ItemLinks items={quest.rewards} />
         </div>
       )}
-      {quest.turnins.length > 0 && (
+      {!open && quest.turnins.length > 0 && (
         <div className="mt-0.5 text-xs" style={{ color: 'var(--color-muted)' }}>
           Turn-ins: <ItemLinks items={quest.turnins} />
+        </div>
+      )}
+      {open && hasWalkthrough && (
+        <div className="mt-1.5 border-t pt-1.5" style={{ borderColor: 'var(--color-border)' }}>
+          <QuestWalkthrough dialogue={quest.dialogue ?? []} />
         </div>
       )}
     </div>
@@ -117,7 +137,7 @@ export default function QuestsPage(): React.ReactElement {
           />
         </div>
         <p className="mt-1.5 text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-          Derived from Project Quarm quest scripts. Open any reward item for its full step-by-step chain.
+          Derived from Project Quarm quest data. Expand a quest to see its full walkthrough.
         </p>
       </div>
 

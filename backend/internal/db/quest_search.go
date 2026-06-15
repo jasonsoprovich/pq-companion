@@ -7,14 +7,16 @@ import (
 )
 
 // QuestSummary is one browsable quest (identified by its giver NPC + zone) for
-// the database explorer's Quests section. Rewards and TurnIns are resolved to
-// item refs so they render as links.
+// the database explorer's Quests section. Rewards/TurnIns are the resolved item
+// refs (for the collapsed card); Dialogue is the full resolved walkthrough (for
+// the expanded view), so no second request is needed.
 type QuestSummary struct {
-	NPC           string    `json:"npc"`
-	ZoneShortName string    `json:"zone_short_name"`
-	ZoneName      string    `json:"zone_name"`
-	Rewards       []ItemRef `json:"rewards"`
-	TurnIns       []ItemRef `json:"turnins"`
+	NPC           string              `json:"npc"`
+	ZoneShortName string              `json:"zone_short_name"`
+	ZoneName      string              `json:"zone_name"`
+	Rewards       []ItemRef           `json:"rewards"`
+	TurnIns       []ItemRef           `json:"turnins"`
+	Dialogue      []QuestDialogueLine `json:"dialogue,omitempty"`
 }
 
 // QuestSearchResult is a page of quest summaries plus the unpaged total. The
@@ -66,7 +68,7 @@ func (db *DB) buildQuestSearchIndex() {
 			zoneLong[short] = v
 			return v
 		}
-		refItems := func(ids []int) []ItemRef {
+		sortedRefs := func(ids []int) []ItemRef {
 			refs := make([]ItemRef, 0, len(ids))
 			for _, id := range ids {
 				refs = append(refs, ItemRef{ID: id, Name: names[id]})
@@ -74,13 +76,14 @@ func (db *DB) buildQuestSearchIndex() {
 			sort.Slice(refs, func(i, j int) bool { return refs[i].Name < refs[j].Name })
 			return refs
 		}
+		ref := refItemsFunc(names) // order-preserving, for dialogue
 
 		questSearchIndex = make([]questSearchEntry, 0, len(questEntries))
 		for i := range questEntries {
 			e := &questEntries[i]
 			zoneName := resolveZone(e.Zone)
-			rewards := refItems(e.Rewards)
-			turnins := refItems(e.TurnIns)
+			rewards := sortedRefs(e.Rewards)
+			turnins := sortedRefs(e.TurnIns)
 			var hay strings.Builder
 			hay.WriteString(strings.ToLower(e.NPC))
 			hay.WriteByte('\n')
@@ -102,6 +105,7 @@ func (db *DB) buildQuestSearchIndex() {
 					ZoneName:      zoneName,
 					Rewards:       rewards,
 					TurnIns:       turnins,
+					Dialogue:      resolveDialogue(e.Dialogue, ref),
 				},
 				haystack: hay.String(),
 			})

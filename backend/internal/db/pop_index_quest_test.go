@@ -83,39 +83,43 @@ func TestSearchQuests(t *testing.T) {
 	}
 }
 
-// TestGetItemQuests checks the display-resolved Quests payload: the chain is
-// reconstructed prerequisite-first with zone long-names and item names filled
-// in. The Sigil Earring of Veracity is a 3-step Lcea Katta chain (Jewel Box →
-// Signet Earring → Sigil Earring), so its final step must grant the item and
-// an earlier step must produce a turn-in the final step requires.
+// TestGetItemQuests checks the display-resolved walkthrough: the Sigil Earring
+// of Veracity is rewarded by Lcea Katta, whose dialogue must resolve with a
+// zone long-name, readable text, and a branch that grants the item.
 func TestGetItemQuests(t *testing.T) {
 	d := openTestDB(t)
 	q, err := d.GetItemQuests(29861) // Sigil Earring of Veracity
 	if err != nil {
 		t.Fatalf("GetItemQuests: %v", err)
 	}
-	if len(q.Chain) < 2 {
-		t.Fatalf("expected a multi-step chain for the Sigil Earring, got %d steps", len(q.Chain))
+	if len(q.Walkthrough) == 0 {
+		t.Fatal("expected a walkthrough for the Sigil Earring")
 	}
-	last := q.Chain[len(q.Chain)-1]
-	if last.ZoneName == "" || last.ZoneName == last.ZoneShortName {
-		t.Errorf("zone long-name not resolved: %+v", last)
+	w := q.Walkthrough[0]
+	if w.ZoneName == "" || w.ZoneName == w.ZoneShortName {
+		t.Errorf("zone long-name not resolved: %+v", w)
 	}
-	grantsTarget := false
-	for _, g := range last.Grants {
-		if g.ID == 29861 {
-			grantsTarget = true
+	if len(w.Dialogue) < 2 {
+		t.Fatalf("expected multiple dialogue branches, got %d", len(w.Dialogue))
+	}
+	grantsTarget, hasText := false, false
+	for _, b := range w.Dialogue {
+		if b.Text != "" {
+			hasText = true
+		}
+		for _, g := range b.Grants {
+			if g.ID == 29861 {
+				grantsTarget = true
+			}
+			if g.Name == "" {
+				t.Errorf("unresolved grant item name for %d", g.ID)
+			}
 		}
 	}
 	if !grantsTarget {
-		t.Errorf("final chain step should grant the target item; got grants %+v", last.Grants)
+		t.Error("expected a dialogue branch granting the Sigil Earring")
 	}
-	// Every referenced item name must be resolved.
-	for _, s := range q.Chain {
-		for _, ri := range append(append([]db.ItemRef{}, s.Requires...), s.Grants...) {
-			if ri.Name == "" {
-				t.Errorf("unresolved item name for %d in chain", ri.ID)
-			}
-		}
+	if !hasText {
+		t.Error("expected at least one dialogue branch with NPC text")
 	}
 }
