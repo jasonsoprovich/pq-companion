@@ -35,6 +35,31 @@ func TestIsPoPGated_QuestSources(t *testing.T) {
 	}
 }
 
+// TestPoPGatedEmbeddedMatchesLive guards the precomputed pop_gated.json the
+// server actually reads (via IsPoPGated) against a fresh live build from the
+// DB. They must be identical — if this fails, either buildPoPGated changed or
+// quarm.db was updated without regenerating: run `go run ./cmd/pop-index`.
+func TestPoPGatedEmbeddedMatchesLive(t *testing.T) {
+	d := openTestDB(t)
+	live, err := d.ComputePoPGated()
+	if err != nil {
+		t.Fatalf("ComputePoPGated: %v", err)
+	}
+	// Forward: every live-gated item is gated by the embedded set.
+	for id := range live {
+		if !d.IsPoPGated(id) {
+			t.Fatalf("embedded set missing live-gated item %d — regenerate pop_gated.json (go run ./cmd/pop-index)", id)
+		}
+	}
+	// Reverse: the embedded set gates nothing beyond the live set. Item IDs sit
+	// well under this bound, so a range scan covers the whole space.
+	for id := 1; id <= 100000; id++ {
+		if d.IsPoPGated(id) && !live[id] {
+			t.Fatalf("embedded set over-gates item %d (not in live build) — regenerate pop_gated.json", id)
+		}
+	}
+}
+
 // TestQuestsForItem checks the item→quest index backing the Quests tab.
 func TestQuestsForItem(t *testing.T) {
 	rewardedBy, _ := db.QuestsForItem(29861)

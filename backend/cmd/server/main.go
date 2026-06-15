@@ -122,12 +122,11 @@ func main() {
 	}
 	defer database.Close()
 
-	// The PoP item index is warmed in the background later — see the deferred
-	// warm just before http.Serve. Building it is a multi-second pass over the
-	// loot/spawn tables, so kicking it off here (on the critical startup path)
-	// delayed BACKEND_PORT by seconds and showed as a black launch screen plus
-	// an empty Items page until the index finished. It's only needed by the
-	// gear-upgrade finder, so it must not gate startup.
+	// Note: the PoP item gate is no longer built at startup. It now loads from
+	// a precomputed set embedded at build time (db/pop_gated.json, regenerated
+	// by cmd/pop-index), so the gear-upgrade finder reads it instantly on first
+	// use. Building it live was a multi-second loot/spawn join pass that, when
+	// run here, delayed BACKEND_PORT and showed as a black launch screen.
 
 	hub := ws.NewHub()
 	go hub.Run()
@@ -923,17 +922,6 @@ func main() {
 	}
 
 	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, actualPort)
-
-	// Warm the PoP item index off the critical path. The port is already
-	// printed and the server is about to accept requests, so this no longer
-	// delays launch. A short head start lets the renderer's first burst of
-	// requests (Items page, etc.) land before this CPU-heavy pass kicks in;
-	// the gear-upgrade finder builds it on demand via sync.Once if a request
-	// beats the warm, so correctness is unaffected either way.
-	go func() {
-		time.Sleep(2 * time.Second)
-		database.WarmPoPIndex()
-	}()
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {
