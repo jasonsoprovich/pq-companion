@@ -687,19 +687,19 @@ function ResultRow({
       <tr className="border-b align-top" style={{ borderColor: 'var(--color-border)' }}>
         <td className="px-1 py-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>{rank}</td>
         <td className="px-2 py-1.5">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button onClick={toggle} style={{ color: 'var(--color-muted)' }}>
               {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             </button>
             <WishStar on={wishlisted} onClick={onStar} />
             <button onClick={() => onOpen(cand.id)}
-              className="flex items-center gap-1.5 underline decoration-dotted"
+              className="flex shrink-0 items-center gap-1.5 text-left underline decoration-dotted"
               style={{ color: 'var(--color-primary)' }}>
               <ItemIcon id={cand.icon} name={cand.name} size={18} />
               {cand.name}
             </button>
             {cand.focus_name && (
-              <span className="flex items-center gap-0.5 rounded px-1 text-[10px]"
+              <span className="flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded px-1 text-[10px]"
                 style={{
                   backgroundColor: cand.priority_focus ? '#eab308' : 'rgba(234,179,8,0.15)',
                   color: cand.priority_focus ? '#1a1a1a' : '#eab308',
