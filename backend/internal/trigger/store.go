@@ -452,6 +452,41 @@ func (s *Store) MigrateBroadenDebuffPatternsAndBardDurations() error {
 	return s.MarkDefaultUpdateApplied(key)
 }
 
+// MigrateBroadenAssistCallPattern upgrades the Raid Alerts "Raid Assist Call"
+// trigger installed before it learned the "kill" calling style (e.g.
+// "'< --- Kill Qua Zethon Xakra -->'") and the dash-arrow decorations. Packs
+// only reach user.db at import time, so a user who imported Raid Alerts earlier
+// keeps the assist-only pattern. This rewrites that one row in place when it
+// still holds the exact pre-fix built-in value; a user-customized pattern is
+// left untouched, and the row's actions are never read or modified. Idempotent
+// via pack_default_updates.
+func (s *Store) MigrateBroadenAssistCallPattern() error {
+	const key = "Packs:BroadenAssistCallPattern:v1"
+	applied, err := s.IsDefaultUpdateApplied(key)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+
+	// Verbatim pre-fix and current built-in patterns (see RaidAlertsPack).
+	const oldPattern = "(?i)^(\\w+) tells the raid,\\s*'.*?assist\\W*([A-Za-z][A-Za-z`' ]*?)(?:\\s*[>|<!']|$)"
+	const newPattern = "(?i)^(\\w+) tells the raid,\\s*'.*?\\b(?:assist|kill)\\b\\W*([A-Za-z][A-Za-z`' ]*?)(?:\\s*[-<>|!']|$)"
+
+	t, err := s.FindByPackAndName("Raid Alerts", "Raid Assist Call")
+	if err != nil {
+		return err
+	}
+	if t != nil && t.Pattern == oldPattern {
+		t.Pattern = newPattern
+		if err := s.Update(t); err != nil {
+			return fmt.Errorf("update Raid Alerts/Raid Assist Call: %w", err)
+		}
+	}
+	return s.MarkDefaultUpdateApplied(key)
+}
+
 // MigrateAddBuffTargetCapture upgrades buff triggers installed before the
 // target-capture feature so they show the "on <target>" overlay suffix when a
 // group buff lands on someone. The current built-in pattern (from AllPacks,

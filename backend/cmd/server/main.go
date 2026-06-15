@@ -449,6 +449,12 @@ func main() {
 	if err := triggerStore.MigrateAddBuffTargetCapture(); err != nil {
 		slog.Warn("trigger buff-target-capture migration failed", "err", err)
 	}
+	// In-place broadening of the Raid Alerts assist-call trigger to also match
+	// "kill" calls and dash-arrow decorations. Only rewrites the pattern of the
+	// un-customized built-in row.
+	if err := triggerStore.MigrateBroadenAssistCallPattern(); err != nil {
+		slog.Warn("trigger assist-call broaden migration failed", "err", err)
+	}
 
 	// One-time additive default updates for built-in packs. Each is keyed
 	// and runs at most once, making only additive edits to installed pack

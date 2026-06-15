@@ -2421,14 +2421,17 @@ func RaidAlertsPack() TriggerPack {
 				},
 			},
 			{
-				// "Krazak tells the raid,  'ASSIST Vox >>>'" → "ASSIST Vox".
-				// The keyword match is case-insensitive; the target capture
-				// runs from the first letter after "assist" up to a decoration
-				// character (>, |, <, !) or the closing quote. Double-quoted
-				// for the backtick in the mob-name class.
+				// "Krazak tells the raid,  'ASSIST Vox >>>'" → "ASSIST Vox", and
+				// the "kill" calling style "'< --- Kill Qua Zethon Xakra -->'" →
+				// "ASSIST Qua Zethon Xakra". The keyword is case-insensitive and
+				// word-bounded so "skill"/"killing"/"killed" don't false-fire;
+				// the target capture runs from the first letter after the keyword
+				// up to a trailing decoration character (- < > | ! ', covering
+				// >>>, -->, <--) or the closing quote. Double-quoted for the
+				// backtick in the mob-name class.
 				Name:     "Raid Assist Call",
 				Enabled:  true,
-				Pattern:  "(?i)^(\\w+) tells the raid,\\s*'.*?assist\\W*([A-Za-z][A-Za-z`' ]*?)(?:\\s*[>|<!']|$)",
+				Pattern:  "(?i)^(\\w+) tells the raid,\\s*'.*?\\b(?:assist|kill)\\b\\W*([A-Za-z][A-Za-z`' ]*?)(?:\\s*[-<>|!']|$)",
 				PackName: "Raid Alerts",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "ASSIST {2}", DurationSecs: 5, Color: "#ff4444"},

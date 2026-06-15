@@ -172,6 +172,13 @@ func TestCommunityPackPatterns(t *testing.T) {
 		{"Raid Alerts", "Raid Assist Call", "Krazak tells the raid,  'ASSIST Vox >>>'", true, "Vox", 2},
 		{"Raid Alerts", "Raid Assist Call", "Krazak tells the raid,  'assist Lord Nagafen'", true, "Lord Nagafen", 2},
 		{"Raid Alerts", "Raid Assist Call", "Krazak tells the raid,  'everyone gather up'", false, "", 0},
+		// "kill" calling style, including the dash-arrow decoration and multi-
+		// word mob names.
+		{"Raid Alerts", "Raid Assist Call", "Krazak tells the raid,  '< --- Kill Qua Zethon Xakra -->'", true, "Qua Zethon Xakra", 2},
+		{"Raid Alerts", "Raid Assist Call", "Krazak tells the raid,  'KILL Vox'", true, "Vox", 2},
+		// Word-bounded so "kill" inside another word never false-fires.
+		{"Raid Alerts", "Raid Assist Call", "Krazak tells the raid,  'use your skill now'", false, "", 0},
+		{"Raid Alerts", "Raid Assist Call", "Krazak tells the raid,  'killing it slowly'", false, "", 0},
 
 		// ── Tracking ────────────────────────────────────────────────────
 		{"Tracking", "Ahead Left", "a willowisp is ahead and to the left.", true, "a willowisp", 0},
