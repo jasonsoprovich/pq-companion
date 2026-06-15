@@ -43,6 +43,38 @@ func ConvertFromDump(ctx context.Context, cfg Config, files []string, db *sql.DB
 			return fmt.Errorf("process %s: %w", path, err)
 		}
 	}
+
+	if err := finalizeSchema(cfg, db); err != nil {
+		return fmt.Errorf("finalize schema: %w", err)
+	}
+	return nil
+}
+
+// finalizeSchema adds indexes the upstream Quarm dump omits but our hot join
+// queries need, then runs ANALYZE so the query planner has table statistics.
+// Runs once per conversion, so it survives every quarm.db regeneration without
+// touching the read-only file at runtime.
+func finalizeSchema(cfg Config, db *sql.DB) error {
+	// JOIN/WHERE columns the dump leaves unindexed. npc_types has no secondary
+	// indexes at all, so loot ("dropped by") and vendor lookups full-scan it;
+	// spawnentry's only index leads with spawngroupID, so resolving "where does
+	// NPC X spawn" (se.npcID = n.id) can't use it. IF NOT EXISTS keeps this
+	// safe if a future dump starts shipping them.
+	stmts := []string{
+		`CREATE INDEX IF NOT EXISTS "npc_types__loottable_id" ON "npc_types" ("loottable_id")`,
+		`CREATE INDEX IF NOT EXISTS "npc_types__merchant_id" ON "npc_types" ("merchant_id")`,
+		`CREATE INDEX IF NOT EXISTS "spawnentry__npcID" ON "spawnentry" ("npcID")`,
+		// Populates sqlite_stat1 so the planner picks index-driven join orders
+		// instead of guessing from row-count heuristics.
+		`ANALYZE`,
+	}
+	for _, s := range stmts {
+		if _, err := db.Exec(s); err != nil {
+			// Non-fatal: a column/table a future dump renames shouldn't abort the
+			// whole conversion. Log and continue — the query still works, slower.
+			cfg.log().Warn("finalize schema step failed", "sql", s, "err", err)
+		}
+	}
 	return nil
 }
 
