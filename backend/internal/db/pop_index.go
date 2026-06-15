@@ -41,7 +41,10 @@ func (db *DB) ensurePoPIndex() {
 //   - explicitly tagged items (items.min_expansion >= 4), to catch PoP items
 //     with no recorded source (e.g. quest rewards), and
 //   - items whose every known source zone (drop, vendor, forage, ground spawn,
-//     or quest reward) is a PoP zone per the curated zoneCatalog.
+//     or quest reward) is a PoP zone per the curated zoneCatalog. Drops are
+//     read both from where the NPC spawns and — for NPCs with no spawn entry
+//     (PoP mobs, which aren't spawned while PoP is locked) — from the NPC's
+//     home zone derived from its id, so their drops aren't invisible.
 //
 // An item with at least one pre-PoP source is kept (it's obtainable now).
 //
@@ -82,7 +85,7 @@ func (db *DB) buildPoPGated() (map[int]bool, error) {
 
 	// Each source query yields (item_id, zone_short_name).
 	sourceQueries := []string{
-		// NPC drops
+		// NPC drops (from where the NPC actually spawns).
 		`SELECT lde.item_id, s2.zone
 		   FROM loottable_entries lte
 		   JOIN lootdrop_entries lde ON lde.lootdrop_id = lte.lootdrop_id
@@ -91,6 +94,24 @@ func (db *DB) buildPoPGated() (map[int]bool, error) {
 		   JOIN spawngroup sg ON sg.id = se.spawngroupid
 		   JOIN spawn2 s2 ON s2.spawngroupID = sg.id
 		  WHERE n.loottable_id > 0`,
+		// NPC drops from NPCs that have NO spawn entry. PoP NPCs aren't spawned
+		// while PoP is locked, so the spawn2 join above misses their drops
+		// entirely and the items leak through. Fall back to the NPC's home zone
+		// derived from its id: EQEmu numbers zone NPCs as zoneidnumber*1000+n
+		// (holds for ~95% of spawned NPCs; only used here where there's no
+		// spawn2 truth to contradict it).
+		`SELECT lde.item_id, z.short_name
+		   FROM loottable_entries lte
+		   JOIN lootdrop_entries lde ON lde.lootdrop_id = lte.lootdrop_id
+		   JOIN npc_types n ON n.loottable_id = lte.loottable_id
+		   JOIN zone z ON z.zoneidnumber = n.id / 1000
+		  WHERE n.loottable_id > 0 AND n.id >= 1000
+		    AND NOT EXISTS (
+		      SELECT 1 FROM spawnentry se
+		      JOIN spawngroup sg ON sg.id = se.spawngroupid
+		      JOIN spawn2 s2 ON s2.spawngroupID = sg.id
+		      WHERE se.npcid = n.id
+		    )`,
 		// Vendor sales
 		`SELECT ml.item, s2.zone
 		   FROM merchantlist ml

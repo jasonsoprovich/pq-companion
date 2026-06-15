@@ -24,6 +24,9 @@ func TestIsPoPGated_QuestSources(t *testing.T) {
 		{32106, "Jade Hoop of Speed (PoK quest reward)", true},
 		{29861, "Sigil Earring of Veracity (Katta/Luclin quest reward)", false},
 		{15929, "Headsman's Hoop (pojustice drop)", true},
+		// Drops only from unspawned Plane of Time NPCs — invisible to the
+		// spawn2 join, caught via the id-derived home zone.
+		{9444, "Mask of Conceptual Energy (unspawned PoP NPC drop)", true},
 	}
 	for _, c := range cases {
 		if got := d.IsPoPGated(c.id); got != c.wantGate {
