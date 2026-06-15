@@ -12,6 +12,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db/enums"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/era"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/upgrade"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
@@ -134,6 +135,8 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	// PoP gear is hidden unless explicitly requested (independent of the global
 	// pop_enabled era flag, so the finder is predictable).
 	excludePoP := !(r.URL.Query().Get("show_pop") == "1" || r.URL.Query().Get("show_pop") == "true")
+	// Crafted (tradeskill-made) gear is hidden by default; ?hide_crafted=0 keeps it.
+	excludeCrafted := r.URL.Query().Get("hide_crafted") != "0" && r.URL.Query().Get("hide_crafted") != "false"
 	limit := 75
 	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 500 {
 		limit = v
@@ -156,7 +159,7 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	equippedFocus := h.equippedFocusSet(worn)
 	wc := h.newWornCache()
 	hasteByLoc := h.hasteByLocation(byLoc, worn, wc)
-	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, excludePoP, limit, prioritySet, equippedFocus, wc, hasteByLoc)
+	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, excludePoP, excludeCrafted, limit, prioritySet, equippedFocus, wc, hasteByLoc)
 
 	writeJSON(w, http.StatusOK, upgradesResponse{
 		Slot:           slot.Key,
@@ -229,6 +232,7 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 	wc := h.newWornCache()
 	hasteByLoc := h.hasteByLocation(byLoc, worn, wc)
 	excludePoP := !(r.URL.Query().Get("show_pop") == "1" || r.URL.Query().Get("show_pop") == "true")
+	excludeCrafted := r.URL.Query().Get("hide_crafted") != "0" && r.URL.Query().Get("hide_crafted") != "false"
 
 	// One candidate scan for the whole sweep: the class/race/level/hidden/variant
 	// filter is identical across all 19 slots — only the slot mask differs — so
@@ -239,11 +243,12 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 		combinedMask |= s.Mask
 	}
 	allCands, err := h.db.UpgradeCandidates(db.CandidateFilter{
-		SlotMask:   combinedMask,
-		ClassBit:   charClassBit(char),
-		RaceBit:    enums.RaceBitForCharRace(char.Race),
-		MaxLevel:   char.Level,
-		ExcludePoP: excludePoP,
+		SlotMask:       combinedMask,
+		ClassBit:       charClassBit(char),
+		RaceBit:        enums.RaceBitForCharRace(char.Race),
+		MaxLevel:       upgradeMaxLevel(char.Level, excludePoP),
+		ExcludePoP:     excludePoP,
+		ExcludeCrafted: excludeCrafted,
 	})
 	if err != nil {
 		allCands = nil
@@ -280,6 +285,18 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// upgradeMaxLevel is the reqlevel ceiling for candidate items. When PoP gear is
+// included, raise it to the PoP cap (65) so level-65 Planes gear isn't filtered
+// out for a level-60 character — the player is browsing PoP-era upgrades and
+// will hit that cap when the expansion goes live. Otherwise stay at the
+// character's actual level.
+func upgradeMaxLevel(charLevel int, excludePoP bool) int {
+	if !excludePoP && era.PoPMaxLevel > charLevel {
+		return era.PoPMaxLevel
+	}
+	return charLevel
+}
+
 // charClassBit returns the items.classes bit for a character's class (0 for an
 // unset/negative class, meaning "don't class-filter").
 func charClassBit(char character.Character) int {
@@ -295,15 +312,16 @@ func charClassBit(char character.Character) int {
 // query and calls scoreSlotCands directly.
 func (h *charactersHandler) scoreSlot(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
-	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll, excludePoP bool, limit int,
+	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll, excludePoP, excludeCrafted bool, limit int,
 	prioritySet, equippedFocus map[int]bool, wc *wornCache, hasteByLoc map[string]int,
 ) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int) {
 	cands, err := h.db.UpgradeCandidates(db.CandidateFilter{
-		SlotMask:   slot.Mask,
-		ClassBit:   charClassBit(char),
-		RaceBit:    enums.RaceBitForCharRace(char.Race),
-		MaxLevel:   char.Level,
-		ExcludePoP: excludePoP, // finder-local "Show PoP gear" toggle (default hide)
+		SlotMask:       slot.Mask,
+		ClassBit:       charClassBit(char),
+		RaceBit:        enums.RaceBitForCharRace(char.Race),
+		MaxLevel:       upgradeMaxLevel(char.Level, excludePoP),
+		ExcludePoP:     excludePoP,     // finder-local "Show PoP gear" toggle (default hide)
+		ExcludeCrafted: excludeCrafted, // finder-local "Hide crafted gear" toggle (default hide)
 	})
 	if err != nil {
 		cands = nil // still return the worn items / empty results below

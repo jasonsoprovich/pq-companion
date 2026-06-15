@@ -1207,11 +1207,20 @@ export interface UpgradeWeightsResponse {
 
 export function getCharacterUpgrades(
   id: number,
-  opts: { slot: string; showAll?: boolean; showPoP?: boolean; limit?: number; weights?: UpgradeWeights },
+  opts: {
+    slot: string
+    showAll?: boolean
+    showPoP?: boolean
+    hideCrafted?: boolean
+    limit?: number
+    weights?: UpgradeWeights
+  },
 ): Promise<UpgradesResponse> {
   const p = new URLSearchParams({ slot: opts.slot })
   if (opts.showAll) p.set('show_all', '1')
   if (opts.showPoP) p.set('show_pop', '1')
+  // Crafted gear is hidden by default; only send the param to keep it shown.
+  if (opts.hideCrafted === false) p.set('hide_crafted', '0')
   if (opts.limit) p.set('limit', String(opts.limit))
   if (opts.weights) p.set('weights', JSON.stringify(opts.weights))
   return get<UpgradesResponse>(`/api/characters/${id}/upgrades?${p.toString()}`)
@@ -1252,10 +1261,12 @@ export function getCharacterUpgradesOverview(
   id: number,
   weights?: UpgradeWeights,
   showPoP?: boolean,
+  hideCrafted?: boolean,
 ): Promise<UpgradesOverviewResponse> {
   const p = new URLSearchParams()
   if (weights) p.set('weights', JSON.stringify(weights))
   if (showPoP) p.set('show_pop', '1')
+  if (hideCrafted === false) p.set('hide_crafted', '0')
   const qs = p.toString()
   return get<UpgradesOverviewResponse>(`/api/characters/${id}/upgrades/overview${qs ? `?${qs}` : ''}`)
 }

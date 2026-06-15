@@ -103,11 +103,12 @@ var excludedGearItems = map[int]bool{
 // CandidateFilter selects items usable in a slot by a character. A zero
 // ClassBit/RaceBit/MaxLevel means "don't filter on that axis".
 type CandidateFilter struct {
-	SlotMask   int  // required: items whose slots bitmask intersects this
-	ClassBit   int  // items.classes bit for the character's class
-	RaceBit    int  // items.races bit for the character's race
-	MaxLevel   int  // character level; items requiring a higher level are excluded
-	ExcludePoP bool // drop Planes-of-Power-gated items (not yet obtainable)
+	SlotMask       int  // required: items whose slots bitmask intersects this
+	ClassBit       int  // items.classes bit for the character's class
+	RaceBit        int  // items.races bit for the character's race
+	MaxLevel       int  // character level; items requiring a higher level are excluded
+	ExcludePoP     bool // drop Planes-of-Power-gated items (not yet obtainable)
+	ExcludeCrafted bool // drop tradeskill-made items (results of a recipe combine)
 }
 
 // UpgradeCandidates returns every equippable item that fits the slot and is
@@ -136,6 +137,12 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 	if f.MaxLevel > 0 {
 		where += " AND (i.reqlevel = 0 OR i.reqlevel <= ?)"
 		args = append(args, f.MaxLevel)
+	}
+	if f.ExcludeCrafted {
+		// successcount > 0 marks an item produced by a recipe combine (vs a
+		// component or container). The item_id index keeps this subquery cheap.
+		where += " AND NOT EXISTS (SELECT 1 FROM tradeskill_recipe_entries tre" +
+			" WHERE tre.item_id = i.id AND tre.successcount > 0)"
 	}
 
 	if clause, hargs := hiddenItemClause(); clause != "" {
