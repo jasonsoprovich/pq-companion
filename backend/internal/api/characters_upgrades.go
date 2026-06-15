@@ -151,10 +151,11 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	ctx := upgrade.Context{Level: char.Level, Current: statLineFromBlock(h.currentTotals(char))}
 
 	byLoc, hasGear := h.loadEquipped(cfg.EQPath, char.Name)
+	worn := h.resolveWornItems(byLoc)
 	prioritySet := h.priorityFocusSet(id)
-	equippedFocus := h.equippedFocusSet(byLoc)
+	equippedFocus := h.equippedFocusSet(worn)
 	wc := h.newWornCache()
-	hasteByLoc := h.hasteByLocation(byLoc, wc)
+	hasteByLoc := h.hasteByLocation(byLoc, worn, wc)
 	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, excludePoP, limit, prioritySet, equippedFocus, wc, hasteByLoc)
 
 	writeJSON(w, http.StatusOK, upgradesResponse{
@@ -222,10 +223,11 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 	}
 	ctx := upgrade.Context{Level: char.Level, Current: statLineFromBlock(h.currentTotals(char))}
 	byLoc, hasGear := h.loadEquipped(cfg.EQPath, char.Name)
+	worn := h.resolveWornItems(byLoc)
 	prioritySet := h.priorityFocusSet(id)
-	equippedFocus := h.equippedFocusSet(byLoc)
+	equippedFocus := h.equippedFocusSet(worn)
 	wc := h.newWornCache()
-	hasteByLoc := h.hasteByLocation(byLoc, wc)
+	hasteByLoc := h.hasteByLocation(byLoc, worn, wc)
 	excludePoP := !(r.URL.Query().Get("show_pop") == "1" || r.URL.Query().Get("show_pop") == "true")
 
 	// One candidate scan for the whole sweep: the class/race/level/hidden/variant
@@ -523,16 +525,33 @@ func (h *charactersHandler) priorityFocusSet(charID int) map[int]bool {
 	return set
 }
 
+// resolveWornItems resolves every distinct worn item id in the equipped map to
+// its full Item once. GetItem is a wide multi-subquery read, and the focus and
+// haste passes each used to call it over the whole loadout; sharing one resolved
+// map collapses those repeated sweeps into a single lookup pass.
+func (h *charactersHandler) resolveWornItems(byLoc map[string][]zeal.InventoryEntry) map[int]*db.Item {
+	out := make(map[int]*db.Item)
+	for _, entries := range byLoc {
+		for _, e := range entries {
+			if _, seen := out[e.ID]; seen {
+				continue
+			}
+			if item, err := h.db.GetItem(e.ID); err == nil && item != nil {
+				out[e.ID] = item
+			}
+		}
+	}
+	return out
+}
+
 // equippedFocusSet returns the focus effects the character already has equipped
 // (any slot). A priority focus already in this set earns no bonus — only the
 // best of a focus type matters, so getting another copy is not an upgrade.
-func (h *charactersHandler) equippedFocusSet(byLoc map[string][]zeal.InventoryEntry) map[int]bool {
+func (h *charactersHandler) equippedFocusSet(worn map[int]*db.Item) map[int]bool {
 	set := map[int]bool{}
-	for _, entries := range byLoc {
-		for _, e := range entries {
-			if item, err := h.db.GetItem(e.ID); err == nil && item != nil && item.FocusEffect > 0 {
-				set[item.FocusEffect] = true
-			}
+	for _, item := range worn {
+		if item.FocusEffect > 0 {
+			set[item.FocusEffect] = true
 		}
 	}
 	return set
@@ -763,15 +782,17 @@ func (h *charactersHandler) itemStatLine(it *db.Item, wc *wornCache) upgrade.Sta
 // hasteByLocation returns the best worn melee-haste percent equipped in each
 // worn location, so scoreSlot can derive the "other slots" haste a candidate
 // must beat (worn haste is best-of-type).
-func (h *charactersHandler) hasteByLocation(byLoc map[string][]zeal.InventoryEntry, wc *wornCache) map[string]int {
+func (h *charactersHandler) hasteByLocation(byLoc map[string][]zeal.InventoryEntry, worn map[int]*db.Item, wc *wornCache) map[string]int {
 	out := make(map[string]int, len(byLoc))
 	for loc, entries := range byLoc {
 		best := 0
 		for _, e := range entries {
-			if item, err := h.db.GetItem(e.ID); err == nil && item != nil {
-				if hv := wc.contribution(item.WornEffect, item.WornLevel).Haste; hv > best {
-					best = hv
-				}
+			item := worn[e.ID]
+			if item == nil {
+				continue
+			}
+			if hv := wc.contribution(item.WornEffect, item.WornLevel).Haste; hv > best {
+				best = hv
 			}
 		}
 		out[loc] = best
