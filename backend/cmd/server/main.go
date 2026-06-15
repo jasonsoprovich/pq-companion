@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/api"
@@ -310,6 +311,21 @@ func main() {
 	// row so the DPS meter can render each combatant's bar in the user's
 	// per-class colour. selfClassFn covers the active character; the
 	// resolver falls back to the /who tracker for other players.
+	// classByNameCache memoizes per-name base-class lookups. stampClasses
+	// re-resolves every combatant on each combat broadcast, and each miss is a
+	// user.db read taken under the tracker lock — heavy during a raid with many
+	// distinct combatants. A player's base class is stable within a session, so
+	// a short TTL eliminates the per-frame reads while staying self-healing if an
+	// early /who reported an odd class. Guarded by its own mutex since the
+	// closure must be safe regardless of who calls it.
+	type classCacheEntry struct {
+		cls string
+		exp time.Time
+	}
+	var classCacheMu sync.Mutex
+	classByNameCache := map[string]classCacheEntry{}
+	const classCacheTTL = 30 * time.Second
+
 	combatTracker.SetClassResolvers(
 		func() string {
 			cfg := cfgMgr.Get()
@@ -332,11 +348,21 @@ func main() {
 			if playerStore == nil || name == "" {
 				return ""
 			}
+			classCacheMu.Lock()
+			if e, ok := classByNameCache[name]; ok && time.Now().Before(e.exp) {
+				classCacheMu.Unlock()
+				return e.cls
+			}
+			classCacheMu.Unlock()
 			s, err := playerStore.Get(name)
 			if err != nil || s == nil {
 				return ""
 			}
-			return players.BaseClassOf(s.Class)
+			cls := players.BaseClassOf(s.Class)
+			classCacheMu.Lock()
+			classByNameCache[name] = classCacheEntry{cls: cls, exp: time.Now().Add(classCacheTTL)}
+			classCacheMu.Unlock()
+			return cls
 		},
 	)
 
