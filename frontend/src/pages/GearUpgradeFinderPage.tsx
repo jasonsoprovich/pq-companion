@@ -628,6 +628,11 @@ function FocusPanel({
         <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
           No focus effects found on this class's gear.
         </p>
+      ) : shown.length === 0 ? (
+        <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+          No focus effects on this class's gear match “{filter.trim()}”. The picker only
+          lists focuses carried by gear your class can use.
+        </p>
       ) : (
         <div className="flex flex-wrap gap-1" style={{ maxHeight: 150, overflowY: 'auto' }}>
           {shown.map((o) => {
@@ -799,7 +804,13 @@ function DeltaChips({ cand }: { cand: UpgradeCandidate }): React.ReactElement {
 
 function SourcesPanel({ sources }: { sources: ItemSources | null }): React.ReactElement {
   if (!sources) return <span style={{ color: 'var(--color-muted)' }}>No source data.</span>
-  const { drops, merchants, forage_zones, ground_spawns, tradeskills } = sources
+  // The backend marshals empty source categories as JSON null (Go nil slices),
+  // so each array can be null even when sources itself is set — default them.
+  const drops = sources.drops ?? []
+  const merchants = sources.merchants ?? []
+  const forage_zones = sources.forage_zones ?? []
+  const ground_spawns = sources.ground_spawns ?? []
+  const tradeskills = sources.tradeskills ?? []
   const empty =
     drops.length === 0 && merchants.length === 0 && forage_zones.length === 0 &&
     ground_spawns.length === 0 && tradeskills.length === 0
