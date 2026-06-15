@@ -22,9 +22,71 @@
       content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; media-src 'self' pq-audio:"
     />
     <title>PQ Companion</title>
+    <!--
+      Boot splash: the main window is shown at ready-to-show before React
+      mounts, so without this users saw a black void for the first beat of
+      startup. The splash is fully self-contained (its own dark backdrop — no
+      global html/body styles) so it can't affect the transparent overlay
+      windows, which load this same index.html under a route hash. React's
+      first render replaces #root's children, removing it; the inline script
+      below also strips it immediately for overlay routes so they never flash
+      an opaque backdrop. Inline styles/script only (the CSP allows
+      'unsafe-inline' for both, but no external/app assets at this stage).
+    -->
+    <style>
+      #pq-boot {
+        position: fixed;
+        inset: 0;
+        background: #0a0a0a;
+        color: #a1a1aa;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      #pq-boot .pq-boot-spinner {
+        width: 26px;
+        height: 26px;
+        border: 2px solid rgba(255, 255, 255, 0.12);
+        border-top-color: #6d9eeb;
+        border-radius: 50%;
+        animation: pq-boot-spin 0.8s linear infinite;
+      }
+      #pq-boot .pq-boot-title {
+        font-size: 15px;
+        letter-spacing: 0.08em;
+        font-weight: 600;
+        opacity: 0.85;
+      }
+      @keyframes pq-boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="pq-boot">
+        <div class="pq-boot-spinner"></div>
+        <div class="pq-boot-title">PQ COMPANION</div>
+      </div>
+    </div>
+    <script>
+      // Overlay windows (transparent, frameless) load this page under a route
+      // hash like "#/dps-overlay-window". They must stay see-through, so drop
+      // the opaque splash for any non-main route before it can paint.
+      if (location.hash && location.hash !== '#/' && location.hash !== '#') {
+        var boot = document.getElementById('pq-boot')
+        if (boot) boot.remove()
+      }
+    </script>
     <script type="module" src="./src/main.tsx"></script>
   </body>
 </html>
