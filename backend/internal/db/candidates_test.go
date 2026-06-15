@@ -49,6 +49,71 @@ func TestUpgradeCandidates_HeadSlotEnchanter(t *testing.T) {
 	t.Logf("enchanter head candidates: %d", len(cands))
 }
 
+// TestUpgradeCandidates_CombinedMaskPartition verifies the overview endpoint's
+// optimization: querying the union of every slot mask once and partitioning the
+// result in Go by (slots & slotMask) yields exactly the same per-slot candidate
+// set as a separate query per slot. If this holds, the 19-query sweep can be
+// collapsed to one scan without changing results.
+func TestUpgradeCandidates_CombinedMaskPartition(t *testing.T) {
+	d := openTestDB(t)
+
+	// A representative spread including the dual slots (ear/wrist/fingers) whose
+	// masks OR two item bits — the partition must handle those correctly.
+	slotMasks := []int{
+		0x000002 | 0x000010, // ear
+		0x000004,            // head
+		0x000020,            // neck
+		0x000200 | 0x000400, // wrist
+		0x002000,            // primary
+		0x004000,            // secondary
+		0x008000 | 0x010000, // fingers
+		0x020000,            // chest
+	}
+	const (
+		enchanterBit = 0x2000
+		darkElf      = 0x0020
+		maxLevel     = 60
+	)
+
+	combined := 0
+	for _, m := range slotMasks {
+		combined |= m
+	}
+	all, err := d.UpgradeCandidates(db.CandidateFilter{
+		SlotMask: combined, ClassBit: enchanterBit, RaceBit: darkElf, MaxLevel: maxLevel,
+	})
+	if err != nil {
+		t.Fatalf("combined query: %v", err)
+	}
+
+	for _, mask := range slotMasks {
+		perSlot, err := d.UpgradeCandidates(db.CandidateFilter{
+			SlotMask: mask, ClassBit: enchanterBit, RaceBit: darkElf, MaxLevel: maxLevel,
+		})
+		if err != nil {
+			t.Fatalf("per-slot query (mask=%#x): %v", mask, err)
+		}
+		want := map[int]bool{}
+		for _, c := range perSlot {
+			want[c.ID] = true
+		}
+		got := map[int]bool{}
+		for _, c := range all {
+			if c.Slots&mask != 0 {
+				got[c.ID] = true
+			}
+		}
+		if len(got) != len(want) {
+			t.Fatalf("mask %#x: partition has %d items, per-slot query has %d", mask, len(got), len(want))
+		}
+		for id := range want {
+			if !got[id] {
+				t.Fatalf("mask %#x: partition missing item %d returned by per-slot query", mask, id)
+			}
+		}
+	}
+}
+
 func TestUpgradeCandidates_LevelGate(t *testing.T) {
 	d := openTestDB(t)
 

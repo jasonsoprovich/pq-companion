@@ -228,9 +228,34 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 	hasteByLoc := h.hasteByLocation(byLoc, wc)
 	excludePoP := !(r.URL.Query().Get("show_pop") == "1" || r.URL.Query().Get("show_pop") == "true")
 
+	// One candidate scan for the whole sweep: the class/race/level/hidden/variant
+	// filter is identical across all 19 slots — only the slot mask differs — so
+	// query the union of every slot mask once and partition in Go by slot. This
+	// replaces 19 full-table item scans with a single one.
+	combinedMask := 0
+	for _, s := range upgradeSlots {
+		combinedMask |= s.Mask
+	}
+	allCands, err := h.db.UpgradeCandidates(db.CandidateFilter{
+		SlotMask:   combinedMask,
+		ClassBit:   charClassBit(char),
+		RaceBit:    enums.RaceBitForCharRace(char.Race),
+		MaxLevel:   char.Level,
+		ExcludePoP: excludePoP,
+	})
+	if err != nil {
+		allCands = nil
+	}
+
 	slots := make([]overviewSlot, 0, len(upgradeSlots))
 	for _, s := range upgradeSlots {
-		current, _, results, considered := h.scoreSlot(char, ctx, weights, s, byLoc, false, excludePoP, 1, prioritySet, equippedFocus, wc, hasteByLoc)
+		var slotCands []db.UpgradeCandidate
+		for _, c := range allCands {
+			if c.Slots&s.Mask != 0 {
+				slotCands = append(slotCands, c)
+			}
+		}
+		current, _, results, considered := h.scoreSlotCands(char, ctx, weights, s, byLoc, false, 1, prioritySet, equippedFocus, wc, hasteByLoc, slotCands)
 		var best *upgradeResult
 		if len(results) > 0 {
 			best = &results[0]
@@ -253,15 +278,47 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// scoreSlot ranks candidates for one slot against the worn baseline (the
-// lowest-scoring item in the slot — you upgrade your weakest ring first). It
-// takes a pre-parsed equipped map so a multi-slot sweep parses the Quarmy
-// export only once. Returns the worn items, the baseline item id, the ranked
-// results (truncated to limit), and how many candidates were considered.
+// charClassBit returns the items.classes bit for a character's class (0 for an
+// unset/negative class, meaning "don't class-filter").
+func charClassBit(char character.Character) int {
+	if char.Class >= 0 {
+		return 1 << char.Class
+	}
+	return 0
+}
+
+// scoreSlot ranks candidates for one slot against the worn baseline. It fetches
+// the slot's candidate set and delegates the scoring to scoreSlotCands. Used by
+// the single-slot endpoint; the overview fetches all slots' candidates in one
+// query and calls scoreSlotCands directly.
 func (h *charactersHandler) scoreSlot(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
 	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll, excludePoP bool, limit int,
 	prioritySet, equippedFocus map[int]bool, wc *wornCache, hasteByLoc map[string]int,
+) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int) {
+	cands, err := h.db.UpgradeCandidates(db.CandidateFilter{
+		SlotMask:   slot.Mask,
+		ClassBit:   charClassBit(char),
+		RaceBit:    enums.RaceBitForCharRace(char.Race),
+		MaxLevel:   char.Level,
+		ExcludePoP: excludePoP, // finder-local "Show PoP gear" toggle (default hide)
+	})
+	if err != nil {
+		cands = nil // still return the worn items / empty results below
+	}
+	return h.scoreSlotCands(char, ctx, weights, slot, byLoc, showAll, limit, prioritySet, equippedFocus, wc, hasteByLoc, cands)
+}
+
+// scoreSlotCands scores a pre-fetched candidate set for one slot against the
+// worn baseline (the lowest-scoring item in the slot — you upgrade your weakest
+// ring first). It takes a pre-parsed equipped map so a multi-slot sweep parses
+// the Quarmy export only once. Returns the worn items, the baseline item id, the
+// ranked results (truncated to limit), and how many candidates were considered.
+func (h *charactersHandler) scoreSlotCands(
+	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
+	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll bool, limit int,
+	prioritySet, equippedFocus map[int]bool, wc *wornCache, hasteByLoc map[string]int,
+	cands []db.UpgradeCandidate,
 ) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int) {
 	focusBonus := weights.FocusBonus
 	if focusBonus <= 0 {
@@ -293,20 +350,6 @@ func (h *charactersHandler) scoreSlot(
 		baselineID = worst.ID
 	}
 
-	classBit := 0
-	if char.Class >= 0 {
-		classBit = 1 << char.Class
-	}
-	cands, err := h.db.UpgradeCandidates(db.CandidateFilter{
-		SlotMask:   slot.Mask,
-		ClassBit:   classBit,
-		RaceBit:    enums.RaceBitForCharRace(char.Race),
-		MaxLevel:   char.Level,
-		ExcludePoP: excludePoP, // finder-local "Show PoP gear" toggle (default hide)
-	})
-	if err != nil {
-		return current, baselineID, []upgradeResult{}, 0
-	}
 	considered = len(cands)
 
 	worn := make(map[int]bool, len(current))
