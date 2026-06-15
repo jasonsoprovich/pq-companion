@@ -54,7 +54,11 @@ export function useRespawnAlerts(): void {
     for (const timer of state.timers) {
       const prev = prevRemaining.current.get(timer.id) ?? timer.remaining_seconds + 1
 
-      if (enabled && pref && prev > threshold && timer.remaining_seconds <= threshold) {
+      // Only announce respawns in the player's current zone — a pop in a zone
+      // they've left is noise. When the zone is unknown, don't suppress.
+      const inCurrentZone = !state.current_zone || timer.zone === state.current_zone
+
+      if (enabled && pref && inCurrentZone && prev > threshold && timer.remaining_seconds <= threshold) {
         if (pref.type === 'play_sound' && pref.sound_path) {
           playSound(pref.sound_path, pref.volume / 100)
         } else if (pref.type === 'text_to_speech' && pref.tts_template) {

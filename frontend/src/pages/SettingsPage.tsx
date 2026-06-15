@@ -1904,8 +1904,8 @@ export default function SettingsPage(): React.ReactElement {
               Respawn alerts
             </p>
             <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-              Plays a sound or speaks as an NPC respawn timer is about to pop. Applies to
-              every timer on the Respawn overlay. Put <code className="font-mono">{'{npc}'}</code> in
+              Plays a sound or speaks as an NPC respawn timer is about to pop. Fires only
+              for respawns in your current zone. Put <code className="font-mono">{'{npc}'}</code> in
               the spoken text to insert the mob's name.
             </p>
             <TimerAlertPrefEditor
