@@ -28,6 +28,23 @@ export const DEFAULT_NPC_OVERLAY_SECTIONS: NPCOverlaySections = {
   spells_class: true,
 }
 
+/**
+ * Global default "fading soon" notification for the Custom Timer and Respawn
+ * overlays — the settings counterpart to a trigger's TimerAlertThreshold.
+ * Mirrors backend config.TimerAlertPref. `type` is the action kind; `seconds`
+ * is the remaining-time threshold the alert fires at; volumes are 0–100.
+ */
+export interface TimerAlertPref {
+  enabled: boolean
+  seconds: number
+  type: 'play_sound' | 'text_to_speech'
+  sound_path: string
+  volume: number
+  tts_template: string
+  voice: string
+  tts_volume: number
+}
+
 export interface Preferences {
   overlay_opacity: number
   // Fade overlay chrome (background, border, title bar) to transparent a few
@@ -64,6 +81,13 @@ export interface Preferences {
   default_overlay_glow_color?: string
   default_overlay_font_family?: string
   default_overlay_font_size?: number
+  // Default fading-soon alert armed on manually-added Custom Timers (the
+  // overlay quick-add form lets the player toggle it off per timer). Disabled
+  // by default. See TimerAlertPref.
+  custom_timer_alert?: TimerAlertPref
+  // Audio cue fired as each NPC respawn timer crosses `seconds` remaining
+  // (0 = at "POP"). Applies to every respawn timer; disabled by default.
+  respawn_alert?: TimerAlertPref
   developer_mode: boolean
   // Planes of Power era switch: level cap 65, PoP spells/AA tabs, PoK as a
   // shopping source. Off until the expansion launches on Quarm; until then

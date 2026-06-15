@@ -5,9 +5,11 @@ import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
 import AlertDefaultsSettings from '../components/settings/AlertDefaultsSettings'
+import TimerAlertPrefEditor from '../components/settings/TimerAlertPrefEditor'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, type ServerInfo, type TestPortResult } from '../services/api'
-import type { Config, DPSClassColors, NPCOverlaySections } from '../types/config'
+import type { Config, DPSClassColors, NPCOverlaySections, TimerAlertPref } from '../types/config'
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
+import { defaultTimerAlertPref } from '../lib/timerAlerts'
 import { OVERLAY_DEFS, resolveLockedMode } from '../lib/overlays'
 import type { OverlayName, LockedMode } from '../lib/overlays'
 import { DEV_HPS } from '../lib/devFlags'
@@ -1867,6 +1869,68 @@ export default function SettingsPage(): React.ReactElement {
                 </label>
               ))}
             </div>
+          </div>
+
+          {/* ── Custom timer alerts ──────────────────────────────────────── */}
+          <div className="mt-6 border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+            <p className="mb-1 text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+              Custom timer alerts
+            </p>
+            <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Plays a sound or speaks when a manually-added timer on the Custom Timers
+              overlay is about to finish. New timers added from the overlay arm this alert
+              by default — use the bell button in the quick-add form to silence an individual
+              timer. Put <code className="font-mono">{'{spell}'}</code> in the spoken text to
+              insert the timer's name. (Trigger-driven custom timers keep their own alerts.)
+            </p>
+            <TimerAlertPrefEditor
+              value={
+                config.preferences?.custom_timer_alert ?? {
+                  ...defaultTimerAlertPref('custom'),
+                  enabled: false,
+                }
+              }
+              onChange={(next: TimerAlertPref) =>
+                setConfig({
+                  ...config,
+                  preferences: { ...config.preferences, custom_timer_alert: next },
+                })
+              }
+              secondsLabel="Alert at"
+              secondsUnit="s remaining"
+              secondsHint="Fires when a timer crosses this many seconds left (0 = as it finishes)."
+              ttsPlaceholder="{spell} done"
+            />
+          </div>
+
+          {/* ── Respawn alerts ───────────────────────────────────────────── */}
+          <div className="mt-6 border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+            <p className="mb-1 text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+              Respawn alerts
+            </p>
+            <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Plays a sound or speaks as an NPC respawn timer is about to pop. Applies to
+              every timer on the Respawn overlay. Put <code className="font-mono">{'{npc}'}</code> in
+              the spoken text to insert the mob's name.
+            </p>
+            <TimerAlertPrefEditor
+              value={
+                config.preferences?.respawn_alert ?? {
+                  ...defaultTimerAlertPref('respawn'),
+                  enabled: false,
+                }
+              }
+              onChange={(next: TimerAlertPref) =>
+                setConfig({
+                  ...config,
+                  preferences: { ...config.preferences, respawn_alert: next },
+                })
+              }
+              secondsLabel="Announce at"
+              secondsUnit="s before respawn"
+              secondsHint="Fires when a respawn crosses this many seconds left (0 = right as it pops)."
+              ttsPlaceholder="{npc} has respawned"
+            />
           </div>
 
           {/* ── CH Chain overlay ─────────────────────────────────────────── */}

@@ -940,9 +940,21 @@ export function removeTimer(id: string): Promise<void> {
   return del(`/api/overlay/timers/${encodeURIComponent(id)}`)
 }
 
-/** Start a manual countdown on the Custom Timers overlay (no trigger needed). */
-export function startCustomTimer(name: string, durationSecs: number): Promise<void> {
-  return post<void>('/api/overlay/timers/custom', { name, duration_secs: durationSecs })
+/**
+ * Start a manual countdown on the Custom Timers overlay (no trigger needed).
+ * Optional `alerts` arms fading-soon sound/TTS cues on the timer (built from
+ * the user's global Custom-timer alert preference); omit for a silent timer.
+ */
+export function startCustomTimer(
+  name: string,
+  durationSecs: number,
+  alerts?: TimerAlertThreshold[],
+): Promise<void> {
+  return post<void>('/api/overlay/timers/custom', {
+    name,
+    duration_secs: durationSecs,
+    ...(alerts && alerts.length > 0 ? { alerts } : {}),
+  })
 }
 
 export function getRespawnState(): Promise<RespawnState> {
