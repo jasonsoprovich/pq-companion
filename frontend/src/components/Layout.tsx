@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, Suspense } from 'react'
 import { Outlet } from 'react-router-dom'
 import TitleBar from './TitleBar'
 import Sidebar from './Sidebar'
@@ -39,7 +39,21 @@ export default function Layout(): React.ReactElement {
           className="selectable flex-1 overflow-auto"
           style={{ backgroundColor: 'var(--color-background)' }}
         >
-          <Outlet />
+          {/* Pages are code-split (React.lazy in App.tsx), so the first visit
+              to a tab fetches its chunk. This boundary covers every main-window
+              page, including the nested combat/characters routes. */}
+          <Suspense
+            fallback={
+              <div
+                className="flex h-full items-center justify-center text-sm"
+                style={{ color: 'var(--color-muted-foreground)' }}
+              >
+                Loading…
+              </div>
+            }
+          >
+            <Outlet />
+          </Suspense>
         </main>
       </div>
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />

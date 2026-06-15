@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, lazy, Suspense } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import OnboardingWizard from './components/OnboardingWizard'
@@ -10,56 +10,64 @@ import { useAudioPrefs } from './hooks/useAudioPrefs'
 import { useHighContrast } from './hooks/useHighContrast'
 import { useZoom } from './hooks/useZoom'
 import { useLogFeedSubscriber } from './hooks/useLogFeed'
+// ItemsPage is the default landing route, so it stays in the initial bundle
+// for an instant first paint. Every other page is code-split below so it loads
+// on demand — this keeps the boot bundle small. The structural layout
+// components (Layout/CombatLayout/CharactersLayout) also stay eager since the
+// shell renders immediately.
 import ItemsPage from './pages/ItemsPage'
-import SpellsPage from './pages/SpellsPage'
-import NpcsPage from './pages/NpcsPage'
-import ZonesPage from './pages/ZonesPage'
-import RecipesPage from './pages/RecipesPage'
-import QuestsPage from './pages/QuestsPage'
-import SettingsPage from './pages/SettingsPage'
-import InventoryPage from './pages/InventoryPage'
-import SpellChecklistPage from './pages/SpellChecklistPage'
-import InventoryTrackerPage from './pages/InventoryTrackerPage'
-import KeyTrackerPage from './pages/KeyTrackerPage'
-import LockoutTrackerPage from './pages/LockoutTrackerPage'
-import WishlistPage from './pages/WishlistPage'
-import LogFeedPage from './pages/LogFeedPage'
-import DPSOverlayWindowPage from './pages/DPSOverlayWindowPage'
-import HPSOverlayWindowPage from './pages/HPSOverlayWindowPage'
-import { DEV_HPS } from './lib/devFlags'
-import BuffTimerWindowPage from './pages/BuffTimerWindowPage'
-import CHChainOverlayWindowPage from './pages/CHChainOverlayWindowPage'
-import CHMetronomeOverlayWindowPage from './pages/CHMetronomeOverlayWindowPage'
-import DetrimTimerWindowPage from './pages/DetrimTimerWindowPage'
-import CustomTimerWindowPage from './pages/CustomTimerWindowPage'
-import OverlaysDashboard from './pages/OverlaysDashboard'
-import CombatLogPage from './pages/CombatLogPage'
-import CombatHistoryPage from './pages/CombatHistoryPage'
 import CombatLayout from './components/CombatLayout'
-import TriggersPage from './pages/TriggersPage'
-import RollTrackerPage from './pages/RollTrackerPage'
-import RollTrackerWindowPage from './pages/RollTrackerWindowPage'
-import RespawnTimerWindowPage from './pages/RespawnTimerWindowPage'
-import PlayersPage from './pages/PlayersPage'
-import ChatHistoryPage from './pages/ChatHistoryPage'
-import LootTrackerPage from './pages/LootTrackerPage'
-import TriggerOverlayWindowPage from './pages/TriggerOverlayWindowPage'
-import NPCOverlayWindowPage from './pages/NPCOverlayWindowPage'
-import CharactersPage from './pages/CharactersPage'
-import CharacterProgressPage from './pages/CharacterProgressPage'
-import CharacterTasksPage from './pages/CharacterTasksPage'
-import GearUpgradeFinderPage from './pages/GearUpgradeFinderPage'
-import CharacterSpellsetsPage from './pages/CharacterSpellsetsPage'
 import CharactersLayout from './components/CharactersLayout'
+import { DEV_HPS } from './lib/devFlags'
 import { ActiveCharacterProvider } from './contexts/ActiveCharacterContext'
 import { BackfillProvider } from './contexts/BackfillContext'
+
+const SpellsPage = lazy(() => import('./pages/SpellsPage'))
+const NpcsPage = lazy(() => import('./pages/NpcsPage'))
+const ZonesPage = lazy(() => import('./pages/ZonesPage'))
+const RecipesPage = lazy(() => import('./pages/RecipesPage'))
+const QuestsPage = lazy(() => import('./pages/QuestsPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const InventoryPage = lazy(() => import('./pages/InventoryPage'))
+const SpellChecklistPage = lazy(() => import('./pages/SpellChecklistPage'))
+const InventoryTrackerPage = lazy(() => import('./pages/InventoryTrackerPage'))
+const KeyTrackerPage = lazy(() => import('./pages/KeyTrackerPage'))
+const LockoutTrackerPage = lazy(() => import('./pages/LockoutTrackerPage'))
+const WishlistPage = lazy(() => import('./pages/WishlistPage'))
+const LogFeedPage = lazy(() => import('./pages/LogFeedPage'))
+const DPSOverlayWindowPage = lazy(() => import('./pages/DPSOverlayWindowPage'))
+const HPSOverlayWindowPage = lazy(() => import('./pages/HPSOverlayWindowPage'))
+const BuffTimerWindowPage = lazy(() => import('./pages/BuffTimerWindowPage'))
+const CHChainOverlayWindowPage = lazy(() => import('./pages/CHChainOverlayWindowPage'))
+const CHMetronomeOverlayWindowPage = lazy(() => import('./pages/CHMetronomeOverlayWindowPage'))
+const DetrimTimerWindowPage = lazy(() => import('./pages/DetrimTimerWindowPage'))
+const CustomTimerWindowPage = lazy(() => import('./pages/CustomTimerWindowPage'))
+const OverlaysDashboard = lazy(() => import('./pages/OverlaysDashboard'))
+const CombatLogPage = lazy(() => import('./pages/CombatLogPage'))
+const CombatHistoryPage = lazy(() => import('./pages/CombatHistoryPage'))
+const TriggersPage = lazy(() => import('./pages/TriggersPage'))
+const RollTrackerPage = lazy(() => import('./pages/RollTrackerPage'))
+const RollTrackerWindowPage = lazy(() => import('./pages/RollTrackerWindowPage'))
+const RespawnTimerWindowPage = lazy(() => import('./pages/RespawnTimerWindowPage'))
+const PlayersPage = lazy(() => import('./pages/PlayersPage'))
+const ChatHistoryPage = lazy(() => import('./pages/ChatHistoryPage'))
+const LootTrackerPage = lazy(() => import('./pages/LootTrackerPage'))
+const TriggerOverlayWindowPage = lazy(() => import('./pages/TriggerOverlayWindowPage'))
+const NPCOverlayWindowPage = lazy(() => import('./pages/NPCOverlayWindowPage'))
+const CharactersPage = lazy(() => import('./pages/CharactersPage'))
+const CharacterProgressPage = lazy(() => import('./pages/CharacterProgressPage'))
+const CharacterTasksPage = lazy(() => import('./pages/CharacterTasksPage'))
+const GearUpgradeFinderPage = lazy(() => import('./pages/GearUpgradeFinderPage'))
+const CharacterSpellsetsPage = lazy(() => import('./pages/CharacterSpellsetsPage'))
 
 function OverlayPage({ children }: { children: React.ReactNode }): React.ReactElement {
   useEffect(() => {
     document.body.style.backgroundColor = 'transparent'
     return () => { document.body.style.backgroundColor = '' }
   }, [])
-  return <>{children}</>
+  // Overlay pages are lazy too; a null fallback keeps the window fully
+  // transparent while the (small) chunk loads instead of flashing a backdrop.
+  return <Suspense fallback={null}>{children}</Suspense>
 }
 
 // MainWindowLayout mounts the audio/alert hooks and renders the main Layout.
