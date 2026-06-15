@@ -47,7 +47,18 @@ type DB struct {
 // modernc.org/sqlite expects PRAGMAs via the _pragma=NAME(VALUE) URI form;
 // mattn-style _busy_timeout was silently ignored before this change.
 func Open(path string) (*DB, error) {
-	dsn := fmt.Sprintf("file:%s?mode=ro&immutable=1&_pragma=busy_timeout(5000)", path)
+	// cache_size is negative => KiB, so -65536 is a 64 MiB per-connection page
+	// cache (the default 2 MiB thrashes on the big loot/spawn joins). mmap_size
+	// maps the file instead of read()ing pages through the cache; safe here
+	// because the DB is opened read-only + immutable (no writer to invalidate
+	// the mapping).
+	dsn := fmt.Sprintf(
+		"file:%s?mode=ro&immutable=1"+
+			"&_pragma=busy_timeout(5000)"+
+			"&_pragma=cache_size(-65536)"+
+			"&_pragma=mmap_size(268435456)",
+		path,
+	)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
@@ -56,7 +67,11 @@ func Open(path string) (*DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("ping sqlite: %w", err)
 	}
-	// Single reader connection is sufficient for a read-only DB.
-	db.SetMaxOpenConns(1)
+	// The DB is read-only + immutable, so concurrent readers are safe and need
+	// no locking. Allowing a small pool lets independent requests (item search,
+	// NPC overlay polling, combat-parser lookups) run in parallel instead of
+	// serializing through one connection. Each connection carries its own page
+	// cache, so this is capped low to bound memory.
+	db.SetMaxOpenConns(4)
 	return &DB{DB: db}, nil
 }
