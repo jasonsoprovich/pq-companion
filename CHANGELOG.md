@@ -9,6 +9,26 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.13.2 — 2026-06-15
+
+Respawn and custom-timer alerts arrive, alongside a batch of Gear Upgrade Finder refinements.
+
+### Highlights
+- **Respawn alerts** — get an audio or text-to-speech heads-up the moment a tracked mob's respawn timer is ready, scoped to the zone you're currently in so you only hear what's relevant.
+- **Custom timer alerts** — add a per-timer alert bell right from the Custom Timers quick-add form, with default alert behavior configurable in Settings.
+- **Gear Upgrade Finder — hide crafted gear** — a new toggle (on by default) keeps tradeskill-made items out of upgrade suggestions.
+- **Gear Upgrade Finder — Planes of Power gear** — turning on "Show PoP gear" now correctly surfaces level-65 Planes drops (e.g. Plane of Time loot) that were previously filtered out.
+
+### Fixes
+- Gear Upgrade Finder no longer suggests a LORE item you already wear for a second slot, or recommends unobtainable GM-event items (Soul Devourer, The Prime Healers Bulwark).
+- Fixed a black screen when expanding a gear suggestion's sources, and tightened item-name alignment when the column is narrow.
+- Spell timers now track clicky buffs whose "lands on you" text collides with another clicky.
+- The "Group Member Died" trigger no longer fires when a pet kills an NPC.
+- The triggers search/filter bar now stays pinned above the scrolling list.
+- CH chain accepts DCH/RAMP heal tokens; the "Ramp" button is renamed "Secondary."
+- The last log line is now flushed when the game goes idle, so the final event isn't held back.
+- Hid the stray HPS Meter row in Settings → Overlays.
+
 ## v0.13.1 — 2026-06-15
 
 A performance release: much faster startup, plus the Minimize to Tray

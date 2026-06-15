@@ -19,7 +19,7 @@ Join the community on [Discord](https://discord.gg/Srj4FXcRaz) for help, feedbac
 - **Combat Log** — Persistent fight history with Personal / Raid / Encounter DPS metrics, expandable per-combatant breakdowns, date-range filters, and event-based session grouping.
 - **Roll Tracker** — Parses `/random` rolls into sessions, with an optional timer that auto-stops collection, a dashboard panel, and a pop-out overlay window.
 - **Spell Timer Engine** — Countdown bars for every buff, debuff, mez, stun, and DoT. Tick-accurate durations, with Zeal-pipe corroboration when available. Separate overlay windows for buffs and detrimentals.
-- **NPC Respawn Timers** — A transparent overlay that tracks NPC deaths and counts down to respawn, with Project Quarm's fast-respawn reduction applied automatically.
+- **NPC Respawn Timers** — A transparent overlay that tracks NPC deaths and counts down to respawn, with Project Quarm's fast-respawn reduction applied automatically. Optional audio or text-to-speech alerts fire when a respawn is ready, scoped to your current zone.
 - **CH Chain Overlay** — Tracks raid Complete Heal chains in real time from heal callouts: cast-to-land bars, live measured cadence, and a stall indicator, plus a personal CH metronome overlay that paces your slot. Both float as standalone dashboard panels.
 - **Loot Tracker** — A dedicated page that logs drops as they happen, with clickable items (full detail popup) and zones (jump straight to the Zone browser).
 - **Chat History** — A multi-channel log of your tells and conversations, with per-character tabs and chat-style threads so you can scroll back through who said what.
