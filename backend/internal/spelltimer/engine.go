@@ -376,7 +376,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 	case logparser.EventSpellCast:
 		data, ok := ev.Data.(logparser.SpellCastData)
 		if !ok {
-			slog.Info("timer-debug: spell-cast event with bad payload", "data_type", fmt.Sprintf("%T", ev.Data))
+			slog.Debug("timer-debug: spell-cast event with bad payload", "data_type", fmt.Sprintf("%T", ev.Data))
 			return
 		}
 		e.mu.Lock()
@@ -391,7 +391,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 			slog.Info("zealpipe-divergence: log cast != pipe cast",
 				"log_spell", data.SpellName, "pipe_spell", pipeName, "ts", ev.Timestamp)
 		}
-		slog.Info("timer-debug: spell-cast recorded (awaiting land)", "spell", data.SpellName, "ts", ev.Timestamp)
+		slog.Debug("timer-debug: spell-cast recorded (awaiting land)", "spell", data.SpellName, "ts", ev.Timestamp)
 
 	case logparser.EventSpellLanded:
 		data, ok := ev.Data.(logparser.SpellLandedData)
@@ -688,7 +688,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 			ArmedAt:              startedAt,
 		}
 		e.mu.Unlock()
-		slog.Info("timer-debug: pending arm stored for deferred-render spell",
+		slog.Debug("timer-debug: pending arm stored for deferred-render spell",
 			"name", name,
 			"threshold_secs", displayThresholdSecs,
 			"alerts_bytes", len(alerts),
@@ -714,7 +714,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 			}
 			snap := e.snapshot(time.Now())
 			e.mu.Unlock()
-			slog.Info("timer-debug: trigger metadata merged onto existing timer",
+			slog.Debug("timer-debug: trigger metadata merged onto existing timer",
 				"name", name,
 				"existing_target", existing.TargetName,
 				"existing_age_ms", time.Since(existing.CastAt).Milliseconds(),
@@ -744,7 +744,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 	snap := e.snapshot(time.Now())
 	e.mu.Unlock()
 
-	slog.Info("timer-debug: external timer started (trigger-driven)",
+	slog.Debug("timer-debug: external timer started (trigger-driven)",
 		"name", name,
 		"category", cat,
 		"duration_secs", durationSecs,
@@ -784,7 +784,7 @@ func (e *Engine) gcPendingArmsLocked(now time.Time) {
 	for name, arm := range e.pendingArms {
 		if now.Sub(arm.ArmedAt) > pendingArmTTL {
 			delete(e.pendingArms, name)
-			slog.Info("timer-debug: pending arm expired (no land within TTL)",
+			slog.Debug("timer-debug: pending arm expired (no land within TTL)",
 				"name", name,
 				"age_ms", now.Sub(arm.ArmedAt).Milliseconds(),
 			)
@@ -865,7 +865,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	// disambiguation keeps populating lastCastSpell for any trigger that
 	// keys off it) but does NOT create timer rows — only triggers/packs do.
 	if e.trackingMode() == modeTriggersOnly {
-		slog.Info("timer-debug: spell-landed skipped (mode=triggers_only)",
+		slog.Debug("timer-debug: spell-landed skipped (mode=triggers_only)",
 			"spell", spellName, "target", target)
 		return
 	}
@@ -909,7 +909,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		return
 	}
 	if spell == nil {
-		slog.Info("timer-debug: landed spell not found in DB (no timer created)", "name", spellName)
+		slog.Debug("timer-debug: landed spell not found in DB (no timer created)", "name", spellName)
 		return
 	}
 
@@ -935,7 +935,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		switch e.trackingScope() {
 		case scopeSelf:
 			if !isSelfTarget {
-				slog.Info("timer-debug: spell-landed skipped (scope=self, non-self target)",
+				slog.Debug("timer-debug: spell-landed skipped (scope=self, non-self target)",
 					"spell", spellName, "target", target, "active", active)
 				return
 			}
@@ -945,7 +945,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 				recentMatch := e.lastCastSpell == spellName && time.Since(e.lastCastAt) <= lastCastWindow
 				e.mu.Unlock()
 				if !recentMatch {
-					slog.Info("timer-debug: spell-landed skipped (scope=cast_by_me, no matching local cast)",
+					slog.Debug("timer-debug: spell-landed skipped (scope=cast_by_me, no matching local cast)",
 						"spell", spellName, "target", target)
 					return
 				}
@@ -959,7 +959,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		// the overlay under scope=anyone — see classFilterAllowsBuff.
 		if e.classFilterFn != nil {
 			if enabled, classIdx := e.classFilterFn(); !classFilterAllowsBuff(spell, isSelfTarget, enabled, classIdx) {
-				slog.Info("timer-debug: spell-landed skipped (class filter)",
+				slog.Debug("timer-debug: spell-landed skipped (class filter)",
 					"spell", spellName, "target", target, "class_idx", classIdx)
 				return
 			}
@@ -973,7 +973,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 			recentMatch := e.lastCastSpell == spellName && time.Since(e.lastCastAt) <= lastCastWindow
 			e.mu.Unlock()
 			if !recentMatch {
-				slog.Info("timer-debug: detrimental spell-landed skipped (no matching local cast)",
+				slog.Debug("timer-debug: detrimental spell-landed skipped (no matching local cast)",
 					"spell", spellName, "target", target, "category", cat)
 				return
 			}
@@ -982,7 +982,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 
 	durationTicks := SpellDurationTicks(spell, defaultCasterLevel)
 	if durationTicks <= 0 {
-		slog.Info("timer-debug: landed spell has zero duration (no timer created)",
+		slog.Debug("timer-debug: landed spell has zero duration (no timer created)",
 			"name", spellName,
 			"formula", spell.BuffDurationFormula,
 			"buff_duration", spell.BuffDuration,
@@ -994,7 +994,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	durationSeconds := e.applyDurationModifiers(spell, baseDurationSec)
 	expiresAt := landedAt.Add(time.Duration(float64(time.Second) * durationSeconds))
 
-	slog.Info("timer-debug: duration computed",
+	slog.Debug("timer-debug: duration computed",
 		"spell", spellName,
 		"formula", spell.BuffDurationFormula,
 		"buff_duration_ticks", spell.BuffDuration,
@@ -1069,7 +1069,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 			timer.TimerAlerts = arm.TimerAlerts
 		}
 		delete(e.pendingArms, spellName)
-		slog.Info("timer-debug: pending arm promoted to landed timer",
+		slog.Debug("timer-debug: pending arm promoted to landed timer",
 			"spell", spellName,
 			"target", target,
 			"arm_age_ms", time.Since(arm.ArmedAt).Milliseconds(),
@@ -1082,7 +1082,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	snap := e.snapshot(time.Now())
 	e.mu.Unlock()
 
-	slog.Info("timer-debug: timer created from spell-landed",
+	slog.Debug("timer-debug: timer created from spell-landed",
 		"spell", spellName,
 		"target", target,
 		"category", timer.Category,
@@ -1204,7 +1204,7 @@ func (e *Engine) resolveLandedSpellName(data logparser.SpellLandedData) string {
 				return c.SpellName
 			}
 		}
-		slog.Info("timer-debug: ambiguous spell-landed; recent cast doesn't match any candidate",
+		slog.Debug("timer-debug: ambiguous spell-landed; recent cast doesn't match any candidate",
 			"last_spell", lastSpell,
 			"candidates", len(data.Candidates),
 		)
@@ -1218,7 +1218,7 @@ func (e *Engine) resolveLandedSpellName(data logparser.SpellLandedData) string {
 	// (Coldain ring clicky) sharing cast text with the item-less, never-
 	// triggerable "Shield of the Ring".
 	if name := e.soleClickableCandidate(data.Candidates); name != "" {
-		slog.Info("timer-debug: ambiguous spell-landed resolved to sole item-clicky candidate",
+		slog.Debug("timer-debug: ambiguous spell-landed resolved to sole item-clicky candidate",
 			"spell", name,
 			"candidates", len(data.Candidates),
 		)
@@ -1231,14 +1231,14 @@ func (e *Engine) resolveLandedSpellName(data logparser.SpellLandedData) string {
 	// still gets a target (you, for a self-land) and the pack trigger dedups
 	// into it by SpellID.
 	if g := matchAmbiguousLandGroup(data.Candidates); g != nil {
-		slog.Info("timer-debug: ambiguous spell-landed resolved to combined group name",
+		slog.Debug("timer-debug: ambiguous spell-landed resolved to combined group name",
 			"spell", g.displayName,
 			"candidates", len(data.Candidates),
 		)
 		return g.displayName
 	}
 
-	slog.Info("timer-debug: ambiguous spell-landed with no recent cast — skipping",
+	slog.Debug("timer-debug: ambiguous spell-landed with no recent cast — skipping",
 		"candidates", len(data.Candidates),
 		"last_cast_age_ms", lastAge.Milliseconds(),
 	)
@@ -1345,7 +1345,7 @@ func (e *Engine) removeSelfTimers() {
 	e.mu.Unlock()
 
 	if removed > 0 {
-		slog.Info("timer-debug: removed self timers on death", "active", active, "removed", removed)
+		slog.Debug("timer-debug: removed self timers on death", "active", active, "removed", removed)
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 	}
 }
@@ -1398,10 +1398,10 @@ func (e *Engine) removeOnKill(target string) {
 	e.mu.Unlock()
 
 	if removed > 0 {
-		slog.Info("timer-debug: removed timers on kill", "target", target, "removed", removed)
+		slog.Debug("timer-debug: removed timers on kill", "target", target, "removed", removed)
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 	} else {
-		slog.Info("timer-debug: kill matched no timers",
+		slog.Debug("timer-debug: kill matched no timers",
 			"target", target,
 			"normalized", normTarget,
 			"detrimental_survivors", survivors)
@@ -1485,7 +1485,7 @@ func (e *Engine) removeCharmTimers() {
 	e.mu.Unlock()
 
 	if removed > 0 {
-		slog.Info("timer-debug: cleared charm timers on charm break", "removed", removed)
+		slog.Debug("timer-debug: cleared charm timers on charm break", "removed", removed)
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 	}
 }
@@ -1521,7 +1521,7 @@ func (e *Engine) removeIllusionsForPlayer(player string) {
 	e.mu.Unlock()
 
 	if removed > 0 {
-		slog.Info("timer-debug: removed illusion timers", "player", player, "removed", removed)
+		slog.Debug("timer-debug: removed illusion timers", "player", player, "removed", removed)
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 	}
 }
@@ -1630,7 +1630,7 @@ func (e *Engine) applyDurationModifiers(spell *db.Spell, baseDurationSec float64
 	// illusion (SPA 58) to a flat 10000 ticks (~16h40m) — the formula duration
 	// and AA/item focus percentages never enter into it.
 	if permIllusion && buffmod.HasIllusionEffect(spell.EffectIDs[:]) {
-		slog.Info("timer-debug: permanent illusion override",
+		slog.Debug("timer-debug: permanent illusion override",
 			"name", spell.Name,
 			"base_sec", int(baseDurationSec),
 			"override_sec", buffmod.PermanentIllusionDurationSec,
@@ -1656,7 +1656,7 @@ func (e *Engine) applyDurationModifiers(spell *db.Spell, baseDurationSec float64
 	if res.ExtendedDurationSec <= 0 || res.ExtendedDurationSec == int(baseDurationSec) {
 		return baseDurationSec
 	}
-	slog.Info("timer-debug: applied duration modifiers",
+	slog.Debug("timer-debug: applied duration modifiers",
 		"name", spell.Name,
 		"base_sec", int(baseDurationSec),
 		"extended_sec", res.ExtendedDurationSec,
@@ -1682,7 +1682,7 @@ func (e *Engine) contributorsFor(eqPath, charName string) ([]buffmod.Modifier, b
 
 	res, err := buffmod.Compute(eqPath, charName, e.db)
 	if err != nil {
-		slog.Info("timer-debug: buffmod.Compute failed (using base duration)",
+		slog.Debug("timer-debug: buffmod.Compute failed (using base duration)",
 			"character", charName, "err", err)
 		return nil, false, false
 	}
