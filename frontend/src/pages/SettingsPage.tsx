@@ -10,6 +10,7 @@ import type { Config, DPSClassColors, NPCOverlaySections } from '../types/config
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
 import { OVERLAY_DEFS, resolveLockedMode } from '../lib/overlays'
 import type { OverlayName, LockedMode } from '../lib/overlays'
+import { DEV_HPS } from '../lib/devFlags'
 import { useOverlayPositionMode } from '../hooks/useOverlayPositionMode'
 import {
   CH_CHAIN_DEFAULT_PATTERN,
@@ -2702,6 +2703,13 @@ const OVERLAY_POPOUT_TOGGLE: Record<OverlayName, () => void> = {
   chMetronome:  () => { window.electron?.overlay?.toggleCHMetronome() },
 }
 
+// The HPS overlay can't be implemented correctly until EQ logs expose real
+// heal data, so it's hidden everywhere (see DEV_HPS / SHOW_HPS) — including
+// this lock-behaviour list. Flip VITE_DEV_HPS to surface it during dev.
+const VISIBLE_OVERLAY_DEFS = DEV_HPS
+  ? OVERLAY_DEFS
+  : OVERLAY_DEFS.filter((def) => def.name !== 'hps')
+
 function OverlayLockModeCard({
   modes,
   onChange,
@@ -2736,7 +2744,7 @@ function OverlayLockModeCard({
 
   const setAll = (mode: LockedMode): void => {
     const next: Partial<Record<OverlayName, LockedMode>> = {}
-    for (const def of OVERLAY_DEFS) next[def.name] = mode
+    for (const def of VISIBLE_OVERLAY_DEFS) next[def.name] = mode
     onChange(next)
   }
 
@@ -2839,7 +2847,7 @@ function OverlayLockModeCard({
 
       {/* Per-overlay rows */}
       <div className="flex flex-col gap-2">
-        {OVERLAY_DEFS.map((def) => {
+        {VISIBLE_OVERLAY_DEFS.map((def) => {
           const mode = resolveLockedMode(modes, def.name)
           return (
             <div
