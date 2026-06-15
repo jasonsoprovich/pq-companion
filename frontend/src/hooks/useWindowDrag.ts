@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import { useOverlayPositionMode } from './useOverlayPositionMode'
 
 /**
  * useWindowDrag — drives a cross-monitor window drag from a title-bar
@@ -13,12 +14,21 @@ import { useCallback } from 'react'
  *
  * Mousedowns that originate on an interactive control (anything inside a
  * `.no-drag` element, or a button) are ignored so header buttons keep working.
+ *
+ * A locked overlay's title bar carries the `.no-drag` class, which normally
+ * blocks dragging. While the global "Position overlays" mode is on we drop the
+ * `.no-drag` guard so even locked / display-only overlays can be repositioned;
+ * buttons and inputs are still skipped so their controls keep working.
  */
 export function useWindowDrag(): (e: React.MouseEvent) => void {
+  const positionMode = useOverlayPositionMode()
   return useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return // left button only
     const target = e.target as HTMLElement | null
-    if (target?.closest('.no-drag, button, a, input, select, textarea')) return
+    const skipSelector = positionMode
+      ? 'button, a, input, select, textarea'
+      : '.no-drag, button, a, input, select, textarea'
+    if (target?.closest(skipSelector)) return
 
     e.preventDefault()
     void window.electron?.window.dragStart()
@@ -28,5 +38,5 @@ export function useWindowDrag(): (e: React.MouseEvent) => void {
       void window.electron?.window.dragEnd()
     }
     document.addEventListener('mouseup', onUp)
-  }, [])
+  }, [positionMode])
 }

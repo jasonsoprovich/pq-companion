@@ -183,6 +183,28 @@ function setOverlayLocked(name: OverlayName, locked: boolean): void {
   saveLockStore(store)
 }
 
+// Global "Position overlays" mode: a transient flag (off on every launch) that
+// makes every popout overlay fully interactive at once so the user can drag
+// each one into place regardless of its locked mode — the recovery path for
+// "display-only" overlays, which otherwise never capture the mouse. Reverting
+// restores each overlay to its persisted lock state.
+let overlayPositionMode = false
+
+// Apply the correct mouse-input state to a freshly created overlay window:
+// fully interactive while positioning, otherwise click-through + non-resizable
+// when locked. (Unlocked overlays stay interactive, the window default.)
+function applyInitialOverlayInput(win: BrowserWindow, name: OverlayName): void {
+  if (overlayPositionMode) {
+    win.setIgnoreMouseEvents(false)
+    win.setResizable(true)
+    return
+  }
+  if (getOverlayLocked(name)) {
+    win.setIgnoreMouseEvents(true, { forward: true })
+    win.setResizable(false)
+  }
+}
+
 // Map a BrowserWindow back to its overlay name so IPC handlers can look up
 // which overlay is sending lock state changes.
 const windowToOverlayName = new WeakMap<BrowserWindow, OverlayName>()
@@ -771,10 +793,7 @@ function createDPSOverlay(): void {
   dpsOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   dpsOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   windowToOverlayName.set(dpsOverlayWindow, 'dps')
-  if (getOverlayLocked('dps')) {
-    dpsOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
-    dpsOverlayWindow.setResizable(false)
-  }
+  applyInitialOverlayInput(dpsOverlayWindow, 'dps')
   trackOverlayBounds('dps', dpsOverlayWindow)
 
   if (isDev) {
@@ -830,10 +849,7 @@ function createHPSOverlay(): void {
   hpsOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   hpsOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   windowToOverlayName.set(hpsOverlayWindow, 'hps')
-  if (getOverlayLocked('hps')) {
-    hpsOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
-    hpsOverlayWindow.setResizable(false)
-  }
+  applyInitialOverlayInput(hpsOverlayWindow, 'hps')
   trackOverlayBounds('hps', hpsOverlayWindow)
 
   if (isDev) {
@@ -889,10 +905,7 @@ function createBuffTimerOverlay(): void {
   buffTimerWindow.setAlwaysOnTop(true, 'screen-saver')
   buffTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   windowToOverlayName.set(buffTimerWindow, 'buffTimer')
-  if (getOverlayLocked('buffTimer')) {
-    buffTimerWindow.setIgnoreMouseEvents(true, { forward: true })
-    buffTimerWindow.setResizable(false)
-  }
+  applyInitialOverlayInput(buffTimerWindow, 'buffTimer')
   trackOverlayBounds('buffTimer', buffTimerWindow)
 
   if (isDev) {
@@ -946,10 +959,7 @@ function createCHChainOverlay(): void {
   chChainWindow.setAlwaysOnTop(true, 'screen-saver')
   chChainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   windowToOverlayName.set(chChainWindow, 'chChain')
-  if (getOverlayLocked('chChain')) {
-    chChainWindow.setIgnoreMouseEvents(true, { forward: true })
-    chChainWindow.setResizable(false)
-  }
+  applyInitialOverlayInput(chChainWindow, 'chChain')
   trackOverlayBounds('chChain', chChainWindow)
 
   if (isDev) {
@@ -1003,10 +1013,7 @@ function createCHMetronomeOverlay(): void {
   chMetronomeWindow.setAlwaysOnTop(true, 'screen-saver')
   chMetronomeWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   windowToOverlayName.set(chMetronomeWindow, 'chMetronome')
-  if (getOverlayLocked('chMetronome')) {
-    chMetronomeWindow.setIgnoreMouseEvents(true, { forward: true })
-    chMetronomeWindow.setResizable(false)
-  }
+  applyInitialOverlayInput(chMetronomeWindow, 'chMetronome')
   trackOverlayBounds('chMetronome', chMetronomeWindow)
 
   if (isDev) {
@@ -1062,10 +1069,7 @@ function createDetrimTimerOverlay(): void {
   detrimTimerWindow.setAlwaysOnTop(true, 'screen-saver')
   detrimTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   windowToOverlayName.set(detrimTimerWindow, 'detrimTimer')
-  if (getOverlayLocked('detrimTimer')) {
-    detrimTimerWindow.setIgnoreMouseEvents(true, { forward: true })
-    detrimTimerWindow.setResizable(false)
-  }
+  applyInitialOverlayInput(detrimTimerWindow, 'detrimTimer')
   trackOverlayBounds('detrimTimer', detrimTimerWindow)
 
   if (isDev) {
@@ -1121,10 +1125,7 @@ function createCustomTimerOverlay(): void {
   customTimerWindow.setAlwaysOnTop(true, 'screen-saver')
   customTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   windowToOverlayName.set(customTimerWindow, 'customTimer')
-  if (getOverlayLocked('customTimer')) {
-    customTimerWindow.setIgnoreMouseEvents(true, { forward: true })
-    customTimerWindow.setResizable(false)
-  }
+  applyInitialOverlayInput(customTimerWindow, 'customTimer')
   trackOverlayBounds('customTimer', customTimerWindow)
 
   if (isDev) {
@@ -1180,10 +1181,7 @@ function createRespawnTimerOverlay(): void {
   respawnTimerWindow.setAlwaysOnTop(true, 'screen-saver')
   respawnTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   windowToOverlayName.set(respawnTimerWindow, 'respawnTimer')
-  if (getOverlayLocked('respawnTimer')) {
-    respawnTimerWindow.setIgnoreMouseEvents(true, { forward: true })
-    respawnTimerWindow.setResizable(false)
-  }
+  applyInitialOverlayInput(respawnTimerWindow, 'respawnTimer')
   trackOverlayBounds('respawnTimer', respawnTimerWindow)
 
   if (isDev) {
@@ -1325,10 +1323,7 @@ function createNPCOverlay(): void {
   npcOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   npcOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   windowToOverlayName.set(npcOverlayWindow, 'npc')
-  if (getOverlayLocked('npc')) {
-    npcOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
-    npcOverlayWindow.setResizable(false)
-  }
+  applyInitialOverlayInput(npcOverlayWindow, 'npc')
   trackOverlayBounds('npc', npcOverlayWindow)
 
   if (isDev) {
@@ -1384,10 +1379,7 @@ function createRollTrackerOverlay(): void {
   rollTrackerWindow.setAlwaysOnTop(true, 'screen-saver')
   rollTrackerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   windowToOverlayName.set(rollTrackerWindow, 'rollTracker')
-  if (getOverlayLocked('rollTracker')) {
-    rollTrackerWindow.setIgnoreMouseEvents(true, { forward: true })
-    rollTrackerWindow.setResizable(false)
-  }
+  applyInitialOverlayInput(rollTrackerWindow, 'rollTracker')
   trackOverlayBounds('rollTracker', rollTrackerWindow)
 
   if (isDev) {
@@ -1941,6 +1933,44 @@ ipcMain.handle('overlay:lock:set', (event, locked: boolean) => {
   // re-enable OS edge-resize. Disable resize while locked so the window can't
   // be moved or resized; dragging is already gated by the no-drag class.
   win.setResizable(!locked)
+})
+
+// ── IPC handlers — global position mode ──────────────────────────────────────
+
+// Push the current position-mode flag to every overlay window and the main
+// window so their renderers (chrome fade, drag gating, lock hover) stay in sync.
+function broadcastPositionMode(): void {
+  const targets: Array<BrowserWindow | null> = [mainWindow]
+  for (const name of RESETTABLE_OVERLAYS) targets.push(overlayWindowByName(name))
+  for (const win of targets) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('overlay:position-mode-changed', overlayPositionMode)
+    }
+  }
+}
+
+function setOverlayPositionMode(enabled: boolean): void {
+  overlayPositionMode = enabled
+  // Flip every open overlay's window-level input state: fully interactive while
+  // positioning, back to its persisted lock state when done.
+  for (const name of RESETTABLE_OVERLAYS) {
+    const win = overlayWindowByName(name)
+    if (!win || win.isDestroyed()) continue
+    if (enabled) {
+      win.setIgnoreMouseEvents(false)
+      win.setResizable(true)
+    } else {
+      const locked = getOverlayLocked(name)
+      win.setIgnoreMouseEvents(locked, { forward: true })
+      win.setResizable(!locked)
+    }
+  }
+  broadcastPositionMode()
+}
+
+ipcMain.handle('overlay:position-mode:get', () => overlayPositionMode)
+ipcMain.handle('overlay:position-mode:set', (_event, enabled: boolean) => {
+  setOverlayPositionMode(Boolean(enabled))
 })
 
 // ── IPC handlers — dialogs ────────────────────────────────────────────────────

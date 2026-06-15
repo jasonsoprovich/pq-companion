@@ -10,6 +10,7 @@ import type { Config, DPSClassColors, NPCOverlaySections } from '../types/config
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
 import { OVERLAY_DEFS, resolveLockedMode } from '../lib/overlays'
 import type { OverlayName, LockedMode } from '../lib/overlays'
+import { useOverlayPositionMode } from '../hooks/useOverlayPositionMode'
 import {
   CH_CHAIN_DEFAULT_PATTERN,
   CH_CHAIN_NUMERIC_PATTERN,
@@ -2569,6 +2570,11 @@ const LOCK_MODE_OPTIONS: ReadonlyArray<{
     label: 'Click-through',
     hint: 'Only the title-bar buttons are clickable; scrolling and clicks everywhere else pass through to the game.',
   },
+  {
+    value: 'display-only',
+    label: 'Display only',
+    hint: 'Nothing ever captures the mouse — the title bar is hidden too. A pure HUD. Use “Position overlays” above to move it.',
+  },
 ]
 
 function OverlayLockModeCard({
@@ -2578,6 +2584,7 @@ function OverlayLockModeCard({
   modes: Partial<Record<OverlayName, LockedMode>>
   onChange: (next: Partial<Record<OverlayName, LockedMode>>) => void
 }): React.ReactElement {
+  const positionMode = useOverlayPositionMode()
   const setAll = (mode: LockedMode): void => {
     const next: Partial<Record<OverlayName, LockedMode>> = {}
     for (const def of OVERLAY_DEFS) next[def.name] = mode
@@ -2601,6 +2608,46 @@ function OverlayLockModeCard({
         off-screen, use its <span style={{ color: 'var(--color-foreground)' }}>Reset position</span>{' '}
         button to recenter it on your primary monitor and unlock it.
       </p>
+
+      {/* Position overlays — global edit mode. Makes every open overlay
+          interactive so they can be dragged into place regardless of mode;
+          this is the only way to move a "Display only" overlay. */}
+      <div
+        className="mb-3 flex items-center justify-between rounded p-3"
+        style={{
+          backgroundColor: positionMode ? 'var(--color-primary)' : 'var(--color-surface-2)',
+          border: '1px solid var(--color-border)',
+        }}
+      >
+        <div className="flex flex-col">
+          <span
+            className="text-sm font-semibold"
+            style={{ color: positionMode ? '#fff' : 'var(--color-foreground)' }}
+          >
+            Position overlays
+          </span>
+          <span
+            className="text-xs"
+            style={{ color: positionMode ? 'rgba(255,255,255,0.85)' : 'var(--color-muted-foreground)' }}
+          >
+            {positionMode
+              ? 'All open overlays are draggable. Move them, then turn this off to lock them back.'
+              : 'Temporarily make every open overlay draggable so you can arrange them (open the ones you want first).'}
+          </span>
+        </div>
+        <button
+          onClick={() => window.electron?.overlay?.setPositionMode?.(!positionMode)}
+          className="rounded px-3 py-1 text-xs font-semibold"
+          style={{
+            backgroundColor: positionMode ? '#fff' : 'var(--color-primary)',
+            color: positionMode ? 'var(--color-primary)' : '#fff',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {positionMode ? 'Done' : 'Position overlays'}
+        </button>
+      </div>
 
       {/* Mode legend */}
       <div className="mb-3 flex flex-col gap-1">

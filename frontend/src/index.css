@@ -119,3 +119,11 @@ body {
 .no-drag {
   -webkit-app-region: no-drag;
 }
+
+/* "Display only" overlay lock mode hides the title bar entirely so the overlay
+   is a pure, fully click-through HUD. The class is toggled on <html> per
+   overlay window by useOverlayLock; it's lifted while the global "Position
+   overlays" mode is on so the header can be grabbed again. */
+.overlay-hide-header .overlay-header {
+  display: none !important;
+}

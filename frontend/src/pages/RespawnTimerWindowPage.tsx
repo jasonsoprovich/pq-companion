@@ -59,7 +59,7 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
       <div
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
-        className={locked ? 'no-drag' : 'drag-region'}
+        className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
         style={{
           display: 'flex',
           alignItems: 'center',

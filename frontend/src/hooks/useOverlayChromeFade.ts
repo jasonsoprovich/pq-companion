@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getConfig } from '../services/api'
+import { useOverlayPositionMode } from './useOverlayPositionMode'
 
 const POLL_INTERVAL = 3000
 
@@ -32,6 +33,9 @@ export function useOverlayChromeFade(): boolean {
   const [hovered, setHovered] = useState(false)
   const [chromeVisible, setChromeVisible] = useState(true)
   const fadeTimer = useRef<number | null>(null)
+  // While positioning overlays the chrome must stay visible so a faded-out or
+  // empty overlay is still visible and grabbable.
+  const positionMode = useOverlayPositionMode()
 
   // Poll the config so a settings change is picked up live, mirroring
   // useOverlayOpacity.
@@ -85,5 +89,5 @@ export function useOverlayChromeFade(): boolean {
     }
   }, [enabled, hovered, delayMs])
 
-  return chromeVisible
+  return chromeVisible || positionMode
 }

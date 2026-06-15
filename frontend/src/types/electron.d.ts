@@ -67,6 +67,9 @@ export interface ElectronAPI {
     onLockChanged: (cb: (locked: boolean) => void) => () => void
     resetPosition: (name: string) => Promise<void>
     resetAllPositions: () => Promise<void>
+    getPositionMode: () => Promise<boolean>
+    setPositionMode: (enabled: boolean) => Promise<void>
+    onPositionModeChanged: (cb: (enabled: boolean) => void) => () => void
     setDisplay: (id: number) => Promise<void>
   }
   screen: {

@@ -90,6 +90,17 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('overlay:reset-position', name),
     resetAllPositions: (): Promise<void> =>
       ipcRenderer.invoke('overlay:reset-all-positions'),
+    // Global "Position overlays" mode: temporarily make every overlay
+    // interactive so they can be dragged into place regardless of locked mode.
+    getPositionMode: (): Promise<boolean> =>
+      ipcRenderer.invoke('overlay:position-mode:get'),
+    setPositionMode: (enabled: boolean): Promise<void> =>
+      ipcRenderer.invoke('overlay:position-mode:set', enabled),
+    onPositionModeChanged: (cb: (enabled: boolean) => void): (() => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, enabled: boolean): void => cb(enabled)
+      ipcRenderer.on('overlay:position-mode-changed', listener)
+      return () => ipcRenderer.removeListener('overlay:position-mode-changed', listener)
+    },
     // Pin trigger alert text (and the positioning card) to one monitor.
     setDisplay: (id: number): Promise<void> =>
       ipcRenderer.invoke('overlay:set-display', id),

@@ -29,8 +29,11 @@ export type OverlayName =
  *                    move off and clicks pass through to the game.
  *   "clickthrough" — only the title-bar buttons are clickable; scrolling and
  *                    clicks everywhere else pass through to the game.
+ *   "display-only" — nothing ever captures the mouse (the title bar is hidden
+ *                    too); a pure HUD. Reposition it with the global "Position
+ *                    overlays" toggle in Settings → Overlays.
  */
-export type LockedMode = 'interactive' | 'clickthrough'
+export type LockedMode = 'interactive' | 'clickthrough' | 'display-only'
 
 export const DEFAULT_LOCKED_MODE: LockedMode = 'interactive'
 
