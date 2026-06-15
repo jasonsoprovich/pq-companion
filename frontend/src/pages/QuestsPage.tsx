@@ -88,19 +88,24 @@ export default function QuestsPage(): React.ReactElement {
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Monotonic token so a slow earlier request can't clobber a newer one
+  // (out-of-order responses). Each run bumps it; only the latest applies.
+  const seqRef = useRef(0)
 
   const run = useCallback((q: string, offset: number) => {
     const more = offset > 0
+    const seq = ++seqRef.current
     if (more) setLoadingMore(true)
     else setLoading(true)
     setError(null)
     searchQuests(q, { limit: PAGE_SIZE, offset })
       .then((res) => {
+        if (seq !== seqRef.current) return
         setTotal(res.total)
         setResults((prev) => (more ? [...prev, ...res.items] : res.items))
       })
-      .catch((e) => setError(String(e)))
-      .finally(() => { setLoading(false); setLoadingMore(false) })
+      .catch((e) => { if (seq === seqRef.current) setError(String(e)) })
+      .finally(() => { if (seq === seqRef.current) { setLoading(false); setLoadingMore(false) } })
   }, [])
 
   useEffect(() => {
