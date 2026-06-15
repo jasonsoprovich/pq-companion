@@ -2914,21 +2914,15 @@ export default function TriggersPage(): React.ReactElement {
               </button>
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {/* Create form */}
-              {showCreate && (
-                <TriggerForm
-                  prefill={createPrefill}
-                  categories={categories}
-                  onCategoriesChanged={reloadCategories}
-                  onSaved={handleCreated}
-                  onCancel={handleCancelCreate}
-                />
-              )}
-
-              {/* Search + class filter */}
+            <>
+              {/* Search + filters — pinned above the scrolling list (matches
+                  the Inventory/Keys layout) so the controls stay visible while
+                  the list scrolls. */}
               {triggers.length > 0 && (
-                <div className="flex items-center gap-2">
+                <div
+                  className="flex items-center gap-2 border-b px-4 py-3 shrink-0"
+                  style={{ borderColor: 'var(--color-border)' }}
+                >
                   <div className="relative flex-1">
                     <Search
                       size={12}
@@ -3048,6 +3042,18 @@ export default function TriggersPage(): React.ReactElement {
                   )}
                 </div>
               )}
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {/* Create form */}
+                {showCreate && (
+                  <TriggerForm
+                    prefill={createPrefill}
+                    categories={categories}
+                    onCategoriesChanged={reloadCategories}
+                    onSaved={handleCreated}
+                    onCancel={handleCancelCreate}
+                  />
+                )}
 
               {/* No-match state */}
               {triggers.length > 0 && filteredTriggers.length === 0 && (
@@ -3374,6 +3380,7 @@ export default function TriggersPage(): React.ReactElement {
                 )
               })}
             </div>
+            </>
           )}
         </>
       )}
