@@ -2010,9 +2010,9 @@ export default function SettingsPage(): React.ReactElement {
                 </span>
                 <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
                   Tracks a second, independent chain — e.g. AAA/BBB ramp-heal calls alongside the
-                  001/002 main tank chain. The overlay and metronome gain a Main&thinsp;/&thinsp;Ramp
+                  001/002 main tank chain. The overlay and metronome gain a Main&thinsp;/&thinsp;Secondary
                   switch. Enabling splits the default patterns into numbers-only (main) and
-                  letters-only (ramp); disabling restores the combined default. Custom patterns are
+                  letters-only (secondary); disabling restores the combined default. Custom patterns are
                   left untouched.
                 </span>
               </span>

@@ -39,7 +39,7 @@ function positionLetter(position: number): string {
   return String(position)
 }
 
-// ChainToggle is the small Main/Ramp segmented switch in the header, styled
+// ChainToggle is the small Main/Secondary segmented switch in the header, styled
 // after the NPC overlay's Stats/Loot/Timers view toggle.
 function ChainToggle({ view, onChange }: { view: ChainView; onChange: (v: ChainView) => void }): React.ReactElement {
   const btn = (active: boolean): React.CSSProperties => ({
@@ -56,7 +56,7 @@ function ChainToggle({ view, onChange }: { view: ChainView; onChange: (v: ChainV
   return (
     <div className="no-drag" style={{ display: 'inline-flex', gap: 2, backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: 4, padding: 1 }}>
       <button style={btn(view === 'main')} onClick={() => onChange('main')}>Main</button>
-      <button style={btn(view === 'ramp')} onClick={() => onChange('ramp')}>Ramp</button>
+      <button style={btn(view === 'ramp')} onClick={() => onChange('ramp')}>Secondary</button>
     </div>
   )
 }
@@ -310,7 +310,7 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
           {secondaryEnabled && <ChainToggle view={activeView} onChange={changeView} />}
           <button
             onClick={() => clearTimers(activeCategory).catch(() => {})}
-            title={activeView === 'ramp' ? 'Clear the ramp chain' : 'Clear the current chain'}
+            title={activeView === 'ramp' ? 'Clear the secondary chain' : 'Clear the current chain'}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -364,7 +364,7 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
           >
             <HeartPulse size={22} style={{ opacity: 0.15, color: '#3b82f6' }} />
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: 0, textAlign: 'center' }}>
-              {activeView === 'ramp' ? 'Waiting for a ramp chain…' : 'Waiting for a CH chain…'}
+              {activeView === 'ramp' ? 'Waiting for a secondary chain…' : 'Waiting for a CH chain…'}
             </p>
           </div>
         ) : (

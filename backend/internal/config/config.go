@@ -479,7 +479,11 @@ const (
 	// ("Soandso shouts") AND second person for your own ("You shout"). Missing
 	// the "?" on shout/OOC was a bug — own shout/OOC chain calls never matched.
 	chChainPatternPrefix = `^(?P<caster>(You|[A-Z][a-z]{3,14})) (?:tells? (?:the (?:raid|group|guild)|your (party|raid|guild)|[A-Za-z]+(?:-[A-Za-z]+)+:\d)|says? out of character|shouts?|auctions?),\s+'[^a-zA-Z0-9]*\b(?P<chainnum>`
-	chChainPatternSuffix = `)[^a-zA-Z0-9]*\b(?:CH|COMPLETE HEALING)\b(?:[^a-zA-Z0-9]*(?:on|to)[^a-zA-Z0-9]*)?[^a-zA-Z0-9]*(?P<target>[A-Z][a-z]{3,14})\b(.*)$`
+	// The heal token tolerates the common calling variants: "CH",
+	// "COMPLETE HEALING", "DCH" (druid complete heal), and a bare "RAMP"
+	// marker. Each is whole-word-anchored (\b…\b) so the surrounding context
+	// keeps it from over-matching ordinary chat.
+	chChainPatternSuffix = `)[^a-zA-Z0-9]*\b(?:DCH|CH|COMPLETE HEALING|RAMP)\b(?:[^a-zA-Z0-9]*(?:on|to)[^a-zA-Z0-9]*)?[^a-zA-Z0-9]*(?P<target>[A-Z][a-z]{3,14})\b(.*)$`
 
 	// DefaultCHChainPattern is the single-chain catch-all: numeric (001) and
 	// letter (AAA) markers both feed the one main chain.
@@ -501,6 +505,12 @@ const (
 // upgrade map.
 const legacyCHChainPrefixV2 = `^(?P<caster>(You|[A-Z][a-z]{3,14})) (?:tells? (?:the (?:raid|group|guild)|your (party|raid|guild)|[A-Za-z]+(?:-[A-Za-z]+)+:\d)|says out of character|shouts|auctions?),\s+'[^a-zA-Z0-9]*\b(?P<chainnum>`
 
+// legacyCHChainSuffixV3 is the chChainPatternSuffix value shipped before the
+// heal token expanded from "CH"/"COMPLETE HEALING" to also accept "DCH" and
+// "RAMP". Kept verbatim so the prior defaults (which paired this suffix with
+// either prefix) can be reconstructed for the upgrade maps.
+const legacyCHChainSuffixV3 = `)[^a-zA-Z0-9]*\b(?:CH|COMPLETE HEALING)\b(?:[^a-zA-Z0-9]*(?:on|to)[^a-zA-Z0-9]*)?[^a-zA-Z0-9]*(?P<target>[A-Z][a-z]{3,14})\b(.*)$`
+
 // legacyCHChainPatternUpgrades maps every PREVIOUS shipped value of the
 // primary pattern (catch-all or numeric-only when split) to its current
 // equivalent. applyDefaults upgrades a saved pattern that exactly matches a
@@ -513,14 +523,18 @@ var legacyCHChainPatternUpgrades = map[string]string{
 	// v1 (89f3cd1): numeric-only, raid tells only, strict dash decorations.
 	`^(?P<caster>\w+) tells the raid, '-+\s*0*(?P<chainnum>\d+)\s*-+\s*CH\s+(?P<target>\w+)`: DefaultCHChainPattern,
 	// v2: own "shout"/"say OOC" not matched (verbs lacked the optional "s").
-	legacyCHChainPrefixV2 + `\d{3,4}|[A-Za-z]{3,4}` + chChainPatternSuffix: DefaultCHChainPattern,
-	legacyCHChainPrefixV2 + `\d{3,4}` + chChainPatternSuffix:               DefaultCHChainNumericPattern,
+	legacyCHChainPrefixV2 + `\d{3,4}|[A-Za-z]{3,4}` + legacyCHChainSuffixV3: DefaultCHChainPattern,
+	legacyCHChainPrefixV2 + `\d{3,4}` + legacyCHChainSuffixV3:               DefaultCHChainNumericPattern,
+	// v3: current prefix, heal token CH/COMPLETE HEALING only (pre DCH/RAMP).
+	chChainPatternPrefix + `\d{3,4}|[A-Za-z]{3,4}` + legacyCHChainSuffixV3: DefaultCHChainPattern,
+	chChainPatternPrefix + `\d{3,4}` + legacyCHChainSuffixV3:               DefaultCHChainNumericPattern,
 }
 
 // legacyCHChainSecondaryUpgrades is the same upgrade map for the secondary
 // (ramp/split) letters-only pattern.
 var legacyCHChainSecondaryUpgrades = map[string]string{
-	legacyCHChainPrefixV2 + `[A-Za-z]{3,4}` + chChainPatternSuffix: DefaultCHChainSecondaryPattern,
+	legacyCHChainPrefixV2 + `[A-Za-z]{3,4}` + legacyCHChainSuffixV3: DefaultCHChainSecondaryPattern,
+	chChainPatternPrefix + `[A-Za-z]{3,4}` + legacyCHChainSuffixV3:  DefaultCHChainSecondaryPattern,
 }
 
 // DefaultCHChainIntervalSecs is the default per-cast countdown cadence.

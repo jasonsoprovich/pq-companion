@@ -16,8 +16,10 @@
 // third-person casts ("Soandso shouts") match.
 const PREFIX =
   `^(?P<caster>(You|[A-Z][a-z]{3,14})) (?:tells? (?:the (?:raid|group|guild)|your (party|raid|guild)|[A-Za-z]+(?:-[A-Za-z]+)+:\\d)|says? out of character|shouts?|auctions?),\\s+'[^a-zA-Z0-9]*\\b(?P<chainnum>`
+// The heal token accepts CH / COMPLETE HEALING / DCH (druid complete heal) /
+// a bare RAMP marker — each whole-word-anchored to stay tight.
 const SUFFIX =
-  `)[^a-zA-Z0-9]*\\b(?:CH|COMPLETE HEALING)\\b(?:[^a-zA-Z0-9]*(?:on|to)[^a-zA-Z0-9]*)?[^a-zA-Z0-9]*(?P<target>[A-Z][a-z]{3,14})\\b(.*)$`
+  `)[^a-zA-Z0-9]*\\b(?:DCH|CH|COMPLETE HEALING|RAMP)\\b(?:[^a-zA-Z0-9]*(?:on|to)[^a-zA-Z0-9]*)?[^a-zA-Z0-9]*(?P<target>[A-Z][a-z]{3,14})\\b(.*)$`
 
 // Single-chain catch-all: numeric (001) and letter (AAA) markers both feed
 // the one main chain.

@@ -152,7 +152,7 @@ function Stepper(props: {
   )
 }
 
-// ChainSwitch is a compact Main/Ramp segmented control matching the Stepper
+// ChainSwitch is a compact Main/Secondary segmented control matching the Stepper
 // layout (label above control), shown only when the secondary chain exists.
 function ChainSwitch({ chain, onChange }: { chain: ChainView; onChange: (v: ChainView) => void }): React.ReactElement {
   const btn = (active: boolean): React.CSSProperties => ({
@@ -173,7 +173,7 @@ function ChainSwitch({ chain, onChange }: { chain: ChainView; onChange: (v: Chai
       </span>
       <div style={{ display: 'inline-flex', gap: 2, backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: 4, padding: 1 }}>
         <button style={btn(chain === 'main')} onClick={() => onChange('main')}>Main</button>
-        <button style={btn(chain === 'ramp')} onClick={() => onChange('ramp')}>Ramp</button>
+        <button style={btn(chain === 'ramp')} onClick={() => onChange('ramp')}>Secondary</button>
       </div>
     </div>
   )
@@ -346,7 +346,7 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
           </span>
           <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginLeft: 2 }}>
             {posLabel(cfg.position, activeChain)}/{cfg.chainSize}
-            {activeChain === 'ramp' ? ' · ramp' : ''}
+            {activeChain === 'ramp' ? ' · secondary' : ''}
           </span>
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
