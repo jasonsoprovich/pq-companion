@@ -99,10 +99,12 @@ function TabButton({ active, onClick, children }: TabButtonProps): React.ReactEl
       className="px-4 py-2 text-sm font-medium rounded-t transition-colors"
       style={{
         backgroundColor: active ? 'var(--color-surface)' : 'transparent',
+        borderTop: 'none',
+        borderLeft: 'none',
+        borderRight: 'none',
         borderBottom: active ? '2px solid var(--color-primary)' : '2px solid transparent',
         color: active ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
         cursor: 'pointer',
-        border: 'none',
       }}
     >
       {children}
