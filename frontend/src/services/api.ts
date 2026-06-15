@@ -51,14 +51,40 @@ export interface GlobalSearchResult {
 
 import { getBackendBaseUrl } from './backendUrl'
 
+// A GET can fail to even reach the backend during the brief startup window
+// before the sidecar is accepting connections — fetch rejects with a TypeError
+// ("Failed to fetch") rather than returning a response. Previously the very
+// first page's load (e.g. the Items landing route) could lose that race and
+// then never retry, leaving the page empty until the user navigated elsewhere.
+// Retry only that connection-level failure, on GETs (idempotent). HTTP error
+// *responses* and parse errors are surfaced immediately, never retried.
+const GET_CONNECT_RETRIES = 5
+const GET_RETRY_DELAY_MS = 250
+
+function isConnectionError(err: unknown): boolean {
+  return err instanceof TypeError
+}
+
 async function get<T>(path: string): Promise<T> {
   const baseUrl = await getBackendBaseUrl()
-  const res = await fetch(`${baseUrl}${path}`)
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(err.error ?? res.statusText)
+  let lastErr: unknown
+  for (let attempt = 0; attempt <= GET_CONNECT_RETRIES; attempt++) {
+    try {
+      const res = await fetch(`${baseUrl}${path}`)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(err.error ?? res.statusText)
+      }
+      return res.json() as Promise<T>
+    } catch (err) {
+      if (!isConnectionError(err)) throw err
+      lastErr = err
+      if (attempt < GET_CONNECT_RETRIES) {
+        await new Promise((r) => setTimeout(r, GET_RETRY_DELAY_MS))
+      }
+    }
   }
-  return res.json() as Promise<T>
+  throw lastErr
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
