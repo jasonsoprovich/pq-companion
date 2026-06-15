@@ -52,6 +52,7 @@ type Tailer struct {
 	filePath          string
 	offset            int64
 	remainder         []byte // incomplete line fragment from the previous read
+	remainderStable   bool   // remainder survived one idle poll — safe to flush as a complete line
 	detectedCharacter string // last auto-detected character name (empty when manually configured)
 	paused            bool   // true while a log replay session owns the dispatch pipeline
 }
@@ -243,6 +244,7 @@ func (t *Tailer) readLines(logPath string) ([]LogEvent, []rawLine) {
 		t.closeFile()
 		t.filePath = logPath
 		t.remainder = nil
+		t.remainderStable = false
 	}
 
 	if t.file == nil {
@@ -276,9 +278,17 @@ func (t *Tailer) readLines(logPath string) ([]LogEvent, []rawLine) {
 		slog.Info("logparser: log file truncated, resetting offset")
 		t.offset = 0
 		t.remainder = nil
+		t.remainderStable = false
 	}
 	if info.Size() == t.offset {
-		return nil, nil // no new data
+		// No new data. EQ writes each line terminated by '\n', but the final
+		// line before the game goes idle (e.g. the camp countdown right before
+		// you log out to character select) can sit unterminated until the next
+		// session appends to the file — leaving it parked in t.remainder, so
+		// triggers never see it even though it's on disk and visible in browse.
+		// Once that remainder has survived a full idle poll it must be a
+		// complete line, so flush it through the normal pipeline.
+		return t.flushStaleRemainder()
 	}
 
 	// Clamp read size to maxReadPerTick.
@@ -303,6 +313,38 @@ func (t *Tailer) readLines(logPath string) ([]LogEvent, []rawLine) {
 	return t.parseChunk(buf[:n])
 }
 
+// flushStaleRemainder emits a parked remainder line once it has survived a full
+// idle poll with no new bytes appended — at which point EQ has finished writing
+// it and the only thing missing is the trailing newline. The first idle poll
+// marks the remainder stable; the next one flushes it. Returns nothing while
+// the remainder is empty, still settling, or not yet a complete EQ line.
+// Must be called with t.mu held.
+func (t *Tailer) flushStaleRemainder() ([]LogEvent, []rawLine) {
+	if len(t.remainder) == 0 {
+		t.remainderStable = false
+		return nil, nil
+	}
+	if !t.remainderStable {
+		t.remainderStable = true // give EQ one more poll to finish the write
+		return nil, nil
+	}
+
+	line := strings.TrimRight(string(t.remainder), "\r")
+	ts, msg, ok := ParseRawLine(line)
+	if !ok {
+		return nil, nil // not a complete EQ line yet — keep waiting
+	}
+	t.remainder = nil
+	t.remainderStable = false
+
+	raws := []rawLine{{ts: ts, msg: msg}}
+	var events []LogEvent
+	if ev, classified := ParseLine(line); classified {
+		events = append(events, ev)
+	}
+	return events, raws
+}
+
 // parseChunk splits raw bytes into lines and parses each complete line.
 // Any trailing incomplete line is saved in t.remainder for the next call.
 // Returns the set of recognised LogEvents and every raw line that had a valid
@@ -313,6 +355,9 @@ func (t *Tailer) parseChunk(data []byte) ([]LogEvent, []rawLine) {
 		data = append(t.remainder, data...)
 		t.remainder = nil
 	}
+	// New bytes arrived: any leftover remainder this produces is fresh, so it
+	// must settle for another idle poll before flushStaleRemainder emits it.
+	t.remainderStable = false
 
 	var events []LogEvent
 	var raws []rawLine
