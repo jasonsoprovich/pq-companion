@@ -284,6 +284,20 @@ type Preferences struct {
 	DefaultOverlayFontFamily string `yaml:"default_overlay_font_family,omitempty" json:"default_overlay_font_family"`
 	DefaultOverlayFontSize   int    `yaml:"default_overlay_font_size,omitempty" json:"default_overlay_font_size"`
 
+	// CustomTimerAlert is the default audio cue attached to manually-added
+	// Custom Timer countdowns. When Enabled, the Custom Timers overlay's
+	// quick-add form arms a fading-soon alert on each new timer (the player
+	// can toggle it off per timer with the bell button). Trigger-driven
+	// custom timers carry their own alerts and are unaffected. Disabled
+	// (zero value) by default — manual timers stay silent as before.
+	CustomTimerAlert TimerAlertPref `yaml:"custom_timer_alert,omitempty" json:"custom_timer_alert"`
+
+	// RespawnAlert announces NPC respawns: when Enabled, an audio cue fires as
+	// each respawn timer crosses Seconds remaining (0 = at "POP"). Applies to
+	// every auto-generated respawn timer; there is no per-timer toggle since
+	// they aren't added by hand. Disabled (zero value) by default.
+	RespawnAlert TimerAlertPref `yaml:"respawn_alert,omitempty" json:"respawn_alert"`
+
 	// DeveloperMode reveals the Developer tab in the Settings page, which
 	// hosts power-user tools (SQL sandbox, schema viewer). Toggled in-app
 	// via the Ctrl+Shift+D shortcut while the Settings page is focused.
@@ -346,6 +360,23 @@ type Preferences struct {
 	// position here; keys absent from the list keep their default order after
 	// the listed ones. Empty/omitted = default order.
 	SidebarOrder []string `yaml:"sidebar_order,omitempty" json:"sidebar_order,omitempty"`
+}
+
+// TimerAlertPref is a global default "fading soon" notification for the Custom
+// Timer and Respawn overlays — the settings-page counterpart to a trigger's
+// per-trigger TimerAlert. The frontend stores and fires it (mirroring
+// useTimerAlerts), so the config package only persists the fields and never
+// introspects them. Type is "play_sound" or "text_to_speech"; Seconds is the
+// remaining-time threshold the alert fires at; volumes are 0–100.
+type TimerAlertPref struct {
+	Enabled     bool   `yaml:"enabled,omitempty" json:"enabled"`
+	Seconds     int    `yaml:"seconds,omitempty" json:"seconds"`
+	Type        string `yaml:"type,omitempty" json:"type"`
+	SoundPath   string `yaml:"sound_path,omitempty" json:"sound_path"`
+	Volume      int    `yaml:"volume,omitempty" json:"volume"`
+	TTSTemplate string `yaml:"tts_template,omitempty" json:"tts_template"`
+	Voice       string `yaml:"voice,omitempty" json:"voice"`
+	TTSVolume   int    `yaml:"tts_volume,omitempty" json:"tts_volume"`
 }
 
 // OverlayPosition is an on-screen point in the trigger overlay window's

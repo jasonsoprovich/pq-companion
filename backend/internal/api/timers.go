@@ -41,11 +41,16 @@ func (h *timerHandler) clear(w http.ResponseWriter, r *http.Request) {
 
 // startCustom handles POST /api/overlay/timers/custom — starts a manual
 // countdown timer on the Custom Timers overlay without needing a trigger.
-// Body: {"name": "Break over", "duration_secs": 300}.
+// Body: {"name": "Break over", "duration_secs": 300, "alerts": [...]}.
+// The optional "alerts" array carries the same fading-soon notification shape
+// the trigger engine emits (the frontend builds it from the user's global
+// Custom-timer alert preference); it is stored opaquely on the timer and fired
+// client-side by useTimerAlerts. Omit or pass null for a silent timer.
 func (h *timerHandler) startCustom(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name         string `json:"name"`
-		DurationSecs int    `json:"duration_secs"`
+		Name         string          `json:"name"`
+		DurationSecs int             `json:"duration_secs"`
+		Alerts       json.RawMessage `json:"alerts,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -62,8 +67,9 @@ func (h *timerHandler) startCustom(w http.ResponseWriter, r *http.Request) {
 	}
 	// spellID 0 — manual timers have no spell, so no duration focuses apply.
 	// targetName "" — a manually-added timer has no captured target.
+	// Alerts pass straight through to the timer's TimerAlerts (nil = silent).
 	h.engine.StartExternal(req.Name, string(spelltimer.CategoryCustom),
-		req.DurationSecs, 0, time.Now(), nil, 0, "")
+		req.DurationSecs, 0, time.Now(), req.Alerts, 0, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 
