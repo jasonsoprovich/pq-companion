@@ -39,12 +39,23 @@ import (
 )
 
 // questEntry is one NPC's quest item activity. Rewards are items the NPC gives
-// out (quest rewards + cursor-summoned items); TurnIns are items it requires.
+// out (quest rewards + cursor-summoned items); TurnIns are items it requires;
+// Steps pair them (turn in Requires → receive Grants) so a multi-NPC questline
+// can be reconstructed by chaining steps through their shared items.
 type questEntry struct {
-	Zone    string `json:"zone"`
-	NPC     string `json:"npc"`
-	Rewards []int  `json:"rewards,omitempty"`
-	TurnIns []int  `json:"turnins,omitempty"`
+	Zone    string      `json:"zone"`
+	NPC     string      `json:"npc"`
+	Rewards []int       `json:"rewards,omitempty"`
+	TurnIns []int       `json:"turnins,omitempty"`
+	Steps   []questStep `json:"steps,omitempty"`
+}
+
+// questStep is one turn-in→reward exchange at an NPC. Requires is empty for a
+// reward granted without a turn-in (e.g. a quest-start item handed out in
+// dialogue).
+type questStep struct {
+	Requires []int `json:"requires,omitempty"`
+	Grants   []int `json:"grants,omitempty"`
 }
 
 var (
@@ -122,7 +133,7 @@ func parseTree(root string) ([]questEntry, parseStats) {
 		if err != nil {
 			return nil
 		}
-		rewards, turnins := parseScript(string(src))
+		rewards, turnins, steps := parseScript(string(src))
 		if len(rewards) == 0 && len(turnins) == 0 {
 			return nil
 		}
@@ -131,7 +142,7 @@ func parseTree(root string) ([]questEntry, parseStats) {
 		stats.turnins += len(turnins)
 		entries = append(entries, questEntry{
 			Zone: zone, NPC: npc,
-			Rewards: rewards, TurnIns: turnins,
+			Rewards: rewards, TurnIns: turnins, Steps: steps,
 		})
 		return nil
 	})
@@ -139,34 +150,104 @@ func parseTree(root string) ([]questEntry, parseStats) {
 	return entries, stats
 }
 
-// parseScript extracts reward and turn-in item IDs from one quest script. It
-// uses balanced-paren extraction (not line regexes) so multi-line calls and
-// nested parens like math.random(0,5) don't derail the arg parsing.
-func parseScript(src string) (rewards, turnins []int) {
+// parseScript extracts reward and turn-in item IDs from one quest script plus
+// the per-step turn-in→reward pairings. It uses balanced-paren extraction (not
+// line regexes) so multi-line calls and nested parens like math.random(0,5)
+// don't derail the arg parsing.
+//
+// Step pairing is positional: quest scripts are structured as a chain of
+//
+//	if(check_turn_in(...{item1=A}...)) then ... QuestReward(...,B) end
+//	elseif(check_turn_in(...{item1=C}...)) then ... QuestReward(...,D) end
+//
+// so the reward calls that sit between one check_turn_in and the next belong to
+// that turn-in. Reward calls before the first turn-in are standalone grants
+// (e.g. a quest-start item handed out in dialogue) with no requirement.
+func parseScript(src string) (rewards, turnins []int, steps []questStep) {
 	rewardSet := map[int]bool{}
 	turnInSet := map[int]bool{}
 
-	for _, args := range callArgs(src, "QuestReward") {
-		for _, id := range rewardItemsFromQuestReward(args) {
+	// Reward calls with their positions and granted items.
+	type grantCall struct {
+		pos    int
+		grants []int
+	}
+	var grantCalls []grantCall
+	for _, c := range callMatches(src, "QuestReward") {
+		ids := rewardItemsFromQuestReward(c.args)
+		if len(ids) > 0 {
+			grantCalls = append(grantCalls, grantCall{c.pos, ids})
+		}
+	}
+	for _, fn := range []string{"SummonItem", "SummonCursorItem"} {
+		for _, c := range callMatches(src, fn) {
+			if id := firstInt(c.args); id > 0 {
+				grantCalls = append(grantCalls, grantCall{c.pos, []int{id}})
+			}
+		}
+	}
+	for _, g := range grantCalls {
+		for _, id := range g.grants {
 			rewardSet[id] = true
 		}
 	}
-	// SummonItem / SummonCursorItem hand the player an item directly.
-	for _, fn := range []string{"SummonItem", "SummonCursorItem"} {
-		for _, args := range callArgs(src, fn) {
-			if id := firstInt(args); id > 0 {
-				rewardSet[id] = true
-			}
-		}
+
+	// Turn-in calls with their positions and required items.
+	type turnInCall struct {
+		pos      int
+		requires []int
 	}
-	for _, args := range callArgs(src, "check_turn_in") {
-		for _, m := range reTurnInItem.FindAllStringSubmatch(args, -1) {
+	var turnInCalls []turnInCall
+	for _, c := range callMatches(src, "check_turn_in") {
+		var reqs []int
+		for _, m := range reTurnInItem.FindAllStringSubmatch(c.args, -1) {
 			if id, _ := strconv.Atoi(m[1]); id > 0 {
+				reqs = append(reqs, id)
 				turnInSet[id] = true
 			}
 		}
+		if len(reqs) > 0 {
+			turnInCalls = append(turnInCalls, turnInCall{c.pos, reqs})
+		}
 	}
-	return sortedKeys(rewardSet), sortedKeys(turnInSet)
+
+	sort.Slice(grantCalls, func(i, j int) bool { return grantCalls[i].pos < grantCalls[j].pos })
+	sort.Slice(turnInCalls, func(i, j int) bool { return turnInCalls[i].pos < turnInCalls[j].pos })
+
+	// Pair each turn-in with the grants that follow it, up to the next turn-in.
+	for i, ti := range turnInCalls {
+		next := len(src)
+		if i+1 < len(turnInCalls) {
+			next = turnInCalls[i+1].pos
+		}
+		grants := map[int]bool{}
+		for _, g := range grantCalls {
+			if g.pos >= ti.pos && g.pos < next {
+				for _, id := range g.grants {
+					grants[id] = true
+				}
+			}
+		}
+		steps = append(steps, questStep{Requires: ti.requires, Grants: sortedKeys(grants)})
+	}
+	// Grants before the first turn-in are standalone (no requirement).
+	firstTurnIn := len(src)
+	if len(turnInCalls) > 0 {
+		firstTurnIn = turnInCalls[0].pos
+	}
+	standalone := map[int]bool{}
+	for _, g := range grantCalls {
+		if g.pos < firstTurnIn {
+			for _, id := range g.grants {
+				standalone[id] = true
+			}
+		}
+	}
+	if len(standalone) > 0 {
+		steps = append([]questStep{{Grants: sortedKeys(standalone)}}, steps...)
+	}
+
+	return sortedKeys(rewardSet), sortedKeys(turnInSet), steps
 }
 
 // rewardItemsFromQuestReward pulls item IDs out of one QuestReward(...) arg
@@ -205,10 +286,17 @@ func rewardItemsFromQuestReward(args string) []int {
 	return out
 }
 
-// callArgs returns the argument string of every `name(...)` call in src, using
-// balanced-paren matching so nested parens are handled.
-func callArgs(src, name string) []string {
-	var out []string
+// callMatch is one `name(...)` call: the byte offset of the name and the raw
+// argument string between the outer parens.
+type callMatch struct {
+	pos  int
+	args string
+}
+
+// callMatches returns every `name(...)` call in src, using balanced-paren
+// matching so nested parens are handled.
+func callMatches(src, name string) []callMatch {
+	var out []callMatch
 	needle := name + "("
 	for i := 0; i+len(needle) <= len(src); {
 		idx := strings.Index(src[i:], needle)
@@ -242,7 +330,7 @@ func callArgs(src, name string) []string {
 		if end < 0 {
 			break
 		}
-		out = append(out, src[open+1:end])
+		out = append(out, callMatch{pos: start, args: src[open+1 : end]})
 		i = end + 1
 	}
 	return out

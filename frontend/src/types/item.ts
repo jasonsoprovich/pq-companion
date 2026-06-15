@@ -135,8 +135,8 @@ export interface ItemRef {
 }
 
 // ItemQuestRef is one quest's involvement with an item: the NPC and zone, plus
-// the related items (turn-ins required for a reward, rewards granted for a
-// turn-in). Derived from the Quarm quest scripts, not the item DB tables.
+// the related items (rewards granted in exchange for this item as a turn-in).
+// Derived from the Quarm quest scripts, not the item DB tables.
 export interface ItemQuestRef {
   npc: string
   zone_short_name: string
@@ -144,8 +144,19 @@ export interface ItemQuestRef {
   related_items?: ItemRef[]
 }
 
+// ItemQuestStep is one step of the questline to obtain an item: turn in
+// `requires` to `npc` (in zone) → receive `grants`. Steps are ordered
+// prerequisite-first.
+export interface ItemQuestStep {
+  npc: string
+  zone_short_name: string
+  zone_name: string
+  requires?: ItemRef[]
+  grants?: ItemRef[]
+}
+
 export interface ItemQuests {
-  rewarded_by: ItemQuestRef[]
+  chain: ItemQuestStep[]
   used_in: ItemQuestRef[]
 }
 

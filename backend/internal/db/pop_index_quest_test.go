@@ -58,28 +58,39 @@ func TestQuestsForItem(t *testing.T) {
 	}
 }
 
-// TestGetItemQuests checks the display-resolved Quests payload: zone long-name
-// and related turn-in item names are filled in, and the item itself is not
-// listed as its own prerequisite.
+// TestGetItemQuests checks the display-resolved Quests payload: the chain is
+// reconstructed prerequisite-first with zone long-names and item names filled
+// in. The Sigil Earring of Veracity is a 3-step Lcea Katta chain (Jewel Box →
+// Signet Earring → Sigil Earring), so its final step must grant the item and
+// an earlier step must produce a turn-in the final step requires.
 func TestGetItemQuests(t *testing.T) {
 	d := openTestDB(t)
 	q, err := d.GetItemQuests(29861) // Sigil Earring of Veracity
 	if err != nil {
 		t.Fatalf("GetItemQuests: %v", err)
 	}
-	if len(q.RewardedBy) == 0 {
-		t.Fatal("expected at least one rewarding quest")
+	if len(q.Chain) < 2 {
+		t.Fatalf("expected a multi-step chain for the Sigil Earring, got %d steps", len(q.Chain))
 	}
-	ref := q.RewardedBy[0]
-	if ref.ZoneName == "" || ref.ZoneName == ref.ZoneShortName {
-		t.Errorf("zone long-name not resolved: %+v", ref)
+	last := q.Chain[len(q.Chain)-1]
+	if last.ZoneName == "" || last.ZoneName == last.ZoneShortName {
+		t.Errorf("zone long-name not resolved: %+v", last)
 	}
-	for _, ri := range ref.RelatedItems {
-		if ri.ID == 29861 {
-			t.Error("item listed as its own turn-in")
+	grantsTarget := false
+	for _, g := range last.Grants {
+		if g.ID == 29861 {
+			grantsTarget = true
 		}
-		if ri.Name == "" {
-			t.Errorf("related item %d name not resolved", ri.ID)
+	}
+	if !grantsTarget {
+		t.Errorf("final chain step should grant the target item; got grants %+v", last.Grants)
+	}
+	// Every referenced item name must be resolved.
+	for _, s := range q.Chain {
+		for _, ri := range append(append([]db.ItemRef{}, s.Requires...), s.Grants...) {
+			if ri.Name == "" {
+				t.Errorf("unresolved item name for %d in chain", ri.ID)
+			}
 		}
 	}
 }

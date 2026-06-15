@@ -319,7 +319,7 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
       .catch(() => setSources({ drops: [], merchants: [], forage_zones: [], ground_spawns: [], tradeskills: [] }))
     getItemQuests(item.id)
       .then(setQuests)
-      .catch(() => setQuests({ rewarded_by: [], used_in: [] }))
+      .catch(() => setQuests({ chain: [], used_in: [] }))
     findItemHoldings(item.id)
       .then(setHoldings)
       .catch(() => setHoldings([]))
@@ -405,7 +405,7 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
           {activeTab === 'forage' && <ForagedFromTab zones={sources?.forage_zones ?? []} />}
           {activeTab === 'ground-spawns' && <GroundSpawnsTab spawns={sources?.ground_spawns ?? []} />}
           {activeTab === 'tradeskills' && <ItemTradeskillsTab entries={sources?.tradeskills ?? []} onNavigate={onClose} />}
-          {activeTab === 'quests' && <ItemQuestsTab quests={quests} onNavigate={onClose} />}
+          {activeTab === 'quests' && <ItemQuestsTab itemId={item.id} quests={quests} onNavigate={onClose} />}
           {activeTab === 'characters' && <ItemCharactersTab holdings={holdings} />}
         </div>
       </div>

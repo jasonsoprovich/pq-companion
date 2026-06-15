@@ -18,12 +18,35 @@ import (
 //go:embed quest_sources.json
 var questSourcesJSON []byte
 
+// QuestStep is one turn-in→reward exchange at an NPC. Requires is empty for a
+// reward granted without a turn-in (a quest-start item handed out in dialogue).
+type QuestStep struct {
+	Requires []int `json:"requires,omitempty"`
+	Grants   []int `json:"grants,omitempty"`
+}
+
 // QuestEntry is one NPC's quest item activity. Mirrors the generator's schema.
 type QuestEntry struct {
-	Zone    string `json:"zone"`
-	NPC     string `json:"npc"`
-	Rewards []int  `json:"rewards,omitempty"`
-	TurnIns []int  `json:"turnins,omitempty"`
+	Zone    string      `json:"zone"`
+	NPC     string      `json:"npc"`
+	Rewards []int       `json:"rewards,omitempty"`
+	TurnIns []int       `json:"turnins,omitempty"`
+	Steps   []QuestStep `json:"steps,omitempty"`
+}
+
+// stepLoc points at one step within one NPC's entry, for the chain graph.
+type stepLoc struct {
+	entry *QuestEntry
+	step  *QuestStep
+}
+
+// QuestChainNode is one reconstructed step in an item's questline (unresolved
+// item ids; the API layer resolves names). Ordered prerequisite-first.
+type QuestChainNode struct {
+	Zone     string
+	NPC      string
+	Requires []int
+	Grants   []int
 }
 
 var (
@@ -32,6 +55,7 @@ var (
 	questByReward      map[int][]*QuestEntry
 	questByTurnIn      map[int][]*QuestEntry
 	questRewardZoneSet map[int]map[string]bool
+	stepsByGrant       map[int][]stepLoc
 )
 
 // loadQuestSources parses the embedded quest_sources.json once and builds the
@@ -46,6 +70,7 @@ func loadQuestSources() {
 		questByReward = make(map[int][]*QuestEntry)
 		questByTurnIn = make(map[int][]*QuestEntry)
 		questRewardZoneSet = make(map[int]map[string]bool)
+		stepsByGrant = make(map[int][]stepLoc)
 		for i := range questEntries {
 			e := &questEntries[i]
 			for _, id := range e.Rewards {
@@ -58,8 +83,114 @@ func loadQuestSources() {
 			for _, id := range e.TurnIns {
 				questByTurnIn[id] = append(questByTurnIn[id], e)
 			}
+			for j := range e.Steps {
+				s := &e.Steps[j]
+				for _, id := range s.Grants {
+					stepsByGrant[id] = append(stepsByGrant[id], stepLoc{entry: e, step: s})
+				}
+			}
 		}
 	})
+}
+
+// maxChainSteps bounds chain reconstruction so a pathological item-flow graph
+// (cycles, hub items required by dozens of quests) can't blow up the response.
+const maxChainSteps = 30
+
+// QuestChainForItem reconstructs the questline that yields an item: the steps
+// that grant it, plus the prerequisite steps that produce the items those
+// steps require, transitively. Steps are returned prerequisite-first (a step
+// producing item X precedes a step that requires X). Items required but not
+// produced by any step (drops, combines, base items) are left as Requires on
+// their step so the caller can link them to their own pages.
+func QuestChainForItem(itemID int) []QuestChainNode {
+	loadQuestSources()
+	if len(stepsByGrant[itemID]) == 0 {
+		return nil
+	}
+
+	// Collect the dependency closure of steps via BFS over required items.
+	seenStep := map[stepLoc]bool{}
+	var closure []stepLoc
+	queue := []int{itemID}
+	queued := map[int]bool{itemID: true}
+	for len(queue) > 0 && len(closure) < maxChainSteps {
+		item := queue[0]
+		queue = queue[1:]
+		for _, loc := range stepsByGrant[item] {
+			if seenStep[loc] {
+				continue
+			}
+			seenStep[loc] = true
+			closure = append(closure, loc)
+			for _, req := range loc.step.Requires {
+				if !queued[req] {
+					queued[req] = true
+					queue = append(queue, req)
+				}
+			}
+			if len(closure) >= maxChainSteps {
+				break
+			}
+		}
+	}
+
+	// Which items are produced by some step in the closure — used to decide
+	// when a step's requirements are satisfied for topological ordering.
+	producedInClosure := map[int]bool{}
+	for _, loc := range closure {
+		for _, g := range loc.step.Grants {
+			producedInClosure[g] = true
+		}
+	}
+
+	// Topological sort: emit a step once every requirement it needs that is
+	// produced within the closure has already been emitted. Requirements that
+	// are NOT produced in the closure (leaf items) don't block emission.
+	emitted := map[int]bool{}
+	remaining := append([]stepLoc(nil), closure...)
+	var ordered []QuestChainNode
+	for len(remaining) > 0 {
+		progressed := false
+		next := remaining[:0]
+		for _, loc := range remaining {
+			ready := true
+			for _, req := range loc.step.Requires {
+				if producedInClosure[req] && !emitted[req] {
+					ready = false
+					break
+				}
+			}
+			if !ready {
+				next = append(next, loc)
+				continue
+			}
+			ordered = append(ordered, QuestChainNode{
+				Zone:     loc.entry.Zone,
+				NPC:      loc.entry.NPC,
+				Requires: loc.step.Requires,
+				Grants:   loc.step.Grants,
+			})
+			for _, g := range loc.step.Grants {
+				emitted[g] = true
+			}
+			progressed = true
+		}
+		remaining = next
+		if !progressed {
+			// Cycle — emit the rest in arbitrary order rather than loop forever.
+			for _, loc := range remaining {
+				ordered = append(ordered, QuestChainNode{
+					Zone:     loc.entry.Zone,
+					NPC:      loc.entry.NPC,
+					Requires: loc.step.Requires,
+					Grants:   loc.step.Grants,
+				})
+			}
+			break
+		}
+	}
+	return ordered
 }
 
 // questRewardZones returns the distinct zone short-names in which an item is a
