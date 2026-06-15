@@ -439,7 +439,11 @@ const CHCastSecs = 10
 // stay in lockstep. Mirrored in frontend/src/lib/chChainPatterns.ts — keep
 // them in sync.
 const (
-	chChainPatternPrefix = `^(?P<caster>(You|[A-Z][a-z]{3,14})) (?:tells? (?:the (?:raid|group|guild)|your (party|raid|guild)|[A-Za-z]+(?:-[A-Za-z]+)+:\d)|says out of character|shouts|auctions?),\s+'[^a-zA-Z0-9]*\b(?P<chainnum>`
+	// Channel verbs carry an optional trailing "s" (tells?, says?, shouts?,
+	// auctions?) so both conjugations match: third person for others' casts
+	// ("Soandso shouts") AND second person for your own ("You shout"). Missing
+	// the "?" on shout/OOC was a bug — own shout/OOC chain calls never matched.
+	chChainPatternPrefix = `^(?P<caster>(You|[A-Z][a-z]{3,14})) (?:tells? (?:the (?:raid|group|guild)|your (party|raid|guild)|[A-Za-z]+(?:-[A-Za-z]+)+:\d)|says? out of character|shouts?|auctions?),\s+'[^a-zA-Z0-9]*\b(?P<chainnum>`
 	chChainPatternSuffix = `)[^a-zA-Z0-9]*\b(?:CH|COMPLETE HEALING)\b(?:[^a-zA-Z0-9]*(?:on|to)[^a-zA-Z0-9]*)?[^a-zA-Z0-9]*(?P<target>[A-Z][a-z]{3,14})\b(.*)$`
 
 	// DefaultCHChainPattern is the single-chain catch-all: numeric (001) and
@@ -456,17 +460,32 @@ const (
 	DefaultCHChainSecondaryPattern = chChainPatternPrefix + `[A-Za-z]{3,4}` + chChainPatternSuffix
 )
 
-// legacyCHChainPatterns lists every PREVIOUS shipped value of
-// DefaultCHChainPattern. applyDefaults upgrades a saved pattern that exactly
-// matches one of these to the current default — configs snapshot the default
-// at save time, so without this an upgrading user would stay pinned to an
-// old default forever (and the settings UI's default-detection, e.g. the
-// secondary-chain pattern swap, wouldn't recognize their pattern as a
-// default). Hand-customized patterns never match and are left alone.
-// Append the outgoing value here whenever DefaultCHChainPattern changes.
-var legacyCHChainPatterns = []string{
+// legacyCHChainPrefixV2 is the chChainPatternPrefix value shipped before the
+// shout/OOC verbs gained their optional trailing "s" (own casts not matched).
+// Kept verbatim so the three v2 defaults below can be reconstructed for the
+// upgrade map.
+const legacyCHChainPrefixV2 = `^(?P<caster>(You|[A-Z][a-z]{3,14})) (?:tells? (?:the (?:raid|group|guild)|your (party|raid|guild)|[A-Za-z]+(?:-[A-Za-z]+)+:\d)|says out of character|shouts|auctions?),\s+'[^a-zA-Z0-9]*\b(?P<chainnum>`
+
+// legacyCHChainPatternUpgrades maps every PREVIOUS shipped value of the
+// primary pattern (catch-all or numeric-only when split) to its current
+// equivalent. applyDefaults upgrades a saved pattern that exactly matches a
+// key — configs snapshot the default at save time, so without this an
+// upgrading user would stay pinned to an old default forever (and the settings
+// UI's default-detection, e.g. the secondary-chain pattern swap, wouldn't
+// recognize their pattern as a default). Hand-customized patterns never match
+// and are left alone. Add the outgoing values whenever a default changes.
+var legacyCHChainPatternUpgrades = map[string]string{
 	// v1 (89f3cd1): numeric-only, raid tells only, strict dash decorations.
-	`^(?P<caster>\w+) tells the raid, '-+\s*0*(?P<chainnum>\d+)\s*-+\s*CH\s+(?P<target>\w+)`,
+	`^(?P<caster>\w+) tells the raid, '-+\s*0*(?P<chainnum>\d+)\s*-+\s*CH\s+(?P<target>\w+)`: DefaultCHChainPattern,
+	// v2: own "shout"/"say OOC" not matched (verbs lacked the optional "s").
+	legacyCHChainPrefixV2 + `\d{3,4}|[A-Za-z]{3,4}` + chChainPatternSuffix: DefaultCHChainPattern,
+	legacyCHChainPrefixV2 + `\d{3,4}` + chChainPatternSuffix:               DefaultCHChainNumericPattern,
+}
+
+// legacyCHChainSecondaryUpgrades is the same upgrade map for the secondary
+// (ramp/split) letters-only pattern.
+var legacyCHChainSecondaryUpgrades = map[string]string{
+	legacyCHChainPrefixV2 + `[A-Za-z]{3,4}` + chChainPatternSuffix: DefaultCHChainSecondaryPattern,
 }
 
 // DefaultCHChainIntervalSecs is the default per-cast countdown cadence.
@@ -651,19 +670,19 @@ func applyDefaults(cfg *Config) bool {
 	// default verbatim, so a user who never customized theirs would
 	// otherwise miss every improvement to the shipped pattern (channel
 	// coverage, letter markers, …). Exact match only — anything the user
-	// edited won't be in the legacy list and stays untouched.
-	for _, legacy := range legacyCHChainPatterns {
-		if cfg.CHChain.Pattern == legacy {
-			cfg.CHChain.Pattern = DefaultCHChainPattern
-			changed = true
-			break
-		}
+	// edited won't be in the map and stays untouched.
+	if up, ok := legacyCHChainPatternUpgrades[cfg.CHChain.Pattern]; ok {
+		cfg.CHChain.Pattern = up
+		changed = true
 	}
 	// Backfill the secondary (ramp/split chain) pattern the same way so the
 	// letters-only default is visible in settings before the user enables it.
 	// SecondaryEnabled is left as loaded — the second chain is opt-in.
 	if cfg.CHChain.SecondaryPattern == "" {
 		cfg.CHChain.SecondaryPattern = DefaultCHChainSecondaryPattern
+		changed = true
+	} else if up, ok := legacyCHChainSecondaryUpgrades[cfg.CHChain.SecondaryPattern]; ok {
+		cfg.CHChain.SecondaryPattern = up
 		changed = true
 	}
 	if cfg.CHChain.IntervalSecs <= 0 {

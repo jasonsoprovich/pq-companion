@@ -11,8 +11,11 @@
  * touched.
  */
 
+// Channel verbs carry an optional trailing "s" (tells?, says?, shouts?,
+// auctions?) so both your own second-person casts ("You shout") and others'
+// third-person casts ("Soandso shouts") match.
 const PREFIX =
-  `^(?P<caster>(You|[A-Z][a-z]{3,14})) (?:tells? (?:the (?:raid|group|guild)|your (party|raid|guild)|[A-Za-z]+(?:-[A-Za-z]+)+:\\d)|says out of character|shouts|auctions?),\\s+'[^a-zA-Z0-9]*\\b(?P<chainnum>`
+  `^(?P<caster>(You|[A-Z][a-z]{3,14})) (?:tells? (?:the (?:raid|group|guild)|your (party|raid|guild)|[A-Za-z]+(?:-[A-Za-z]+)+:\\d)|says? out of character|shouts?|auctions?),\\s+'[^a-zA-Z0-9]*\\b(?P<chainnum>`
 const SUFFIX =
   `)[^a-zA-Z0-9]*\\b(?:CH|COMPLETE HEALING)\\b(?:[^a-zA-Z0-9]*(?:on|to)[^a-zA-Z0-9]*)?[^a-zA-Z0-9]*(?P<target>[A-Z][a-z]{3,14})\\b(.*)$`
 

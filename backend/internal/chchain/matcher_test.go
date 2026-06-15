@@ -89,6 +89,39 @@ func TestMatcher_RealRaidFormat(t *testing.T) {
 	}
 }
 
+// TestMatcher_OwnCastVerbConjugation guards the bug where own casts in shout
+// and OOC never matched: your own messages use second-person verbs ("You
+// shout", "You say out of character") while others use third person ("Soandso
+// shouts", "Soandso says out of character"). Both conjugations must match.
+func TestMatcher_OwnCastVerbConjugation(t *testing.T) {
+	s := &fakeSink{}
+	m := newMatcher(s, true, config.DefaultCHChainPattern, 6)
+
+	lines := []struct {
+		in   string
+		want string
+	}{
+		// shout: own (second person) and others (third person)
+		{"You shout, '--- 001 --- CH Krayziefoo'", "#1  Krayziefoo  ← You"},
+		{"Soandso shouts, '--- 002 --- CH Krayziefoo'", "#2  Krayziefoo  ← Soandso"},
+		// OOC: own and others
+		{"You say out of character, '--- 003 --- CH Krayziefoo'", "#3  Krayziefoo  ← You"},
+		{"Soandso says out of character, '--- 004 --- CH Krayziefoo'", "#4  Krayziefoo  ← Soandso"},
+		// raid say already worked (tells?), kept as a regression anchor
+		{"You tell the raid, '--- 005 --- CH Krayziefoo'", "#5  Krayziefoo  ← You"},
+	}
+	for _, tc := range lines {
+		s.calls = nil
+		m.HandleLine(time.Unix(1, 0), tc.in)
+		if len(s.calls) != 1 {
+			t.Fatalf("%q: got %d calls, want 1", tc.in, len(s.calls))
+		}
+		if s.calls[0].name != tc.want {
+			t.Errorf("%q: label = %q, want %q", tc.in, s.calls[0].name, tc.want)
+		}
+	}
+}
+
 func TestMatcher_DisabledAndNonMatching(t *testing.T) {
 	s := &fakeSink{}
 	// Disabled → no calls even on a matching line.
