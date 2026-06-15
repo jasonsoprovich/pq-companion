@@ -157,9 +157,10 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	worn := h.resolveWornItems(byLoc)
 	prioritySet := h.priorityFocusSet(id)
 	equippedFocus := h.equippedFocusSet(worn)
+	wornLore := h.equippedLoreSet(worn)
 	wc := h.newWornCache()
 	hasteByLoc := h.hasteByLocation(byLoc, worn, wc)
-	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, excludePoP, excludeCrafted, limit, prioritySet, equippedFocus, wc, hasteByLoc)
+	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, excludePoP, excludeCrafted, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc)
 
 	writeJSON(w, http.StatusOK, upgradesResponse{
 		Slot:           slot.Key,
@@ -229,6 +230,7 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 	worn := h.resolveWornItems(byLoc)
 	prioritySet := h.priorityFocusSet(id)
 	equippedFocus := h.equippedFocusSet(worn)
+	wornLore := h.equippedLoreSet(worn)
 	wc := h.newWornCache()
 	hasteByLoc := h.hasteByLocation(byLoc, worn, wc)
 	excludePoP := !(r.URL.Query().Get("show_pop") == "1" || r.URL.Query().Get("show_pop") == "true")
@@ -262,7 +264,7 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 				slotCands = append(slotCands, c)
 			}
 		}
-		current, _, results, considered := h.scoreSlotCands(char, ctx, weights, s, byLoc, false, 1, prioritySet, equippedFocus, wc, hasteByLoc, slotCands)
+		current, _, results, considered := h.scoreSlotCands(char, ctx, weights, s, byLoc, false, 1, prioritySet, equippedFocus, wornLore, wc, hasteByLoc, slotCands)
 		var best *upgradeResult
 		if len(results) > 0 {
 			best = &results[0]
@@ -313,7 +315,7 @@ func charClassBit(char character.Character) int {
 func (h *charactersHandler) scoreSlot(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
 	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll, excludePoP, excludeCrafted bool, limit int,
-	prioritySet, equippedFocus map[int]bool, wc *wornCache, hasteByLoc map[string]int,
+	prioritySet, equippedFocus, wornLore map[int]bool, wc *wornCache, hasteByLoc map[string]int,
 ) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int) {
 	cands, err := h.db.UpgradeCandidates(db.CandidateFilter{
 		SlotMask:       slot.Mask,
@@ -326,7 +328,7 @@ func (h *charactersHandler) scoreSlot(
 	if err != nil {
 		cands = nil // still return the worn items / empty results below
 	}
-	return h.scoreSlotCands(char, ctx, weights, slot, byLoc, showAll, limit, prioritySet, equippedFocus, wc, hasteByLoc, cands)
+	return h.scoreSlotCands(char, ctx, weights, slot, byLoc, showAll, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc, cands)
 }
 
 // scoreSlotCands scores a pre-fetched candidate set for one slot against the
@@ -337,7 +339,7 @@ func (h *charactersHandler) scoreSlot(
 func (h *charactersHandler) scoreSlotCands(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
 	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll bool, limit int,
-	prioritySet, equippedFocus map[int]bool, wc *wornCache, hasteByLoc map[string]int,
+	prioritySet, equippedFocus, wornLore map[int]bool, wc *wornCache, hasteByLoc map[string]int,
 	cands []db.UpgradeCandidate,
 ) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int) {
 	focusBonus := weights.FocusBonus
@@ -380,6 +382,9 @@ func (h *charactersHandler) scoreSlotCands(
 	for _, c := range cands {
 		if worn[c.ID] {
 			continue // don't suggest what's already equipped in this slot
+		}
+		if wornLore[c.ID] {
+			continue // a LORE item worn elsewhere can't be acquired a second time
 		}
 		res := upgrade.Score(ctx, weights, baseline, h.candStatLine(c, wc))
 		score := res.Score
@@ -570,6 +575,22 @@ func (h *charactersHandler) equippedFocusSet(worn map[int]*db.Item) map[int]bool
 	for _, item := range worn {
 		if item.FocusEffect > 0 {
 			set[item.FocusEffect] = true
+		}
+	}
+	return set
+}
+
+// equippedLoreSet returns the IDs of LORE items the character already wears in
+// any slot. A LORE item is unique — you can only possess one — so once it's
+// equipped it must never be offered as an upgrade for a different slot (you
+// can't acquire a second). EQ encodes LORE as a lore string beginning with '*'.
+// (Same-slot duplicates are already filtered by the per-slot worn check, so this
+// only matters for multi-slot items like a charm/torch that also fit elsewhere.)
+func (h *charactersHandler) equippedLoreSet(worn map[int]*db.Item) map[int]bool {
+	set := map[int]bool{}
+	for id, item := range worn {
+		if strings.HasPrefix(item.Lore, "*") {
+			set[id] = true
 		}
 	}
 	return set
