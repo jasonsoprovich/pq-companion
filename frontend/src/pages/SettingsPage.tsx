@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart, ExternalLink } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
@@ -2681,6 +2681,23 @@ const LOCK_MODE_OPTIONS: ReadonlyArray<{
   },
 ]
 
+// Maps each lockable overlay to the IPC toggle that opens/closes its floating
+// popout window. Mirrors PANEL_POPOUT in OverlaysDashboard so popping out from
+// Settings drives the exact same windows — and therefore the exact same
+// persisted positions — as the Overlays tab.
+const OVERLAY_POPOUT_TOGGLE: Record<OverlayName, () => void> = {
+  dps:          () => { window.electron?.overlay?.toggleDPS() },
+  hps:          () => { window.electron?.overlay?.toggleHPS() },
+  buffTimer:    () => { window.electron?.overlay?.toggleBuffTimer() },
+  detrimTimer:  () => { window.electron?.overlay?.toggleDetrimTimer() },
+  customTimer:  () => { window.electron?.overlay?.toggleCustomTimer() },
+  npc:          () => { window.electron?.overlay?.toggleNPC() },
+  rollTracker:  () => { window.electron?.overlay?.toggleRollTracker() },
+  respawnTimer: () => { window.electron?.overlay?.toggleRespawnTimer() },
+  chChain:      () => { window.electron?.overlay?.toggleCHChain() },
+  chMetronome:  () => { window.electron?.overlay?.toggleCHMetronome() },
+}
+
 function OverlayLockModeCard({
   modes,
   onChange,
@@ -2689,6 +2706,30 @@ function OverlayLockModeCard({
   onChange: (next: Partial<Record<OverlayName, LockedMode>>) => void
 }): React.ReactElement {
   const positionMode = useOverlayPositionMode()
+
+  // Per-overlay popout open-state, keyed by canonical overlay name. Polled like
+  // the dashboard's manager since Electron doesn't push window-state changes.
+  const [popoutStates, setPopoutStates] = useState<Record<string, boolean>>({})
+  useEffect(() => {
+    if (!window.electron?.overlay?.popoutStates) return
+    let cancelled = false
+    const check = (): void => {
+      window.electron.overlay
+        .popoutStates()
+        .then((s) => { if (!cancelled) setPopoutStates(s) })
+        .catch(() => {})
+    }
+    check()
+    const id = setInterval(check, 1500)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [])
+
+  const togglePopout = (name: OverlayName): void => {
+    OVERLAY_POPOUT_TOGGLE[name]()
+    // Optimistic flip; the poll reconciles shortly after.
+    setPopoutStates((s) => ({ ...s, [name]: !s[name] }))
+  }
+
   const setAll = (mode: LockedMode): void => {
     const next: Partial<Record<OverlayName, LockedMode>> = {}
     for (const def of OVERLAY_DEFS) next[def.name] = mode
@@ -2708,9 +2749,14 @@ function OverlayLockModeCard({
       </h2>
       <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
         When an overlay is locked it can&rsquo;t be moved or resized. Choose how
-        each one reacts to the mouse while locked. If an overlay has drifted
+        each one reacts to the mouse while locked. To place an overlay, use its{' '}
+        <span style={{ color: 'var(--color-foreground)' }}>Pop out</span> button
+        to open the window, turn on{' '}
+        <span style={{ color: 'var(--color-foreground)' }}>Position overlays</span>{' '}
+        below to drag it where you want, then turn that off to lock it back —
+        the position is shared with the Overlays tab. If an overlay has drifted
         off-screen, use its <span style={{ color: 'var(--color-foreground)' }}>Reset position</span>{' '}
-        button to recenter it on your primary monitor and unlock it.
+        button to recenter it on your primary monitor.
       </p>
 
       {/* Position overlays — global edit mode. Makes every open overlay
@@ -2801,6 +2847,26 @@ function OverlayLockModeCard({
                 {def.label}
               </span>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => togglePopout(def.name)}
+                  className="flex items-center gap-1 rounded px-2 py-1 text-xs"
+                  style={{
+                    backgroundColor: popoutStates[def.name]
+                      ? 'var(--color-primary)'
+                      : 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                    color: popoutStates[def.name] ? '#fff' : 'var(--color-muted-foreground)',
+                    cursor: 'pointer',
+                  }}
+                  title={
+                    popoutStates[def.name]
+                      ? `Close the ${def.label} pop-out window`
+                      : `Pop out ${def.label} as a floating window so you can position it`
+                  }
+                >
+                  <ExternalLink size={11} />
+                  {popoutStates[def.name] ? 'Close' : 'Pop out'}
+                </button>
                 <button
                   onClick={() => window.electron?.overlay?.resetPosition?.(def.name)}
                   className="flex items-center gap-1 rounded px-2 py-1 text-xs"
