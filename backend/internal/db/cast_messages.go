@@ -1,5 +1,7 @@
 package db
 
+import "strings"
+
 // CastMessage holds the cast-text fields for a single spell — the text EQ
 // writes to the log when a spell lands on the player (CastOnYou) or on
 // somebody else (CastOnOther). Used by the logparser's CastIndex to detect
@@ -64,6 +66,40 @@ func (d *DB) InstantEffectSpellIDs() (map[int]bool, error) {
 	defer rows.Close()
 
 	ids := make(map[int]bool)
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids[id] = true
+	}
+	return ids, rows.Err()
+}
+
+// ClickEffectSpellIDsForItems returns the set of click-effect spell IDs
+// produced by the given owned item IDs. The spell-timer engine uses it to
+// disambiguate land text shared by several clickies: among the clicky
+// candidates, the one whose source item the player actually carries is the
+// spell that landed. Read-only data.
+func (d *DB) ClickEffectSpellIDsForItems(itemIDs []int) (map[int]bool, error) {
+	ids := make(map[int]bool)
+	if len(itemIDs) == 0 {
+		return ids, nil
+	}
+	placeholders := make([]string, len(itemIDs))
+	args := make([]any, len(itemIDs))
+	for i, id := range itemIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	q := "SELECT DISTINCT clickeffect FROM items WHERE clickeffect > 0 AND id IN (" +
+		strings.Join(placeholders, ",") + ")"
+	rows, err := d.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
 	for rows.Next() {
 		var id int
 		if err := rows.Scan(&id); err != nil {

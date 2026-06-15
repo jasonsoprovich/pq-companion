@@ -413,6 +413,29 @@ func main() {
 		return true, c.Class
 	}, func() string {
 		return cfgMgr.Get().SpellTimer.TrackingMode
+	}, func() []int {
+		// Owned item IDs for the active character, from the latest Zeal
+		// inventory export — lets the engine break ties between clickies that
+		// share land text by picking the one the player actually carries.
+		inv := zealWatcher.Inventory()
+		if inv == nil {
+			return nil
+		}
+		var charName string
+		if tailer != nil {
+			charName = tailer.ActiveCharacter()
+		}
+		if charName != "" && inv.Character != "" &&
+			!strings.EqualFold(inv.Character, charName) {
+			return nil // stale export for a different character
+		}
+		ids := make([]int, 0, len(inv.Entries))
+		for _, entry := range inv.Entries {
+			if entry.ID > 0 {
+				ids = append(ids, entry.ID)
+			}
+		}
+		return ids
 	})
 	go timerEngine.Start(context.Background())
 

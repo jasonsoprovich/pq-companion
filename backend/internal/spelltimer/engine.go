@@ -48,6 +48,15 @@ type ClassFilterProvider func() (enabled bool, classIndex int)
 // triggers/packs do. nil provider or empty/unknown string means "auto".
 type ModeProvider func() string
 
+// OwnedItemsProvider returns the item IDs the active character currently owns
+// (equipped + bags), from the most recent Zeal inventory export. Used to break
+// ties when several item clickies share identical land text ("Your eyes
+// tingle." is produced by Acumen, Ultravision, See Invisible, Serpent Sight
+// and Chill Sight clickies) and there's no "begin casting" line to
+// disambiguate: the one the player actually carries is the spell that landed.
+// nil provider or empty slice means "inventory unknown" — no narrowing.
+type OwnedItemsProvider func() []int
+
 const (
 	scopeSelf     = "self"
 	scopeCastByMe = "cast_by_me"
@@ -249,6 +258,15 @@ type Engine struct {
 	clickableSpellIDs map[int]bool
 	clickableLoaded   bool
 
+	// ownedItemsFn / ownedClicky* narrow a multi-clicky land collision to the
+	// single clicky the active character actually carries. The clicky spell-ID
+	// set is derived from the owned item list once and cached; RefreshModifiers
+	// (fired on inventory/character change) clears it.
+	ownedItemsFn        OwnedItemsProvider
+	ownedMu             sync.Mutex
+	ownedClickySpellIDs map[int]bool
+	ownedClickyLoaded   bool
+
 	// modifier cache: keeps the last-computed contributors per character so
 	// the engine doesn't re-parse the Quarmy export on every cast. Invalidated
 	// by character change or RefreshModifiers().
@@ -293,7 +311,8 @@ type Engine struct {
 // scopeFn may be nil (engine behaves as if scope is "anyone").
 // classFilterFn may be nil (no class-castability filtering).
 // modeFn may be nil (engine behaves as if mode is "auto").
-func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn ScopeProvider, classFilterFn ClassFilterProvider, modeFn ModeProvider) *Engine {
+// ownedItemsFn may be nil (no clicky-collision narrowing by inventory).
+func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn ScopeProvider, classFilterFn ClassFilterProvider, modeFn ModeProvider, ownedItemsFn OwnedItemsProvider) *Engine {
 	return &Engine{
 		hub:           hub,
 		db:            database,
@@ -301,6 +320,7 @@ func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn S
 		scopeFn:       scopeFn,
 		classFilterFn: classFilterFn,
 		modeFn:        modeFn,
+		ownedItemsFn:  ownedItemsFn,
 		timers:        make(map[string]*ActiveTimer),
 		pendingArms:   make(map[string]*pendingArm),
 	}
@@ -346,6 +366,13 @@ func (e *Engine) RefreshModifiers() {
 	e.modContribs = nil
 	e.modPermIllusion = false
 	e.modMu.Unlock()
+
+	// The owned-clicky set is derived from the same inventory export, so drop
+	// it too — the next ambiguous clicky land recomputes against current bags.
+	e.ownedMu.Lock()
+	e.ownedClickyLoaded = false
+	e.ownedClickySpellIDs = nil
+	e.ownedMu.Unlock()
 }
 
 // Start runs the background ticker that prunes expired timers and broadcasts
@@ -1254,18 +1281,62 @@ func (e *Engine) soleClickableCandidate(cands []logparser.SpellLandedCandidate) 
 	if clickable == nil {
 		return ""
 	}
-	var name string
-	matches := 0
+	var clicky []logparser.SpellLandedCandidate
 	for _, c := range cands {
 		if clickable[c.SpellID] {
-			matches++
-			name = c.SpellName
+			clicky = append(clicky, c)
 		}
 	}
-	if matches == 1 {
-		return name
+	if len(clicky) == 1 {
+		return clicky[0].SpellName
+	}
+	// More than one clicky shares this land text (e.g. the five "Your eyes
+	// tingle." clickies). Break the tie with what the player actually carries:
+	// if exactly one of these clickies comes from an item in their inventory,
+	// that's the one that fired.
+	if len(clicky) > 1 {
+		if owned := e.ownedClickyIDs(); len(owned) > 0 {
+			var name string
+			n := 0
+			for _, c := range clicky {
+				if owned[c.SpellID] {
+					n++
+					name = c.SpellName
+				}
+			}
+			if n == 1 {
+				return name
+			}
+		}
 	}
 	return ""
+}
+
+// ownedClickyIDs returns the set of clicky spell IDs produced by items the
+// active character currently carries, used to disambiguate land text shared by
+// several clickies. Empty when inventory is unknown. Cached until
+// RefreshModifiers fires (inventory/character change).
+func (e *Engine) ownedClickyIDs() map[int]bool {
+	if e.ownedItemsFn == nil || e.db == nil {
+		return nil
+	}
+	e.ownedMu.Lock()
+	defer e.ownedMu.Unlock()
+	if e.ownedClickyLoaded {
+		return e.ownedClickySpellIDs
+	}
+	e.ownedClickyLoaded = true
+	items := e.ownedItemsFn()
+	if len(items) == 0 {
+		return nil
+	}
+	ids, err := e.db.ClickEffectSpellIDsForItems(items)
+	if err != nil {
+		slog.Warn("timer-debug: failed to load owned clicky spell IDs", "err", err)
+		return nil
+	}
+	e.ownedClickySpellIDs = ids
+	return ids
 }
 
 // clickableIDs returns the cached set of item-produced spell IDs, loading it
