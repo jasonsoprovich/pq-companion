@@ -137,6 +137,10 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	excludePoP := !(r.URL.Query().Get("show_pop") == "1" || r.URL.Query().Get("show_pop") == "true")
 	// Crafted (tradeskill-made) gear is hidden by default; ?hide_crafted=0 keeps it.
 	excludeCrafted := r.URL.Query().Get("hide_crafted") != "0" && r.URL.Query().Get("hide_crafted") != "false"
+	// NO RENT gear (expires on camp/zone) is hidden by default; ?hide_norent=0 keeps it.
+	excludeNoRent := r.URL.Query().Get("hide_norent") != "0" && r.URL.Query().Get("hide_norent") != "false"
+	// NO DROP gear is shown by default; ?hide_nodrop=1 drops it.
+	excludeNoDrop := r.URL.Query().Get("hide_nodrop") == "1" || r.URL.Query().Get("hide_nodrop") == "true"
 	limit := 75
 	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 500 {
 		limit = v
@@ -160,7 +164,7 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	wornLore := h.equippedLoreSet(worn)
 	wc := h.newWornCache()
 	hasteByLoc := h.hasteByLocation(byLoc, worn, wc)
-	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, excludePoP, excludeCrafted, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc)
+	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, excludePoP, excludeCrafted, excludeNoRent, excludeNoDrop, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc)
 
 	writeJSON(w, http.StatusOK, upgradesResponse{
 		Slot:           slot.Key,
@@ -235,6 +239,8 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 	hasteByLoc := h.hasteByLocation(byLoc, worn, wc)
 	excludePoP := !(r.URL.Query().Get("show_pop") == "1" || r.URL.Query().Get("show_pop") == "true")
 	excludeCrafted := r.URL.Query().Get("hide_crafted") != "0" && r.URL.Query().Get("hide_crafted") != "false"
+	excludeNoRent := r.URL.Query().Get("hide_norent") != "0" && r.URL.Query().Get("hide_norent") != "false"
+	excludeNoDrop := r.URL.Query().Get("hide_nodrop") == "1" || r.URL.Query().Get("hide_nodrop") == "true"
 
 	// One candidate scan for the whole sweep: the class/race/level/hidden/variant
 	// filter is identical across all 19 slots — only the slot mask differs — so
@@ -251,6 +257,8 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 		MaxLevel:       upgradeMaxLevel(char.Level, excludePoP),
 		ExcludePoP:     excludePoP,
 		ExcludeCrafted: excludeCrafted,
+		ExcludeNoRent:  excludeNoRent,
+		ExcludeNoDrop:  excludeNoDrop,
 	})
 	if err != nil {
 		allCands = nil
@@ -314,7 +322,7 @@ func charClassBit(char character.Character) int {
 // query and calls scoreSlotCands directly.
 func (h *charactersHandler) scoreSlot(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
-	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll, excludePoP, excludeCrafted bool, limit int,
+	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll, excludePoP, excludeCrafted, excludeNoRent, excludeNoDrop bool, limit int,
 	prioritySet, equippedFocus, wornLore map[int]bool, wc *wornCache, hasteByLoc map[string]int,
 ) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int) {
 	cands, err := h.db.UpgradeCandidates(db.CandidateFilter{
@@ -324,6 +332,8 @@ func (h *charactersHandler) scoreSlot(
 		MaxLevel:       upgradeMaxLevel(char.Level, excludePoP),
 		ExcludePoP:     excludePoP,     // finder-local "Show PoP gear" toggle (default hide)
 		ExcludeCrafted: excludeCrafted, // finder-local "Hide crafted gear" toggle (default hide)
+		ExcludeNoRent:  excludeNoRent,  // finder-local "Hide NO RENT" toggle (default hide)
+		ExcludeNoDrop:  excludeNoDrop,  // finder-local "Hide NO DROP" toggle (default show)
 	})
 	if err != nil {
 		cands = nil // still return the worn items / empty results below

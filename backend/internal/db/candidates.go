@@ -113,6 +113,8 @@ type CandidateFilter struct {
 	MaxLevel       int  // character level; items requiring a higher level are excluded
 	ExcludePoP     bool // drop Planes-of-Power-gated items (not yet obtainable)
 	ExcludeCrafted bool // drop tradeskill-made items (results of a recipe combine)
+	ExcludeNoRent  bool // drop NO RENT items (expire on camp/zone) — noise by default
+	ExcludeNoDrop  bool // drop NO DROP items (can't be traded for)
 }
 
 // UpgradeCandidates returns every equippable item that fits the slot and is
@@ -147,6 +149,12 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 		// component or container). The item_id index keeps this subquery cheap.
 		where += " AND NOT EXISTS (SELECT 1 FROM tradeskill_recipe_entries tre" +
 			" WHERE tre.item_id = i.id AND tre.successcount > 0)"
+	}
+	if f.ExcludeNoRent {
+		where += " AND i.norent = 0"
+	}
+	if f.ExcludeNoDrop {
+		where += " AND i.nodrop = 0"
 	}
 
 	if clause, hargs := hiddenItemClause(); clause != "" {

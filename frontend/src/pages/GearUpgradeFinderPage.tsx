@@ -102,12 +102,17 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
 
   const [showAll, setShowAll] = useState(false)
   const [focusOnly, setFocusOnly] = useState(false)
+  // NO DROP gear is shown by default — you can still farm it yourself — but the
+  // toggle lets you hide it when you only care about tradeable upgrades.
   const [hideNoDrop, setHideNoDrop] = useState(false)
   // Planes of Power gear is hidden by default (not yet obtainable on Quarm).
   const [showPoP, setShowPoP] = useState(false)
   // Crafted (tradeskill-made) gear is hidden by default — it's chased
   // deliberately, so it tends to be noise in a "what drops can I upgrade" list.
   const [hideCrafted, setHideCrafted] = useState(true)
+  // NO RENT gear (expires on camp/zone) is hidden by default like crafted — it's
+  // throwaway and rarely a real upgrade target. Toggle off to include it.
+  const [hideNoRent, setHideNoRent] = useState(true)
 
   const [weights, setWeights] = useState<UpgradeWeights | null>(null)
   const [weightsCustom, setWeightsCustom] = useState(false)
@@ -164,7 +169,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
     const id = setTimeout(() => {
       setLoading(true)
       setError(null)
-      getCharacterUpgrades(selected.id, { slot, showAll, showPoP, hideCrafted, weights, limit: 100 })
+      getCharacterUpgrades(selected.id, { slot, showAll, showPoP, hideCrafted, hideNoRent, hideNoDrop, weights, limit: 100 })
         .then((r) => {
           if (!cancelled) setData(r)
         })
@@ -179,7 +184,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
       cancelled = true
       clearTimeout(id)
     }
-  }, [selected, slot, showAll, showPoP, hideCrafted, weights, reload])
+  }, [selected, slot, showAll, showPoP, hideCrafted, hideNoRent, hideNoDrop, weights, reload])
 
   // Fetch the all-slots overview on demand (entering overview mode, or weights
   // change while in it).
@@ -188,7 +193,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
     let cancelled = false
     const id = setTimeout(() => {
       setOverviewLoading(true)
-      getCharacterUpgradesOverview(selected.id, weights, showPoP, hideCrafted)
+      getCharacterUpgradesOverview(selected.id, weights, showPoP, hideCrafted, hideNoRent, hideNoDrop)
         .then((r) => {
           if (!cancelled) setOverview(r)
         })
@@ -201,7 +206,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
       cancelled = true
       clearTimeout(id)
     }
-  }, [mode, selected, weights, showPoP, hideCrafted, reload])
+  }, [mode, selected, weights, showPoP, hideCrafted, hideNoRent, hideNoDrop, reload])
 
   // Load the viewed character's wishlist for the star toggles.
   const refreshWishlist = useCallback((charID: number) => {
@@ -291,9 +296,8 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
   const visible = useMemo(() => {
     let list = data?.candidates ?? []
     if (focusOnly) list = list.filter((c) => c.focus_effect > 0)
-    if (hideNoDrop) list = list.filter((c) => c.nodrop === 0)
     return list
-  }, [data, focusOnly, hideNoDrop])
+  }, [data, focusOnly])
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -390,9 +394,15 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                 <input type="checkbox" checked={focusOnly} onChange={(e) => setFocusOnly(e.target.checked)} />
                 Focus only
               </label>
-              <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}>
+              <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
+                title="Hide NO DROP items (can't be traded for — must farm yourself)">
                 <input type="checkbox" checked={hideNoDrop} onChange={(e) => setHideNoDrop(e.target.checked)} />
-                Tradeable only
+                Hide NO DROP
+              </label>
+              <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
+                title="Hide NO RENT items (expire when you camp or zone)">
+                <input type="checkbox" checked={hideNoRent} onChange={(e) => setHideNoRent(e.target.checked)} />
+                Hide NO RENT
               </label>
               <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
                 title="Hide tradeskill-made (crafted) items">
@@ -424,6 +434,16 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
           {mode === 'overview' && (
             <div className="shrink-0 flex items-center justify-end gap-2 border-b px-6 py-2 text-xs"
               style={{ borderColor: 'var(--color-border)' }}>
+              <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
+                title="Hide NO DROP items (can't be traded for — must farm yourself)">
+                <input type="checkbox" checked={hideNoDrop} onChange={(e) => setHideNoDrop(e.target.checked)} />
+                Hide NO DROP
+              </label>
+              <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
+                title="Hide NO RENT items (expire when you camp or zone)">
+                <input type="checkbox" checked={hideNoRent} onChange={(e) => setHideNoRent(e.target.checked)} />
+                Hide NO RENT
+              </label>
               <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
                 title="Hide tradeskill-made (crafted) items">
                 <input type="checkbox" checked={hideCrafted} onChange={(e) => setHideCrafted(e.target.checked)} />
