@@ -188,27 +188,37 @@ export default function CharacterProgressPage(): React.ReactElement {
     load().finally(() => setLoading(false))
   }, [load])
 
-  const statsSource = quarmy?.stats ?? (activeChar ? {
-    base_str: activeChar.base_str,
-    base_sta: activeChar.base_sta,
-    base_cha: activeChar.base_cha,
-    base_dex: activeChar.base_dex,
-    base_int: activeChar.base_int,
-    base_agi: activeChar.base_agi,
-    base_wis: activeChar.base_wis,
-  } : null)
+  const statsSource = useMemo(
+    () =>
+      quarmy?.stats ??
+      (activeChar
+        ? {
+            base_str: activeChar.base_str,
+            base_sta: activeChar.base_sta,
+            base_cha: activeChar.base_cha,
+            base_dex: activeChar.base_dex,
+            base_int: activeChar.base_int,
+            base_agi: activeChar.base_agi,
+            base_wis: activeChar.base_wis,
+          }
+        : null),
+    [quarmy, activeChar],
+  )
 
   const hasStats = statsSource && Object.values(statsSource).some((v) => v > 0)
 
-  const equippedGear = (quarmy?.inventory ?? []).filter((e) => isEquipmentSlot(e.location))
-  equippedGear.sort((a, b) => {
-    const ai = EQUIPMENT_SLOTS.indexOf(a.location)
-    const bi = EQUIPMENT_SLOTS.indexOf(b.location)
-    if (ai === -1 && bi === -1) return a.location.localeCompare(b.location)
-    if (ai === -1) return 1
-    if (bi === -1) return -1
-    return ai - bi
-  })
+  const equippedGear = useMemo(() => {
+    const gear = (quarmy?.inventory ?? []).filter((e) => isEquipmentSlot(e.location))
+    gear.sort((a, b) => {
+      const ai = EQUIPMENT_SLOTS.indexOf(a.location)
+      const bi = EQUIPMENT_SLOTS.indexOf(b.location)
+      if (ai === -1 && bi === -1) return a.location.localeCompare(b.location)
+      if (ai === -1) return 1
+      if (bi === -1) return -1
+      return ai - bi
+    })
+    return gear
+  }, [quarmy])
 
   return (
     <div className="flex h-full flex-col">

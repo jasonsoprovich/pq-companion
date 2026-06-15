@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import {
   Zap,
@@ -2376,7 +2376,7 @@ export default function TriggersPage(): React.ReactElement {
       .catch(() => {})
   }, [])
 
-  const filteredTriggers = (() => {
+  const filteredTriggers = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q && classFilter === null && !charFilter && !packFilter) return triggers
     return triggers.filter((t) => {
@@ -2411,12 +2411,12 @@ export default function TriggersPage(): React.ReactElement {
       }
       return true
     })
-  })()
+  }, [triggers, search, classFilter, charFilter, packFilter, packClassByName])
 
   // Pack names currently represented in the user's triggers, for the
   // pack-filter dropdown. Sorted alphabetically; the "Uncategorized"
   // bucket (user-authored) is pinned to the end.
-  const packsInUse = (() => {
+  const packsInUse = useMemo(() => {
     const set = new Set<string>()
     let hasUncategorized = false
     for (const t of triggers) {
@@ -2426,7 +2426,7 @@ export default function TriggersPage(): React.ReactElement {
     const names = Array.from(set).sort((a, b) => a.localeCompare(b))
     if (hasUncategorized) names.push('__uncategorized__')
     return names
-  })()
+  }, [triggers])
 
   const hasActiveFilter = !!(search.trim() || classFilter !== null || charFilter || packFilter)
 
@@ -2434,7 +2434,7 @@ export default function TriggersPage(): React.ReactElement {
   // backend category order; Uncategorized pins last. Empty custom categories
   // are shown (so they can be drag targets) when no filter is narrowing the
   // view. Each section's entries are sorted per sortMode.
-  const groupedTriggers = (() => {
+  const groupedTriggers = useMemo(() => {
     const groups = new Map<string, Trigger[]>()
     for (const t of filteredTriggers) {
       const key = t.pack_name || '__uncategorized__'
@@ -2483,7 +2483,14 @@ export default function TriggersPage(): React.ReactElement {
     })
     for (const g of ordered) sortItems(g.items)
     return ordered
-  })()
+  }, [filteredTriggers, categories, sortMode, hasActiveFilter])
+
+  // Set of pack ids the user already has installed, for the Packs tab. Memoized
+  // so the PacksTab prop identity is stable across unrelated re-renders.
+  const installedPacks = useMemo(
+    () => new Set(triggers.map((t) => t.source_pack).filter((n): n is string => !!n)),
+    [triggers],
+  )
 
   const togglePackCollapsed = (packName: string) => {
     setCollapsedPacks((prev) => {
@@ -3376,10 +3383,7 @@ export default function TriggersPage(): React.ReactElement {
 
       {/* Tab: Packs */}
       {tab === 'packs' && (
-        <PacksTab
-          installedPacks={new Set(triggers.map((t) => t.source_pack).filter((n): n is string => !!n))}
-          onInstalled={load}
-        />
+        <PacksTab installedPacks={installedPacks} onInstalled={load} />
       )}
 
       {deletingCategory && (
