@@ -3,10 +3,10 @@ import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { useCachedState } from '../hooks/useCachedState'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Filter, Search, X } from 'lucide-react'
-import { searchItems, getItem, getItemSources, getItemRaw } from '../services/api'
+import { searchItems, getItem, getItemSources, getItemQuests, getItemRaw } from '../services/api'
 import type { ItemSearchFilter } from '../services/api'
 import { findItemHoldings, type ItemHolding } from '../services/itemHoldings'
-import type { Item, ItemSourceNPC, ItemSources, ItemForageZone, ItemGroundSpawnZone } from '../types/item'
+import type { Item, ItemSourceNPC, ItemSources, ItemForageZone, ItemGroundSpawnZone, ItemQuests } from '../types/item'
 import {
   baneBodyLabel,
   baneRaceLabel,
@@ -27,6 +27,7 @@ import WishlistStarButton from '../components/WishlistStarButton'
 import VariantLinks from '../components/VariantLinks'
 import { ItemTradeskillsTab } from '../components/RecipeView'
 import ItemCharactersTab from '../components/ItemCharactersTab'
+import ItemQuestsTab, { questsHaveContent } from '../components/ItemQuestsTab'
 
 // ── Filter definitions ─────────────────────────────────────────────────────────
 
@@ -978,7 +979,7 @@ function GroundSpawnsTab({ spawns }: { spawns: ItemGroundSpawnZone[] }): React.R
 
 // ── Detail panel ───────────────────────────────────────────────────────────────
 
-type ItemTabKey = 'overview' | 'drops' | 'merchants' | 'forage' | 'ground-spawns' | 'tradeskills' | 'characters'
+type ItemTabKey = 'overview' | 'drops' | 'merchants' | 'forage' | 'ground-spawns' | 'tradeskills' | 'quests' | 'characters'
 
 const ITEM_TABS: { key: ItemTabKey; label: string }[] = [
   { key: 'overview', label: 'Overview' },
@@ -987,10 +988,15 @@ const ITEM_TABS: { key: ItemTabKey; label: string }[] = [
   { key: 'forage', label: 'Foraged From' },
   { key: 'ground-spawns', label: 'Ground Spawns' },
   { key: 'tradeskills', label: 'Tradeskills' },
+  { key: 'quests', label: 'Quests' },
   { key: 'characters', label: 'Characters' },
 ]
 
-function visibleItemTabs(sources: ItemSources | null, holdings: ItemHolding[]): { key: ItemTabKey; label: string }[] {
+function visibleItemTabs(
+  sources: ItemSources | null,
+  quests: ItemQuests | null,
+  holdings: ItemHolding[],
+): { key: ItemTabKey; label: string }[] {
   return ITEM_TABS.filter((tab) => {
     switch (tab.key) {
       case 'overview': return true
@@ -999,6 +1005,7 @@ function visibleItemTabs(sources: ItemSources | null, holdings: ItemHolding[]): 
       case 'forage': return (sources?.forage_zones?.length ?? 0) > 0
       case 'ground-spawns': return (sources?.ground_spawns?.length ?? 0) > 0
       case 'tradeskills': return (sources?.tradeskills?.length ?? 0) > 0
+      case 'quests': return questsHaveContent(quests)
       case 'characters': return holdings.length > 0
     }
   })
@@ -1010,6 +1017,7 @@ interface DetailPanelProps {
 
 function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
   const [sources, setSources] = useState<ItemSources | null>(null)
+  const [quests, setQuests] = useState<ItemQuests | null>(null)
   const [holdings, setHoldings] = useState<ItemHolding[]>([])
   const [activeTab, setActiveTab] = useState<ItemTabKey>('overview')
   const [copied, setCopied] = useState(false)
@@ -1019,11 +1027,15 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
   useEffect(() => {
     setActiveTab('overview')
     setHoldings([])
+    setQuests(null)
     if (!item) { setSources(null); return }
     let cancelled = false
     getItemSources(item.id)
       .then((s) => { if (!cancelled) setSources(s) })
       .catch(() => { if (!cancelled) setSources({ drops: [], merchants: [], forage_zones: [], ground_spawns: [], tradeskills: [] }) })
+    getItemQuests(item.id)
+      .then((q) => { if (!cancelled) setQuests(q) })
+      .catch(() => { if (!cancelled) setQuests({ rewarded_by: [], used_in: [] }) })
     findItemHoldings(item.id)
       .then((h) => { if (!cancelled) setHoldings(h) })
       .catch(() => { if (!cancelled) setHoldings([]) })
@@ -1077,7 +1089,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
 
         {/* Tabs */}
         <div className="mt-3 flex gap-0 overflow-x-auto">
-          {visibleItemTabs(sources, holdings).map((tab) => (
+          {visibleItemTabs(sources, quests, holdings).map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
@@ -1115,6 +1127,9 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
         )}
         {activeTab === 'tradeskills' && (
           <ItemTradeskillsTab entries={sources?.tradeskills ?? []} />
+        )}
+        {activeTab === 'quests' && (
+          <ItemQuestsTab quests={quests} />
         )}
         {activeTab === 'characters' && (
           <ItemCharactersTab holdings={holdings} />

@@ -1,5 +1,5 @@
 import type { Config } from '../types/config'
-import type { Item, ItemSources, SearchResult } from '../types/item'
+import type { Item, ItemSources, ItemQuests, SearchResult } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells } from '../types/npc'
 import type { BuffStatDelta, Spell, SpellCrossRefs, ShoppingRoute, ShoppingRouteOptions } from '../types/spell'
 import type { Zone, ZoneConnection, ZoneGroundSpawn, ZoneForageItem, ZoneDropItem } from '../types/zone'
@@ -175,6 +175,10 @@ export function getItem(id: number): Promise<Item> {
 
 export function getItemSources(id: number): Promise<ItemSources> {
   return get<ItemSources>(`/api/items/${id}/sources`)
+}
+
+export function getItemQuests(id: number): Promise<ItemQuests> {
+  return get<ItemQuests>(`/api/items/${id}/quests`)
 }
 
 // ── Tradeskill recipes ──────────────────────────────────────────────────────────

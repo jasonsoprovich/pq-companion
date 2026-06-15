@@ -128,6 +128,27 @@ export interface ItemSources {
   tradeskills: ItemTradeskillEntry[]
 }
 
+// ItemRef is a lightweight item link (id + name) used in quest entries.
+export interface ItemRef {
+  id: number
+  name: string
+}
+
+// ItemQuestRef is one quest's involvement with an item: the NPC and zone, plus
+// the related items (turn-ins required for a reward, rewards granted for a
+// turn-in). Derived from the Quarm quest scripts, not the item DB tables.
+export interface ItemQuestRef {
+  npc: string
+  zone_short_name: string
+  zone_name: string
+  related_items?: ItemRef[]
+}
+
+export interface ItemQuests {
+  rewarded_by: ItemQuestRef[]
+  used_in: ItemQuestRef[]
+}
+
 export interface SearchResult<T> {
   items: T[]
   total: number
