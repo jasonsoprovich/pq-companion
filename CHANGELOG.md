@@ -9,6 +9,66 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.13.0 — 2026-06-15
+
+A large feature release: a new Gear Upgrade Finder, built-in quest
+walkthroughs, a reworked trigger/regex system, custom timers, log replay,
+and a rebuilt navigation layout.
+
+### Highlights
+- **Gear Upgrade Finder** — a new per-character, per-slot upgrade scanner
+  that ranks gear with cap-aware stat scoring (it knows when a stat is
+  already maxed vs. still scaling), editable per-class weights, an all-slots
+  overview, and weapon/ATK/haste scoring. Pairs with a wishlist you can star
+  upgrades into.
+- **Quests** — self-contained quest walkthroughs are now built into the app:
+  a Quests section in the database explorer, a Quests tab on item pages
+  (rewards + turn-ins), and full quest-chain to-do lists for multi-step keys.
+- **Trigger & regex rework** — triggers now support multiple regex patterns
+  each (with per-row toggles), GINA-style `{c}`/`{target}` token
+  compatibility, custom categories with drag-and-drop reordering, target-name
+  capture into timers and alerts, and per-pattern timer overrides. Seven
+  community trigger packs ship built-in, including class CC-break alerts.
+- **Custom timers** — create manual countdown timers with their own dedicated
+  overlay, including durations pulled from capture groups.
+- **Log replay & browse** — replay historical log segments through the live
+  pipeline to test triggers and overlays, plus a read-only Browse mode for
+  viewing logs out of game.
+- **Navigation rebuild** — the sidebar now has collapsible sections with
+  character pages nested under each character, and smoother scrolling.
+- **Overlay controls** — a global "Position overlays" mode and "Manage
+  overlays" menu, a "Display only" click-through HUD lock mode, one-click
+  reset to recover off-screen overlays, customizable trigger alert text style
+  (color, glow, font, size), and optional fade-out of overlay chrome.
+- **Player tracker** — per-player notes and a PVP flag, an audible + on-screen
+  warning when a PVP-flagged player appears in `/who`, and automatic tracking
+  of tells and group joins.
+- **Combat meter** — a Combined (pooled) view, a "Last 20 mobs" rolling-average
+  scope, expanded per-pet damage, and spell/melee crit counting.
+- **Inventory** — hide empty bags by default, scope the tracker to imported
+  characters, flat cross-character search, and an item Characters tab showing
+  who holds an item.
+- **NPC overlay** — a player info + timers tab when you target another character.
+- **Settings** — settings now autosave as you change them (no more
+  Save/Discard), plus a new About tab. Donations have moved to Ko-fi.
+- **Planes of Power preview** — an optional `pop_enabled` toggle that gates the
+  PoP-era level cap and content for testing ahead of the era launch.
+
+### Fixes
+- Drag-and-drop (reordering triggers, moving them between categories, and
+  reordering the wishlist) now works on Windows — it was silently broken by the
+  title-bar/sidebar drag regions.
+- Buff-duration modeling corrected: SPA 137/141 focus limits enforced, AA
+  duration extensions now apply to off-class clickies, and the Permanent
+  Illusion override is honored.
+- CH chain now matches your own shout/OOC casts; outdated pinned chain patterns
+  are migrated.
+- Combat meter now counts spell crits and the player's own melee crits.
+- Spell timer overlays (detrimental, buff, CH chain) scroll again when popped out.
+- Smaller fixes: spellset edit-state alignment, a log-replayer crash on stop,
+  out-of-order quest search results, and a black screen when switching to a
+  character with an empty gear slot.
+
 ## v0.12.3 — 2026-06-08
 
 Trigger alert overlays now behave reliably on multi-monitor setups, with a

@@ -1277,6 +1277,70 @@ Parse and edit Zeal `_spellsets.ini` exports.
 - Duplicate-named bosses headline the strongest matching NPC and collapse the rest
 - Switching between items/spells/NPCs/zones no longer flickers the detail panel
 
+## v0.13.0 — Gear Upgrade Finder, Quests, Trigger Rework, Custom Timers, Log Replay
+
+- **Gear Upgrade Finder** — a per-character, per-slot upgrade scanner backed by
+  a cap-aware scoring engine (255-stat-cap aware; HP/mana/AC scored uncapped),
+  editable per-class weights with persistence, an all-slots overview endpoint
+  showing the best pick per slot, worn ATK and cap-aware haste scoring, weapon
+  DPS (ratio) scoring so melee offhands rank correctly, per-character priority
+  focus effects (score bonus + badge), and a slot-scoped wishlist with stars on
+  suggestions; Planes of Power gear is hidden unless `pop_enabled` is on, and
+  item era is derived from quest scripts to fix gear-finder era leaks
+- **Quests** — self-contained quest walkthroughs built into the app: a Quests
+  section in the database explorer, a Quests tab on item detail (rewards +
+  turn-ins) backed by `GET /api/items/{id}/quests`, and full quest-chain to-do
+  lists for multi-step keys
+- **Trigger & regex rework** — multiple regex patterns per trigger with per-row
+  toggles, built-in `{c}`/`{target}` tokens with GINA-style pattern
+  compatibility, custom categories with drag-and-drop reordering and pack-origin
+  tagging, target-name capture into trigger-driven timers, per-pattern timer
+  overrides + capture-keyed timers, assist-call triggers that also fire on kill
+  calls, and seven built-in community trigger packs with shared class CC-break
+  alerts
+- **Custom timers** — manual countdown timers with a dedicated overlay and
+  durations pulled from capture groups
+- **Log replay & browse** — replay historical log segments through the live
+  pipeline to test triggers/overlays, plus a read-only Browse mode for viewing
+  logs out of game
+- **Navigation rebuild** — collapsible sidebar sections with character pages
+  nested under each character, and smoother sidebar scrolling
+- **Overlay controls** — a global Position-overlays edit mode and a Manage
+  overlays menu on the dashboard, a "Display only" click-through HUD lock mode,
+  one-click reset to recover an off-screen/locked overlay, customizable trigger
+  alert text style (color, glow, font, size) with a live preview card and
+  one-click Reset Style, optional fade-out of overlay chrome with a configurable
+  delay, and per-overlay pop-out buttons in the Settings lock-behaviour card
+- **Player tracker** — per-player notes and a PVP flag, a sound + on-screen
+  warning when a PVP-flagged player appears in `/who`, automatic tracking of
+  tells and group joins, a global toggle to disable the PVP warning, and Show
+  More pagination instead of a silent 500 cap
+- **Combat meter** — a Combined (pooled) view across fights, a "Last 20 mobs"
+  rolling-average scope, a clearer Per Fight / All Fights switch, expanded
+  per-pet damage, and spell/melee crit counting
+- **Inventory** — hide empty bags by default (persisted), scope the tracker to
+  imported characters with an opt-in toggle, flat cross-character search
+  results, and an item Characters tab showing which characters hold an item
+- **NPC overlay** — a player info + timers tab when you target another character
+- **Settings** — settings now autosave on change (Save/Discard buttons removed),
+  a new About tab linking Discord/Ko-fi/GitHub/website, and donations moved from
+  Buy Me a Coffee to Ko-fi
+- **Planes of Power preview** — a backend era package and `pop_enabled`
+  preference gating the level cap and content, with frontend era gating and a
+  PoP preview toggle
+- Native HTML5 drag-and-drop (trigger reorder/category moves, wishlist
+  reordering) now works on Windows — it was silently broken by the title-bar /
+  sidebar `-webkit-app-region: drag` regions
+- Buff-duration modeling corrected: SPA 137/141 focus limits enforced, AA
+  duration extensions applied to off-class clickies, focus SPA 134/139 limits
+  use the caster's class level, and the Permanent Illusion override is honored
+- CH chain matches your own shout/OOC casts, and upgrade configs pinned to an
+  outdated default pattern are migrated
+- Spell timer overlays (detrimental, buff, CH chain) scroll again when popped out
+- Smaller fixes: spellset edit-state alignment and an unresolvable-ID re-fetch
+  loop, a log-replayer crash on stop, out-of-order quest search results, and a
+  black screen when switching to a character with an empty gear slot
+
 ## Phase 11 — Project Website
 _Planned_
 
