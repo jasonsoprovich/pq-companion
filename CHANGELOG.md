@@ -9,6 +9,24 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.13.1 — 2026-06-15
+
+A performance release: much faster startup, plus the Minimize to Tray
+option now works.
+
+### Highlights
+- **Faster startup** — the app launches significantly quicker and no
+  longer shows a multi-second black screen while loading; a brief
+  loading splash appears instead.
+- **Minimize to Tray** — the setting now does what it says: closing the
+  window hides PQ Companion to the system tray (with a tray icon to
+  restore it or quit) instead of quitting.
+
+### Fixes
+- The Items page no longer comes up blank on a fresh launch (it used to
+  stay empty until you clicked another tab).
+- Database browsing (items, NPCs, drops, vendors) is a little snappier.
+
 ## v0.13.0 — 2026-06-15
 
 A large feature release: a new Gear Upgrade Finder, built-in quest
