@@ -198,6 +198,11 @@ func (r *Replayer) Stop() {
 	r.mu.Lock()
 	stop := r.stop
 	active := r.state != ReplayIdle
+	// Claim the channel under the lock so a concurrent/repeat Stop() can't also
+	// close it. finish() later sets r.stop = nil again, which is harmless.
+	if active && stop != nil {
+		r.stop = nil
+	}
 	r.mu.Unlock()
 	if active && stop != nil {
 		close(stop) // run() finalizes state + callbacks
