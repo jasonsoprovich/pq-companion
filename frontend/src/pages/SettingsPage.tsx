@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
@@ -27,6 +27,12 @@ import { WSEvent } from '../lib/wsEvents'
 const ZEAL_RELEASE_URL = 'https://github.com/CoastalRedwood/Zeal/releases/latest'
 const QUARM_PATCHER_RELEASE_URL = 'https://github.com/Pkelly668/QuarmPatcher/releases/latest'
 
+// Community / project links surfaced on the About tab.
+const DISCORD_URL = 'https://discord.gg/Srj4FXcRaz'
+const KOFI_URL = 'https://ko-fi.com/jasonsoprovich'
+const GITHUB_URL = 'https://github.com/jasonsoprovich/pq-companion'
+const WEBSITE_URL = 'https://pq-companion.com'
+
 // formatManifestDate converts a YYYYMMDD manifest date into a readable form.
 // Returns the original string if it doesn't match the expected layout — the
 // upstream manifest format is stable but we'd rather show the raw value than
@@ -42,7 +48,7 @@ import DeveloperTab from './DeveloperTab'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backups' | 'advanced' | 'developer'
+type Tab = 'general' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backups' | 'advanced' | 'about' | 'developer'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -168,7 +174,7 @@ export default function SettingsPage(): React.ReactElement {
   // Allow deep-linking to a specific tab via ?tab= (e.g. links to the Logs tab
   // for backfill). Falls back to General for unknown/absent values.
   const [tab, setTab] = useState<Tab>(() => {
-    const valid: Tab[] = ['general', 'navigation', 'overlays', 'spelltimers', 'dpscolors', 'logs', 'backups', 'advanced', 'developer']
+    const valid: Tab[] = ['general', 'navigation', 'overlays', 'spelltimers', 'dpscolors', 'logs', 'backups', 'advanced', 'about', 'developer']
     const t = searchParams.get('tab') ?? ''
     return (valid as string[]).includes(t) ? (t as Tab) : 'general'
   })
@@ -506,6 +512,7 @@ export default function SettingsPage(): React.ReactElement {
     { id: 'logs', label: 'Logs', icon: <FileText size={13} /> },
     { id: 'backups', label: 'EQ Config Backups', icon: <HardDrive size={13} /> },
     { id: 'advanced', label: 'Advanced', icon: <Wifi size={13} /> },
+    { id: 'about', label: 'About', icon: <Info size={13} /> },
     ...(developerMode
       ? [{ id: 'developer' as Tab, label: 'Developer', icon: <Code2 size={13} /> }]
       : []),
@@ -791,6 +798,103 @@ export default function SettingsPage(): React.ReactElement {
         />
         <DiagnosticsSection />
         </>
+        )}
+
+        {/* ── About ──────────────────────────────────────────────────────── */}
+        {tab === 'about' && (
+        <section
+          className="rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <div className="mb-3 flex items-center gap-3">
+            <span className="text-2xl" aria-hidden="true">⚔</span>
+            <div>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--color-foreground)' }}>
+                PQ Companion
+              </h2>
+              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                {appVersion ? `v${appVersion}` : 'Desktop companion for Project Quarm'}
+              </p>
+            </div>
+          </div>
+
+          <p className="mb-4 text-sm leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>
+            An independent, fan-made desktop companion for the EverQuest
+            emulated server Project Quarm. Built by players, for players.
+          </p>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <a
+              href={DISCORD_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="flex items-center gap-2 rounded px-3 py-2 text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                textDecoration: 'none',
+              }}
+            >
+              <MessageCircle size={15} style={{ color: '#5865F2' }} />
+              Discord
+            </a>
+            <a
+              href={KOFI_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="flex items-center gap-2 rounded px-3 py-2 text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                textDecoration: 'none',
+              }}
+            >
+              <Coffee size={15} style={{ color: '#FF5E5B' }} />
+              Support on Ko-fi
+            </a>
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="flex items-center gap-2 rounded px-3 py-2 text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                textDecoration: 'none',
+              }}
+            >
+              <Code2 size={15} style={{ color: 'var(--color-muted-foreground)' }} />
+              GitHub
+            </a>
+            <a
+              href={WEBSITE_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="flex items-center gap-2 rounded px-3 py-2 text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                textDecoration: 'none',
+              }}
+            >
+              <Globe size={15} style={{ color: 'var(--color-primary)' }} />
+              Website
+            </a>
+          </div>
+
+          <div
+            className="mt-4 flex items-center justify-center gap-1.5 border-t pt-4 text-xs"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
+          >
+            <span>Made with</span>
+            <Heart size={12} style={{ color: '#FF5E5B' }} fill="#FF5E5B" />
+            <span>by Osui &lt;Seekers of Souls&gt;</span>
+          </div>
+        </section>
         )}
 
         {/* ── EverQuest Path ─────────────────────────────────────────────── */}

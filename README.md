@@ -4,7 +4,7 @@ A desktop companion app for [Project Quarm](https://www.projectquarm.com/) — t
 
 > **Status:** Feature-complete and in active maintenance. See [FEATURES.md](FEATURES.md) for the full list of what's implemented.
 
-Join the community on [Discord](https://discord.gg/a2QytxSVgM) for help, feedback, and release announcements.
+Join the community on [Discord](https://discord.gg/Srj4FXcRaz) for help, feedback, and release announcements.
 
 ---
 
@@ -106,7 +106,7 @@ See [FEATURES.md](FEATURES.md) for detailed implementation notes on every shippe
 
 ## Donate
 
-[![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/jasonsoprovich)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/jasonsoprovich)
 
 ---
 
