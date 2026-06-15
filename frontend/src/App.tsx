@@ -6,6 +6,7 @@ import { getConfig } from './services/api'
 import { loadEnums } from './lib/enumsCache'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useTimerAlerts } from './hooks/useTimerAlerts'
+import { useRespawnAlerts } from './hooks/useRespawnAlerts'
 import { useAudioPrefs } from './hooks/useAudioPrefs'
 import { useHighContrast } from './hooks/useHighContrast'
 import { useZoom } from './hooks/useZoom'
@@ -79,6 +80,7 @@ function MainWindowLayout(): React.ReactElement {
   useZoom()
   useAudioEngine()
   useTimerAlerts()
+  useRespawnAlerts()
   // Keep the Log Feed populating in the background so it persists across tab
   // navigation. Clearing only happens via the user's Trash button or restart.
   useLogFeedSubscriber()
