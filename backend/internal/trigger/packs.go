@@ -2220,6 +2220,19 @@ func GeneralTriggersPack() TriggerPack {
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "GROUP DEATH!", DurationSecs: 5, Color: "#ff6600"},
 				},
+				// "X has been slain by Y" is logged for every death in range,
+				// not just group members — so a charmed/normal pet killing an
+				// NPC would otherwise fire GROUP DEATH. Player names are always
+				// a single capitalized word, so anything else as the victim is
+				// an NPC: exclude victims that start lowercase ("a poacher",
+				// "an ulthork", "the guardian") or are multi-word ("Trooper
+				// Coglee", "Verina Tomb"). Single-word named NPCs (e.g.
+				// "Sontalak") are textually indistinguishable from a player and
+				// can still leak — that needs NPC-awareness, not regex.
+				ExcludePatterns: []string{
+					`^[a-z]`,
+					`^\S+ \S+ has been slain by`,
+				},
 			},
 			{
 				Name:     "Spell Resist",
