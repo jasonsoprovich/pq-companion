@@ -58,6 +58,31 @@ func TestQuestsForItem(t *testing.T) {
 	}
 }
 
+// TestSearchQuests checks the DB-explorer quest search matches on a related
+// item name and resolves zone/item display fields.
+func TestSearchQuests(t *testing.T) {
+	d := openTestDB(t)
+	res := d.SearchQuests("Sigil Earring of Veracity", 50, 0)
+	if res.Total == 0 {
+		t.Fatal("expected a quest matching the Sigil Earring item name")
+	}
+	found := false
+	for _, q := range res.Results {
+		if q.NPC == "Lcea Katta" && q.ZoneName != "" && q.ZoneName != q.ZoneShortName {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected Lcea Katta with a resolved zone name in results")
+	}
+
+	// Empty query returns the full set, paged.
+	all := d.SearchQuests("", 10, 0)
+	if all.Total < 100 || len(all.Results) != 10 {
+		t.Errorf("empty-query paging off: total=%d page=%d", all.Total, len(all.Results))
+	}
+}
+
 // TestGetItemQuests checks the display-resolved Quests payload: the chain is
 // reconstructed prerequisite-first with zone long-names and item names filled
 // in. The Sigil Earring of Veracity is a 3-step Lcea Katta chain (Jewel Box →

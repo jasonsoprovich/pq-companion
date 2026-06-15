@@ -160,6 +160,16 @@ export interface ItemQuests {
   used_in: ItemQuestRef[]
 }
 
+// QuestSummary is one browsable quest (by giver NPC + zone) for the database
+// explorer's Quests section.
+export interface QuestSummary {
+  npc: string
+  zone_short_name: string
+  zone_name: string
+  rewards: ItemRef[]
+  turnins: ItemRef[]
+}
+
 export interface SearchResult<T> {
   items: T[]
   total: number

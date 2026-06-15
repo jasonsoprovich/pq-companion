@@ -36,6 +36,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/npcs', label: 'NPCs', icon: <Skull size={16} /> },
       { to: '/zones', label: 'Zones', icon: <Map size={16} /> },
       { to: '/recipes', label: 'Recipes', icon: <Hammer size={16} /> },
+      { to: '/quests', label: 'Quests', icon: <ScrollText size={16} /> },
     ],
   },
   {
