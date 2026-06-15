@@ -1,14 +1,19 @@
 /**
- * OverlaysDashboard — customizable in-app dashboard combining the four
- * draggable/resizable overlay panels. The toolbar exposes per-panel show/hide,
- * a Pop Out All toggle, and a Reset button. The only standalone Electron overlay
- * without an in-dashboard panel is HPS (gated behind SHOW_HPS).
+ * OverlaysDashboard — customizable in-app dashboard combining the
+ * draggable/resizable overlay panels. The toolbar stays compact: a global
+ * "Position overlays" toggle plus a "Manage overlays" dropdown that holds the
+ * per-overlay controls (show/hide the dashboard panel, pop the window out,
+ * recenter it) and the bulk actions (Pop Out All, Reset Positions, Reset
+ * Layout, monitor picker). The only standalone Electron overlay without an
+ * in-dashboard panel is HPS (gated behind SHOW_HPS).
  *
  * Layout (positions, sizes, visibility) is persisted to localStorage and
  * restored on next mount. Drag/resize snaps to a 16px grid.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, HeartPulse, ExternalLink, Layers, X, Crosshair } from 'lucide-react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, ExternalLink, Layers, X, Crosshair, ChevronDown, Move, ListChecks } from 'lucide-react'
+import type { OverlayName } from '../lib/overlays'
+import { useOverlayPositionMode } from '../hooks/useOverlayPositionMode'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
@@ -45,30 +50,253 @@ const VISIBLE_PANEL_KEYS: DashboardPanelKey[] = SHOW_HPS
   ? DASHBOARD_PANEL_KEYS
   : DASHBOARD_PANEL_KEYS.filter((k) => k !== 'hps')
 
-function PanelToggle({
-  label,
-  visible,
-  onToggle,
+// Maps each dashboard panel to its standalone popout window: the canonical
+// overlay name (used for popout open-state polling and per-overlay position
+// reset) and the IPC toggle that opens/closes that floating window.
+const PANEL_POPOUT: Record<DashboardPanelKey, { name: OverlayName; toggle: () => void }> = {
+  buff:        { name: 'buffTimer',    toggle: () => { window.electron?.overlay?.toggleBuffTimer() } },
+  detrim:      { name: 'detrimTimer',  toggle: () => { window.electron?.overlay?.toggleDetrimTimer() } },
+  dps:         { name: 'dps',          toggle: () => { window.electron?.overlay?.toggleDPS() } },
+  npc:         { name: 'npc',          toggle: () => { window.electron?.overlay?.toggleNPC() } },
+  hps:         { name: 'hps',          toggle: () => { window.electron?.overlay?.toggleHPS() } },
+  rolls:       { name: 'rollTracker',  toggle: () => { window.electron?.overlay?.toggleRollTracker() } },
+  respawn:     { name: 'respawnTimer', toggle: () => { window.electron?.overlay?.toggleRespawnTimer() } },
+  chChain:     { name: 'chChain',      toggle: () => { window.electron?.overlay?.toggleCHChain() } },
+  chMetronome: { name: 'chMetronome',  toggle: () => { window.electron?.overlay?.toggleCHMetronome() } },
+  custom:      { name: 'customTimer',  toggle: () => { window.electron?.overlay?.toggleCustomTimer() } },
+}
+
+// Compact square icon button for the manager's per-overlay rows.
+function RowIconButton({
+  active,
+  onClick,
+  title,
+  children,
 }: {
-  label: string
-  visible: boolean
-  onToggle: () => void
+  active?: boolean
+  onClick: () => void
+  title: string
+  children: React.ReactNode
 }): React.ReactElement {
-  const Icon = visible ? Eye : EyeOff
   return (
     <button
-      onClick={onToggle}
-      className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+      onClick={onClick}
+      title={title}
+      className="flex items-center justify-center rounded"
       style={{
-        backgroundColor: visible ? 'var(--color-surface-2)' : 'var(--color-surface)',
-        color: visible ? 'var(--color-foreground)' : 'var(--color-muted)',
+        width: 26,
+        height: 24,
+        backgroundColor: active ? 'var(--color-primary)' : 'var(--color-surface)',
+        color: active ? '#fff' : 'var(--color-muted-foreground)',
         border: '1px solid var(--color-border)',
+        cursor: 'pointer',
       }}
-      title={visible ? `Hide ${label}` : `Show ${label}`}
     >
-      <Icon size={11} />
-      {label}
+      {children}
     </button>
+  )
+}
+
+// OverlaysManager — the "Manage overlays ▾" dropdown. Replaces the old row of
+// per-panel chips so the toolbar stays compact as overlays grow. Holds global
+// actions (pop out all, reset positions/layout, monitor picker) plus a
+// per-overlay grid: show/hide the dashboard panel, pop the window out, and
+// recenter that window.
+function OverlaysManager({
+  panelKeys,
+  labels,
+  layout,
+  onToggleVisible,
+  popoutStates,
+  onTogglePopout,
+  onResetPanelPosition,
+  anyPopoutOpen,
+  onTogglePopouts,
+  onResetPositions,
+  onResetLayout,
+  displays,
+  currentDisplayId,
+  onDisplayChange,
+}: {
+  panelKeys: DashboardPanelKey[]
+  labels: Record<DashboardPanelKey, string>
+  layout: DashboardLayout
+  onToggleVisible: (key: DashboardPanelKey) => void
+  popoutStates: Record<string, boolean>
+  onTogglePopout: (key: DashboardPanelKey) => void
+  onResetPanelPosition: (key: DashboardPanelKey) => void
+  anyPopoutOpen: boolean
+  onTogglePopouts: () => void
+  onResetPositions: () => void
+  onResetLayout: () => void
+  displays: Array<{ id: number; label: string; width: number; height: number; isPrimary: boolean; isCurrent: boolean }>
+  currentDisplayId?: number
+  onDisplayChange: (id: number) => void
+}): React.ReactElement {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  // Close on outside click.
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent): void => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  const actionBtn = {
+    backgroundColor: 'var(--color-surface)',
+    color: 'var(--color-foreground)',
+    border: '1px solid var(--color-border)',
+    cursor: 'pointer',
+  } as const
+  const headerCell = { color: 'var(--color-muted)', width: 26, textAlign: 'center' as const }
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+        style={{
+          backgroundColor: open ? 'var(--color-surface-2)' : 'var(--color-surface)',
+          color: 'var(--color-foreground)',
+          border: '1px solid var(--color-border)',
+        }}
+        title="Show/hide dashboard panels, pop out windows, and reset positions"
+      >
+        <ListChecks size={11} />
+        Manage overlays
+        <ChevronDown size={11} style={{ opacity: 0.7 }} />
+      </button>
+
+      {open && (
+        <div
+          className="rounded-lg p-3"
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: 'calc(100% + 6px)',
+            zIndex: 50,
+            width: 380,
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+          }}
+        >
+          {/* Global actions */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            {typeof window.electron?.overlay?.anyPopoutOpen === 'function' && (
+              <button
+                onClick={onTogglePopouts}
+                className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+                style={actionBtn}
+              >
+                {anyPopoutOpen ? <X size={11} /> : <Layers size={11} />}
+                {anyPopoutOpen ? 'Close All Popouts' : 'Pop Out All'}
+              </button>
+            )}
+            {typeof window.electron?.overlay?.resetAllPositions === 'function' && (
+              <button
+                onClick={onResetPositions}
+                className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+                style={actionBtn}
+                title="Recenter all pop-out overlay windows on the primary monitor and unlock them"
+              >
+                <Crosshair size={11} /> Reset Positions
+              </button>
+            )}
+            <button
+              onClick={onResetLayout}
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+              style={actionBtn}
+              title="Reset the in-app dashboard panel positions, sizes, and visibility to defaults"
+            >
+              <RotateCcw size={11} /> Reset Layout
+            </button>
+          </div>
+
+          {/* Monitor picker — only meaningful with more than one display. */}
+          {displays.length > 1 && (
+            <div
+              className="mb-3 flex items-center gap-1.5"
+              title="Which monitor trigger alert text and the positioning card appear on"
+            >
+              <Monitor size={11} style={{ color: 'var(--color-muted-foreground)' }} />
+              <select
+                value={currentDisplayId ?? ''}
+                onChange={(e) => onDisplayChange(Number(e.target.value))}
+                className="flex-1 text-xs rounded px-1.5 py-1 outline-none"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-foreground)',
+                  border: '1px solid var(--color-border)',
+                  cursor: 'pointer',
+                }}
+              >
+                {displays.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {`${d.label} (${d.width}×${d.height})${d.isPrimary ? ' • Primary' : ''}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Per-overlay grid: Dashboard panel | Pop-out window | Reset position */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr auto auto auto',
+              columnGap: 8,
+              alignItems: 'center',
+            }}
+          >
+            <span className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+              Overlay
+            </span>
+            <span className="text-[10px] uppercase tracking-wide" style={headerCell}>Dash</span>
+            <span className="text-[10px] uppercase tracking-wide" style={headerCell}>Pop</span>
+            <span className="text-[10px] uppercase tracking-wide" style={headerCell}>Pos</span>
+            {panelKeys.map((key) => {
+              const dashOn = layout[key].visible
+              const popOn = !!popoutStates[PANEL_POPOUT[key].name]
+              return (
+                <React.Fragment key={key}>
+                  <span
+                    className="truncate text-xs"
+                    style={{ color: 'var(--color-foreground)', paddingTop: 5, paddingBottom: 5 }}
+                  >
+                    {labels[key]}
+                  </span>
+                  <RowIconButton
+                    active={dashOn}
+                    onClick={() => onToggleVisible(key)}
+                    title={dashOn ? `Hide ${labels[key]} panel in the dashboard` : `Show ${labels[key]} panel in the dashboard`}
+                  >
+                    {dashOn ? <Eye size={12} /> : <EyeOff size={12} />}
+                  </RowIconButton>
+                  <RowIconButton
+                    active={popOn}
+                    onClick={() => onTogglePopout(key)}
+                    title={popOn ? `Close the ${labels[key]} pop-out window` : `Pop out ${labels[key]} as a floating window`}
+                  >
+                    <ExternalLink size={12} />
+                  </RowIconButton>
+                  <RowIconButton
+                    onClick={() => onResetPanelPosition(key)}
+                    title={`Recenter the ${labels[key]} pop-out on the primary monitor and unlock it`}
+                  >
+                    <Crosshair size={12} />
+                  </RowIconButton>
+                </React.Fragment>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -99,9 +327,42 @@ export default function OverlaysDashboard(): React.ReactElement {
   )
 
   const toggleVisible = useCallback(
-    (key: DashboardPanelKey) => () => updatePanel(key, { visible: !layout[key].visible }),
+    (key: DashboardPanelKey) => updatePanel(key, { visible: !layout[key].visible }),
     [layout, updatePanel],
   )
+
+  // Global "Position overlays" edit mode (shared with Settings) — temporarily
+  // makes every open overlay draggable regardless of its locked mode.
+  const positionMode = useOverlayPositionMode()
+
+  // Per-overlay popout open-state, keyed by canonical overlay name. Polled like
+  // anyPopoutOpen since Electron doesn't push window-state changes.
+  const [popoutStates, setPopoutStates] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    if (!window.electron?.overlay?.popoutStates) return
+    let cancelled = false
+    const check = (): void => {
+      window.electron.overlay
+        .popoutStates()
+        .then((s) => { if (!cancelled) setPopoutStates(s) })
+        .catch(() => {})
+    }
+    check()
+    const id = setInterval(check, 1500)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [])
+
+  const togglePopout = useCallback((key: DashboardPanelKey) => {
+    PANEL_POPOUT[key].toggle()
+    // Optimistic flip; the poll reconciles shortly after.
+    const name = PANEL_POPOUT[key].name
+    setPopoutStates((s) => ({ ...s, [name]: !s[name] }))
+  }, [])
+
+  const resetPanelPosition = useCallback((key: DashboardPanelKey) => {
+    window.electron?.overlay?.resetPosition?.(PANEL_POPOUT[key].name)
+  }, [])
 
   const handleReset = useCallback(() => {
     setLayout({ ...DEFAULT_DASHBOARD_LAYOUT })
@@ -204,125 +465,59 @@ export default function OverlaysDashboard(): React.ReactElement {
         backgroundColor: 'var(--color-background)',
       }}
     >
-      {/* Toolbar — title pinned left, panel toggles flow in the middle (wrapping
-          to new rows as the window narrows), action buttons pinned right so they
-          never wrap away into a disconnected row. */}
+      {/* Toolbar — compact: title left, global Position-overlays toggle and the
+          Manage overlays menu (per-overlay show/pop-out/reset + bulk actions)
+          on the right. The old per-panel chip row moved into the menu so the
+          toolbar scales as overlays are added. */}
       <div
-        className="flex items-start gap-3 border-b px-4 py-2 shrink-0"
+        className="flex items-center gap-3 border-b px-4 py-2 shrink-0"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <div className="flex items-center gap-2 shrink-0 h-6">
+        <div className="flex items-center gap-2 shrink-0">
           <MonitorPlay size={14} style={{ color: 'var(--color-primary)' }} />
           <span className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
             Overlays
           </span>
         </div>
 
-        {/* Per-panel show/hide — grows to fill, wraps within its own area */}
-        <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
-          {VISIBLE_PANEL_KEYS.map((key) => (
-            <PanelToggle
-              key={key}
-              label={DASHBOARD_PANEL_LABELS[key]}
-              visible={layout[key].visible}
-              onToggle={toggleVisible(key)}
-            />
-          ))}
-        </div>
+        <div className="min-w-0 flex-1" />
 
         <div className="flex items-center gap-2 shrink-0">
-          {/* Overlay monitor picker — only meaningful with more than one
-              display. Trigger alert text and the positioning card are pinned
-              to the chosen monitor. */}
-          {displays.length > 1 && (
-            <div
-              className="flex items-center gap-1.5"
-              title="Which monitor trigger alert text and the positioning card appear on"
-            >
-              <Monitor size={11} style={{ color: 'var(--color-muted-foreground)' }} />
-              <select
-                value={currentDisplayId ?? ''}
-                onChange={(e) => handleDisplayChange(Number(e.target.value))}
-                className="text-xs rounded px-1.5 py-1 outline-none"
-                style={{
-                  backgroundColor: 'var(--color-surface)',
-                  color: 'var(--color-foreground)',
-                  border: '1px solid var(--color-border)',
-                  cursor: 'pointer',
-                }}
-              >
-                {displays.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {`${d.label} (${d.width}×${d.height})${d.isPrimary ? ' • Primary' : ''}`}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          {/* HPS has no in-dashboard panel — pop it out as a floating window. */}
-          {SHOW_HPS && (
+          {typeof window.electron?.overlay?.setPositionMode === 'function' && (
             <button
-              onClick={() => window.electron?.overlay?.toggleHPS()}
+              onClick={() => window.electron?.overlay?.setPositionMode?.(!positionMode)}
               className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
               style={{
-                backgroundColor: 'var(--color-surface-2)',
-                color: 'var(--color-muted-foreground)',
-                border: '1px solid var(--color-border)',
-              }}
-              title="Toggle the HPS meter overlay window"
-            >
-              <HeartPulse size={11} />
-              HPS Meter
-              <ExternalLink size={9} style={{ opacity: 0.6 }} />
-            </button>
-          )}
-          {typeof window.electron?.overlay?.anyPopoutOpen === 'function' && (
-            <button
-              onClick={handleTogglePopouts}
-              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-              style={{
-                backgroundColor: anyPopoutOpen ? 'var(--color-surface-2)' : 'var(--color-surface)',
-                color: anyPopoutOpen ? 'var(--color-foreground)' : 'var(--color-muted-foreground)',
+                backgroundColor: positionMode ? 'var(--color-primary)' : 'var(--color-surface)',
+                color: positionMode ? '#fff' : 'var(--color-foreground)',
                 border: '1px solid var(--color-border)',
               }}
               title={
-                anyPopoutOpen
-                  ? 'Close all standalone overlay windows'
-                  : 'Pop out the overlays you have toggled visible above (plus Trigger Alerts)'
+                positionMode
+                  ? 'Done — lock every overlay back to its configured mode'
+                  : 'Make every open overlay draggable so you can arrange them, regardless of locked mode (the only way to move a Display-only overlay)'
               }
             >
-              {anyPopoutOpen ? <X size={11} /> : <Layers size={11} />}
-              {anyPopoutOpen ? 'Close All Popouts' : 'Pop Out All'}
+              <Move size={11} />
+              {positionMode ? 'Done positioning' : 'Position overlays'}
             </button>
           )}
-          {typeof window.electron?.overlay?.resetAllPositions === 'function' && (
-            <button
-              onClick={() => setShowResetConfirm(true)}
-              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                color: 'var(--color-muted-foreground)',
-                border: '1px solid var(--color-border)',
-              }}
-              title="Recenter all pop-out overlay windows on the primary monitor and unlock them — use this if an overlay has drifted off-screen"
-            >
-              <Crosshair size={11} />
-              Reset Window Positions
-            </button>
-          )}
-          <button
-            onClick={handleReset}
-            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-            style={{
-              backgroundColor: 'var(--color-surface)',
-              color: 'var(--color-muted-foreground)',
-              border: '1px solid var(--color-border)',
-            }}
-            title="Reset the in-app dashboard panel positions, sizes, and visibility to defaults (does not affect pop-out windows)"
-          >
-            <RotateCcw size={11} />
-            Reset Dashboard Layout
-          </button>
+          <OverlaysManager
+            panelKeys={VISIBLE_PANEL_KEYS}
+            labels={DASHBOARD_PANEL_LABELS}
+            layout={layout}
+            onToggleVisible={toggleVisible}
+            popoutStates={popoutStates}
+            onTogglePopout={togglePopout}
+            onResetPanelPosition={resetPanelPosition}
+            anyPopoutOpen={anyPopoutOpen}
+            onTogglePopouts={handleTogglePopouts}
+            onResetPositions={() => setShowResetConfirm(true)}
+            onResetLayout={handleReset}
+            displays={displays}
+            currentDisplayId={currentDisplayId}
+            onDisplayChange={handleDisplayChange}
+          />
         </div>
       </div>
 

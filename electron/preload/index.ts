@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld('electron', {
     openAllPopouts: (panels?: string[]): Promise<void> =>
       ipcRenderer.invoke('overlay:popouts:open-all', panels),
     closeAllPopouts: (): Promise<void> => ipcRenderer.invoke('overlay:popouts:close-all'),
+    popoutStates: (): Promise<Record<string, boolean>> =>
+      ipcRenderer.invoke('overlay:popouts:states'),
     setIgnoreMouseEvents: (ignore: boolean): Promise<void> =>
       ipcRenderer.invoke('overlay:set-ignore-mouse-events', ignore),
     setTriggerMode: (mode: 'interactive' | 'passthrough' | 'hidden'): Promise<void> =>

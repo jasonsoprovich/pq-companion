@@ -1830,6 +1830,17 @@ ipcMain.handle('overlay:popouts:close-all', () => {
   for (const win of popoutWindows()) win.close()
 })
 
+// Per-overlay popout open state, keyed by canonical overlay name (excludes the
+// always-on trigger overlay). Lets the dashboard show which windows are open.
+ipcMain.handle('overlay:popouts:states', () => {
+  const states: Record<string, boolean> = {}
+  for (const name of RESETTABLE_OVERLAYS) {
+    const win = overlayWindowByName(name)
+    states[name] = !!win && !win.isDestroyed()
+  }
+  return states
+})
+
 // ── IPC handlers — overlay position reset ────────────────────────────────────
 // Recovers an overlay that has wandered (or been pushed by a layout/update)
 // off-screen. Because a locked overlay is click-through and its unlock button
