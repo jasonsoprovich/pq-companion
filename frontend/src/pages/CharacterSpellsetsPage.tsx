@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import {
   Check,
@@ -1050,7 +1050,12 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
   }, [classSpells, referenced])
 
   // Backfill any referenced spell IDs that aren't in the class catalog by
-  // fetching them once. Keeps the off-class display clean.
+  // fetching them once. Keeps the off-class display clean. IDs we've already
+  // tried are recorded so a spell that fails to resolve (deleted/invalid id,
+  // getSpell -> null) isn't re-requested forever — without this guard the
+  // effect re-runs on every partial success (referenced -> spellsById change)
+  // and keeps re-fetching the unresolved ids.
+  const attemptedSpellIds = useRef<Set<number>>(new Set())
   useEffect(() => {
     if (!viewedFile) return
     const missing: number[] = []
@@ -1060,10 +1065,11 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
         if (id <= 0) continue
         if (seen.has(id)) continue
         seen.add(id)
-        if (!spellsById.has(id)) missing.push(id)
+        if (!spellsById.has(id) && !attemptedSpellIds.current.has(id)) missing.push(id)
       }
     }
     if (missing.length === 0) return
+    for (const id of missing) attemptedSpellIds.current.add(id)
     let cancelled = false
     Promise.all(
       missing.map((id) => getSpell(id).catch(() => null)),
