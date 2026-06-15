@@ -97,7 +97,10 @@ func (db *DB) FocusOptions(classBit, maxLevel int) ([]FocusOption, error) {
 // items and other non-obtainable specials. There's no data flag distinguishing
 // these, so they're listed explicitly — extend as more are found.
 var excludedGearItems = map[int]bool{
-	2660: true, // Ban Hammer — GM-only, not obtainable by players
+	2660:  true, // Ban Hammer — GM-only, not obtainable by players
+	11000: true, // Big Soul Devourer — GM-event weapon, no longer obtainable
+	11001: true, // Soul Devourer — GM-event weapon, no longer obtainable
+	2883:  true, // The Prime Healers Bulwark — GM-event item, no longer obtainable
 }
 
 // CandidateFilter selects items usable in a slot by a character. A zero
