@@ -23,6 +23,32 @@ export function defaultTimerAlertPref(kind: 'custom' | 'respawn'): TimerAlertPre
 }
 
 /**
+ * Fill any unset/invalid fields of a stored preference from the kind's
+ * defaults, keeping the user's enabled flag and configured values. Returns a
+ * complete, valid pref so the Settings editor never starts from an empty Type
+ * (which would render a blank dropdown and an enabled-but-silent alert) and so
+ * every onChange persists a fully-populated object. `undefined` (never
+ * configured) yields the defaults with the alert left disabled.
+ */
+export function withTimerAlertDefaults(
+  pref: TimerAlertPref | undefined,
+  kind: 'custom' | 'respawn',
+): TimerAlertPref {
+  const d = defaultTimerAlertPref(kind)
+  if (!pref) return { ...d, enabled: false }
+  return {
+    enabled: pref.enabled,
+    seconds: Number.isFinite(pref.seconds) ? pref.seconds : d.seconds,
+    type: pref.type === 'play_sound' || pref.type === 'text_to_speech' ? pref.type : d.type,
+    sound_path: pref.sound_path ?? d.sound_path,
+    volume: pref.volume || d.volume,
+    tts_template: pref.tts_template || d.tts_template,
+    voice: pref.voice ?? d.voice,
+    tts_volume: pref.tts_volume || d.tts_volume,
+  }
+}
+
+/**
  * Convert a Custom-timer alert preference into the timer_alerts payload sent
  * with a new manual timer. Returns [] when disabled, so the timer stays
  * silent. The single threshold uses the same {spell} placeholder convention

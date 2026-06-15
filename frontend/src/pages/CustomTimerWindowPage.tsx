@@ -9,7 +9,7 @@ import { Bell, BellOff, Hourglass, Trash2, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresholds'
 import { useCustomTimerAlertPref } from '../hooks/useCustomTimerAlertPref'
-import { customAlertThresholds, defaultTimerAlertPref } from '../lib/timerAlerts'
+import { customAlertThresholds, withTimerAlertDefaults } from '../lib/timerAlerts'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
@@ -205,7 +205,7 @@ export default function CustomTimerWindowPage(): React.ReactElement {
     // When the bell is lit, arm this timer with the global alert config (or a
     // sensible built-in default if none is configured); otherwise stay silent.
     const alerts = bellOn
-      ? customAlertThresholds({ ...(alertPref ?? defaultTimerAlertPref('custom')), enabled: true })
+      ? customAlertThresholds({ ...withTimerAlertDefaults(alertPref, 'custom'), enabled: true })
       : undefined
     startCustomTimer(newName.trim(), secs, alerts)
       .then(() => {

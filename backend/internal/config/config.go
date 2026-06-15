@@ -288,15 +288,19 @@ type Preferences struct {
 	// Custom Timer countdowns. When Enabled, the Custom Timers overlay's
 	// quick-add form arms a fading-soon alert on each new timer (the player
 	// can toggle it off per timer with the bell button). Trigger-driven
-	// custom timers carry their own alerts and are unaffected. Disabled
-	// (zero value) by default — manual timers stay silent as before.
-	CustomTimerAlert TimerAlertPref `yaml:"custom_timer_alert,omitempty" json:"custom_timer_alert"`
+	// custom timers carry their own alerts and are unaffected. Nil/omitted by
+	// default — manual timers stay silent as before. A pointer so an unset
+	// field is dropped from JSON entirely; a zero struct would otherwise
+	// serialize with an empty Type and read client-side as a misconfigured
+	// alert instead of "not configured".
+	CustomTimerAlert *TimerAlertPref `yaml:"custom_timer_alert,omitempty" json:"custom_timer_alert,omitempty"`
 
 	// RespawnAlert announces NPC respawns: when Enabled, an audio cue fires as
 	// each respawn timer crosses Seconds remaining (0 = at "POP"). Applies to
 	// every auto-generated respawn timer; there is no per-timer toggle since
-	// they aren't added by hand. Disabled (zero value) by default.
-	RespawnAlert TimerAlertPref `yaml:"respawn_alert,omitempty" json:"respawn_alert"`
+	// they aren't added by hand. Nil/omitted (disabled) by default; pointer for
+	// the same reason as CustomTimerAlert.
+	RespawnAlert *TimerAlertPref `yaml:"respawn_alert,omitempty" json:"respawn_alert,omitempty"`
 
 	// DeveloperMode reveals the Developer tab in the Settings page, which
 	// hosts power-user tools (SQL sandbox, schema viewer). Toggled in-app

@@ -9,7 +9,7 @@ import TimerAlertPrefEditor from '../components/settings/TimerAlertPrefEditor'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config, DPSClassColors, NPCOverlaySections, TimerAlertPref } from '../types/config'
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
-import { defaultTimerAlertPref } from '../lib/timerAlerts'
+import { withTimerAlertDefaults } from '../lib/timerAlerts'
 import { OVERLAY_DEFS, resolveLockedMode } from '../lib/overlays'
 import type { OverlayName, LockedMode } from '../lib/overlays'
 import { DEV_HPS } from '../lib/devFlags'
@@ -1884,12 +1884,7 @@ export default function SettingsPage(): React.ReactElement {
               insert the timer's name. (Trigger-driven custom timers keep their own alerts.)
             </p>
             <TimerAlertPrefEditor
-              value={
-                config.preferences?.custom_timer_alert ?? {
-                  ...defaultTimerAlertPref('custom'),
-                  enabled: false,
-                }
-              }
+              value={withTimerAlertDefaults(config.preferences?.custom_timer_alert, 'custom')}
               onChange={(next: TimerAlertPref) =>
                 setConfig({
                   ...config,
@@ -1914,12 +1909,7 @@ export default function SettingsPage(): React.ReactElement {
               the spoken text to insert the mob's name.
             </p>
             <TimerAlertPrefEditor
-              value={
-                config.preferences?.respawn_alert ?? {
-                  ...defaultTimerAlertPref('respawn'),
-                  enabled: false,
-                }
-              }
+              value={withTimerAlertDefaults(config.preferences?.respawn_alert, 'respawn')}
               onChange={(next: TimerAlertPref) =>
                 setConfig({
                   ...config,
