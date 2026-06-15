@@ -538,7 +538,7 @@ async function resolveDevBackendPort(): Promise<void> {
     } catch {
       // file not written yet — keep polling
     }
-    await new Promise((r) => setTimeout(r, 200))
+    await new Promise((r) => setTimeout(r, 50))
   }
   console.warn(
     `[main] Dev port discovery timed out (${portFile} not found / unreadable). ` +

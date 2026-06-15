@@ -1,7 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, Suspense } from 'react'
 import { Code2, AlertTriangle, FileText, Database, Network, FlaskConical } from 'lucide-react'
 import SqlSandboxPanel from './SqlSandboxPanel'
-import SchemaGraphPanel from './SchemaGraphPanel'
+// Lazy-loaded: SchemaGraphPanel pulls in @xyflow/react (~4MB) + dagre. Keeping
+// it out of the static import graph removes those heavy deps from the app's
+// boot bundle — only Dev-tab users who open the graph sub-tab pay the cost.
+const SchemaGraphPanel = React.lazy(() => import('./SchemaGraphPanel'))
 import { getConfig, updateConfig } from '../services/api'
 import type { Config } from '../types/config'
 
@@ -69,7 +72,11 @@ export default function DeveloperTab(): React.ReactElement {
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         {sub === 'notes' && <NotesPanel />}
         {sub === 'sandbox' && <SqlSandboxPanel />}
-        {sub === 'graph' && <SchemaGraphPanel />}
+        {sub === 'graph' && (
+          <Suspense fallback={<div className="text-sm text-zinc-500">Loading schema graph…</div>}>
+            <SchemaGraphPanel />
+          </Suspense>
+        )}
         {sub === 'flags' && <FlagsPanel />}
       </div>
     </div>
