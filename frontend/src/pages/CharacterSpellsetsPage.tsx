@@ -1455,8 +1455,11 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
                 .filter((_, j) => j !== i)
                 .map((other) => other.name)
               return (
+                // Key on the (file-unique) spellset name, not the index, so a
+                // card's local editing/draft state stays bound to its spellset
+                // after a mid-list delete instead of jumping to a neighbour.
                 <SpellsetCard
-                  key={i}
+                  key={s.name}
                   spellset={s}
                   spellsById={spellsById}
                   siblingNames={siblingNames}
