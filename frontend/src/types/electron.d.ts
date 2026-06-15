@@ -21,6 +21,7 @@ export interface ElectronAPI {
     dragStart: () => Promise<void>
     dragEnd: () => Promise<void>
     setZoom: (factor: number) => Promise<void>
+    setMinimizeToTray: (enabled: boolean) => Promise<void>
   }
   overlay: {
     openDPS: () => Promise<void>

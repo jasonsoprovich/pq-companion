@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol, globalShortcut } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol, globalShortcut, Tray, Menu, nativeImage } from 'electron'
 import { join, extname, dirname } from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import { existsSync, readFileSync, writeFileSync, statSync } from 'fs'
@@ -76,6 +76,66 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 const appIconPath = isDev
   ? join(__dirname, '../../build/icon.png')
   : join(process.resourcesPath, 'icon.png')
+
+// ── System tray / minimize-to-tray ─────────────────────────────────────────
+// The renderer pushes the user's "Minimize to Tray" preference here via the
+// `window:set-minimize-to-tray` IPC (see App.tsx + SettingsPage). When on, the
+// window's close ('X') hides to a tray icon instead of quitting; when off there
+// is no tray icon and 'X' quits as before. `isQuittingApp` lets the tray's Quit
+// item — and any real quit — bypass the hide-on-close interception.
+let tray: Tray | null = null
+let minimizeToTray = false
+let isQuittingApp = false
+
+// Bring the main window back from the tray (or recreate it if it was torn
+// down). Used by the tray click handler and the tray menu's "Show" item.
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createMainWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function createTray(): void {
+  if (tray && !tray.isDestroyed()) return
+  // A nativeImage from the same PNG the window uses. If the file is missing
+  // for any reason, fall back to the path string so Electron still renders
+  // something rather than throwing.
+  const image = nativeImage.createFromPath(appIconPath)
+  tray = new Tray(image.isEmpty() ? appIconPath : image)
+  tray.setToolTip('PQ Companion')
+  const menu = Menu.buildFromTemplate([
+    { label: 'Show PQ Companion', click: () => showMainWindow() },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        isQuittingApp = true
+        app.quit()
+      }
+    }
+  ])
+  tray.setContextMenu(menu)
+  // Left-click (Windows) restores the window; on other platforms the context
+  // menu covers it, but wiring click everywhere is harmless.
+  tray.on('click', () => showMainWindow())
+}
+
+function destroyTray(): void {
+  if (tray && !tray.isDestroyed()) tray.destroy()
+  tray = null
+}
+
+// Apply the latest preference value. Creating/destroying the tray here keeps
+// the icon present only while the feature is enabled.
+function setMinimizeToTray(enabled: boolean): void {
+  minimizeToTray = enabled
+  if (enabled) createTray()
+  else destroyTray()
+}
 
 // MIME type for the pq-audio:// handler. Chromium needs a Content-Type that
 // matches a media type it can decode; without this it silently rejects the
@@ -747,6 +807,16 @@ function createMainWindow(): void {
     return { action: 'deny' }
   })
 
+  // Minimize-to-tray: when the preference is on, the 'X' hides the window to
+  // the tray instead of closing it. A real quit (tray "Quit", app.quit, OS
+  // shutdown) sets isQuittingApp first so this doesn't trap the exit.
+  mainWindow.on('close', (event) => {
+    if (minimizeToTray && !isQuittingApp) {
+      event.preventDefault()
+      mainWindow?.hide()
+    }
+  })
+
   mainWindow.on('closed', () => {
     closeAllOverlays()
     mainWindow = null
@@ -1408,6 +1478,13 @@ ipcMain.handle('window:maximize', () => {
 })
 ipcMain.handle('window:close', () => mainWindow?.close())
 ipcMain.handle('window:is-maximized', () => mainWindow?.isMaximized() ?? false)
+
+// The renderer mirrors the persisted "Minimize to Tray" preference here on
+// startup and whenever the user toggles it, so the close handler and tray
+// icon stay in sync without the main process needing to parse config.yaml.
+ipcMain.handle('window:set-minimize-to-tray', (_event, enabled: boolean) => {
+  setMinimizeToTray(Boolean(enabled))
+})
 
 // Scales the whole main-window UI like a browser zoom (issue #130). Clamped to
 // a sane range so the UI can't be zoomed into uselessness. Applied to the
@@ -2200,6 +2277,9 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', (event) => {
+  // We're genuinely quitting now — let the main window's close handler through
+  // instead of hiding it to the tray.
+  isQuittingApp = true
   if (isGracefulQuit || !sidecarProcess) return
   // Electron only waits for before-quit synchronously. To stop the sidecar
   // and confirm exit before we really quit, cancel this pass, run the async

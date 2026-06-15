@@ -81,7 +81,15 @@ function MainWindowLayout(): React.ReactElement {
 
   useEffect(() => {
     getConfig()
-      .then((c) => setOnboardingDone(Boolean(c.onboarding_completed)))
+      .then((c) => {
+        setOnboardingDone(Boolean(c.onboarding_completed))
+        // Mirror the persisted "Minimize to Tray" preference to the main
+        // process so the close ('X') behaviour and tray icon match the saved
+        // setting from the moment the app loads.
+        void window.electron?.window?.setMinimizeToTray(
+          Boolean(c.preferences?.minimize_to_tray)
+        )
+      })
       // If the backend is briefly unreachable on first launch, default to
       // showing the wizard rather than the main UI in an unconfigured state.
       .catch(() => setOnboardingDone(false))

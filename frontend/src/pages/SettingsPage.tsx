@@ -1370,15 +1370,19 @@ export default function SettingsPage(): React.ReactElement {
               </p>
             </div>
             <div
-              onClick={() =>
+              onClick={() => {
+                const next = !config.preferences.minimize_to_tray
                 setConfig({
                   ...config,
                   preferences: {
                     ...config.preferences,
-                    minimize_to_tray: !config.preferences.minimize_to_tray,
+                    minimize_to_tray: next,
                   },
                 })
-              }
+                // Apply immediately so the close behaviour / tray icon update
+                // without waiting for a restart or config reload.
+                void window.electron?.window?.setMinimizeToTray(next)
+              }}
               style={{
                 width: 40,
                 height: 22,
