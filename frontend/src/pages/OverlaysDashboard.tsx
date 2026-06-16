@@ -11,7 +11,7 @@
  * restored on next mount. Drag/resize snaps to a 16px grid.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, ExternalLink, Layers, X, Crosshair, ChevronDown, Move, ListChecks } from 'lucide-react'
+import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, ExternalLink, Layers, X, Crosshair, ChevronDown, Move, ListChecks, Trash2 } from 'lucide-react'
 import type { OverlayName } from '../lib/overlays'
 import { useOverlayPositionMode } from '../hooks/useOverlayPositionMode'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
@@ -25,6 +25,7 @@ import CHChainPanel from '../components/overlays/CHChainPanel'
 import CHMetronomePanel from '../components/overlays/CHMetronomePanel'
 import CustomTimerPanel from '../components/overlays/CustomTimerPanel'
 import { ConfirmModal } from '../components/ConfirmModal'
+import { clearTimers } from '../services/api'
 import {
   DASHBOARD_PANEL_KEYS,
   DASHBOARD_PANEL_LABELS,
@@ -114,6 +115,7 @@ function OverlaysManager({
   onTogglePopouts,
   onResetPositions,
   onResetLayout,
+  onClearTimers,
   displays,
   currentDisplayId,
   onDisplayChange,
@@ -129,6 +131,7 @@ function OverlaysManager({
   onTogglePopouts: () => void
   onResetPositions: () => void
   onResetLayout: () => void
+  onClearTimers: () => void
   displays: Array<{ id: number; label: string; width: number; height: number; isPrimary: boolean; isCurrent: boolean }>
   currentDisplayId?: number
   onDisplayChange: (id: number) => void
@@ -214,6 +217,14 @@ function OverlaysManager({
               title="Reset the in-app dashboard panel positions, sizes, and visibility to defaults"
             >
               <RotateCcw size={11} /> Reset Layout
+            </button>
+            <button
+              onClick={onClearTimers}
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+              style={actionBtn}
+              title="Clear every active buff, detrimental, and custom timer — use after switching characters so stale buffs from the old character don't linger"
+            >
+              <Trash2 size={11} /> Clear All Timers
             </button>
           </div>
 
@@ -382,6 +393,16 @@ export default function OverlaysDashboard(): React.ReactElement {
     window.electron?.overlay?.resetAllPositions?.().catch(() => {})
   }, [])
 
+  // Clear-all-timers is destructive (wipes active buff/detrimental/custom
+  // timers), so it's gated behind a confirm. Main use is after switching
+  // characters, where the old character's timers would otherwise keep running.
+  const [showClearTimersConfirm, setShowClearTimersConfirm] = useState(false)
+
+  const confirmClearTimers = useCallback(() => {
+    setShowClearTimersConfirm(false)
+    clearTimers('all').catch(() => {})
+  }, [])
+
   // Tracks whether any standalone popout window is currently open. Polled
   // because Electron doesn't push window-state changes to this renderer.
   const [anyPopoutOpen, setAnyPopoutOpen] = useState(false)
@@ -514,6 +535,7 @@ export default function OverlaysDashboard(): React.ReactElement {
             onTogglePopouts={handleTogglePopouts}
             onResetPositions={() => setShowResetConfirm(true)}
             onResetLayout={handleReset}
+            onClearTimers={() => setShowClearTimersConfirm(true)}
             displays={displays}
             currentDisplayId={currentDisplayId}
             onDisplayChange={handleDisplayChange}
@@ -672,6 +694,15 @@ export default function OverlaysDashboard(): React.ReactElement {
           confirmLabel="Reset Positions"
           onConfirm={confirmResetPositions}
           onCancel={() => setShowResetConfirm(false)}
+        />
+      )}
+      {showClearTimersConfirm && (
+        <ConfirmModal
+          title="Clear All Timers"
+          message="Clear every active buff, detrimental, and custom timer? Handy after switching characters so the old character's buffs stop showing. This can't be undone."
+          confirmLabel="Clear All Timers"
+          onConfirm={confirmClearTimers}
+          onCancel={() => setShowClearTimersConfirm(false)}
         />
       )}
     </div>
