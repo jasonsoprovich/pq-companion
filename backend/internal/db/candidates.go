@@ -200,6 +200,9 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 		if excludedGearItems[c.ID] {
 			continue // GM/non-obtainable special
 		}
+		if db.IsGMZoneItem(c.ID) {
+			continue // sold only by GM-zone merchants (Sunset Home) — not obtainable
+		}
 		if f.ExcludePoP && db.IsPoPGated(c.ID) {
 			continue // not yet obtainable on Project Quarm
 		}

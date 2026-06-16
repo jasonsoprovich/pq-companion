@@ -30,6 +30,14 @@ type DB struct {
 	// sources. Used to hide not-yet-available PoP gear from the upgrade finder.
 	popOnce  sync.Once
 	popGated map[int]bool
+
+	// GM-zone-only item gate, computed once on first use (see gm_zones.go).
+	// Items sold exclusively by merchants in GM/non-playable zones (Sunset
+	// Home) and not obtainable any other way are GM items normal players can't
+	// get; the upgrade finder must never suggest them. Cheap enough to derive
+	// live (a few indexed joins) so it needs no precomputed file.
+	gmOnce      sync.Once
+	gmZoneItems map[int]bool
 }
 
 // Open opens the SQLite database at the given path in read-only mode.
