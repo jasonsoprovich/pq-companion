@@ -383,6 +383,16 @@ type TimerAlertPref struct {
 	TTSVolume   int    `yaml:"tts_volume,omitempty" json:"tts_volume"`
 }
 
+// Respawn-alert TTS default. The frontend mirrors these in
+// frontend/src/lib/timerAlerts.ts — keep them in sync. The legacy spelling
+// "respawned" is mispronounced by the speech engine ("R-E-S-P-awned"), so the
+// hyphenated form is the current default; applyDefaults upgrades a saved pref
+// still pinned to the exact legacy string (see the migration there).
+const (
+	legacyRespawnTTSTemplate  = "{npc} has respawned"
+	DefaultRespawnTTSTemplate = "{npc} has re-spawned"
+)
+
 // OverlayPosition is an on-screen point in the trigger overlay window's
 // local pixel space (mirrors trigger.ActionPosition, but lives here so the
 // config package doesn't import the trigger package).
@@ -777,6 +787,15 @@ func applyDefaults(cfg *Config) bool {
 			s.SpellsClass = true
 		}
 		cfg.Preferences.NPCSpellsSectionMigrationDone = true
+		changed = true
+	}
+	// Respawn-alert TTS spelling: a config saved with the exact legacy default
+	// "{npc} has respawned" predates the pronunciation fix. Swap it for the
+	// hyphenated form so existing users who enabled the alert stop hearing
+	// "R-E-S-P-awned". Exact match only — a customized template stays untouched.
+	if cfg.Preferences.RespawnAlert != nil &&
+		cfg.Preferences.RespawnAlert.TTSTemplate == legacyRespawnTTSTemplate {
+		cfg.Preferences.RespawnAlert.TTSTemplate = DefaultRespawnTTSTemplate
 		changed = true
 	}
 	return changed

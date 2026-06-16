@@ -279,6 +279,55 @@ preferences:
 	}
 }
 
+func TestLoadFrom_MigratesRespawnTTSSpelling(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	// A config that enabled the respawn alert before the pronunciation fix has
+	// the exact legacy template saved verbatim.
+	const old = `eq_path: /games/EQ
+preferences:
+  respawn_alert:
+    enabled: true
+    type: text_to_speech
+    tts_template: '{npc} has respawned'
+`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	cfg := m.Get()
+	if cfg.Preferences.RespawnAlert == nil {
+		t.Fatal("respawn_alert should be present")
+	}
+	if got := cfg.Preferences.RespawnAlert.TTSTemplate; got != DefaultRespawnTTSTemplate {
+		t.Errorf("legacy template should migrate to %q, got %q", DefaultRespawnTTSTemplate, got)
+	}
+
+	// A customized template must be left untouched.
+	const custom = `eq_path: /games/EQ
+preferences:
+  respawn_alert:
+    enabled: true
+    type: text_to_speech
+    tts_template: '{npc} is back, watch out'
+`
+	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m2, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom (custom): %v", err)
+	}
+	if got := m2.Get().Preferences.RespawnAlert.TTSTemplate; got != "{npc} is back, watch out" {
+		t.Errorf("custom template must be preserved, got %q", got)
+	}
+}
+
 // Configs snapshot DefaultCHChainPattern at save time, so when the shipped
 // default improves, a user who never customized theirs would stay pinned to
 // the old one. applyDefaults upgrades exact matches of any legacy default to
