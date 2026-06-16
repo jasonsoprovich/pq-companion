@@ -1774,6 +1774,13 @@ func (e *Engine) contributorsFor(eqPath, charName string) ([]buffmod.Modifier, b
 // spell with goodEffect=1 (rare but it happens for certain proc effects)
 // still surfaces as a DoT.
 func categorize(spell *db.Spell) Category {
+	// A self-targeted beneficial spell is always a buff, even when one of its
+	// effect slots carries a negative HP value. That slot is an HP cost/drain
+	// component (e.g. Ancient: Master of Death's -63 HP), not a damage-over-time
+	// — you can't DoT or debuff yourself — so it must not trip the DoT detection
+	// below. Enemy-targeted goodEffect=1 DoT procs (target type != self) are
+	// unaffected and still surface as DoTs.
+	selfBuff := spell.GoodEffect == 1 && spell.TargetType == targetTypeSelf
 	for i, effID := range spell.EffectIDs {
 		switch effID {
 		case 18: // Mesmerize
@@ -1782,7 +1789,7 @@ func categorize(spell *db.Spell) Category {
 			return CategoryStun
 		case 0:
 			// Effect 0 is HP: positive base = heal/regen, negative = damage over time.
-			if spell.EffectBaseValues[i] < 0 {
+			if spell.EffectBaseValues[i] < 0 && !selfBuff {
 				return CategoryDot
 			}
 		}

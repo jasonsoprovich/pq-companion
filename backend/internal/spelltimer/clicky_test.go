@@ -104,6 +104,21 @@ func TestCategorize_ClickyAndDebuff(t *testing.T) {
 			},
 			want: CategoryDot,
 		},
+		{
+			// Ancient: Master of Death — a self-target beneficial spell
+			// (goodEffect=1) whose effect slot 7 is an HP cost (effect 0, base
+			// -63). That negative HP must NOT classify it as a DoT; the self +
+			// goodEffect flags win.
+			name: "self buff with hp-cost slot is a buff, not a dot",
+			spell: &db.Spell{
+				GoodEffect:       1,
+				TargetType:       targetTypeSelf,
+				ClassLevels:      enchanterCastable(),
+				EffectIDs:        [12]int{58, 15, 10, 66, 13, 10, 0},
+				EffectBaseValues: [12]int{85, 44, 0, 1, 1, 0, -63},
+			},
+			want: CategoryBuff,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
