@@ -75,6 +75,11 @@ const STAT_KEYS: { key: keyof UpgradeWeights; label: string }[] = [
   { key: 'mana_regen', label: 'ManaReg' },
 ]
 
+// Weights that are soft/hard-capped or situational, pulled out of the compact
+// stat grid into their own full-width rows so they can carry a caveat note.
+// They stay in STAT_KEYS so the stat-delta chips still label them.
+const NOTED_WEIGHTS = new Set<keyof UpgradeWeights>(['atk', 'mana_regen'])
+
 const STAT_LABEL: Record<string, string> = Object.fromEntries(
   STAT_KEYS.map((s) => [s.key, s.label]),
 )
@@ -576,7 +581,7 @@ function WeightsEditor({
         </div>
       </div>
       <div className="grid grid-cols-5 gap-2 md:grid-cols-8">
-        {STAT_KEYS.map((s) => (
+        {STAT_KEYS.filter((s) => !NOTED_WEIGHTS.has(s.key)).map((s) => (
           <label key={s.key} className="flex items-center gap-1 text-xs"
             style={{ color: 'var(--color-muted-foreground)' }}>
             <span className="w-8 shrink-0">{s.label}</span>
@@ -589,7 +594,31 @@ function WeightsEditor({
           </label>
         ))}
       </div>
+      {/* Capped/situational weights get a full-width row with a caveat note,
+          like Weapon DPS and Priority focus bonus below. */}
       <label className="mt-2 flex items-center gap-2 text-xs"
+        style={{ color: 'var(--color-muted-foreground)' }}>
+        <span className="w-28">ATK</span>
+        <input type="number" step={0.1} min={0}
+          value={weights.atk}
+          onChange={(e) => onChange('atk', Number(e.target.value))}
+          style={{ ...inputStyle(), width: 70 }} />
+        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+          worn attack bonus — soft-capped at ~250; points past the cap score nothing, and it's worthless for casters
+        </span>
+      </label>
+      <label className="mt-1 flex items-center gap-2 text-xs"
+        style={{ color: 'var(--color-muted-foreground)' }}>
+        <span className="w-28">ManaReg</span>
+        <input type="number" step={0.1} min={0}
+          value={weights.mana_regen}
+          onChange={(e) => onChange('mana_regen', Number(e.target.value))}
+          style={{ ...inputStyle(), width: 70 }} />
+        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+          worn mana regen (Flowing Thought) — item-capped at 15; useless once you're capped, and 0 for pure melee
+        </span>
+      </label>
+      <label className="mt-1 flex items-center gap-2 text-xs"
         style={{ color: 'var(--color-muted-foreground)' }}>
         <span className="w-28">Weapon DPS</span>
         <input type="number" step={10} min={0}
