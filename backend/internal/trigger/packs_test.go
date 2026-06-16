@@ -126,6 +126,11 @@ func TestCommunityPackPatterns(t *testing.T) {
 		{"Spell Breaks", "Spell Worn Off", "Your Screaming Terror spell has worn off.", false, "", 0},
 		// Lulls aren't mezzes — they fall through to the generic overlay.
 		{"Spell Breaks", "Spell Worn Off", "Your Wake of Tranquility spell has worn off.", true, "Wake of Tranquility", 0},
+		// Pet buffs get their own trigger and are excluded from the player one.
+		{"Spell Breaks", "Pet Spell Worn Off", "Your pet's Shield of Thistles spell has worn off.", true, "Shield of Thistles", 0},
+		{"Spell Breaks", "Spell Worn Off", "Your pet's Shield of Thistles spell has worn off.", false, "", 0},
+		// …and a player's own buff must NOT fire the pet trigger.
+		{"Spell Breaks", "Pet Spell Worn Off", "Your Heat Blood spell has worn off.", false, "", 0},
 
 		// ── CC break completeness (2026-06-11 quarm.db audit) ───────────
 		{"Spell Breaks", "Charm Broke", "Your Dominating Gaze spell has worn off.", true, "", 0},

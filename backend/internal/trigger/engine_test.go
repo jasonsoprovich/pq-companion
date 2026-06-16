@@ -416,6 +416,68 @@ func TestApplyDefaultUpdates_MissingTriggerSkipsAndMarks(t *testing.T) {
 	}
 }
 
+// ApplyDefaultUpdates adds a brand-new trigger to an already-installed pack,
+// is idempotent, and never resurrects a pack the user doesn't have.
+func TestApplyDefaultUpdates_InsertTrigger(t *testing.T) {
+	s := openTestStore(t)
+
+	insert := petSpellWornOff("Spell Breaks")
+	updates := []DefaultUpdate{
+		{
+			Key:           "test:pet-worn-off:add-v1",
+			PackName:      "Spell Breaks",
+			InsertTrigger: &insert,
+		},
+	}
+
+	// Pack not installed → skipped (don't resurrect it), but marked applied.
+	mutated, err := ApplyDefaultUpdates(s, updates)
+	if err != nil {
+		t.Fatalf("ApplyDefaultUpdates (no pack): %v", err)
+	}
+	if mutated != 0 {
+		t.Errorf("insert into absent pack mutated %d; want 0", mutated)
+	}
+	if got, _ := s.FindByPackAndName("Spell Breaks", "Pet Spell Worn Off"); got != nil {
+		t.Fatal("trigger inserted into a pack the user never installed")
+	}
+
+	// Now the user has the pack installed (some other trigger present). A fresh
+	// key must insert the pet trigger.
+	owner := &Trigger{
+		ID: "sb1", Name: "Spell Worn Off", PackName: "Spell Breaks",
+		SourcePack: "Spell Breaks", Enabled: true, Pattern: `x`,
+		Actions: []Action{}, CreatedAt: time.Now().UTC(),
+	}
+	if err := s.Insert(owner); err != nil {
+		t.Fatalf("Insert owner: %v", err)
+	}
+	updates[0].Key = "test:pet-worn-off:add-v2" // fresh key (v1 already marked)
+	mutated, err = ApplyDefaultUpdates(s, updates)
+	if err != nil {
+		t.Fatalf("ApplyDefaultUpdates (installed): %v", err)
+	}
+	if mutated != 1 {
+		t.Errorf("insert mutated %d; want 1", mutated)
+	}
+	got, err := s.FindByPackAndName("Spell Breaks", "Pet Spell Worn Off")
+	if err != nil || got == nil {
+		t.Fatalf("pet trigger not inserted: %v", err)
+	}
+	if got.SourcePack != "Spell Breaks" || got.Pattern != petWornOffPattern {
+		t.Errorf("inserted trigger malformed: source=%q pattern=%q", got.SourcePack, got.Pattern)
+	}
+
+	// Re-running with the same key is a no-op; the trigger isn't duplicated.
+	mutated, err = ApplyDefaultUpdates(s, updates)
+	if err != nil {
+		t.Fatalf("ApplyDefaultUpdates (rerun): %v", err)
+	}
+	if mutated != 0 {
+		t.Errorf("rerun mutated %d; want 0", mutated)
+	}
+}
+
 // ApplyDefaultUpdates fills in a missing reuse cooldown (monk Feign Death
 // gained a 9s CD after some installs were created). Idempotent on re-run.
 func TestApplyDefaultUpdates_SetsCooldownWhenUnset(t *testing.T) {

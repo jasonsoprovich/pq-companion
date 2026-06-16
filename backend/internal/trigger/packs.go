@@ -216,6 +216,11 @@ const (
 	// covers it; lull-type spells (Wake of Tranquility, Lugubrious Lament)
 	// are not mezzes and fall through to the generic worn-off overlay.
 	mezWornOffPattern = "^Your (?:Mesmerize|Mesmerization|Enthrall|Entrance|Dazzle|Fascination|Entrancing Lights|Glamour of Kintaz|Rapture|Ancient: Eternal Rapture|Screaming Terror|Kelin[`']s Lucid Lullaby|Crission[`']s Pixie Strike|Sionachie[`']s Dreams|Song of Twilight|Dreams of Ayonae|Ancient: Lullaby of Shadow) spell has worn off\\.$"
+	// petWornOffPattern matches a pet buff wearing off ("Your pet's <Spell>
+	// spell has worn off."). It's both its own "Pet Spell Worn Off" trigger and
+	// an ExcludePattern on the generic "Spell Worn Off" catch-all, so a pet line
+	// fires only the pet trigger and never the player one.
+	petWornOffPattern = "^Your pet's (.+) spell has worn off\\.$"
 )
 
 // sharedCharmBreak returns the shared charm-break alert. Pack name is
@@ -2353,11 +2358,11 @@ func SpellBreaksPack() TriggerPack {
 			sharedRootBreak("Spell Breaks"),
 			sharedSnareBreak("Spell Breaks"),
 			{
-				// Go's regexp has no negative lookahead, so the CC spells are
-				// carved out with ExcludePatterns instead: the broad pattern
-				// matches every worn-off line, and any line the CC break
-				// alerts (or the class packs' mez alerts) already cover is
-				// suppressed here.
+				// Go's regexp has no negative lookahead, so the CC spells (and
+				// pet buffs, which have their own trigger below) are carved out
+				// with ExcludePatterns instead: the broad pattern matches every
+				// worn-off line, and any line a more specific alert already
+				// covers is suppressed here.
 				Name:     "Spell Worn Off",
 				Enabled:  true,
 				Pattern:  `^Your (.+) spell has worn off\.$`,
@@ -2367,11 +2372,30 @@ func SpellBreaksPack() TriggerPack {
 					rootBreakPattern,
 					snareBreakPattern,
 					mezWornOffPattern,
+					petWornOffPattern,
 				},
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "{1} has worn off", DurationSecs: 4, Color: "#cccccc"},
 				},
 			},
+			petSpellWornOff("Spell Breaks"),
+		},
+	}
+}
+
+// petSpellWornOff returns the "Pet Spell Worn Off" trigger. Pet buffs wearing
+// off ("Your pet's <Spell> spell has worn off.") get their own trigger so
+// they're distinguishable from the player's own buffs and can be toggled/styled
+// separately. Shared by SpellBreaksPack and the DefaultUpdate that adds it to
+// already-installed Spell Breaks packs.
+func petSpellWornOff(packName string) Trigger {
+	return Trigger{
+		Name:     "Pet Spell Worn Off",
+		Enabled:  true,
+		Pattern:  petWornOffPattern,
+		PackName: packName,
+		Actions: []Action{
+			{Type: ActionOverlayText, Text: "Pet: {1} has worn off", DurationSecs: 4, Color: "#999999"},
 		},
 	}
 }
@@ -2615,6 +2639,13 @@ type DefaultUpdate struct {
 	// but only if it's currently 0 (unset), so we add a missing cooldown
 	// without overwriting a value the user changed by hand. 0 = leave as-is.
 	SetCooldownSecs int
+	// InsertTrigger, when non-nil, adds a brand-new trigger to PackName for
+	// users who already have that pack installed (a fresh InstallPack would
+	// wipe their customizations, so it can't be used). Skipped when the pack
+	// isn't installed or a trigger of the same name already exists, so it's
+	// idempotent and never resurrects a pack the user removed. TriggerName is
+	// ignored for insert updates.
+	InsertTrigger *Trigger
 }
 
 // DefaultUpdates is the list of one-time additive pack updates to apply on
@@ -2665,6 +2696,25 @@ func DefaultUpdates() []DefaultUpdate {
 			TriggerName:     "Feign Death",
 			SetCooldownSecs: 9,
 		},
+		{
+			// 2026-06-15: pet buffs wearing off ("Your pet's <Spell> spell has
+			// worn off.") used to fire the generic "Spell Worn Off" overlay,
+			// indistinguishable from the player's own buffs. Exclude pet lines
+			// from that trigger for existing Spell Breaks installs…
+			Key:         "SpellBreaks:SpellWornOff:exclude-pet-v1",
+			PackName:    "Spell Breaks",
+			TriggerName: "Spell Worn Off",
+			AppendExcludePatterns: []string{
+				petWornOffPattern,
+			},
+		},
+		{
+			// …and add the dedicated "Pet Spell Worn Off" trigger that now
+			// catches those lines for existing installs.
+			Key:           "SpellBreaks:PetSpellWornOff:add-v1",
+			PackName:      "Spell Breaks",
+			InsertTrigger: func() *Trigger { t := petSpellWornOff("Spell Breaks"); return &t }(),
+		},
 	}
 }
 
@@ -2704,7 +2754,49 @@ func ApplyDefaultUpdates(store *Store, updates []DefaultUpdate) (int, error) {
 // SetCooldownSecs. Returns whether the trigger was actually mutated (false if
 // the trigger doesn't exist, or every change was already present).
 func applyDefaultUpdate(store *Store, u DefaultUpdate) (bool, error) {
-	if u.TriggerName == "" || u.PackName == "" {
+	if u.PackName == "" {
+		return false, nil
+	}
+
+	// Insert-a-new-trigger update: add the trigger to an already-installed pack.
+	if u.InsertTrigger != nil {
+		hasPack, err := store.packHasAnyTrigger(u.PackName)
+		if err != nil {
+			return false, err
+		}
+		if !hasPack {
+			// Pack not installed — don't resurrect it. Marked applied by the
+			// caller, but new installs get the trigger from InstallPack anyway.
+			slog.Info("trigger: default insert skipped, pack not installed", "key", u.Key, "pack", u.PackName)
+			return false, nil
+		}
+		existing, err := store.FindByPackAndName(u.PackName, u.InsertTrigger.Name)
+		if err != nil {
+			return false, err
+		}
+		if existing != nil {
+			return false, nil // already present — idempotent
+		}
+		t := *u.InsertTrigger
+		t.PackName = u.PackName
+		id, err := NewID()
+		if err != nil {
+			return false, err
+		}
+		t.ID = id
+		t.CreatedAt = time.Now().UTC()
+		t.SourcePack = u.PackName
+		if so, err := store.NextTriggerSortOrder(u.PackName); err == nil {
+			t.SortOrder = so
+		}
+		if err := store.Insert(&t); err != nil {
+			return false, err
+		}
+		slog.Info("trigger: default insert applied", "key", u.Key, "pack", u.PackName, "trigger", t.Name)
+		return true, nil
+	}
+
+	if u.TriggerName == "" {
 		return false, nil
 	}
 	t, err := store.FindByPackAndName(u.PackName, u.TriggerName)
