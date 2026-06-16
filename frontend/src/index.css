@@ -24,10 +24,12 @@
   --color-warning: #f59e0b;
   --color-info: #3b82f6;
 
-  /* Scrollbar */
-  --scrollbar-width: 6px;
-  --scrollbar-thumb: #2a2a2a;
-  --scrollbar-thumb-hover: #3a3a3a;
+  /* Scrollbar — 12px is the minimum comfortable mouse target; a 6px bar was
+     hard to grab. Thumb colour is lifted slightly for contrast on the dark
+     surface. */
+  --scrollbar-width: 12px;
+  --scrollbar-thumb: #3a3a3a;
+  --scrollbar-thumb-hover: #4a4a4a;
 }
 
 /* ── High-contrast accessibility mode (issue #130) ───────────────────────────
