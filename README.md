@@ -4,6 +4,8 @@ A desktop companion app for [Project Quarm](https://www.projectquarm.com/) — t
 
 > **Status:** Feature-complete and in active maintenance. See [FEATURES.md](FEATURES.md) for the full list of what's implemented.
 
+**🌐 Website: [pq-companion.com](https://pq-companion.com)** — the best place to start: feature tour, screenshots, setup walkthrough, quick-start guide, and the full changelog.
+
 Join the community on [Discord](https://discord.gg/Srj4FXcRaz) for help, feedback, and release announcements.
 
 ---
