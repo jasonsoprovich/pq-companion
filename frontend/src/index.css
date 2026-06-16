@@ -67,6 +67,16 @@ html {
   color-scheme: dark;
 }
 
+/* Range sliders — paint the filled track in EQ gold everywhere. Without this,
+   native range inputs fall back to each OS's default accent (blue on Windows,
+   system grey on Mac), so the same slider looked different per-platform and
+   none matched the gold Settings → Master Volume slider, which was the only
+   one setting accent-color inline. One rule keeps every slider consistent. */
+input[type="range"] {
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
 body {
   background-color: var(--color-background);
   color: var(--color-foreground);

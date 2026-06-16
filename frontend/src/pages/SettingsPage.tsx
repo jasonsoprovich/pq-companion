@@ -1356,7 +1356,7 @@ export default function SettingsPage(): React.ReactElement {
                     },
                   })
                 }
-                style={{ flex: 1, accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+                style={{ flex: 1 }}
               />
             </div>
           </div>
@@ -1543,7 +1543,7 @@ export default function SettingsPage(): React.ReactElement {
                     },
                   })
                 }
-                style={{ width: '100%', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+                style={{ width: '100%' }}
               />
               <div className="mt-1 flex justify-between text-xs" style={{ color: 'var(--color-muted)' }}>
                 <span>10%</span>
@@ -1655,7 +1655,7 @@ export default function SettingsPage(): React.ReactElement {
                     },
                   })
                 }
-                style={{ width: '100%', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+                style={{ width: '100%' }}
               />
               <div className="mt-1 flex justify-between text-xs" style={{ color: 'var(--color-muted)' }}>
                 <span>0.5s</span>
