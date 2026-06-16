@@ -9,6 +9,23 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.13.3 — 2026-06-16
+
+The Gear Upgrade Finder stops suggesting items you can't actually get, plus inventory stack totals and a round of overlay and trigger refinements.
+
+### Highlights
+- **Gear Upgrade Finder — unobtainable gear filtered out** — NO RENT temporaries no longer appear as upgrades, and GM-only items (Sunset Home GM-zone vendor gear, the Scepter of Al`Kabor) are excluded. A new **NO DROP** toggle lets you hide items you'd have to farm yourself.
+- **Inventory — stack totals** — searching a stackable item (e.g. Othmir Fur) now shows a per-character total and a grand total across all characters, above the individual stacks.
+- **Overlays — Clear All Timers** — a new action in the Manage overlays dropdown wipes every active buff, detrimental, and custom timer at once, handy after switching characters so the old character's buffs stop lingering.
+- **Triggers — Pet Spell Worn Off** — pet buffs wearing off now fire their own trigger instead of the player's "Spell Worn Off", so they're easy to tell apart. Existing Spell Breaks installs pick it up automatically.
+- **Gear weights — ATK & Mana Regen notes** — both now carry a caveat note (ATK is soft-capped around 250, worn Mana Regen / Flowing Thought is item-capped at 15) and sit alongside the other situational weights.
+
+### Fixes
+- Self-targeted buffs that carry an HP cost — such as Ancient: Master of Death — now show in the buff overlay instead of the detrimental overlay.
+- Respawn alert text-to-speech now pronounces "respawned" correctly; saved alerts using the old wording are migrated automatically.
+- Scrollbars are wider and easier to grab.
+- The app title is now properly centered in the title bar instead of sitting slightly to the left.
+
 ## v0.13.2 — 2026-06-15
 
 Respawn and custom-timer alerts arrive, alongside a batch of Gear Upgrade Finder refinements.
