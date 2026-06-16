@@ -29,7 +29,7 @@ type upgradeSlot struct {
 }
 
 var upgradeSlots = []upgradeSlot{
-	{"charm", "Charm", 0x000001, "Charm"},
+	// No Charm slot — Project Quarm (TAKP/EQMac client) has no charm slot.
 	{"ear", "Ear", 0x000002 | 0x000010, "Ear"},
 	{"head", "Head", 0x000004, "Head"},
 	{"face", "Face", 0x000008, "Face"},
