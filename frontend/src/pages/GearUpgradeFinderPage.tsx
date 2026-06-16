@@ -50,7 +50,7 @@ const SLOTS: { key: string; label: string; bucket: string }[] = [
   { key: 'primary', label: 'Primary', bucket: 'Primary' },
   { key: 'secondary', label: 'Secondary', bucket: 'Secondary' },
   { key: 'range', label: 'Range', bucket: 'Range' },
-  { key: 'charm', label: 'Charm', bucket: 'Charm' },
+  // No Charm slot — Project Quarm (TAKP/EQMac client) has no charm slot.
   { key: 'ammo', label: 'Ammo', bucket: 'Ammo' },
 ]
 
