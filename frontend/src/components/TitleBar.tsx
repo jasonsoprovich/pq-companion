@@ -29,7 +29,7 @@ export default function TitleBar(): React.ReactElement {
   return (
     <header
       onMouseDown={onDragMouseDown}
-      className="drag-region flex h-9 shrink-0 items-center border-b"
+      className="drag-region relative flex h-9 shrink-0 items-center border-b"
       style={{
         backgroundColor: 'var(--color-surface)',
         borderColor: 'var(--color-border)',
@@ -38,8 +38,11 @@ export default function TitleBar(): React.ReactElement {
       {/* Left padding — space for macOS traffic lights */}
       {isMac && <div className="w-[72px] shrink-0" />}
 
-      {/* App name — centered */}
-      <div className="flex flex-1 items-center justify-center">
+      {/* App name — absolutely centered across the full window width so the
+          macOS traffic lights and the Windows/Linux window controls don't pull
+          it off-center. pointer-events-none lets drag/clicks fall through to the
+          header and the controls beneath it. */}
+      <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center">
         <span
           className="text-xs font-semibold tracking-widest uppercase"
           style={{ color: 'var(--color-primary)' }}
@@ -47,6 +50,9 @@ export default function TitleBar(): React.ReactElement {
           PQ Companion
         </span>
       </div>
+
+      {/* Spacer pushes the controls to the right edge in normal flow. */}
+      <div className="flex-1" />
 
       {/* Window controls — Windows/Linux only */}
       {!isMac && (
