@@ -348,6 +348,32 @@ export default function InventoryTrackerPage(): React.ReactElement {
     [flatMatches],
   )
 
+  // Per-item totals for the search results: a grand total plus a per-character
+  // breakdown, summing the count of every stack. Only items split across more
+  // than one stack are summarized — a single stack already shows its own count,
+  // so a summary line would just repeat it. Sorted by name to match the list.
+  const matchTotals = useMemo(() => {
+    if (!searchActive) return []
+    const byName = new Map<
+      string,
+      { name: string; icon?: number; total: number; stacks: number; perChar: Map<string, number> }
+    >()
+    for (const e of flatMatches) {
+      let g = byName.get(e.name)
+      if (!g) {
+        g = { name: e.name, icon: e.icon, total: 0, stacks: 0, perChar: new Map() }
+        byName.set(e.name, g)
+      }
+      g.total += e.count
+      g.stacks += 1
+      const holder = e.character || 'Shared Bank'
+      g.perChar.set(holder, (g.perChar.get(holder) ?? 0) + e.count)
+    }
+    return [...byName.values()]
+      .filter((g) => g.stacks > 1)
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [flatMatches, searchActive])
+
   const hasEmptyBag = useMemo(
     () =>
       bagGroups.some((g) => g.slots.every(isEmptyEntry)) ||
@@ -604,6 +630,39 @@ export default function InventoryTrackerPage(): React.ReactElement {
                 ? `No items matching "${query.trim()}"`
                 : `${flatMatches.length} ${flatMatches.length === 1 ? 'match' : 'matches'} across ${matchHolderCount} ${matchHolderCount === 1 ? 'character' : 'characters'}`}
             </p>
+            {matchTotals.length > 0 && (
+              <div className="mb-3 flex flex-col gap-1.5" style={{ maxWidth: 560 }}>
+                {matchTotals.map((g) => (
+                  <div
+                    key={`tot-${g.name}`}
+                    className="rounded px-2 py-1.5 text-xs"
+                    style={{
+                      backgroundColor: 'var(--color-surface-3)',
+                      border: '1px solid var(--color-border)',
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <ItemIcon id={g.icon} name={g.name} size={18} />
+                      <span className="truncate font-medium" style={{ color: 'var(--color-foreground)' }}>
+                        {g.name}
+                      </span>
+                      <span className="ml-auto shrink-0 font-semibold" style={{ color: 'var(--color-primary)' }}>
+                        {g.total} total
+                      </span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 pl-7" style={{ color: 'var(--color-muted-foreground)' }}>
+                      {[...g.perChar.entries()]
+                        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                        .map(([holder, n]) => (
+                          <span key={holder} className="text-[11px]">
+                            {holder}: <span style={{ color: 'var(--color-foreground)' }}>{n}</span>
+                          </span>
+                        ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="flex flex-col gap-1.5" style={{ maxWidth: 560 }}>
               {flatMatches.map((e, i) => (
                 <button
