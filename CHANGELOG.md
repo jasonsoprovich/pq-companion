@@ -9,6 +9,14 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.13.4 — 2026-06-16
+
+A small fixes release tidying up the volume sliders and the equipment slot list.
+
+### Fixes
+- Volume sliders now use the same gold fill everywhere. The per-trigger volume controls previously fell back to each operating system's default color, so they looked different on Windows and Mac and didn't match the Master Volume slider in Settings.
+- Removed the Charm equipment slot from the Gear Upgrade Finder and the Character Info gear view. Project Quarm's client has no charm slot, so it was never usable.
+
 ## v0.13.3 — 2026-06-16
 
 The Gear Upgrade Finder stops suggesting items you can't actually get, plus inventory stack totals and a round of overlay and trigger refinements.
