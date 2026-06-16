@@ -1212,7 +1212,6 @@ export function getCharacterUpgrades(
     showAll?: boolean
     showPoP?: boolean
     hideCrafted?: boolean
-    hideNoRent?: boolean
     hideNoDrop?: boolean
     limit?: number
     weights?: UpgradeWeights
@@ -1223,8 +1222,6 @@ export function getCharacterUpgrades(
   if (opts.showPoP) p.set('show_pop', '1')
   // Crafted gear is hidden by default; only send the param to keep it shown.
   if (opts.hideCrafted === false) p.set('hide_crafted', '0')
-  // NO RENT gear is hidden by default; only send the param to keep it shown.
-  if (opts.hideNoRent === false) p.set('hide_norent', '0')
   // NO DROP gear is shown by default; only send the param to hide it.
   if (opts.hideNoDrop) p.set('hide_nodrop', '1')
   if (opts.limit) p.set('limit', String(opts.limit))
@@ -1268,14 +1265,12 @@ export function getCharacterUpgradesOverview(
   weights?: UpgradeWeights,
   showPoP?: boolean,
   hideCrafted?: boolean,
-  hideNoRent?: boolean,
   hideNoDrop?: boolean,
 ): Promise<UpgradesOverviewResponse> {
   const p = new URLSearchParams()
   if (weights) p.set('weights', JSON.stringify(weights))
   if (showPoP) p.set('show_pop', '1')
   if (hideCrafted === false) p.set('hide_crafted', '0')
-  if (hideNoRent === false) p.set('hide_norent', '0')
   if (hideNoDrop) p.set('hide_nodrop', '1')
   const qs = p.toString()
   return get<UpgradesOverviewResponse>(`/api/characters/${id}/upgrades/overview${qs ? `?${qs}` : ''}`)

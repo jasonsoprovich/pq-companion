@@ -113,7 +113,6 @@ type CandidateFilter struct {
 	MaxLevel       int  // character level; items requiring a higher level are excluded
 	ExcludePoP     bool // drop Planes-of-Power-gated items (not yet obtainable)
 	ExcludeCrafted bool // drop tradeskill-made items (results of a recipe combine)
-	ExcludeNoRent  bool // drop NO RENT items (expire on camp/zone) — noise by default
 	ExcludeNoDrop  bool // drop NO DROP items (can't be traded for)
 }
 
@@ -129,7 +128,12 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 	// all-class sentinel >= 32767). In this dataset every classes=0 equippable
 	// row is a non-wearable special (quest/GM/book — e.g. Sword of Truth), so
 	// classes=0 means "no class can equip", NOT "all".
-	where := "(i.slots & ?) != 0 AND i.itemclass = 0 AND i.classes <> 0"
+	// NO RENT items (expire when you camp or zone) are throwaway temporaries —
+	// summoned/fading gear, etc. — that nobody equips as a real upgrade target,
+	// so they're always excluded with no toggle. In this dataset NO RENT is
+	// encoded as norent = 0 (matching the "NO RENT" badge in ItemsPage /
+	// ItemDetailModal); every rentable item is non-zero (typically -1).
+	where := "(i.slots & ?) != 0 AND i.itemclass = 0 AND i.classes <> 0 AND i.norent <> 0"
 	args := []any{f.SlotMask}
 
 	if f.ClassBit > 0 {
@@ -149,9 +153,6 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 		// component or container). The item_id index keeps this subquery cheap.
 		where += " AND NOT EXISTS (SELECT 1 FROM tradeskill_recipe_entries tre" +
 			" WHERE tre.item_id = i.id AND tre.successcount > 0)"
-	}
-	if f.ExcludeNoRent {
-		where += " AND i.norent = 0"
 	}
 	if f.ExcludeNoDrop {
 		where += " AND i.nodrop = 0"

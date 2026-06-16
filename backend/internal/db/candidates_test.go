@@ -49,6 +49,34 @@ func TestUpgradeCandidates_HeadSlotEnchanter(t *testing.T) {
 	t.Logf("enchanter head candidates: %d", len(cands))
 }
 
+// TestUpgradeCandidates_ExcludesNoRent guards the norent filter direction. NO
+// RENT items are encoded as norent=0 in this dataset (every rentable item is
+// non-zero, typically -1), so the finder must drop only the norent=0 rows. A
+// flipped comparison (norent=0 kept) collapsed every slot to a handful of
+// summoned temporaries — the regression this test exists to catch.
+func TestUpgradeCandidates_ExcludesNoRent(t *testing.T) {
+	d := openTestDB(t)
+
+	const headBit = 0x000004
+	cands, err := d.UpgradeCandidates(db.CandidateFilter{
+		SlotMask: headBit,
+		ClassBit: 0x2000, // enchanter
+		RaceBit:  0x0020, // Dark Elf
+		MaxLevel: 60,
+	})
+	if err != nil {
+		t.Fatalf("UpgradeCandidates: %v", err)
+	}
+	if len(cands) < 20 {
+		t.Fatalf("filter dropped too much — got %d head items, expected the full rentable set", len(cands))
+	}
+	for _, c := range cands {
+		if c.NoRent == 0 {
+			t.Errorf("%q (%d) is NO RENT (norent=0) but was offered as an upgrade", c.Name, c.ID)
+		}
+	}
+}
+
 // TestUpgradeCandidates_CombinedMaskPartition verifies the overview endpoint's
 // optimization: querying the union of every slot mask once and partitioning the
 // result in Go by (slots & slotMask) yields exactly the same per-slot candidate
