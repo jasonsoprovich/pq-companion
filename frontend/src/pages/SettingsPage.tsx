@@ -1919,7 +1919,7 @@ export default function SettingsPage(): React.ReactElement {
               secondsLabel="Announce at"
               secondsUnit="s before respawn"
               secondsHint="Fires when a respawn crosses this many seconds left (0 = right as it pops)."
-              ttsPlaceholder="{npc} has respawned"
+              ttsPlaceholder="{npc} has re-spawned"
             />
           </div>
 

@@ -16,7 +16,7 @@ export function defaultTimerAlertPref(kind: 'custom' | 'respawn'): TimerAlertPre
     type: 'text_to_speech',
     sound_path: '',
     volume: 80,
-    tts_template: kind === 'custom' ? '{spell} done' : '{npc} has respawned',
+    tts_template: kind === 'custom' ? '{spell} done' : '{npc} has re-spawned',
     voice: '',
     tts_volume: 80,
   }
