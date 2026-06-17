@@ -68,6 +68,28 @@ protocol.registerSchemesAsPrivileged([
 // set before app is ready.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
+// Single-instance lock. Without this, launching the shortcut again while the
+// app is already running (e.g. it's hidden in the tray and the user forgets
+// it's open) spins up a whole second copy — sidecar, windows and all — instead
+// of surfacing the existing one. Users have reported 3–5 instances stacking up
+// this way. We grab the lock before app.ready: if another instance already
+// holds it we quit immediately, and Electron delivers our launch to that
+// instance via the 'second-instance' event, where we restore + focus the
+// existing window (the same path the tray uses). On macOS the OS already
+// enforces single-instance for packaged .app bundles, but the lock is harmless
+// there and keeps `npm run dev` honest too.
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    // A second launch was attempted; bring our window back to the foreground
+    // instead of letting a duplicate start. showMainWindow() restores from the
+    // tray / un-minimizes / re-creates the window as needed.
+    showMainWindow()
+  })
+}
+
 // Resolve the app icon for runtime BrowserWindow use.
 // In packaged Windows builds the exe already embeds build/icon.ico via
 // electron-builder, so the taskbar/title-bar icon comes from there. We only
