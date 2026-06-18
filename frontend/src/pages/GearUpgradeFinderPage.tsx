@@ -718,23 +718,30 @@ function FocusPanel({
           Priority focus effects
         </span>
         <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-          An item with one of these you don't already have equipped is boosted and flagged.
+          Click any below to prioritize it — an upgrade carrying one you don't
+          already wear is boosted and flagged. This is the list of focuses found
+          on gear your class can use ({options.length}); type to filter it, not to
+          search for new ones.
         </span>
-        <div className="ml-auto" style={{ position: 'relative' }}>
-          <Search size={11} style={{ position: 'absolute', left: 7, top: '50%',
-            transform: 'translateY(-50%)', color: 'var(--color-muted)', pointerEvents: 'none' }} />
-          <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter focuses…"
-            style={{ ...inputStyle(), paddingLeft: 22, width: 180 }} />
-        </div>
+        {options.length > 0 && (
+          <div className="ml-auto" style={{ position: 'relative' }}>
+            <Search size={11} style={{ position: 'absolute', left: 7, top: '50%',
+              transform: 'translateY(-50%)', color: 'var(--color-muted)', pointerEvents: 'none' }} />
+            <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter the list…"
+              style={{ ...inputStyle(), paddingLeft: 22, width: 180 }} />
+          </div>
+        )}
       </div>
       {options.length === 0 ? (
         <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
-          No focus effects found on this class's gear.
+          No focus effects are carried by gear this class can use, so there's
+          nothing to prioritize here.
         </p>
       ) : shown.length === 0 ? (
         <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
-          No focus effects on this class's gear match “{filter.trim()}”. The picker only
-          lists focuses carried by gear your class can use.
+          None of this class's {options.length} focus effects match “{filter.trim()}”.
+          Clear the filter to see them all — the list only covers focuses your
+          class's gear actually carries.
         </p>
       ) : (
         <div className="flex flex-wrap gap-1" style={{ maxHeight: 150, overflowY: 'auto' }}>
@@ -743,10 +750,11 @@ function FocusPanel({
             return (
               <button key={o.spell_id} onClick={() => onToggle(o.spell_id)}
                 className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px]"
+                title={`${o.count} item${o.count === 1 ? '' : 's'} carry this focus`}
                 style={{ border: '1px solid var(--color-border)',
                   backgroundColor: on ? 'rgba(234,179,8,0.18)' : 'var(--color-surface-2)',
                   color: on ? '#eab308' : 'var(--color-muted-foreground)' }}>
-                {on && <Star size={9} fill="#eab308" />}
+                {on && <Check size={10} />}
                 {o.name}
                 <span style={{ color: 'var(--color-muted)' }}>·{o.count}</span>
               </button>

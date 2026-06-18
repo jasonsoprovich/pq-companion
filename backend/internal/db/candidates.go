@@ -66,10 +66,14 @@ type FocusOption struct {
 // usable by the given class at or below the level. classBit/maxLevel of 0 mean
 // "don't filter on that axis".
 func (db *DB) FocusOptions(classBit, maxLevel int) ([]FocusOption, error) {
-	where := "i.focuseffect > 0 AND i.itemclass = 0"
+	// classes <> 0 mirrors UpgradeCandidates: a classes=0 equippable is a
+	// non-wearable special that no class can actually use, so its focus would
+	// never show up as a real candidate. Excluding it keeps the picker (and its
+	// counts) aligned with the items the finder will actually suggest.
+	where := "i.focuseffect > 0 AND i.itemclass = 0 AND i.classes <> 0"
 	args := []any{}
 	if classBit > 0 {
-		where += " AND (i.classes = 0 OR i.classes >= 32767 OR (i.classes & ?) != 0)"
+		where += " AND (i.classes >= 32767 OR (i.classes & ?) != 0)"
 		args = append(args, classBit)
 	}
 	if maxLevel > 0 {
