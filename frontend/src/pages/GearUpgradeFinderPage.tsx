@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Wand2, ChevronDown, ChevronRight, Star, Loader2, AlertTriangle, Sliders, RotateCcw, Save, LayoutGrid, List, Target, Search } from 'lucide-react'
+import { Wand2, ChevronDown, ChevronRight, Star, Loader2, AlertTriangle, Sliders, RotateCcw, Save, Check, LayoutGrid, List, Target, Search } from 'lucide-react'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import { ItemIcon } from '../components/Icon'
 import { SourceNPCLink } from '../components/SourceNPCLink'
@@ -82,14 +82,56 @@ const STAT_KEYS: { key: keyof UpgradeWeights; label: string }[] = [
   { key: 'mana_regen', label: 'ManaReg' },
 ]
 
-// Weights that are soft/hard-capped or situational, pulled out of the compact
-// stat grid into their own full-width rows so they can carry a caveat note.
-// They stay in STAT_KEYS so the stat-delta chips still label them.
-const NOTED_WEIGHTS = new Set<keyof UpgradeWeights>(['atk', 'mana_regen'])
-
 const STAT_LABEL: Record<string, string> = Object.fromEntries(
   STAT_KEYS.map((s) => [s.key, s.label]),
 )
+
+// Every editable weight, in display order: the STAT_KEYS grid plus the two
+// weights that only live in the editor (DPS, focus bonus), not the delta chips.
+const WEIGHT_ROWS: { key: keyof UpgradeWeights; label: string }[] = [
+  ...STAT_KEYS,
+  { key: 'dps', label: 'Weapon DPS' },
+  { key: 'focus_bonus', label: 'Focus bonus' },
+]
+
+// Importance presets per weight. Each weight lives on its own scale (1 AC is
+// worth more per point than 1 STR, weapon DPS is a big ratio multiplier, etc.),
+// so the Off/Low/Med/High/Critical anchors differ by stat. Clicking a preset
+// fills the number; the number stays hand-editable for fine tuning. Stats not
+// listed use DEFAULT_PRESET (the per-point attribute/resist scale).
+const PRESET_LABELS = ['Off', 'Low', 'Med', 'High', 'Crit']
+const DEFAULT_PRESET = [0, 0.2, 0.5, 1, 2]
+const WEIGHT_PRESETS: Partial<Record<keyof UpgradeWeights, number[]>> = {
+  hp: [0, 0.5, 1, 2, 3],
+  mana: [0, 0.5, 1, 2, 3],
+  ac: [0, 2, 5, 10, 20],
+  atk: [0, 0.3, 0.6, 1, 2],
+  haste: [0, 5, 10, 12, 15],
+  mana_regen: [0, 5, 15, 25, 40],
+  dps: [0, 40, 100, 180, 250],
+  focus_bonus: [0, 50, 100, 200, 400],
+}
+
+// Caveats for the conditional weights, so they don't read as broken when a
+// change appears to do nothing.
+const WEIGHT_NOTE: Partial<Record<keyof UpgradeWeights, string>> = {
+  atk: 'soft-capped ~250 — no gain once capped; ~0 for casters',
+  haste: 'best worn haste wins, level-capped',
+  mana_regen: 'capped at 15 — no gain once capped; 0 for pure melee',
+  dps: 'weapon slots only (Primary / Secondary / Range)',
+  focus_bonus: 'only applies when a Priority focus is set',
+}
+
+function presetsFor(key: keyof UpgradeWeights): number[] {
+  return WEIGHT_PRESETS[key] ?? DEFAULT_PRESET
+}
+
+// stepFor picks a sensible number-input step for each weight's scale.
+function stepFor(key: keyof UpgradeWeights): number {
+  if (key === 'dps' || key === 'focus_bonus') return 10
+  if (key === 'mana_regen' || key === 'haste') return 1
+  return 0.1
+}
 
 function inputStyle(): React.CSSProperties {
   return {
@@ -287,11 +329,11 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
     setWeightsCustom(true)
   }
 
-  const saveWeights = (): void => {
-    if (!selected || !weights) return
-    setCharacterUpgradeWeights(selected.id, weights)
-      .then(() => setWeightsCustom(true))
-      .catch(() => {})
+  const saveWeights = (): Promise<void> => {
+    if (!selected || !weights) return Promise.resolve()
+    return setCharacterUpgradeWeights(selected.id, weights).then(() => {
+      setWeightsCustom(true)
+    })
   }
 
   const resetWeights = (): void => {
@@ -563,25 +605,78 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
 
 // ── Weights editor ─────────────────────────────────────────────────────────────
 
+// WeightRow is one stat's importance presets + editable number + caveat.
+function WeightRow({
+  weightKey, label, value, onChange,
+}: {
+  weightKey: keyof UpgradeWeights
+  label: string
+  value: number
+  onChange: (key: keyof UpgradeWeights, value: number) => void
+}): React.ReactElement {
+  const presets = presetsFor(weightKey)
+  const note = WEIGHT_NOTE[weightKey]
+  return (
+    <div className="flex items-center gap-2 py-0.5 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+      <span className="w-20 shrink-0">{label}</span>
+      <div className="flex shrink-0 gap-0.5">
+        {presets.map((v, i) => {
+          const active = Math.abs(value - v) < 1e-9
+          return (
+            <button key={i} onClick={() => onChange(weightKey, v)}
+              className="rounded px-1.5 py-0.5 text-[10px]"
+              title={`${PRESET_LABELS[i]} = ${v}`}
+              style={{
+                backgroundColor: active ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                color: active ? 'var(--color-background)' : 'var(--color-muted)',
+              }}>
+              {PRESET_LABELS[i]}
+            </button>
+          )
+        })}
+      </div>
+      <input type="number" step={stepFor(weightKey)} min={0}
+        value={value}
+        onChange={(e) => onChange(weightKey, Number(e.target.value))}
+        style={{ ...inputStyle(), width: 60 }} />
+      {note && (
+        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>{note}</span>
+      )}
+    </div>
+  )
+}
+
 function WeightsEditor({
   weights, isCustom, onChange, onSave, onReset,
 }: {
   weights: UpgradeWeights
   isCustom: boolean
   onChange: (key: keyof UpgradeWeights, value: number) => void
-  onSave: () => void
+  onSave: () => Promise<void>
   onReset: () => void
 }): React.ReactElement {
+  const [saved, setSaved] = useState(false)
+  const handleSave = (): void => {
+    onSave()
+      .then(() => {
+        setSaved(true)
+        setTimeout(() => setSaved(false), 2000)
+      })
+      .catch(() => {})
+  }
   return (
     <div className="shrink-0 border-b px-6 py-2" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
-      <div className="mb-2 flex items-center gap-3">
+      <div className="mb-2 flex items-start gap-3">
         <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
-          Stat weights (HP-equivalent — e.g. AC 5 means 1 AC counts as 5 HP). Edits re-rank live.
+          How important is each stat to this character? Higher = weighed more
+          when ranking upgrades. Values are independent (not a % of any total),
+          and a point of one stat isn&apos;t a point of another — they&apos;re just
+          relative importance. Edits re-rank live; Save keeps them for this character.
         </span>
-        <div className="ml-auto flex items-center gap-2">
-          <button onClick={onSave} className="flex items-center gap-1 rounded px-2 py-1 text-xs"
-            style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-background)' }}>
-            <Save size={11} /> Save
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <button onClick={handleSave} className="flex items-center gap-1 rounded px-2 py-1 text-xs"
+            style={{ backgroundColor: saved ? '#22c55e' : 'var(--color-primary)', color: 'var(--color-background)' }}>
+            {saved ? <Check size={11} /> : <Save size={11} />} {saved ? 'Saved' : 'Save'}
           </button>
           <button onClick={onReset} disabled={!isCustom}
             className="flex items-center gap-1 rounded px-2 py-1 text-xs"
@@ -591,66 +686,12 @@ function WeightsEditor({
           </button>
         </div>
       </div>
-      <div className="grid grid-cols-5 gap-2 md:grid-cols-8">
-        {STAT_KEYS.filter((s) => !NOTED_WEIGHTS.has(s.key)).map((s) => (
-          <label key={s.key} className="flex items-center gap-1 text-xs"
-            style={{ color: 'var(--color-muted-foreground)' }}>
-            <span className="w-8 shrink-0">{s.label}</span>
-            <input
-              type="number" step={0.1} min={0}
-              value={weights[s.key]}
-              onChange={(e) => onChange(s.key, Number(e.target.value))}
-              style={{ ...inputStyle(), width: 56 }}
-            />
-          </label>
+      <div className="flex flex-col" style={{ maxHeight: '42vh', overflowY: 'auto' }}>
+        {WEIGHT_ROWS.map((s) => (
+          <WeightRow key={s.key} weightKey={s.key} label={s.label}
+            value={weights[s.key]} onChange={onChange} />
         ))}
       </div>
-      {/* Capped/situational weights get a full-width row with a caveat note,
-          like Weapon DPS and Priority focus bonus below. */}
-      <label className="mt-2 flex items-center gap-2 text-xs"
-        style={{ color: 'var(--color-muted-foreground)' }}>
-        <span className="w-28">ATK</span>
-        <input type="number" step={0.1} min={0}
-          value={weights.atk}
-          onChange={(e) => onChange('atk', Number(e.target.value))}
-          style={{ ...inputStyle(), width: 70 }} />
-        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
-          worn attack bonus — soft-capped at ~250; points past the cap score nothing, and it's worthless for casters
-        </span>
-      </label>
-      <label className="mt-1 flex items-center gap-2 text-xs"
-        style={{ color: 'var(--color-muted-foreground)' }}>
-        <span className="w-28">ManaReg</span>
-        <input type="number" step={0.1} min={0}
-          value={weights.mana_regen}
-          onChange={(e) => onChange('mana_regen', Number(e.target.value))}
-          style={{ ...inputStyle(), width: 70 }} />
-        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
-          worn mana regen (Flowing Thought) — item-capped at 15; useless once you're capped, and 0 for pure melee
-        </span>
-      </label>
-      <label className="mt-1 flex items-center gap-2 text-xs"
-        style={{ color: 'var(--color-muted-foreground)' }}>
-        <span className="w-28">Weapon DPS</span>
-        <input type="number" step={10} min={0}
-          value={weights.dps}
-          onChange={(e) => onChange('dps', Number(e.target.value))}
-          style={{ ...inputStyle(), width: 70 }} />
-        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
-          value per +1.0 weapon ratio (damage/delay) — keep high for melee, 0 for casters
-        </span>
-      </label>
-      <label className="mt-1 flex items-center gap-2 text-xs"
-        style={{ color: 'var(--color-muted-foreground)' }}>
-        <span className="w-28">Priority focus bonus</span>
-        <input type="number" step={10} min={0}
-          value={weights.focus_bonus}
-          onChange={(e) => onChange('focus_bonus', Number(e.target.value))}
-          style={{ ...inputStyle(), width: 70 }} />
-        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
-          score boost for a wanted focus you don't already have (HP-equivalent)
-        </span>
-      </label>
     </div>
   )
 }
