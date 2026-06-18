@@ -7,9 +7,17 @@
 
 // Deduplication: track when each unique audio key was last fired.
 // Prevents the same sound/utterance from playing twice when multiple alert
-// systems (event alerts + trigger actions) fire for the same log line.
+// systems fire for the same effect. This is the ONLY dedup shared across all
+// three audio paths — trigger actions (useAudioEngine), spell-timer threshold
+// alerts (useTimerAlerts), and respawn alerts (useRespawnAlerts) — so it is
+// keyed on the actual output (sound path / TTS text), not on the matched line.
+// Kept at the same 750ms window the per-line dedup in useAudioEngine uses, so
+// a burst that resolves to the same sound or utterance collapses to one play
+// no matter how many triggers or alert systems fired it (one mez/charm break,
+// one tell beep). Distinct TTS text — e.g. per-sender tell readouts — is left
+// alone, since those are genuinely different utterances.
 const lastFiredAt = new Map<string, number>()
-const AUDIO_DEDUP_MS = 400
+const AUDIO_DEDUP_MS = 750
 
 // Master volume scales every playback (sound + TTS, including test previews)
 // on top of the per-action volume. Stored as 0.0–1.0; updated from
