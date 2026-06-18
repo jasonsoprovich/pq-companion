@@ -105,6 +105,22 @@ npm run dev
 
 Requires Go 1.22+ and Node.js 20+. The Vite dev server starts on port 5173; Electron opens pointing at it. The Go backend runs on port 8080.
 
+### Getting `quarm.db`
+
+The EQ game database (`backend/data/quarm.db`) is **not** committed to the repo — it's ~85&nbsp;MB and regenerated from MySQL dumps by the `data-release` workflow. A fresh clone won't have it, and the backend won't start without it. Download the latest copy from the `data-latest` release into `backend/data/`:
+
+```bash
+# with the GitHub CLI
+mkdir -p backend/data
+gh release download data-latest --repo jasonsoprovich/pq-companion -p quarm.db -D backend/data
+
+# or with curl
+curl -L -o backend/data/quarm.db \
+  https://github.com/jasonsoprovich/pq-companion/releases/download/data-latest/quarm.db
+```
+
+(Linux source-build users: this is the file to grab here — you don't need a Windows install to copy it from.)
+
 See [FEATURES.md](FEATURES.md) for detailed implementation notes on every shipped feature.
 
 ---
