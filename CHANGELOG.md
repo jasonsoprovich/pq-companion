@@ -9,6 +9,24 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.13.5 — 2026-06-18
+
+Reliable drag-and-drop everywhere, finer-grained gear upgrade targets, and a portable download for Wine/Proton users.
+
+### Highlights
+- **Drag-and-drop rebuilt** — reordering wishlist items, triggers, and character tasks now uses a pointer-based engine that works reliably on Windows, where the old drag handles were flaky or didn't work at all.
+- **Gear Upgrade Finder — per-slot ear/wrist/finger targets** — each of your two ear, wrist, and finger slots is now scored separately, so an upgrade for one slot no longer hides behind what's already in the other.
+- **Gear Upgrade Finder — clearer weights editor** — editing per-class stat weights now offers importance presets and shows save feedback, and proc/click effects are called out with their own badge.
+- **CH metronome — Main/Secondary chain switch** — the Complete Heal chain overlay can be flipped between your main and secondary rotation right from the Overlays dashboard.
+- **Portable Windows download** — every release now ships a `.zip` alongside the installer, for users who run PQ Companion under Wine/Proton on Linux (where the installer fails) or on locked-down machines. Unzip and run — note auto-update doesn't reach the zip, so re-download to upgrade.
+
+### Fixes
+- Only one copy of PQ Companion can run at a time now; launching it again focuses the existing window instead of starting a duplicate.
+- Spell checklist now matches Zeal spellbook exports correctly when two spells share a name.
+- AoE mez timers track each target separately and clear one break at a time instead of all at once.
+- Alert sounds use a single 750ms de-duplication window, so a burst of matching lines no longer replays the same sound repeatedly.
+- Tidied the priority-focus picker wording and the gear paper-doll layout after the charm slot's removal.
+
 ## v0.13.4 — 2026-06-16
 
 A small fixes release tidying up the volume sliders and the equipment slot list.
