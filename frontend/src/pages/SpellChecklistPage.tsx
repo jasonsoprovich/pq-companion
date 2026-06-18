@@ -31,6 +31,7 @@ import {
   durationLabel,
   durationScales,
   effectDescription,
+  expandKnownSpellIds,
   msLabel,
   resistLabel,
   skillLabel,
@@ -491,7 +492,12 @@ export default function SpellChecklistPage(): React.ReactElement {
     navigate(`/spells?select=${id}`)
   }
 
-  const knownIds = new Set(spellbook?.spell_ids ?? [])
+  // Match the Zeal export against each spell's full variant group, not just its
+  // canonical id — the client may have scribed a duplicate-name variant whose id
+  // differs from the canonical row shown in the list (e.g. Skin like Wood 26 vs
+  // 2110). Without this, owned spells whose scribed id is non-canonical show as
+  // missing. See expandKnownSpellIds.
+  const knownIds = expandKnownSpellIds(spellbook?.spell_ids ?? [], spells)
 
   const minLvl = parseInt(levelFilter.min) || 0
   const maxLvl = parseInt(levelFilter.max) || 0

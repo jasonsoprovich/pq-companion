@@ -27,6 +27,7 @@ import {
 import type { Spell } from '../types/spell'
 import type { Spellset, SpellsetFile } from '../types/zeal'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
+import { expandKnownSpellIds } from '../lib/spellHelpers'
 import { SpellIcon } from '../components/Icon'
 
 const CLASS_NAMES = [
@@ -1049,6 +1050,14 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
     return m
   }, [classSpells, referenced])
 
+  // Expand the raw Zeal spellbook ids to cover duplicate-name variants, so a gem
+  // holding (or a character owning) a non-canonical variant id still resolves as
+  // known. See expandKnownSpellIds in spellHelpers.
+  const expandedKnownIds = useMemo(
+    () => expandKnownSpellIds(knownIds, spellsById.values()),
+    [knownIds, spellsById],
+  )
+
   // Backfill any referenced spell IDs that aren't in the class catalog by
   // fetching them once. Keeps the off-class display clean. IDs we've already
   // tried are recorded so a spell that fails to resolve (deleted/invalid id,
@@ -1283,7 +1292,10 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
       const ctx: EligibilityContext = {
         classIndex,
         characterLevel,
-        knownIds,
+        // Expand against the full import lookup (catalog + fetched incoming
+        // spells) so a gem holding a duplicate-name variant id still matches
+        // the spellbook. See expandKnownSpellIds.
+        knownIds: expandKnownSpellIds(knownIds, lookup.values()),
         spellsById: lookup,
       }
       setImportState({
@@ -1479,7 +1491,7 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
         <SlotPicker
           classIndex={classIndex}
           characterLevel={characterLevel}
-          knownIds={knownIds}
+          knownIds={expandedKnownIds}
           allSpells={classSpells}
           referencedSpells={referenced}
           currentSpellId={currentSpellId}

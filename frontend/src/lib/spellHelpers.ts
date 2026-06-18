@@ -38,6 +38,36 @@ export function castableClassesShort(classLevels: number[]): string {
   return shown.join(' · ') + (classes.length > 4 ? ` +${classes.length - 4}` : '')
 }
 
+// ── Known-spell matching (Zeal spellbook) ──────────────────────────────────────
+
+/**
+ * Expands a raw set of Zeal-exported spell IDs to include every duplicate-name
+ * variant. Quarm's spells_new ships several rows per spell name with different
+ * IDs (e.g. "Skin like Wood" as both 26 and 2110); list views collapse these to
+ * one canonical row, but the in-game client can scribe — and Zeal can export —
+ * whichever duplicate it pleases. Matching the export against canonical IDs
+ * alone would then mark an owned spell as missing.
+ *
+ * For each spell in `spells` (canonical list rows carrying their `variant_ids`),
+ * if ANY ID in its variant group is present in `rawKnown`, every ID in the group
+ * is added to the result. Callers can then keep doing `known.has(spell.id)` /
+ * `known.has(gemSpellId)` and match regardless of which duplicate was scribed.
+ */
+export function expandKnownSpellIds(
+  rawKnown: Iterable<number>,
+  spells: Iterable<{ id: number; variant_ids?: number[] }>,
+): Set<number> {
+  const known = new Set(rawKnown)
+  for (const s of spells) {
+    if (!s.variant_ids || s.variant_ids.length === 0) continue
+    const group = [s.id, ...s.variant_ids]
+    if (group.some((id) => known.has(id))) {
+      for (const id of group) known.add(id)
+    }
+  }
+  return known
+}
+
 // ── Resist / Target / Skill labels ────────────────────────────────────
 //
 // All three label maps live in backend/internal/db/enums/spell.go. The

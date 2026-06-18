@@ -43,11 +43,11 @@ export interface Spell {
   no_dispell: number
   zone_type: number
 
-  // Duplicate-name collapse (set by GET /spells/:id; absent in list views).
-  // The dump ships several rows per spell name; lists show only the canonical
-  // one. variant_ids are the other rows sharing this name (hidden from lists,
-  // fetchable by id). canonical_id points back to the main row when this spell
-  // is itself a variant.
+  // Duplicate-name collapse (populated by GET /spells/:id AND the class list
+  // GET /spells/class/:n; omitted on a row with no duplicates). The dump ships
+  // several rows per spell name; lists show only the canonical one. variant_ids
+  // are the other rows sharing this name (hidden from lists, fetchable by id).
+  // canonical_id points back to the main row when this spell is itself a variant.
   variant_ids?: number[]
   canonical_id?: number
 }
