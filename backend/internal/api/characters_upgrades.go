@@ -17,37 +17,46 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
 
-// upgradeSlot is one logical worn slot the upgrade finder can target. Dual
-// slots (Ear/Wrist/Fingers) collapse to a single logical slot whose Mask ORs
-// both item bits and whose Location matches the canonical Quarmy name (Zeal
-// normalizes Ear1/Ear2 → "Ear", Finger1/2 → "Fingers", etc.).
+// upgradeSlot is one worn slot the upgrade finder can target. The paired slots
+// (Ear/Wrist/Fingers) are split into two targets each — Ear 1 / Ear 2, etc. —
+// so the finder ranks against the specific item worn in that physical slot
+// (the user knows which of their two earrings the suggestion replaces). Both
+// slots in a pair share the same Mask (ORing both item bits — an earring fits
+// either ear, so the candidate pool is identical) and the same Location (Zeal
+// normalizes Ear1/Ear2 → "Ear", Finger1/2 → "Fingers", etc.). Index picks the
+// equipped item at that Location to use as the baseline (0 for the first, 1 for
+// the second). Non-paired slots use Index 0.
 type upgradeSlot struct {
 	Key      string
 	Label    string
 	Mask     int
 	Location string
+	Index    int
 }
 
 var upgradeSlots = []upgradeSlot{
 	// No Charm slot — Project Quarm (TAKP/EQMac client) has no charm slot.
-	{"ear", "Ear", 0x000002 | 0x000010, "Ear"},
-	{"head", "Head", 0x000004, "Head"},
-	{"face", "Face", 0x000008, "Face"},
-	{"neck", "Neck", 0x000020, "Neck"},
-	{"shoulders", "Shoulders", 0x000040, "Shoulders"},
-	{"arms", "Arms", 0x000080, "Arms"},
-	{"back", "Back", 0x000100, "Back"},
-	{"wrist", "Wrist", 0x000200 | 0x000400, "Wrist"},
-	{"range", "Range", 0x000800, "Range"},
-	{"hands", "Hands", 0x001000, "Hands"},
-	{"primary", "Primary", 0x002000, "Primary"},
-	{"secondary", "Secondary", 0x004000, "Secondary"},
-	{"fingers", "Fingers", 0x008000 | 0x010000, "Fingers"},
-	{"chest", "Chest", 0x020000, "Chest"},
-	{"legs", "Legs", 0x040000, "Legs"},
-	{"feet", "Feet", 0x080000, "Feet"},
-	{"waist", "Waist", 0x100000, "Waist"},
-	{"ammo", "Ammo", 0x200000, "Ammo"},
+	{"ear1", "Ear 1", 0x000002 | 0x000010, "Ear", 0},
+	{"ear2", "Ear 2", 0x000002 | 0x000010, "Ear", 1},
+	{"head", "Head", 0x000004, "Head", 0},
+	{"face", "Face", 0x000008, "Face", 0},
+	{"neck", "Neck", 0x000020, "Neck", 0},
+	{"shoulders", "Shoulders", 0x000040, "Shoulders", 0},
+	{"arms", "Arms", 0x000080, "Arms", 0},
+	{"back", "Back", 0x000100, "Back", 0},
+	{"wrist1", "Wrist 1", 0x000200 | 0x000400, "Wrist", 0},
+	{"wrist2", "Wrist 2", 0x000200 | 0x000400, "Wrist", 1},
+	{"range", "Range", 0x000800, "Range", 0},
+	{"hands", "Hands", 0x001000, "Hands", 0},
+	{"primary", "Primary", 0x002000, "Primary", 0},
+	{"secondary", "Secondary", 0x004000, "Secondary", 0},
+	{"finger1", "Finger 1", 0x008000 | 0x010000, "Fingers", 0},
+	{"finger2", "Finger 2", 0x008000 | 0x010000, "Fingers", 1},
+	{"chest", "Chest", 0x020000, "Chest", 0},
+	{"legs", "Legs", 0x040000, "Legs", 0},
+	{"feet", "Feet", 0x080000, "Feet", 0},
+	{"waist", "Waist", 0x100000, "Waist", 0},
+	{"ammo", "Ammo", 0x200000, "Ammo", 0},
 }
 
 func upgradeSlotByKey(key string) (upgradeSlot, bool) {
@@ -337,8 +346,8 @@ func (h *charactersHandler) scoreSlot(
 }
 
 // scoreSlotCands scores a pre-fetched candidate set for one slot against the
-// worn baseline (the lowest-scoring item in the slot — you upgrade your weakest
-// ring first). It takes a pre-parsed equipped map so a multi-slot sweep parses
+// item worn in that physical slot (slot.Index picks Ear 1 vs Ear 2, etc.). It
+// takes a pre-parsed equipped map so a multi-slot sweep parses
 // the Quarmy export only once. Returns the worn items, the baseline item id, the
 // ranked results (truncated to limit), and how many candidates were considered.
 func (h *charactersHandler) scoreSlotCands(
@@ -362,25 +371,28 @@ func (h *charactersHandler) scoreSlotCands(
 	}
 	ctx.OtherHaste = otherHaste
 
-	current = h.equippedItemsForSlot(byLoc, slot, wc)
+	// allWorn is every item at this Location (both earrings, both rings, …);
+	// current is just the one in THIS physical slot (slot.Index), which is what
+	// we display and rank against. An empty second slot → empty baseline → the
+	// candidate ranks against nothing, which is correct for a bare slot.
+	allWorn := h.equippedItemsForSlot(byLoc, slot, wc)
+	current = make([]upgradeCurrentItem, 0, 1)
+	if slot.Index < len(allWorn) {
+		current = append(current, allWorn[slot.Index])
+	}
 
 	baseline := upgrade.StatLine{}
 	if len(current) > 0 {
-		worst := current[0]
-		worstScore := upgrade.Score(ctx, weights, upgrade.StatLine{}, worst.Stats).Score
-		for _, ci := range current[1:] {
-			if s := upgrade.Score(ctx, weights, upgrade.StatLine{}, ci.Stats).Score; s < worstScore {
-				worst, worstScore = ci, s
-			}
-		}
-		baseline = worst.Stats
-		baselineID = worst.ID
+		baseline = current[0].Stats
+		baselineID = current[0].ID
 	}
 
 	considered = len(cands)
 
-	worn := make(map[int]bool, len(current))
-	for _, ci := range current {
+	// Exclude every item worn at this Location (both paired slots), so the other
+	// earring/ring you already wear is never suggested as an upgrade.
+	worn := make(map[int]bool, len(allWorn))
+	for _, ci := range allWorn {
 		worn[ci.ID] = true
 	}
 	results = make([]upgradeResult, 0, len(cands))

@@ -32,17 +32,24 @@ import type { WishlistEntry } from '../types/wishlist'
 // Logical worn slots, keyed to the backend slot keys. `bucket` is the wishlist
 // slot-bucket name (singular Shoulder/Finger) that an item from this slot is
 // wishlisted under — see lib/wishlistSlots WISHLIST_SLOT_ORDER.
+// The paired slots (Ear/Wrist/Finger) are split into two targets each so each
+// is ranked against the item actually worn in that physical slot. Both share
+// one wishlist `bucket` (singular Ear/Wrist/Finger) — see lib/wishlistSlots
+// WISHLIST_SLOT_ORDER. Keys mirror the backend upgradeSlots keys.
 const SLOTS: { key: string; label: string; bucket: string }[] = [
-  { key: 'ear', label: 'Ear', bucket: 'Ear' },
+  { key: 'ear1', label: 'Ear 1', bucket: 'Ear' },
+  { key: 'ear2', label: 'Ear 2', bucket: 'Ear' },
   { key: 'head', label: 'Head', bucket: 'Head' },
   { key: 'face', label: 'Face', bucket: 'Face' },
   { key: 'neck', label: 'Neck', bucket: 'Neck' },
   { key: 'shoulders', label: 'Shoulders', bucket: 'Shoulder' },
   { key: 'arms', label: 'Arms', bucket: 'Arms' },
   { key: 'back', label: 'Back', bucket: 'Back' },
-  { key: 'wrist', label: 'Wrist', bucket: 'Wrist' },
+  { key: 'wrist1', label: 'Wrist 1', bucket: 'Wrist' },
+  { key: 'wrist2', label: 'Wrist 2', bucket: 'Wrist' },
   { key: 'hands', label: 'Hands', bucket: 'Hands' },
-  { key: 'fingers', label: 'Fingers', bucket: 'Finger' },
+  { key: 'finger1', label: 'Finger 1', bucket: 'Finger' },
+  { key: 'finger2', label: 'Finger 2', bucket: 'Finger' },
   { key: 'chest', label: 'Chest', bucket: 'Chest' },
   { key: 'legs', label: 'Legs', bucket: 'Legs' },
   { key: 'feet', label: 'Feet', bucket: 'Feet' },
