@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Star,
@@ -14,6 +14,24 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
 } from 'lucide-react'
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type CollisionDetection,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import {
   listCharacters,
   listWishlist,
@@ -38,10 +56,12 @@ import { WISHLIST_SLOT_ORDER, GENERAL_BUCKET, validSlotsForItem, isMultiSlotItem
 
 type ViewMode = 'category' | 'all'
 
-// MIME-ish keys we set on dataTransfer to distinguish drag kinds. Browsers
-// lowercase types, so check via includes() at the destination.
-const DRAG_TYPE_ITEM = 'application/x-wishlist-item'
-const DRAG_TYPE_CARD = 'application/x-wishlist-card'
+// Sortable id prefixes. Native HTML5 DnD was unreliable in Electron on Windows
+// (the window-drag regions swallowed dragover/drop), so reordering uses dnd-kit
+// (pointer events). Items and cards live in one DndContext; the id prefix tells
+// a card drag from an item drag in both collision detection and the drop handler.
+const ITEM_PREFIX = 'item:'
+const CARD_PREFIX = 'card:'
 
 // ── Source line ───────────────────────────────────────────────────────────────
 
@@ -174,12 +194,6 @@ interface WishlistRowProps {
   showSlotBadge?: boolean
   onOpenItem: (item: { id: number; name: string; icon: number }) => void
   onDelete: () => void
-  isDraggedOver: boolean
-  onDragStart: (e: React.DragEvent) => void
-  onDragOver: (e: React.DragEvent) => void
-  onDragLeave: () => void
-  onDrop: (e: React.DragEvent) => void
-  onDragEnd: () => void
 }
 
 function WishlistRow({
@@ -188,29 +202,30 @@ function WishlistRow({
   showSlotBadge,
   onOpenItem,
   onDelete,
-  isDraggedOver,
-  onDragStart,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-  onDragEnd,
 }: WishlistRowProps): React.ReactElement {
   const item = entry.item
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: `${ITEM_PREFIX}${entry.id}`,
+  })
   return (
     <div
-      draggable
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-      onDragEnd={onDragEnd}
+      ref={setNodeRef}
       className="flex items-center gap-2 rounded px-2 py-2"
       style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
         backgroundColor: 'var(--color-surface)',
-        border: `1px solid ${isDraggedOver ? 'var(--color-primary)' : 'var(--color-border)'}`,
+        border: '1px solid var(--color-border)',
+        opacity: isDragging ? 0.4 : 1,
       }}
     >
-      <span className="cursor-grab" style={{ color: 'var(--color-muted)' }} title="Drag to reorder">
+      <span
+        {...attributes}
+        {...listeners}
+        className="cursor-grab touch-none active:cursor-grabbing"
+        style={{ color: 'var(--color-muted)' }}
+        title="Drag to reorder"
+      >
         <GripVertical size={14} />
       </span>
       {item && <ItemIcon id={item.icon} name={item.name} size={28} />}
@@ -250,6 +265,107 @@ function WishlistRow({
       >
         <Trash2 size={14} />
       </button>
+    </div>
+  )
+}
+
+// ── Wishlist card (slot bucket section) ─────────────────────────────────────────
+
+interface WishlistCardProps {
+  bucket: string
+  list: WishlistEntry[]
+  collapsed: boolean
+  sourcesCache: Map<number, ItemSources>
+  onToggleCollapsed: () => void
+  onOpenItem: (item: { id: number; name: string; icon: number }) => void
+  onDelete: (entry: WishlistEntry) => void
+}
+
+function WishlistCard({
+  bucket,
+  list,
+  collapsed,
+  sourcesCache,
+  onToggleCollapsed,
+  onOpenItem,
+  onDelete,
+}: WishlistCardProps): React.ReactElement {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: `${CARD_PREFIX}${bucket}`,
+  })
+  return (
+    <div
+      ref={setNodeRef}
+      className="rounded"
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        border: '1px solid var(--color-border)',
+        backgroundColor: 'var(--color-surface-2)',
+        opacity: isDragging ? 0.5 : 1,
+      }}
+    >
+      {/* Card header */}
+      <div
+        className="flex items-center gap-1.5 px-2 py-1.5"
+        style={{ borderBottom: collapsed ? 'none' : '1px solid var(--color-border)' }}
+      >
+        <span
+          {...attributes}
+          {...listeners}
+          className="cursor-grab touch-none shrink-0 active:cursor-grabbing"
+          style={{ color: 'var(--color-muted)' }}
+          title="Drag to reorder section"
+        >
+          <GripVertical size={14} />
+        </span>
+        <button
+          onClick={onToggleCollapsed}
+          className="flex flex-1 items-center gap-2 text-left"
+          title={collapsed ? 'Expand section' : 'Collapse section'}
+        >
+          {collapsed ? (
+            <ChevronRight size={12} style={{ color: 'var(--color-muted)' }} />
+          ) : (
+            <ChevronDown size={12} style={{ color: 'var(--color-muted)' }} />
+          )}
+          <span
+            className="text-[10px] font-semibold uppercase tracking-widest"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            {bucket === GENERAL_BUCKET ? 'General' : bucket}
+          </span>
+          <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+            {list.length}
+          </span>
+        </button>
+        <button
+          onClick={onToggleCollapsed}
+          className="shrink-0 rounded p-0.5"
+          style={{ color: 'var(--color-muted)' }}
+          title={collapsed ? 'Expand section' : 'Collapse section'}
+        >
+          <span className="text-sm font-mono leading-none">{collapsed ? '+' : '−'}</span>
+        </button>
+      </div>
+      {!collapsed && (
+        <div className="space-y-1.5 p-2">
+          <SortableContext
+            items={list.map((e) => `${ITEM_PREFIX}${e.id}`)}
+            strategy={verticalListSortingStrategy}
+          >
+            {list.map((entry) => (
+              <WishlistRow
+                key={entry.id}
+                entry={entry}
+                sources={sourcesCache.get(entry.item_id) ?? null}
+                onOpenItem={onOpenItem}
+                onDelete={() => onDelete(entry)}
+              />
+            ))}
+          </SortableContext>
+        </div>
+      )}
     </div>
   )
 }
@@ -375,11 +491,12 @@ export default function WishlistPage(): React.ReactElement {
   const [detailItem, setDetailItem] = useState<Item | null>(null)
   const [pendingDelete, setPendingDelete] = useState<WishlistEntry | null>(null)
 
-  // Drag state — separate refs so item and card drags don't collide.
-  const itemDragSrc = useRef<{ id: number; slot: string } | null>(null)
-  const cardDragSrc = useRef<string | null>(null)
-  const [dragOverItemID, setDragOverItemID] = useState<number | null>(null)
-  const [dragOverCardBucket, setDragOverCardBucket] = useState<string | null>(null)
+  // dnd-kit sensors: a small activation distance lets the grip be clicked
+  // without starting a drag, and keyboard reordering comes for free.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   useEffect(() => {
     listCharacters().then((r) => setCharacters(r.characters)).catch(() => setCharacters([]))
@@ -546,87 +663,72 @@ export default function WishlistPage(): React.ReactElement {
     })
   }
 
-  // ── Item drag handlers ──────────────────────────────────────────────────────
+  // ── Drag-and-drop (dnd-kit) ─────────────────────────────────────────────────
 
-  function onItemDragStart(entry: WishlistEntry) {
-    return (e: React.DragEvent) => {
-      itemDragSrc.current = { id: entry.id, slot: entry.slot_bucket }
-      e.dataTransfer.effectAllowed = 'move'
-      e.dataTransfer.setData(DRAG_TYPE_ITEM, String(entry.id))
-      // Firefox requires text/plain for any drag.
-      e.dataTransfer.setData('text/plain', String(entry.id))
-    }
-  }
-  function onItemDragOver(entry: WishlistEntry) {
-    return (e: React.DragEvent) => {
-      const src = itemDragSrc.current
-      if (!src) return
-      // In category view, only allow drop on same-bucket targets.
-      if (viewMode === 'category' && src.slot !== entry.slot_bucket) return
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'move'
-      setDragOverItemID(entry.id)
-    }
-  }
-  function onItemDragLeave() {
-    setDragOverItemID(null)
-  }
-  function onItemDrop(target: WishlistEntry) {
-    return (e: React.DragEvent) => {
-      e.preventDefault()
-      const src = itemDragSrc.current
-      setDragOverItemID(null)
-      itemDragSrc.current = null
-      if (!src || src.id === target.id) return
-      if (viewMode === 'category' && src.slot !== target.slot_bucket) return
-      const next =
-        viewMode === 'category'
-          ? reorderItemsWithinBucket(entries, target.slot_bucket, src.id, target.id)
-          : reorderItemsGlobal(entries, src.id, target.id)
-      commitEntryOrder(next)
-    }
-  }
-  function onItemDragEnd() {
-    itemDragSrc.current = null
-    setDragOverItemID(null)
-  }
+  // Scope collision detection by drag kind so a card drag only considers card
+  // targets and an item drag only considers item targets. Without this, the
+  // nested card/item sortables cross-talk and the wrong thing reorders.
+  const collisionDetection = useCallback<CollisionDetection>(
+    (args) => {
+      const activeId = String(args.active.id)
+      if (activeId.startsWith(CARD_PREFIX)) {
+        return closestCenter({
+          ...args,
+          droppableContainers: args.droppableContainers.filter((c) =>
+            String(c.id).startsWith(CARD_PREFIX),
+          ),
+        })
+      }
+      // Item drag. In category view, confine targets to the same bucket so the
+      // live reflow never strays into a bucket the item can't be moved to.
+      let allowed: Set<string> | null = null
+      if (viewMode === 'category') {
+        const srcID = Number(activeId.slice(ITEM_PREFIX.length))
+        const bucket = entries.find((x) => x.id === srcID)?.slot_bucket
+        if (bucket != null) {
+          allowed = new Set(
+            entries
+              .filter((x) => x.slot_bucket === bucket)
+              .map((x) => `${ITEM_PREFIX}${x.id}`),
+          )
+        }
+      }
+      return closestCenter({
+        ...args,
+        droppableContainers: args.droppableContainers.filter((c) => {
+          const id = String(c.id)
+          if (!id.startsWith(ITEM_PREFIX)) return false
+          return allowed ? allowed.has(id) : true
+        }),
+      })
+    },
+    [viewMode, entries],
+  )
 
-  // ── Card drag handlers ──────────────────────────────────────────────────────
-
-  function onCardDragStart(bucket: string) {
-    return (e: React.DragEvent) => {
-      cardDragSrc.current = bucket
-      e.dataTransfer.effectAllowed = 'move'
-      e.dataTransfer.setData(DRAG_TYPE_CARD, bucket)
-      e.dataTransfer.setData('text/plain', bucket)
+  function handleDragEnd(e: DragEndEvent) {
+    const { active, over } = e
+    if (!over) return
+    const a = String(active.id)
+    const o = String(over.id)
+    if (a === o) return
+    if (a.startsWith(CARD_PREFIX) && o.startsWith(CARD_PREFIX)) {
+      reorderCards(a.slice(CARD_PREFIX.length), o.slice(CARD_PREFIX.length))
+      return
     }
-  }
-  function onCardDragOver(bucket: string) {
-    return (e: React.DragEvent) => {
-      if (!cardDragSrc.current || cardDragSrc.current === bucket) return
-      // Only react to card drags, not item drags drifting onto the header.
-      if (!e.dataTransfer.types.includes(DRAG_TYPE_CARD)) return
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'move'
-      setDragOverCardBucket(bucket)
+    if (a.startsWith(ITEM_PREFIX) && o.startsWith(ITEM_PREFIX)) {
+      const srcID = Number(a.slice(ITEM_PREFIX.length))
+      const tgtID = Number(o.slice(ITEM_PREFIX.length))
+      const src = entries.find((x) => x.id === srcID)
+      const tgt = entries.find((x) => x.id === tgtID)
+      if (!src || !tgt) return
+      if (viewMode === 'category') {
+        // Category view forbids cross-bucket moves — bucket is fixed by slot.
+        if (src.slot_bucket !== tgt.slot_bucket) return
+        commitEntryOrder(reorderItemsWithinBucket(entries, tgt.slot_bucket, srcID, tgtID))
+      } else {
+        commitEntryOrder(reorderItemsGlobal(entries, srcID, tgtID))
+      }
     }
-  }
-  function onCardDragLeave() {
-    setDragOverCardBucket(null)
-  }
-  function onCardDrop(bucket: string) {
-    return (e: React.DragEvent) => {
-      e.preventDefault()
-      const src = cardDragSrc.current
-      setDragOverCardBucket(null)
-      cardDragSrc.current = null
-      if (!src || src === bucket) return
-      reorderCards(src, bucket)
-    }
-  }
-  function onCardDragEnd() {
-    cardDragSrc.current = null
-    setDragOverCardBucket(null)
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -765,115 +867,61 @@ export default function WishlistPage(): React.ReactElement {
         )}
 
         {!loading && viewedCharID && !isEmpty && viewMode === 'category' && (
-          <>
-            {bucketOrder.map((bucket) => {
-              const list = entriesByBucket.get(bucket) ?? []
-              const collapsed = collapsedByBucket.get(bucket) ?? false
-              const isCardDragOver = dragOverCardBucket === bucket
-              return (
-                <div
-                  key={bucket}
-                  onDragOver={onCardDragOver(bucket)}
-                  onDragLeave={onCardDragLeave}
-                  onDrop={onCardDrop(bucket)}
-                  className="rounded"
-                  style={{
-                    border: `1px solid ${isCardDragOver ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                    backgroundColor: 'var(--color-surface-2)',
-                  }}
-                >
-                  {/* Card header */}
-                  <div
-                    className="flex items-center gap-1.5 px-2 py-1.5"
-                    style={{
-                      borderBottom: collapsed ? 'none' : '1px solid var(--color-border)',
-                    }}
-                  >
-                    <span
-                      draggable
-                      onDragStart={onCardDragStart(bucket)}
-                      onDragEnd={onCardDragEnd}
-                      className="cursor-grab shrink-0"
-                      style={{ color: 'var(--color-muted)' }}
-                      title="Drag to reorder section"
-                    >
-                      <GripVertical size={14} />
-                    </span>
-                    <button
-                      onClick={() => setBucketCollapsed(bucket, !collapsed)}
-                      className="flex flex-1 items-center gap-2 text-left"
-                      title={collapsed ? 'Expand section' : 'Collapse section'}
-                    >
-                      {collapsed ? (
-                        <ChevronRight size={12} style={{ color: 'var(--color-muted)' }} />
-                      ) : (
-                        <ChevronDown size={12} style={{ color: 'var(--color-muted)' }} />
-                      )}
-                      <span
-                        className="text-[10px] font-semibold uppercase tracking-widest"
-                        style={{ color: 'var(--color-muted)' }}
-                      >
-                        {bucket === GENERAL_BUCKET ? 'General' : bucket}
-                      </span>
-                      <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
-                        {list.length}
-                      </span>
-                    </button>
-                    <button
-                      onClick={() => setBucketCollapsed(bucket, !collapsed)}
-                      className="shrink-0 rounded p-0.5"
-                      style={{ color: 'var(--color-muted)' }}
-                      title={collapsed ? 'Expand section' : 'Collapse section'}
-                    >
-                      <span className="text-sm font-mono leading-none">
-                        {collapsed ? '+' : '−'}
-                      </span>
-                    </button>
-                  </div>
-                  {!collapsed && (
-                    <div className="space-y-1.5 p-2">
-                      {list.map((entry) => (
-                        <WishlistRow
-                          key={entry.id}
-                          entry={entry}
-                          sources={sourcesCache.get(entry.item_id) ?? null}
-                          onOpenItem={handleOpenItem}
-                          onDelete={() => setPendingDelete(entry)}
-                          isDraggedOver={dragOverItemID === entry.id}
-                          onDragStart={onItemDragStart(entry)}
-                          onDragOver={onItemDragOver(entry)}
-                          onDragLeave={onItemDragLeave}
-                          onDrop={onItemDrop(entry)}
-                          onDragEnd={onItemDragEnd}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={collisionDetection}
+            modifiers={[restrictToVerticalAxis]}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={bucketOrder.map((b) => `${CARD_PREFIX}${b}`)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-4">
+                {bucketOrder.map((bucket) => (
+                  <WishlistCard
+                    key={bucket}
+                    bucket={bucket}
+                    list={entriesByBucket.get(bucket) ?? []}
+                    collapsed={collapsedByBucket.get(bucket) ?? false}
+                    sourcesCache={sourcesCache}
+                    onToggleCollapsed={() =>
+                      setBucketCollapsed(bucket, !(collapsedByBucket.get(bucket) ?? false))
+                    }
+                    onOpenItem={handleOpenItem}
+                    onDelete={(entry) => setPendingDelete(entry)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
         )}
 
         {!loading && viewedCharID && !isEmpty && viewMode === 'all' && (
-          <div className="space-y-1.5">
-            {entries.map((entry) => (
-              <WishlistRow
-                key={entry.id}
-                entry={entry}
-                sources={sourcesCache.get(entry.item_id) ?? null}
-                showSlotBadge
-                onOpenItem={handleOpenItem}
-                onDelete={() => setPendingDelete(entry)}
-                isDraggedOver={dragOverItemID === entry.id}
-                onDragStart={onItemDragStart(entry)}
-                onDragOver={onItemDragOver(entry)}
-                onDragLeave={onItemDragLeave}
-                onDrop={onItemDrop(entry)}
-                onDragEnd={onItemDragEnd}
-              />
-            ))}
-          </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={collisionDetection}
+            modifiers={[restrictToVerticalAxis]}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={entries.map((e) => `${ITEM_PREFIX}${e.id}`)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-1.5">
+                {entries.map((entry) => (
+                  <WishlistRow
+                    key={entry.id}
+                    entry={entry}
+                    sources={sourcesCache.get(entry.item_id) ?? null}
+                    showSlotBadge
+                    onOpenItem={handleOpenItem}
+                    onDelete={() => setPendingDelete(entry)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
         )}
       </div>
 
