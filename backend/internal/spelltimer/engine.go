@@ -1067,7 +1067,14 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		if existingKey == key {
 			continue
 		}
-		sameSpell := sameSpellForDedup(existing, spellName, spell.ID)
+		// Only absorb a target-less orphan (the trigger twin) or a same-target
+		// re-land. A same-named timer bound to a DIFFERENT non-empty target is a
+		// separate recipient — AoE mez or a debuff cast on several mobs — and
+		// must coexist as its own row, not be overwritten. Without this guard
+		// the second mob's land deleted the first mob's timer, collapsing an
+		// AoE mez to a single timer (the reported bug).
+		sameSpell := (existing.TargetName == "" || existing.TargetName == target) &&
+			sameSpellForDedup(existing, spellName, spell.ID)
 		sameLand := landDetrimental && sameLandOrphan(existing, landedAt)
 		if !sameSpell && !sameLand {
 			continue
@@ -1086,7 +1093,12 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	}
 	// Pending-arm promotion: for deferred-render spells (mez), the
 	// trigger's metadata was stashed instead of creating a timer on
-	// cast-begin. Graft it onto the new timer now and clear the arm.
+	// cast-begin. Graft it onto the new timer now. The arm is NOT consumed
+	// here: an AoE mez lands on several mobs from one cast, and each land must
+	// inherit the same threshold/alerts — deleting on the first land left the
+	// other mobs' timers bare. The arm is cleared by StopExternal (worn-off /
+	// resist) or aged out by pendingArmTTL; a genuine recast overwrites it with
+	// a fresh timestamp, and any same-name re-graft carries identical metadata.
 	e.gcPendingArmsLocked(time.Now())
 	if arm, ok := e.pendingArms[spellName]; ok {
 		if arm.DisplayThresholdSecs > 0 {
@@ -1095,7 +1107,6 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		if len(arm.TimerAlerts) > 0 {
 			timer.TimerAlerts = arm.TimerAlerts
 		}
-		delete(e.pendingArms, spellName)
 		slog.Debug("timer-debug: pending arm promoted to landed timer",
 			"spell", spellName,
 			"target", target,
@@ -1597,20 +1608,56 @@ func (e *Engine) removeIllusionsForPlayer(player string) {
 	}
 }
 
-// removeBySpellNameOrID deletes every timer whose SpellName matches, or (when
-// spellID > 0) whose SpellID matches, regardless of target. Used by
-// StopExternal: a custom-trigger worn-off pattern is presumed to wipe the
-// spell entirely (the user wrote it that way), and we also want to catch any
-// spell-landed timer we may have created in parallel — including merged
-// timers that survived under the DB name rather than the trigger's name.
+// removeBySpellNameOrID handles a worn-off / fade signal for a spell, matching
+// timers by SpellName or (when spellID > 0) SpellID, regardless of target. Used
+// by StopExternal when a custom-trigger worn-off pattern fires.
+//
+// A "...worn off." line names no target, so it can't say WHICH instance ended.
+// Policy splits by category:
+//
+//   - Detrimentals (mez/debuff/dot/stun) are cast on individual mobs that break
+//     independently, each on its own worn-off line. So when several same-spell
+//     detrimental timers are active we peel off just ONE per signal — the one
+//     nearest expiry, i.e. the earliest-cast still running, which is the one
+//     that would naturally drop first. Successive breaks remove the rows one at
+//     a time in cast order. (Wiping all of them on the first break was the
+//     reported AoE-mez bug, where every mez timer vanished at once.)
+//
+//   - Buffs keep wipe-all: a group buff is cast once and its members' timers
+//     fade together, so the single worn-off line the caster sees clears the
+//     whole set. This also preserves the SpellID-merge fade path for haste
+//     buffs ("Your body slows.") that survived under the DB name.
+//
+// A single matching timer collapses to the same result either way.
 func (e *Engine) removeBySpellNameOrID(spellName string, spellID int) {
 	if spellName == "" && spellID <= 0 {
 		return
 	}
 	e.mu.Lock()
-	removed := 0
+	var matches []string
+	allDetrimental := true
 	for k, t := range e.timers {
 		if t.SpellName == spellName || (spellID > 0 && t.SpellID == spellID) {
+			matches = append(matches, k)
+			if !isDetrimentalCategory(t.Category) {
+				allDetrimental = false
+			}
+		}
+	}
+
+	removed := 0
+	if allDetrimental && len(matches) > 1 {
+		// Peel off only the single nearest-expiry instance.
+		earliest := matches[0]
+		for _, k := range matches[1:] {
+			if e.timers[k].ExpiresAt.Before(e.timers[earliest].ExpiresAt) {
+				earliest = k
+			}
+		}
+		delete(e.timers, earliest)
+		removed = 1
+	} else {
+		for _, k := range matches {
 			delete(e.timers, k)
 			removed++
 		}

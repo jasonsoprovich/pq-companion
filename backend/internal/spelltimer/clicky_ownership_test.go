@@ -69,3 +69,63 @@ func TestOnSpellLanded_AcumenTracksWhenEarringOwned(t *testing.T) {
 		t.Errorf("Acumen category = %s, want buff", timers[0].Category)
 	}
 }
+
+// AoE mez lands on several mobs from one cast. Each land must produce its own
+// per-target timer — so one mob's break can't clear the rest — and each must
+// inherit the trigger's display threshold from the single pending arm stashed
+// on cast-begin. Regression test for the report that AoE mez collapsed to one
+// timer and that any break made it vanish for every mob.
+func TestOnSpellLanded_AoEMezTracksPerTarget(t *testing.T) {
+	database, err := db.Open("../../data/quarm.db")
+	if err != nil {
+		t.Skipf("quarm.db not available: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	charCtx := func() (string, string, int) { return "/eq", "Osui", -1 }
+	e := NewEngine(ws.NewHub(), database, charCtx,
+		func() string { return scopeAnyone }, nil, nil, nil)
+
+	now := time.Now()
+	// Cast-begin stashes the trigger's metadata as a deferred-render pending
+	// arm (no visible timer yet) and records the recent local cast the
+	// detrimental scope filter requires for non-self targets.
+	e.StartExternal("Mesmerization", "mez", 24, 8, now, nil, 0, "")
+	e.mu.Lock()
+	e.lastCastSpell = "Mesmerization"
+	e.lastCastAt = now
+	e.mu.Unlock()
+
+	mobs := []string{"a gnoll", "a kobold", "a bat"}
+	for _, m := range mobs {
+		e.onSpellLanded(now, logparser.SpellLandedData{
+			Kind:       logparser.SpellLandedKindOther,
+			SpellName:  "Mesmerization",
+			TargetName: m,
+		})
+	}
+
+	if len(e.timers) != len(mobs) {
+		t.Fatalf("AoE mez should track one timer per mob, got %d: %v",
+			len(e.timers), keysOf(e.timers))
+	}
+	for _, m := range mobs {
+		tm, ok := e.timers[timerKey("Mesmerization", m)]
+		if !ok {
+			t.Errorf("missing per-target mez timer for %q", m)
+			continue
+		}
+		if !isDetrimentalCategory(tm.Category) {
+			t.Errorf("%s: category %s is not detrimental", m, tm.Category)
+		}
+		if tm.DisplayThresholdSecs != 8 {
+			t.Errorf("%s: threshold %d, want 8 (grafted from the pending arm)",
+				m, tm.DisplayThresholdSecs)
+		}
+	}
+
+	// One worn-off line peels a single mob; the rest keep ticking.
+	e.StopExternal("Mesmerization", 0)
+	if len(e.timers) != len(mobs)-1 {
+		t.Fatalf("one mez break should clear one mob, got %d timers", len(e.timers))
+	}
+}

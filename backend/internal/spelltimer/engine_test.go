@@ -421,6 +421,47 @@ func TestStopExternal_RemovesAllSameNameTimers(t *testing.T) {
 	}
 }
 
+// A worn-off line names no target, but several mobs can carry the same
+// detrimental at once (AoE mez). Each break is its own worn-off line, so
+// StopExternal must peel off ONE timer per call — the nearest expiry — rather
+// than wiping every same-named row at once (the reported AoE-mez bug).
+func TestStopExternal_DetrimentalPeelsOneTimer(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	mobs := []struct {
+		target string
+		expiry time.Duration
+	}{
+		{"a gnoll", 10 * time.Second},  // earliest — peeled first
+		{"a kobold", 20 * time.Second}, // peeled second
+		{"a bat", 30 * time.Second},    // survives two breaks
+	}
+	for _, m := range mobs {
+		key := timerKey("Mesmerization", m.target)
+		e.timers[key] = &ActiveTimer{
+			ID: key, SpellName: "Mesmerization", TargetName: m.target,
+			Category: CategoryMez, CastAt: now, StartsAt: now,
+			ExpiresAt: now.Add(m.expiry),
+		}
+	}
+
+	e.StopExternal("Mesmerization", 0)
+	if len(e.timers) != 2 {
+		t.Fatalf("first break should leave 2 timers, got %d", len(e.timers))
+	}
+	if _, ok := e.timers[timerKey("Mesmerization", "a gnoll")]; ok {
+		t.Error("first break should peel the nearest-expiry timer (a gnoll)")
+	}
+
+	e.StopExternal("Mesmerization", 0)
+	if len(e.timers) != 1 {
+		t.Fatalf("second break should leave 1 timer, got %d", len(e.timers))
+	}
+	if _, ok := e.timers[timerKey("Mesmerization", "a bat")]; !ok {
+		t.Error("the longest-running mez (a bat) should survive two breaks")
+	}
+}
+
 // sameSpellForDedup matches on name, on a shared non-zero SpellID, and on
 // neither when both differ. The SpellID arm is what lets a combined pack
 // name ("Speed of the Shissar/Brood") dedup against the DB name the
