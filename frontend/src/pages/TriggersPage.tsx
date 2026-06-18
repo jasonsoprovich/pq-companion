@@ -23,6 +23,30 @@ import {
   GripVertical,
   Check,
 } from 'lucide-react'
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+  closestCenter,
+  pointerWithin,
+  rectIntersection,
+  type CollisionDetection,
+  type DragStartEvent,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { useVoices } from '../hooks/useVoices'
 import NotificationActionEditor, { NotificationTypeSelect } from '../components/NotificationActionEditor'
 import SpellSearchPicker from '../components/SpellSearchPicker'
@@ -1284,21 +1308,21 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
 
 // ── Trigger row ───────────────────────────────────────────────────────────────
 
+// Sortable id prefixes. Native HTML5 DnD was unreliable in Electron on Windows
+// (the window-drag regions swallowed dragover/drop), so reordering uses dnd-kit
+// (pointer events). The prefix distinguishes the three drag kinds — trigger
+// rows, category sections (reorder), and section drop zones (move) — in both
+// collision detection and the drop handler.
+const TRIGGER_PREFIX = 'trigger:'
+const CATEGORY_PREFIX = 'category:'
+const SECTION_PREFIX = 'section:'
+
 interface TriggerRowProps {
   trigger: Trigger
   categories: TriggerCategory[]
   onCategoriesChanged: () => void
   onDeleted: (id: string) => void
   onUpdated: (t: Trigger) => void
-  // Drag-and-drop: the grip handle starts a drag; the page wires drops onto
-  // category section headers. `dragging` dims the row being dragged.
-  onDragStart: (t: Trigger) => void
-  onDragEnd: () => void
-  dragging: boolean
-  // Reorder: when a same-category trigger is being dragged, this row becomes a
-  // drop target that reorders the list (and switches the page to Manual sort).
-  dragTrigger: Trigger | null
-  onReorder: (targetId: string, position: 'before' | 'after') => void
 }
 
 function TriggerRow({
@@ -1307,11 +1331,6 @@ function TriggerRow({
   onCategoriesChanged,
   onDeleted,
   onUpdated,
-  onDragStart,
-  onDragEnd,
-  dragging,
-  dragTrigger,
-  onReorder,
 }: TriggerRowProps): React.ReactElement {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -1320,16 +1339,13 @@ function TriggerRow({
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [shared, setShared] = useState(false)
-  // Insertion indicator while a sibling is dragged over this row.
-  const [overPos, setOverPos] = useState<'before' | 'after' | null>(null)
-
-  // This row accepts a reorder drop when a different trigger from the same
-  // category is being dragged (any sort mode — dropping switches to Manual).
-  const reorderable =
-    !!dragTrigger &&
-    dragTrigger.id !== trigger.id &&
-    (dragTrigger.pack_name || '') === (trigger.pack_name || '')
   const [isEditing, setIsEditing] = useState(false)
+  // dnd-kit sortable: the grip handle (below) carries the drag listeners so the
+  // row's buttons stay clickable. Reorder within the category happens in the
+  // page's drag-end handler; cross-category moves drop onto a section.
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: `${TRIGGER_PREFIX}${trigger.id}`,
+  })
 
   const handleShare = () => {
     const pack: TriggerPack = {
@@ -1410,60 +1426,23 @@ function TriggerRow({
 
   return (
     <div
+      ref={setNodeRef}
       className="rounded-lg"
-      onDragOver={
-        reorderable
-          ? (e) => {
-              e.preventDefault()
-              e.stopPropagation() // don't let the section treat this as a move
-              const rect = e.currentTarget.getBoundingClientRect()
-              const pos = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
-              setOverPos((p) => (p === pos ? p : pos))
-            }
-          : undefined
-      }
-      onDragLeave={
-        reorderable
-          ? (e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverPos(null)
-            }
-          : undefined
-      }
-      onDrop={
-        reorderable
-          ? (e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              const pos = overPos ?? 'before'
-              setOverPos(null)
-              onReorder(trigger.id, pos)
-            }
-          : undefined
-      }
       style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
         backgroundColor: 'var(--color-surface)',
         border: `1px solid ${trigger.enabled ? 'var(--color-border)' : 'var(--color-surface-3)'}`,
-        opacity: dragging ? 0.4 : trigger.enabled ? 1 : 0.65,
-        boxShadow:
-          overPos === 'before'
-            ? 'inset 0 2px 0 0 var(--color-primary)'
-            : overPos === 'after'
-              ? 'inset 0 -2px 0 0 var(--color-primary)'
-              : undefined,
+        opacity: isDragging ? 0.4 : trigger.enabled ? 1 : 0.65,
       }}
     >
       <div className="flex items-center gap-3 px-3 py-2.5">
-        {/* Drag handle — move to another category */}
+        {/* Drag handle — reorder within or move to another category */}
         <div
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.setData('text/plain', trigger.id)
-            e.dataTransfer.effectAllowed = 'move'
-            onDragStart(trigger)
-          }}
-          onDragEnd={onDragEnd}
-          title="Drag to move to another category"
-          className="shrink-0 cursor-grab active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+          title="Drag to reorder or move to another category"
+          className="shrink-0 cursor-grab touch-none active:cursor-grabbing"
           style={{ color: 'var(--color-muted)' }}
         >
           <GripVertical size={14} />
@@ -1656,6 +1635,265 @@ function TriggerRow({
           {error}
         </p>
       )}
+    </div>
+  )
+}
+
+// ── Category section ──────────────────────────────────────────────────────────
+
+interface CategorySectionProps {
+  group: { packName: string; items: Trigger[] }
+  categories: TriggerCategory[]
+  collapsed: boolean
+  // True when a movable trigger is mid-drag (i.e. one whose current category is
+  // not this one) — drives the dashed "drop allowed" border.
+  canDrop: boolean
+  isRenaming: boolean
+  renameValue: string
+  onRenameValueChange: (v: string) => void
+  onToggleCollapsed: () => void
+  onStartRename: () => void
+  onCommitRename: () => void
+  onCancelRename: () => void
+  onDeleteCategory: (cat: TriggerCategory) => void
+  onTriggerDeleted: (id: string) => void
+  onTriggerUpdated: (t: Trigger) => void
+  onCategoriesChanged: () => void
+}
+
+function CategorySection({
+  group,
+  categories,
+  collapsed,
+  canDrop,
+  isRenaming,
+  renameValue,
+  onRenameValueChange,
+  onToggleCollapsed,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
+  onDeleteCategory,
+  onTriggerDeleted,
+  onTriggerUpdated,
+  onCategoriesChanged,
+}: CategorySectionProps): React.ReactElement {
+  const packName = group.packName
+  const isUncategorized = packName === '__uncategorized__'
+  const reorderableSection = !isUncategorized
+  const label = isUncategorized ? 'Uncategorized' : packName
+  const cat = categories.find((c) => c.name === packName)
+  const isCustom = !!cat?.custom
+
+  // Category reorder: dragging the header grip moves the whole section.
+  // Uncategorized is pinned last, so its sortable is disabled.
+  const {
+    setNodeRef: setSortRef,
+    attributes,
+    listeners,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: `${CATEGORY_PREFIX}${packName}`, disabled: !reorderableSection })
+
+  // Trigger move: dropping a trigger anywhere on this section reassigns it here.
+  const { setNodeRef: setDropRef, isOver, active } = useDroppable({
+    id: `${SECTION_PREFIX}${packName}`,
+  })
+
+  const triggerBeingDragged = !!active && String(active.id).startsWith(TRIGGER_PREFIX)
+  const moveTarget = triggerBeingDragged && canDrop
+  const isDropTarget = isOver && moveTarget
+
+  return (
+    <div
+      ref={setSortRef}
+      className="space-y-2 rounded"
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+      }}
+    >
+      <div ref={setDropRef} className="space-y-2">
+        <div
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5"
+          style={{
+            backgroundColor: isDropTarget ? 'var(--color-surface-3)' : 'var(--color-surface-2)',
+            border: `1px ${moveTarget ? 'dashed' : 'solid'} ${
+              isDropTarget || moveTarget ? 'var(--color-primary)' : 'var(--color-border)'
+            }`,
+          }}
+        >
+          {reorderableSection && !isRenaming && (
+            <div
+              {...attributes}
+              {...listeners}
+              title="Drag to reorder category"
+              className="shrink-0 cursor-grab touch-none active:cursor-grabbing"
+              style={{ color: 'var(--color-muted)' }}
+            >
+              <GripVertical size={13} />
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            className={`flex items-center gap-2 text-left ${
+              isRenaming ? 'shrink-0' : 'flex-1 min-w-0'
+            }`}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+          >
+            {collapsed ? (
+              <ChevronRight size={13} style={{ color: 'var(--color-muted)' }} />
+            ) : (
+              <ChevronDown size={13} style={{ color: 'var(--color-muted)' }} />
+            )}
+            {!isRenaming && (
+              <>
+                <span
+                  className="text-xs font-semibold truncate"
+                  style={{ color: 'var(--color-foreground)' }}
+                >
+                  {label}
+                </span>
+                <span
+                  className="text-[11px] shrink-0"
+                  style={{ color: 'var(--color-muted-foreground)' }}
+                >
+                  {group.items.length}
+                </span>
+              </>
+            )}
+          </button>
+          {isRenaming && (
+            <>
+              <input
+                type="text"
+                autoFocus
+                value={renameValue}
+                onChange={(e) => onRenameValueChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    onCommitRename()
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onCancelRename()
+                  }
+                }}
+                onBlur={onCommitRename}
+                className="flex-1 rounded px-2 py-0.5 text-xs outline-none min-w-0"
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-foreground)',
+                }}
+              />
+              {/* onMouseDown preventDefault keeps the input focused so its
+                  onBlur doesn't fire (and re-commit) before the click runs. */}
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={onCommitRename}
+                className="p-0.5 rounded shrink-0"
+                title="Save"
+                style={{ color: 'var(--color-primary)', cursor: 'pointer' }}
+              >
+                <Check size={14} />
+              </button>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={onCancelRename}
+                className="p-0.5 rounded shrink-0"
+                title="Cancel"
+                style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
+              >
+                <X size={14} />
+              </button>
+            </>
+          )}
+          {isDropTarget && (
+            <span
+              className="text-[11px] font-medium shrink-0"
+              style={{ color: 'var(--color-primary)' }}
+            >
+              Move here
+            </span>
+          )}
+          {isCustom && !isRenaming && (
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={onStartRename}
+                className="p-0.5 rounded"
+                title="Rename category"
+                style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
+              >
+                <Pencil size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => cat && onDeleteCategory(cat)}
+                className="p-0.5 rounded"
+                title="Delete category"
+                style={{ color: 'var(--color-destructive)', cursor: 'pointer' }}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          )}
+        </div>
+        {!collapsed && (
+          <SortableContext
+            items={group.items.map((t) => `${TRIGGER_PREFIX}${t.id}`)}
+            strategy={verticalListSortingStrategy}
+          >
+            {group.items.map((t) => (
+              <TriggerRow
+                key={t.id}
+                trigger={t}
+                categories={categories}
+                onCategoriesChanged={onCategoriesChanged}
+                onDeleted={onTriggerDeleted}
+                onUpdated={onTriggerUpdated}
+              />
+            ))}
+          </SortableContext>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Lightweight previews rendered in the DragOverlay so the dragged item follows
+// the cursor (the cross-category move in particular reads much better this way).
+function TriggerDragPreview({ trigger }: { trigger: Trigger }): React.ReactElement {
+  return (
+    <div
+      className="flex items-center gap-2 rounded-lg px-3 py-2.5 shadow-lg"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-primary)' }}
+    >
+      <GripVertical size={14} style={{ color: 'var(--color-muted)' }} />
+      <span className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+        {trigger.name}
+      </span>
+    </div>
+  )
+}
+
+function CategoryDragPreview({ label }: { label: string }): React.ReactElement {
+  return (
+    <div
+      className="flex items-center gap-2 rounded px-2 py-1.5 shadow-lg"
+      style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-primary)' }}
+    >
+      <GripVertical size={13} style={{ color: 'var(--color-muted)' }} />
+      <span className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
+        {label}
+      </span>
     </div>
   )
 }
@@ -2323,15 +2561,17 @@ export default function TriggersPage(): React.ReactElement {
   // Latches a rename commit so the input's unmount-blur doesn't fire twice
   // (and so Escape skips the rename). See commitRenameCategory.
   const cancelRenameRef = useRef(false)
-  // Drag-and-drop: the trigger currently being dragged by its grip handle,
-  // and the category section being hovered over (for highlight).
-  const [dragTrigger, setDragTrigger] = useState<Trigger | null>(null)
-  const [dragOverPack, setDragOverPack] = useState<string | null>(null)
-  // Section reordering. The dragged category is held in a ref (not state) so
-  // onDragStart doesn't re-render mid-drag — the same pattern the Wishlist DnD
-  // uses. dragOverCat drives only the hovered-section highlight.
-  const categoryDragSrc = useRef<string | null>(null)
-  const [dragOverCat, setDragOverCat] = useState<string | null>(null)
+  // dnd-kit drag state. activeTrigger is the trigger being dragged (drives the
+  // per-section "drop allowed" hint + overlay preview); activeCategory is the
+  // section being dragged for reorder (drives its overlay preview).
+  const [activeTrigger, setActiveTrigger] = useState<Trigger | null>(null)
+  const [activeCategory, setActiveCategory] = useState<string | null>(null)
+  // A small activation distance lets the grip be clicked without starting a
+  // drag; the keyboard sensor brings arrow-key reordering for free.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   // Categories are partly derived from in-use pack_name values, so refresh
   // them whenever triggers change (create/move/delete) as well as after
@@ -2576,29 +2816,19 @@ export default function TriggersPage(): React.ReactElement {
       .catch(() => {})
   }
 
-  // ── Drag-and-drop: move a trigger to a category by dropping on its section ──
-  const handleRowDragStart = (t: Trigger) => setDragTrigger(t)
-  const handleRowDragEnd = () => {
-    setDragTrigger(null)
-    setDragOverPack(null)
-  }
-
+  // ── Drag-and-drop (dnd-kit) ──
   // A section keyed by packKey ('__uncategorized__' or a category name) accepts
-  // the active drag when a drag is in progress and it isn't the trigger's
-  // current category. Pack sections are valid targets too — origin is tracked
-  // by source_pack, so moving a trigger into/out of a pack category doesn't
-  // change which pack it belongs to.
-  const canDropOnPack = (packKey: string): boolean => {
-    if (!dragTrigger) return false
+  // the active trigger when it isn't already that trigger's category. Pack
+  // sections are valid targets too — origin is tracked by source_pack, so
+  // moving a trigger into/out of a pack category doesn't change its pack.
+  const canDropTriggerOn = (packKey: string): boolean => {
+    if (!activeTrigger) return false
     const target = packKey === '__uncategorized__' ? '' : packKey
-    return dragTrigger.pack_name !== target
+    return activeTrigger.pack_name !== target
   }
 
-  const handleDropOnPack = (packKey: string) => {
-    const t = dragTrigger
-    setDragOverPack(null)
-    setDragTrigger(null)
-    if (!t) return
+  // Move a trigger to another category by reassigning its pack_name.
+  const moveTriggerToCategory = (t: Trigger, packKey: string) => {
     const target = packKey === '__uncategorized__' ? '' : packKey
     if (t.pack_name === target) return
     // Re-serialize the trigger with the new category. Sending the full request
@@ -2629,15 +2859,11 @@ export default function TriggersPage(): React.ReactElement {
     updateTrigger(t.id, req).then(handleUpdated).catch(() => {})
   }
 
-  // Reorder within a category (Manual sort mode): drop the dragged trigger
-  // before/after the target row in the same category, then persist the new
-  // order. Optimistically rewrites local sort_order so the row jumps
-  // immediately; a failed write resyncs from the server.
-  const handleReorderWithin = (targetId: string, position: 'before' | 'after') => {
-    const dragged = dragTrigger
-    setDragTrigger(null)
-    setDragOverPack(null)
-    if (!dragged || dragged.id === targetId) return
+  // Reorder a trigger within its category by dropping it onto a sibling row.
+  // Optimistically rewrites local sort_order so the row jumps immediately;
+  // a failed write resyncs from the server.
+  const reorderTriggerWithin = (dragged: Trigger, overId: string) => {
+    if (dragged.id === overId) return
     // Seed the new manual order from the CURRENT displayed order of the whole
     // category (name/recent/manual) so a drag in any sort mode reorders from
     // what the user sees. Uses all category triggers (not the filtered view)
@@ -2660,12 +2886,11 @@ export default function TriggersPage(): React.ReactElement {
       .filter((t) => (t.pack_name || '') === key)
       .sort(byMode)
       .map((t) => t.id)
-      .filter((id) => id !== dragged.id)
-    let idx = ids.indexOf(targetId)
-    if (idx === -1) return
-    if (position === 'after') idx += 1
-    ids.splice(idx, 0, dragged.id)
-    const orderMap = new Map(ids.map((id, i) => [id, i]))
+    const from = ids.indexOf(dragged.id)
+    const to = ids.indexOf(overId)
+    if (from === -1 || to === -1 || from === to) return
+    const next = arrayMove(ids, from, to)
+    const orderMap = new Map(next.map((id, i) => [id, i]))
     setTriggers((prev) =>
       prev.map((t) =>
         orderMap.has(t.id) ? { ...t, sort_order: orderMap.get(t.id)! } : t,
@@ -2674,24 +2899,12 @@ export default function TriggersPage(): React.ReactElement {
     // Reordering manually implies Manual sort — switch so the change sticks
     // visibly instead of being re-sorted away by Name/Recent.
     if (sortMode !== 'manual') setSortMode('manual')
-    reorderTriggers(ids).catch(() => load())
+    reorderTriggers(next).catch(() => load())
   }
 
-  // ── Drag-and-drop: reorder category sections by dragging their headers ──
-  // Mirrors the Wishlist card reorder: the grip sets a ref (no state change on
-  // drag start), the whole section is the drop target, and dropping on a
-  // section moves the dragged one to that section's slot (no before/after
-  // edge math). This is what makes it land reliably regardless of how tall the
-  // target section is.
-  const handleCategoryDragEnd = () => {
-    categoryDragSrc.current = null
-    setDragOverCat(null)
-  }
-
-  const reorderCategoryTo = (targetKey: string) => {
-    const dragged = categoryDragSrc.current
-    categoryDragSrc.current = null
-    setDragOverCat(null)
+  // Reorder category sections by dragging their header grip onto another
+  // section. Uncategorized is pinned last and can't be a drag source or target.
+  const reorderCategoryTo = (dragged: string, targetKey: string) => {
     if (!dragged || dragged === targetKey || targetKey === '__uncategorized__') return
     // Order over ALL categories (already display-sorted) so reordering while
     // filtered doesn't drop hidden ones. Move dragged to target's slot.
@@ -2699,15 +2912,83 @@ export default function TriggersPage(): React.ReactElement {
     const from = order.indexOf(dragged)
     const to = order.indexOf(targetKey)
     if (from === -1 || to === -1 || from === to) return
-    const next = [...order]
-    const moved = next.splice(from, 1)[0]
-    next.splice(to, 0, moved)
+    const next = arrayMove(order, from, to)
     // Optimistic: rebuild categories in the new order so sections reflow.
     const byName = new Map(categories.map((c) => [c.name, c]))
     setCategories(
       next.map((name, i) => ({ ...(byName.get(name) as TriggerCategory), sort_order: i })),
     )
     reorderTriggerCategories(next).catch(() => load())
+  }
+
+  // Scope collision detection by drag kind so the nested sortables don't
+  // cross-talk. A category drag only sees other category sortables. A trigger
+  // drag prefers the sibling row under the pointer (reorder); when the pointer
+  // isn't over a row it falls back to the section drop zone (move to another
+  // category, including empty ones) — a plain closestCenter can't do this
+  // because a tall section's centre often beats the row actually under the
+  // cursor.
+  const collisionDetection = useCallback<CollisionDetection>((args) => {
+    const only = (pred: (id: string) => boolean) => ({
+      ...args,
+      droppableContainers: args.droppableContainers.filter((c) => pred(String(c.id))),
+    })
+    if (String(args.active.id).startsWith(CATEGORY_PREFIX)) {
+      return closestCenter(only((id) => id.startsWith(CATEGORY_PREFIX)))
+    }
+    const scoped = only((id) => id.startsWith(TRIGGER_PREFIX) || id.startsWith(SECTION_PREFIX))
+    // pointerWithin is precise for the pointer sensor; rectIntersection covers
+    // the keyboard sensor (no pointer) and drags past the list edges.
+    let hits = pointerWithin(scoped)
+    if (hits.length === 0) hits = rectIntersection(scoped)
+    const rows = hits.filter((h) => String(h.id).startsWith(TRIGGER_PREFIX))
+    if (rows.length) return rows
+    const sections = hits.filter((h) => String(h.id).startsWith(SECTION_PREFIX))
+    if (sections.length) return sections
+    return closestCenter(only((id) => id.startsWith(SECTION_PREFIX)))
+  }, [])
+
+  const handleDragStart = (e: DragStartEvent) => {
+    const id = String(e.active.id)
+    if (id.startsWith(TRIGGER_PREFIX)) {
+      const tid = id.slice(TRIGGER_PREFIX.length)
+      setActiveTrigger(triggers.find((t) => t.id === tid) ?? null)
+    } else if (id.startsWith(CATEGORY_PREFIX)) {
+      setActiveCategory(id.slice(CATEGORY_PREFIX.length))
+    }
+  }
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    const aId = String(e.active.id)
+    setActiveTrigger(null)
+    setActiveCategory(null)
+    if (!e.over) return
+    const oId = String(e.over.id)
+    if (aId === oId) return
+
+    if (aId.startsWith(CATEGORY_PREFIX)) {
+      if (!oId.startsWith(CATEGORY_PREFIX)) return
+      reorderCategoryTo(aId.slice(CATEGORY_PREFIX.length), oId.slice(CATEGORY_PREFIX.length))
+      return
+    }
+
+    if (aId.startsWith(TRIGGER_PREFIX)) {
+      const dragged = triggers.find((t) => t.id === aId.slice(TRIGGER_PREFIX.length))
+      if (!dragged) return
+      const srcKey = dragged.pack_name || '__uncategorized__'
+      if (oId.startsWith(TRIGGER_PREFIX)) {
+        const overT = triggers.find((t) => t.id === oId.slice(TRIGGER_PREFIX.length))
+        if (!overT) return
+        const overKey = overT.pack_name || '__uncategorized__'
+        // Same category → reorder; different category → move (dropping onto a
+        // foreign row reassigns the category, matching the old behaviour).
+        if (overKey === srcKey) reorderTriggerWithin(dragged, overT.id)
+        else moveTriggerToCategory(dragged, overKey)
+      } else if (oId.startsWith(SECTION_PREFIX)) {
+        const overKey = oId.slice(SECTION_PREFIX.length)
+        if (overKey !== srcKey) moveTriggerToCategory(dragged, overKey)
+      }
+    }
   }
 
   const handleCancelCreate = () => {
@@ -3163,222 +3444,55 @@ export default function TriggersPage(): React.ReactElement {
                 </div>
               )}
 
-              {/* Trigger list — grouped by pack with collapsible sections */}
-              {groupedTriggers.map((group) => {
-                const isCollapsed = collapsedPacks.has(group.packName)
-                const label =
-                  group.packName === '__uncategorized__' ? 'Uncategorized' : group.packName
-                const isDropTarget = dragOverPack === group.packName
-                const dropHint = !!dragTrigger && canDropOnPack(group.packName)
-                const cat = categories.find((c) => c.name === group.packName)
-                const isCustom = !!cat?.custom
-                const isRenaming = renamingCategory === group.packName
-                // Section reordering: every section except Uncategorized can be
-                // dragged by its header grip.
-                const reorderableSection = group.packName !== '__uncategorized__'
-                const catDropTarget = dragOverCat === group.packName
-                return (
-                  <div
-                    key={group.packName}
-                    className="space-y-2 rounded"
-                    onDragOver={(e) => {
-                      // Category reorder: the whole section (header + body) is the
-                      // drop target; dropping anywhere on it moves the dragged
-                      // category to this one's slot — no before/after edge math,
-                      // so it lands reliably however tall this section is.
-                      if (
-                        categoryDragSrc.current &&
-                        reorderableSection &&
-                        categoryDragSrc.current !== group.packName
-                      ) {
-                        e.preventDefault()
-                        e.dataTransfer.dropEffect = 'move'
-                        if (dragOverCat !== group.packName) setDragOverCat(group.packName)
-                        return
+              {/* Trigger list — grouped by pack with collapsible sections.
+                  Pointer-based DnD (dnd-kit) replaces native HTML5 DnD, which
+                  was unreliable in Electron on Windows: reorder triggers within
+                  a category, move a trigger to another category by dropping on
+                  its section, and reorder the sections themselves. */}
+              <DndContext
+                sensors={sensors}
+                collisionDetection={collisionDetection}
+                modifiers={[restrictToVerticalAxis]}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={groupedTriggers.map((g) => `${CATEGORY_PREFIX}${g.packName}`)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {groupedTriggers.map((group) => (
+                    <CategorySection
+                      key={group.packName}
+                      group={group}
+                      categories={categories}
+                      collapsed={collapsedPacks.has(group.packName)}
+                      canDrop={canDropTriggerOn(group.packName)}
+                      isRenaming={renamingCategory === group.packName}
+                      renameValue={renameValue}
+                      onRenameValueChange={setRenameValue}
+                      onToggleCollapsed={() => togglePackCollapsed(group.packName)}
+                      onStartRename={() => startRenameCategory(group.packName)}
+                      onCommitRename={() => commitRenameCategory(group.packName)}
+                      onCancelRename={cancelRenameCategory}
+                      onDeleteCategory={(c) => setDeletingCategory(c)}
+                      onTriggerDeleted={handleDeleted}
+                      onTriggerUpdated={handleUpdated}
+                      onCategoriesChanged={reloadCategories}
+                    />
+                  ))}
+                </SortableContext>
+                <DragOverlay>
+                  {activeTrigger ? (
+                    <TriggerDragPreview trigger={activeTrigger} />
+                  ) : activeCategory ? (
+                    <CategoryDragPreview
+                      label={
+                        activeCategory === '__uncategorized__' ? 'Uncategorized' : activeCategory
                       }
-                      // Trigger move onto this category.
-                      if (!canDropOnPack(group.packName)) return
-                      e.preventDefault()
-                      e.dataTransfer.dropEffect = 'move'
-                      if (dragOverPack !== group.packName) setDragOverPack(group.packName)
-                    }}
-                    onDragLeave={(e) => {
-                      // Only clear when the cursor leaves the section entirely,
-                      // not when moving between the header and its rows.
-                      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                        setDragOverPack((p) => (p === group.packName ? null : p))
-                        setDragOverCat((c) => (c === group.packName ? null : c))
-                      }
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault()
-                      if (categoryDragSrc.current) {
-                        reorderCategoryTo(group.packName)
-                        return
-                      }
-                      handleDropOnPack(group.packName)
-                    }}
-                  >
-                    <div
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5"
-                      style={{
-                        backgroundColor:
-                          isDropTarget || catDropTarget
-                            ? 'var(--color-surface-3)'
-                            : 'var(--color-surface-2)',
-                        border: `1px ${dropHint ? 'dashed' : 'solid'} ${
-                          isDropTarget || dropHint || catDropTarget
-                            ? 'var(--color-primary)'
-                            : 'var(--color-border)'
-                        }`,
-                      }}
-                    >
-                      {reorderableSection && !isRenaming && (
-                        <div
-                          draggable
-                          onDragStart={(e) => {
-                            e.dataTransfer.effectAllowed = 'move'
-                            e.dataTransfer.setData('text/plain', group.packName)
-                            categoryDragSrc.current = group.packName
-                          }}
-                          onDragEnd={handleCategoryDragEnd}
-                          title="Drag to reorder category"
-                          className="shrink-0 cursor-grab active:cursor-grabbing"
-                          style={{ color: 'var(--color-muted)' }}
-                        >
-                          <GripVertical size={13} />
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => togglePackCollapsed(group.packName)}
-                        className={`flex items-center gap-2 text-left ${
-                          isRenaming ? 'shrink-0' : 'flex-1 min-w-0'
-                        }`}
-                        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
-                      >
-                        {isCollapsed ? (
-                          <ChevronRight size={13} style={{ color: 'var(--color-muted)' }} />
-                        ) : (
-                          <ChevronDown size={13} style={{ color: 'var(--color-muted)' }} />
-                        )}
-                        {!isRenaming && (
-                          <>
-                            <span
-                              className="text-xs font-semibold truncate"
-                              style={{ color: 'var(--color-foreground)' }}
-                            >
-                              {label}
-                            </span>
-                            <span
-                              className="text-[11px] shrink-0"
-                              style={{ color: 'var(--color-muted-foreground)' }}
-                            >
-                              {group.items.length}
-                            </span>
-                          </>
-                        )}
-                      </button>
-                      {isRenaming && (
-                        <>
-                          <input
-                            type="text"
-                            autoFocus
-                            value={renameValue}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault()
-                                commitRenameCategory(group.packName)
-                              } else if (e.key === 'Escape') {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                cancelRenameCategory()
-                              }
-                            }}
-                            onBlur={() => commitRenameCategory(group.packName)}
-                            className="flex-1 rounded px-2 py-0.5 text-xs outline-none min-w-0"
-                            style={{
-                              backgroundColor: 'var(--color-surface)',
-                              border: '1px solid var(--color-border)',
-                              color: 'var(--color-foreground)',
-                            }}
-                          />
-                          {/* onMouseDown preventDefault keeps the input focused
-                              so its onBlur doesn't fire (and re-commit) before
-                              the button's onClick runs. */}
-                          <button
-                            type="button"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => commitRenameCategory(group.packName)}
-                            className="p-0.5 rounded shrink-0"
-                            title="Save"
-                            style={{ color: 'var(--color-primary)', cursor: 'pointer' }}
-                          >
-                            <Check size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={cancelRenameCategory}
-                            className="p-0.5 rounded shrink-0"
-                            title="Cancel"
-                            style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
-                          >
-                            <X size={14} />
-                          </button>
-                        </>
-                      )}
-                      {isDropTarget && (
-                        <span
-                          className="text-[11px] font-medium shrink-0"
-                          style={{ color: 'var(--color-primary)' }}
-                        >
-                          Move here
-                        </span>
-                      )}
-                      {isCustom && !isRenaming && (
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => startRenameCategory(group.packName)}
-                            className="p-0.5 rounded"
-                            title="Rename category"
-                            style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
-                          >
-                            <Pencil size={12} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => cat && setDeletingCategory(cat)}
-                            className="p-0.5 rounded"
-                            title="Delete category"
-                            style={{ color: 'var(--color-destructive)', cursor: 'pointer' }}
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    {!isCollapsed &&
-                      group.items.map((t) => (
-                        <TriggerRow
-                          key={t.id}
-                          trigger={t}
-                          categories={categories}
-                          onCategoriesChanged={reloadCategories}
-                          onDeleted={handleDeleted}
-                          onUpdated={handleUpdated}
-                          onDragStart={handleRowDragStart}
-                          onDragEnd={handleRowDragEnd}
-                          dragging={dragTrigger?.id === t.id}
-                          dragTrigger={dragTrigger}
-                          onReorder={handleReorderWithin}
-                        />
-                      ))}
-                  </div>
-                )
-              })}
+                    />
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
             </div>
             </>
           )}
