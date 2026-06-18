@@ -1,7 +1,25 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ListChecks, Plus, Pencil, Trash2, Check, X, GripVertical, ChevronDown, ChevronRight,
 } from 'lucide-react'
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import {
   listCharacters,
   listCharacterTasks,
@@ -147,8 +165,6 @@ interface TaskCardProps {
   saving: boolean
   formError: string | null
   deleteConfirm: boolean
-  isDragging: boolean
-  isDragOver: boolean
   onToggleExpanded: () => void
   onToggleComplete: () => void
   onStartEdit: () => void
@@ -160,22 +176,22 @@ interface TaskCardProps {
   onAddSubtask: (name: string) => void
   onToggleSubtask: (subtask: Subtask) => void
   onDeleteSubtask: (subtask: Subtask) => void
-  onDragStart: () => void
-  onDragOver: (e: React.DragEvent) => void
-  onDragLeave: () => void
-  onDrop: () => void
-  onDragEnd: () => void
 }
 
 function TaskCard(props: TaskCardProps): React.ReactElement {
   const {
-    task, expanded, editing, saving, formError, deleteConfirm, isDragging, isDragOver,
+    task, expanded, editing, saving, formError, deleteConfirm,
     onToggleExpanded, onToggleComplete, onStartEdit, onSaveEdit, onCancelEdit,
     onRequestDelete, onConfirmDelete, onCancelDelete,
     onAddSubtask, onToggleSubtask, onDeleteSubtask,
-    onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd,
   } = props
   const [newSubtask, setNewSubtask] = useState('')
+  // dnd-kit sortable: native HTML5 DnD was unreliable in Electron on Windows,
+  // so task reordering is pointer-based. The grip button (below) carries the
+  // drag listeners so the rest of the card stays interactive.
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: task.id,
+  })
 
   const completedSubs = task.subtasks.filter((s) => s.completed).length
   const totalSubs = task.subtasks.length
@@ -196,12 +212,11 @@ function TaskCard(props: TaskCardProps): React.ReactElement {
 
   return (
     <div
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
+      ref={setNodeRef}
       style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
         opacity: isDragging ? 0.4 : 1,
-        borderTop: isDragOver ? '2px solid var(--color-primary)' : '2px solid transparent',
       }}
     >
       <div
@@ -213,10 +228,9 @@ function TaskCard(props: TaskCardProps): React.ReactElement {
       >
         <div className="flex items-start gap-2 px-3 py-3">
           <button
-            draggable
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            className="mt-0.5 cursor-grab active:cursor-grabbing rounded p-1 hover:bg-(--color-surface-2)"
+            {...attributes}
+            {...listeners}
+            className="mt-0.5 cursor-grab touch-none active:cursor-grabbing rounded p-1 hover:bg-(--color-surface-2)"
             style={{ color: 'var(--color-muted)' }}
             title="Drag to reorder"
             aria-label="Drag to reorder"
@@ -417,9 +431,12 @@ export default function CharacterTasksPage(): React.ReactElement {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
-  const [dragId, setDragId] = useState<number | null>(null)
-  const [dragOverId, setDragOverId] = useState<number | null>(null)
-  const dragSourceRef = useRef<number | null>(null)
+  // A small activation distance lets the grip be clicked without starting a
+  // drag; the keyboard sensor brings arrow-key reordering for free.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -574,19 +591,14 @@ export default function CharacterTasksPage(): React.ReactElement {
     }
   }
 
-  function handleDrop(targetID: number) {
-    const sourceID = dragSourceRef.current
-    setDragId(null)
-    setDragOverId(null)
-    dragSourceRef.current = null
-    if (sourceID === null || sourceID === targetID) return
+  function handleDragEnd(e: DragEndEvent) {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
     setTasks((prev) => {
-      const sourceIdx = prev.findIndex((t) => t.id === sourceID)
-      const targetIdx = prev.findIndex((t) => t.id === targetID)
+      const sourceIdx = prev.findIndex((t) => t.id === active.id)
+      const targetIdx = prev.findIndex((t) => t.id === over.id)
       if (sourceIdx === -1 || targetIdx === -1) return prev
-      const next = [...prev]
-      const [moved] = next.splice(sourceIdx, 1)
-      next.splice(targetIdx, 0, moved)
+      const next = arrayMove(prev, sourceIdx, targetIdx)
       void commitReorder(next.map((t) => t.id))
       return next
     })
@@ -691,37 +703,42 @@ export default function CharacterTasksPage(): React.ReactElement {
           </p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {tasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              expanded={expanded.has(task.id)}
-              editing={typeof mode === 'object' && mode.editing === task.id}
-              saving={saving}
-              formError={formError}
-              deleteConfirm={deleteConfirm === task.id}
-              isDragging={dragId === task.id}
-              isDragOver={dragOverId === task.id && dragId !== task.id}
-              onToggleExpanded={() => toggleExpanded(task.id)}
-              onToggleComplete={() => handleToggleComplete(task)}
-              onStartEdit={() => { setMode({ editing: task.id }); setFormError(null) }}
-              onSaveEdit={(name, description) => handleSaveEdit(task.id, name, description)}
-              onCancelEdit={() => { setMode('idle'); setFormError(null) }}
-              onRequestDelete={() => setDeleteConfirm(task.id)}
-              onConfirmDelete={() => handleDelete(task.id)}
-              onCancelDelete={() => setDeleteConfirm(null)}
-              onAddSubtask={(name) => handleAddSubtask(task.id, name)}
-              onToggleSubtask={(sub) => handleToggleSubtask(task.id, sub)}
-              onDeleteSubtask={(sub) => handleDeleteSubtask(task.id, sub)}
-              onDragStart={() => { dragSourceRef.current = task.id; setDragId(task.id) }}
-              onDragOver={(e) => { e.preventDefault(); setDragOverId(task.id) }}
-              onDragLeave={() => setDragOverId((prev) => (prev === task.id ? null : prev))}
-              onDrop={() => handleDrop(task.id)}
-              onDragEnd={() => { setDragId(null); setDragOverId(null); dragSourceRef.current = null }}
-            />
-          ))}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis]}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={tasks.map((t) => t.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-2">
+              {tasks.map((task) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  expanded={expanded.has(task.id)}
+                  editing={typeof mode === 'object' && mode.editing === task.id}
+                  saving={saving}
+                  formError={formError}
+                  deleteConfirm={deleteConfirm === task.id}
+                  onToggleExpanded={() => toggleExpanded(task.id)}
+                  onToggleComplete={() => handleToggleComplete(task)}
+                  onStartEdit={() => { setMode({ editing: task.id }); setFormError(null) }}
+                  onSaveEdit={(name, description) => handleSaveEdit(task.id, name, description)}
+                  onCancelEdit={() => { setMode('idle'); setFormError(null) }}
+                  onRequestDelete={() => setDeleteConfirm(task.id)}
+                  onConfirmDelete={() => handleDelete(task.id)}
+                  onCancelDelete={() => setDeleteConfirm(null)}
+                  onAddSubtask={(name) => handleAddSubtask(task.id, name)}
+                  onToggleSubtask={(sub) => handleToggleSubtask(task.id, sub)}
+                  onDeleteSubtask={(sub) => handleDeleteSubtask(task.id, sub)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
       </div>
     </div>
