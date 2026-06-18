@@ -7,14 +7,9 @@ import UpdateNotification from './UpdateNotification'
 import BackfillProgressBar from './BackfillProgressBar'
 import ZealNotification from './ZealNotification'
 import ZealVersionWarning from './ZealVersionWarning'
-import { useHtml5DragRegionFix } from '../hooks/useHtml5DragRegionFix'
 
 export default function Layout(): React.ReactElement {
   const [searchOpen, setSearchOpen] = useState(false)
-
-  // Keeps native HTML5 drag-and-drop (trigger/wishlist reordering) working on
-  // Windows, where the title-bar/sidebar drag regions otherwise break it.
-  useHtml5DragRegionFix()
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

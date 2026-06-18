@@ -132,15 +132,6 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* Windows fix: native HTML5 drag-and-drop (trigger reorder/move, wishlist
-   reorder) breaks while any element carries `-webkit-app-region: drag`. While
-   a drag is in flight, useHtml5DragRegionFix adds `.dnd-active` to <body> so
-   the window-drag regions go inert; they're restored when the drag ends. The
-   higher specificity here wins over `.drag-region` without needing !important. */
-body.dnd-active .drag-region {
-  -webkit-app-region: no-drag;
-}
-
 /* "Display only" overlay lock mode hides the title bar entirely so the overlay
    is a pure, fully click-through HUD. The class is toggled on <html> per
    overlay window by useOverlayLock; it's lifted while the global "Position
