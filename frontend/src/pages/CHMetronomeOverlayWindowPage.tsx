@@ -27,11 +27,14 @@ import { useWindowDrag } from '../hooks/useWindowDrag'
 import { useCHChainConfig } from '../hooks/useCHChainConfig'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { getTimerState } from '../services/api'
+import {
+  CH_CAST,
+  type ChainView,
+  computeAnchorMs,
+  watchPosition,
+} from '../lib/chMetronome'
 import type { ActiveTimer, TimerState } from '../types/timer'
 
-// CH cast time in seconds — mirrors backend config.CHCastSecs. A constant of
-// the spell, so the personal countdown window is always 10s long.
-const CH_CAST = 10
 // How long to hold the CAST NOW flash after the cast moment passes.
 const PULSE_SECS = 1.5
 // Keep using the last anchor for a little past the 10s cast so the flash and
@@ -42,11 +45,8 @@ type Cfg = { position: number; chainSize: number; delay: number }
 
 const DEFAULT_CFG: Cfg = { position: 2, chainSize: 3, delay: 4 }
 
-// Which chain the metronome follows. 'main' = ch_chain timers (001-style
-// calls), 'ramp' = ch_chain_2 timers (AAA-style ramp/split-chain calls).
-// Only selectable when the secondary chain is enabled in settings.
-type ChainView = 'main' | 'ramp'
-
+// ChainView ('main' | 'ramp') is shared via lib/chMetronome. The selector is
+// only shown when the secondary chain is enabled in settings.
 const CHAIN_STORAGE_KEY = 'chMetronome:chain'
 
 function loadChain(): ChainView {
@@ -80,20 +80,6 @@ function saveCfg(c: Cfg): void {
   localStorage.setItem('chMetronome:position', String(c.position))
   localStorage.setItem('chMetronome:chainSize', String(c.chainSize))
   localStorage.setItem('chMetronome:delay', String(c.delay))
-}
-
-// parsePosition pulls the leading "#N" chain position out of a ch_chain timer
-// label ("#N  Target  ← Caster"). Returns 0 when the label has no position.
-function parsePosition(label: string): number {
-  const m = /^#(\d+)/.exec(label)
-  return m ? parseInt(m[1], 10) : 0
-}
-
-// watchPosition is the position immediately before mine — the cleric whose
-// callout starts my countdown. Position 1 follows the last position (wrap).
-function watchPosition(c: Cfg): number {
-  if (c.position <= 1) return c.chainSize
-  return c.position - 1
 }
 
 // Stepper is a small "− value +" control used for the three config fields.
@@ -201,24 +187,19 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   const cfgRef = useRef(cfg)
   const chainRef = useRef(activeChain)
   const timersRef = useRef<ActiveTimer[]>([])
+  // seenRef accumulates the distinct chain-call numbers observed for the active
+  // chain so coded sequences (111/222/333) can be ranked into slots even though
+  // the live feed never holds them all at once. Cleared on chain switch.
+  const seenRef = useRef<Map<number, number>>(new Map())
   const [, setTick] = useState(0)
 
-  // recomputeAnchor finds the most recent callout for the watched position and
-  // re-derives the local anchor from its backend-computed remaining time. Using
-  // remaining (not the log timestamp) keeps the countdown immune to any skew
-  // between the game-log clock and the local clock.
+  // recomputeAnchor re-derives the local anchor from the watched cleric's most
+  // recent callout (see lib/chMetronome.computeAnchorMs). It leaves the existing
+  // anchor untouched when no match is found yet, so a missed callout just coasts
+  // on the last cycle rather than dropping the countdown.
   const recomputeAnchor = useCallback((timers: ActiveTimer[]) => {
-    const watch = watchPosition(cfgRef.current)
-    const category = chainRef.current === 'ramp' ? 'ch_chain_2' : 'ch_chain'
-    let best: ActiveTimer | null = null
-    for (const t of timers) {
-      if (t.category !== category) continue
-      if (parsePosition(t.spell_name) !== watch) continue
-      if (!best || Date.parse(t.starts_at) > Date.parse(best.starts_at)) best = t
-    }
-    if (best) {
-      anchorRef.current = Date.now() - (CH_CAST - best.remaining_seconds) * 1000
-    }
+    const anchor = computeAnchorMs(timers, cfgRef.current, chainRef.current, seenRef.current, Date.now())
+    if (anchor != null) anchorRef.current = anchor
   }, [])
 
   useEffect(() => {
@@ -232,9 +213,11 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   useEffect(() => {
     chainRef.current = activeChain
     localStorage.setItem(CHAIN_STORAGE_KEY, chain)
-    // Switching chains drops the old chain's anchor — a countdown keyed to
-    // the other chain's cadence would flash CAST NOW at the wrong moment.
+    // Switching chains drops the old chain's anchor and learned slots — a
+    // countdown keyed to the other chain's cadence/numbering would flash CAST
+    // NOW at the wrong moment.
     anchorRef.current = null
+    seenRef.current.clear()
     recomputeAnchor(timersRef.current)
   }, [chain, activeChain, recomputeAnchor])
 
