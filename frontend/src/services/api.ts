@@ -1181,6 +1181,10 @@ export interface UpgradeCandidate {
   rec_level: number
   focus_effect: number
   focus_name: string
+  click_effect: number
+  click_name: string
+  proc_effect: number
+  proc_name: string
   score: number
   deltas: UpgradeStatDelta[]
   priority_focus: boolean

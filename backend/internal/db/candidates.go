@@ -41,6 +41,12 @@ type UpgradeCandidate struct {
 
 	FocusEffect int    `json:"focus_effect"`
 	FocusName   string `json:"focus_name"`
+	// ClickEffect/ProcEffect and their names surface the item's click and proc
+	// spells so the finder can badge them in the candidate summary.
+	ClickEffect int    `json:"click_effect"`
+	ClickName   string `json:"click_name"`
+	ProcEffect  int    `json:"proc_effect"`
+	ProcName    string `json:"proc_name"`
 	// WornEffect/WornLevel identify the item's worn-effect spell, from which the
 	// finder derives worn ATK and melee haste.
 	WornEffect int `json:"worn_effect"`
@@ -174,6 +180,10 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 	  i.mr, i.fr, i.cr, i.dr, i.pr,
 	  i.focuseffect,
 	  COALESCE(NULLIF(i.focusname, ''), (SELECT s.name FROM spells_new s WHERE s.id = i.focuseffect), '') AS focusname,
+	  i.clickeffect,
+	  COALESCE(NULLIF(i.clickname, ''), (SELECT s.name FROM spells_new s WHERE s.id = i.clickeffect), '') AS clickname,
+	  i.proceffect,
+	  COALESCE(NULLIF(i.procname, ''), (SELECT s.name FROM spells_new s WHERE s.id = i.proceffect), '') AS procname,
 	  i.worneffect, i.wornlevel
 	  FROM items i WHERE ` + where
 
@@ -193,6 +203,8 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 			&c.HP, &c.Mana, &c.AC, &c.STR, &c.STA, &c.AGI, &c.DEX, &c.WIS, &c.INT, &c.CHA,
 			&c.MR, &c.FR, &c.CR, &c.DR, &c.PR,
 			&c.FocusEffect, &c.FocusName,
+			&c.ClickEffect, &c.ClickName,
+			&c.ProcEffect, &c.ProcName,
 			&c.WornEffect, &c.WornLevel,
 		); err != nil {
 			return nil, fmt.Errorf("upgrade candidates scan: %w", err)

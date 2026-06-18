@@ -89,6 +89,10 @@ type upgradeResult struct {
 	RecLevel    int                 `json:"rec_level"`
 	FocusEffect int                 `json:"focus_effect"`
 	FocusName   string              `json:"focus_name"`
+	ClickEffect int                 `json:"click_effect"`
+	ClickName   string              `json:"click_name"`
+	ProcEffect  int                 `json:"proc_effect"`
+	ProcName    string              `json:"proc_name"`
 	Score       float64             `json:"score"`
 	Deltas      []upgrade.StatDelta `json:"deltas"`
 	// PriorityFocus is true when this candidate carries one of the character's
@@ -424,6 +428,10 @@ func (h *charactersHandler) scoreSlotCands(
 			RecLevel:      c.RecLevel,
 			FocusEffect:   c.FocusEffect,
 			FocusName:     c.FocusName,
+			ClickEffect:   c.ClickEffect,
+			ClickName:     c.ClickName,
+			ProcEffect:    c.ProcEffect,
+			ProcName:      c.ProcName,
 			Score:         score,
 			Deltas:        res.Deltas,
 			PriorityFocus: priority,

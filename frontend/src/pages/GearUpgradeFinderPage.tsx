@@ -390,7 +390,11 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                       style={{ color: 'var(--color-primary)' }}>
                       <ItemIcon id={ci.icon} name={ci.name} size={16} />
                       {ci.name}
-                      {ci.focus_name && <Star size={10} style={{ color: '#eab308' }} />}
+                      {ci.focus_name && (
+                        <span className="rounded px-1 text-[9px]"
+                          style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }}
+                          title={`Focus: ${ci.focus_name}`}>focus</span>
+                      )}
                     </button>
                   ))
                 )}
@@ -713,6 +717,47 @@ function FocusPanel({
   )
 }
 
+// EffectPills renders a candidate's focus / click / proc spell badges. The
+// focus pill carries no star icon — stars are reserved for the wishlist toggle,
+// and a star on a focus pill was being mistaken for one. Colors differ per
+// effect type (focus = amber, click = sky, proc = violet) so they read apart.
+function EffectPills({ cand }: { cand: UpgradeCandidate }): React.ReactElement | null {
+  const pills: React.ReactElement[] = []
+  if (cand.focus_name) {
+    pills.push(
+      <span key="focus" className="shrink-0 whitespace-nowrap rounded px-1 text-[10px]"
+        style={{
+          backgroundColor: cand.priority_focus ? '#eab308' : 'rgba(234,179,8,0.15)',
+          color: cand.priority_focus ? '#1a1a1a' : '#eab308',
+          fontWeight: cand.priority_focus ? 600 : 400,
+        }}
+        title={cand.priority_focus ? `Priority focus: ${cand.focus_name}` : `Focus: ${cand.focus_name}`}>
+        {cand.priority_focus ? `Priority: ${cand.focus_name}` : cand.focus_name}
+      </span>,
+    )
+  }
+  if (cand.click_name) {
+    pills.push(
+      <span key="click" className="shrink-0 whitespace-nowrap rounded px-1 text-[10px]"
+        style={{ backgroundColor: 'rgba(56,189,248,0.16)', color: '#38bdf8' }}
+        title={`Click effect: ${cand.click_name}`}>
+        Click: {cand.click_name}
+      </span>,
+    )
+  }
+  if (cand.proc_name) {
+    pills.push(
+      <span key="proc" className="shrink-0 whitespace-nowrap rounded px-1 text-[10px]"
+        style={{ backgroundColor: 'rgba(167,139,250,0.18)', color: '#a78bfa' }}
+        title={`Proc effect: ${cand.proc_name}`}>
+        Proc: {cand.proc_name}
+      </span>,
+    )
+  }
+  if (pills.length === 0) return null
+  return <>{pills}</>
+}
+
 // ── Result row ─────────────────────────────────────────────────────────────────
 
 function ResultRow({
@@ -756,18 +801,7 @@ function ResultRow({
               <ItemIcon id={cand.icon} name={cand.name} size={18} />
               {cand.name}
             </button>
-            {cand.focus_name && (
-              <span className="flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded px-1 text-[10px]"
-                style={{
-                  backgroundColor: cand.priority_focus ? '#eab308' : 'rgba(234,179,8,0.15)',
-                  color: cand.priority_focus ? '#1a1a1a' : '#eab308',
-                  fontWeight: cand.priority_focus ? 600 : 400,
-                }}
-                title={cand.priority_focus ? `Priority focus: ${cand.focus_name}` : `Focus: ${cand.focus_name}`}>
-                <Star size={9} fill={cand.priority_focus ? '#1a1a1a' : 'none'} />
-                {cand.priority_focus ? `Priority: ${cand.focus_name}` : cand.focus_name}
-              </span>
-            )}
+            <EffectPills cand={cand} />
             {cand.nodrop !== 0 && (
               <span className="rounded px-1 text-[10px]"
                 style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
@@ -985,7 +1019,11 @@ function OverviewView({
                           className="flex items-center gap-1 text-xs underline decoration-dotted"
                           style={{ color: 'var(--color-muted-foreground)' }}>
                           <ItemIcon id={ci.icon} name={ci.name} size={14} /> {ci.name}
-                          {ci.focus_name && <Star size={9} style={{ color: '#eab308' }} />}
+                          {ci.focus_name && (
+                            <span className="rounded px-1 text-[9px]"
+                              style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }}
+                              title={`Focus: ${ci.focus_name}`}>focus</span>
+                          )}
                         </button>
                       ))}
                     </div>
@@ -993,25 +1031,14 @@ function OverviewView({
                 </td>
                 <td className="px-2 py-1.5">
                   {best ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <WishStar on={isWishlisted(best.id, bucket)} onClick={() => onToggleWish(best.id, bucket)} />
                       <button onClick={() => onOpen(best.id)}
                         className="flex items-center gap-1.5 underline decoration-dotted"
                         style={{ color: 'var(--color-primary)' }}>
                         <ItemIcon id={best.icon} name={best.name} size={16} /> {best.name}
                       </button>
-                      {best.focus_name && (
-                        <span className="flex items-center gap-0.5 rounded px-1 text-[10px]"
-                          style={{
-                            backgroundColor: best.priority_focus ? '#eab308' : 'rgba(234,179,8,0.15)',
-                            color: best.priority_focus ? '#1a1a1a' : '#eab308',
-                            fontWeight: best.priority_focus ? 600 : 400,
-                          }}
-                          title={best.priority_focus ? `Priority focus: ${best.focus_name}` : `Focus: ${best.focus_name}`}>
-                          <Star size={9} fill={best.priority_focus ? '#1a1a1a' : 'none'} />
-                          {best.priority_focus ? `Priority: ${best.focus_name}` : best.focus_name}
-                        </span>
-                      )}
+                      <EffectPills cand={best} />
                       {best.nodrop !== 0 && (
                         <span className="rounded px-1 text-[10px]"
                           style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
