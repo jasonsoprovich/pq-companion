@@ -28,10 +28,11 @@ interface SlotPos {
 
 // 5-column × 9-row grid loosely modeled on the EQ paper-doll inventory window.
 const SLOTS: SlotPos[] = [
-  // No Charm slot — Project Quarm (TAKP/EQMac client) has no charm slot, so
-  // col 1 / row 1 is intentionally left empty.
-  { label: 'Ear',        key: 'Ear',       index: 0, col: 2, row: 1 },
-  { label: 'Head',       key: 'Head',      col: 3, row: 1 },
+  // No Charm slot — Project Quarm (TAKP/EQMac client) has no charm slot. The
+  // ears anchor the outer columns (1 & 5) so the top row reads symmetrically —
+  // Ear · Head · _ · Face · Ear — with Neck centered below it.
+  { label: 'Ear',        key: 'Ear',       index: 0, col: 1, row: 1 },
+  { label: 'Head',       key: 'Head',      col: 2, row: 1 },
   { label: 'Face',       key: 'Face',      col: 4, row: 1 },
   { label: 'Ear',        key: 'Ear',       index: 1, col: 5, row: 1 },
 
