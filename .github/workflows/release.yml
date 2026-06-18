@@ -25,10 +25,12 @@ permissions:
 #
 # AUTO-UPDATER
 #
-#  The build job publishes with `--publish always`, which uploads the
-#  installer and the update manifest (latest.yml) directly to the GitHub
-#  release.  electron-updater reads this manifest on startup
-#  to detect and download new versions.
+#  The build job publishes with `--publish always`, which uploads every
+#  Windows target defined in electron-builder.yml — the NSIS installer, the
+#  portable .zip, and the update manifest (latest.yml) — directly to the
+#  GitHub release. electron-updater reads latest.yml on startup to detect and
+#  download new versions (NSIS-installed users only; the portable .zip is for
+#  Wine/Proton + locked-down machines and updates by manual re-download).
 #
 #  The final `release` job promotes the draft to a published release so that
 #  the auto-updater can find it.

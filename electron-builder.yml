@@ -25,6 +25,17 @@ win:
   target:
     - target: nsis
       arch: [x64]
+    # Portable zip alongside the NSIS installer. EverQuest (and therefore PQ
+    # Companion) is Windows-only, but a handful of users run the Windows build
+    # under Wine/Proton on Linux, where the NSIS installer fails (Retry/Abort
+    # loop mid-extraction). The zip is the same fully-built app with no install
+    # ceremony — they unzip and run PQ Companion.exe directly. It is purely
+    # additive: the NSIS installer, signing, latest.yml, and auto-updater path
+    # are untouched. Zip users update manually by re-downloading (auto-update
+    # only works through the NSIS flow). Also doubles as a portable Windows
+    # build for locked-down machines.
+    - target: zip
+      arch: [x64]
   extraResources:
     # Go sidecar (.exe)
     - from: backend/bin/pq-companion-server.exe
