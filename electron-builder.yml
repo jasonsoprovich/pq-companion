@@ -18,7 +18,13 @@ files:
 # When both secrets are present, electron-builder signs automatically (SHA-256).
 # When absent, the installer is unsigned (SmartScreen will warn on first run).
 win:
-  artifactName: "PQ-Companion-Setup-${version}.exe"
+  # Use ${ext} so each win target gets its correct extension. With a hardcoded
+  # ".exe" here, electron-builder applies the same name to BOTH targets and
+  # hands the zip target a ".exe" filename — p7zip 16.02 infers format from the
+  # extension and fails with E_INVALIDARG (-mm=Deflate to a .exe). ${ext}
+  # yields PQ-Companion-Setup-X.Y.Z.exe for nsis (unchanged; latest.yml and the
+  # auto-updater depend on this name) and PQ-Companion-Setup-X.Y.Z.zip for zip.
+  artifactName: "PQ-Companion-Setup-${version}.${ext}"
   icon: build/icon.ico
   signtoolOptions:
     signingHashAlgorithms: ['sha256']
