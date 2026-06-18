@@ -454,7 +454,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
               <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
                 title="Hide NO DROP items (can't be traded for — must farm yourself)">
                 <input type="checkbox" checked={hideNoDrop} onChange={(e) => setHideNoDrop(e.target.checked)} />
-                Hide NO DROP
+                Hide no-drop
               </label>
               <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
                 title="Hide tradeskill-made (crafted) items">
@@ -489,7 +489,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
               <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
                 title="Hide NO DROP items (can't be traded for — must farm yourself)">
                 <input type="checkbox" checked={hideNoDrop} onChange={(e) => setHideNoDrop(e.target.checked)} />
-                Hide NO DROP
+                Hide no-drop
               </label>
               <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
                 title="Hide tradeskill-made (crafted) items">
