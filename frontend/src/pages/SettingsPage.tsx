@@ -13,7 +13,6 @@ import { withTimerAlertDefaults } from '../lib/timerAlerts'
 import { OVERLAY_DEFS, resolveLockedMode } from '../lib/overlays'
 import type { OverlayName, LockedMode } from '../lib/overlays'
 import { DEV_HPS } from '../lib/devFlags'
-import { useOverlayPositionMode } from '../hooks/useOverlayPositionMode'
 import {
   CH_CHAIN_DEFAULT_PATTERN,
   CH_CHAIN_NUMERIC_PATTERN,
@@ -2771,11 +2770,11 @@ function OverlayLockModeCard({
   modes: Partial<Record<OverlayName, LockedMode>>
   onChange: (next: Partial<Record<OverlayName, LockedMode>>) => void
 }): React.ReactElement {
-  const positionMode = useOverlayPositionMode()
-
-  // Per-overlay popout open-state, keyed by canonical overlay name. Polled like
-  // the dashboard's manager since Electron doesn't push window-state changes.
+  // Per-overlay popout open-state + the monitor each overlay currently sits on,
+  // keyed by canonical overlay name. Polled like the dashboard's manager since
+  // Electron doesn't push window-state changes.
   const [popoutStates, setPopoutStates] = useState<Record<string, boolean>>({})
+  const [overlayDisplays, setOverlayDisplays] = useState<Record<string, number>>({})
   useEffect(() => {
     if (!window.electron?.overlay?.popoutStates) return
     let cancelled = false
@@ -2784,11 +2783,32 @@ function OverlayLockModeCard({
         .popoutStates()
         .then((s) => { if (!cancelled) setPopoutStates(s) })
         .catch(() => {})
+      window.electron?.overlay?.displayIds?.()
+        .then((m) => { if (!cancelled && m) setOverlayDisplays(m) })
+        .catch(() => {})
     }
     check()
     const id = setInterval(check, 1500)
     return () => { cancelled = true; clearInterval(id) }
   }, [])
+
+  // Available monitors. Fetched once on mount (and the overlay-display poll
+  // above keeps the per-overlay selection fresh). The Monitor dropdown only
+  // appears when more than one display is present.
+  const [displays, setDisplays] = useState<Array<{ id: number; label: string; isPrimary: boolean }>>([])
+  useEffect(() => {
+    let cancelled = false
+    window.electron?.screen?.listDisplays?.()
+      .then((list) => { if (!cancelled) setDisplays(list ?? []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+  const multiMonitor = displays.length > 1
+
+  const moveToDisplay = (name: OverlayName, id: number): void => {
+    window.electron?.overlay?.moveToDisplay?.(name, id)
+    setOverlayDisplays((m) => ({ ...m, [name]: id })) // optimistic; poll reconciles
+  }
 
   const togglePopout = (name: OverlayName): void => {
     OVERLAY_POPOUT_TOGGLE[name]()
@@ -2815,55 +2835,14 @@ function OverlayLockModeCard({
       </h2>
       <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
         When an overlay is locked it can&rsquo;t be moved or resized. Choose how
-        each one reacts to the mouse while locked. To place an overlay, use its{' '}
+        each one reacts to the mouse while locked. To position one, use its{' '}
         <span style={{ color: 'var(--color-foreground)' }}>Pop out</span> button
-        to open the window, turn on{' '}
-        <span style={{ color: 'var(--color-foreground)' }}>Position overlays</span>{' '}
-        below to drag it where you want, then turn that off to lock it back —
-        the position is shared with the Overlays tab. If an overlay has drifted
-        off-screen, use its <span style={{ color: 'var(--color-foreground)' }}>Reset position</span>{' '}
-        button to recenter it on your primary monitor.
+        to open the window and drag it where you want. On a multi-monitor setup,
+        use its <span style={{ color: 'var(--color-foreground)' }}>Monitor</span>{' '}
+        dropdown to send it to another screen.{' '}
+        <span style={{ color: 'var(--color-foreground)' }}>Reset position</span>{' '}
+        recenters a drifted overlay on your primary monitor.
       </p>
-
-      {/* Position overlays — global edit mode. Makes every open overlay
-          interactive so they can be dragged into place regardless of mode;
-          this is the only way to move a "Display only" overlay. */}
-      <div
-        className="mb-3 flex items-center justify-between rounded p-3"
-        style={{
-          backgroundColor: positionMode ? 'var(--color-primary)' : 'var(--color-surface-2)',
-          border: '1px solid var(--color-border)',
-        }}
-      >
-        <div className="flex flex-col">
-          <span
-            className="text-sm font-semibold"
-            style={{ color: positionMode ? '#fff' : 'var(--color-foreground)' }}
-          >
-            Position overlays
-          </span>
-          <span
-            className="text-xs"
-            style={{ color: positionMode ? 'rgba(255,255,255,0.85)' : 'var(--color-muted-foreground)' }}
-          >
-            {positionMode
-              ? 'All open overlays are draggable. Move them, then turn this off to lock them back.'
-              : 'Temporarily make every open overlay draggable so you can arrange them (open the ones you want first).'}
-          </span>
-        </div>
-        <button
-          onClick={() => window.electron?.overlay?.setPositionMode?.(!positionMode)}
-          className="rounded px-3 py-1 text-xs font-semibold"
-          style={{
-            backgroundColor: positionMode ? '#fff' : 'var(--color-primary)',
-            color: positionMode ? 'var(--color-primary)' : '#fff',
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {positionMode ? 'Done' : 'Position overlays'}
-        </button>
-      </div>
 
       {/* Mode legend */}
       <div className="mb-3 flex flex-col gap-1">
@@ -2899,60 +2878,85 @@ function OverlayLockModeCard({
         ))}
       </div>
 
-      {/* Per-overlay rows */}
-      <div className="flex flex-col gap-2">
+      {/* Per-overlay rows — a single grid so the Pop out / Reset / Monitor /
+          lock-mode columns line up cleanly across rows regardless of label
+          length. The Monitor column only appears on multi-monitor setups. */}
+      <div
+        className="text-xs"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: multiMonitor ? 'minmax(96px,1fr) auto auto auto auto' : 'minmax(96px,1fr) auto auto auto',
+          columnGap: 10,
+          rowGap: 8,
+          alignItems: 'center',
+        }}
+      >
         {VISIBLE_OVERLAY_DEFS.map((def) => {
           const mode = resolveLockedMode(modes, def.name)
           return (
-            <div
-              key={def.name}
-              className="flex items-center justify-between rounded p-2"
-              style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
-            >
-              <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+            <React.Fragment key={def.name}>
+              <span className="text-sm truncate" style={{ color: 'var(--color-foreground)' }}>
                 {def.label}
               </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => togglePopout(def.name)}
-                  className="flex items-center gap-1 rounded px-2 py-1 text-xs"
+              <button
+                onClick={() => togglePopout(def.name)}
+                className="flex items-center justify-center gap-1 rounded px-2 py-1"
+                style={{
+                  width: 84,
+                  backgroundColor: popoutStates[def.name] ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                  color: popoutStates[def.name] ? '#fff' : 'var(--color-muted-foreground)',
+                  cursor: 'pointer',
+                }}
+                title={
+                  popoutStates[def.name]
+                    ? `Close the ${def.label} pop-out window`
+                    : `Pop out ${def.label} as a floating window so you can position it`
+                }
+              >
+                <ExternalLink size={11} />
+                {popoutStates[def.name] ? 'Close' : 'Pop out'}
+              </button>
+              <button
+                onClick={() => window.electron?.overlay?.resetPosition?.(def.name)}
+                className="flex items-center justify-center gap-1 rounded px-2 py-1"
+                style={{
+                  width: 132,
+                  backgroundColor: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-muted-foreground)',
+                  cursor: 'pointer',
+                }}
+                title={`Recenter the ${def.label} overlay on the primary monitor and unlock it`}
+              >
+                <Crosshair size={11} />
+                Reset position
+              </button>
+              {multiMonitor && (
+                <select
+                  value={overlayDisplays[def.name] ?? ''}
+                  onChange={(e) => moveToDisplay(def.name, Number(e.target.value))}
+                  className="rounded px-1.5 py-1 outline-none"
                   style={{
-                    backgroundColor: popoutStates[def.name]
-                      ? 'var(--color-primary)'
-                      : 'var(--color-surface)',
+                    backgroundColor: 'var(--color-surface-2)',
                     border: '1px solid var(--color-border)',
-                    color: popoutStates[def.name] ? '#fff' : 'var(--color-muted-foreground)',
+                    color: 'var(--color-foreground)',
                     cursor: 'pointer',
                   }}
-                  title={
-                    popoutStates[def.name]
-                      ? `Close the ${def.label} pop-out window`
-                      : `Pop out ${def.label} as a floating window so you can position it`
-                  }
+                  title={`Send the ${def.label} overlay to a specific monitor`}
                 >
-                  <ExternalLink size={11} />
-                  {popoutStates[def.name] ? 'Close' : 'Pop out'}
-                </button>
-                <button
-                  onClick={() => window.electron?.overlay?.resetPosition?.(def.name)}
-                  className="flex items-center gap-1 rounded px-2 py-1 text-xs"
-                  style={{
-                    backgroundColor: 'var(--color-surface)',
-                    border: '1px solid var(--color-border)',
-                    color: 'var(--color-muted-foreground)',
-                    cursor: 'pointer',
-                  }}
-                  title={`Recenter the ${def.label} overlay on the primary monitor and unlock it`}
-                >
-                  <Crosshair size={11} />
-                  Reset position
-                </button>
-                <LockModeToggle
-                  value={mode}
-                  onChange={(next) => onChange({ ...modes, [def.name]: next })}
-                />
-              </div>
-            </div>
+                  {displays.map((d, i) => (
+                    <option key={d.id} value={d.id}>
+                      {d.label || `Display ${i + 1}`}{d.isPrimary ? ' (primary)' : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <LockModeToggle
+                value={mode}
+                onChange={(next) => onChange({ ...modes, [def.name]: next })}
+              />
+            </React.Fragment>
           )
         })}
       </div>

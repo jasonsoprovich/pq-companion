@@ -2015,6 +2015,50 @@ ipcMain.handle('overlay:reset-all-positions', () => {
   for (const name of RESETTABLE_OVERLAYS) resetOverlayPosition(name)
 })
 
+// Center a window of the given size on a specific display's work area.
+function centeredOnDisplay(display: Electron.Display, size: { width: number; height: number }): Bounds {
+  const wa = display.workArea
+  return {
+    x: Math.round(wa.x + (wa.width - size.width) / 2),
+    y: Math.round(wa.y + (wa.height - size.height) / 2),
+    width: size.width,
+    height: size.height,
+  }
+}
+
+// The display id each resettable overlay currently lives on — by its live
+// window bounds when open, else its saved (or default) bounds. Powers the
+// per-overlay monitor picker in Settings so the dropdown shows where each
+// overlay is now.
+ipcMain.handle('overlay:display-ids', () => {
+  const out: Record<string, number> = {}
+  const store = loadBoundsStore()
+  for (const name of RESETTABLE_OVERLAYS) {
+    const win = overlayWindowByName(name)
+    const b = win && !win.isDestroyed() ? win.getBounds() : store[name] ?? OVERLAY_DEFAULTS[name]
+    out[name] = screen.getDisplayMatching(b).id
+  }
+  return out
+})
+
+// Send one overlay to a chosen monitor, centered on it. Persists the new
+// bounds so a currently-closed overlay also re-opens there. This is the
+// reliable multi-monitor path — dragging frameless always-on-top windows
+// across monitors is unreliable on Windows, so users pick a monitor instead.
+ipcMain.handle('overlay:move-to-display', (_event, name: string, displayId: number) => {
+  if (!(RESETTABLE_OVERLAYS as string[]).includes(name)) return
+  const target = screen.getAllDisplays().find((d) => d.id === displayId)
+  if (!target) return
+  const oname = name as Exclude<OverlayName, 'trigger'>
+  const win = overlayWindowByName(oname)
+  const size = win && !win.isDestroyed() ? win.getBounds() : loadBoundsStore()[oname] ?? OVERLAY_DEFAULTS[oname]
+  const bounds = centeredOnDisplay(target, { width: size.width, height: size.height })
+  const store = loadBoundsStore()
+  store[oname] = bounds
+  saveBoundsStore(store)
+  if (win && !win.isDestroyed()) win.setBounds(bounds)
+})
+
 // ── IPC handlers — click-through ─────────────────────────────────────────────
 
 ipcMain.handle('overlay:set-ignore-mouse-events', (event, ignore: boolean) => {

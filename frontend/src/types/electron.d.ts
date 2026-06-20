@@ -73,6 +73,8 @@ export interface ElectronAPI {
     setPositionMode: (enabled: boolean) => Promise<void>
     onPositionModeChanged: (cb: (enabled: boolean) => void) => () => void
     setDisplay: (id: number) => Promise<void>
+    displayIds: () => Promise<Record<string, number>>
+    moveToDisplay: (name: string, id: number) => Promise<void>
   }
   screen: {
     triggerDefaultCenter: () => Promise<{ x: number; y: number }>

@@ -108,6 +108,13 @@ contextBridge.exposeInMainWorld('electron', {
     // Pin trigger alert text (and the positioning card) to one monitor.
     setDisplay: (id: number): Promise<void> =>
       ipcRenderer.invoke('overlay:set-display', id),
+    // Per-overlay monitor targeting for the data overlays (DPS, timers, NPC,
+    // …): which monitor each one is on, and a way to send one to a chosen
+    // monitor centered on it.
+    displayIds: (): Promise<Record<string, number>> =>
+      ipcRenderer.invoke('overlay:display-ids'),
+    moveToDisplay: (name: string, id: number): Promise<void> =>
+      ipcRenderer.invoke('overlay:move-to-display', name, id),
   },
   screen: {
     triggerDefaultCenter: (): Promise<{ x: number; y: number }> =>
