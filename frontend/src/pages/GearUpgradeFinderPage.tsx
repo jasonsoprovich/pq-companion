@@ -851,7 +851,7 @@ function ResultRow({
               {cand.name}
             </button>
             <EffectPills cand={cand} />
-            {cand.nodrop !== 0 && (
+            {cand.nodrop === 0 && (
               <span className="rounded px-1 text-[10px]"
                 style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
                 NO DROP
@@ -1088,7 +1088,7 @@ function OverviewView({
                         <ItemIcon id={best.icon} name={best.name} size={16} /> {best.name}
                       </button>
                       <EffectPills cand={best} />
-                      {best.nodrop !== 0 && (
+                      {best.nodrop === 0 && (
                         <span className="rounded px-1 text-[10px]"
                           style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
                           NO DROP

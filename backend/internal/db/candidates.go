@@ -165,7 +165,9 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 			" WHERE tre.item_id = i.id AND tre.successcount > 0)"
 	}
 	if f.ExcludeNoDrop {
-		where += " AND i.nodrop = 0"
+		// nodrop = 0 marks a NO DROP (untradeable) item in this dataset, same
+		// inverted convention as norent above; keep only tradeable items.
+		where += " AND i.nodrop <> 0"
 	}
 
 	if clause, hargs := hiddenItemClause(); clause != "" {
