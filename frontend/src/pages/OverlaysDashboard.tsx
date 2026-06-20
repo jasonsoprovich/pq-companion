@@ -11,9 +11,8 @@
  * restored on next mount. Drag/resize snaps to a 16px grid.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, ExternalLink, Layers, X, Crosshair, ChevronDown, Move, ListChecks, Trash2 } from 'lucide-react'
+import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, ExternalLink, Layers, X, Crosshair, ChevronDown, ListChecks, Trash2 } from 'lucide-react'
 import type { OverlayName } from '../lib/overlays'
-import { useOverlayPositionMode } from '../hooks/useOverlayPositionMode'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
@@ -269,7 +268,7 @@ function OverlaysManager({
             </span>
             <span className="text-[10px] uppercase tracking-wide" style={headerCell}>Dash</span>
             <span className="text-[10px] uppercase tracking-wide" style={headerCell}>Pop</span>
-            <span className="text-[10px] uppercase tracking-wide" style={headerCell}>Pos</span>
+            <span className="text-[10px] uppercase tracking-wide" style={headerCell} title="Reset position">Res</span>
             {panelKeys.map((key) => {
               const dashOn = layout[key].visible
               const popOn = !!popoutStates[PANEL_POPOUT[key].name]
@@ -341,10 +340,6 @@ export default function OverlaysDashboard(): React.ReactElement {
     (key: DashboardPanelKey) => updatePanel(key, { visible: !layout[key].visible }),
     [layout, updatePanel],
   )
-
-  // Global "Position overlays" edit mode (shared with Settings) — temporarily
-  // makes every open overlay draggable regardless of its locked mode.
-  const positionMode = useOverlayPositionMode()
 
   // Per-overlay popout open-state, keyed by canonical overlay name. Polled like
   // anyPopoutOpen since Electron doesn't push window-state changes.
@@ -486,10 +481,10 @@ export default function OverlaysDashboard(): React.ReactElement {
         backgroundColor: 'var(--color-background)',
       }}
     >
-      {/* Toolbar — compact: title left, global Position-overlays toggle and the
-          Manage overlays menu (per-overlay show/pop-out/reset + bulk actions)
-          on the right. The old per-panel chip row moved into the menu so the
-          toolbar scales as overlays are added. */}
+      {/* Toolbar — compact: title left, the Manage overlays menu (per-overlay
+          show/pop-out/reset + bulk actions) on the right. Each popped-out
+          overlay is positioned individually (drag its window, or pick a
+          monitor in Settings), so there's no global position-mode toggle. */}
       <div
         className="flex items-center gap-3 border-b px-4 py-2 shrink-0"
         style={{ borderColor: 'var(--color-border)' }}
@@ -504,25 +499,6 @@ export default function OverlaysDashboard(): React.ReactElement {
         <div className="min-w-0 flex-1" />
 
         <div className="flex items-center gap-2 shrink-0">
-          {typeof window.electron?.overlay?.setPositionMode === 'function' && (
-            <button
-              onClick={() => window.electron?.overlay?.setPositionMode?.(!positionMode)}
-              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-              style={{
-                backgroundColor: positionMode ? 'var(--color-primary)' : 'var(--color-surface)',
-                color: positionMode ? '#fff' : 'var(--color-foreground)',
-                border: '1px solid var(--color-border)',
-              }}
-              title={
-                positionMode
-                  ? 'Done — lock every overlay back to its configured mode'
-                  : 'Make every open overlay draggable so you can arrange them, regardless of locked mode (the only way to move a Display-only overlay)'
-              }
-            >
-              <Move size={11} />
-              {positionMode ? 'Done positioning' : 'Position overlays'}
-            </button>
-          )}
           <OverlaysManager
             panelKeys={VISIBLE_PANEL_KEYS}
             labels={DASHBOARD_PANEL_LABELS}

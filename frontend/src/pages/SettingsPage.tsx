@@ -680,7 +680,10 @@ export default function SettingsPage(): React.ReactElement {
     <div className="flex h-full flex-col">
       <TabBar tabs={tabs} active={tab} onChange={setTab} />
       <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-xl p-6">
+      {/* The Overlays tab holds a wide per-overlay control table (Pop out /
+          Reset / Monitor / lock-mode), so it gets more horizontal room than
+          the other tabs to keep those columns from clipping. */}
+      <div className={`mx-auto p-6 ${tab === 'overlays' ? 'max-w-3xl' : 'max-w-xl'}`}>
       {/* Page header */}
       <div className="mb-6 flex items-center gap-3">
         <Settings size={20} style={{ color: 'var(--color-primary)' }} />
@@ -2735,7 +2738,7 @@ const LOCK_MODE_OPTIONS: ReadonlyArray<{
   {
     value: 'display-only',
     label: 'Display only',
-    hint: 'Nothing ever captures the mouse — the title bar is hidden too. A pure HUD. Use “Position overlays” above to move it.',
+    hint: 'Nothing ever captures the mouse — the title bar is hidden too. A pure HUD. To move it, switch to another mode, drag it, then switch back (or use Reset position / the Monitor dropdown).',
   },
 ]
 
@@ -2885,7 +2888,9 @@ function OverlayLockModeCard({
         className="text-xs"
         style={{
           display: 'grid',
-          gridTemplateColumns: multiMonitor ? 'minmax(96px,1fr) auto auto auto auto' : 'minmax(96px,1fr) auto auto auto',
+          gridTemplateColumns: multiMonitor
+            ? 'minmax(80px,1fr) auto auto auto auto'
+            : 'minmax(80px,1fr) auto auto auto',
           columnGap: 10,
           rowGap: 8,
           alignItems: 'center',
@@ -2917,20 +2922,21 @@ function OverlayLockModeCard({
                 <ExternalLink size={11} />
                 {popoutStates[def.name] ? 'Close' : 'Pop out'}
               </button>
+              {/* Reset is icon-only (Crosshair) — matching the Manage-overlays
+                  menu — so the row leaves room for the lock-mode toggle and
+                  Monitor dropdown without clipping. */}
               <button
                 onClick={() => window.electron?.overlay?.resetPosition?.(def.name)}
-                className="flex items-center justify-center gap-1 rounded px-2 py-1"
+                className="flex items-center justify-center rounded p-1.5"
                 style={{
-                  width: 132,
                   backgroundColor: 'var(--color-surface-2)',
                   border: '1px solid var(--color-border)',
                   color: 'var(--color-muted-foreground)',
                   cursor: 'pointer',
                 }}
-                title={`Recenter the ${def.label} overlay on the primary monitor and unlock it`}
+                title={`Reset position — recenter the ${def.label} overlay on the primary monitor and unlock it`}
               >
-                <Crosshair size={11} />
-                Reset position
+                <Crosshair size={13} />
               </button>
               {multiMonitor && (
                 <select
@@ -2938,6 +2944,7 @@ function OverlayLockModeCard({
                   onChange={(e) => moveToDisplay(def.name, Number(e.target.value))}
                   className="rounded px-1.5 py-1 outline-none"
                   style={{
+                    maxWidth: 120,
                     backgroundColor: 'var(--color-surface-2)',
                     border: '1px solid var(--color-border)',
                     color: 'var(--color-foreground)',
@@ -2983,7 +2990,7 @@ function LockModeToggle({
           <button
             key={opt.value}
             onClick={() => onChange(opt.value)}
-            className="px-2 py-1 text-xs"
+            className="whitespace-nowrap px-2 py-1 text-xs"
             style={{
               backgroundColor: active ? 'var(--color-primary)' : 'transparent',
               color: active ? '#fff' : 'var(--color-muted-foreground)',

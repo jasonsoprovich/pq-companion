@@ -26,40 +26,40 @@ interface SlotPos {
   row: number
 }
 
-// 5-column × 9-row grid loosely modeled on the EQ paper-doll inventory window.
+// 5-column × 8-row grid loosely modeled on the EQ paper-doll inventory window.
 const SLOTS: SlotPos[] = [
   // No Charm slot — Project Quarm (TAKP/EQMac client) has no charm slot. The
-  // ears anchor the outer columns (1 & 5) so the top row reads symmetrically —
-  // Ear · Head · _ · Face · Ear — with Neck centered below it.
+  // top row reads straight across — Ear · Head · Neck · Face · Ear — so the
+  // head/neck/face cluster sits inline rather than dropping Neck to its own
+  // row beneath the others.
   { label: 'Ear',        key: 'Ear',       index: 0, col: 1, row: 1 },
   { label: 'Head',       key: 'Head',      col: 2, row: 1 },
+  { label: 'Neck',       key: 'Neck',      col: 3, row: 1 },
   { label: 'Face',       key: 'Face',      col: 4, row: 1 },
   { label: 'Ear',        key: 'Ear',       index: 1, col: 5, row: 1 },
 
-  { label: 'Neck',       key: 'Neck',      col: 3, row: 2 },
+  { label: 'Shoulders',  key: 'Shoulders', col: 1, row: 2 },
+  { label: 'Chest',      key: 'Chest',     col: 5, row: 2 },
 
-  { label: 'Shoulders',  key: 'Shoulders', col: 1, row: 3 },
-  { label: 'Chest',      key: 'Chest',     col: 5, row: 3 },
+  { label: 'Arms',       key: 'Arms',      col: 1, row: 3 },
+  { label: 'Back',       key: 'Back',      col: 5, row: 3 },
 
-  { label: 'Arms',       key: 'Arms',      col: 1, row: 4 },
-  { label: 'Back',       key: 'Back',      col: 5, row: 4 },
+  { label: 'Wrist',      key: 'Wrist',     index: 0, col: 1, row: 4 },
+  { label: 'Wrist',      key: 'Wrist',     index: 1, col: 5, row: 4 },
 
-  { label: 'Wrist',      key: 'Wrist',     index: 0, col: 1, row: 5 },
-  { label: 'Wrist',      key: 'Wrist',     index: 1, col: 5, row: 5 },
+  { label: 'Hands',      key: 'Hands',     col: 1, row: 5 },
+  { label: 'Range',      key: 'Range',     col: 5, row: 5 },
 
-  { label: 'Hands',      key: 'Hands',     col: 1, row: 6 },
-  { label: 'Range',      key: 'Range',     col: 5, row: 6 },
+  { label: 'Finger',     key: 'Fingers',   index: 0, col: 1, row: 6 },
+  { label: 'Finger',     key: 'Fingers',   index: 1, col: 5, row: 6 },
 
-  { label: 'Finger',     key: 'Fingers',   index: 0, col: 1, row: 7 },
-  { label: 'Finger',     key: 'Fingers',   index: 1, col: 5, row: 7 },
+  { label: 'Waist',      key: 'Waist',     col: 1, row: 7 },
+  { label: 'Legs',       key: 'Legs',      col: 3, row: 7 },
+  { label: 'Feet',       key: 'Feet',      col: 5, row: 7 },
 
-  { label: 'Waist',      key: 'Waist',     col: 1, row: 8 },
-  { label: 'Legs',       key: 'Legs',      col: 3, row: 8 },
-  { label: 'Feet',       key: 'Feet',      col: 5, row: 8 },
-
-  { label: 'Primary',    key: 'Primary',   col: 1, row: 9 },
-  { label: 'Secondary',  key: 'Secondary', col: 3, row: 9 },
-  { label: 'Ammo',       key: 'Ammo',      col: 5, row: 9 },
+  { label: 'Primary',    key: 'Primary',   col: 1, row: 8 },
+  { label: 'Secondary',  key: 'Secondary', col: 3, row: 8 },
+  { label: 'Ammo',       key: 'Ammo',      col: 5, row: 8 },
 ]
 
 function isEmptyEntry(e: EquipSlotEntry): boolean {
