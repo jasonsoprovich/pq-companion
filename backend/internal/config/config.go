@@ -352,6 +352,15 @@ type Preferences struct {
 	// the map can be nil/omitted for upgrading users with no migration.
 	OverlayLockedModes map[string]string `yaml:"overlay_locked_modes,omitempty" json:"overlay_locked_modes,omitempty"`
 
+	// Roll Tracker overlay defaults, remembered across sessions. The tracker
+	// is otherwise stateless across restarts, but these UI preferences (e.g.
+	// a guild that always rolls lowest-wins, or runs in timer mode) should
+	// stick. Empty/zero means "use the built-in default" (highest / manual /
+	// DefaultAutoStopSeconds).
+	RollTrackerWinnerRule      string `yaml:"roll_tracker_winner_rule,omitempty" json:"roll_tracker_winner_rule,omitempty"`
+	RollTrackerMode            string `yaml:"roll_tracker_mode,omitempty" json:"roll_tracker_mode,omitempty"`
+	RollTrackerAutoStopSeconds int    `yaml:"roll_tracker_auto_stop_seconds,omitempty" json:"roll_tracker_auto_stop_seconds,omitempty"`
+
 	// SidebarHidden lists side-nav route keys (e.g. "/loot") the user has
 	// hidden from the navigation menu. Hiding only removes the tab from the
 	// sidebar — the page is still reachable by URL. Empty/omitted = nothing

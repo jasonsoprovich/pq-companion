@@ -42,6 +42,11 @@ type Tracker struct {
 	// while we wait for its matching EventRollResult.
 	pendingRoller string
 	pendingAt     time.Time
+
+	// onChange, if set, is invoked (outside the lock) whenever the winner
+	// rule, mode, or auto-stop window changes, so the caller can persist the
+	// new settings. It is never fired by Configure.
+	onChange func(rule WinnerRule, mode Mode, autoStopSeconds int)
 }
 
 // New returns an initialised Tracker with the default WinnerHighest rule.
@@ -53,6 +58,42 @@ func New(hub *ws.Hub) *Tracker {
 		autoStopSeconds: DefaultAutoStopSeconds,
 		autoStops:       make(map[uint64]*time.Timer),
 	}
+}
+
+// Configure seeds the tracker's settings from persisted preferences. Invalid
+// or zero values fall back to the built-in defaults. It does not fire
+// onChange — it's meant to be called once at startup before any events flow.
+func (t *Tracker) Configure(rule WinnerRule, mode Mode, autoStopSeconds int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if rule == WinnerHighest || rule == WinnerLowest {
+		t.rule = rule
+	}
+	if mode == ModeManual || mode == ModeTimer {
+		t.mode = mode
+	}
+	if autoStopSeconds >= 5 && autoStopSeconds <= 600 {
+		t.autoStopSeconds = autoStopSeconds
+	}
+}
+
+// SetOnChange registers a callback fired whenever the winner rule, mode, or
+// auto-stop window changes, so settings can be persisted.
+func (t *Tracker) SetOnChange(fn func(rule WinnerRule, mode Mode, autoStopSeconds int)) {
+	t.mu.Lock()
+	t.onChange = fn
+	t.mu.Unlock()
+}
+
+// notifyChangeLocked snapshots the current settings and schedules the
+// onChange callback to run after the lock is released. mu must be held.
+func (t *Tracker) notifyChangeLocked() {
+	if t.onChange == nil {
+		return
+	}
+	rule, mode, secs := t.rule, t.mode, t.autoStopSeconds
+	fn := t.onChange
+	go fn(rule, mode, secs)
 }
 
 // Handle routes a parsed log event into the tracker. Only roll events do
@@ -266,6 +307,7 @@ func (t *Tracker) SetWinnerRule(rule WinnerRule) {
 		return
 	}
 	t.rule = rule
+	t.notifyChangeLocked()
 	state := t.stateLocked()
 	t.mu.Unlock()
 	t.broadcast(state)
@@ -295,6 +337,7 @@ func (t *Tracker) SetMode(mode Mode, autoStopSeconds int) {
 		t.mu.Unlock()
 		return
 	}
+	t.notifyChangeLocked()
 	state := t.stateLocked()
 	t.mu.Unlock()
 	t.broadcast(state)

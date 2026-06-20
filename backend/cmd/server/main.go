@@ -782,8 +782,28 @@ func main() {
 	go pipeSupervisor.Start(context.Background())
 
 	// Roll tracker: groups /random results into per-range sessions and
-	// broadcasts overlay:rolls WebSocket events. Stateless across restarts.
+	// broadcasts overlay:rolls WebSocket events. Sessions are stateless
+	// across restarts, but the winner-rule / mode / timer preferences are
+	// seeded from config and persisted back whenever the user changes them
+	// (e.g. a guild that always rolls lowest-wins).
 	rollTracker := rolltracker.New(hub)
+	{
+		p := cfgMgr.Get().Preferences
+		rollTracker.Configure(
+			rolltracker.WinnerRule(p.RollTrackerWinnerRule),
+			rolltracker.Mode(p.RollTrackerMode),
+			p.RollTrackerAutoStopSeconds,
+		)
+		rollTracker.SetOnChange(func(rule rolltracker.WinnerRule, mode rolltracker.Mode, secs int) {
+			c := cfgMgr.Get()
+			c.Preferences.RollTrackerWinnerRule = string(rule)
+			c.Preferences.RollTrackerMode = string(mode)
+			c.Preferences.RollTrackerAutoStopSeconds = secs
+			if err := cfgMgr.Update(c); err != nil {
+				slog.Warn("persist roll tracker settings", "err", err)
+			}
+		})
+	}
 
 	// Central dispatch callbacks, shared by the live tailer and the log
 	// replayer so a replayed line drives exactly the same consumers as a
