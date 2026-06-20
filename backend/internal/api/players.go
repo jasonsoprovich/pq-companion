@@ -105,6 +105,35 @@ func (h *playersHandler) upsertNote(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// upsertManual handles PUT /api/players/{name}/manual — saves the user's
+// manual class/level/race override for an always-anonymous player. Empty
+// strings / 0 clear the respective field.
+func (h *playersHandler) upsertManual(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "name required")
+		return
+	}
+	var req struct {
+		Class string `json:"class"`
+		Level int    `json:"level"`
+		Race  string `json:"race"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if req.Level < 0 || req.Level > 65 {
+		writeError(w, http.StatusBadRequest, "level must be between 0 and 65")
+		return
+	}
+	if err := h.store.UpsertManual(name, req.Class, req.Level, req.Race); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 // delete handles DELETE /api/players/{name}
 func (h *playersHandler) delete(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")

@@ -616,6 +616,15 @@ export function updatePlayerNote(name: string, note: string, pvp: boolean): Prom
   return put<{ ok: boolean }>(`/api/players/${encodeURIComponent(name)}/note`, { note, pvp })
 }
 
+// updatePlayerManual saves the user's manual class/level/race override for an
+// always-anonymous player. Empty strings / 0 clear the respective field.
+export function updatePlayerManual(
+  name: string,
+  manual: { class: string; level: number; race: string },
+): Promise<{ ok: boolean }> {
+  return put<{ ok: boolean }>(`/api/players/${encodeURIComponent(name)}/manual`, manual)
+}
+
 export function deletePlayer(name: string): Promise<{ ok: boolean }> {
   return del<{ ok: boolean }>(`/api/players/${encodeURIComponent(name)}`)
 }

@@ -15,6 +15,15 @@ export interface PlayerSighting {
   last_tell_at: number
   group_count: number
   last_grouped_at: number
+  // User-entered overrides for permanently-anonymous players. Effective_*
+  // resolve display + DPS colours: a real /who value always wins, falling
+  // back to the manual override only when nothing was ever seen un-anon.
+  manual_class: string
+  manual_level: number
+  manual_race: string
+  effective_class: string
+  effective_level: number
+  effective_race: string
 }
 
 export interface PlayerLevelHistoryEntry {

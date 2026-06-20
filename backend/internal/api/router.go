@@ -238,6 +238,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/{name}", playersH.get)
 			r.Get("/{name}/history", playersH.history)
 			r.Put("/{name}/note", playersH.upsertNote)
+			r.Put("/{name}/manual", playersH.upsertManual)
 			r.Delete("/{name}", playersH.delete)
 		})
 		r.Route("/chat", func(r chi.Router) {

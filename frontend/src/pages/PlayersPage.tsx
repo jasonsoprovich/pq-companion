@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { UserSearch, RefreshCw, Trash2, AlertCircle, EyeOff, X, ArrowUp, ArrowDown, Swords, StickyNote, Bell, BellOff } from 'lucide-react'
-import { listPlayers, deletePlayer, clearPlayers, getPlayerHistory, updatePlayerNote, getConfig, updateConfig } from '../services/api'
+import { listPlayers, deletePlayer, clearPlayers, getPlayerHistory, updatePlayerNote, updatePlayerManual, getConfig, updateConfig } from '../services/api'
 import type { PlayerSighting, PlayerLevelHistoryEntry } from '../types/player'
 import MissingLogNotice from '../components/MissingLogNotice'
 import BackfillLink from '../components/BackfillLink'
@@ -26,6 +26,37 @@ const CLASS_LIST = [
   'Wizard',
 ]
 
+// EQ playable races (Velious-era Quarm) — drives the manual race dropdown for
+// always-anonymous players the user wants to fill in by hand.
+const RACE_LIST = [
+  'Human',
+  'Barbarian',
+  'Erudite',
+  'Wood Elf',
+  'High Elf',
+  'Dark Elf',
+  'Half Elf',
+  'Dwarf',
+  'Troll',
+  'Ogre',
+  'Halfling',
+  'Gnome',
+  'Iksar',
+  'Vah Shir',
+]
+
+// withEffective recomputes the effective_* fields locally after a manual edit
+// so the UI updates instantly without a refetch. Mirrors the backend rule:
+// a /who-discovered value always wins; manual only fills the gaps.
+function withEffective(p: PlayerSighting): PlayerSighting {
+  return {
+    ...p,
+    effective_class: p.class || p.manual_class,
+    effective_level: p.last_seen_level > 0 ? p.last_seen_level : p.manual_level,
+    effective_race: p.race || p.manual_race,
+  }
+}
+
 function formatRelative(unix: number): string {
   if (!unix) return '—'
   const diffMs = Date.now() - unix * 1000
@@ -44,17 +75,23 @@ function PlayerDetail({
   onClose,
   onDeleted,
   onChanged,
+  onManualChanged,
 }: {
   player: PlayerSighting
   onClose: () => void
   onDeleted: () => void
   onChanged: (note: string, pvp: boolean) => void
+  onManualChanged: (manual: { class: string; level: number; race: string }) => void
 }): React.ReactElement {
   const [history, setHistory] = useState<PlayerLevelHistoryEntry[] | null>(null)
   const [historyErr, setHistoryErr] = useState<string | null>(null)
   const [note, setNote] = useState(player.note)
   const [pvp, setPvp] = useState(player.pvp)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [mClass, setMClass] = useState(player.manual_class)
+  const [mLevel, setMLevel] = useState(player.manual_level ? String(player.manual_level) : '')
+  const [mRace, setMRace] = useState(player.manual_race)
+  const [manualSave, setManualSave] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEscapeToClose(onClose)
 
@@ -63,6 +100,10 @@ function PlayerDetail({
     setNote(player.note)
     setPvp(player.pvp)
     setSaveState('idle')
+    setMClass(player.manual_class)
+    setMLevel(player.manual_level ? String(player.manual_level) : '')
+    setMRace(player.manual_race)
+    setManualSave('idle')
   }, [player.name]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function saveNote(nextNote: string, nextPvp: boolean) {
@@ -81,6 +122,24 @@ function PlayerDetail({
     setPvp(next)
     void saveNote(note, next)
   }
+
+  async function saveManual(next: { class: string; level: string; race: string }) {
+    const levelNum = next.level === '' ? 0 : Math.max(0, Math.min(65, parseInt(next.level, 10) || 0))
+    setManualSave('saving')
+    try {
+      await updatePlayerManual(player.name, { class: next.class, level: levelNum, race: next.race })
+      setManualSave('saved')
+      onManualChanged({ class: next.class, level: levelNum, race: next.race })
+    } catch {
+      setManualSave('error')
+    }
+  }
+
+  // Whether a manual override is actually driving any displayed value (i.e.
+  // /who has never revealed that field). Drives the "in use" hint.
+  const manualClassInUse = !player.class && !!player.manual_class
+  const manualLevelInUse = player.last_seen_level === 0 && player.manual_level > 0
+  const manualRaceInUse = !player.race && !!player.manual_race
 
   useEffect(() => {
     let cancelled = false
@@ -121,10 +180,13 @@ function PlayerDetail({
             {pvp && <PvpBadge className="ml-2 align-middle" />}
           </h2>
           <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
-            {player.last_seen_level > 0 ? `Level ${player.last_seen_level}` : 'Level unknown'}
-            {player.class ? ` ${player.class}` : ''}
-            {player.race ? ` · ${player.race}` : ''}
+            {player.effective_level > 0 ? `Level ${player.effective_level}` : 'Level unknown'}
+            {player.effective_class ? ` ${player.effective_class}` : ''}
+            {player.effective_race ? ` · ${player.effective_race}` : ''}
             {player.guild ? ` · <${player.guild}>` : ''}
+            {(manualClassInUse || manualLevelInUse || manualRaceInUse) && (
+              <span className="ml-1.5 italic">(manual)</span>
+            )}
           </p>
           <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-muted)' }}>
             Seen {player.sightings_count} time{player.sightings_count === 1 ? '' : 's'} · last in{' '}
@@ -206,6 +268,66 @@ function PlayerDetail({
             color: 'var(--color-foreground)',
           }}
         />
+      </div>
+
+      {/* Manual class/level/race override for permanently-anonymous players */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
+            Known info
+            {manualSave === 'saving' && <span className="ml-2 normal-case tracking-normal font-normal">saving…</span>}
+            {manualSave === 'saved' && <span className="ml-2 normal-case tracking-normal font-normal">saved</span>}
+            {manualSave === 'error' && (
+              <span className="ml-2 normal-case tracking-normal font-normal" style={{ color: 'var(--color-danger)' }}>
+                save failed
+              </span>
+            )}
+          </p>
+        </div>
+        <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 70px 1fr' }}>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>Class</span>
+            <select
+              value={mClass}
+              onChange={(e) => { setMClass(e.target.value); void saveManual({ class: e.target.value, level: mLevel, race: mRace }) }}
+              className="text-xs rounded px-1.5 py-1 outline-none"
+              style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+            >
+              <option value="">—</option>
+              {CLASS_LIST.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>Level</span>
+            <input
+              type="number"
+              min={0}
+              max={65}
+              value={mLevel}
+              onChange={(e) => setMLevel(e.target.value)}
+              onBlur={() => { if (mLevel !== (player.manual_level ? String(player.manual_level) : '')) void saveManual({ class: mClass, level: mLevel, race: mRace }) }}
+              className="text-xs rounded px-1.5 py-1 outline-none"
+              style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+            />
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>Race</span>
+            <select
+              value={mRace}
+              onChange={(e) => { setMRace(e.target.value); void saveManual({ class: mClass, level: mLevel, race: e.target.value }) }}
+              className="text-xs rounded px-1.5 py-1 outline-none"
+              style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+            >
+              <option value="">—</option>
+              {RACE_LIST.map((rr) => <option key={rr} value={rr}>{rr}</option>)}
+            </select>
+          </label>
+        </div>
+        <p className="text-[10px] mt-1" style={{ color: 'var(--color-muted)' }}>
+          For friends/guildmates who stay anonymous. A real /who sighting always
+          wins; these only apply while a field is unknown — and they drive DPS
+          meter colors.
+        </p>
       </div>
 
       <p className="text-[10px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: 'var(--color-muted)' }}>
@@ -370,9 +492,9 @@ export default function PlayersPage(): React.ReactElement {
         case 'name':
           return a.name.localeCompare(b.name) * direction
         case 'level':
-          return (a.last_seen_level - b.last_seen_level) * direction
+          return (a.effective_level - b.effective_level) * direction
         case 'class':
-          return (a.class || '').localeCompare(b.class || '') * direction
+          return (a.effective_class || '').localeCompare(b.effective_class || '') * direction
         case 'guild':
           return (a.guild || '').localeCompare(b.guild || '') * direction
         case 'zone':
@@ -616,6 +738,14 @@ export default function PlayersPage(): React.ReactElement {
                 )
                 setSelected((prev) => (prev ? { ...prev, note, pvp } : prev))
               }}
+              onManualChanged={(m) => {
+                const patch = (pl: PlayerSighting) =>
+                  withEffective({ ...pl, manual_class: m.class, manual_level: m.level, manual_race: m.race })
+                setPlayers((prev) =>
+                  prev.map((pl) => (pl.name === selected.name ? patch(pl) : pl))
+                )
+                setSelected((prev) => (prev ? patch(prev) : prev))
+              }}
             />
           </div>
         )}
@@ -684,8 +814,8 @@ export default function PlayersPage(): React.ReactElement {
                     </span>
                   )}
                 </button>
-                <span className="py-1 tabular-nums">{p.last_seen_level > 0 ? p.last_seen_level : '—'}</span>
-                <span className="py-1 truncate">{p.class || '—'}</span>
+                <span className="py-1 tabular-nums">{p.effective_level > 0 ? p.effective_level : '—'}</span>
+                <span className="py-1 truncate">{p.effective_class || '—'}</span>
                 <span className="py-1 truncate" title={p.guild || ''}>{p.guild || '—'}</span>
                 <span className="py-1 truncate">{p.last_seen_zone || '—'}</span>
                 <span className="py-1 text-right tabular-nums">{p.sightings_count}</span>

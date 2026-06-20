@@ -360,7 +360,10 @@ func main() {
 			if err != nil || s == nil {
 				return ""
 			}
-			cls := players.BaseClassOf(s.Class)
+			// EffectiveClass prefers the /who-discovered class but falls back
+			// to the user's manual override for always-anonymous players, so
+			// DPS bars colour correctly for hidden guildmates.
+			cls := players.BaseClassOf(s.EffectiveClass)
 			classCacheMu.Lock()
 			classByNameCache[name] = classCacheEntry{cls: cls, exp: time.Now().Add(classCacheTTL)}
 			classCacheMu.Unlock()

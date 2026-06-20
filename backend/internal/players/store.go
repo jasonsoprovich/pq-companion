@@ -32,6 +32,40 @@ type Sighting struct {
 	LastTellAt     int64  `json:"last_tell_at"`
 	GroupCount     int    `json:"group_count"`
 	LastGroupedAt  int64  `json:"last_grouped_at"`
+
+	// Manual* are the user-entered overrides for players who stay
+	// anonymous (always hidden) so the app can still colour their DPS bars
+	// and show their class/level. They're stored alongside the note + PVP
+	// flag and survive a "Clear all".
+	ManualClass string `json:"manual_class"`
+	ManualLevel int    `json:"manual_level"`
+	ManualRace  string `json:"manual_race"`
+
+	// Effective* resolve display/colours: a real /who-discovered value always
+	// wins, falling back to the manual override only when nothing was ever
+	// seen un-anonymously.
+	EffectiveClass string `json:"effective_class"`
+	EffectiveLevel int    `json:"effective_level"`
+	EffectiveRace  string `json:"effective_race"`
+}
+
+// computeEffective fills the Effective* fields from the discovered values,
+// falling back to the manual overrides. Discovered always wins (a /who
+// sighting is ground truth); manual only fills the gaps for players never
+// seen un-anonymously.
+func (v *Sighting) computeEffective() {
+	v.EffectiveClass = v.Class
+	if v.EffectiveClass == "" {
+		v.EffectiveClass = v.ManualClass
+	}
+	v.EffectiveLevel = v.LastSeenLevel
+	if v.EffectiveLevel == 0 {
+		v.EffectiveLevel = v.ManualLevel
+	}
+	v.EffectiveRace = v.Race
+	if v.EffectiveRace == "" {
+		v.EffectiveRace = v.ManualRace
+	}
 }
 
 // Interaction kinds recorded by TouchInteraction.
@@ -139,6 +173,25 @@ func (s *Store) migrate() error {
 	`); err != nil {
 		return err
 	}
+	// Manual class/level/race overrides live on the notes row (same user-intel
+	// table, same survives-Clear semantics). Added via ALTER for upgrading
+	// users whose player_notes predates these columns.
+	cols, err := s.tableColumns("player_notes")
+	if err != nil {
+		return err
+	}
+	for _, c := range []struct{ name, decl string }{
+		{"manual_class", "manual_class TEXT NOT NULL DEFAULT ''"},
+		{"manual_level", "manual_level INTEGER NOT NULL DEFAULT 0"},
+		{"manual_race", "manual_race TEXT NOT NULL DEFAULT ''"},
+	} {
+		if cols[c.name] {
+			continue
+		}
+		if _, err := s.db.Exec(`ALTER TABLE player_notes ADD COLUMN ` + c.decl); err != nil {
+			return err
+		}
+	}
 	// Direct interactions (tells exchanged, group joins) — auto-tracked so
 	// the tracker shows who the user has actually played with, not just who
 	// walked past a /who.
@@ -155,6 +208,30 @@ func (s *Store) migrate() error {
 		return err
 	}
 	return nil
+}
+
+// tableColumns returns the set of column names on a table, used to make
+// ALTER TABLE migrations idempotent for upgrading users.
+func (s *Store) tableColumns(table string) (map[string]bool, error) {
+	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var (
+			cid         int
+			name, ctype string
+			notnull, pk int
+			dfltValue   sql.NullString
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return nil, err
+		}
+		out[name] = true
+	}
+	return out, rows.Err()
 }
 
 // TouchInteraction records one direct interaction (a tell exchanged or a
@@ -545,15 +622,17 @@ func buildFilterClause(f SearchFilters) (string, []any) {
 		// "Enchanter" in the dropdown also matches Illusionists, Beguilers
 		// and Phantasmists. expandClassFilter falls back to a single-element
 		// slice for unknown / specific-title queries so direct matches still
-		// work.
+		// work. Match the *effective* class so manually-classed always-anon
+		// players appear under their set class too.
+		const effClass = `COALESCE(NULLIF(s.class, ''), n.manual_class)`
 		titles := expandClassFilter(f.Class)
 		if len(titles) == 1 {
-			q += ` AND s.class = ? COLLATE NOCASE`
+			q += ` AND ` + effClass + ` = ? COLLATE NOCASE`
 			args = append(args, titles[0])
 		} else {
 			placeholders := strings.Repeat("?,", len(titles))
 			placeholders = placeholders[:len(placeholders)-1]
-			q += ` AND s.class IN (` + placeholders + `) COLLATE NOCASE`
+			q += ` AND ` + effClass + ` IN (` + placeholders + `) COLLATE NOCASE`
 			for _, t := range titles {
 				args = append(args, t)
 			}
@@ -579,7 +658,8 @@ func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
 	             s.last_seen_at, s.first_seen_at, s.last_anonymous, s.sightings_count,
 	             COALESCE(n.note, ''), COALESCE(n.pvp, 0),
 	             COALESCE(ti.count, 0), COALESCE(ti.last_at, 0),
-	             COALESCE(gi.count, 0), COALESCE(gi.last_at, 0)` + sightingJoins
+	             COALESCE(gi.count, 0), COALESCE(gi.last_at, 0),
+	             COALESCE(n.manual_class, ''), COALESCE(n.manual_level, 0), COALESCE(n.manual_race, '')` + sightingJoins
 	clause, args := buildFilterClause(f)
 	q += clause
 	q += ` ORDER BY s.last_seen_at DESC`
@@ -602,11 +682,13 @@ func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
 		var lastAnon, pvp int
 		if err := rows.Scan(&v.Name, &v.Class, &v.Race, &v.Guild, &v.LastSeenLevel,
 			&v.LastSeenZone, &v.LastSeenAt, &v.FirstSeenAt, &lastAnon, &v.SightingsCount,
-			&v.Note, &pvp, &v.TellCount, &v.LastTellAt, &v.GroupCount, &v.LastGroupedAt); err != nil {
+			&v.Note, &pvp, &v.TellCount, &v.LastTellAt, &v.GroupCount, &v.LastGroupedAt,
+			&v.ManualClass, &v.ManualLevel, &v.ManualRace); err != nil {
 			return nil, err
 		}
 		v.LastAnonymous = lastAnon != 0
 		v.PVP = pvp != 0
+		v.computeEffective()
 		out = append(out, v)
 	}
 	return out, rows.Err()
@@ -632,7 +714,8 @@ func (s *Store) Get(name string) (*Sighting, error) {
 		       s.last_seen_at, s.first_seen_at, s.last_anonymous, s.sightings_count,
 		       COALESCE(n.note, ''), COALESCE(n.pvp, 0),
 		       COALESCE(ti.count, 0), COALESCE(ti.last_at, 0),
-		       COALESCE(gi.count, 0), COALESCE(gi.last_at, 0)
+		       COALESCE(gi.count, 0), COALESCE(gi.last_at, 0),
+		       COALESCE(n.manual_class, ''), COALESCE(n.manual_level, 0), COALESCE(n.manual_race, '')
 		FROM player_sightings s
 		LEFT JOIN player_notes n ON n.name = s.name COLLATE NOCASE
 		LEFT JOIN player_interactions ti ON ti.name = s.name AND ti.kind = 'tell'
@@ -643,7 +726,8 @@ func (s *Store) Get(name string) (*Sighting, error) {
 	var lastAnon, pvp int
 	if err := row.Scan(&v.Name, &v.Class, &v.Race, &v.Guild, &v.LastSeenLevel,
 		&v.LastSeenZone, &v.LastSeenAt, &v.FirstSeenAt, &lastAnon, &v.SightingsCount,
-		&v.Note, &pvp, &v.TellCount, &v.LastTellAt, &v.GroupCount, &v.LastGroupedAt); err != nil {
+		&v.Note, &pvp, &v.TellCount, &v.LastTellAt, &v.GroupCount, &v.LastGroupedAt,
+		&v.ManualClass, &v.ManualLevel, &v.ManualRace); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -651,28 +735,66 @@ func (s *Store) Get(name string) (*Sighting, error) {
 	}
 	v.LastAnonymous = lastAnon != 0
 	v.PVP = pvp != 0
+	v.computeEffective()
 	return &v, nil
 }
 
-// UpsertNote saves the user's note text + PVP flag for a player. An empty
-// note with pvp=false deletes the row so the table only holds real intel.
+// UpsertNote saves the user's note text + PVP flag for a player, leaving any
+// manual class/level/race override on the row untouched. A row carrying no
+// intel at all (no note, no PVP flag, no manual override) is pruned so the
+// table only holds real intel.
 func (s *Store) UpsertNote(name, note string, pvp bool) error {
 	if name == "" {
 		return fmt.Errorf("name required")
-	}
-	if note == "" && !pvp {
-		_, err := s.db.Exec(`DELETE FROM player_notes WHERE name = ? COLLATE NOCASE`, name)
-		return err
 	}
 	pvpInt := 0
 	if pvp {
 		pvpInt = 1
 	}
-	_, err := s.db.Exec(`
+	if _, err := s.db.Exec(`
 		INSERT INTO player_notes (name, note, pvp, updated_at)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET note = excluded.note, pvp = excluded.pvp, updated_at = excluded.updated_at
-	`, name, note, pvpInt, time.Now().Unix())
+	`, name, note, pvpInt, time.Now().Unix()); err != nil {
+		return err
+	}
+	return s.pruneEmptyNote(name)
+}
+
+// UpsertManual saves the user's manual class/level/race override for a player,
+// leaving the note + PVP flag untouched. Used for guildmates/friends who stay
+// permanently anonymous in /who but whose class the user knows. An override
+// that clears every field (and leaves no note/PVP) prunes the row.
+func (s *Store) UpsertManual(name, class string, level int, race string) error {
+	if name == "" {
+		return fmt.Errorf("name required")
+	}
+	if level < 0 {
+		level = 0
+	}
+	if _, err := s.db.Exec(`
+		INSERT INTO player_notes (name, manual_class, manual_level, manual_race, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(name) DO UPDATE SET
+			manual_class = excluded.manual_class,
+			manual_level = excluded.manual_level,
+			manual_race = excluded.manual_race,
+			updated_at = excluded.updated_at
+	`, name, class, level, race, time.Now().Unix()); err != nil {
+		return err
+	}
+	return s.pruneEmptyNote(name)
+}
+
+// pruneEmptyNote deletes a player_notes row that holds nothing the user
+// authored — no note, no PVP flag, and no manual override.
+func (s *Store) pruneEmptyNote(name string) error {
+	_, err := s.db.Exec(`
+		DELETE FROM player_notes
+		WHERE name = ? COLLATE NOCASE
+		  AND note = '' AND pvp = 0
+		  AND manual_class = '' AND manual_level = 0 AND manual_race = ''
+	`, name)
 	return err
 }
 
