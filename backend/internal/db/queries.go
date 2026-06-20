@@ -1322,6 +1322,15 @@ func (db *DB) loadNPCLoot(npcID int) (int, string, []LootDrop, error) {
 		return 0, "", nil, fmt.Errorf("get npc loottable %d: %w", npcID, err)
 	}
 
+	// Order pools by specificity, not raw lootdrop_id. A lootdrop referenced
+	// by only a handful of loottables is this NPC's own signature loot; pools
+	// shared across dozens of tables ("Velious Spells 60", "level_49_research",
+	// gem/cash pools) are generic libraries that belong below the NPC-specific
+	// drops. A quarm.db data release shifted raw id ordering and pushed those
+	// shared spell/research pools above signature item pools; ranking by
+	// reference count (then drop probability) restores NPC-specific items to
+	// the top regardless of id churn. The ref-count subquery aggregates the
+	// (~20k row) table once.
 	rows, err := db.Query(`
 		SELECT lte.lootdrop_id, ld.name, lte.multiplier, lte.probability,
 		       lde.item_id, i.Name, i.icon, lde.chance, lde.multiplier
@@ -1329,8 +1338,11 @@ func (db *DB) loadNPCLoot(npcID int) (int, string, []LootDrop, error) {
 		JOIN lootdrop ld ON ld.id = lte.lootdrop_id
 		JOIN lootdrop_entries lde ON lde.lootdrop_id = lte.lootdrop_id
 		JOIN items i ON i.id = lde.item_id
+		JOIN (SELECT lootdrop_id, COUNT(*) AS ref_tables
+		      FROM loottable_entries GROUP BY lootdrop_id) rc
+		  ON rc.lootdrop_id = lte.lootdrop_id
 		WHERE lte.loottable_id = ?
-		ORDER BY lte.lootdrop_id, lde.chance DESC
+		ORDER BY rc.ref_tables ASC, lte.probability DESC, lte.lootdrop_id, lde.chance DESC
 		LIMIT 500`, ltID)
 	if err != nil {
 		return 0, "", nil, fmt.Errorf("get npc loot entries %d: %w", npcID, err)
