@@ -398,7 +398,11 @@ function getRestoredBounds(name: OverlayName, defaults: Bounds): Bounds {
 function trackOverlayBounds(name: OverlayName, win: BrowserWindow): void {
   win.on('move', () => persistBounds(name, win))
   win.on('resize', () => persistBounds(name, win))
-  win.on('close', () => persistBounds(name, win))
+  win.on('close', () => {
+    persistBounds(name, win)
+    // Don't leave a closed overlay armed to re-enter placing mode next open.
+    placingOverlays.delete(name)
+  })
 }
 
 // ── Main window state persistence ─────────────────────────────────────────────
@@ -2040,6 +2044,51 @@ ipcMain.handle('overlay:display-ids', () => {
   }
   return out
 })
+
+// ── Per-overlay "Move" (placing) mode ───────────────────────────────────────
+// Scoped, visible replacement for the old global "Position overlays" toggle.
+// While an overlay is "placing" it's made interactive and draggable regardless
+// of its lock mode (so a chromeless Display-only HUD can be grabbed), with a
+// dashed outline + "Drag to place / Done" banner drawn by the renderer
+// (useOverlayLock). The renderer owns input state; the main process just tracks
+// which overlays are placing and notifies their windows.
+const placingOverlays = new Set<string>()
+
+function setPlacing(name: string, on: boolean): void {
+  if (on) placingOverlays.add(name)
+  else placingOverlays.delete(name)
+  const win = overlayWindowByName(name as OverlayName)
+  if (win && !win.isDestroyed()) {
+    if (on) {
+      // Re-home an off-screen overlay onto the primary monitor first so its
+      // placing banner is actually visible to grab.
+      if (!isOnScreen(win.getBounds())) win.setBounds(centeredOnPrimary(win.getBounds()))
+      win.show()
+    }
+    win.webContents.send('overlay:placing-changed', on)
+  }
+}
+
+ipcMain.handle('overlay:place:start', (_event, name: string) => {
+  if ((RESETTABLE_OVERLAYS as string[]).includes(name)) setPlacing(name, true)
+})
+ipcMain.handle('overlay:place:stop', (_event, name: string) => {
+  if ((RESETTABLE_OVERLAYS as string[]).includes(name)) setPlacing(name, false)
+})
+// Called by the overlay's own "Done" button — resolve the window to its name.
+ipcMain.handle('overlay:place:stop-self', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const name = win ? windowToOverlayName.get(win) : undefined
+  if (name) setPlacing(name, false)
+})
+// Read on mount so a freshly-opened overlay window picks up that it should be
+// placing even if it missed the placing-changed broadcast.
+ipcMain.handle('overlay:place:am-i-placing', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const name = win ? windowToOverlayName.get(win) : undefined
+  return name ? placingOverlays.has(name) : false
+})
+ipcMain.handle('overlay:place:names', () => Array.from(placingOverlays))
 
 // Send one overlay to a chosen monitor, centered on it. Persists the new
 // bounds so a currently-closed overlay also re-opens there. This is the

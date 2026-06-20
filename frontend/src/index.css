@@ -139,3 +139,42 @@ body {
 .overlay-hide-header .overlay-header {
   display: none !important;
 }
+
+/* Per-overlay "Move" (placing) mode, toggled on <html> by useOverlayLock.
+   A dashed accent outline marks which overlay is being placed, and a small
+   draggable banner (injected imperatively by the hook) sits at the top with a
+   Done button. The banner itself is the drag handle, so even a chromeless
+   Display-only HUD can be repositioned. */
+.overlay-placing #root {
+  outline: 2px dashed var(--color-primary);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+.overlay-placing-banner {
+  position: fixed;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+  cursor: move;
+}
+.overlay-placing-done {
+  cursor: pointer;
+  border-radius: 9999px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: #fff;
+}

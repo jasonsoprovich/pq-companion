@@ -11,7 +11,7 @@
  * restored on next mount. Drag/resize snaps to a 16px grid.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, ExternalLink, Layers, X, Crosshair, ChevronDown, ListChecks, Trash2 } from 'lucide-react'
+import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, ExternalLink, Layers, X, Crosshair, ChevronDown, Move, ListChecks, Trash2 } from 'lucide-react'
 import type { OverlayName } from '../lib/overlays'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
@@ -110,6 +110,8 @@ function OverlaysManager({
   popoutStates,
   onTogglePopout,
   onResetPanelPosition,
+  placingNames,
+  onMovePanel,
   anyPopoutOpen,
   onTogglePopouts,
   onResetPositions,
@@ -126,6 +128,8 @@ function OverlaysManager({
   popoutStates: Record<string, boolean>
   onTogglePopout: (key: DashboardPanelKey) => void
   onResetPanelPosition: (key: DashboardPanelKey) => void
+  placingNames: string[]
+  onMovePanel: (key: DashboardPanelKey) => void
   anyPopoutOpen: boolean
   onTogglePopouts: () => void
   onResetPositions: () => void
@@ -154,7 +158,7 @@ function OverlaysManager({
     border: '1px solid var(--color-border)',
     cursor: 'pointer',
   } as const
-  const headerCell = { color: 'var(--color-muted)', width: 26, textAlign: 'center' as const }
+  const headerCell = { color: 'var(--color-muted)', width: 30, textAlign: 'center' as const }
 
   return (
     <div ref={wrapRef} style={{ position: 'relative' }}>
@@ -254,11 +258,11 @@ function OverlaysManager({
             </div>
           )}
 
-          {/* Per-overlay grid: Dashboard panel | Pop-out window | Reset position */}
+          {/* Per-overlay grid: Dashboard panel | Pop-out | Move (place) | Reset */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr auto auto auto',
+              gridTemplateColumns: '1fr auto auto auto auto',
               columnGap: 8,
               alignItems: 'center',
             }}
@@ -268,6 +272,7 @@ function OverlaysManager({
             </span>
             <span className="text-[10px] uppercase tracking-wide" style={headerCell}>Dash</span>
             <span className="text-[10px] uppercase tracking-wide" style={headerCell}>Pop</span>
+            <span className="text-[10px] uppercase tracking-wide" style={headerCell} title="Move — drag to position">Move</span>
             <span className="text-[10px] uppercase tracking-wide" style={headerCell} title="Reset position">Res</span>
             {panelKeys.map((key) => {
               const dashOn = layout[key].visible
@@ -293,6 +298,17 @@ function OverlaysManager({
                     title={popOn ? `Close the ${labels[key]} pop-out window` : `Pop out ${labels[key]} as a floating window`}
                   >
                     <ExternalLink size={12} />
+                  </RowIconButton>
+                  <RowIconButton
+                    active={placingNames.includes(PANEL_POPOUT[key].name)}
+                    onClick={() => onMovePanel(key)}
+                    title={
+                      placingNames.includes(PANEL_POPOUT[key].name)
+                        ? `Done positioning ${labels[key]}`
+                        : `Move ${labels[key]} — pops it out and lets you drag it anywhere, even a Display-only HUD`
+                    }
+                  >
+                    <Move size={12} />
                   </RowIconButton>
                   <RowIconButton
                     onClick={() => onResetPanelPosition(key)}
@@ -344,6 +360,8 @@ export default function OverlaysDashboard(): React.ReactElement {
   // Per-overlay popout open-state, keyed by canonical overlay name. Polled like
   // anyPopoutOpen since Electron doesn't push window-state changes.
   const [popoutStates, setPopoutStates] = useState<Record<string, boolean>>({})
+  // Which overlays are currently in per-overlay "Move" (placing) mode.
+  const [placingNames, setPlacingNames] = useState<string[]>([])
 
   useEffect(() => {
     if (!window.electron?.overlay?.popoutStates) return
@@ -352,6 +370,9 @@ export default function OverlaysDashboard(): React.ReactElement {
       window.electron.overlay
         .popoutStates()
         .then((s) => { if (!cancelled) setPopoutStates(s) })
+        .catch(() => {})
+      window.electron?.overlay?.placingNames?.()
+        .then((n) => { if (!cancelled && n) setPlacingNames(n) })
         .catch(() => {})
     }
     check()
@@ -369,6 +390,25 @@ export default function OverlaysDashboard(): React.ReactElement {
   const resetPanelPosition = useCallback((key: DashboardPanelKey) => {
     window.electron?.overlay?.resetPosition?.(PANEL_POPOUT[key].name)
   }, [])
+
+  // Enter/leave per-overlay "Move" mode. Pops the overlay out first if it's
+  // closed (placing only makes sense on an open window — the banner draws on
+  // it), then flips the placing flag for that one overlay.
+  const toggleMovePanel = useCallback((key: DashboardPanelKey) => {
+    const name = PANEL_POPOUT[key].name
+    const isPlacing = placingNames.includes(name)
+    if (isPlacing) {
+      window.electron?.overlay?.place?.(name, false)
+      setPlacingNames((p) => p.filter((n) => n !== name))
+      return
+    }
+    if (!popoutStates[name]) {
+      PANEL_POPOUT[key].toggle()
+      setPopoutStates((s) => ({ ...s, [name]: true }))
+    }
+    window.electron?.overlay?.place?.(name, true)
+    setPlacingNames((p) => [...p, name])
+  }, [placingNames, popoutStates])
 
   const handleReset = useCallback(() => {
     setLayout({ ...DEFAULT_DASHBOARD_LAYOUT })
@@ -507,6 +547,8 @@ export default function OverlaysDashboard(): React.ReactElement {
             popoutStates={popoutStates}
             onTogglePopout={togglePopout}
             onResetPanelPosition={resetPanelPosition}
+            placingNames={placingNames}
+            onMovePanel={toggleMovePanel}
             anyPopoutOpen={anyPopoutOpen}
             onTogglePopouts={handleTogglePopouts}
             onResetPositions={() => setShowResetConfirm(true)}

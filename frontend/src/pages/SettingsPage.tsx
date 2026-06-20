@@ -2738,7 +2738,7 @@ const LOCK_MODE_OPTIONS: ReadonlyArray<{
   {
     value: 'display-only',
     label: 'Display only',
-    hint: 'Nothing ever captures the mouse — the title bar is hidden too. A pure HUD. To move it, switch to another mode, drag it, then switch back (or use Reset position / the Monitor dropdown).',
+    hint: 'Nothing ever captures the mouse — the title bar is hidden too. A pure HUD. To move it, use the Move button in the Overlays tab’s “Manage overlays” menu (or Reset position / the Monitor dropdown).',
   },
 ]
 

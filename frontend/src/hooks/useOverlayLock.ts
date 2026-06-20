@@ -59,6 +59,13 @@ export function useOverlayLock(name: OverlayName): {
   const [locked, setLocked] = useState(false)
   const [mode, setMode] = useState<LockedMode>('interactive')
   const positionMode = useOverlayPositionMode()
+  // Per-overlay "Move" (placing) mode — this window only. Replaces the old
+  // global position toggle for arranging a single overlay (incl. a chromeless
+  // Display-only HUD). Treated like positionMode below: reveal the header,
+  // suspend hover toggling, and force the window interactive so it's draggable.
+  const placing = useOverlayPlacingSelf()
+  // Either form of positioning suspends the normal lock behaviour.
+  const positioning = positionMode || placing
   // Always-current lock value for the display-only restore effect below, so it
   // can read the lock state without re-running on every lock toggle.
   const lockedRef = useRef(locked)
@@ -137,11 +144,43 @@ export function useOverlayLock(name: OverlayName): {
   // while positioning, when it must be visible to grab. The class lives on the
   // document so a single CSS rule can hide every overlay header (see index.css).
   useEffect(() => {
-    const hide = mode === 'display-only' && !positionMode
+    const hide = mode === 'display-only' && !positioning
     const root = document.documentElement
     root.classList.toggle('overlay-hide-header', hide)
     return () => root.classList.remove('overlay-hide-header')
-  }, [mode, positionMode])
+  }, [mode, positioning])
+
+  // While THIS overlay is in "Move" mode: force it interactive (so a
+  // Display-only / locked overlay becomes draggable), mark it with an outline,
+  // and inject a "Drag to place / Done" banner. On exit, restore the input
+  // state implied by the current mode/lock. Bounds persist automatically via
+  // the main process's move listener, so there's nothing to save here.
+  useEffect(() => {
+    if (!placing) return
+    window.electron?.overlay?.setIgnoreMouseEvents(false)
+    const root = document.documentElement
+    root.classList.add('overlay-placing')
+
+    const banner = document.createElement('div')
+    banner.className = 'overlay-placing-banner drag-region'
+    const label = document.createElement('span')
+    label.textContent = 'Drag to place'
+    const done = document.createElement('button')
+    done.textContent = 'Done'
+    done.className = 'overlay-placing-done no-drag'
+    done.onclick = () => { window.electron?.overlay?.placeDoneSelf?.() }
+    banner.append(label, done)
+    document.body.appendChild(banner)
+
+    return () => {
+      root.classList.remove('overlay-placing')
+      banner.remove()
+      // Restore the base input state for the current mode (display-only stays
+      // click-through; otherwise follow the lock flag).
+      const passthrough = mode === 'display-only' ? true : lockedRef.current
+      window.electron?.overlay?.setIgnoreMouseEvents(passthrough)
+    }
+  }, [placing, mode])
 
   // Display-only forces full click-through regardless of the lock flag (a pure
   // HUD must never capture), so it works even if the user never locked it. We
@@ -151,7 +190,7 @@ export function useOverlayLock(name: OverlayName): {
   // positioning, the main process owns input state, so stay out of its way.
   const wasDisplayOnly = useRef(false)
   useEffect(() => {
-    if (positionMode) return
+    if (positioning) return
     const isDisplayOnly = mode === 'display-only'
     if (isDisplayOnly) {
       window.electron?.overlay?.setIgnoreMouseEvents(true)
@@ -160,7 +199,7 @@ export function useOverlayLock(name: OverlayName): {
       window.electron?.overlay?.setIgnoreMouseEvents(lockedRef.current)
     }
     wasDisplayOnly.current = isDisplayOnly
-  }, [mode, positionMode])
+  }, [mode, positioning])
 
   // In "interactive" mode the whole root drives the toggle; in "clickthrough"
   // mode only the header does. React's onMouseEnter/Leave are non-bubbling, so
@@ -169,9 +208,28 @@ export function useOverlayLock(name: OverlayName): {
   // "display-only" wires up neither, so the overlay stays fully click-through.
   // While positioning, the main process owns input state, so suspend the hover
   // toggling to avoid fighting it.
-  const active = !positionMode
+  const active = !positioning
   const rootInteractionProps = active && mode === 'interactive' ? handlers : {}
   const headerInteractionProps = active && mode === 'clickthrough' ? handlers : {}
 
   return { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps }
+}
+
+// useOverlayPlacingSelf reports whether THIS overlay window is in "Move" mode.
+// It reads the initial state on mount (so a freshly-opened window that the user
+// asked to move picks it up even if it missed the broadcast) and subscribes to
+// live changes from the main process.
+function useOverlayPlacingSelf(): boolean {
+  const [placing, setPlacing] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    window.electron?.overlay?.amIPlacing?.()
+      .then((v) => { if (!cancelled) setPlacing(!!v) })
+      .catch(() => {})
+    const off = window.electron?.overlay?.onPlacing?.((v) => {
+      if (!cancelled) setPlacing(!!v)
+    })
+    return () => { cancelled = true; off?.() }
+  }, [])
+  return placing
 }

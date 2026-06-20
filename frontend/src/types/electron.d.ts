@@ -75,6 +75,11 @@ export interface ElectronAPI {
     setDisplay: (id: number) => Promise<void>
     displayIds: () => Promise<Record<string, number>>
     moveToDisplay: (name: string, id: number) => Promise<void>
+    place: (name: string, on: boolean) => Promise<void>
+    placeDoneSelf: () => Promise<void>
+    amIPlacing: () => Promise<boolean>
+    placingNames: () => Promise<string[]>
+    onPlacing: (cb: (placing: boolean) => void) => () => void
   }
   screen: {
     triggerDefaultCenter: () => Promise<{ x: number; y: number }>

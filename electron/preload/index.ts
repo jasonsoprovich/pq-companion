@@ -115,6 +115,18 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('overlay:display-ids'),
     moveToDisplay: (name: string, id: number): Promise<void> =>
       ipcRenderer.invoke('overlay:move-to-display', name, id),
+    // Per-overlay "Move" (placing) mode: drop one overlay into a marked,
+    // draggable state regardless of its lock mode, then restore it.
+    place: (name: string, on: boolean): Promise<void> =>
+      ipcRenderer.invoke(on ? 'overlay:place:start' : 'overlay:place:stop', name),
+    placeDoneSelf: (): Promise<void> => ipcRenderer.invoke('overlay:place:stop-self'),
+    amIPlacing: (): Promise<boolean> => ipcRenderer.invoke('overlay:place:am-i-placing'),
+    placingNames: (): Promise<string[]> => ipcRenderer.invoke('overlay:place:names'),
+    onPlacing: (cb: (placing: boolean) => void): (() => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, placing: boolean): void => cb(placing)
+      ipcRenderer.on('overlay:placing-changed', listener)
+      return () => ipcRenderer.removeListener('overlay:placing-changed', listener)
+    },
   },
   screen: {
     triggerDefaultCenter: (): Promise<{ x: number; y: number }> =>
