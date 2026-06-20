@@ -620,7 +620,7 @@ export function updatePlayerNote(name: string, note: string, pvp: boolean): Prom
 // always-anonymous player. Empty strings / 0 clear the respective field.
 export function updatePlayerManual(
   name: string,
-  manual: { class: string; level: number; race: string },
+  manual: { class: string; level: number; race: string; guild: string },
 ): Promise<{ ok: boolean }> {
   return put<{ ok: boolean }>(`/api/players/${encodeURIComponent(name)}/manual`, manual)
 }

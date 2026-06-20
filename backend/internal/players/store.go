@@ -35,11 +35,12 @@ type Sighting struct {
 
 	// Manual* are the user-entered overrides for players who stay
 	// anonymous (always hidden) so the app can still colour their DPS bars
-	// and show their class/level. They're stored alongside the note + PVP
-	// flag and survive a "Clear all".
+	// and show their class/level/guild. They're stored alongside the note +
+	// PVP flag and survive a "Clear all".
 	ManualClass string `json:"manual_class"`
 	ManualLevel int    `json:"manual_level"`
 	ManualRace  string `json:"manual_race"`
+	ManualGuild string `json:"manual_guild"`
 
 	// Effective* resolve display/colours: a real /who-discovered value always
 	// wins, falling back to the manual override only when nothing was ever
@@ -47,6 +48,7 @@ type Sighting struct {
 	EffectiveClass string `json:"effective_class"`
 	EffectiveLevel int    `json:"effective_level"`
 	EffectiveRace  string `json:"effective_race"`
+	EffectiveGuild string `json:"effective_guild"`
 }
 
 // computeEffective fills the Effective* fields from the discovered values,
@@ -65,6 +67,10 @@ func (v *Sighting) computeEffective() {
 	v.EffectiveRace = v.Race
 	if v.EffectiveRace == "" {
 		v.EffectiveRace = v.ManualRace
+	}
+	v.EffectiveGuild = v.Guild
+	if v.EffectiveGuild == "" {
+		v.EffectiveGuild = v.ManualGuild
 	}
 }
 
@@ -184,6 +190,7 @@ func (s *Store) migrate() error {
 		{"manual_class", "manual_class TEXT NOT NULL DEFAULT ''"},
 		{"manual_level", "manual_level INTEGER NOT NULL DEFAULT 0"},
 		{"manual_race", "manual_race TEXT NOT NULL DEFAULT ''"},
+		{"manual_guild", "manual_guild TEXT NOT NULL DEFAULT ''"},
 	} {
 		if cols[c.name] {
 			continue
@@ -643,7 +650,9 @@ func buildFilterClause(f SearchFilters) (string, []any) {
 		args = append(args, f.Zone)
 	}
 	if f.Guild != "" {
-		q += ` AND s.guild = ? COLLATE NOCASE`
+		// Match the effective guild so a manually-set guild surfaces under its
+		// guild filter too (mirrors the class filter).
+		q += ` AND COALESCE(NULLIF(s.guild, ''), n.manual_guild) = ? COLLATE NOCASE`
 		args = append(args, f.Guild)
 	}
 	if f.PVPOnly {
@@ -659,7 +668,8 @@ func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
 	             COALESCE(n.note, ''), COALESCE(n.pvp, 0),
 	             COALESCE(ti.count, 0), COALESCE(ti.last_at, 0),
 	             COALESCE(gi.count, 0), COALESCE(gi.last_at, 0),
-	             COALESCE(n.manual_class, ''), COALESCE(n.manual_level, 0), COALESCE(n.manual_race, '')` + sightingJoins
+	             COALESCE(n.manual_class, ''), COALESCE(n.manual_level, 0), COALESCE(n.manual_race, ''),
+	             COALESCE(n.manual_guild, '')` + sightingJoins
 	clause, args := buildFilterClause(f)
 	q += clause
 	q += ` ORDER BY s.last_seen_at DESC`
@@ -683,7 +693,7 @@ func (s *Store) Search(f SearchFilters) ([]Sighting, error) {
 		if err := rows.Scan(&v.Name, &v.Class, &v.Race, &v.Guild, &v.LastSeenLevel,
 			&v.LastSeenZone, &v.LastSeenAt, &v.FirstSeenAt, &lastAnon, &v.SightingsCount,
 			&v.Note, &pvp, &v.TellCount, &v.LastTellAt, &v.GroupCount, &v.LastGroupedAt,
-			&v.ManualClass, &v.ManualLevel, &v.ManualRace); err != nil {
+			&v.ManualClass, &v.ManualLevel, &v.ManualRace, &v.ManualGuild); err != nil {
 			return nil, err
 		}
 		v.LastAnonymous = lastAnon != 0
@@ -715,7 +725,8 @@ func (s *Store) Get(name string) (*Sighting, error) {
 		       COALESCE(n.note, ''), COALESCE(n.pvp, 0),
 		       COALESCE(ti.count, 0), COALESCE(ti.last_at, 0),
 		       COALESCE(gi.count, 0), COALESCE(gi.last_at, 0),
-		       COALESCE(n.manual_class, ''), COALESCE(n.manual_level, 0), COALESCE(n.manual_race, '')
+		       COALESCE(n.manual_class, ''), COALESCE(n.manual_level, 0), COALESCE(n.manual_race, ''),
+		       COALESCE(n.manual_guild, '')
 		FROM player_sightings s
 		LEFT JOIN player_notes n ON n.name = s.name COLLATE NOCASE
 		LEFT JOIN player_interactions ti ON ti.name = s.name AND ti.kind = 'tell'
@@ -727,7 +738,7 @@ func (s *Store) Get(name string) (*Sighting, error) {
 	if err := row.Scan(&v.Name, &v.Class, &v.Race, &v.Guild, &v.LastSeenLevel,
 		&v.LastSeenZone, &v.LastSeenAt, &v.FirstSeenAt, &lastAnon, &v.SightingsCount,
 		&v.Note, &pvp, &v.TellCount, &v.LastTellAt, &v.GroupCount, &v.LastGroupedAt,
-		&v.ManualClass, &v.ManualLevel, &v.ManualRace); err != nil {
+		&v.ManualClass, &v.ManualLevel, &v.ManualRace, &v.ManualGuild); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -761,11 +772,11 @@ func (s *Store) UpsertNote(name, note string, pvp bool) error {
 	return s.pruneEmptyNote(name)
 }
 
-// UpsertManual saves the user's manual class/level/race override for a player,
-// leaving the note + PVP flag untouched. Used for guildmates/friends who stay
-// permanently anonymous in /who but whose class the user knows. An override
-// that clears every field (and leaves no note/PVP) prunes the row.
-func (s *Store) UpsertManual(name, class string, level int, race string) error {
+// UpsertManual saves the user's manual class/level/race/guild override for a
+// player, leaving the note + PVP flag untouched. Used for guildmates/friends
+// who stay permanently anonymous in /who but whose details the user knows. An
+// override that clears every field (and leaves no note/PVP) prunes the row.
+func (s *Store) UpsertManual(name, class string, level int, race, guild string) error {
 	if name == "" {
 		return fmt.Errorf("name required")
 	}
@@ -773,14 +784,15 @@ func (s *Store) UpsertManual(name, class string, level int, race string) error {
 		level = 0
 	}
 	if _, err := s.db.Exec(`
-		INSERT INTO player_notes (name, manual_class, manual_level, manual_race, updated_at)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO player_notes (name, manual_class, manual_level, manual_race, manual_guild, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET
 			manual_class = excluded.manual_class,
 			manual_level = excluded.manual_level,
 			manual_race = excluded.manual_race,
+			manual_guild = excluded.manual_guild,
 			updated_at = excluded.updated_at
-	`, name, class, level, race, time.Now().Unix()); err != nil {
+	`, name, class, level, race, guild, time.Now().Unix()); err != nil {
 		return err
 	}
 	return s.pruneEmptyNote(name)
@@ -793,7 +805,7 @@ func (s *Store) pruneEmptyNote(name string) error {
 		DELETE FROM player_notes
 		WHERE name = ? COLLATE NOCASE
 		  AND note = '' AND pvp = 0
-		  AND manual_class = '' AND manual_level = 0 AND manual_race = ''
+		  AND manual_class = '' AND manual_level = 0 AND manual_race = '' AND manual_guild = ''
 	`, name)
 	return err
 }

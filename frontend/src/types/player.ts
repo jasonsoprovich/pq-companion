@@ -21,9 +21,11 @@ export interface PlayerSighting {
   manual_class: string
   manual_level: number
   manual_race: string
+  manual_guild: string
   effective_class: string
   effective_level: number
   effective_race: string
+  effective_guild: string
 }
 
 export interface PlayerLevelHistoryEntry {

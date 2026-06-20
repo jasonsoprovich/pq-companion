@@ -118,6 +118,7 @@ func (h *playersHandler) upsertManual(w http.ResponseWriter, r *http.Request) {
 		Class string `json:"class"`
 		Level int    `json:"level"`
 		Race  string `json:"race"`
+		Guild string `json:"guild"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -127,7 +128,7 @@ func (h *playersHandler) upsertManual(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "level must be between 0 and 65")
 		return
 	}
-	if err := h.store.UpsertManual(name, req.Class, req.Level, req.Race); err != nil {
+	if err := h.store.UpsertManual(name, req.Class, req.Level, req.Race, req.Guild); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

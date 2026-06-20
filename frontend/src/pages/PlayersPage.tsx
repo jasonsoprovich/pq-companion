@@ -54,6 +54,7 @@ function withEffective(p: PlayerSighting): PlayerSighting {
     effective_class: p.class || p.manual_class,
     effective_level: p.last_seen_level > 0 ? p.last_seen_level : p.manual_level,
     effective_race: p.race || p.manual_race,
+    effective_guild: p.guild || p.manual_guild,
   }
 }
 
@@ -72,16 +73,18 @@ function formatRelative(unix: number): string {
 
 function PlayerDetail({
   player,
+  guildOptions,
   onClose,
   onDeleted,
   onChanged,
   onManualChanged,
 }: {
   player: PlayerSighting
+  guildOptions: string[]
   onClose: () => void
   onDeleted: () => void
   onChanged: (note: string, pvp: boolean) => void
-  onManualChanged: (manual: { class: string; level: number; race: string }) => void
+  onManualChanged: (manual: { class: string; level: number; race: string; guild: string }) => void
 }): React.ReactElement {
   const [history, setHistory] = useState<PlayerLevelHistoryEntry[] | null>(null)
   const [historyErr, setHistoryErr] = useState<string | null>(null)
@@ -91,7 +94,17 @@ function PlayerDetail({
   const [mClass, setMClass] = useState(player.manual_class)
   const [mLevel, setMLevel] = useState(player.manual_level ? String(player.manual_level) : '')
   const [mRace, setMRace] = useState(player.manual_race)
+  const [mGuild, setMGuild] = useState(player.manual_guild)
   const [manualSave, setManualSave] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  // Guild choices = every guild discovered across tracked players (like the
+  // guild filter), plus this player's own manual guild so a previously-set
+  // value still shows even if no one else is in that guild yet.
+  const guildChoices = useMemo(() => {
+    const s = new Set(guildOptions)
+    if (mGuild) s.add(mGuild)
+    return Array.from(s).sort()
+  }, [guildOptions, mGuild])
 
   useEscapeToClose(onClose)
 
@@ -103,6 +116,7 @@ function PlayerDetail({
     setMClass(player.manual_class)
     setMLevel(player.manual_level ? String(player.manual_level) : '')
     setMRace(player.manual_race)
+    setMGuild(player.manual_guild)
     setManualSave('idle')
   }, [player.name]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -123,13 +137,13 @@ function PlayerDetail({
     void saveNote(note, next)
   }
 
-  async function saveManual(next: { class: string; level: string; race: string }) {
+  async function saveManual(next: { class: string; level: string; race: string; guild: string }) {
     const levelNum = next.level === '' ? 0 : Math.max(0, Math.min(65, parseInt(next.level, 10) || 0))
     setManualSave('saving')
     try {
-      await updatePlayerManual(player.name, { class: next.class, level: levelNum, race: next.race })
+      await updatePlayerManual(player.name, { class: next.class, level: levelNum, race: next.race, guild: next.guild })
       setManualSave('saved')
-      onManualChanged({ class: next.class, level: levelNum, race: next.race })
+      onManualChanged({ class: next.class, level: levelNum, race: next.race, guild: next.guild })
     } catch {
       setManualSave('error')
     }
@@ -140,6 +154,7 @@ function PlayerDetail({
   const manualClassInUse = !player.class && !!player.manual_class
   const manualLevelInUse = player.last_seen_level === 0 && player.manual_level > 0
   const manualRaceInUse = !player.race && !!player.manual_race
+  const manualGuildInUse = !player.guild && !!player.manual_guild
 
   useEffect(() => {
     let cancelled = false
@@ -183,8 +198,8 @@ function PlayerDetail({
             {player.effective_level > 0 ? `Level ${player.effective_level}` : 'Level unknown'}
             {player.effective_class ? ` ${player.effective_class}` : ''}
             {player.effective_race ? ` · ${player.effective_race}` : ''}
-            {player.guild ? ` · <${player.guild}>` : ''}
-            {(manualClassInUse || manualLevelInUse || manualRaceInUse) && (
+            {player.effective_guild ? ` · <${player.effective_guild}>` : ''}
+            {(manualClassInUse || manualLevelInUse || manualRaceInUse || manualGuildInUse) && (
               <span className="ml-1.5 italic">(manual)</span>
             )}
           </p>
@@ -284,12 +299,12 @@ function PlayerDetail({
             )}
           </p>
         </div>
-        <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 70px 1fr' }}>
+        <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 64px 1fr 1fr' }}>
           <label className="flex flex-col gap-0.5">
             <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>Class</span>
             <select
               value={mClass}
-              onChange={(e) => { setMClass(e.target.value); void saveManual({ class: e.target.value, level: mLevel, race: mRace }) }}
+              onChange={(e) => { setMClass(e.target.value); void saveManual({ class: e.target.value, level: mLevel, race: mRace, guild: mGuild }) }}
               className="text-xs rounded px-1.5 py-1 outline-none"
               style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
             >
@@ -305,7 +320,7 @@ function PlayerDetail({
               max={65}
               value={mLevel}
               onChange={(e) => setMLevel(e.target.value)}
-              onBlur={() => { if (mLevel !== (player.manual_level ? String(player.manual_level) : '')) void saveManual({ class: mClass, level: mLevel, race: mRace }) }}
+              onBlur={() => { if (mLevel !== (player.manual_level ? String(player.manual_level) : '')) void saveManual({ class: mClass, level: mLevel, race: mRace, guild: mGuild }) }}
               className="text-xs rounded px-1.5 py-1 outline-none"
               style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
             />
@@ -314,12 +329,24 @@ function PlayerDetail({
             <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>Race</span>
             <select
               value={mRace}
-              onChange={(e) => { setMRace(e.target.value); void saveManual({ class: mClass, level: mLevel, race: e.target.value }) }}
+              onChange={(e) => { setMRace(e.target.value); void saveManual({ class: mClass, level: mLevel, race: e.target.value, guild: mGuild }) }}
               className="text-xs rounded px-1.5 py-1 outline-none"
               style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
             >
               <option value="">—</option>
               {RACE_LIST.map((rr) => <option key={rr} value={rr}>{rr}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>Guild</span>
+            <select
+              value={mGuild}
+              onChange={(e) => { setMGuild(e.target.value); void saveManual({ class: mClass, level: mLevel, race: mRace, guild: e.target.value }) }}
+              className="text-xs rounded px-1.5 py-1 outline-none"
+              style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+            >
+              <option value="">—</option>
+              {guildChoices.map((g) => <option key={g} value={g}>{g}</option>)}
             </select>
           </label>
         </div>
@@ -477,7 +504,7 @@ export default function PlayersPage(): React.ReactElement {
   }, [players])
   const guildOptions = useMemo(() => {
     const guilds = new Set<string>()
-    players.forEach((p) => { if (p.guild) guilds.add(p.guild) })
+    players.forEach((p) => { if (p.effective_guild) guilds.add(p.effective_guild) })
     return Array.from(guilds).sort()
   }, [players])
 
@@ -496,7 +523,7 @@ export default function PlayersPage(): React.ReactElement {
         case 'class':
           return (a.effective_class || '').localeCompare(b.effective_class || '') * direction
         case 'guild':
-          return (a.guild || '').localeCompare(b.guild || '') * direction
+          return (a.effective_guild || '').localeCompare(b.effective_guild || '') * direction
         case 'zone':
           return (a.last_seen_zone || '').localeCompare(b.last_seen_zone || '') * direction
         case 'sightings':
@@ -725,6 +752,7 @@ export default function PlayersPage(): React.ReactElement {
           >
             <PlayerDetail
               player={selected}
+              guildOptions={guildOptions}
               onClose={() => setSelected(null)}
               onDeleted={() => {
                 // Patch locally instead of reloading so any extra "Show
@@ -740,7 +768,7 @@ export default function PlayersPage(): React.ReactElement {
               }}
               onManualChanged={(m) => {
                 const patch = (pl: PlayerSighting) =>
-                  withEffective({ ...pl, manual_class: m.class, manual_level: m.level, manual_race: m.race })
+                  withEffective({ ...pl, manual_class: m.class, manual_level: m.level, manual_race: m.race, manual_guild: m.guild })
                 setPlayers((prev) =>
                   prev.map((pl) => (pl.name === selected.name ? patch(pl) : pl))
                 )
@@ -816,7 +844,7 @@ export default function PlayersPage(): React.ReactElement {
                 </button>
                 <span className="py-1 tabular-nums">{p.effective_level > 0 ? p.effective_level : '—'}</span>
                 <span className="py-1 truncate">{p.effective_class || '—'}</span>
-                <span className="py-1 truncate" title={p.guild || ''}>{p.guild || '—'}</span>
+                <span className="py-1 truncate" title={p.effective_guild || ''}>{p.effective_guild || '—'}</span>
                 <span className="py-1 truncate">{p.last_seen_zone || '—'}</span>
                 <span className="py-1 text-right tabular-nums">{p.sightings_count}</span>
                 <span className="py-1 text-right tabular-nums">{formatRelative(p.last_seen_at)}</span>
