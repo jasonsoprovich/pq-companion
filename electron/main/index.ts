@@ -812,6 +812,16 @@ function createMainWindow(): void {
     show: false // show after ready-to-show to avoid flash
   })
 
+  // Mixed-DPI multi-monitor correction. When the window is constructed with an
+  // x/y on a monitor whose scale factor differs from the primary display,
+  // Chromium sizes it using the wrong display's scale, so width/height come
+  // back wrong (and then get re-saved on the resize, never converging). Once
+  // the window physically lives on the target display we re-apply the saved
+  // rect: setBounds() now interprets the dimensions in THAT monitor's scale
+  // factor, correcting the size. On single-monitor / same-DPI setups the bounds
+  // already match, so this is a no-op — existing users are unaffected.
+  if (restored) mainWindow.setBounds(restored)
+
   mainWindow.once('ready-to-show', () => {
     if (savedState.maximized) mainWindow?.maximize()
     mainWindow?.show()
