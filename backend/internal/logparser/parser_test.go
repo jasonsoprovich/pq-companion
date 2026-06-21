@@ -528,6 +528,30 @@ func TestParseLine(t *testing.T) {
 			wantData: KillData{Killer: "Gygr`s warder", Target: "a fungi shroom"},
 		},
 
+		{
+			name:     "kill: DoT/swarm death, no attributed killer",
+			line:     "[Mon Apr 13 06:00:00 2026] a gnoll has died.",
+			wantOK:   true,
+			wantType: EventKill,
+			wantData: KillData{Killer: "", Target: "a gnoll"},
+		},
+		{
+			name:     "kill: DoT/swarm death, multi-word target",
+			line:     "[Mon Apr 13 06:00:00 2026] a greater gnoll pup has died.",
+			wantOK:   true,
+			wantType: EventKill,
+			wantData: KillData{Killer: "", Target: "a greater gnoll pup"},
+		},
+
+		{
+			// Feign Death's cast_on_other ("X dies.", present tense) must NOT
+			// be mistaken for a kill — it would spawn bogus respawn timers and
+			// end live fights whenever a group member feigns.
+			name:   "kill: feign death 'X dies.' is not a kill",
+			line:   "[Mon Apr 13 06:00:00 2026] Osui dies.",
+			wantOK: false,
+		},
+
 		// --- Death ---
 		{
 			name:     "death: slain by NPC",

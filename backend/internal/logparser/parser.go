@@ -188,6 +188,17 @@ var (
 	// to classify (and it produces no timer because FD's duration is zero).
 	reSlainByPassive = regexp.MustCompile(`^(.+) has been slain by (.+)!$`)
 
+	// Kill — death with no attributed killer, e.g. a mob finished off by a
+	// damage-over-time tick while swarming (no melee killing blow):
+	// "a gnoll has died."
+	//
+	// Distinct from Feign Death's cast_on_other text, which is "X dies."
+	// (present tense, no "has"). No spell in quarm.db uses the "has died."
+	// phrasing, so this is always a real NPC death and is safe to treat as a
+	// kill. Players never produce it either (their deaths are "You died.",
+	// "X has been slain by Y!", or FD's "X dies.").
+	reHasDied = regexp.MustCompile(`^(.+) has died\.$`)
+
 	// Heals — player heals a target:
 	// "You healed Playerone for 150 hit points."
 	// "You healed yourself for 150 hit points."
@@ -652,6 +663,18 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		return LogEvent{
 			Type: EventKill,
 			Data: KillData{Killer: m[2], Target: m[1]},
+		}, true
+	}
+
+	// --- Kill with no attributed killer ("X has died.") ---
+	// DoT/swarm kills where the player lands no melee killing blow produce
+	// this form instead of "You have slain X!". Without it, swarmed mobs
+	// never emit EventKill, so respawn timers never start. Killer is left
+	// empty — every EventKill consumer keys off Target only.
+	if m := reHasDied.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventKill,
+			Data: KillData{Killer: "", Target: m[1]},
 		}, true
 	}
 
