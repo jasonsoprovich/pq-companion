@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   MessageSquare, RefreshCw, Trash2, AlertCircle, ArrowUp, ArrowDown,
   ChevronRight, ChevronDown, Search,
@@ -69,6 +69,24 @@ export default function ChatHistoryPage(): React.ReactElement {
   const [metaLoaded, setMetaLoaded] = useState(false)
   const [confirmClearOpen, setConfirmClearOpen] = useState(false)
 
+  // Scroll-preservation for live (background) reloads. The body list is fully
+  // re-fetched on every chat:new, so without this the swap would jump the
+  // viewport. We snapshot the scroll position just before the data swap and
+  // restore it in a layout effect once the new rows are laid out — following
+  // the newest edge if the user is already pinned there.
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const pendingScroll = useRef<{ top: number; height: number; atTop: boolean; atBottom: boolean } | null>(null)
+  const snapshotScroll = useCallback(() => {
+    const el = bodyRef.current
+    if (!el) return
+    pendingScroll.current = {
+      top: el.scrollTop,
+      height: el.scrollHeight,
+      atTop: el.scrollTop < 40,
+      atBottom: el.scrollHeight - el.scrollTop - el.clientHeight < 40,
+    }
+  }, [])
+
   // Load characters + present channels once (and refresh after backfills via a
   // manual refresh).
   const loadMeta = useCallback(() => {
@@ -97,23 +115,46 @@ export default function ChatHistoryPage(): React.ReactElement {
     return [...KNOWN_CHANNELS, ...named]
   }, [presentChannels])
 
-  const load = useCallback(() => {
-    setLoading(true)
+  // load(background): a foreground load shows the spinner and replaces the
+  // view (used on mount, filter/character changes, and manual Refresh). A
+  // background load is what live chat:new events trigger — it keeps the
+  // current list mounted and visible (no spinner flash, no scroll reset) and
+  // swallows transient fetch errors so a momentary failure never blanks the
+  // view. Scroll is preserved across the silent data swap.
+  const load = useCallback((background = false) => {
+    if (!background) setLoading(true)
     setError(null)
     const from = dateToUnix(fromDate, false)
     const to = dateToUnix(toDate, true)
     if (channel === 'tell') {
       listChatConversations({ character: selectedChar || undefined, search, from, to, sort: sortDir, limit: 2000 })
-        .then((r) => { setConvos(r.conversations); setFeed([]) })
-        .catch((e: Error) => setError(e.message))
-        .finally(() => setLoading(false))
+        .then((r) => { if (background) snapshotScroll(); setConvos(r.conversations); setFeed([]) })
+        .catch((e: Error) => { if (!background) setError(e.message) })
+        .finally(() => { if (!background) setLoading(false) })
     } else {
       getChatFeed({ character: selectedChar || undefined, channel, search, from, to, sort: sortDir, limit: 3000 })
-        .then((r) => { setFeed(r.messages); setConvos([]) })
-        .catch((e: Error) => setError(e.message))
-        .finally(() => setLoading(false))
+        .then((r) => { if (background) snapshotScroll(); setFeed(r.messages); setConvos([]) })
+        .catch((e: Error) => { if (!background) setError(e.message) })
+        .finally(() => { if (!background) setLoading(false) })
     }
-  }, [channel, selectedChar, search, fromDate, toDate, sortDir])
+  }, [channel, selectedChar, search, fromDate, toDate, sortDir, snapshotScroll])
+
+  // Restore the snapshotted scroll position after a background data swap.
+  // desc (newest first): new rows prepend at the top, so anchor by the height
+  // delta — unless the user is pinned to the top, where we follow the newest.
+  // asc (oldest first): new rows append at the bottom, so keep the position —
+  // unless pinned to the bottom, where we follow.
+  useLayoutEffect(() => {
+    const snap = pendingScroll.current
+    const el = bodyRef.current
+    if (!snap || !el) return
+    pendingScroll.current = null
+    if (sortDir === 'desc') {
+      el.scrollTop = snap.atTop ? 0 : snap.top + (el.scrollHeight - snap.height)
+    } else {
+      el.scrollTop = snap.atBottom ? el.scrollHeight : snap.top
+    }
+  }, [feed, convos, sortDir])
 
   // Wait for the character/channel metadata before the first fetch: otherwise
   // the feed loads once for the unresolved (empty) character and then again
@@ -128,7 +169,7 @@ export default function ChatHistoryPage(): React.ReactElement {
   const onWs = useCallback((msg: { type: string }) => {
     if (msg.type !== WSEvent.ChatNew) return
     if (reloadTimer.current) clearTimeout(reloadTimer.current)
-    reloadTimer.current = setTimeout(() => load(), 500)
+    reloadTimer.current = setTimeout(() => load(true), 500)
   }, [load])
   useWebSocket(onWs)
 
@@ -286,7 +327,7 @@ export default function ChatHistoryPage(): React.ReactElement {
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+      <div ref={bodyRef} className="flex-1 overflow-y-auto p-4 space-y-2">
         <MissingLogNotice />
         {loading && (
           <div className="flex flex-1 items-center justify-center py-12">
