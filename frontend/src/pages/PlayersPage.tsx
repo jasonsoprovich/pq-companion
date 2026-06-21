@@ -5,6 +5,18 @@ import { listPlayers, deletePlayer, clearPlayers, getPlayerHistory, updatePlayer
 import type { PlayerSighting, PlayerLevelHistoryEntry } from '../types/player'
 import MissingLogNotice from '../components/MissingLogNotice'
 import BackfillLink from '../components/BackfillLink'
+import { useDPSClassColors } from '../hooks/useDPSClassColors'
+import { combatantClassHex } from '../lib/combatantColor'
+
+// "Active within" filter options (value in minutes; 0 = any time).
+const RECENT_OPTIONS: ReadonlyArray<{ label: string; minutes: number }> = [
+  { label: 'Any time', minutes: 0 },
+  { label: 'Last 15 min', minutes: 15 },
+  { label: 'Last hour', minutes: 60 },
+  { label: 'Last 6 hours', minutes: 360 },
+  { label: 'Last 24 hours', minutes: 1440 },
+  { label: 'Last 7 days', minutes: 10080 },
+]
 
 // EQ class list — matches what /who emits. Used to drive the class filter chip
 // row plus the "no class data yet" guard.
@@ -420,7 +432,9 @@ export default function PlayersPage(): React.ReactElement {
   const [zoneFilter, setZoneFilter] = useState<string>('')
   const [guildFilter, setGuildFilter] = useState<string>('')
   const [pvpOnly, setPvpOnly] = useState(false)
+  const [recentMinutes, setRecentMinutes] = useState(0)
   const [selected, setSelected] = useState<PlayerSighting | null>(null)
+  const palette = useDPSClassColors()
   const [sortField, setSortField] = useState<SortField>('none')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
@@ -461,7 +475,7 @@ export default function PlayersPage(): React.ReactElement {
   const load = useCallback(() => {
     setLoading(true)
     setError(null)
-    listPlayers({ search, class: classFilter, zone: zoneFilter, guild: guildFilter, pvp: pvpOnly, limit: PLAYER_PAGE_SIZE })
+    listPlayers({ search, class: classFilter, zone: zoneFilter, guild: guildFilter, pvp: pvpOnly, withinMinutes: recentMinutes, limit: PLAYER_PAGE_SIZE })
       .then((r) => {
         setPlayers(r.players)
         // Fall back to the page length when talking to a backend that
@@ -470,7 +484,7 @@ export default function PlayersPage(): React.ReactElement {
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [search, classFilter, zoneFilter, guildFilter, pvpOnly])
+  }, [search, classFilter, zoneFilter, guildFilter, pvpOnly, recentMinutes])
 
   const loadMore = useCallback(() => {
     setLoadingMore(true)
@@ -480,6 +494,7 @@ export default function PlayersPage(): React.ReactElement {
       zone: zoneFilter,
       guild: guildFilter,
       pvp: pvpOnly,
+      withinMinutes: recentMinutes,
       limit: PLAYER_PAGE_SIZE,
       offset: players.length,
     })
@@ -489,7 +504,7 @@ export default function PlayersPage(): React.ReactElement {
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoadingMore(false))
-  }, [search, classFilter, zoneFilter, guildFilter, pvpOnly, players.length])
+  }, [search, classFilter, zoneFilter, guildFilter, pvpOnly, recentMinutes, players.length])
 
   useEffect(() => {
     load()
@@ -693,6 +708,21 @@ export default function PlayersPage(): React.ReactElement {
             <option key={g} value={g}>{g}</option>
           ))}
         </select>
+        <select
+          value={recentMinutes}
+          onChange={(e) => setRecentMinutes(Number(e.target.value))}
+          title="Show only players seen within this window"
+          className="text-xs rounded px-2 py-1 outline-none"
+          style={{
+            backgroundColor: recentMinutes > 0 ? 'var(--color-primary)' : 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            color: recentMinutes > 0 ? '#fff' : 'var(--color-foreground)',
+          }}
+        >
+          {RECENT_OPTIONS.map((o) => (
+            <option key={o.minutes} value={o.minutes}>{o.label}</option>
+          ))}
+        </select>
         <button
           onClick={() => setPvpOnly((v) => !v)}
           title="Show only players flagged as PVP"
@@ -706,7 +736,7 @@ export default function PlayersPage(): React.ReactElement {
           <Swords size={11} />
           PVP only
         </button>
-        {(search || classFilter || zoneFilter || guildFilter || pvpOnly || sortField !== 'none') && (
+        {(search || classFilter || zoneFilter || guildFilter || pvpOnly || recentMinutes > 0 || sortField !== 'none') && (
           <button
             onClick={() => {
               setSearch('')
@@ -714,6 +744,7 @@ export default function PlayersPage(): React.ReactElement {
               setZoneFilter('')
               setGuildFilter('')
               setPvpOnly(false)
+              setRecentMinutes(0)
               setSortField('none')
               setSortDir('desc')
             }}
@@ -791,7 +822,7 @@ export default function PlayersPage(): React.ReactElement {
           </div>
         )}
 
-        {!loading && !error && players.length === 0 && (search || classFilter || zoneFilter || guildFilter || pvpOnly) && (
+        {!loading && !error && players.length === 0 && (search || classFilter || zoneFilter || guildFilter || pvpOnly || recentMinutes > 0) && (
           <div className="flex flex-col items-center justify-center gap-2 py-12">
             <UserSearch size={32} style={{ color: 'var(--color-muted)' }} />
             <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
@@ -800,7 +831,7 @@ export default function PlayersPage(): React.ReactElement {
           </div>
         )}
 
-        {!loading && !error && players.length === 0 && !search && !classFilter && !zoneFilter && !guildFilter && !pvpOnly && (
+        {!loading && !error && players.length === 0 && !search && !classFilter && !zoneFilter && !guildFilter && !pvpOnly && recentMinutes === 0 && (
           <div className="flex flex-col items-center justify-center gap-2 py-12">
             <UserSearch size={32} style={{ color: 'var(--color-muted)' }} />
             <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
@@ -829,7 +860,16 @@ export default function PlayersPage(): React.ReactElement {
                 <button
                   onClick={() => setSelected(p)}
                   className="text-left py-1 hover:underline"
-                  style={{ color: 'var(--color-primary)' }}
+                  title={p.effective_class ? `${p.effective_class}` : undefined}
+                  style={{
+                    color: 'var(--color-primary)',
+                    // Class-colour accent bar at the row's left edge, like the
+                    // wishlist accent on the NPC loot list. Transparent (but
+                    // still spaced) when the class is unknown so names stay
+                    // aligned.
+                    borderLeft: `3px solid ${p.effective_class ? combatantClassHex(p.effective_class, palette) : 'transparent'}`,
+                    paddingLeft: 8,
+                  }}
                 >
                   {p.name}
                   {p.last_anonymous && (

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
@@ -28,6 +29,12 @@ func (h *playersHandler) list(w http.ResponseWriter, r *http.Request) {
 		PVPOnly:      r.URL.Query().Get("pvp") == "1",
 		Limit:        limit,
 		Offset:       queryInt(r, "offset", 0),
+	}
+	// within_minutes=N filters to players last seen in the last N minutes.
+	// The cutoff is computed server-side so it tracks the same clock that
+	// stamps last_seen_at, avoiding any renderer/sidecar skew.
+	if mins := queryInt(r, "within_minutes", 0); mins > 0 {
+		filters.SeenSince = time.Now().Add(-time.Duration(mins) * time.Minute).Unix()
 	}
 	out, err := h.store.Search(filters)
 	if err != nil {

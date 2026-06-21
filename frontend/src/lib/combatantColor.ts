@@ -57,6 +57,18 @@ export function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
+// combatantClassHex returns the solid palette hex for a class — used where a
+// full-opacity swatch is wanted (e.g. the class accent line in the Player
+// Tracker) rather than the translucent bar fill. Unknown class → the palette's
+// unknown grey.
+export function combatantClassHex(
+  className: string | undefined,
+  palette: DPSClassColors | null | undefined,
+): string {
+  const pal = palette ?? DEFAULT_DPS_CLASS_COLORS
+  return pal[classKey(className)] || pal.unknown
+}
+
 // combatantBarColor returns the bar background colour for one combatant
 // row. Pass the canonical class string from EntityStats.class. When the
 // palette is not yet loaded the function uses the seeded defaults so first

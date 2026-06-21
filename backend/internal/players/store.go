@@ -601,8 +601,11 @@ type SearchFilters struct {
 	Zone         string
 	Guild        string
 	PVPOnly      bool
-	Limit        int
-	Offset       int
+	// SeenSince, when > 0, limits results to players last seen at or after
+	// this unix timestamp — the "active within the last X" filter.
+	SeenSince int64
+	Limit     int
+	Offset    int
 }
 
 // sightingJoins is the FROM clause shared by Search and Count — sightings
@@ -657,6 +660,10 @@ func buildFilterClause(f SearchFilters) (string, []any) {
 	}
 	if f.PVPOnly {
 		q += ` AND COALESCE(n.pvp, 0) = 1`
+	}
+	if f.SeenSince > 0 {
+		q += ` AND s.last_seen_at >= ?`
+		args = append(args, f.SeenSince)
 	}
 	return q, args
 }
