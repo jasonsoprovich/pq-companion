@@ -544,6 +544,33 @@ These are inherent to log-file parsing and affect multiple features:
 
 ---
 
+## 13. UI rendering / performance
+
+### 13.1 Chat History re-fetches the whole feed on each live update
+
+- **Limitation:** When the log is live, every `chat:new` event triggers a full
+  background re-fetch of the current channel's feed (up to 3000 rows) and
+  swaps the whole array into React, which reconciles every row even though
+  only one line is actually new. The feed list is not virtualized. On a very
+  busy channel with a large backfilled history this could feel slightly less
+  snappy on each reload.
+- **Root cause:** Filtering/sorting is server-authoritative, so the client
+  re-queries rather than appending the new line locally. A delta-append (push
+  the new message straight off the WebSocket payload) would avoid the churn
+  entirely, but it would require replicating the server's filter logic
+  (channel/character/search/date/NPC-reply filtering) client-side — any drift
+  there means missing or duplicated lines.
+- **Sources checked:** N/A (this is an app-side rendering tradeoff, not a
+  data-availability limit).
+- **Could a future data source fix this?** **N/A (design choice)** — accepted
+  for now because a single session rarely approaches the 3000-row cap and the
+  reload is no longer jarring (no spinner flash or scroll reset). If lag is
+  observed on a busy `ooc`/`auction` feed on real Windows hardware, the fix is
+  a delta-append with a full-reload fallback on filter changes (verify with a
+  Windows smoke test, since reconciliation perf is hard to judge in Mac dev).
+
+---
+
 ## Template for new entries
 
 ```
