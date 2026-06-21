@@ -9,6 +9,34 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.13.6 — 2026-06-20
+
+Richer Players tracking, per-overlay positioning, and a batch of combat/loot fixes.
+
+### Highlights
+- **Players page — manual identity & guild overrides** — fill in class, level, and
+  race for anonymous players yourself, and set a player's guild from a dropdown of
+  guilds you've already seen, so your roster stays accurate even when /who hides details.
+- **Players page — class-colour accents & "active within" filter** — each row now
+  carries a class-coloured accent line, and a new filter narrows the list to players
+  seen within a chosen time window.
+- **Overlays — "Move" mode** — every overlay gets a dedicated move mode for dragging it
+  into position, separate from resizing.
+- **Overlays — per-overlay monitor picker & aligned settings** — pick which monitor each
+  overlay lives on, with a tidied, aligned settings grid across all overlays.
+- **Roll tracker — settings persist** — the winner rule, mode, and timer now carry over
+  between sessions instead of resetting each launch.
+
+### Fixes
+- DoT and swarm-pet kills now start respawn timers — deaths logged as "X has died."
+  are counted as kills.
+- The Chat History feed no longer flashes or jumps to the top when new lines arrive.
+- Class titles (Phantasmist, Hierophant, …) are coloured correctly on the Players page.
+- Loot pools specific to an NPC now rank above shared spell/cash pools.
+- The gear browser's No Drop filter and badge no longer read inverted.
+- Per-overlay Reset buttons are now labelled instead of an ambiguous crosshair icon.
+- Overlay settings panels fit their content, and the gear paper-doll neck row is fixed.
+
 ## v0.13.5 — 2026-06-18
 
 Reliable drag-and-drop everywhere, finer-grained gear upgrade targets, and a portable download for Wine/Proton users.
