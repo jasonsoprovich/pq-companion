@@ -9,34 +9,42 @@
 import type { DPSClassColors } from '../types/config'
 import { DEFAULT_DPS_CLASS_COLORS } from '../types/config'
 
-// classKey maps a canonical EQ class name to the key on DPSClassColors.
-// Accepts trimmed / lower-cased input so a future Zeal raid payload that
-// reports "shadowknight" without the space still matches.
+// CLASS_TITLE_TO_KEY maps every EQ class name — base AND level-progression
+// titles (51 / 55 / 60) — to its DPSClassColors key, so a /who row that reports
+// e.g. "Phantasmist" or "Hierophant" still colours as Enchanter / Druid. Mirrors
+// the backend's ClassTitles table (internal/players/classes.go). Keep the two in
+// sync. Titles are unique across player classes, so a flat lowercase map works.
+const CLASS_TITLE_TO_KEY: Record<string, keyof DPSClassColors> = {}
+{
+  const titles: Record<keyof DPSClassColors, string[]> = {
+    warrior: ['warrior', 'champion', 'myrmidon', 'warlord', 'overlord'],
+    cleric: ['cleric', 'vicar', 'templar', 'high priest', 'archon'],
+    paladin: ['paladin', 'cavalier', 'knight', 'crusader', 'lord protector'],
+    ranger: ['ranger', 'pathfinder', 'outrider', 'warder', 'forest stalker'],
+    shadow_knight: ['shadow knight', 'shadowknight', 'reaver', 'revenant', 'grave lord', 'dread lord'],
+    druid: ['druid', 'wanderer', 'preserver', 'hierophant', 'storm warden'],
+    monk: ['monk', 'disciple', 'master', 'grandmaster', 'transcendant'],
+    bard: ['bard', 'minstrel', 'troubador', 'virtuoso', 'maestro'],
+    rogue: ['rogue', 'rake', 'blackguard', 'assassin', 'deceiver'],
+    shaman: ['shaman', 'mystic', 'luminary', 'oracle', 'prophet'],
+    necromancer: ['necromancer', 'heretic', 'defiler', 'warlock', 'arch lich'],
+    wizard: ['wizard', 'channeler', 'evoker', 'sorcerer', 'arcanist'],
+    magician: ['magician', 'mage', 'elementalist', 'conjurer', 'arch mage', 'arch convoker'],
+    enchanter: ['enchanter', 'illusionist', 'beguiler', 'phantasmist', 'coercer'],
+    beastlord: ['beastlord', 'primalist', 'animist', 'savage lord', 'feral lord'],
+    unknown: [],
+  }
+  for (const key of Object.keys(titles) as Array<keyof DPSClassColors>) {
+    for (const t of titles[key]) CLASS_TITLE_TO_KEY[t] = key
+  }
+}
+
+// classKey maps a canonical EQ class name OR a level-progression title to the
+// key on DPSClassColors. Accepts trimmed / lower-cased input so a Zeal raid
+// payload that reports "shadowknight" without the space still matches.
 function classKey(name: string | undefined): keyof DPSClassColors {
   if (!name) return 'unknown'
-  const norm = name.trim().toLowerCase()
-  switch (norm) {
-    case 'warrior': return 'warrior'
-    case 'cleric': return 'cleric'
-    case 'paladin': return 'paladin'
-    case 'ranger': return 'ranger'
-    case 'shadow knight':
-    case 'shadowknight':
-      return 'shadow_knight'
-    case 'druid': return 'druid'
-    case 'monk': return 'monk'
-    case 'bard': return 'bard'
-    case 'rogue': return 'rogue'
-    case 'shaman': return 'shaman'
-    case 'necromancer': return 'necromancer'
-    case 'wizard': return 'wizard'
-    case 'magician':
-    case 'mage':
-      return 'magician'
-    case 'enchanter': return 'enchanter'
-    case 'beastlord': return 'beastlord'
-    default: return 'unknown'
-  }
+  return CLASS_TITLE_TO_KEY[name.trim().toLowerCase()] ?? 'unknown'
 }
 
 // hexToRgba converts "#RRGGBB" (or "#RGB") to "rgba(r, g, b, alpha)". Falls
