@@ -9,6 +9,16 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.13.7 — 2026-06-21
+
+Respawn timers now start for DoT and swarm-kited kills.
+
+### Fixes
+- Respawn timers now start when a mob dies with no melee killing blow — e.g.
+  a bard DoT-kiting a swarm. Project Quarm logs these as "<name> died.", which
+  the previous build didn't recognise, so those kills started no timer. Both
+  "<name> died." and "<name> has died." are now counted as kills.
+
 ## v0.13.6 — 2026-06-20
 
 Richer Players tracking, per-overlay positioning, and a batch of combat/loot fixes.
