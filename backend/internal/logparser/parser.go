@@ -189,15 +189,19 @@ var (
 	reSlainByPassive = regexp.MustCompile(`^(.+) has been slain by (.+)!$`)
 
 	// Kill — death with no attributed killer, e.g. a mob finished off by a
-	// damage-over-time tick while swarming (no melee killing blow):
+	// damage-over-time tick while swarming (no melee killing blow). Project
+	// Quarm emits the bare past-tense form:
+	// "a gnoll died."
+	// and some clients/contexts the "has" variant:
 	// "a gnoll has died."
+	// Both are accepted ("has" optional).
 	//
 	// Distinct from Feign Death's cast_on_other text, which is "X dies."
-	// (present tense, no "has"). No spell in quarm.db uses the "has died."
+	// (present tense, not "died"). No spell in quarm.db uses the "died."
 	// phrasing, so this is always a real NPC death and is safe to treat as a
-	// kill. Players never produce it either (their deaths are "You died.",
-	// "X has been slain by Y!", or FD's "X dies.").
-	reHasDied = regexp.MustCompile(`^(.+) has died\.$`)
+	// kill. The one collision is the player's own "You died." — handled by
+	// reDiedSimple instead and guarded out at the call site.
+	reNpcDied = regexp.MustCompile(`^(.+?) (?:has )?died\.$`)
 
 	// Heals — player heals a target:
 	// "You healed Playerone for 150 hit points."
@@ -666,12 +670,15 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		}, true
 	}
 
-	// --- Kill with no attributed killer ("X has died.") ---
+	// --- Kill with no attributed killer ("X died." / "X has died.") ---
 	// DoT/swarm kills where the player lands no melee killing blow produce
 	// this form instead of "You have slain X!". Without it, swarmed mobs
 	// never emit EventKill, so respawn timers never start. Killer is left
 	// empty — every EventKill consumer keys off Target only.
-	if m := reHasDied.FindStringSubmatch(msg); m != nil {
+	//
+	// Skip the player's own "You died." — that's a death, not a kill, and is
+	// classified by reDiedSimple just below.
+	if m := reNpcDied.FindStringSubmatch(msg); m != nil && m[1] != "You" {
 		return LogEvent{
 			Type: EventKill,
 			Data: KillData{Killer: "", Target: m[1]},

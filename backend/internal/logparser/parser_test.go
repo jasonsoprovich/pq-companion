@@ -529,14 +529,31 @@ func TestParseLine(t *testing.T) {
 		},
 
 		{
-			name:     "kill: DoT/swarm death, no attributed killer",
+			// The form Project Quarm actually emits for a DoT/swarm kill:
+			// bare past tense, no "has".
+			name:     "kill: DoT/swarm death, bare 'died.'",
+			line:     "[Mon Apr 13 06:00:00 2026] a gnoll died.",
+			wantOK:   true,
+			wantType: EventKill,
+			wantData: KillData{Killer: "", Target: "a gnoll"},
+		},
+		{
+			name:     "kill: DoT/swarm death, bare 'died.' multi-word target",
+			line:     "[Mon Apr 13 06:00:00 2026] a greater gnoll pup died.",
+			wantOK:   true,
+			wantType: EventKill,
+			wantData: KillData{Killer: "", Target: "a greater gnoll pup"},
+		},
+		{
+			// "has died." variant also accepted, for clients that emit it.
+			name:     "kill: DoT/swarm death, 'has died.' variant",
 			line:     "[Mon Apr 13 06:00:00 2026] a gnoll has died.",
 			wantOK:   true,
 			wantType: EventKill,
 			wantData: KillData{Killer: "", Target: "a gnoll"},
 		},
 		{
-			name:     "kill: DoT/swarm death, multi-word target",
+			name:     "kill: DoT/swarm death, 'has died.' multi-word target",
 			line:     "[Mon Apr 13 06:00:00 2026] a greater gnoll pup has died.",
 			wantOK:   true,
 			wantType: EventKill,
