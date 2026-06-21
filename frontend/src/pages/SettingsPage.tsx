@@ -2922,13 +2922,14 @@ function OverlayLockModeCard({
                 <ExternalLink size={11} />
                 {popoutStates[def.name] ? 'Close' : 'Pop out'}
               </button>
-              {/* Reset is icon-only (Crosshair) — matching the Manage-overlays
-                  menu — so the row leaves room for the lock-mode toggle and
-                  Monitor dropdown without clipping. */}
+              {/* "Reset" + Crosshair — the label makes the button's purpose
+                  obvious; it stays compact enough to leave room for the
+                  lock-mode toggle and Monitor dropdown without clipping. */}
               <button
                 onClick={() => window.electron?.overlay?.resetPosition?.(def.name)}
-                className="flex items-center justify-center rounded p-1.5"
+                className="flex items-center justify-center gap-1 rounded px-2 py-1"
                 style={{
+                  width: 84,
                   backgroundColor: 'var(--color-surface-2)',
                   border: '1px solid var(--color-border)',
                   color: 'var(--color-muted-foreground)',
@@ -2936,7 +2937,7 @@ function OverlayLockModeCard({
                 }}
                 title={`Reset position — recenter the ${def.label} overlay on the primary monitor and unlock it`}
               >
-                <Crosshair size={13} />
+                <Crosshair size={11} /> Reset
               </button>
               {multiMonitor && (
                 <select
