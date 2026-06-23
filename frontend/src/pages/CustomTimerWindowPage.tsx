@@ -123,6 +123,9 @@ function TimerRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
             }}
           >
             {timer.spell_name}
+            {timer.target_name && (
+              <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>{` — ${timer.target_name}`}</span>
+            )}
           </span>
         </div>
         <span

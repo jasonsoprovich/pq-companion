@@ -94,6 +94,9 @@ function TimerRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
           <Hourglass size={12} style={{ color, flexShrink: 0 }} />
           <span style={{ fontSize: 12, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
             {timer.spell_name}
+            {timer.target_name && (
+              <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{` — ${timer.target_name}`}</span>
+            )}
           </span>
         </div>
         <span style={{ fontSize: 11, color: urgent ? '#f87171' : color, fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: urgent ? 700 : 500 }}>
