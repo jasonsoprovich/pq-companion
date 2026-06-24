@@ -174,10 +174,10 @@ function TimerAlertRow({ alert, voices, onChange, onRemove }: TimerAlertRowProps
           Alert at
           <input
             type="number"
-            min={1}
+            min={0}
             max={3600}
             value={alert.seconds}
-            onChange={(e) => onChange({ ...alert, seconds: Math.max(1, parseInt(e.target.value) || 1) })}
+            onChange={(e) => onChange({ ...alert, seconds: Math.max(0, parseInt(e.target.value) || 0) })}
             style={{ ...inputStyle, width: 60 }}
           />
           s remaining
