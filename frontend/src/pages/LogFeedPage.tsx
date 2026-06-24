@@ -479,9 +479,6 @@ export default function LogFeedPage(): React.ReactElement {
   const [showReplay, setShowReplay] = useState(false)
   const [replayStatus, setReplayStatus] = useState<ReplayStatus>({ state: 'idle', lines_emitted: 0 })
   const [replayPrefs, patchReplayPrefs] = useReplayPrefs()
-  // Right-click "Play from this point" menu. Anchored at the cursor; the
-  // timestamp is the clicked row's, used as the replay start point.
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; timestamp: string } | null>(null)
   const feedRef = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
 
@@ -643,22 +640,11 @@ export default function LogFeedPage(): React.ReactElement {
     })
   }, [status?.raw_feed])
 
-  const handleRowContext = useCallback((e: React.MouseEvent, timestamp: string) => {
-    e.preventDefault()
-    // Keep the menu on-screen near the bottom/right edges.
-    setCtxMenu({
-      x: Math.min(e.clientX, window.innerWidth - 190),
-      y: Math.min(e.clientY, window.innerHeight - 60),
-      timestamp,
-    })
-  }, [])
-
   // Stage the clicked row as the replay start (and probe the file's end for a
   // sensible range), open the Replay panel, and auto-start when idle. If a
   // replay is already running we only stage the selection so the user can stop
   // and re-play from here without losing their place.
   const handlePlayFrom = useCallback((timestamp: string) => {
-    setCtxMenu(null)
     const file = mode === 'browse' ? browseFile : liveFileBase
     if (!file) return
     const fromStr = toLocalInput(timestamp)
@@ -754,20 +740,6 @@ export default function LogFeedPage(): React.ReactElement {
           {mode === 'live' && <ConnPill state={wsState} status={status} />}
           {mode === 'live' && (
             <button
-              onClick={handleToggleRawFeed}
-              className="flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
-              style={{
-                color: rawFeed ? 'var(--color-primary)' : 'var(--color-muted)',
-                border: '1px solid var(--color-border)',
-              }}
-              title="Also show raw, unrecognised lines (chat, system messages) in the feed so they can be searched"
-            >
-              <FileText size={12} />
-              Raw lines
-            </button>
-          )}
-          {mode === 'live' && (
-            <button
               onClick={() => setShowReplay((v) => !v)}
               className="flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
               style={{
@@ -794,10 +766,28 @@ export default function LogFeedPage(): React.ReactElement {
         </div>
       </div>
 
-      {/* Tailer status (live only) */}
+      {/* Tailer status + raw-lines toggle (live only) */}
       {mode === 'live' && (
-        <div className="shrink-0 border-b px-4 py-2" style={{ borderColor: 'var(--color-border)' }}>
-          <StatusBar status={status} />
+        <div
+          className="flex shrink-0 items-center gap-2 border-b px-4 py-2"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          <div className="min-w-0 flex-1">
+            <StatusBar status={status} />
+          </div>
+          <button
+            onClick={handleToggleRawFeed}
+            className="flex shrink-0 items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
+            style={{
+              color: rawFeed ? 'var(--color-primary)' : 'var(--color-muted)',
+              backgroundColor: rawFeed ? 'var(--color-surface-2)' : 'transparent',
+              border: '1px solid var(--color-border)',
+            }}
+            title="Also show raw, unrecognised lines (chat, system messages, e.g. “… is no longer mezzed”) in the feed so they can be searched here"
+          >
+            <FileText size={12} />
+            Raw lines{rawFeed ? ': on' : ''}
+          </button>
         </div>
       )}
 
@@ -839,7 +829,7 @@ export default function LogFeedPage(): React.ReactElement {
             hasMore={browseNext != null}
             search={debouncedSearch}
             onPickLive={() => setMode('live')}
-            onContext={playFromFile ? handleRowContext : undefined}
+            onPlayFrom={playFromFile ? handlePlayFrom : undefined}
           />
         ) : events.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-20">
@@ -873,55 +863,13 @@ export default function LogFeedPage(): React.ReactElement {
                 <EventRow
                   key={i}
                   ev={ev}
-                  onContext={playFromFile ? handleRowContext : undefined}
+                  onPlayFrom={playFromFile ? handlePlayFrom : undefined}
                 />
               ))}
             </tbody>
           </table>
         )}
       </div>
-
-      {/* Right-click "Play from this point" menu */}
-      {ctxMenu && (
-        <>
-          <div
-            onClick={() => setCtxMenu(null)}
-            onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null) }}
-            style={{ position: 'fixed', inset: 0, zIndex: 50 }}
-          />
-          <div
-            style={{
-              position: 'fixed',
-              top: ctxMenu.y,
-              left: ctxMenu.x,
-              zIndex: 51,
-              minWidth: 180,
-              padding: 4,
-              borderRadius: 4,
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              boxShadow: '0 6px 16px rgba(0,0,0,0.45)',
-            }}
-          >
-            <button
-              onClick={() => handlePlayFrom(ctxMenu.timestamp)}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-surface-2)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs"
-              style={{ color: 'var(--color-foreground)', background: 'transparent' }}
-            >
-              <Play size={12} style={{ color: 'var(--color-primary)' }} />
-              Play from this point
-            </button>
-            <p
-              className="px-2 pt-0.5 pb-1 text-[10px]"
-              style={{ color: 'var(--color-muted)' }}
-            >
-              {new Date(ctxMenu.timestamp).toLocaleString()}
-            </p>
-          </div>
-        </>
-      )}
 
     </div>
   )
@@ -937,7 +885,7 @@ function BrowseBody({
   hasMore,
   search,
   onPickLive,
-  onContext,
+  onPlayFrom,
 }: {
   file: string
   lines: LogBrowseLine[]
@@ -946,7 +894,7 @@ function BrowseBody({
   hasMore: boolean
   search: string
   onPickLive: () => void
-  onContext?: (e: React.MouseEvent, timestamp: string) => void
+  onPlayFrom?: (timestamp: string) => void
 }): React.ReactElement {
   if (error) {
     return (
@@ -993,7 +941,7 @@ function BrowseBody({
       <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
         <tbody>
           {lines.map((ev, i) => (
-            <EventRow key={i} ev={ev} onContext={onContext} />
+            <EventRow key={i} ev={ev} onPlayFrom={onPlayFrom} />
           ))}
         </tbody>
       </table>
@@ -1015,27 +963,39 @@ function BrowseBody({
 
 // EventRow renders one line for both the live feed and the browse view, so it
 // accepts the minimal shared shape rather than the narrow LogEvent union.
-// onContext, when provided, wires the row's right-click to the "Play from this
-// point" menu (the row's timestamp is the replay start).
+// onPlayFrom, when provided, shows a hover play button that replays from this
+// line's timestamp.
 function EventRow({
   ev,
-  onContext,
+  onPlayFrom,
 }: {
   ev: { type: string; timestamp: string; message: string }
-  onContext?: (e: React.MouseEvent, timestamp: string) => void
+  onPlayFrom?: (timestamp: string) => void
 }): React.ReactElement {
   const ts = new Date(ev.timestamp)
   const timeStr = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
   return (
     <tr
-      className="border-b"
-      onContextMenu={onContext ? (e) => onContext(e, ev.timestamp) : undefined}
-      style={{
-        borderColor: 'var(--color-border)',
-        cursor: onContext ? 'context-menu' : undefined,
-      }}
+      className="group border-b"
+      style={{ borderColor: 'var(--color-border)' }}
     >
+      {/* Play-from-here (appears on row hover) */}
+      {onPlayFrom && (
+        <td className="w-7 pl-2" style={{ verticalAlign: 'middle' }}>
+          <button
+            onClick={() => onPlayFrom(ev.timestamp)}
+            title="Replay from this line"
+            className="flex items-center justify-center rounded opacity-0 transition-opacity group-hover:opacity-100"
+            style={{ width: 18, height: 18, color: 'var(--color-primary)' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-surface-2)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+          >
+            <Play size={12} />
+          </button>
+        </td>
+      )}
+
       {/* Timestamp */}
       <td
         className="w-24 shrink-0 px-3 py-1.5 font-mono text-[10px] tabular-nums"
