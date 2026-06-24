@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Activity, Trash2, AlertTriangle, CheckCircle2, Circle, Search, Film, Play, Pause, Square, FolderOpen, Loader2 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useLogFeed, clearLogFeed, LOG_FEED_MAX } from '../hooks/useLogFeed'
+import { useReplayPrefs, type ReplayPrefs } from '../hooks/useReplayPrefs'
 import {
   getLogStatus,
   listReplayFiles,
@@ -182,13 +183,18 @@ function fmtBytes(n: number): string {
  * as if the session were live. Live tailing pauses for the duration; the
  * file is read strictly read-only.
  */
-function ReplayPanel({ status }: { status: ReplayStatus }): React.ReactElement {
+function ReplayPanel({
+  status,
+  prefs,
+  onPrefsChange,
+}: {
+  status: ReplayStatus
+  prefs: ReplayPrefs
+  onPrefsChange: (patch: Partial<ReplayPrefs>) => void
+}): React.ReactElement {
   const [files, setFiles] = useState<ReplayFile[]>([])
-  const [file, setFile] = useState('')
-  const [fromStr, setFromStr] = useState('')
-  const [toStr, setToStr] = useState('')
-  const [speed, setSpeed] = useState(1)
   const [error, setError] = useState<string | null>(null)
+  const { file, fromStr, toStr, speed } = prefs
 
   useEffect(() => {
     listReplayFiles()
@@ -198,13 +204,12 @@ function ReplayPanel({ status }: { status: ReplayStatus }): React.ReactElement {
 
   // Selecting a file probes its first/last timestamps and pre-fills the range.
   const handleFileChange = (name: string): void => {
-    setFile(name)
+    onPrefsChange({ file: name })
     setError(null)
     if (!name) return
     getReplayInfo(name)
       .then((info) => {
-        setFromStr(toLocalInput(info.first))
-        setToStr(toLocalInput(info.last))
+        onPrefsChange({ fromStr: toLocalInput(info.first), toStr: toLocalInput(info.last) })
       })
       .catch((err: Error) => setError(err.message))
   }
@@ -267,7 +272,7 @@ function ReplayPanel({ status }: { status: ReplayStatus }): React.ReactElement {
           type="datetime-local"
           step={1}
           value={fromStr}
-          onChange={(e) => setFromStr(e.target.value)}
+          onChange={(e) => onPrefsChange({ fromStr: e.target.value })}
           disabled={active || !file}
           title="Replay start point"
           style={inputStyle}
@@ -277,14 +282,14 @@ function ReplayPanel({ status }: { status: ReplayStatus }): React.ReactElement {
           type="datetime-local"
           step={1}
           value={toStr}
-          onChange={(e) => setToStr(e.target.value)}
+          onChange={(e) => onPrefsChange({ toStr: e.target.value })}
           disabled={active || !file}
           title="Replay end point"
           style={inputStyle}
         />
         <select
           value={speed}
-          onChange={(e) => setSpeed(Number(e.target.value))}
+          onChange={(e) => onPrefsChange({ speed: Number(e.target.value) })}
           disabled={active}
           title="Playback speed"
           style={inputStyle}
@@ -472,6 +477,7 @@ export default function LogFeedPage(): React.ReactElement {
   const [search, setSearch] = useState('')
   const [showReplay, setShowReplay] = useState(false)
   const [replayStatus, setReplayStatus] = useState<ReplayStatus>({ state: 'idle', lines_emitted: 0 })
+  const [replayPrefs, patchReplayPrefs] = useReplayPrefs()
   const feedRef = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
 
@@ -725,7 +731,13 @@ export default function LogFeedPage(): React.ReactElement {
       )}
 
       {/* Replay controls (live only) */}
-      {mode === 'live' && showReplay && <ReplayPanel status={replayStatus} />}
+      {mode === 'live' && showReplay && (
+        <ReplayPanel
+          status={replayStatus}
+          prefs={replayPrefs}
+          onPrefsChange={patchReplayPrefs}
+        />
+      )}
 
       {/* Browse controls */}
       {mode === 'browse' && (
