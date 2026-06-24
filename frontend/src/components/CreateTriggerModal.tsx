@@ -19,6 +19,8 @@ export interface TriggerPrefill {
   // exposes the first one's lead time as a single editable field; the full
   // multi-threshold editor lives in the Triggers tab.
   timerAlerts?: TimerAlertThreshold[]
+  // Optional per-trigger bar color ("" = automatic overlay color).
+  barColor?: string
 }
 
 interface CreateTriggerModalProps {
@@ -81,6 +83,8 @@ export default function CreateTriggerModal({
   // Lead time for the "fading soon" TTS alert; 0 = no alert. Seeded from the
   // prefill so the From-spell flow announces before a buff/debuff lapses.
   const [fadeAlertSecs, setFadeAlertSecs] = useState(prefill.timerAlerts?.[0]?.seconds ?? 0)
+  // Optional per-trigger bar color; '' = automatic overlay color.
+  const [barColor, setBarColor] = useState(prefill.barColor ?? '')
   const [action, setAction] = useState<Action>(() => buildInitialAction(prefill))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -106,6 +110,7 @@ export default function CreateTriggerModal({
     setDuration(prefill.timerDurationSecs ?? 0)
     setDisplayThreshold(prefill.displayThresholdSecs ?? 0)
     setFadeAlertSecs(prefill.timerAlerts?.[0]?.seconds ?? 0)
+    setBarColor(prefill.barColor ?? '')
     setAction(buildInitialAction(prefill))
     setError(null)
     setPatternError(null)
@@ -117,6 +122,7 @@ export default function CreateTriggerModal({
     prefill.timerDurationSecs,
     prefill.displayThresholdSecs,
     prefill.timerAlerts,
+    prefill.barColor,
     prefill.displayText,
     prefill.displayColor,
   ])
@@ -177,6 +183,7 @@ export default function CreateTriggerModal({
       worn_off_pattern: timerType === 'none' ? '' : wornOff.trim(),
       spell_id: prefill.spellId ?? 0,
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
+      bar_color: timerType === 'none' ? '' : barColor,
       timer_alerts,
     }
 
@@ -367,6 +374,30 @@ export default function CreateTriggerModal({
               <p className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
                 Speaks &ldquo;{name || '{spell}'} fading soon&rdquo; this many seconds before the timer ends, so you can recast in time. Add more alerts or a sound in the Triggers tab.
               </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+                Bar color
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={barColor || '#38bdf8'}
+                  onChange={(e) => setBarColor(e.target.value)}
+                  className="h-7 w-12 rounded cursor-pointer p-0"
+                  style={{ border: '1px solid var(--color-border)', background: 'transparent' }}
+                  disabled={submitting}
+                />
+                {barColor ? (
+                  <button type="button" onClick={() => setBarColor('')} className="text-xs underline" style={{ color: 'var(--color-muted-foreground)' }}>
+                    reset to automatic
+                  </button>
+                ) : (
+                  <span className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                    automatic — click the swatch to set a custom color
+                  </span>
+                )}
+              </div>
             </div>
           </>
         )}

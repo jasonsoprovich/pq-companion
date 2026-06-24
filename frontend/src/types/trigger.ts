@@ -158,6 +158,12 @@ export interface Trigger {
    */
   display_threshold_secs: number
   /**
+   * Optional CSS color (e.g. "#22c55e") for this trigger's timer bar, for
+   * color-coding the overlay. Empty/absent = use the overlay's automatic
+   * category/remaining-based color.
+   */
+  bar_color?: string
+  /**
    * Character names this trigger fires for. Empty = fires for any active
    * character (legacy / safety fallback).
    */

@@ -912,6 +912,7 @@ type captureSink struct {
 	duration int
 	spellID  int
 	target   string
+	barColor string
 	calls    int
 
 	stopName    string
@@ -919,8 +920,8 @@ type captureSink struct {
 	stops       int
 }
 
-func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName string) {
-	s.name, s.category, s.duration, s.spellID, s.target = name, category, durationSecs, spellID, targetName
+func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string) {
+	s.name, s.category, s.duration, s.spellID, s.target, s.barColor = name, category, durationSecs, spellID, targetName, barColor
 	s.calls++
 }
 func (s *captureSink) StopExternal(name string, spellID int) {
@@ -970,6 +971,43 @@ func TestEngine_CustomTimerWithCaptureDuration(t *testing.T) {
 	}
 	if stored.TimerDurationCapture != "2" || stored.TimerType != TimerTypeCustom {
 		t.Errorf("persisted trigger = capture %q type %q", stored.TimerDurationCapture, stored.TimerType)
+	}
+}
+
+// TestEngine_BarColorDispatched verifies a trigger's per-trigger BarColor is
+// passed through to the timer sink (and round-trips through the store), so the
+// overlay can color-code that trigger's bar.
+func TestEngine_BarColorDispatched(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	sink := &captureSink{}
+	e := NewEngine(s, hub, sink, nil)
+
+	tr := &Trigger{
+		ID: "bc-1", Name: "Pet Haste", Enabled: true,
+		Pattern:           `^Your pet begins to move faster\.$`,
+		TimerType:         TimerTypeBuff,
+		TimerDurationSecs: 600,
+		BarColor:          "#22c55e",
+		Actions:           []Action{{Type: ActionOverlayText, Text: "haste"}},
+		CreatedAt:         time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	e.Handle(time.Now(), "Your pet begins to move faster.")
+	if sink.calls != 1 || sink.barColor != "#22c55e" {
+		t.Errorf("bar color dispatch = %+v, want barColor #22c55e", sink)
+	}
+
+	stored, err := s.Get("bc-1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if stored.BarColor != "#22c55e" {
+		t.Errorf("persisted bar_color = %q, want #22c55e", stored.BarColor)
 	}
 }
 

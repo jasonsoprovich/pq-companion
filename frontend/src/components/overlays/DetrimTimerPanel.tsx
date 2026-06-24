@@ -4,6 +4,7 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import { useActivePlayerName } from '../../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../../hooks/useDisplayThresholds'
+import { useTimerAppearance, type TimerAppearance } from '../../hooks/useTimerAppearance'
 import { clearTimers, getLogStatus, getTimerState, removeTimer } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import CreateTriggerModal from '../CreateTriggerModal'
@@ -61,7 +62,7 @@ function barColor(remaining: number, total: number, category: TimerCategory): st
   return remaining / total > 0.2 ? CATEGORY_COLORS[category] : '#ef4444'
 }
 
-function DetrimRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: string }): React.ReactElement {
+function DetrimRow({ timer, activePlayer, appearance }: { timer: ActiveTimer; activePlayer: string; appearance: TimerAppearance }): React.ReactElement {
   // A kept-expired effect lingers as an overdue reminder: remaining_seconds is
   // negative, so show a full red bar and a count-up "+Xs" label.
   const expired = timer.expired === true
@@ -71,17 +72,22 @@ function DetrimRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: 
     : timer.duration_seconds > 0
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
       : 0
-  const color = expired ? '#ef4444' : barColor(timer.remaining_seconds, timer.duration_seconds, timer.category)
+  // Expired forces red ("needs attention"); otherwise a per-trigger bar_color
+  // overrides the automatic category/remaining color.
+  const color = expired ? '#ef4444' : (timer.bar_color || barColor(timer.remaining_seconds, timer.duration_seconds, timer.category))
+  const fillOpacity = expired
+    ? (appearance.fillOpacity === 0 ? 0 : Math.min(1, appearance.fillOpacity + 0.07))
+    : appearance.fillOpacity
   const urgent = expired || pct < 0.2
   const catColor = CATEGORY_COLORS[timer.category]
   const target = detrimTarget(timer.target_name, activePlayer)
 
   return (
-    <div style={{ position: 'relative', padding: '3px 10px', borderBottom: '1px solid var(--color-border)', overflow: 'hidden', flexShrink: 0 }}>
+    <div style={{ position: 'relative', padding: `${appearance.rowPadding}px 10px`, borderBottom: '1px solid var(--color-border)', overflow: 'hidden', flexShrink: 0 }}>
       <div
         style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
-          width: `${pct * 100}%`, backgroundColor: color, opacity: expired ? 0.22 : 0.15,
+          width: `${pct * 100}%`, backgroundColor: color, opacity: fillOpacity,
           pointerEvents: 'none', transition: 'width 1s linear',
         }}
       />
@@ -89,7 +95,7 @@ function DetrimRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: 
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, paddingLeft: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
           <SpellIcon id={timer.icon} name={timer.spell_name} size={16} loading="eager" />
-          <span style={{ fontSize: 12, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
+          <span style={{ fontSize: appearance.nameFontSize, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
             {timer.spell_name}
             {target && (
               <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{` — ${target}`}</span>
@@ -98,7 +104,7 @@ function DetrimRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: 
         </div>
         <span
           title={expired ? 'Expired — recast to refresh, or dismiss with ✕' : undefined}
-          style={{ fontSize: 11, color: urgent ? '#f87171' : color, fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: urgent ? 700 : 400 }}
+          style={{ fontSize: appearance.timeFontSize, color: urgent ? '#f87171' : color, fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: urgent ? 700 : 400 }}
         >
           {expired ? fmtOverdue(overdue) : fmtRemaining(timer.remaining_seconds)}
         </span>
@@ -151,6 +157,7 @@ export default function DetrimTimerPanel({
   const [pickedSpell, setPickedSpell] = useState<Spell | null>(null)
   const activePlayer = useActivePlayerName()
   const thresholds = useDisplayThresholds()
+  const appearance = useTimerAppearance()
 
   useEffect(() => {
     getTimerState().then(setTimerState).catch(() => {})
@@ -226,7 +233,7 @@ export default function DetrimTimerPanel({
               <p style={{ fontSize: 12, margin: 0 }}>No active detrimentals</p>
             </div>
           ) : (
-            detrims.map((t) => <DetrimRow key={t.id} timer={t} activePlayer={activePlayer} />)
+            detrims.map((t) => <DetrimRow key={t.id} timer={t} activePlayer={activePlayer} appearance={appearance} />)
           )}
         </div>
       </OverlayWindow>

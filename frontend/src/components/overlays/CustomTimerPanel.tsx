@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Bell, BellOff, Hourglass, Trash2, ExternalLink, X } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useDisplayThresholds, passesThreshold } from '../../hooks/useDisplayThresholds'
+import { useTimerAppearance, type TimerAppearance } from '../../hooks/useTimerAppearance'
 import { useCustomTimerAlertPref } from '../../hooks/useCustomTimerAlertPref'
 import { customAlertThresholds, withTimerAlertDefaults } from '../../lib/timerAlerts'
 import { WSEvent } from '../../lib/wsEvents'
@@ -72,35 +73,45 @@ function parseDurationText(raw: string): number {
     (parseInt(sec ?? '0', 10) || 0)
 }
 
-function TimerRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
-  const pct =
-    timer.duration_seconds > 0
+function TimerRow({ timer, appearance }: { timer: ActiveTimer; appearance: TimerAppearance }): React.ReactElement {
+  const expired = timer.expired === true
+  const overdue = expired ? -timer.remaining_seconds : 0
+  const pct = expired
+    ? 1
+    : timer.duration_seconds > 0
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
       : 0
-  const color = barColor(timer.remaining_seconds, timer.duration_seconds)
-  const urgent = pct < 0.2
+  // Expired forces red; otherwise a per-timer bar_color overrides the auto color.
+  const color = expired ? '#ef4444' : (timer.bar_color || barColor(timer.remaining_seconds, timer.duration_seconds))
+  const fillOpacity = expired
+    ? (appearance.fillOpacity === 0 ? 0 : Math.min(1, appearance.fillOpacity + 0.07))
+    : appearance.fillOpacity
+  const urgent = expired || pct < 0.2
 
   return (
-    <div style={{ position: 'relative', padding: '3px 10px', borderBottom: '1px solid var(--color-border)', overflow: 'hidden', flexShrink: 0 }}>
+    <div style={{ position: 'relative', padding: `${appearance.rowPadding}px 10px`, borderBottom: '1px solid var(--color-border)', overflow: 'hidden', flexShrink: 0 }}>
       <div
         style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
           width: `${pct * 100}%`, backgroundColor: color,
-          opacity: 0.18, pointerEvents: 'none', transition: 'width 1s linear',
+          opacity: fillOpacity, pointerEvents: 'none', transition: 'width 1s linear',
         }}
       />
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
           <Hourglass size={12} style={{ color, flexShrink: 0 }} />
-          <span style={{ fontSize: 12, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
+          <span style={{ fontSize: appearance.nameFontSize, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
             {timer.spell_name}
             {timer.target_name && (
               <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{` — ${timer.target_name}`}</span>
             )}
           </span>
         </div>
-        <span style={{ fontSize: 11, color: urgent ? '#f87171' : color, fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: urgent ? 700 : 500 }}>
-          {fmtRemaining(timer.remaining_seconds)}
+        <span
+          title={expired ? 'Expired — restart or dismiss with ✕' : undefined}
+          style={{ fontSize: appearance.timeFontSize, color: urgent ? '#f87171' : color, fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: urgent ? 700 : 500 }}
+        >
+          {expired ? `+${Math.floor(overdue) < 60 ? Math.floor(overdue) + 's' : Math.floor(overdue / 60) + 'm'}` : fmtRemaining(timer.remaining_seconds)}
         </span>
         <button
           onClick={() => removeTimer(timer.id).catch(() => {})}
@@ -128,6 +139,7 @@ export default function CustomTimerPanel({
 }: CustomTimerPanelProps): React.ReactElement {
   const [state, setState] = useState<TimerState | null>(null)
   const thresholds = useDisplayThresholds()
+  const appearance = useTimerAppearance()
   const [newName, setNewName] = useState('')
   const [newDuration, setNewDuration] = useState('')
   const [addError, setAddError] = useState(false)
@@ -234,7 +246,7 @@ export default function CustomTimerPanel({
             <p style={{ fontSize: 12, margin: 0 }}>No active timers</p>
           </div>
         ) : (
-          timers.map((t) => <TimerRow key={t.id} timer={t} />)
+          timers.map((t) => <TimerRow key={t.id} timer={t} appearance={appearance} />)
         )}
       </div>
 

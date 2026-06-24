@@ -1897,6 +1897,82 @@ export default function SettingsPage(): React.ReactElement {
             </label>
           </div>
 
+          <div className="mt-6">
+            <p className="mb-1 text-sm" style={{ color: 'var(--color-foreground)' }}>
+              Timer bar appearance
+            </p>
+            <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Tune how timer rows look across the Buff, Detrimental, and Custom overlays. Per-trigger bar colors (set in the Triggers tab) still override the automatic color.
+            </p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs w-20" style={{ color: 'var(--color-muted-foreground)' }}>Bar fill</span>
+              <div className="flex gap-1">
+                {([
+                  { value: 'faded' as const, label: 'Faded' },
+                  { value: 'solid' as const, label: 'Solid' },
+                  { value: 'none' as const, label: 'None' },
+                ]).map(({ value, label }) => {
+                  const active = (config.spell_timer?.timer_bar_fill ?? 'faded') === value
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() =>
+                        setConfig({
+                          ...config,
+                          spell_timer: { ...config.spell_timer, timer_bar_fill: value },
+                        })
+                      }
+                      className="rounded px-3 py-1 text-xs"
+                      style={{
+                        backgroundColor: active ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                        color: active ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+                        border: '1px solid var(--color-border)',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+              <span className="text-[11px] italic" style={{ color: 'var(--color-muted)' }}>
+                None = countdown text only (transparent)
+              </span>
+            </div>
+            <div className="mt-3 flex gap-3">
+              {([
+                { label: 'Name font (px)', key: 'timer_name_font_size' as const, def: 12, min: 8, max: 28 },
+                { label: 'Time font (px)', key: 'timer_time_font_size' as const, def: 11, min: 8, max: 28 },
+                { label: 'Row padding (px)', key: 'timer_row_padding' as const, def: 3, min: 0, max: 16 },
+              ]).map(({ label, key, def, min, max }) => (
+                <label key={key} className="flex flex-col gap-1" style={{ flex: 1 }}>
+                  <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>
+                  <input
+                    type="number"
+                    min={min}
+                    max={max}
+                    value={config.spell_timer?.[key] || def}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        spell_timer: {
+                          ...config.spell_timer,
+                          [key]: Math.max(min, Math.min(max, Number(e.target.value) || def)),
+                        },
+                      })
+                    }
+                    className="rounded px-2 py-1 text-sm"
+                    style={{
+                      backgroundColor: 'var(--color-surface-2)',
+                      color: 'var(--color-foreground)',
+                      border: '1px solid var(--color-border)',
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+
           {/* ── Custom timer alerts ──────────────────────────────────────── */}
           <div className="mt-6 border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
             <p className="mb-1 text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>

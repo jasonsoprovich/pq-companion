@@ -240,6 +240,13 @@ type Trigger struct {
 	// settings in user config.
 	DisplayThresholdSecs int `json:"display_threshold_secs"`
 
+	// BarColor is an optional CSS color (e.g. "#22c55e") for this trigger's
+	// timer bar, letting users color-code their overlay. Empty (default) means
+	// the overlay uses its automatic category/remaining-based color, so the
+	// out-of-the-box behaviour is unchanged. Carried through to the timer the
+	// same way as DisplayThresholdSecs.
+	BarColor string `json:"bar_color,omitempty"`
+
 	// Characters lists the character names this trigger fires for. Empty =
 	// fires for any active character (legacy + safety fallback). The frontend
 	// presents this as toggleable chips in the edit modal.

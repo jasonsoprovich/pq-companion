@@ -144,6 +144,20 @@ type SpellTimerSettings struct {
 	// doubles as a "buffs I still need to refresh" checklist. Off by default;
 	// the standard behaviour is to remove a timer the moment it expires.
 	KeepExpiredTimers bool `yaml:"keep_expired_timers,omitempty" json:"keep_expired_timers"`
+
+	// TimerBarFill controls the timer overlay row's bar fill: "" / "faded"
+	// (the default ~15% tint), "solid" (a stronger ~55% fill), or "none"
+	// (no fill — just the countdown text on the transparent overlay). Purely
+	// cosmetic and resolved in the frontend; the engine ignores it.
+	TimerBarFill string `yaml:"timer_bar_fill,omitempty" json:"timer_bar_fill,omitempty"`
+
+	// TimerNameFontSize / TimerTimeFontSize / TimerRowPadding override the
+	// timer overlay row's spell-name font size, countdown font size, and
+	// vertical row padding (in px). 0 (default) means "use the built-in
+	// default" (12 / 11 / 3). Frontend-only; the engine never reads them.
+	TimerNameFontSize int `yaml:"timer_name_font_size,omitempty" json:"timer_name_font_size,omitempty"`
+	TimerTimeFontSize int `yaml:"timer_time_font_size,omitempty" json:"timer_time_font_size,omitempty"`
+	TimerRowPadding   int `yaml:"timer_row_padding,omitempty" json:"timer_row_padding,omitempty"`
 }
 
 // DPSClassColors holds the user-customisable bar colours for the DPS meter

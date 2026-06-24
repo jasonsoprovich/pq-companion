@@ -52,6 +52,12 @@ export interface ActiveTimer {
    * drop-on-expiry mode.
    */
   expired?: boolean
+  /**
+   * Optional per-trigger CSS color for this timer's overlay bar. Empty/absent
+   * means the overlay uses its automatic category/remaining-based color. Set
+   * only on trigger-driven (and manual custom) timers that carry a color.
+   */
+  bar_color?: string
 }
 
 export interface TimerState {

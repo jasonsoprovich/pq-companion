@@ -351,6 +351,8 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
   const [timerTargetCapture, setTimerTargetCapture] = useState(initial?.timer_target_capture ?? '')
   const [wornOffPattern, setWornOffPattern] = useState(initial?.worn_off_pattern ?? prefill?.wornOffPattern ?? '')
   const [displayThreshold, setDisplayThreshold] = useState(initial?.display_threshold_secs ?? 0)
+  // Optional per-trigger bar color; '' = automatic overlay color.
+  const [barColor, setBarColor] = useState(initial?.bar_color ?? '')
   const [timerAlerts, setTimerAlerts] = useState<TimerAlertThreshold[]>(
     initial?.timer_alerts ?? prefill?.timerAlerts ?? [],
   )
@@ -571,6 +573,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
       worn_off_pattern: source === 'pipe' || timerType === 'none' ? '' : wornOffPattern.trim(),
       spell_id: initial?.spell_id ?? prefill?.spellId ?? 0,
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
+      bar_color: timerType === 'none' ? '' : barColor,
       characters: Array.from(selectedChars),
       timer_alerts: timerType === 'none' ? [] : timerAlerts,
       exclude_patterns: source === 'pipe' ? [] : excludeList,
@@ -1184,6 +1187,35 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
               <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
                 0 = use global default
               </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                Bar color
+              </label>
+              <input
+                type="color"
+                value={barColor || '#38bdf8'}
+                onChange={(e) => setBarColor(e.target.value)}
+                className="h-6 w-10 rounded cursor-pointer p-0"
+                style={{ border: '1px solid var(--color-border)', background: 'transparent' }}
+                disabled={submitting}
+                title="Custom color for this trigger's timer bar (overrides the automatic color)"
+              />
+              {barColor ? (
+                <button
+                  type="button"
+                  onClick={() => setBarColor('')}
+                  className="text-[10px] underline"
+                  style={{ color: 'var(--color-muted)' }}
+                >
+                  reset to automatic
+                </button>
+              ) : (
+                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                  automatic (click swatch to set)
+                </span>
+              )}
             </div>
 
             {/* Fading-soon alerts */}

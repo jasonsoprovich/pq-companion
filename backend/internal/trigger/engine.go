@@ -36,7 +36,7 @@ const historyMaxSize = 200
 // trigger-driven timer extends to the same length as the spell-landed
 // pipeline would produce. 0 = use durationSecs as given.
 type TimerSink interface {
-	StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName string)
+	StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string)
 	StopExternal(name string, spellID int)
 }
 
@@ -432,7 +432,7 @@ func (e *Engine) firePipe(t *Trigger, matchedLine string, firedAt time.Time) {
 			}
 		}
 		e.sink.StartExternal(timerKeyFor(t), timerCategory(t.TimerType),
-			t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID, "")
+			t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID, "", t.BarColor)
 	}
 	e.startCooldownTimer(t, firedAt)
 }
@@ -661,7 +661,7 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 			if extra != nil && extra.SpellID > 0 {
 				spellID = extra.SpellID
 			}
-			e.sink.StartExternal(key, timerCategory(t.TimerType), durationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, spellID, target)
+			e.sink.StartExternal(key, timerCategory(t.TimerType), durationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, spellID, target, t.BarColor)
 		}
 	}
 	e.startCooldownTimer(t, firedAt)
@@ -743,7 +743,7 @@ func (e *Engine) startCooldownTimer(t *Trigger, firedAt time.Time) {
 	if buf, err := json.Marshal([]TimerAlert{readyAlert}); err == nil {
 		alertJSON = buf
 	}
-	e.sink.StartExternal(cooldownKeyFor(t), "buff", t.CooldownSecs, 0, firedAt, alertJSON, 0, "")
+	e.sink.StartExternal(cooldownKeyFor(t), "buff", t.CooldownSecs, 0, firedAt, alertJSON, 0, "", "")
 }
 
 // timerCategory maps a trigger's TimerType onto a spelltimer category string.

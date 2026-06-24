@@ -21,7 +21,7 @@ import (
 // Sink is the subset of the spell-timer engine the matcher needs. It matches
 // (*spelltimer.Engine).StartExternal so the engine satisfies it directly.
 type Sink interface {
-	StartExternal(name string, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName string)
+	StartExternal(name string, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string)
 }
 
 // categoryCHChain / categoryCHChain2 mirror spelltimer.CategoryCHChain /
@@ -149,7 +149,7 @@ func (m *Matcher) matchAndStart(ts time.Time, msg, pattern string, cache *cached
 	// heal lands (a callout fires at cast-start). The live spacing between
 	// casts is measured in the overlay from successive callout timestamps, so
 	// the bar length is the fixed cast duration rather than the cadence.
-	m.sink.StartExternal(label, category, config.CHCastSecs, 0, ts, nil, 0, "")
+	m.sink.StartExternal(label, category, config.CHCastSecs, 0, ts, nil, 0, "", "")
 	return true
 }
 

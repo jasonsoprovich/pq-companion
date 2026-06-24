@@ -168,6 +168,19 @@ export interface SpellTimerSettings {
    * checklist. Off by default (timers vanish the moment they expire).
    */
   keep_expired_timers?: boolean
+
+  /**
+   * Timer overlay bar fill: '' / 'faded' (default ~15% tint), 'solid'
+   * (~55% fill), or 'none' (no fill — just the countdown text).
+   */
+  timer_bar_fill?: 'faded' | 'solid' | 'none'
+
+  /** Timer row spell-name font size in px. 0/absent = default (12). */
+  timer_name_font_size?: number
+  /** Timer row countdown font size in px. 0/absent = default (11). */
+  timer_time_font_size?: number
+  /** Timer row vertical padding in px (controls row height). 0/absent = 3. */
+  timer_row_padding?: number
 }
 
 // CHChainSettings configures the Complete-Heal-chain overlay matcher. Mirrors

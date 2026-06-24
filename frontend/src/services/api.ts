@@ -1600,6 +1600,8 @@ export interface CreateTriggerRequest {
   worn_off_pattern?: string
   spell_id?: number
   display_threshold_secs?: number
+  /** Optional per-trigger timer-bar color ("" = automatic overlay color). */
+  bar_color?: string
   characters?: string[]
   timer_alerts?: TimerAlertThreshold[]
   exclude_patterns?: string[]

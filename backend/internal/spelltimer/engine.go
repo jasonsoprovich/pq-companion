@@ -180,6 +180,7 @@ const pendingArmTTL = 10 * time.Second
 type pendingArm struct {
 	DisplayThresholdSecs int
 	TimerAlerts          json.RawMessage
+	BarColor             string
 	ArmedAt              time.Time
 }
 
@@ -683,7 +684,7 @@ func divergenceKey(names []string) string {
 // apply the active character's item/AA duration focuses to durationSecs —
 // matching the spell-landed pipeline. 0 means "use durationSecs as given"
 // (custom triggers without a spell anchor, tests).
-func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName string) {
+func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string) {
 	if name == "" || durationSecs <= 0 {
 		return
 	}
@@ -728,6 +729,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 		e.pendingArms[name] = &pendingArm{
 			DisplayThresholdSecs: displayThresholdSecs,
 			TimerAlerts:          alerts,
+			BarColor:             barColor,
 			ArmedAt:              startedAt,
 		}
 		e.mu.Unlock()
@@ -755,6 +757,9 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 			if len(alerts) > 0 {
 				existing.TimerAlerts = alerts
 			}
+			if barColor != "" {
+				existing.BarColor = barColor
+			}
 			snap := e.snapshot(time.Now())
 			e.mu.Unlock()
 			slog.Debug("timer-debug: trigger metadata merged onto existing timer",
@@ -781,6 +786,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 		DurationSeconds:      float64(durationSecs),
 		DisplayThresholdSecs: displayThresholdSecs,
 		TimerAlerts:          alerts,
+		BarColor:             barColor,
 		IsCharm:              isCharm,
 	}
 	e.timers[key] = timer
@@ -1104,6 +1110,9 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		if len(existing.TimerAlerts) > 0 {
 			timer.TimerAlerts = existing.TimerAlerts
 		}
+		if existing.BarColor != "" {
+			timer.BarColor = existing.BarColor
+		}
 		delete(e.timers, existingKey)
 		break
 	}
@@ -1122,6 +1131,9 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		}
 		if len(arm.TimerAlerts) > 0 {
 			timer.TimerAlerts = arm.TimerAlerts
+		}
+		if arm.BarColor != "" {
+			timer.BarColor = arm.BarColor
 		}
 		slog.Debug("timer-debug: pending arm promoted to landed timer",
 			"spell", spellName,

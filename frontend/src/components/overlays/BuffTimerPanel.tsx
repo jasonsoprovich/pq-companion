@@ -5,6 +5,7 @@ import { WSEvent } from '../../lib/wsEvents'
 import { useActivePlayerName, targetSuffix } from '../../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../../hooks/useDisplayThresholds'
 import { useBuffSortMode, sortBuffs } from '../../hooks/useBuffSortMode'
+import { useTimerAppearance, type TimerAppearance } from '../../hooks/useTimerAppearance'
 import { clearTimers, getLogStatus, getTimerState, removeTimer } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import CreateTriggerModal from '../CreateTriggerModal'
@@ -45,7 +46,7 @@ function barColor(remaining: number, total: number): string {
   return '#ef4444'
 }
 
-function BuffRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: string }): React.ReactElement {
+function BuffRow({ timer, activePlayer, appearance }: { timer: ActiveTimer; activePlayer: string; appearance: TimerAppearance }): React.ReactElement {
   // A kept-expired buff lingers as an overdue reminder: remaining_seconds is
   // negative, so show a full red bar and a count-up "+Xs" label instead of a
   // depleting bar.
@@ -56,23 +57,30 @@ function BuffRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: st
     : timer.duration_seconds > 0
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
       : 0
-  const color = expired ? '#ef4444' : barColor(timer.remaining_seconds, timer.duration_seconds)
+  // Expired rows force red to flag "needs refresh"; otherwise a per-trigger
+  // bar_color (if set) overrides the automatic category/remaining color.
+  const color = expired ? '#ef4444' : (timer.bar_color || barColor(timer.remaining_seconds, timer.duration_seconds))
+  // Expired keeps a slight emphasis bump over the base fill, but a 0 (text-only)
+  // fill stays fully transparent even when overdue.
+  const fillOpacity = expired
+    ? (appearance.fillOpacity === 0 ? 0 : Math.min(1, appearance.fillOpacity + 0.07))
+    : appearance.fillOpacity
   const urgent = expired || pct < 0.2
   const onTarget = targetSuffix(timer.target_name, activePlayer)
 
   return (
-    <div style={{ position: 'relative', padding: '3px 10px', borderBottom: '1px solid var(--color-border)', overflow: 'hidden', flexShrink: 0 }}>
+    <div style={{ position: 'relative', padding: `${appearance.rowPadding}px 10px`, borderBottom: '1px solid var(--color-border)', overflow: 'hidden', flexShrink: 0 }}>
       <div
         style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
-          width: `${pct * 100}%`, backgroundColor: color, opacity: expired ? 0.22 : 0.15,
+          width: `${pct * 100}%`, backgroundColor: color, opacity: fillOpacity,
           pointerEvents: 'none', transition: 'width 1s linear',
         }}
       />
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
           <SpellIcon id={timer.icon} name={timer.spell_name} size={16} loading="eager" />
-          <span style={{ fontSize: 12, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
+          <span style={{ fontSize: appearance.nameFontSize, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
             {timer.spell_name}
             {onTarget && (
               <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{onTarget}</span>
@@ -81,7 +89,7 @@ function BuffRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: st
         </div>
         <span
           title={expired ? 'Expired — recast to refresh, or dismiss with ✕' : undefined}
-          style={{ fontSize: 11, color: urgent ? '#f87171' : color, fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: urgent ? 700 : 400 }}
+          style={{ fontSize: appearance.timeFontSize, color: urgent ? '#f87171' : color, fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: urgent ? 700 : 400 }}
         >
           {expired ? fmtOverdue(overdue) : fmtRemaining(timer.remaining_seconds)}
         </span>
@@ -134,6 +142,7 @@ export default function BuffTimerPanel({
   const [pickedSpell, setPickedSpell] = useState<Spell | null>(null)
   const activePlayer = useActivePlayerName()
   const thresholds = useDisplayThresholds()
+  const appearance = useTimerAppearance()
   const { mode: sortMode, toggle: toggleSort } = useBuffSortMode()
 
   useEffect(() => {
@@ -224,7 +233,7 @@ export default function BuffTimerPanel({
               <p style={{ fontSize: 12, margin: 0 }}>No active buffs</p>
             </div>
           ) : (
-            buffs.map((t) => <BuffRow key={t.id} timer={t} activePlayer={activePlayer} />)
+            buffs.map((t) => <BuffRow key={t.id} timer={t} activePlayer={activePlayer} appearance={appearance} />)
           )}
         </div>
       </OverlayWindow>

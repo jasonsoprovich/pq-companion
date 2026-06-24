@@ -97,6 +97,12 @@ type ActiveTimer struct {
 	// (nil) for spell-cast-driven timers.
 	TimerAlerts json.RawMessage `json:"timer_alerts,omitempty"`
 
+	// BarColor is an optional per-trigger CSS color for this timer's overlay
+	// bar (e.g. "#22c55e"). Empty means the overlay uses its automatic
+	// category/remaining-based color. Set only on trigger-driven timers that
+	// carry a Trigger.BarColor; spell-landed-driven timers leave it empty.
+	BarColor string `json:"bar_color,omitempty"`
+
 	// IsCharm marks a timer whose source spell is a Charm effect (SPA 22).
 	// Charm represents an ongoing pet the player controls, so — unlike a
 	// debuff or mez — its timer must survive the death of *other* mobs.
