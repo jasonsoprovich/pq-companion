@@ -10,6 +10,7 @@ import type { Item, ItemSourceNPC, ItemSources, ItemForageZone, ItemGroundSpawnZ
 import {
   baneBodyLabel,
   baneRaceLabel,
+  baneRatioLabel,
   classesLabel,
   effectiveItemTypeLabel,
   inGameItemLink,
@@ -19,6 +20,7 @@ import {
   racesLabel,
   sizeLabel,
   slotsLabel,
+  weaponRatioLabel,
   weightLabel,
 } from '../lib/itemHelpers'
 import { ItemIcon } from '../components/Icon'
@@ -807,7 +809,7 @@ function OverviewTab({ item, copied, onCopy }: OverviewTabProps): React.ReactEle
       {hasCombat && (
         <Section title="Combat">
           {item.damage > 0 && (
-            <StatRow label="Damage / Delay" value={`${item.damage} / ${item.delay}`} />
+            <StatRow label="Damage / Delay" value={weaponRatioLabel(item.damage, item.delay)} />
           )}
           {item.range > 0 && <StatRow label="Range" value={item.range} />}
           {item.ac > 0 && <StatRow label="AC" value={item.ac} />}
@@ -816,7 +818,7 @@ function OverviewTab({ item, copied, onCopy }: OverviewTabProps): React.ReactEle
 
       {hasBane && (
         <Section title="Bane Damage">
-          {item.bane_amt > 0 && <StatRow label="Bane Damage" value={`+${item.bane_amt}`} />}
+          {item.bane_amt > 0 && <StatRow label="Bane Damage" value={baneRatioLabel(item.damage, item.delay, item.bane_amt)} />}
           {item.bane_body > 0 && <StatRow label="Bane vs Body" value={baneBodyLabel(item.bane_body)} />}
           {item.bane_race > 0 && <StatRow label="Bane vs Race" value={baneRaceLabel(item.bane_race)} />}
         </Section>

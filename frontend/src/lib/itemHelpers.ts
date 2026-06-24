@@ -123,3 +123,22 @@ export function baneRaceLabel(raceId: number): string {
 export function weightLabel(w: number): string {
   return `${(w / 10).toFixed(1)}`
 }
+
+// ── Weapon damage ratio ────────────────────────────────────────────────────────
+//
+// pqdi.cc and the in-game tooltips show the damage-to-delay ratio for weapons.
+// The base ratio is damage/delay; the bane ratio is the effective ratio against
+// the bane target, i.e. (damage + bane) / delay. Both are shown to four decimal
+// places in front of the raw values, e.g. "(Ratio: 0.3500) | 7 / 20".
+
+export function weaponRatioLabel(damage: number, delay: number): string {
+  const dmgDelay = `${damage} / ${delay}`
+  if (delay <= 0) return dmgDelay
+  return `(Ratio: ${(damage / delay).toFixed(4)}) | ${dmgDelay}`
+}
+
+export function baneRatioLabel(damage: number, delay: number, bane: number): string {
+  const baneAmt = `+${bane}`
+  if (delay <= 0) return baneAmt
+  return `(Ratio: ${((damage + bane) / delay).toFixed(4)}) | ${baneAmt}`
+}
