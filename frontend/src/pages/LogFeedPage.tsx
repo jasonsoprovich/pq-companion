@@ -618,15 +618,6 @@ export default function LogFeedPage(): React.ReactElement {
     atBottomRef.current = feedRef.current.scrollTop < 40
   }
 
-  // The eqlog this row belongs to: the chosen browse file, or (live mode) the
-  // currently-tailed character's log derived from the tailer status path.
-  const liveFileBase = useMemo(() => {
-    const p = status?.file_path
-    if (!p) return ''
-    return p.replace(/\\/g, '/').split('/').pop() ?? ''
-  }, [status])
-  const playFromFile = mode === 'browse' ? browseFile : liveFileBase
-
   // Opt-in raw passthrough: when on, the backend also pushes unrecognised
   // lines (chat, system messages, "X is no longer mezzed") to the live feed so
   // they're visible and searchable. The flag lives on the backend; optimistic
@@ -640,25 +631,28 @@ export default function LogFeedPage(): React.ReactElement {
     })
   }, [status?.raw_feed])
 
-  // Stage the clicked row as the replay start (and probe the file's end for a
-  // sensible range), open the Replay panel, and auto-start when idle. If a
-  // replay is already running we only stage the selection so the user can stop
-  // and re-play from here without losing their place.
+  // Stage the clicked Browse row as the replay start (and probe the file's end
+  // for a sensible range), open the Replay panel, and auto-start when idle. If
+  // a replay is already running we only stage the selection so the user can
+  // stop and re-play from here without losing their place.
+  //
+  // Browse-only by design: replay drives the full pipeline (triggers, timers,
+  // overlays) and pauses live tailing, so it must never be triggered from the
+  // live feed while the game is running.
   const handlePlayFrom = useCallback((timestamp: string) => {
-    const file = mode === 'browse' ? browseFile : liveFileBase
-    if (!file) return
+    if (!browseFile) return
     const fromStr = toLocalInput(timestamp)
     setMode('live')
     setShowReplay(true)
-    patchReplayPrefs({ file, fromStr })
-    getReplayInfo(file)
+    patchReplayPrefs({ file: browseFile, fromStr })
+    getReplayInfo(browseFile)
       .then((info) => patchReplayPrefs({ toStr: toLocalInput(info.last) }))
       .catch(() => {})
     if (replayStatus.state === 'idle') {
-      startReplay({ file, from: new Date(fromStr).toISOString(), speed: replayPrefs.speed })
+      startReplay({ file: browseFile, from: new Date(fromStr).toISOString(), speed: replayPrefs.speed })
         .catch(() => {})
     }
-  }, [mode, browseFile, liveFileBase, patchReplayPrefs, replayStatus.state, replayPrefs.speed])
+  }, [browseFile, patchReplayPrefs, replayStatus.state, replayPrefs.speed])
 
   return (
     <div className="flex h-full flex-col overflow-hidden" style={{ position: 'relative' }}>
@@ -829,7 +823,7 @@ export default function LogFeedPage(): React.ReactElement {
             hasMore={browseNext != null}
             search={debouncedSearch}
             onPickLive={() => setMode('live')}
-            onPlayFrom={playFromFile ? handlePlayFrom : undefined}
+            onPlayFrom={browseFile ? handlePlayFrom : undefined}
           />
         ) : events.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-20">
@@ -860,11 +854,7 @@ export default function LogFeedPage(): React.ReactElement {
           <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
             <tbody>
               {visibleEvents.map((ev, i) => (
-                <EventRow
-                  key={i}
-                  ev={ev}
-                  onPlayFrom={playFromFile ? handlePlayFrom : undefined}
-                />
+                <EventRow key={i} ev={ev} />
               ))}
             </tbody>
           </table>
