@@ -44,6 +44,14 @@ export interface ActiveTimer {
    * empty) for spell-cast-driven timers, which never fire fading alerts.
    */
   timer_alerts?: TimerAlertThreshold[]
+  /**
+   * True when this row has passed its expiry while the user's "keep expired
+   * timers" option is on. The timer lingers as an overdue reminder until the
+   * spell is recast or the row is dismissed; remaining_seconds goes negative
+   * (the seconds it has been overdue). Absent/false in the default
+   * drop-on-expiry mode.
+   */
+  expired?: boolean
 }
 
 export interface TimerState {

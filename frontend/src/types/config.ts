@@ -160,6 +160,14 @@ export interface SpellTimerSettings {
    *                     disambiguation but stops producing rows.
    */
   tracking_mode?: TrackingMode
+
+  /**
+   * When true, a buff/detrimental stays in the overlay after it expires —
+   * shown as an overdue row counting up — until it's recast or dismissed with
+   * the row's X, so the overlay doubles as a "buffs I still need to refresh"
+   * checklist. Off by default (timers vanish the moment they expire).
+   */
+  keep_expired_timers?: boolean
 }
 
 // CHChainSettings configures the Complete-Heal-chain overlay matcher. Mirrors

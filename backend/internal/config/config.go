@@ -136,6 +136,14 @@ type SpellTimerSettings struct {
 	// Empty string is treated as "auto" so existing config files migrate
 	// cleanly without an explicit value.
 	TrackingMode string `yaml:"tracking_mode,omitempty" json:"tracking_mode,omitempty"`
+
+	// KeepExpiredTimers, when true, keeps a buff/detrimental row in the
+	// overlay after it expires — shown as an overdue count-up — instead of
+	// dropping it. The row lingers until the spell is recast (refreshing the
+	// timer) or the user dismisses it with the per-row X, so the overlay
+	// doubles as a "buffs I still need to refresh" checklist. Off by default;
+	// the standard behaviour is to remove a timer the moment it expires.
+	KeepExpiredTimers bool `yaml:"keep_expired_timers,omitempty" json:"keep_expired_timers"`
 }
 
 // DPSClassColors holds the user-customisable bar colours for the DPS meter

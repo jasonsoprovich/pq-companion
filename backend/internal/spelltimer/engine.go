@@ -57,6 +57,13 @@ type ModeProvider func() string
 // nil provider or empty slice means "inventory unknown" — no narrowing.
 type OwnedItemsProvider func() []int
 
+// KeepExpiredProvider returns whether expired buff/detrimental timers should
+// linger in the overlay (as overdue count-ups) instead of being dropped on
+// expiry or worn-off. The engine calls this live so a Settings change takes
+// effect without a restart. nil provider or false means the default: remove a
+// timer the moment it expires.
+type KeepExpiredProvider func() bool
+
 const (
 	scopeSelf     = "self"
 	scopeCastByMe = "cast_by_me"
@@ -232,6 +239,7 @@ type Engine struct {
 	scopeFn       ScopeProvider
 	classFilterFn ClassFilterProvider
 	modeFn        ModeProvider
+	keepExpiredFn KeepExpiredProvider
 
 	mu     sync.Mutex
 	timers map[string]*ActiveTimer // keyed by timerKey(spell, target)
@@ -312,7 +320,8 @@ type Engine struct {
 // classFilterFn may be nil (no class-castability filtering).
 // modeFn may be nil (engine behaves as if mode is "auto").
 // ownedItemsFn may be nil (no clicky-collision narrowing by inventory).
-func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn ScopeProvider, classFilterFn ClassFilterProvider, modeFn ModeProvider, ownedItemsFn OwnedItemsProvider) *Engine {
+// keepExpiredFn may be nil (expired timers are dropped on expiry).
+func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn ScopeProvider, classFilterFn ClassFilterProvider, modeFn ModeProvider, ownedItemsFn OwnedItemsProvider, keepExpiredFn KeepExpiredProvider) *Engine {
 	return &Engine{
 		hub:           hub,
 		db:            database,
@@ -321,9 +330,16 @@ func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn S
 		classFilterFn: classFilterFn,
 		modeFn:        modeFn,
 		ownedItemsFn:  ownedItemsFn,
+		keepExpiredFn: keepExpiredFn,
 		timers:        make(map[string]*ActiveTimer),
 		pendingArms:   make(map[string]*pendingArm),
 	}
+}
+
+// keepExpired reports whether expired timers should linger as overdue
+// reminders (the user's "keep expired timers" option). Defaults to false.
+func (e *Engine) keepExpired() bool {
+	return e.keepExpiredFn != nil && e.keepExpiredFn()
 }
 
 // trackingMode returns the user's currently-configured mode, defaulting to
@@ -1394,12 +1410,24 @@ func (e *Engine) RemoveByID(id string) bool {
 }
 
 // removeTimer deletes a single timer by its composite key and broadcasts.
-// No-op if the key isn't present.
+// No-op if the key isn't present. With the keep-expired option on, a worn-off
+// signal doesn't drop the row — it flips the timer to overdue (expires now) so
+// it lingers as a "needs refresh" reminder until recast or manually dismissed.
 func (e *Engine) removeTimer(key string) {
+	now := time.Now()
+	keep := e.keepExpired()
 	e.mu.Lock()
-	_, had := e.timers[key]
-	delete(e.timers, key)
-	snap := e.snapshot(time.Now())
+	t, had := e.timers[key]
+	if had {
+		if keep {
+			if t.ExpiresAt.After(now) {
+				t.ExpiresAt = now
+			}
+		} else {
+			delete(e.timers, key)
+		}
+	}
+	snap := e.snapshot(now)
 	e.mu.Unlock()
 
 	if had {
@@ -1633,6 +1661,8 @@ func (e *Engine) removeBySpellNameOrID(spellName string, spellID int) {
 	if spellName == "" && spellID <= 0 {
 		return
 	}
+	now := time.Now()
+	keep := e.keepExpired()
 	e.mu.Lock()
 	var matches []string
 	allDetrimental := true
@@ -1645,6 +1675,18 @@ func (e *Engine) removeBySpellNameOrID(spellName string, spellID int) {
 		}
 	}
 
+	// With keep-expired on, a worn-off signal flips the matched row(s) to
+	// overdue (expires now) so they linger as reminders; otherwise it deletes.
+	clear := func(k string) {
+		if keep {
+			if e.timers[k].ExpiresAt.After(now) {
+				e.timers[k].ExpiresAt = now
+			}
+		} else {
+			delete(e.timers, k)
+		}
+	}
+
 	removed := 0
 	if allDetrimental && len(matches) > 1 {
 		// Peel off only the single nearest-expiry instance.
@@ -1654,15 +1696,15 @@ func (e *Engine) removeBySpellNameOrID(spellName string, spellID int) {
 				earliest = k
 			}
 		}
-		delete(e.timers, earliest)
+		clear(earliest)
 		removed = 1
 	} else {
 		for _, k := range matches {
-			delete(e.timers, k)
+			clear(k)
 			removed++
 		}
 	}
-	snap := e.snapshot(time.Now())
+	snap := e.snapshot(now)
 	e.mu.Unlock()
 
 	if removed > 0 {
@@ -1682,14 +1724,28 @@ func (e *Engine) clearAll() {
 	}
 }
 
-// pruneExpired removes timers whose expiry time has passed.
+// keepExpiredMaxOverdue caps how long a kept-expired timer lingers as an
+// overdue reminder before the engine drops it anyway. Without this backstop a
+// row the user never recasts or dismisses (zoned away, logged for the night)
+// would accumulate in the overlay forever.
+const keepExpiredMaxOverdue = 60 * time.Minute
+
+// pruneExpired removes timers whose expiry time has passed. With the
+// keep-expired option on, a past-expiry timer is instead left in place so
+// snapshot() can surface it as an overdue count-up — until it has been overdue
+// longer than keepExpiredMaxOverdue, at which point it's dropped regardless.
 func (e *Engine) pruneExpired() {
 	now := time.Now()
+	keep := e.keepExpired()
 	e.mu.Lock()
 	for name, t := range e.timers {
-		if now.After(t.ExpiresAt) {
-			delete(e.timers, name)
+		if !now.After(t.ExpiresAt) {
+			continue
 		}
+		if keep && now.Sub(t.ExpiresAt) <= keepExpiredMaxOverdue {
+			continue
+		}
+		delete(e.timers, name)
 	}
 	e.mu.Unlock()
 }
@@ -1704,12 +1760,21 @@ func (e *Engine) broadcast() {
 // snapshot builds an immutable TimerState. Must be called with e.mu held.
 func (e *Engine) snapshot(now time.Time) TimerState {
 	timers := make([]ActiveTimer, 0, len(e.timers))
+	keep := e.keepExpired()
 	for _, t := range e.timers {
 		remaining := t.ExpiresAt.Sub(now).Seconds()
-		if remaining < 0 {
-			remaining = 0
-		}
 		entry := *t
+		if remaining < 0 {
+			if keep {
+				// Overdue: report the (negative) seconds-since-expiry so the
+				// overlay can render a count-up "needs refresh" row, and flag
+				// it so the frontend can style it distinctly. These sort to the
+				// top (most negative first) — most urgent.
+				entry.Expired = true
+			} else {
+				remaining = 0
+			}
+		}
 		entry.RemainingSeconds = remaining
 		timers = append(timers, entry)
 	}

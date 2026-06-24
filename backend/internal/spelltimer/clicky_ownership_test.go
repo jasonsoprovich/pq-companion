@@ -38,7 +38,7 @@ func ownershipEngine(t *testing.T, ownedItems []int) *Engine {
 	charCtx := func() (string, string, int) { return "/eq", "Vortikai", -1 }
 	return NewEngine(ws.NewHub(), database, charCtx,
 		func() string { return scopeAnyone }, nil, nil,
-		func() []int { return ownedItems })
+		func() []int { return ownedItems }, nil)
 }
 
 func TestSoleClickableCandidate_NarrowsByOwnership(t *testing.T) {
@@ -83,7 +83,7 @@ func TestOnSpellLanded_AoEMezTracksPerTarget(t *testing.T) {
 	t.Cleanup(func() { database.Close() })
 	charCtx := func() (string, string, int) { return "/eq", "Osui", -1 }
 	e := NewEngine(ws.NewHub(), database, charCtx,
-		func() string { return scopeAnyone }, nil, nil, nil)
+		func() string { return scopeAnyone }, nil, nil, nil, nil)
 
 	now := time.Now()
 	// Cast-begin stashes the trigger's metadata as a deferred-render pending

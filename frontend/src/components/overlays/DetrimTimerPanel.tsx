@@ -49,18 +49,30 @@ function fmtRemaining(secs: number): string {
   return `${Math.ceil(secs / 60)}m`
 }
 
+// Count-up label for an overdue (kept-expired) row. overdue is how long the
+// effect has been gone, in seconds (>= 0); rendered as "+5s" / "+2m".
+function fmtOverdue(overdue: number): string {
+  if (overdue < 60) return `+${Math.floor(overdue)}s`
+  return `+${Math.floor(overdue / 60)}m`
+}
+
 function barColor(remaining: number, total: number, category: TimerCategory): string {
   if (total <= 0) return CATEGORY_COLORS[category]
   return remaining / total > 0.2 ? CATEGORY_COLORS[category] : '#ef4444'
 }
 
 function DetrimRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: string }): React.ReactElement {
-  const pct =
-    timer.duration_seconds > 0
+  // A kept-expired effect lingers as an overdue reminder: remaining_seconds is
+  // negative, so show a full red bar and a count-up "+Xs" label.
+  const expired = timer.expired === true
+  const overdue = expired ? -timer.remaining_seconds : 0
+  const pct = expired
+    ? 1
+    : timer.duration_seconds > 0
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
       : 0
-  const color = barColor(timer.remaining_seconds, timer.duration_seconds, timer.category)
-  const urgent = pct < 0.2
+  const color = expired ? '#ef4444' : barColor(timer.remaining_seconds, timer.duration_seconds, timer.category)
+  const urgent = expired || pct < 0.2
   const catColor = CATEGORY_COLORS[timer.category]
   const target = detrimTarget(timer.target_name, activePlayer)
 
@@ -69,7 +81,7 @@ function DetrimRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: 
       <div
         style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
-          width: `${pct * 100}%`, backgroundColor: color, opacity: 0.15,
+          width: `${pct * 100}%`, backgroundColor: color, opacity: expired ? 0.22 : 0.15,
           pointerEvents: 'none', transition: 'width 1s linear',
         }}
       />
@@ -84,8 +96,11 @@ function DetrimRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: 
             )}
           </span>
         </div>
-        <span style={{ fontSize: 11, color: urgent ? '#f87171' : color, fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: urgent ? 700 : 400 }}>
-          {fmtRemaining(timer.remaining_seconds)}
+        <span
+          title={expired ? 'Expired — recast to refresh, or dismiss with ✕' : undefined}
+          style={{ fontSize: 11, color: urgent ? '#f87171' : color, fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: urgent ? 700 : 400 }}
+        >
+          {expired ? fmtOverdue(overdue) : fmtRemaining(timer.remaining_seconds)}
         </span>
         <button
           onClick={() => removeTimer(timer.id).catch(() => {})}

@@ -1873,6 +1873,30 @@ export default function SettingsPage(): React.ReactElement {
             </div>
           </div>
 
+          <div className="mt-4">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.spell_timer?.keep_expired_timers ?? false}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    spell_timer: { ...config.spell_timer, keep_expired_timers: e.target.checked },
+                  })
+                }
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  Keep expired timers until refreshed
+                </span>
+                <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Instead of vanishing when it runs out, a buff or detrimental stays in the overlay as an overdue row (full red bar, counting up) until you recast it or dismiss it with the row's <b>✕</b>. Turns the overlay into a "buffs I still need to refresh" checklist — handy for pet haste, Fero, and the like. Overdue rows clear themselves after an hour.
+                </span>
+              </span>
+            </label>
+          </div>
+
           {/* ── Custom timer alerts ──────────────────────────────────────── */}
           <div className="mt-6 border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
             <p className="mb-1 text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>

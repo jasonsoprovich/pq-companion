@@ -76,6 +76,13 @@ type ActiveTimer struct {
 	DurationSeconds  float64 `json:"duration_seconds"`
 	RemainingSeconds float64 `json:"remaining_seconds"`
 
+	// Expired is set on the broadcast copy of a timer that has passed its
+	// expiry while the user's "keep expired timers" option is on: the row
+	// lingers as an overdue reminder and RemainingSeconds goes negative (the
+	// seconds it has been overdue). Always false in the default
+	// drop-on-expiry mode. Computed per-broadcast in snapshot(); never stored.
+	Expired bool `json:"expired,omitempty"`
+
 	// DisplayThresholdSecs is a per-timer override for the user-configured
 	// global display threshold. > 0 means "only show me when remaining
 	// time falls at or below this value"; 0 means "let the frontend resolve

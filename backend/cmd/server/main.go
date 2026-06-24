@@ -439,6 +439,8 @@ func main() {
 			}
 		}
 		return ids
+	}, func() bool {
+		return cfgMgr.Get().SpellTimer.KeepExpiredTimers
 	})
 	go timerEngine.Start(context.Background())
 
