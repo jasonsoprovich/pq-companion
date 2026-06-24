@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { X, Zap, RefreshCw, Shield, Skull, Hourglass, Bell as BellIcon } from 'lucide-react'
 import { createTrigger, type CreateTriggerRequest } from '../services/api'
-import type { Action, TimerType, Trigger } from '../types/trigger'
+import type { Action, TimerAlertThreshold, TimerType, Trigger } from '../types/trigger'
 import NotificationActionEditor, { NotificationTypeSelect } from './NotificationActionEditor'
 import { useVoices } from '../hooks/useVoices'
 
@@ -15,6 +15,10 @@ export interface TriggerPrefill {
   displayText?: string
   displayColor?: string
   displayThresholdSecs?: number
+  // Seeded "fading soon" alerts (e.g. from buildSpellTriggerPrefill). The modal
+  // exposes the first one's lead time as a single editable field; the full
+  // multi-threshold editor lives in the Triggers tab.
+  timerAlerts?: TimerAlertThreshold[]
 }
 
 interface CreateTriggerModalProps {
@@ -74,6 +78,9 @@ export default function CreateTriggerModal({
   const [timerType, setTimerType] = useState<TimerType>(prefill.timerType ?? 'none')
   const [duration, setDuration] = useState(prefill.timerDurationSecs ?? 0)
   const [displayThreshold, setDisplayThreshold] = useState(prefill.displayThresholdSecs ?? 0)
+  // Lead time for the "fading soon" TTS alert; 0 = no alert. Seeded from the
+  // prefill so the From-spell flow announces before a buff/debuff lapses.
+  const [fadeAlertSecs, setFadeAlertSecs] = useState(prefill.timerAlerts?.[0]?.seconds ?? 0)
   const [action, setAction] = useState<Action>(() => buildInitialAction(prefill))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -98,6 +105,7 @@ export default function CreateTriggerModal({
     setTimerType(prefill.timerType ?? 'none')
     setDuration(prefill.timerDurationSecs ?? 0)
     setDisplayThreshold(prefill.displayThresholdSecs ?? 0)
+    setFadeAlertSecs(prefill.timerAlerts?.[0]?.seconds ?? 0)
     setAction(buildInitialAction(prefill))
     setError(null)
     setPatternError(null)
@@ -108,6 +116,7 @@ export default function CreateTriggerModal({
     prefill.timerType,
     prefill.timerDurationSecs,
     prefill.displayThresholdSecs,
+    prefill.timerAlerts,
     prefill.displayText,
     prefill.displayColor,
   ])
@@ -136,6 +145,28 @@ export default function CreateTriggerModal({
 
     const actions: Action[] = actionHasContent(action) ? [action] : []
 
+    // A "fading soon" alert only makes sense with a running timer. Reuse the
+    // seeded alert's voice/template when present so editing just the lead time
+    // keeps the rest of the prefill; otherwise synthesize a sensible TTS one.
+    const base = prefill.timerAlerts?.[0]
+    const timer_alerts: TimerAlertThreshold[] =
+      timerType !== 'none' && fadeAlertSecs > 0
+        ? [
+            base
+              ? { ...base, seconds: fadeAlertSecs }
+              : {
+                  id: 'spell-fade-default',
+                  seconds: fadeAlertSecs,
+                  type: 'text_to_speech',
+                  sound_path: '',
+                  volume: 80,
+                  tts_template: '{spell} fading soon',
+                  voice: '',
+                  tts_volume: 80,
+                },
+          ]
+        : []
+
     const req: CreateTriggerRequest = {
       name: name.trim(),
       enabled: true,
@@ -146,6 +177,7 @@ export default function CreateTriggerModal({
       worn_off_pattern: timerType === 'none' ? '' : wornOff.trim(),
       spell_id: prefill.spellId ?? 0,
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
+      timer_alerts,
     }
 
     setSubmitting(true)
@@ -317,6 +349,23 @@ export default function CreateTriggerModal({
               />
               <p className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
                 Hide this timer until its remaining time is at or below this value. Overrides the global Buff / Detrimental defaults in Settings.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+                Fading alert (seconds remaining, 0 = off)
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={fadeAlertSecs}
+                onChange={(e) => setFadeAlertSecs(Math.max(0, parseInt(e.target.value) || 0))}
+                className="w-full rounded px-3 py-1.5 text-sm outline-none"
+                style={inputStyle}
+                disabled={submitting}
+              />
+              <p className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                Speaks &ldquo;{name || '{spell}'} fading soon&rdquo; this many seconds before the timer ends, so you can recast in time. Add more alerts or a sound in the Triggers tab.
               </p>
             </div>
           </>

@@ -9,6 +9,7 @@ import {
   spellTargetLabel,
   spellTypeFilterLabel,
 } from './enumsCache'
+import type { TimerAlertThreshold } from '../types/trigger'
 
 // ── Class names ────────────────────────────────────────────────────────────────
 
@@ -161,6 +162,37 @@ export type SpellTimerTriggerPrefill = {
   timerType: 'buff' | 'detrimental'
   timerDurationSecs: number
   spellId: number
+  timerAlerts: TimerAlertThreshold[]
+}
+
+/**
+ * Seed a single "fading soon" alert for a spell-timer trigger so the From-spell
+ * flow gives a proactive heads-up out of the box (the user can edit or remove
+ * it in the trigger editor). Buffs warn ~3 min out so there's time to recast;
+ * detrimentals/mez warn ~10s out. The lead never exceeds half the duration, so
+ * short buffs still get a meaningful alert rather than one that fires instantly
+ * or never (useTimerAlerts only fires once remaining crosses below the
+ * threshold from above). Returns [] when the spell has no trackable duration.
+ */
+function buildDefaultFadeAlert(
+  timerType: 'buff' | 'detrimental',
+  durationSecs: number,
+): TimerAlertThreshold[] {
+  if (durationSecs <= 0) return []
+  const desired = timerType === 'buff' ? 180 : 10
+  const seconds = Math.min(desired, Math.max(1, Math.floor(durationSecs / 2)))
+  return [
+    {
+      id: 'spell-fade-default',
+      seconds,
+      type: 'text_to_speech',
+      sound_path: '',
+      volume: 80,
+      tts_template: '{spell} fading soon',
+      voice: '',
+      tts_volume: 80,
+    },
+  ]
 }
 
 function escapeRegex(s: string): string {
@@ -240,13 +272,15 @@ export function buildSpellTriggerPrefill(spell: {
     : approxDurationTicks(spell.buff_duration_formula, spell.buff_duration, 60)
   const durationSecs = durationTicks > 0 ? durationTicks * 6 : 0
 
+  const timerType = spellIsBuff(spell.target_type) ? 'buff' : 'detrimental'
   return {
     name: spell.name,
     pattern,
     wornOffPattern: wornOff,
-    timerType: spellIsBuff(spell.target_type) ? 'buff' : 'detrimental',
+    timerType,
     timerDurationSecs: durationSecs,
     spellId: spell.id,
+    timerAlerts: buildDefaultFadeAlert(timerType, durationSecs),
   }
 }
 

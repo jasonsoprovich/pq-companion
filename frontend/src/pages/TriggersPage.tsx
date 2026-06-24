@@ -352,7 +352,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
   const [wornOffPattern, setWornOffPattern] = useState(initial?.worn_off_pattern ?? prefill?.wornOffPattern ?? '')
   const [displayThreshold, setDisplayThreshold] = useState(initial?.display_threshold_secs ?? 0)
   const [timerAlerts, setTimerAlerts] = useState<TimerAlertThreshold[]>(
-    initial?.timer_alerts ?? [],
+    initial?.timer_alerts ?? prefill?.timerAlerts ?? [],
   )
   // Exclude patterns are stored as one regex per line in the textarea so the
   // user can paste a curated list without juggling per-row controls. Empty
