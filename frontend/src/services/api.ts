@@ -961,11 +961,13 @@ export function startCustomTimer(
   name: string,
   durationSecs: number,
   alerts?: TimerAlertThreshold[],
+  color?: string,
 ): Promise<void> {
   return post<void>('/api/overlay/timers/custom', {
     name,
     duration_secs: durationSecs,
     ...(alerts && alerts.length > 0 ? { alerts } : {}),
+    ...(color ? { color } : {}),
   })
 }
 

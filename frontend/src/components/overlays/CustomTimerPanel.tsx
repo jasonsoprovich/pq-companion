@@ -8,7 +8,7 @@
  * window.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Bell, BellOff, Hourglass, Trash2, ExternalLink, X } from 'lucide-react'
+import { Bell, BellOff, Hourglass, Palette, Trash2, ExternalLink, X } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useDisplayThresholds, passesThreshold } from '../../hooks/useDisplayThresholds'
 import { useTimerAppearance, type TimerAppearance } from '../../hooks/useTimerAppearance'
@@ -143,6 +143,8 @@ export default function CustomTimerPanel({
   const [newName, setNewName] = useState('')
   const [newDuration, setNewDuration] = useState('')
   const [addError, setAddError] = useState(false)
+  // '' = automatic (urgency cyan→orange→red shift); a hex value pins the bar.
+  const [newColor, setNewColor] = useState('')
   // Per-add alert toggle. null = follow the global default; once the user
   // clicks the bell it holds their explicit choice for subsequent adds.
   const alertPref = useCustomTimerAlertPref()
@@ -175,7 +177,7 @@ export default function CustomTimerPanel({
     const alerts = bellOn
       ? customAlertThresholds({ ...withTimerAlertDefaults(alertPref, 'custom'), enabled: true })
       : undefined
-    startCustomTimer(newName.trim(), secs, alerts)
+    startCustomTimer(newName.trim(), secs, alerts, newColor || undefined)
       .then(() => {
         setNewName('')
         setNewDuration('')
@@ -277,6 +279,34 @@ export default function CustomTimerPanel({
           title="Duration: seconds (300), colon notation (6:40), or units (6m40s)"
           style={{ ...quickInputStyle, width: 78 }}
         />
+        {newColor !== '' && (
+          <input
+            type="color"
+            value={newColor}
+            onChange={(e) => setNewColor(e.target.value)}
+            title="Bar color for this timer"
+            style={{ width: 26, height: 24, padding: 0, borderRadius: 3, border: '1px solid var(--color-border)', background: 'transparent', cursor: 'pointer', flexShrink: 0 }}
+          />
+        )}
+        <button
+          type="button"
+          onClick={() => setNewColor(newColor ? '' : '#38bdf8')}
+          title={newColor ? 'Custom bar color (click for automatic)' : 'Automatic bar color (click to pick a color)'}
+          aria-pressed={newColor !== ''}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '2px 6px',
+            borderRadius: 3,
+            border: '1px solid var(--color-border)',
+            backgroundColor: newColor ? 'rgba(56,189,248,0.2)' : 'var(--color-surface)',
+            color: newColor ? 'var(--color-foreground)' : 'var(--color-muted)',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <Palette size={12} />
+        </button>
         <button
           type="button"
           onClick={() => setAlertOverride(!bellOn)}
