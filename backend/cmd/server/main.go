@@ -834,6 +834,19 @@ func main() {
 		}
 	}
 	dispatchLine := func(ts time.Time, msg string) {
+		// Opt-in raw passthrough: when enabled, surface lines that match no
+		// known event pattern to the live feed as log:raw so they're visible
+		// and searchable there. Classified lines already arrive via
+		// dispatchEvent, so only broadcast the ones ParseLine would drop.
+		if tailer != nil && tailer.RawFeed() {
+			if _, ok := logparser.ClassifyMessage(msg); !ok {
+				hub.Broadcast(ws.Event{Type: string(logparser.EventRaw), Data: logparser.LogEvent{
+					Type:      logparser.EventRaw,
+					Timestamp: ts,
+					Message:   msg,
+				}})
+			}
+		}
 		triggerEngine.Handle(ts, msg)
 		chChainMatcher.HandleLine(ts, msg)
 		if keyringConsumer != nil {

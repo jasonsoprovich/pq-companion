@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
@@ -55,7 +56,20 @@ type Tailer struct {
 	remainderStable   bool   // remainder survived one idle poll — safe to flush as a complete line
 	detectedCharacter string // last auto-detected character name (empty when manually configured)
 	paused            bool   // true while a log replay session owns the dispatch pipeline
+
+	// rawFeed, when set, makes the live feed also surface lines that match no
+	// known event pattern (chat, system messages, "X is no longer mezzed", …)
+	// so they can be searched there. Opt-in: off by default to keep the feed
+	// to recognised combat/spell events. Read on the hot path, so atomic.
+	rawFeed atomic.Bool
 }
+
+// SetRawFeed toggles whether unrecognised log lines are broadcast to the live
+// feed (as log:raw events) in addition to the classified events.
+func (t *Tailer) SetRawFeed(enabled bool) { t.rawFeed.Store(enabled) }
+
+// RawFeed reports whether the raw-line passthrough is currently enabled.
+func (t *Tailer) RawFeed() bool { return t.rawFeed.Load() }
 
 // NewTailer creates a Tailer. Call Start in a goroutine to begin tailing.
 // lineHandler, if non-nil, is called for every line that has a valid EQ

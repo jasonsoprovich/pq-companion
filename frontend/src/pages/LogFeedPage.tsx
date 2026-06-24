@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Activity, Trash2, AlertTriangle, CheckCircle2, Circle, Search, Film, Play, Pause, Square, FolderOpen, Loader2 } from 'lucide-react'
+import { Activity, Trash2, AlertTriangle, CheckCircle2, Circle, Search, Film, Play, Pause, Square, FolderOpen, Loader2, FileText } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useLogFeed, clearLogFeed, LOG_FEED_MAX } from '../hooks/useLogFeed'
 import { useReplayPrefs, type ReplayPrefs } from '../hooks/useReplayPrefs'
@@ -13,6 +13,7 @@ import {
   pauseReplay,
   resumeReplay,
   stopReplay,
+  setLogRawFeed,
   browseLog,
   type ReplayFile,
   type ReplayStatus,
@@ -629,6 +630,19 @@ export default function LogFeedPage(): React.ReactElement {
   }, [status])
   const playFromFile = mode === 'browse' ? browseFile : liveFileBase
 
+  // Opt-in raw passthrough: when on, the backend also pushes unrecognised
+  // lines (chat, system messages, "X is no longer mezzed") to the live feed so
+  // they're visible and searchable. The flag lives on the backend; optimistic
+  // toggle, revert on failure.
+  const rawFeed = status?.raw_feed ?? false
+  const handleToggleRawFeed = useCallback(() => {
+    const next = !(status?.raw_feed ?? false)
+    setStatus((prev) => (prev ? { ...prev, raw_feed: next } : prev))
+    setLogRawFeed(next).catch(() => {
+      setStatus((prev) => (prev ? { ...prev, raw_feed: !next } : prev))
+    })
+  }, [status?.raw_feed])
+
   const handleRowContext = useCallback((e: React.MouseEvent, timestamp: string) => {
     e.preventDefault()
     // Keep the menu on-screen near the bottom/right edges.
@@ -738,6 +752,20 @@ export default function LogFeedPage(): React.ReactElement {
             />
           </div>
           {mode === 'live' && <ConnPill state={wsState} status={status} />}
+          {mode === 'live' && (
+            <button
+              onClick={handleToggleRawFeed}
+              className="flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors"
+              style={{
+                color: rawFeed ? 'var(--color-primary)' : 'var(--color-muted)',
+                border: '1px solid var(--color-border)',
+              }}
+              title="Also show raw, unrecognised lines (chat, system messages) in the feed so they can be searched"
+            >
+              <FileText size={12} />
+              Raw lines
+            </button>
+          )}
           {mode === 'live' && (
             <button
               onClick={() => setShowReplay((v) => !v)}

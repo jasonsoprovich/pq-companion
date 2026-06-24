@@ -270,6 +270,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/info", logH.info)
 			r.Get("/browse", logH.browse)
 			r.Post("/cleanup", logH.cleanup)
+			r.Post("/raw-feed", logH.rawFeed)
 		})
 		r.Route("/replay", func(r chi.Router) {
 			r.Get("/files", replayH.files)

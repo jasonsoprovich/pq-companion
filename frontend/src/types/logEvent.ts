@@ -61,6 +61,8 @@ export interface LogTailerStatus {
   offset: number
   size_bytes: number
   large_file: boolean
+  // When true, the live feed also surfaces unrecognised lines as log:raw.
+  raw_feed: boolean
 }
 
 export interface LogFileInfo {

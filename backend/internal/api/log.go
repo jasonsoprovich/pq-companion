@@ -27,6 +27,7 @@ func (h *logHandler) status(w http.ResponseWriter, r *http.Request) {
 		Offset     int64  `json:"offset"`
 		SizeBytes  int64  `json:"size_bytes"`
 		LargeFile  bool   `json:"large_file"`
+		RawFeed    bool   `json:"raw_feed"`
 	}
 
 	var sizeBytes int64
@@ -46,7 +47,24 @@ func (h *logHandler) status(w http.ResponseWriter, r *http.Request) {
 		Offset:     s.Offset,
 		SizeBytes:  sizeBytes,
 		LargeFile:  largeFile,
+		RawFeed:    h.tailer.RawFeed(),
 	})
+}
+
+// rawFeed handles POST /api/log/raw-feed — toggles whether unrecognised log
+// lines (chat, system messages) are broadcast to the live feed as log:raw.
+// Body: {"enabled": true}. The setting lives on the tailer, so it persists
+// across renderer navigation until the backend restarts.
+func (h *logHandler) rawFeed(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	h.tailer.SetRawFeed(req.Enabled)
+	writeJSON(w, http.StatusOK, map[string]bool{"raw_feed": req.Enabled})
 }
 
 // info handles GET /api/log/info — returns full file metadata including

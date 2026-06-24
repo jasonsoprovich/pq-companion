@@ -804,6 +804,13 @@ export function cleanupLog(): Promise<{ backup_path: string }> {
   return post<{ backup_path: string }>('/api/log/cleanup', {})
 }
 
+// Toggle whether the live feed also surfaces unrecognised lines (chat, system
+// messages) as log:raw events so they can be searched there. The backend holds
+// the flag, so it persists across renderer navigation until restart.
+export function setLogRawFeed(enabled: boolean): Promise<{ raw_feed: boolean }> {
+  return post<{ raw_feed: boolean }>('/api/log/raw-feed', { enabled })
+}
+
 // ── Log Browse (out-of-game viewer) ──────────────────────────────────────────
 
 // One line from the log browser: the same shape as a live LogEvent plus the

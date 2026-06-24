@@ -310,6 +310,15 @@ func ParseLine(line string) (LogEvent, bool) {
 	return ev, true
 }
 
+// ClassifyMessage reports whether a timestamp-stripped log message matches any
+// known event pattern. It is the same classification ParseLine performs (which
+// is just this plus stamping the timestamp), exposed so the live-feed raw
+// passthrough can tell classified lines from unrecognised chat/system lines
+// without re-parsing the full line.
+func ClassifyMessage(msg string) (LogEvent, bool) {
+	return classifyMessage(msg)
+}
+
 // classifyMessage matches a bare log message (timestamp stripped) to a known
 // event type and returns a partially-filled LogEvent (no Timestamp/Message yet).
 func classifyMessage(msg string) (LogEvent, bool) {
