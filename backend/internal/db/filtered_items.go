@@ -10,7 +10,6 @@ import (
 // should not be visible to users. Add new IDs here as they are identified.
 var hiddenItemIDs = []int{
 	11400, // test item from database creator
-	14346, // Red Glowing Robe — GM-only item, not obtainable by players
 }
 
 // hiddenItemSet is a fast lookup version of hiddenItemIDs.

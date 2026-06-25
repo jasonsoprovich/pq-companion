@@ -112,6 +112,7 @@ var excludedGearItems = map[int]bool{
 	11001: true, // Soul Devourer — GM-event weapon, no longer obtainable
 	2883:  true, // The Prime Healers Bulwark — GM-event item, no longer obtainable
 	2446:  true, // Scepter of Al`Kabor — GM-event item, no longer obtainable
+	14346: true, // Red Glowing Robe — GM-only, not obtainable by players
 }
 
 // CandidateFilter selects items usable in a slot by a character. A zero
