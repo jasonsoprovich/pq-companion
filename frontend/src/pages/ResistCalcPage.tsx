@@ -20,6 +20,19 @@ const CLASS_NAMES = [
 
 const ENCHANTER = 13
 
+// The target is always a real NPC (picked in-game or from the database), so
+// its level/resists are displayed read-only rather than hand-edited.
+interface TargetNPC {
+  name: string
+  level: number // worst case: top of the NPC's level range
+  mr: number
+  cr: number
+  fr: number
+  dr: number
+  pr: number
+  specialAbilities: string
+}
+
 function pct(x: number): string {
   return `${(x * 100).toFixed(1)}%`
 }
@@ -35,13 +48,7 @@ export default function ResistCalcPage(): React.ReactElement {
   const [spellFilter, setSpellFilter] = useState('')
   const [spellID, setSpellID] = useState<number | null>(null)
 
-  const [targetName, setTargetName] = useState('')
-  const [targetLevel, setTargetLevel] = useState(60)
-  const [mr, setMR] = useState(0)
-  const [cr, setCR] = useState(0)
-  const [fr, setFR] = useState(0)
-  const [dr, setDR] = useState(0)
-  const [pr, setPR] = useState(0)
+  const [target, setTarget] = useState<TargetNPC | null>(null)
 
   const [result, setResult] = useState<ResistCheckResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -90,9 +97,10 @@ export default function ResistCalcPage(): React.ReactElement {
     return list.slice(0, 400)
   }, [spells, spellFilter])
 
-  // Run the resist check whenever a spell is chosen and inputs change.
+  // Run the resist check whenever a spell is chosen, the caster changes, or a
+  // new target is selected.
   useEffect(() => {
-    if (spellID == null) {
+    if (spellID == null || !target) {
       setResult(null)
       return
     }
@@ -103,12 +111,13 @@ export default function ResistCalcPage(): React.ReactElement {
       caster_level: casterLevel,
       caster_class: casterClass,
       caster_cha: casterCHA,
-      target_level: targetLevel,
-      target_mr: mr,
-      target_cr: cr,
-      target_fr: fr,
-      target_dr: dr,
-      target_pr: pr,
+      target_level: target.level,
+      target_mr: target.mr,
+      target_cr: target.cr,
+      target_fr: target.fr,
+      target_dr: target.dr,
+      target_pr: target.pr,
+      target_special_abilities: target.specialAbilities,
     })
       .then((r) => {
         if (!cancelled) setResult(r)
@@ -122,20 +131,23 @@ export default function ResistCalcPage(): React.ReactElement {
     return () => {
       cancelled = true
     }
-  }, [spellID, casterLevel, casterClass, casterCHA, targetLevel, mr, cr, fr, dr, pr])
+  }, [spellID, casterLevel, casterClass, casterCHA, target])
 
-  // applyNPCTarget fills the target fields from any NPC row — shared by the
-  // in-game current-target button and the manual database search, so whichever
-  // is invoked most recently wins.
+  // applyNPCTarget loads the target from any NPC row — shared by the in-game
+  // current-target button and the manual database search, so whichever is
+  // invoked most recently wins.
   const applyNPCTarget = (npc: NPC): void => {
-    setTargetName(npc.name)
-    // Worst case: use the top of the NPC's level range.
-    setTargetLevel(Math.max(npc.level, npc.max_level || 0))
-    setMR(npc.mr)
-    setCR(npc.cr)
-    setFR(npc.fr)
-    setDR(npc.dr)
-    setPR(npc.pr)
+    setTarget({
+      name: npc.name,
+      // Worst case: use the top of the NPC's level range.
+      level: Math.max(npc.level, npc.max_level || 0),
+      mr: npc.mr,
+      cr: npc.cr,
+      fr: npc.fr,
+      dr: npc.dr,
+      pr: npc.pr,
+      specialAbilities: npc.special_abilities ?? '',
+    })
   }
 
   const useCurrentTarget = (): void => {
@@ -328,23 +340,30 @@ export default function ResistCalcPage(): React.ReactElement {
               </ul>
             )}
           </div>
-          {targetName && (
-            <span className="shrink-0 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-              {targetName}
+          {target && (
+            <span className="shrink-0 text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+              {target.name}
             </span>
           )}
         </div>
         {targetNote && (
           <p className="mb-2 text-xs" style={{ color: '#f59e0b' }}>{targetNote}</p>
         )}
-        <div className="grid grid-cols-3 gap-3">
-          <NumField label="Level (worst case)" value={targetLevel} onChange={setTargetLevel} min={1} max={75} />
-          <NumField label="Magic (MR)" value={mr} onChange={setMR} min={0} max={500} />
-          <NumField label="Fire (FR)" value={fr} onChange={setFR} min={0} max={500} />
-          <NumField label="Cold (CR)" value={cr} onChange={setCR} min={0} max={500} />
-          <NumField label="Disease (DR)" value={dr} onChange={setDR} min={0} max={500} />
-          <NumField label="Poison (PR)" value={pr} onChange={setPR} min={0} max={500} />
-        </div>
+        {target ? (
+          <div className="grid grid-cols-3 gap-3">
+            <ReadField label="Level (worst case)" value={target.level} />
+            <ReadField label="Magic (MR)" value={target.mr} />
+            <ReadField label="Fire (FR)" value={target.fr} />
+            <ReadField label="Cold (CR)" value={target.cr} />
+            <ReadField label="Disease (DR)" value={target.dr} />
+            <ReadField label="Poison (PR)" value={target.pr} />
+          </div>
+        ) : (
+          <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+            Pick a target with “Use current target” or the database search above.
+            Resists and level come straight from the NPC.
+          </p>
+        )}
       </Section>
 
       {error && (
@@ -357,6 +376,20 @@ export default function ResistCalcPage(): React.ReactElement {
 }
 
 function Results({ result }: { result: ResistCheckResponse }): React.ReactElement {
+  if (result.cannot_affect) {
+    return (
+      <Section title="Result — cannot affect target">
+        <div className="flex items-start gap-2">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" style={{ color: '#f87171' }} />
+          <p className="text-sm">
+            <strong style={{ color: 'var(--color-foreground)' }}>{result.spell_name}</strong>{' '}
+            won&rsquo;t land on this target: {result.reason}
+          </p>
+        </div>
+      </Section>
+    )
+  }
+
   if (result.unresistable) {
     return (
       <Section title="Result">
@@ -480,6 +513,26 @@ function NumField({
       />
       {hint && <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>{hint}</span>}
     </label>
+  )
+}
+
+// ReadField shows a derived target value (level / resist) read-only — the
+// target's numbers come from the NPC and aren't hand-edited.
+function ReadField({ label, value }: { label: string; value: number }): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      <span style={{ color: 'var(--color-muted)' }}>{label}</span>
+      <div
+        className="rounded px-2 py-1.5 text-sm tabular-nums"
+        style={{
+          backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+          color: 'var(--color-foreground)',
+        }}
+      >
+        {value}
+      </div>
+    </div>
   )
 }
 
