@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Crosshair, AlertTriangle, CheckCircle2, Circle, ExternalLink } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
@@ -11,6 +11,7 @@ import { getOverlayNPCTarget, getLogStatus, getNPCLoot, getNPCFaction, getItem }
 import { className, bodyTypeName, npcRunSpeedPct, npcLevelLabel } from '../../lib/npcHelpers'
 import { cleanLootDropLabel, effectiveDropPct, rarityColor } from '../../lib/lootHelpers'
 import OverlayWindow from '../OverlayWindow'
+import TargetPinButton from '../TargetPinButton'
 import ItemDetailModal from '../ItemDetailModal'
 import { ItemIcon } from '../Icon'
 import { ResistChip } from '../ResistChip'
@@ -698,6 +699,10 @@ export default function NPCPanel({
   const [view, setView] = useState<View>('stats')
   const [modalItem, setModalItem] = useState<Item | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  // Pin holds the displayed target and ignores incoming swaps until unpinned.
+  // Ref mirrors state so the WS handler stays stable (no re-subscribe).
+  const [pinned, setPinned] = useState(false)
+  const pinnedRef = useRef(false)
   const sections = useNPCOverlaySections('dashboard')
   const wishlistItemIds = useWishlistItemIds()
 
@@ -708,7 +713,18 @@ export default function NPCPanel({
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type !== WSEvent.OverlayNPCTarget) return
+    if (pinnedRef.current) return
     setTarget(msg.data as TargetState)
+  }, [])
+
+  const togglePin = useCallback(() => {
+    setPinned((p) => {
+      const next = !p
+      pinnedRef.current = next
+      // On unpin, snap back to the live target.
+      if (!next) getOverlayNPCTarget().then(setTarget).catch(() => {})
+      return next
+    })
   }, [])
 
   const wsState = useWebSocket(handleMessage)
@@ -737,6 +753,9 @@ export default function NPCPanel({
         }
         headerRight={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {(target?.has_target || pinned) && (
+              <TargetPinButton pinned={pinned} onToggle={togglePin} />
+            )}
             {window.electron?.overlay && (
               <button
                 onClick={() => window.electron.overlay.toggleNPC()}
@@ -749,6 +768,7 @@ export default function NPCPanel({
             <ConnPill state={wsState} status={status} />
           </div>
         }
+        outlineColor={pinned ? '#c9a84c' : undefined}
         defaultWidth={defaultWidth}
         defaultHeight={defaultHeight}
         defaultX={defaultX}

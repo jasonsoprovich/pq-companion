@@ -14,6 +14,8 @@ interface OverlayWindowProps {
   snapGridSize?: number
   /** Fires once at the end of a drag or resize (mouseup) with the final bounds. */
   onLayoutChange?: (bounds: { x: number; y: number; width: number; height: number }) => void
+  /** When set, draws a thick accent outline around the window (e.g. pinned state). */
+  outlineColor?: string
   children: React.ReactNode
 }
 
@@ -90,6 +92,7 @@ export default function OverlayWindow({
   minHeight = 180,
   snapGridSize,
   onLayoutChange,
+  outlineColor,
   children,
 }: OverlayWindowProps): React.ReactElement {
   const [pos, setPos] = useState({ x: defaultX, y: defaultY })
@@ -280,6 +283,8 @@ export default function OverlayWindow({
         flexDirection: 'column',
         backgroundColor: 'var(--color-surface)',
         border: '1px solid var(--color-border)',
+        outline: outlineColor ? `2px solid ${outlineColor}` : undefined,
+        outlineOffset: outlineColor ? -2 : undefined,
         borderRadius: 8,
         overflow: 'hidden',
         boxShadow: '0 8px 32px rgba(0,0,0,0.6)',

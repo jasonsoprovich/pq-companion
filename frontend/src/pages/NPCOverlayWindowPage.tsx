@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Crosshair, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
@@ -11,6 +11,7 @@ import { useWishlistItemIds } from '../hooks/useWishlistItemIds'
 import { useTargetTimers } from '../hooks/useTargetTimers'
 import { useTargetPlayer } from '../hooks/useTargetPlayer'
 import OverlayLockButton from '../components/OverlayLockButton'
+import TargetPinButton from '../components/TargetPinButton'
 import { ItemIcon } from '../components/Icon'
 import { ResistChip } from '../components/ResistChip'
 import NPCCasterSummarySection from '../components/overlays/NPCCasterSummarySection'
@@ -574,6 +575,10 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
   const onDragMouseDown = useWindowDrag()
   const [target, setTarget] = useState<TargetState | null>(null)
   const [view, setView] = useState<View>('stats')
+  // Pin holds the displayed target and ignores incoming swaps until unpinned.
+  // Ref mirrors state so the WS handler stays stable (no re-subscribe).
+  const [pinned, setPinned] = useState(false)
+  const pinnedRef = useRef(false)
   const sections = useNPCOverlaySections('popout')
   const wishlistItemIds = useWishlistItemIds()
 
@@ -585,7 +590,18 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type !== WSEvent.OverlayNPCTarget) return
+    if (pinnedRef.current) return
     setTarget(msg.data as TargetState)
+  }, [])
+
+  const togglePin = useCallback(() => {
+    setPinned((p) => {
+      const next = !p
+      pinnedRef.current = next
+      // On unpin, snap back to the live target.
+      if (!next) getOverlayNPCTarget().then(setTarget).catch(() => {})
+      return next
+    })
   }, [])
 
   useWebSocket(handleMessage)
@@ -604,6 +620,9 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
         overflow: 'hidden',
         borderRadius: 8,
         border: `1px solid rgba(255,255,255,${chrome ? 0.1 : 0})`,
+        // Pin indicator stays visible even when the chrome fades.
+        outline: pinned ? '2px solid #c9a84c' : undefined,
+        outlineOffset: pinned ? -2 : undefined,
         transition: 'background-color 0.4s ease, border-color 0.4s ease',
       }}
     >
@@ -635,6 +654,9 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
           className="no-drag"
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
+          {(target?.has_target || pinned) && (
+            <TargetPinButton pinned={pinned} onToggle={togglePin} />
+          )}
           <OverlayLockButton locked={locked} onToggle={toggleLocked} size={12} />
           <button
             onClick={() => window.electron?.overlay?.closeNPC()}
