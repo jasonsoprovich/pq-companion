@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Crosshair, Percent, Search } from 'lucide-react'
+import { AlertTriangle, Crosshair, Percent, Search, X } from 'lucide-react'
 import {
   getSpellsByClass,
   getOverlayNPCTarget,
+  getResistDebuffs,
   listCharacters,
   postResistCheck,
   searchNPCs,
   type ResistCheckResponse,
+  type ResistDebuff,
 } from '../services/api'
 import type { Spell } from '../types/spell'
 import type { NPC } from '../types/npc'
@@ -58,6 +60,11 @@ export default function ResistCalcPage(): React.ReactElement {
   const [npcResults, setNpcResults] = useState<NPC[]>([])
   const npcSearchRef = useRef<HTMLDivElement>(null)
 
+  const [debuffList, setDebuffList] = useState<ResistDebuff[]>([])
+  const [selectedDebuffs, setSelectedDebuffs] = useState<ResistDebuff[]>([])
+  const [debuffQuery, setDebuffQuery] = useState('')
+  const debuffSearchRef = useRef<HTMLDivElement>(null)
+
   // Seed the caster from the active character (level/class/base CHA). CHA is
   // editable since the formula wants total (buffed) charisma, not base.
   useEffect(() => {
@@ -71,6 +78,29 @@ export default function ResistCalcPage(): React.ReactElement {
       })
       .catch(() => {})
   }, [])
+
+  // Load the resist-debuff catalogue once.
+  useEffect(() => {
+    getResistDebuffs()
+      .then(setDebuffList)
+      .catch(() => {})
+  }, [])
+
+  // Effective resists = the NPC's base plus the sum of selected debuff deltas
+  // (deltas are negative), floored at 1 like the in-game resist calc.
+  const modified = useMemo(() => {
+    if (!target) return null
+    const sum = (k: 'mr' | 'cr' | 'fr' | 'dr' | 'pr'): number =>
+      selectedDebuffs.reduce((acc, d) => acc + d[k], 0)
+    const clamp = (v: number): number => Math.max(1, v)
+    return {
+      mr: clamp(target.mr + sum('mr')),
+      cr: clamp(target.cr + sum('cr')),
+      fr: clamp(target.fr + sum('fr')),
+      dr: clamp(target.dr + sum('dr')),
+      pr: clamp(target.pr + sum('pr')),
+    }
+  }, [target, selectedDebuffs])
 
   // Load the class spell list whenever the class changes; keep only detrimental
   // spells (the only ones a resist check is meaningful for) and sort by name.
@@ -100,7 +130,7 @@ export default function ResistCalcPage(): React.ReactElement {
   // Run the resist check whenever a spell is chosen, the caster changes, or a
   // new target is selected.
   useEffect(() => {
-    if (spellID == null || !target) {
+    if (spellID == null || !target || !modified) {
       setResult(null)
       return
     }
@@ -112,11 +142,11 @@ export default function ResistCalcPage(): React.ReactElement {
       caster_class: casterClass,
       caster_cha: casterCHA,
       target_level: target.level,
-      target_mr: target.mr,
-      target_cr: target.cr,
-      target_fr: target.fr,
-      target_dr: target.dr,
-      target_pr: target.pr,
+      target_mr: modified.mr,
+      target_cr: modified.cr,
+      target_fr: modified.fr,
+      target_dr: modified.dr,
+      target_pr: modified.pr,
       target_special_abilities: target.specialAbilities,
     })
       .then((r) => {
@@ -131,7 +161,38 @@ export default function ResistCalcPage(): React.ReactElement {
     return () => {
       cancelled = true
     }
-  }, [spellID, casterLevel, casterClass, casterCHA, target])
+  }, [spellID, casterLevel, casterClass, casterCHA, target, modified])
+
+  const addDebuff = (d: ResistDebuff): void => {
+    setSelectedDebuffs((prev) => (prev.some((x) => x.id === d.id) ? prev : [...prev, d]))
+    setDebuffQuery('')
+  }
+  const removeDebuff = (id: number): void => {
+    setSelectedDebuffs((prev) => prev.filter((d) => d.id !== id))
+  }
+
+  // Clear the target's debuffs when a new target is picked (resists differ).
+  useEffect(() => {
+    setSelectedDebuffs([])
+  }, [target?.name])
+
+  const debuffMatches = useMemo(() => {
+    const q = debuffQuery.trim().toLowerCase()
+    if (!q) return []
+    return debuffList
+      .filter((d) => d.name.toLowerCase().includes(q) && !selectedDebuffs.some((s) => s.id === d.id))
+      .slice(0, 10)
+  }, [debuffQuery, debuffList, selectedDebuffs])
+
+  // Dismiss the debuff results dropdown on click outside.
+  useEffect(() => {
+    if (debuffMatches.length === 0) return
+    const handler = (e: MouseEvent) => {
+      if (!debuffSearchRef.current?.contains(e.target as Node)) setDebuffQuery('')
+    }
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
+  }, [debuffMatches.length])
 
   // applyNPCTarget loads the target from any NPC row — shared by the in-game
   // current-target button and the manual database search, so whichever is
@@ -350,14 +411,25 @@ export default function ResistCalcPage(): React.ReactElement {
           <p className="mb-2 text-xs" style={{ color: '#f59e0b' }}>{targetNote}</p>
         )}
         {target ? (
-          <div className="grid grid-cols-3 gap-3">
-            <ReadField label="Level (worst case)" value={target.level} />
-            <ReadField label="Magic (MR)" value={target.mr} />
-            <ReadField label="Fire (FR)" value={target.fr} />
-            <ReadField label="Cold (CR)" value={target.cr} />
-            <ReadField label="Disease (DR)" value={target.dr} />
-            <ReadField label="Poison (PR)" value={target.pr} />
-          </div>
+          <>
+            <div className="grid grid-cols-3 gap-3">
+              <ReadField label="Level (worst case)" value={target.level} />
+              <ReadField label="Magic (MR)" value={target.mr} modified={modified?.mr} />
+              <ReadField label="Fire (FR)" value={target.fr} modified={modified?.fr} />
+              <ReadField label="Cold (CR)" value={target.cr} modified={modified?.cr} />
+              <ReadField label="Disease (DR)" value={target.dr} modified={modified?.dr} />
+              <ReadField label="Poison (PR)" value={target.pr} modified={modified?.pr} />
+            </div>
+            <DebuffPicker
+              ref={debuffSearchRef}
+              query={debuffQuery}
+              setQuery={setDebuffQuery}
+              matches={debuffMatches}
+              selected={selectedDebuffs}
+              onAdd={addDebuff}
+              onRemove={removeDebuff}
+            />
+          </>
         ) : (
           <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
             Pick a target with “Use current target” or the database search above.
@@ -448,6 +520,111 @@ function Results({ result }: { result: ResistCheckResponse }): React.ReactElemen
   )
 }
 
+function formatDeltas(d: ResistDebuff): string {
+  const parts: string[] = []
+  if (d.mr) parts.push(`MR ${d.mr}`)
+  if (d.fr) parts.push(`FR ${d.fr}`)
+  if (d.cr) parts.push(`CR ${d.cr}`)
+  if (d.dr) parts.push(`DR ${d.dr}`)
+  if (d.pr) parts.push(`PR ${d.pr}`)
+  return parts.join(' · ')
+}
+
+interface DebuffPickerProps {
+  query: string
+  setQuery: (s: string) => void
+  matches: ResistDebuff[]
+  selected: ResistDebuff[]
+  onAdd: (d: ResistDebuff) => void
+  onRemove: (id: number) => void
+}
+
+const DebuffPicker = React.forwardRef<HTMLDivElement, DebuffPickerProps>(
+  function DebuffPicker({ query, setQuery, matches, selected, onAdd, onRemove }, ref) {
+    return (
+      <div className="mt-4">
+        <span
+          className="text-[10px] font-semibold uppercase tracking-widest"
+          style={{ color: 'var(--color-muted)' }}
+        >
+          Resist debuffs
+        </span>
+        {selected.length > 0 && (
+          <div className="mb-2 mt-1.5 flex flex-wrap gap-1.5">
+            {selected.map((d) => (
+              <span
+                key={d.id}
+                className="flex items-center gap-1.5 rounded px-2 py-1 text-[11px]"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                <span className="font-medium">{d.name}</span>
+                <span style={{ color: '#4ade80' }}>{formatDeltas(d)}</span>
+                <button
+                  type="button"
+                  onClick={() => onRemove(d.id)}
+                  className="opacity-60 hover:opacity-100"
+                  title="Remove"
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div ref={ref} className="relative mt-1.5 max-w-sm">
+          <Search
+            size={13}
+            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"
+            style={{ color: 'var(--color-muted)' }}
+          />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Add a resist debuff (Tashanian, Malo…)"
+            className="w-full rounded py-1.5 pl-7 pr-2 text-xs"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              border: '1px solid var(--color-border)',
+            }}
+          />
+          {matches.length > 0 && (
+            <ul
+              className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded shadow-lg"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+              }}
+            >
+              {matches.map((d) => (
+                <li key={d.id}>
+                  <button
+                    type="button"
+                    onClick={() => onAdd(d)}
+                    className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-(--color-surface-3)"
+                  >
+                    <span className="truncate">{d.name}</span>
+                    <span className="shrink-0" style={{ color: 'var(--color-muted)' }}>
+                      {formatDeltas(d)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <p className="mt-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+          Assumes debuffs land. Same-line debuffs (e.g. Tashani + Tashanian)
+          don&rsquo;t stack in-game — add only the strongest of a line.
+        </p>
+      </div>
+    )
+  },
+)
+
 function CaveatBanner(): React.ReactElement {
   return (
     <div
@@ -517,8 +694,18 @@ function NumField({
 }
 
 // ReadField shows a derived target value (level / resist) read-only — the
-// target's numbers come from the NPC and aren't hand-edited.
-function ReadField({ label, value }: { label: string; value: number }): React.ReactElement {
+// target's numbers come from the NPC and aren't hand-edited. When `modified`
+// differs from the base value (resist debuffs applied) it's shown in brackets,
+// green when lowered (easier to land), red when raised.
+function ReadField({
+  label, value, modified,
+}: {
+  label: string
+  value: number
+  modified?: number
+}): React.ReactElement {
+  const changed = modified != null && modified !== value
+  const color = changed ? (modified < value ? '#4ade80' : '#f87171') : 'var(--color-foreground)'
   return (
     <div className="flex flex-col gap-1 text-xs">
       <span style={{ color: 'var(--color-muted)' }}>{label}</span>
@@ -531,6 +718,9 @@ function ReadField({ label, value }: { label: string; value: number }): React.Re
         }}
       >
         {value}
+        {changed && (
+          <span style={{ color }}> ({modified})</span>
+        )}
       </div>
     </div>
   )

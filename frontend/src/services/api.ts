@@ -553,6 +553,22 @@ export function postResistCheck(req: ResistCheckRequest): Promise<ResistCheckRes
   return post<ResistCheckResponse>('/api/resist-check', req)
 }
 
+// A detrimental spell that lowers resists; the resist fields are per-resist
+// deltas (negative = lowers that resist).
+export interface ResistDebuff {
+  id: number
+  name: string
+  mr: number
+  cr: number
+  fr: number
+  dr: number
+  pr: number
+}
+
+export function getResistDebuffs(): Promise<ResistDebuff[]> {
+  return get<ResistDebuff[]>('/api/resist-debuffs')
+}
+
 // ── Keys ───────────────────────────────────────────────────────────────────────
 
 export function getKeys(): Promise<KeysResponse> {
