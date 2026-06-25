@@ -171,7 +171,9 @@ export default function ResistCalcPage(): React.ReactElement {
     const handle = setTimeout(() => {
       searchNPCs(q, 10)
         .then((resp) => {
-          if (!cancelled) setNpcResults(resp.items)
+          // A no-match search returns items: null (Go nil slice), so default
+          // to [] — otherwise npcResults.length throws and black-screens.
+          if (!cancelled) setNpcResults(resp.items ?? [])
         })
         .catch(() => {
           if (!cancelled) setNpcResults([])
