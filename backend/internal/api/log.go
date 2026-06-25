@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -106,8 +108,12 @@ func (h *logHandler) browse(w http.ResponseWriter, r *http.Request) {
 	beforeOffset, _ := strconv.ParseInt(q.Get("before_offset"), 10, 64)
 	limit, _ := strconv.Atoi(q.Get("limit"))
 
-	res, err := logparser.BrowseLines(full, beforeOffset, q.Get("q"), q.Get("type"), limit)
+	res, err := logparser.BrowseLines(r.Context(), full, beforeOffset, q.Get("q"), q.Get("type"), limit)
 	if err != nil {
+		// The client abandoned this search (kept typing); nothing to send.
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

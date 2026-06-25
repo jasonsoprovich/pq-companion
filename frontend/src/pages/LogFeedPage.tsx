@@ -15,6 +15,7 @@ import {
   stopReplay,
   setLogRawFeed,
   browseLog,
+  isAbortError,
   type ReplayFile,
   type ReplayStatus,
   type LogBrowseLine,
@@ -481,6 +482,10 @@ export default function LogFeedPage(): React.ReactElement {
   const [replayPrefs, patchReplayPrefs] = useReplayPrefs()
   const feedRef = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
+  // The in-flight browse request. Every new browse (first page or older page)
+  // aborts the previous one so only one ever runs — without this, fast typing
+  // stacks up full-file scans on the backend that each run to completion.
+  const browseAbortRef = useRef<AbortController | null>(null)
 
   // Live feed vs. out-of-game browser. Browse reads a chosen saved log file on
   // demand via /api/log/browse; the live feed is fed only by the WebSocket.
@@ -560,49 +565,63 @@ export default function LogFeedPage(): React.ReactElement {
       setBrowseNext(null)
       return
     }
-    let cancelled = false
+    browseAbortRef.current?.abort()
+    const ac = new AbortController()
+    browseAbortRef.current = ac
     setBrowseLoading(true)
     setBrowseError(null)
-    browseLog({
-      file: browseFile,
-      q: debouncedSearch || undefined,
-      type: browseType || undefined,
-      limit: BROWSE_LIMIT,
-    })
+    browseLog(
+      {
+        file: browseFile,
+        q: debouncedSearch || undefined,
+        type: browseType || undefined,
+        limit: BROWSE_LIMIT,
+      },
+      ac.signal,
+    )
       .then((res) => {
-        if (cancelled) return
+        if (ac.signal.aborted) return
         setBrowseLines(res.lines)
         setBrowseNext(res.next_offset)
         if (feedRef.current) feedRef.current.scrollTop = 0
       })
       .catch((err: Error) => {
-        if (!cancelled) setBrowseError(err.message)
+        if (!isAbortError(err)) setBrowseError(err.message)
       })
       .finally(() => {
-        if (!cancelled) setBrowseLoading(false)
+        if (!ac.signal.aborted) setBrowseLoading(false)
       })
-    return () => {
-      cancelled = true
-    }
+    return () => ac.abort()
   }, [mode, browseFile, browseType, debouncedSearch])
 
   // Fetch the next (older) page and append. Called on scroll near the bottom.
   const loadMoreBrowse = useCallback(() => {
     if (browseLoading || browseNext == null || !browseFile) return
+    browseAbortRef.current?.abort()
+    const ac = new AbortController()
+    browseAbortRef.current = ac
     setBrowseLoading(true)
-    browseLog({
-      file: browseFile,
-      q: debouncedSearch || undefined,
-      type: browseType || undefined,
-      beforeOffset: browseNext,
-      limit: BROWSE_LIMIT,
-    })
+    browseLog(
+      {
+        file: browseFile,
+        q: debouncedSearch || undefined,
+        type: browseType || undefined,
+        beforeOffset: browseNext,
+        limit: BROWSE_LIMIT,
+      },
+      ac.signal,
+    )
       .then((res) => {
+        if (ac.signal.aborted) return
         setBrowseLines((prev) => [...prev, ...res.lines])
         setBrowseNext(res.next_offset)
       })
-      .catch((err: Error) => setBrowseError(err.message))
-      .finally(() => setBrowseLoading(false))
+      .catch((err: Error) => {
+        if (!isAbortError(err)) setBrowseError(err.message)
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setBrowseLoading(false)
+      })
   }, [browseLoading, browseNext, browseFile, debouncedSearch, browseType])
 
   function handleScroll(): void {

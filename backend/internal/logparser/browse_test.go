@@ -1,6 +1,7 @@
 package logparser
 
 import (
+	"context"
 	"testing"
 )
 
@@ -11,7 +12,7 @@ func browseAll(t *testing.T, path, q, evType string, limit int) []BrowseLine {
 	var all []BrowseLine
 	var before int64
 	for i := 0; i < 1000; i++ { // guard against a cursor that never terminates
-		res, err := BrowseLines(path, before, q, evType, limit)
+		res, err := BrowseLines(context.Background(), path, before, q, evType, limit)
 		if err != nil {
 			t.Fatalf("BrowseLines: %v", err)
 		}

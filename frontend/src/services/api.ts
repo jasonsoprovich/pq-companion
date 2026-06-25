@@ -65,12 +65,12 @@ function isConnectionError(err: unknown): boolean {
   return err instanceof TypeError
 }
 
-async function get<T>(path: string): Promise<T> {
+async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   const baseUrl = await getBackendBaseUrl()
   let lastErr: unknown
   for (let attempt = 0; attempt <= GET_CONNECT_RETRIES; attempt++) {
     try {
-      const res = await fetch(`${baseUrl}${path}`)
+      const res = await fetch(`${baseUrl}${path}`, { signal })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(err.error ?? res.statusText)
@@ -831,19 +831,28 @@ export interface LogBrowseResult {
   next_offset: number | null
 }
 
-export function browseLog(req: {
-  file: string
-  q?: string
-  type?: string
-  beforeOffset?: number
-  limit?: number
-}): Promise<LogBrowseResult> {
+export function browseLog(
+  req: {
+    file: string
+    q?: string
+    type?: string
+    beforeOffset?: number
+    limit?: number
+  },
+  signal?: AbortSignal,
+): Promise<LogBrowseResult> {
   const p = new URLSearchParams({ file: req.file })
   if (req.q) p.set('q', req.q)
   if (req.type) p.set('type', req.type)
   if (req.beforeOffset) p.set('before_offset', String(req.beforeOffset))
   if (req.limit) p.set('limit', String(req.limit))
-  return get<LogBrowseResult>(`/api/log/browse?${p.toString()}`)
+  return get<LogBrowseResult>(`/api/log/browse?${p.toString()}`, signal)
+}
+
+// True when a promise rejected because its fetch was aborted (a superseded
+// browse request), so callers can ignore it rather than surface an error.
+export function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError'
 }
 
 // ── Log Replay ─────────────────────────────────────────────────────────────────

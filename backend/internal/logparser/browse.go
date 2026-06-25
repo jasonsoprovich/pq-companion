@@ -2,6 +2,7 @@ package logparser
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"strings"
 )
@@ -36,8 +37,10 @@ type BrowseResult struct {
 // The file is read strictly read-only, backward in chunks. With no filter the
 // scan stops as soon as limit lines are collected — typically a single chunk —
 // so a multi-hundred-MB log costs only a few KB of I/O for the recent tail. A
-// filter that matches sparsely may scan further, up to the whole file.
-func BrowseLines(path string, beforeOffset int64, query, eventType string, limit int) (*BrowseResult, error) {
+// filter that matches sparsely may scan further, up to the whole file; ctx is
+// checked between chunks so an abandoned request (the user kept typing) stops
+// scanning instead of running the whole file to completion.
+func BrowseLines(ctx context.Context, path string, beforeOffset int64, query, eventType string, limit int) (*BrowseResult, error) {
 	if limit <= 0 {
 		limit = 300
 	}
@@ -73,14 +76,20 @@ func BrowseLines(path string, beforeOffset int64, query, eventType string, limit
 		if !ok {
 			return false // no EQ timestamp — continuation/garbage, skip
 		}
-		ev, classified := ParseLine(text)
-		if !classified {
-			ev = LogEvent{Type: EventRaw, Timestamp: ts, Message: msg}
-		}
-		if eventType != "" && string(ev.Type) != eventType {
+		// Apply the cheap substring filter before the expensive classifier.
+		// A text search over a multi-hundred-thousand-line file otherwise
+		// pays full ~45-regex classification on every line, including the
+		// vast majority that can't match the query at all.
+		if q != "" && !strings.Contains(strings.ToLower(msg), q) {
 			return false
 		}
-		if q != "" && !strings.Contains(strings.ToLower(msg), q) {
+		ev, classified := ClassifyMessage(msg)
+		if !classified {
+			ev = LogEvent{Type: EventRaw}
+		}
+		ev.Timestamp = ts
+		ev.Message = msg
+		if eventType != "" && string(ev.Type) != eventType {
 			return false
 		}
 		res.Lines = append(res.Lines, BrowseLine{LogEvent: ev, Offset: off})
@@ -89,6 +98,13 @@ func BrowseLines(path string, beforeOffset int64, query, eventType string, limit
 
 	full := false
 	for lo > 0 {
+		// Stop scanning if the caller has gone away (e.g. the user kept
+		// typing and this search was superseded). Without this an abandoned
+		// filtered request keeps churning the whole file, and several stack
+		// up under fast typing.
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		chunkSize := int64(browseChunk)
 		if chunkSize > lo {
 			chunkSize = lo
