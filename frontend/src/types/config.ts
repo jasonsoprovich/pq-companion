@@ -93,6 +93,10 @@ export interface Preferences {
   // shopping source. Off until the expansion launches on Quarm; until then
   // it's a preview toggle in the Developer tab. See lib/era.ts.
   pop_enabled?: boolean
+  // Interactive resist calculator: estimates spell landing odds against a
+  // targeted NPC. Power-user/experimental feature gated behind a Developer-tab
+  // toggle while the resist formula is validated. See pages/ResistCalcPage.tsx.
+  resist_calc_enabled?: boolean
   npc_overlay_dashboard_sections: NPCOverlaySections
   npc_overlay_popout_sections: NPCOverlaySections
   // Per-overlay locked behaviour, keyed by canonical overlay name. Missing

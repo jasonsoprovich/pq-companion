@@ -515,6 +515,44 @@ export function getSpellsByClass(
   return get<SearchResult<Spell>>(`/api/spells/class/${classIndex}?${params}`)
 }
 
+// ── Resist calculator ────────────────────────────────────────────────────────
+
+export interface ResistCheckRequest {
+  spell_id: number
+  caster_level: number
+  caster_class: number // 0-based (Warrior=0 … Beastlord=14)
+  caster_cha: number
+  target_level: number
+  target_mr: number
+  target_cr: number
+  target_fr: number
+  target_dr: number
+  target_pr: number
+}
+
+export interface ResistCheckResponse {
+  spell_id: number
+  spell_name: string
+  resist_type: number
+  resist_type_label: string
+  target_resist: number
+  binary: boolean
+  unresistable: boolean
+  land_chance: number
+  avg_casts_to_land: number
+  full_resist: number
+  partial: number
+  full_damage: number
+  expected_effectiveness: number
+  partial_min: number
+  partial_max: number
+  resist_chance: number
+}
+
+export function postResistCheck(req: ResistCheckRequest): Promise<ResistCheckResponse> {
+  return post<ResistCheckResponse>('/api/resist-check', req)
+}
+
 // ── Keys ───────────────────────────────────────────────────────────────────────
 
 export function getKeys(): Promise<KeysResponse> {

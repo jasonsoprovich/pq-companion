@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
+import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Percent } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import CharacterSwitcher from './CharacterSwitcher'
 import { useHistoryNav } from '../hooks/useHistoryNav'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import { NAV_SECTIONS, orderItems, type NavItem } from '../lib/sidebarNav'
 import { useSidebarPrefs } from '../hooks/useSidebarPrefs'
+import { useResistCalcEnabled } from '../hooks/useResistCalcEnabled'
 
 function SidebarLink({ to, label, icon }: NavItem): React.ReactElement {
   return (
@@ -50,6 +51,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   const { canGoBack, canGoForward, goBack, goForward } = useHistoryNav()
   const onDragMouseDown = useWindowDrag()
   const { hidden, order } = useSidebarPrefs()
+  const resistCalcEnabled = useResistCalcEnabled()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed)
 
   const toggleSection = (id: string): void => {
@@ -68,11 +70,27 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   // up empty so their header doesn't dangle.
   const sections = useMemo(() => {
     const hiddenSet = new Set(hidden)
-    return NAV_SECTIONS.map((s) => ({
-      ...s,
-      items: orderItems(s.items, order).filter((i) => !hiddenSet.has(i.to)),
-    })).filter((s) => s.items.length > 0)
-  }, [hidden, order])
+    // The Resist Calculator is an experimental, Developer-tab-gated tool, so
+    // it's injected here (not in NAV_SECTIONS) — keeping it out of the
+    // user-facing Navigation editor until it graduates to a permanent tab.
+    const base = NAV_SECTIONS.map((s) =>
+      s.id === 'database' && resistCalcEnabled
+        ? {
+            ...s,
+            items: [
+              ...s.items,
+              { to: '/resist-calc', label: 'Resist Calculator', icon: <Percent size={16} /> },
+            ],
+          }
+        : s,
+    )
+    return base
+      .map((s) => ({
+        ...s,
+        items: orderItems(s.items, order).filter((i) => !hiddenSet.has(i.to)),
+      }))
+      .filter((s) => s.items.length > 0)
+  }, [hidden, order, resistCalcEnabled])
 
   useEffect(() => {
     const poll = () => {

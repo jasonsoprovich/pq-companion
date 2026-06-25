@@ -25,6 +25,7 @@ import { BackfillProvider } from './contexts/BackfillContext'
 
 const SpellsPage = lazy(() => import('./pages/SpellsPage'))
 const NpcsPage = lazy(() => import('./pages/NpcsPage'))
+const ResistCalcPage = lazy(() => import('./pages/ResistCalcPage'))
 const ZonesPage = lazy(() => import('./pages/ZonesPage'))
 const RecipesPage = lazy(() => import('./pages/RecipesPage'))
 const QuestsPage = lazy(() => import('./pages/QuestsPage'))
@@ -171,6 +172,7 @@ export default function App(): React.ReactElement {
           <Route path="items" element={<ItemsPage />} />
           <Route path="spells" element={<SpellsPage />} />
           <Route path="npcs" element={<NpcsPage />} />
+          <Route path="resist-calc" element={<ResistCalcPage />} />
           <Route path="zones" element={<ZonesPage />} />
           <Route path="recipes" element={<RecipesPage />} />
           <Route path="quests" element={<QuestsPage />} />
