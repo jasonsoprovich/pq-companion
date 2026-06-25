@@ -3,6 +3,8 @@ import {
   ReactFlow,
   Background,
   Controls,
+  Handle,
+  Position,
   MarkerType,
   useNodesState,
   useEdgesState,
@@ -67,6 +69,22 @@ interface TableNodeData {
   [key: string]: unknown
 }
 
+// Edges carry no explicit handle ids, so the node must expose the default
+// (unnamed) source/target handles or React Flow can't attach any edge (error
+// #008). Hidden because the schema graph isn't interactively editable — the
+// handles exist purely as edge anchor points. LR layout → target on the left,
+// source on the right.
+const hiddenHandleStyle: React.CSSProperties = {
+  opacity: 0,
+  width: 1,
+  height: 1,
+  minWidth: 0,
+  minHeight: 0,
+  border: 'none',
+  background: 'transparent',
+  pointerEvents: 'none',
+}
+
 function TableNode({ data }: { data: TableNodeData }): React.ReactElement {
   const palette = CATEGORY_COLORS[data.category]
   return (
@@ -84,6 +102,8 @@ function TableNode({ data }: { data: TableNodeData }): React.ReactElement {
         overflow: 'hidden',
       }}
     >
+      <Handle type="target" position={Position.Left} style={hiddenHandleStyle} isConnectable={false} />
+      <Handle type="source" position={Position.Right} style={hiddenHandleStyle} isConnectable={false} />
       <div
         style={{
           height: HEADER_HEIGHT,
