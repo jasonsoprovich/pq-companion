@@ -682,7 +682,7 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
   // the block for the active mode. While the first fetch is in flight, fall
   // back to the quarmy base attributes so the seven stat bars still render —
   // vitals read zero until the derived blocks resolve.
-  const emptySplit = { item: 0, aa: 0, buff: 0 }
+  const emptySplit = { base: 0, item: 0, aa: 0, buff: 0 }
   const block: StatBlock = (derived && derived[mode]) || {
     hp: 0, mana: 0, ac: 0,
     str: stats.base_str, sta: stats.base_sta, agi: stats.base_agi, dex: stats.base_dex,

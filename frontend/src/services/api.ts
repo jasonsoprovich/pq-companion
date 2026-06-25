@@ -535,6 +535,9 @@ export interface ResistCheckRequest {
   target_fr: number
   target_dr: number
   target_pr: number
+  // Raw npc_types.special_abilities string; parsed for charm/mez/fear/etc.
+  // immunity flags on the backend.
+  target_special_abilities: string
 }
 
 export interface ResistCheckResponse {
@@ -545,6 +548,10 @@ export interface ResistCheckResponse {
   target_resist: number
   binary: boolean
   unresistable: boolean
+  // True when the spell can't affect the target at all (immune/wrong target);
+  // reason explains why.
+  cannot_affect: boolean
+  reason?: string
   land_chance: number
   avg_casts_to_land: number
   full_resist: number

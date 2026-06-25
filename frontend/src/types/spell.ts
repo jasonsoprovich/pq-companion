@@ -24,6 +24,8 @@ export interface Spell {
   target_type: number
   resist_type: number
   skill: number
+  // 1 = beneficial buff, 0 = detrimental (from spells_new.goodEffect).
+  good_effect: number
 
   // Resist-check inputs (mirror backend Spell). resist_diff is the spell's
   // resist adjust (negative = easier to land); no_partial_resist marks binary
