@@ -342,7 +342,7 @@ const SERVER_LEVEL_CAP = 60
 // Mirrors EQMacEmu Mob::CalcSpellEffectValue_formula (zone/spell_effects.cpp).
 // Returns the effect value at a given caster level, applying updownsign and
 // the post-formula max clamp. Unknown formulas fall back to raw base.
-function applyLevelFormula(formula: number, base: number, max: number, level: number): number {
+export function applyLevelFormula(formula: number, base: number, max: number, level: number): number {
   const ubase = Math.abs(base)
   const updownsign = max !== 0 && max < base ? -1 : 1
   let result: number

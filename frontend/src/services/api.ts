@@ -553,16 +553,21 @@ export function postResistCheck(req: ResistCheckRequest): Promise<ResistCheckRes
   return post<ResistCheckResponse>('/api/resist-check', req)
 }
 
-// A detrimental spell that lowers resists; the resist fields are per-resist
-// deltas (negative = lowers that resist).
+// One resist-lowering effect slot. The magnitude is level-scaled
+// (base/max/formula via the spell effect-value formula), so callers compute
+// the value at the debuffer's level rather than trusting base.
+export interface ResistMod {
+  resist: 'mr' | 'cr' | 'fr' | 'dr' | 'pr'
+  base: number
+  max: number
+  formula: number
+}
+
+// A detrimental spell that lowers resists.
 export interface ResistDebuff {
   id: number
   name: string
-  mr: number
-  cr: number
-  fr: number
-  dr: number
-  pr: number
+  mods: ResistMod[]
 }
 
 export function getResistDebuffs(): Promise<ResistDebuff[]> {

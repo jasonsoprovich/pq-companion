@@ -12,6 +12,17 @@ import {
 } from '../services/api'
 import type { Spell } from '../types/spell'
 import type { NPC } from '../types/npc'
+import { applyLevelFormula } from '../lib/spellHelpers'
+
+type ResistKey = 'mr' | 'cr' | 'fr' | 'dr' | 'pr'
+
+// scaledDelta returns a debuff's total reduction to one resist at the given
+// (debuffer) level, applying the EQ level-scaling formula. Negative = lowers.
+function scaledDelta(d: ResistDebuff, resist: ResistKey, level: number): number {
+  return d.mods
+    .filter((m) => m.resist === resist)
+    .reduce((acc, m) => acc + applyLevelFormula(m.formula, m.base, m.max, level), 0)
+}
 
 // 0-based EQ class names (matches eqstat / spells_new ordering).
 const CLASS_NAMES = [
@@ -90,8 +101,10 @@ export default function ResistCalcPage(): React.ReactElement {
   // (deltas are negative), floored at 1 like the in-game resist calc.
   const modified = useMemo(() => {
     if (!target) return null
-    const sum = (k: 'mr' | 'cr' | 'fr' | 'dr' | 'pr'): number =>
-      selectedDebuffs.reduce((acc, d) => acc + d[k], 0)
+    // Debuffs are assumed cast at the caster's level (the debuffer's level
+    // isn't modelled separately in v1).
+    const sum = (k: ResistKey): number =>
+      selectedDebuffs.reduce((acc, d) => acc + scaledDelta(d, k, casterLevel), 0)
     const clamp = (v: number): number => Math.max(1, v)
     return {
       mr: clamp(target.mr + sum('mr')),
@@ -100,7 +113,7 @@ export default function ResistCalcPage(): React.ReactElement {
       dr: clamp(target.dr + sum('dr')),
       pr: clamp(target.pr + sum('pr')),
     }
-  }, [target, selectedDebuffs])
+  }, [target, selectedDebuffs, casterLevel])
 
   // Load the class spell list whenever the class changes; keep only detrimental
   // spells (the only ones a resist check is meaningful for) and sort by name.
@@ -426,6 +439,7 @@ export default function ResistCalcPage(): React.ReactElement {
               setQuery={setDebuffQuery}
               matches={debuffMatches}
               selected={selectedDebuffs}
+              level={casterLevel}
               onAdd={addDebuff}
               onRemove={removeDebuff}
             />
@@ -520,13 +534,15 @@ function Results({ result }: { result: ResistCheckResponse }): React.ReactElemen
   )
 }
 
-function formatDeltas(d: ResistDebuff): string {
+// formatDeltas renders a debuff's resist reductions scaled at the given level,
+// e.g. "MR -39" or "MR -60 · CR -60".
+function formatDeltas(d: ResistDebuff, level: number): string {
+  const order: ResistKey[] = ['mr', 'fr', 'cr', 'dr', 'pr']
   const parts: string[] = []
-  if (d.mr) parts.push(`MR ${d.mr}`)
-  if (d.fr) parts.push(`FR ${d.fr}`)
-  if (d.cr) parts.push(`CR ${d.cr}`)
-  if (d.dr) parts.push(`DR ${d.dr}`)
-  if (d.pr) parts.push(`PR ${d.pr}`)
+  for (const k of order) {
+    const v = scaledDelta(d, k, level)
+    if (v !== 0) parts.push(`${k.toUpperCase()} ${v}`)
+  }
   return parts.join(' · ')
 }
 
@@ -535,12 +551,13 @@ interface DebuffPickerProps {
   setQuery: (s: string) => void
   matches: ResistDebuff[]
   selected: ResistDebuff[]
+  level: number
   onAdd: (d: ResistDebuff) => void
   onRemove: (id: number) => void
 }
 
 const DebuffPicker = React.forwardRef<HTMLDivElement, DebuffPickerProps>(
-  function DebuffPicker({ query, setQuery, matches, selected, onAdd, onRemove }, ref) {
+  function DebuffPicker({ query, setQuery, matches, selected, level, onAdd, onRemove }, ref) {
     return (
       <div className="mt-4">
         <span
@@ -561,7 +578,7 @@ const DebuffPicker = React.forwardRef<HTMLDivElement, DebuffPickerProps>(
                 }}
               >
                 <span className="font-medium">{d.name}</span>
-                <span style={{ color: '#4ade80' }}>{formatDeltas(d)}</span>
+                <span style={{ color: '#4ade80' }}>{formatDeltas(d, level)}</span>
                 <button
                   type="button"
                   onClick={() => onRemove(d.id)}
@@ -608,7 +625,7 @@ const DebuffPicker = React.forwardRef<HTMLDivElement, DebuffPickerProps>(
                   >
                     <span className="truncate">{d.name}</span>
                     <span className="shrink-0" style={{ color: 'var(--color-muted)' }}>
-                      {formatDeltas(d)}
+                      {formatDeltas(d, level)}
                     </span>
                   </button>
                 </li>

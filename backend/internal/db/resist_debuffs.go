@@ -6,25 +6,32 @@ import (
 	"strings"
 )
 
-// ResistDebuff is a spell that lowers a target's resists, with its per-resist
-// reduction (negative = lowers that resist). Powers the resist calculator's
-// debuff picker — these come from any class since group debuffs (Tashanian,
-// Malosini, …) are often cast by other players.
+// ResistMod is one resist-lowering effect slot. The actual magnitude is
+// level-scaled (Base/Max/Formula via CalcSpellEffectValue_formula), so the
+// caller computes the value at the debuffer's level rather than trusting Base.
+type ResistMod struct {
+	Resist  string `json:"resist"` // "mr" | "cr" | "fr" | "dr" | "pr"
+	Base    int    `json:"base"`
+	Max     int    `json:"max"`
+	Formula int    `json:"formula"`
+}
+
+// ResistDebuff is a spell that lowers a target's resists. Powers the resist
+// calculator's debuff picker — these come from any class since group debuffs
+// (Tashanian, Malosini, …) are often cast by other players. The per-resist
+// magnitude is level-scaled, so Mods carries the scaling params, not a final
+// number.
 type ResistDebuff struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
-	MR   int    `json:"mr"`
-	CR   int    `json:"cr"`
-	FR   int    `json:"fr"`
-	DR   int    `json:"dr"`
-	PR   int    `json:"pr"`
+	ID   int         `json:"id"`
+	Name string      `json:"name"`
+	Mods []ResistMod `json:"mods"`
 }
 
 // spaResistAll is SPA 111 (Resist All) — lowers every resist by its base.
 const spaResistAll = 111
 
 // ResistDebuffSpells returns every detrimental spell that lowers at least one
-// resist, with its per-resist deltas. Deduplicated by name (the dump ships
+// resist, with per-resist scaling params. Deduplicated by name (the dump ships
 // several rows per spell), keeping the strongest variant, and sorted by name.
 func (db *DB) ResistDebuffSpells() ([]ResistDebuff, error) {
 	// Candidate filter: detrimental, non-discipline, with any resist SPA in a
@@ -51,11 +58,11 @@ func (db *DB) ResistDebuffSpells() ([]ResistDebuff, error) {
 		if err != nil {
 			return nil, fmt.Errorf("scan resist debuff: %w", err)
 		}
-		d := resistDeltaFor(sp)
-		if d.MR >= 0 && d.CR >= 0 && d.FR >= 0 && d.DR >= 0 && d.PR >= 0 {
-			continue // not actually a resist debuff (no negative delta)
+		mods := resistModsFor(sp)
+		if len(mods) == 0 {
+			continue // not actually a resist debuff (no negative slot)
 		}
-		d.ID, d.Name = sp.ID, sp.Name
+		d := ResistDebuff{ID: sp.ID, Name: sp.Name, Mods: mods}
 		if cur, ok := best[sp.Name]; !ok || debuffMagnitude(d) > debuffMagnitude(cur) {
 			best[sp.Name] = d
 		}
@@ -72,41 +79,50 @@ func (db *DB) ResistDebuffSpells() ([]ResistDebuff, error) {
 	return out, nil
 }
 
-// resistDeltaFor sums a spell's resist-affecting effects into per-resist
-// deltas. SPA 46–50 map to one resist each; SPA 111 lowers all five.
-func resistDeltaFor(sp *Spell) ResistDebuff {
-	var d ResistDebuff
+// resistModsFor collects a spell's resist-lowering effect slots as scaling
+// params. SPA 46–50 map to one resist each; SPA 111 lowers all five. Only
+// slots with a negative base (an actual reduction) are kept.
+func resistModsFor(sp *Spell) []ResistMod {
+	var mods []ResistMod
+	add := func(resist string, i int) {
+		if sp.EffectBaseValues[i] >= 0 {
+			return
+		}
+		mods = append(mods, ResistMod{
+			Resist:  resist,
+			Base:    sp.EffectBaseValues[i],
+			Max:     sp.EffectMaxValues[i],
+			Formula: sp.EffectFormulas[i],
+		})
+	}
 	for i := 0; i < 12; i++ {
-		val := sp.EffectBaseValues[i]
 		switch sp.EffectIDs[i] {
 		case spaBuffFireRes:
-			d.FR += val
+			add("fr", i)
 		case spaBuffColdRes:
-			d.CR += val
+			add("cr", i)
 		case spaBuffPoisonRes:
-			d.PR += val
+			add("pr", i)
 		case spaBuffDiseRes:
-			d.DR += val
+			add("dr", i)
 		case spaBuffMagicRes:
-			d.MR += val
+			add("mr", i)
 		case spaResistAll:
-			d.MR += val
-			d.CR += val
-			d.FR += val
-			d.DR += val
-			d.PR += val
+			for _, r := range []string{"mr", "cr", "fr", "dr", "pr"} {
+				add(r, i)
+			}
 		}
 	}
-	return d
+	return mods
 }
 
-// debuffMagnitude is the total resist reduction (positive number), used to
+// debuffMagnitude is the total resist reduction by base magnitude, used to
 // pick the strongest variant of a same-named spell.
 func debuffMagnitude(d ResistDebuff) int {
 	sum := 0
-	for _, v := range []int{d.MR, d.CR, d.FR, d.DR, d.PR} {
-		if v < 0 {
-			sum -= v
+	for _, m := range d.Mods {
+		if m.Base < 0 {
+			sum -= m.Base
 		}
 	}
 	return sum
