@@ -34,6 +34,9 @@ type resistCheckRequest struct {
 	TargetFR    int `json:"target_fr"`
 	TargetDR    int `json:"target_dr"`
 	TargetPR    int `json:"target_pr"`
+	// TargetSpecialAbilities is the raw npc_types.special_abilities string;
+	// parsed for charm/mez/fear/etc. immunity flags.
+	TargetSpecialAbilities string `json:"target_special_abilities"`
 }
 
 // resistCheckResponse wraps the computed distribution with the context needed
@@ -46,6 +49,8 @@ type resistCheckResponse struct {
 	TargetResist    int    `json:"target_resist"` // the value actually used
 	Binary          bool   `json:"binary"`
 	Unresistable    bool   `json:"unresistable"`
+	CannotAffect    bool   `json:"cannot_affect"`
+	Reason          string `json:"reason,omitempty"`
 
 	LandChance     float64 `json:"land_chance"`
 	AvgCastsToLand float64 `json:"avg_casts_to_land"`
@@ -98,12 +103,13 @@ func (h *resistHandler) check(w http.ResponseWriter, r *http.Request) {
 	targetResist := resistForType(spell.ResistType, body)
 
 	in := resist.Input{
-		Spell:        toResistSpell(spell),
-		CasterLevel:  body.CasterLevel,
-		CasterClass:  body.CasterClass,
-		CasterCHA:    body.CasterCHA,
-		TargetLevel:  body.TargetLevel,
-		TargetResist: targetResist,
+		Spell:            toResistSpell(spell),
+		CasterLevel:      body.CasterLevel,
+		CasterClass:      body.CasterClass,
+		CasterCHA:        body.CasterCHA,
+		TargetLevel:      body.TargetLevel,
+		TargetResist:     targetResist,
+		TargetImmunities: parseImmunities(body.TargetSpecialAbilities),
 		Era: resist.Era{
 			PoPEnabled: h.cfgMgr.Get().Preferences.PoPEnabled,
 			// Project Quarm is currently in the Luclin era, which disables
@@ -122,6 +128,8 @@ func (h *resistHandler) check(w http.ResponseWriter, r *http.Request) {
 		TargetResist:          targetResist,
 		Binary:                res.Binary,
 		Unresistable:          res.Unresistable,
+		CannotAffect:          res.CannotAffect,
+		Reason:                res.Reason,
 		LandChance:            res.LandChance,
 		AvgCastsToLand:        res.AvgCastsToLand,
 		FullResist:            res.FullResist,
@@ -165,5 +173,32 @@ func toResistSpell(s *db.Spell) resist.Spell {
 	rs.EffectIDs = s.EffectIDs
 	rs.EffectBase = s.EffectBaseValues
 	rs.EffectFormula = s.EffectFormulas
+	rs.EffectMax = s.EffectMaxValues
 	return rs
+}
+
+// parseImmunities maps the npc_types.special_abilities string to the immunity
+// flags the resist gate checks. Codes match common/emu_constants.h
+// SpecialAbility (and db.ParseSpecialAbilities).
+func parseImmunities(special string) resist.Immunities {
+	var im resist.Immunities
+	for _, a := range db.ParseSpecialAbilities(special) {
+		switch a.Code {
+		case 12:
+			im.Slow = true
+		case 13:
+			im.Mez = true
+		case 14:
+			im.Charm = true
+		case 15:
+			im.Stun = true
+		case 16:
+			im.Snare = true
+		case 17:
+			im.Fear = true
+		case 20:
+			im.Magic = true
+		}
+	}
+	return im
 }

@@ -9,6 +9,10 @@ func mezSpell() Spell {
 	var s Spell
 	s.ResistType = resistMagic
 	s.EffectIDs[0] = seMez
+	// Real mez spells always set a level cap; use a high one so these
+	// resist-chance tests aren't gated by the level cap. (Mez has no max!=0
+	// guard in EQMacEmu, so a 0 here would block every NPC.)
+	s.EffectMax[0] = 65
 	return s
 }
 
@@ -19,6 +23,100 @@ func nukeSpell(resistType, resistDiff int) Spell {
 	s.EffectIDs[0] = seCurrentHPOnce
 	s.EffectBase[0] = -500
 	return s
+}
+
+func charmSpell(maxLevel int) Spell {
+	var s Spell
+	s.ResistType = resistMagic
+	s.EffectIDs[0] = seCharm
+	s.EffectMax[0] = maxLevel
+	return s
+}
+
+func TestImmunity_Charm(t *testing.T) {
+	// Charm-immune NPC (e.g. Vex Thal) → cannot affect regardless of resist.
+	r := ComputeChances(Input{
+		Spell:            charmSpell(60),
+		CasterLevel:      60,
+		TargetLevel:      55,
+		TargetResist:     0,
+		TargetImmunities: Immunities{Charm: true},
+		Era:              Era{LuclinEnabled: true},
+	})
+	if !r.CannotAffect || r.LandChance != 0 {
+		t.Fatalf("charm-immune target should not be affected: %+v", r)
+	}
+	if !r.Binary {
+		t.Errorf("charm should still report as binary")
+	}
+}
+
+func TestImmunity_CharmLevelCap(t *testing.T) {
+	// Beguile (cap 37) on a level-66 NPC, not flagged immune → over level cap.
+	r := ComputeChances(Input{
+		Spell:        charmSpell(37),
+		CasterLevel:  60,
+		TargetLevel:  66,
+		TargetResist: 0,
+		Era:          Era{LuclinEnabled: true},
+	})
+	if !r.CannotAffect {
+		t.Fatalf("level 66 > charm cap 37 should not be affectable: %+v", r)
+	}
+}
+
+func TestImmunity_CharmUnderCapStillRolls(t *testing.T) {
+	// Under the cap and not immune → proceeds to the normal resist roll.
+	r := ComputeChances(Input{
+		Spell:        charmSpell(60),
+		CasterLevel:  60,
+		TargetLevel:  50,
+		TargetResist: 0,
+		Era:          Era{LuclinEnabled: true},
+	})
+	if r.CannotAffect {
+		t.Fatalf("level 50 <= cap 60, not immune: should be affectable: %+v", r)
+	}
+	if r.LandChance <= 0 {
+		t.Errorf("expected a positive land chance, got %v", r.LandChance)
+	}
+}
+
+func TestImmunity_MezLevelCap(t *testing.T) {
+	var s Spell
+	s.ResistType = resistMagic
+	s.EffectIDs[0] = seMez
+	s.EffectMax[0] = 58
+	r := ComputeChances(Input{Spell: s, CasterLevel: 60, TargetLevel: 60, Era: Era{LuclinEnabled: true}})
+	if !r.CannotAffect {
+		t.Fatalf("level 60 > mez cap 58 should not be affectable: %+v", r)
+	}
+}
+
+func TestImmunity_FearOver52(t *testing.T) {
+	var s Spell
+	s.ResistType = resistMagic
+	s.EffectIDs[0] = seFear
+	s.EffectMax[0] = 0
+	r := ComputeChances(Input{Spell: s, CasterLevel: 60, TargetLevel: 60, Era: Era{LuclinEnabled: true}})
+	if !r.CannotAffect {
+		t.Fatalf("NPCs above level 52 cannot be feared: %+v", r)
+	}
+}
+
+func TestImmunity_Magic(t *testing.T) {
+	// Magic immunity stops everything, even an otherwise-landing nuke.
+	r := ComputeChances(Input{
+		Spell:            nukeSpell(resistFire, -50),
+		CasterLevel:      60,
+		TargetLevel:      55,
+		TargetResist:     0,
+		TargetImmunities: Immunities{Magic: true},
+		Era:              Era{LuclinEnabled: true},
+	})
+	if !r.CannotAffect || r.LandChance != 0 {
+		t.Fatalf("magic-immune target should resist everything: %+v", r)
+	}
 }
 
 func approx(t *testing.T, name string, got, want float64) {

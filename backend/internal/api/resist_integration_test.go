@@ -70,3 +70,53 @@ func TestResistCheck_RealSpells(t *testing.T) {
 		})
 	}
 }
+
+// TestResistCheck_CharmImmuneNPC reproduces the reported bug: Beguile on a Vex
+// Thal NPC (charm-immune and well above the charm level cap) must report
+// "cannot affect", not a ~33% chance.
+func TestResistCheck_CharmImmuneNPC(t *testing.T) {
+	_, file, _, _ := runtime.Caller(0)
+	repoRoot := filepath.Join(filepath.Dir(file), "..", "..", "..")
+	dbPath := filepath.Join(repoRoot, "backend", "data", "quarm.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Skip("quarm.db not present")
+	}
+	d, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer d.Close()
+
+	// Eom Centien Xakra, Vex Thal: level 66, special_abilities include 14
+	// (charm immunity). Beguile's charm effect caps at level 37.
+	npcRes, err := d.SearchNPCs("Eom_Centien_Xakra", 5, 0, true)
+	if err != nil || len(npcRes.Items) == 0 {
+		t.Skip("Eom_Centien_Xakra not present in DB")
+	}
+	npc := npcRes.Items[0]
+
+	beguile, err := d.GetSpell(182)
+	if err != nil {
+		t.Fatalf("GetSpell(Beguile): %v", err)
+	}
+
+	in := resist.Input{
+		Spell:            toResistSpell(beguile),
+		CasterLevel:      60,
+		CasterClass:      13, // Enchanter
+		CasterCHA:        95,
+		TargetLevel:      max(npc.Level, npc.MaxLevel),
+		TargetResist:     npc.MR,
+		TargetImmunities: parseImmunities(npc.SpecialAbilities),
+		Era:              resist.Era{LuclinEnabled: true},
+	}
+	got := resist.ComputeChances(in)
+	if !got.CannotAffect {
+		t.Fatalf("Beguile on charm-immune L%d NPC should be CannotAffect, got %+v",
+			in.TargetLevel, got)
+	}
+	if got.LandChance != 0 {
+		t.Errorf("LandChance = %v, want 0", got.LandChance)
+	}
+	t.Logf("reason: %s", got.Reason)
+}

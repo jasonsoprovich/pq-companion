@@ -18,11 +18,16 @@
 // defaults track Project Quarm's current pre-Planes-of-Power state.
 package resist
 
+import "fmt"
+
 // EQMac spell-effect (SPA) ids used to classify spells. Mirrors common/spdat.h
 // in the EQMacEmu fork.
 const (
 	seCurrentHP              = 0   // damage/heal DoT (repeats per tick in a buff)
+	seMovementSpeed          = 3   // SE_MovementSpeed (snare when negative)
 	seCHA                    = 10  // used as a slot spacer
+	seAttackSpeed            = 11  // SE_AttackSpeed (slow when base < 100)
+	seStun                   = 21  // SE_Stun
 	seCharm                  = 22  // SE_Charm
 	seFear                   = 23  // SE_Fear
 	seChangeFrenzyRad        = 30  // SE_ChangeFrenzyRad (Pacify)
@@ -34,6 +39,10 @@ const (
 	seStackingCommandOverwrt = 149 // SE_StackingCommand_Overwrite
 	seBlank                  = 254 // SE_Blank
 )
+
+// fearLevelCap: EQMacEmu hardcaps fear on NPCs above level 52 regardless of
+// the spell's own level limit (Mob::IsImmuneToSpell).
+const fearLevelCap = 52
 
 // EQMac resist-type ids (spells_new.resisttype).
 const (
@@ -93,6 +102,22 @@ type Spell struct {
 	EffectIDs     [effectCount]int
 	EffectBase    [effectCount]int
 	EffectFormula [effectCount]int
+	// EffectMax is the per-slot `max` value. For charm/mez/fear effects this
+	// holds the maximum NPC level the spell can affect (0 = no limit).
+	EffectMax [effectCount]int
+}
+
+// Immunities flags the NPC special abilities that make a whole spell category
+// fail outright, independent of the resist roll (Mob::IsImmuneToSpell). Parsed
+// from npc_types.special_abilities at the call site.
+type Immunities struct {
+	Magic bool // SpecialAbility::MagicImmunity (20) — fully resists everything
+	Mez   bool // MesmerizeImmunity (13)
+	Charm bool // CharmImmunity (14)
+	Fear  bool // FearImmunity (17)
+	Snare bool // SnareImmunity (16) — root/movement
+	Slow  bool // SlowImmunity (12)
+	Stun  bool // StunImmunity (15)
 }
 
 // Input describes one calculator query: a spell, the caster, and the targeted
@@ -100,13 +125,14 @@ type Spell struct {
 // (MR/CR/FR/DR/PR), already read off npc_types. TargetLevel should be the top
 // end of the NPC's level range (worst case).
 type Input struct {
-	Spell        Spell
-	CasterLevel  int
-	CasterClass  int // 0-based class index (eqstat ordering)
-	CasterCHA    int
-	TargetLevel  int
-	TargetResist int
-	Era          Era
+	Spell            Spell
+	CasterLevel      int
+	CasterClass      int // 0-based class index (eqstat ordering)
+	CasterCHA        int
+	TargetLevel      int
+	TargetResist     int
+	TargetImmunities Immunities
+	Era              Era
 }
 
 // Result is the outcome distribution for an Input. All probabilities are in
@@ -117,6 +143,11 @@ type Result struct {
 	// Binary is true when the spell cannot partial (mez/root/charm/snare):
 	// every cast is either a full land or a full resist.
 	Binary bool
+	// CannotAffect is true when the target is immune to this spell category or
+	// is above the spell's level cap — it can never land, regardless of the
+	// resist roll. Reason explains why (shown in the UI).
+	CannotAffect bool
+	Reason       string
 
 	// LandChance is the probability the spell has any effect at all
 	// (1 - FullResist). For binary spells this equals FullDamage.
@@ -210,6 +241,95 @@ func isPartialCapableSpell(s Spell) bool {
 		return false
 	}
 	return false
+}
+
+// effectMax returns the `max` value of the first slot holding the given SPA
+// (and whether such a slot exists). For charm/mez/fear this is the spell's
+// maximum affectable NPC level.
+func effectMax(s Spell, spa int) (int, bool) {
+	for i := 0; i < effectCount; i++ {
+		if s.EffectIDs[i] == spa {
+			return s.EffectMax[i], true
+		}
+	}
+	return 0, false
+}
+
+func isStunSpell(s Spell) bool { return isEffectInSpell(s, seStun) }
+
+// isSlowSpell mirrors IsSlowSpell: an attack-speed effect with base < 100
+// (100 = no change, <100 = slow).
+func isSlowSpell(s Spell) bool {
+	for i := 0; i < effectCount; i++ {
+		if s.EffectIDs[i] == seAttackSpeed && s.EffectBase[i] < 100 {
+			return true
+		}
+	}
+	return false
+}
+
+// isRootOrSnareSpell: snare immunity covers both root and movement-speed
+// (snare) effects.
+func isRootOrSnareSpell(s Spell) bool {
+	return isEffectInSpell(s, seRoot) || isEffectInSpell(s, seMovementSpeed)
+}
+
+// immunityCheck mirrors Mob::IsImmuneToSpell for a client→NPC cast: it returns
+// a reason string when the spell can never land on this target (special-ability
+// immunity or over the spell's level cap), or "" when the spell is allowed to
+// proceed to the resist roll.
+func immunityCheck(in Input) string {
+	s := in.Spell
+	im := in.TargetImmunities
+	lvl := in.TargetLevel
+
+	// Magic immunity fully resists every spell.
+	if im.Magic {
+		return "Target is immune to magic — no spell can land."
+	}
+
+	if isMezSpell(s) {
+		if im.Mez {
+			return "Target is immune to mesmerize."
+		}
+		// NPCs above the spell's max level can't be mezzed.
+		if max, ok := effectMax(s, seMez); ok && lvl > max {
+			return fmt.Sprintf("Target level %d is above this mez spell's cap of %d.", lvl, max)
+		}
+	}
+
+	if isCharmSpell(s) {
+		if im.Charm {
+			return "Target is immune to charm."
+		}
+		if max, ok := effectMax(s, seCharm); ok && max != 0 && lvl > max {
+			return fmt.Sprintf("Target level %d is above this charm spell's cap of %d.", lvl, max)
+		}
+	}
+
+	if isFearSpell(s) {
+		if im.Fear {
+			return "Target is immune to fear."
+		}
+		if lvl > fearLevelCap {
+			return fmt.Sprintf("NPCs above level %d cannot be feared.", fearLevelCap)
+		}
+		if max, ok := effectMax(s, seFear); ok && max != 0 && lvl > max {
+			return fmt.Sprintf("Target level %d is above this fear spell's cap of %d.", lvl, max)
+		}
+	}
+
+	if isRootOrSnareSpell(s) && im.Snare {
+		return "Target is immune to snare/root."
+	}
+	if isSlowSpell(s) && im.Slow {
+		return "Target is immune to slow."
+	}
+	if isStunSpell(s) && im.Stun {
+		return "Target is immune to stun."
+	}
+
+	return ""
 }
 
 // resistChanceFor computes the pre-roll resist_chance for a player→NPC initial
@@ -340,6 +460,16 @@ func effectivenessForRoll(in Input, resistChance, roll int) int {
 // ComputeChances returns the exact outcome distribution for an Input by
 // enumerating every uniform roll (0..200), the same range zone uses.
 func ComputeChances(in Input) Result {
+	// Immunity / level-cap gate runs before the resist roll (and before the
+	// unresistable shortcut — magic immunity stops even unresistable spells).
+	if reason := immunityCheck(in); reason != "" {
+		return Result{
+			Binary:       !isPartialCapableSpell(in.Spell),
+			CannotAffect: true,
+			Reason:       reason,
+		}
+	}
+
 	// Unresistable spells always land fully.
 	if in.Spell.ResistType == resistNone {
 		return Result{
