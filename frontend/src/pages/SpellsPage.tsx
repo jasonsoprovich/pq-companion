@@ -22,6 +22,8 @@ import RawDataModal from '../components/RawDataModal'
 import VariantLinks from '../components/VariantLinks'
 import SpellAcquisition from '../components/SpellAcquisition'
 import { useCachedState } from '../hooks/useCachedState'
+import { usePoPEnabled } from '../hooks/usePoPEnabled'
+import { maxLevel as eraMaxLevel } from '../lib/era'
 
 const SPELL_CLASSES: { index: number; abbr: string; full: string }[] = [
   { index: 0,  abbr: 'WAR', full: 'Warrior' },
@@ -331,6 +333,7 @@ interface DetailPanelProps {
 
 function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
   const navigate = useNavigate()
+  const levelCap = eraMaxLevel(usePoPEnabled())
   const [crossRefs, setCrossRefs] = useState<SpellCrossRefs | null>(null)
   const [showTriggerModal, setShowTriggerModal] = useState(false)
   const [rawOpen, setRawOpen] = useState(false)
@@ -373,6 +376,7 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
         spell.effect_max_values[i] ?? 0,
         spell.effect_formulas?.[i] ?? 0,
         spell.class_levels,
+        levelCap,
       ),
     }))
     .filter((e) => e.description !== '')

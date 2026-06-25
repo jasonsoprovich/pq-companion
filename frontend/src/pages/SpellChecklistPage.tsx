@@ -25,6 +25,8 @@ import type { Spellbook } from '../types/zeal'
 import SpellAcquisition from '../components/SpellAcquisition'
 import ShoppingRoutePanel from '../components/ShoppingRoutePanel'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
+import { usePoPEnabled } from '../hooks/usePoPEnabled'
+import { maxLevel as eraMaxLevel } from '../lib/era'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import {
   castableClasses,
@@ -124,6 +126,7 @@ interface SpellDetailModalProps {
 
 function SpellDetailModal({ spell, onClose, onOpenInExplorer }: SpellDetailModalProps): React.ReactElement {
   useEscapeToClose(onClose)
+  const levelCap = eraMaxLevel(usePoPEnabled())
   const classes = castableClasses(spell.class_levels)
   const hasDuration = spell.buff_duration > 0
   const hasAoE = spell.aoe_range > 0
@@ -141,6 +144,7 @@ function SpellDetailModal({ spell, onClose, onOpenInExplorer }: SpellDetailModal
         spell.effect_max_values[i] ?? 0,
         spell.effect_formulas?.[i] ?? 0,
         spell.class_levels,
+        levelCap,
       ),
     }))
     .filter((e) => e.description !== '')

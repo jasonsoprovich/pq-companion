@@ -386,11 +386,11 @@ function formulaCapLevel(formula: number, base: number, max: number): number | u
 // Lowest castable level across the spell's class table. 255 is the
 // "not castable" sentinel; entries above the server cap (e.g. Ranger 65 on
 // some spells) are ignored.
-function minCasterLevel(classLevels?: number[]): number | undefined {
+function minCasterLevel(classLevels?: number[], levelCap = SERVER_LEVEL_CAP): number | undefined {
   if (!classLevels || classLevels.length === 0) return undefined
   let min = Infinity
   for (const lvl of classLevels) {
-    if (lvl > 0 && lvl <= SERVER_LEVEL_CAP && lvl < min) min = lvl
+    if (lvl > 0 && lvl <= levelCap && lvl < min) min = lvl
   }
   return Number.isFinite(min) ? min : undefined
 }
@@ -408,13 +408,16 @@ function minCasterLevel(classLevels?: number[]): number | undefined {
  * `+1% to +50%` matching pqdi rather than the raw base value.
  *
  * `classLevels` is the spell's 15-class level table — when supplied alongside
- * a level-scaling formula on SPA 3 (movement speed), the description renders
- * a pqdi-style "+N% (Lx) to +M% (Ly)" range.
+ * a level-scaling formula on SPA 3 (movement speed) or a resist SPA, the
+ * description renders a pqdi-style "+N (Lx) to +M (Ly)" range.
+ *
+ * `levelCap` bounds the high end of those ranges to the active era cap (60
+ * pre-PoP, 65 with pop_enabled); defaults to the pre-PoP cap.
  *
  * Returns empty string for sentinel/blank slots and for ID/base combinations
  * that should not render.
  */
-export function effectDescription(id: number, base: number, buffduration: number, max?: number, formula?: number, classLevels?: number[]): string {
+export function effectDescription(id: number, base: number, buffduration: number, max?: number, formula?: number, classLevels?: number[], levelCap = SERVER_LEVEL_CAP): string {
   if (id === 254 || id === 255 || id === 320) return ''
 
   const sign = base > 0 ? '+' : ''
@@ -434,11 +437,11 @@ export function effectDescription(id: number, base: number, buffduration: number
     const name = RESIST_NAMES[id]
     const fmt = (v: number): string => `${v > 0 ? '+' : ''}${v}`
     if (formula !== undefined && formula !== 100 && formula !== 0) {
-      const minL = minCasterLevel(classLevels)
+      const minL = minCasterLevel(classLevels, levelCap)
       if (minL !== undefined) {
         const lowVal = applyLevelFormula(formula, base, max ?? 0, minL)
         const cap = formulaCapLevel(formula, base, max ?? 0)
-        const highL = Math.min(SERVER_LEVEL_CAP, cap ?? SERVER_LEVEL_CAP)
+        const highL = Math.min(levelCap, cap ?? levelCap)
         const highVal = applyLevelFormula(formula, base, max ?? 0, highL)
         if (lowVal !== highVal) {
           return `${fmt(lowVal)} (L${minL}) to ${fmt(highVal)} (L${highL}) ${name} Resist`
@@ -470,11 +473,11 @@ export function effectDescription(id: number, base: number, buffduration: number
     case 3: { // Movement Speed (% modifier)
       if (base === 0) return ''
       const verb = base > 0 ? 'Increase' : 'Decrease'
-      const minL = minCasterLevel(classLevels)
+      const minL = minCasterLevel(classLevels, levelCap)
       if (formula !== undefined && formula !== 100 && formula !== 0 && minL !== undefined) {
         const lowVal = applyLevelFormula(formula, base, max ?? 0, minL)
         const cap = formulaCapLevel(formula, base, max ?? 0)
-        const highL = Math.min(SERVER_LEVEL_CAP, cap ?? SERVER_LEVEL_CAP)
+        const highL = Math.min(levelCap, cap ?? levelCap)
         const highVal = applyLevelFormula(formula, base, max ?? 0, highL)
         if (Math.abs(lowVal) !== Math.abs(highVal)) {
           return `${verb} Movement by ${Math.abs(lowVal)}% (L${minL}) to ${Math.abs(highVal)}% (L${highL})`
