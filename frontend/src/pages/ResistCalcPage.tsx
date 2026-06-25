@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Crosshair, Percent } from 'lucide-react'
+import { AlertTriangle, Crosshair, Percent, Search } from 'lucide-react'
 import {
   getSpellsByClass,
   getOverlayNPCTarget,
   listCharacters,
   postResistCheck,
+  searchNPCs,
   type ResistCheckResponse,
 } from '../services/api'
 import type { Spell } from '../types/spell'
+import type { NPC } from '../types/npc'
 
 // 0-based EQ class names (matches eqstat / spells_new ordering).
 const CLASS_NAMES = [
@@ -44,6 +46,9 @@ export default function ResistCalcPage(): React.ReactElement {
   const [result, setResult] = useState<ResistCheckResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [targetNote, setTargetNote] = useState<string | null>(null)
+
+  const [npcQuery, setNpcQuery] = useState('')
+  const [npcResults, setNpcResults] = useState<NPC[]>([])
 
   // Seed the caster from the active character (level/class/base CHA). CHA is
   // editable since the formula wants total (buffed) charisma, not base.
@@ -118,26 +123,64 @@ export default function ResistCalcPage(): React.ReactElement {
     }
   }, [spellID, casterLevel, casterClass, casterCHA, targetLevel, mr, cr, fr, dr, pr])
 
+  // applyNPCTarget fills the target fields from any NPC row — shared by the
+  // in-game current-target button and the manual database search, so whichever
+  // is invoked most recently wins.
+  const applyNPCTarget = (npc: NPC): void => {
+    setTargetName(npc.name)
+    // Worst case: use the top of the NPC's level range.
+    setTargetLevel(Math.max(npc.level, npc.max_level || 0))
+    setMR(npc.mr)
+    setCR(npc.cr)
+    setFR(npc.fr)
+    setDR(npc.dr)
+    setPR(npc.pr)
+  }
+
   const useCurrentTarget = (): void => {
     setTargetNote(null)
     getOverlayNPCTarget()
       .then((t) => {
+        // No in-game target: leave any previously selected target in place
+        // rather than clearing it.
         if (!t.has_target || !t.npc_data) {
-          setTargetNote('No NPC is currently targeted in-game.')
+          setTargetNote('No NPC targeted in-game — keeping the current target.')
           return
         }
-        const npc = t.npc_data
-        setTargetName(npc.name)
-        // Worst case: use the top of the NPC's level range.
-        setTargetLevel(Math.max(npc.level, npc.max_level || 0))
-        setMR(npc.mr)
-        setCR(npc.cr)
-        setFR(npc.fr)
-        setDR(npc.dr)
-        setPR(npc.pr)
+        applyNPCTarget(t.npc_data)
       })
       .catch(() => setTargetNote('Could not read the current target.'))
   }
+
+  const selectSearchedNPC = (npc: NPC): void => {
+    setTargetNote(null)
+    applyNPCTarget(npc)
+    setNpcQuery('')
+    setNpcResults([])
+  }
+
+  // Search the NPC database as the user types (debounced).
+  useEffect(() => {
+    const q = npcQuery.trim()
+    if (q.length < 2) {
+      setNpcResults([])
+      return
+    }
+    let cancelled = false
+    const handle = setTimeout(() => {
+      searchNPCs(q, 10)
+        .then((resp) => {
+          if (!cancelled) setNpcResults(resp.items)
+        })
+        .catch(() => {
+          if (!cancelled) setNpcResults([])
+        })
+    }, 200)
+    return () => {
+      cancelled = true
+      clearTimeout(handle)
+    }
+  }, [npcQuery])
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4 p-4">
@@ -216,11 +259,11 @@ export default function ResistCalcPage(): React.ReactElement {
 
       {/* Target */}
       <Section title="Target NPC">
-        <div className="mb-3 flex items-center gap-3">
+        <div className="mb-3 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={useCurrentTarget}
-            className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors"
+            className="flex shrink-0 items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors"
             style={{
               backgroundColor: 'var(--color-surface-2)',
               border: '1px solid var(--color-border)',
@@ -229,8 +272,51 @@ export default function ResistCalcPage(): React.ReactElement {
           >
             <Crosshair size={13} /> Use current target
           </button>
+          <div className="relative min-w-[12rem] flex-1">
+            <Search
+              size={13}
+              className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"
+              style={{ color: 'var(--color-muted)' }}
+            />
+            <input
+              type="text"
+              value={npcQuery}
+              onChange={(e) => setNpcQuery(e.target.value)}
+              placeholder="Search NPC database…"
+              className="w-full rounded py-1.5 pl-7 pr-2 text-xs"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+              }}
+            />
+            {npcResults.length > 0 && (
+              <ul
+                className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded shadow-lg"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                {npcResults.map((npc) => (
+                  <li key={npc.id}>
+                    <button
+                      type="button"
+                      onClick={() => selectSearchedNPC(npc)}
+                      className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-(--color-surface-3)"
+                    >
+                      <span className="truncate">{npc.name}</span>
+                      <span className="shrink-0" style={{ color: 'var(--color-muted)' }}>
+                        L{npc.level}
+                        {npc.max_level > npc.level ? `–${npc.max_level}` : ''}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           {targetName && (
-            <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+            <span className="shrink-0 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
               {targetName}
             </span>
           )}
