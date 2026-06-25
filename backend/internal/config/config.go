@@ -338,6 +338,13 @@ type Preferences struct {
 	// PoP launches the default flips in a release and this becomes a no-op.
 	PoPEnabled bool `yaml:"pop_enabled,omitempty" json:"pop_enabled"`
 
+	// ResistCalcEnabled reveals the experimental Resist Calculator page
+	// (estimates spell landing odds against a targeted NPC). Off by default;
+	// it's a power-user/testing toggle in the Developer tab while the
+	// community-reverse-engineered resist formula is validated. See
+	// internal/resist and pages/ResistCalcPage.tsx.
+	ResistCalcEnabled bool `yaml:"resist_calc_enabled,omitempty" json:"resist_calc_enabled"`
+
 	// NPCOverlayDashboardSections controls which optional sections of the
 	// NPC overlay are visible in the dashboard panel. Name, zone, pet
 	// owner, raid/rare badges, and the HP bar are always shown regardless
