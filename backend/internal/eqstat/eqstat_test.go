@@ -194,3 +194,29 @@ func TestDisplayedATKRangerBonus(t *testing.T) {
 		t.Errorf("DisplayedATK ranger <55 = %d, want 1041", got)
 	}
 }
+
+func TestNaturalHPRegen(t *testing.T) {
+	cases := []struct {
+		name  string
+		level int
+		race  int
+		want  int
+	}{
+		// Non-regen race: standing base tiers only.
+		{"human L60", 60, RaceHuman, 4},
+		{"human L65", 65, RaceHuman, 7},
+		{"human L50", 50, RaceHuman, 1},
+		// Troll/Iksar: extra 51/56 steps, then doubled.
+		{"troll L60", 60, RaceTroll, 12},
+		{"iksar L60", 60, RaceIksar, 12},
+		{"troll L65", 65, RaceTroll, 18},
+		{"iksar L65", 65, RaceIksar, 18},
+		// Below 51 no racial steps apply yet: base 1, doubled = 2.
+		{"troll L50", 50, RaceTroll, 2},
+	}
+	for _, tc := range cases {
+		if got := NaturalHPRegen(tc.level, tc.race); got != tc.want {
+			t.Errorf("NaturalHPRegen(%s) = %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}

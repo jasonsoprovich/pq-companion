@@ -425,9 +425,12 @@ type statBlock struct {
 	Breakdown statBreakdown `json:"breakdown"`
 }
 
-// sourceSplit attributes a single stat's total to its three contributing
-// sources. The components sum to the corresponding statBlock field.
+// sourceSplit attributes a single stat's total to its contributing sources.
+// The components sum to the corresponding statBlock field. Base is the innate
+// level/race contribution (currently only natural HP regen); it is zero for
+// every other stat.
 type sourceSplit struct {
+	Base int `json:"base"`
 	Item int `json:"item"`
 	AA   int `json:"aa"`
 	Buff int `json:"buff"`
@@ -873,7 +876,10 @@ func (h *charactersHandler) deriveBlock(
 	itemAC := item.AC
 	spellAC := 0
 	attack := item.Attack + aa.Attack
-	regen := item.Regen + aa.HPRegen
+	// Innate per-tick HP regen from level + race (the standing Troll/Iksar
+	// bonus), independent of gear/buffs/AAs. See issue tracking natural regen.
+	naturalRegen := eqstat.NaturalHPRegen(level, race)
+	regen := naturalRegen + item.Regen + aa.HPRegen
 	manaRegen := item.ManaRegen + aa.ManaRegen
 	ft := item.FT
 	dmgShield := item.DmgShield
@@ -970,7 +976,7 @@ func (h *charactersHandler) deriveBlock(
 			// attack = item.Attack + aa.Attack + Σ buff; regen/manaRegen
 			// similarly start from item + AA before the buff loop adds in.
 			Attack:    sourceSplit{Item: item.Attack, AA: aa.Attack, Buff: buffAttack},
-			Regen:     sourceSplit{Item: item.Regen, AA: aa.HPRegen, Buff: buffRegen},
+			Regen:     sourceSplit{Base: naturalRegen, Item: item.Regen, AA: aa.HPRegen, Buff: buffRegen},
 			ManaRegen: sourceSplit{Item: item.ManaRegen, AA: aa.ManaRegen, Buff: buffManaRegen},
 			// FT is worn-focus only — no AA or buff source on Quarm.
 			FT: sourceSplit{Item: item.FT},

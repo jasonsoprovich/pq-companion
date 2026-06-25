@@ -1402,10 +1402,11 @@ export function getZealQuarmy(character?: string): Promise<{ quarmy: QuarmyData 
   return get<{ quarmy: QuarmyData | null }>(`/api/zeal/quarmy${qs}`)
 }
 
-// SourceSplit attributes a stat total to its three contributing sources.
-// The parts sum to the matching StatBlock field.
+// SourceSplit attributes a stat total to its contributing sources. The parts
+// sum to the matching StatBlock field. `base` is the innate level/race
+// contribution (currently only natural HP regen); zero for every other stat.
 export interface SourceSplit {
-  item: number; aa: number; buff: number
+  base: number; item: number; aa: number; buff: number
 }
 
 // StatBreakdown carries the per-source split for the stats the Stats panel

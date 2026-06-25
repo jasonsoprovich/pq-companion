@@ -554,6 +554,58 @@ func agiTierBonus(agi int) int {
 	}
 }
 
+// HasRacialRegenBonus reports whether a race gets the doubled "natural" HP
+// regeneration tier (the classic Troll/Iksar regen). Only these two races
+// carry it in the Quarm formula.
+func HasRacialRegenBonus(race int) bool {
+	return race == RaceTroll || race == RaceIksar
+}
+
+// NaturalHPRegen returns the innate per-tick HP regeneration a character gets
+// from level and race alone — the "standing" posture, which is what the static
+// Stats panel displays. It ports the server CalcHPRegen tiering: a level-banded
+// base, plus the doubled Troll/Iksar racial bonus. Sitting and feign-death add
+// further bonuses server-side; those are noted in the UI but not modeled here
+// since the panel has no live posture.
+//
+// At level 60 a non-regen race stands at 4/tick; Troll/Iksar at 12/tick. At
+// level 65 those become 7 and 18 respectively.
+func NaturalHPRegen(level, race int) int {
+	amount := 1
+
+	// Level-banded standing tiers (51/56/60/61/63/65).
+	if level >= 51 {
+		amount++
+	}
+	if level >= 56 {
+		amount++
+	}
+	if level >= 60 {
+		amount++
+	}
+	if level >= 61 {
+		amount++
+	}
+	if level >= 63 {
+		amount++
+	}
+	if level >= 65 {
+		amount++
+	}
+
+	// Troll/Iksar gain two extra level-gated steps, then double the total.
+	if HasRacialRegenBonus(race) {
+		if level >= 51 {
+			amount++
+		}
+		if level >= 56 {
+			amount++
+		}
+		amount *= 2
+	}
+	return amount
+}
+
 // DisplayedAC reproduces the client inventory-window AC:
 // (avoidance + mitigation) × 1000 / 847, integer-truncated. This is the number
 // the EQ client shows — it ignores the in-combat AC softcap.

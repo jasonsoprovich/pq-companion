@@ -754,7 +754,7 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
               <BreakdownRow label="Haste"           value={`${block.haste}%`}          split={block.breakdown.haste} includeAA={false} />
               <BreakdownRow label="Spell Haste"     value={`${block.spell_haste}%`}    split={block.breakdown.spell_haste} note="Hard-capped at 50% per Project Quarm rules" />
               <BreakdownRow label="Worn ATK"        value={`+${block.attack}`}        split={block.breakdown.attack} />
-              <BreakdownRow label="HP Regen"        value={`+${block.regen}/tick`}    split={block.breakdown.regen} />
+              <BreakdownRow label="HP Regen"        value={`+${block.regen}/tick`}    split={block.breakdown.regen} note="Natural is the standing rate; sitting and feign-death regen more in-game." />
               <BreakdownRow label="Flowing Thought" value={`${block.ft}/15`}          split={block.breakdown.ft} includeAA={false} />
               <BreakdownRow label="Mana Regen"      value={`+${block.mana_regen}/tick`} split={block.breakdown.mana_regen} />
               <BreakdownRow label="Damage Shield"   value={`${block.dmg_shield}`}     split={block.breakdown.dmg_shield} includeAA={false} />
@@ -894,10 +894,10 @@ function BreakdownRow({
   label: string; value: string; split: SourceSplit
   includeAA?: boolean; note?: string
 }): React.ReactElement {
-  const rows: Array<[string, number]> = [
-    ['Equip', split.item],
-    ['Buffs', split.buff],
-  ]
+  const rows: Array<[string, number]> = []
+  // Natural (level/race) base — only HP regen carries one; zero elsewhere.
+  if (split.base > 0) rows.push(['Natural', split.base])
+  rows.push(['Equip', split.item], ['Buffs', split.buff])
   if (includeAA) rows.push(['AA', split.aa])
   return (
     <>
