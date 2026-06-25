@@ -345,6 +345,13 @@ type Preferences struct {
 	// internal/resist and pages/ResistCalcPage.tsx.
 	ResistCalcEnabled bool `yaml:"resist_calc_enabled,omitempty" json:"resist_calc_enabled"`
 
+	// TraderTrackerEnabled reveals the experimental Bazaar Trader Tracker page,
+	// which infers what a parked trader sold by diffing inventory exports. Off
+	// by default; it's a power-user/testing toggle in the Developer tab while
+	// the inventory-diff approach is validated in a live bazaar. See
+	// internal/trader and pages/TraderTrackerPage.tsx.
+	TraderTrackerEnabled bool `yaml:"trader_tracker_enabled,omitempty" json:"trader_tracker_enabled"`
+
 	// NPCOverlayDashboardSections controls which optional sections of the
 	// NPC overlay are visible in the dashboard panel. Name, zone, pet
 	// owner, raid/rare badges, and the HP bar are always shown regardless

@@ -38,6 +38,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/savedquery"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/skills"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/trader"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
@@ -982,7 +983,22 @@ func main() {
 		defer savedQueryStore.Close()
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, actualPort)
+	// Bazaar Trader Tracker store + auto-capturer (developer-tab feature):
+	// records trader inventory snapshots and infers bazaar sales by diffing
+	// them. Non-fatal — failure here just disables the Trader Tracker page.
+	// The capturer scans on its own goroutine so it never blocks startup.
+	traderStore, err := trader.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	var traderCapturer *trader.Capturer
+	if err != nil {
+		slog.Warn("open trader tracker (disabled)", "err", err)
+		traderStore = nil
+	} else {
+		defer traderStore.Close()
+		traderCapturer = trader.NewCapturer(cfgMgr, traderStore, hub)
+		go traderCapturer.Start(context.Background())
+	}
+
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

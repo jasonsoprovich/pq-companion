@@ -27,6 +27,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/savedquery"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/skills"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/trader"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
@@ -36,7 +37,7 @@ import (
 // NewRouter builds and returns the chi router wired to all backend components.
 // combatHistory may be nil when persistence is disabled (e.g. user.db open
 // failed); in that case the history endpoints respond 503.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, replayer *logparser.Replayer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, respawnEngine *respawn.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, chatStore *chat.Store, lootStore *loot.Store, backfillRegistry *backfill.Registry, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, lockoutStore *lockout.Store, sb *sandbox.Sandbox, savedQueryStore *savedquery.Store, skillsStore *skills.Store, actualPort int) http.Handler {
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, replayer *logparser.Replayer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, timerEngine *spelltimer.Engine, respawnEngine *respawn.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, chatStore *chat.Store, lootStore *loot.Store, backfillRegistry *backfill.Registry, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, lockoutStore *lockout.Store, sb *sandbox.Sandbox, savedQueryStore *savedquery.Store, skillsStore *skills.Store, traderStore *trader.Store, traderCapturer *trader.Capturer, actualPort int) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -58,6 +59,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	spells := &spellsHandler{db: database, cfgMgr: cfgMgr}
 	npcs := &npcsHandler{db: database}
 	resistCalc := &resistHandler{db: database, cfgMgr: cfgMgr}
+	traderH := &traderHandler{store: traderStore, capturer: traderCapturer, cfgMgr: cfgMgr, db: database}
 	zones := &zonesHandler{db: database}
 	recipes := &recipesHandler{db: database}
 	quests := &questsHandler{db: database}
@@ -114,6 +116,17 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		})
 		r.Post("/resist-check", resistCalc.check)
 		r.Get("/resist-debuffs", resistCalc.debuffs)
+		// Bazaar Trader Tracker (developer-tab feature). Routes only exist when
+		// the snapshot store opened successfully (user.db available).
+		if traderStore != nil {
+			r.Route("/trader", func(r chi.Router) {
+				r.Get("/characters", traderH.characters)
+				r.Get("/{char}/listings", traderH.listings)
+				r.Get("/{char}/sessions", traderH.sessions)
+				r.Get("/{char}/snapshots", traderH.snapshots)
+				r.Post("/{char}/capture", traderH.capture)
+			})
+		}
 		r.Route("/npcs", func(r chi.Router) {
 			r.Get("/", npcs.search)
 			r.Get("/{id}", npcs.get)
