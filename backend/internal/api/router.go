@@ -113,6 +113,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/{id}/raw", raw.rowFromTable("spells_new", "id"))
 		})
 		r.Post("/resist-check", resistCalc.check)
+		r.Get("/resist-debuffs", resistCalc.debuffs)
 		r.Route("/npcs", func(r chi.Router) {
 			r.Get("/", npcs.search)
 			r.Get("/{id}", npcs.get)

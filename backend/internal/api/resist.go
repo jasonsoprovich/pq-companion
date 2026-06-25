@@ -78,6 +78,18 @@ var resistTypeLabels = map[int]string{
 	9: "Corruption",
 }
 
+// GET /api/resist-debuffs
+// Lists every detrimental spell that lowers resists, with per-resist deltas,
+// for the resist calculator's debuff picker.
+func (h *resistHandler) debuffs(w http.ResponseWriter, r *http.Request) {
+	list, err := h.db.ResistDebuffSpells()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
 // POST /api/resist-check
 func (h *resistHandler) check(w http.ResponseWriter, r *http.Request) {
 	var body resistCheckRequest
