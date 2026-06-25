@@ -425,10 +425,28 @@ export function effectDescription(id: number, base: number, buffduration: number
     return `${sign}${base} ${STAT_NAMES[id]}`
   }
 
-  // Per-resist SPAs (46-50).
+  // Per-resist SPAs (46-50). Like movement speed, resist debuffs/buffs are
+  // commonly level-scaled (formula 101/102 with the true magnitude in `max`),
+  // so render a "low (Lx) to high (Ly)" range rather than the raw base — e.g.
+  // Tashanian is -9 base but scales to ~-39 at L60.
   if (RESIST_NAMES[id] !== undefined) {
     if (base === 0) return ''
-    return `${sign}${base} ${RESIST_NAMES[id]} Resist`
+    const name = RESIST_NAMES[id]
+    const fmt = (v: number): string => `${v > 0 ? '+' : ''}${v}`
+    if (formula !== undefined && formula !== 100 && formula !== 0) {
+      const minL = minCasterLevel(classLevels)
+      if (minL !== undefined) {
+        const lowVal = applyLevelFormula(formula, base, max ?? 0, minL)
+        const cap = formulaCapLevel(formula, base, max ?? 0)
+        const highL = Math.min(SERVER_LEVEL_CAP, cap ?? SERVER_LEVEL_CAP)
+        const highVal = applyLevelFormula(formula, base, max ?? 0, highL)
+        if (lowVal !== highVal) {
+          return `${fmt(lowVal)} (L${minL}) to ${fmt(highVal)} (L${highL}) ${name} Resist`
+        }
+        return `${fmt(highVal)} ${name} Resist`
+      }
+    }
+    return `${fmt(base)} ${name} Resist`
   }
 
   switch (id) {
