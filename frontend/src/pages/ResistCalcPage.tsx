@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Crosshair, Percent, Search } from 'lucide-react'
 import {
   getSpellsByClass,
@@ -49,6 +49,7 @@ export default function ResistCalcPage(): React.ReactElement {
 
   const [npcQuery, setNpcQuery] = useState('')
   const [npcResults, setNpcResults] = useState<NPC[]>([])
+  const npcSearchRef = useRef<HTMLDivElement>(null)
 
   // Seed the caster from the active character (level/class/base CHA). CHA is
   // editable since the formula wants total (buffed) charisma, not base.
@@ -182,6 +183,16 @@ export default function ResistCalcPage(): React.ReactElement {
     }
   }, [npcQuery])
 
+  // Dismiss the NPC results dropdown on click outside the search box.
+  useEffect(() => {
+    if (npcResults.length === 0) return
+    const handler = (e: MouseEvent) => {
+      if (!npcSearchRef.current?.contains(e.target as Node)) setNpcResults([])
+    }
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
+  }, [npcResults.length])
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4 p-4">
       <div className="flex items-center gap-2">
@@ -272,7 +283,7 @@ export default function ResistCalcPage(): React.ReactElement {
           >
             <Crosshair size={13} /> Use current target
           </button>
-          <div className="relative min-w-[12rem] flex-1">
+          <div ref={npcSearchRef} className="relative min-w-[12rem] flex-1">
             <Search
               size={13}
               className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"
