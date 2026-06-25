@@ -32,6 +32,13 @@ import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, Action, Timer
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
 import type { RecipeSummary, RecipeDetail, RecipeTradeskillCount } from '../types/recipe'
+import type {
+  TraderCharacter,
+  TraderListing,
+  TraderSession,
+  TraderSnapshotInfo,
+  TraderCaptureResponse,
+} from '../types/trader'
 import type { SkillsResponse } from '../types/skill'
 import type {
   SandboxResult,
@@ -572,6 +579,28 @@ export interface ResistDebuff {
 
 export function getResistDebuffs(): Promise<ResistDebuff[]> {
   return get<ResistDebuff[]>('/api/resist-debuffs')
+}
+
+// ── Bazaar Trader Tracker (developer-tab feature) ────────────────────────────────
+
+export function getTraderCharacters(): Promise<TraderCharacter[]> {
+  return get<TraderCharacter[]>('/api/trader/characters')
+}
+
+export function getTraderListings(character: string): Promise<TraderListing[]> {
+  return get<TraderListing[]>(`/api/trader/${encodeURIComponent(character)}/listings`)
+}
+
+export function getTraderSessions(character: string): Promise<TraderSession[]> {
+  return get<TraderSession[]>(`/api/trader/${encodeURIComponent(character)}/sessions`)
+}
+
+export function getTraderSnapshots(character: string): Promise<TraderSnapshotInfo[]> {
+  return get<TraderSnapshotInfo[]>(`/api/trader/${encodeURIComponent(character)}/snapshots`)
+}
+
+export function captureTraderSnapshot(character: string): Promise<TraderCaptureResponse> {
+  return post<TraderCaptureResponse>(`/api/trader/${encodeURIComponent(character)}/capture`)
 }
 
 // ── Keys ───────────────────────────────────────────────────────────────────────

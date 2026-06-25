@@ -97,6 +97,10 @@ export interface Preferences {
   // targeted NPC. Power-user/experimental feature gated behind a Developer-tab
   // toggle while the resist formula is validated. See pages/ResistCalcPage.tsx.
   resist_calc_enabled?: boolean
+  // Bazaar Trader Tracker: infers what a parked trader sold by diffing
+  // inventory exports. Power-user/experimental feature gated behind a
+  // Developer-tab toggle. See pages/TraderTrackerPage.tsx.
+  trader_tracker_enabled?: boolean
   npc_overlay_dashboard_sections: NPCOverlaySections
   npc_overlay_popout_sections: NPCOverlaySections
   // Per-overlay locked behaviour, keyed by canonical overlay name. Missing

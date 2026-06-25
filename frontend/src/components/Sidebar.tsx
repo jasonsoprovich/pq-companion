@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Percent } from 'lucide-react'
+import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Percent, Store } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import CharacterSwitcher from './CharacterSwitcher'
 import { useHistoryNav } from '../hooks/useHistoryNav'
@@ -8,6 +8,7 @@ import { useWindowDrag } from '../hooks/useWindowDrag'
 import { NAV_SECTIONS, orderItems, type NavItem } from '../lib/sidebarNav'
 import { useSidebarPrefs } from '../hooks/useSidebarPrefs'
 import { useResistCalcEnabled } from '../hooks/useResistCalcEnabled'
+import { useTraderTrackerEnabled } from '../hooks/useTraderTrackerEnabled'
 
 function SidebarLink({ to, label, icon }: NavItem): React.ReactElement {
   return (
@@ -52,6 +53,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   const onDragMouseDown = useWindowDrag()
   const { hidden, order } = useSidebarPrefs()
   const resistCalcEnabled = useResistCalcEnabled()
+  const traderTrackerEnabled = useTraderTrackerEnabled()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed)
 
   const toggleSection = (id: string): void => {
@@ -70,27 +72,27 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   // up empty so their header doesn't dangle.
   const sections = useMemo(() => {
     const hiddenSet = new Set(hidden)
-    // The Resist Calculator is an experimental, Developer-tab-gated tool, so
-    // it's injected here (not in NAV_SECTIONS) — keeping it out of the
-    // user-facing Navigation editor until it graduates to a permanent tab.
-    const base = NAV_SECTIONS.map((s) =>
-      s.id === 'database' && resistCalcEnabled
-        ? {
-            ...s,
-            items: [
-              ...s.items,
-              { to: '/resist-calc', label: 'Resist Calculator', icon: <Percent size={16} /> },
-            ],
-          }
-        : s,
-    )
+    // The Resist Calculator and Trader Tracker are experimental, Developer-
+    // tab-gated tools, so they're injected here (not in NAV_SECTIONS) — keeping
+    // them out of the user-facing Navigation editor until they graduate to
+    // permanent tabs.
+    const base = NAV_SECTIONS.map((s) => {
+      const extra: NavItem[] = []
+      if (s.id === 'database' && resistCalcEnabled) {
+        extra.push({ to: '/resist-calc', label: 'Resist Calculator', icon: <Percent size={16} /> })
+      }
+      if (s.id === 'characters' && traderTrackerEnabled) {
+        extra.push({ to: '/trader-tracker', label: 'Trader Tracker', icon: <Store size={16} /> })
+      }
+      return extra.length ? { ...s, items: [...s.items, ...extra] } : s
+    })
     return base
       .map((s) => ({
         ...s,
         items: orderItems(s.items, order).filter((i) => !hiddenSet.has(i.to)),
       }))
       .filter((s) => s.items.length > 0)
-  }, [hidden, order, resistCalcEnabled])
+  }, [hidden, order, resistCalcEnabled, traderTrackerEnabled])
 
   useEffect(() => {
     const poll = () => {
