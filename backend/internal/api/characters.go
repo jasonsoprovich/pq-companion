@@ -536,14 +536,12 @@ func parseWornEffect(s *db.Spell, wornLevel int, out *statBlock) (haste int) {
 			}
 		case spaMana:
 			if base > 0 {
-				// All worn mana-regen items are exposed as "Flowing Thought
-				// N" by the spell name; that's the FT bucket. Anything else
-				// rolls into generic ManaRegen.
-				if strings.HasPrefix(s.Name, "Flowing Thought") {
-					out.FT += base
-				} else {
-					out.ManaRegen += base
-				}
+				// Worn-effect mana regen is "Flowing Thought" regardless of
+				// the spell's name — EQMacEmu applies all item-sourced SPA 15
+				// against the same worn mana-regen (FT) cap. Some worn effects
+				// expose it under a flavor name (e.g. "Blessing of Vah
+				// Kerrath"), so don't gate on the "Flowing Thought N" prefix.
+				out.FT += base
 			}
 		case spaMeleeHaste, spaMeleeHaste2:
 			// Apply the spell's effect formula to wornLevel (formula 102 =
