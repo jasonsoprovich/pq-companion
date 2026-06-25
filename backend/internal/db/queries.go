@@ -405,7 +405,11 @@ func (db *DB) BestWeaponSkillCap(classIdx, level int) (int, error) {
 }
 
 func collectItems(rows *sql.Rows) ([]Item, error) {
-	var result []Item
+	// Initialise non-nil so an empty result marshals to [] not null — the
+	// SearchResult JSON contract is items: T[], and a null trips consumers
+	// that index/spread/length the array (black-screened the resist
+	// calculator's NPC search on a no-match query).
+	result := []Item{}
 	for rows.Next() {
 		it, err := scanItem(rows)
 		if err != nil {
@@ -781,7 +785,8 @@ func (db *DB) SearchNPCs(query string, limit, offset int, hidePlaceholders bool)
 }
 
 func collectNPCs(rows *sql.Rows) ([]NPC, error) {
-	var result []NPC
+	// Non-nil so an empty result marshals to [] not null (see collectItems).
+	result := []NPC{}
 	for rows.Next() {
 		n, err := scanNPC(rows)
 		if err != nil {
@@ -1588,7 +1593,8 @@ func (db *DB) SearchSpells(query string, classIndex, minLevel, maxLevel, limit, 
 }
 
 func collectSpells(rows *sql.Rows) ([]Spell, error) {
-	var result []Spell
+	// Non-nil so an empty result marshals to [] not null (see collectItems).
+	result := []Spell{}
 	for rows.Next() {
 		sp, err := scanSpell(rows)
 		if err != nil {
@@ -2092,7 +2098,8 @@ func (db *DB) ZoneExpansions() ([]int, error) {
 }
 
 func collectZones(rows *sql.Rows) ([]Zone, error) {
-	var result []Zone
+	// Non-nil so an empty result marshals to [] not null (see collectItems).
+	result := []Zone{}
 	for rows.Next() {
 		z, err := scanZone(rows)
 		if err != nil {
