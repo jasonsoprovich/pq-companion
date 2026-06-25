@@ -25,6 +25,16 @@ export interface Spell {
   resist_type: number
   skill: number
 
+  // Resist-check inputs (mirror backend Spell). resist_diff is the spell's
+  // resist adjust (negative = easier to land); no_partial_resist marks binary
+  // land-or-resist spells; resist_per_level/resist_cap scale resist with
+  // target level; ae_duration classifies rain spells.
+  resist_diff: number
+  no_partial_resist: number
+  resist_per_level: number
+  resist_cap: number
+  ae_duration: number
+
   // Parallel arrays, 12 slots each
   effect_ids: number[]
   effect_base_values: number[]

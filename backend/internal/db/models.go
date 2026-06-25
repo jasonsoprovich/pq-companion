@@ -249,6 +249,17 @@ type Spell struct {
 	ResistType int `json:"resist_type"`
 	Skill      int `json:"skill"`
 
+	// Resist-check inputs (spells_new). ResistDiff is the spell's resist
+	// adjust (negative = easier to land). NoPartialResist marks binary
+	// land-or-resist spells (mez/root/charm/snare). ResistPerLevel/ResistCap
+	// scale resist with target level. AEDuration is used to classify rain
+	// spells. See internal/resist for the landing-chance computation.
+	ResistDiff      int `json:"resist_diff"`
+	NoPartialResist int `json:"no_partial_resist"`
+	ResistPerLevel  int `json:"resist_per_level"`
+	ResistCap       int `json:"resist_cap"`
+	AEDuration      int `json:"ae_duration"`
+
 	// Effect slots (12 slots each)
 	EffectIDs         [12]int `json:"effect_ids"`
 	EffectBaseValues  [12]int `json:"effect_base_values"`
