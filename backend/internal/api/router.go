@@ -57,6 +57,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	items := &itemsHandler{db: database}
 	spells := &spellsHandler{db: database, cfgMgr: cfgMgr}
 	npcs := &npcsHandler{db: database}
+	resistCalc := &resistHandler{db: database, cfgMgr: cfgMgr}
 	zones := &zonesHandler{db: database}
 	recipes := &recipesHandler{db: database}
 	quests := &questsHandler{db: database}
@@ -111,6 +112,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/{id}/items", spells.crossRefs)
 			r.Get("/{id}/raw", raw.rowFromTable("spells_new", "id"))
 		})
+		r.Post("/resist-check", resistCalc.check)
 		r.Route("/npcs", func(r chi.Router) {
 			r.Get("/", npcs.search)
 			r.Get("/{id}", npcs.get)

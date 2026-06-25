@@ -163,10 +163,12 @@ func isBlankSlot(s Spell, i int) bool {
 	return false
 }
 
-func isFearSpell(s Spell) bool    { return isEffectInSpell(s, seFear) }
-func isCharmSpell(s Spell) bool   { return isEffectInSpell(s, seCharm) }
-func isMezSpell(s Spell) bool     { return isEffectInSpell(s, seMez) }
-func isHarmonySpell(s Spell) bool { return isEffectInSpell(s, seHarmony) || isEffectInSpell(s, seChangeFrenzyRad) }
+func isFearSpell(s Spell) bool  { return isEffectInSpell(s, seFear) }
+func isCharmSpell(s Spell) bool { return isEffectInSpell(s, seCharm) }
+func isMezSpell(s Spell) bool   { return isEffectInSpell(s, seMez) }
+func isHarmonySpell(s Spell) bool {
+	return isEffectInSpell(s, seHarmony) || isEffectInSpell(s, seChangeFrenzyRad)
+}
 
 // isDirectDamageSpell mirrors IsDirectDamageSpell: an instant (no buff
 // duration) spell with a negative HP effect.
@@ -376,11 +378,11 @@ func ComputeChances(in Input) Result {
 	}
 
 	res := Result{
-		Binary:       binary,
-		ResistChance: resistChance,
-		FullResist:   float64(full) / rolls,
-		Partial:      float64(partial) / rolls,
-		FullDamage:   float64(fullDmg) / rolls,
+		Binary:                binary,
+		ResistChance:          resistChance,
+		FullResist:            float64(full) / rolls,
+		Partial:               float64(partial) / rolls,
+		FullDamage:            float64(fullDmg) / rolls,
 		ExpectedEffectiveness: float64(effSum) / (rolls * 100),
 	}
 	res.LandChance = 1 - res.FullResist
