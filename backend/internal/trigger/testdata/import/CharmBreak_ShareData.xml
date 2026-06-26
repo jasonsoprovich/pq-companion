@@ -1,0 +1,71 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<SharedData>
+  <TriggerGroups>
+    <TriggerGroup>
+      <Name>Production</Name>
+      <Comments></Comments>
+      <SelfCommented>False</SelfCommented>
+      <GroupId>0</GroupId>
+      <EnableByDefault>False</EnableByDefault>
+      <TriggerGroups>
+        <TriggerGroup>
+          <Name>Class</Name>
+          <Comments></Comments>
+          <SelfCommented>False</SelfCommented>
+          <GroupId>0</GroupId>
+          <EnableByDefault>False</EnableByDefault>
+          <TriggerGroups>
+            <TriggerGroup>
+              <Name>Enchanter</Name>
+              <Comments></Comments>
+              <SelfCommented>False</SelfCommented>
+              <GroupId>0</GroupId>
+              <EnableByDefault>False</EnableByDefault>
+              <TriggerGroups>
+                <TriggerGroup>
+                  <Name>Debuffs</Name>
+                  <Comments></Comments>
+                  <SelfCommented>False</SelfCommented>
+                  <GroupId>0</GroupId>
+                  <EnableByDefault>False</EnableByDefault>
+                  <Triggers>
+                    <Trigger>
+                      <Name>Charm Break</Name>
+                      <TriggerText>^Your (Charm|Beguile|Cajoling Whispers|Allure|Boltran`s Agacerie|Beckon|Command of Druzzil) spell has worn off of (.*).</TriggerText>
+                      <Comments></Comments>
+                      <EnableRegex>True</EnableRegex>
+                      <UseText>True</UseText>
+                      <DisplayText>${2} broke charm!</DisplayText>
+                      <CopyToClipboard>False</CopyToClipboard>
+                      <ClipboardText></ClipboardText>
+                      <UseTextToVoice>True</UseTextToVoice>
+                      <InterruptSpeech>True</InterruptSpeech>
+                      <TextToVoiceText>Charm Break on ${2}</TextToVoiceText>
+                      <PlayMediaFile>False</PlayMediaFile>
+                      <TimerType>NoTimer</TimerType>
+                      <TimerName></TimerName>
+                      <RestartBasedOnTimerName>False</RestartBasedOnTimerName>
+                      <TimerMillisecondDuration>0</TimerMillisecondDuration>
+                      <TimerDuration>0</TimerDuration>
+                      <TimerVisibleDuration>0</TimerVisibleDuration>
+                      <TimerStartBehavior>StartNewTimer</TimerStartBehavior>
+                      <TimerEndingTime>1</TimerEndingTime>
+                      <UseTimerEnding>False</UseTimerEnding>
+                      <UseTimerEnded>False</UseTimerEnded>
+                      <UseCounterResetTimer>False</UseCounterResetTimer>
+                      <CounterResetDuration>0</CounterResetDuration>
+                      <Category>Default</Category>
+                      <Modified>0001-01-01T00:00:00</Modified>
+                      <UseFastCheck>True</UseFastCheck>
+                      <TimerEarlyEnders />
+                    </Trigger>
+                  </Triggers>
+                </TriggerGroup>
+              </TriggerGroups>
+            </TriggerGroup>
+          </TriggerGroups>
+        </TriggerGroup>
+      </TriggerGroups>
+    </TriggerGroup>
+  </TriggerGroups>
+</SharedData>

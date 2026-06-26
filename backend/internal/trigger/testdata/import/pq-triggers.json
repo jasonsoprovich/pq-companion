@@ -1,0 +1,1254 @@
+{
+  "pack_name": "Custom Export",
+  "description": "Exported from PQ Companion",
+  "triggers": [
+    {
+      "id": "22779ef6892dbf39",
+      "name": "Feign Death Failed",
+      "enabled": true,
+      "pattern": "^{C} has fallen to the ground\\.$",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "FEIGN DEATH FAILED",
+          "duration_secs": 5,
+          "color": "#ff0000",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        },
+        {
+          "type": "text_to_speech",
+          "text": "Feign death failed",
+          "duration_secs": 0,
+          "color": "",
+          "sound_path": "",
+          "volume": 1,
+          "voice": ""
+        }
+      ],
+      "pack_name": "Misc Alerts",
+      "created_at": "2026-06-13T19:19:50Z",
+      "source": "log",
+      "timer_type": "none",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Feane",
+        "Nariana",
+        "Osui",
+        "Winladar"
+      ],
+      "timer_alerts": [],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Misc Alerts",
+      "sort_order": 0
+    },
+    {
+      "id": "253f4fe856ea567e",
+      "name": "Stunned",
+      "enabled": true,
+      "pattern": "^You are stunned!$",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "STUNNED",
+          "duration_secs": 3,
+          "color": "#ff4444",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        }
+      ],
+      "pack_name": "Misc Alerts",
+      "created_at": "2026-06-13T19:19:50Z",
+      "source": "log",
+      "timer_type": "none",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Feane",
+        "Nariana",
+        "Osui",
+        "Winladar"
+      ],
+      "timer_alerts": [],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Misc Alerts",
+      "sort_order": 2
+    },
+    {
+      "id": "9c4f6b5bb003ec01",
+      "name": "Unstunned",
+      "enabled": true,
+      "pattern": "^You are unstunned\\.$",
+      "actions": [
+        {
+          "type": "text_to_speech",
+          "text": "NO LONGER STUNNED",
+          "duration_secs": 2,
+          "color": "",
+          "sound_path": "",
+          "volume": 0,
+          "voice": "Alva",
+          "position": {
+            "x": 797,
+            "y": 221
+          }
+        }
+      ],
+      "pack_name": "Misc Alerts",
+      "created_at": "2026-06-13T19:19:50Z",
+      "source": "log",
+      "timer_type": "none",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Feane",
+        "Nariana",
+        "Osui",
+        "Winladar"
+      ],
+      "timer_alerts": [],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Misc Alerts",
+      "sort_order": 3
+    },
+    {
+      "id": "17cde2d36912e814",
+      "name": "MGB Announcement",
+      "enabled": true,
+      "pattern": "(?i)^\\w+ tells general:\\d+, '.*(?:mgb.*(?:\\d|hour|min|now|soon)|\\d.*mgb).*'$",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "{0}",
+          "duration_secs": 10,
+          "color": "#44ddff",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        }
+      ],
+      "pack_name": "Misc Alerts",
+      "created_at": "2026-06-13T19:19:50Z",
+      "source": "log",
+      "timer_type": "none",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Feane",
+        "Nariana",
+        "Osui",
+        "Winladar"
+      ],
+      "timer_alerts": [],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Misc Alerts",
+      "sort_order": 1
+    },
+    {
+      "id": "426f33506d17c12c",
+      "name": "Mez Broke",
+      "enabled": true,
+      "pattern": "Your (?:Mesmerize|Mesmerization|Enthrall|Entrance|Dazzle|Fascination|Entrancing Lights|Glamour of Kintaz|Rapture|Ancient: Eternal Rapture) spell has worn off\\.",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "MEZ BROKE!",
+          "duration_secs": 5,
+          "color": "#ff4444",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        },
+        {
+          "type": "text_to_speech",
+          "text": "Mezz broke",
+          "duration_secs": 0,
+          "color": "",
+          "sound_path": "",
+          "volume": 1,
+          "voice": ""
+        }
+      ],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "none",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "cd827a43931720aa",
+      "name": "Charm Broke",
+      "enabled": true,
+      "pattern": "^Your (?:charm|Charm|Beguile|Cajoling Whispers|Allure|Boltran[`']s Agacerie|Dictate|Befriend Animal|Charm Animals|Beguile Plants|Beguile Animals|Allure of the Wild|Call of Karana|Tunare[`']s Request|Dominate Undead|Beguile Undead|Cajole Undead|Thrall of Bones|Enslave Death|Word of Terris|Undead Pact|Dominating Gaze|Solon[`']s Bewitching Bravura|Solon[`']s Song of the Sirens) spell has worn off\\.$",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "CHARM BROKE!",
+          "duration_secs": 6,
+          "color": "#ff0000",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        },
+        {
+          "type": "text_to_speech",
+          "text": "Charm broke",
+          "duration_secs": 0,
+          "color": "",
+          "sound_path": "",
+          "volume": 1,
+          "voice": ""
+        }
+      ],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "none",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "dedup_key": "charm_broke",
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "3201fd2d4beae82e",
+      "name": "Root Broke",
+      "enabled": true,
+      "pattern": "^Your (?:Root|Instill|Fetter|Greater Fetter|Paralyzing Earth|Immobilize|Grasping Roots|Ensnaring Roots|Enveloping Roots|Engulfing Roots|Engorging Roots|Entrapping Roots|Hungry Earth|Elnerick[`']s Entombment of Ice) spell has worn off\\.$",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "ROOT BROKE!",
+          "duration_secs": 5,
+          "color": "#ff6633",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        },
+        {
+          "type": "text_to_speech",
+          "text": "Root broke",
+          "duration_secs": 0,
+          "color": "",
+          "sound_path": "",
+          "volume": 1,
+          "voice": ""
+        }
+      ],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "none",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "dedup_key": "root_broke",
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "045a8378e439b2fc",
+      "name": "Cannot Be Mezzed",
+      "enabled": true,
+      "pattern": "Your target cannot be mesmerized\\.",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "CANNOT MEZ",
+          "duration_secs": 4,
+          "color": "#ff8800",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        }
+      ],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "none",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "6f43693b4dc6b1e1",
+      "name": "Cannot Be Charmed",
+      "enabled": true,
+      "pattern": "Your target cannot be charmed\\.",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "CANNOT CHARM",
+          "duration_secs": 4,
+          "color": "#ff8800",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        }
+      ],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "none",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "9d0a52dbabe50ad9",
+      "name": "Visions of Grandeur",
+      "enabled": true,
+      "pattern": "^(?:You experience visions of grandeur\\.|(?P<target>[A-Z][a-zA-Z']{2,14}) experiences visions of grandeur\\.)$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "buff",
+      "timer_duration_secs": 2520,
+      "worn_off_pattern": "^Your visions fade\\.$",
+      "spell_id": 1710,
+      "timer_target_capture": "target",
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-fade-60s",
+          "seconds": 60,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} fading soon",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "886f0aab181f8867",
+      "name": "Koadic's Endless Intellect",
+      "enabled": true,
+      "pattern": "^(?:Your mind expands beyond the bounds of space and time\\.|(?P<target>[A-Z][a-zA-Z']{2,14})'s mind expands beyond the bounds of space and time\\.)$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "buff",
+      "timer_duration_secs": 9000,
+      "worn_off_pattern": "^Your mind returns to normal\\.$",
+      "spell_id": 2570,
+      "timer_target_capture": "target",
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-fade-300s",
+          "seconds": 300,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} fading soon",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "189343ae5b1ae975",
+      "name": "Gift of Brilliance",
+      "enabled": true,
+      "pattern": "^(?:Your thoughts begin to race and flow faster\\.|(?P<target>[A-Z][a-zA-Z']{2,14}) appears to be staring into nothingness\\.)$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "buff",
+      "timer_duration_secs": 6000,
+      "worn_off_pattern": "^Your gift of brilliance fades\\.$",
+      "spell_id": 1410,
+      "timer_target_capture": "target",
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-fade-300s",
+          "seconds": 300,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} fading soon",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "b5468d1f8df78a3a",
+      "name": "Intellectual Superiority",
+      "enabled": true,
+      "pattern": "^(?:Your mind sharpens\\.|(?P<target>[A-Z][a-zA-Z']{2,14})'s mind sharpens\\.)$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "buff",
+      "timer_duration_secs": 1620,
+      "worn_off_pattern": "^The intellectual advancement fades\\.$",
+      "spell_id": 2562,
+      "timer_target_capture": "target",
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-fade-60s",
+          "seconds": 60,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} fading soon",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "54927155a1cb0e83",
+      "name": "Group Resist Magic",
+      "enabled": true,
+      "pattern": "^(?:You feel protected from magic\\.|(?P<target>[A-Z][a-zA-Z']{2,14}) is resistant to magic\\.)$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "buff",
+      "timer_duration_secs": 2160,
+      "worn_off_pattern": "^Your protection fades\\.$",
+      "spell_id": 72,
+      "timer_target_capture": "target",
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-fade-60s",
+          "seconds": 60,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} fading soon",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "2664027cb92a18c2",
+      "name": "Speed of the Shissar/Brood",
+      "enabled": true,
+      "pattern": "^(?:Your body pulses with the spirit of the Shissar\\.|(?P<target>[A-Z][a-zA-Z']{2,14})'s body pulses with the spirit of the Shissar\\.)$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "buff",
+      "timer_duration_secs": 1800,
+      "worn_off_pattern": "^Your body slows\\.$",
+      "spell_id": 1939,
+      "timer_target_capture": "target",
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-fade-60s",
+          "seconds": 60,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} fading soon",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "910c99b562d1901f",
+      "name": "Tashanian",
+      "enabled": true,
+      "pattern": "^(?:You hear the barking of Tashania\\.|[a-zA-Z][a-zA-Z' `]{2,29} glances nervously about\\.)$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "detrimental",
+      "timer_duration_secs": 780,
+      "worn_off_pattern": "^The barking fades\\.$",
+      "spell_id": 1702,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-expire-10s",
+          "seconds": 10,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} expiring",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "668329a74ff6d031",
+      "name": "Cripple",
+      "enabled": true,
+      "pattern": "^(?:You have been crippled\\.|[a-zA-Z][a-zA-Z' `]{2,29} has been crippled\\.)$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "detrimental",
+      "timer_duration_secs": 450,
+      "worn_off_pattern": "^You feel your strength return\\.$",
+      "spell_id": 1592,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-expire-10s",
+          "seconds": 10,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} expiring",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "65b69dee0a24abad",
+      "name": "Asphyxiate",
+      "enabled": true,
+      "pattern": "^(?:You feel a shortness of breath\\.|[a-zA-Z][a-zA-Z' `]{2,29} begins to choke\\.)$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "detrimental",
+      "timer_duration_secs": 120,
+      "worn_off_pattern": "^You can breathe again\\.$",
+      "spell_id": 1703,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-expire-10s",
+          "seconds": 10,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} expiring",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "45ce685ee6545638",
+      "name": "Root",
+      "enabled": true,
+      "pattern": "^You begin casting (Root)\\.$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "detrimental",
+      "timer_duration_secs": 48,
+      "worn_off_pattern": "^Your (?:target resisted the )?(Greater Fetter|Fetter|Root) spell(?: has worn off)?\\.$",
+      "spell_id": 230,
+      "timer_key_capture": "1",
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-expire-10s",
+          "seconds": 10,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} expiring",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [
+        {
+          "pattern": "^You begin casting (Fetter)\\.$",
+          "enabled": true,
+          "timer_duration_secs": 180,
+          "spell_id": 1633
+        },
+        {
+          "pattern": "^You begin casting (Greater Fetter)\\.$",
+          "enabled": true,
+          "timer_duration_secs": 180,
+          "spell_id": 3194
+        }
+      ],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "dd0ac38281c3974e",
+      "name": "Mez",
+      "enabled": true,
+      "pattern": "^You begin casting (Mesmerize)\\.$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "detrimental",
+      "timer_duration_secs": 24,
+      "worn_off_pattern": "^Your (?:target resisted the )?(Mesmerization|Mesmerize|Dazzle) spell(?: has worn off)?\\.$",
+      "spell_id": 292,
+      "timer_key_capture": "1",
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-expire-10s",
+          "seconds": 10,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} expiring",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [
+        {
+          "pattern": "^You begin casting (Mesmerization)\\.$",
+          "enabled": true,
+          "timer_duration_secs": 24,
+          "spell_id": 307
+        },
+        {
+          "pattern": "^You begin casting (Dazzle)\\.$",
+          "enabled": true,
+          "timer_duration_secs": 96,
+          "spell_id": 190
+        }
+      ],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "507fbe2909fb6b85",
+      "name": "Enthrall",
+      "enabled": true,
+      "pattern": "^(?:You have been enthralled\\.|[a-zA-Z][a-zA-Z' `]{2,29} has been enthralled\\.)$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "detrimental",
+      "timer_duration_secs": 144,
+      "worn_off_pattern": "^Your Enthrall spell has worn off\\.$",
+      "spell_id": 187,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-expire-10s",
+          "seconds": 10,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} expiring",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "c2069d8c4f854b1d",
+      "name": "Entrance",
+      "enabled": true,
+      "pattern": "^(?:You have been entranced\\.|[a-zA-Z][a-zA-Z' `]{2,29} has been entranced\\.)$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "detrimental",
+      "timer_duration_secs": 72,
+      "worn_off_pattern": "^Your Entrance spell has worn off\\.$",
+      "spell_id": 188,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-expire-10s",
+          "seconds": 10,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} expiring",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "b143600d17d3ca47",
+      "name": "Glamour of Kintaz",
+      "enabled": true,
+      "pattern": "^(?:You are mesmerized by the Glamour of Kintaz\\.|[a-zA-Z][a-zA-Z' `]{2,29} has been mesmerized by the Glamour of Kintaz\\.)$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "detrimental",
+      "timer_duration_secs": 54,
+      "worn_off_pattern": "^Your Glamour of Kintaz spell has worn off\\.$",
+      "spell_id": 1691,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-expire-10s",
+          "seconds": 10,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} expiring",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "d99a4de0a9b93bd2",
+      "name": "Rapture",
+      "enabled": true,
+      "pattern": "^(?:You swoon, overcome by rapture\\.|[a-zA-Z][a-zA-Z' `]{2,29} swoons in raptured bliss\\.)$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "detrimental",
+      "timer_duration_secs": 42,
+      "worn_off_pattern": "^Your (?:Rapture|Ancient: Eternal Rapture) spell has worn off\\.$",
+      "spell_id": 1692,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-expire-10s",
+          "seconds": 10,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} expiring",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "46479c6e699688a3",
+      "name": "Charm",
+      "enabled": true,
+      "pattern": "^You begin casting (Charm)\\.$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "detrimental",
+      "timer_duration_secs": 1140,
+      "worn_off_pattern": "^Your (?:target resisted the )?(Cajoling Whispers|Boltran[`']s Agacerie|Beguile|Allure|Charm) spell(?: has worn off)?\\.$",
+      "spell_id": 300,
+      "timer_key_capture": "1",
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-expire-10s",
+          "seconds": 10,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} expiring",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [
+        {
+          "pattern": "^You begin casting (Beguile)\\.$",
+          "enabled": true,
+          "timer_duration_secs": 1140,
+          "spell_id": 182
+        },
+        {
+          "pattern": "^You begin casting (Cajoling Whispers)\\.$",
+          "enabled": true,
+          "timer_duration_secs": 1140,
+          "spell_id": 183
+        },
+        {
+          "pattern": "^You begin casting (Allure)\\.$",
+          "enabled": true,
+          "timer_duration_secs": 1140,
+          "spell_id": 184
+        },
+        {
+          "pattern": "^You begin casting (Boltran[`']s Agacerie)\\.$",
+          "enabled": true,
+          "timer_duration_secs": 1140,
+          "spell_id": 1706
+        }
+      ],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "5c1b28e5af7119fe",
+      "name": "Dictate",
+      "enabled": true,
+      "pattern": "^You begin casting Dictate\\.$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "detrimental",
+      "timer_duration_secs": 48,
+      "worn_off_pattern": "^(?:Your Dictate spell has worn off\\.|Your target resisted the Dictate spell\\.)$",
+      "spell_id": 1707,
+      "cooldown_secs": 300,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-expire-10s",
+          "seconds": 10,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} expiring",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "fad0df7959e9452f",
+      "name": "Pacify",
+      "enabled": true,
+      "pattern": "^You begin casting (Lull)\\.$",
+      "actions": [],
+      "pack_name": "Enchanter",
+      "created_at": "2026-06-16T04:59:50Z",
+      "source": "log",
+      "timer_type": "detrimental",
+      "timer_duration_secs": 120,
+      "worn_off_pattern": "^Your (?:target resisted the )?(Wake of Tranquility|Soothe|Pacify|Lull|Calm) spell(?: has worn off)?\\.$",
+      "spell_id": 208,
+      "timer_key_capture": "1",
+      "display_threshold_secs": 0,
+      "characters": [
+        "Osui"
+      ],
+      "timer_alerts": [
+        {
+          "id": "pack-expire-10s",
+          "seconds": 10,
+          "type": "text_to_speech",
+          "sound_path": "",
+          "volume": 0,
+          "tts_template": "{spell} expiring",
+          "voice": "",
+          "tts_volume": 100
+        }
+      ],
+      "extra_patterns": [
+        {
+          "pattern": "^You begin casting (Calm)\\.$",
+          "enabled": true,
+          "timer_duration_secs": 126,
+          "spell_id": 47
+        },
+        {
+          "pattern": "^You begin casting (Soothe)\\.$",
+          "enabled": true,
+          "timer_duration_secs": 450,
+          "spell_id": 501
+        },
+        {
+          "pattern": "^You begin casting (Pacify)\\.$",
+          "enabled": true,
+          "timer_duration_secs": 360,
+          "spell_id": 45
+        },
+        {
+          "pattern": "^You begin casting (Wake of Tranquility)\\.$",
+          "enabled": true,
+          "timer_duration_secs": 126,
+          "spell_id": 1541
+        }
+      ],
+      "exclude_patterns": [],
+      "source_pack": "Enchanter",
+      "sort_order": 0
+    },
+    {
+      "id": "37fbe38fc59a4cee",
+      "name": "Incoming Tell",
+      "enabled": true,
+      "pattern": "\\w+ tells you,",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "INCOMING TELL!",
+          "duration_secs": 5,
+          "color": "#44aaff",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        }
+      ],
+      "pack_name": "General Triggers",
+      "created_at": "2026-06-26T03:38:03Z",
+      "source": "log",
+      "timer_type": "none",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Feane",
+        "Nariana",
+        "Osui",
+        "Winladar"
+      ],
+      "timer_alerts": [],
+      "extra_patterns": [],
+      "exclude_patterns": [
+        "\\b[Mm]aster[.!]",
+        "tells you, '[Tt]hat'll be",
+        "tells you, '[Ii]'ll give you",
+        "tells you, 'I'?m not interested in buying",
+        "tells you, 'Welcome to my bank",
+        "tells you, 'Come back soon",
+        "tells you, 'You cannot afford",
+        "tells you, '?Hold your horses",
+        "tells you, 'I'?m busy",
+        "tells you, 'You have learned the basics",
+        "tells you, 'You have increased your",
+        "tells you, 'You are already browsing",
+        "tells you, 'I charge",
+        "tells you, 'I am unable to wake"
+      ],
+      "source_pack": "General Triggers",
+      "sort_order": 0
+    },
+    {
+      "id": "0eafbddd14d2dc3c",
+      "name": "You Died",
+      "enabled": true,
+      "pattern": "You have been slain by",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "YOU DIED!",
+          "duration_secs": 8,
+          "color": "#ff0000",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        }
+      ],
+      "pack_name": "General Triggers",
+      "created_at": "2026-06-26T03:38:03Z",
+      "source": "log",
+      "timer_type": "none",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Feane",
+        "Nariana",
+        "Osui",
+        "Winladar"
+      ],
+      "timer_alerts": [],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "General Triggers",
+      "sort_order": 0
+    },
+    {
+      "id": "920556de2a1c31c8",
+      "name": "Group Member Died",
+      "enabled": true,
+      "pattern": "\\w+ has been slain by",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "GROUP DEATH!",
+          "duration_secs": 5,
+          "color": "#ff6600",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        }
+      ],
+      "pack_name": "General Triggers",
+      "created_at": "2026-06-26T03:38:03Z",
+      "source": "log",
+      "timer_type": "none",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Feane",
+        "Nariana",
+        "Osui",
+        "Winladar"
+      ],
+      "timer_alerts": [],
+      "extra_patterns": [],
+      "exclude_patterns": [
+        "^[a-z]",
+        "^\\S+ \\S+ has been slain by"
+      ],
+      "source_pack": "General Triggers",
+      "sort_order": 0
+    },
+    {
+      "id": "f8abcb8db7a44190",
+      "name": "Spell Resist",
+      "enabled": true,
+      "pattern": "Your target resisted the (.+) spell\\.",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "RESISTED!",
+          "duration_secs": 3,
+          "color": "#ffaa00",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        }
+      ],
+      "pack_name": "General Triggers",
+      "created_at": "2026-06-26T03:38:03Z",
+      "source": "log",
+      "timer_type": "none",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Feane",
+        "Nariana",
+        "Osui",
+        "Winladar"
+      ],
+      "timer_alerts": [],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "General Triggers",
+      "sort_order": 0
+    },
+    {
+      "id": "9c4b6f0a263ba583",
+      "name": "Spell Interrupt",
+      "enabled": true,
+      "pattern": "Your(?: (.+))? spell is interrupted\\.",
+      "actions": [
+        {
+          "type": "overlay_text",
+          "text": "INTERRUPTED!",
+          "duration_secs": 3,
+          "color": "#ffaa00",
+          "sound_path": "",
+          "volume": 0,
+          "voice": ""
+        }
+      ],
+      "pack_name": "General Triggers",
+      "created_at": "2026-06-26T03:38:03Z",
+      "source": "log",
+      "timer_type": "none",
+      "timer_duration_secs": 0,
+      "worn_off_pattern": "",
+      "spell_id": 0,
+      "display_threshold_secs": 0,
+      "characters": [
+        "Feane",
+        "Nariana",
+        "Osui",
+        "Winladar"
+      ],
+      "timer_alerts": [],
+      "extra_patterns": [],
+      "exclude_patterns": [],
+      "source_pack": "General Triggers",
+      "sort_order": 0
+    }
+  ]
+}
