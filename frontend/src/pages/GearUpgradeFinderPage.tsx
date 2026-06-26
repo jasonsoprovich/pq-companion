@@ -1025,16 +1025,14 @@ function OverviewView({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const handleSort = useCallback((col: 'slot' | 'best' | 'score') => {
-    setSortCol((prev) => {
-      if (prev === col) {
-        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-        return prev
-      }
+    if (sortCol === col) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortCol(col)
       // Score is the headline use case — start high-to-low.
       setSortDir(col === 'score' ? 'desc' : 'asc')
-      return col
-    })
-  }, [])
+    }
+  }, [sortCol])
 
   const sortedSlots = useMemo(() => {
     const slots = overview?.slots ?? []
