@@ -1811,6 +1811,63 @@ export default function SettingsPage(): React.ReactElement {
         />
         )}
 
+        {/* ── Threat Meter ───────────────────────────────────────────────── */}
+        {tab === 'overlays' && (
+        <section
+          className="rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <h2
+            className="mb-1 text-sm font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            Threat Meter
+          </h2>
+          <p className="mb-4 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            The Threat Meter overlay estimates your own per-mob hate from your
+            character&rsquo;s combat log. Logs can&rsquo;t reveal a hate modifier
+            from gear or AAs, so supply it here as a signed percentage applied to
+            every generated hate value (e.g. <code>+15</code> for a tank with
+            aggro AAs, negative for hate-reduction gear).
+          </p>
+          <div className="flex items-center gap-2">
+            <label className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+              Static hatemod %
+            </label>
+            <input
+              type="number"
+              min={-100}
+              max={500}
+              step={1}
+              defaultValue={config.preferences.threat_hatemod_pct ?? 0}
+              key={config.preferences.threat_hatemod_pct ?? 0}
+              onBlur={(e) => {
+                const v = Number(e.target.value)
+                const cur = config.preferences.threat_hatemod_pct ?? 0
+                if (!Number.isNaN(v) && v !== cur) {
+                  setConfig({
+                    ...config,
+                    preferences: {
+                      ...config.preferences,
+                      threat_hatemod_pct: Math.max(-100, Math.min(500, Math.round(v))),
+                    },
+                  })
+                }
+              }}
+              className="w-20 rounded px-2 py-1 text-xs"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                color: 'var(--color-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+            />
+            <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
+              gear + AA hate bonus the log can&rsquo;t see
+            </span>
+          </div>
+        </section>
+        )}
+
         {/* ── Spell Timers ───────────────────────────────────────────────── */}
         {tab === 'spelltimers' && (
         <section

@@ -8,15 +8,6 @@ import { NAV_SECTIONS, visibleNavSections, orderItems, type NavItem, type NavSec
 // re-enabled and moved).
 type SecOrder = Record<string, string[]>
 
-// navFlags maps the Developer-tab flags that gate optional nav tabs to their
-// enabled state, so gated tabs (Trader Tracker) only show in this editor while
-// their flag is on — matching the live sidebar.
-function navFlags(c: Config | null): Record<string, boolean> {
-  return {
-    trader_tracker_enabled: Boolean(c?.preferences?.trader_tracker_enabled),
-  }
-}
-
 export default function SidebarNavSettings(): React.ReactElement {
   const [cfg, setCfg] = useState<Config | null>(null)
   const [secOrder, setSecOrder] = useState<SecOrder>({})
@@ -29,13 +20,13 @@ export default function SidebarNavSettings(): React.ReactElement {
     return m
   }, [])
 
-  // Sections to display/reorder, with flag-gated tabs filtered to those enabled.
-  const sections: NavSection[] = useMemo(() => visibleNavSections(navFlags(cfg)), [cfg])
+  // Sections to display/reorder.
+  const sections: NavSection[] = useMemo(() => visibleNavSections({}), [])
 
   function hydrate(c: Config) {
     const order = c.preferences?.sidebar_order ?? []
     const next: SecOrder = {}
-    visibleNavSections(navFlags(c)).forEach((s) => {
+    visibleNavSections({}).forEach((s) => {
       next[s.id] = orderItems(s.items, order).map((i) => i.to)
     })
     setSecOrder(next)

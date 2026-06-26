@@ -299,9 +299,8 @@ func main() {
 	// Threat meter: estimates the active character's own per-mob hate from its
 	// own combat log lines, reusing the same mob keys as the combat tracker.
 	// Damage hate is observed directly; spell instant-hate comes from the game
-	// DB; the static gear/AA hatemod is read live from preferences. Gated behind
-	// the threat_meter_enabled dev flag on the frontend, but always running so
-	// the overlay has data the moment it's enabled.
+	// DB; the static gear/AA hatemod is read live from preferences. Always
+	// running so the overlay has data the moment it's opened.
 	threatTracker := threat.NewTracker(hub, threat.NewCalculator(database, database), func() int {
 		return cfgMgr.Get().Preferences.ThreatHatemodPct
 	})

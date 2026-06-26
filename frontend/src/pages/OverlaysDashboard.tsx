@@ -25,9 +25,7 @@ import CHChainPanel from '../components/overlays/CHChainPanel'
 import CHMetronomePanel from '../components/overlays/CHMetronomePanel'
 import CustomTimerPanel from '../components/overlays/CustomTimerPanel'
 import { ConfirmModal } from '../components/ConfirmModal'
-import { clearTimers, getConfig } from '../services/api'
-import { useWebSocket } from '../hooks/useWebSocket'
-import { WSEvent } from '../lib/wsEvents'
+import { clearTimers } from '../services/api'
 import {
   DASHBOARD_PANEL_KEYS,
   DASHBOARD_PANEL_LABELS,
@@ -341,28 +339,9 @@ export default function OverlaysDashboard(): React.ReactElement {
   // new initial values.
   const [layoutVersion, setLayoutVersion] = useState(0)
 
-  // The Threat Meter is a dev-gated experimental overlay (threat_meter_enabled).
-  // Fetch the flag on mount and keep it live via config:updated so toggling it
-  // in the Developer tab shows/hides the card without reloading the app.
-  const [threatEnabled, setThreatEnabled] = useState(false)
-  useEffect(() => {
-    getConfig()
-      .then((c) => setThreatEnabled(Boolean(c?.preferences?.threat_meter_enabled)))
-      .catch(() => {})
-  }, [])
-  const handleConfigWs = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type !== WSEvent.ConfigUpdated) return
-    const c = msg.data as { preferences?: { threat_meter_enabled?: boolean } }
-    setThreatEnabled(Boolean(c?.preferences?.threat_meter_enabled))
-  }, [])
-  useWebSocket(handleConfigWs)
-
   // Panel keys actually offered in the UI: hps is gated by SHOW_HPS (module
-  // level) and threat by the dev flag above.
-  const visiblePanelKeys = useMemo(
-    () => (threatEnabled ? VISIBLE_PANEL_KEYS : VISIBLE_PANEL_KEYS.filter((k) => k !== 'threat')),
-    [threatEnabled],
-  )
+  // level); the rest (including the Threat Meter) are always available.
+  const visiblePanelKeys = VISIBLE_PANEL_KEYS
 
   useEffect(() => {
     saveDashboardLayout(layout)
@@ -682,7 +661,7 @@ export default function OverlaysDashboard(): React.ReactElement {
             onLayoutChange={handleLayoutChange('npc')}
           />
         )}
-        {threatEnabled && layout.threat.visible && (
+        {layout.threat.visible && (
           <ThreatPanel
             key={`threat-${layoutVersion}`}
             defaultX={layout.threat.x}

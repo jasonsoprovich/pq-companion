@@ -350,21 +350,6 @@ type Preferences struct {
 	// PoP launches the default flips in a release and this becomes a no-op.
 	PoPEnabled bool `yaml:"pop_enabled,omitempty" json:"pop_enabled"`
 
-	// TraderTrackerEnabled reveals the experimental Bazaar Trader Tracker page,
-	// which infers what a parked trader sold by diffing inventory exports. Off
-	// by default; it's a power-user/testing toggle in the Developer tab while
-	// the inventory-diff approach is validated in a live bazaar. See
-	// internal/trader and pages/TraderTrackerPage.tsx.
-	TraderTrackerEnabled bool `yaml:"trader_tracker_enabled,omitempty" json:"trader_tracker_enabled"`
-
-	// ThreatMeterEnabled reveals the experimental personal Threat Meter overlay,
-	// which estimates the active character's own per-mob hate from its own combat
-	// log lines (see internal/threat). Off by default; a power-user/testing
-	// toggle in the Developer tab while the hate model is validated. It is an
-	// estimate, not the server's exact threat — strongest for damage classes,
-	// and best used for cooperative raid callouts.
-	ThreatMeterEnabled bool `yaml:"threat_meter_enabled,omitempty" json:"threat_meter_enabled"`
-
 	// ThreatHatemodPct is the static gear/AA hate modifier, as a signed
 	// percentage, that the Threat Meter applies to every generated hate value.
 	// Logs can't reveal a character's hatemod, so the user supplies it here

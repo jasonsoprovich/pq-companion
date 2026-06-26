@@ -7,7 +7,6 @@ import { useHistoryNav } from '../hooks/useHistoryNav'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import { visibleNavSections, orderItems, type NavItem } from '../lib/sidebarNav'
 import { useSidebarPrefs } from '../hooks/useSidebarPrefs'
-import { useTraderTrackerEnabled } from '../hooks/useTraderTrackerEnabled'
 
 function SidebarLink({ to, label, icon }: NavItem): React.ReactElement {
   return (
@@ -51,7 +50,6 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   const { canGoBack, canGoForward, goBack, goForward } = useHistoryNav()
   const onDragMouseDown = useWindowDrag()
   const { hidden, order } = useSidebarPrefs()
-  const traderTrackerEnabled = useTraderTrackerEnabled()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed)
 
   const toggleSection = (id: string): void => {
@@ -67,20 +65,16 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   }
 
   // Apply the user's hide/order prefs to each section; drop sections that end
-  // up empty so their header doesn't dangle. Flag-gated tabs (Trader Tracker)
-  // are filtered out by visibleNavSections when their Developer-tab flag is off.
+  // up empty so their header doesn't dangle.
   const sections = useMemo(() => {
     const hiddenSet = new Set(hidden)
-    const flags = {
-      trader_tracker_enabled: traderTrackerEnabled,
-    }
-    return visibleNavSections(flags)
+    return visibleNavSections({})
       .map((s) => ({
         ...s,
         items: orderItems(s.items, order).filter((i) => !hiddenSet.has(i.to)),
       }))
       .filter((s) => s.items.length > 0)
-  }, [hidden, order, traderTrackerEnabled])
+  }, [hidden, order])
 
   useEffect(() => {
     const poll = () => {

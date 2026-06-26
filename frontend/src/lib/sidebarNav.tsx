@@ -58,8 +58,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/characters/wishlist', label: 'Wishlist', icon: <Star size={16} /> },
       { to: '/characters/upgrades', label: 'Gear Upgrades', icon: <Wand2 size={16} /> },
       { to: '/characters/tasks', label: 'Tasks', icon: <ListChecks size={16} /> },
-      // Developer-tab-gated tool (see visibleNavSections).
-      { to: '/trader-tracker', label: 'Trader Tracker', icon: <Store size={16} />, flag: 'trader_tracker_enabled' },
+      { to: '/trader-tracker', label: 'Trader Tracker', icon: <Store size={16} /> },
     ],
   },
   {
