@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Wand2, ChevronDown, ChevronRight, Star, Loader2, AlertTriangle, Sliders, RotateCcw, Save, Check, LayoutGrid, List, Target, Search } from 'lucide-react'
+import { Wand2, ChevronDown, ChevronUp, ChevronRight, Star, Loader2, AlertTriangle, Sliders, RotateCcw, Save, Check, LayoutGrid, List, Target, Search } from 'lucide-react'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import { ItemIcon } from '../components/Icon'
 import { SourceNPCLink } from '../components/SourceNPCLink'
@@ -1019,6 +1019,53 @@ function OverviewView({
   isWishlisted: (id: number, bucket: string) => boolean
   onToggleWish: (id: number, bucket: string) => void
 }): React.ReactElement {
+  // Column sorting. `null` col = backend's natural slot order. Rows whose best
+  // upgrade is null always sink to the bottom regardless of direction.
+  const [sortCol, setSortCol] = useState<'slot' | 'best' | 'score' | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const handleSort = useCallback((col: 'slot' | 'best' | 'score') => {
+    setSortCol((prev) => {
+      if (prev === col) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+        return prev
+      }
+      // Score is the headline use case — start high-to-low.
+      setSortDir(col === 'score' ? 'desc' : 'asc')
+      return col
+    })
+  }, [])
+
+  const sortedSlots = useMemo(() => {
+    const slots = overview?.slots ?? []
+    if (!sortCol) return slots
+    const dir = sortDir === 'asc' ? 1 : -1
+    const indexed = slots.map((s, i) => ({ s, i }))
+    indexed.sort((a, b) => {
+      let cmp = 0
+      if (sortCol === 'slot') {
+        cmp = a.s.slot_label.localeCompare(b.s.slot_label)
+      } else if (sortCol === 'best') {
+        const an = a.s.best?.name ?? null
+        const bn = b.s.best?.name ?? null
+        if (an === null && bn === null) cmp = 0
+        else if (an === null) return 1
+        else if (bn === null) return -1
+        else cmp = an.localeCompare(bn)
+      } else {
+        const av = a.s.best?.score ?? null
+        const bv = b.s.best?.score ?? null
+        if (av === null && bv === null) cmp = 0
+        else if (av === null) return 1
+        else if (bv === null) return -1
+        else cmp = av - bv
+      }
+      if (cmp === 0) return a.i - b.i // stable: fall back to natural order
+      return cmp * dir
+    })
+    return indexed.map((x) => x.s)
+  }, [overview, sortCol, sortDir])
+
   if (loading && !overview) {
     return (
       <div className="flex flex-1 items-center justify-center gap-2 py-10 text-sm"
@@ -1028,6 +1075,14 @@ function OverviewView({
     )
   }
   if (!overview) return <div className="flex-1" />
+
+  const arrow = (col: 'slot' | 'best' | 'score'): React.ReactNode => {
+    if (sortCol !== col) return null
+    return sortDir === 'asc'
+      ? <ChevronUp size={12} className="inline" />
+      : <ChevronDown size={12} className="inline" />
+  }
+
   return (
     <div className="flex-1 overflow-y-auto px-6 py-2">
       {!overview.has_current_gear && (
@@ -1040,14 +1095,29 @@ function OverviewView({
       <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
         <thead>
           <tr className="text-left text-xs" style={{ color: 'var(--color-muted)' }}>
-            <th className="w-24 px-2 py-1">Slot</th>
+            <th className="w-24 px-2 py-1">
+              <button onClick={() => handleSort('slot')}
+                className="inline-flex items-center gap-0.5 hover:text-[var(--color-foreground)]">
+                Slot {arrow('slot')}
+              </button>
+            </th>
             <th className="px-2 py-1">Current</th>
-            <th className="px-2 py-1">Best upgrade</th>
-            <th className="w-16 px-2 py-1 text-right">Score</th>
+            <th className="px-2 py-1">
+              <button onClick={() => handleSort('best')}
+                className="inline-flex items-center gap-0.5 hover:text-[var(--color-foreground)]">
+                Best upgrade {arrow('best')}
+              </button>
+            </th>
+            <th className="w-16 px-2 py-1 text-right">
+              <button onClick={() => handleSort('score')}
+                className="inline-flex items-center gap-0.5 hover:text-[var(--color-foreground)]">
+                Score {arrow('score')}
+              </button>
+            </th>
           </tr>
         </thead>
         <tbody>
-          {overview.slots.map((s) => {
+          {sortedSlots.map((s) => {
             const bucket = BUCKET_FOR_SLOT[s.slot]
             const best = s.best
             return (
