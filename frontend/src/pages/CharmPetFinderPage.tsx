@@ -21,7 +21,18 @@ const CHARM_CLASSES = [
 ]
 const ENCHANTER = 13
 
-type SortKey = 'dps' | 'level' | 'hp' | 'maxhit' | 'mr' | 'land'
+type SortKey =
+  | 'level'
+  | 'name'
+  | 'class'
+  | 'body'
+  | 'summon'
+  | 'hp'
+  | 'maxhit'
+  | 'delay'
+  | 'dps'
+  | 'mr'
+  | 'land'
 
 interface SortState {
   key: SortKey
@@ -164,23 +175,33 @@ export default function CharmPetFinderPage(): React.ReactElement {
     if (hideSummoners) pets = pets.filter((p) => !p.summon)
     if (levelSafeOnly) pets = pets.filter((p) => !p.level_warning)
     const dir = sort.dir === 'asc' ? 1 : -1
-    const val = (p: CharmPet): number => {
+    const cmp = (a: CharmPet, b: CharmPet): number => {
       switch (sort.key) {
+        case 'name':
+          return a.name.localeCompare(b.name)
+        case 'class':
+          return (a.class_name || '').localeCompare(b.class_name || '')
+        case 'body':
+          return (a.body_type_name || '').localeCompare(b.body_type_name || '')
+        case 'summon':
+          return Number(a.summon) - Number(b.summon)
         case 'level':
-          return p.level_max
+          return a.level_max - b.level_max
         case 'hp':
-          return p.hp_max
+          return a.hp_max - b.hp_max
         case 'maxhit':
-          return p.max_hit_max
+          return a.max_hit_max - b.max_hit_max
+        case 'delay':
+          return a.attack_delay - b.attack_delay
         case 'mr':
-          return p.mr
+          return a.mr - b.mr
         case 'land':
-          return p.land_chance
+          return a.land_chance - b.land_chance
         default:
-          return p.dps_max
+          return a.dps_max - b.dps_max
       }
     }
-    return [...pets].sort((a, b) => (val(a) - val(b)) * dir)
+    return [...pets].sort((a, b) => cmp(a, b) * dir)
   }, [data, hideSummoners, levelSafeOnly, sort])
 
   const toggleSort = (key: SortKey): void => {
@@ -293,18 +314,7 @@ export default function CharmPetFinderPage(): React.ReactElement {
           {/* Level */}
           <label className="flex flex-col gap-1 text-xs">
             <span style={{ color: 'var(--color-muted)' }}>Level</span>
-            <input
-              type="number"
-              value={level}
-              min={1}
-              max={65}
-              onChange={(e) => setLevel(Number(e.target.value))}
-              className="rounded px-2 py-1.5 text-sm"
-              style={{
-                backgroundColor: 'var(--color-surface-2)',
-                border: '1px solid var(--color-border)',
-              }}
-            />
+            <NumberField value={level} onChange={setLevel} min={1} max={65} />
           </label>
 
           {/* Charm spell */}
@@ -339,18 +349,10 @@ export default function CharmPetFinderPage(): React.ReactElement {
             <span style={{ color: 'var(--color-muted)' }}>
               Charisma <span style={{ color: 'var(--color-muted)' }}>(charm resist)</span>
             </span>
-            <input
-              type="number"
-              value={casterCHA}
-              min={1}
-              max={500}
-              onChange={(e) => setCasterCHA(Number(e.target.value))}
-              className="rounded px-2 py-1.5 text-sm"
-              style={{
-                backgroundColor: 'var(--color-surface-2)',
-                border: '1px solid var(--color-border)',
-              }}
-            />
+            <NumberField value={casterCHA} onChange={setCasterCHA} min={1} max={500} />
+            <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+              Modest on Quarm — ~2% better land per 30 CHA, Enchanter only.
+            </span>
           </label>
         )}
 
@@ -395,17 +397,17 @@ export default function CharmPetFinderPage(): React.ReactElement {
                 <thead>
                   <tr style={{ color: 'var(--color-muted)' }}>
                     <Th label="Level" sortKey="level" sort={sort} onSort={toggleSort} />
-                    <th className="px-2 py-1.5 font-semibold">Name</th>
-                    <th className="px-2 py-1.5 font-semibold">Class</th>
-                    <th className="px-2 py-1.5 font-semibold">Body</th>
-                    <th className="px-2 py-1.5 font-semibold">Summon</th>
+                    <Th label="Name" sortKey="name" sort={sort} onSort={toggleSort} />
+                    <Th label="Class" sortKey="class" sort={sort} onSort={toggleSort} />
+                    <Th label="Body" sortKey="body" sort={sort} onSort={toggleSort} />
+                    <Th label="Summon" sortKey="summon" sort={sort} onSort={toggleSort} />
                     <Th label="HP" sortKey="hp" sort={sort} onSort={toggleSort} />
                     <Th label="Max Hit" sortKey="maxhit" sort={sort} onSort={toggleSort} />
-                    <th className="px-2 py-1.5 font-semibold">Delay</th>
+                    <Th label="Delay" sortKey="delay" sort={sort} onSort={toggleSort} />
                     <Th label="DPS" sortKey="dps" sort={sort} onSort={toggleSort} />
                     <Th label="MR" sortKey="mr" sort={sort} onSort={toggleSort} />
                     <Th label="Land%" sortKey="land" sort={sort} onSort={toggleSort} />
-                    <th className="px-2 py-1.5 font-semibold">Other</th>
+                    <th className="whitespace-nowrap px-2 py-1.5 font-semibold">Other</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -514,17 +516,61 @@ function Th({
 }): React.ReactElement {
   const active = sort.key === sortKey
   return (
-    <th className="px-2 py-1.5 font-semibold">
+    <th className="whitespace-nowrap px-2 py-1.5 font-semibold">
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className="inline-flex items-center gap-1 hover:underline"
+        className="inline-flex items-center gap-1 whitespace-nowrap hover:underline"
         style={{ color: active ? 'var(--color-foreground)' : 'inherit' }}
       >
         {label}
         {active && <span>{sort.dir === 'desc' ? '▼' : '▲'}</span>}
       </button>
     </th>
+  )
+}
+
+// NumberField is a numeric input that lets the user clear it while typing
+// (so they can backspace past a leading value and type fresh) instead of the
+// browser forcing the empty string back to 0. The numeric value only updates
+// while the text parses; on blur an empty/invalid field snaps back to the last
+// good value.
+function NumberField({
+  value,
+  onChange,
+  min,
+  max,
+}: {
+  value: number
+  onChange: (n: number) => void
+  min?: number
+  max?: number
+}): React.ReactElement {
+  const [text, setText] = useState(String(value))
+  useEffect(() => {
+    if (Number(text) !== value) setText(String(value))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+  return (
+    <input
+      type="number"
+      value={text}
+      min={min}
+      max={max}
+      onChange={(e) => {
+        const t = e.target.value
+        setText(t)
+        if (t !== '' && !Number.isNaN(Number(t))) onChange(Number(t))
+      }}
+      onBlur={() => {
+        if (text === '' || Number.isNaN(Number(text))) setText(String(value))
+      }}
+      className="rounded px-2 py-1.5 text-sm"
+      style={{
+        backgroundColor: 'var(--color-surface-2)',
+        border: '1px solid var(--color-border)',
+      }}
+    />
   )
 }
 
