@@ -1928,14 +1928,19 @@ ipcMain.handle('overlay:rolltracker:toggle', () => {
 
 // ── IPC handlers — bulk popout control ───────────────────────────────────────
 
-function popoutWindows(): BrowserWindow[] {
+// User-managed popout windows. Excludes the trigger alert overlay: it's created
+// at startup and always present (just hidden until an alert fires), so counting
+// it would make "any popout open" perpetually true — wrongly starting the bulk
+// button on "Close All Popouts" with nothing actually popped out. Closing it
+// would also stop trigger alerts from rendering, so it's left alone by the
+// bulk close as well.
+function userPopoutWindows(): BrowserWindow[] {
   return [
     dpsOverlayWindow,
     hpsOverlayWindow,
     buffTimerWindow,
     detrimTimerWindow,
     customTimerWindow,
-    triggerOverlayWindow,
     npcOverlayWindow,
     rollTrackerWindow,
     respawnTimerWindow,
@@ -1944,7 +1949,7 @@ function popoutWindows(): BrowserWindow[] {
   ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
 }
 
-ipcMain.handle('overlay:popouts:any-open', () => popoutWindows().length > 0)
+ipcMain.handle('overlay:popouts:any-open', () => userPopoutWindows().length > 0)
 
 ipcMain.handle('overlay:popouts:open-all', (_event, panels?: string[]) => {
   // `panels` is the set of dashboard panel keys the user has toggled visible
@@ -1973,8 +1978,10 @@ ipcMain.handle('overlay:popouts:open-all', (_event, panels?: string[]) => {
 })
 
 ipcMain.handle('overlay:popouts:close-all', () => {
-  // Use close() (not destroy()) so each window's 'close' handler persists its bounds.
-  for (const win of popoutWindows()) win.close()
+  // Use close() (not destroy()) so each window's 'close' handler persists its
+  // bounds. The always-on trigger overlay is intentionally left open so trigger
+  // alerts keep rendering after a bulk close.
+  for (const win of userPopoutWindows()) win.close()
 })
 
 // Per-overlay popout open state, keyed by canonical overlay name (excludes the
