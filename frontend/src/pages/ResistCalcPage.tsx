@@ -12,6 +12,7 @@ import {
 } from '../services/api'
 import type { Spell } from '../types/spell'
 import type { NPC } from '../types/npc'
+import { npcDisplayName } from '../lib/npcHelpers'
 import { applyLevelFormula } from '../lib/spellHelpers'
 
 type ResistKey = 'mr' | 'cr' | 'fr' | 'dr' | 'pr'
@@ -212,7 +213,7 @@ export default function ResistCalcPage(): React.ReactElement {
   // invoked most recently wins.
   const applyNPCTarget = (npc: NPC): void => {
     setTarget({
-      name: npc.name,
+      name: npcDisplayName(npc),
       // Worst case: use the top of the NPC's level range.
       level: Math.max(npc.level, npc.max_level || 0),
       mr: npc.mr,
@@ -246,7 +247,11 @@ export default function ResistCalcPage(): React.ReactElement {
     setNpcResults([])
   }
 
-  // Search the NPC database as the user types (debounced).
+  // Search the NPC database as the user types (debounced). Include placeholder
+  // NPCs (showPlaceholders=true) so results match the NPC database tab: named
+  // bosses are stored with a leading '#' and are placeholder-filtered out
+  // otherwise — yet they're exactly the targets you'd check resists against
+  // (e.g. "rhag" → #Rhag`Zadune). A larger limit fits the wider result space.
   useEffect(() => {
     const q = npcQuery.trim()
     if (q.length < 2) {
@@ -255,7 +260,7 @@ export default function ResistCalcPage(): React.ReactElement {
     }
     let cancelled = false
     const handle = setTimeout(() => {
-      searchNPCs(q, 10)
+      searchNPCs(q, 25, 0, true)
         .then((resp) => {
           // A no-match search returns items: null (Go nil slice), so default
           // to [] — otherwise npcResults.length throws and black-screens.
@@ -403,7 +408,7 @@ export default function ResistCalcPage(): React.ReactElement {
                       onClick={() => selectSearchedNPC(npc)}
                       className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-(--color-surface-3)"
                     >
-                      <span className="truncate">{npc.name}</span>
+                      <span className="truncate">{npcDisplayName(npc)}</span>
                       <span className="shrink-0" style={{ color: 'var(--color-muted)' }}>
                         L{npc.level}
                         {npc.max_level > npc.level ? `–${npc.max_level}` : ''}
