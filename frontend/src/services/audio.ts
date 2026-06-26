@@ -52,6 +52,16 @@ function effectiveVolume(volume: number): number {
   return Math.min(1, Math.max(0, volume)) * masterVolume
 }
 
+// Strong references to every in-flight playback. A bare `new Audio().play()`
+// whose element falls out of scope can be garbage-collected by Chromium mid-
+// playback under rapid-fire creation — the sound stops partway through. This
+// is the "it cuts off when several fire at once" symptom: a single play has
+// little GC pressure and finishes fine, but a burst (AE mez breaking several
+// mobs, two enchanters' alerts, a run of tells) creates many short-lived
+// Audio elements and some get reclaimed before they finish. Holding each
+// element here until it ends (or errors) keeps it alive for its full duration.
+const activePlaybacks = new Set<HTMLAudioElement>()
+
 function isDuplicate(key: string): boolean {
   const now = Date.now()
   const last = lastFiredAt.get(key) ?? 0
@@ -162,10 +172,21 @@ export function playSound(filePath: string, volume = 1.0): void {
 
   const audio = new Audio(audioUrl(filePath))
   audio.volume = effectiveVolume(volume)
+  // Retain the element until playback finishes so it isn't garbage-collected
+  // mid-sound (see activePlaybacks above), then release it.
+  activePlaybacks.add(audio)
+  const release = (): void => {
+    activePlaybacks.delete(audio)
+    audio.removeEventListener('ended', release)
+    audio.removeEventListener('error', release)
+  }
+  audio.addEventListener('ended', release)
+  audio.addEventListener('error', release)
   audio.play().catch((err: unknown) => {
     // Surface the failure in DevTools — file-not-found and autoplay-blocked
     // both look identical to the user (silence) so a console line is the
     // only signal something's wrong with their trigger.
+    release()
     // eslint-disable-next-line no-console
     console.warn('[audio] playSound failed', { filePath, error: err })
   })
