@@ -47,21 +47,31 @@ type Tracker struct {
 	// lastEngaged is the most recently damaged mob, used as the highlight and
 	// spell-attribution fallback when no pipe target is available.
 	lastEngaged string
-	// hatemodPct is the static gear/AA hate modifier as a signed percentage,
-	// supplied by the user in settings (logs can't reveal it). Applied to every
-	// generated hate value going forward; never retroactive.
-	hatemodPct int
+	// hatemodFn returns the static gear/AA hate modifier as a signed percentage,
+	// supplied by the user in settings (logs can't reveal it). Read live so a
+	// settings change takes effect immediately; applied to generated hate going
+	// forward, never retroactively. May be nil (treated as 0).
+	hatemodFn func() int
 }
 
 // NewTracker returns an initialised threat Tracker. calc may be nil, in which
 // case spell-cast hate (instant hate / aggro shedders) is skipped and the meter
-// runs on observed damage alone.
-func NewTracker(hub *ws.Hub, calc *Calculator) *Tracker {
+// runs on observed damage alone. hatemodFn may be nil (no static modifier).
+func NewTracker(hub *ws.Hub, calc *Calculator, hatemodFn func() int) *Tracker {
 	return &Tracker{
-		hub:  hub,
-		calc: calc,
-		mobs: make(map[string]*mobState),
+		hub:       hub,
+		calc:      calc,
+		mobs:      make(map[string]*mobState),
+		hatemodFn: hatemodFn,
 	}
+}
+
+// hatemod returns the current static hate modifier percentage (0 when unset).
+func (t *Tracker) hatemod() int {
+	if t.hatemodFn == nil {
+		return 0
+	}
+	return t.hatemodFn()
 }
 
 // SetPipeTarget records the player's current target from Zeal LabelTargetName,
@@ -77,14 +87,6 @@ func (t *Tracker) SetPipeTarget(name string) {
 	snap := t.snapshotLocked(time.Now())
 	t.mu.Unlock()
 	t.broadcast(snap)
-}
-
-// SetHatemodPct sets the static gear/AA hate modifier percentage. Applied to
-// future hate only.
-func (t *Tracker) SetHatemodPct(pct int) {
-	t.mu.Lock()
-	t.hatemodPct = pct
-	t.mu.Unlock()
 }
 
 // Handle processes a single parsed log event.
@@ -154,7 +156,7 @@ func (t *Tracker) addHate(mob string, amount float64, ts time.Time) {
 	if mob == "" || mob == "You" {
 		return
 	}
-	adjusted := amount * float64(100+t.hatemodPct) / 100
+	adjusted := amount * float64(100+t.hatemod()) / 100
 
 	t.mu.Lock()
 	m := t.mobs[mob]
@@ -248,7 +250,7 @@ func (t *Tracker) GetState() ThreatState {
 func (t *Tracker) snapshotLocked(now time.Time) ThreatState {
 	state := ThreatState{
 		InCombat:    len(t.mobs) > 0,
-		HatemodPct:  t.hatemodPct,
+		HatemodPct:  t.hatemod(),
 		LastUpdated: now,
 		Mobs:        make([]MobThreat, 0, len(t.mobs)),
 	}

@@ -357,6 +357,21 @@ type Preferences struct {
 	// internal/trader and pages/TraderTrackerPage.tsx.
 	TraderTrackerEnabled bool `yaml:"trader_tracker_enabled,omitempty" json:"trader_tracker_enabled"`
 
+	// ThreatMeterEnabled reveals the experimental personal Threat Meter overlay,
+	// which estimates the active character's own per-mob hate from its own combat
+	// log lines (see internal/threat). Off by default; a power-user/testing
+	// toggle in the Developer tab while the hate model is validated. It is an
+	// estimate, not the server's exact threat — strongest for damage classes,
+	// and best used for cooperative raid callouts.
+	ThreatMeterEnabled bool `yaml:"threat_meter_enabled,omitempty" json:"threat_meter_enabled"`
+
+	// ThreatHatemodPct is the static gear/AA hate modifier, as a signed
+	// percentage, that the Threat Meter applies to every generated hate value.
+	// Logs can't reveal a character's hatemod, so the user supplies it here
+	// (e.g. +15 for a tank with aggro AAs, negative for hate-reduction gear).
+	// Zero by default.
+	ThreatHatemodPct int `yaml:"threat_hatemod_pct,omitempty" json:"threat_hatemod_pct"`
+
 	// NPCOverlayDashboardSections controls which optional sections of the
 	// NPC overlay are visible in the dashboard panel. Name, zone, pet
 	// owner, raid/rare badges, and the HP bar are always shown regardless

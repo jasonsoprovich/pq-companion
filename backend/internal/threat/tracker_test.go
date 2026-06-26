@@ -51,7 +51,7 @@ func hateFor(s ThreatState, mob string) int64 {
 }
 
 func TestDamageAccumulatesPerMob(t *testing.T) {
-	tr := NewTracker(nil, nil)
+	tr := NewTracker(nil, nil, nil)
 	t0 := time.Now()
 	tr.Handle(hit("a gnoll", 100, t0))
 	tr.Handle(hit("a gnoll", 50, t0.Add(time.Second)))
@@ -70,7 +70,7 @@ func TestDamageAccumulatesPerMob(t *testing.T) {
 }
 
 func TestIncomingAndThirdPartyDamageIgnored(t *testing.T) {
-	tr := NewTracker(nil, nil)
+	tr := NewTracker(nil, nil, nil)
 	t0 := time.Now()
 	// NPC hitting you — must not generate player threat.
 	tr.Handle(logparser.LogEvent{
@@ -90,7 +90,7 @@ func TestIncomingAndThirdPartyDamageIgnored(t *testing.T) {
 }
 
 func TestKillClearsOneMob(t *testing.T) {
-	tr := NewTracker(nil, nil)
+	tr := NewTracker(nil, nil, nil)
 	t0 := time.Now()
 	tr.Handle(hit("a gnoll", 100, t0))
 	tr.Handle(hit("an orc", 40, t0))
@@ -117,7 +117,7 @@ func TestZoneAndDeathClearAll(t *testing.T) {
 		{"death", logparser.LogEvent{Type: logparser.EventDeath, Data: logparser.DeathData{SlainBy: "a gnoll"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tr := NewTracker(nil, nil)
+			tr := NewTracker(nil, nil, nil)
 			t0 := time.Now()
 			tr.Handle(hit("a gnoll", 100, t0))
 			tr.Handle(hit("an orc", 40, t0))
@@ -136,7 +136,7 @@ func TestInstantHateSpellAddsToCurrentTarget(t *testing.T) {
 		"Terror of Terris": spellWithInstantHate("Terror of Terris", 510),
 		"Jolt":             spellWithInstantHate("Jolt", -500),
 	}
-	tr := NewTracker(nil, NewCalculator(spells))
+	tr := NewTracker(nil, NewCalculator(spells), nil)
 	t0 := time.Now()
 
 	// Engage so there's a current (last-engaged) mob to attribute the cast to.
@@ -155,7 +155,7 @@ func TestInstantHateSpellAddsToCurrentTarget(t *testing.T) {
 
 func TestAggroShedFlooredAtZero(t *testing.T) {
 	spells := fakeSpells{"Jolt": spellWithInstantHate("Jolt", -500)}
-	tr := NewTracker(nil, NewCalculator(spells))
+	tr := NewTracker(nil, NewCalculator(spells), nil)
 	t0 := time.Now()
 	tr.Handle(hit("a gnoll", 100, t0))
 	tr.Handle(cast("Jolt", t0.Add(time.Second))) // raw total -400
@@ -166,7 +166,7 @@ func TestAggroShedFlooredAtZero(t *testing.T) {
 
 func TestCastWithoutTargetIgnored(t *testing.T) {
 	spells := fakeSpells{"Terror of Terris": spellWithInstantHate("Terror of Terris", 510)}
-	tr := NewTracker(nil, NewCalculator(spells))
+	tr := NewTracker(nil, NewCalculator(spells), nil)
 	// No prior engagement and no pipe target → nothing to attribute to.
 	tr.Handle(cast("Terror of Terris", time.Now()))
 	if s := tr.GetState(); s.InCombat {
@@ -175,8 +175,7 @@ func TestCastWithoutTargetIgnored(t *testing.T) {
 }
 
 func TestHatemodScalesDamage(t *testing.T) {
-	tr := NewTracker(nil, nil)
-	tr.SetHatemodPct(50)
+	tr := NewTracker(nil, nil, func() int { return 50 })
 	tr.Handle(hit("a gnoll", 100, time.Now()))
 	if got := hateFor(tr.GetState(), "a gnoll"); got != 150 {
 		t.Errorf("hate with +50%% hatemod = %d, want 150", got)
@@ -184,7 +183,7 @@ func TestHatemodScalesDamage(t *testing.T) {
 }
 
 func TestPipeTargetDrivesHighlight(t *testing.T) {
-	tr := NewTracker(nil, nil)
+	tr := NewTracker(nil, nil, nil)
 	t0 := time.Now()
 	tr.Handle(hit("a gnoll", 100, t0))
 	tr.Handle(hit("an orc", 30, t0.Add(time.Second)))

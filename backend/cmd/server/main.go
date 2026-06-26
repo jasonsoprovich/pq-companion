@@ -38,6 +38,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/savedquery"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/skills"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/threat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trader"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
@@ -293,6 +294,16 @@ func main() {
 			}
 		}
 		return cfgMgr.Get().Character
+	})
+
+	// Threat meter: estimates the active character's own per-mob hate from its
+	// own combat log lines, reusing the same mob keys as the combat tracker.
+	// Damage hate is observed directly; spell instant-hate comes from the game
+	// DB; the static gear/AA hatemod is read live from preferences. Gated behind
+	// the threat_meter_enabled dev flag on the frontend, but always running so
+	// the overlay has data the moment it's enabled.
+	threatTracker := threat.NewTracker(hub, threat.NewCalculator(database), func() int {
+		return cfgMgr.Get().Preferences.ThreatHatemodPct
 	})
 
 	// Combat history store: persists every archived fight to user.db so the
@@ -735,6 +746,7 @@ func main() {
 					npcTracker.SetPipeTarget(l.Value)
 				}
 				combatTracker.SetPipeTarget(l.Value)
+				threatTracker.SetPipeTarget(l.Value)
 			case zealpipe.LabelTargetHPPerc:
 				if n, err := strconv.Atoi(strings.TrimSpace(l.Value)); err == nil {
 					targetHP = n
@@ -818,6 +830,7 @@ func main() {
 		hub.Broadcast(ws.Event{Type: string(ev.Type), Data: ev})
 		npcTracker.Handle(ev)
 		combatTracker.Handle(ev)
+		threatTracker.Handle(ev)
 		timerEngine.Handle(ev)
 		respawnEngine.Handle(ev)
 		rollTracker.Handle(ev)
@@ -998,7 +1011,7 @@ func main() {
 		go traderCapturer.Start(context.Background())
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {
