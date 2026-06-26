@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Percent, Store } from 'lucide-react'
+import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import CharacterSwitcher from './CharacterSwitcher'
 import { useHistoryNav } from '../hooks/useHistoryNav'
 import { useWindowDrag } from '../hooks/useWindowDrag'
-import { NAV_SECTIONS, orderItems, type NavItem } from '../lib/sidebarNav'
+import { visibleNavSections, orderItems, type NavItem } from '../lib/sidebarNav'
 import { useSidebarPrefs } from '../hooks/useSidebarPrefs'
 import { useResistCalcEnabled } from '../hooks/useResistCalcEnabled'
 import { useTraderTrackerEnabled } from '../hooks/useTraderTrackerEnabled'
@@ -69,24 +69,16 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   }
 
   // Apply the user's hide/order prefs to each section; drop sections that end
-  // up empty so their header doesn't dangle.
+  // up empty so their header doesn't dangle. Flag-gated tabs (Resist
+  // Calculator, Trader Tracker) are filtered out by visibleNavSections when
+  // their Developer-tab flag is off.
   const sections = useMemo(() => {
     const hiddenSet = new Set(hidden)
-    // The Resist Calculator and Trader Tracker are experimental, Developer-
-    // tab-gated tools, so they're injected here (not in NAV_SECTIONS) — keeping
-    // them out of the user-facing Navigation editor until they graduate to
-    // permanent tabs.
-    const base = NAV_SECTIONS.map((s) => {
-      const extra: NavItem[] = []
-      if (s.id === 'database' && resistCalcEnabled) {
-        extra.push({ to: '/resist-calc', label: 'Resist Calculator', icon: <Percent size={16} /> })
-      }
-      if (s.id === 'characters' && traderTrackerEnabled) {
-        extra.push({ to: '/trader-tracker', label: 'Trader Tracker', icon: <Store size={16} /> })
-      }
-      return extra.length ? { ...s, items: [...s.items, ...extra] } : s
-    })
-    return base
+    const flags = {
+      resist_calc_enabled: resistCalcEnabled,
+      trader_tracker_enabled: traderTrackerEnabled,
+    }
+    return visibleNavSections(flags)
       .map((s) => ({
         ...s,
         items: orderItems(s.items, order).filter((i) => !hiddenSet.has(i.to)),

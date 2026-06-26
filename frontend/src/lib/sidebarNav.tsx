@@ -2,15 +2,18 @@ import React from 'react'
 import {
   Sword, Sparkles, Skull, Map, Hammer, Activity, Layers, ScrollText, Zap,
   Users, Dice5, UserSearch, MessageSquare, Package, TrendingUp, BookOpen,
-  Library, KeyRound, Hourglass, Star, Wand2, ListChecks,
+  Library, KeyRound, Hourglass, Star, Wand2, ListChecks, Percent, Store, PawPrint,
 } from 'lucide-react'
 
 // A single navigable side-tab. `to` doubles as the stable key used for
-// hide/order preferences.
+// hide/order preferences. `flag`, when set, is a Developer-tab preference key
+// that gates the tab: it only appears (in the sidebar and the Navigation
+// settings editor) while that flag is enabled.
 export interface NavItem {
   to: string
   label: string
   icon: React.ReactNode
+  flag?: string
 }
 
 // A labeled group of side tabs. Visibility/ordering preferences apply to the
@@ -37,6 +40,10 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/zones', label: 'Zones', icon: <Map size={16} /> },
       { to: '/recipes', label: 'Recipes', icon: <Hammer size={16} /> },
       { to: '/quests', label: 'Quests', icon: <ScrollText size={16} /> },
+      { to: '/charm-pet-finder', label: 'Charm Pet Finder', icon: <PawPrint size={16} /> },
+      // Developer-tab-gated tools: present in the Navigation editor and sidebar
+      // only while their flag is on (see visibleNavSections).
+      { to: '/resist-calc', label: 'Resist Calculator', icon: <Percent size={16} />, flag: 'resist_calc_enabled' },
     ],
   },
   {
@@ -53,6 +60,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/characters/wishlist', label: 'Wishlist', icon: <Star size={16} /> },
       { to: '/characters/upgrades', label: 'Gear Upgrades', icon: <Wand2 size={16} /> },
       { to: '/characters/tasks', label: 'Tasks', icon: <ListChecks size={16} /> },
+      // Developer-tab-gated tool (see visibleNavSections).
+      { to: '/trader-tracker', label: 'Trader Tracker', icon: <Store size={16} />, flag: 'trader_tracker_enabled' },
     ],
   },
   {
@@ -70,6 +79,19 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
 ]
+
+// visibleNavSections filters out flag-gated items whose flag isn't enabled, then
+// drops any section left empty. `flags` maps a NavItem.flag key to its enabled
+// state (from config preferences). Shared by the Sidebar and the Navigation
+// settings editor so a gated tab appears in both only when its flag is on.
+export function visibleNavSections(flags: Record<string, boolean>): NavSection[] {
+  return NAV_SECTIONS
+    .map((s) => ({
+      ...s,
+      items: s.items.filter((i) => !i.flag || flags[i.flag]),
+    }))
+    .filter((s) => s.items.length > 0)
+}
 
 // orderItems sorts a section's items by their position in `order`; items absent
 // from `order` keep their default relative position after the listed ones.

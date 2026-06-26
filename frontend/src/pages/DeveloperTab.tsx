@@ -291,6 +291,7 @@ function FlagsPanel(): React.ReactElement {
           </p>
         )}
       </section>
+
     </div>
   )
 }

@@ -59,6 +59,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	spells := &spellsHandler{db: database, cfgMgr: cfgMgr}
 	npcs := &npcsHandler{db: database}
 	resistCalc := &resistHandler{db: database, cfgMgr: cfgMgr}
+	charmH := &charmHandler{db: database, cfgMgr: cfgMgr}
 	traderH := &traderHandler{store: traderStore, capturer: traderCapturer, cfgMgr: cfgMgr, db: database}
 	zones := &zonesHandler{db: database}
 	recipes := &recipesHandler{db: database}
@@ -116,6 +117,12 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		})
 		r.Post("/resist-check", resistCalc.check)
 		r.Get("/resist-debuffs", resistCalc.debuffs)
+		// Charm Pet Finder: lists a zone's charmable NPCs for a charm
+		// class/spell, ranked by DPS, with level-cap warnings and land odds.
+		r.Route("/charm", func(r chi.Router) {
+			r.Get("/spells", charmH.spells)
+			r.Get("/pets", charmH.pets)
+		})
 		// Bazaar Trader Tracker (developer-tab feature). Routes only exist when
 		// the snapshot store opened successfully (user.db available).
 		if traderStore != nil {

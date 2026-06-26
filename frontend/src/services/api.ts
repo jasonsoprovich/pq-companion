@@ -401,6 +401,79 @@ export function getZoneByShortName(shortName: string): Promise<Zone> {
   return get<Zone>(`/api/zones/short/${encodeURIComponent(shortName)}`)
 }
 
+// ── Charm Pet Finder (developer-tab feature) ───────────────────────────────────
+
+// CharmSpellOption is one selectable charm spell for a class. restriction is
+// "", "animal", or "undead".
+export interface CharmSpellOption {
+  spell_id: number
+  name: string
+  req_level: number
+  max_charm_level: number
+  restriction?: string
+}
+
+// CharmPet is one charmable NPC. Stats are min..max ranges across the NPC's
+// spawn level range (min === max for fixed-level spawns).
+export interface CharmPet {
+  npc_id: number
+  name: string
+  class: number
+  class_name: string
+  body_type: number
+  body_type_name: string
+  level_min: number
+  level_max: number
+  hp_min: number
+  hp_max: number
+  max_hit_min: number
+  max_hit_max: number
+  attack_delay: number
+  dps_min: number
+  dps_max: number
+  mr: number
+  summon: boolean
+  gate: boolean
+  caster: boolean
+  abilities?: string[]
+  level_warning: boolean
+  land_chance: number
+  binary: boolean
+}
+
+export interface CharmPetsResponse {
+  zone: string
+  spell_id: number
+  spell_name: string
+  max_charm_level: number
+  restriction?: string
+  count: number
+  pets: CharmPet[]
+}
+
+export function getCharmSpells(classIndex: number): Promise<CharmSpellOption[]> {
+  return get<CharmSpellOption[]>(`/api/charm/spells?class=${classIndex}`)
+}
+
+export function getCharmPets(params: {
+  zone: string
+  classIndex: number
+  level: number
+  spellID: number
+  casterCHA?: number
+}): Promise<CharmPetsResponse> {
+  const q = new URLSearchParams({
+    zone: params.zone,
+    class: String(params.classIndex),
+    level: String(params.level),
+    spell_id: String(params.spellID),
+  })
+  if (params.casterCHA && params.casterCHA > 0) {
+    q.set('caster_cha', String(params.casterCHA))
+  }
+  return get<CharmPetsResponse>(`/api/charm/pets?${q}`)
+}
+
 // ── Raw row (experimental) ─────────────────────────────────────────────────────
 
 export interface RawField {
