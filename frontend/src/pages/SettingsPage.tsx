@@ -240,8 +240,17 @@ export default function SettingsPage(): React.ReactElement {
   const [logInfoLoading, setLogInfoLoading] = useState(false)
   const [cleanupState, setCleanupState] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
   const [cleanupResult, setCleanupResult] = useState<string | null>(null)
+  // "Restore overlays on launch" — persisted in Electron userData (not the Go
+  // config), since it's read at boot before the backend port is resolved.
+  const [restoreOverlaysOnLaunch, setRestoreOverlaysOnLaunch] = useState(false)
   const logPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const saveStateClearRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    window.electron?.overlay?.autoOpenGet?.()
+      .then((s) => setRestoreOverlaysOnLaunch(s?.enabled === true))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -1705,6 +1714,52 @@ export default function SettingsPage(): React.ReactElement {
               </div>
             </div>
           )}
+
+          <label className="flex cursor-pointer items-center justify-between py-1 mt-4">
+            <div>
+              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                Restore Overlays on Launch
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                Re-open the popout overlay windows you had open when you last
+                quit, in their saved positions, so they're ready as soon as the
+                app starts. Off by default.
+              </p>
+            </div>
+            <div
+              onClick={() => {
+                const next = !restoreOverlaysOnLaunch
+                setRestoreOverlaysOnLaunch(next)
+                window.electron?.overlay?.autoOpenSetEnabled?.(next).catch(() => {})
+              }}
+              style={{
+                width: 40,
+                height: 22,
+                borderRadius: 11,
+                backgroundColor: restoreOverlaysOnLaunch
+                  ? 'var(--color-primary)'
+                  : 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+                position: 'relative',
+                flexShrink: 0,
+                transition: 'background-color 0.15s',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 2,
+                  left: restoreOverlaysOnLaunch ? 20 : 2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  backgroundColor: '#fff',
+                  transition: 'left 0.15s',
+                }}
+              />
+            </div>
+          </label>
         </section>
         )}
 

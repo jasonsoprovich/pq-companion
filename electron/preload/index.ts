@@ -65,6 +65,12 @@ contextBridge.exposeInMainWorld('electron', {
     closeAllPopouts: (): Promise<void> => ipcRenderer.invoke('overlay:popouts:close-all'),
     popoutStates: (): Promise<Record<string, boolean>> =>
       ipcRenderer.invoke('overlay:popouts:states'),
+    // "Restore overlays on launch": whether to re-open the last open popout set
+    // on startup, plus that remembered set. Persisted in Electron userData.
+    autoOpenGet: (): Promise<{ enabled: boolean; overlays: string[] }> =>
+      ipcRenderer.invoke('overlay:auto-open:get'),
+    autoOpenSetEnabled: (enabled: boolean): Promise<void> =>
+      ipcRenderer.invoke('overlay:auto-open:set-enabled', enabled),
     setIgnoreMouseEvents: (ignore: boolean): Promise<void> =>
       ipcRenderer.invoke('overlay:set-ignore-mouse-events', ignore),
     setTriggerMode: (mode: 'interactive' | 'passthrough' | 'hidden'): Promise<void> =>

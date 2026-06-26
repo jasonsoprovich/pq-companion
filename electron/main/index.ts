@@ -265,6 +265,40 @@ function setOverlayLocked(name: OverlayName, locked: boolean): void {
   saveLockStore(store)
 }
 
+// ── Restore-overlays-on-launch persistence ───────────────────────────────────
+// When enabled, the set of popout overlays the user had open is remembered and
+// re-opened (in their saved positions) on the next launch. Stored here in
+// Electron's userData rather than the Go config because the decision has to be
+// made at boot, before the backend port is even resolved. `overlays` is the
+// last-known open set (canonical overlay names, excluding the always-on
+// trigger overlay); it's refreshed when the toggle is enabled and again on quit.
+type AutoOpenStore = { enabled: boolean; overlays: OverlayName[] }
+
+function autoOpenFilePath(): string {
+  return join(app.getPath('userData'), 'overlayAutoOpen.json')
+}
+
+function loadAutoOpenStore(): AutoOpenStore {
+  try {
+    const raw = readFileSync(autoOpenFilePath(), 'utf8')
+    const parsed = JSON.parse(raw) as Partial<AutoOpenStore>
+    return {
+      enabled: parsed.enabled === true,
+      overlays: Array.isArray(parsed.overlays) ? parsed.overlays : [],
+    }
+  } catch {
+    return { enabled: false, overlays: [] }
+  }
+}
+
+function saveAutoOpenStore(store: AutoOpenStore): void {
+  try {
+    writeFileSync(autoOpenFilePath(), JSON.stringify(store, null, 2), 'utf8')
+  } catch (err) {
+    console.error('[main] Failed to write overlay auto-open state:', err)
+  }
+}
+
 // Global "Position overlays" mode: a transient flag (off on every launch) that
 // makes every popout overlay fully interactive at once so the user can drag
 // each one into place regardless of its locked mode — the recovery path for
@@ -1954,6 +1988,20 @@ ipcMain.handle('overlay:popouts:states', () => {
   return states
 })
 
+// ── IPC handlers — restore overlays on launch ────────────────────────────────
+
+ipcMain.handle('overlay:auto-open:get', () => loadAutoOpenStore())
+
+ipcMain.handle('overlay:auto-open:set-enabled', (_event, enabled: boolean) => {
+  const store = loadAutoOpenStore()
+  store.enabled = enabled === true
+  // Snapshot the currently-open set the moment the user turns this on, so even
+  // an abrupt exit (no before-quit) still restores something sensible. The set
+  // is refreshed again on quit to track windows opened/closed afterwards.
+  if (store.enabled) store.overlays = currentlyOpenOverlayNames()
+  saveAutoOpenStore(store)
+})
+
 // ── IPC handlers — overlay position reset ────────────────────────────────────
 // Recovers an overlay that has wandered (or been pushed by a layout/update)
 // off-screen. Because a locked overlay is click-through and its unlock button
@@ -1979,6 +2027,34 @@ function overlayWindowByName(name: OverlayName): BrowserWindow | null {
     case 'chMetronome': return chMetronomeWindow
     default: return null
   }
+}
+
+// Open one overlay's popout window by canonical name (the trigger overlay is
+// created separately at startup and so is intentionally absent here).
+function createOverlayByName(name: OverlayName): void {
+  switch (name) {
+    case 'dps': createDPSOverlay(); break
+    case 'hps': createHPSOverlay(); break
+    case 'buffTimer': createBuffTimerOverlay(); break
+    case 'detrimTimer': createDetrimTimerOverlay(); break
+    case 'customTimer': createCustomTimerOverlay(); break
+    case 'npc': createNPCOverlay(); break
+    case 'rollTracker': createRollTrackerOverlay(); break
+    case 'respawnTimer': createRespawnTimerOverlay(); break
+    case 'chChain': createCHChainOverlay(); break
+    case 'chMetronome': createCHMetronomeOverlay(); break
+    default: break
+  }
+}
+
+// Canonical names of every popout overlay currently open (excludes the
+// always-on trigger overlay, which isn't user-toggled). Used to snapshot what
+// to restore on the next launch.
+function currentlyOpenOverlayNames(): OverlayName[] {
+  return RESETTABLE_OVERLAYS.filter((name) => {
+    const win = overlayWindowByName(name)
+    return !!win && !win.isDestroyed()
+  })
 }
 
 // Center a window of the given size on the PRIMARY display's work area. We
@@ -2371,6 +2447,19 @@ app.whenReady().then(async () => {
   // trigger editor. Create it at startup; it stays hidden until an alert or
   // positioning session needs it (see overlay:trigger:set-mode).
   createTriggerOverlay()
+
+  // Restore overlays on launch: if the user enabled it, re-open the popout
+  // windows that were open when they last quit. Each restores to its saved
+  // bounds/lock state via the normal create path, so they come back in place.
+  const autoOpen = loadAutoOpenStore()
+  if (autoOpen.enabled) {
+    for (const name of autoOpen.overlays) {
+      if (name === 'trigger') continue
+      const win = overlayWindowByName(name)
+      if (!win || win.isDestroyed()) createOverlayByName(name)
+    }
+  }
+
   setupAutoUpdater()
 
   // Keep the trigger overlay pinned to its chosen monitor when the layout
@@ -2399,6 +2488,20 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+// Snapshot which popout overlays are open as the app quits, so "restore
+// overlays on launch" can re-open exactly that set next time. Runs once, on the
+// first before-quit pass, while the overlay windows are still alive. Only the
+// open set is updated — `enabled` is left untouched.
+let didSnapshotAutoOpen = false
+app.on('before-quit', () => {
+  if (didSnapshotAutoOpen) return
+  didSnapshotAutoOpen = true
+  const store = loadAutoOpenStore()
+  if (!store.enabled) return
+  store.overlays = currentlyOpenOverlayNames()
+  saveAutoOpenStore(store)
 })
 
 app.on('before-quit', (event) => {

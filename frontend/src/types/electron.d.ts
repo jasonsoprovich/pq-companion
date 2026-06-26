@@ -69,6 +69,8 @@ export interface ElectronAPI {
     resetPosition: (name: string) => Promise<void>
     resetAllPositions: () => Promise<void>
     popoutStates: () => Promise<Record<string, boolean>>
+    autoOpenGet: () => Promise<{ enabled: boolean; overlays: string[] }>
+    autoOpenSetEnabled: (enabled: boolean) => Promise<void>
     getPositionMode: () => Promise<boolean>
     setPositionMode: (enabled: boolean) => Promise<void>
     onPositionModeChanged: (cb: (enabled: boolean) => void) => () => void
