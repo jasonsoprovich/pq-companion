@@ -1786,6 +1786,11 @@ export interface CreateTriggerRequest {
   timer_target_capture?: string
   worn_off_pattern?: string
   spell_id?: number
+  /**
+   * Anti-spam lockout: after firing, suppress this trigger from firing again
+   * for this many seconds. 0/omitted = fire on every match (default).
+   */
+  refire_cooldown_secs?: number
   display_threshold_secs?: number
   /** Optional per-trigger timer-bar color ("" = automatic overlay color). */
   bar_color?: string

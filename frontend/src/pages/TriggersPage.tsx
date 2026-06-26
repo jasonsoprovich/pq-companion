@@ -351,6 +351,8 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
   const [timerKeyCapture, setTimerKeyCapture] = useState(initial?.timer_key_capture ?? '')
   const [timerTargetCapture, setTimerTargetCapture] = useState(initial?.timer_target_capture ?? '')
   const [wornOffPattern, setWornOffPattern] = useState(initial?.worn_off_pattern ?? prefill?.wornOffPattern ?? '')
+  // Anti-spam refire lockout (seconds); 0 = fire on every match (default).
+  const [refireCooldown, setRefireCooldown] = useState(initial?.refire_cooldown_secs ?? 0)
   const [displayThreshold, setDisplayThreshold] = useState(initial?.display_threshold_secs ?? 0)
   // Optional per-trigger bar color; '' = automatic overlay color.
   const [barColor, setBarColor] = useState(initial?.bar_color ?? '')
@@ -573,6 +575,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
         source === 'pipe' || timerType === 'none' ? '' : timerTargetCapture.trim(),
       worn_off_pattern: source === 'pipe' || timerType === 'none' ? '' : wornOffPattern.trim(),
       spell_id: initial?.spell_id ?? prefill?.spellId ?? 0,
+      refire_cooldown_secs: Math.max(0, refireCooldown),
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
       bar_color: timerType === 'none' ? '' : barColor,
       characters: Array.from(selectedChars),
@@ -991,6 +994,26 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
         )}
       </div>
       )}
+
+      {/* Refire cooldown — applies to any trigger (log or pipe) */}
+      <div className="space-y-1">
+        <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+          Refire cooldown (seconds)
+        </label>
+        <input
+          type="number"
+          min={0}
+          value={refireCooldown}
+          onChange={(e) => setRefireCooldown(Math.max(0, parseInt(e.target.value, 10) || 0))}
+          className="w-28 rounded px-3 py-1.5 text-xs outline-none"
+          style={{ ...inputStyle, border: '1px solid var(--color-border)' }}
+          disabled={submitting}
+        />
+        <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+          After firing, ignore further matches for this many seconds. 0 = fire on every match.
+          Useful for spammy lines (rampage, resists) without flooding alerts.
+        </p>
+      </div>
 
       {/* Characters */}
       <div className="space-y-1.5">

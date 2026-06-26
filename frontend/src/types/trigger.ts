@@ -145,6 +145,12 @@ export interface Trigger {
   worn_off_pattern: string
   spell_id: number
   /**
+   * Anti-spam lockout: after firing, suppress this trigger from firing again
+   * for this many seconds. 0/absent = fire on every match (default). Distinct
+   * from cooldown_secs — this is a silent gate, not a visible recast timer.
+   */
+  refire_cooldown_secs?: number
+  /**
    * Cooldown timer (seconds) spawned alongside the duration timer to track
    * reuse cooldown. Counts down on the buff overlay with a " CD" suffix.
    * 0 = no cooldown timer.

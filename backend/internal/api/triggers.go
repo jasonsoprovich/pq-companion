@@ -47,18 +47,22 @@ func (h *triggerHandler) list(w http.ResponseWriter, r *http.Request) {
 
 // triggerRequest is the shared JSON payload accepted by create and update.
 type triggerRequest struct {
-	Name                 string                 `json:"name"`
-	Enabled              bool                   `json:"enabled"`
-	Pattern              string                 `json:"pattern"`
-	Actions              []trigger.Action       `json:"actions"`
-	TimerType            trigger.TimerType      `json:"timer_type"`
-	TimerDurationSecs    int                    `json:"timer_duration_secs"`
-	TimerDurationCapture string                 `json:"timer_duration_capture"`
-	TimerKeyCapture      string                 `json:"timer_key_capture"`
-	TimerTargetCapture   string                 `json:"timer_target_capture"`
-	WornOffPattern       string                 `json:"worn_off_pattern"`
-	SpellID              int                    `json:"spell_id"`
-	RefireCooldownSecs   int                    `json:"refire_cooldown_secs"`
+	Name                 string            `json:"name"`
+	Enabled              bool              `json:"enabled"`
+	Pattern              string            `json:"pattern"`
+	Actions              []trigger.Action  `json:"actions"`
+	TimerType            trigger.TimerType `json:"timer_type"`
+	TimerDurationSecs    int               `json:"timer_duration_secs"`
+	TimerDurationCapture string            `json:"timer_duration_capture"`
+	TimerKeyCapture      string            `json:"timer_key_capture"`
+	TimerTargetCapture   string            `json:"timer_target_capture"`
+	WornOffPattern       string            `json:"worn_off_pattern"`
+	SpellID              int               `json:"spell_id"`
+	// RefireCooldownSecs is a pointer so an omitted field on update preserves
+	// the existing value (matching how cooldown_secs is left untouched). A
+	// present value — including 0 to clear it — replaces it. The editor always
+	// sends it; bulk paths (toggle, move category) omit it.
+	RefireCooldownSecs   *int                   `json:"refire_cooldown_secs,omitempty"`
 	DisplayThresholdSecs int                    `json:"display_threshold_secs"`
 	BarColor             string                 `json:"bar_color"`
 	Characters           []string               `json:"characters"`
@@ -150,7 +154,6 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 		TimerTargetCapture:   strings.TrimSpace(req.TimerTargetCapture),
 		WornOffPattern:       req.WornOffPattern,
 		SpellID:              req.SpellID,
-		RefireCooldownSecs:   req.RefireCooldownSecs,
 		DisplayThresholdSecs: req.DisplayThresholdSecs,
 		BarColor:             strings.TrimSpace(req.BarColor),
 		Characters:           req.Characters,
@@ -159,6 +162,9 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 		ExtraPatterns:        req.ExtraPatterns,
 		Source:               src,
 		PipeCondition:        req.PipeCondition,
+	}
+	if req.RefireCooldownSecs != nil {
+		t.RefireCooldownSecs = *req.RefireCooldownSecs
 	}
 	if t.Actions == nil {
 		t.Actions = []trigger.Action{}
@@ -226,7 +232,11 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	existing.TimerTargetCapture = strings.TrimSpace(req.TimerTargetCapture)
 	existing.WornOffPattern = req.WornOffPattern
 	existing.SpellID = req.SpellID
-	existing.RefireCooldownSecs = req.RefireCooldownSecs
+	// Only touch the refire cooldown when the request carries it — bulk paths
+	// (toggle enabled, move category) omit it and must leave it intact.
+	if req.RefireCooldownSecs != nil {
+		existing.RefireCooldownSecs = *req.RefireCooldownSecs
+	}
 	existing.DisplayThresholdSecs = req.DisplayThresholdSecs
 	existing.BarColor = strings.TrimSpace(req.BarColor)
 	existing.Characters = req.Characters
