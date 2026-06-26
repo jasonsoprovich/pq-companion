@@ -58,6 +58,7 @@ type triggerRequest struct {
 	TimerTargetCapture   string                 `json:"timer_target_capture"`
 	WornOffPattern       string                 `json:"worn_off_pattern"`
 	SpellID              int                    `json:"spell_id"`
+	RefireCooldownSecs   int                    `json:"refire_cooldown_secs"`
 	DisplayThresholdSecs int                    `json:"display_threshold_secs"`
 	BarColor             string                 `json:"bar_color"`
 	Characters           []string               `json:"characters"`
@@ -149,6 +150,7 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 		TimerTargetCapture:   strings.TrimSpace(req.TimerTargetCapture),
 		WornOffPattern:       req.WornOffPattern,
 		SpellID:              req.SpellID,
+		RefireCooldownSecs:   req.RefireCooldownSecs,
 		DisplayThresholdSecs: req.DisplayThresholdSecs,
 		BarColor:             strings.TrimSpace(req.BarColor),
 		Characters:           req.Characters,
@@ -224,6 +226,7 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	existing.TimerTargetCapture = strings.TrimSpace(req.TimerTargetCapture)
 	existing.WornOffPattern = req.WornOffPattern
 	existing.SpellID = req.SpellID
+	existing.RefireCooldownSecs = req.RefireCooldownSecs
 	existing.DisplayThresholdSecs = req.DisplayThresholdSecs
 	existing.BarColor = strings.TrimSpace(req.BarColor)
 	existing.Characters = req.Characters

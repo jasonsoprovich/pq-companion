@@ -3,6 +3,7 @@ package trigger
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -84,6 +85,15 @@ func TestEQNagRampage(t *testing.T) {
 	}
 	if it.OriginalGroup != "Common/Combat" {
 		t.Errorf("group = %q, want Common/Combat", it.OriginalGroup)
+	}
+	// EQNag cooldownDuration (12s) now maps to a refire cooldown — no warning.
+	if it.Trigger.RefireCooldownSecs != 12 {
+		t.Errorf("refire cooldown = %d, want 12", it.Trigger.RefireCooldownSecs)
+	}
+	for _, w := range it.Warnings {
+		if strings.Contains(w, "refire") || strings.Contains(w, "cooldown") {
+			t.Errorf("unexpected cooldown warning after mapping: %q", w)
+		}
 	}
 }
 

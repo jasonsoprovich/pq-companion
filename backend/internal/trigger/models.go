@@ -229,6 +229,14 @@ type Trigger struct {
 	// branch of an alternation), the target is empty and no suffix shows.
 	TimerTargetCapture string `json:"timer_target_capture,omitempty"`
 
+	// RefireCooldownSecs suppresses the trigger from firing again for this many
+	// seconds after it fires. 0 (default) means fire on every match — the
+	// out-of-the-box behaviour. Unlike CooldownSecs (a visible spell-recast
+	// timer), this is a silent anti-spam lockout: no timer, no overlay, it just
+	// gates the next fire. Tracked per-trigger (by ID), independent of captures
+	// or target, matching GINA/EQNag/EQLogParser's per-trigger cooldown.
+	RefireCooldownSecs int `json:"refire_cooldown_secs,omitempty"`
+
 	// CooldownSecs spawns a second timer alongside the buff/duration timer to
 	// track the spell or discipline's reuse cooldown (recast_time in
 	// spells_new). Counts down on the buff overlay with a " CD" suffix in the

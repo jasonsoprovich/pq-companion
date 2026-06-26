@@ -236,9 +236,7 @@ func convertEQNag(t eqnagTrigger, paths map[string]string) (ImportedTrigger, boo
 	}
 
 	if t.UseCooldown && t.CooldownDuration > 0 {
-		warnings = append(warnings, fmt.Sprintf(
-			"EQNag re-fire cooldown (%ds) not applied — PQ Companion has no per-trigger refire lockout",
-			t.CooldownDuration))
+		tr.RefireCooldownSecs = t.CooldownDuration
 	}
 	if len(t.Conditions) > 0 {
 		warnings = append(warnings, "EQNag conditions dropped — imported as a plain match; re-add in-app if needed")

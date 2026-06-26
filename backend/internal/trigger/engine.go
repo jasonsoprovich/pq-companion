@@ -92,6 +92,13 @@ type Engine struct {
 
 	histMu  sync.Mutex
 	history []TriggerFired // ring buffer, newest appended last
+
+	// Refire-cooldown state: last fire time per trigger ID. Lives on the engine
+	// (not the recompiled `compiled` slice) so a Reload from an unrelated CRUD
+	// edit doesn't reset in-flight cooldowns. Keyed by trigger ID; only
+	// populated for triggers with RefireCooldownSecs > 0.
+	fireMu    sync.Mutex
+	lastFired map[string]time.Time
 }
 
 // NewEngine creates an Engine backed by store. Call Reload before routing
@@ -99,7 +106,7 @@ type Engine struct {
 // activeChar returns the currently active character name; nil disables
 // per-character filtering (used by tests).
 func NewEngine(store *Store, hub *ws.Hub, sink TimerSink, activeChar func() string) *Engine {
-	return &Engine{store: store, hub: hub, sink: sink, activeChar: activeChar}
+	return &Engine{store: store, hub: hub, sink: sink, activeChar: activeChar, lastFired: make(map[string]time.Time)}
 }
 
 // SetTargetProvider wires a current-target lookup (overlay.NPCTracker) into
@@ -220,7 +227,7 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 				extra = &c.extras[i].meta
 			}
 		}
-		if m != nil && !matchesAny(c.excludes, message) {
+		if m != nil && !matchesAny(c.excludes, message) && e.passesRefireCooldown(c.trigger, timestamp) {
 			e.fire(c, message, timestamp, m, names, extra)
 		}
 		if c.wornOff != nil && e.sink != nil && c.timerKey != "" {
@@ -597,6 +604,28 @@ func triggerAppliesTo(t *Trigger, active string) bool {
 		}
 	}
 	return false
+}
+
+// passesRefireCooldown reports whether the trigger is allowed to fire at ts,
+// honoring its RefireCooldownSecs anti-spam lockout. When the trigger has a
+// cooldown and is allowed, the fire time is recorded so the next match within
+// the window is suppressed. Triggers with no cooldown (the default) always pass
+// and record nothing. ts is the log line's timestamp (not wall clock) so replay
+// behaves deterministically.
+func (e *Engine) passesRefireCooldown(t *Trigger, ts time.Time) bool {
+	if t.RefireCooldownSecs <= 0 {
+		return true
+	}
+	window := time.Duration(t.RefireCooldownSecs) * time.Second
+	e.fireMu.Lock()
+	defer e.fireMu.Unlock()
+	if last, ok := e.lastFired[t.ID]; ok {
+		if d := ts.Sub(last); d >= 0 && d < window {
+			return false
+		}
+	}
+	e.lastFired[t.ID] = ts
+	return true
 }
 
 // GetHistory returns a copy of the recent trigger firing history, newest last.

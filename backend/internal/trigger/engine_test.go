@@ -69,6 +69,64 @@ func TestEngine_MatchAndFire(t *testing.T) {
 	}
 }
 
+func TestEngine_RefireCooldownSuppressesRepeat(t *testing.T) {
+	s, e := openTestEngine(t)
+
+	tr := &Trigger{
+		ID:                 "cd1",
+		Name:               "Rampage",
+		Enabled:            true,
+		Pattern:            `goes on a RAMPAGE`,
+		Actions:            []Action{{Type: ActionOverlayText, Text: "RAMP", DurationSecs: 5}},
+		RefireCooldownSecs: 10,
+		CreatedAt:          time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	base := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
+	// First fire is allowed.
+	e.Handle(base, "A gnoll goes on a RAMPAGE!")
+	// 3s later — within the 10s cooldown — suppressed.
+	e.Handle(base.Add(3*time.Second), "A gnoll goes on a RAMPAGE!")
+	if got := len(e.GetHistory()); got != 1 {
+		t.Fatalf("expected 1 fire during cooldown, got %d", got)
+	}
+	// 11s after the first fire — cooldown elapsed — fires again.
+	e.Handle(base.Add(11*time.Second), "A gnoll goes on a RAMPAGE!")
+	if got := len(e.GetHistory()); got != 2 {
+		t.Fatalf("expected 2 fires after cooldown elapsed, got %d", got)
+	}
+}
+
+func TestEngine_RefireCooldownSurvivesReload(t *testing.T) {
+	s, e := openTestEngine(t)
+	tr := &Trigger{
+		ID:                 "cd2",
+		Name:               "Spam",
+		Enabled:            true,
+		Pattern:            `ding`,
+		Actions:            []Action{{Type: ActionOverlayText, Text: "DING"}},
+		RefireCooldownSecs: 30,
+		CreatedAt:          time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	base := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
+	e.Handle(base, "ding")
+	e.Reload() // an unrelated CRUD edit recompiles triggers
+	// Still within the cooldown after a reload — must stay suppressed.
+	e.Handle(base.Add(5*time.Second), "ding")
+	if got := len(e.GetHistory()); got != 1 {
+		t.Fatalf("cooldown should survive Reload; expected 1 fire, got %d", got)
+	}
+}
+
 func TestEngine_DisabledTriggerDoesNotFire(t *testing.T) {
 	s, e := openTestEngine(t)
 

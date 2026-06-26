@@ -179,9 +179,7 @@ func convertEQLP(n *eqlpNode, group string) (ImportedTrigger, bool) {
 		warnings = append(warnings, "EQLogParser previous-line condition dropped — imported as a plain match")
 	}
 	if td.LockoutTime > 0 {
-		warnings = append(warnings, fmt.Sprintf(
-			"EQLogParser lockout (%ds) not applied — PQ Companion has no per-trigger refire lockout",
-			int(td.LockoutTime)))
+		tr.RefireCooldownSecs = int(td.LockoutTime)
 	}
 	if strings.TrimSpace(td.TextToSendToChat) != "" || strings.TrimSpace(td.ChatWebhook) != "" {
 		warnings = append(warnings, "EQLogParser chat/webhook action dropped (no equivalent)")

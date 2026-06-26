@@ -79,7 +79,8 @@ func (s *Store) migrate() error {
 			cooldown_secs          INTEGER NOT NULL DEFAULT 0,
 			sort_order             INTEGER NOT NULL DEFAULT 0,
 			source_pack            TEXT    NOT NULL DEFAULT '',
-			bar_color              TEXT    NOT NULL DEFAULT ''
+			bar_color              TEXT    NOT NULL DEFAULT '',
+			refire_cooldown_secs   INTEGER NOT NULL DEFAULT 0
 		)
 	`); err != nil {
 		return err
@@ -132,6 +133,7 @@ func (s *Store) migrate() error {
 		`ALTER TABLE triggers ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE triggers ADD COLUMN source_pack TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE triggers ADD COLUMN bar_color TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE triggers ADD COLUMN refire_cooldown_secs INTEGER NOT NULL DEFAULT 0`,
 		// trigger_categories columns for databases created before category
 		// ordering. Existing rows were all user-created → explicit defaults 1.
 		`ALTER TABLE trigger_categories ADD COLUMN explicit INTEGER NOT NULL DEFAULT 1`,
@@ -620,12 +622,12 @@ func (s *Store) Insert(t *Trigger) error {
 		                       timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		                       display_threshold_secs, characters, timer_alerts, exclude_patterns,
 		                       extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition,
-		                       dedup_key, cooldown_secs, sort_order, source_pack, bar_color)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName, t.CreatedAt.Unix(),
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
-		string(extraJSON), t.TimerDurationCapture, t.TimerKeyCapture, t.TimerTargetCapture, source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder, t.SourcePack, t.BarColor,
+		string(extraJSON), t.TimerDurationCapture, t.TimerKeyCapture, t.TimerTargetCapture, source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder, t.SourcePack, t.BarColor, t.RefireCooldownSecs,
 	)
 	if err != nil {
 		return fmt.Errorf("insert trigger: %w", err)
@@ -659,7 +661,7 @@ func (s *Store) List() ([]*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color
+		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs
 		 FROM triggers ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -684,7 +686,7 @@ func (s *Store) Get(id string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color
+		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs
 		 FROM triggers WHERE id = ?`, id,
 	)
 	t, err := scanTrigger(row)
@@ -740,12 +742,12 @@ func (s *Store) Update(t *Trigger) error {
 		                     timer_type=?, timer_duration_secs=?, worn_off_pattern=?, spell_id=?,
 		                     display_threshold_secs=?, characters=?, timer_alerts=?, exclude_patterns=?,
 		                     extra_patterns=?, timer_duration_capture=?, timer_key_capture=?, timer_target_capture=?, source=?, pipe_condition=?,
-		                     dedup_key=?, cooldown_secs=?, sort_order=?, source_pack=?, bar_color=?
+		                     dedup_key=?, cooldown_secs=?, sort_order=?, source_pack=?, bar_color=?, refire_cooldown_secs=?
 		 WHERE id=?`,
 		t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName,
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
-		string(extraJSON), t.TimerDurationCapture, t.TimerKeyCapture, t.TimerTargetCapture, source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder, t.SourcePack, t.BarColor,
+		string(extraJSON), t.TimerDurationCapture, t.TimerKeyCapture, t.TimerTargetCapture, source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder, t.SourcePack, t.BarColor, t.RefireCooldownSecs,
 		t.ID,
 	)
 	if err != nil {
@@ -781,7 +783,7 @@ func (s *Store) FindByPackAndName(packName, name string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color
+		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs
 		 FROM triggers WHERE pack_name = ? AND name = ? LIMIT 1`,
 		packName, name,
 	)
@@ -809,7 +811,7 @@ func (s *Store) FindByDedupKey(key string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color
+		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs
 		 FROM triggers WHERE dedup_key = ? LIMIT 1`, key,
 	)
 	t, err := scanTrigger(row)
@@ -942,7 +944,7 @@ func scanTrigger(row scanner) (*Trigger, error) {
 		&t.ID, &t.Name, &enabledInt, &t.Pattern, &actJSON, &t.PackName, &unixSec,
 		&timerType, &t.TimerDurationSecs, &t.WornOffPattern, &t.SpellID,
 		&t.DisplayThresholdSecs, &charJSON, &alertJSON, &excludeJSON,
-		&extraJSON, &t.TimerDurationCapture, &t.TimerKeyCapture, &t.TimerTargetCapture, &source, &pipeJSON, &t.DedupKey, &t.CooldownSecs, &t.SortOrder, &t.SourcePack, &t.BarColor,
+		&extraJSON, &t.TimerDurationCapture, &t.TimerKeyCapture, &t.TimerTargetCapture, &source, &pipeJSON, &t.DedupKey, &t.CooldownSecs, &t.SortOrder, &t.SourcePack, &t.BarColor, &t.RefireCooldownSecs,
 	); err != nil {
 		return nil, err
 	}
