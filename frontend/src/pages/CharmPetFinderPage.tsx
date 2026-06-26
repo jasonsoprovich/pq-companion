@@ -61,7 +61,8 @@ export default function CharmPetFinderPage(): React.ReactElement {
 
   const [zone, setZone] = useState<{ short: string; long: string } | null>(null)
   const [zoneQuery, setZoneQuery] = useState('')
-  const [zoneResults, setZoneResults] = useState<Zone[]>([])
+  const [allZones, setAllZones] = useState<Zone[]>([])
+  const [zoneOpen, setZoneOpen] = useState(false)
   const zoneBoxRef = useRef<HTMLDivElement>(null)
 
   const [spellOptions, setSpellOptions] = useState<CharmSpellOption[]>([])
@@ -109,39 +110,37 @@ export default function CharmPetFinderPage(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [classIdx])
 
-  // Zone search (debounced) — only when the typed query doesn't already match
-  // the selected zone's name.
+  // Load the full zone list once so the picker is a browsable, scrollable
+  // dropdown that the search box narrows client-side (instant, no round-trip).
   useEffect(() => {
-    const q = zoneQuery.trim()
-    if (q.length < 2 || (zone && q === zone.long)) {
-      setZoneResults([])
-      return
-    }
-    let cancelled = false
-    const t = setTimeout(() => {
-      searchZones(q, {}, 12)
-        .then((res) => {
-          if (!cancelled) setZoneResults(res.items)
-        })
-        .catch(() => {})
-    }, 180)
-    return () => {
-      cancelled = true
-      clearTimeout(t)
-    }
-  }, [zoneQuery, zone])
+    searchZones('', {}, 1000)
+      .then((res) => setAllZones(res.items))
+      .catch(() => {})
+  }, [])
+
+  // The dropdown list: all zones, narrowed by the typed query. When the query is
+  // just the already-selected zone's name, show the full list so it stays
+  // browsable rather than collapsing to the single match.
+  const filteredZones = useMemo(() => {
+    const q = zoneQuery.trim().toLowerCase()
+    if (!q || (zone && zoneQuery === zone.long)) return allZones
+    return allZones.filter(
+      (z) =>
+        z.long_name.toLowerCase().includes(q) || z.short_name.toLowerCase().includes(q),
+    )
+  }, [allZones, zoneQuery, zone])
 
   // Close the zone dropdown on outside click.
   useEffect(() => {
-    if (zoneResults.length === 0) return
+    if (!zoneOpen) return
     const handler = (e: MouseEvent): void => {
       if (zoneBoxRef.current && !zoneBoxRef.current.contains(e.target as Node)) {
-        setZoneResults([])
+        setZoneOpen(false)
       }
     }
     window.addEventListener('mousedown', handler)
     return () => window.removeEventListener('mousedown', handler)
-  }, [zoneResults.length])
+  }, [zoneOpen])
 
   // Fetch the charmable NPCs whenever the inputs are complete.
   useEffect(() => {
@@ -252,43 +251,55 @@ export default function CharmPetFinderPage(): React.ReactElement {
               <input
                 type="text"
                 value={zoneQuery}
-                onChange={(e) => setZoneQuery(e.target.value)}
-                placeholder="Search zones…"
+                onChange={(e) => {
+                  setZoneQuery(e.target.value)
+                  setZoneOpen(true)
+                }}
+                onFocus={(e) => {
+                  setZoneOpen(true)
+                  e.target.select()
+                }}
+                placeholder="Search or pick a zone…"
                 className="w-full rounded py-1.5 pl-7 pr-2 text-sm"
                 style={{
                   backgroundColor: 'var(--color-surface-2)',
                   border: '1px solid var(--color-border)',
                 }}
               />
+              {zoneOpen && filteredZones.length > 0 && (
+                <ul
+                  className="absolute left-0 right-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded shadow-lg"
+                  style={{
+                    backgroundColor: 'var(--color-surface-2)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                >
+                  {filteredZones.map((z) => (
+                    <li key={z.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setZone({ short: z.short_name, long: z.long_name })
+                          setZoneQuery(z.long_name)
+                          setZoneOpen(false)
+                        }}
+                        className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-(--color-surface-3)"
+                        style={
+                          zone && zone.short === z.short_name
+                            ? { backgroundColor: 'var(--color-surface-3)' }
+                            : undefined
+                        }
+                      >
+                        <span className="truncate">{z.long_name}</span>
+                        <span className="shrink-0" style={{ color: 'var(--color-muted)' }}>
+                          {z.short_name}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
-            {zoneResults.length > 0 && (
-              <ul
-                className="absolute z-10 mt-[3.4rem] max-h-60 w-full overflow-y-auto rounded shadow-lg"
-                style={{
-                  backgroundColor: 'var(--color-surface-2)',
-                  border: '1px solid var(--color-border)',
-                }}
-              >
-                {zoneResults.map((z) => (
-                  <li key={z.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setZone({ short: z.short_name, long: z.long_name })
-                        setZoneQuery(z.long_name)
-                        setZoneResults([])
-                      }}
-                      className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-(--color-surface-3)"
-                    >
-                      <span className="truncate">{z.long_name}</span>
-                      <span className="shrink-0" style={{ color: 'var(--color-muted)' }}>
-                        {z.short_name}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
 
           {/* Class */}
