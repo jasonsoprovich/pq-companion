@@ -1,16 +1,30 @@
 package trader
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
 
 // testdataDir points at the shared game-directory fixture (Feane is the trader).
+// These are real game exports under the gitignored testdata/ tree, so they are
+// only present on a dev machine — CI skips the fixture-backed tests.
 const testdataDir = "../../../testdata/TAKPv22"
 
+// requireFixture skips the test when a shared game-directory fixture is absent
+// (e.g. in CI, where testdata/ is gitignored). Mirrors the zeal package pattern.
+func requireFixture(t *testing.T, name string) string {
+	t.Helper()
+	path := filepath.Join(testdataDir, name)
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("testdata fixture not present: %v", err)
+	}
+	return path
+}
+
 func TestParseBZR(t *testing.T) {
-	path := filepath.Join(testdataDir, "BZR_Feane_pq.proj.ini")
+	path := requireFixture(t, "BZR_Feane_pq.proj.ini")
 	listing, err := ParseBZR(path, "Feane")
 	if err != nil {
 		t.Fatalf("ParseBZR: %v", err)
@@ -43,7 +57,7 @@ func TestParseBZR(t *testing.T) {
 }
 
 func TestParseSnapshot(t *testing.T) {
-	path := filepath.Join(testdataDir, "Feane-Inventory.txt")
+	path := requireFixture(t, "Feane-Inventory.txt")
 	snap, err := ParseSnapshot(path, "Feane")
 	if err != nil {
 		t.Fatalf("ParseSnapshot: %v", err)
@@ -95,11 +109,11 @@ func TestParseSnapshot(t *testing.T) {
 }
 
 func TestInferSales(t *testing.T) {
-	listing, err := ParseBZR(filepath.Join(testdataDir, "BZR_Feane_pq.proj.ini"), "Feane")
+	listing, err := ParseBZR(requireFixture(t, "BZR_Feane_pq.proj.ini"), "Feane")
 	if err != nil {
 		t.Fatalf("ParseBZR: %v", err)
 	}
-	prev, err := ParseSnapshot(filepath.Join(testdataDir, "Feane-Inventory.txt"), "Feane")
+	prev, err := ParseSnapshot(requireFixture(t, "Feane-Inventory.txt"), "Feane")
 	if err != nil {
 		t.Fatalf("ParseSnapshot: %v", err)
 	}
