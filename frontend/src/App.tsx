@@ -5,6 +5,7 @@ import OnboardingWizard from './components/OnboardingWizard'
 import { getConfig } from './services/api'
 import { loadEnums } from './lib/enumsCache'
 import { useAudioEngine } from './hooks/useAudioEngine'
+import { useTriggerClipboard } from './hooks/useTriggerClipboard'
 import { useTimerAlerts } from './hooks/useTimerAlerts'
 import { useRespawnAlerts } from './hooks/useRespawnAlerts'
 import { useAudioPrefs } from './hooks/useAudioPrefs'
@@ -82,6 +83,7 @@ function MainWindowLayout(): React.ReactElement {
   useHighContrast()
   useZoom()
   useAudioEngine()
+  useTriggerClipboard()
   useTimerAlerts()
   useRespawnAlerts()
   // Keep the Log Feed populating in the background so it persists across tab

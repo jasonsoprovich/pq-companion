@@ -1,4 +1,8 @@
-export type ActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
+export type ActionType =
+  | 'overlay_text'
+  | 'play_sound'
+  | 'text_to_speech'
+  | 'clipboard'
 
 export type TimerType = 'none' | 'buff' | 'detrimental' | 'custom'
 

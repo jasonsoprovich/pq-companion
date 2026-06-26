@@ -303,6 +303,8 @@ function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps):
         onVoiceChange={(v) => onChange(index, { ...action, voice: v })}
         ttsVolume={volume0to100}
         onTtsVolumeChange={(v) => onChange(index, { ...action, volume: v / 100 })}
+        clipboardText={action.text}
+        onClipboardTextChange={(v) => onChange(index, { ...action, text: v })}
       />
     </div>
   )

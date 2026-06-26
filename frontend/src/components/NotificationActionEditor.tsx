@@ -20,15 +20,25 @@ import { usePositioningSession } from '../hooks/usePositioningSession'
 import { useOverlayTextDefaults } from '../hooks/useOverlayTextDefaults'
 import { resolveOverlayTextStyle, WINDOWS_SAFE_FONTS } from '../lib/overlayTextStyle'
 
-export type NotificationActionType = 'overlay_text' | 'play_sound' | 'text_to_speech'
+export type NotificationActionType =
+  | 'overlay_text'
+  | 'play_sound'
+  | 'text_to_speech'
+  | 'clipboard'
 
 const TYPE_LABEL: Record<NotificationActionType, string> = {
   overlay_text: 'Overlay Text',
   play_sound: 'Play Sound',
   text_to_speech: 'Text to Speech',
+  clipboard: 'Copy to Clipboard',
 }
 
-const ALL_TYPES: readonly NotificationActionType[] = ['overlay_text', 'play_sound', 'text_to_speech']
+const ALL_TYPES: readonly NotificationActionType[] = [
+  'overlay_text',
+  'play_sound',
+  'text_to_speech',
+  'clipboard',
+]
 
 const inputStyle: React.CSSProperties = {
   backgroundColor: 'var(--color-surface-2)',
@@ -547,6 +557,42 @@ export function TextToSpeechFields({
   )
 }
 
+interface ClipboardFieldsProps {
+  text: string
+  onTextChange: (v: string) => void
+  textPlaceholder?: string
+}
+
+/**
+ * ClipboardFields — the editor for a "Copy to Clipboard" action. The text is
+ * written to the system clipboard verbatim when the trigger fires (after the
+ * usual {1}/$1 capture substitution), so the user can paste it straight into
+ * EverQuest. Typical use: "/tar {1}" to target whoever the matched line named.
+ */
+export function ClipboardFields({
+  text,
+  onTextChange,
+  textPlaceholder = 'Clipboard text (e.g. /tar {1})',
+}: ClipboardFieldsProps): React.ReactElement {
+  return (
+    <>
+      <input
+        type="text"
+        placeholder={textPlaceholder}
+        value={text}
+        onChange={(e) => onTextChange(e.target.value)}
+        className="w-full rounded px-2 py-1 text-xs outline-none font-mono"
+        style={inputStyle}
+      />
+      <p className="text-[10px] leading-snug" style={{ color: 'var(--color-muted)' }}>
+        Copied to the clipboard when the trigger fires. Use {'{1}'} / $1 for
+        capture groups — e.g. <span className="font-mono">/tar {'{1}'}</span> then
+        paste in-game with Ctrl+V.
+      </p>
+    </>
+  )
+}
+
 // ── Type selector ─────────────────────────────────────────────────────────────
 
 interface TypeSelectorProps {
@@ -616,6 +662,11 @@ interface NotificationActionEditorProps {
   /** 0–100. */
   ttsVolume?: number
   onTtsVolumeChange?: (v: number) => void
+
+  // clipboard fields
+  clipboardText?: string
+  onClipboardTextChange?: (v: string) => void
+  clipboardTextPlaceholder?: string
 }
 
 /**
@@ -671,6 +722,15 @@ export default function NotificationActionEditor(
         voices={voices}
         volume={props.ttsVolume ?? 100}
         onVolumeChange={props.onTtsVolumeChange ?? noop}
+      />
+    )
+  }
+  if (type === 'clipboard') {
+    return (
+      <ClipboardFields
+        text={props.clipboardText ?? ''}
+        onTextChange={props.onClipboardTextChange ?? noop}
+        textPlaceholder={props.clipboardTextPlaceholder}
       />
     )
   }

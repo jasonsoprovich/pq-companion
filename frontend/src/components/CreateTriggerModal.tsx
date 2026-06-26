@@ -450,6 +450,8 @@ export default function CreateTriggerModal({
               onVoiceChange={(v) => setAction((prev) => ({ ...prev, voice: v }))}
               ttsVolume={Math.round((action.volume || 1) * 100)}
               onTtsVolumeChange={(v) => setAction((prev) => ({ ...prev, volume: v / 100 }))}
+              clipboardText={action.text}
+              onClipboardTextChange={(v) => setAction((prev) => ({ ...prev, text: v }))}
             />
           </div>
         </div>
