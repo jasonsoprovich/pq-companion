@@ -195,11 +195,6 @@ func parsePQCImport(data []byte, sourceName string) (ImportPreview, error) {
 	return ImportPreview{Format: FormatPQC, SourceName: name, Triggers: out}, nil
 }
 
-// parseEQNagImport is implemented in phase 2 (importer_eqnag.go).
-func parseEQNagImport(data []byte, sourceName string) (ImportPreview, error) {
-	return ImportPreview{}, fmt.Errorf("EQNag import is coming in a later update")
-}
-
 // parseEQLogParserImport is implemented in phase 3 (importer_eqlogparser.go).
 func parseEQLogParserImport(data []byte, sourceName string) (ImportPreview, error) {
 	return ImportPreview{}, fmt.Errorf("EQLogParser import is coming in a later update")
@@ -219,6 +214,24 @@ func normalizeActionText(s string) string {
 		return s
 	}
 	return dollarBraceRe.ReplaceAllString(s, "{$1}")
+}
+
+// dedupeWarnings removes repeated warning strings while preserving order, so a
+// trigger with several phrases that hit the same caveat shows it once.
+func dedupeWarnings(warnings []string) []string {
+	if len(warnings) < 2 {
+		return warnings
+	}
+	seen := make(map[string]bool, len(warnings))
+	out := warnings[:0:0]
+	for _, w := range warnings {
+		if seen[w] {
+			continue
+		}
+		seen[w] = true
+		out = append(out, w)
+	}
+	return out
 }
 
 // validatePattern reports whether a trigger pattern compiles under Go's RE2
@@ -267,7 +280,7 @@ func applySoundFallback(t *Trigger, origFile string) string {
 	}
 	t.Actions = append(t.Actions, Action{Type: ActionTextToSpeech, Text: speakText})
 	if origFile == "" {
-		return "sound converted to speech (GINA exports don't include the audio file) — re-add it manually if desired"
+		return "sound converted to speech — the source audio file isn't portable; re-add it manually if desired"
 	}
 	return fmt.Sprintf("audio%s not found — converted to speech; re-add the file manually if desired", named)
 }
