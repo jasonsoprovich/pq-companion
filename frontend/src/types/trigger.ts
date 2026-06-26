@@ -231,6 +231,37 @@ export interface TriggerPack {
   triggers: Trigger[]
 }
 
+/** Source app a trigger import file came from, as detected by the backend. */
+export type ImportFormat = 'pqc' | 'gina' | 'eqnag' | 'eqlogparser'
+
+/** Human-facing label for an ImportFormat. */
+export const IMPORT_FORMAT_LABELS: Record<ImportFormat, string> = {
+  pqc: 'PQ Companion',
+  gina: 'GINA',
+  eqnag: 'EQNag',
+  eqlogparser: 'EQLogParser',
+}
+
+/**
+ * One trigger produced by parsing an import file, with the lossy-mapping
+ * warnings the wizard surfaces and the source group path it lived under.
+ */
+export interface ImportedTrigger {
+  trigger: Trigger
+  original_group?: string
+  warnings?: string[]
+  // false = the mapped pattern doesn't compile under Go's RE2; the trigger is
+  // imported disabled and flagged for manual editing.
+  regex_ok: boolean
+}
+
+/** Result of detecting + parsing an import file, reviewed before commit. */
+export interface ImportPreview {
+  format: ImportFormat
+  source_name: string
+  triggers: ImportedTrigger[]
+}
+
 /**
  * A trigger grouping (category), keyed off pack_name. Custom categories are
  * user-created and editable; built-in (class) and imported packs surface here

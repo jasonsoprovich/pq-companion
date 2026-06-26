@@ -28,7 +28,7 @@ import type { TargetState } from '../types/overlay'
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { RespawnState } from '../types/respawn'
-import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern } from '../types/trigger'
+import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
 import type { RecipeSummary, RecipeDetail, RecipeTradeskillCount } from '../types/recipe'
@@ -1945,22 +1945,35 @@ export function testPortAvailability(port: number): Promise<TestPortResult> {
   return get<TestPortResult>(`/api/config/test-port?port=${port}`)
 }
 
-export async function importGINAxml(
-  xml: string,
-  packName: string,
-): Promise<{ status: string; pack_name: string; imported: number }> {
+// previewTriggerImport uploads a trigger file (PQ Companion JSON, GINA .gtp/
+// .xml, EQNag backup .zip/.json, or EQLogParser .tgf), lets the backend detect
+// its format and parse it, and returns the normalized preview for review.
+// Nothing is persisted until commitTriggerImport. The raw file bytes are sent
+// as-is (.gtp / .zip are binary archives, so the file is read as an
+// ArrayBuffer rather than text).
+export async function previewTriggerImport(file: File): Promise<ImportPreview> {
   const baseUrl = await getBackendBaseUrl()
-  const url = `${baseUrl}/api/triggers/import-gina?pack_name=${encodeURIComponent(packName)}`
+  const url = `${baseUrl}/api/triggers/import/preview?filename=${encodeURIComponent(file.name)}`
+  const buf = await file.arrayBuffer()
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: xml,
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: buf,
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error ?? res.statusText)
   }
   return res.json()
+}
+
+// commitTriggerImport installs the chosen subset of previewed triggers into a
+// category (created if it doesn't exist; triggers are appended, not replaced).
+export function commitTriggerImport(
+  category: string,
+  triggers: Trigger[],
+): Promise<{ status: string; category: string; imported: number }> {
+  return post('/api/triggers/import/commit', { category, triggers })
 }
 
 // ── Roll Tracker ───────────────────────────────────────────────────────────────

@@ -50,6 +50,7 @@ import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { useVoices } from '../hooks/useVoices'
 import NotificationActionEditor, { NotificationTypeSelect } from '../components/NotificationActionEditor'
 import SpellSearchPicker from '../components/SpellSearchPicker'
+import ImportTriggersModal from '../components/ImportTriggersModal'
 import { buildSpellTriggerPrefill, type SpellTimerTriggerPrefill } from '../lib/spellHelpers'
 import {
   listTriggers,
@@ -61,9 +62,7 @@ import {
   getBuiltinPacks,
   installBuiltinPack,
   removeTriggerPack,
-  importTriggerPack,
   exportTriggerPack,
-  importGINAxml,
   listCharacters,
   listTriggerCategories,
   createTriggerCategory,
@@ -2040,8 +2039,8 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [confirm, setConfirm] = useState<PackConfirm | null>(null)
   useEscapeToClose(() => setConfirm(null), !!confirm)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const ginaInputRef = useRef<HTMLInputElement>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const [importFile, setImportFile] = useState<File | null>(null)
 
   const toggleExpanded = (packName: string) => {
     setExpanded((prev) => {
@@ -2116,45 +2115,13 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
       .catch((err: Error) => setError(err.message))
   }
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Open the import wizard with the picked file. Detection + parsing happen in
+  // the modal; this just hands off the raw File (which may be a binary .gtp /
+  // .zip archive, so it must not be read as text here).
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const pack = JSON.parse(ev.target?.result as string) as TriggerPack
-        importTriggerPack(pack)
-          .then(() => {
-            onInstalled()
-            setInstalled(pack.pack_name)
-            setTimeout(() => setInstalled(null), 3000)
-          })
-          .catch((err: Error) => setError(err.message))
-      } catch {
-        setError('Invalid JSON file')
-      }
-    }
-    reader.readAsText(file)
-    // Reset so same file can be re-imported
-    e.target.value = ''
-  }
-
-  const handleGINAImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const xml = ev.target?.result as string
-      const packName = file.name.replace(/\.(xml|gtp)$/i, '') || 'GINA Import'
-      importGINAxml(xml, packName)
-        .then((r) => {
-          onInstalled()
-          setInstalled(`${r.pack_name} (${r.imported})`)
-          setTimeout(() => setInstalled(null), 3000)
-        })
-        .catch((err: Error) => setError(err.message))
-    }
-    reader.readAsText(file)
+    if (file) setImportFile(file)
+    // Reset so the same file can be re-picked.
     e.target.value = ''
   }
 
@@ -2177,7 +2144,8 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
           Import / Export
         </p>
         <p className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
-          Share trigger packs with other players or back up your triggers as JSON.
+          Import triggers from PQ Companion, GINA, EQNag, or EQLogParser exports,
+          or back up your triggers as JSON.
         </p>
         <div className="flex gap-2">
           <button
@@ -2192,40 +2160,22 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
             <Download size={12} /> Export All
           </button>
           <button
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => importInputRef.current?.click()}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded"
             style={{
               backgroundColor: 'var(--color-surface-2)',
               color: 'var(--color-foreground)',
               border: '1px solid var(--color-border)',
             }}
+            title="Import triggers from PQ Companion, GINA, EQNag, or EQLogParser"
           >
-            <Upload size={12} /> Import Pack
-          </button>
-          <button
-            onClick={() => ginaInputRef.current?.click()}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded"
-            style={{
-              backgroundColor: 'var(--color-surface-2)',
-              color: 'var(--color-foreground)',
-              border: '1px solid var(--color-border)',
-            }}
-            title="Import a GINA trigger share (.xml / .gtp)"
-          >
-            <Upload size={12} /> Import GINA
+            <Upload size={12} /> Import Triggers
           </button>
           <input
-            ref={fileInputRef}
+            ref={importInputRef}
             type="file"
-            accept=".json,application/json"
-            onChange={handleImport}
-            className="hidden"
-          />
-          <input
-            ref={ginaInputRef}
-            type="file"
-            accept=".xml,.gtp,application/xml,text/xml"
-            onChange={handleGINAImport}
+            accept=".json,.gtp,.xml,.zip,.tgf,application/json,application/xml,text/xml,application/zip"
+            onChange={handleImportFile}
             className="hidden"
           />
         </div>
@@ -2424,6 +2374,18 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
             </div>
           </div>
         </div>
+      )}
+      {importFile && (
+        <ImportTriggersModal
+          file={importFile}
+          onClose={() => setImportFile(null)}
+          onImported={(category, count) => {
+            setImportFile(null)
+            onInstalled()
+            setInstalled(`${category} (${count})`)
+            setTimeout(() => setInstalled(null), 3000)
+          }}
+        />
       )}
     </div>
   )
