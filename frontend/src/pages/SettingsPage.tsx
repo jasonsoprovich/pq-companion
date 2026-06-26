@@ -1363,6 +1363,46 @@ export default function SettingsPage(): React.ReactElement {
             </div>
           </div>
 
+          <div className="mt-4">
+            <div className="mb-1 flex items-center justify-between">
+              <div>
+                <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  Repeat-Audio Cooldown
+                </p>
+                <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  After a trigger plays a sound or TTS, mutes further audio from that same trigger for this long. Collapses rapid bursts (e.g. an AE mez wearing off several mobs at once) to a single alert. Overlay text, history, and timers are unaffected. 0 = off; try 1–2s.
+                </p>
+              </div>
+              <div className="flex items-center gap-1 shrink-0 ml-3">
+                <input
+                  type="number"
+                  min={0}
+                  max={10}
+                  step={0.5}
+                  value={config.preferences.trigger_audio_cooldown_secs ?? 0}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      preferences: {
+                        ...config.preferences,
+                        trigger_audio_cooldown_secs: Math.max(0, Number(e.target.value) || 0),
+                      },
+                    })
+                  }
+                  className="w-16 rounded px-2 py-1 text-sm text-right"
+                  style={{
+                    backgroundColor: 'var(--color-surface-2)',
+                    border: '1px solid var(--color-border)',
+                    color: 'var(--color-foreground)',
+                  }}
+                />
+                <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  sec
+                </span>
+              </div>
+            </div>
+          </div>
+
           <AlertDefaultsSettings config={config} setConfig={setConfig} />
 
           <label className="flex cursor-pointer items-center justify-between py-1 mt-4">

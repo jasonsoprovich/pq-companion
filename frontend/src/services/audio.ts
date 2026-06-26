@@ -48,6 +48,26 @@ export function setDefaultTTSVoice(name: string): void {
   defaultTTSVoice = typeof name === 'string' ? name : ''
 }
 
+// Per-trigger repeat-audio cooldown, in milliseconds. After a trigger fires
+// audio, useAudioEngine suppresses further audio from that SAME trigger id for
+// this long, collapsing rapid same-trigger bursts (AE mez breaking several
+// mobs) to one alert. 0 = disabled (every fire plays). Pushed from
+// Preferences.trigger_audio_cooldown_secs by useAudioPrefs(). The actual gate
+// lives in useAudioEngine since only it knows the trigger id; this module just
+// holds the configured value so the engine can read it. Experimental — see the
+// config field comment for how to remove the feature.
+let repeatAudioCooldownMs = 0
+
+/** Set the per-trigger repeat-audio cooldown (ms). Non-positive/invalid = off. */
+export function setRepeatAudioCooldownMs(ms: number): void {
+  repeatAudioCooldownMs = Number.isFinite(ms) && ms > 0 ? ms : 0
+}
+
+/** Returns the per-trigger repeat-audio cooldown in ms (0 = disabled). */
+export function getRepeatAudioCooldownMs(): number {
+  return repeatAudioCooldownMs
+}
+
 function effectiveVolume(volume: number): number {
   return Math.min(1, Math.max(0, volume)) * masterVolume
 }

@@ -67,6 +67,11 @@ export interface Preferences {
   // Voice for any text_to_speech alert whose own voice field is empty
   // ("App default" in the editor). Empty = the OS default voice.
   default_tts_voice?: string
+  // Repeat-audio cooldown (seconds): after a trigger plays a sound/TTS,
+  // further audio from that SAME trigger is suppressed for this long.
+  // Collapses rapid same-trigger bursts (AE mez breaking several mobs) to
+  // one alert; overlay text / history / timers are unaffected. 0 = off.
+  trigger_audio_cooldown_secs?: number
   // Anchors trigger overlay_text alerts that have no per-trigger pinned
   // position at a fixed point (alerts stack downward from it). Coordinates
   // are window-local pixels on the trigger overlay's chosen monitor.

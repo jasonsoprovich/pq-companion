@@ -287,6 +287,18 @@ type Preferences struct {
 	// playback time. Empty = the OS default voice (pre-existing behaviour).
 	DefaultTTSVoice string `yaml:"default_tts_voice,omitempty" json:"default_tts_voice"`
 
+	// TriggerAudioCooldownSecs rate-limits repeat audio alerts from the SAME
+	// trigger: after a trigger plays a sound or TTS, further audio from that
+	// same trigger is suppressed for this many seconds. It collapses rapid
+	// same-trigger bursts (e.g. an AE mez wearing off several mobs at once →
+	// one alert instead of five) without touching the overlay-text, history,
+	// or spell-timer pipelines — those still fire per match. Applied per
+	// trigger id in the frontend audio engine (useAudioEngine). 0 (default)
+	// disables it: every fire plays, the pre-existing behaviour. Experimental
+	// and self-contained — removing the feature means deleting this field, the
+	// audio-engine gate, and the Settings input.
+	TriggerAudioCooldownSecs float64 `yaml:"trigger_audio_cooldown_secs,omitempty" json:"trigger_audio_cooldown_secs"`
+
 	// DefaultOverlayPosition anchors trigger overlay_text alerts that have no
 	// per-trigger pinned position at a fixed on-screen point (alerts stack
 	// downward from it). Coordinates are window-local pixels on the trigger
