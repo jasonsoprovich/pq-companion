@@ -352,6 +352,13 @@ type Preferences struct {
 	// internal/trader and pages/TraderTrackerPage.tsx.
 	TraderTrackerEnabled bool `yaml:"trader_tracker_enabled,omitempty" json:"trader_tracker_enabled"`
 
+	// CharmPetFinderEnabled reveals the experimental Charm Pet Finder page,
+	// which lists a zone's charmable NPCs for a charm class/spell, ranked by
+	// DPS, with level-cap warnings and per-NPC charm land odds. Off by default;
+	// it's a power-user/testing toggle in the Developer tab while the feature is
+	// validated. See internal/charm and pages/CharmPetFinderPage.tsx.
+	CharmPetFinderEnabled bool `yaml:"charm_pet_finder_enabled,omitempty" json:"charm_pet_finder_enabled"`
+
 	// NPCOverlayDashboardSections controls which optional sections of the
 	// NPC overlay are visible in the dashboard panel. Name, zone, pet
 	// owner, raid/rare badges, and the HP bar are always shown regardless
