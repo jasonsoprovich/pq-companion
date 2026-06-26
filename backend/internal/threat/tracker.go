@@ -16,6 +16,10 @@ import (
 // with-damage fight expiry.
 const mobExpiry = 60 * time.Second
 
+// tickDuration is the EQ buff "tick" used to convert a spell's BuffDuration
+// (in ticks) to wall-clock for expiring an active hate-mod buff.
+const tickDuration = 6 * time.Second
+
 // mobState is the running per-mob hate accumulator. Hate is kept as a float so
 // the static hatemod multiplier doesn't round on every event; it is rounded
 // only at snapshot time.
@@ -23,6 +27,20 @@ type mobState struct {
 	hate  float64
 	first time.Time
 	last  time.Time
+	timer *time.Timer
+
+	// meleeSum/meleeCount track this character's landed melee swings on the mob,
+	// giving an average swing used to estimate the (otherwise unknown) hate of a
+	// melee MISS — the server adds per-swing hate regardless of hit or miss.
+	meleeSum   int64
+	meleeCount int
+}
+
+// modState is one active hate-generation modifier from a self-buff (SPA 114/130,
+// e.g. Glamorous Visage -10%, Voice of Terris +10%). pct is the signed percent;
+// the timer drops it when the buff's duration elapses.
+type modState struct {
+	pct   int
 	timer *time.Timer
 }
 
@@ -40,6 +58,10 @@ type Tracker struct {
 	mu   sync.Mutex
 	mobs map[string]*mobState
 
+	// mods holds active hate-generation modifier buffs keyed by spell name.
+	// Their percentages add to the static hatemod for every hate value.
+	mods map[string]*modState
+
 	// pipeTarget is the player's current target name from the Zeal pipe, fed in
 	// exactly as the combat tracker receives it. Drives which mob the overlay
 	// highlights and which mob a no-target spell cast is attributed to.
@@ -49,29 +71,41 @@ type Tracker struct {
 	lastEngaged string
 	// hatemodFn returns the static gear/AA hate modifier as a signed percentage,
 	// supplied by the user in settings (logs can't reveal it). Read live so a
-	// settings change takes effect immediately; applied to generated hate going
-	// forward, never retroactively. May be nil (treated as 0).
+	// settings change takes effect immediately. May be nil (treated as 0).
 	hatemodFn func() int
 }
 
 // NewTracker returns an initialised threat Tracker. calc may be nil, in which
-// case spell-cast hate (instant hate / aggro shedders) is skipped and the meter
-// runs on observed damage alone. hatemodFn may be nil (no static modifier).
+// case spell-cast hate (instant/standard hate, aggro shedders, hate-mod buffs)
+// is skipped and the meter runs on observed damage alone. hatemodFn may be nil
+// (no static modifier).
 func NewTracker(hub *ws.Hub, calc *Calculator, hatemodFn func() int) *Tracker {
 	return &Tracker{
 		hub:       hub,
 		calc:      calc,
 		mobs:      make(map[string]*mobState),
+		mods:      make(map[string]*modState),
 		hatemodFn: hatemodFn,
 	}
 }
 
-// hatemod returns the current static hate modifier percentage (0 when unset).
-func (t *Tracker) hatemod() int {
+// staticHatemod returns the user-configured static hate modifier percentage
+// (0 when unset).
+func (t *Tracker) staticHatemod() int {
 	if t.hatemodFn == nil {
 		return 0
 	}
 	return t.hatemodFn()
+}
+
+// effectiveHatemodLocked is the total hate modifier currently in effect: the
+// static gear/AA value plus every active hate-mod buff. Caller must hold t.mu.
+func (t *Tracker) effectiveHatemodLocked() int {
+	total := t.staticHatemod()
+	for _, m := range t.mods {
+		total += m.pct
+	}
+	return total
 }
 
 // SetPipeTarget records the player's current target from Zeal LabelTargetName,
@@ -99,7 +133,17 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 			// can attribute. Incoming and third-party hits are ignored.
 			return
 		}
-		t.addHate(data.Target, float64(data.Damage), ev.Timestamp)
+		// Melee swings (a verb skill, no spell name) feed the miss-hate average;
+		// "spell" hits and DoT ticks do not.
+		melee := data.SpellName == "" && data.Skill != "spell"
+		t.recordDamage(data.Target, data.Damage, melee, ev.Timestamp)
+
+	case logparser.EventCombatMiss:
+		data, ok := ev.Data.(logparser.CombatMissData)
+		if !ok || data.Actor != "You" {
+			return
+		}
+		t.recordMiss(data.Target, ev.Timestamp)
 
 	case logparser.EventSpellCast:
 		data, ok := ev.Data.(logparser.SpellCastData)
@@ -108,34 +152,46 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 		}
 		t.recordCast(data.SpellName, ev.Timestamp)
 
+	case logparser.EventHeal:
+		data, ok := ev.Data.(logparser.HealData)
+		if !ok || data.Actor != "You" {
+			return
+		}
+		t.recordHeal(data.Amount, ev.Timestamp)
+
 	case logparser.EventKill:
 		if data, ok := ev.Data.(logparser.KillData); ok {
 			t.endMob(data.Target, ev.Timestamp)
 		}
 
-	case logparser.EventZone, logparser.EventDeath:
-		// Zoning (including gate/egress/evac, which all emit a zone line) and
-		// the player's own death both wipe all hate.
+	case logparser.EventZone, logparser.EventDeath, logparser.EventFeignDeath:
+		// Zoning (incl. gate/egress/evac, which emit a zone line), the player's
+		// own death, and a successful feign death all wipe the player's hate.
 		t.endAll(ev.Timestamp)
 	}
 }
 
-// recordCast applies the non-damage hate of a spell the player just cast. The
-// cast line names no target, so the hate is attributed to the current target
-// (Zeal pipe) or, failing that, the most recently engaged mob. Spells that
-// generate no instant hate (the common case) are a no-op.
+// recordCast applies the hate of a spell the player just cast. The cast line
+// names no target, so any offensive hate is attributed to the current target
+// (Zeal pipe) or the most recently engaged mob. Hate-mod self-buffs register an
+// active modifier instead of adding hate.
 func (t *Tracker) recordCast(spellName string, ts time.Time) {
-	hate, found := t.calc.CastHate(spellName)
-	if !found || hate == 0 {
-		return
-	}
 	t.mu.Lock()
-	mob := t.castTargetLocked()
+	target := t.castTargetLocked()
 	t.mu.Unlock()
-	if mob == "" {
+
+	// Classify does DB I/O (NPC HP lookup), so it runs outside the lock.
+	info := t.calc.Classify(spellName, target)
+	if !info.Found {
 		return
 	}
-	t.addHate(mob, float64(hate), ts)
+	if info.HatemodPct != 0 {
+		t.registerMod(spellName, info.HatemodPct, info.DurationTicks, ts)
+		return
+	}
+	if info.OffensiveHate != 0 && target != "" {
+		t.addHate(target, float64(info.OffensiveHate), ts)
+	}
 }
 
 // castTargetLocked returns the mob a no-target spell cast should be attributed
@@ -148,44 +204,149 @@ func (t *Tracker) castTargetLocked() string {
 	return t.lastEngaged
 }
 
-// addHate adds amount (pre-hatemod) to the named mob's running total, applies
-// the static hatemod, (re)arms its expiry timer, and broadcasts. amount may be
-// negative (an aggro-shedding spell), which can drive the raw total below zero;
-// the displayed value is floored at snapshot time.
-func (t *Tracker) addHate(mob string, amount float64, ts time.Time) {
-	if mob == "" || mob == "You" {
-		return
-	}
-	adjusted := amount * float64(100+t.hatemod()) / 100
-
-	t.mu.Lock()
+// ensureMobLocked returns the mob's state, creating it on first contact. Caller
+// must hold t.mu.
+func (t *Tracker) ensureMobLocked(mob string, ts time.Time) *mobState {
 	m := t.mobs[mob]
 	if m == nil {
 		m = &mobState{first: ts}
 		t.mobs[mob] = m
 	}
-	m.hate += adjusted
 	if m.first.IsZero() {
 		m.first = ts
 	}
+	return m
+}
+
+// addHateLocked adds amount (pre-hatemod) to a mob's running total, applies the
+// effective hatemod, and (re)arms the staleness timer. amount may be negative
+// (an aggro shedder); the displayed value is floored at snapshot time. Does NOT
+// touch lastEngaged — callers that represent "engaging" a mob set that. Caller
+// must hold t.mu.
+func (t *Tracker) addHateLocked(mob string, amount float64, ts time.Time) {
+	adjusted := amount * float64(100+t.effectiveHatemodLocked()) / 100
+	m := t.ensureMobLocked(mob, ts)
+	m.hate += adjusted
 	m.last = ts
-	t.lastEngaged = mob
 	t.armExpiryLocked(mob, m)
+}
+
+// addHate attributes amount to a single mob and marks it as the most recently
+// engaged (used for spell offensive hate). Locks, snapshots, broadcasts.
+func (t *Tracker) addHate(mob string, amount float64, ts time.Time) {
+	if mob == "" || mob == "You" {
+		return
+	}
+	t.mu.Lock()
+	t.addHateLocked(mob, amount, ts)
+	t.lastEngaged = mob
 	snap := t.snapshotLocked(ts)
 	t.mu.Unlock()
-
 	t.broadcast(snap)
 }
 
-// armExpiryLocked (re)starts the per-mob staleness timer. Caller must hold
-// t.mu.
-func (t *Tracker) armExpiryLocked(mob string, m *mobState) {
+// recordDamage credits observed damage as hate (one point per point) and feeds
+// the per-mob melee average used for miss-hate estimation.
+func (t *Tracker) recordDamage(mob string, dmg int, melee bool, ts time.Time) {
+	if mob == "" || mob == "You" || dmg <= 0 {
+		return
+	}
+	t.mu.Lock()
+	t.addHateLocked(mob, float64(dmg), ts)
+	if melee {
+		m := t.mobs[mob]
+		m.meleeSum += int64(dmg)
+		m.meleeCount++
+	}
+	t.lastEngaged = mob
+	snap := t.snapshotLocked(ts)
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
+// recordMiss adds the per-swing hate of a melee MISS — estimated as this
+// character's average landed swing on that mob, since the server adds per-swing
+// hate whether or not the swing connects. No-op until at least one swing has
+// landed (no basis to estimate) or if the mob isn't tracked.
+func (t *Tracker) recordMiss(mob string, ts time.Time) {
+	if mob == "" || mob == "You" {
+		return
+	}
+	t.mu.Lock()
+	m := t.mobs[mob]
+	if m == nil || m.meleeCount == 0 {
+		t.mu.Unlock()
+		return
+	}
+	avg := float64(m.meleeSum) / float64(m.meleeCount)
+	t.addHateLocked(mob, avg, ts)
+	snap := t.snapshotLocked(ts)
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
+// recordHeal spreads a heal's hate across every mob currently on the player's
+// list — heals aggro everything aggroed on the healer, not just the current
+// target. No-op out of combat (no hate list to add to).
+func (t *Tracker) recordHeal(amount int, ts time.Time) {
+	h := HealHate(amount)
+	if h == 0 {
+		return
+	}
+	t.mu.Lock()
+	if len(t.mobs) == 0 {
+		t.mu.Unlock()
+		return
+	}
+	for mob := range t.mobs {
+		t.addHateLocked(mob, float64(h), ts)
+	}
+	snap := t.snapshotLocked(ts)
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
+// registerMod activates (or refreshes) a hate-mod self-buff's percentage,
+// expiring it after its buff duration. A non-positive duration (e.g. a
+// permanent illusion) registers with no timer and is cleared only on
+// zone/death/reset.
+func (t *Tracker) registerMod(spellName string, pct, durationTicks int, ts time.Time) {
+	if pct == 0 || spellName == "" {
+		return
+	}
+	t.mu.Lock()
+	m := t.mods[spellName]
+	if m == nil {
+		m = &modState{}
+		t.mods[spellName] = m
+	}
+	m.pct = pct
 	if m.timer != nil {
 		m.timer.Stop()
+		m.timer = nil
 	}
-	m.timer = time.AfterFunc(mobExpiry, func() {
-		t.endMob(mob, time.Now())
-	})
+	if durationTicks > 0 {
+		m.timer = time.AfterFunc(time.Duration(durationTicks)*tickDuration, func() {
+			t.expireMod(spellName)
+		})
+	}
+	snap := t.snapshotLocked(ts)
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
+// expireMod drops a hate-mod buff when its duration elapses.
+func (t *Tracker) expireMod(spellName string) {
+	t.mu.Lock()
+	if m, ok := t.mods[spellName]; ok {
+		if m.timer != nil {
+			m.timer.Stop()
+		}
+		delete(t.mods, spellName)
+	}
+	snap := t.snapshotLocked(time.Now())
+	t.mu.Unlock()
+	t.broadcast(snap)
 }
 
 // endMob drops a single mob (kill or staleness) and broadcasts the change.
@@ -211,10 +372,11 @@ func (t *Tracker) endMob(mob string, ts time.Time) {
 	t.broadcast(snap)
 }
 
-// endAll wipes every tracked mob (zone change or player death).
+// endAll wipes every tracked mob and active hate-mod buff (zone change, player
+// death, or feign death).
 func (t *Tracker) endAll(ts time.Time) {
 	t.mu.Lock()
-	if len(t.mobs) == 0 {
+	if len(t.mobs) == 0 && len(t.mods) == 0 {
 		t.mu.Unlock()
 		return
 	}
@@ -223,16 +385,21 @@ func (t *Tracker) endAll(ts time.Time) {
 			m.timer.Stop()
 		}
 	}
+	for _, m := range t.mods {
+		if m.timer != nil {
+			m.timer.Stop()
+		}
+	}
 	t.mobs = make(map[string]*mobState)
+	t.mods = make(map[string]*modState)
 	t.lastEngaged = ""
 	snap := t.snapshotLocked(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)
 }
 
-// Reset clears all accumulated hate without restarting the process (the
-// overlay's manual "reset" button). Preserves the configured hatemod and the
-// current pipe target — those describe settings/world state, not session hate.
+// Reset clears all accumulated hate and active modifiers (the overlay's manual
+// "reset" button). Preserves the configured static hatemod and pipe target.
 func (t *Tracker) Reset() {
 	t.endAll(time.Now())
 }
@@ -250,7 +417,7 @@ func (t *Tracker) GetState() ThreatState {
 func (t *Tracker) snapshotLocked(now time.Time) ThreatState {
 	state := ThreatState{
 		InCombat:    len(t.mobs) > 0,
-		HatemodPct:  t.hatemod(),
+		HatemodPct:  t.effectiveHatemodLocked(),
 		LastUpdated: now,
 		Mobs:        make([]MobThreat, 0, len(t.mobs)),
 	}
@@ -313,6 +480,17 @@ func (t *Tracker) highlightLocked() string {
 		}
 	}
 	return best
+}
+
+// armExpiryLocked (re)starts the per-mob staleness timer. Caller must hold
+// t.mu.
+func (t *Tracker) armExpiryLocked(mob string, m *mobState) {
+	if m.timer != nil {
+		m.timer.Stop()
+	}
+	m.timer = time.AfterFunc(mobExpiry, func() {
+		t.endMob(mob, time.Now())
+	})
 }
 
 func (t *Tracker) broadcast(state ThreatState) {

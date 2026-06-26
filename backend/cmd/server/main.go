@@ -302,7 +302,7 @@ func main() {
 	// DB; the static gear/AA hatemod is read live from preferences. Gated behind
 	// the threat_meter_enabled dev flag on the frontend, but always running so
 	// the overlay has data the moment it's enabled.
-	threatTracker := threat.NewTracker(hub, threat.NewCalculator(database), func() int {
+	threatTracker := threat.NewTracker(hub, threat.NewCalculator(database, database), func() int {
 		return cfgMgr.Get().Preferences.ThreatHatemodPct
 	})
 

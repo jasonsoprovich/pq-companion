@@ -131,6 +131,7 @@ var (
 	// hostile re-aggro from the former pet isn't mis-credited to the
 	// player.
 	reCharmBroken = regexp.MustCompile(`^Your charm spell has worn off\.$`)
+	reFeignDeath  = regexp.MustCompile(`^You feign death\.$`)
 
 	// Player-verification chat patterns. Anything matching one of these
 	// proves the speaker is another player: NPCs in EQ never use the
@@ -367,6 +368,15 @@ func classifyMessage(msg string) (LogEvent, bool) {
 	if reCharmBroken.MatchString(msg) {
 		return LogEvent{
 			Type: EventCharmBroken,
+			Data: nil,
+		}, true
+	}
+
+	// "You feign death." — a successful monk/SK feign wipes hate. Matched
+	// before the generic spell-fade pass so it gets its own event type.
+	if reFeignDeath.MatchString(msg) {
+		return LogEvent{
+			Type: EventFeignDeath,
 			Data: nil,
 		}, true
 	}

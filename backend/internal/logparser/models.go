@@ -107,6 +107,12 @@ const (
 	// up under the player.
 	EventCharmBroken EventType = "log:charm_broken"
 
+	// EventFeignDeath is emitted on the active character's "You feign death."
+	// line (monk / shadow knight). A successful feign wipes the character's
+	// hate, so consumers that track personal threat reset on it. Carries no
+	// data.
+	EventFeignDeath EventType = "log:feign_death"
+
 	// EventRollAnnounce is emitted when EQ logs the first line of a /random
 	// result: "**A Magic Die is rolled by <Name>." It carries only the
 	// roller's name — the range and value arrive on the next line as
