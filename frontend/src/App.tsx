@@ -27,6 +27,7 @@ const SpellsPage = lazy(() => import('./pages/SpellsPage'))
 const NpcsPage = lazy(() => import('./pages/NpcsPage'))
 const ResistCalcPage = lazy(() => import('./pages/ResistCalcPage'))
 const TraderTrackerPage = lazy(() => import('./pages/TraderTrackerPage'))
+const CharmPetFinderPage = lazy(() => import('./pages/CharmPetFinderPage'))
 const ZonesPage = lazy(() => import('./pages/ZonesPage'))
 const RecipesPage = lazy(() => import('./pages/RecipesPage'))
 const QuestsPage = lazy(() => import('./pages/QuestsPage'))
@@ -175,6 +176,7 @@ export default function App(): React.ReactElement {
           <Route path="npcs" element={<NpcsPage />} />
           <Route path="resist-calc" element={<ResistCalcPage />} />
           <Route path="trader-tracker" element={<TraderTrackerPage />} />
+          <Route path="charm-pet-finder" element={<CharmPetFinderPage />} />
           <Route path="zones" element={<ZonesPage />} />
           <Route path="recipes" element={<RecipesPage />} />
           <Route path="quests" element={<QuestsPage />} />

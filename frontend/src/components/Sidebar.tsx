@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Percent, Store } from 'lucide-react'
+import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Percent, Store, PawPrint } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import CharacterSwitcher from './CharacterSwitcher'
 import { useHistoryNav } from '../hooks/useHistoryNav'
@@ -9,6 +9,7 @@ import { NAV_SECTIONS, orderItems, type NavItem } from '../lib/sidebarNav'
 import { useSidebarPrefs } from '../hooks/useSidebarPrefs'
 import { useResistCalcEnabled } from '../hooks/useResistCalcEnabled'
 import { useTraderTrackerEnabled } from '../hooks/useTraderTrackerEnabled'
+import { useCharmPetFinderEnabled } from '../hooks/useCharmPetFinderEnabled'
 
 function SidebarLink({ to, label, icon }: NavItem): React.ReactElement {
   return (
@@ -54,6 +55,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   const { hidden, order } = useSidebarPrefs()
   const resistCalcEnabled = useResistCalcEnabled()
   const traderTrackerEnabled = useTraderTrackerEnabled()
+  const charmPetFinderEnabled = useCharmPetFinderEnabled()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed)
 
   const toggleSection = (id: string): void => {
@@ -81,6 +83,9 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
       if (s.id === 'database' && resistCalcEnabled) {
         extra.push({ to: '/resist-calc', label: 'Resist Calculator', icon: <Percent size={16} /> })
       }
+      if (s.id === 'database' && charmPetFinderEnabled) {
+        extra.push({ to: '/charm-pet-finder', label: 'Charm Pet Finder', icon: <PawPrint size={16} /> })
+      }
       if (s.id === 'characters' && traderTrackerEnabled) {
         extra.push({ to: '/trader-tracker', label: 'Trader Tracker', icon: <Store size={16} /> })
       }
@@ -92,7 +97,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
         items: orderItems(s.items, order).filter((i) => !hiddenSet.has(i.to)),
       }))
       .filter((s) => s.items.length > 0)
-  }, [hidden, order, resistCalcEnabled, traderTrackerEnabled])
+  }, [hidden, order, resistCalcEnabled, traderTrackerEnabled, charmPetFinderEnabled])
 
   useEffect(() => {
     const poll = () => {
