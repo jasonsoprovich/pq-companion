@@ -447,9 +447,12 @@ func (h *triggerHandler) exportPack(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, pack)
 }
 
-// importGINA imports triggers from a GINA share XML document in the request
-// body. The pack_name is taken from the ?pack_name= query param or a default.
-func (h *triggerHandler) importGINA(w http.ResponseWriter, r *http.Request) {
+// importPreview detects the source app of an uploaded trigger file (PQ
+// Companion / GINA / EQNag / EQLogParser), parses it into a normalized preview,
+// and returns it WITHOUT persisting anything. The wizard reviews/selects from
+// the preview and then calls importCommit. The ?filename= query supplies the
+// original name (used to suggest a category and as a weak format hint).
+func (h *triggerHandler) importPreview(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "read body: "+err.Error())
@@ -459,26 +462,104 @@ func (h *triggerHandler) importGINA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "empty body")
 		return
 	}
-	packName := r.URL.Query().Get("pack_name")
-	pack, err := trigger.ParseGINA(body, packName)
+	filename := r.URL.Query().Get("filename")
+	preview, err := trigger.DetectAndParse(filename, body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if len(pack.Triggers) == 0 {
-		writeError(w, http.StatusBadRequest, "no triggers found in GINA document")
+	if len(preview.Triggers) == 0 {
+		writeError(w, http.StatusBadRequest, "no triggers found in file")
 		return
 	}
-	h.applyDefaultCharacters(&pack)
-	if err := trigger.InstallPack(h.store, pack); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	writeJSON(w, http.StatusOK, preview)
+}
+
+// importCommitRequest is the wizard's commit payload: the user-chosen subset of
+// previewed triggers and the category to file them under.
+type importCommitRequest struct {
+	Category string            `json:"category"`
+	Triggers []trigger.Trigger `json:"triggers"`
+}
+
+// importCommit installs a selected subset of previewed triggers into a category.
+// The category is created if it doesn't exist; triggers are appended (not
+// replaced) so several imports can share one category, and removal is via the
+// category's Delete-all. Characters default to all known characters (imports
+// are class-agnostic).
+func (h *triggerHandler) importCommit(w http.ResponseWriter, r *http.Request) {
+	var req importCommitRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
+	}
+	category := strings.TrimSpace(req.Category)
+	if category == "" {
+		writeError(w, http.StatusBadRequest, "category is required")
+		return
+	}
+	if len(req.Triggers) == 0 {
+		writeError(w, http.StatusBadRequest, "no triggers selected")
+		return
+	}
+
+	// Ensure the destination category exists. A reserved/builtin name or an
+	// already-existing custom category is fine — only hard errors abort.
+	if _, err := h.store.CreateCategory(category); err != nil &&
+		!errors.Is(err, trigger.ErrCategoryExists) {
+		writeCategoryError(w, err)
+		return
+	}
+
+	// Default Characters via the shared (class-agnostic) pack logic.
+	pack := trigger.TriggerPack{PackName: category, Triggers: req.Triggers}
+	h.applyDefaultCharacters(&pack)
+
+	imported := 0
+	for i := range pack.Triggers {
+		t := pack.Triggers[i]
+		t.PackName = category
+		t.SourcePack = "" // user-owned: removal is via the category, not a pack
+		t.TimerType = normalizeTimerType(t.TimerType)
+		id, err := trigger.NewID()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		t.ID = id
+		t.CreatedAt = time.Now().UTC()
+		if order, err := h.store.NextTriggerSortOrder(category); err == nil {
+			t.SortOrder = order
+		}
+		if t.Actions == nil {
+			t.Actions = []trigger.Action{}
+		}
+		if t.Characters == nil {
+			t.Characters = []string{}
+		}
+		if t.TimerAlerts == nil {
+			t.TimerAlerts = []trigger.TimerAlert{}
+		}
+		if t.ExcludePatterns == nil {
+			t.ExcludePatterns = []string{}
+		}
+		if t.ExtraPatterns == nil {
+			t.ExtraPatterns = []trigger.ExtraPattern{}
+		}
+		if t.Source == "" {
+			t.Source = trigger.SourceLog
+		}
+		if err := h.store.Insert(&t); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		imported++
 	}
 	h.engine.Reload()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":    "ok",
-		"pack_name": pack.PackName,
-		"imported":  len(pack.Triggers),
+		"status":   "ok",
+		"category": category,
+		"imported": imported,
 	})
 }
 
