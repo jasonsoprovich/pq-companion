@@ -101,11 +101,6 @@ export interface Preferences {
   // inventory exports. Power-user/experimental feature gated behind a
   // Developer-tab toggle. See pages/TraderTrackerPage.tsx.
   trader_tracker_enabled?: boolean
-  // Charm Pet Finder: lists a zone's charmable NPCs for a charm class/spell,
-  // ranked by DPS, with level-cap warnings and charm land odds. Power-user/
-  // experimental feature gated behind a Developer-tab toggle. See
-  // pages/CharmPetFinderPage.tsx.
-  charm_pet_finder_enabled?: boolean
   npc_overlay_dashboard_sections: NPCOverlaySections
   npc_overlay_popout_sections: NPCOverlaySections
   // Per-overlay locked behaviour, keyed by canonical overlay name. Missing

@@ -102,7 +102,6 @@ function FlagsPanel(): React.ReactElement {
   const popEnabled = Boolean(config?.preferences?.pop_enabled)
   const resistCalcEnabled = Boolean(config?.preferences?.resist_calc_enabled)
   const traderTrackerEnabled = Boolean(config?.preferences?.trader_tracker_enabled)
-  const charmPetFinderEnabled = Boolean(config?.preferences?.charm_pet_finder_enabled)
 
   const togglePoP = (): void => {
     if (!config || saving) return
@@ -137,19 +136,6 @@ function FlagsPanel(): React.ReactElement {
     updateConfig({
       ...config,
       preferences: { ...config.preferences, trader_tracker_enabled: !traderTrackerEnabled },
-    })
-      .then(setConfig)
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setSaving(false))
-  }
-
-  const toggleCharmPetFinder = (): void => {
-    if (!config || saving) return
-    setSaving(true)
-    setError(null)
-    updateConfig({
-      ...config,
-      preferences: { ...config.preferences, charm_pet_finder_enabled: !charmPetFinderEnabled },
     })
       .then(setConfig)
       .catch((err: Error) => setError(err.message))
@@ -306,56 +292,6 @@ function FlagsPanel(): React.ReactElement {
         )}
       </section>
 
-      <section
-        className="rounded-lg p-4"
-        style={{
-          backgroundColor: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-        }}
-      >
-        <div className="mb-3 flex items-center gap-2">
-          <FlaskConical size={14} style={{ color: 'var(--color-primary)' }} />
-          <h2
-            className="text-sm font-semibold uppercase tracking-wide"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            Charm pet finder
-          </h2>
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-            Adds a Charm Pet Finder page (under Database in the nav) that lists a
-            zone&rsquo;s charmable NPCs for your charm class and spell, ranked by
-            melee DPS, with level-cap warnings and per-NPC charm land odds. The
-            DPS/HP scaling and land-chance math are best-effort estimates, so
-            it&rsquo;s a power-user feature that&rsquo;s off by default.
-          </p>
-          <button
-            type="button"
-            onClick={toggleCharmPetFinder}
-            disabled={!config || saving}
-            className="shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors"
-            style={{
-              backgroundColor: charmPetFinderEnabled
-                ? 'var(--color-primary)'
-                : 'var(--color-surface-2)',
-              color: charmPetFinderEnabled
-                ? 'var(--color-background)'
-                : 'var(--color-muted-foreground)',
-              border: '1px solid var(--color-border)',
-              cursor: !config || saving ? 'default' : 'pointer',
-              opacity: !config || saving ? 0.6 : 1,
-            }}
-          >
-            {charmPetFinderEnabled ? 'Enabled' : 'Disabled'}
-          </button>
-        </div>
-        {error && (
-          <p className="mt-2 text-xs" style={{ color: '#f87171' }}>
-            {error}
-          </p>
-        )}
-      </section>
     </div>
   )
 }

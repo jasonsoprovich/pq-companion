@@ -117,8 +117,8 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		})
 		r.Post("/resist-check", resistCalc.check)
 		r.Get("/resist-debuffs", resistCalc.debuffs)
-		// Charm Pet Finder (developer-tab feature). Routes always exist; the
-		// page is gated client-side by the charm_pet_finder_enabled flag.
+		// Charm Pet Finder: lists a zone's charmable NPCs for a charm
+		// class/spell, ranked by DPS, with level-cap warnings and land odds.
 		r.Route("/charm", func(r chi.Router) {
 			r.Get("/spells", charmH.spells)
 			r.Get("/pets", charmH.pets)
