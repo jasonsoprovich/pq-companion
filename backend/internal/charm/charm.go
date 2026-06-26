@@ -131,51 +131,45 @@ func DPS(minDmg, maxDmg, attackDelay int) float64 {
 	return avg / (float64(attackDelay) / 10)
 }
 
-// CatalogEntry pins a charm spell to a class and the level at which that class
-// learns it. The spell's id, maximum charmable NPC level, resist data and body
-// restriction are resolved from quarm.db at request time by name.
-type CatalogEntry struct {
-	Name     string
-	ReqLevel int
-}
-
-// catalog is the per-class charm spell line. Req levels are the Quarm-era values
-// for each class. Dire Charm is intentionally absent: it has no row in quarm.db
-// (the spell isn't in this era's spell table), so it can't be resolved, scored,
-// or land-checked.
-var catalog = map[int][]CatalogEntry{
+// catalog is the per-class charm spell line, by spell name. The catalog only
+// pins class membership (the spells_new.classesN columns can't reliably tell
+// enchanter from bard on shared target types, and don't name the line); the
+// required level, era availability, maximum charmable NPC level, resist data
+// and body restriction are all resolved live from quarm.db at request time.
+//
+// Era gating is data-driven: a charm's required level is read from the spell's
+// classesN column, which on Quarm encodes era — Planes-of-Power charms sit above
+// the level 60 cap (Beckon 62, Command of Druzzil 64, Word of Terris 65, Command
+// of Tunare 63, Call of the Banshee 64), so they fall out automatically while the
+// pop_enabled flag is off and reappear when it's on (cap 65).
+//
+// Dire Charm is intentionally absent: it has no row in quarm.db (the spell isn't
+// in this era's spell table), so it can't be resolved, scored, or land-checked.
+var catalog = map[int][]string{
 	classEnchanter: {
-		{"Charm", 12},
-		{"Beguile", 29},
-		{"Cajoling Whispers", 39},
-		{"Allure", 49},
-		{"Boltran's Agacerie", 53},
-		{"Beckon", 57},
-		{"Dictate", 58},
-		{"Command of Druzzil", 64},
+		"Charm", "Beguile", "Cajoling Whispers", "Allure",
+		"Boltran's Agacerie", "Beckon", "Dictate", "Command of Druzzil",
 	},
 	classNecromancer: {
-		{"Dominate Undead", 18},
-		{"Beguile Undead", 39},
-		{"Cajole Undead", 49},
-		{"Thrall of Bones", 53},
-		{"Enslave Death", 55},
-		{"Word of Terris", 60},
+		"Dominate Undead", "Beguile Undead", "Cajole Undead",
+		"Thrall of Bones", "Enslave Death", "Word of Terris",
 	},
 	classDruid: {
-		{"Befriend Animal", 14},
-		{"Charm Animals", 29},
-		{"Tunare's Request", 34},
-		{"Beguile Animals", 39},
-		{"Allure of the Wild", 49},
-		{"Call of Karana", 53},
-		{"Command of Tunare", 60},
+		"Befriend Animal", "Charm Animals", "Tunare's Request", "Beguile Animals",
+		"Allure of the Wild", "Call of Karana", "Command of Tunare",
 	},
 	classBard: {
-		{"Solon's Song of the Sirens", 27},
-		{"Solon's Bewitching Bravura", 51},
-		{"Call of the Banshee", 57},
+		"Solon's Song of the Sirens", "Solon's Bewitching Bravura", "Call of the Banshee",
 	},
+}
+
+// researchLevels overrides the required level for charm spells whose classesN
+// column reads 255 (not trainer-taught) but which are nonetheless obtainable in
+// the current pre-PoP era via spell research. Without this they'd be wrongly
+// dropped as "not castable". Boltran's Agacerie is the canonical case: a Luclin
+// research spell and the standard level-53 enchanter charm.
+var researchLevels = map[string]int{
+	"Boltran's Agacerie": 53,
 }
 
 // Classes returns the charm-capable class indices, highest-tier line last.
@@ -189,10 +183,17 @@ func IsCharmClass(classIdx int) bool {
 	return ok
 }
 
-// SpellsForClass returns the curated charm catalog for a class, or nil when the
+// SpellsForClass returns the charm spell names for a class, or nil when the
 // class can't charm.
-func SpellsForClass(classIdx int) []CatalogEntry {
+func SpellsForClass(classIdx int) []string {
 	return catalog[classIdx]
+}
+
+// ResearchLevel returns the pre-PoP usable level for a research charm spell
+// whose classesN column reads 255, and whether such an override exists.
+func ResearchLevel(name string) (int, bool) {
+	lvl, ok := researchLevels[name]
+	return lvl, ok
 }
 
 // CharmEffectSPA is exported so the api layer reads the same SPA id when pulling

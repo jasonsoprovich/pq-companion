@@ -91,12 +91,8 @@ func (h *charmHandler) spells(w http.ResponseWriter, r *http.Request) {
 	maxLevel := era.MaxLevel(h.cfgMgr.Get().Preferences.PoPEnabled)
 
 	opts := []charmSpellOption{}
-	for _, entry := range charm.SpellsForClass(classIdx) {
-		// Era gate: a spell the class can't reach this era is hidden entirely.
-		if entry.ReqLevel > maxLevel {
-			continue
-		}
-		spell, err := h.db.GetSpellByExactName(entry.Name)
+	for _, name := range charm.SpellsForClass(classIdx) {
+		spell, err := h.db.GetSpellByExactName(name)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -106,10 +102,25 @@ func (h *charmHandler) spells(w http.ResponseWriter, r *http.Request) {
 			// skip rather than surface a half-populated option.
 			continue
 		}
+		// Required level comes from the spell's own class column (quarm.db),
+		// which encodes era: PoP charms sit above the level-60 cap and so fall
+		// out while pop_enabled is off. A 255 means "not trainer-taught" —
+		// available only if it's a known pre-PoP research spell.
+		reqLevel := spell.ClassLevels[classIdx]
+		if reqLevel == 255 {
+			override, ok := charm.ResearchLevel(name)
+			if !ok {
+				continue
+			}
+			reqLevel = override
+		}
+		if reqLevel < 1 || reqLevel > maxLevel {
+			continue
+		}
 		opts = append(opts, charmSpellOption{
 			SpellID:       spell.ID,
-			Name:          entry.Name,
-			ReqLevel:      entry.ReqLevel,
+			Name:          name,
+			ReqLevel:      reqLevel,
 			MaxCharmLevel: charmMaxLevel(spell),
 			Restriction:   charm.RestrictionForTargetType(spell.TargetType).String(),
 		})
