@@ -18,6 +18,7 @@ export type OverlayName =
   | 'detrimTimer'
   | 'customTimer'
   | 'npc'
+  | 'threat'
   | 'rollTracker'
   | 'respawnTimer'
   | 'chChain'
@@ -44,6 +45,7 @@ export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'detrimTimer', label: 'Detrimental Timers' },
   { name: 'customTimer', label: 'Custom Timers' },
   { name: 'npc', label: 'NPC Info' },
+  { name: 'threat', label: 'Threat Meter' },
   { name: 'rollTracker', label: 'Roll Tracker' },
   { name: 'respawnTimer', label: 'Respawn Timers' },
   { name: 'chChain', label: 'CH Chain' },

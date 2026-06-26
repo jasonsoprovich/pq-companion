@@ -26,6 +26,29 @@ export interface TargetVariant {
   caster_summary?: NPCCasterSummary
 }
 
+// MobThreat is the player's estimated personal hate into one mob (mirrors the
+// Go threat.MobThreat). hate is floored at zero; tps is hate-per-second.
+export interface MobThreat {
+  name: string
+  hate: number
+  tps: number
+  is_target: boolean
+}
+
+// ThreatState mirrors the Go threat.ThreatState broadcast on overlay:threat.
+// It is an estimate of the active character's OWN hate per mob, derived from
+// that character's own log lines — see internal/threat for the model and its
+// limitations.
+export interface ThreatState {
+  in_combat: boolean
+  // target is the highlighted mob (current Zeal target, else most-recently
+  // engaged). Absent when nothing is tracked; mirrors an entry in mobs.
+  target?: MobThreat
+  mobs: MobThreat[]
+  hatemod_pct: number
+  last_updated: string
+}
+
 export interface TargetState {
   has_target: boolean
   target_name?: string

@@ -18,13 +18,16 @@ import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
 import HPSPanel from '../components/overlays/HPSPanel'
 import NPCPanel from '../components/overlays/NPCPanel'
+import ThreatPanel from '../components/overlays/ThreatPanel'
 import RollTrackerPanel from '../components/overlays/RollTrackerPanel'
 import RespawnTimerPanel from '../components/overlays/RespawnTimerPanel'
 import CHChainPanel from '../components/overlays/CHChainPanel'
 import CHMetronomePanel from '../components/overlays/CHMetronomePanel'
 import CustomTimerPanel from '../components/overlays/CustomTimerPanel'
 import { ConfirmModal } from '../components/ConfirmModal'
-import { clearTimers } from '../services/api'
+import { clearTimers, getConfig } from '../services/api'
+import { useWebSocket } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 import {
   DASHBOARD_PANEL_KEYS,
   DASHBOARD_PANEL_LABELS,
@@ -58,6 +61,7 @@ const PANEL_POPOUT: Record<DashboardPanelKey, { name: OverlayName; toggle: () =>
   detrim:      { name: 'detrimTimer',  toggle: () => { window.electron?.overlay?.toggleDetrimTimer() } },
   dps:         { name: 'dps',          toggle: () => { window.electron?.overlay?.toggleDPS() } },
   npc:         { name: 'npc',          toggle: () => { window.electron?.overlay?.toggleNPC() } },
+  threat:      { name: 'threat',       toggle: () => { window.electron?.overlay?.toggleThreat() } },
   hps:         { name: 'hps',          toggle: () => { window.electron?.overlay?.toggleHPS() } },
   rolls:       { name: 'rollTracker',  toggle: () => { window.electron?.overlay?.toggleRollTracker() } },
   respawn:     { name: 'respawnTimer', toggle: () => { window.electron?.overlay?.toggleRespawnTimer() } },
@@ -337,6 +341,29 @@ export default function OverlaysDashboard(): React.ReactElement {
   // new initial values.
   const [layoutVersion, setLayoutVersion] = useState(0)
 
+  // The Threat Meter is a dev-gated experimental overlay (threat_meter_enabled).
+  // Fetch the flag on mount and keep it live via config:updated so toggling it
+  // in the Developer tab shows/hides the card without reloading the app.
+  const [threatEnabled, setThreatEnabled] = useState(false)
+  useEffect(() => {
+    getConfig()
+      .then((c) => setThreatEnabled(Boolean(c?.preferences?.threat_meter_enabled)))
+      .catch(() => {})
+  }, [])
+  const handleConfigWs = useCallback((msg: { type: string; data: unknown }) => {
+    if (msg.type !== WSEvent.ConfigUpdated) return
+    const c = msg.data as { preferences?: { threat_meter_enabled?: boolean } }
+    setThreatEnabled(Boolean(c?.preferences?.threat_meter_enabled))
+  }, [])
+  useWebSocket(handleConfigWs)
+
+  // Panel keys actually offered in the UI: hps is gated by SHOW_HPS (module
+  // level) and threat by the dev flag above.
+  const visiblePanelKeys = useMemo(
+    () => (threatEnabled ? VISIBLE_PANEL_KEYS : VISIBLE_PANEL_KEYS.filter((k) => k !== 'threat')),
+    [threatEnabled],
+  )
+
   useEffect(() => {
     saveDashboardLayout(layout)
   }, [layout])
@@ -503,14 +530,14 @@ export default function OverlaysDashboard(): React.ReactElement {
   const sizerExtent = useMemo(() => {
     let maxRight = 0
     let maxBottom = 0
-    for (const key of VISIBLE_PANEL_KEYS) {
+    for (const key of visiblePanelKeys) {
       const p = layout[key]
       if (!p.visible) continue
       if (p.x + p.width > maxRight) maxRight = p.x + p.width
       if (p.y + p.height > maxBottom) maxBottom = p.y + p.height
     }
     return { width: maxRight + CANVAS_PADDING, height: maxBottom + CANVAS_PADDING }
-  }, [layout])
+  }, [layout, visiblePanelKeys])
 
   const handleTogglePopouts = useCallback(() => {
     const o = window.electron?.overlay
@@ -522,11 +549,11 @@ export default function OverlaysDashboard(): React.ReactElement {
       // Only pop out overlays the user has toggled visible in the dashboard —
       // a panel hidden here shouldn't open as a floating window. Trigger Alerts
       // has no dashboard toggle and is always included by the main process.
-      const visiblePanels = VISIBLE_PANEL_KEYS.filter((k) => layout[k].visible)
+      const visiblePanels = visiblePanelKeys.filter((k) => layout[k].visible)
       o.openAllPopouts(visiblePanels).catch(() => {})
       setAnyPopoutOpen(true)
     }
-  }, [anyPopoutOpen, layout])
+  }, [anyPopoutOpen, layout, visiblePanelKeys])
 
   return (
     <div
@@ -557,7 +584,7 @@ export default function OverlaysDashboard(): React.ReactElement {
 
         <div className="flex items-center gap-2 shrink-0">
           <OverlaysManager
-            panelKeys={VISIBLE_PANEL_KEYS}
+            panelKeys={visiblePanelKeys}
             labels={DASHBOARD_PANEL_LABELS}
             layout={layout}
             onToggleVisible={toggleVisible}
@@ -653,6 +680,17 @@ export default function OverlaysDashboard(): React.ReactElement {
             defaultHeight={layout.npc.height}
             snapGridSize={SNAP_GRID}
             onLayoutChange={handleLayoutChange('npc')}
+          />
+        )}
+        {threatEnabled && layout.threat.visible && (
+          <ThreatPanel
+            key={`threat-${layoutVersion}`}
+            defaultX={layout.threat.x}
+            defaultY={layout.threat.y}
+            defaultWidth={layout.threat.width}
+            defaultHeight={layout.threat.height}
+            snapGridSize={SNAP_GRID}
+            onLayoutChange={handleLayoutChange('threat')}
           />
         )}
         {SHOW_HPS && layout.hps.visible && (

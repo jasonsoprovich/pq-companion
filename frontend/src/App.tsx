@@ -59,6 +59,7 @@ const ChatHistoryPage = lazy(() => import('./pages/ChatHistoryPage'))
 const LootTrackerPage = lazy(() => import('./pages/LootTrackerPage'))
 const TriggerOverlayWindowPage = lazy(() => import('./pages/TriggerOverlayWindowPage'))
 const NPCOverlayWindowPage = lazy(() => import('./pages/NPCOverlayWindowPage'))
+const ThreatOverlayWindowPage = lazy(() => import('./pages/ThreatOverlayWindowPage'))
 const CharactersPage = lazy(() => import('./pages/CharactersPage'))
 const CharacterProgressPage = lazy(() => import('./pages/CharacterProgressPage'))
 const CharacterTasksPage = lazy(() => import('./pages/CharacterTasksPage'))
@@ -165,6 +166,7 @@ export default function App(): React.ReactElement {
         <Route path="custom-timer-window" element={<OverlayPage><CustomTimerWindowPage /></OverlayPage>} />
         <Route path="trigger-overlay-window" element={<OverlayPage><TriggerOverlayWindowPage /></OverlayPage>} />
         <Route path="npc-overlay-window" element={<OverlayPage><NPCOverlayWindowPage /></OverlayPage>} />
+        <Route path="threat-overlay-window" element={<OverlayPage><ThreatOverlayWindowPage /></OverlayPage>} />
         <Route path="roll-tracker-window" element={<OverlayPage><RollTrackerWindowPage /></OverlayPage>} />
         <Route path="respawn-timer-window" element={<OverlayPage><RespawnTimerWindowPage /></OverlayPage>} />
         <Route path="ch-chain-window" element={<OverlayPage><CHChainOverlayWindowPage /></OverlayPage>} />

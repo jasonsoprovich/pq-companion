@@ -24,7 +24,7 @@ import type {
 } from '../types/lockouts'
 import type { Backup, BackupsResponse } from '../types/backup'
 import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
-import type { TargetState } from '../types/overlay'
+import type { TargetState, ThreatState } from '../types/overlay'
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { RespawnState } from '../types/respawn'
@@ -1087,6 +1087,14 @@ export function getCombatState(): Promise<CombatState> {
 
 export function resetCombatState(): Promise<void> {
   return post<void>('/api/combat/reset')
+}
+
+export function getThreatState(): Promise<ThreatState> {
+  return get<ThreatState>('/api/overlay/threat')
+}
+
+export function resetThreat(): Promise<void> {
+  return post<void>('/api/threat/reset')
 }
 
 // ── Combat history (persisted) ─────────────────────────────────────────────

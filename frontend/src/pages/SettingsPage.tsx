@@ -2948,6 +2948,7 @@ const OVERLAY_POPOUT_TOGGLE: Record<OverlayName, () => void> = {
   detrimTimer:  () => { window.electron?.overlay?.toggleDetrimTimer() },
   customTimer:  () => { window.electron?.overlay?.toggleCustomTimer() },
   npc:          () => { window.electron?.overlay?.toggleNPC() },
+  threat:       () => { window.electron?.overlay?.toggleThreat() },
   rollTracker:  () => { window.electron?.overlay?.toggleRollTracker() },
   respawnTimer: () => { window.electron?.overlay?.toggleRespawnTimer() },
   chChain:      () => { window.electron?.overlay?.toggleCHChain() },

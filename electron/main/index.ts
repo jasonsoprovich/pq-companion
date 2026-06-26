@@ -189,7 +189,7 @@ function audioMimeType(ext: string): string {
 
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
-type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome'
+type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome'
 type Bounds = { x: number; y: number; width: number; height: number }
 
 type BoundsStore = Partial<Record<OverlayName, Bounds>>
@@ -207,6 +207,7 @@ const OVERLAY_DEFAULTS: Record<Exclude<OverlayName, 'trigger'>, Bounds> = {
   detrimTimer: { x: 0, y: 0, width: 300, height: 320 },
   customTimer: { x: 0, y: 0, width: 280, height: 280 },
   npc: { x: 0, y: 0, width: 360, height: 480 },
+  threat: { x: 0, y: 0, width: 288, height: 384 },
   rollTracker: { x: 0, y: 0, width: 320, height: 360 },
   respawnTimer: { x: 0, y: 0, width: 300, height: 320 },
   chChain: { x: 0, y: 0, width: 260, height: 320 },
@@ -507,6 +508,7 @@ let detrimTimerWindow: BrowserWindow | null = null
 let customTimerWindow: BrowserWindow | null = null
 let triggerOverlayWindow: BrowserWindow | null = null
 let npcOverlayWindow: BrowserWindow | null = null
+let threatOverlayWindow: BrowserWindow | null = null
 let rollTrackerWindow: BrowserWindow | null = null
 let respawnTimerWindow: BrowserWindow | null = null
 let sidecarProcess: ChildProcess | null = null
@@ -814,7 +816,7 @@ function setupAutoUpdater(): void {
 // ── Window management ─────────────────────────────────────────────────────────
 
 function closeAllOverlays(): void {
-  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, customTimerWindow, triggerOverlayWindow, npcOverlayWindow, rollTrackerWindow, respawnTimerWindow, chChainWindow, chMetronomeWindow]) {
+  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, customTimerWindow, triggerOverlayWindow, npcOverlayWindow, threatOverlayWindow, rollTrackerWindow, respawnTimerWindow, chChainWindow, chMetronomeWindow]) {
     if (win && !win.isDestroyed()) win.destroy()
   }
 }
@@ -1480,6 +1482,62 @@ function createNPCOverlay(): void {
   })
 }
 
+// ── Threat meter overlay window ──────────────────────────────────────────────
+
+function createThreatOverlay(): void {
+  if (threatOverlayWindow && !threatOverlayWindow.isDestroyed()) {
+    threatOverlayWindow.focus()
+    return
+  }
+
+  const { x, y, width, height } = getRestoredBounds('threat', OVERLAY_DEFAULTS.threat)
+  threatOverlayWindow = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    minWidth: 200,
+    minHeight: 150,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    },
+  })
+
+  threatOverlayWindow.once('ready-to-show', () => {
+    threatOverlayWindow?.show()
+  })
+
+  threatOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
+  threatOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  windowToOverlayName.set(threatOverlayWindow, 'threat')
+  applyInitialOverlayInput(threatOverlayWindow, 'threat')
+  trackOverlayBounds('threat', threatOverlayWindow)
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    threatOverlayWindow.loadURL(`${rendererUrl}/#/threat-overlay-window`)
+  } else {
+    threatOverlayWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/threat-overlay-window',
+    })
+  }
+
+  threatOverlayWindow.on('closed', () => {
+    threatOverlayWindow = null
+  })
+}
+
 // ── Roll Tracker overlay window ──────────────────────────────────────────────
 
 function createRollTrackerOverlay(): void {
@@ -1908,6 +1966,24 @@ ipcMain.handle('overlay:npc:toggle', () => {
   }
 })
 
+ipcMain.handle('overlay:threat:open', () => {
+  createThreatOverlay()
+})
+
+ipcMain.handle('overlay:threat:close', () => {
+  if (threatOverlayWindow && !threatOverlayWindow.isDestroyed()) {
+    threatOverlayWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:threat:toggle', () => {
+  if (threatOverlayWindow && !threatOverlayWindow.isDestroyed()) {
+    threatOverlayWindow.close()
+  } else {
+    createThreatOverlay()
+  }
+})
+
 ipcMain.handle('overlay:rolltracker:open', () => {
   createRollTrackerOverlay()
 })
@@ -1942,6 +2018,7 @@ function userPopoutWindows(): BrowserWindow[] {
     detrimTimerWindow,
     customTimerWindow,
     npcOverlayWindow,
+    threatOverlayWindow,
     rollTrackerWindow,
     respawnTimerWindow,
     chChainWindow,
@@ -1966,6 +2043,7 @@ ipcMain.handle('overlay:popouts:open-all', (_event, panels?: string[]) => {
   if (wants('detrim') && (!detrimTimerWindow || detrimTimerWindow.isDestroyed())) createDetrimTimerOverlay()
   if (wants('custom') && (!customTimerWindow || customTimerWindow.isDestroyed())) createCustomTimerOverlay()
   if (wants('npc') && (!npcOverlayWindow || npcOverlayWindow.isDestroyed())) createNPCOverlay()
+  if (wants('threat') && (!threatOverlayWindow || threatOverlayWindow.isDestroyed())) createThreatOverlay()
   if (wants('rolls') && (!rollTrackerWindow || rollTrackerWindow.isDestroyed())) createRollTrackerOverlay()
   if (wants('respawn') && (!respawnTimerWindow || respawnTimerWindow.isDestroyed())) createRespawnTimerOverlay()
   if (wants('chChain') && (!chChainWindow || chChainWindow.isDestroyed())) createCHChainOverlay()
@@ -2028,6 +2106,7 @@ function overlayWindowByName(name: OverlayName): BrowserWindow | null {
     case 'customTimer': return customTimerWindow
     case 'trigger': return triggerOverlayWindow
     case 'npc': return npcOverlayWindow
+    case 'threat': return threatOverlayWindow
     case 'rollTracker': return rollTrackerWindow
     case 'respawnTimer': return respawnTimerWindow
     case 'chChain': return chChainWindow
@@ -2046,6 +2125,7 @@ function createOverlayByName(name: OverlayName): void {
     case 'detrimTimer': createDetrimTimerOverlay(); break
     case 'customTimer': createCustomTimerOverlay(); break
     case 'npc': createNPCOverlay(); break
+    case 'threat': createThreatOverlay(); break
     case 'rollTracker': createRollTrackerOverlay(); break
     case 'respawnTimer': createRespawnTimerOverlay(); break
     case 'chChain': createCHChainOverlay(); break

@@ -1,0 +1,123 @@
+/**
+ * ThreatOverlayWindowPage — transparent always-on-top overlay showing the
+ * active character's ESTIMATED personal hate per mob. Renders in a dedicated
+ * frameless Electron window. See internal/threat for the hate model.
+ */
+import React, { useCallback, useEffect, useState } from 'react'
+import { Gauge, Trash2 } from 'lucide-react'
+import { useWebSocket } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
+import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
+import { useOverlayLock } from '../hooks/useOverlayLock'
+import { useWindowDrag } from '../hooks/useWindowDrag'
+import OverlayLockButton from '../components/OverlayLockButton'
+import { getThreatState, resetThreat } from '../services/api'
+import { ThreatContent } from '../components/overlays/threatShared'
+import type { ThreatState } from '../types/overlay'
+
+export default function ThreatOverlayWindowPage(): React.ReactElement {
+  const opacity = useOverlayOpacity()
+  const chrome = useOverlayChromeFade()
+  const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
+    useOverlayLock('threat')
+  const onDragMouseDown = useWindowDrag()
+  const [state, setState] = useState<ThreatState | null>(null)
+
+  useEffect(() => {
+    getThreatState().then(setState).catch(() => {})
+  }, [])
+
+  const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
+    if (msg.type === WSEvent.OverlayThreat) {
+      setState(msg.data as ThreatState)
+    }
+  }, [])
+
+  useWebSocket(handleMessage)
+
+  return (
+    <div
+      {...rootInteractionProps}
+      style={{
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: `rgba(10,10,12,${chrome ? opacity : 0})`,
+        border: `1px solid rgba(255,255,255,${chrome ? 0.12 : 0})`,
+        transition: 'background-color 0.4s ease, border-color 0.4s ease',
+        borderRadius: 8,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        color: 'rgba(255,255,255,0.9)',
+      }}
+    >
+      {/* ── Drag handle / title bar ─────────────────────────────────────── */}
+      <div
+        {...headerInteractionProps}
+        onMouseDown={onDragMouseDown}
+        className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '5px 8px',
+          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          backgroundColor: 'rgba(255,255,255,0.04)',
+          flexShrink: 0,
+          userSelect: 'none',
+          opacity: chrome ? 1 : 0,
+          pointerEvents: chrome ? 'auto' : 'none',
+          transition: 'opacity 0.4s ease',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <Gauge size={11} style={{ color: '#c9a84c' }} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>
+            Threat
+          </span>
+        </div>
+        <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            onClick={() => resetThreat().catch(() => {})}
+            title="Reset threat"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '1px 5px',
+              borderRadius: 3,
+              border: '1px solid rgba(255,255,255,0.1)',
+              backgroundColor: 'transparent',
+              color: 'rgba(255,255,255,0.4)',
+              cursor: 'pointer',
+              lineHeight: 1,
+            }}
+          >
+            <Trash2 size={11} />
+          </button>
+          <OverlayLockButton locked={locked} onToggle={toggleLocked} />
+          <button
+            onClick={() => window.electron?.overlay?.closeThreat()}
+            style={{
+              fontSize: 11,
+              lineHeight: 1,
+              padding: '1px 5px',
+              borderRadius: 3,
+              border: '1px solid rgba(255,255,255,0.1)',
+              backgroundColor: 'transparent',
+              color: 'rgba(255,255,255,0.4)',
+              cursor: 'pointer',
+            }}
+            title="Close overlay"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+
+      {/* ── Threat body ──────────────────────────────────────────────────── */}
+      <ThreatContent state={state} />
+    </div>
+  )
+}

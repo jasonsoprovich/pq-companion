@@ -9,6 +9,7 @@ export const WSEvent = {
   OverlayRespawns: 'overlay:respawns',
   OverlayRolls: 'overlay:rolls',
   OverlayNPCTarget: 'overlay:npc_target',
+  OverlayThreat: 'overlay:threat',
   TriggerFired: 'trigger:fired',
   TriggerTest: 'trigger:test',
   TriggerTestPosition: 'trigger:test_position',

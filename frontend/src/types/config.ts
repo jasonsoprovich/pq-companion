@@ -102,6 +102,13 @@ export interface Preferences {
   // inventory exports. Power-user/experimental feature gated behind a
   // Developer-tab toggle. See pages/TraderTrackerPage.tsx.
   trader_tracker_enabled?: boolean
+  // Personal Threat Meter overlay: estimates the character's own per-mob hate
+  // from its own combat log lines. Experimental, gated behind a Developer-tab
+  // toggle. See components/overlays/ThreatPanel.tsx and internal/threat.
+  threat_meter_enabled?: boolean
+  // Static gear/AA hate modifier (signed %) applied to the Threat Meter's
+  // generated hate. Logs can't reveal it, so the user supplies it.
+  threat_hatemod_pct?: number
   npc_overlay_dashboard_sections: NPCOverlaySections
   npc_overlay_popout_sections: NPCOverlaySections
   // Per-overlay locked behaviour, keyed by canonical overlay name. Missing
