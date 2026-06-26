@@ -80,3 +80,18 @@ testdata/
 !backend/internal/lockout/testdata/
 backend/internal/lockout/testdata/*
 !backend/internal/lockout/testdata/sll-sample.log
+
+# Trigger import sample packs (shareable trigger exports, not personal game
+# logs) — committed so the GINA/EQNag/EQLogParser/PQC parsers run in CI.
+!backend/internal/trigger/testdata/
+backend/internal/trigger/testdata/*
+!backend/internal/trigger/testdata/import/
+backend/internal/trigger/testdata/import/*
+!backend/internal/trigger/testdata/import/CharmBreak_ShareData.xml
+!backend/internal/trigger/testdata/import/eqlogparser-triggers.tgf
+!backend/internal/trigger/testdata/import/eqnag-trigger-database.json
+!backend/internal/trigger/testdata/import/GINA_FromJemi.gtp
+!backend/internal/trigger/testdata/import/GINA_Generic.gtp
+!backend/internal/trigger/testdata/import/Grokii_GINA_CharmBreak.gtp
+!backend/internal/trigger/testdata/import/Grokii_GINA_Enchanter.gtp
+!backend/internal/trigger/testdata/import/pq-triggers.json
