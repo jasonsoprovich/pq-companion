@@ -437,25 +437,52 @@ func liveFor(s ThreatState, mob string) float64 {
 // TestLiveTPSRollingWindow verifies the live rate is recent-hate / tpsWindow,
 // stays put while the hate is inside the window, and decays to zero once the
 // only sample ages out — even with no new events (the ticker drives the
-// re-snapshot in production; here we call snapshotLocked at chosen times).
+// re-snapshot in production; here we drive the injectable receive clock).
 func TestLiveTPSRollingWindow(t *testing.T) {
 	tr := NewTracker(nil, nil, nil)
 	t0 := time.Now()
-	tr.Handle(hit("a gnoll", 600, t0)) // 600 / 6s window = 100/s
+	clk := t0
+	tr.nowFn = func() time.Time { return clk } // controllable receive clock
 
-	snap := func(now time.Time) ThreatState {
+	tr.Handle(hit("a gnoll", 600, t0)) // sample stamped at clk == t0; 600/6s = 100/s
+
+	live := func() float64 {
 		tr.mu.Lock()
 		defer tr.mu.Unlock()
-		return tr.snapshotLocked(now)
+		return liveFor(tr.snapshotLocked(clk), "a gnoll")
 	}
 
-	if got := liveFor(snap(t0), "a gnoll"); got != 100 {
+	if got := live(); got != 100 {
 		t.Errorf("live tps at t0 = %v, want 100", got)
 	}
-	if got := liveFor(snap(t0.Add(5*time.Second)), "a gnoll"); got != 100 {
+	clk = t0.Add(5 * time.Second)
+	if got := live(); got != 100 {
 		t.Errorf("live tps inside window = %v, want 100", got)
 	}
-	if got := liveFor(snap(t0.Add(7*time.Second)), "a gnoll"); got != 0 {
+	clk = t0.Add(7 * time.Second)
+	if got := live(); got != 0 {
 		t.Errorf("live tps after window = %v, want 0 (decayed)", got)
+	}
+}
+
+// TestLiveTPSReplaySafe guards the bug the receive-clock design fixes: events
+// carrying historical log timestamps (as the replayer feeds them) must still
+// produce a live rate, because the window is measured on the receive clock, not
+// the event timestamp.
+func TestLiveTPSReplaySafe(t *testing.T) {
+	tr := NewTracker(nil, nil, nil)
+	// Event timestamp is months in the past, like a replayed log line...
+	histTS := time.Now().Add(-90 * 24 * time.Hour)
+	// ...but it is received now.
+	clk := time.Now()
+	tr.nowFn = func() time.Time { return clk }
+
+	tr.Handle(hit("a gnoll", 600, histTS))
+
+	tr.mu.Lock()
+	got := liveFor(tr.snapshotLocked(histTS), "a gnoll")
+	tr.mu.Unlock()
+	if got != 100 {
+		t.Errorf("live tps for replayed (historical) event = %v, want 100", got)
 	}
 }

@@ -91,6 +91,15 @@ type Tracker struct {
 	// supplied by the user in settings (logs can't reveal it). Read live so a
 	// settings change takes effect immediately. May be nil (treated as 0).
 	hatemodFn func() int
+
+	// nowFn is the receive clock for the live (rolling-window) rate: hate
+	// samples are stamped with it and the window is measured against it. It is
+	// deliberately NOT the event's log timestamp — both the live tailer and the
+	// replayer feed events in real wall-clock order, so a wall clock gives a
+	// consistent window in both modes (a replayed historical log would otherwise
+	// always read zero, its samples being months older than time.Now()).
+	// Overridable in tests. Defaults to time.Now.
+	nowFn func() time.Time
 }
 
 // NewTracker returns an initialised threat Tracker. calc may be nil, in which
@@ -104,6 +113,7 @@ func NewTracker(hub *ws.Hub, calc *Calculator, hatemodFn func() int) *Tracker {
 		mobs:      make(map[string]*mobState),
 		mods:      make(map[string]*modState),
 		hatemodFn: hatemodFn,
+		nowFn:     time.Now,
 	}
 }
 
@@ -246,7 +256,9 @@ func (t *Tracker) addHateLocked(mob string, amount float64, ts time.Time) {
 	m := t.ensureMobLocked(mob, ts)
 	m.hate += adjusted
 	m.last = ts
-	m.recent = append(m.recent, hateSample{ts: ts, amt: adjusted})
+	// Stamp with the receive clock (not the event ts) so the live window is
+	// wall-clock consistent in both live-tail and replay modes — see nowFn.
+	m.recent = append(m.recent, hateSample{ts: t.nowFn(), amt: adjusted})
 	t.armExpiryLocked(mob, m)
 }
 
@@ -442,13 +454,13 @@ func (t *Tracker) RunLiveTicker(ctx context.Context, interval time.Duration) {
 		select {
 		case <-ctx.Done():
 			return
-		case now := <-ticker.C:
+		case <-ticker.C:
 			t.mu.Lock()
 			if len(t.mobs) == 0 {
 				t.mu.Unlock()
 				continue
 			}
-			snap := t.snapshotLocked(now)
+			snap := t.snapshotLocked(t.nowFn())
 			t.mu.Unlock()
 			t.broadcast(snap)
 		}
@@ -483,7 +495,10 @@ func (t *Tracker) snapshotLocked(now time.Time) ThreatState {
 			Name:     name,
 			Hate:     int64(hate + 0.5),
 			TPS:      tps,
-			LiveTPS:  liveTPSLocked(m, now),
+			// Live rate is measured on the receive clock (nowFn), independent of
+			// the snapshot's event-time `now`, so event-driven and ticker-driven
+			// snapshots agree.
+			LiveTPS:  liveTPSLocked(m, t.nowFn()),
 			IsTarget: name == highlight,
 		})
 	}
