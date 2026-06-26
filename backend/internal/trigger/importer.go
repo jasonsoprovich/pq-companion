@@ -195,11 +195,6 @@ func parsePQCImport(data []byte, sourceName string) (ImportPreview, error) {
 	return ImportPreview{Format: FormatPQC, SourceName: name, Triggers: out}, nil
 }
 
-// parseEQLogParserImport is implemented in phase 3 (importer_eqlogparser.go).
-func parseEQLogParserImport(data []byte, sourceName string) (ImportPreview, error) {
-	return ImportPreview{}, fmt.Errorf("EQLogParser import is coming in a later update")
-}
-
 // dollarBraceRe matches GINA/EQNag braced-dollar capture references like
 // ${2} or ${SpellBeingCast} in action text. We rewrite them to our native
 // {2} / {SpellBeingCast} form at import time so the runtime engine — which
