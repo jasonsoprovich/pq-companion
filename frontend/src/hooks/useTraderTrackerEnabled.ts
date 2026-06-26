@@ -7,7 +7,7 @@ import type { Config } from '../types/config'
 // (preferences.trader_tracker_enabled). It reads the config once on mount and
 // tracks live changes via the config:updated broadcast, so flipping the
 // Developer-tab toggle shows/hides the nav entry without a reload. Defaults to
-// false until the config loads. Mirrors useResistCalcEnabled.
+// false until the config loads.
 export function useTraderTrackerEnabled(): boolean {
   const [enabled, setEnabled] = useState(false)
 

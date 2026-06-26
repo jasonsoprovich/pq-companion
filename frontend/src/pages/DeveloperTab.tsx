@@ -100,7 +100,6 @@ function FlagsPanel(): React.ReactElement {
   }, [])
 
   const popEnabled = Boolean(config?.preferences?.pop_enabled)
-  const resistCalcEnabled = Boolean(config?.preferences?.resist_calc_enabled)
   const traderTrackerEnabled = Boolean(config?.preferences?.trader_tracker_enabled)
 
   const togglePoP = (): void => {
@@ -116,18 +115,6 @@ function FlagsPanel(): React.ReactElement {
       .finally(() => setSaving(false))
   }
 
-  const toggleResistCalc = (): void => {
-    if (!config || saving) return
-    setSaving(true)
-    setError(null)
-    updateConfig({
-      ...config,
-      preferences: { ...config.preferences, resist_calc_enabled: !resistCalcEnabled },
-    })
-      .then(setConfig)
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setSaving(false))
-  }
 
   const toggleTraderTracker = (): void => {
     if (!config || saving) return
@@ -183,54 +170,6 @@ function FlagsPanel(): React.ReactElement {
             }}
           >
             {popEnabled ? 'Enabled' : 'Disabled'}
-          </button>
-        </div>
-        {error && (
-          <p className="mt-2 text-xs" style={{ color: '#f87171' }}>
-            {error}
-          </p>
-        )}
-      </section>
-
-      <section
-        className="rounded-lg p-4"
-        style={{
-          backgroundColor: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-        }}
-      >
-        <div className="mb-3 flex items-center gap-2">
-          <FlaskConical size={14} style={{ color: 'var(--color-primary)' }} />
-          <h2
-            className="text-sm font-semibold uppercase tracking-wide"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            Resist calculator
-          </h2>
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-            Adds a Resist Calculator page (under Database in the nav) that
-            estimates the odds a spell lands on a targeted NPC, given your level
-            and the NPC&rsquo;s resists. The underlying resist math is a
-            community-reverse-engineered, worst-case approximation &mdash; this
-            is a power-user/testing feature while its accuracy is validated, so
-            it&rsquo;s off by default.
-          </p>
-          <button
-            type="button"
-            onClick={toggleResistCalc}
-            disabled={!config || saving}
-            className="shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors"
-            style={{
-              backgroundColor: resistCalcEnabled ? 'var(--color-primary)' : 'var(--color-surface-2)',
-              color: resistCalcEnabled ? 'var(--color-background)' : 'var(--color-muted-foreground)',
-              border: '1px solid var(--color-border)',
-              cursor: !config || saving ? 'default' : 'pointer',
-              opacity: !config || saving ? 0.6 : 1,
-            }}
-          >
-            {resistCalcEnabled ? 'Enabled' : 'Disabled'}
           </button>
         </div>
         {error && (

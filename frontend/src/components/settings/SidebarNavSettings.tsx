@@ -9,11 +9,10 @@ import { NAV_SECTIONS, visibleNavSections, orderItems, type NavItem, type NavSec
 type SecOrder = Record<string, string[]>
 
 // navFlags maps the Developer-tab flags that gate optional nav tabs to their
-// enabled state, so gated tabs (Resist Calculator, Trader Tracker) only show in
-// this editor while their flag is on — matching the live sidebar.
+// enabled state, so gated tabs (Trader Tracker) only show in this editor while
+// their flag is on — matching the live sidebar.
 function navFlags(c: Config | null): Record<string, boolean> {
   return {
-    resist_calc_enabled: Boolean(c?.preferences?.resist_calc_enabled),
     trader_tracker_enabled: Boolean(c?.preferences?.trader_tracker_enabled),
   }
 }

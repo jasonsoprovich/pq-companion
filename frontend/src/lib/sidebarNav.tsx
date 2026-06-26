@@ -41,9 +41,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/recipes', label: 'Recipes', icon: <Hammer size={16} /> },
       { to: '/quests', label: 'Quests', icon: <ScrollText size={16} /> },
       { to: '/charm-pet-finder', label: 'Charm Pet Finder', icon: <PawPrint size={16} /> },
-      // Developer-tab-gated tools: present in the Navigation editor and sidebar
-      // only while their flag is on (see visibleNavSections).
-      { to: '/resist-calc', label: 'Resist Calculator', icon: <Percent size={16} />, flag: 'resist_calc_enabled' },
+      { to: '/resist-calc', label: 'Resist Calculator', icon: <Percent size={16} /> },
     ],
   },
   {
