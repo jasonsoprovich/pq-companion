@@ -113,6 +113,7 @@ function OverlaysManager({
   placingNames,
   onMovePanel,
   anyPopoutOpen,
+  onMenuOpen,
   onTogglePopouts,
   onResetPositions,
   onResetLayout,
@@ -131,6 +132,7 @@ function OverlaysManager({
   placingNames: string[]
   onMovePanel: (key: DashboardPanelKey) => void
   anyPopoutOpen: boolean
+  onMenuOpen: () => void
   onTogglePopouts: () => void
   onResetPositions: () => void
   onResetLayout: () => void
@@ -142,15 +144,17 @@ function OverlaysManager({
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
-  // Close on outside click.
+  // Close on outside click. Also re-read popout state each time the menu opens
+  // so the bulk-action label and per-overlay indicators are fresh on display.
   useEffect(() => {
     if (!open) return
+    onMenuOpen()
     const onDown = (e: MouseEvent): void => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
-  }, [open])
+  }, [open, onMenuOpen])
 
   const actionBtn = {
     backgroundColor: 'var(--color-surface)',
@@ -456,6 +460,19 @@ export default function OverlaysDashboard(): React.ReactElement {
     return () => { cancelled = true; clearInterval(id) }
   }, [])
 
+  // Re-read popout open-state on demand — used when the Manage overlays menu
+  // opens so the "Pop Out All / Close All Popouts" label and per-overlay Pop
+  // indicators reflect reality immediately instead of waiting for the next
+  // 1.5s poll. Matters right after launch, when overlays may already be open
+  // (e.g. restored by "Restore overlays on launch"): the label must start on
+  // "Close All Popouts" rather than briefly showing the wrong text.
+  const refreshPopouts = useCallback(() => {
+    const o = window.electron?.overlay
+    if (!o) return
+    o.anyPopoutOpen?.().then(setAnyPopoutOpen).catch(() => {})
+    o.popoutStates?.().then(setPopoutStates).catch(() => {})
+  }, [])
+
   // Multi-monitor: pick which monitor trigger alert text (and the positioning
   // card) appears on. The trigger overlay covers exactly that one monitor —
   // spanning the whole desktop is unreliable across mixed-DPI screens. The
@@ -550,6 +567,7 @@ export default function OverlaysDashboard(): React.ReactElement {
             placingNames={placingNames}
             onMovePanel={toggleMovePanel}
             anyPopoutOpen={anyPopoutOpen}
+            onMenuOpen={refreshPopouts}
             onTogglePopouts={handleTogglePopouts}
             onResetPositions={() => setShowResetConfirm(true)}
             onResetLayout={handleReset}
