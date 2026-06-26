@@ -325,7 +325,7 @@ export default function CharmPetFinderPage(): React.ReactElement {
                 </option>
               )}
               {spellOptions.map((o) => (
-                <option key={o.spell_id} value={o.spell_id} disabled={o.req_level > level}>
+                <option key={o.spell_id} value={o.spell_id}>
                   {o.name} — caps L{o.max_charm_level} (req {o.req_level})
                   {o.req_level > level ? ' — not yet' : ''}
                 </option>
