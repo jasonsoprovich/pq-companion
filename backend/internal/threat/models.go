@@ -41,6 +41,12 @@ type MobThreat struct {
 	// TPS is hate-per-second over the engagement span (first to last hate event
 	// on this mob), the rough analogue of the DPS meter's personal DPS.
 	TPS float64 `json:"tps"`
+	// LiveTPS is the recent, rolling-window hate rate: hate generated on this mob
+	// in the last tpsWindow seconds divided by that window. Unlike TPS (a
+	// lifetime average that converges and barely moves), this rises during a
+	// burst and decays toward zero once you stop generating hate, so the overlay
+	// can show a responsive "live" meter.
+	LiveTPS float64 `json:"tps_live"`
 	// IsTarget marks the mob the overlay should highlight: the player's current
 	// target (from the Zeal pipe) when available, otherwise the most recently
 	// engaged mob.

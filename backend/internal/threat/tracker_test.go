@@ -422,3 +422,40 @@ func TestFeignDeathClearsAll(t *testing.T) {
 		t.Error("InCombat = true after feign death, want all cleared")
 	}
 }
+
+// liveFor returns the live (rolling-window) hate rate for a mob, or -1 if
+// untracked.
+func liveFor(s ThreatState, mob string) float64 {
+	for _, m := range s.Mobs {
+		if m.Name == mob {
+			return m.LiveTPS
+		}
+	}
+	return -1
+}
+
+// TestLiveTPSRollingWindow verifies the live rate is recent-hate / tpsWindow,
+// stays put while the hate is inside the window, and decays to zero once the
+// only sample ages out — even with no new events (the ticker drives the
+// re-snapshot in production; here we call snapshotLocked at chosen times).
+func TestLiveTPSRollingWindow(t *testing.T) {
+	tr := NewTracker(nil, nil, nil)
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 600, t0)) // 600 / 6s window = 100/s
+
+	snap := func(now time.Time) ThreatState {
+		tr.mu.Lock()
+		defer tr.mu.Unlock()
+		return tr.snapshotLocked(now)
+	}
+
+	if got := liveFor(snap(t0), "a gnoll"); got != 100 {
+		t.Errorf("live tps at t0 = %v, want 100", got)
+	}
+	if got := liveFor(snap(t0.Add(5*time.Second)), "a gnoll"); got != 100 {
+		t.Errorf("live tps inside window = %v, want 100", got)
+	}
+	if got := liveFor(snap(t0.Add(7*time.Second)), "a gnoll"); got != 0 {
+		t.Errorf("live tps after window = %v, want 0 (decayed)", got)
+	}
+}

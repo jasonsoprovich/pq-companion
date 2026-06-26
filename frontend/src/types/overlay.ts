@@ -27,11 +27,15 @@ export interface TargetVariant {
 }
 
 // MobThreat is the player's estimated personal hate into one mob (mirrors the
-// Go threat.MobThreat). hate is floored at zero; tps is hate-per-second.
+// Go threat.MobThreat). hate is floored at zero; tps is the lifetime average
+// hate-per-second; tps_live is the recent rolling-window rate.
 export interface MobThreat {
   name: string
   hate: number
   tps: number
+  // tps_live is hate generated in the last ~6s ÷ that window: it rises during a
+  // burst and decays toward zero when idle — the responsive "live" meter.
+  tps_live: number
   is_target: boolean
 }
 

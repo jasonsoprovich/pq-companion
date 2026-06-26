@@ -305,6 +305,10 @@ func main() {
 	threatTracker := threat.NewTracker(hub, threat.NewCalculator(database, database), func() int {
 		return cfgMgr.Get().Preferences.ThreatHatemodPct
 	})
+	// Drive the live (rolling-window) hate rate: rebroadcast once a second while
+	// any mob is tracked so the per-second meter decays on screen between log
+	// events instead of freezing at its last value.
+	go threatTracker.RunLiveTicker(context.Background(), time.Second)
 
 	// Combat history store: persists every archived fight to user.db so the
 	// in-memory ring buffer is no longer the only record. Failure here is

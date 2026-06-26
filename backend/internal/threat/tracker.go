@@ -1,6 +1,7 @@
 package threat
 
 import (
+	"context"
 	"sort"
 	"sync"
 	"time"
@@ -20,6 +21,18 @@ const mobExpiry = 60 * time.Second
 // (in ticks) to wall-clock for expiring an active hate-mod buff.
 const tickDuration = 6 * time.Second
 
+// tpsWindow is the rolling window over which the "live" hate-per-second rate is
+// measured. Short enough to feel responsive to a burst, long enough not to be
+// jumpy between individual swings. See mobState.recent / liveTPSLocked.
+const tpsWindow = 6 * time.Second
+
+// hateSample is one post-hatemod hate increment with the time it landed, kept
+// in a short rolling buffer per mob to compute the live (windowed) rate.
+type hateSample struct {
+	ts  time.Time
+	amt float64
+}
+
 // mobState is the running per-mob hate accumulator. Hate is kept as a float so
 // the static hatemod multiplier doesn't round on every event; it is rounded
 // only at snapshot time.
@@ -34,6 +47,11 @@ type mobState struct {
 	// melee MISS — the server adds per-swing hate regardless of hit or miss.
 	meleeSum   int64
 	meleeCount int
+
+	// recent holds the last few seconds of post-hatemod hate increments (oldest
+	// first), used to derive the live rolling-window rate. Expired entries are
+	// pruned lazily when the rate is read.
+	recent []hateSample
 }
 
 // modState is one active hate-generation modifier from a self-buff (SPA 114/130,
@@ -228,6 +246,7 @@ func (t *Tracker) addHateLocked(mob string, amount float64, ts time.Time) {
 	m := t.ensureMobLocked(mob, ts)
 	m.hate += adjusted
 	m.last = ts
+	m.recent = append(m.recent, hateSample{ts: ts, amt: adjusted})
 	t.armExpiryLocked(mob, m)
 }
 
@@ -411,6 +430,31 @@ func (t *Tracker) GetState() ThreatState {
 	return t.snapshotLocked(time.Now())
 }
 
+// RunLiveTicker re-snapshots and rebroadcasts on a fixed interval while at
+// least one mob is tracked, so the live (rolling-window) rate visibly decays
+// toward zero between log events instead of freezing at its last value. Idle
+// (no tracked mobs) ticks broadcast nothing. Blocks until ctx is cancelled;
+// run it in its own goroutine.
+func (t *Tracker) RunLiveTicker(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			t.mu.Lock()
+			if len(t.mobs) == 0 {
+				t.mu.Unlock()
+				continue
+			}
+			snap := t.snapshotLocked(now)
+			t.mu.Unlock()
+			t.broadcast(snap)
+		}
+	}
+}
+
 // snapshotLocked builds an immutable ThreatState from current state. The
 // highlighted Target is the pipe target when it is tracked, else the most
 // recently engaged mob, else the highest-hate mob. Caller must hold t.mu.
@@ -439,6 +483,7 @@ func (t *Tracker) snapshotLocked(now time.Time) ThreatState {
 			Name:     name,
 			Hate:     int64(hate + 0.5),
 			TPS:      tps,
+			LiveTPS:  liveTPSLocked(m, now),
 			IsTarget: name == highlight,
 		})
 	}
@@ -455,6 +500,30 @@ func (t *Tracker) snapshotLocked(now time.Time) ThreatState {
 		}
 	}
 	return state
+}
+
+// liveTPSLocked returns the mob's recent rolling-window hate rate: hate added
+// in the last tpsWindow seconds divided by that window. It prunes expired
+// samples in place (they arrive in time order). Floored at zero so an
+// aggro-shedder in the window can't show a negative rate. Caller must hold
+// t.mu.
+func liveTPSLocked(m *mobState, now time.Time) float64 {
+	cutoff := now.Add(-tpsWindow)
+	i := 0
+	for i < len(m.recent) && m.recent[i].ts.Before(cutoff) {
+		i++
+	}
+	if i > 0 {
+		m.recent = m.recent[i:]
+	}
+	var sum float64
+	for _, s := range m.recent {
+		sum += s.amt
+	}
+	if sum < 0 {
+		sum = 0
+	}
+	return sum / tpsWindow.Seconds()
 }
 
 // highlightLocked returns the mob name to highlight: the pipe target if we hold

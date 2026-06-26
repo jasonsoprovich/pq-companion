@@ -44,7 +44,7 @@ function ThreatRow({ mob, max }: { mob: MobThreat; max: number }): React.ReactEl
         </span>
         <span style={{ flexShrink: 0, color: 'var(--color-muted, rgba(255,255,255,0.5))', fontVariantNumeric: 'tabular-nums' }}>
           {fmt(mob.hate)}
-          <span style={{ opacity: 0.6 }}> · {mob.tps.toFixed(0)}/s</span>
+          <span style={{ opacity: 0.6 }}> · {mob.tps_live.toFixed(0)}/s</span>
         </span>
       </div>
       <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
@@ -96,8 +96,14 @@ export function ThreatContent({ state }: { state: ThreatState | null }): React.R
             <span style={{ fontSize: 20, fontWeight: 700, color: '#f4e8c1', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
               {fmt(state.target.hate)}
             </span>
-            <span style={{ fontSize: 11, color: 'var(--color-muted, rgba(255,255,255,0.55))' }}>
-              {state.target.tps.toFixed(0)} hate/sec
+            <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.2 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#e8d59a', fontVariantNumeric: 'tabular-nums' }}>
+                {state.target.tps_live.toFixed(0)}
+                <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.7 }}> hate/sec</span>
+              </span>
+              <span style={{ fontSize: 9.5, color: 'var(--color-muted, rgba(255,255,255,0.45))' }}>
+                avg {state.target.tps.toFixed(0)}/s
+              </span>
             </span>
           </div>
         </div>
