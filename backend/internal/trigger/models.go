@@ -20,6 +20,11 @@ const (
 	ActionPlaySound ActionType = "play_sound"
 	// ActionTextToSpeech speaks text aloud using the system TTS engine.
 	ActionTextToSpeech ActionType = "text_to_speech"
+	// ActionClipboard writes text to the system clipboard. The content lives
+	// in Action.Text and so receives the same {1}/$1 capture substitution as
+	// overlay/TTS text — e.g. "/tar {1}" becomes "/tar Soandso" so the user
+	// can paste a ready-made command into EverQuest.
+	ActionClipboard ActionType = "clipboard"
 )
 
 // TimerType identifies the overlay a trigger-driven timer should appear on.
