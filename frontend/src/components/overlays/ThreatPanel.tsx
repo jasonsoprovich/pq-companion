@@ -1,11 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Gauge, ExternalLink, Trash2 } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { useRaidThreatEnabled } from '../../hooks/useRaidThreatEnabled'
 import { WSEvent } from '../../lib/wsEvents'
-import { getThreatState, resetThreat } from '../../services/api'
+import { getThreatState, getRaidThreatState, resetThreat } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
-import type { ThreatState } from '../../types/overlay'
-import { ThreatContent } from './threatShared'
+import type { ThreatState, RaidThreatState } from '../../types/overlay'
+import {
+  ThreatContent,
+  RaidThreatContent,
+  ThreatModeToggle,
+  type ThreatMode,
+} from './threatShared'
 
 interface ThreatPanelProps {
   defaultX?: number
@@ -14,6 +20,13 @@ interface ThreatPanelProps {
   defaultHeight?: number
   snapGridSize?: number
   onLayoutChange?: (b: { x: number; y: number; width: number; height: number }) => void
+}
+
+// Mode is persisted so the overlay reopens in whichever view the user last
+// chose. Shared key with the popped-out window.
+const MODE_KEY = 'threatOverlayMode'
+function loadMode(): ThreatMode {
+  return localStorage.getItem(MODE_KEY) === 'raid' ? 'raid' : 'personal'
 }
 
 function ConnPill({ state }: { state: string }): React.ReactElement {
@@ -35,13 +48,28 @@ export default function ThreatPanel({
   onLayoutChange,
 }: ThreatPanelProps): React.ReactElement {
   const [state, setState] = useState<ThreatState | null>(null)
+  const [raidState, setRaidState] = useState<RaidThreatState | null>(null)
+  const [mode, setMode] = useState<ThreatMode>(loadMode)
+  const raidEnabled = useRaidThreatEnabled()
+  // Fall back to personal if raid mode was persisted but later disabled.
+  const effMode: ThreatMode = raidEnabled ? mode : 'personal'
+
+  const chooseMode = (m: ThreatMode): void => {
+    setMode(m)
+    localStorage.setItem(MODE_KEY, m)
+  }
 
   useEffect(() => {
     getThreatState().then(setState).catch(() => {})
   }, [])
 
+  useEffect(() => {
+    if (raidEnabled) getRaidThreatState().then(setRaidState).catch(() => {})
+  }, [raidEnabled])
+
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === WSEvent.OverlayThreat) setState(msg.data as ThreatState)
+    else if (msg.type === WSEvent.OverlayRaidThreat) setRaidState(msg.data as RaidThreatState)
   }, [])
 
   const wsState = useWebSocket(handleMessage)
@@ -56,13 +84,16 @@ export default function ThreatPanel({
       }
       headerRight={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button
-            onClick={() => resetThreat().catch(() => {})}
-            title="Reset threat"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}
-          >
-            <Trash2 size={12} />
-          </button>
+          {raidEnabled && <ThreatModeToggle mode={effMode} onChange={chooseMode} />}
+          {effMode === 'personal' && (
+            <button
+              onClick={() => resetThreat().catch(() => {})}
+              title="Reset threat"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
           {window.electron?.overlay && (
             <button
               onClick={() => window.electron.overlay.toggleThreat()}
@@ -84,7 +115,7 @@ export default function ThreatPanel({
       snapGridSize={snapGridSize}
       onLayoutChange={onLayoutChange}
     >
-      <ThreatContent state={state} />
+      {effMode === 'raid' ? <RaidThreatContent state={raidState} /> : <ThreatContent state={state} />}
     </OverlayWindow>
   )
 }

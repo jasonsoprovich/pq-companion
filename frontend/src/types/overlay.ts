@@ -53,6 +53,41 @@ export interface ThreatState {
   last_updated: string
 }
 
+// ── Raid-estimate threat (mirrors Go internal/raidthreat) ──────────────────
+// An ESTIMATED per-mob, per-player hate view derived from observed damage. It
+// carries the DPS meter's accuracy limits plus threat blind spots (others'
+// DoTs/heals/taunts/out-of-range damage are unseen) — see internal/raidthreat.
+
+// RaidThreatConfidence flags surface which estimates to distrust.
+export type RaidThreatConfidence = 'class_unknown' | 'dot_undercount' | 'heal_undercount'
+
+// RaidEntry is one player's (or pet's) estimated hate on a mob.
+export interface RaidEntry {
+  name: string
+  class?: string
+  owner_name?: string
+  is_you: boolean
+  is_pet: boolean
+  hate: number
+  hate_pct: number // hate / top_hate, 0..1
+  confidence?: RaidThreatConfidence[]
+}
+
+// RaidMob is one mob's ranked per-player estimated hate.
+export interface RaidMob {
+  name: string
+  is_target: boolean
+  top_hate: number
+  players: RaidEntry[]
+}
+
+// RaidThreatState mirrors the Go raidthreat.RaidThreatState on overlay:raidthreat.
+export interface RaidThreatState {
+  in_combat: boolean
+  mobs: RaidMob[]
+  last_updated: string
+}
+
 export interface TargetState {
   has_target: boolean
   target_name?: string

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, Suspense } from 'react'
-import { Code2, AlertTriangle, FileText, Database, Network, FlaskConical } from 'lucide-react'
+import { Code2, AlertTriangle, FileText, Database, Network, FlaskConical, Trash2 } from 'lucide-react'
 import SqlSandboxPanel from './SqlSandboxPanel'
 // Lazy-loaded: SchemaGraphPanel pulls in @xyflow/react (~4MB) + dagre. Keeping
 // it out of the static import graph removes those heavy deps from the app's
@@ -88,10 +88,23 @@ export default function DeveloperTab(): React.ReactElement {
 // reveals PoP spells, AA tabs, and Plane of Knowledge shopping app-wide
 // (see backend internal/era). Stored in config.yaml so it survives
 // restarts; consumers track changes live via the config:updated broadcast.
+// RAID_CLASSES / RAID_TANK_DEFAULTS mirror internal/raidthreat: tanks default
+// to +30% to offset taunt/disciplines/+hate gear that logs can't show.
+const RAID_CLASSES = [
+  'Warrior', 'Shadow Knight', 'Paladin', 'Cleric', 'Druid', 'Shaman',
+  'Ranger', 'Monk', 'Rogue', 'Bard', 'Beastlord',
+  'Necromancer', 'Wizard', 'Magician', 'Enchanter',
+]
+const RAID_TANK_DEFAULTS: Record<string, number> = {
+  Warrior: 30, 'Shadow Knight': 30, Paladin: 30,
+}
+
 function FlagsPanel(): React.ReactElement {
   const [config, setConfig] = useState<Config | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [newPlayer, setNewPlayer] = useState('')
+  const [newPlayerPct, setNewPlayerPct] = useState('')
 
   useEffect(() => {
     getConfig()
@@ -112,6 +125,45 @@ function FlagsPanel(): React.ReactElement {
       .then(setConfig)
       .catch((err: Error) => setError(err.message))
       .finally(() => setSaving(false))
+  }
+
+  // ── Raid-estimate threat ──────────────────────────────────────────────
+  const raidEnabled = Boolean(config?.preferences?.raid_threat_enabled)
+  const classMods = config?.preferences?.raid_threat_class_mods ?? {}
+  const playerMods = config?.preferences?.raid_threat_player_mods ?? {}
+
+  // savePrefs persists a Preferences patch (merged over the current config).
+  const savePrefs = (patch: Record<string, unknown>): void => {
+    if (!config || saving) return
+    setSaving(true)
+    setError(null)
+    updateConfig({ ...config, preferences: { ...config.preferences, ...patch } })
+      .then(setConfig)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setSaving(false))
+  }
+
+  const toggleRaid = (): void => savePrefs({ raid_threat_enabled: !raidEnabled })
+
+  // setClassMod writes (or clears, when blank) a per-class adjustment.
+  const setClassMod = (cls: string, raw: string): void => {
+    const next = { ...classMods }
+    if (raw.trim() === '') delete next[cls]
+    else next[cls] = Math.max(-100, Math.min(500, Math.round(Number(raw) || 0)))
+    savePrefs({ raid_threat_class_mods: next })
+  }
+
+  const addPlayerMod = (name: string, raw: string): void => {
+    const n = name.trim()
+    if (n === '') return
+    const next = { ...playerMods, [n]: Math.max(-100, Math.min(500, Math.round(Number(raw) || 0))) }
+    savePrefs({ raid_threat_player_mods: next })
+  }
+
+  const removePlayerMod = (name: string): void => {
+    const next = { ...playerMods }
+    delete next[name]
+    savePrefs({ raid_threat_player_mods: next })
   }
 
   return (
@@ -161,6 +213,124 @@ function FlagsPanel(): React.ReactElement {
           <p className="mt-2 text-xs" style={{ color: '#f87171' }}>
             {error}
           </p>
+        )}
+      </section>
+
+      {/* ── Raid-estimate threat ─────────────────────────────────────────── */}
+      <section
+        className="rounded-lg p-4"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <div className="mb-3 flex items-center gap-2">
+          <FlaskConical size={14} style={{ color: 'var(--color-primary)' }} />
+          <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            Raid threat (estimated)
+          </h2>
+        </div>
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+            Adds a <strong>Solo / Raid</strong> toggle to the Threat overlay. Raid
+            mode estimates every nearby player&rsquo;s hate from the damage they
+            do — the same data the DPS meter uses. It is approximate: out-of-range
+            players, others&rsquo; DoTs, heals, taunts, and utility casts aren&rsquo;t
+            in your log, so DoT/healer classes read low and the tank is understated
+            (hence the per-class boost below).
+          </p>
+          <button
+            type="button"
+            onClick={toggleRaid}
+            disabled={!config || saving}
+            className="shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors"
+            style={{
+              backgroundColor: raidEnabled ? 'var(--color-primary)' : 'var(--color-surface-2)',
+              color: raidEnabled ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+              cursor: !config || saving ? 'default' : 'pointer',
+              opacity: !config || saving ? 0.6 : 1,
+            }}
+          >
+            {raidEnabled ? 'Enabled' : 'Disabled'}
+          </button>
+        </div>
+
+        {raidEnabled && (
+          <>
+            {/* Per-class hate adjustment */}
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+                Per-class hate adjustment (%)
+              </p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
+                {RAID_CLASSES.map((cls) => {
+                  const def = RAID_TANK_DEFAULTS[cls] ?? 0
+                  const set = classMods[cls]
+                  return (
+                    <label key={cls} className="flex items-center justify-between gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                      <span className="truncate">{cls}</span>
+                      <input
+                        type="number"
+                        defaultValue={set ?? ''}
+                        key={set ?? 'unset'}
+                        placeholder={String(def)}
+                        onBlur={(e) => setClassMod(cls, e.target.value)}
+                        className="w-14 rounded px-1 py-0.5 text-right text-xs"
+                        style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+                      />
+                    </label>
+                  )
+                })}
+              </div>
+              <p className="mt-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                Blank uses the default (tanks +30, others 0). Applied to a
+                player&rsquo;s observed damage.
+              </p>
+            </div>
+
+            {/* Per-player override */}
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+                Per-player override (%)
+              </p>
+              {Object.keys(playerMods).length > 0 && (
+                <div className="mb-2 flex flex-col gap-1">
+                  {Object.entries(playerMods).map(([name, pct]) => (
+                    <div key={name} className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                      <span className="w-28 truncate">{name}</span>
+                      <span className="w-12 text-right">{pct > 0 ? '+' : ''}{pct}%</span>
+                      <button type="button" onClick={() => removePlayerMod(name)} title="Remove" style={{ color: '#f87171', cursor: 'pointer' }}>
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  value={newPlayer}
+                  onChange={(e) => setNewPlayer(e.target.value)}
+                  placeholder="Player name"
+                  className="w-28 rounded px-2 py-0.5 text-xs"
+                  style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+                />
+                <input
+                  value={newPlayerPct}
+                  onChange={(e) => setNewPlayerPct(e.target.value)}
+                  type="number"
+                  placeholder="%"
+                  className="w-14 rounded px-1 py-0.5 text-right text-xs"
+                  style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => { addPlayerMod(newPlayer, newPlayerPct); setNewPlayer(''); setNewPlayerPct('') }}
+                  className="rounded px-2 py-0.5 text-xs"
+                  style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </section>
     </div>

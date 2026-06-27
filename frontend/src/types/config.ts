@@ -101,6 +101,13 @@ export interface Preferences {
   // Static gear/AA hate modifier (signed %) applied to the Threat Meter's
   // generated hate. Logs can't reveal it, so the user supplies it.
   threat_hatemod_pct?: number
+  // Experimental raid-estimate threat mode (dev-gated, off by default).
+  raid_threat_enabled?: boolean
+  // Per-class hate adjustment (class name → signed %) for the raid estimate;
+  // an entry overrides the built-in default (tanks +30 when unset).
+  raid_threat_class_mods?: Record<string, number>
+  // Per-player hate adjustment (player name → signed %), added on top of class.
+  raid_threat_player_mods?: Record<string, number>
   npc_overlay_dashboard_sections: NPCOverlaySections
   npc_overlay_popout_sections: NPCOverlaySections
   // Per-overlay locked behaviour, keyed by canonical overlay name. Missing

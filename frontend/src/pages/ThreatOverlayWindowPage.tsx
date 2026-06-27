@@ -6,15 +6,26 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Gauge, Trash2 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useRaidThreatEnabled } from '../hooks/useRaidThreatEnabled'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
-import { getThreatState, resetThreat } from '../services/api'
-import { ThreatContent } from '../components/overlays/threatShared'
-import type { ThreatState } from '../types/overlay'
+import { getThreatState, getRaidThreatState, resetThreat } from '../services/api'
+import {
+  ThreatContent,
+  RaidThreatContent,
+  ThreatModeToggle,
+  type ThreatMode,
+} from '../components/overlays/threatShared'
+import type { ThreatState, RaidThreatState } from '../types/overlay'
+
+const MODE_KEY = 'threatOverlayMode'
+function loadMode(): ThreatMode {
+  return localStorage.getItem(MODE_KEY) === 'raid' ? 'raid' : 'personal'
+}
 
 export default function ThreatOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
@@ -23,15 +34,27 @@ export default function ThreatOverlayWindowPage(): React.ReactElement {
     useOverlayLock('threat')
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<ThreatState | null>(null)
+  const [raidState, setRaidState] = useState<RaidThreatState | null>(null)
+  const [mode, setMode] = useState<ThreatMode>(loadMode)
+  const raidEnabled = useRaidThreatEnabled()
+  const effMode: ThreatMode = raidEnabled ? mode : 'personal'
+
+  const chooseMode = (m: ThreatMode): void => {
+    setMode(m)
+    localStorage.setItem(MODE_KEY, m)
+  }
 
   useEffect(() => {
     getThreatState().then(setState).catch(() => {})
   }, [])
 
+  useEffect(() => {
+    if (raidEnabled) getRaidThreatState().then(setRaidState).catch(() => {})
+  }, [raidEnabled])
+
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === WSEvent.OverlayThreat) {
-      setState(msg.data as ThreatState)
-    }
+    if (msg.type === WSEvent.OverlayThreat) setState(msg.data as ThreatState)
+    else if (msg.type === WSEvent.OverlayRaidThreat) setRaidState(msg.data as RaidThreatState)
   }, [])
 
   useWebSocket(handleMessage)
@@ -79,23 +102,26 @@ export default function ThreatOverlayWindowPage(): React.ReactElement {
           </span>
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button
-            onClick={() => resetThreat().catch(() => {})}
-            title="Reset threat"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              padding: '1px 5px',
-              borderRadius: 3,
-              border: '1px solid rgba(255,255,255,0.1)',
-              backgroundColor: 'transparent',
-              color: 'rgba(255,255,255,0.4)',
-              cursor: 'pointer',
-              lineHeight: 1,
-            }}
-          >
-            <Trash2 size={11} />
-          </button>
+          {raidEnabled && <ThreatModeToggle mode={effMode} onChange={chooseMode} />}
+          {effMode === 'personal' && (
+            <button
+              onClick={() => resetThreat().catch(() => {})}
+              title="Reset threat"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                padding: '1px 5px',
+                borderRadius: 3,
+                border: '1px solid rgba(255,255,255,0.1)',
+                backgroundColor: 'transparent',
+                color: 'rgba(255,255,255,0.4)',
+                cursor: 'pointer',
+                lineHeight: 1,
+              }}
+            >
+              <Trash2 size={11} />
+            </button>
+          )}
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeThreat()}
@@ -117,7 +143,7 @@ export default function ThreatOverlayWindowPage(): React.ReactElement {
       </div>
 
       {/* ── Threat body ──────────────────────────────────────────────────── */}
-      <ThreatContent state={state} />
+      {effMode === 'raid' ? <RaidThreatContent state={raidState} /> : <ThreatContent state={state} />}
     </div>
   )
 }
