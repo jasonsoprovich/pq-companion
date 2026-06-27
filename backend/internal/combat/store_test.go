@@ -242,7 +242,7 @@ func TestFacetsReturnsDistinctSortedNonEmpty(t *testing.T) {
 		{"a gnoll", "East Karana", "Osui"},
 		{"a wolf", "East Karana", "Osui"},
 		{"Aten Ha Ra", "The Hole", "Nariana"},
-		{"a kobold", "", "Osui"},  // empty zone: should not appear in zones
+		{"a kobold", "", "Osui"},      // empty zone: should not appear in zones
 		{"a goblin", "Mistmoore", ""}, // empty character: not in characters
 	} {
 		if _, err := s.SaveFight(sampleFight(row.npc, now), row.zone, row.char); err != nil {

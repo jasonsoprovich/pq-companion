@@ -138,6 +138,25 @@ type FightSummary struct {
 	YouHPS        float64       `json:"you_hps"`
 }
 
+// MobDamage is one active mob's per-attacker damage rollup, exposed for the
+// raid threat estimator. It is the same attribution the DPS meter uses (pets
+// resolved to owners, classes stamped, NPCs filtered out), but surfaced
+// per-mob since aggro is per-mob.
+type MobDamage struct {
+	Mob       string           `json:"mob"` // NPC display name (matches the threat meter's key)
+	Attackers []AttackerDamage `json:"attackers"`
+}
+
+// AttackerDamage is one player's (or pet's) cumulative attributed damage on a
+// single mob.
+type AttackerDamage struct {
+	Name      string `json:"name"`
+	Class     string `json:"class,omitempty"`      // canonical base class; owner's class for pets
+	OwnerName string `json:"owner_name,omitempty"` // controlling player when this is a pet
+	Damage    int64  `json:"damage"`
+	IsPet     bool   `json:"is_pet"`
+}
+
 // DeathRecord captures a single player death event.
 type DeathRecord struct {
 	Timestamp time.Time `json:"timestamp"`

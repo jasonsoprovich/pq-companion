@@ -32,6 +32,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/loot"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/raidthreat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/respawn"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/sandbox"
@@ -308,6 +309,17 @@ func main() {
 	// any mob is tracked so the per-second meter decays on screen between log
 	// events instead of freezing at its last value.
 	go threatTracker.RunLiveTicker(context.Background(), time.Second)
+
+	// Raid-estimate threat: an experimental per-mob, per-player ESTIMATED hate
+	// view assembled from the combat tracker's observed damage (×class/player
+	// hate mods) plus this character's high-fidelity personal hate. Dev-gated;
+	// reads its config live. Rebroadcasts once a second while combat is active.
+	raidThreatAssembler := raidthreat.NewAssembler(hub, combatTracker, threatTracker,
+		func() bool { return cfgMgr.Get().Preferences.RaidThreatEnabled },
+		func() map[string]int { return cfgMgr.Get().Preferences.RaidThreatClassMods },
+		func() map[string]int { return cfgMgr.Get().Preferences.RaidThreatPlayerMods },
+	)
+	go raidThreatAssembler.RunTicker(context.Background(), time.Second)
 
 	// Combat history store: persists every archived fight to user.db so the
 	// in-memory ring buffer is no longer the only record. Failure here is
@@ -750,6 +762,8 @@ func main() {
 				}
 				combatTracker.SetPipeTarget(l.Value)
 				threatTracker.SetPipeTarget(l.Value)
+				raidThreatAssembler.SetPipeTarget(l.Value)
+				raidThreatAssembler.Broadcast()
 			case zealpipe.LabelTargetHPPerc:
 				if n, err := strconv.Atoi(strings.TrimSpace(l.Value)); err == nil {
 					targetHP = n
@@ -1014,7 +1028,7 @@ func main() {
 		go traderCapturer.Start(context.Background())
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

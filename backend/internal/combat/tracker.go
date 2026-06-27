@@ -575,6 +575,39 @@ func (t *Tracker) GetState() CombatState {
 	return t.snapshot(time.Now())
 }
 
+// RaidThreatDamage returns each active fight's per-attacker cumulative damage,
+// with pets resolved to owners, classes stamped, and NPCs (AoE crossfire)
+// filtered out — exactly the rollup the DPS meter shows, surfaced per-mob for
+// the raid threat estimator. Read-only point-in-time snapshot.
+func (t *Tracker) RaidThreatDamage() []MobDamage {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make([]MobDamage, 0, len(t.activeFights))
+	for _, f := range t.activeFights {
+		// duration/raidSeconds only feed the DPS variants we don't read here, so
+		// any non-zero value works.
+		combatants := excludeNPCsByName(buildEntityStats(f.outgoing, 1, 1),
+			map[string]bool{f.npcName: true}, t.petOwners, t.confirmedHostiles)
+		stampPetOwners(combatants, t.petOwners)
+		stampClasses(combatants, t.selfClass(), t.classResolverFn)
+		if len(combatants) == 0 {
+			continue
+		}
+		md := MobDamage{Mob: f.npcName, Attackers: make([]AttackerDamage, 0, len(combatants))}
+		for _, c := range combatants {
+			md.Attackers = append(md.Attackers, AttackerDamage{
+				Name:      c.Name,
+				Class:     c.Class,
+				OwnerName: c.OwnerName,
+				Damage:    c.TotalDamage,
+				IsPet:     c.OwnerName != "",
+			})
+		}
+		out = append(out, md)
+	}
+	return out
+}
+
 // Reset clears all fight history, session aggregates, and death records,
 // returning the tracker to a clean state without restarting the process.
 //

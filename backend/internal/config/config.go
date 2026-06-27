@@ -357,6 +357,24 @@ type Preferences struct {
 	// Zero by default.
 	ThreatHatemodPct int `yaml:"threat_hatemod_pct,omitempty" json:"threat_hatemod_pct"`
 
+	// RaidThreatEnabled gates the experimental raid-estimate mode of the Threat
+	// Meter (a per-mob, per-player ESTIMATED hate view derived from observed
+	// damage). Dev-gated, off by default; carries the DPS meter's accuracy
+	// limits plus threat-specific blind spots (DoTs/heals/taunts/out-of-range).
+	RaidThreatEnabled bool `yaml:"raid_threat_enabled,omitempty" json:"raid_threat_enabled"`
+
+	// RaidThreatClassMods is the per-class hate adjustment (class name → signed
+	// percent) the raid-estimate view applies to a player's observed damage, to
+	// offset hate sources logs can't see (a tank's taunt/disciplines/+hate gear).
+	// A present entry (including 0) overrides the built-in default; tank classes
+	// default to +30 when unset. May be nil/omitted.
+	RaidThreatClassMods map[string]int `yaml:"raid_threat_class_mods,omitempty" json:"raid_threat_class_mods,omitempty"`
+
+	// RaidThreatPlayerMods is an optional per-player hate adjustment (player
+	// name → signed percent) added on top of the class mod, for known cases
+	// (e.g. a player running a hate-amp buff). May be nil/omitted.
+	RaidThreatPlayerMods map[string]int `yaml:"raid_threat_player_mods,omitempty" json:"raid_threat_player_mods,omitempty"`
+
 	// NPCOverlayDashboardSections controls which optional sections of the
 	// NPC overlay are visible in the dashboard panel. Name, zone, pet
 	// owner, raid/rare badges, and the HP bar are always shown regardless

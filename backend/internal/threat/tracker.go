@@ -672,6 +672,23 @@ func (t *Tracker) GetState() ThreatState {
 	return t.snapshotLocked(time.Now())
 }
 
+// PersonalHate returns the active character's current estimated hate per mob
+// (display name → hate, floored at zero), for the raid threat estimator to
+// splice in as the high-fidelity "You" row. Read-only snapshot.
+func (t *Tracker) PersonalHate() map[string]int64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make(map[string]int64, len(t.mobs))
+	for name, m := range t.mobs {
+		h := m.hate
+		if h < 0 {
+			h = 0
+		}
+		out[name] = int64(h + 0.5)
+	}
+	return out
+}
+
 // RunLiveTicker re-snapshots and rebroadcasts on a fixed interval while at
 // least one mob is tracked, so the live (rolling-window) rate visibly decays
 // toward zero between log events instead of freezing at its last value. Idle
