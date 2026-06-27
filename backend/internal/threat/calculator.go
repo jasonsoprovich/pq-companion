@@ -9,29 +9,72 @@ import (
 
 // SPA (spell-effect) codes relevant to hate, matching the SpellEffect IDs
 // stored in spells_new (EQMacEmu/Server numbering — the fork Project Quarm
-// runs; see internal/db/enums/spell.go).
+// runs; see internal/db/enums/spell.go). These mirror the cases of
+// Mob::CheckAggroAmount in the SecretsOTheP/EQMacEmu fork (zone/aggro.cpp),
+// which is the authoritative source for how much hate a cast generates.
 const (
-	// spaCurrentHP (SE_CurrentHP) and spaCurrentHPOnce (SE_CurrentHPOnce) carry
-	// damage when their base value is negative. Damage-driven hate is observed
-	// from the character's own damage lines, so a spell with a damage effect
-	// does NOT also get the HP-scaled "standard" hate below.
-	spaCurrentHP     = 0
-	spaCurrentHPOnce = 79
-	// spaInstantHate (SE_InstantHate): flat signed hate applied on land, stored
-	// as the effect base value (Terror +200..+510; Jolt/Concussion negative).
+	// Damage effects: hate is the observed damage, read from the player's own
+	// damage line, so these contribute NOTHING here (they are not in the switch
+	// below) — folding them in would double-count.
+	spaCurrentHP     = 0  // SE_CurrentHP
+	spaCurrentHPOnce = 79 // SE_CurrentHPOnce
+
+	// setStandardHate triggers → the cast adds the HP-scaled "standard hate"
+	// (target maxHP/15, clamped). Independent of whether the spell also does
+	// damage, so a damage nuke that ALSO stuns/mezzes gets damage + standardHate.
+	spaArmorClass    = 1   // SE_ArmorClass     (if value < 0)
+	spaMovementSpeed = 3   // SE_MovementSpeed  (snare; if value < 0)
+	spaAttackSpeed   = 11  // SE_AttackSpeed    (slow; if value < 100)
+	spaBlind         = 20  // SE_Blind
+	spaStun          = 21  // SE_Stun
+	spaCharm         = 22  // SE_Charm
+	spaFear          = 23  // SE_Fear
+	spaPoisonCounter = 36  // SE_PoisonCounter
+	spaDestroy       = 41  // SE_Destroy
+	spaSpinTarget    = 64  // SE_SpinTarget (spin stun)
+	spaSilence       = 96  // SE_Silence
+	spaAttackSpeed2  = 98  // SE_AttackSpeed2 (slow; if value < 100)
+	spaMez           = 31  // SE_Mez
+	spaAttackSpeed3  = 119 // SE_AttackSpeed3 (slow; if value < 100)
+	spaAmnesia       = 191 // SE_Amnesia
+
+	// Flat nonDamageHate additions (per matching effect).
+	spaRoot              = 99  // SE_Root            +10
+	spaATK               = 2   // SE_ATK             +10 if value < 0
+	spaSTR               = 4   // SE_STR             +10 if value < 0
+	spaDEX               = 5   // SE_DEX             +10 if value < 0
+	spaAGI               = 6   // SE_AGI             +10 if value < 0
+	spaSTA               = 7   // SE_STA             +10 if value < 0
+	spaINT               = 8   // SE_INT             +10 if value < 0
+	spaWIS               = 9   // SE_WIS             +10 if value < 0
+	spaCHA               = 10  // SE_CHA             +10 if value < 0
+	spaCurrentMana       = 15  // SE_CurrentMana     +10 if value < 0
+	spaResistFire        = 46  // SE_ResistFire      +10 if value < 0
+	spaResistCold        = 47  // SE_ResistCold      +10 if value < 0
+	spaResistPoison      = 48  // SE_ResistPoison    +10 if value < 0
+	spaResistDisease     = 49  // SE_ResistDisease   +10 if value < 0
+	spaResistMagic       = 50  // SE_ResistMagic     +10 if value < 0
+	spaManaPool          = 97  // SE_ManaPool        +10 if value < 0
+	spaEndurance         = 189 // SE_CurrentEndurance +10 if value < 0
+	spaResistAll         = 111 // SE_ResistAll       +50 if value < 0
+	spaAllStats          = 159 // SE_AllStats        +70 if value < 0
+	spaCancelMagic       = 27  // SE_CancelMagic     +1
+	spaDispelDetrimental = 154 // SE_DispelDetrimental +1
+
+	// spaInstantHate (SE_InstantHate): flat signed hate (Terror +200..+510;
+	// Jolt/Concussion negative — aggro shed). Added on top of everything else.
 	spaInstantHate = 92
+
 	// spaChangeAggro (SE_ChangeAggro) and spaSpellHateMod (SE_SpellHateMod) are
 	// percentage hate-generation modifiers carried by self-buffs (Glamorous
-	// Visage -10, Voice of Terris +10). Tracked as active modifiers, not as hate
-	// on a mob.
+	// Visage -10, Voice of Terris +10). Tracked as active modifiers, not hate.
 	spaChangeAggro  = 114
 	spaSpellHateMod = 130
 )
 
-// standardSpellHate is the EQMacEmu CheckAggroAmount value a no-damage
-// detrimental control/debuff spell (mez/slow/snare/root/tash/debuff) generates:
-// the target NPC's max HP / 15, clamped. Damage spells and instant-hate spells
-// don't use it (their hate is the observed damage / the SE_InstantHate value).
+// standardSpellHate is CheckAggroAmount's HP-scaled term: the target NPC's max
+// HP / 15, clamped. The server floors max HP at 375 (→ 25 hate) and caps the
+// result at 1200.
 const (
 	standardHateDivisor = 15
 	standardHateCap     = 1200
@@ -102,33 +145,80 @@ func (c *Calculator) Classify(spellName, targetNPC string) SpellHate {
 		return SpellHate{}
 	}
 
-	var instant int64
-	var hatemod int
-	hasDamage := false
+	// A beneficial self-buff that modifies hate generation → active modifier,
+	// not hate on a mob. Checked first so it short-circuits the offensive path.
+	hatemod := 0
 	for i := 0; i < len(sp.EffectIDs); i++ {
-		switch sp.EffectIDs[i] {
-		case spaInstantHate:
-			instant += int64(sp.EffectBaseValues[i])
-		case spaChangeAggro, spaSpellHateMod:
+		if sp.EffectIDs[i] == spaChangeAggro || sp.EffectIDs[i] == spaSpellHateMod {
 			hatemod += sp.EffectBaseValues[i]
-		case spaCurrentHP, spaCurrentHPOnce:
-			if sp.EffectBaseValues[i] < 0 {
-				hasDamage = true
-			}
 		}
 	}
-
-	// A beneficial self-buff that modifies hate generation → active modifier.
 	if hatemod != 0 && sp.GoodEffect == 1 {
 		return SpellHate{Found: true, HatemodPct: hatemod, DurationTicks: sp.BuffDuration}
 	}
 
-	offensive := instant
-	// HP-scaled standard hate for a no-damage detrimental utility spell. Skipped
-	// for damage spells (hate = observed damage) and instant-hate spells
-	// (fully described by their SE_InstantHate value, e.g. Jolt sheds, Terror
-	// adds) so neither is over-counted.
-	if instant == 0 && !hasDamage && sp.GoodEffect == 0 && targetNPC != "" {
+	// Only detrimental spells generate aggro against their target.
+	if sp.GoodEffect != 0 {
+		return SpellHate{Found: true}
+	}
+
+	// Faithful port of Mob::CheckAggroAmount (SecretsOTheP/EQMacEmu
+	// zone/aggro.cpp), computing the NON-damage hate a detrimental cast adds.
+	// The `damage` accumulator of the original is excluded — the tracker reads
+	// damage hate from the observed damage line — so this returns exactly the
+	// cast-added component: instant hate + flat debuff hate + (HP-scaled
+	// standard hate when a control/slow/AC effect sets it, regardless of whether
+	// the spell ALSO does damage; that is what makes a stun-nuke aggro for
+	// damage + standard hate).
+	//
+	// Known-omitted minor cases (rare in offensive casting, and avoided to keep
+	// the SPA mapping reliable): the `slevel*2` melee-debuff/Harmony group, the
+	// off-class-clicky 400 cap, the bard-class clamp, and the HateAdded DB
+	// override (column is empty in the Quarm dump). These under-count a few
+	// uncommon spells slightly rather than risk a wrong value.
+	instant := 0
+	nonDamageHate := 0
+	setStandardHate := false
+	for i := 0; i < len(sp.EffectIDs); i++ {
+		val := sp.EffectBaseValues[i]
+		switch sp.EffectIDs[i] {
+		case spaStun, spaBlind, spaMez, spaCharm, spaFear,
+			spaSpinTarget, spaAmnesia, spaSilence, spaDestroy, spaPoisonCounter:
+			setStandardHate = true
+		case spaMovementSpeed, spaArmorClass:
+			if val < 0 {
+				setStandardHate = true
+			}
+		case spaAttackSpeed, spaAttackSpeed2, spaAttackSpeed3:
+			if val < 100 {
+				setStandardHate = true
+			}
+		case spaRoot:
+			nonDamageHate += 10
+		case spaATK, spaSTR, spaSTA, spaDEX, spaAGI, spaINT, spaWIS, spaCHA,
+			spaResistMagic, spaResistFire, spaResistCold, spaResistPoison,
+			spaResistDisease, spaCurrentMana, spaManaPool, spaEndurance:
+			if val < 0 {
+				nonDamageHate += 10
+			}
+		case spaResistAll:
+			if val < 0 {
+				nonDamageHate += 50
+			}
+		case spaAllStats:
+			if val < 0 {
+				nonDamageHate += 70
+			}
+		case spaCancelMagic, spaDispelDetrimental:
+			nonDamageHate += 1
+		case spaInstantHate:
+			instant += val
+		}
+	}
+
+	// Standard hate: target maxHP/15, clamped. Only addable when the mob's HP is
+	// known; otherwise the term is dropped (the instant + flat hate still apply).
+	if setStandardHate && targetNPC != "" {
 		if hp := c.npcMaxHP(targetNPC); hp > 0 {
 			sh := hp / standardHateDivisor
 			if sh > standardHateCap {
@@ -137,10 +227,11 @@ func (c *Calculator) Classify(spellName, targetNPC string) SpellHate {
 			if sh < standardHateFloor {
 				sh = standardHateFloor
 			}
-			offensive += int64(sh)
+			nonDamageHate += sh
 		}
 	}
-	return SpellHate{Found: true, OffensiveHate: offensive}
+
+	return SpellHate{Found: true, OffensiveHate: int64(nonDamageHate + instant)}
 }
 
 // npcMaxHP returns the NPC's database max HP by display name (spaces converted

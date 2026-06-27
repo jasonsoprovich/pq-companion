@@ -236,20 +236,41 @@ func TestPipeTargetDrivesHighlight(t *testing.T) {
 
 // ── Phase 3: standard hate, hate-mod buffs, heal, miss, feign ───────────────
 
-// spellDetrimentalUtility is a no-damage detrimental spell (mez/slow/tash-like):
-// GoodEffect 0, one non-damage/non-hate effect slot.
+// spellDetrimentalUtility is a no-damage control spell (mez/charm/stun-like):
+// GoodEffect 0, a single SE_Mez effect that triggers the HP-scaled standard
+// hate term.
 func spellDetrimentalUtility(name string) *db.Spell {
 	sp := &db.Spell{Name: name, GoodEffect: 0}
-	sp.EffectIDs[0] = 18 // arbitrary non-damage, non-hate effect
-	sp.EffectBaseValues[0] = -10
+	sp.EffectIDs[0] = spaMez
 	return sp
 }
 
-// spellDamage is a detrimental damage spell (SE_CurrentHP negative).
+// spellDamage is a detrimental pure-damage spell (SE_CurrentHP negative). Its
+// hate comes from the observed damage line, so the cast adds no extra hate.
 func spellDamage(name string) *db.Spell {
 	sp := &db.Spell{Name: name, GoodEffect: 0}
 	sp.EffectIDs[0] = spaCurrentHP
 	sp.EffectBaseValues[0] = -200
+	return sp
+}
+
+// spellDamageStun is a nuke that ALSO stuns: a damage effect plus SE_Stun. Per
+// CheckAggroAmount the stun sets standard hate independent of the damage, so the
+// cast adds standard hate ON TOP of the (separately observed) damage.
+func spellDamageStun(name string) *db.Spell {
+	sp := &db.Spell{Name: name, GoodEffect: 0}
+	sp.EffectIDs[0] = spaCurrentHP
+	sp.EffectBaseValues[0] = -200
+	sp.EffectIDs[1] = spaStun
+	return sp
+}
+
+// spellResistDebuff is a single-resist debuff (SE_ResistMagic < 0, Tashan-like):
+// a flat +10 nonDamageHate, NOT the HP-scaled standard hate.
+func spellResistDebuff(name string) *db.Spell {
+	sp := &db.Spell{Name: name, GoodEffect: 0}
+	sp.EffectIDs[0] = spaResistMagic
+	sp.EffectBaseValues[0] = -40
 	return sp
 }
 
@@ -278,14 +299,43 @@ func heal(amount int, ts time.Time) logparser.LogEvent {
 }
 
 func TestStandardHateUtilitySpell(t *testing.T) {
-	spells := fakeSpells{"Tashan": spellDetrimentalUtility("Tashan")}
+	spells := fakeSpells{"Mez": spellDetrimentalUtility("Mez")}
 	npcs := fakeNPCs{"a_gnoll": 3000} // HP/15 = 200
 	tr := NewTracker(nil, NewCalculator(spells, npcs), nil)
 	t0 := time.Now()
 	tr.Handle(hit("a gnoll", 100, t0))
-	castLand(tr, "Tashan", t0.Add(time.Second))
+	castLand(tr, "Mez", t0.Add(time.Second))
 	if got := hateFor(tr.GetState(), "a gnoll"); got != 300 {
-		t.Errorf("hate after Tashan = %d, want 300 (100 + 3000/15)", got)
+		t.Errorf("hate after Mez = %d, want 300 (100 + 3000/15)", got)
+	}
+}
+
+func TestControlSpellAddsStandardHateEvenWithDamage(t *testing.T) {
+	// A stun-nuke: SE_Stun sets standard hate, which lands ON TOP of the nuke's
+	// (separately observed) damage — the old model wrongly skipped it whenever
+	// the spell did damage.
+	spells := fakeSpells{"Shock of Stun": spellDamageStun("Shock of Stun")}
+	npcs := fakeNPCs{"a_gnoll": 3000} // HP/15 = 200
+	tr := NewTracker(nil, NewCalculator(spells, npcs), nil)
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 100, t0)) // stands in for the nuke's damage line
+	castLand(tr, "Shock of Stun", t0.Add(time.Second))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 300 {
+		t.Errorf("hate after stun-nuke = %d, want 300 (100 damage + 200 standard)", got)
+	}
+}
+
+func TestResistDebuffAddsFlatHate(t *testing.T) {
+	// A single-resist debuff (Tashan-like) gets a flat +10, NOT the HP-scaled
+	// standard hate — even on a high-HP mob.
+	spells := fakeSpells{"Tashan": spellResistDebuff("Tashan")}
+	npcs := fakeNPCs{"a_dragon": 300000} // standard hate would be the 1200 cap
+	tr := NewTracker(nil, NewCalculator(spells, npcs), nil)
+	t0 := time.Now()
+	tr.Handle(hit("a dragon", 100, t0))
+	castLand(tr, "Tashan", t0.Add(time.Second))
+	if got := hateFor(tr.GetState(), "a dragon"); got != 110 {
+		t.Errorf("hate after Tashan = %d, want 110 (100 + flat 10, not standard hate)", got)
 	}
 }
 
@@ -311,11 +361,11 @@ func TestStandardHateFloorAndCap(t *testing.T) {
 }
 
 func TestStandardHateSkippedWithoutNPCSource(t *testing.T) {
-	spells := fakeSpells{"Tashan": spellDetrimentalUtility("Tashan")}
+	spells := fakeSpells{"Mez": spellDetrimentalUtility("Mez")}
 	tr := NewTracker(nil, NewCalculator(spells, nil), nil) // no NPC source
 	t0 := time.Now()
 	tr.Handle(hit("a gnoll", 100, t0))
-	castLand(tr, "Tashan", t0.Add(time.Second))
+	castLand(tr, "Mez", t0.Add(time.Second))
 	if got := hateFor(tr.GetState(), "a gnoll"); got != 100 {
 		t.Errorf("hate = %d, want 100 (no HP → no standard hate)", got)
 	}
