@@ -126,13 +126,65 @@ type Calculator struct {
 	// npcCache memoises GetNPCByName by db name; a present key with a nil value
 	// is a known miss, so a busy fight never re-queries the same mob.
 	npcCache map[string]*db.NPC
+	// spellCache memoises GetSpellByExactName by spell name (rows are static).
+	// Keeps the per-land hate-mod-buff check off the DB on a busy raid.
+	spellCache map[string]*db.Spell
 }
 
 // NewCalculator returns a Calculator backed by the given sources. spells may be
 // nil (spell-cast hate is then skipped). npcs may be nil (the HP-scaled
 // standard-hate term is then skipped; instant hate still works).
 func NewCalculator(spells SpellSource, npcs NPCSource) *Calculator {
-	return &Calculator{spells: spells, npcs: npcs, npcCache: make(map[string]*db.NPC)}
+	return &Calculator{
+		spells:     spells,
+		npcs:       npcs,
+		npcCache:   make(map[string]*db.NPC),
+		spellCache: make(map[string]*db.Spell),
+	}
+}
+
+// lookupSpell returns a spell row by exact name, memoising both hits and misses.
+// Returns nil when unknown or when no spell source is wired.
+func (c *Calculator) lookupSpell(name string) *db.Spell {
+	if c == nil || c.spells == nil || name == "" {
+		return nil
+	}
+	c.mu.Lock()
+	if sp, ok := c.spellCache[name]; ok {
+		c.mu.Unlock()
+		return sp
+	}
+	c.mu.Unlock()
+
+	var sp *db.Spell
+	if s, err := c.spells.GetSpellByExactName(name); err == nil {
+		sp = s
+	}
+
+	c.mu.Lock()
+	c.spellCache[name] = sp
+	c.mu.Unlock()
+	return sp
+}
+
+// HateModBuff reports whether spellName is a beneficial hate-generation buff
+// (SPA 114/130) and, if so, its signed percent and buff duration in ticks. Used
+// to register a hate-mod buff that LANDS on the player — including one cast by
+// another player, which never produces a local "You begin casting" line.
+func (c *Calculator) HateModBuff(spellName string) (pct, durationTicks int, ok bool) {
+	sp := c.lookupSpell(spellName)
+	if sp == nil || sp.GoodEffect != 1 {
+		return 0, 0, false
+	}
+	for i := 0; i < len(sp.EffectIDs); i++ {
+		if sp.EffectIDs[i] == spaChangeAggro || sp.EffectIDs[i] == spaSpellHateMod {
+			pct += sp.EffectBaseValues[i]
+		}
+	}
+	if pct == 0 {
+		return 0, 0, false
+	}
+	return pct, sp.BuffDuration, true
 }
 
 // Classify resolves a cast spell into its hate contribution, attributing the
@@ -142,8 +194,8 @@ func (c *Calculator) Classify(spellName, targetNPC string) SpellHate {
 	if c == nil || c.spells == nil || spellName == "" {
 		return SpellHate{}
 	}
-	sp, err := c.spells.GetSpellByExactName(spellName)
-	if err != nil || sp == nil {
+	sp := c.lookupSpell(spellName)
+	if sp == nil {
 		return SpellHate{}
 	}
 

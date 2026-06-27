@@ -226,9 +226,14 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 		t.recordCast(data.SpellName, ev.Timestamp)
 
 	case logparser.EventSpellLanded:
-		// The cast took hold: apply its full hate (offensive hate and/or a
-		// hate-mod self-buff).
+		// The cast took hold: apply our own pending offensive/buff hate.
 		t.commitPending(ev.Timestamp, commitLand)
+		// A hate-mod buff landing ON us also registers — this is the only signal
+		// for one cast by ANOTHER player (no local "You begin casting" line).
+		if data, ok := ev.Data.(logparser.SpellLandedData); ok &&
+			data.Kind == logparser.SpellLandedKindYou {
+			t.registerLandedBuff(data, ev.Timestamp)
+		}
 
 	case logparser.EventSpellResist, logparser.EventSpellDidNotTakeHold:
 		// Resisted or immune: the spell still hit the mob, so its offensive
@@ -489,6 +494,46 @@ func (t *Tracker) registerModLocked(spellName string, pct, durationTicks int) {
 			t.expireMod(spellName)
 		})
 	}
+}
+
+// registerLandedBuff registers a hate-generation buff (Voice of Terris,
+// Glamorous Visage, ...) that LANDED on the active player. Its main purpose is
+// to catch a buff cast by ANOTHER player — that produces no local "You begin
+// casting" line, so the pending-cast path never sees it and the land-on-you
+// event is the only signal. For the player's own self-buffs this is idempotent
+// with the pending path (registerModLocked refreshes the same entry). The buff
+// duration is the spell's listed value (the real one scales with the unknown
+// caster's level — an accepted estimate, same as for self-casts).
+func (t *Tracker) registerLandedBuff(data logparser.SpellLandedData, ts time.Time) {
+	if t.calc == nil {
+		return
+	}
+	for _, name := range candidateNames(data) {
+		pct, dur, ok := t.calc.HateModBuff(name)
+		if !ok {
+			continue
+		}
+		t.mu.Lock()
+		t.registerModLocked(name, pct, dur)
+		snap := t.snapshotLocked(ts)
+		t.mu.Unlock()
+		t.broadcast(snap)
+		return
+	}
+}
+
+// candidateNames returns the spell name(s) a landed-spell event may refer to:
+// the resolved name when the cast text is unambiguous, else every candidate
+// that shares the ambiguous text.
+func candidateNames(data logparser.SpellLandedData) []string {
+	if data.SpellName != "" {
+		return []string{data.SpellName}
+	}
+	names := make([]string, 0, len(data.Candidates))
+	for _, c := range data.Candidates {
+		names = append(names, c.SpellName)
+	}
+	return names
 }
 
 // expireMod drops a hate-mod buff when its duration elapses.

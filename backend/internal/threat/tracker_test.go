@@ -423,6 +423,51 @@ func TestHateModBuffScalesHate(t *testing.T) {
 	}
 }
 
+// A hate-mod buff cast on us by ANOTHER player has no "You begin casting" line;
+// it must still register off the land-on-you event.
+func TestHateModBuffFromExternalCaster(t *testing.T) {
+	spells := fakeSpells{"Voice of Terris": spellHateModBuff("Voice of Terris", 10, 100)}
+	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
+	t0 := time.Now()
+	tr.Handle(logparser.LogEvent{
+		Type:      logparser.EventSpellLanded,
+		Timestamp: t0,
+		Data: logparser.SpellLandedData{
+			Kind:      logparser.SpellLandedKindYou,
+			SpellName: "Voice of Terris",
+		},
+	})
+	tr.Handle(hit("a gnoll", 100, t0.Add(time.Second)))
+	s := tr.GetState()
+	if s.HatemodPct != 10 {
+		t.Errorf("HatemodPct = %d, want 10 (external hate buff registered on land)", s.HatemodPct)
+	}
+	if got := hateFor(s, "a gnoll"); got != 110 {
+		t.Errorf("hate = %d, want 110", got)
+	}
+}
+
+// A buff landing on us via cast_on_OTHER (Kind=other, i.e. on someone else, or a
+// detrimental landing on a mob) must NOT register our hate-mod.
+func TestHateModBuffOnOthersNotRegistered(t *testing.T) {
+	spells := fakeSpells{"Voice of Terris": spellHateModBuff("Voice of Terris", 10, 100)}
+	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
+	t0 := time.Now()
+	tr.Handle(logparser.LogEvent{
+		Type:      logparser.EventSpellLanded,
+		Timestamp: t0,
+		Data: logparser.SpellLandedData{
+			Kind:       logparser.SpellLandedKindOther,
+			SpellName:  "Voice of Terris",
+			TargetName: "Sandrian",
+		},
+	})
+	tr.Handle(hit("a gnoll", 100, t0.Add(time.Second)))
+	if s := tr.GetState(); s.HatemodPct != 0 {
+		t.Errorf("HatemodPct = %d, want 0 (buff landed on someone else)", s.HatemodPct)
+	}
+}
+
 func TestHateModBuffStacksWithStatic(t *testing.T) {
 	spells := fakeSpells{"Voice of Terris": spellHateModBuff("Voice of Terris", 10, 100)}
 	tr := NewTracker(nil, NewCalculator(spells, nil), func() int { return 20 })
