@@ -122,15 +122,17 @@ type Calculator struct {
 	spells SpellSource
 	npcs   NPCSource
 
-	mu      sync.Mutex
-	hpCache map[string]int // db npc name → max HP (negative cache: 0 = unknown)
+	mu sync.Mutex
+	// npcCache memoises GetNPCByName by db name; a present key with a nil value
+	// is a known miss, so a busy fight never re-queries the same mob.
+	npcCache map[string]*db.NPC
 }
 
 // NewCalculator returns a Calculator backed by the given sources. spells may be
 // nil (spell-cast hate is then skipped). npcs may be nil (the HP-scaled
 // standard-hate term is then skipped; instant hate still works).
 func NewCalculator(spells SpellSource, npcs NPCSource) *Calculator {
-	return &Calculator{spells: spells, npcs: npcs, hpCache: make(map[string]int)}
+	return &Calculator{spells: spells, npcs: npcs, npcCache: make(map[string]*db.NPC)}
 }
 
 // Classify resolves a cast spell into its hate contribution, attributing the
@@ -234,29 +236,45 @@ func (c *Calculator) Classify(spellName, targetNPC string) SpellHate {
 	return SpellHate{Found: true, OffensiveHate: int64(nonDamageHate + instant)}
 }
 
-// npcMaxHP returns the NPC's database max HP by display name (spaces converted
-// to the underscores the DB stores), caching both hits and misses so a busy
-// fight doesn't re-query the same mob. 0 means unknown.
-func (c *Calculator) npcMaxHP(displayName string) int {
+// lookupNPC returns the NPC row by display name (spaces converted to the
+// underscores the DB stores), caching both hits and misses so a busy fight
+// doesn't re-query the same mob. Returns nil when unknown.
+func (c *Calculator) lookupNPC(displayName string) *db.NPC {
 	key := strings.ReplaceAll(displayName, " ", "_")
 	c.mu.Lock()
-	if hp, ok := c.hpCache[key]; ok {
+	if n, ok := c.npcCache[key]; ok {
 		c.mu.Unlock()
-		return hp
+		return n
 	}
 	c.mu.Unlock()
 
-	hp := 0
+	var npc *db.NPC
 	if c.npcs != nil {
-		if n, err := c.npcs.GetNPCByName(key); err == nil && n != nil {
-			hp = n.HP
+		if n, err := c.npcs.GetNPCByName(key); err == nil {
+			npc = n
 		}
 	}
 
 	c.mu.Lock()
-	c.hpCache[key] = hp
+	c.npcCache[key] = npc
 	c.mu.Unlock()
-	return hp
+	return npc
+}
+
+// npcMaxHP returns the NPC's database max HP by display name. 0 means unknown.
+func (c *Calculator) npcMaxHP(displayName string) int {
+	if n := c.lookupNPC(displayName); n != nil {
+		return n.HP
+	}
+	return 0
+}
+
+// NPCLevel returns the NPC's database level by display name. 0 means unknown.
+func (c *Calculator) NPCLevel(displayName string) int {
+	if n := c.lookupNPC(displayName); n != nil {
+		return n.Level
+	}
+	return 0
 }
 
 // HealHate is the EQMacEmu CheckHealAggroAmount value for a heal of the given

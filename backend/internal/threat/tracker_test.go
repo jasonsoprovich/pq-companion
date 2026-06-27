@@ -26,6 +26,18 @@ func (f fakeNPCs) GetNPCByName(name string) (*db.NPC, error) {
 	return &db.NPC{Name: name, HP: hp}, nil
 }
 
+// fakeNPCLevels is an in-memory NPCSource keyed by db name → level, for tests
+// that exercise level-gated behaviour (feign-death residual).
+type fakeNPCLevels map[string]int
+
+func (f fakeNPCLevels) GetNPCByName(name string) (*db.NPC, error) {
+	lvl, ok := f[name]
+	if !ok {
+		return nil, nil
+	}
+	return &db.NPC{Name: name, Level: lvl}, nil
+}
+
 // spellWithInstantHate builds a minimal spell carrying a single SE_InstantHate
 // effect of the given value.
 func spellWithInstantHate(name string, hate int) *db.Spell {
@@ -490,6 +502,24 @@ func TestFeignDeathClearsAll(t *testing.T) {
 	tr.Handle(logparser.LogEvent{Type: logparser.EventFeignDeath, Timestamp: t0.Add(time.Second)})
 	if s := tr.GetState(); s.InCombat {
 		t.Error("InCombat = true after feign death, want all cleared")
+	}
+}
+
+// On raid mobs (level >= 35) a successful feign leaves the player on the hate
+// list at the residual 64, not fully cleared; lower mobs are removed.
+func TestFeignDeathResidualOnRaidMobs(t *testing.T) {
+	npcs := fakeNPCLevels{"a_dragon": 60, "a_rat": 10}
+	tr := NewTracker(nil, NewCalculator(nil, npcs), nil)
+	t0 := time.Now()
+	tr.Handle(hit("a dragon", 5000, t0))
+	tr.Handle(hit("a rat", 100, t0))
+	tr.Handle(logparser.LogEvent{Type: logparser.EventFeignDeath, Timestamp: t0.Add(time.Second)})
+	s := tr.GetState()
+	if got := hateFor(s, "a dragon"); got != feignResidualHate {
+		t.Errorf("a dragon hate after feign = %d, want %d (residual, level>=35)", got, feignResidualHate)
+	}
+	if got := hateFor(s, "a rat"); got != -1 {
+		t.Errorf("a rat still tracked after feign (hate=%d), want removed (level<35)", got)
 	}
 }
 

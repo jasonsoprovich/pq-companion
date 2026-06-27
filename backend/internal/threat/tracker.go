@@ -34,6 +34,20 @@ const tpsWindow = 6 * time.Second
 // lastCastWindow so the two engines treat an in-flight cast consistently.
 const castResolveWindow = 30 * time.Second
 
+// feignResidualMinLevel is the NPC level at or above which a successful feign
+// death does NOT reliably remove the player from the hate list. The server
+// (EntityList::ClearFeignAggro in the SecretsOTheP/EQMacEmu fork) only fully
+// clears a mob this level or higher on a random roll; otherwise it leaves the
+// player on the list at a residual feignResidualHate. Below this level the
+// player is always removed. Mobs of unknown level are treated as below it
+// (full clear), matching the meter's pre-residual behaviour.
+const feignResidualMinLevel = 35
+
+// feignResidualHate is the leftover hate the server stamps on a not-cleared
+// feign (SetHate(target, 64)). Tiny — it keeps the mob on the meter to show the
+// player is still on its hate list (at the bottom), rather than safely off it.
+const feignResidualHate = 64
+
 // hateSample is one post-hatemod hate increment with the time it landed, kept
 // in a short rolling buffer per mob to compute the live (windowed) rate.
 type hateSample struct {
@@ -238,10 +252,14 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 			t.endMob(data.Target, ev.Timestamp)
 		}
 
-	case logparser.EventZone, logparser.EventDeath, logparser.EventFeignDeath:
-		// Zoning (incl. gate/egress/evac, which emit a zone line), the player's
-		// own death, and a successful feign death all wipe the player's hate.
+	case logparser.EventZone, logparser.EventDeath:
+		// Zoning (incl. gate/egress/evac, which emit a zone line) and the
+		// player's own death remove the player from every hate list entirely.
 		t.endAll(ev.Timestamp)
+
+	case logparser.EventFeignDeath:
+		// A successful feign is NOT a clean wipe on raid mobs — see feignDeath.
+		t.feignDeath(ev.Timestamp)
 	}
 }
 
@@ -532,6 +550,65 @@ func (t *Tracker) endAll(ts time.Time) {
 	t.mods = make(map[string]*modState)
 	t.pending = nil
 	t.lastEngaged = ""
+	snap := t.snapshotLocked(ts)
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
+// npcLevel returns the tracked mob's database level, or 0 (unknown) when no
+// calculator/NPC source is wired.
+func (t *Tracker) npcLevel(mob string) int {
+	if t.calc == nil {
+		return 0
+	}
+	return t.calc.NPCLevel(mob)
+}
+
+// feignDeath models a successful feign on the player's hate. Mirrors
+// EntityList::ClearFeignAggro: a mob at/above feignResidualMinLevel keeps the
+// player on its hate list at feignResidualHate (the server's clear roll is
+// unobservable, so the meter assumes the common not-cleared outcome — better to
+// show "still on the list at the bottom" than a false all-clear); a lower or
+// unknown-level mob is fully removed. An in-flight cast is interrupted (pending
+// dropped); hate-mod self-buffs persist through feign, so mods are kept.
+func (t *Tracker) feignDeath(ts time.Time) {
+	// Resolve levels outside the lock — NPCLevel may do DB I/O.
+	t.mu.Lock()
+	names := make([]string, 0, len(t.mobs))
+	for name := range t.mobs {
+		names = append(names, name)
+	}
+	hadPending := t.pending != nil
+	t.mu.Unlock()
+
+	if len(names) == 0 && !hadPending {
+		return
+	}
+
+	levels := make(map[string]int, len(names))
+	for _, name := range names {
+		levels[name] = t.npcLevel(name)
+	}
+
+	t.mu.Lock()
+	t.pending = nil
+	for name, m := range t.mobs {
+		if levels[name] >= feignResidualMinLevel {
+			// Residual: still on the hate list, reset to the bottom.
+			m.hate = feignResidualHate
+			m.recent = nil
+			m.meleeSum, m.meleeCount = 0, 0
+			continue
+		}
+		// Fully cleared.
+		if m.timer != nil {
+			m.timer.Stop()
+		}
+		delete(t.mobs, name)
+		if t.lastEngaged == name {
+			t.lastEngaged = ""
+		}
+	}
 	snap := t.snapshotLocked(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)
