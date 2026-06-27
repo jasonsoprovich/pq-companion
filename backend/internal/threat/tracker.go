@@ -26,6 +26,14 @@ const tickDuration = 6 * time.Second
 // jumpy between individual swings. See mobState.recent / liveTPSLocked.
 const tpsWindow = 6 * time.Second
 
+// castResolveWindow bounds how long a pending spell cast waits for its terminal
+// event (land / resist / interrupt / did-not-take-hold) before it is considered
+// stale and dropped. A cast that never resolves within this window — a silent
+// fizzle, or a land line the parser didn't recognise — generates no hate rather
+// than binding to an unrelated later land event. Matches spelltimer's
+// lastCastWindow so the two engines treat an in-flight cast consistently.
+const castResolveWindow = 30 * time.Second
+
 // hateSample is one post-hatemod hate increment with the time it landed, kept
 // in a short rolling buffer per mob to compute the live (windowed) rate.
 type hateSample struct {
@@ -62,6 +70,22 @@ type modState struct {
 	timer *time.Timer
 }
 
+// pendingCast holds a spell the player has begun casting but whose hate has not
+// yet been applied. The hate is committed only when the cast actually resolves
+// (lands, or is resisted — a resisted detrimental spell still generates aggro),
+// never at "You begin casting", so an interrupted or fizzled cast adds nothing.
+// Only one cast is ever in flight (EQ casts serially), so a single slot suffices;
+// a new cast replaces any unresolved prior pending. Exactly one of offensiveHate
+// / hatemodPct is non-zero, mirroring Calculator.Classify.
+type pendingCast struct {
+	spellName     string
+	target        string // mob the offensive hate lands on (captured at cast time)
+	offensiveHate int64  // instant + standard hate; applied on land/resist
+	hatemodPct    int    // self-buff hate modifier; registered on land only
+	durationTicks int
+	at            time.Time
+}
+
 // Tracker accumulates the active character's estimated personal hate per mob
 // from parsed log events and broadcasts a ThreatState snapshot on every change.
 //
@@ -79,6 +103,11 @@ type Tracker struct {
 	// mods holds active hate-generation modifier buffs keyed by spell name.
 	// Their percentages add to the static hatemod for every hate value.
 	mods map[string]*modState
+
+	// pending is the spell currently being cast, awaiting its resolve event.
+	// Its hate is held here until the cast lands or is resisted; nil when no
+	// hate-relevant cast is in flight. See pendingCast.
+	pending *pendingCast
 
 	// pipeTarget is the player's current target name from the Zeal pipe, fed in
 	// exactly as the combat tracker receives it. Drives which mob the overlay
@@ -178,7 +207,24 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 		if !ok {
 			return
 		}
+		// Hate is not applied here ("You begin casting") — only recorded as
+		// pending. It commits when the cast resolves below.
 		t.recordCast(data.SpellName, ev.Timestamp)
+
+	case logparser.EventSpellLanded:
+		// The cast took hold: apply its full hate (offensive hate and/or a
+		// hate-mod self-buff).
+		t.commitPending(ev.Timestamp, commitLand)
+
+	case logparser.EventSpellResist, logparser.EventSpellDidNotTakeHold:
+		// Resisted or immune: the spell still hit the mob, so its offensive
+		// (aggro) component lands, but a beneficial hate-mod buff never took
+		// hold and is dropped.
+		t.commitPending(ev.Timestamp, commitAggroOnly)
+
+	case logparser.EventSpellInterrupt:
+		// Cast aborted before completion — no hate at all.
+		t.commitPending(ev.Timestamp, commitDrop)
 
 	case logparser.EventHeal:
 		data, ok := ev.Data.(logparser.HealData)
@@ -199,10 +245,11 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 	}
 }
 
-// recordCast applies the hate of a spell the player just cast. The cast line
-// names no target, so any offensive hate is attributed to the current target
-// (Zeal pipe) or the most recently engaged mob. Hate-mod self-buffs register an
-// active modifier instead of adding hate.
+// recordCast records a spell the player just began casting as pending, WITHOUT
+// applying its hate. The hate is committed later, when the cast resolves (see
+// commitPending) — so an interrupted or fizzled cast generates nothing. The cast
+// line names no target, so any offensive hate is attributed to the current
+// target (Zeal pipe) or the most recently engaged mob, captured now.
 func (t *Tracker) recordCast(spellName string, ts time.Time) {
 	t.mu.Lock()
 	target := t.castTargetLocked()
@@ -210,16 +257,80 @@ func (t *Tracker) recordCast(spellName string, ts time.Time) {
 
 	// Classify does DB I/O (NPC HP lookup), so it runs outside the lock.
 	info := t.calc.Classify(spellName, target)
-	if !info.Found {
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	// A new cast supersedes any unresolved prior pending (EQ casts serially), so
+	// even a cast that generates no hate clears the slot — a stale pending must
+	// not survive to bind to this cast's later resolve event.
+	if !info.Found || (info.OffensiveHate == 0 && info.HatemodPct == 0) {
+		t.pending = nil
 		return
 	}
-	if info.HatemodPct != 0 {
-		t.registerMod(spellName, info.HatemodPct, info.DurationTicks, ts)
+	t.pending = &pendingCast{
+		spellName:     spellName,
+		target:        target,
+		offensiveHate: info.OffensiveHate,
+		hatemodPct:    info.HatemodPct,
+		durationTicks: info.DurationTicks,
+		at:            ts,
+	}
+}
+
+// commitMode selects how a resolved cast's pending hate is applied.
+type commitMode int
+
+const (
+	// commitLand — the cast took hold: apply offensive hate and/or register a
+	// hate-mod self-buff.
+	commitLand commitMode = iota
+	// commitAggroOnly — the cast resolved without taking hold (resisted or
+	// immune): the offensive aggro component still lands, but a beneficial
+	// hate-mod buff did not, so it is not registered.
+	commitAggroOnly
+	// commitDrop — the cast was interrupted before completion: nothing applies.
+	commitDrop
+)
+
+// commitPending applies (or discards) the spell whose cast is awaiting a resolve
+// event, per mode, then clears the slot. A pending older than castResolveWindow
+// is dropped untouched — its resolve line was missed, so this event belongs to a
+// different (untracked) cast rather than the one we recorded.
+func (t *Tracker) commitPending(ts time.Time, mode commitMode) {
+	t.mu.Lock()
+	p := t.pending
+	t.pending = nil
+	if p == nil || ts.Sub(p.at) > castResolveWindow {
+		t.mu.Unlock()
 		return
 	}
-	if info.OffensiveHate != 0 && target != "" {
-		t.addHate(target, float64(info.OffensiveHate), ts)
+
+	changed := false
+	if mode != commitDrop {
+		switch {
+		case p.hatemodPct != 0:
+			// A hate-mod self-buff applies only on a true land; a resist/immune
+			// means it never took hold.
+			if mode == commitLand {
+				t.registerModLocked(p.spellName, p.hatemodPct, p.durationTicks)
+				changed = true
+			}
+		case p.offensiveHate != 0 && p.target != "":
+			// Offensive (aggro) hate lands on a successful cast AND on a resist —
+			// a resisted detrimental spell still adds aggro.
+			t.addHateLocked(p.target, float64(p.offensiveHate), ts)
+			t.lastEngaged = p.target
+			changed = true
+		}
 	}
+
+	if !changed {
+		t.mu.Unlock()
+		return
+	}
+	snap := t.snapshotLocked(ts)
+	t.mu.Unlock()
+	t.broadcast(snap)
 }
 
 // castTargetLocked returns the mob a no-target spell cast should be attributed
@@ -337,15 +448,14 @@ func (t *Tracker) recordHeal(amount int, ts time.Time) {
 	t.broadcast(snap)
 }
 
-// registerMod activates (or refreshes) a hate-mod self-buff's percentage,
-// expiring it after its buff duration. A non-positive duration (e.g. a
-// permanent illusion) registers with no timer and is cleared only on
-// zone/death/reset.
-func (t *Tracker) registerMod(spellName string, pct, durationTicks int, ts time.Time) {
+// registerModLocked activates (or refreshes) a hate-mod self-buff's percentage,
+// expiring it after its buff duration. A non-positive duration (e.g. a permanent
+// illusion) registers with no timer and is cleared only on zone/death/reset.
+// Caller must hold t.mu and is responsible for snapshotting/broadcasting.
+func (t *Tracker) registerModLocked(spellName string, pct, durationTicks int) {
 	if pct == 0 || spellName == "" {
 		return
 	}
-	t.mu.Lock()
 	m := t.mods[spellName]
 	if m == nil {
 		m = &modState{}
@@ -361,9 +471,6 @@ func (t *Tracker) registerMod(spellName string, pct, durationTicks int, ts time.
 			t.expireMod(spellName)
 		})
 	}
-	snap := t.snapshotLocked(ts)
-	t.mu.Unlock()
-	t.broadcast(snap)
 }
 
 // expireMod drops a hate-mod buff when its duration elapses.
@@ -407,7 +514,7 @@ func (t *Tracker) endMob(mob string, ts time.Time) {
 // death, or feign death).
 func (t *Tracker) endAll(ts time.Time) {
 	t.mu.Lock()
-	if len(t.mobs) == 0 && len(t.mods) == 0 {
+	if len(t.mobs) == 0 && len(t.mods) == 0 && t.pending == nil {
 		t.mu.Unlock()
 		return
 	}
@@ -423,6 +530,7 @@ func (t *Tracker) endAll(ts time.Time) {
 	}
 	t.mobs = make(map[string]*mobState)
 	t.mods = make(map[string]*modState)
+	t.pending = nil
 	t.lastEngaged = ""
 	snap := t.snapshotLocked(ts)
 	t.mu.Unlock()
@@ -492,9 +600,9 @@ func (t *Tracker) snapshotLocked(now time.Time) ThreatState {
 			tps = hate // sub-second engagement: report the burst as-is
 		}
 		state.Mobs = append(state.Mobs, MobThreat{
-			Name:     name,
-			Hate:     int64(hate + 0.5),
-			TPS:      tps,
+			Name: name,
+			Hate: int64(hate + 0.5),
+			TPS:  tps,
 			// Live rate is measured on the receive clock (nowFn), independent of
 			// the snapshot's event-time `now`, so event-driven and ticker-driven
 			// snapshots agree.

@@ -51,6 +51,26 @@ func cast(spell string, ts time.Time) logparser.LogEvent {
 	}
 }
 
+// land is the spell-resolve event that commits a pending cast's hate. The
+// tracker keys off the event type (one cast is in flight at a time), so the
+// payload only needs to carry the name for readability.
+func land(spell string, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventSpellLanded,
+		Timestamp: ts,
+		Data:      logparser.SpellLandedData{SpellName: spell},
+	}
+}
+
+// castLand drives a complete, successful cast: the begin-cast that records the
+// pending hate followed by the land that commits it. Hate is applied only on the
+// land, so most tests (which assume the spell took hold) need both. Resist and
+// interrupt paths are exercised explicitly elsewhere.
+func castLand(tr *Tracker, spell string, ts time.Time) {
+	tr.Handle(cast(spell, ts))
+	tr.Handle(land(spell, ts))
+}
+
 // hateFor returns the tracked hate for a mob, or -1 if untracked.
 func hateFor(s ThreatState, mob string) int64 {
 	for _, m := range s.Mobs {
@@ -152,13 +172,13 @@ func TestInstantHateSpellAddsToCurrentTarget(t *testing.T) {
 
 	// Engage so there's a current (last-engaged) mob to attribute the cast to.
 	tr.Handle(hit("a gnoll", 100, t0))
-	tr.Handle(cast("Terror of Terris", t0.Add(time.Second)))
+	castLand(tr, "Terror of Terris", t0.Add(time.Second))
 	if got := hateFor(tr.GetState(), "a gnoll"); got != 610 {
 		t.Errorf("hate after Terror = %d, want 610 (100 + 510)", got)
 	}
 
 	// Jolt sheds aggro: total drops by 500 → 110.
-	tr.Handle(cast("Jolt", t0.Add(2*time.Second)))
+	castLand(tr, "Jolt", t0.Add(2*time.Second))
 	if got := hateFor(tr.GetState(), "a gnoll"); got != 110 {
 		t.Errorf("hate after Jolt = %d, want 110 (610 - 500)", got)
 	}
@@ -169,7 +189,7 @@ func TestAggroShedFlooredAtZero(t *testing.T) {
 	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
 	t0 := time.Now()
 	tr.Handle(hit("a gnoll", 100, t0))
-	tr.Handle(cast("Jolt", t0.Add(time.Second))) // raw total -400
+	castLand(tr, "Jolt", t0.Add(time.Second)) // raw total -400
 	if got := hateFor(tr.GetState(), "a gnoll"); got != 0 {
 		t.Errorf("displayed hate = %d, want 0 (negative raw total floored)", got)
 	}
@@ -179,7 +199,7 @@ func TestCastWithoutTargetIgnored(t *testing.T) {
 	spells := fakeSpells{"Terror of Terris": spellWithInstantHate("Terror of Terris", 510)}
 	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
 	// No prior engagement and no pipe target → nothing to attribute to.
-	tr.Handle(cast("Terror of Terris", time.Now()))
+	castLand(tr, "Terror of Terris", time.Now())
 	if s := tr.GetState(); s.InCombat {
 		t.Error("InCombat = true, want false (cast with no target dropped)")
 	}
@@ -263,7 +283,7 @@ func TestStandardHateUtilitySpell(t *testing.T) {
 	tr := NewTracker(nil, NewCalculator(spells, npcs), nil)
 	t0 := time.Now()
 	tr.Handle(hit("a gnoll", 100, t0))
-	tr.Handle(cast("Tashan", t0.Add(time.Second)))
+	castLand(tr, "Tashan", t0.Add(time.Second))
 	if got := hateFor(tr.GetState(), "a gnoll"); got != 300 {
 		t.Errorf("hate after Tashan = %d, want 300 (100 + 3000/15)", got)
 	}
@@ -276,7 +296,7 @@ func TestStandardHateFloorAndCap(t *testing.T) {
 	// HP/15 below the floor clamps up to 25.
 	low := NewTracker(nil, NewCalculator(spells, fakeNPCs{"a_rat": 100}), nil)
 	low.Handle(hit("a rat", 10, t0))
-	low.Handle(cast("Debuff", t0.Add(time.Second)))
+	castLand(low, "Debuff", t0.Add(time.Second))
 	if got := hateFor(low.GetState(), "a rat"); got != 35 {
 		t.Errorf("floor case hate = %d, want 35 (10 + floor 25)", got)
 	}
@@ -284,7 +304,7 @@ func TestStandardHateFloorAndCap(t *testing.T) {
 	// HP/15 above the cap clamps down to 1200.
 	high := NewTracker(nil, NewCalculator(spells, fakeNPCs{"a_dragon": 300000}), nil)
 	high.Handle(hit("a dragon", 100, t0))
-	high.Handle(cast("Debuff", t0.Add(time.Second)))
+	castLand(high, "Debuff", t0.Add(time.Second))
 	if got := hateFor(high.GetState(), "a dragon"); got != 1300 {
 		t.Errorf("cap case hate = %d, want 1300 (100 + cap 1200)", got)
 	}
@@ -295,7 +315,7 @@ func TestStandardHateSkippedWithoutNPCSource(t *testing.T) {
 	tr := NewTracker(nil, NewCalculator(spells, nil), nil) // no NPC source
 	t0 := time.Now()
 	tr.Handle(hit("a gnoll", 100, t0))
-	tr.Handle(cast("Tashan", t0.Add(time.Second)))
+	castLand(tr, "Tashan", t0.Add(time.Second))
 	if got := hateFor(tr.GetState(), "a gnoll"); got != 100 {
 		t.Errorf("hate = %d, want 100 (no HP → no standard hate)", got)
 	}
@@ -309,7 +329,7 @@ func TestDamageSpellCastAddsNoStandardHate(t *testing.T) {
 	tr := NewTracker(nil, NewCalculator(spells, npcs), nil)
 	t0 := time.Now()
 	tr.Handle(hit("a gnoll", 100, t0))
-	tr.Handle(cast("Nuke", t0.Add(time.Second)))
+	castLand(tr, "Nuke", t0.Add(time.Second))
 	if got := hateFor(tr.GetState(), "a gnoll"); got != 100 {
 		t.Errorf("hate after nuke cast = %d, want 100 (damage counted from its own line only)", got)
 	}
@@ -323,7 +343,7 @@ func TestHateModBuffScalesHate(t *testing.T) {
 	t0 := time.Now()
 
 	down := NewTracker(nil, NewCalculator(spells, nil), nil)
-	down.Handle(cast("Glamorous Visage", t0))
+	castLand(down, "Glamorous Visage", t0)
 	down.Handle(hit("a gnoll", 100, t0.Add(time.Second)))
 	s := down.GetState()
 	if got := hateFor(s, "a gnoll"); got != 90 {
@@ -334,7 +354,7 @@ func TestHateModBuffScalesHate(t *testing.T) {
 	}
 
 	up := NewTracker(nil, NewCalculator(spells, nil), nil)
-	up.Handle(cast("Voice of Terris", t0))
+	castLand(up, "Voice of Terris", t0)
 	up.Handle(hit("a gnoll", 100, t0.Add(time.Second)))
 	if got := hateFor(up.GetState(), "a gnoll"); got != 110 {
 		t.Errorf("hate with +10%% buff = %d, want 110", got)
@@ -345,7 +365,7 @@ func TestHateModBuffStacksWithStatic(t *testing.T) {
 	spells := fakeSpells{"Voice of Terris": spellHateModBuff("Voice of Terris", 10, 100)}
 	tr := NewTracker(nil, NewCalculator(spells, nil), func() int { return 20 })
 	t0 := time.Now()
-	tr.Handle(cast("Voice of Terris", t0))
+	castLand(tr, "Voice of Terris", t0)
 	tr.Handle(hit("a gnoll", 100, t0.Add(time.Second)))
 	// 100 * (100 + 20 + 10) / 100 = 130
 	if got := hateFor(tr.GetState(), "a gnoll"); got != 130 {
@@ -357,7 +377,7 @@ func TestHateModBuffClearedOnZone(t *testing.T) {
 	spells := fakeSpells{"Glamorous Visage": spellHateModBuff("Glamorous Visage", -10, 100)}
 	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
 	t0 := time.Now()
-	tr.Handle(cast("Glamorous Visage", t0))
+	castLand(tr, "Glamorous Visage", t0)
 	tr.Handle(logparser.LogEvent{Type: logparser.EventZone, Timestamp: t0.Add(time.Second), Data: logparser.ZoneData{ZoneName: "x"}})
 	tr.Handle(hit("a gnoll", 100, t0.Add(2*time.Second)))
 	s := tr.GetState()
@@ -420,6 +440,102 @@ func TestFeignDeathClearsAll(t *testing.T) {
 	tr.Handle(logparser.LogEvent{Type: logparser.EventFeignDeath, Timestamp: t0.Add(time.Second)})
 	if s := tr.GetState(); s.InCombat {
 		t.Error("InCombat = true after feign death, want all cleared")
+	}
+}
+
+// ── Cast → resolve deferral: hate applies on land/resist, not cast-begin ────
+
+func resist(spell string, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventSpellResist,
+		Timestamp: ts,
+		Data:      logparser.SpellResistData{SpellName: spell},
+	}
+}
+
+func interrupt(spell string, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventSpellInterrupt,
+		Timestamp: ts,
+		Data:      logparser.SpellInterruptData{SpellName: spell},
+	}
+}
+
+// A bare "begin casting" must NOT apply hate — only the later resolve does.
+func TestCastBeginDoesNotApplyHate(t *testing.T) {
+	spells := fakeSpells{"Terror of Terris": spellWithInstantHate("Terror of Terris", 510)}
+	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 100, t0))
+	tr.Handle(cast("Terror of Terris", t0.Add(time.Second))) // no resolve yet
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 100 {
+		t.Errorf("hate before resolve = %d, want 100 (cast pending, not applied)", got)
+	}
+	tr.Handle(land("Terror of Terris", t0.Add(2*time.Second)))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 610 {
+		t.Errorf("hate after land = %d, want 610", got)
+	}
+}
+
+// An interrupted cast generates no hate, and a stale land for it can't resurrect.
+func TestInterruptedCastAddsNoHate(t *testing.T) {
+	spells := fakeSpells{"Terror of Terris": spellWithInstantHate("Terror of Terris", 510)}
+	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 100, t0))
+	tr.Handle(cast("Terror of Terris", t0.Add(time.Second)))
+	tr.Handle(interrupt("Terror of Terris", t0.Add(2*time.Second)))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 100 {
+		t.Errorf("hate after interrupt = %d, want 100 (no hate from aborted cast)", got)
+	}
+	tr.Handle(land("Terror of Terris", t0.Add(3*time.Second)))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 100 {
+		t.Errorf("hate after stale land = %d, want 100", got)
+	}
+}
+
+// A resisted detrimental spell still generates its aggro component.
+func TestResistedDetrimentalStillAggros(t *testing.T) {
+	spells := fakeSpells{"Terror of Terris": spellWithInstantHate("Terror of Terris", 510)}
+	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 100, t0))
+	tr.Handle(cast("Terror of Terris", t0.Add(time.Second)))
+	tr.Handle(resist("Terror of Terris", t0.Add(2*time.Second)))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 610 {
+		t.Errorf("hate after resist = %d, want 610 (resisted spell still aggros)", got)
+	}
+}
+
+// A hate-mod self-buff that is resisted/immune must NOT register its modifier
+// (it never took hold), unlike its offensive counterpart.
+func TestHateModBuffNotRegisteredOnResist(t *testing.T) {
+	spells := fakeSpells{"Voice of Terris": spellHateModBuff("Voice of Terris", 10, 100)}
+	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
+	t0 := time.Now()
+	tr.Handle(cast("Voice of Terris", t0))
+	tr.Handle(resist("Voice of Terris", t0.Add(time.Second)))
+	tr.Handle(hit("a gnoll", 100, t0.Add(2*time.Second)))
+	s := tr.GetState()
+	if s.HatemodPct != 0 {
+		t.Errorf("HatemodPct = %d, want 0 (resisted buff never took hold)", s.HatemodPct)
+	}
+	if got := hateFor(s, "a gnoll"); got != 100 {
+		t.Errorf("hate = %d, want 100 (no active hate-mod buff)", got)
+	}
+}
+
+// A resolve that arrives after the staleness window is ignored — its cast's
+// resolve line was lost, so it must not bind to an unrelated later event.
+func TestStalePendingDropped(t *testing.T) {
+	spells := fakeSpells{"Terror of Terris": spellWithInstantHate("Terror of Terris", 510)}
+	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 100, t0))
+	tr.Handle(cast("Terror of Terris", t0.Add(time.Second)))
+	tr.Handle(land("Terror of Terris", t0.Add(time.Second).Add(castResolveWindow+time.Second)))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 100 {
+		t.Errorf("hate after stale land = %d, want 100 (pending expired)", got)
 	}
 }
 
