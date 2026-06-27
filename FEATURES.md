@@ -1341,6 +1341,48 @@ Parse and edit Zeal `_spellsets.ini` exports.
   loop, a log-replayer crash on stop, out-of-order quest search results, and a
   black screen when switching to a character with an empty gear slot
 
+## v0.14.0 — Threat Meter, Trader Tracker, Resist Calculator, Charm Pet Finder, Multi-Format Trigger Import
+
+- **Threat Meter** — a personal, per-mob hate estimator built entirely from
+  your own log lines: observed damage, spell instant-hate (SPA 92), standard
+  hate, hate-modifying buffs (SPA 114/130), heal and miss hate, and feign-death
+  resets, with a live rolling-window hate-per-second readout measured on a
+  receive clock. Surfaced as a dashboard card and a pop-out overlay window
+- **Trader Tracker** — infers your Bazaar sales by diffing your Trader's Satchel
+  between inventory exports, captured automatically by a background poller or
+  from manual `/output` exports, so you can see what sold while you were away
+- **Resist Calculator** — estimates a spell's land chance against any NPC by
+  porting EQMacEmu's resist check and enumerating the full roll distribution,
+  with a resist-debuff section (level-scaled magnitudes), immunity and
+  charm/mez/fear level-cap gating, and a searchable NPC target picker
+- **Charm Pet Finder** — lists charmable NPCs per zone, class, and spell, ranked
+  by DPS with land-chance odds (reusing the resist engine) and level-cap
+  warnings, gating charm spells by Quarm class level
+- **Multi-format trigger import** — a unified Import Triggers wizard that
+  detects, previews, and commits GINA, EQNag, EQLogParser (`.tgf`), and PQ
+  Companion trigger packs into a chosen category
+- **Trigger anti-spam** — per-trigger refire cooldown (lockout) and a separate
+  repeat-audio cooldown to tame bursts of duplicate alerts, plus a "Copy to
+  Clipboard" trigger action
+- **Log Feed** — right-click a line to "Play from this point", an opt-in "Raw
+  lines" toggle so live search finds any line, a visible play button, and
+  replay file/date/time selections that persist across navigation
+- **Custom timers & overlays** — per-trigger timer bar color with a global timer
+  appearance setting and a quick-add color picker, optional "keep expired
+  timers" overdue reminders, NPC overlay target pin/lock during target swaps,
+  overlays that restore on launch, and a fading-soon alert seeded when creating
+  a trigger from a spell
+- **Items & character** — weapon damage ratio on item detail, and natural
+  (level/race) HP regen added to character stats
+- Spell-detail effect ranges and resist magnitudes now level-scale correctly
+  and respect the PoP era cap
+- Fixes: main window keeps its size/position on a secondary or mixed-DPI monitor
+  (Windows); mez/charm/root break triggers no longer stack multiple sounds for
+  one break and trigger sounds no longer cut off mid-play; GM-only items (e.g.
+  the Red Glowing Robe) are hidden from item queries and gear suggestions;
+  Flowing Thought counts flavor-named worn FT effects; Log Feed browse search is
+  fast and cancellable on large logs
+
 ## Phase 11 — Project Website
 _Planned_
 

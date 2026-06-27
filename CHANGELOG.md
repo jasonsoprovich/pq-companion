@@ -9,6 +9,52 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.14.0 — 2026-06-26
+
+Four new tools arrive — Threat Meter, Trader Tracker, Resist Calculator, and
+Charm Pet Finder — and triggers gain multi-format import.
+
+### Highlights
+- **Threat Meter** — a personal, per-mob hate estimator built from your own
+  log lines (damage, spell aggro, hate-modifying buffs, heals, and feign
+  resets), with a live rolling-window hate-per-second readout. Surfaced as an
+  overlay with a dashboard card and pop-out window.
+- **Trader Tracker** — infers your Bazaar sales by diffing your Trader's
+  Satchel between inventory exports, so you can see what sold while you were
+  away.
+- **Resist Calculator** — estimates a spell's land chance against any NPC,
+  including a resist-debuff section and a searchable NPC target picker.
+- **Charm Pet Finder** — lists charmable NPCs per zone, class, and spell,
+  ranked by DPS with land-chance and level-cap warnings.
+- **Multi-format trigger import** — a unified Import Triggers wizard that
+  detects and previews GINA, EQNag, EQLogParser, and PQ Companion trigger
+  packs before committing them into a category.
+- **Per-trigger refire cooldown** — an anti-spam lockout, plus a separate
+  repeat-audio cooldown, to tame bursts of duplicate alerts.
+- **Trigger "Copy to Clipboard" action** — fire a trigger that copies text
+  straight to your clipboard.
+- **Log Feed** — right-click any line to "Play from this point", an opt-in
+  "Raw lines" toggle so live search finds any line, and replay file/date/time
+  selections now persist as you navigate.
+- **Custom timers & overlays** — per-trigger timer bar colors with a global
+  appearance setting, a bar-color picker on quick-add, optional overdue
+  reminders for expired timers, NPC overlay target pin/lock, and overlays now
+  restore on launch.
+- **Items** — item details show weapon damage ratio; character stats now
+  include natural (level/race) HP regen.
+
+### Fixes
+- The main window now keeps its size and position on a secondary or
+  mixed-DPI monitor on Windows.
+- Mez/charm/root break triggers no longer play multiple stacked sounds for a
+  single break, and trigger sounds no longer cut off mid-play.
+- GM-only items (e.g. the Red Glowing Robe) are hidden from item queries and
+  gear upgrade suggestions.
+- Flowing Thought totals now count flavor-named worn FT effects.
+- Log Feed browse search is fast and cancellable on large logs.
+- Spell-detail effect ranges and resist magnitudes now scale correctly with
+  level and respect the PoP era cap.
+
 ## v0.13.7 — 2026-06-21
 
 Respawn timers now start for DoT and swarm-kited kills.
