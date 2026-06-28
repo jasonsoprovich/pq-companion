@@ -1033,6 +1033,66 @@ func TestInferredPetOwnerYieldsToLeaderLine(t *testing.T) {
 	}
 }
 
+// TestDruidCharmPetInferredFromSelfHeal covers the druid case: an article-named
+// charm pet that never emits a parseable "My leader is"/charm-tell line and
+// isn't a generator name. Healing it yourself ("You healed a drakkel dire wolf
+// ...") is enough to bind it, so its subsequent damage rolls up to the owner
+// instead of being dropped as an NPC.
+func TestDruidCharmPetInferredFromSelfHeal(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Vortikai" })
+	now := time.Now()
+
+	// Start a fight, heal the charm pet, then the pet attacks (capitalised
+	// subject form — exercises canonicalNPCName too).
+	tr.Handle(hitEvent("You", "a frost giant", 100, now))
+	tr.Handle(healEvent("You", "a drakkel dire wolf", 200, now.Add(time.Second)))
+	tr.Handle(hitEvent("A drakkel dire wolf", "a frost giant", 250, now.Add(2*time.Second)))
+
+	st := tr.GetState()
+	pet := findCombatant(st.CurrentFight.Combatants, "a drakkel dire wolf")
+	if pet == nil {
+		t.Fatal("expected charm pet row; self-heal did not bind the pet")
+	}
+	if pet.OwnerName != "Vortikai" {
+		t.Errorf("OwnerName = %q, want %q", pet.OwnerName, "Vortikai")
+	}
+	if pet.TotalDamage != 250 {
+		t.Errorf("pet TotalDamage = %d, want 250", pet.TotalDamage)
+	}
+
+	// Charm break must release the heal-inferred binding (it was flagged
+	// charmed), so a re-aggro from the former pet isn't credited to Vortikai.
+	tr.Handle(charmBrokenEvent(now.Add(3 * time.Second)))
+	tr.mu.Lock()
+	_, stillBound := tr.petOwners["a drakkel dire wolf"]
+	tr.mu.Unlock()
+	if stillBound {
+		t.Error("expected charm-break to release the heal-inferred pet binding")
+	}
+}
+
+// TestSelfHealDoesNotBindGroupedPlayer guards the broadened heal-inference: a
+// single-token player name is never mistaken for a charm pet, even when self-
+// healed.
+func TestSelfHealDoesNotBindGroupedPlayer(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Vortikai" })
+	now := time.Now()
+
+	tr.Handle(hitEvent("You", "a frost giant", 100, now))
+	tr.Handle(healEvent("You", "Grouptank", 200, now.Add(time.Second)))
+
+	tr.mu.Lock()
+	_, bound := tr.petOwners["Grouptank"]
+	tr.mu.Unlock()
+	if bound {
+		t.Error("self-heal on a player name must not create a pet binding")
+	}
+}
+
 // TestGeneratedPetDamageToUnconfirmedBossKept ensures a generated pet's damage
 // to a single-token boss name (which fails looksLikeNPC) is routed to that
 // boss's fight instead of being dropped as an unresolved player-vs-player hit.

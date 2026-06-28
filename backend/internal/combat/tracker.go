@@ -1176,22 +1176,27 @@ func mergeHealerInto(dst, src *internalHealer) {
 // across Reset) so it applies
 // across fights — once a charm is established, every hit the pet lands until
 // charm break gets attributed to the owner.
-// inferPetOwnerFromHealLocked tentatively binds a game-generated pet name to
-// the player healing it. This is how an OTHER raider's mage/necro/shaman pet
-// (whose name embeds no owner, and whose owner's buff casts never reach our
-// log) gets attributed before anyone runs /pet who leader. Deliberately
-// conservative:
-//   - only fires for an EQMac generator name (no player false positives in the
-//     real capture),
-//   - never rebinds a pet we already have an owner for,
-//   - never treats a known real player as a pet.
+// inferPetOwnerFromHealLocked tentatively binds a pet to the player healing it.
+// Two cases, both low-confidence and overridable by any authoritative source
+// ("My leader is", the Zeal pipe, charm tells):
 //
-// It is a low-confidence signal: a cleric topping off someone else's pet would
-// mis-bind it. That's acceptable because every authoritative source -
-// "My leader is", the Zeal pipe, charm tells - overwrites it via the normal
-// recordPetOwner / SetPipePetName paths. Caller must hold t.mu.
+//  1. Any healer topping off an EQMac generator-named pet — how an OTHER
+//     raider's mage/necro/shaman pet (whose name embeds no owner, and whose
+//     owner's buff casts never reach our log) gets attributed before anyone
+//     runs /pet who leader.
+//
+//  2. The active character healing an article-/multi-word-named NPC. You can't
+//     heal a hostile in EQ, so a self-cast heal on an NPC-shaped name is almost
+//     certainly our own charmed pet. This is the most reliable signal for
+//     druids, who heal their charm pet constantly but whose animal pets ("a
+//     drakkel dire wolf") carry no owner in their name and may never emit a
+//     "My leader is"/charm-tell line our parser catches. Flagged charmed so
+//     charm-break cleanup releases the binding.
+//
+// Conservative in both cases: never rebinds a pet we already have an owner for,
+// and never treats a known real player as a pet. Caller must hold t.mu.
 func (t *Tracker) inferPetOwnerFromHealLocked(healer, target string) {
-	if !isGeneratedPetName(target) || t.verifiedPlayers[target] {
+	if target == "" || t.verifiedPlayers[target] {
 		return
 	}
 	if _, known := t.petOwners[target]; known {
@@ -1206,7 +1211,15 @@ func (t *Tracker) inferPetOwnerFromHealLocked(healer, target string) {
 	if owner == "" || owner == target {
 		return
 	}
-	t.petOwners[target] = owner
+
+	self := healer == "You" || healer == t.playerName()
+	switch {
+	case isGeneratedPetName(target):
+		t.petOwners[target] = owner
+	case self && looksLikeNPC(target):
+		t.petOwners[target] = owner
+		t.charmedPets[target] = true
+	}
 }
 
 func (t *Tracker) recordPetOwner(pet, owner string) {
