@@ -9,6 +9,37 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.14.1 — 2026-06-28
+
+A Planes of Power flagging tracker arrives, and the Threat Meter gains a
+raid-aware estimation mode.
+
+### Highlights
+- **PoP Flagging Tracker** — a new tool that tracks your Planes of Power
+  progression as a step-by-step checklist with an interactive dependency
+  graph. Each flag is classified and colour-coded by step type (kill, turn-in,
+  zone, etc.), locked steps stay locked until their prerequisites are met, and
+  progress can be seeded from a Seer paste-in or detected live from your log as
+  kills happen.
+- **Threat Meter — Raid mode** — a new Solo/Raid overlay toggle that models
+  taunt in raid settings (drops the default solo tank boost), registers
+  hate-modifying buffs cast on you by other players, and detects successful
+  taunt emotes.
+
+### Fixes
+- Charm-pet damage now attributes correctly to its owner on the DPS meter —
+  leading-article casing is canonicalized, Zeal's target-pet-owner label is
+  honoured, and self-healed druid pets bind properly.
+- Threat estimates are more accurate: spell-cast hate now applies on
+  land/resist rather than cast-begin, stun-nukes add standard hate, and feign
+  death no longer leaves residual hate on raid mobs.
+- Mob name casing no longer splits hate tracking across solo and raid mobs.
+- PoP flag checklist no longer resets checked flags during an async load race,
+  blocks manually completing a locked flag out of order, and handles locked
+  flags gracefully without a full-page error.
+- Navigation to graph-heavy (xyflow) pages no longer lags — routing is now
+  synchronous.
+
 ## v0.14.0 — 2026-06-26
 
 Four new tools arrive — Threat Meter, Trader Tracker, Resist Calculator, and
