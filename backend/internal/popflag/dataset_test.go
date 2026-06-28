@@ -85,6 +85,17 @@ func findCycle(all []PoPFlag) string {
 	return ""
 }
 
+// TestStepKind guards the per-node action classification that drives the UI's
+// icon/colour coding: every node must carry one of the four known kinds.
+func TestStepKind(t *testing.T) {
+	valid := map[string]bool{"kill": true, "timed_hail": true, "hail": true, "loot": true}
+	for _, f := range Flags() {
+		if !valid[f.StepKind] {
+			t.Errorf("flag %q has missing/unknown step_kind %q", f.ID, f.StepKind)
+		}
+	}
+}
+
 // TestReplacementAnyOf locks in the only genuine either/or in PoP flagging: the
 // Seer Lua deletes mmarr+saryrn when cipher is granted, and mmarr_book+karana
 // when zebuxoruk is granted. Nodes backed by those qglobals must therefore also

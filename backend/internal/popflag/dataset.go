@@ -59,6 +59,18 @@ type PoPFlag struct {
 	Prereqs   []string `json:"prereqs"`         // AND-list of flag IDs that gate this one
 	Level     int      `json:"level,omitempty"` // level at which the chain can be skipped to (display)
 
+	// StepKind buckets the step by the action a player must take, so the UI can
+	// colour-code and icon them (decouples "what do I do" from done/locked
+	// status). One of:
+	//   "kill"       — a boss/encounter fight; be present at the raid.
+	//   "timed_hail" — a limited-window hail right after a boss kill (the
+	//                  "hail the Planar/Astral Projection" steps, poi_mb's
+	//                  QUICKLY-hail, the post-Agnarr Karana hail). Easy to miss.
+	//   "hail"       — an always-up NPC hail; homework that can be done anytime.
+	//   "loot"       — loot / turn-in / combine items; homework, anytime.
+	// Empty is treated by the frontend as "no badge".
+	StepKind string `json:"step_kind,omitempty"`
+
 	// Completion detection — consumed by the Phase 2 Seer parser; authored now.
 	Qglobal      string        `json:"qglobal,omitempty"`       // backing qglobal name
 	QglobalValue string        `json:"qglobal_value,omitempty"` // value marking THIS node complete

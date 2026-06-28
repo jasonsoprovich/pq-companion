@@ -8,6 +8,7 @@
     "detail": "Find Mavuin in the basement, hail him, and agree to plea his case to The Tribunal.",
     "prereqs": [],
     "level": 46,
+    "step_kind": "hail",
     "qglobal": "mavuin",
     "qglobal_value": "1",
     "counter": true
@@ -20,6 +21,7 @@
     "label": "Show the Tribunal a Trial mark",
     "detail": "Complete any one Trial, loot its Mark, and show the Tribunal the mark.",
     "prereqs": ["poj_preflag"],
+    "step_kind": "loot",
     "qglobal": "mavuin",
     "qglobal_value": "2",
     "counter": true
@@ -32,6 +34,7 @@
     "label": "Return to Mavuin (Valor/Storms flag)",
     "detail": "Return to Mavuin and hail him. You are now flagged for Valor and Storms.",
     "prereqs": ["poj_trial_mark"],
+    "step_kind": "hail",
     "qglobal": "mavuin",
     "qglobal_value": "3",
     "counter": true
@@ -44,7 +47,8 @@
     "label": "Preflag with Adroha Jezith",
     "detail": "Hail Adroha Jezith in the Plane of Tranquility sick bay and say 'Tortured by nightmares'.",
     "prereqs": [],
-    "level": 46
+    "level": 46,
+    "step_kind": "hail"
   },
   {
     "id": "ponb_hedge",
@@ -54,6 +58,7 @@
     "label": "Hedge: Construct of Nightmares",
     "detail": "Escort Thelin through the Maze and defeat the construct of nightmares in the Hedge event.",
     "prereqs": ["ponb_preflag"],
+    "step_kind": "kill",
     "qglobal": "thelin",
     "qglobal_value": "1",
     "counter": true,
@@ -67,6 +72,7 @@
     "label": "Defeat Terris Thule",
     "detail": "Enter PoNb through the gate near the Hedge and defeat Terris Thule.",
     "prereqs": ["ponb_hedge"],
+    "step_kind": "kill",
     "qglobal": "thelin",
     "qglobal_value": "3",
     "counter": true,
@@ -80,6 +86,7 @@
     "label": "Hail Elder Poxbourne",
     "detail": "Hail Elder Poxbourne in the Plane of Tranquility after defeating Terris Thule.",
     "prereqs": ["ponb_terris"],
+    "step_kind": "hail",
     "qglobal": "thelin",
     "qglobal_value": "4",
     "counter": true
@@ -93,6 +100,7 @@
     "detail": "Hail Adler Fuirstel outside the Plane of Disease, talk, and say 'what ward'.",
     "prereqs": [],
     "level": 46,
+    "step_kind": "hail",
     "qglobal": "fuirstel",
     "qglobal_value": "1",
     "counter": true
@@ -106,6 +114,7 @@
     "detail": "Enter Disease, defeat Grummus, and hail the Planar Projection. Opens the Crypt of Decay.",
     "prereqs": ["pod_preflag"],
     "level": 46,
+    "step_kind": "timed_hail",
     "qglobal": "grummus",
     "qglobal_value": "1",
     "events": [{ "kind": "kill", "match": "Grummus" }]
@@ -118,6 +127,7 @@
     "label": "Hail Elder Fuirstel (Grummus flag)",
     "detail": "Return to the sick bay in Tranquility and hail Elder Fuirstel. Receives the Grummus flag.",
     "prereqs": ["pod_grummus"],
+    "step_kind": "hail",
     "qglobal": "fuirstel",
     "qglobal_value": "3",
     "counter": true
@@ -131,6 +141,7 @@
     "detail": "Optional: defeat Xanamech Nezmirthafen for access to the Factory (can be 85/15'd past).",
     "prereqs": [],
     "level": 46,
+    "step_kind": "kill",
     "qglobal": "poi_door",
     "qglobal_value": "1",
     "events": [{ "kind": "kill", "match": "Xanamech Nezmirthafen" }]
@@ -143,7 +154,8 @@
     "label": "Preflag with Giwin Mirakon",
     "detail": "Enter the Factory and hail the gnome. Say 'I will test the machine.'",
     "prereqs": [],
-    "level": 46
+    "level": 46,
+    "step_kind": "hail"
   },
   {
     "id": "poi_mb",
@@ -154,6 +166,7 @@
     "detail": "Defeat the Manaetic Behemoth deep in the Factory, then QUICKLY hail Giwin Mirakon. Flags for Tactics.",
     "prereqs": ["poi_preflag"],
     "level": 46,
+    "step_kind": "timed_hail",
     "qglobal": "zeks",
     "qglobal_value": "2",
     "counter": true
@@ -166,6 +179,7 @@
     "label": "Show prowess to Askr",
     "detail": "Find and hail Askr the Lost; complete his initial tasks for Askr's Bag of Veracity.",
     "prereqs": ["poj_mavuin_return"],
+    "step_kind": "loot",
     "qglobal": "karana",
     "qglobal_value": "1",
     "counter": true,
@@ -179,6 +193,7 @@
     "label": "Bastion of Thunder flag",
     "detail": "Obtain the Talisman of Thunderous Foyer from Askr. Flags for the Bastion of Thunder.",
     "prereqs": ["post_bot_preflag"],
+    "step_kind": "loot",
     "qglobal": "karana",
     "qglobal_value": "2",
     "counter": true,
@@ -193,6 +208,7 @@
     "detail": "Enter Aerin`Dar's lair and defeat the prismatic dragon, then hail the Astral Projection. Flags for Halls of Honor.",
     "prereqs": ["poj_mavuin_return"],
     "level": 55,
+    "step_kind": "timed_hail",
     "qglobal": "aerindar",
     "qglobal_value": "2",
     "counter": true,
@@ -206,7 +222,8 @@
     "label": "Carpryn cycle",
     "detail": "Fight through Carpin, Ahvi, Bishop, Vindor, Raex, and High Priest Ultor Szanvon within Ruins of Lxanvom.",
     "prereqs": ["pod_postflag"],
-    "level": 55
+    "level": 55,
+    "step_kind": "kill"
   },
   {
     "id": "cod_bertox",
@@ -216,6 +233,7 @@
     "label": "Defeat Bertoxxulous",
     "detail": "Defeat Bertoxxulous within the Crypt of Decay and hail the Planar Projection.",
     "prereqs": ["cod_carpryn"],
+    "step_kind": "timed_hail",
     "qglobal": "fuirstel",
     "qglobal_value": "4",
     "counter": true,
@@ -229,6 +247,7 @@
     "label": "Hail Elder Fuirstel (Bertox flag)",
     "detail": "Hail Adler Fuirstel near Disease and Elder Fuirstel in the sick bay after defeating Bertox.",
     "prereqs": ["cod_bertox"],
+    "step_kind": "hail",
     "qglobal": "fuirstel",
     "qglobal_value": "5",
     "counter": true
@@ -242,6 +261,7 @@
     "detail": "Complete Trydan Faye's trial by defeating Rydda`Dar (first of Honor's Trials).",
     "prereqs": ["pov_aerindar", "poj_mavuin_return"],
     "level": 62,
+    "step_kind": "kill",
     "qglobal": "hohtrials",
     "bit_position": 1
   },
@@ -254,6 +274,7 @@
     "detail": "Complete Rhaliq Trell's trial by saving the villagers (second of Honor's Trials).",
     "prereqs": ["pov_aerindar", "poj_mavuin_return"],
     "level": 62,
+    "step_kind": "kill",
     "qglobal": "hohtrials",
     "bit_position": 2
   },
@@ -266,6 +287,7 @@
     "detail": "Complete Alekson Garn's trial by protecting the maidens (third of Honor's Trials).",
     "prereqs": ["pov_aerindar", "poj_mavuin_return"],
     "level": 62,
+    "step_kind": "kill",
     "qglobal": "hohtrials",
     "bit_position": 3
   },
@@ -277,6 +299,7 @@
     "label": "Defeat Lord Mithaniel Marr",
     "detail": "Enter Halls of Honor B and defeat Lord Mithaniel Marr within his temple.",
     "prereqs": ["hoh_trial_maidens", "hoh_trial_villagers", "hoh_trial_rydda", "pov_aerindar"],
+    "step_kind": "kill",
     "qglobal": "mmarr",
     "qglobal_value": "1",
     "satisfied_by": [{ "qglobal": "cipher", "value": "1" }],
@@ -290,6 +313,7 @@
     "label": "Preflag with Fahlia Shadyglade",
     "detail": "Hail Fahlia Shadyglade in the sick bay, follow her text, and say 'I will go.'",
     "prereqs": ["cod_postflag", "ponb_postflag"],
+    "step_kind": "hail",
     "qglobal": "tylis",
     "qglobal_value": "1",
     "counter": true
@@ -302,6 +326,7 @@
     "label": "Defeat the Keeper of Sorrows",
     "detail": "Talk to Tylis Newleaf to teleport the raid to the Keeper of Sorrows, then defeat it. Hail Tylis afterward.",
     "prereqs": ["potor_preflag"],
+    "step_kind": "timed_hail",
     "qglobal": "tylis",
     "qglobal_value": "2",
     "counter": true,
@@ -315,6 +340,7 @@
     "label": "Defeat Saryrn",
     "detail": "Go to the 5th floor, defeat Saryrn, and hail the Planar Projection.",
     "prereqs": ["potor_preflag"],
+    "step_kind": "timed_hail",
     "qglobal": "saryrn",
     "qglobal_value": "1",
     "satisfied_by": [{ "qglobal": "cipher", "value": "1" }],
@@ -327,7 +353,8 @@
     "zone_short": "PoTor",
     "label": "Hail Fahlia (Saryrn flag)",
     "detail": "Return to the sick bay and hail Tylis and Fahlia after defeating the Keeper of Sorrows and Saryrn.",
-    "prereqs": ["potor_saryrn", "potor_keeper"]
+    "prereqs": ["potor_saryrn", "potor_keeper"],
+    "step_kind": "hail"
   },
   {
     "id": "potac_vallon",
@@ -337,6 +364,7 @@
     "label": "Defeat Vallon Zek",
     "detail": "Defeat Vallon Zek and hail the Planar Projection.",
     "prereqs": ["poi_mb"],
+    "step_kind": "timed_hail",
     "qglobal": "zeks",
     "qglobal_value": "3",
     "events": [{ "kind": "kill", "match": "Vallon Zek" }]
@@ -349,6 +377,7 @@
     "label": "Defeat Tallon Zek",
     "detail": "Defeat Tallon Zek and hail the Planar Projection.",
     "prereqs": ["poi_mb"],
+    "step_kind": "timed_hail",
     "qglobal": "zeks",
     "qglobal_value": "4",
     "events": [{ "kind": "kill", "match": "Tallon Zek" }]
@@ -361,6 +390,7 @@
     "label": "Defeat Rallos Zek the Warlord",
     "detail": "Defeat Rallos Zek the Warlord and hail the Planar Projection.",
     "prereqs": ["poi_mb"],
+    "step_kind": "timed_hail",
     "qglobal": "zeks",
     "qglobal_value": "7",
     "counter": true,
@@ -375,6 +405,7 @@
     "detail": "Defeat Agnarr the Storm Lord, then go upstairs to Karana, hail him, and say 'I will follow the path of the Fallen.'",
     "prereqs": ["post_bot_flag"],
     "level": 62,
+    "step_kind": "timed_hail",
     "events": [{ "kind": "kill", "match": "Agnarr the Storm Lord" }]
   },
   {
@@ -385,6 +416,7 @@
     "label": "Speak to Grand Librarian (Elemental access)",
     "detail": "Hail Grand Librarian Maelin atop the Knowledge library; say 'I have new lore' and 'I have new information'. Flags for the Elemental Planes and Tower of Solusek Ro.",
     "prereqs": ["post_bot_flag", "bot_agnarr", "hoh_mithaniel", "potor_postflag", "potac_rallos", "potac_vallon", "potac_tallon"],
+    "step_kind": "hail",
     "qglobal": "zebuxoruk",
     "qglobal_value": "1",
     "counter": true
@@ -397,6 +429,7 @@
     "label": "Mini: Xuzl",
     "detail": "Defeat the mini boss Xuzl within the Tower of Solusek Ro.",
     "prereqs": ["potac_tallon", "potac_vallon", "potor_postflag", "hoh_mithaniel"],
+    "step_kind": "kill",
     "qglobal": "sol_room",
     "bit_position": 1,
     "events": [{ "kind": "kill", "match": "Xuzl" }]
@@ -409,6 +442,7 @@
     "label": "Mini: Arlyxir",
     "detail": "Defeat the mini boss Arlyxir within the Tower of Solusek Ro.",
     "prereqs": ["potac_tallon", "potac_vallon", "potor_postflag", "hoh_mithaniel"],
+    "step_kind": "kill",
     "qglobal": "sol_room",
     "bit_position": 2,
     "events": [{ "kind": "kill", "match": "Arlyxir" }]
@@ -421,6 +455,7 @@
     "label": "Mini: Protector of Dresolik",
     "detail": "Defeat the Protector of Dresolik within the Tower of Solusek Ro.",
     "prereqs": ["potac_tallon", "potac_vallon", "potor_postflag", "hoh_mithaniel"],
+    "step_kind": "kill",
     "qglobal": "sol_room",
     "bit_position": 3,
     "events": [{ "kind": "kill", "match": "the Protector of Dresolik" }]
@@ -433,6 +468,7 @@
     "label": "Mini: Rizlona",
     "detail": "Defeat the mini boss Rizlona within the Tower of Solusek Ro.",
     "prereqs": ["potac_tallon", "potac_vallon", "potor_postflag", "hoh_mithaniel"],
+    "step_kind": "kill",
     "qglobal": "sol_room",
     "bit_position": 4,
     "events": [{ "kind": "kill", "match": "Rizlona" }]
@@ -445,6 +481,7 @@
     "label": "Mini: Jiva",
     "detail": "Defeat the mini boss Jiva within the Tower of Solusek Ro.",
     "prereqs": ["potac_tallon", "potac_vallon", "potor_postflag", "hoh_mithaniel"],
+    "step_kind": "kill",
     "qglobal": "sol_room",
     "bit_position": 5,
     "events": [{ "kind": "kill", "match": "Jiva" }]
@@ -457,6 +494,7 @@
     "label": "Defeat Solusek Ro (Plane of Fire flag)",
     "detail": "Enter the room of Solusek Ro and defeat him. Flags for the Plane of Fire.",
     "prereqs": ["potac_rallos", "solro_arlyxir", "solro_dresolik", "solro_jiva", "solro_rizlona", "solro_xuzl"],
+    "step_kind": "kill",
     "qglobal": "pofire",
     "qglobal_value": "1",
     "counter": true,
@@ -470,6 +508,7 @@
     "label": "Defeat Xegony, Queen of Air",
     "detail": "Defeat the Avatars of Wind for access, then defeat Xegony for the Amorphous Cloud of Air.",
     "prereqs": ["pok_librarian"],
+    "step_kind": "kill",
     "events": [{ "kind": "kill", "match": "Xegony" }]
   },
   {
@@ -480,6 +519,7 @@
     "label": "Defeat the Mystical Arbitor (PoEb flag)",
     "detail": "Complete the rings to spawn the Mystical Arbitor and defeat it. Flags for Plane of Earth B.",
     "prereqs": ["pok_librarian"],
+    "step_kind": "kill",
     "events": [{ "kind": "kill", "match": "the Mystical Arbitor" }]
   },
   {
@@ -490,6 +530,7 @@
     "label": "Defeat the Rathe Council / Avatar of Earth",
     "detail": "Enter PoEb, defeat the Rathe Council to spawn the Avatar of Earth, and defeat it for the Mound of Living Stone.",
     "prereqs": ["poearth_arbitor"],
+    "step_kind": "kill",
     "events": [{ "kind": "kill", "match": "the Avatar of Earth" }]
   },
   {
@@ -500,6 +541,7 @@
     "label": "Defeat Coirnav, Avatar of Water",
     "detail": "Defeat Coirnav, the Avatar of Water, for the Sphere of Coalesced Water.",
     "prereqs": ["pok_librarian"],
+    "step_kind": "kill",
     "events": [{ "kind": "kill", "match": "Coirnav" }]
   },
   {
@@ -510,6 +552,7 @@
     "label": "Defeat Fennin Ro, Avatar of Fire",
     "detail": "Defeat Fennin Ro, the Avatar of Fire, for the Globe of Dancing Flame.",
     "prereqs": ["solro_solusek"],
+    "step_kind": "kill",
     "events": [{ "kind": "kill", "match": "Fennin Ro" }]
   },
   {
@@ -520,6 +563,7 @@
     "label": "Plane of Time access",
     "detail": "Craft the Quintessence of Elements from the four elemental god drops, hail Grand Librarian Maelin, and enter the Plane of Time via the Factory.",
     "prereqs": ["pofire_fennin", "poair_xegony", "powater_coirnav", "poearth_rathe"],
+    "step_kind": "loot",
     "qglobal": "time",
     "qglobal_value": "1"
   }
