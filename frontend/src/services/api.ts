@@ -22,7 +22,7 @@ import type {
   LockoutCharactersResponse,
   LockoutCharacterResponse,
 } from '../types/lockouts'
-import type { PoPResolved, PoPFlagDatasetResponse } from '../types/popflag'
+import type { PoPResolved, PoPFlagDatasetResponse, SeerPreviewResponse } from '../types/popflag'
 import type { Backup, BackupsResponse } from '../types/backup'
 import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { RaidThreatState, TargetState, ThreatState } from '../types/overlay'
@@ -726,6 +726,23 @@ export function setPopFlag(
   return post<PoPResolved>(
     `/api/popflags/${encodeURIComponent(character)}/${encodeURIComponent(flagID)}`,
     { done },
+  )
+}
+
+export function previewPopSeer(
+  character: string,
+  text: string,
+): Promise<SeerPreviewResponse> {
+  return post<SeerPreviewResponse>(
+    `/api/popflags/${encodeURIComponent(character)}/seer/preview`,
+    { text },
+  )
+}
+
+export function commitPopSeer(character: string, text: string): Promise<PoPResolved> {
+  return post<PoPResolved>(
+    `/api/popflags/${encodeURIComponent(character)}/seer/commit`,
+    { text },
   )
 }
 

@@ -251,6 +251,7 @@ func main() {
 	// snapshots. Non-fatal — failing here only disables the Lockouts page.
 	lockoutStore, err := lockout.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
 	var lockoutConsumer *lockout.Consumer
+	var popflagConsumer *popflag.Consumer
 	if err != nil {
 		slog.Warn("open lockout tracker (disabled)", "err", err)
 		lockoutStore = nil
@@ -604,6 +605,16 @@ func main() {
 		})
 	}
 
+	if popflagStore != nil {
+		popflagConsumer = popflag.NewConsumer(popflagStore, activeChar)
+		popflagConsumer.SetOnSnapshot(func(character string) {
+			hub.Broadcast(ws.Event{
+				Type: "popflag.snapshot",
+				Data: map[string]any{"character": character},
+			})
+		})
+	}
+
 	if chatStore != nil {
 		chatConsumer = chat.NewConsumer(chatStore, activeChar)
 		chatConsumer.SetOnInsert(func(m chat.Message) {
@@ -914,6 +925,9 @@ func main() {
 		}
 		if lockoutConsumer != nil {
 			lockoutConsumer.HandleLine(ts, msg)
+		}
+		if popflagConsumer != nil {
+			popflagConsumer.HandleLine(ts, msg)
 		}
 		if chatConsumer != nil {
 			chatConsumer.HandleLine(ts, msg)

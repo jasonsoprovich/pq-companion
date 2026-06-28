@@ -2,6 +2,7 @@ package popflag
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -70,6 +71,18 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(`CREATE INDEX IF NOT EXISTS pop_flag_state_character ON pop_flag_state(character)`); err != nil {
 		return err
 	}
+	// Raw Seer snapshot per character — kept for audit and re-derivation when
+	// the dataset's completion rules change.
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS pop_seer_snapshot (
+			character TEXT PRIMARY KEY COLLATE NOCASE,
+			qglobals  TEXT NOT NULL,
+			raw_text  TEXT NOT NULL,
+			taken_at  INTEGER NOT NULL
+		)
+	`); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -128,6 +141,92 @@ func (s *Store) upsert(character, flagID string, done bool, source string) error
 		return fmt.Errorf("upsert pop_flag_state char=%q flag=%q: %w", character, flagID, err)
 	}
 	return nil
+}
+
+// Snapshot is the stored raw Seer reading for a character.
+type Snapshot struct {
+	Character string            `json:"character"`
+	Qglobals  map[string]string `json:"qglobals"`
+	RawText   string            `json:"raw_text"`
+	TakenAt   int64             `json:"taken_at"`
+}
+
+// ApplySeer records a Seer guided-meditation reading: it replaces all
+// non-manual rows for the character with seer-sourced rows for the flags the
+// reading marks complete, and stores the raw snapshot for audit.
+//
+// Precedence (manual > seer > auto) is enforced here: existing manual rows are
+// never touched (the seer insert hits ON CONFLICT DO NOTHING), while stale
+// seer/auto rows are cleared first so a re-reading can retract a flag the
+// character no longer shows.
+func (s *Store) ApplySeer(character string, qglobals map[string]string, rawText string, observedAt time.Time) ([]string, error) {
+	if character == "" {
+		return nil, fmt.Errorf("character required")
+	}
+	if observedAt.IsZero() {
+		observedAt = time.Now()
+	}
+	now := observedAt.Unix()
+	done := DeriveCompletion(qglobals)
+
+	qjson, err := json.Marshal(qglobals)
+	if err != nil {
+		return nil, fmt.Errorf("marshal qglobals: %w", err)
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Clear non-manual rows so retractions take effect and seer supersedes auto.
+	if _, err := tx.Exec(`DELETE FROM pop_flag_state WHERE character = ? AND source != 'manual'`, character); err != nil {
+		return nil, fmt.Errorf("clear non-manual rows for %q: %w", character, err)
+	}
+	// Insert seer rows; a surviving manual row wins (DO NOTHING).
+	for _, id := range done {
+		if _, err := tx.Exec(`
+			INSERT INTO pop_flag_state (character, flag_id, done, source, updated_at)
+			VALUES (?, ?, 1, ?, ?)
+			ON CONFLICT(character, flag_id) DO NOTHING
+		`, character, id, SourceSeer, now); err != nil {
+			return nil, fmt.Errorf("insert seer row char=%q flag=%q: %w", character, id, err)
+		}
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO pop_seer_snapshot (character, qglobals, raw_text, taken_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(character) DO UPDATE SET
+			qglobals = excluded.qglobals,
+			raw_text = excluded.raw_text,
+			taken_at = excluded.taken_at
+	`, character, string(qjson), rawText, now); err != nil {
+		return nil, fmt.Errorf("upsert snapshot for %q: %w", character, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return done, nil
+}
+
+// GetSnapshot returns the stored raw Seer snapshot for a character, or nil when
+// none has been recorded.
+func (s *Store) GetSnapshot(character string) (*Snapshot, error) {
+	row := s.db.QueryRow(`SELECT qglobals, raw_text, taken_at FROM pop_seer_snapshot WHERE character = ?`, character)
+	var qjson, rawText string
+	var takenAt int64
+	if err := row.Scan(&qjson, &rawText, &takenAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	snap := &Snapshot{Character: character, RawText: rawText, TakenAt: takenAt}
+	if err := json.Unmarshal([]byte(qjson), &snap.Qglobals); err != nil {
+		return nil, fmt.Errorf("unmarshal snapshot qglobals: %w", err)
+	}
+	return snap, nil
 }
 
 // Characters returns the distinct character names with at least one stored

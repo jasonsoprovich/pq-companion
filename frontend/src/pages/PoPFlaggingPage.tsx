@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Flag, RefreshCw, AlertCircle, CheckCircle2, Circle, Lock,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, ScrollText,
 } from 'lucide-react'
 import { getPopFlagDataset, getPopFlags, setPopFlag } from '../services/api'
 import type { PoPFlagStatus, PoPResolved } from '../types/popflag'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
+import { useWebSocket } from '../hooks/useWebSocket'
 import CharacterSubTabs from '../components/CharacterSubTabs'
+import ImportSeerModal from '../components/ImportSeerModal'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -247,6 +249,7 @@ export default function PoPFlaggingPage(): React.ReactElement {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [showImport, setShowImport] = useState(false)
 
   // Default the viewed character to the active character once known.
   useEffect(() => {
@@ -266,6 +269,16 @@ export default function PoPFlaggingPage(): React.ReactElement {
   }, [viewedCharacter])
 
   useEffect(() => { load() }, [load])
+
+  // Live refresh when a Seer reading (paste-in or live-log) commits for the
+  // viewed character.
+  useWebSocket((msg) => {
+    if (msg.type !== 'popflag.snapshot') return
+    const snapChar = (msg.data as { character?: string } | null)?.character ?? ''
+    if (snapChar && viewedCharacter && snapChar.toLowerCase() === viewedCharacter.toLowerCase()) {
+      load()
+    }
+  })
 
   const onToggle = useCallback((flag: PoPFlagStatus) => {
     if (!viewedCharacter) return
@@ -336,18 +349,34 @@ export default function PoPFlaggingPage(): React.ReactElement {
             <ProgressBar done={resolved.done} total={resolved.total} />
           </div>
         )}
-        <button
-          onClick={load}
-          className="ml-auto flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-          style={{
-            backgroundColor: 'var(--color-surface-2)',
-            color: 'var(--color-muted-foreground)',
-            border: '1px solid var(--color-border)',
-          }}
-        >
-          <RefreshCw size={11} />
-          Refresh
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {canToggle && (
+            <button
+              onClick={() => setShowImport(true)}
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                color: 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+            >
+              <ScrollText size={11} />
+              Import Seer reading
+            </button>
+          )}
+          <button
+            onClick={load}
+            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            <RefreshCw size={11} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Per-character switcher */}
@@ -376,6 +405,14 @@ export default function PoPFlaggingPage(): React.ReactElement {
           />
         ))}
       </div>
+
+      {showImport && canToggle && (
+        <ImportSeerModal
+          character={viewedCharacter}
+          onClose={() => setShowImport(false)}
+          onCommitted={(r) => setResolved(r)}
+        />
+      )}
     </div>
   )
 }

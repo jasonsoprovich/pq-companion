@@ -52,3 +52,18 @@ export interface PoPResolved {
 export interface PoPFlagDatasetResponse {
   flags: PoPFlag[]
 }
+
+export interface SeerDetected {
+  id: string
+  label: string
+  zone: string
+  tier: number
+  already_done: boolean
+  manual_blocked: boolean
+}
+
+export interface SeerPreviewResponse {
+  qglobals: Record<string, string>
+  detected: SeerDetected[]
+  new_count: number
+}

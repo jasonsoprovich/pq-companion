@@ -99,7 +99,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	quarmH := &quarmHandler{cfgMgr: cfgMgr, fetcher: quarm.NewManifestFetcher()}
 	sandboxH := &sandboxHandler{sb: sb, cfgMgr: cfgMgr}
 	savedQueryH := &savedQueryHandler{store: savedQueryStore, cfgMgr: cfgMgr}
-	popflagH := &popflagHandler{store: popflagStore}
+	popflagH := &popflagHandler{store: popflagStore, hub: hub}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
@@ -251,6 +251,8 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		r.Route("/popflags", func(r chi.Router) {
 			r.Get("/dataset", popflagH.dataset)
 			r.Get("/{character}", popflagH.get)
+			r.Post("/{character}/seer/preview", popflagH.seerPreview)
+			r.Post("/{character}/seer/commit", popflagH.seerCommit)
 			r.Post("/{character}/{flagID}", popflagH.setManual)
 		})
 		// Per-character loot/legacy lockout tracker driven by /sll log parsing.
