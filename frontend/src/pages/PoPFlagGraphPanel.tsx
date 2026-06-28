@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ReactFlow,
   Background,
-  Controls,
   Handle,
   Position,
   MarkerType,
@@ -27,7 +26,7 @@ type Status = 'done' | 'available' | 'locked'
 const STATUS_COLORS: Record<Status, { border: string; bg: string; label: string }> = {
   done: { border: '#34d399', bg: 'rgba(52,211,153,0.14)', label: 'Done' },
   available: { border: '#60a5fa', bg: 'rgba(96,165,250,0.12)', label: 'Available' },
-  locked: { border: '#6b7280', bg: 'rgba(107,114,128,0.10)', label: 'Locked' },
+  locked: { border: '#f87171', bg: 'rgba(248,113,113,0.08)', label: 'Locked' },
 }
 
 function statusOf(f: PoPFlagStatus): Status {
@@ -230,11 +229,6 @@ export default function PoPFlagGraphPanel({ flags }: PoPFlagGraphPanelProps): Re
           proOptions={{ hideAttribution: true }}
         >
           <Background color="#1f2937" gap={24} />
-          <Controls
-            position="bottom-right"
-            showInteractive={false}
-            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-          />
         </ReactFlow>
       </div>
     </div>

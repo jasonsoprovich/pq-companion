@@ -141,6 +141,36 @@ func TestSetManualOrdering(t *testing.T) {
 	}
 }
 
+func TestSetManualRetractionGuard(t *testing.T) {
+	s := openTempStore(t)
+	const char = "Osui"
+
+	// Complete two linked steps in order.
+	if err := s.SetManual(char, "poj_preflag", true); err != nil {
+		t.Fatalf("set poj_preflag: %v", err)
+	}
+	if err := s.SetManual(char, "poj_trial_mark", true); err != nil {
+		t.Fatalf("set poj_trial_mark: %v", err)
+	}
+
+	// Can't retract the prereq while its dependent is still done.
+	if err := s.SetManual(char, "poj_preflag", false); err == nil {
+		t.Fatalf("expected retraction of poj_preflag to be blocked (poj_trial_mark depends on it)")
+	}
+	if !doneByID(t, s, char)["poj_preflag"].Done {
+		t.Errorf("poj_preflag should still be done after blocked retraction")
+	}
+
+	// Retract top-down: the dependent first (no done dependents of its own)...
+	if err := s.SetManual(char, "poj_trial_mark", false); err != nil {
+		t.Fatalf("retracting the dependent should be allowed: %v", err)
+	}
+	// ...then the prereq is free to retract.
+	if err := s.SetManual(char, "poj_preflag", false); err != nil {
+		t.Errorf("retracting poj_preflag should be allowed once nothing depends on it: %v", err)
+	}
+}
+
 func contains(ss []string, want string) bool {
 	for _, s := range ss {
 		if s == want {

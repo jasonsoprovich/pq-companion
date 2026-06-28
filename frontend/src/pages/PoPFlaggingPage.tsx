@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Flag, RefreshCw, AlertCircle, CheckCircle2, Circle, Lock,
-  ChevronDown, ChevronRight, ScrollText, ListChecks, Share2, X,
+  ChevronDown, ChevronRight, ScrollText, ListChecks, Share2,
 } from 'lucide-react'
 import { getPopFlagDataset, getPopFlags, setPopFlag } from '../services/api'
 import type { PoPFlagStatus, PoPResolved } from '../types/popflag'
@@ -121,27 +121,32 @@ function ProvenanceChip({
 interface FlagRowProps {
   flag: PoPFlagStatus
   allFlags: PoPFlagStatus[]
+  requiredByDone: Set<string>
   canToggle: boolean
   busy: boolean
   onToggle: (flag: PoPFlagStatus) => void
   onConfirm: (flag: PoPFlagStatus) => void
 }
 
-function FlagRow({ flag, allFlags, canToggle, busy, onToggle, onConfirm }: FlagRowProps): React.ReactElement {
+function FlagRow({ flag, allFlags, requiredByDone, canToggle, busy, onToggle, onConfirm }: FlagRowProps): React.ReactElement {
   const missingLabels = (flag.missing ?? []).map((id) => labelFor(allFlags, id))
   const lockTitle = flag.locked ? `Needs: ${missingLabels.join(', ')}` : ''
-  // A locked flag that isn't already done can't be checked — its prerequisites
-  // must be completed first. Un-checking a done flag (retraction) and confirming
-  // an already-done auto/seer detection stay allowed.
-  const blockCheck = flag.locked && !flag.done
-  const checkDisabled = !canToggle || busy || blockCheck
+  // Checking is blocked while prerequisites are unmet (must be done in order);
+  // un-checking is blocked while a completed later step depends on this one
+  // (must be retracted top-down). Confirming an already-done auto/seer
+  // detection via the chip stays allowed.
+  const lockedForCheck = flag.locked && !flag.done
+  const lockedForUncheck = flag.done && requiredByDone.has(flag.id)
+  const checkDisabled = !canToggle || busy || lockedForCheck || lockedForUncheck
   const checkTitle = !canToggle
     ? 'Select a character to track'
-    : blockCheck
+    : lockedForCheck
       ? `Complete prerequisites first — Needs: ${missingLabels.join(', ')}`
-      : flag.done
-        ? 'Mark not done'
-        : 'Mark done'
+      : lockedForUncheck
+        ? 'Required by a completed later step'
+        : flag.done
+          ? 'Mark not done'
+          : 'Mark done'
   return (
     <div
       className="flex items-start gap-2 px-4 py-2"
@@ -177,7 +182,7 @@ function FlagRow({ flag, allFlags, canToggle, busy, onToggle, onConfirm }: FlagR
           </span>
           {flag.locked && !flag.done && (
             <span className="ml-1.5 shrink-0" title={lockTitle}>
-              <Lock size={11} style={{ color: 'var(--color-muted)' }} />
+              <Lock size={11} style={{ color: '#f87171' }} />
             </span>
           )}
           {flag.level ? (
@@ -212,11 +217,12 @@ interface TierCardProps {
   onToggle: (flag: PoPFlagStatus) => void
   onConfirm: (flag: PoPFlagStatus) => void
   allFlags: PoPFlagStatus[]
+  requiredByDone: Set<string>
   defaultOpen: boolean
 }
 
 function TierCard({
-  tier, flags, done, total, canToggle, busyId, onToggle, onConfirm, allFlags, defaultOpen,
+  tier, flags, done, total, canToggle, busyId, onToggle, onConfirm, allFlags, requiredByDone, defaultOpen,
 }: TierCardProps): React.ReactElement {
   const [open, setOpen] = useState(defaultOpen)
   const complete = done === total && total > 0
@@ -272,6 +278,7 @@ function TierCard({
                   key={f.id}
                   flag={f}
                   allFlags={allFlags}
+                  requiredByDone={requiredByDone}
                   canToggle={canToggle}
                   busy={busyId === f.id}
                   onToggle={onToggle}
@@ -327,13 +334,15 @@ export default function PoPFlaggingPage(): React.ReactElement {
     }
   })
 
+  // Locked flags can't be checked (the UI disables them), so a toggle failure
+  // here is rare/transient — leave the page as-is rather than surfacing an
+  // error. The backend stays authoritative either way.
   const onToggle = useCallback((flag: PoPFlagStatus) => {
     if (!viewedCharacter) return
     setBusyId(flag.id)
-    setError(null)
     setPopFlag(viewedCharacter, flag.id, !flag.done)
       .then(setResolved)
-      .catch((err: Error) => setError(err.message))
+      .catch(() => {})
       .finally(() => setBusyId(null))
   }, [viewedCharacter])
 
@@ -341,12 +350,21 @@ export default function PoPFlaggingPage(): React.ReactElement {
   const onConfirm = useCallback((flag: PoPFlagStatus) => {
     if (!viewedCharacter) return
     setBusyId(flag.id)
-    setError(null)
     setPopFlag(viewedCharacter, flag.id, true)
       .then(setResolved)
-      .catch((err: Error) => setError(err.message))
+      .catch(() => {})
       .finally(() => setBusyId(null))
   }, [viewedCharacter])
+
+  // Flags that a currently-done flag depends on — these can't be un-checked
+  // (retraction must go top-down).
+  const requiredByDone = useMemo(() => {
+    const s = new Set<string>()
+    for (const f of resolved?.flags ?? []) {
+      if (f.done) for (const p of f.prereqs) s.add(p)
+    }
+    return s
+  }, [resolved])
 
   // Group flags by tier, preserving the (already tier-ordered) tier tallies.
   const tiers = useMemo(() => {
@@ -465,24 +483,6 @@ export default function PoPFlaggingPage(): React.ReactElement {
       {/* Per-character switcher */}
       <CharacterSubTabs value={viewedCharacter} onChange={setViewedCharacter} />
 
-      {/* Transient action error — keeps the page, dismissible. */}
-      {error && (
-        <div
-          className="flex items-center gap-2 px-4 py-1.5 shrink-0 text-xs"
-          style={{
-            backgroundColor: 'rgba(248,113,113,0.12)',
-            borderBottom: '1px solid rgba(248,113,113,0.3)',
-            color: '#f87171',
-          }}
-        >
-          <AlertCircle size={13} className="shrink-0" />
-          <span className="flex-1">{error}</span>
-          <button type="button" onClick={() => setError(null)} title="Dismiss" style={{ color: '#f87171' }}>
-            <X size={13} />
-          </button>
-        </div>
-      )}
-
       {!canToggle && (
         <p className="px-4 py-2 text-[11px] shrink-0" style={{ color: 'var(--color-muted)' }}>
           Select a character above to track flags. Showing the full flag list as a preview.
@@ -514,6 +514,7 @@ export default function PoPFlaggingPage(): React.ReactElement {
               onToggle={onToggle}
               onConfirm={onConfirm}
               allFlags={resolved?.flags ?? []}
+              requiredByDone={requiredByDone}
               defaultOpen={progress.done < progress.total}
             />
           ))}

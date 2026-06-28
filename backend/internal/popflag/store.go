@@ -127,12 +127,15 @@ func (s *Store) SetManual(character, flagID string, done bool) error {
 	if _, ok := ByID(flagID); !ok {
 		return fmt.Errorf("unknown flag id %q", flagID)
 	}
+	states, err := s.Get(character)
+	if err != nil {
+		return err
+	}
+	resolved := Resolve(states)
 	if done {
-		states, err := s.Get(character)
-		if err != nil {
-			return err
-		}
-		for _, fs := range Resolve(states).Flags {
+		// Can't complete a flag whose prerequisites aren't met — unless it's
+		// already effectively done (confirming an auto/seer detection).
+		for _, fs := range resolved.Flags {
 			if fs.ID != flagID {
 				continue
 			}
@@ -140,6 +143,19 @@ func (s *Store) SetManual(character, flagID string, done bool) error {
 				return fmt.Errorf("complete prerequisites first: %s", missingLabels(fs.Missing))
 			}
 			break
+		}
+	} else {
+		// Can't retract a flag that a completed later step depends on —
+		// un-checking must proceed top-down.
+		for _, fs := range resolved.Flags {
+			if !fs.Done {
+				continue
+			}
+			for _, p := range fs.Prereqs {
+				if p == flagID {
+					return fmt.Errorf("required by a completed step: %s", fs.Label)
+				}
+			}
 		}
 	}
 	return s.upsert(character, flagID, done, SourceManual)
