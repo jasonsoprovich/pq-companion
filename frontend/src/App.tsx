@@ -157,7 +157,14 @@ export default function App(): React.ReactElement {
   if (!enumsReady) return <></>
 
   return (
-    <HashRouter>
+    // useTransitions={false} makes route changes synchronous. React Router v7
+    // wraps location updates in React.startTransition by default, but pages
+    // built on an external store that can't be deferred (xyflow / Zustand —
+    // the Schema Graph and PoP Flags graph) make that concurrent commit land
+    // one navigation late: a sidebar click appears to do nothing until the
+    // NEXT click, which then shows the previously-clicked page. Opting out
+    // restores immediate, predictable navigation everywhere.
+    <HashRouter useTransitions={false}>
       <Routes>
         {/* Standalone overlay windows — no sidebar/titlebar Layout */}
         <Route path="dps-overlay-window" element={<OverlayPage><DPSOverlayWindowPage /></OverlayPage>} />
