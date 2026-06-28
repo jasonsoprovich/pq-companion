@@ -14,6 +14,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import dagre from 'dagre'
 import type { PoPFlagStatus } from '../types/popflag'
+import { stepKindMeta } from '../lib/popFlagKind'
 
 // PoPFlagGraphPanel renders the flag dependency DAG: nodes are flags coloured
 // by effective status, edges are prereqs (prereq → flag). Reuses the same
@@ -56,6 +57,7 @@ interface FlagNodeData {
   zoneShort: string
   status: Status
   title: string
+  kind?: string // step_kind — drives the icon/accent badge (static per node)
   dimmed?: boolean
   highlighted?: boolean
   [key: string]: unknown
@@ -68,6 +70,15 @@ const hiddenHandleStyle: React.CSSProperties = {
 
 function FlagNode({ data }: { data: FlagNodeData }): React.ReactElement {
   const palette = STATUS_COLORS[data.status]
+  const km = stepKindMeta(data.kind)
+  const KindIcon = km?.icon
+  // Highlight ring wins; otherwise timed-hail nodes get a warm glow so the
+  // easy-to-miss "act now after the kill" steps stand out in the graph.
+  const boxShadow = data.highlighted
+    ? `0 0 0 2px ${palette.border}`
+    : km?.kind === 'timed_hail'
+      ? `0 0 9px 1px ${km.color}66`
+      : 'none'
   return (
     <div
       title={data.title}
@@ -76,10 +87,11 @@ function FlagNode({ data }: { data: FlagNodeData }): React.ReactElement {
         minHeight: NODE_HEIGHT,
         backgroundColor: palette.bg,
         border: `1px solid ${data.highlighted ? '#fff' : palette.border}`,
+        borderLeft: `3px solid ${km ? km.color : palette.border}`,
         borderRadius: 5,
         opacity: data.dimmed ? 0.18 : 1,
         transition: 'opacity 0.15s ease, border-color 0.15s ease',
-        boxShadow: data.highlighted ? `0 0 0 2px ${palette.border}` : 'none',
+        boxShadow,
         padding: '6px 9px',
         fontSize: 11,
         display: 'flex',
@@ -89,19 +101,44 @@ function FlagNode({ data }: { data: FlagNodeData }): React.ReactElement {
     >
       <Handle type="target" position={Position.Left} style={hiddenHandleStyle} isConnectable={false} />
       <Handle type="source" position={Position.Right} style={hiddenHandleStyle} isConnectable={false} />
-      <span
-        style={{
-          color: '#e5e7eb',
-          fontWeight: 600,
-          lineHeight: 1.2,
-          textDecoration: data.status === 'done' ? 'line-through' : 'none',
-        }}
-      >
-        {data.label}
-      </span>
-      <span style={{ color: palette.border, fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-        {data.zoneShort}
-      </span>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}>
+        {KindIcon && (
+          <KindIcon size={12} style={{ color: km!.color, flexShrink: 0, marginTop: 1 }} />
+        )}
+        <span
+          style={{
+            color: '#e5e7eb',
+            fontWeight: 600,
+            lineHeight: 1.2,
+            flex: 1,
+            textDecoration: data.status === 'done' ? 'line-through' : 'none',
+          }}
+        >
+          {data.label}
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+        <span style={{ color: palette.border, fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          {data.zoneShort}
+        </span>
+        {km && (
+          <span
+            style={{
+              color: km.color,
+              fontSize: 8,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+              padding: '1px 4px',
+              borderRadius: 3,
+              backgroundColor: km.bg,
+              border: `1px solid ${km.border}`,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {km.label}
+          </span>
+        )}
+      </div>
     </div>
   )
 }
@@ -126,7 +163,10 @@ export default function PoPFlagGraphPanel({ flags }: PoPFlagGraphPanelProps): Re
       id: f.id,
       type: 'flag',
       position: { x: 0, y: 0 },
-      data: { label: f.label, zoneShort: f.zone_short, status: statusOf(f), title: '' } satisfies FlagNodeData,
+      data: {
+        label: f.label, zoneShort: f.zone_short, status: statusOf(f),
+        title: '', kind: f.step_kind,
+      } satisfies FlagNodeData,
     }))
     const rawEdges: Edge[] = []
     for (const f of flags) {

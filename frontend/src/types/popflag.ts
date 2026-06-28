@@ -16,6 +16,9 @@ export interface PoPFlag {
   detail: string
   prereqs: string[]
   level?: number
+  // Action bucket for icon/colour coding (see backend popflag.PoPFlag.StepKind):
+  // 'kill' | 'timed_hail' | 'hail' | 'loot'. Optional for forward-compat.
+  step_kind?: string
   // Phase-2 completion-detection fields (present in the dataset, unused by the
   // Phase 1 checklist UI).
   qglobal?: string

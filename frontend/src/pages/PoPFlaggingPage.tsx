@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { getPopFlagDataset, getPopFlags, setPopFlag } from '../services/api'
 import type { PoPFlagStatus, PoPResolved } from '../types/popflag'
+import { STEP_KIND_META, STEP_KIND_ORDER, stepKindMeta } from '../lib/popFlagKind'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useWebSocket } from '../hooks/useWebSocket'
 import CharacterSubTabs from '../components/CharacterSubTabs'
@@ -147,11 +148,19 @@ function FlagRow({ flag, allFlags, requiredByDone, canToggle, busy, onToggle, on
         : flag.done
           ? 'Mark not done'
           : 'Mark done'
+  // Step-kind accent: a coloured left stripe + icon + chip so a player can tell
+  // a raid kill from a must-act-now post-kill hail from solo homework. The
+  // timed-hail kind also gets a faint row tint to make the easy-to-miss steps
+  // stand out (left as transparent stripe when a kind is missing/unknown).
+  const km = stepKindMeta(flag.step_kind)
+  const KindIcon = km?.icon
   return (
     <div
       className="flex items-start gap-2 px-4 py-2"
       style={{
         borderTop: '1px solid var(--color-border)',
+        borderLeft: `3px solid ${km ? km.color : 'transparent'}`,
+        backgroundColor: km?.kind === 'timed_hail' ? km.bg : undefined,
         opacity: flag.locked && !flag.done ? 0.6 : 1,
       }}
     >
@@ -171,6 +180,11 @@ function FlagRow({ flag, allFlags, requiredByDone, canToggle, busy, onToggle, on
       </button>
       <div className="min-w-0 flex-1">
         <div className="flex items-center">
+          {KindIcon && (
+            <span className="mr-1.5 shrink-0" title={km?.tip}>
+              <KindIcon size={13} style={{ color: km!.color }} />
+            </span>
+          )}
           <span
             className="text-sm"
             style={{
@@ -180,6 +194,15 @@ function FlagRow({ flag, allFlags, requiredByDone, canToggle, busy, onToggle, on
           >
             {flag.label}
           </span>
+          {km && (
+            <span
+              className="ml-2 shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
+              title={km.tip}
+              style={{ color: km.color, backgroundColor: km.bg, border: `1px solid ${km.border}` }}
+            >
+              {km.label}
+            </span>
+          )}
           {flag.locked && !flag.done && (
             <span className="ml-1.5 shrink-0" title={lockTitle}>
               <Lock size={11} style={{ color: '#f87171' }} />
@@ -502,6 +525,31 @@ export default function PoPFlaggingPage(): React.ReactElement {
           Select a character above to track flags. Showing the full flag list as a preview.
         </p>
       )}
+
+      {/* Step-type legend — explains the per-row icon/colour coding. */}
+      <div
+        className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b px-4 py-1.5 shrink-0"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
+          Step type
+        </span>
+        {STEP_KIND_ORDER.map((k) => {
+          const m = STEP_KIND_META[k]
+          const Icon = m.icon
+          return (
+            <span
+              key={k}
+              className="inline-flex items-center gap-1 text-[11px]"
+              title={m.tip}
+              style={{ color: m.color }}
+            >
+              <Icon size={12} />
+              {m.label}
+            </span>
+          )
+        })}
+      </div>
 
       {view === 'graph' ? (
         <Suspense
