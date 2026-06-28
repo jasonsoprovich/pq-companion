@@ -1464,6 +1464,41 @@ func TestCharmedPetTellBindsOwner(t *testing.T) {
 	}
 }
 
+// TestCharmedPetActorCasingMismatch reproduces the druid-charm-pet bug: an
+// article-named pet binds under its clean lowercase spawn name (how Zeal's
+// LabelPlayerPetName and /pet leader report it) but EQ capitalises the article
+// when the pet is the SUBJECT of its attack line ("A drakkel dire wolf hits a
+// frost giant ..."). The exact-match petOwners lookup missed the capitalised
+// actor, so the pet's damage was dropped as an NPC and never showed on the
+// meter. canonicalNPCName folds the article so both casings key identically.
+func TestCharmedPetActorCasingMismatch(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Vortikai" })
+	now := time.Now()
+
+	// Pet bound via the pipe under the clean lowercase spawn name.
+	tr.SetPipePetName("a drakkel dire wolf")
+	// ... but its damage line capitalises the leading article (subject form).
+	tr.Handle(hitEvent("A drakkel dire wolf", "a frost giant", 250, now.Add(time.Second)))
+	tr.Handle(hitEvent("You", "a frost giant", 80, now.Add(2*time.Second)))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil {
+		t.Fatal("expected an active fight on 'a frost giant'")
+	}
+	pet := findCombatant(st.CurrentFight.Combatants, "a drakkel dire wolf")
+	if pet == nil {
+		t.Fatal("expected charmed pet row; capitalised-actor damage was dropped as an NPC")
+	}
+	if pet.OwnerName != "Vortikai" {
+		t.Errorf("OwnerName = %q, want %q", pet.OwnerName, "Vortikai")
+	}
+	if pet.TotalDamage != 250 {
+		t.Errorf("pet TotalDamage = %d, want 250", pet.TotalDamage)
+	}
+}
+
 // TestCharmedPetSameNameAsTarget covers the case where the charmed mob and
 // its target share an NPC name (e.g. charmed "a netherbian drone" attacking
 // another "a netherbian drone" in the Netherbian Lair). Before the fix,

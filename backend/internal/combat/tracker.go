@@ -43,6 +43,27 @@ func looksLikeNPC(name string) bool {
 	return false
 }
 
+// canonicalNPCName normalises the casing of a leading English indefinite
+// article so the same mob keys identically regardless of where it appears in a
+// log line. EQ capitalises the article when the mob is the subject of a line
+// ("A wolf bites YOU") but lowercases it when the mob is an object ("you slash
+// a wolf") or named as a clean spawn (Zeal pet name, /pet leader). An
+// article-named charm pet ("a drakkel dire wolf") therefore binds under one
+// casing yet accumulates its outgoing damage under another, so without this
+// its damage never rolls up to the owner and is dropped as an NPC. Unique
+// "The <Name>" mobs are left untouched — EQ keeps their article capitalised in
+// every position, and real player names are single tokens with no space.
+func canonicalNPCName(name string) string {
+	switch {
+	case strings.HasPrefix(name, "A "):
+		return "a " + name[len("A "):]
+	case strings.HasPrefix(name, "An "):
+		return "an " + name[len("An "):]
+	default:
+		return name
+	}
+}
+
 // EQMac summoned-pet name model. Project Quarm runs the EQMac client, whose
 // name generator (mirrored in EQMacEmu/Server common/name_generator.cpp's
 // name_tables[] "// Pet" rows) builds a pet name positionally: a guaranteed
@@ -341,7 +362,7 @@ func (t *Tracker) SetClassResolvers(selfClassFn func() string, classResolverFn f
 // structural looksLikeNPC heuristic. Empty clears the binding (called on
 // pipe disconnect or when the player has no target).
 func (t *Tracker) SetPipeTarget(name string) {
-	name = strings.TrimSpace(name)
+	name = canonicalNPCName(strings.TrimSpace(name))
 	t.mu.Lock()
 	t.pipeTarget = name
 	t.mu.Unlock()
@@ -354,7 +375,7 @@ func (t *Tracker) SetPipeTarget(name string) {
 // the prior pipe-registered entry is revoked — but only if WE set it,
 // preserving log-driven bindings already in place.
 func (t *Tracker) SetPipePetName(name string) {
-	name = strings.TrimSpace(name)
+	name = canonicalNPCName(strings.TrimSpace(name))
 	owner := t.playerName()
 	if owner == "" {
 		owner = "You"
@@ -836,6 +857,8 @@ func (t *Tracker) fightTimerExpired(npcName string, fightID int) {
 // ── ingest paths ───────────────────────────────────────────────────────────
 
 func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
+	data.Actor = canonicalNPCName(data.Actor)
+	data.Target = canonicalNPCName(data.Target)
 	t.mu.Lock()
 
 	// Charm-break detection: if a known pet starts attacking the player,
@@ -947,6 +970,8 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 // If no fight is active, the heal is dropped — combat tracking requires
 // at least one damage line touching an NPC to have started a fight first.
 func (t *Tracker) recordHeal(ts time.Time, data logparser.HealData) {
+	data.Actor = canonicalNPCName(data.Actor)
+	data.Target = canonicalNPCName(data.Target)
 	t.mu.Lock()
 	// A heal line names both caster and target, so it's the one owner signal
 	// that survives in our local log for another raider's summoned pet: the
@@ -986,6 +1011,8 @@ func (t *Tracker) recordHeal(ts time.Time, data logparser.HealData) {
 // Misses do not seed fights — a string of misses with no actual damage is
 // noise. If neither side is a known NPC fight, the miss is dropped.
 func (t *Tracker) recordMiss(ts time.Time, data logparser.CombatMissData) {
+	data.Actor = canonicalNPCName(data.Actor)
+	data.Target = canonicalNPCName(data.Target)
 	npcName := t.resolveNPCForMiss(data.Actor, data.Target)
 	if npcName == "" {
 		return
@@ -1183,6 +1210,7 @@ func (t *Tracker) inferPetOwnerFromHealLocked(healer, target string) {
 }
 
 func (t *Tracker) recordPetOwner(pet, owner string) {
+	pet = canonicalNPCName(pet)
 	if pet == "" || owner == "" {
 		return
 	}
@@ -1201,6 +1229,7 @@ func (t *Tracker) recordPetOwner(pet, owner string) {
 // receives. Owner is always the playerName(), or the literal "You" when
 // no player name is configured (tests).
 func (t *Tracker) recordCharmedPet(pet string) {
+	pet = canonicalNPCName(pet)
 	if pet == "" {
 		return
 	}
@@ -1281,6 +1310,7 @@ func (t *Tracker) popPendingCritLocked(actor string, dmg int) bool {
 // If no fight is active for that NPC the call is a no-op (e.g. we missed
 // the engage).
 func (t *Tracker) endFightByNPC(npcName string, ts time.Time) {
+	npcName = canonicalNPCName(npcName)
 	if npcName == "" {
 		return
 	}
