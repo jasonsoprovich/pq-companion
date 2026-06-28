@@ -329,8 +329,8 @@ export function RaidThreatContent({ state }: { state: RaidThreatState | null }):
         <RaidMobCard key={mob.name} mob={mob} palette={palette} />
       ))}
       <div style={{ marginTop: 'auto', paddingTop: 8, fontSize: 9.5, lineHeight: 1.4, color: 'var(--color-muted, rgba(255,255,255,0.4))' }}>
-        Estimated — proximity &amp; class limited. DoTs, heals, taunts, and
-        out-of-range players aren&apos;t counted.
+        Estimated — proximity &amp; class limited. DoTs, heals, and out-of-range
+        players aren&apos;t counted; taunts are.
       </div>
     </div>
   )

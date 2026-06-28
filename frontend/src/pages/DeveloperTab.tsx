@@ -88,16 +88,14 @@ export default function DeveloperTab(): React.ReactElement {
 // reveals PoP spells, AA tabs, and Plane of Knowledge shopping app-wide
 // (see backend internal/era). Stored in config.yaml so it survives
 // restarts; consumers track changes live via the config:updated broadcast.
-// RAID_CLASSES / RAID_TANK_DEFAULTS mirror internal/raidthreat: tanks default
-// to +30% to offset taunt/disciplines/+hate gear that logs can't show.
+// RAID_CLASSES mirrors internal/raidthreat. There is no built-in per-class
+// boost any more (tanks are handled by modelling taunt); these knobs are opt-in
+// for a known aggro-mod gear/AA setup, so every default is 0.
 const RAID_CLASSES = [
   'Warrior', 'Shadow Knight', 'Paladin', 'Cleric', 'Druid', 'Shaman',
   'Ranger', 'Monk', 'Rogue', 'Bard', 'Beastlord',
   'Necromancer', 'Wizard', 'Magician', 'Enchanter',
 ]
-const RAID_TANK_DEFAULTS: Record<string, number> = {
-  Warrior: 30, 'Shadow Knight': 30, Paladin: 30,
-}
 
 function FlagsPanel(): React.ReactElement {
   const [config, setConfig] = useState<Config | null>(null)
@@ -231,10 +229,11 @@ function FlagsPanel(): React.ReactElement {
           <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
             Adds a <strong>Solo / Raid</strong> toggle to the Threat overlay. Raid
             mode estimates every nearby player&rsquo;s hate from the damage they
-            do — the same data the DPS meter uses. It is approximate: out-of-range
-            players, others&rsquo; DoTs, heals, taunts, and utility casts aren&rsquo;t
-            in your log, so DoT/healer classes read low and the tank is understated
-            (hence the per-class boost below).
+            do — the same data the DPS meter uses — and pins a tank to the top
+            when it sees their taunt land. It is approximate: out-of-range
+            players, others&rsquo; DoTs, heals, and utility casts aren&rsquo;t in
+            your log, so DoT/healer classes read low. The per-class field below
+            is optional (default 0) for dialing in a known aggro-mod setup.
           </p>
           <button
             type="button"
@@ -262,7 +261,6 @@ function FlagsPanel(): React.ReactElement {
               </p>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
                 {RAID_CLASSES.map((cls) => {
-                  const def = RAID_TANK_DEFAULTS[cls] ?? 0
                   const set = classMods[cls]
                   return (
                     <label key={cls} className="flex items-center justify-between gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
@@ -271,7 +269,7 @@ function FlagsPanel(): React.ReactElement {
                         type="number"
                         defaultValue={set ?? ''}
                         key={set ?? 'unset'}
-                        placeholder={String(def)}
+                        placeholder="0"
                         onBlur={(e) => setClassMod(cls, e.target.value)}
                         className="w-14 rounded px-1 py-0.5 text-right text-xs"
                         style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
@@ -281,8 +279,8 @@ function FlagsPanel(): React.ReactElement {
                 })}
               </div>
               <p className="mt-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                Blank uses the default (tanks +30, others 0). Applied to a
-                player&rsquo;s observed damage.
+                Blank = 0 (no adjustment). Applied to a player&rsquo;s observed
+                damage — opt-in for known aggro-mod gear/AAs.
               </p>
             </div>
 
