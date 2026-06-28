@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Flag, RefreshCw, AlertCircle, CheckCircle2, Circle, Lock,
   ChevronDown, ChevronRight, ScrollText, ListChecks, Share2,
@@ -310,16 +310,23 @@ export default function PoPFlaggingPage(): React.ReactElement {
     if (!viewedCharacter && active) setViewedCharacter(active)
   }, [active, viewedCharacter])
 
+  // Monotonic token so only the most recent fetch wins. Without it, the
+  // mount-time empty-preview load (viewedCharacter '') can resolve AFTER the
+  // real per-character load and clobber it with a blank state. POST handlers
+  // bump it too, so a fresh toggle result can't be overwritten by a slow GET.
+  const loadSeq = useRef(0)
+
   const load = useCallback(() => {
+    const seq = ++loadSeq.current
     setLoading(true)
     setError(null)
     const p = viewedCharacter
       ? getPopFlags(viewedCharacter)
       : getPopFlagDataset().then((d) => buildEmptyResolved(d.flags as PoPFlagStatus[]))
     p
-      .then(setResolved)
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false))
+      .then((r) => { if (seq === loadSeq.current) setResolved(r) })
+      .catch((err: Error) => { if (seq === loadSeq.current) setError(err.message) })
+      .finally(() => { if (seq === loadSeq.current) setLoading(false) })
   }, [viewedCharacter])
 
   useEffect(() => { load() }, [load])
@@ -337,24 +344,31 @@ export default function PoPFlaggingPage(): React.ReactElement {
   // Locked flags can't be checked (the UI disables them), so a toggle failure
   // here is rare/transient — leave the page as-is rather than surfacing an
   // error. The backend stays authoritative either way.
+  // applyAuthoritative records a server response from a user action and
+  // invalidates any in-flight load so a slow GET can't revert it.
+  const applyAuthoritative = useCallback((r: PoPResolved) => {
+    loadSeq.current++
+    setResolved(r)
+  }, [])
+
   const onToggle = useCallback((flag: PoPFlagStatus) => {
     if (!viewedCharacter) return
     setBusyId(flag.id)
     setPopFlag(viewedCharacter, flag.id, !flag.done)
-      .then(setResolved)
+      .then(applyAuthoritative)
       .catch(() => {})
       .finally(() => setBusyId(null))
-  }, [viewedCharacter])
+  }, [viewedCharacter, applyAuthoritative])
 
   // Promote an auto-detected flag to a confirmed manual row.
   const onConfirm = useCallback((flag: PoPFlagStatus) => {
     if (!viewedCharacter) return
     setBusyId(flag.id)
     setPopFlag(viewedCharacter, flag.id, true)
-      .then(setResolved)
+      .then(applyAuthoritative)
       .catch(() => {})
       .finally(() => setBusyId(null))
-  }, [viewedCharacter])
+  }, [viewedCharacter, applyAuthoritative])
 
   // Flags that a currently-done flag depends on — these can't be un-checked
   // (retraction must go top-down).
@@ -525,7 +539,7 @@ export default function PoPFlaggingPage(): React.ReactElement {
         <ImportSeerModal
           character={viewedCharacter}
           onClose={() => setShowImport(false)}
-          onCommitted={(r) => setResolved(r)}
+          onCommitted={applyAuthoritative}
         />
       )}
     </div>
