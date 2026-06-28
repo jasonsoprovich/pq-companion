@@ -19,11 +19,23 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 )
 
 //go:embed flags.json
 var flagsJSON []byte
+
+// EventRule is a live-log signal (Phase 3) that optimistically marks a flag
+// complete as an 'auto'-sourced row. Kind is "kill" | "zone" | "say" | "loot";
+// Match is the entity name (mob, zone, …), compared case- and article-
+// insensitively. Only authored on nodes where the event is itself the
+// milestone — never on a node that strictly requires a post-kill hail, so a
+// bare kill can't produce a false positive.
+type EventRule struct {
+	Kind  string `json:"kind"`
+	Match string `json:"match"`
+}
 
 // QualifyCond is an alternate qglobal condition that also marks a flag
 // complete. Used for the cipher/zebuxoruk replacement any-of: a node backed by
@@ -54,6 +66,7 @@ type PoPFlag struct {
 	BitPosition  int           `json:"bit_position,omitempty"`  // 1-based bitmask sub-step (hohtrials/sol_room)
 	SatisfiedBy  []QualifyCond `json:"satisfied_by,omitempty"`  // any-of replacement conditions
 	SeerPhrases  []string      `json:"seer_phrases,omitempty"`  // Phase 2: Seer guided-meditation substrings
+	Events       []EventRule   `json:"events,omitempty"`        // Phase 3: live-log auto-detection signals
 }
 
 var (
@@ -87,4 +100,37 @@ func ByID(id string) (PoPFlag, bool) {
 	load()
 	f, ok := byID[id]
 	return f, ok
+}
+
+// MatchEvent returns the IDs of flags whose EventRules match a live event of
+// the given kind and entity name (e.g. kind="kill", name="Terris Thule").
+// Matching is case- and leading-article-insensitive so "a construct" and
+// "Construct" both resolve. Returns an empty slice when nothing matches.
+func MatchEvent(kind, name string) []string {
+	load()
+	want := normName(name)
+	if want == "" {
+		return nil
+	}
+	out := []string{}
+	for _, f := range flags {
+		for _, r := range f.Events {
+			if r.Kind == kind && normName(r.Match) == want {
+				out = append(out, f.ID)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// normName lowercases and strips a leading English article for name matching.
+func normName(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	for _, art := range []string{"a ", "an ", "the "} {
+		if strings.HasPrefix(s, art) {
+			return s[len(art):]
+		}
+	}
+	return s
 }

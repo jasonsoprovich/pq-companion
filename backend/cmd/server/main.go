@@ -903,6 +903,20 @@ func main() {
 		if skillsConsumer != nil {
 			skillsConsumer.Handle(ev)
 		}
+		// PoP flag auto-detection: boss kills (and zone-ins) optimistically set
+		// 'auto'-sourced flags for the active character.
+		if popflagConsumer != nil {
+			switch ev.Type {
+			case logparser.EventKill:
+				if kd, ok := ev.Data.(logparser.KillData); ok {
+					popflagConsumer.HandleEvent("kill", kd.Target)
+				}
+			case logparser.EventZone:
+				if zd, ok := ev.Data.(logparser.ZoneData); ok {
+					popflagConsumer.HandleEvent("zone", zd.ZoneName)
+				}
+			}
+		}
 	}
 	dispatchLine := func(ts time.Time, msg string) {
 		// Opt-in raw passthrough: when enabled, surface lines that match no

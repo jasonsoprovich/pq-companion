@@ -75,9 +75,31 @@ function ProgressBar({ done, total }: { done: number; total: number }): React.Re
   )
 }
 
-function ProvenanceChip({ source }: { source?: string }): React.ReactElement | null {
+function ProvenanceChip({
+  source, onConfirm,
+}: { source?: string; onConfirm?: () => void }): React.ReactElement | null {
   if (!source) return null
-  const label = source === 'seer' ? 'Seer' : source === 'auto' ? 'auto' : 'manual'
+  // Auto-detected flags are optimistic — render an amber, clickable chip the
+  // user can click to confirm (promote to a manual row).
+  if (source === 'auto') {
+    return (
+      <button
+        type="button"
+        onClick={onConfirm}
+        disabled={!onConfirm}
+        className="ml-2 shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
+        title="Auto-detected from a kill — click to confirm"
+        style={{
+          backgroundColor: 'rgba(245,158,11,0.15)',
+          color: '#f59e0b',
+          border: '1px solid rgba(245,158,11,0.4)',
+          cursor: onConfirm ? 'pointer' : 'default',
+        }}
+      >
+        auto — confirm?
+      </button>
+    )
+  }
   return (
     <span
       className="ml-2 shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
@@ -87,7 +109,7 @@ function ProvenanceChip({ source }: { source?: string }): React.ReactElement | n
         border: '1px solid var(--color-border)',
       }}
     >
-      {label}
+      {source === 'seer' ? 'Seer' : 'manual'}
     </span>
   )
 }
@@ -98,9 +120,10 @@ interface FlagRowProps {
   canToggle: boolean
   busy: boolean
   onToggle: (flag: PoPFlagStatus) => void
+  onConfirm: (flag: PoPFlagStatus) => void
 }
 
-function FlagRow({ flag, allFlags, canToggle, busy, onToggle }: FlagRowProps): React.ReactElement {
+function FlagRow({ flag, allFlags, canToggle, busy, onToggle, onConfirm }: FlagRowProps): React.ReactElement {
   const missingLabels = (flag.missing ?? []).map((id) => labelFor(allFlags, id))
   const lockTitle = flag.locked ? `Needs: ${missingLabels.join(', ')}` : ''
   return (
@@ -146,7 +169,12 @@ function FlagRow({ flag, allFlags, canToggle, busy, onToggle }: FlagRowProps): R
               L{flag.level}
             </span>
           ) : null}
-          {flag.done && <ProvenanceChip source={flag.source} />}
+          {flag.done && (
+            <ProvenanceChip
+              source={flag.source}
+              onConfirm={canToggle && !busy ? () => onConfirm(flag) : undefined}
+            />
+          )}
         </div>
         {flag.detail && (
           <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--color-muted)' }}>
@@ -166,12 +194,13 @@ interface TierCardProps {
   canToggle: boolean
   busyId: string | null
   onToggle: (flag: PoPFlagStatus) => void
+  onConfirm: (flag: PoPFlagStatus) => void
   allFlags: PoPFlagStatus[]
   defaultOpen: boolean
 }
 
 function TierCard({
-  tier, flags, done, total, canToggle, busyId, onToggle, allFlags, defaultOpen,
+  tier, flags, done, total, canToggle, busyId, onToggle, onConfirm, allFlags, defaultOpen,
 }: TierCardProps): React.ReactElement {
   const [open, setOpen] = useState(defaultOpen)
   const complete = done === total && total > 0
@@ -230,6 +259,7 @@ function TierCard({
                   canToggle={canToggle}
                   busy={busyId === f.id}
                   onToggle={onToggle}
+                  onConfirm={onConfirm}
                 />
               ))}
             </div>
@@ -284,6 +314,16 @@ export default function PoPFlaggingPage(): React.ReactElement {
     if (!viewedCharacter) return
     setBusyId(flag.id)
     setPopFlag(viewedCharacter, flag.id, !flag.done)
+      .then(setResolved)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setBusyId(null))
+  }, [viewedCharacter])
+
+  // Promote an auto-detected flag to a confirmed manual row.
+  const onConfirm = useCallback((flag: PoPFlagStatus) => {
+    if (!viewedCharacter) return
+    setBusyId(flag.id)
+    setPopFlag(viewedCharacter, flag.id, true)
       .then(setResolved)
       .catch((err: Error) => setError(err.message))
       .finally(() => setBusyId(null))
@@ -400,6 +440,7 @@ export default function PoPFlaggingPage(): React.ReactElement {
             canToggle={canToggle}
             busyId={busyId}
             onToggle={onToggle}
+            onConfirm={onConfirm}
             allFlags={resolved?.flags ?? []}
             defaultOpen={progress.done < progress.total}
           />

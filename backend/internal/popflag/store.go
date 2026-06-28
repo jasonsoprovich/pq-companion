@@ -124,6 +124,29 @@ func (s *Store) SetManual(character, flagID string, done bool) error {
 	return s.upsert(character, flagID, done, SourceManual)
 }
 
+// SetAuto optimistically records a live-event detection as an 'auto'-sourced
+// row. Auto is the lowest precedence, so it inserts only when no row exists for
+// the (character, flag): any existing manual/seer/auto row wins (ON CONFLICT DO
+// NOTHING). Returns true when a new row was actually inserted.
+func (s *Store) SetAuto(character, flagID string) (bool, error) {
+	if character == "" {
+		return false, fmt.Errorf("character required")
+	}
+	if _, ok := ByID(flagID); !ok {
+		return false, fmt.Errorf("unknown flag id %q", flagID)
+	}
+	res, err := s.db.Exec(`
+		INSERT INTO pop_flag_state (character, flag_id, done, source, updated_at)
+		VALUES (?, ?, 1, ?, ?)
+		ON CONFLICT(character, flag_id) DO NOTHING
+	`, character, flagID, SourceAuto, time.Now().Unix())
+	if err != nil {
+		return false, fmt.Errorf("insert auto row char=%q flag=%q: %w", character, flagID, err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
 func (s *Store) upsert(character, flagID string, done bool, source string) error {
 	d := 0
 	if done {

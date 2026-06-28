@@ -56,7 +56,8 @@
     "prereqs": ["ponb_preflag"],
     "qglobal": "thelin",
     "qglobal_value": "1",
-    "counter": true
+    "counter": true,
+    "events": [{ "kind": "kill", "match": "construct of nightmares" }]
   },
   {
     "id": "ponb_terris",
@@ -68,7 +69,8 @@
     "prereqs": ["ponb_hedge"],
     "qglobal": "thelin",
     "qglobal_value": "3",
-    "counter": true
+    "counter": true,
+    "events": [{ "kind": "kill", "match": "Terris Thule" }]
   },
   {
     "id": "ponb_postflag",
@@ -105,7 +107,8 @@
     "prereqs": ["pod_preflag"],
     "level": 46,
     "qglobal": "grummus",
-    "qglobal_value": "1"
+    "qglobal_value": "1",
+    "events": [{ "kind": "kill", "match": "Grummus" }]
   },
   {
     "id": "pod_postflag",
@@ -129,7 +132,8 @@
     "prereqs": [],
     "level": 46,
     "qglobal": "poi_door",
-    "qglobal_value": "1"
+    "qglobal_value": "1",
+    "events": [{ "kind": "kill", "match": "Xanamech Nezmirthafen" }]
   },
   {
     "id": "poi_preflag",
@@ -191,7 +195,8 @@
     "level": 55,
     "qglobal": "aerindar",
     "qglobal_value": "2",
-    "counter": true
+    "counter": true,
+    "events": [{ "kind": "kill", "match": "Aerin`Dar" }]
   },
   {
     "id": "cod_carpryn",
@@ -213,7 +218,8 @@
     "prereqs": ["cod_carpryn"],
     "qglobal": "fuirstel",
     "qglobal_value": "4",
-    "counter": true
+    "counter": true,
+    "events": [{ "kind": "kill", "match": "Bertoxxulous" }]
   },
   {
     "id": "cod_postflag",
@@ -273,7 +279,8 @@
     "prereqs": ["hoh_trial_maidens", "hoh_trial_villagers", "hoh_trial_rydda", "pov_aerindar"],
     "qglobal": "mmarr",
     "qglobal_value": "1",
-    "satisfied_by": [{ "qglobal": "cipher", "value": "1" }]
+    "satisfied_by": [{ "qglobal": "cipher", "value": "1" }],
+    "events": [{ "kind": "kill", "match": "Lord Mithaniel Marr" }]
   },
   {
     "id": "potor_preflag",
@@ -297,7 +304,8 @@
     "prereqs": ["potor_preflag"],
     "qglobal": "tylis",
     "qglobal_value": "2",
-    "counter": true
+    "counter": true,
+    "events": [{ "kind": "kill", "match": "the Keeper of Sorrows" }]
   },
   {
     "id": "potor_saryrn",
@@ -309,7 +317,8 @@
     "prereqs": ["potor_preflag"],
     "qglobal": "saryrn",
     "qglobal_value": "1",
-    "satisfied_by": [{ "qglobal": "cipher", "value": "1" }]
+    "satisfied_by": [{ "qglobal": "cipher", "value": "1" }],
+    "events": [{ "kind": "kill", "match": "Saryrn" }]
   },
   {
     "id": "potor_postflag",
@@ -329,7 +338,8 @@
     "detail": "Defeat Vallon Zek and hail the Planar Projection.",
     "prereqs": ["poi_mb"],
     "qglobal": "zeks",
-    "qglobal_value": "3"
+    "qglobal_value": "3",
+    "events": [{ "kind": "kill", "match": "Vallon Zek" }]
   },
   {
     "id": "potac_tallon",
@@ -340,7 +350,8 @@
     "detail": "Defeat Tallon Zek and hail the Planar Projection.",
     "prereqs": ["poi_mb"],
     "qglobal": "zeks",
-    "qglobal_value": "4"
+    "qglobal_value": "4",
+    "events": [{ "kind": "kill", "match": "Tallon Zek" }]
   },
   {
     "id": "potac_rallos",
@@ -352,7 +363,8 @@
     "prereqs": ["poi_mb"],
     "qglobal": "zeks",
     "qglobal_value": "7",
-    "counter": true
+    "counter": true,
+    "events": [{ "kind": "kill", "match": "Rallos Zek the Warlord" }]
   },
   {
     "id": "bot_agnarr",
@@ -362,7 +374,8 @@
     "label": "Defeat Agnarr the Storm Lord",
     "detail": "Defeat Agnarr the Storm Lord, then go upstairs to Karana, hail him, and say 'I will follow the path of the Fallen.'",
     "prereqs": ["post_bot_flag"],
-    "level": 62
+    "level": 62,
+    "events": [{ "kind": "kill", "match": "Agnarr the Storm Lord" }]
   },
   {
     "id": "pok_librarian",
@@ -385,7 +398,8 @@
     "detail": "Defeat the mini boss Xuzl within the Tower of Solusek Ro.",
     "prereqs": ["potac_tallon", "potac_vallon", "potor_postflag", "hoh_mithaniel"],
     "qglobal": "sol_room",
-    "bit_position": 1
+    "bit_position": 1,
+    "events": [{ "kind": "kill", "match": "Xuzl" }]
   },
   {
     "id": "solro_arlyxir",
@@ -396,7 +410,8 @@
     "detail": "Defeat the mini boss Arlyxir within the Tower of Solusek Ro.",
     "prereqs": ["potac_tallon", "potac_vallon", "potor_postflag", "hoh_mithaniel"],
     "qglobal": "sol_room",
-    "bit_position": 2
+    "bit_position": 2,
+    "events": [{ "kind": "kill", "match": "Arlyxir" }]
   },
   {
     "id": "solro_dresolik",
@@ -407,7 +422,8 @@
     "detail": "Defeat the Protector of Dresolik within the Tower of Solusek Ro.",
     "prereqs": ["potac_tallon", "potac_vallon", "potor_postflag", "hoh_mithaniel"],
     "qglobal": "sol_room",
-    "bit_position": 3
+    "bit_position": 3,
+    "events": [{ "kind": "kill", "match": "the Protector of Dresolik" }]
   },
   {
     "id": "solro_rizlona",
@@ -418,7 +434,8 @@
     "detail": "Defeat the mini boss Rizlona within the Tower of Solusek Ro.",
     "prereqs": ["potac_tallon", "potac_vallon", "potor_postflag", "hoh_mithaniel"],
     "qglobal": "sol_room",
-    "bit_position": 4
+    "bit_position": 4,
+    "events": [{ "kind": "kill", "match": "Rizlona" }]
   },
   {
     "id": "solro_jiva",
@@ -429,7 +446,8 @@
     "detail": "Defeat the mini boss Jiva within the Tower of Solusek Ro.",
     "prereqs": ["potac_tallon", "potac_vallon", "potor_postflag", "hoh_mithaniel"],
     "qglobal": "sol_room",
-    "bit_position": 5
+    "bit_position": 5,
+    "events": [{ "kind": "kill", "match": "Jiva" }]
   },
   {
     "id": "solro_solusek",
@@ -441,7 +459,8 @@
     "prereqs": ["potac_rallos", "solro_arlyxir", "solro_dresolik", "solro_jiva", "solro_rizlona", "solro_xuzl"],
     "qglobal": "pofire",
     "qglobal_value": "1",
-    "counter": true
+    "counter": true,
+    "events": [{ "kind": "kill", "match": "Solusek Ro" }]
   },
   {
     "id": "poair_xegony",
@@ -450,7 +469,8 @@
     "zone_short": "PoAir",
     "label": "Defeat Xegony, Queen of Air",
     "detail": "Defeat the Avatars of Wind for access, then defeat Xegony for the Amorphous Cloud of Air.",
-    "prereqs": ["pok_librarian"]
+    "prereqs": ["pok_librarian"],
+    "events": [{ "kind": "kill", "match": "Xegony" }]
   },
   {
     "id": "poearth_arbitor",
@@ -459,7 +479,8 @@
     "zone_short": "PoEarth",
     "label": "Defeat the Mystical Arbitor (PoEb flag)",
     "detail": "Complete the rings to spawn the Mystical Arbitor and defeat it. Flags for Plane of Earth B.",
-    "prereqs": ["pok_librarian"]
+    "prereqs": ["pok_librarian"],
+    "events": [{ "kind": "kill", "match": "the Mystical Arbitor" }]
   },
   {
     "id": "poearth_rathe",
@@ -468,7 +489,8 @@
     "zone_short": "PoEarth",
     "label": "Defeat the Rathe Council / Avatar of Earth",
     "detail": "Enter PoEb, defeat the Rathe Council to spawn the Avatar of Earth, and defeat it for the Mound of Living Stone.",
-    "prereqs": ["poearth_arbitor"]
+    "prereqs": ["poearth_arbitor"],
+    "events": [{ "kind": "kill", "match": "the Avatar of Earth" }]
   },
   {
     "id": "powater_coirnav",
@@ -477,7 +499,8 @@
     "zone_short": "PoWater",
     "label": "Defeat Coirnav, Avatar of Water",
     "detail": "Defeat Coirnav, the Avatar of Water, for the Sphere of Coalesced Water.",
-    "prereqs": ["pok_librarian"]
+    "prereqs": ["pok_librarian"],
+    "events": [{ "kind": "kill", "match": "Coirnav" }]
   },
   {
     "id": "pofire_fennin",
@@ -486,7 +509,8 @@
     "zone_short": "PoFire",
     "label": "Defeat Fennin Ro, Avatar of Fire",
     "detail": "Defeat Fennin Ro, the Avatar of Fire, for the Globe of Dancing Flame.",
-    "prereqs": ["solro_solusek"]
+    "prereqs": ["solro_solusek"],
+    "events": [{ "kind": "kill", "match": "Fennin Ro" }]
   },
   {
     "id": "potime",

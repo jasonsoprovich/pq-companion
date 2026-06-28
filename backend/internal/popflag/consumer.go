@@ -59,6 +59,49 @@ func (c *Consumer) HandleLine(ts time.Time, msg string) {
 	c.flush()
 }
 
+// HandleEvent evaluates a typed live event (kind "kill"/"zone", entity name)
+// against the dataset's EventRules and optimistically records matches as
+// 'auto'-sourced rows for the active character. Auto never overwrites a manual
+// or seer row (enforced by Store.SetAuto), and a snapshot event is broadcast
+// only when something actually changed. Independent of the Seer line buffer.
+func (c *Consumer) HandleEvent(kind, name string) {
+	if c.store == nil {
+		return
+	}
+	ids := MatchEvent(kind, name)
+	if len(ids) == 0 {
+		return
+	}
+	character := ""
+	if c.activeChar != nil {
+		character = c.activeChar()
+	}
+	if character == "" {
+		return
+	}
+	changed := false
+	for _, id := range ids {
+		inserted, err := c.store.SetAuto(character, id)
+		if err != nil {
+			slog.Warn("popflag: auto-detect failed", "flag", id, "err", err)
+			continue
+		}
+		if inserted {
+			changed = true
+			slog.Info("popflag: auto-detected flag", "character", character, "flag", id, "kind", kind, "match", name)
+		}
+	}
+	if !changed {
+		return
+	}
+	c.mu.Lock()
+	cb := c.onSnapshot
+	c.mu.Unlock()
+	if cb != nil {
+		cb(character)
+	}
+}
+
 func (c *Consumer) appendMatch(line string, ts time.Time) {
 	c.mu.Lock()
 	if len(c.buffer) == 0 {
