@@ -43,25 +43,15 @@ func looksLikeNPC(name string) bool {
 	return false
 }
 
-// canonicalNPCName normalises the casing of a leading English indefinite
-// article so the same mob keys identically regardless of where it appears in a
-// log line. EQ capitalises the article when the mob is the subject of a line
-// ("A wolf bites YOU") but lowercases it when the mob is an object ("you slash
-// a wolf") or named as a clean spawn (Zeal pet name, /pet leader). An
-// article-named charm pet ("a drakkel dire wolf") therefore binds under one
-// casing yet accumulates its outgoing damage under another, so without this
-// its damage never rolls up to the owner and is dropped as an NPC. Unique
-// "The <Name>" mobs are left untouched — EQ keeps their article capitalised in
-// every position, and real player names are single tokens with no space.
+// canonicalNPCName folds the casing of a leading indefinite article so an
+// article-named charm pet ("a drakkel dire wolf") keys identically whether it
+// binds under its clean lowercase spawn name (Zeal/"My leader is") or
+// accumulates damage under the capitalised subject form EQ uses on its attack
+// lines. Without it the exact-match petOwners lookup misses and the pet's
+// damage is dropped as an NPC. Shared with threat/raidthreat via logparser so
+// the whole pipeline normalises names identically.
 func canonicalNPCName(name string) string {
-	switch {
-	case strings.HasPrefix(name, "A "):
-		return "a " + name[len("A "):]
-	case strings.HasPrefix(name, "An "):
-		return "an " + name[len("An "):]
-	default:
-		return name
-	}
+	return logparser.CanonicalNPCName(name)
 }
 
 // EQMac summoned-pet name model. Project Quarm runs the EQMac client, whose

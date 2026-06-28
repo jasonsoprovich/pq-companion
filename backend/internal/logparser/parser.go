@@ -913,3 +913,28 @@ func isArticle(word string) bool {
 	}
 	return false
 }
+
+// CanonicalNPCName normalises the casing of a leading English indefinite
+// article so the same mob keys identically regardless of where it appears in a
+// log line. EQ is inconsistent about this: a combat line capitalises the
+// article when the mob is the subject ("A wolf bites YOU"), an object-position
+// capture keeps it lowercase ("you slash a wolf"), and say-emotes are mixed
+// ("a fetid fiend says ..." but also "A shadow reaver says ..."). The Zeal pipe
+// and /pet leader report a clean lowercase spawn name. Any structure keyed by
+// these raw names with an exact, case-sensitive match (combat pet owners,
+// threat per-mob hate, raidthreat taunt offsets and target highlight) splits
+// the same mob across two keys when the casing differs. Folding the leading
+// "A "/"An " to lowercase at every name-ingest point keeps the key stable.
+// Unique "The <Name>" mobs are left untouched — EQ keeps their article
+// capitalised in every position — and real player names are single tokens with
+// no space, so they never match.
+func CanonicalNPCName(name string) string {
+	switch {
+	case strings.HasPrefix(name, "A "):
+		return "a " + name[len("A "):]
+	case strings.HasPrefix(name, "An "):
+		return "an " + name[len("An "):]
+	default:
+		return name
+	}
+}
