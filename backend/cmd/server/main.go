@@ -32,6 +32,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/loot"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/popflag"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/raidthreat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/respawn"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
@@ -234,6 +235,16 @@ func main() {
 		} else {
 			slog.Info("keyring master list loaded", "count", len(keyringMaster))
 		}
+	}
+
+	// PoP flagging tracker: persists per-character planar-progression state.
+	// Non-fatal — failing here only disables the PoP Flags page.
+	popflagStore, err := popflag.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	if err != nil {
+		slog.Warn("open pop flag tracker (disabled)", "err", err)
+		popflagStore = nil
+	} else {
+		defer popflagStore.Close()
 	}
 
 	// Lockout tracker: persists per-character /sll loot & legacy-item lockout
@@ -1046,7 +1057,7 @@ func main() {
 		go traderCapturer.Start(context.Background())
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

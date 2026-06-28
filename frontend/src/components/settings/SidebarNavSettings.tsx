@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { PanelLeft, ChevronUp, ChevronDown, RotateCcw, Eye, EyeOff } from 'lucide-react'
 import { getConfig, updateConfig } from '../../services/api'
 import type { Config } from '../../types/config'
-import { NAV_SECTIONS, visibleNavSections, orderItems, type NavItem, type NavSection } from '../../lib/sidebarNav'
+import { NAV_SECTIONS, visibleNavSections, navFlags, orderItems, type NavItem, type NavSection } from '../../lib/sidebarNav'
 
 // Per-section working order of route keys (includes hidden items so they can be
 // re-enabled and moved).
@@ -20,13 +20,14 @@ export default function SidebarNavSettings(): React.ReactElement {
     return m
   }, [])
 
-  // Sections to display/reorder.
-  const sections: NavSection[] = useMemo(() => visibleNavSections({}), [])
+  // Sections to display/reorder, gated by the same feature flags as the live
+  // sidebar so dev-preview tabs only appear here when enabled.
+  const sections: NavSection[] = useMemo(() => visibleNavSections(navFlags(cfg?.preferences)), [cfg])
 
   function hydrate(c: Config) {
     const order = c.preferences?.sidebar_order ?? []
     const next: SecOrder = {}
-    visibleNavSections({}).forEach((s) => {
+    visibleNavSections(navFlags(c.preferences)).forEach((s) => {
       next[s.id] = orderItems(s.items, order).map((i) => i.to)
     })
     setSecOrder(next)

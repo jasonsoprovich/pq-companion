@@ -143,6 +143,10 @@ function FlagsPanel(): React.ReactElement {
 
   const toggleRaid = (): void => savePrefs({ raid_threat_enabled: !raidEnabled })
 
+  // ── PoP flagging ──────────────────────────────────────────────────────
+  const popFlagsEnabled = Boolean(config?.preferences?.pop_flags_enabled)
+  const togglePopFlags = (): void => savePrefs({ pop_flags_enabled: !popFlagsEnabled })
+
   // setClassMod writes (or clears, when blank) a per-class adjustment.
   const setClassMod = (cls: string, raw: string): void => {
     const next = { ...classMods }
@@ -330,6 +334,44 @@ function FlagsPanel(): React.ReactElement {
             </div>
           </>
         )}
+      </section>
+
+      {/* ── PoP flagging ──────────────────────────────────────────────────── */}
+      <section
+        className="rounded-lg p-4"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <div className="mb-3 flex items-center gap-2">
+          <FlaskConical size={14} style={{ color: 'var(--color-primary)' }} />
+          <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            PoP flagging tracker
+          </h2>
+        </div>
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+            Adds a <strong>PoP Flags</strong> page: a per-character checklist of
+            the Planes of Power planar-progression flags (Tiers 1&ndash;4 +
+            Plane of Time), with prerequisite locking. Flags live server-side as
+            qglobals that aren&rsquo;t in the game DB or Zeal, so for now every
+            step is a manual toggle &mdash; auto-detection from the Seer NPC and
+            live log lines comes once PoP is live on Quarm.
+          </p>
+          <button
+            type="button"
+            onClick={togglePopFlags}
+            disabled={!config || saving}
+            className="shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors"
+            style={{
+              backgroundColor: popFlagsEnabled ? 'var(--color-primary)' : 'var(--color-surface-2)',
+              color: popFlagsEnabled ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+              cursor: !config || saving ? 'default' : 'pointer',
+              opacity: !config || saving ? 0.6 : 1,
+            }}
+          >
+            {popFlagsEnabled ? 'Enabled' : 'Disabled'}
+          </button>
+        </div>
       </section>
     </div>
   )

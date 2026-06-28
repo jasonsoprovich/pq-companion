@@ -3,7 +3,9 @@ import {
   Sword, Sparkles, Skull, Map, Hammer, Activity, Layers, ScrollText, Zap,
   Users, Dice5, UserSearch, MessageSquare, Package, TrendingUp, BookOpen,
   Library, KeyRound, Hourglass, Star, Wand2, ListChecks, Percent, Store, PawPrint,
+  Flag,
 } from 'lucide-react'
+import type { Preferences } from '../types/config'
 
 // A single navigable side-tab. `to` doubles as the stable key used for
 // hide/order preferences. `flag`, when set, is a Developer-tab preference key
@@ -58,6 +60,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/characters/wishlist', label: 'Wishlist', icon: <Star size={16} /> },
       { to: '/characters/upgrades', label: 'Gear Upgrades', icon: <Wand2 size={16} /> },
       { to: '/characters/tasks', label: 'Tasks', icon: <ListChecks size={16} /> },
+      { to: '/pop-flags', label: 'PoP Flags', icon: <Flag size={16} />, flag: 'pop_flags_enabled' },
       { to: '/trader-tracker', label: 'Trader Tracker', icon: <Store size={16} /> },
     ],
   },
@@ -76,6 +79,15 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
 ]
+
+// navFlags builds the flag map consumed by visibleNavSections from config
+// preferences. Centralized here so the live sidebar and the Navigation settings
+// editor gate the same dev-preview tabs identically.
+export function navFlags(prefs?: Partial<Preferences>): Record<string, boolean> {
+  return {
+    pop_flags_enabled: Boolean(prefs?.pop_flags_enabled),
+  }
+}
 
 // visibleNavSections filters out flag-gated items whose flag isn't enabled, then
 // drops any section left empty. `flags` maps a NavItem.flag key to its enabled

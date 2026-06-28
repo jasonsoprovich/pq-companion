@@ -22,6 +22,7 @@ import type {
   LockoutCharactersResponse,
   LockoutCharacterResponse,
 } from '../types/lockouts'
+import type { PoPResolved, PoPFlagDatasetResponse } from '../types/popflag'
 import type { Backup, BackupsResponse } from '../types/backup'
 import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { RaidThreatState, TargetState, ThreatState } from '../types/overlay'
@@ -705,6 +706,27 @@ export function getKeyringCharacters(): Promise<KeyringCharactersResponse> {
 
 export function getKeyringForCharacter(name: string): Promise<KeyringCharacterResponse> {
   return get<KeyringCharacterResponse>(`/api/keyring/characters/${encodeURIComponent(name)}`)
+}
+
+// ── PoP Flags (per-character planar progression) ──────────────────────────────
+
+export function getPopFlagDataset(): Promise<PoPFlagDatasetResponse> {
+  return get<PoPFlagDatasetResponse>('/api/popflags/dataset')
+}
+
+export function getPopFlags(character: string): Promise<PoPResolved> {
+  return get<PoPResolved>(`/api/popflags/${encodeURIComponent(character)}`)
+}
+
+export function setPopFlag(
+  character: string,
+  flagID: string,
+  done: boolean,
+): Promise<PoPResolved> {
+  return post<PoPResolved>(
+    `/api/popflags/${encodeURIComponent(character)}/${encodeURIComponent(flagID)}`,
+    { done },
+  )
 }
 
 // ── Lockouts (per-character /sll loot & legacy-item lockouts) ─────────────────

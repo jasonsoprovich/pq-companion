@@ -49,7 +49,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const { canGoBack, canGoForward, goBack, goForward } = useHistoryNav()
   const onDragMouseDown = useWindowDrag()
-  const { hidden, order } = useSidebarPrefs()
+  const { hidden, order, flags } = useSidebarPrefs()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed)
 
   const toggleSection = (id: string): void => {
@@ -68,13 +68,13 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   // up empty so their header doesn't dangle.
   const sections = useMemo(() => {
     const hiddenSet = new Set(hidden)
-    return visibleNavSections({})
+    return visibleNavSections(flags)
       .map((s) => ({
         ...s,
         items: orderItems(s.items, order).filter((i) => !hiddenSet.has(i.to)),
       }))
       .filter((s) => s.items.length > 0)
-  }, [hidden, order])
+  }, [hidden, order, flags])
 
   useEffect(() => {
     const poll = () => {

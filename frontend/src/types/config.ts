@@ -108,6 +108,9 @@ export interface Preferences {
   raid_threat_class_mods?: Record<string, number>
   // Per-player hate adjustment (player name → signed %), added on top of class.
   raid_threat_player_mods?: Record<string, number>
+  // Planes of Power flagging tracker (dev-gated, off by default; preview until
+  // PoP launches on Quarm).
+  pop_flags_enabled?: boolean
   npc_overlay_dashboard_sections: NPCOverlaySections
   npc_overlay_popout_sections: NPCOverlaySections
   // Per-overlay locked behaviour, keyed by canonical overlay name. Missing
