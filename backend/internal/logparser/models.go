@@ -107,6 +107,11 @@ const (
 	// up under the player.
 	EventCharmBroken EventType = "log:charm_broken"
 
+	// EventTaunt is emitted on a successful-taunt emote — a public NPC "say"
+	// naming the player who taunted (visible to everyone in range). Used by the
+	// raid threat estimator to model taunt (top-of-list + 10).
+	EventTaunt EventType = "log:taunt"
+
 	// EventFeignDeath is emitted on the active character's "You feign death."
 	// line (monk / shadow knight). A successful feign wipes the character's
 	// hate, so consumers that track personal threat reset on it. Carries no
@@ -302,6 +307,13 @@ type ConsideredData struct {
 type PetOwnerData struct {
 	Pet   string `json:"pet"`
 	Owner string `json:"owner"`
+}
+
+// TauntData is the structured payload for EventTaunt: the mob that emitted the
+// successful-taunt emote and the player who taunted it (clean name).
+type TauntData struct {
+	Mob     string `json:"mob"`
+	Taunter string `json:"taunter"`
 }
 
 // IllusionFadeData carries no data — both EQ illusion-end messages omit the

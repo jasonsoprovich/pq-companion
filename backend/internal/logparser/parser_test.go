@@ -725,6 +725,22 @@ func TestParseLine(t *testing.T) {
 			wantData: PetOwnerData{Pet: "Grimrose`s warder", Owner: "Grimrose"},
 		},
 
+		// --- Successful taunt emote ---
+		{
+			name:     "taunt: humanoid mob emote names the taunter",
+			line:     "[Mon Apr 13 06:00:00 2026] a sand giant says 'I'll teach you to interfere with me Borg.'",
+			wantOK:   true,
+			wantType: EventTaunt,
+			wantData: TauntData{Mob: "a sand giant", Taunter: "Borg"},
+		},
+		{
+			name:     "taunt: named mob with comma after says",
+			line:     "[Mon Apr 13 06:00:00 2026] Atdehim Sqonci says, 'I'll teach you to interfere with me Sage.'",
+			wantOK:   true,
+			wantType: EventTaunt,
+			wantData: TauntData{Mob: "Atdehim Sqonci", Taunter: "Sage"},
+		},
+
 		// --- /random dice rolls ---
 		{
 			name:     "roll: announce line names the roller",
@@ -893,6 +909,14 @@ func compareData(t *testing.T, got, want interface{}) {
 		}
 		if g != w {
 			t.Errorf("PetOwnerData = %+v, want %+v", g, w)
+		}
+	case TauntData:
+		g, ok := got.(TauntData)
+		if !ok {
+			t.Fatalf("Data type = %T, want TauntData", got)
+		}
+		if g != w {
+			t.Errorf("TauntData = %+v, want %+v", g, w)
 		}
 	case CritHitData:
 		g, ok := got.(CritHitData)

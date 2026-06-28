@@ -224,6 +224,14 @@ var (
 	// other words; owner is a single player name.
 	rePetOwner = regexp.MustCompile(`^(.+?) says '?My leader is (\w+)\.'?$`)
 
+	// Successful-taunt emote — a public NPC "say" naming the taunter, broadcast
+	// to everyone in range. Sent by EQMacEmu Mob::Taunt on a SUCCESSFUL
+	// single-target taunt when the NPC CanTalk():
+	//   "a sand giant says 'I'll teach you to interfere with me Borg.'"
+	// The taunter (m[2]) is the player's clean name; m[1] is the mob. Lets the
+	// raid threat estimator model taunt (sets the taunter to top-of-list + 10).
+	reTaunt = regexp.MustCompile(`^(.+?) says,? '?I'll teach you to interfere with me (.+?)\.'?$`)
+
 	// Illusion buff dropped — two distinct EQ messages, neither names the
 	// race so we treat both as "all illusions on the active player ended":
 	//   "Your illusion fades."
@@ -724,6 +732,15 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		return LogEvent{
 			Type: EventPetOwner,
 			Data: PetOwnerData{Pet: m[1], Owner: m[2]},
+		}, true
+	}
+
+	// --- Successful taunt emote ---
+	// Also a "<name> says ..." line; matched before /con for the same reason.
+	if m := reTaunt.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventTaunt,
+			Data: TauntData{Mob: m[1], Taunter: m[2]},
 		}, true
 	}
 
