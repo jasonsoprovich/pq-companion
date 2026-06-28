@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -112,8 +113,13 @@ func (s *Store) Get(character string) ([]State, error) {
 }
 
 // SetManual records a deliberate user toggle (done=1 confirms, done=0 retracts
-// a false auto/seer positive). It always wins, so it upserts unconditionally
-// with source='manual'.
+// a false auto/seer positive) with source='manual'.
+//
+// Ordering is enforced: a flag cannot be manually marked done while it is
+// locked (a prerequisite isn't yet effectively done) UNLESS it is already
+// effectively done — that exception lets the user confirm an optimistic auto/
+// seer detection on a node whose prereqs aren't tracked. Retraction (done=0) is
+// always allowed.
 func (s *Store) SetManual(character, flagID string, done bool) error {
 	if character == "" {
 		return fmt.Errorf("character required")
@@ -121,7 +127,36 @@ func (s *Store) SetManual(character, flagID string, done bool) error {
 	if _, ok := ByID(flagID); !ok {
 		return fmt.Errorf("unknown flag id %q", flagID)
 	}
+	if done {
+		states, err := s.Get(character)
+		if err != nil {
+			return err
+		}
+		for _, fs := range Resolve(states).Flags {
+			if fs.ID != flagID {
+				continue
+			}
+			if fs.Locked && !fs.Done {
+				return fmt.Errorf("complete prerequisites first: %s", missingLabels(fs.Missing))
+			}
+			break
+		}
+	}
 	return s.upsert(character, flagID, done, SourceManual)
+}
+
+// missingLabels turns prereq flag IDs into a comma-separated label list for
+// user-facing error messages.
+func missingLabels(ids []string) string {
+	labels := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if f, ok := ByID(id); ok {
+			labels = append(labels, f.Label)
+		} else {
+			labels = append(labels, id)
+		}
+	}
+	return strings.Join(labels, ", ")
 }
 
 // SetAuto optimistically records a live-event detection as an 'auto'-sourced

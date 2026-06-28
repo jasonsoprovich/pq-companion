@@ -103,6 +103,44 @@ func TestSnapshotRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSetManualOrdering(t *testing.T) {
+	s := openTempStore(t)
+	const char = "Osui"
+
+	// Can't check a locked step out of order.
+	if err := s.SetManual(char, "poj_trial_mark", true); err == nil {
+		t.Fatalf("expected SetManual to reject a locked flag")
+	}
+	if doneByID(t, s, char)["poj_trial_mark"].Done {
+		t.Errorf("locked flag should not have been recorded done")
+	}
+
+	// Completing the prereq first unlocks it.
+	if err := s.SetManual(char, "poj_preflag", true); err != nil {
+		t.Fatalf("root flag should be settable: %v", err)
+	}
+	if err := s.SetManual(char, "poj_trial_mark", true); err != nil {
+		t.Fatalf("flag should be settable once prereq is done: %v", err)
+	}
+
+	// Retraction of a locked flag is always allowed.
+	if err := s.SetManual(char, "hoh_mithaniel", false); err != nil {
+		t.Errorf("retracting a locked flag should be allowed: %v", err)
+	}
+
+	// Confirming an already-done auto detection on a locked node is allowed
+	// (the exception that keeps "auto — confirm?" working).
+	if _, err := s.SetAuto(char, "ponb_terris"); err != nil { // locked: ponb_hedge undone
+		t.Fatalf("SetAuto: %v", err)
+	}
+	if err := s.SetManual(char, "ponb_terris", true); err != nil {
+		t.Errorf("confirming an already-done locked auto flag should be allowed: %v", err)
+	}
+	if r := doneByID(t, s, char)["ponb_terris"]; !r.Done || r.Source != SourceManual {
+		t.Errorf("confirmed flag should be manual-done: %+v", r)
+	}
+}
+
 func contains(ss []string, want string) bool {
 	for _, s := range ss {
 		if s == want {

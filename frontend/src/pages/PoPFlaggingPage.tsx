@@ -130,6 +130,18 @@ interface FlagRowProps {
 function FlagRow({ flag, allFlags, canToggle, busy, onToggle, onConfirm }: FlagRowProps): React.ReactElement {
   const missingLabels = (flag.missing ?? []).map((id) => labelFor(allFlags, id))
   const lockTitle = flag.locked ? `Needs: ${missingLabels.join(', ')}` : ''
+  // A locked flag that isn't already done can't be checked — its prerequisites
+  // must be completed first. Un-checking a done flag (retraction) and confirming
+  // an already-done auto/seer detection stay allowed.
+  const blockCheck = flag.locked && !flag.done
+  const checkDisabled = !canToggle || busy || blockCheck
+  const checkTitle = !canToggle
+    ? 'Select a character to track'
+    : blockCheck
+      ? `Complete prerequisites first — Needs: ${missingLabels.join(', ')}`
+      : flag.done
+        ? 'Mark not done'
+        : 'Mark done'
   return (
     <div
       className="flex items-start gap-2 px-4 py-2"
@@ -141,10 +153,10 @@ function FlagRow({ flag, allFlags, canToggle, busy, onToggle, onConfirm }: FlagR
       <button
         type="button"
         onClick={() => onToggle(flag)}
-        disabled={!canToggle || busy}
+        disabled={checkDisabled}
         className="mt-0.5 shrink-0"
-        title={canToggle ? (flag.done ? 'Mark not done' : 'Mark done') : 'Select a character to track'}
-        style={{ cursor: canToggle && !busy ? 'pointer' : 'default' }}
+        title={checkTitle}
+        style={{ cursor: checkDisabled ? 'not-allowed' : 'pointer' }}
       >
         {flag.done ? (
           <CheckCircle2 size={16} style={{ color: 'var(--color-success)' }} />
