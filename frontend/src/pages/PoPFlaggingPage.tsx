@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Flag, RefreshCw, AlertCircle, CheckCircle2, Circle, Lock,
-  ChevronDown, ChevronRight, ScrollText, ListChecks, Share2,
+  ChevronDown, ChevronRight, ScrollText, ListChecks, Share2, X,
 } from 'lucide-react'
 import { getPopFlagDataset, getPopFlags, setPopFlag } from '../services/api'
 import type { PoPFlagStatus, PoPResolved } from '../types/popflag'
@@ -330,6 +330,7 @@ export default function PoPFlaggingPage(): React.ReactElement {
   const onToggle = useCallback((flag: PoPFlagStatus) => {
     if (!viewedCharacter) return
     setBusyId(flag.id)
+    setError(null)
     setPopFlag(viewedCharacter, flag.id, !flag.done)
       .then(setResolved)
       .catch((err: Error) => setError(err.message))
@@ -340,6 +341,7 @@ export default function PoPFlaggingPage(): React.ReactElement {
   const onConfirm = useCallback((flag: PoPFlagStatus) => {
     if (!viewedCharacter) return
     setBusyId(flag.id)
+    setError(null)
     setPopFlag(viewedCharacter, flag.id, true)
       .then(setResolved)
       .catch((err: Error) => setError(err.message))
@@ -368,7 +370,9 @@ export default function PoPFlaggingPage(): React.ReactElement {
     )
   }
 
-  if (error) {
+  // Full-page error only on an initial load failure (nothing to show yet).
+  // Action failures keep the page and surface as a dismissible banner.
+  if (error && !resolved) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-8">
         <AlertCircle size={32} style={{ color: 'var(--color-danger)' }} />
@@ -460,6 +464,24 @@ export default function PoPFlaggingPage(): React.ReactElement {
 
       {/* Per-character switcher */}
       <CharacterSubTabs value={viewedCharacter} onChange={setViewedCharacter} />
+
+      {/* Transient action error — keeps the page, dismissible. */}
+      {error && (
+        <div
+          className="flex items-center gap-2 px-4 py-1.5 shrink-0 text-xs"
+          style={{
+            backgroundColor: 'rgba(248,113,113,0.12)',
+            borderBottom: '1px solid rgba(248,113,113,0.3)',
+            color: '#f87171',
+          }}
+        >
+          <AlertCircle size={13} className="shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button type="button" onClick={() => setError(null)} title="Dismiss" style={{ color: '#f87171' }}>
+            <X size={13} />
+          </button>
+        </div>
+      )}
 
       {!canToggle && (
         <p className="px-4 py-2 text-[11px] shrink-0" style={{ color: 'var(--color-muted)' }}>
