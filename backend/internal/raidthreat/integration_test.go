@@ -16,12 +16,12 @@ import (
 // assembler for the raid view — the same path main.go wires up. It is the
 // end-to-end smoke for the feature: it proves mob keys line up between the
 // combat and personal meters, that class resolution and pet roll-up flow into
-// the per-player rows, and that the tank boost / ranking come out sane.
+// the per-player rows, and that the taunt model / ranking come out sane.
 func TestRaidThreatLiveIntegration(t *testing.T) {
 	// Class resolver: who is what. Mirrors what the character/who tracker feeds
 	// the combat tracker in production.
 	classOf := map[string]string{
-		"Borg":    "Warrior",     // tank → +30% default
+		"Borg":    "Warrior",     // tank (holds aggro via taunt, not damage)
 		"Narya":   "Wizard",      // pure DPS → neutral
 		"Plague":  "Necromancer", // DoT class → dot_undercount flag
 		"Magebot": "Magician",    // pet owner
@@ -38,8 +38,9 @@ func TestRaidThreatLiveIntegration(t *testing.T) {
 
 	asm := raidthreat.NewAssembler(nil, ct, tt,
 		func() bool { return true },
-		func() map[string]int { return nil },                         // class mods: use defaults
+		func() map[string]int { return nil },                         // class mods: use defaults (0)
 		func() map[string]int { return map[string]int{"Narya": 15} }, // a per-player override
+		func() string { return "You" },                               // self name
 	)
 
 	// A pull on "a sand giant": you engage first (seeds the fight), then the
@@ -50,10 +51,11 @@ func TestRaidThreatLiveIntegration(t *testing.T) {
 		"a sand giant was hit by non-melee for 250 points of damage.", // your nuke
 		"Borg slashes a sand giant for 350 points of damage.",         // tank melee
 		"Borg slashes a sand giant for 300 points of damage.",
-		"Narya hit a sand giant for 800 points of non-melee damage.",  // wizard nuke
-		"Plague hit a sand giant for 150 points of non-melee damage.", // necro direct nuke
-		"Gybartik says 'My leader is Magebot.'",                       // pet → owner
-		"Gybartik slashes a sand giant for 90 points of damage.",      // mage pet melee
+		"Narya hit a sand giant for 800 points of non-melee damage.",    // wizard nuke
+		"Plague hit a sand giant for 150 points of non-melee damage.",   // necro direct nuke
+		"Gybartik says 'My leader is Magebot.'",                         // pet → owner
+		"Gybartik slashes a sand giant for 90 points of damage.",        // mage pet melee
+		"a sand giant says 'I'll teach you to interfere with me Borg.'", // tank taunts
 	}
 	const ts = "[Sat Jun 27 20:00:00 2026] " // ParseLine needs the EQ timestamp prefix
 	for _, ln := range lines {
@@ -61,8 +63,10 @@ func TestRaidThreatLiveIntegration(t *testing.T) {
 		if !ok {
 			t.Fatalf("parser did not recognise: %q", ln)
 		}
+		// Mirror main.go's dispatch: every consumer sees every event.
 		ct.Handle(ev)
 		tt.Handle(ev)
+		asm.Handle(ev)
 	}
 
 	state := asm.GetState()
@@ -91,13 +95,14 @@ func TestRaidThreatLiveIntegration(t *testing.T) {
 	if you == nil || !you.IsYou || you.Hate != 470 {
 		t.Fatalf("You row = %+v, want personal hate 470", you)
 	}
-	// Tank: 650 melee × +30% default = 845.
-	if borg := get("Borg"); borg == nil || borg.Hate != 845 {
-		t.Fatalf("Borg (tank) = %+v, want 845 (650 × 1.30)", borg)
-	}
-	// Wizard: 800 × +15% player override = 920.
+	// Wizard: 800 × +15% player override = 920 — the top damage dealer.
 	if narya := get("Narya"); narya == nil || narya.Hate != 920 {
 		t.Fatalf("Narya (wizard) = %+v, want 920 (800 × 1.15)", narya)
+	}
+	// Tank: 650 melee (no class boost now), but the taunt pins Borg to the
+	// current top (Narya 920) + 10 = 930.
+	if borg := get("Borg"); borg == nil || borg.Hate != 930 {
+		t.Fatalf("Borg (tank) = %+v, want 930 (taunt → top 920 + 10)", borg)
 	}
 	// Necro flagged as DoT-undercount; direct nuke 150 at neutral.
 	necro := get("Plague")
@@ -110,8 +115,8 @@ func TestRaidThreatLiveIntegration(t *testing.T) {
 		t.Fatalf("pet row = %+v, want IsPet/owner Magebot/hate 90", pet)
 	}
 
-	// Ranking: top is the wizard (920); bars are relative to it.
-	if mob.TopHate != 920 || mob.Players[0].Name != "Narya" {
-		t.Fatalf("top = %s/%d, want Narya/920", mob.Players[0].Name, mob.TopHate)
+	// Ranking: the taunt puts the tank on top (930), just above the wizard.
+	if mob.TopHate != 930 || mob.Players[0].Name != "Borg" {
+		t.Fatalf("top = %s/%d, want Borg/930 (taunt)", mob.Players[0].Name, mob.TopHate)
 	}
 }

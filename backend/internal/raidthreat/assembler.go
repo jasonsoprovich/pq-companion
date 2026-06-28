@@ -7,19 +7,21 @@ import (
 	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
 // defaultClassMods are the built-in per-class hate adjustments (signed percent)
-// applied when the user hasn't overridden a class. Tanks default high because
-// their taunt / disciplines / +hate gear are invisible in the log, so raw
-// damage badly understates their hate. Users tune these in settings; an
-// explicit entry (including 0) always wins over the default.
-var defaultClassMods = map[string]int{
-	"Warrior":       30,
-	"Shadow Knight": 30,
-	"Paladin":       30,
-}
+// applied when the user hasn't overridden a class. Empty by default: every
+// player's hate is honest observed damage. The tank-undercount problem is now
+// handled by modelling taunt directly (see applyTaunt) rather than a blanket
+// boost; the per-class config knob remains for users who want to approximate a
+// known aggro-mod gear/AA setup. An explicit config entry always wins.
+var defaultClassMods = map[string]int{}
+
+// tauntBump is the hate a successful taunt adds above the current top of the
+// list (EQMacEmu Mob::Taunt: myHate = topHate + 10).
+const tauntBump = 10
 
 // dotClasses / healClasses drive the per-row confidence flags: their DoT ticks
 // (resp. heals on others) are never in the local log, so their hate reads low.
@@ -53,15 +55,23 @@ type Assembler struct {
 	enabledFn    func() bool           // raid_threat_enabled
 	classModsFn  func() map[string]int // raid_threat_class_mods (class → signed %)
 	playerModsFn func() map[string]int // raid_threat_player_mods (player → signed %)
+	// selfNameFn returns the active character's name, so a taunt emote naming
+	// "Borg" maps onto the "You" row when Borg is the player. May be nil.
+	selfNameFn func() string
 
 	mu         sync.Mutex
 	pipeTarget string
+	// taunt holds a per-mob, per-player additive hate offset set when that
+	// player taunts (so their displayed hate becomes top+10) and carried until
+	// the mob dies / the player zones. Observed damage accrues on top of it.
+	taunt map[string]map[string]int64
 }
 
-// NewAssembler returns a raid threat Assembler. Any of the config closures may
-// be nil (treated as disabled / empty).
+// NewAssembler returns a raid threat Assembler. Any of the closures may be nil
+// (treated as disabled / empty / no self name).
 func NewAssembler(hub *ws.Hub, dmg DamageSource, personal PersonalSource,
-	enabledFn func() bool, classModsFn, playerModsFn func() map[string]int) *Assembler {
+	enabledFn func() bool, classModsFn, playerModsFn func() map[string]int,
+	selfNameFn func() string) *Assembler {
 	return &Assembler{
 		hub:          hub,
 		dmg:          dmg,
@@ -69,6 +79,8 @@ func NewAssembler(hub *ws.Hub, dmg DamageSource, personal PersonalSource,
 		enabledFn:    enabledFn,
 		classModsFn:  classModsFn,
 		playerModsFn: playerModsFn,
+		selfNameFn:   selfNameFn,
+		taunt:        make(map[string]map[string]int64),
 	}
 }
 
@@ -98,14 +110,9 @@ func (a *Assembler) SetPipeTarget(name string) {
 	a.mu.Unlock()
 }
 
-func (a *Assembler) pipe() string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.pipeTarget
-}
-
 // classMod returns the effective signed-percent adjustment for a class: the
-// user override when present, else the built-in default (0 for non-tanks).
+// user override when present, else the built-in default (currently 0 for every
+// class — see defaultClassMods).
 func classMod(class string, userMods map[string]int) int {
 	if v, ok := userMods[class]; ok {
 		return v
@@ -113,34 +120,26 @@ func classMod(class string, userMods map[string]int) int {
 	return defaultClassMods[class]
 }
 
-// GetState builds a point-in-time raid threat snapshot. Returns an empty
-// (not-in-combat) state when the feature is disabled.
-func (a *Assembler) GetState() RaidThreatState {
-	now := time.Now()
-	if !a.enabled() {
-		return RaidThreatState{Mobs: []RaidMob{}, LastUpdated: now}
-	}
-
+// collectBase builds the per-mob, per-player BASE hate (observed damage × hate
+// mods, plus the high-fidelity personal "You" row) before any taunt offset.
+// Stateless — derived fresh from the combat and personal meters. Keyed
+// mob → player.
+func (a *Assembler) collectBase() map[string]map[string]*RaidEntry {
 	classMods := a.classModsCfg()
 	playerMods := a.playerModsCfg()
-	pipe := a.pipe()
 
-	dmgByMob := a.dmg.RaidThreatDamage()
-	personal := a.personal.PersonalHate()
-
-	// Union of mobs seen in combat and mobs we personally hold hate on, in a
-	// stable first-seen order before the final sort.
-	entries := make(map[string][]RaidEntry)
-	order := make([]string, 0, len(dmgByMob)+len(personal))
-	ensure := func(name string) {
-		if _, ok := entries[name]; !ok {
-			entries[name] = nil
-			order = append(order, name)
+	out := make(map[string]map[string]*RaidEntry)
+	ensure := func(mob string) map[string]*RaidEntry {
+		m := out[mob]
+		if m == nil {
+			m = make(map[string]*RaidEntry)
+			out[mob] = m
 		}
+		return m
 	}
 
-	for _, md := range dmgByMob {
-		ensure(md.Mob)
+	for _, md := range a.dmg.RaidThreatDamage() {
+		m := ensure(md.Mob)
 		for _, atk := range md.Attackers {
 			if atk.Name == "You" {
 				// The high-fidelity "You" row comes from the personal meter
@@ -157,29 +156,74 @@ func (a *Assembler) GetState() RaidThreatState {
 			if hate < 0 {
 				hate = 0
 			}
-			entries[md.Mob] = append(entries[md.Mob], RaidEntry{
+			m[atk.Name] = &RaidEntry{
 				Name:       atk.Name,
 				Class:      atk.Class,
 				OwnerName:  atk.OwnerName,
 				IsPet:      atk.IsPet,
 				Hate:       hate,
 				Confidence: confidenceFor(atk.Class, atk.IsPet),
-			})
+			}
 		}
 	}
+	for mob, hate := range a.personal.PersonalHate() {
+		ensure(mob)["You"] = &RaidEntry{Name: "You", IsYou: true, Hate: hate}
+	}
+	return out
+}
 
-	for mob, hate := range personal {
-		ensure(mob)
-		entries[mob] = append(entries[mob], RaidEntry{Name: "You", IsYou: true, Hate: hate})
+// GetState builds a point-in-time raid threat snapshot: base hate plus any
+// active taunt offsets, ranked per mob. Returns an empty (not-in-combat) state
+// when the feature is disabled.
+func (a *Assembler) GetState() RaidThreatState {
+	now := time.Now()
+	if !a.enabled() {
+		return RaidThreatState{Mobs: []RaidMob{}, LastUpdated: now}
 	}
 
-	state := RaidThreatState{Mobs: make([]RaidMob, 0, len(order)), LastUpdated: now}
-	for _, mob := range order {
-		rows := entries[mob]
-		if len(rows) == 0 {
+	base := a.collectBase()
+
+	a.mu.Lock()
+	pipe := a.pipeTarget
+	// Layer taunt offsets on top of base, materialising a taunt-only player
+	// (one who taunted but hasn't been seen doing damage yet) as a bare row.
+	for mob, offs := range a.taunt {
+		m := base[mob]
+		if m == nil {
+			m = make(map[string]*RaidEntry)
+			base[mob] = m
+		}
+		for player, off := range offs {
+			e := m[player]
+			if e == nil {
+				e = &RaidEntry{Name: player, IsYou: player == "You"}
+				m[player] = e
+			}
+			e.Hate += off
+			if e.Hate < 0 {
+				e.Hate = 0
+			}
+		}
+	}
+	a.mu.Unlock()
+
+	state := RaidThreatState{Mobs: make([]RaidMob, 0, len(base)), LastUpdated: now}
+	for mob, players := range base {
+		if len(players) == 0 {
 			continue
 		}
-		sort.SliceStable(rows, func(i, j int) bool { return rows[i].Hate > rows[j].Hate })
+		rows := make([]RaidEntry, 0, len(players))
+		for _, e := range players {
+			rows = append(rows, *e)
+		}
+		// Sort by hate desc, name asc as a stable tiebreaker so equal-hate rows
+		// don't jitter between snapshots.
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].Hate != rows[j].Hate {
+				return rows[i].Hate > rows[j].Hate
+			}
+			return rows[i].Name < rows[j].Name
+		})
 		top := rows[0].Hate
 		if top > 0 {
 			for i := range rows {
@@ -193,11 +237,106 @@ func (a *Assembler) GetState() RaidThreatState {
 			Players:  rows,
 		})
 	}
-	sort.SliceStable(state.Mobs, func(i, j int) bool {
-		return state.Mobs[i].TopHate > state.Mobs[j].TopHate
+	sort.Slice(state.Mobs, func(i, j int) bool {
+		if state.Mobs[i].TopHate != state.Mobs[j].TopHate {
+			return state.Mobs[i].TopHate > state.Mobs[j].TopHate
+		}
+		return state.Mobs[i].Name < state.Mobs[j].Name
 	})
 	state.InCombat = len(state.Mobs) > 0
 	return state
+}
+
+// applyTaunt records a successful taunt: the taunter's displayed hate on the
+// mob becomes the current top + tauntBump, stored as an additive offset so
+// subsequent observed damage accrues on top of it. A taunter already at the top
+// is left unchanged (matches the server's no-op when you are already top hater).
+// Note: the offset is fixed until the mob dies / the player zones, so a tank who
+// taunts once then stops can read high until others overtake — re-taunts (the
+// normal case) re-pin it to the live top.
+func (a *Assembler) applyTaunt(mob, taunter string) {
+	if a.selfNameFn != nil {
+		if sn := a.selfNameFn(); sn != "" && taunter == sn {
+			taunter = "You" // the emote names the character; our row is keyed "You"
+		}
+	}
+	base := a.collectBase()
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Current displayed hate (base + existing offset) for every player on the
+	// mob, including earlier taunt-only players.
+	displayed := make(map[string]int64)
+	if m := base[mob]; m != nil {
+		for p, e := range m {
+			displayed[p] = e.Hate
+		}
+	}
+	for p, off := range a.taunt[mob] {
+		displayed[p] += off
+	}
+
+	var top int64
+	for _, h := range displayed {
+		if h > top {
+			top = h
+		}
+	}
+	if top > 0 && displayed[taunter] >= top {
+		return // already the top hater — taunt is a no-op
+	}
+
+	var taunterBase int64
+	if m := base[mob]; m != nil {
+		if e := m[taunter]; e != nil {
+			taunterBase = e.Hate
+		}
+	}
+	if a.taunt[mob] == nil {
+		a.taunt[mob] = make(map[string]int64)
+	}
+	// Offset chosen so base + offset == top + tauntBump right now.
+	a.taunt[mob][taunter] = top + tauntBump - taunterBase
+}
+
+// Handle processes the parsed log events the assembler reacts to: taunts (which
+// drive the taunt model) and the lifecycle events that clear it. No-op while
+// the feature is disabled.
+func (a *Assembler) Handle(ev logparser.LogEvent) {
+	if !a.enabled() {
+		return
+	}
+	switch ev.Type {
+	case logparser.EventTaunt:
+		data, ok := ev.Data.(logparser.TauntData)
+		if !ok || data.Mob == "" || data.Taunter == "" {
+			return
+		}
+		a.applyTaunt(data.Mob, data.Taunter)
+		a.broadcast(a.GetState()) // reflect the jump immediately, not on the next tick
+
+	case logparser.EventKill:
+		if data, ok := ev.Data.(logparser.KillData); ok {
+			a.mu.Lock()
+			delete(a.taunt, data.Target)
+			a.mu.Unlock()
+		}
+
+	case logparser.EventZone, logparser.EventDeath:
+		a.mu.Lock()
+		a.taunt = make(map[string]map[string]int64)
+		a.mu.Unlock()
+
+	case logparser.EventFeignDeath:
+		// A successful feign drops YOU from every hate list — clear only your
+		// taunt holds, leaving other players' intact.
+		a.mu.Lock()
+		for _, offs := range a.taunt {
+			delete(offs, "You")
+		}
+		a.mu.Unlock()
+	}
 }
 
 // confidenceFor returns the caveat flags for a non-You player row.

@@ -4,11 +4,22 @@ import (
 	"testing"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 )
 
 type fakeDmg []combat.MobDamage
 
 func (f fakeDmg) RaidThreatDamage() []combat.MobDamage { return f }
+
+// settableDmg is a mutable damage source for tests that change damage between
+// snapshots (e.g. damage accruing after a taunt).
+type settableDmg struct{ mobs []combat.MobDamage }
+
+func (s *settableDmg) RaidThreatDamage() []combat.MobDamage { return s.mobs }
+
+func tauntEv(mob, taunter string) logparser.LogEvent {
+	return logparser.LogEvent{Type: logparser.EventTaunt, Data: logparser.TauntData{Mob: mob, Taunter: taunter}}
+}
 
 type fakePersonal map[string]int64
 
@@ -24,7 +35,8 @@ func newAsm(dmg DamageSource, personal PersonalSource, classMods, playerMods map
 	return NewAssembler(nil, dmg, personal,
 		func() bool { return true },
 		func() map[string]int { return classMods },
-		func() map[string]int { return playerMods })
+		func() map[string]int { return playerMods },
+		nil)
 }
 
 func mob(name string, atk ...combat.AttackerDamage) combat.MobDamage {
@@ -57,7 +69,7 @@ func TestDisabledReturnsEmpty(t *testing.T) {
 	a := NewAssembler(nil,
 		fakeDmg{mob("a dragon", combat.AttackerDamage{Name: "Narya", Class: "Wizard", Damage: 1000})},
 		fakePersonal{"a dragon": 500},
-		func() bool { return false }, nil, nil)
+		func() bool { return false }, nil, nil, nil)
 	if s := a.GetState(); s.InCombat || len(s.Mobs) != 0 {
 		t.Errorf("disabled state = %+v, want empty/not-in-combat", s)
 	}
@@ -78,12 +90,12 @@ func TestDamageToHateRankingAndYouSplice(t *testing.T) {
 	if m == nil {
 		t.Fatal("a dragon not in snapshot")
 	}
-	// Wizard: no adjustment → 1000. Warrior: +30% default → 1300. You: personal 5000.
+	// No class boost by default — every row is honest observed damage.
 	if got := findPlayer(m, "Narya"); got == nil || got.Hate != 1000 {
 		t.Errorf("Narya hate = %v, want 1000", got)
 	}
-	if got := findPlayer(m, "Tank"); got == nil || got.Hate != 1300 {
-		t.Errorf("Tank hate = %v, want 1300 (+30%% tank default)", got)
+	if got := findPlayer(m, "Tank"); got == nil || got.Hate != 1000 {
+		t.Errorf("Tank hate = %v, want 1000 (no default class boost)", got)
 	}
 	you := findPlayer(m, "You")
 	if you == nil || you.Hate != 5000 || !you.IsYou {
@@ -93,20 +105,20 @@ func TestDamageToHateRankingAndYouSplice(t *testing.T) {
 	if m.Players[0].Name != "You" || m.TopHate != 5000 {
 		t.Errorf("top = %s/%d, want You/5000", m.Players[0].Name, m.TopHate)
 	}
-	if got := findPlayer(m, "Tank").HatePct; got < 0.25 || got > 0.27 {
-		t.Errorf("Tank pct = %v, want ~0.26", got)
+	if got := findPlayer(m, "Tank").HatePct; got < 0.19 || got > 0.21 {
+		t.Errorf("Tank pct = %v, want ~0.20", got)
 	}
 }
 
-func TestUserClassModOverridesDefault(t *testing.T) {
+func TestUserClassModApplied(t *testing.T) {
 	a := newAsm(
 		fakeDmg{mob("a dragon", combat.AttackerDamage{Name: "Tank", Class: "Warrior", Damage: 1000})},
 		nil,
-		map[string]int{"Warrior": 0}, // explicit 0 beats the +30 default
+		map[string]int{"Warrior": 50}, // opt-in: known aggro-mod gear
 		nil)
 	m := findMob(a.GetState(), "a dragon")
-	if got := findPlayer(m, "Tank"); got == nil || got.Hate != 1000 {
-		t.Errorf("Tank hate = %v, want 1000 (override to 0)", got)
+	if got := findPlayer(m, "Tank"); got == nil || got.Hate != 1500 {
+		t.Errorf("Tank hate = %v, want 1500 (+50%% class mod)", got)
 	}
 }
 
@@ -180,5 +192,89 @@ func TestPipeTargetHighlights(t *testing.T) {
 	}
 	if m := findMob(s, "a whelp"); m == nil || m.IsTarget {
 		t.Errorf("a whelp IsTarget = true, want false")
+	}
+}
+
+// ── Taunt model ─────────────────────────────────────────────────────────────
+
+func TestTauntSetsToTopPlusBump(t *testing.T) {
+	a := newAsm(fakeDmg{mob("a dragon",
+		combat.AttackerDamage{Name: "Narya", Class: "Wizard", Damage: 2000},
+		combat.AttackerDamage{Name: "Borg", Class: "Warrior", Damage: 500},
+	)}, nil, nil, nil)
+	a.Handle(tauntEv("a dragon", "Borg")) // Borg below Narya → jumps to 2000 + 10
+	m := findMob(a.GetState(), "a dragon")
+	if got := findPlayer(m, "Borg"); got == nil || got.Hate != 2010 {
+		t.Fatalf("Borg after taunt = %v, want 2010 (top 2000 + 10)", got)
+	}
+	if m.Players[0].Name != "Borg" || m.TopHate != 2010 {
+		t.Errorf("top = %s/%d, want Borg/2010", m.Players[0].Name, m.TopHate)
+	}
+}
+
+func TestTauntNoOpWhenAlreadyTop(t *testing.T) {
+	a := newAsm(fakeDmg{mob("a dragon",
+		combat.AttackerDamage{Name: "Borg", Class: "Warrior", Damage: 3000},
+		combat.AttackerDamage{Name: "Narya", Class: "Wizard", Damage: 500},
+	)}, nil, nil, nil)
+	a.Handle(tauntEv("a dragon", "Borg")) // already top → unchanged
+	if got := findPlayer(findMob(a.GetState(), "a dragon"), "Borg"); got == nil || got.Hate != 3000 {
+		t.Errorf("Borg = %v, want 3000 (taunt no-op when already top)", got)
+	}
+}
+
+func TestTauntThenDamageAccrues(t *testing.T) {
+	sd := &settableDmg{mobs: []combat.MobDamage{mob("a dragon",
+		combat.AttackerDamage{Name: "Narya", Class: "Wizard", Damage: 2000},
+		combat.AttackerDamage{Name: "Borg", Class: "Warrior", Damage: 500},
+	)}}
+	a := NewAssembler(nil, sd, fakePersonal(nil),
+		func() bool { return true },
+		func() map[string]int { return nil },
+		func() map[string]int { return nil }, nil)
+	a.Handle(tauntEv("a dragon", "Borg")) // offset = 2010 - 500 = 1510
+	// Borg keeps swinging: base 500 → 800. Displayed should be 800 + 1510 = 2310.
+	sd.mobs[0].Attackers[1].Damage = 800
+	if got := findPlayer(findMob(a.GetState(), "a dragon"), "Borg"); got == nil || got.Hate != 2310 {
+		t.Errorf("Borg = %v, want 2310 (offset + accrued damage)", got)
+	}
+}
+
+func TestTauntMapsSelfNameToYou(t *testing.T) {
+	a := NewAssembler(nil,
+		fakeDmg{mob("a dragon", combat.AttackerDamage{Name: "Narya", Class: "Wizard", Damage: 2000})},
+		fakePersonal{"a dragon": 300},
+		func() bool { return true },
+		func() map[string]int { return nil },
+		func() map[string]int { return nil },
+		func() string { return "Osui" }) // you are Osui
+	a.Handle(tauntEv("a dragon", "Osui")) // emote names Osui → applies to the You row
+	you := findPlayer(findMob(a.GetState(), "a dragon"), "You")
+	if you == nil || you.Hate != 2010 {
+		t.Errorf("You after self-taunt = %v, want 2010 (top 2000 + 10)", you)
+	}
+}
+
+func TestTauntOnlyPlayerAppears(t *testing.T) {
+	// A tank who taunts before doing any damage still shows, at top + 10.
+	a := newAsm(fakeDmg{mob("a dragon",
+		combat.AttackerDamage{Name: "Narya", Class: "Wizard", Damage: 2000},
+	)}, nil, nil, nil)
+	a.Handle(tauntEv("a dragon", "Borg"))
+	if got := findPlayer(findMob(a.GetState(), "a dragon"), "Borg"); got == nil || got.Hate != 2010 {
+		t.Errorf("taunt-only Borg = %v, want 2010", got)
+	}
+}
+
+func TestKillClearsTauntOffset(t *testing.T) {
+	a := newAsm(fakeDmg{mob("a dragon",
+		combat.AttackerDamage{Name: "Narya", Class: "Wizard", Damage: 2000},
+		combat.AttackerDamage{Name: "Borg", Class: "Warrior", Damage: 100},
+	)}, nil, nil, nil)
+	a.Handle(tauntEv("a dragon", "Borg")) // Borg → 2010
+	a.Handle(logparser.LogEvent{Type: logparser.EventKill, Data: logparser.KillData{Killer: "You", Target: "a dragon"}})
+	// Offset cleared; Borg falls back to base damage hate.
+	if got := findPlayer(findMob(a.GetState(), "a dragon"), "Borg"); got == nil || got.Hate != 100 {
+		t.Errorf("Borg after kill = %v, want 100 (taunt offset cleared)", got)
 	}
 }

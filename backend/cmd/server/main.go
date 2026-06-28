@@ -318,6 +318,14 @@ func main() {
 		func() bool { return cfgMgr.Get().Preferences.RaidThreatEnabled },
 		func() map[string]int { return cfgMgr.Get().Preferences.RaidThreatClassMods },
 		func() map[string]int { return cfgMgr.Get().Preferences.RaidThreatPlayerMods },
+		func() string { // self name, so a taunt emote naming the player maps to "You"
+			if tailer != nil {
+				if name := tailer.ActiveCharacter(); name != "" {
+					return name
+				}
+			}
+			return cfgMgr.Get().Character
+		},
 	)
 	go raidThreatAssembler.RunTicker(context.Background(), time.Second)
 
@@ -848,6 +856,7 @@ func main() {
 		npcTracker.Handle(ev)
 		combatTracker.Handle(ev)
 		threatTracker.Handle(ev)
+		raidThreatAssembler.Handle(ev)
 		timerEngine.Handle(ev)
 		respawnEngine.Handle(ev)
 		rollTracker.Handle(ev)
