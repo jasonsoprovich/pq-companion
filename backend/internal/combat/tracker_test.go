@@ -1874,6 +1874,34 @@ func TestPipePetNameRegistersOwner(t *testing.T) {
 	}
 }
 
+// TestPipeTargetPetOwnerBindsForDPS confirms that targeting a charm pet (Zeal
+// LabelTargetPetOwner == the player) binds it for DPS attribution, matching the
+// NPC overlay which already reads that label. Casing is folded so the
+// capitalised attack-line actor still resolves.
+func TestPipeTargetPetOwnerBindsForDPS(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Vortikai" })
+	now := time.Now()
+
+	// Player clicks their charm pet; Zeal reports target=pet, owner=Vortikai.
+	tr.SetPipeTargetPetOwner("a drakkel dire wolf", "Vortikai")
+
+	tr.mu.Lock()
+	owner := tr.petOwners["a drakkel dire wolf"]
+	tr.mu.Unlock()
+	if owner != "Vortikai" {
+		t.Fatalf("expected pet bound to Vortikai, got %q", owner)
+	}
+
+	tr.Handle(hitEvent("A drakkel dire wolf", "a frost giant", 250, now))
+	st := tr.GetState()
+	pet := findCombatant(st.CurrentFight.Combatants, "a drakkel dire wolf")
+	if pet == nil || pet.OwnerName != "Vortikai" || pet.TotalDamage != 250 {
+		t.Fatalf("pet row not attributed: %+v", pet)
+	}
+}
+
 // TestPipePetNameRespectsLogBindings confirms that ResetPipeState only
 // revokes pipe-set bindings — log-driven bindings (e.g. from "My leader is X"
 // announcements) survive a pipe disconnect.

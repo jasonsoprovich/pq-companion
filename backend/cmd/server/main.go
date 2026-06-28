@@ -756,7 +756,7 @@ func main() {
 		// (Zeal/named_pipe.cpp:280), so absence of a label means the slot is
 		// empty — we still need to push that as a snapshot so consumers
 		// learn the prior value is gone.
-		var castingName, targetName string
+		var castingName, targetName, targetPetOwner string
 		targetHP := -1
 		var buffSlots []string
 		for _, l := range labels {
@@ -779,6 +779,7 @@ func main() {
 				}
 			case zealpipe.LabelTargetPetOwner:
 				npcTracker.SetPipePetOwner(l.Value)
+				targetPetOwner = l.Value
 			case zealpipe.LabelPlayerPetName:
 				combatTracker.SetPipePetName(l.Value)
 			case zealpipe.LabelCastingName:
@@ -791,6 +792,14 @@ func main() {
 					buffSlots = append(buffSlots, l.Value)
 				}
 			}
+		}
+		// When the current target is a pet, Zeal reports its owner. Bind it for
+		// DPS attribution (the NPC overlay already consumes the same label) so
+		// targeting your own charm pet to heal/buff it is enough to roll its
+		// damage up to you. Done after the loop so it doesn't depend on label
+		// order within the envelope.
+		if targetName != "" && targetPetOwner != "" {
+			combatTracker.SetPipeTargetPetOwner(targetName, targetPetOwner)
 		}
 		timerEngine.SetPipeCasting(castingName)
 		timerEngine.SetPipeBuffSlots(buffSlots)

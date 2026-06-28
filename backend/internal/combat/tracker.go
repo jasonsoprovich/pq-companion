@@ -395,6 +395,27 @@ func (t *Tracker) SetPipePetName(name string) {
 	}
 }
 
+// SetPipeTargetPetOwner records a pet→owner binding learned from Zeal's
+// LabelTargetPetOwner: when the player's current target is someone's pet, Zeal
+// reports that pet's owner. Targeting your own charm pet — which players do to
+// heal or buff it — is the most direct way to learn the binding, and it's
+// authoritative game state rather than a log heuristic. It explains the
+// reported symptom where the NPC overlay (which already reads this label)
+// recognised a charm pet that the DPS meter did not: the meter never consumed
+// the signal. Binds any owner (self or a groupmate's pet), and never clobbers
+// an existing binding for the same name with an identical value, so the ~10 Hz
+// pipe cadence doesn't thrash the map.
+func (t *Tracker) SetPipeTargetPetOwner(pet, owner string) {
+	pet = canonicalNPCName(strings.TrimSpace(pet))
+	owner = strings.TrimSpace(owner)
+	if pet == "" || owner == "" || pet == owner {
+		return
+	}
+	t.mu.Lock()
+	t.petOwners[pet] = owner
+	t.mu.Unlock()
+}
+
 // ResetPipeState clears all pipe-driven tracker state. Called from the
 // supervisor's OnDisconnect hook so a stale pipe target or pet binding
 // doesn't continue to influence attribution after Zeal goes away.
