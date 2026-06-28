@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Flag, RefreshCw, AlertCircle, CheckCircle2, Circle, Lock,
-  ChevronDown, ChevronRight, ScrollText,
+  ChevronDown, ChevronRight, ScrollText, ListChecks, Share2,
 } from 'lucide-react'
 import { getPopFlagDataset, getPopFlags, setPopFlag } from '../services/api'
 import type { PoPFlagStatus, PoPResolved } from '../types/popflag'
@@ -9,6 +9,10 @@ import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useWebSocket } from '../hooks/useWebSocket'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import ImportSeerModal from '../components/ImportSeerModal'
+
+// Graph view is lazy — @xyflow/react is ~4MB and most sessions stay on the
+// checklist.
+const PoPFlagGraphPanel = lazy(() => import('./PoPFlagGraphPanel'))
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -280,6 +284,7 @@ export default function PoPFlaggingPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
+  const [view, setView] = useState<'checklist' | 'graph'>('checklist')
 
   // Default the viewed character to the active character once known.
   useEffect(() => {
@@ -389,6 +394,28 @@ export default function PoPFlaggingPage(): React.ReactElement {
             <ProgressBar done={resolved.done} total={resolved.total} />
           </div>
         )}
+        <div className="ml-4 flex items-center gap-1">
+          {([['checklist', 'Checklist', ListChecks], ['graph', 'Graph', Share2]] as const).map(
+            ([v, label, Icon]) => {
+              const isActive = view === v
+              return (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className="flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium"
+                  style={{
+                    backgroundColor: isActive ? 'var(--color-surface-2)' : 'transparent',
+                    color: isActive ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
+                    border: `1px solid ${isActive ? 'var(--color-border)' : 'transparent'}`,
+                  }}
+                >
+                  <Icon size={12} />
+                  {label}
+                </button>
+              )
+            },
+          )}
+        </div>
         <div className="ml-auto flex items-center gap-2">
           {canToggle && (
             <button
@@ -428,24 +455,36 @@ export default function PoPFlaggingPage(): React.ReactElement {
         </p>
       )}
 
-      {/* Tier cards */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {tiers.map(({ progress, flags }) => (
-          <TierCard
-            key={progress.tier}
-            tier={progress.tier ?? 0}
-            flags={flags}
-            done={progress.done}
-            total={progress.total}
-            canToggle={canToggle}
-            busyId={busyId}
-            onToggle={onToggle}
-            onConfirm={onConfirm}
-            allFlags={resolved?.flags ?? []}
-            defaultOpen={progress.done < progress.total}
-          />
-        ))}
-      </div>
+      {view === 'graph' ? (
+        <Suspense
+          fallback={
+            <div className="flex flex-1 items-center justify-center">
+              <RefreshCw size={20} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
+            </div>
+          }
+        >
+          <PoPFlagGraphPanel flags={resolved?.flags ?? []} />
+        </Suspense>
+      ) : (
+        /* Tier cards */
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {tiers.map(({ progress, flags }) => (
+            <TierCard
+              key={progress.tier}
+              tier={progress.tier ?? 0}
+              flags={flags}
+              done={progress.done}
+              total={progress.total}
+              canToggle={canToggle}
+              busyId={busyId}
+              onToggle={onToggle}
+              onConfirm={onConfirm}
+              allFlags={resolved?.flags ?? []}
+              defaultOpen={progress.done < progress.total}
+            />
+          ))}
+        </div>
+      )}
 
       {showImport && canToggle && (
         <ImportSeerModal
