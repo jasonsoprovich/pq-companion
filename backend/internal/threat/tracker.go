@@ -183,6 +183,7 @@ func (t *Tracker) effectiveHatemodLocked() int {
 // mirroring combat.Tracker.SetPipeTarget. Changes the highlighted mob; empty
 // clears the highlight (falls back to the most recently engaged mob).
 func (t *Tracker) SetPipeTarget(name string) {
+	name = logparser.CanonicalNPCName(name)
 	t.mu.Lock()
 	if name == t.pipeTarget {
 		t.mu.Unlock()
@@ -413,6 +414,7 @@ func (t *Tracker) addHate(mob string, amount float64, ts time.Time) {
 // recordDamage credits observed damage as hate (one point per point) and feeds
 // the per-mob melee average used for miss-hate estimation.
 func (t *Tracker) recordDamage(mob string, dmg int, melee bool, ts time.Time) {
+	mob = logparser.CanonicalNPCName(mob)
 	if mob == "" || mob == "You" || dmg <= 0 {
 		return
 	}
@@ -434,6 +436,7 @@ func (t *Tracker) recordDamage(mob string, dmg int, melee bool, ts time.Time) {
 // hate whether or not the swing connects. No-op until at least one swing has
 // landed (no basis to estimate) or if the mob isn't tracked.
 func (t *Tracker) recordMiss(mob string, ts time.Time) {
+	mob = logparser.CanonicalNPCName(mob)
 	if mob == "" || mob == "You" {
 		return
 	}
@@ -552,6 +555,7 @@ func (t *Tracker) expireMod(spellName string) {
 
 // endMob drops a single mob (kill or staleness) and broadcasts the change.
 func (t *Tracker) endMob(mob string, ts time.Time) {
+	mob = logparser.CanonicalNPCName(mob)
 	if mob == "" {
 		return
 	}

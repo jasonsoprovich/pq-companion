@@ -246,6 +246,28 @@ func TestPipeTargetDrivesHighlight(t *testing.T) {
 	}
 }
 
+// TestPipeTargetHighlightCasingMismatch guards the article-casing fold: a mob
+// whose damage line capitalises the leading article ("A wolf") must still be
+// highlighted when the Zeal pipe selects it under the clean lowercase spawn
+// name ("a wolf"). Without canonicalisation the per-mob hate keys under one
+// casing and the highlight lookup under the other, so the highlight is lost.
+func TestPipeTargetHighlightCasingMismatch(t *testing.T) {
+	tr := NewTracker(nil, nil, nil)
+	t0 := time.Now()
+	tr.Handle(hit("A wolf", 100, t0))
+
+	// The mob is keyed canonically, so hate is tracked under "a wolf".
+	if got := hateFor(tr.GetState(), "a wolf"); got <= 0 {
+		t.Fatalf("hate for canonical 'a wolf' = %d, want > 0", got)
+	}
+
+	tr.SetPipeTarget("a wolf")
+	s := tr.GetState()
+	if s.Target == nil || s.Target.Name != "a wolf" || !s.Target.IsTarget {
+		t.Fatalf("highlight = %v, want 'a wolf' targeted", s.Target)
+	}
+}
+
 // ── Phase 3: standard hate, hate-mod buffs, heal, miss, feign ───────────────
 
 // spellDetrimentalUtility is a no-damage control spell (mez/charm/stun-like):
