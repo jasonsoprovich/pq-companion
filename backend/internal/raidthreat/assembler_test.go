@@ -212,6 +212,24 @@ func TestTauntSetsToTopPlusBump(t *testing.T) {
 	}
 }
 
+// TestTauntCasingMismatchStillApplies covers the EQ inconsistency where a taunt
+// emote capitalises the mob's leading article ("A shadow reaver says ...") while
+// its damage line / clean spawn name is lowercase. The taunt offset must key to
+// the same canonical mob as the damage, or it would be recorded but never
+// merged into the displayed hate.
+func TestTauntCasingMismatchStillApplies(t *testing.T) {
+	a := newAsm(fakeDmg{mob("a shadow reaver",
+		combat.AttackerDamage{Name: "Narya", Class: "Wizard", Damage: 2000},
+		combat.AttackerDamage{Name: "Borg", Class: "Warrior", Damage: 500},
+	)}, nil, nil, nil)
+	// Emote subject is capitalised — the bug fold target.
+	a.Handle(tauntEv("A shadow reaver", "Borg"))
+	m := findMob(a.GetState(), "a shadow reaver")
+	if got := findPlayer(m, "Borg"); got == nil || got.Hate != 2010 {
+		t.Fatalf("Borg after capitalised-emote taunt = %v, want 2010", got)
+	}
+}
+
 func TestTauntNoOpWhenAlreadyTop(t *testing.T) {
 	a := newAsm(fakeDmg{mob("a dragon",
 		combat.AttackerDamage{Name: "Borg", Class: "Warrior", Damage: 3000},

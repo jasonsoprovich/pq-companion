@@ -105,6 +105,7 @@ func (a *Assembler) playerModsCfg() map[string]int {
 // SetPipeTarget records the player's current Zeal target so the highlighted mob
 // matches the DPS/personal meters. Mirrors combat/threat SetPipeTarget.
 func (a *Assembler) SetPipeTarget(name string) {
+	name = logparser.CanonicalNPCName(name)
 	a.mu.Lock()
 	a.pipeTarget = name
 	a.mu.Unlock()
@@ -255,6 +256,11 @@ func (a *Assembler) GetState() RaidThreatState {
 // taunts once then stops can read high until others overtake — re-taunts (the
 // normal case) re-pin it to the live top.
 func (a *Assembler) applyTaunt(mob, taunter string) {
+	// The taunt emote names the mob in subject position, whose article casing
+	// EQ varies ("a fetid fiend says ..." but also "A shadow reaver says ...").
+	// Fold it so the offset keys match the canonical base/damage mob keys —
+	// otherwise the offset is recorded but never merged into displayed hate.
+	mob = logparser.CanonicalNPCName(mob)
 	if a.selfNameFn != nil {
 		if sn := a.selfNameFn(); sn != "" && taunter == sn {
 			taunter = "You" // the emote names the character; our row is keyed "You"
