@@ -7,6 +7,7 @@ import {
   listCharacters,
   postResistCheck,
   searchNPCs,
+  type Character,
   type ResistCheckResponse,
   type ResistDebuff,
 } from '../services/api'
@@ -23,6 +24,21 @@ function scaledDelta(d: ResistDebuff, resist: ResistKey, level: number): number 
   return d.mods
     .filter((m) => m.resist === resist)
     .reduce((acc, m) => acc + applyLevelFormula(m.formula, m.base, m.max, level), 0)
+}
+
+// moddedDelta applies a manual strength multiplier on top of the level-scaled
+// value. mod=1 is a no-op (the default). For bards this is the instrument
+// modifier (e.g. 3.2× with a matching instrument + Instrument Mastery); for
+// any other class it's a free "what-if" adjustment. Rounded to a whole number
+// since resists are integers in-game.
+function moddedDelta(
+  d: ResistDebuff,
+  resist: ResistKey,
+  level: number,
+  mod: number,
+): number {
+  const base = scaledDelta(d, resist, level)
+  return mod === 1 ? base : Math.round(base * mod)
 }
 
 // 0-based EQ class names (matches eqstat / spells_new ordering).
@@ -77,19 +93,38 @@ export default function ResistCalcPage(): React.ReactElement {
   const [debuffQuery, setDebuffQuery] = useState('')
   const debuffSearchRef = useRef<HTMLDivElement>(null)
 
-  // Seed the caster from the active character (level/class/base CHA). CHA is
-  // editable since the formula wants total (buffed) charisma, not base.
+  // Per-debuff manual strength multiplier, keyed by debuff id (default 1).
+  const [debuffMods, setDebuffMods] = useState<Record<number, number>>({})
+
+  // Optional character binding. null = "manual" mode (the original behaviour:
+  // pick any class/level by hand). Selecting a character seeds level/class/CHA.
+  const [characters, setCharacters] = useState<Character[]>([])
+  const [selectedCharId, setSelectedCharId] = useState<number | null>(null)
+
+  // Load the character list once and default to the active character (so the
+  // page still auto-fills like before). Users can switch to "Manual" to keep
+  // the class/level free for testing.
   useEffect(() => {
     listCharacters()
       .then((resp) => {
+        setCharacters(resp.characters)
         const active = resp.characters.find((c) => c.name === resp.active)
-        if (!active) return
-        if (active.level > 0) setCasterLevel(active.level)
-        if (active.class >= 0 && active.class <= 14) setCasterClass(active.class)
-        if (active.base_cha > 0) setCasterCHA(active.base_cha)
+        if (active) setSelectedCharId(active.id)
       })
       .catch(() => {})
   }, [])
+
+  // Seed the caster from the selected character (level/class/base CHA). Runs
+  // only when the selection changes, so manual edits afterwards stick. CHA is
+  // editable since the formula wants total (buffed) charisma, not base.
+  useEffect(() => {
+    if (selectedCharId == null) return
+    const c = characters.find((x) => x.id === selectedCharId)
+    if (!c) return
+    if (c.level > 0) setCasterLevel(c.level)
+    if (c.class >= 0 && c.class <= 14) setCasterClass(c.class)
+    if (c.base_cha > 0) setCasterCHA(c.base_cha)
+  }, [selectedCharId, characters])
 
   // Load the resist-debuff catalogue once.
   useEffect(() => {
@@ -105,7 +140,10 @@ export default function ResistCalcPage(): React.ReactElement {
     // Debuffs are assumed cast at the caster's level (the debuffer's level
     // isn't modelled separately in v1).
     const sum = (k: ResistKey): number =>
-      selectedDebuffs.reduce((acc, d) => acc + scaledDelta(d, k, casterLevel), 0)
+      selectedDebuffs.reduce(
+        (acc, d) => acc + moddedDelta(d, k, casterLevel, debuffMods[d.id] ?? 1),
+        0,
+      )
     const clamp = (v: number): number => Math.max(1, v)
     return {
       mr: clamp(target.mr + sum('mr')),
@@ -114,7 +152,7 @@ export default function ResistCalcPage(): React.ReactElement {
       dr: clamp(target.dr + sum('dr')),
       pr: clamp(target.pr + sum('pr')),
     }
-  }, [target, selectedDebuffs, casterLevel])
+  }, [target, selectedDebuffs, casterLevel, debuffMods])
 
   // Load the class spell list whenever the class changes; keep only detrimental
   // spells (the only ones a resist check is meaningful for) and sort by name.
@@ -183,11 +221,21 @@ export default function ResistCalcPage(): React.ReactElement {
   }
   const removeDebuff = (id: number): void => {
     setSelectedDebuffs((prev) => prev.filter((d) => d.id !== id))
+    setDebuffMods((prev) => {
+      if (!(id in prev)) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }
+  const setDebuffMod = (id: number, mod: number): void => {
+    setDebuffMods((prev) => ({ ...prev, [id]: mod }))
   }
 
   // Clear the target's debuffs when a new target is picked (resists differ).
   useEffect(() => {
     setSelectedDebuffs([])
+    setDebuffMods({})
   }, [target?.name])
 
   const debuffMatches = useMemo(() => {
@@ -297,6 +345,27 @@ export default function ResistCalcPage(): React.ReactElement {
 
       {/* Caster */}
       <Section title="Caster">
+        {characters.length > 0 && (
+          <label className="mb-3 flex flex-col gap-1 text-xs">
+            <span style={{ color: 'var(--color-muted)' }}>Character</span>
+            <select
+              value={selectedCharId ?? ''}
+              onChange={(e) =>
+                setSelectedCharId(e.target.value ? Number(e.target.value) : null)
+              }
+              className="rounded px-2 py-1.5 text-sm"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+              }}
+            >
+              <option value="">Manual (no character)</option>
+              {characters.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="grid grid-cols-3 gap-3">
           <NumField label="Level" value={casterLevel} onChange={setCasterLevel} min={1} max={65} />
           <label className="flex flex-col gap-1 text-xs">
@@ -445,8 +514,10 @@ export default function ResistCalcPage(): React.ReactElement {
               matches={debuffMatches}
               selected={selectedDebuffs}
               level={casterLevel}
+              mods={debuffMods}
               onAdd={addDebuff}
               onRemove={removeDebuff}
+              onSetMod={setDebuffMod}
             />
           </>
         ) : (
@@ -539,13 +610,13 @@ function Results({ result }: { result: ResistCheckResponse }): React.ReactElemen
   )
 }
 
-// formatDeltas renders a debuff's resist reductions scaled at the given level,
-// e.g. "MR -39" or "MR -60 · CR -60".
-function formatDeltas(d: ResistDebuff, level: number): string {
+// formatDeltas renders a debuff's resist reductions scaled at the given level
+// (and manual multiplier), e.g. "MR -39" or "MR -60 · CR -60".
+function formatDeltas(d: ResistDebuff, level: number, mod = 1): string {
   const order: ResistKey[] = ['mr', 'fr', 'cr', 'dr', 'pr']
   const parts: string[] = []
   for (const k of order) {
-    const v = scaledDelta(d, k, level)
+    const v = moddedDelta(d, k, level, mod)
     if (v !== 0) parts.push(`${k.toUpperCase()} ${v}`)
   }
   return parts.join(' · ')
@@ -557,12 +628,17 @@ interface DebuffPickerProps {
   matches: ResistDebuff[]
   selected: ResistDebuff[]
   level: number
+  mods: Record<number, number>
   onAdd: (d: ResistDebuff) => void
   onRemove: (id: number) => void
+  onSetMod: (id: number, mod: number) => void
 }
 
 const DebuffPicker = React.forwardRef<HTMLDivElement, DebuffPickerProps>(
-  function DebuffPicker({ query, setQuery, matches, selected, level, onAdd, onRemove }, ref) {
+  function DebuffPicker(
+    { query, setQuery, matches, selected, level, mods, onAdd, onRemove, onSetMod },
+    ref,
+  ) {
     return (
       <div className="mt-4">
         <span
@@ -573,7 +649,9 @@ const DebuffPicker = React.forwardRef<HTMLDivElement, DebuffPickerProps>(
         </span>
         {selected.length > 0 && (
           <div className="mb-2 mt-1.5 flex flex-wrap gap-1.5">
-            {selected.map((d) => (
+            {selected.map((d) => {
+              const mod = mods[d.id] ?? 1
+              return (
               <span
                 key={d.id}
                 className="flex items-center gap-1.5 rounded px-2 py-1 text-[11px]"
@@ -583,7 +661,27 @@ const DebuffPicker = React.forwardRef<HTMLDivElement, DebuffPickerProps>(
                 }}
               >
                 <span className="font-medium">{d.name}</span>
-                <span style={{ color: '#4ade80' }}>{formatDeltas(d, level)}</span>
+                <span style={{ color: '#4ade80' }}>{formatDeltas(d, level, mod)}</span>
+                <span
+                  className="flex items-center gap-0.5"
+                  title="Manual strength multiplier (e.g. bard instrument modifier)"
+                >
+                  <span style={{ color: 'var(--color-muted)' }}>×</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.05}
+                    value={mod}
+                    onChange={(e) =>
+                      onSetMod(d.id, Math.max(0, Number(e.target.value) || 0))
+                    }
+                    className="w-12 rounded px-1 py-0.5 text-[11px] tabular-nums"
+                    style={{
+                      backgroundColor: 'var(--color-surface-3)',
+                      border: `1px solid ${mod !== 1 ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                    }}
+                  />
+                </span>
                 <button
                   type="button"
                   onClick={() => onRemove(d.id)}
@@ -593,7 +691,8 @@ const DebuffPicker = React.forwardRef<HTMLDivElement, DebuffPickerProps>(
                   <X size={11} />
                 </button>
               </span>
-            ))}
+              )
+            })}
           </div>
         )}
         <div ref={ref} className="relative mt-1.5 max-w-sm">
@@ -640,7 +739,9 @@ const DebuffPicker = React.forwardRef<HTMLDivElement, DebuffPickerProps>(
         </div>
         <p className="mt-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
           Assumes debuffs land. Same-line debuffs (e.g. Tashani + Tashanian)
-          don&rsquo;t stack in-game — add only the strongest of a line.
+          don&rsquo;t stack in-game — add only the strongest of a line. Use the
+          &times; field to scale a debuff manually (e.g. a bard&rsquo;s
+          instrument modifier).
         </p>
       </div>
     )
