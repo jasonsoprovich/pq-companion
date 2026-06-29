@@ -398,7 +398,7 @@ func (t *Tracker) commitPending(ts time.Time, mode commitMode) {
 			// same CheckAggroAmount hate (EQMacEmu ResistSpell).
 			hate := p.offensiveHate + p.damageHate
 			if hate != 0 && p.target != "" {
-				t.addHateLocked(p.target, float64(hate), ts)
+				t.addHateLocked(p.target, float64(hate), ts, true) // spell hate
 				t.lastEngaged = p.target
 				changed = true
 			}
@@ -438,13 +438,18 @@ func (t *Tracker) ensureMobLocked(mob string, ts time.Time) *mobState {
 	return m
 }
 
-// addHateLocked adds amount (pre-hatemod) to a mob's running total, applies the
-// effective hatemod, and (re)arms the staleness timer. amount may be negative
-// (an aggro shedder); the displayed value is floored at snapshot time. Does NOT
-// touch lastEngaged — callers that represent "engaging" a mob set that. Caller
-// must hold t.mu.
-func (t *Tracker) addHateLocked(mob string, amount float64, ts time.Time) {
-	adjusted := amount * float64(100+t.effectiveHatemodLocked()) / 100
+// addHateLocked adds amount (pre-hatemod) to a mob's running total and (re)arms
+// the staleness timer. When applyHatemod is true the effective hate modifier
+// (Spell Casting Subtlety AA + hate-mod buffs + manual gear %) scales the amount;
+// the server applies that modifier to spell and heal hate ONLY, never to melee
+// swings, so melee callers pass false. amount may be negative (an aggro shedder);
+// the displayed value is floored at snapshot time. Does NOT touch lastEngaged —
+// callers that represent "engaging" a mob set that. Caller must hold t.mu.
+func (t *Tracker) addHateLocked(mob string, amount float64, ts time.Time, applyHatemod bool) {
+	adjusted := amount
+	if applyHatemod {
+		adjusted = amount * float64(100+t.effectiveHatemodLocked()) / 100
+	}
 	m := t.ensureMobLocked(mob, ts)
 	m.hate += adjusted
 	m.last = ts
@@ -452,20 +457,6 @@ func (t *Tracker) addHateLocked(mob string, amount float64, ts time.Time) {
 	// wall-clock consistent in both live-tail and replay modes — see nowFn.
 	m.recent = append(m.recent, hateSample{ts: t.nowFn(), amt: adjusted})
 	t.armExpiryLocked(mob, m)
-}
-
-// addHate attributes amount to a single mob and marks it as the most recently
-// engaged (used for spell offensive hate). Locks, snapshots, broadcasts.
-func (t *Tracker) addHate(mob string, amount float64, ts time.Time) {
-	if mob == "" || mob == "You" {
-		return
-	}
-	t.mu.Lock()
-	t.addHateLocked(mob, amount, ts)
-	t.lastEngaged = mob
-	snap := t.snapshotLocked(ts)
-	t.mu.Unlock()
-	t.broadcast(snap)
 }
 
 // recordSpellDamage resolves a direct spell-damage line. When it matches the
@@ -487,7 +478,7 @@ func (t *Tracker) recordSpellDamage(mob string, dmg int, ts time.Time) {
 	t.mu.Lock()
 	if p := t.pending; p != nil && p.directDamage && ts.Sub(p.at) <= castResolveWindow {
 		t.pending = nil
-		t.addHateLocked(mob, float64(p.offensiveHate+p.damageHate), ts)
+		t.addHateLocked(mob, float64(p.offensiveHate+p.damageHate), ts, true) // spell hate
 		t.lastEngaged = mob
 		snap := t.snapshotLocked(ts)
 		t.mu.Unlock()
@@ -498,7 +489,7 @@ func (t *Tracker) recordSpellDamage(mob string, dmg int, ts time.Time) {
 		t.mu.Unlock()
 		return
 	}
-	t.addHateLocked(mob, float64(dmg), ts)
+	t.addHateLocked(mob, float64(dmg), ts, true) // spell (proc) hate
 	t.lastEngaged = mob
 	snap := t.snapshotLocked(ts)
 	t.mu.Unlock()
@@ -527,7 +518,8 @@ func (t *Tracker) recordDamage(mob string, dmg int, melee bool, ts time.Time) {
 		return
 	}
 	t.mu.Lock()
-	t.addHateLocked(mob, float64(amount), ts)
+	// The hate modifier applies to spell/heal hate only, never melee swings.
+	t.addHateLocked(mob, float64(amount), ts, !melee)
 	if melee {
 		// Track the OBSERVED swing damage so an unknown-weapon miss can still be
 		// estimated from the landed-swing average.
@@ -565,7 +557,7 @@ func (t *Tracker) recordMiss(mob string, ts time.Time) {
 		}
 		amount = float64(m.meleeSum) / float64(m.meleeCount)
 	}
-	t.addHateLocked(mob, amount, ts)
+	t.addHateLocked(mob, amount, ts, false) // melee miss — no hatemod
 	snap := t.snapshotLocked(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)
@@ -585,7 +577,7 @@ func (t *Tracker) recordHeal(amount int, ts time.Time) {
 		return
 	}
 	for mob := range t.mobs {
-		t.addHateLocked(mob, float64(h), ts)
+		t.addHateLocked(mob, float64(h), ts, true) // heal hate
 	}
 	snap := t.snapshotLocked(ts)
 	t.mu.Unlock()

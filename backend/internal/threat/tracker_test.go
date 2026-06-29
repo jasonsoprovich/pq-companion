@@ -240,11 +240,22 @@ func TestCastWithoutTargetIgnored(t *testing.T) {
 	}
 }
 
-func TestHatemodScalesDamage(t *testing.T) {
-	tr := NewTracker(nil, nil, func() int { return 50 })
-	tr.Handle(hit("a gnoll", 100, time.Now()))
-	if got := hateFor(tr.GetState(), "a gnoll"); got != 150 {
-		t.Errorf("hate with +50%% hatemod = %d, want 150", got)
+// The hate modifier scales SPELL hate but NOT melee swings — the server applies
+// it in CheckAggroAmount/CheckHealAggroAmount only, never to Client::Attack hate.
+func TestHatemodScalesSpellNotMelee(t *testing.T) {
+	spells := fakeSpells{"Terror": spellWithInstantHate("Terror", 100)}
+	tr := NewTracker(nil, NewCalculator(spells, nil), func() int { return 50 })
+	t0 := time.Now()
+	tr.SetPipeTarget("a gnoll")
+	// Melee swing: unmodified (white damage isn't a hate-mod target).
+	tr.Handle(hit("a gnoll", 100, t0))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 100 {
+		t.Fatalf("melee hate with +50%% hatemod = %d, want 100 (melee unmodified)", got)
+	}
+	// Spell hate: scaled by +50% → 100 + 150 = 250.
+	castLand(tr, "Terror", t0.Add(time.Second))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 250 {
+		t.Errorf("hate after spell with +50%% hatemod = %d, want 250 (100 melee + 150 spell)", got)
 	}
 }
 
@@ -515,34 +526,41 @@ func TestHateModBuffScalesHate(t *testing.T) {
 	spells := fakeSpells{
 		"Glamorous Visage": spellHateModBuff("Glamorous Visage", -10, 100),
 		"Voice of Terris":  spellHateModBuff("Voice of Terris", 10, 100),
+		"Terror":           spellWithInstantHate("Terror", 100),
 	}
 	t0 := time.Now()
 
 	down := NewTracker(nil, NewCalculator(spells, nil), nil)
+	down.SetPipeTarget("a gnoll")
 	castLand(down, "Glamorous Visage", t0)
-	down.Handle(hit("a gnoll", 100, t0.Add(time.Second)))
+	castLand(down, "Terror", t0.Add(time.Second)) // instant 100 × 0.9
 	s := down.GetState()
 	if got := hateFor(s, "a gnoll"); got != 90 {
-		t.Errorf("hate with -10%% buff = %d, want 90", got)
+		t.Errorf("spell hate with -10%% buff = %d, want 90", got)
 	}
 	if s.HatemodPct != -10 {
 		t.Errorf("HatemodPct = %d, want -10", s.HatemodPct)
 	}
 
 	up := NewTracker(nil, NewCalculator(spells, nil), nil)
+	up.SetPipeTarget("a gnoll")
 	castLand(up, "Voice of Terris", t0)
-	up.Handle(hit("a gnoll", 100, t0.Add(time.Second)))
+	castLand(up, "Terror", t0.Add(time.Second)) // instant 100 × 1.1
 	if got := hateFor(up.GetState(), "a gnoll"); got != 110 {
-		t.Errorf("hate with +10%% buff = %d, want 110", got)
+		t.Errorf("spell hate with +10%% buff = %d, want 110", got)
 	}
 }
 
 // A hate-mod buff cast on us by ANOTHER player has no "You begin casting" line;
 // it must still register off the land-on-you event.
 func TestHateModBuffFromExternalCaster(t *testing.T) {
-	spells := fakeSpells{"Voice of Terris": spellHateModBuff("Voice of Terris", 10, 100)}
+	spells := fakeSpells{
+		"Voice of Terris": spellHateModBuff("Voice of Terris", 10, 100),
+		"Terror":          spellWithInstantHate("Terror", 100),
+	}
 	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
 	t0 := time.Now()
+	tr.SetPipeTarget("a gnoll")
 	tr.Handle(logparser.LogEvent{
 		Type:      logparser.EventSpellLanded,
 		Timestamp: t0,
@@ -551,13 +569,13 @@ func TestHateModBuffFromExternalCaster(t *testing.T) {
 			SpellName: "Voice of Terris",
 		},
 	})
-	tr.Handle(hit("a gnoll", 100, t0.Add(time.Second)))
+	castLand(tr, "Terror", t0.Add(time.Second)) // instant 100 × 1.1
 	s := tr.GetState()
 	if s.HatemodPct != 10 {
 		t.Errorf("HatemodPct = %d, want 10 (external hate buff registered on land)", s.HatemodPct)
 	}
 	if got := hateFor(s, "a gnoll"); got != 110 {
-		t.Errorf("hate = %d, want 110", got)
+		t.Errorf("spell hate = %d, want 110", got)
 	}
 }
 
@@ -583,14 +601,18 @@ func TestHateModBuffOnOthersNotRegistered(t *testing.T) {
 }
 
 func TestHateModBuffStacksWithStatic(t *testing.T) {
-	spells := fakeSpells{"Voice of Terris": spellHateModBuff("Voice of Terris", 10, 100)}
+	spells := fakeSpells{
+		"Voice of Terris": spellHateModBuff("Voice of Terris", 10, 100),
+		"Terror":          spellWithInstantHate("Terror", 100),
+	}
 	tr := NewTracker(nil, NewCalculator(spells, nil), func() int { return 20 })
 	t0 := time.Now()
+	tr.SetPipeTarget("a gnoll")
 	castLand(tr, "Voice of Terris", t0)
-	tr.Handle(hit("a gnoll", 100, t0.Add(time.Second)))
-	// 100 * (100 + 20 + 10) / 100 = 130
+	castLand(tr, "Terror", t0.Add(time.Second))
+	// spell hate 100 * (100 + 20 static + 10 buff) / 100 = 130
 	if got := hateFor(tr.GetState(), "a gnoll"); got != 130 {
-		t.Errorf("hate with +20 static +10 buff = %d, want 130", got)
+		t.Errorf("spell hate with +20 static +10 buff = %d, want 130", got)
 	}
 }
 
