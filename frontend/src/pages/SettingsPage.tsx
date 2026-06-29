@@ -58,28 +58,71 @@ interface TabBarProps {
   onChange: (t: Tab) => void
 }
 
+// Settings tabs are grouped into labelled sections in the vertical sidebar so
+// the (now ~11) tabs stay scannable instead of crowding a horizontal bar. Any
+// tab not listed here (e.g. a future addition) still renders, ungrouped, at the
+// end — so forgetting to register one degrades gracefully rather than hiding it.
+const TAB_GROUPS: { label: string; ids: Tab[] }[] = [
+  { label: 'General', ids: ['general', 'accessibility'] },
+  { label: 'Interface', ids: ['navigation', 'overlays', 'spelltimers', 'dpscolors'] },
+  { label: 'System', ids: ['logs', 'backups', 'advanced'] },
+  { label: 'About', ids: ['about', 'developer'] },
+]
+
+// TabBar renders the settings navigation as a vertical sidebar (a second nav
+// beside the main app sidebar, scoped to the Settings page). Grouped by
+// TAB_GROUPS; the provided `tabs` list still controls which entries exist
+// (e.g. the developer tab only when unlocked).
 function TabBar({ tabs, active, onChange }: TabBarProps): React.ReactElement {
+  const byId = new Map(tabs.map((t) => [t.id, t]))
+  const grouped = new Set(TAB_GROUPS.flatMap((g) => g.ids))
+  const leftovers = tabs.filter((t) => !grouped.has(t.id))
+
+  const renderButton = ({ id, label, icon }: TabBarProps['tabs'][number]): React.ReactElement => (
+    <button
+      key={id}
+      onClick={() => onChange(id)}
+      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs font-medium transition-colors"
+      style={{
+        backgroundColor: active === id ? 'var(--color-surface-2)' : 'transparent',
+        color: active === id ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
+      }}
+    >
+      {icon}
+      {label}
+    </button>
+  )
+
   return (
-    <div
-      className="flex shrink-0 border-b"
+    <nav
+      className="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r p-2"
       style={{ borderColor: 'var(--color-border)' }}
     >
-      {tabs.map(({ id, label, icon }) => (
-        <button
-          key={id}
-          onClick={() => onChange(id)}
-          className="flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-xs font-medium transition-colors"
-          style={{
-            borderBottomColor: active === id ? 'var(--color-primary)' : 'transparent',
-            color: active === id ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
-            backgroundColor: 'transparent',
-          }}
-        >
-          {icon}
-          {label}
-        </button>
-      ))}
-    </div>
+      <div className="mb-2 flex items-center gap-2 px-2 pt-1">
+        <Settings size={16} style={{ color: 'var(--color-primary)' }} />
+        <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+          Settings
+        </span>
+      </div>
+      {TAB_GROUPS.map((group) => {
+        const items = group.ids
+          .map((id) => byId.get(id))
+          .filter((t): t is TabBarProps['tabs'][number] => Boolean(t))
+        if (items.length === 0) return null
+        return (
+          <div key={group.label} className="mb-1">
+            <p
+              className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider"
+              style={{ color: 'var(--color-muted)' }}
+            >
+              {group.label}
+            </p>
+            {items.map(renderButton)}
+          </div>
+        )
+      })}
+      {leftovers.length > 0 && <div className="mb-1">{leftovers.map(renderButton)}</div>}
+    </nav>
   )
 }
 
@@ -533,7 +576,7 @@ export default function SettingsPage(): React.ReactElement {
   if (loadError && tab !== 'backups') {
     const configPath = configFolder ? `${configFolder}\\config.yaml` : null
     return (
-      <div className="flex h-full flex-col">
+      <div className="flex h-full">
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
         <div className="flex flex-1 items-start justify-center overflow-y-auto p-6">
           <div className="flex w-full max-w-xl flex-col gap-4">
@@ -635,7 +678,7 @@ export default function SettingsPage(): React.ReactElement {
 
   if (!config && tab !== 'backups') {
     return (
-      <div className="flex h-full flex-col">
+      <div className="flex h-full">
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
           <Loader2 size={24} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
@@ -649,7 +692,7 @@ export default function SettingsPage(): React.ReactElement {
 
   if (tab === 'backups') {
     return (
-      <div className="flex h-full flex-col">
+      <div className="flex h-full">
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
         <div className="min-h-0 flex-1">
           <BackupManagerPage />
@@ -660,7 +703,7 @@ export default function SettingsPage(): React.ReactElement {
 
   if (tab === 'developer') {
     return (
-      <div className="flex h-full flex-col">
+      <div className="flex h-full">
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           <DeveloperTab />
@@ -671,7 +714,7 @@ export default function SettingsPage(): React.ReactElement {
 
   if (tab === 'navigation') {
     return (
-      <div className="flex h-full flex-col">
+      <div className="flex h-full">
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           <SidebarNavSettings />
@@ -687,18 +730,18 @@ export default function SettingsPage(): React.ReactElement {
   const hasElectronUpdater = Boolean(window.electron?.updater)
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full">
       <TabBar tabs={tabs} active={tab} onChange={setTab} />
       <div className="flex-1 overflow-y-auto">
       {/* The Overlays tab holds a wide per-overlay control table (Pop out /
           Reset / Monitor / lock-mode), so it gets more horizontal room than
           the other tabs to keep those columns from clipping. */}
       <div className={`mx-auto p-6 ${tab === 'overlays' ? 'max-w-3xl' : 'max-w-xl'}`}>
-      {/* Page header */}
+      {/* Page header — shows the active tab's name; the sidebar carries the
+          overall "Settings" branding. */}
       <div className="mb-6 flex items-center gap-3">
-        <Settings size={20} style={{ color: 'var(--color-primary)' }} />
         <h1 className="text-lg font-semibold" style={{ color: 'var(--color-foreground)' }}>
-          Settings
+          {tabs.find((t) => t.id === tab)?.label ?? 'Settings'}
         </h1>
       </div>
 
