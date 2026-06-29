@@ -1841,6 +1841,7 @@ func (e *Engine) applyDurationModifiers(spell *db.Spell, baseDurationSec float64
 		buffmod.SpellLevelForClass(spell.ClassLevels, casterClass),
 		defaultCasterLevel,
 		int(baseDurationSec),
+		spell.CastTime, // SPA 143 (min cast time) filter
 		spellType,
 		spell.EffectIDs[:],
 		contribs,

@@ -90,6 +90,7 @@ func TestComputeOsui(t *testing.T) {
 		aegolism.ID, aegolism.Name,
 		buffmod.SpellLevel(aegolism.ClassLevels), 60,
 		aegolism.BuffDuration*6,
+		aegolism.CastTime,
 		buffmod.SpellTypeBeneficial, aegolism.EffectIDs[:],
 		res.Contributors,
 		buffmod.CasterClassUnknown, [15]int{},
@@ -125,6 +126,7 @@ func TestKEIOsuiExtendedDuration(t *testing.T) {
 		kei.ID, kei.Name,
 		buffmod.SpellLevel(kei.ClassLevels), 60,
 		9000,
+		kei.CastTime,
 		buffmod.SpellTypeBeneficial, kei.EffectIDs[:],
 		res.Contributors,
 		buffmod.CasterClassUnknown, [15]int{},
@@ -161,6 +163,7 @@ func TestKEIRejectsEH1(t *testing.T) {
 		buffmod.SpellLevel(kei.ClassLevels), // L60 — rejects EH1 (max_level=20)
 		60,                                  // caster level
 		kei.BuffDuration*6,
+		kei.CastTime,
 		buffmod.SpellTypeBeneficial, kei.EffectIDs[:],
 		res.Contributors,
 		buffmod.CasterClassUnknown, [15]int{},
@@ -209,6 +212,7 @@ func TestKEIBlocksEH1(t *testing.T) {
 		kei.ID, kei.Name,
 		buffmod.SpellLevel(kei.ClassLevels), 60,
 		kei.BuffDuration*6,
+		kei.CastTime,
 		buffmod.SpellTypeBeneficial, kei.EffectIDs[:],
 		contributors,
 		buffmod.CasterClassUnknown, [15]int{},
@@ -251,6 +255,7 @@ func TestSpellHasteCap(t *testing.T) {
 	r := buffmod.Resolve(
 		1, "Synthetic Buff",
 		60, 60, 600,
+		0, // no SPA-143 cast-time limit on the synthetic foci
 		buffmod.SpellTypeBeneficial,
 		[]int{},
 		contributors,
@@ -294,6 +299,7 @@ func TestBardExemptOnInClassSpell(t *testing.T) {
 	r := buffmod.Resolve(
 		1, "Resonance (synthetic)",
 		50, 60, 720, // 12 min base
+		0,
 		buffmod.SpellTypeBeneficial,
 		[]int{},
 		contributors,
@@ -350,6 +356,7 @@ func TestOffClassClickyDurationGate(t *testing.T) {
 	off := buffmod.Resolve(
 		1, "Wand of Deflection (synthetic)",
 		60, 60, 600,
+		0,
 		buffmod.SpellTypeBeneficial,
 		[]int{},
 		contributors,
@@ -373,6 +380,7 @@ func TestOffClassClickyDurationGate(t *testing.T) {
 	in := buffmod.Resolve(
 		1, "Synthetic Enchanter Buff",
 		60, 60, 600,
+		0,
 		buffmod.SpellTypeBeneficial,
 		[]int{},
 		contributors,
@@ -423,6 +431,7 @@ func TestBardDurationExempt(t *testing.T) {
 		kei.ID, kei.Name,
 		buffmod.SpellLevel(kei.ClassLevels), 60,
 		9000,
+		kei.CastTime,
 		buffmod.SpellTypeBeneficial, kei.EffectIDs[:],
 		res.Contributors,
 		buffmod.BardClassIdx,
@@ -493,6 +502,7 @@ func TestMultiClassSpellLevelFocusGate(t *testing.T) {
 		celerity.ID, celerity.Name,
 		buffmod.SpellLevelForClass(celerity.ClassLevels, shamanIdx), 60,
 		base,
+		celerity.CastTime,
 		buffmod.SpellTypeBeneficial, celerity.EffectIDs[:],
 		contributors,
 		shamanIdx,
@@ -510,6 +520,7 @@ func TestMultiClassSpellLevelFocusGate(t *testing.T) {
 		celerity.ID, celerity.Name,
 		buffmod.SpellLevelForClass(celerity.ClassLevels, enchanterIdx), 60,
 		base,
+		celerity.CastTime,
 		buffmod.SpellTypeBeneficial, celerity.EffectIDs[:],
 		contributors,
 		enchanterIdx,
@@ -538,6 +549,7 @@ func TestExclusionFilter(t *testing.T) {
 	r := buffmod.Resolve(
 		completeHeal.ID, completeHeal.Name,
 		buffmod.SpellLevel(completeHeal.ClassLevels), 60, 0,
+		completeHeal.CastTime,
 		buffmod.SpellTypeBeneficial,
 		completeHeal.EffectIDs[:],
 		res.Contributors,
@@ -576,6 +588,7 @@ func TestIncludeEffectLimit(t *testing.T) {
 	pet := buffmod.Resolve(
 		1, "Synthetic Pet Summon",
 		40, 60, 0,
+		0,
 		buffmod.SpellTypeBeneficial,
 		[]int{33, 254, 254, 254},
 		contributors,
@@ -588,6 +601,7 @@ func TestIncludeEffectLimit(t *testing.T) {
 	nonPet := buffmod.Resolve(
 		2, "Synthetic Nuke",
 		40, 60, 0,
+		0,
 		buffmod.SpellTypeDetrimental,
 		[]int{0, 254, 254, 254},
 		contributors,
@@ -613,7 +627,7 @@ func TestIncludeSpellLimit(t *testing.T) {
 		},
 	}
 	hit := buffmod.Resolve(
-		1447, "Aegolism", 60, 60, 600,
+		1447, "Aegolism", 60, 60, 600, 0,
 		buffmod.SpellTypeBeneficial, []int{},
 		whitelist, buffmod.CasterClassUnknown, [15]int{},
 	)
@@ -621,7 +635,7 @@ func TestIncludeSpellLimit(t *testing.T) {
 		t.Errorf("whitelisted spell item duration %% = %d, want 20", hit.DurationItemPercent)
 	}
 	miss := buffmod.Resolve(
-		2570, "Koadic's Endless Intellect", 60, 60, 600,
+		2570, "Koadic's Endless Intellect", 60, 60, 600, 0,
 		buffmod.SpellTypeBeneficial, []int{},
 		whitelist, buffmod.CasterClassUnknown, [15]int{},
 	)
@@ -641,7 +655,7 @@ func TestIncludeSpellLimit(t *testing.T) {
 		},
 	}
 	blocked := buffmod.Resolve(
-		1292, "Complete Heal", 60, 60, 600,
+		1292, "Complete Heal", 60, 60, 600, 0,
 		buffmod.SpellTypeBeneficial, []int{},
 		exclude, buffmod.CasterClassUnknown, [15]int{},
 	)

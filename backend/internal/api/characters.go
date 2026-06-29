@@ -355,6 +355,7 @@ func (h *charactersHandler) spellModifiers(w http.ResponseWriter, r *http.Reques
 		resolution := buffmod.Resolve(
 			sp.ID, sp.Name, spellLevel, casterLevel,
 			baseTicks*6, // ticks → seconds
+			sp.CastTime, // SPA 143 (min cast time) filter
 			spellType, sp.EffectIDs[:],
 			res.Contributors,
 			char.Class,

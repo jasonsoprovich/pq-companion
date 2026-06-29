@@ -1712,6 +1712,7 @@ function ModifierRow({ m }: { m: SpellModifier }): React.ReactElement {
         {m.limits.max_level ? <FilterTag label={`≤ L${m.limits.max_level}`} /> : null}
         {m.limits.min_level ? <FilterTag label={`≥ L${m.limits.min_level}`} /> : null}
         {m.limits.min_duration_sec ? <FilterTag label={`≥ ${m.limits.min_duration_sec}s`} /> : null}
+        {m.limits.min_cast_time_ms ? <FilterTag label={`≥ ${m.limits.min_cast_time_ms / 1000}s cast`} /> : null}
         {m.limits.instant_only ? <FilterTag label="direct only" /> : null}
         {m.limits.exclude_effects && m.limits.exclude_effects.length > 0 ? (
           <FilterTag label={`excl. ${m.limits.exclude_effects.length} effect${m.limits.exclude_effects.length > 1 ? 's' : ''}`} />

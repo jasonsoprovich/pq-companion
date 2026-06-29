@@ -122,6 +122,7 @@ type Limits struct {
 	MinLevel       int   `json:"min_level,omitempty"`        // SPA 142
 	SpellType      int   `json:"spell_type"`                 // SPA 138; SpellTypeUnset/0/1/2
 	MinDurationSec int   `json:"min_duration_sec,omitempty"` // SPA 140 × 6
+	MinCastTimeMs  int   `json:"min_cast_time_ms,omitempty"` // SPA 143; target spell base cast time ≥ this (ms)
 	InstantOnly    bool  `json:"instant_only,omitempty"`     // SPA 141; applies only to instant (zero-duration) spells
 	ExcludeEffects []int `json:"exclude_effects,omitempty"`  // SPA 137 with negative base
 	IncludeEffects []int `json:"include_effects,omitempty"`  // SPA 137 with positive base; spell must contain one
@@ -305,10 +306,10 @@ func parseFocusSpell(s *db.Spell) []Modifier {
 			} else if base > 0 {
 				limits.IncludeSpells = append(limits.IncludeSpells, base)
 			}
-			// SPALimitCastTimeMin (143) is recognized but not enforced — Match
-			// has no base-cast-time context to test against. Haste foci carry it
-			// (e.g. 143:3000 = "spells with ≥3s cast time only"); modeling it
-			// would require plumbing cast time into Match.
+		case SPALimitCastTimeMin:
+			// Haste foci carry e.g. 143:3000 = "spells with ≥3s base cast time
+			// only" — the EQ rule that haste doesn't speed up already-fast spells.
+			limits.MinCastTimeMs = base
 		}
 	}
 
@@ -327,7 +328,9 @@ func parseFocusSpell(s *db.Spell) []Modifier {
 
 // Match reports whether m applies to a spell with the given properties.
 // casterLevel = 0 means caller does not want a level filter applied.
-func (m Modifier) Match(spellID, spellLevel, durationSec, spellType int, effectIDs []int) bool {
+// castTimeMs is the target spell's base cast time (db.Spell.CastTime), tested
+// against SPA 143 (Limit: Min Cast Time); pass 0 when unknown to skip it.
+func (m Modifier) Match(spellID, spellLevel, durationSec, castTimeMs, spellType int, effectIDs []int) bool {
 	l := m.Limits
 	if l.MaxLevel > 0 && spellLevel > l.MaxLevel {
 		return false
@@ -336,6 +339,11 @@ func (m Modifier) Match(spellID, spellLevel, durationSec, spellType int, effectI
 		return false
 	}
 	if l.MinDurationSec > 0 && durationSec < l.MinDurationSec {
+		return false
+	}
+	// SPA 143 (min cast time): haste foci only speed up spells whose base cast
+	// time meets the threshold (e.g. 143:3000 → ≥3s cast only).
+	if l.MinCastTimeMs > 0 && castTimeMs < l.MinCastTimeMs {
 		return false
 	}
 	// SPA 141 (instant-only): the focus applies only to direct, zero-duration
@@ -540,7 +548,9 @@ func SpellLevelForClass(classLevels [15]int, casterClass int) int {
 //
 // spellClassLevels is the spell's classes1..classes15 array (0-indexed in our
 // Spell struct). All zeroes means "no data" — the off-class gate is skipped.
-func Resolve(spellID int, spellName string, spellLevel, casterLevel, baseDurationSec, spellType int, effectIDs []int, contributors []Modifier, casterClass int, spellClassLevels [15]int) Resolution {
+// castTimeMs is the target spell's base cast time (db.Spell.CastTime), used for
+// the SPA 143 (Limit: Min Cast Time) filter on haste foci. Pass 0 to skip it.
+func Resolve(spellID int, spellName string, spellLevel, casterLevel, baseDurationSec, castTimeMs, spellType int, effectIDs []int, contributors []Modifier, casterClass int, spellClassLevels [15]int) Resolution {
 	r := Resolution{
 		SpellID:         spellID,
 		SpellName:       spellName,
@@ -562,7 +572,7 @@ func Resolve(spellID int, spellName string, spellLevel, casterLevel, baseDuratio
 		var matched []Modifier
 		for i := range contributors {
 			c := contributors[i]
-			if c.SPA != spa || !c.Match(spellID, spellLevel, baseDurationSec, spellType, effectIDs) {
+			if c.SPA != spa || !c.Match(spellID, spellLevel, baseDurationSec, castTimeMs, spellType, effectIDs) {
 				continue
 			}
 			matched = append(matched, c)

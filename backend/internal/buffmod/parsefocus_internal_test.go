@@ -69,14 +69,21 @@ func TestParseFocusSpellHasteExcludesCompleteHeal(t *testing.T) {
 	if len(l.ExcludeSpells) != 1 || l.ExcludeSpells[0] != 13 {
 		t.Errorf("ExcludeSpells = %v, want [13] (Complete Healing excluded from haste)", l.ExcludeSpells)
 	}
+	if l.MinCastTimeMs != 3000 {
+		t.Errorf("MinCastTimeMs = %d, want 3000 (SPA 143)", l.MinCastTimeMs)
+	}
 
-	// Match must therefore reject Complete Healing (spell 13)…
-	if mods[0].Match(13, 50, 0, SpellTypeBeneficial, nil) {
+	// Match must reject Complete Healing (spell 13) even on a ≥3s spell…
+	if mods[0].Match(13, 50, 0, 4000, SpellTypeBeneficial, nil) {
 		t.Error("haste focus should NOT apply to Complete Healing (spell 13)")
 	}
-	// …but still apply to an ordinary spell.
-	if !mods[0].Match(999, 50, 0, SpellTypeBeneficial, nil) {
-		t.Error("haste focus should apply to a non-excluded spell")
+	// …apply to an ordinary spell whose cast time meets the 143 threshold…
+	if !mods[0].Match(999, 50, 0, 4000, SpellTypeBeneficial, nil) {
+		t.Error("haste focus should apply to a non-excluded ≥3s spell")
+	}
+	// …and reject a fast spell below the SPA-143 min cast time.
+	if mods[0].Match(999, 50, 0, 1500, SpellTypeBeneficial, nil) {
+		t.Error("haste focus should NOT apply to a sub-3s spell (SPA 143)")
 	}
 }
 
@@ -93,11 +100,11 @@ func TestParseFocusInstantOnly(t *testing.T) {
 		t.Fatalf("InstantOnly not set from SPA 141 (mods=%+v)", mods)
 	}
 	// Direct nuke (zero base duration) → applies.
-	if !mods[0].Match(999, 50, 0, SpellTypeDetrimental, nil) {
+	if !mods[0].Match(999, 50, 0, 0, SpellTypeDetrimental, nil) {
 		t.Error("instant-only damage focus should apply to a direct nuke")
 	}
 	// DoT (non-zero duration) → excluded.
-	if mods[0].Match(999, 50, 60, SpellTypeDetrimental, nil) {
+	if mods[0].Match(999, 50, 60, 0, SpellTypeDetrimental, nil) {
 		t.Error("instant-only damage focus should NOT apply to a DoT")
 	}
 }
