@@ -55,6 +55,29 @@ func hit(target string, dmg int, ts time.Time) logparser.LogEvent {
 	}
 }
 
+// spellHit is a direct spell-damage line (Skill "spell") — the resolution signal
+// for a pending nuke. The amount is the OBSERVED damage, which the meter ignores
+// in favour of the spell's base hate whenever a direct-damage cast is pending.
+func spellHit(target string, dmg int, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventCombatHit,
+		Timestamp: ts,
+		Data:      logparser.CombatHitData{Actor: "You", Skill: "spell", Target: target, Damage: dmg},
+	}
+}
+
+// dotTick is a DoT damage line (Skill "dot", carrying its spell name). Per-tick
+// hate is the observed amount, matching DoBuffTic.
+func dotTick(target, spell string, dmg int, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventCombatHit,
+		Timestamp: ts,
+		Data: logparser.CombatHitData{
+			Actor: "You", Skill: "dot", Target: target, SpellName: spell, Damage: dmg,
+		},
+	}
+}
+
 func cast(spell string, ts time.Time) logparser.LogEvent {
 	return logparser.LogEvent{
 		Type:      logparser.EventSpellCast,
@@ -279,12 +302,23 @@ func spellDetrimentalUtility(name string) *db.Spell {
 	return sp
 }
 
-// spellDamage is a detrimental pure-damage spell (SE_CurrentHP negative). Its
-// hate comes from the observed damage line, so the cast adds no extra hate.
+// spellDamage is a detrimental pure-damage spell (SE_CurrentHP negative, instant
+// — buffduration 0). Its hate is the BASE damage (200), applied once from the
+// damage line; crits and resists never change it.
 func spellDamage(name string) *db.Spell {
 	sp := &db.Spell{Name: name, GoodEffect: 0}
 	sp.EffectIDs[0] = spaCurrentHP
 	sp.EffectBaseValues[0] = -200
+	return sp
+}
+
+// spellDoT is a detrimental damage-over-time spell (SE_CurrentHP negative with a
+// buff duration). It is NOT a direct-damage cast: hate accrues per tick from the
+// observed "dot" lines, so the cast itself records no pending hate.
+func spellDoT(name string) *db.Spell {
+	sp := &db.Spell{Name: name, GoodEffect: 0, BuffDuration: 10}
+	sp.EffectIDs[0] = spaCurrentHP
+	sp.EffectBaseValues[0] = -30
 	return sp
 }
 
@@ -346,16 +380,17 @@ func TestStandardHateUtilitySpell(t *testing.T) {
 
 func TestControlSpellAddsStandardHateEvenWithDamage(t *testing.T) {
 	// A stun-nuke: SE_Stun sets standard hate, which lands ON TOP of the nuke's
-	// (separately observed) damage — the old model wrongly skipped it whenever
-	// the spell did damage.
-	spells := fakeSpells{"Shock of Stun": spellDamageStun("Shock of Stun")}
-	npcs := fakeNPCs{"a_gnoll": 3000} // HP/15 = 200
+	// BASE damage when the cast resolves from its damage line. The observed
+	// (crit-inflated) amount on that line is ignored.
+	spells := fakeSpells{"Shock of Stun": spellDamageStun("Shock of Stun")} // base 200 + stun
+	npcs := fakeNPCs{"a_gnoll": 3000}                                       // HP/15 = 200
 	tr := NewTracker(nil, NewCalculator(spells, npcs), nil)
 	t0 := time.Now()
-	tr.Handle(hit("a gnoll", 100, t0)) // stands in for the nuke's damage line
-	castLand(tr, "Shock of Stun", t0.Add(time.Second))
-	if got := hateFor(tr.GetState(), "a gnoll"); got != 300 {
-		t.Errorf("hate after stun-nuke = %d, want 300 (100 damage + 200 standard)", got)
+	tr.SetPipeTarget("a gnoll") // target known at cast time for the HP-scaled term
+	tr.Handle(cast("Shock of Stun", t0))
+	tr.Handle(spellHit("a gnoll", 9999, t0.Add(time.Second))) // observed ignored
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 400 {
+		t.Errorf("hate after stun-nuke = %d, want 400 (200 base damage + 200 standard)", got)
 	}
 }
 
@@ -405,17 +440,74 @@ func TestStandardHateSkippedWithoutNPCSource(t *testing.T) {
 	}
 }
 
-func TestDamageSpellCastAddsNoStandardHate(t *testing.T) {
-	// A nuke's hate is its observed damage line, not the cast. The cast must add
-	// nothing (no double counting) even though the mob HP is known.
-	spells := fakeSpells{"Nuke": spellDamage("Nuke")}
+func TestDirectDamageHateUsesBaseNotObserved(t *testing.T) {
+	// A nuke's hate is its BASE damage, applied once from the damage line. Neither
+	// the observed amount (a crit here) nor the known mob HP changes it.
+	spells := fakeSpells{"Nuke": spellDamage("Nuke")} // base 200
 	npcs := fakeNPCs{"a_gnoll": 3000}
 	tr := NewTracker(nil, NewCalculator(spells, npcs), nil)
 	t0 := time.Now()
-	tr.Handle(hit("a gnoll", 100, t0))
-	castLand(tr, "Nuke", t0.Add(time.Second))
-	if got := hateFor(tr.GetState(), "a gnoll"); got != 100 {
-		t.Errorf("hate after nuke cast = %d, want 100 (damage counted from its own line only)", got)
+	tr.Handle(cast("Nuke", t0))
+	tr.Handle(spellHit("a gnoll", 350, t0.Add(time.Second))) // crit 350 ignored
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 200 {
+		t.Errorf("hate after nuke = %d, want 200 (base damage, not observed 350)", got)
+	}
+}
+
+func TestDirectDamageFullResistStillUsesBase(t *testing.T) {
+	// A fully resisted nuke still adds the same hate as a land — the server adds
+	// CheckAggroAmount (base damage) again in ResistSpell.
+	spells := fakeSpells{"Nuke": spellDamage("Nuke")} // base 200
+	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 50, t0)) // engage (melee), so target is known
+	tr.Handle(cast("Nuke", t0.Add(time.Second)))
+	tr.Handle(resist("Nuke", t0.Add(2*time.Second)))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 250 {
+		t.Errorf("hate after resisted nuke = %d, want 250 (50 melee + 200 base)", got)
+	}
+}
+
+func TestNukeNotDoubleCountedWithLandMessage(t *testing.T) {
+	// A damage spell that also emits a "lands" message must be counted once: the
+	// land message is ignored for direct-damage casts; the damage line resolves it.
+	spells := fakeSpells{"Shock of Stun": spellDamageStun("Shock of Stun")} // base 200 + stun
+	npcs := fakeNPCs{"a_gnoll": 3000}                                       // standard 200
+	tr := NewTracker(nil, NewCalculator(spells, npcs), nil)
+	t0 := time.Now()
+	tr.SetPipeTarget("a gnoll")
+	tr.Handle(cast("Shock of Stun", t0))
+	tr.Handle(land("Shock of Stun", t0.Add(time.Second)))      // ignored for direct damage
+	tr.Handle(spellHit("a gnoll", 500, t0.Add(2*time.Second))) // resolves once
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 400 {
+		t.Errorf("hate = %d, want 400 (counted once: 200 base + 200 standard)", got)
+	}
+}
+
+func TestProcDamageFallsBackToObserved(t *testing.T) {
+	// Spell damage with no matching cast (a weapon proc) can't be traced to a
+	// spell, so its observed amount stands in as the hate.
+	tr := NewTracker(nil, NewCalculator(fakeSpells{}, nil), nil)
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 50, t0))                       // melee engage
+	tr.Handle(spellHit("a gnoll", 75, t0.Add(time.Second))) // proc, no pending cast
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 125 {
+		t.Errorf("hate = %d, want 125 (50 melee + 75 observed proc)", got)
+	}
+}
+
+func TestDoTTickHateUsesObserved(t *testing.T) {
+	// A DoT is not a direct-damage cast: it records no pending hate, and its ticks
+	// credit the observed per-tick damage.
+	spells := fakeSpells{"Poison": spellDoT("Poison")}
+	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
+	t0 := time.Now()
+	tr.Handle(cast("Poison", t0))
+	tr.Handle(land("Poison", t0.Add(time.Second))) // no offensive/standard hate
+	tr.Handle(dotTick("a gnoll", "Poison", 30, t0.Add(2*time.Second)))
+	tr.Handle(dotTick("a gnoll", "Poison", 30, t0.Add(8*time.Second)))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 60 {
+		t.Errorf("DoT hate = %d, want 60 (2 ticks × 30 observed)", got)
 	}
 }
 

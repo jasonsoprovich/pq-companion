@@ -13,9 +13,11 @@ import (
 // Mob::CheckAggroAmount in the SecretsOTheP/EQMacEmu fork (zone/aggro.cpp),
 // which is the authoritative source for how much hate a cast generates.
 const (
-	// Damage effects: hate is the observed damage, read from the player's own
-	// damage line, so these contribute NOTHING here (they are not in the switch
-	// below) — folding them in would double-count.
+	// Direct-damage effects: hate is the spell's BASE (unmodified) damage,
+	// computed here and added at cast time. Crits and partial resists never
+	// change it — even a full resist adds the same value (EQMacEmu ResistSpell →
+	// CheckAggroAmount). DoTs (buffduration>0) are excluded; their hate is added
+	// per tick from the observed "dot" damage lines, mirroring Mob::DoBuffTic.
 	spaCurrentHP     = 0  // SE_CurrentHP
 	spaCurrentHPOnce = 79 // SE_CurrentHPOnce
 
@@ -109,10 +111,20 @@ type SpellHate struct {
 	// modifier. Only meaningful when HatemodPct != 0.
 	DurationTicks int
 	// OffensiveHate is the non-damage hate the cast adds to its target mob
-	// (instant hate + HP-scaled standard hate). Signed: aggro shedders are
-	// negative. Zero when the spell is a pure nuke/DoT (hate comes from damage)
-	// or a hate-mod buff.
+	// (instant hate + flat debuff hate + HP-scaled standard hate). Signed: aggro
+	// shedders are negative. Zero when the spell is a pure nuke (hate is all in
+	// DamageHate), a DoT (hate comes per-tick from observed damage), or a
+	// hate-mod buff.
 	OffensiveHate int64
+	// DamageHate is the BASE direct damage of an instant-damage spell, added as
+	// hate when the cast resolves — independent of the rolled damage (crits and
+	// partial resists never change it). Zero for non-damage spells and DoTs.
+	DamageHate int64
+	// DirectDamage marks a spell that deals instant damage. Its hate resolves
+	// from the spell's own damage line (recordSpellDamage) or a full resist —
+	// NOT a generic "lands" message — so the meter neither double-counts it nor
+	// credits the observed (crit/resist-distorted) damage.
+	DirectDamage bool
 }
 
 // Calculator converts cast spells and heals into the hate they generate beyond
@@ -217,13 +229,17 @@ func (c *Calculator) Classify(spellName, targetNPC string) SpellHate {
 	}
 
 	// Faithful port of Mob::CheckAggroAmount (SecretsOTheP/EQMacEmu
-	// zone/aggro.cpp), computing the NON-damage hate a detrimental cast adds.
-	// The `damage` accumulator of the original is excluded — the tracker reads
-	// damage hate from the observed damage line — so this returns exactly the
-	// cast-added component: instant hate + flat debuff hate + (HP-scaled
-	// standard hate when a control/slow/AC effect sets it, regardless of whether
-	// the spell ALSO does damage; that is what makes a stun-nuke aggro for
-	// damage + standard hate).
+	// zone/aggro.cpp): instant hate + flat debuff hate + (HP-scaled standard hate
+	// when a control/slow/AC effect sets it) + the BASE direct damage. All of it
+	// is added once when the cast resolves. A spell that BOTH damages and controls
+	// (a stun-nuke) thus aggros for base damage + standard hate; resists and crits
+	// never change the total (the server adds the same CheckAggroAmount on a land,
+	// a partial resist, or a full resist).
+	//
+	// The base direct damage is read from the spell's effect base value (not the
+	// observed log damage); level-scaled nukes use their listed base, an accepted
+	// approximation for the max-level raiders this meter targets. DoT damage is
+	// excluded here — it is added per tick from the observed "dot" lines.
 	//
 	// Known-omitted minor cases (rare in offensive casting, and avoided to keep
 	// the SPA mapping reliable): the `slevel*2` melee-debuff/Harmony group, the
@@ -232,10 +248,20 @@ func (c *Calculator) Classify(spellName, targetNPC string) SpellHate {
 	// uncommon spells slightly rather than risk a wrong value.
 	instant := 0
 	nonDamageHate := 0
+	damage := 0
+	directDamage := false
 	setStandardHate := false
 	for i := 0; i < len(sp.EffectIDs); i++ {
 		val := sp.EffectBaseValues[i]
 		switch sp.EffectIDs[i] {
+		case spaCurrentHP, spaCurrentHPOnce:
+			// Instant damage (buffduration==0) only — DoTs carry their hate
+			// per tick via the observed damage lines. Damage is stored as a
+			// negative base value, so subtracting it accumulates positive hate.
+			if val < 0 && sp.BuffDuration == 0 {
+				damage -= val
+				directDamage = true
+			}
 		case spaStun, spaBlind, spaMez, spaCharm, spaFear,
 			spaSpinTarget, spaAmnesia, spaSilence, spaDestroy, spaPoisonCounter:
 			setStandardHate = true
@@ -285,7 +311,12 @@ func (c *Calculator) Classify(spellName, targetNPC string) SpellHate {
 		}
 	}
 
-	return SpellHate{Found: true, OffensiveHate: int64(nonDamageHate + instant)}
+	return SpellHate{
+		Found:         true,
+		OffensiveHate: int64(nonDamageHate + instant),
+		DamageHate:    int64(damage),
+		DirectDamage:  directDamage,
+	}
 }
 
 // lookupNPC returns the NPC row by display name (spaces converted to the

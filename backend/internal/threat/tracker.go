@@ -89,12 +89,15 @@ type modState struct {
 // (lands, or is resisted — a resisted detrimental spell still generates aggro),
 // never at "You begin casting", so an interrupted or fizzled cast adds nothing.
 // Only one cast is ever in flight (EQ casts serially), so a single slot suffices;
-// a new cast replaces any unresolved prior pending. Exactly one of offensiveHate
-// / hatemodPct is non-zero, mirroring Calculator.Classify.
+// a new cast replaces any unresolved prior pending. A hate-mod buff carries only
+// hatemodPct; every other cast carries offensiveHate and/or damageHate, mirroring
+// Calculator.Classify.
 type pendingCast struct {
 	spellName     string
 	target        string // mob the offensive hate lands on (captured at cast time)
-	offensiveHate int64  // instant + standard hate; applied on land/resist
+	offensiveHate int64  // instant + flat + standard hate; applied on land/resist
+	damageHate    int64  // base direct damage; applied on land/resist (not crits/resist-scaled)
+	directDamage  bool   // resolves from its own damage line or a full resist, not a land message
 	hatemodPct    int    // self-buff hate modifier; registered on land only
 	durationTicks int
 	at            time.Time
@@ -205,10 +208,20 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 			// can attribute. Incoming and third-party hits are ignored.
 			return
 		}
-		// Melee swings (a verb skill, no spell name) feed the miss-hate average;
-		// "spell" hits and DoT ticks do not.
-		melee := data.SpellName == "" && data.Skill != "spell"
-		t.recordDamage(data.Target, data.Damage, melee, ev.Timestamp)
+		switch {
+		case data.Skill == "spell":
+			// Direct spell damage — our own nuke, or a weapon proc. Hate is the
+			// spell's BASE damage, resolved here (see recordSpellDamage), NOT the
+			// observed amount a crit or partial resist would distort.
+			t.recordSpellDamage(data.Target, data.Damage, ev.Timestamp)
+		case data.SpellName == "":
+			// Melee swing (a verb skill). Feeds the miss-hate average.
+			t.recordDamage(data.Target, data.Damage, true, ev.Timestamp)
+		default:
+			// DoT tick (Skill=="dot"): per-tick hate from observed damage,
+			// matching DoBuffTic (ticks add base damage, no crit/variance here).
+			t.recordDamage(data.Target, data.Damage, false, ev.Timestamp)
+		}
 
 	case logparser.EventCombatMiss:
 		data, ok := ev.Data.(logparser.CombatMissData)
@@ -287,7 +300,7 @@ func (t *Tracker) recordCast(spellName string, ts time.Time) {
 	// A new cast supersedes any unresolved prior pending (EQ casts serially), so
 	// even a cast that generates no hate clears the slot — a stale pending must
 	// not survive to bind to this cast's later resolve event.
-	if !info.Found || (info.OffensiveHate == 0 && info.HatemodPct == 0) {
+	if !info.Found || (info.OffensiveHate == 0 && info.DamageHate == 0 && info.HatemodPct == 0) {
 		t.pending = nil
 		return
 	}
@@ -295,6 +308,8 @@ func (t *Tracker) recordCast(spellName string, ts time.Time) {
 		spellName:     spellName,
 		target:        target,
 		offensiveHate: info.OffensiveHate,
+		damageHate:    info.DamageHate,
+		directDamage:  info.DirectDamage,
 		hatemodPct:    info.HatemodPct,
 		durationTicks: info.DurationTicks,
 		at:            ts,
@@ -323,11 +338,20 @@ const (
 func (t *Tracker) commitPending(ts time.Time, mode commitMode) {
 	t.mu.Lock()
 	p := t.pending
-	t.pending = nil
 	if p == nil || ts.Sub(p.at) > castResolveWindow {
+		t.pending = nil
 		t.mu.Unlock()
 		return
 	}
+	// A direct-damage cast is resolved by its own damage line (recordSpellDamage)
+	// or by a full resist — never by a generic "lands" message, which some damage
+	// spells also emit. Ignoring commitLand here keeps that pending intact so the
+	// damage line resolves it once, instead of counting it on both events.
+	if p.directDamage && mode == commitLand {
+		t.mu.Unlock()
+		return
+	}
+	t.pending = nil
 
 	changed := false
 	if mode != commitDrop {
@@ -339,12 +363,16 @@ func (t *Tracker) commitPending(ts time.Time, mode commitMode) {
 				t.registerModLocked(p.spellName, p.hatemodPct, p.durationTicks)
 				changed = true
 			}
-		case p.offensiveHate != 0 && p.target != "":
-			// Offensive (aggro) hate lands on a successful cast AND on a resist —
-			// a resisted detrimental spell still adds aggro.
-			t.addHateLocked(p.target, float64(p.offensiveHate), ts)
-			t.lastEngaged = p.target
-			changed = true
+		default:
+			// Offensive (aggro) + base damage hate. Both land on a successful cast
+			// AND on a full resist — a resisted detrimental spell still adds the
+			// same CheckAggroAmount hate (EQMacEmu ResistSpell).
+			hate := p.offensiveHate + p.damageHate
+			if hate != 0 && p.target != "" {
+				t.addHateLocked(p.target, float64(hate), ts)
+				t.lastEngaged = p.target
+				changed = true
+			}
 		}
 	}
 
@@ -411,8 +439,46 @@ func (t *Tracker) addHate(mob string, amount float64, ts time.Time) {
 	t.broadcast(snap)
 }
 
+// recordSpellDamage resolves a direct spell-damage line. When it matches the
+// pending cast, it credits the spell's BASE hate (computed at cast) rather than
+// the observed damage — crits and partial resists never change the hate. The
+// damage line is the resolution signal for a nuke (which emits no "lands"
+// message). With no matching cast the line is a weapon proc or otherwise
+// untracked spell: its originating spell — and thus its base damage — can't be
+// read from the bare damage line, so the observed amount stands in as a proxy.
+//
+// The pending is resolved on the first direct-damage line within the cast window
+// regardless of which mob it names (EQ casts serially, so the recent cast is
+// this nuke); the hate is credited to the mob actually struck.
+func (t *Tracker) recordSpellDamage(mob string, dmg int, ts time.Time) {
+	mob = logparser.CanonicalNPCName(mob)
+	if mob == "" || mob == "You" {
+		return
+	}
+	t.mu.Lock()
+	if p := t.pending; p != nil && p.directDamage && ts.Sub(p.at) <= castResolveWindow {
+		t.pending = nil
+		t.addHateLocked(mob, float64(p.offensiveHate+p.damageHate), ts)
+		t.lastEngaged = mob
+		snap := t.snapshotLocked(ts)
+		t.mu.Unlock()
+		t.broadcast(snap)
+		return
+	}
+	if dmg <= 0 {
+		t.mu.Unlock()
+		return
+	}
+	t.addHateLocked(mob, float64(dmg), ts)
+	t.lastEngaged = mob
+	snap := t.snapshotLocked(ts)
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
 // recordDamage credits observed damage as hate (one point per point) and feeds
-// the per-mob melee average used for miss-hate estimation.
+// the per-mob melee average used for miss-hate estimation. Used for melee swings
+// and DoT ticks; direct spell damage goes through recordSpellDamage.
 func (t *Tracker) recordDamage(mob string, dmg int, melee bool, ts time.Time) {
 	mob = logparser.CanonicalNPCName(mob)
 	if mob == "" || mob == "You" || dmg <= 0 {
