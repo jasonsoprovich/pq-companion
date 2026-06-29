@@ -13,6 +13,11 @@ func newTrackerForTest() *Tracker {
 
 func feedRoll(t *testing.T, tr *Tracker, roller string, max, value int, ts time.Time) {
 	t.Helper()
+	feedRollRange(t, tr, roller, 0, max, value, ts)
+}
+
+func feedRollRange(t *testing.T, tr *Tracker, roller string, min, max, value int, ts time.Time) {
+	t.Helper()
 	tr.Handle(logparser.LogEvent{
 		Type:      logparser.EventRollAnnounce,
 		Timestamp: ts,
@@ -21,7 +26,7 @@ func feedRoll(t *testing.T, tr *Tracker, roller string, max, value int, ts time.
 	tr.Handle(logparser.LogEvent{
 		Type:      logparser.EventRollResult,
 		Timestamp: ts,
-		Data:      logparser.RollResultData{Min: 0, Max: max, Value: value},
+		Data:      logparser.RollResultData{Min: min, Max: max, Value: value},
 	})
 }
 
@@ -42,6 +47,46 @@ func TestTrackerGroupsByMax(t *testing.T) {
 	}
 	if len(st.Sessions[1].Rolls) != 2 {
 		t.Fatalf("333 session: want 2 rolls, got %d", len(st.Sessions[1].Rolls))
+	}
+}
+
+func TestNonZeroMinGetsOwnSession(t *testing.T) {
+	tr := newTrackerForTest()
+	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)
+	// Two normal 0–611 rolls plus one player who fat-fingered "/random
+	// 222 611". The 222–611 roll must NOT merge into the 0–611 session —
+	// a non-zero floor skews the odds under highest-wins, so it belongs
+	// in its own bucket.
+	feedRoll(t, tr, "Astrael", 611, 400, base)
+	feedRoll(t, tr, "Sopphia", 611, 510, base.Add(time.Second))
+	feedRollRange(t, tr, "Newbie", 222, 611, 590, base.Add(2*time.Second))
+
+	st := tr.State()
+	if len(st.Sessions) != 2 {
+		t.Fatalf("want 2 sessions (0–611 and 222–611), got %d", len(st.Sessions))
+	}
+
+	var zero, offset *Session
+	for i := range st.Sessions {
+		s := &st.Sessions[i]
+		switch {
+		case s.Min == 0 && s.Max == 611:
+			zero = s
+		case s.Min == 222 && s.Max == 611:
+			offset = s
+		}
+	}
+	if zero == nil {
+		t.Fatalf("missing 0–611 session: %+v", st.Sessions)
+	}
+	if offset == nil {
+		t.Fatalf("missing 222–611 session: %+v", st.Sessions)
+	}
+	if len(zero.Rolls) != 2 {
+		t.Fatalf("0–611 session: want 2 rolls, got %d", len(zero.Rolls))
+	}
+	if len(offset.Rolls) != 1 || offset.Rolls[0].Roller != "Newbie" {
+		t.Fatalf("222–611 session: want only Newbie's roll, got %+v", offset.Rolls)
 	}
 }
 

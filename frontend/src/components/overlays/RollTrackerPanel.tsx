@@ -73,7 +73,7 @@ function SessionRow({
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
           <Dice5 size={12} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-foreground)' }}>
-            0–{session.max}
+            {session.min}–{session.max}
           </span>
           <span style={{ fontSize: 10, color: 'var(--color-muted)' }}>
             ({session.rolls.length})

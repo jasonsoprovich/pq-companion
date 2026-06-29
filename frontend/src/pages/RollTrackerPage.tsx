@@ -42,7 +42,7 @@ function SessionCard({
           <Dice5 size={16} style={{ color: 'var(--color-primary)' }} />
           <div>
             <div className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
-              0 – {session.max}
+              {session.min} – {session.max}
             </div>
             <div className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
               {session.rolls.length} roll{session.rolls.length === 1 ? '' : 's'} ·

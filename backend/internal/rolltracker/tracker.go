@@ -123,7 +123,7 @@ func (t *Tracker) recordAnnounce(roller string, ts time.Time) {
 	t.mu.Unlock()
 }
 
-func (t *Tracker) recordResult(_, max, value int, ts time.Time) {
+func (t *Tracker) recordResult(min, max, value int, ts time.Time) {
 	t.mu.Lock()
 	roller := t.pendingRoller
 	pendingAt := t.pendingAt
@@ -136,7 +136,7 @@ func (t *Tracker) recordResult(_, max, value int, ts time.Time) {
 		return
 	}
 
-	sess := t.sessionForLocked(max, ts)
+	sess := t.sessionForLocked(min, max, ts)
 	dup := false
 	for i := range sess.Rolls {
 		if sess.Rolls[i].Roller == roller {
@@ -156,17 +156,20 @@ func (t *Tracker) recordResult(_, max, value int, ts time.Time) {
 	t.broadcast(state)
 }
 
-// sessionForLocked returns the active session for max, opening a new one
-// if there isn't one or the existing one has gone stale. mu must be held.
-func (t *Tracker) sessionForLocked(max int, ts time.Time) *Session {
+// sessionForLocked returns the active session for the min–max range,
+// opening a new one if there isn't one or the existing one has gone
+// stale. Sessions key on both bounds so a "/random 222 611" roll lands
+// in its own 222–611 session instead of the 0–611 one. mu must be held.
+func (t *Tracker) sessionForLocked(min, max int, ts time.Time) *Session {
 	for _, s := range t.sessions {
-		if s.Max == max && s.Active && ts.Sub(s.LastRollAt) <= staleAfter {
+		if s.Min == min && s.Max == max && s.Active && ts.Sub(s.LastRollAt) <= staleAfter {
 			return s
 		}
 	}
 	t.nextID++
 	s := &Session{
 		ID:         t.nextID,
+		Min:        min,
 		Max:        max,
 		StartedAt:  ts,
 		LastRollAt: ts,
@@ -362,6 +365,7 @@ func (t *Tracker) stateLocked() State {
 		copy(rolls, s.Rolls)
 		out.Sessions = append(out.Sessions, Session{
 			ID:         s.ID,
+			Min:        s.Min,
 			Max:        s.Max,
 			StartedAt:  s.StartedAt,
 			LastRollAt: s.LastRollAt,

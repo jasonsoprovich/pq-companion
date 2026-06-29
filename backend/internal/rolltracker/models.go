@@ -9,8 +9,12 @@
 // Raiders commonly pre-announce different drops with different upper
 // bounds (e.g. "Cowl of Mortality 333", "Massive Dragonclaw Shard 444")
 // so that simultaneously-ongoing rolls can be distinguished by their
-// Max. The tracker mirrors that convention: each unique Max gets its
-// own session, and rolls are bucketed into the matching session.
+// Max. The tracker mirrors that convention: each unique range (Min–Max)
+// gets its own session, and rolls are bucketed into the matching
+// session. The Min is almost always 0 (the EQ default for "/random N"),
+// so most sessions are "0–N"; a player who rolls with an explicit
+// non-zero floor ("/random 222 611") gets a separate 222–611 session
+// instead of being lumped in with the 0–611 rolls.
 package rolltracker
 
 import "time"
@@ -64,15 +68,23 @@ type Roll struct {
 	Duplicate bool `json:"duplicate"`
 }
 
-// Session is the set of rolls collected for a single dice range (Max).
+// Session is the set of rolls collected for a single dice range
+// (Min–Max).
 type Session struct {
 	// ID is a process-local monotonic identifier. Lets the UI target a
 	// specific session for Stop/Remove even when multiple sessions share
-	// the same Max (e.g. two rolls on identical-bound drops in one raid).
+	// the same range (e.g. two rolls on identical-bound drops in one raid).
 	ID uint64 `json:"id"`
+	// Min is the lower bound of the dice range — the "0" in "any number
+	// from 0 to 333". Almost always 0 (the EQ default for "/random N"),
+	// but a player who types "/random 222 611" rolls 222–611, which the
+	// tracker keeps in its own session rather than mixing it in with the
+	// 0–611 rolls (a non-zero floor gives an unfair edge under a
+	// highest-wins rule).
+	Min int `json:"min"`
 	// Max is the upper bound of the dice range — the "333" in "any
-	// number from 0 to 333". Used to bucket new rolls into the right
-	// active session.
+	// number from 0 to 333". Together with Min it buckets new rolls into
+	// the right active session.
 	Max int `json:"max"`
 	// StartedAt is when the first roll for this session arrived.
 	StartedAt time.Time `json:"started_at"`
