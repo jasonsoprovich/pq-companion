@@ -451,21 +451,46 @@ export default function ResistCalcPage(): React.ReactElement {
             border: '1px solid var(--color-border)',
           }}
         />
-        <select
-          value={spellID ?? ''}
-          onChange={(e) => setSpellID(e.target.value ? Number(e.target.value) : null)}
-          size={8}
-          className="w-full rounded px-2 py-1 text-sm"
+        {/* A custom listbox rather than a native <select size>: a controlled
+            native select drops the onChange when the filtered list narrows to a
+            single option whose value differs from the current selection (the
+            browser auto-selects the lone option, so clicking it isn't a
+            "change"). Buttons sidestep that and match the NPC/debuff pickers. */}
+        <div
+          role="listbox"
+          className="h-48 w-full overflow-y-auto rounded text-sm"
           style={{
             backgroundColor: 'var(--color-surface-2)',
             border: '1px solid var(--color-border)',
           }}
         >
-          {filteredSpells.length === 0 && <option value="" disabled>No spells</option>}
-          {filteredSpells.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
+          {filteredSpells.length === 0 ? (
+            <p className="px-2 py-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
+              No spells
+            </p>
+          ) : (
+            filteredSpells.map((s) => {
+              const active = s.id === spellID
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => setSpellID(s.id)}
+                  className="block w-full truncate px-2 py-1 text-left transition-colors hover:bg-(--color-surface-3)"
+                  style={
+                    active
+                      ? { backgroundColor: 'var(--color-surface-3)', color: 'var(--color-primary)' }
+                      : undefined
+                  }
+                >
+                  {s.name}
+                </button>
+              )
+            })
+          )}
+        </div>
         {spells.length > filteredSpells.length && (
           <p className="mt-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
             Showing {filteredSpells.length} of {spells.length} — narrow the filter to see more.
