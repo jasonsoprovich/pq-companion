@@ -178,7 +178,7 @@ const pendingArmTTL = 10 * time.Second
 // while we wait for the spell-landed event to materialise the real timer.
 // See deferredRenderSpells.
 type pendingArm struct {
-	DisplayThresholdSecs int
+	DisplayThresholdSecs float64
 	TimerAlerts          json.RawMessage
 	BarColor             string
 	ArmedAt              time.Time
@@ -684,7 +684,7 @@ func divergenceKey(names []string) string {
 // apply the active character's item/AA duration focuses to durationSecs —
 // matching the spell-landed pipeline. 0 means "use durationSecs as given"
 // (custom triggers without a spell anchor, tests).
-func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string) {
+func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string) {
 	if name == "" || durationSecs <= 0 {
 		return
 	}
@@ -699,8 +699,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 	var isCharm bool
 	if spellID > 0 && e.db != nil {
 		if spell, err := e.db.GetSpell(spellID); err == nil && spell != nil {
-			extended := e.applyDurationModifiers(spell, float64(durationSecs))
-			durationSecs = int(extended)
+			durationSecs = e.applyDurationModifiers(spell, durationSecs)
 			resolvedIcon = spell.NewIcon
 			isCharm = isCharmSpell(spell)
 		}
@@ -782,8 +781,8 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 		Category:             cat,
 		CastAt:               startedAt,
 		StartsAt:             startedAt,
-		ExpiresAt:            startedAt.Add(time.Duration(durationSecs) * time.Second),
-		DurationSeconds:      float64(durationSecs),
+		ExpiresAt:            startedAt.Add(time.Duration(durationSecs * float64(time.Second))),
+		DurationSeconds:      durationSecs,
 		DisplayThresholdSecs: displayThresholdSecs,
 		TimerAlerts:          alerts,
 		BarColor:             barColor,

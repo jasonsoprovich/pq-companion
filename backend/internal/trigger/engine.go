@@ -36,7 +36,7 @@ const historyMaxSize = 200
 // trigger-driven timer extends to the same length as the spell-landed
 // pipeline would produce. 0 = use durationSecs as given.
 type TimerSink interface {
-	StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string)
+	StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string)
 	StopExternal(name string, spellID int)
 }
 
@@ -797,21 +797,21 @@ var durationUnitsRe = regexp.MustCompile(`^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$`)
 // into seconds. Accepted: plain seconds ("400"), colon notation ("6:40",
 // "1:02:03"), and unit notation ("6m40s", "2h", "90s"). Returns 0 when the
 // text doesn't parse.
-func ParseDurationText(s string) int {
+func ParseDurationText(s string) float64 {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if s == "" {
 		return 0
 	}
-	if n, err := strconv.Atoi(s); err == nil {
-		if n < 0 {
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		if f < 0 {
 			return 0
 		}
-		return n
+		return f
 	}
 	if strings.Contains(s, ":") { // MM:SS or HH:MM:SS
-		total := 0
+		total := 0.0
 		for _, p := range strings.Split(s, ":") {
-			n, err := strconv.Atoi(strings.TrimSpace(p))
+			n, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
 			if err != nil || n < 0 {
 				return 0
 			}
@@ -823,12 +823,12 @@ func ParseDurationText(s string) int {
 	if m == nil {
 		return 0
 	}
-	atoi := func(v string) int {
+	atoi := func(v string) float64 {
 		if v == "" {
 			return 0
 		}
 		n, _ := strconv.Atoi(v)
-		return n
+		return float64(n)
 	}
 	return atoi(m[1])*3600 + atoi(m[2])*60 + atoi(m[3])
 }
@@ -837,7 +837,7 @@ func ParseDurationText(s string) int {
 // order: the matched extra pattern's per-row override, the text captured by
 // TimerDurationCapture when configured and parseable, and finally the
 // trigger's fixed TimerDurationSecs.
-func resolveTimerDuration(t *Trigger, extra *ExtraPattern, match []string, names []string) int {
+func resolveTimerDuration(t *Trigger, extra *ExtraPattern, match []string, names []string) float64 {
 	if extra != nil && extra.TimerDurationSecs > 0 {
 		return extra.TimerDurationSecs
 	}

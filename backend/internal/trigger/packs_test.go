@@ -252,7 +252,7 @@ func TestEnchanterMergedTriggers(t *testing.T) {
 	starts := []struct {
 		line     string
 		key      string
-		duration int
+		duration float64
 		spellID  int
 	}{
 		{"You begin casting Mesmerize.", "Mesmerize", 24, 292},
@@ -276,7 +276,7 @@ func TestEnchanterMergedTriggers(t *testing.T) {
 			continue
 		}
 		if sink.name != c.key || sink.duration != c.duration || sink.spellID != c.spellID {
-			t.Errorf("%q: started %s/%d/%d, want %s/%d/%d",
+			t.Errorf("%q: started %s/%v/%d, want %s/%v/%d",
 				c.line, sink.name, sink.duration, sink.spellID, c.key, c.duration, c.spellID)
 		}
 	}

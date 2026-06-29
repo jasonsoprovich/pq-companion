@@ -118,7 +118,7 @@ func TestOnSpellLanded_AoEMezTracksPerTarget(t *testing.T) {
 			t.Errorf("%s: category %s is not detrimental", m, tm.Category)
 		}
 		if tm.DisplayThresholdSecs != 8 {
-			t.Errorf("%s: threshold %d, want 8 (grafted from the pending arm)",
+			t.Errorf("%s: threshold %v, want 8 (grafted from the pending arm)",
 				m, tm.DisplayThresholdSecs)
 		}
 	}

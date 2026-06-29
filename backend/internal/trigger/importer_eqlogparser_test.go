@@ -53,7 +53,7 @@ func TestEQLPEnrageTimer(t *testing.T) {
 		t.Errorf("timer type = %q, want detrimental", tr.TimerType)
 	}
 	if tr.TimerDurationSecs != 16 {
-		t.Errorf("duration = %d, want 16", tr.TimerDurationSecs)
+		t.Errorf("duration = %v, want 16", tr.TimerDurationSecs)
 	}
 	// AltTimerName "Enraged:  {s1}" → per-target timer keyed on group S1.
 	if tr.TimerKeyCapture != "S1" || tr.TimerTargetCapture != "S1" {

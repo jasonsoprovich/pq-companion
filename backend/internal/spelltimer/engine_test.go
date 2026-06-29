@@ -268,7 +268,7 @@ func TestStartExternal_CopiesDisplayThreshold(t *testing.T) {
 		t.Fatalf("timer not found")
 	}
 	if got.DisplayThresholdSecs != 600 {
-		t.Errorf("threshold: got %d, want 600", got.DisplayThresholdSecs)
+		t.Errorf("threshold: got %v, want 600", got.DisplayThresholdSecs)
 	}
 }
 
@@ -323,7 +323,7 @@ func TestStartExternal_MergesMetadataOntoExistingTimer(t *testing.T) {
 	}
 	got := e.timers[key]
 	if got.DisplayThresholdSecs != 300 {
-		t.Errorf("threshold: got %d, want 300 (merged from trigger)", got.DisplayThresholdSecs)
+		t.Errorf("threshold: got %v, want 300 (merged from trigger)", got.DisplayThresholdSecs)
 	}
 	if string(got.TimerAlerts) != string(alerts) {
 		t.Errorf("alerts: got %s, want %s", got.TimerAlerts, alerts)
@@ -352,7 +352,7 @@ func TestStartExternal_DefersMezTimerToSpellLanded(t *testing.T) {
 		t.Fatal("pendingArms missing Mesmerize entry")
 	}
 	if arm.DisplayThresholdSecs != 8 {
-		t.Errorf("pending arm threshold: got %d, want 8", arm.DisplayThresholdSecs)
+		t.Errorf("pending arm threshold: got %v, want 8", arm.DisplayThresholdSecs)
 	}
 	if string(arm.TimerAlerts) != string(alerts) {
 		t.Errorf("pending arm alerts: got %s, want %s", arm.TimerAlerts, alerts)
@@ -521,7 +521,7 @@ func TestStartExternal_DedupsBySpellIDAcrossNames(t *testing.T) {
 		t.Errorf("surviving timer lost its target: %q", surviving.TargetName)
 	}
 	if surviving.DisplayThresholdSecs != 120 {
-		t.Errorf("trigger threshold should graft onto surviving timer, got %d", surviving.DisplayThresholdSecs)
+		t.Errorf("trigger threshold should graft onto surviving timer, got %v", surviving.DisplayThresholdSecs)
 	}
 }
 

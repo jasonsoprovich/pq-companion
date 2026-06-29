@@ -51,7 +51,7 @@ import { useVoices } from '../hooks/useVoices'
 import NotificationActionEditor, { NotificationTypeSelect } from '../components/NotificationActionEditor'
 import SpellSearchPicker from '../components/SpellSearchPicker'
 import ImportTriggersModal from '../components/ImportTriggersModal'
-import { buildSpellTriggerPrefill, type SpellTimerTriggerPrefill } from '../lib/spellHelpers'
+import { buildSpellTriggerPrefill, secsLabel, type SpellTimerTriggerPrefill } from '../lib/spellHelpers'
 import {
   listTriggers,
   createTrigger,
@@ -175,8 +175,9 @@ function TimerAlertRow({ alert, voices, onChange, onRemove }: TimerAlertRowProps
             type="number"
             min={0}
             max={3600}
+            step="any"
             value={alert.seconds}
-            onChange={(e) => onChange({ ...alert, seconds: Math.max(0, parseInt(e.target.value) || 0) })}
+            onChange={(e) => onChange({ ...alert, seconds: Math.max(0, parseFloat(e.target.value) || 0) })}
             style={{ ...inputStyle, width: 60 }}
           />
           s remaining
@@ -847,9 +848,10 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
                   <input
                     type="number"
                     min={0}
+                    step="any"
                     value={ep.timer_duration_secs ?? 0}
                     onChange={(e) => {
-                      const v = Math.max(0, parseInt(e.target.value) || 0)
+                      const v = Math.max(0, parseFloat(e.target.value) || 0)
                       setExtraPatterns((prev) => prev.map((p, j) => (j === i ? { ...p, timer_duration_secs: v } : p)))
                     }}
                     className="w-16 rounded px-2 py-1.5 text-xs outline-none text-center"
@@ -1116,8 +1118,9 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
                 <input
                   type="number"
                   min={0}
+                  step="any"
                   value={timerDuration}
-                  onChange={(e) => setTimerDuration(Math.max(0, parseInt(e.target.value) || 0))}
+                  onChange={(e) => setTimerDuration(Math.max(0, parseFloat(e.target.value) || 0))}
                   className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center"
                   style={inputStyle}
                   disabled={submitting}
@@ -1202,8 +1205,9 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
               <input
                 type="number"
                 min={0}
+                step="any"
                 value={displayThreshold}
-                onChange={(e) => setDisplayThreshold(Math.max(0, parseInt(e.target.value) || 0))}
+                onChange={(e) => setDisplayThreshold(Math.max(0, parseFloat(e.target.value) || 0))}
                 className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center"
                 style={inputStyle}
                 disabled={submitting}
@@ -1527,7 +1531,7 @@ function TriggerRow({
                   border: `1px solid ${trigger.timer_type === 'buff' ? '#22c55e' : '#ef4444'}`,
                 }}
               >
-                {trigger.timer_type} · {trigger.timer_duration_secs}s
+                {trigger.timer_type} · {secsLabel(trigger.timer_duration_secs)}s
               </span>
             )}
             {trigger.source === 'pipe' && (

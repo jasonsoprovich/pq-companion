@@ -259,9 +259,9 @@ func convertEQNag(t eqnagTrigger, paths map[string]string) (ImportedTrigger, boo
 // eqnagOverlayAction maps an EQNag display action (type 0/7/8) to an
 // overlay_text Action, carrying over styling where present.
 func eqnagOverlayAction(a eqnagAction) Action {
-	dur := 5
+	dur := 5.0
 	if a.Duration != nil && *a.Duration > 0 {
-		dur = int(*a.Duration)
+		dur = *a.Duration
 	}
 	act := Action{
 		Type:         ActionOverlayText,
@@ -285,7 +285,7 @@ func applyEQNagTimer(tr *Trigger, a eqnagAction, phrasePatterns map[string]strin
 		return
 	}
 	tr.TimerType = TimerTypeDetrimental
-	tr.TimerDurationSecs = int(*a.Duration)
+	tr.TimerDurationSecs = *a.Duration
 
 	// End-early phrases clear the timer before expiry → worn-off alternation.
 	var enders []string
@@ -304,9 +304,9 @@ func applyEQNagTimer(tr *Trigger, a eqnagAction, phrasePatterns map[string]strin
 
 	// "Ending soon" spoken cue → a fading TimerAlert.
 	if txt := strings.TrimSpace(a.EndingSoonSpeakPhrase); txt != "" {
-		secs := 5
+		secs := 5.0
 		if a.EndingDuration != nil && *a.EndingDuration > 0 {
-			secs = int(*a.EndingDuration)
+			secs = *a.EndingDuration
 		}
 		tr.TimerAlerts = append(tr.TimerAlerts, TimerAlert{
 			Seconds:     secs,

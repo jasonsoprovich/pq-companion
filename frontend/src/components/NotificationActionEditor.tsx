@@ -208,8 +208,9 @@ export function OverlayTextFields({
             type="number"
             min={1}
             max={30}
+            step="any"
             value={durationSecs}
-            onChange={(e) => onDurationSecsChange(Math.max(1, parseInt(e.target.value) || 5))}
+            onChange={(e) => onDurationSecsChange(Math.max(1, parseFloat(e.target.value) || 5))}
             className="w-14 rounded px-2 py-0.5 text-xs outline-none text-center"
             style={inputStyle}
           />

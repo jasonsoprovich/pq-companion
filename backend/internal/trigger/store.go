@@ -379,8 +379,8 @@ func (s *Store) MigrateBroadenDebuffPatternsAndBardDurations() error {
 		triggerName string
 		oldPattern  string
 		newPattern  string
-		oldDuration int
-		newDuration int
+		oldDuration float64
+		newDuration float64
 	}
 	byKey := map[string]*correction{}
 	get := func(pack, name string) *correction {

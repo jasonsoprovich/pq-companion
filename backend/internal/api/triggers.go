@@ -52,7 +52,7 @@ type triggerRequest struct {
 	Pattern              string            `json:"pattern"`
 	Actions              []trigger.Action  `json:"actions"`
 	TimerType            trigger.TimerType `json:"timer_type"`
-	TimerDurationSecs    int               `json:"timer_duration_secs"`
+	TimerDurationSecs    float64           `json:"timer_duration_secs"`
 	TimerDurationCapture string            `json:"timer_duration_capture"`
 	TimerKeyCapture      string            `json:"timer_key_capture"`
 	TimerTargetCapture   string            `json:"timer_target_capture"`
@@ -63,7 +63,7 @@ type triggerRequest struct {
 	// present value — including 0 to clear it — replaces it. The editor always
 	// sends it; bulk paths (toggle, move category) omit it.
 	RefireCooldownSecs   *float64               `json:"refire_cooldown_secs,omitempty"`
-	DisplayThresholdSecs int                    `json:"display_threshold_secs"`
+	DisplayThresholdSecs float64                `json:"display_threshold_secs"`
 	BarColor             string                 `json:"bar_color"`
 	Characters           []string               `json:"characters"`
 	TimerAlerts          []trigger.TimerAlert   `json:"timer_alerts"`

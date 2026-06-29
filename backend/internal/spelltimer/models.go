@@ -89,7 +89,7 @@ type ActiveTimer struct {
 	// against the global default for my category". Set on a per-trigger
 	// basis (Trigger.DisplayThresholdSecs); spell-landed-driven timers
 	// always emit 0 here so a config change updates them retroactively.
-	DisplayThresholdSecs int `json:"display_threshold_secs"`
+	DisplayThresholdSecs float64 `json:"display_threshold_secs"`
 
 	// TimerAlerts is opaque per-trigger fading-soon configuration carried
 	// through to the frontend as JSON. Spelltimer never introspects it; it

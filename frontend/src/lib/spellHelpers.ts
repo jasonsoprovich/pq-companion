@@ -80,6 +80,16 @@ export const skillLabel = spellSkillLabel
 
 // ── Timing helpers ─────────────────────────────────────────────────────────────
 
+/**
+ * Format a seconds value for display, keeping it clean: whole numbers render
+ * as plain integers ("16") and only fractional values show a decimal ("1.5").
+ * Rounds to at most 2 decimals and strips trailing zeros, so float artifacts
+ * (e.g. 1.4999999) and ".0" suffixes never reach the UI.
+ */
+export function secsLabel(secs: number): string {
+  return String(Math.round(secs * 100) / 100)
+}
+
 /** Convert milliseconds to a human-readable string (e.g. "2.5s"). */
 export function msLabel(ms: number): string {
   if (ms <= 0) return 'Instant'

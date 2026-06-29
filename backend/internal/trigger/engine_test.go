@@ -576,7 +576,7 @@ func TestApplyDefaultUpdates_SetsCooldownWhenUnset(t *testing.T) {
 		t.Fatalf("Get: %v", err)
 	}
 	if got.CooldownSecs != 9 {
-		t.Errorf("CooldownSecs: got %d, want 9", got.CooldownSecs)
+		t.Errorf("CooldownSecs: got %v, want 9", got.CooldownSecs)
 	}
 
 	// Idempotent: the key is recorded as applied, so a second run is a no-op.
@@ -629,7 +629,7 @@ func TestApplyDefaultUpdates_PreservesCustomCooldown(t *testing.T) {
 		t.Fatalf("Get: %v", err)
 	}
 	if got.CooldownSecs != 20 {
-		t.Errorf("user cooldown was overwritten: got %d, want 20", got.CooldownSecs)
+		t.Errorf("user cooldown was overwritten: got %v, want 20", got.CooldownSecs)
 	}
 }
 
@@ -938,10 +938,12 @@ func TestNormalizePattern(t *testing.T) {
 func TestParseDurationText(t *testing.T) {
 	cases := []struct {
 		in   string
-		want int
+		want float64
 	}{
 		{"400", 400},
+		{"1.5", 1.5},
 		{"6:40", 400},
+		{"6:40.5", 400.5},
 		{"1:02:03", 3723},
 		{"6m40s", 400},
 		{"6M40S", 400},
@@ -957,7 +959,7 @@ func TestParseDurationText(t *testing.T) {
 	}
 	for _, c := range cases {
 		if got := ParseDurationText(c.in); got != c.want {
-			t.Errorf("ParseDurationText(%q) = %d, want %d", c.in, got, c.want)
+			t.Errorf("ParseDurationText(%q) = %v, want %v", c.in, got, c.want)
 		}
 	}
 }
@@ -967,7 +969,7 @@ func TestParseDurationText(t *testing.T) {
 type captureSink struct {
 	name     string
 	category string
-	duration int
+	duration float64
 	spellID  int
 	target   string
 	barColor string
@@ -978,7 +980,7 @@ type captureSink struct {
 	stops       int
 }
 
-func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string) {
+func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string) {
 	s.name, s.category, s.duration, s.spellID, s.target, s.barColor = name, category, durationSecs, spellID, targetName, barColor
 	s.calls++
 }
@@ -1029,6 +1031,52 @@ func TestEngine_CustomTimerWithCaptureDuration(t *testing.T) {
 	}
 	if stored.TimerDurationCapture != "2" || stored.TimerType != TimerTypeCustom {
 		t.Errorf("persisted trigger = capture %q type %q", stored.TimerDurationCapture, stored.TimerType)
+	}
+}
+
+// TestEngine_FractionalTimerDuration verifies a sub-second timer duration
+// (e.g. 1.5s, common in EQNag/EQLogParser imports) flows through the engine to
+// the timer sink without truncation, both as a fixed value and from a captured
+// decimal duration.
+func TestEngine_FractionalTimerDuration(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	sink := &captureSink{}
+	e := NewEngine(s, hub, sink, nil)
+
+	tr := &Trigger{
+		ID: "frac-1", Name: "Quick Pulse", Enabled: true,
+		Pattern:              `^(.+) pulses for (.+)\.$`,
+		TimerType:            TimerTypeCustom,
+		TimerDurationSecs:    1.5, // fallback
+		TimerDurationCapture: "2",
+		Actions:              []Action{{Type: ActionOverlayText, Text: "pulse"}},
+		CreatedAt:            time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	// Decimal capture parses to a fractional duration.
+	e.Handle(time.Now(), "Aura pulses for 2.5.")
+	if sink.calls != 1 || sink.duration != 2.5 {
+		t.Errorf("captured fractional dispatch = %+v, want duration 2.5", sink)
+	}
+
+	// Unparseable capture falls back to the fixed fractional duration.
+	e.Handle(time.Now(), "Aura pulses for nothing.")
+	if sink.calls != 2 || sink.duration != 1.5 {
+		t.Errorf("fallback dispatch = %+v, want duration 1.5", sink)
+	}
+
+	// Fractional duration round-trips through the store.
+	stored, err := s.Get("frac-1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if stored.TimerDurationSecs != 1.5 {
+		t.Errorf("persisted TimerDurationSecs = %v, want 1.5", stored.TimerDurationSecs)
 	}
 }
 

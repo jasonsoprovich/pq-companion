@@ -138,7 +138,7 @@ func TestEQNagTimer(t *testing.T) {
 		t.Errorf("timer type = %q, want detrimental", it.Trigger.TimerType)
 	}
 	if it.Trigger.TimerDurationSecs != 300 {
-		t.Errorf("timer duration = %d, want 300", it.Trigger.TimerDurationSecs)
+		t.Errorf("timer duration = %v, want 300", it.Trigger.TimerDurationSecs)
 	}
 	// "ending soon" speak → a TTS fading alert.
 	if len(it.Trigger.TimerAlerts) == 0 {

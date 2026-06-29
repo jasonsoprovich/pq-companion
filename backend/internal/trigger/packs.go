@@ -46,7 +46,7 @@ const npcNameClass = "[a-zA-Z][a-zA-Z' `]{2,29}"
 func buffFadingAlert(seconds int) TimerAlert {
 	return TimerAlert{
 		ID:          fmt.Sprintf("pack-fade-%ds", seconds),
-		Seconds:     seconds,
+		Seconds:     float64(seconds),
 		Type:        TimerAlertTypeTextToSpeech,
 		TTSTemplate: "{spell} fading soon",
 		TTSVolume:   100,
@@ -2832,7 +2832,7 @@ func applyDefaultUpdate(store *Store, u DefaultUpdate) (bool, error) {
 
 	// Set a missing reuse cooldown, leaving a user-customized value alone.
 	if u.SetCooldownSecs > 0 && t.CooldownSecs == 0 {
-		t.CooldownSecs = u.SetCooldownSecs
+		t.CooldownSecs = float64(u.SetCooldownSecs)
 		changed = true
 	}
 

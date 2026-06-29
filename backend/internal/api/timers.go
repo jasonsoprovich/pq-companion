@@ -49,7 +49,7 @@ func (h *timerHandler) clear(w http.ResponseWriter, r *http.Request) {
 func (h *timerHandler) startCustom(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name         string          `json:"name"`
-		DurationSecs int             `json:"duration_secs"`
+		DurationSecs float64         `json:"duration_secs"`
 		Alerts       json.RawMessage `json:"alerts,omitempty"`
 		Color        string          `json:"color,omitempty"`
 	}

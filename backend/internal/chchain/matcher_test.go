@@ -11,12 +11,12 @@ import (
 type capture struct {
 	name     string
 	category string
-	dur      int
+	dur      float64
 }
 
 type fakeSink struct{ calls []capture }
 
-func (f *fakeSink) StartExternal(name, category string, dur, _ int, _ time.Time, _ json.RawMessage, _ int, _, _ string) {
+func (f *fakeSink) StartExternal(name, category string, dur, _ float64, _ time.Time, _ json.RawMessage, _ int, _, _ string) {
 	f.calls = append(f.calls, capture{name, category, dur})
 }
 
@@ -54,7 +54,7 @@ func TestMatcher_DefaultPattern(t *testing.T) {
 	}
 	// Bars now run the fixed CH cast time, not the configured cadence.
 	if c.dur != config.CHCastSecs {
-		t.Errorf("duration = %d, want %d", c.dur, config.CHCastSecs)
+		t.Errorf("duration = %v, want %v", c.dur, config.CHCastSecs)
 	}
 	// Label carries chain position, target, and caster for the overlay.
 	if want := "#1  Winian  ← Soandso"; c.name != want {

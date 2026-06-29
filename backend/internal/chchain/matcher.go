@@ -21,7 +21,7 @@ import (
 // Sink is the subset of the spell-timer engine the matcher needs. It matches
 // (*spelltimer.Engine).StartExternal so the engine satisfies it directly.
 type Sink interface {
-	StartExternal(name string, category string, durationSecs, displayThresholdSecs int, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string)
+	StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string)
 }
 
 // categoryCHChain / categoryCHChain2 mirror spelltimer.CategoryCHChain /

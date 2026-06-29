@@ -55,7 +55,7 @@ type ActionPosition struct {
 type Action struct {
 	Type         ActionType `json:"type"`
 	Text         string     `json:"text"`          // overlay text or TTS speech text
-	DurationSecs int        `json:"duration_secs"` // seconds to show overlay text (0 = default 5s)
+	DurationSecs float64    `json:"duration_secs"` // seconds to show overlay text (0 = default 5s)
 	Color        string     `json:"color"`         // optional hex color for overlay text
 	SoundPath    string     `json:"sound_path"`    // local file path for play_sound action
 	Volume       float64    `json:"volume"`        // playback volume 0.0–1.0 (0 = default 1.0)
@@ -96,7 +96,7 @@ const (
 // mez). Empty list = no fading alert.
 type TimerAlert struct {
 	ID          string         `json:"id"`
-	Seconds     int            `json:"seconds"`
+	Seconds     float64        `json:"seconds"`
 	Type        TimerAlertType `json:"type"`
 	SoundPath   string         `json:"sound_path"`
 	Volume      int            `json:"volume"` // 0–100
@@ -121,8 +121,8 @@ type ExtraPattern struct {
 	// the trigger's duration and a non-zero SpellID replaces the trigger's
 	// spell link (for icon + item/AA duration-focus resolution). Zero values
 	// inherit from the trigger. Meaningless on alert-only triggers.
-	TimerDurationSecs int `json:"timer_duration_secs,omitempty"`
-	SpellID           int `json:"spell_id,omitempty"`
+	TimerDurationSecs float64 `json:"timer_duration_secs,omitempty"`
+	SpellID           int     `json:"spell_id,omitempty"`
 }
 
 // SourceLog and SourcePipe are the legal values for Trigger.Source.
@@ -193,7 +193,7 @@ type Trigger struct {
 	// match starts a countdown timer on the corresponding overlay.
 	// WornOffPattern optionally clears the timer before its natural expiry.
 	TimerType         TimerType `json:"timer_type"`
-	TimerDurationSecs int       `json:"timer_duration_secs"`
+	TimerDurationSecs float64   `json:"timer_duration_secs"`
 	WornOffPattern    string    `json:"worn_off_pattern"`
 	SpellID           int       `json:"spell_id"` // optional — 0 means not linked to a specific DB spell
 
@@ -245,7 +245,7 @@ type Trigger struct {
 	// label and a "ready" TTS at 1s remaining. 0 = no cooldown timer.
 	// Independent of TimerType — works even when the primary trigger is an
 	// overlay-only alert (Lay on Hands, Harvest, etc.).
-	CooldownSecs int `json:"cooldown_secs,omitempty"`
+	CooldownSecs float64 `json:"cooldown_secs,omitempty"`
 
 	// DisplayThresholdSecs is a per-trigger override for the global buff /
 	// detrimental display threshold. When > 0, the timer this trigger
@@ -253,7 +253,7 @@ type Trigger struct {
 	// at or below this value. 0 (default) means "use the global default
 	// for my category"; the frontend resolves against the SpellTimer
 	// settings in user config.
-	DisplayThresholdSecs int `json:"display_threshold_secs"`
+	DisplayThresholdSecs float64 `json:"display_threshold_secs"`
 
 	// BarColor is an optional CSS color (e.g. "#22c55e") for this trigger's
 	// timer bar, letting users color-code their overlay. Empty (default) means

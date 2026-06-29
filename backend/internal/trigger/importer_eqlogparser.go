@@ -125,7 +125,7 @@ func convertEQLP(n *eqlpNode, group string) (ImportedTrigger, bool) {
 	// Timer.
 	if td.EnableTimer && td.TimerType != 0 && td.DurationSeconds > 0 {
 		tr.TimerType = TimerTypeDetrimental
-		tr.TimerDurationSecs = int(td.DurationSeconds)
+		tr.TimerDurationSecs = td.DurationSeconds
 
 		// AltTimerName like "Enraged: {s1}" → per-target timer: the first
 		// capture token becomes the timer key + target suffix so each mob gets
@@ -160,7 +160,7 @@ func convertEQLP(n *eqlpNode, group string) (ImportedTrigger, bool) {
 		// "Warning" cue → a fading TimerAlert.
 		if txt := strings.TrimSpace(td.WarningTextToSpeak); txt != "" && td.WarningSeconds > 0 {
 			tr.TimerAlerts = append(tr.TimerAlerts, TimerAlert{
-				Seconds:     int(td.WarningSeconds),
+				Seconds:     td.WarningSeconds,
 				Type:        TimerAlertTypeTextToSpeech,
 				TTSTemplate: eqlpText(txt),
 			})

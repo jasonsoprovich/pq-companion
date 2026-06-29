@@ -36,7 +36,7 @@ func preBroadenPattern(p string) string {
 // insertInstalledTrigger writes a row mimicking an already-installed pack
 // trigger, with the given pre-fix pattern/duration and a user-style action so
 // tests can confirm actions survive the migration.
-func insertInstalledTrigger(t *testing.T, s *Store, pack, name, pattern string, dur int) *Trigger {
+func insertInstalledTrigger(t *testing.T, s *Store, pack, name, pattern string, dur float64) *Trigger {
 	t.Helper()
 	id, err := NewID()
 	if err != nil {
@@ -93,7 +93,7 @@ func TestMigrateBroaden_UpdatesBardSongDuration(t *testing.T) {
 	// Warsong of Zek: old install had 54s, built-in is now 18s.
 	want := builtinTrigger(t, "Bard", "Warsong of Zek")
 	if want.TimerDurationSecs != 18 {
-		t.Fatalf("test setup: expected built-in Warsong of Zek = 18s, got %d", want.TimerDurationSecs)
+		t.Fatalf("test setup: expected built-in Warsong of Zek = 18s, got %v", want.TimerDurationSecs)
 	}
 	insertInstalledTrigger(t, s, "Bard", "Warsong of Zek", want.Pattern, 54)
 
@@ -106,7 +106,7 @@ func TestMigrateBroaden_UpdatesBardSongDuration(t *testing.T) {
 		t.Fatalf("find: %v", err)
 	}
 	if got.TimerDurationSecs != 18 {
-		t.Errorf("duration not migrated: got %d, want 18", got.TimerDurationSecs)
+		t.Errorf("duration not migrated: got %v, want 18", got.TimerDurationSecs)
 	}
 }
 
@@ -129,7 +129,7 @@ func TestMigrateBroaden_FixesBothPatternAndDuration(t *testing.T) {
 		t.Errorf("pattern not migrated:\n got  %q\n want %q", got.Pattern, want.Pattern)
 	}
 	if got.TimerDurationSecs != 18 {
-		t.Errorf("duration not migrated: got %d, want 18", got.TimerDurationSecs)
+		t.Errorf("duration not migrated: got %v, want 18", got.TimerDurationSecs)
 	}
 }
 
@@ -197,7 +197,7 @@ func TestMigrateBroaden_LeavesCustomizedBardDurationAlone(t *testing.T) {
 		t.Fatalf("find: %v", err)
 	}
 	if got.TimerDurationSecs != 30 {
-		t.Errorf("customized duration was overwritten: got %d, want 30", got.TimerDurationSecs)
+		t.Errorf("customized duration was overwritten: got %v, want 30", got.TimerDurationSecs)
 	}
 }
 

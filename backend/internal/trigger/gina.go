@@ -124,7 +124,7 @@ func convertGINA(g ginaTrigger) (ImportedTrigger, bool) {
 	}
 
 	tt := TimerTypeNone
-	duration := 0
+	duration := 0.0
 	if strings.EqualFold(g.TimerType, "Timer") || strings.EqualFold(g.TimerType, "RepeatingTimer") {
 		duration = ginaDurationSecs(g.TimerDuration, g.TimerMillisecondDuration)
 		if duration > 0 {
@@ -191,10 +191,10 @@ func truthy(v string) bool {
 // ginaDurationSecs parses a GINA timer duration. GINA emits either a bare
 // seconds integer, a float, an HH:MM:SS string, or a milliseconds field.
 // Returns 0 when no duration could be parsed.
-func ginaDurationSecs(timerDuration, timerMsDuration string) int {
+func ginaDurationSecs(timerDuration, timerMsDuration string) float64 {
 	if ms := strings.TrimSpace(timerMsDuration); ms != "" {
 		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
-			return n / 1000
+			return float64(n) / 1000
 		}
 	}
 	s := strings.TrimSpace(timerDuration)
@@ -204,9 +204,9 @@ func ginaDurationSecs(timerDuration, timerMsDuration string) int {
 	// HH:MM:SS or MM:SS
 	if strings.Contains(s, ":") {
 		parts := strings.Split(s, ":")
-		var total int
+		var total float64
 		for _, p := range parts {
-			n, err := strconv.Atoi(strings.TrimSpace(p))
+			n, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
 			if err != nil {
 				return 0
 			}
@@ -215,11 +215,8 @@ func ginaDurationSecs(timerDuration, timerMsDuration string) int {
 		return total
 	}
 	// Plain seconds (int or float).
-	if n, err := strconv.Atoi(s); err == nil {
-		return n
-	}
 	if f, err := strconv.ParseFloat(s, 64); err == nil {
-		return int(f)
+		return f
 	}
 	return 0
 }
