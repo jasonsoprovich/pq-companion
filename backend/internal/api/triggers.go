@@ -62,7 +62,7 @@ type triggerRequest struct {
 	// the existing value (matching how cooldown_secs is left untouched). A
 	// present value — including 0 to clear it — replaces it. The editor always
 	// sends it; bulk paths (toggle, move category) omit it.
-	RefireCooldownSecs   *int                   `json:"refire_cooldown_secs,omitempty"`
+	RefireCooldownSecs   *float64               `json:"refire_cooldown_secs,omitempty"`
 	DisplayThresholdSecs int                    `json:"display_threshold_secs"`
 	BarColor             string                 `json:"bar_color"`
 	Characters           []string               `json:"characters"`

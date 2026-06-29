@@ -1003,8 +1003,9 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
         <input
           type="number"
           min={0}
+          step="any"
           value={refireCooldown}
-          onChange={(e) => setRefireCooldown(Math.max(0, parseInt(e.target.value, 10) || 0))}
+          onChange={(e) => setRefireCooldown(Math.max(0, parseFloat(e.target.value) || 0))}
           className="w-28 rounded px-3 py-1.5 text-xs outline-none"
           style={{ ...inputStyle, border: '1px solid var(--color-border)' }}
           disabled={submitting}

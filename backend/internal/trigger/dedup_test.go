@@ -284,3 +284,29 @@ func TestDedupKey_RoundtripPersists(t *testing.T) {
 		t.Errorf("DedupKey roundtrip: got %q, want %q", got.DedupKey, "test_key")
 	}
 }
+
+// Fractional refire cooldowns (e.g. 1.5s from EQNag imports) must survive a
+// store roundtrip even though the column has INTEGER affinity — SQLite stores
+// a non-integer REAL losslessly rather than truncating.
+func TestRefireCooldown_FractionalRoundtrip(t *testing.T) {
+	s := openTestStore(t)
+	id, _ := NewID()
+	tr := &Trigger{
+		ID:                 id,
+		Name:               "Test",
+		Enabled:            true,
+		Pattern:            `^test$`,
+		RefireCooldownSecs: 1.5,
+		Actions:            []Action{},
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	got, err := s.Get(id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.RefireCooldownSecs != 1.5 {
+		t.Errorf("RefireCooldownSecs roundtrip: got %v, want 1.5", got.RefireCooldownSecs)
+	}
+}

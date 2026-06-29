@@ -88,7 +88,7 @@ func TestEQNagRampage(t *testing.T) {
 	}
 	// EQNag cooldownDuration (12s) now maps to a refire cooldown — no warning.
 	if it.Trigger.RefireCooldownSecs != 12 {
-		t.Errorf("refire cooldown = %d, want 12", it.Trigger.RefireCooldownSecs)
+		t.Errorf("refire cooldown = %v, want 12", it.Trigger.RefireCooldownSecs)
 	}
 	for _, w := range it.Warnings {
 		if strings.Contains(w, "refire") || strings.Contains(w, "cooldown") {

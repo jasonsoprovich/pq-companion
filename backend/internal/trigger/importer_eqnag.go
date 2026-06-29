@@ -29,7 +29,7 @@ type eqnagTrigger struct {
 	CapturePhrases   []eqnagPhrase     `json:"capturePhrases"`
 	Actions          []eqnagAction     `json:"actions"`
 	UseCooldown      bool              `json:"useCooldown"`
-	CooldownDuration int               `json:"cooldownDuration"`
+	CooldownDuration float64           `json:"cooldownDuration"`
 	Conditions       []json.RawMessage `json:"conditions"`
 }
 

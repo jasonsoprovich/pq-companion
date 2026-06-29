@@ -235,7 +235,9 @@ type Trigger struct {
 	// timer), this is a silent anti-spam lockout: no timer, no overlay, it just
 	// gates the next fire. Tracked per-trigger (by ID), independent of captures
 	// or target, matching GINA/EQNag/EQLogParser's per-trigger cooldown.
-	RefireCooldownSecs int `json:"refire_cooldown_secs,omitempty"`
+	// Fractional values (e.g. 1.5) are allowed so imports from tools that use
+	// sub-second cooldowns (EQNag and friends) survive without truncation.
+	RefireCooldownSecs float64 `json:"refire_cooldown_secs,omitempty"`
 
 	// CooldownSecs spawns a second timer alongside the buff/duration timer to
 	// track the spell or discipline's reuse cooldown (recast_time in

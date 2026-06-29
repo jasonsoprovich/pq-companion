@@ -616,7 +616,7 @@ func (e *Engine) passesRefireCooldown(t *Trigger, ts time.Time) bool {
 	if t.RefireCooldownSecs <= 0 {
 		return true
 	}
-	window := time.Duration(t.RefireCooldownSecs) * time.Second
+	window := time.Duration(t.RefireCooldownSecs * float64(time.Second))
 	e.fireMu.Lock()
 	defer e.fireMu.Unlock()
 	if last, ok := e.lastFired[t.ID]; ok {
