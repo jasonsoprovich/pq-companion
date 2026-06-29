@@ -1,5 +1,6 @@
 import React from 'react'
-import { Crosshair, ShieldAlert, Users } from 'lucide-react'
+import { Crosshair, ShieldAlert, Users, X } from 'lucide-react'
+import { removeThreatMob } from '../../services/api'
 import type {
   MobThreat,
   ThreatState,
@@ -54,6 +55,24 @@ function ThreatRow({ mob, max }: { mob: MobThreat; max: number }): React.ReactEl
           {fmt(mob.hate)}
           <span style={{ opacity: 0.6 }}> · {mob.tps_live.toFixed(0)}/s</span>
         </span>
+        <button
+          onClick={() => removeThreatMob(mob.name).catch(() => {})}
+          title="Remove this mob"
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+            marginLeft: 1,
+            color: 'var(--color-muted, rgba(255,255,255,0.4))',
+            display: 'flex',
+            alignItems: 'center',
+            flexShrink: 0,
+            lineHeight: 0,
+          }}
+        >
+          <X size={11} />
+        </button>
       </div>
       <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
         <div style={{ width: `${pct}%`, height: '100%', background: accent, borderRadius: 2, transition: 'width 0.25s ease' }} />

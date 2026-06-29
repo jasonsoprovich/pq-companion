@@ -1166,6 +1166,10 @@ export function resetThreat(): Promise<void> {
   return post<void>('/api/threat/reset')
 }
 
+export function removeThreatMob(name: string): Promise<void> {
+  return del(`/api/overlay/threat/${encodeURIComponent(name)}`)
+}
+
 export function getRaidThreatState(): Promise<RaidThreatState> {
   return get<RaidThreatState>('/api/overlay/raidthreat')
 }

@@ -664,16 +664,17 @@ func (t *Tracker) expireMod(spellName string) {
 }
 
 // endMob drops a single mob (kill or staleness) and broadcasts the change.
-func (t *Tracker) endMob(mob string, ts time.Time) {
+// Returns false if no mob with that name is tracked.
+func (t *Tracker) endMob(mob string, ts time.Time) bool {
 	mob = logparser.CanonicalNPCName(mob)
 	if mob == "" {
-		return
+		return false
 	}
 	t.mu.Lock()
 	m, ok := t.mobs[mob]
 	if !ok {
 		t.mu.Unlock()
-		return
+		return false
 	}
 	if m.timer != nil {
 		m.timer.Stop()
@@ -685,6 +686,14 @@ func (t *Tracker) endMob(mob string, ts time.Time) {
 	snap := t.snapshotLocked(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)
+	return true
+}
+
+// RemoveMob drops a single mob from the threat list (the overlay's per-row
+// manual "x" button) and broadcasts the change. Returns false if no mob with
+// that name is tracked.
+func (t *Tracker) RemoveMob(name string) bool {
+	return t.endMob(name, time.Now())
 }
 
 // endAll wipes every tracked mob and active hate-mod buff (zone change, player

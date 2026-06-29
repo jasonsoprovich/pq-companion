@@ -2,7 +2,9 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/threat"
 )
 
@@ -21,5 +23,23 @@ func (h *threatHandler) state(w http.ResponseWriter, r *http.Request) {
 // Clears all accumulated hate (the overlay's manual reset button).
 func (h *threatHandler) reset(w http.ResponseWriter, r *http.Request) {
 	h.tracker.Reset()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// removeMob handles DELETE /api/overlay/threat/{name}.
+// Drops a single mob from the threat list (the overlay's per-row "x" button).
+func (h *threatHandler) removeMob(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if decoded, err := url.PathUnescape(name); err == nil {
+		name = decoded
+	}
+	if name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
+		return
+	}
+	if !h.tracker.RemoveMob(name) {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
