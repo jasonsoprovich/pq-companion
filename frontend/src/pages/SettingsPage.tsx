@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart, ExternalLink } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart, ExternalLink, Eye } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
@@ -50,7 +50,7 @@ import DeveloperTab from './DeveloperTab'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backups' | 'advanced' | 'about' | 'developer'
+type Tab = 'general' | 'accessibility' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backups' | 'advanced' | 'about' | 'developer'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -176,7 +176,7 @@ export default function SettingsPage(): React.ReactElement {
   // Allow deep-linking to a specific tab via ?tab= (e.g. links to the Logs tab
   // for backfill). Falls back to General for unknown/absent values.
   const [tab, setTab] = useState<Tab>(() => {
-    const valid: Tab[] = ['general', 'navigation', 'overlays', 'spelltimers', 'dpscolors', 'logs', 'backups', 'advanced', 'about', 'developer']
+    const valid: Tab[] = ['general', 'accessibility', 'navigation', 'overlays', 'spelltimers', 'dpscolors', 'logs', 'backups', 'advanced', 'about', 'developer']
     const t = searchParams.get('tab') ?? ''
     return (valid as string[]).includes(t) ? (t as Tab) : 'general'
   })
@@ -516,6 +516,7 @@ export default function SettingsPage(): React.ReactElement {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'general', label: 'General', icon: <Settings size={13} /> },
+    { id: 'accessibility', label: 'Accessibility', icon: <Eye size={13} /> },
     { id: 'navigation', label: 'Navigation', icon: <PanelLeft size={13} /> },
     { id: 'overlays', label: 'Overlays', icon: <Layers size={13} /> },
     { id: 'spelltimers', label: 'Spell Timers', icon: <Sparkles size={13} /> },
@@ -1466,7 +1467,26 @@ export default function SettingsPage(): React.ReactElement {
             </div>
           </label>
 
-          <label className="flex cursor-pointer items-center justify-between py-1 mt-4">
+        </section>
+        )}
+
+        {/* ── Accessibility ──────────────────────────────────────────────── */}
+        {tab === 'accessibility' && (
+        <section
+          className="rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <h2
+            className="mb-1 text-sm font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            Accessibility
+          </h2>
+          <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Readability options for different displays and resolutions.
+          </p>
+
+          <label className="flex cursor-pointer items-center justify-between py-1">
             <div>
               <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
                 High Contrast Text
@@ -1520,11 +1540,11 @@ export default function SettingsPage(): React.ReactElement {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-                  Zoom
+                  App Zoom
                 </p>
                 <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Scale the whole app up or down for readability on
-                  high-resolution displays.
+                  Scale the whole main app window up or down. Popout overlay
+                  windows are sized separately below.
                 </p>
               </div>
               <span className="text-sm font-mono" style={{ color: 'var(--color-muted-foreground)' }}>
@@ -1549,6 +1569,63 @@ export default function SettingsPage(): React.ReactElement {
               }}
               className="w-full mt-2"
             />
+          </div>
+
+          <div
+            className="mt-5 border-t pt-4"
+            style={{ borderColor: 'var(--color-border)' }}
+          >
+            <p className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+              Overlay font size
+            </p>
+            <p className="mb-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Scale each popout overlay window independently — useful when an
+              overlay is hard to read at your game resolution. Applies to the
+              popped-out windows; dashboard cards follow the App Zoom above.
+            </p>
+            <div className="mt-2 max-h-72 overflow-y-auto pr-1">
+              {OVERLAY_DEFS.filter((o) => o.name !== 'hps' || DEV_HPS).map((o) => {
+                const factor = config.preferences.overlay_zoom_factors?.[o.name] ?? 1
+                return (
+                  <div key={o.name} className="py-1.5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                        {o.label}
+                      </p>
+                      <span
+                        className="text-sm font-mono"
+                        style={{ color: 'var(--color-muted-foreground)' }}
+                      >
+                        {Math.round(factor * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={80}
+                      max={150}
+                      step={5}
+                      value={Math.round(factor * 100)}
+                      onChange={(e) => {
+                        const next = (parseInt(e.target.value) || 100) / 100
+                        // No applyZoom() here — that would scale THIS (main)
+                        // window. The change is saved and the overlay's own
+                        // window picks it up live via the config:updated event
+                        // (see useOverlayZoom).
+                        const cur = config.preferences.overlay_zoom_factors ?? {}
+                        setConfig({
+                          ...config,
+                          preferences: {
+                            ...config.preferences,
+                            overlay_zoom_factors: { ...cur, [o.name]: next },
+                          },
+                        })
+                      }}
+                      className="w-full mt-1"
+                    />
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </section>
         )}
