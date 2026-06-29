@@ -650,6 +650,78 @@ func (h *charactersHandler) equippedStats(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// instrumentModsResponse reports a character's bard instrument modifier per
+// song skill (10 = 1.0x, capped at 36). Non-bards always report 1.0x.
+type instrumentModsResponse struct {
+	Character string            `json:"character"`
+	Class     int               `json:"class"`
+	IsBard    bool              `json:"is_bard"`
+	Mods      db.InstrumentMods `json:"mods"`
+}
+
+// instrumentMods computes the character's bard instrument modifier from their
+// currently equipped instrument(s) plus Instrument/Singing Mastery AAs. The
+// resist calculator uses it to pre-fill each bard-song debuff's multiplier.
+func (h *charactersHandler) instrumentMods(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	char, ok, err := h.store.Get(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+
+	resp := instrumentModsResponse{
+		Character: char.Name,
+		Class:     char.Class,
+		Mods:      db.NoInstrumentMods(),
+	}
+	const bardClassIdx = 7 // 0-based EQ class index
+	if char.Class != bardClassIdx {
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	resp.IsBard = true
+
+	// Currently equipped instruments from the most recent Quarmy export
+	// (best-effort: a missing export just yields no item mods).
+	var itemIDs []int
+	if eqPath := h.mgr.Get().EQPath; eqPath != "" {
+		if path := zeal.FindQuarmyFile(eqPath, char.Name); path != "" {
+			if q, err := zeal.ParseQuarmy(path, char.Name); err == nil && q != nil {
+				for _, e := range q.Inventory {
+					if equipSlots[e.Location] && e.ID > 0 {
+						itemIDs = append(itemIDs, e.ID)
+					}
+				}
+			}
+		}
+	}
+
+	// Trained Instrument/Singing Mastery ranks.
+	var trained []db.TrainedAA
+	if ta, err := h.store.ListAAs(id); err == nil {
+		for _, t := range ta {
+			trained = append(trained, db.TrainedAA{AAID: t.AAID, Rank: t.Rank})
+		}
+	}
+
+	mods, err := h.db.BardInstrumentMods(itemIDs, trained)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Mods = mods
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // sumEquipment returns the raw summed contribution of the character's currently
 // worn items: attributes, item AC, resists, the flat HP/Mana pools, and the
 // parsed worn-effect bonuses (attack, regen, FT, damage shield). bestHaste is

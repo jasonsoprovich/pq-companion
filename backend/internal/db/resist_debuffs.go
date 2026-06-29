@@ -25,6 +25,10 @@ type ResistDebuff struct {
 	ID   int         `json:"id"`
 	Name string      `json:"name"`
 	Mods []ResistMod `json:"mods"`
+	// BardSkill is the song's instrument skill (spells_new.skill: wind/stringed/
+	// brass/percussion/singing) when this debuff is a bard song, else 0. The
+	// resist calculator scales a bard-song debuff by that instrument's modifier.
+	BardSkill int `json:"bard_skill"`
 }
 
 // spaResistAll is SPA 111 (Resist All) — lowers every resist by its base.
@@ -62,7 +66,7 @@ func (db *DB) ResistDebuffSpells() ([]ResistDebuff, error) {
 		if len(mods) == 0 {
 			continue // not actually a resist debuff (no negative slot)
 		}
-		d := ResistDebuff{ID: sp.ID, Name: sp.Name, Mods: mods}
+		d := ResistDebuff{ID: sp.ID, Name: sp.Name, Mods: mods, BardSkill: bardSongSkill(sp)}
 		if cur, ok := best[sp.Name]; !ok || debuffMagnitude(d) > debuffMagnitude(cur) {
 			best[sp.Name] = d
 		}
@@ -114,6 +118,23 @@ func resistModsFor(sp *Spell) []ResistMod {
 		}
 	}
 	return mods
+}
+
+// bardSongSkill returns the song's instrument skill if this spell is a bard
+// song that scales off an instrument (or singing), else 0. We require the bard
+// class to actually cast it (a handful of non-song spells carry a bard casting
+// skill) — ClassLevels is 0-based with 255 meaning "cannot cast".
+func bardSongSkill(sp *Spell) int {
+	switch sp.Skill {
+	case skillPercussionInst, skillBrassInst, skillSinging, skillStringedInst, skillWindInst:
+	default:
+		return 0
+	}
+	const bardIdx = 7
+	if lvl := sp.ClassLevels[bardIdx]; lvl <= 0 || lvl >= 255 {
+		return 0
+	}
+	return sp.Skill
 }
 
 // debuffMagnitude is the total resist reduction by base magnitude, used to
