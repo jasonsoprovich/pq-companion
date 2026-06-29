@@ -317,6 +317,25 @@ func main() {
 	threatTracker := threat.NewTracker(hub, threat.NewCalculator(database, database), func() int {
 		return cfgMgr.Get().Preferences.ThreatHatemodPct
 	})
+	// Melee swing hate is a flat per-swing value (equipped weapon damage +
+	// primary-hand bonus), not the white damage rolled — so the meter needs the
+	// active character's equipped primary weapon, level, and class. Resolved from
+	// the Zeal inventory export + character row, memoised, with a graceful
+	// fall-back to observed damage when any of those are unknown.
+	meleeHate := &meleeSwingHateProvider{
+		activeName: func() string {
+			if tailer != nil {
+				if name := tailer.ActiveCharacter(); name != "" {
+					return name
+				}
+			}
+			return cfgMgr.Get().Character
+		},
+		inventory: zealWatcher.Inventory,
+		getItem:   database.GetItem,
+		getChar:   charStore.GetByName,
+	}
+	threatTracker.SetMeleeSwingHateFn(meleeHate.value)
 	// Drive the live (rolling-window) hate rate: rebroadcast once a second while
 	// any mob is tracked so the per-second meter decays on screen between log
 	// events instead of freezing at its last value.

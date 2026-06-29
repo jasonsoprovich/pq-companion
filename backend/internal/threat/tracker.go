@@ -138,6 +138,13 @@ type Tracker struct {
 	// settings change takes effect immediately. May be nil (treated as 0).
 	hatemodFn func() int
 
+	// meleeSwingHateFn returns the flat hate of a single melee swing — the
+	// equipped weapon's damage rating plus the primary-hand bonus, identical on
+	// every swing regardless of the damage rolled. 0 means the weapon/level isn't
+	// known, in which case the meter falls back to observed damage. May be nil.
+	// Supplied by the wiring layer (it reads the Zeal inventory + character row).
+	meleeSwingHateFn func() int
+
 	// nowFn is the receive clock for the live (rolling-window) rate: hate
 	// samples are stamped with it and the window is measured against it. It is
 	// deliberately NOT the event's log timestamp — both the live tailer and the
@@ -170,6 +177,28 @@ func (t *Tracker) staticHatemod() int {
 		return 0
 	}
 	return t.hatemodFn()
+}
+
+// SetMeleeSwingHateFn installs the flat per-swing melee-hate provider. Safe to
+// call once at wiring time; the provider is read live on each swing.
+func (t *Tracker) SetMeleeSwingHateFn(fn func() int) {
+	t.mu.Lock()
+	t.meleeSwingHateFn = fn
+	t.mu.Unlock()
+}
+
+// meleeSwingHate returns the current flat per-swing melee hate, or 0 when no
+// provider is wired or the equipped weapon is unknown. Called WITHOUT t.mu held
+// (the provider may do its own I/O), so it reads meleeSwingHateFn under a brief
+// lock and invokes it outside.
+func (t *Tracker) meleeSwingHate() int {
+	t.mu.Lock()
+	fn := t.meleeSwingHateFn
+	t.mu.Unlock()
+	if fn == nil {
+		return 0
+	}
+	return fn()
 }
 
 // effectiveHatemodLocked is the total hate modifier currently in effect: the
@@ -476,17 +505,32 @@ func (t *Tracker) recordSpellDamage(mob string, dmg int, ts time.Time) {
 	t.broadcast(snap)
 }
 
-// recordDamage credits observed damage as hate (one point per point) and feeds
-// the per-mob melee average used for miss-hate estimation. Used for melee swings
-// and DoT ticks; direct spell damage goes through recordSpellDamage.
+// recordDamage credits a damage line's hate. For a melee swing the hate is the
+// flat per-swing value (equipped weapon damage + primary-hand bonus), identical
+// on every swing — NOT the white damage rolled; only when that value is unknown
+// does it fall back to the observed damage. DoT ticks always credit the observed
+// per-tick damage. The observed damage feeds the per-mob melee average that backs
+// the miss-hate fallback. Direct spell damage goes through recordSpellDamage.
 func (t *Tracker) recordDamage(mob string, dmg int, melee bool, ts time.Time) {
 	mob = logparser.CanonicalNPCName(mob)
-	if mob == "" || mob == "You" || dmg <= 0 {
+	if mob == "" || mob == "You" {
+		return
+	}
+	// Resolve the per-swing value outside the lock (the provider may do I/O).
+	amount := dmg
+	if melee {
+		if swing := t.meleeSwingHate(); swing > 0 {
+			amount = swing
+		}
+	}
+	if amount <= 0 {
 		return
 	}
 	t.mu.Lock()
-	t.addHateLocked(mob, float64(dmg), ts)
+	t.addHateLocked(mob, float64(amount), ts)
 	if melee {
+		// Track the OBSERVED swing damage so an unknown-weapon miss can still be
+		// estimated from the landed-swing average.
 		m := t.mobs[mob]
 		m.meleeSum += int64(dmg)
 		m.meleeCount++
@@ -497,23 +541,31 @@ func (t *Tracker) recordDamage(mob string, dmg int, melee bool, ts time.Time) {
 	t.broadcast(snap)
 }
 
-// recordMiss adds the per-swing hate of a melee MISS — estimated as this
-// character's average landed swing on that mob, since the server adds per-swing
-// hate whether or not the swing connects. No-op until at least one swing has
-// landed (no basis to estimate) or if the mob isn't tracked.
+// recordMiss adds the per-swing hate of a melee MISS — the server adds the same
+// flat per-swing hate whether or not the swing connects. It uses the equipped
+// weapon's swing value when known; otherwise it estimates the miss as this
+// character's average landed swing on that mob (a no-op until one has landed).
 func (t *Tracker) recordMiss(mob string, ts time.Time) {
 	mob = logparser.CanonicalNPCName(mob)
 	if mob == "" || mob == "You" {
 		return
 	}
+	swing := t.meleeSwingHate()
 	t.mu.Lock()
 	m := t.mobs[mob]
-	if m == nil || m.meleeCount == 0 {
+	if m == nil {
 		t.mu.Unlock()
 		return
 	}
-	avg := float64(m.meleeSum) / float64(m.meleeCount)
-	t.addHateLocked(mob, avg, ts)
+	amount := float64(swing)
+	if swing <= 0 {
+		if m.meleeCount == 0 {
+			t.mu.Unlock()
+			return
+		}
+		amount = float64(m.meleeSum) / float64(m.meleeCount)
+	}
+	t.addHateLocked(mob, amount, ts)
 	snap := t.snapshotLocked(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)

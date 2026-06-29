@@ -634,6 +634,8 @@ func TestHealOutOfCombatIgnored(t *testing.T) {
 	}
 }
 
+// With no swing-hate provider wired, melee falls back to observed damage and a
+// miss is estimated as the average landed swing.
 func TestMeleeMissHate(t *testing.T) {
 	tr := NewTracker(nil, nil, nil)
 	t0 := time.Now()
@@ -642,6 +644,20 @@ func TestMeleeMissHate(t *testing.T) {
 	tr.Handle(miss("a gnoll", t0.Add(2*time.Second)))  // miss ≈ avg swing 75
 	if got := hateFor(tr.GetState(), "a gnoll"); got != 225 {
 		t.Errorf("hate after miss = %d, want 225 (100+50+75)", got)
+	}
+}
+
+// When the equipped-weapon swing value is known, every melee swing — hit OR miss
+// — credits that flat value, and the white damage rolled is ignored entirely.
+func TestMeleeFlatPerSwingHate(t *testing.T) {
+	tr := NewTracker(nil, nil, nil)
+	tr.SetMeleeSwingHateFn(func() int { return 25 })
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 200, t0))                // big hit → still 25
+	tr.Handle(hit("a gnoll", 5, t0.Add(time.Second))) // small hit → still 25
+	tr.Handle(miss("a gnoll", t0.Add(2*time.Second))) // miss → still 25
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 75 {
+		t.Errorf("melee hate = %d, want 75 (3 swings × 25, damage ignored)", got)
 	}
 }
 
