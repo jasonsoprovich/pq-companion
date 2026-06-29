@@ -65,6 +65,11 @@ type Assembler struct {
 	// player taunts (so their displayed hate becomes top+10) and carried until
 	// the mob dies / the player zones. Observed damage accrues on top of it.
 	taunt map[string]map[string]int64
+	// dismissed holds mobs the user manually removed via the overlay's per-card
+	// "x". The view is otherwise stateless (rebuilt from live combat each
+	// snapshot), so without this a removed mob would reappear on the next tick.
+	// Cleared on the same kill / zone / death lifecycle events as taunt.
+	dismissed map[string]bool
 }
 
 // NewAssembler returns a raid threat Assembler. Any of the closures may be nil
@@ -81,6 +86,7 @@ func NewAssembler(hub *ws.Hub, dmg DamageSource, personal PersonalSource,
 		playerModsFn: playerModsFn,
 		selfNameFn:   selfNameFn,
 		taunt:        make(map[string]map[string]int64),
+		dismissed:    make(map[string]bool),
 	}
 }
 
@@ -186,6 +192,15 @@ func (a *Assembler) GetState() RaidThreatState {
 
 	a.mu.Lock()
 	pipe := a.pipeTarget
+	// Snapshot the dismissed set so we can drop those mobs after releasing the
+	// lock (the final assembly loop runs unlocked).
+	var dismissed map[string]bool
+	if len(a.dismissed) > 0 {
+		dismissed = make(map[string]bool, len(a.dismissed))
+		for k := range a.dismissed {
+			dismissed[k] = true
+		}
+	}
 	// Layer taunt offsets on top of base, materialising a taunt-only player
 	// (one who taunted but hasn't been seen doing damage yet) as a bare row.
 	for mob, offs := range a.taunt {
@@ -210,7 +225,7 @@ func (a *Assembler) GetState() RaidThreatState {
 
 	state := RaidThreatState{Mobs: make([]RaidMob, 0, len(base)), LastUpdated: now}
 	for mob, players := range base {
-		if len(players) == 0 {
+		if len(players) == 0 || dismissed[mob] {
 			continue
 		}
 		rows := make([]RaidEntry, 0, len(players))
@@ -306,6 +321,34 @@ func (a *Assembler) applyTaunt(mob, taunter string) {
 	a.taunt[mob][taunter] = top + tauntBump - taunterBase
 }
 
+// DismissMob suppresses a mob from the raid threat view (the overlay's per-card
+// "x"). The view is rebuilt from live combat each snapshot, so the mob is held
+// in a dismissed set until its fight lifecycle resets (kill / zone / death)
+// rather than reappearing on the next tick. Returns false if the named mob
+// isn't currently shown.
+func (a *Assembler) DismissMob(name string) bool {
+	name = logparser.CanonicalNPCName(name)
+	if name == "" {
+		return false
+	}
+	present := false
+	for _, m := range a.GetState().Mobs {
+		if m.Name == name {
+			present = true
+			break
+		}
+	}
+	if !present {
+		return false
+	}
+	a.mu.Lock()
+	a.dismissed[name] = true
+	delete(a.taunt, name)
+	a.mu.Unlock()
+	a.broadcast(a.GetState())
+	return true
+}
+
 // Handle processes the parsed log events the assembler reacts to: taunts (which
 // drive the taunt model) and the lifecycle events that clear it. No-op while
 // the feature is disabled.
@@ -326,12 +369,14 @@ func (a *Assembler) Handle(ev logparser.LogEvent) {
 		if data, ok := ev.Data.(logparser.KillData); ok {
 			a.mu.Lock()
 			delete(a.taunt, data.Target)
+			delete(a.dismissed, logparser.CanonicalNPCName(data.Target))
 			a.mu.Unlock()
 		}
 
 	case logparser.EventZone, logparser.EventDeath:
 		a.mu.Lock()
 		a.taunt = make(map[string]map[string]int64)
+		a.dismissed = make(map[string]bool)
 		a.mu.Unlock()
 
 	case logparser.EventFeignDeath:

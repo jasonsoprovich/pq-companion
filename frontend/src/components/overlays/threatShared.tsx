@@ -1,6 +1,6 @@
 import React from 'react'
 import { Crosshair, ShieldAlert, Users, X } from 'lucide-react'
-import { removeThreatMob } from '../../services/api'
+import { removeThreatMob, dismissRaidThreatMob } from '../../services/api'
 import type {
   MobThreat,
   ThreatState,
@@ -298,19 +298,39 @@ function RaidMobCard({
         border: `1px solid ${mob.is_target ? 'rgba(201,168,76,0.25)' : 'rgba(255,255,255,0.06)'}`,
       }}
     >
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
-          marginBottom: 3,
-          color: mob.is_target ? '#e8d59a' : 'var(--color-text, rgba(255,255,255,0.82))',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {mob.is_target && <Crosshair size={10} style={{ marginRight: 3, verticalAlign: '-1px', color: '#c9a84c' }} />}
-        {mob.name}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontSize: 12,
+            fontWeight: 700,
+            color: mob.is_target ? '#e8d59a' : 'var(--color-text, rgba(255,255,255,0.82))',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {mob.is_target && <Crosshair size={10} style={{ marginRight: 3, verticalAlign: '-1px', color: '#c9a84c' }} />}
+          {mob.name}
+        </span>
+        <button
+          onClick={() => dismissRaidThreatMob(mob.name).catch(() => {})}
+          title="Remove this mob"
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+            color: 'var(--color-muted, rgba(255,255,255,0.4))',
+            display: 'flex',
+            alignItems: 'center',
+            flexShrink: 0,
+            lineHeight: 0,
+          }}
+        >
+          <X size={11} />
+        </button>
       </div>
       {mob.players.map((p) => (
         <RaidPlayerRow key={p.name} entry={p} palette={palette} />

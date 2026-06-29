@@ -1174,6 +1174,10 @@ export function getRaidThreatState(): Promise<RaidThreatState> {
   return get<RaidThreatState>('/api/overlay/raidthreat')
 }
 
+export function dismissRaidThreatMob(name: string): Promise<void> {
+  return del(`/api/overlay/raidthreat/${encodeURIComponent(name)}`)
+}
+
 // ── Combat history (persisted) ─────────────────────────────────────────────
 
 export function listCombatHistory(filter: HistoryFilter = {}): Promise<HistoryListResponse> {
