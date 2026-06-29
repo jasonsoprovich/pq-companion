@@ -266,6 +266,13 @@ type Preferences struct {
 	// (issue #130). 1.0 = 100% (default). 0 is treated as 1.0 by the client.
 	ZoomFactor float64 `yaml:"zoom_factor,omitempty" json:"zoom_factor"`
 
+	// OverlayZoomFactors scales individual popout overlay windows via the same
+	// Electron zoom, keyed by canonical overlay name (see frontend
+	// lib/overlays.ts). Lets the NPC info / timer / meter overlays be sized
+	// independently of the main window for different play resolutions. Missing
+	// keys / 0 are treated as 1.0 (100%) by the client.
+	OverlayZoomFactors map[string]float64 `yaml:"overlay_zoom_factors,omitempty" json:"overlay_zoom_factors"`
+
 	// ParseCombatLog enables real-time combat log parsing.
 	ParseCombatLog bool `yaml:"parse_combat_log" json:"parse_combat_log"`
 

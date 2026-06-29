@@ -60,6 +60,10 @@ export interface Preferences {
   minimize_to_tray: boolean
   high_contrast: boolean
   zoom_factor: number
+  // Per-overlay zoom for popout overlay windows, keyed by canonical overlay
+  // name (see lib/overlays.ts). Scales an overlay independently of the main
+  // window's zoom_factor. Missing/0 = 1.0 (100%).
+  overlay_zoom_factors?: Record<string, number>
   parse_combat_log: boolean
   overlay_dps_enabled: boolean
   overlay_hps_enabled: boolean
