@@ -350,11 +350,11 @@ type Preferences struct {
 	// PoP launches the default flips in a release and this becomes a no-op.
 	PoPEnabled bool `yaml:"pop_enabled,omitempty" json:"pop_enabled"`
 
-	// ThreatHatemodPct is the static gear/AA hate modifier, as a signed
-	// percentage, that the Threat Meter applies to every generated hate value.
-	// Logs can't reveal a character's hatemod, so the user supplies it here
-	// (e.g. +15 for a tank with aggro AAs, negative for hate-reduction gear).
-	// Zero by default.
+	// ThreatHatemodPct is a MANUAL hate modifier, as a signed percentage, that the
+	// Threat Meter adds to its spell- and heal-hate. The Spell Casting Subtlety AA
+	// is now auto-detected from the character's trained AAs, so this is for sources
+	// the logs/DB can't reveal (e.g. hate-reduction gear) — leave it 0 unless you
+	// have such an effect, and do NOT re-enter Spell Casting Subtlety here.
 	ThreatHatemodPct int `yaml:"threat_hatemod_pct,omitempty" json:"threat_hatemod_pct"`
 
 	// RaidThreatEnabled gates the experimental raid-estimate mode of the Threat

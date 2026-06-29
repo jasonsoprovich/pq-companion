@@ -49,6 +49,28 @@ func TestAAStatBonuses_Osui(t *testing.T) {
 	}
 }
 
+// TestAAStatBonuses_Hatemod verifies the Spell Casting Subtlety AA (eqmacid 25)
+// resolves to its cumulative hate-reduction percentage: -5/-10/-20 across ranks.
+func TestAAStatBonuses_Hatemod(t *testing.T) {
+	d := openTestDB(t)
+	for _, tc := range []struct {
+		rank int
+		want int
+	}{
+		{1, -5},
+		{2, -10},
+		{3, -20},
+	} {
+		b, err := d.AAStatBonuses([]db.TrainedAA{{AAID: 25, Rank: tc.rank}})
+		if err != nil {
+			t.Fatalf("AAStatBonuses rank %d: %v", tc.rank, err)
+		}
+		if b.Hatemod != tc.want {
+			t.Errorf("Spell Casting Subtlety rank %d Hatemod = %d, want %d", tc.rank, b.Hatemod, tc.want)
+		}
+	}
+}
+
 // TestAAStatBonuses_Empty guards the no-AA path.
 func TestAAStatBonuses_Empty(t *testing.T) {
 	d := openTestDB(t)

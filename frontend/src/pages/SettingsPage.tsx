@@ -1825,14 +1825,15 @@ export default function SettingsPage(): React.ReactElement {
           </h2>
           <p className="mb-4 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
             The Threat Meter overlay estimates your own per-mob hate from your
-            character&rsquo;s combat log. Logs can&rsquo;t reveal a hate modifier
-            from gear or AAs, so supply it here as a signed percentage applied to
-            every generated hate value (e.g. <code>+15</code> for a tank with
-            aggro AAs, negative for hate-reduction gear).
+            character&rsquo;s combat log. The Spell Casting Subtlety AA is now
+            auto-detected from your trained AAs, so use this only for a hate
+            modifier the logs and DB can&rsquo;t reveal &mdash; e.g.
+            hate-reduction gear. Leave it <code>0</code> otherwise, and
+            don&rsquo;t re-enter Spell Casting Subtlety here.
           </p>
           <div className="flex items-center gap-2">
             <label className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-              Static hatemod %
+              Manual hatemod %
             </label>
             <input
               type="number"

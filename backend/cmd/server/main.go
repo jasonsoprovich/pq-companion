@@ -312,28 +312,36 @@ func main() {
 	// Threat meter: estimates the active character's own per-mob hate from its
 	// own combat log lines, reusing the same mob keys as the combat tracker.
 	// Damage hate is observed directly; spell instant-hate comes from the game
-	// DB; the static gear/AA hatemod is read live from preferences. Always
-	// running so the overlay has data the moment it's opened.
-	threatTracker := threat.NewTracker(hub, threat.NewCalculator(database, database), func() int {
-		return cfgMgr.Get().Preferences.ThreatHatemodPct
-	})
+	// DB. Always running so the overlay has data the moment it's opened.
+	activeCharName := func() string {
+		if tailer != nil {
+			if name := tailer.ActiveCharacter(); name != "" {
+				return name
+			}
+		}
+		return cfgMgr.Get().Character
+	}
+	// Static hate modifier: the auto-detected Spell Casting Subtlety AA (the only
+	// hate AA in Quarm) plus the user's manual gear modifier. Memoised — it only
+	// changes when the character or their AAs change.
+	staticHatemod := &staticHatemodProvider{
+		activeName: activeCharName,
+		manualPct:  func() int { return cfgMgr.Get().Preferences.ThreatHatemodPct },
+		getChar:    charStore.GetByName,
+		listAAs:    charStore.ListAAs,
+		aaBonuses:  database.AAStatBonuses,
+	}
+	threatTracker := threat.NewTracker(hub, threat.NewCalculator(database, database), staticHatemod.value)
 	// Melee swing hate is a flat per-swing value (equipped weapon damage +
 	// primary-hand bonus), not the white damage rolled — so the meter needs the
 	// active character's equipped primary weapon, level, and class. Resolved from
 	// the Zeal inventory export + character row, memoised, with a graceful
 	// fall-back to observed damage when any of those are unknown.
 	meleeHate := &meleeSwingHateProvider{
-		activeName: func() string {
-			if tailer != nil {
-				if name := tailer.ActiveCharacter(); name != "" {
-					return name
-				}
-			}
-			return cfgMgr.Get().Character
-		},
-		inventory: zealWatcher.Inventory,
-		getItem:   database.GetItem,
-		getChar:   charStore.GetByName,
+		activeName: activeCharName,
+		inventory:  zealWatcher.Inventory,
+		getItem:    database.GetItem,
+		getChar:    charStore.GetByName,
 	}
 	threatTracker.SetMeleeSwingHateFn(meleeHate.value)
 	// Drive the live (rolling-window) hate rate: rebroadcast once a second while

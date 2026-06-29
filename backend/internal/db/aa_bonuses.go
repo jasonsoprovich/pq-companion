@@ -23,6 +23,12 @@ type AABonuses struct {
 	ManaRegen                         int     // SE_CurrentMana (effectid 15), per tick
 	Attack                            int     // SE_ATK (effectid 2)
 	HPPct                             float64 // Natural Durability + Physical Enhancement, percent
+	// Hatemod is the signed hate-generation modifier percentage from hate AAs
+	// (SE_ChangeAggro / SE_SpellHateMod) — Spell Casting Subtlety in Quarm, which
+	// reduces spell and heal hate by 5/10/20% across its three ranks. Applied by
+	// the server (CheckAggroAmount/CheckHealAggroAmount) to spell and heal hate
+	// only, never melee.
+	Hatemod int
 }
 
 // aa_effects effectid (SE_*) codes we translate into stat bonuses. These match
@@ -43,6 +49,8 @@ const (
 	seResistPoison  = 48
 	seResistDisease = 49
 	seResistMagic   = 50
+	seChangeAggro   = 114 // SE_ChangeAggro — signed hate-generation modifier %
+	seSpellHateMod  = 130 // SE_SpellHateMod — signed hate-generation modifier %
 )
 
 // AAStatBonuses resolves a character's trained AAs into their aggregate passive
@@ -188,6 +196,8 @@ func (db *DB) AAStatBonuses(trained []TrainedAA) (AABonuses, error) {
 			b.ManaRegen += base1
 		case seATK:
 			b.Attack += base1
+		case seChangeAggro, seSpellHateMod:
+			b.Hatemod += base1
 		}
 	}
 	return b, erows.Err()
