@@ -2,12 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Crosshair, Percent, Search, X } from 'lucide-react'
 import {
   getSpellsByClass,
+  getInstrumentMods,
   getOverlayNPCTarget,
   getResistDebuffs,
   listCharacters,
   postResistCheck,
   searchNPCs,
   type Character,
+  type InstrumentMods,
   type ResistCheckResponse,
   type ResistDebuff,
 } from '../services/api'
@@ -100,6 +102,8 @@ export default function ResistCalcPage(): React.ReactElement {
   // pick any class/level by hand). Selecting a character seeds level/class/CHA.
   const [characters, setCharacters] = useState<Character[]>([])
   const [selectedCharId, setSelectedCharId] = useState<number | null>(null)
+  // A selected bard's instrument modifier per song skill (null otherwise).
+  const [instrumentMods, setInstrumentMods] = useState<InstrumentMods | null>(null)
 
   // Load the character list once and default to the active character (so the
   // page still auto-fills like before). Users can switch to "Manual" to keep
@@ -126,12 +130,51 @@ export default function ResistCalcPage(): React.ReactElement {
     if (c.base_cha > 0) setCasterCHA(c.base_cha)
   }, [selectedCharId, characters])
 
+  // Load the selected character's bard instrument modifier (used to pre-fill
+  // each bard-song debuff's multiplier). Manual edits to a debuff's × field
+  // still override it. Switching/clearing the character resets the modifier and
+  // any manual overrides so the new character's auto values apply cleanly.
+  useEffect(() => {
+    setDebuffMods({})
+    if (selectedCharId == null) {
+      setInstrumentMods(null)
+      return
+    }
+    let cancelled = false
+    getInstrumentMods(selectedCharId)
+      .then((resp) => {
+        if (!cancelled) setInstrumentMods(resp.is_bard ? resp.mods : null)
+      })
+      .catch(() => {
+        if (!cancelled) setInstrumentMods(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedCharId])
+
   // Load the resist-debuff catalogue once.
   useEffect(() => {
     getResistDebuffs()
       .then(setDebuffList)
       .catch(() => {})
   }, [])
+
+  // autoMod is the multiplier a bard song picks up from the selected
+  // character's instrument modifier (1 for non-songs or no bard character).
+  const autoMod = (d: ResistDebuff): number => {
+    if (!instrumentMods || !d.bard_skill) return 1
+    const m = instrumentMods
+    const eff =
+      d.bard_skill === 70 ? m.wind :
+      d.bard_skill === 54 ? m.stringed :
+      d.bard_skill === 41 ? m.brass :
+      d.bard_skill === 12 ? m.percussion :
+      d.bard_skill === 49 ? m.singing : 10
+    return eff / 10
+  }
+  // effectiveMod prefers a manual override, else the auto (instrument) value.
+  const effectiveMod = (d: ResistDebuff): number => debuffMods[d.id] ?? autoMod(d)
 
   // Effective resists = the NPC's base plus the sum of selected debuff deltas
   // (deltas are negative), floored at 1 like the in-game resist calc.
@@ -141,7 +184,7 @@ export default function ResistCalcPage(): React.ReactElement {
     // isn't modelled separately in v1).
     const sum = (k: ResistKey): number =>
       selectedDebuffs.reduce(
-        (acc, d) => acc + moddedDelta(d, k, casterLevel, debuffMods[d.id] ?? 1),
+        (acc, d) => acc + moddedDelta(d, k, casterLevel, effectiveMod(d)),
         0,
       )
     const clamp = (v: number): number => Math.max(1, v)
@@ -152,7 +195,7 @@ export default function ResistCalcPage(): React.ReactElement {
       dr: clamp(target.dr + sum('dr')),
       pr: clamp(target.pr + sum('pr')),
     }
-  }, [target, selectedDebuffs, casterLevel, debuffMods])
+  }, [target, selectedDebuffs, casterLevel, debuffMods, instrumentMods])
 
   // Load the class spell list whenever the class changes; keep only detrimental
   // spells (the only ones a resist check is meaningful for) and sort by name.
@@ -514,7 +557,7 @@ export default function ResistCalcPage(): React.ReactElement {
               matches={debuffMatches}
               selected={selectedDebuffs}
               level={casterLevel}
-              mods={debuffMods}
+              modFor={effectiveMod}
               onAdd={addDebuff}
               onRemove={removeDebuff}
               onSetMod={setDebuffMod}
@@ -628,7 +671,7 @@ interface DebuffPickerProps {
   matches: ResistDebuff[]
   selected: ResistDebuff[]
   level: number
-  mods: Record<number, number>
+  modFor: (d: ResistDebuff) => number
   onAdd: (d: ResistDebuff) => void
   onRemove: (id: number) => void
   onSetMod: (id: number, mod: number) => void
@@ -636,7 +679,7 @@ interface DebuffPickerProps {
 
 const DebuffPicker = React.forwardRef<HTMLDivElement, DebuffPickerProps>(
   function DebuffPicker(
-    { query, setQuery, matches, selected, level, mods, onAdd, onRemove, onSetMod },
+    { query, setQuery, matches, selected, level, modFor, onAdd, onRemove, onSetMod },
     ref,
   ) {
     return (
@@ -650,7 +693,7 @@ const DebuffPicker = React.forwardRef<HTMLDivElement, DebuffPickerProps>(
         {selected.length > 0 && (
           <div className="mb-2 mt-1.5 flex flex-wrap gap-1.5">
             {selected.map((d) => {
-              const mod = mods[d.id] ?? 1
+              const mod = modFor(d)
               return (
               <span
                 key={d.id}
@@ -729,7 +772,7 @@ const DebuffPicker = React.forwardRef<HTMLDivElement, DebuffPickerProps>(
                   >
                     <span className="truncate">{d.name}</span>
                     <span className="shrink-0" style={{ color: 'var(--color-muted)' }}>
-                      {formatDeltas(d, level)}
+                      {formatDeltas(d, level, modFor(d))}
                     </span>
                   </button>
                 </li>
@@ -739,9 +782,10 @@ const DebuffPicker = React.forwardRef<HTMLDivElement, DebuffPickerProps>(
         </div>
         <p className="mt-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
           Assumes debuffs land. Same-line debuffs (e.g. Tashani + Tashanian)
-          don&rsquo;t stack in-game — add only the strongest of a line. Use the
-          &times; field to scale a debuff manually (e.g. a bard&rsquo;s
-          instrument modifier).
+          don&rsquo;t stack in-game — add only the strongest of a line. The
+          &times; field scales a debuff&rsquo;s magnitude — auto-filled from a
+          selected bard&rsquo;s instrument modifier (equipped instrument +
+          Instrument/Singing Mastery), and editable for any class.
         </p>
       </div>
     )

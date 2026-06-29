@@ -656,10 +656,40 @@ export interface ResistDebuff {
   id: number
   name: string
   mods: ResistMod[]
+  // bard_skill is the song's instrument skill (spells_new.skill: 70=wind,
+  // 54=stringed, 41=brass, 12=percussion, 49=singing) when the debuff is a
+  // bard song, else 0. Used to apply the bard instrument modifier.
+  bard_skill: number
 }
 
 export function getResistDebuffs(): Promise<ResistDebuff[]> {
   return get<ResistDebuff[]>('/api/resist-debuffs')
+}
+
+// InstrumentMods is a bard's effective instrument modifier per song skill, each
+// an effectmod value (10 = 1.0x, capped at 36). A song's magnitude is scaled by
+// the matching mod / 10.
+export interface InstrumentMods {
+  wind: number
+  stringed: number
+  brass: number
+  percussion: number
+  singing: number
+}
+
+export interface InstrumentModsResponse {
+  character: string
+  class: number
+  is_bard: boolean
+  mods: InstrumentMods
+}
+
+export function getInstrumentMods(
+  charId: number,
+): Promise<InstrumentModsResponse> {
+  return get<InstrumentModsResponse>(
+    `/api/characters/${charId}/instrument-mods`,
+  )
 }
 
 // ── Bazaar Trader Tracker (developer-tab feature) ────────────────────────────────
