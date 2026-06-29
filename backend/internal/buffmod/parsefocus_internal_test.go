@@ -46,6 +46,62 @@ func TestParseFocusZeroPercentSkipped(t *testing.T) {
 	}
 }
 
+// TestParseFocusSpellHasteExcludesCompleteHeal locks in the corrected limit-SPA
+// numbering. Every Spell Haste focus carries SPA 139:-13 (SE_LimitSpell,
+// exclude spell 13 = Complete Healing) and SPA 143 (min cast time). 139 must
+// populate ExcludeSpells, NOT MinLevel — the old code mislabeled 139 as min
+// level, which both failed to exclude CH and (for clicky foci with a positive
+// 139 spell-ID) produced a garbage "≥ L3325"-style min-level value.
+func TestParseFocusSpellHasteExcludesCompleteHeal(t *testing.T) {
+	// Mirrors Spell Haste III (2341): 127:15, 134:60, 139:-13, 143:3000.
+	s := &db.Spell{ID: 2341, Name: "Spell Haste III"}
+	s.EffectIDs = [12]int{SPACastTime, SPALimitMaxLevel, SPALimitSpellID, SPALimitCastTimeMin}
+	s.EffectBaseValues = [12]int{15, 60, -13, 3000}
+
+	mods := parseFocusSpell(s)
+	if len(mods) != 1 {
+		t.Fatalf("parseFocusSpell returned %d modifiers, want 1", len(mods))
+	}
+	l := mods[0].Limits
+	if l.MinLevel != 0 {
+		t.Errorf("MinLevel = %d, want 0 (139 is a spell-ID limit, not min level)", l.MinLevel)
+	}
+	if len(l.ExcludeSpells) != 1 || l.ExcludeSpells[0] != 13 {
+		t.Errorf("ExcludeSpells = %v, want [13] (Complete Healing excluded from haste)", l.ExcludeSpells)
+	}
+
+	// Match must therefore reject Complete Healing (spell 13)…
+	if mods[0].Match(13, 50, 0, SpellTypeBeneficial, nil) {
+		t.Error("haste focus should NOT apply to Complete Healing (spell 13)")
+	}
+	// …but still apply to an ordinary spell.
+	if !mods[0].Match(999, 50, 0, SpellTypeBeneficial, nil) {
+		t.Error("haste focus should apply to a non-excluded spell")
+	}
+}
+
+// TestParseFocusInstantOnly verifies SPA 141 (SE_LimitInstant) sets InstantOnly
+// and that Match rejects duration spells (DoTs/HoTs) for an instant-only focus.
+func TestParseFocusInstantOnly(t *testing.T) {
+	// Mirrors Improved Damage III (2338): 124:20, 134:60, 141:1, 138:0.
+	s := &db.Spell{ID: 2338, Name: "Improved Damage III"}
+	s.EffectIDs = [12]int{SPAImprovedDamage, SPALimitMaxLevel, SPALimitInstant, SPALimitSpellType}
+	s.EffectBaseValues = [12]int{20, 60, 1, SpellTypeDetrimental}
+
+	mods := parseFocusSpell(s)
+	if len(mods) != 1 || !mods[0].Limits.InstantOnly {
+		t.Fatalf("InstantOnly not set from SPA 141 (mods=%+v)", mods)
+	}
+	// Direct nuke (zero base duration) → applies.
+	if !mods[0].Match(999, 50, 0, SpellTypeDetrimental, nil) {
+		t.Error("instant-only damage focus should apply to a direct nuke")
+	}
+	// DoT (non-zero duration) → excluded.
+	if mods[0].Match(999, 50, 60, SpellTypeDetrimental, nil) {
+		t.Error("instant-only damage focus should NOT apply to a DoT")
+	}
+}
+
 // TestParseFocusAllWornTypes verifies every worn-focus SPA (124–132) is
 // surfaced as a contributor, not just duration/cast-time.
 func TestParseFocusAllWornTypes(t *testing.T) {

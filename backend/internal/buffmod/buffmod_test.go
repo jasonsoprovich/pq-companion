@@ -598,8 +598,8 @@ func TestIncludeEffectLimit(t *testing.T) {
 	}
 }
 
-// TestIncludeSpellLimit — SPA 141 with a positive base whitelists specific
-// spell IDs; a negative base excludes that spell ID.
+// TestIncludeSpellLimit — SPA 139 (SE_LimitSpell) with a positive base
+// whitelists specific spell IDs; a negative base excludes that spell ID.
 func TestIncludeSpellLimit(t *testing.T) {
 	whitelist := []buffmod.Modifier{
 		{

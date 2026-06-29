@@ -39,13 +39,23 @@ const (
 	SPASpellHate        = 130 // SE_SpellHateMod
 	SPAReagentConserve  = 131 // SE_ReduceReagentCost
 	SPAManaCost         = 132 // SE_ReduceManaCost
-	SPALimitMaxLevel    = 134
+	SPALimitMaxLevel    = 134 // SE_LimitMaxLevel
 	SPALimitEffect      = 137 // SE_LimitEffect: base is an SPA code; negative = exclude, positive = require
-	SPALimitSpellType   = 138 // 0 = detrimental, 1 = beneficial, 2 = any
-	SPALimitMinLevel    = 139
-	SPALimitMinDuration = 140 // value × 6 sec (ticks)
-	SPALimitSpellID     = 141 // SE_LimitSpell: negative = exclude spell ID, positive = whitelist
+	SPALimitSpellType   = 138 // SE_LimitSpellType: 0 = detrimental, 1 = beneficial, 2 = any
+	SPALimitSpellID     = 139 // SE_LimitSpell: negative = exclude spell ID, positive = whitelist
+	SPALimitMinDuration = 140 // SE_LimitMinDur: value × 6 sec (ticks)
+	SPALimitInstant     = 141 // SE_LimitInstant: base 1 = instant/direct spells only (no DoT/HoT)
+	SPALimitMinLevel    = 142 // SE_LimitMinLevel
+	SPALimitCastTimeMin = 143 // SE_LimitCastTimeMin: min base cast time, ms (recognized, not enforced)
 )
+
+// NOTE on limit SPA numbering: codes 139/141/142 follow EQMacEmu's spdat.h
+// (139 = SE_LimitSpell, 141 = SE_LimitInstant, 142 = SE_LimitMinLevel) — NOT
+// the order an earlier version of this file assumed (139 min level / 141 spell
+// ID). The real-world tell: every Spell Haste focus carries 139:-13, i.e.
+// "exclude spell 13 (Complete Healing)" — the classic rule that haste cannot
+// speed-cast CH — and every Improved Damage/Healing focus carries 141:1
+// (direct spells only). See enums/spell.go and the EQMacEmu source.
 
 // Spell-type filter values for SPA 138.
 const (
@@ -109,13 +119,14 @@ func HasIllusionEffect(effectIDs []int) bool {
 // Zero/empty fields mean "no limit on this dimension".
 type Limits struct {
 	MaxLevel       int   `json:"max_level,omitempty"`        // SPA 134; max caster level
-	MinLevel       int   `json:"min_level,omitempty"`        // SPA 139
+	MinLevel       int   `json:"min_level,omitempty"`        // SPA 142
 	SpellType      int   `json:"spell_type"`                 // SPA 138; SpellTypeUnset/0/1/2
 	MinDurationSec int   `json:"min_duration_sec,omitempty"` // SPA 140 × 6
+	InstantOnly    bool  `json:"instant_only,omitempty"`     // SPA 141; applies only to instant (zero-duration) spells
 	ExcludeEffects []int `json:"exclude_effects,omitempty"`  // SPA 137 with negative base
 	IncludeEffects []int `json:"include_effects,omitempty"`  // SPA 137 with positive base; spell must contain one
-	IncludeSpells  []int `json:"include_spells,omitempty"`   // SPA 141 with positive base; spell ID whitelist
-	ExcludeSpells  []int `json:"exclude_spells,omitempty"`   // SPA 141 with negative base
+	IncludeSpells  []int `json:"include_spells,omitempty"`   // SPA 139 with positive base; spell ID whitelist
+	ExcludeSpells  []int `json:"exclude_spells,omitempty"`   // SPA 139 with negative base
 }
 
 // Modifier is one focus contribution from either an equipped item or a trained
@@ -280,6 +291,8 @@ func parseFocusSpell(s *db.Spell) []Modifier {
 			limits.SpellType = base
 		case SPALimitMinDuration:
 			limits.MinDurationSec = base * 6
+		case SPALimitInstant:
+			limits.InstantOnly = base != 0
 		case SPALimitEffect:
 			if base < 0 {
 				limits.ExcludeEffects = append(limits.ExcludeEffects, -base)
@@ -292,6 +305,10 @@ func parseFocusSpell(s *db.Spell) []Modifier {
 			} else if base > 0 {
 				limits.IncludeSpells = append(limits.IncludeSpells, base)
 			}
+			// SPALimitCastTimeMin (143) is recognized but not enforced — Match
+			// has no base-cast-time context to test against. Haste foci carry it
+			// (e.g. 143:3000 = "spells with ≥3s cast time only"); modeling it
+			// would require plumbing cast time into Match.
 		}
 	}
 
@@ -319,6 +336,12 @@ func (m Modifier) Match(spellID, spellLevel, durationSec, spellType int, effectI
 		return false
 	}
 	if l.MinDurationSec > 0 && durationSec < l.MinDurationSec {
+		return false
+	}
+	// SPA 141 (instant-only): the focus applies only to direct, zero-duration
+	// spells — Improved Damage hits nukes but not DoTs, Improved Healing hits
+	// direct heals but not HoTs.
+	if l.InstantOnly && durationSec > 0 {
 		return false
 	}
 	if l.SpellType >= 0 && l.SpellType != SpellTypeAny && l.SpellType != spellType {

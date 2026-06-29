@@ -1595,6 +1595,7 @@ export interface SpellModifierLimits {
   min_level?: number
   spell_type: number // -1 unset, 0 detrimental, 1 beneficial, 2 any
   min_duration_sec?: number
+  instant_only?: boolean
   exclude_effects?: number[]
   include_effects?: number[]
   include_spells?: number[]
