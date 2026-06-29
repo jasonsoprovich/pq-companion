@@ -354,7 +354,10 @@ export function applyLevelFormula(formula: number, base: number, max: number, le
     case 103: result = updownsign * (ubase + level * 2); break
     case 104: result = updownsign * (ubase + level * 3); break
     case 105: result = updownsign * (ubase + level * 4); break
+    case 109: result = updownsign * (ubase + Math.floor(level / 4)); break
+    case 110: result = updownsign * (ubase + Math.floor(level / 6)); break
     case 119: result = updownsign * (ubase + Math.floor(level / 8)); break
+    case 121: result = ubase + Math.floor(level / 3); break
     default: return base
   }
   if (max !== 0) {
