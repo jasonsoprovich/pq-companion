@@ -1583,7 +1583,7 @@ export default function SettingsPage(): React.ReactElement {
               overlay is hard to read at your game resolution. Applies to the
               popped-out windows; dashboard cards follow the App Zoom above.
             </p>
-            <div className="mt-2 max-h-72 overflow-y-auto pr-1">
+            <div className="mt-2">
               {OVERLAY_DEFS.filter((o) => o.name !== 'hps' || DEV_HPS).map((o) => {
                 const factor = config.preferences.overlay_zoom_factors?.[o.name] ?? 1
                 return (
