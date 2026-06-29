@@ -1,11 +1,14 @@
-// Package buffmod computes per-character spell duration / cast-time modifiers
-// from equipped item focus effects and trained AAs.
+// Package buffmod computes per-character spell focus modifiers from equipped
+// item focus effects and trained AAs.
 //
-// Item focuses are fully data-driven: items.focuseffect → spells_new SPA 128
-// (Increase Spell Duration) and SPA 127 (Increase Spell Haste, i.e. cast time
-// reduction), with the surrounding limit SPAs (134 max level, 137 exclude
-// effect / target type, 138 spell type, 139 min level, 140 min duration ticks,
-// 141 specific spell) defining which spells the focus applies to.
+// Item focuses are fully data-driven: items.focuseffect → a spells_new focus
+// spell. The Spell Modifiers display surfaces every worn-focus SPA (124 spell
+// damage, 125 healing, 126 resist reduction, 127 cast time, 128 duration, 129
+// range, 130 hate, 131 reagent conservation, 132 mana cost), with the
+// surrounding limit SPAs (134 max level, 137 exclude effect / target type, 138
+// spell type, 139 min level, 140 min duration ticks, 141 specific spell)
+// defining which spells the focus applies to. Only SPA 127 (cast time) and 128
+// (duration) feed Resolve's per-spell math; the rest are display-only.
 //
 // AA focuses are NOT data-driven on Project Quarm: aa_effects is empty for
 // classic-era duration AAs because EQEmu hardcodes them in C++. The aaTable
@@ -21,9 +24,21 @@ import (
 )
 
 // SPA codes we care about. Other SPAs in a focus spell are treated as limits.
+//
+// 127 (cast time) and 128 (duration) additionally feed Resolve's per-spell
+// duration/haste math. The remaining focus SPAs (124–132) are surfaced as
+// contributors for the Spell Modifiers display only — Resolve, SpellHaste*
+// and the spell-timer engine filter on SPA and ignore them.
 const (
+	SPAImprovedDamage   = 124 // SE_ImprovedDamage (spell damage bonus)
+	SPAImprovedHeal     = 125 // SE_ImprovedHeal (healing effectiveness)
+	SPAResistReduction  = 126 // SE_SpellResistReduction (target resist debuff)
 	SPACastTime         = 127 // SE_IncreaseSpellHaste
 	SPADuration         = 128 // SE_IncreaseSpellDuration
+	SPAIncreaseRange    = 129 // SE_IncreaseRange
+	SPASpellHate        = 130 // SE_SpellHateMod
+	SPAReagentConserve  = 131 // SE_ReduceReagentCost
+	SPAManaCost         = 132 // SE_ReduceManaCost
 	SPALimitMaxLevel    = 134
 	SPALimitEffect      = 137 // SE_LimitEffect: base is an SPA code; negative = exclude, positive = require
 	SPALimitSpellType   = 138 // 0 = detrimental, 1 = beneficial, 2 = any
@@ -115,7 +130,7 @@ type Modifier struct {
 	SourceAARank   int    `json:"source_aa_rank,omitempty"`
 	FocusSpellID   int    `json:"focus_spell_id,omitempty"`
 	FocusSpellName string `json:"focus_spell_name,omitempty"`
-	SPA            int    `json:"spa"`     // 127 (cast time) or 128 (duration)
+	SPA            int    `json:"spa"`     // focus SPA: 124–132 (see const block)
 	Percent        int    `json:"percent"` // positive = extension/reduction magnitude
 	Limits         Limits `json:"limits"`
 }
@@ -249,8 +264,14 @@ func parseFocusSpell(s *db.Spell) []Modifier {
 		spa := s.EffectIDs[i]
 		base := s.EffectBaseValues[i]
 		switch spa {
-		case SPADuration, SPACastTime:
-			primaries = append(primaries, primary{spa, base})
+		case SPAImprovedDamage, SPAImprovedHeal, SPAResistReduction,
+			SPACastTime, SPADuration, SPAIncreaseRange,
+			SPASpellHate, SPAReagentConserve, SPAManaCost:
+			// A 0% slot is a placeholder, not a real focus — skip it so the
+			// display doesn't show "+0%" rows.
+			if base != 0 {
+				primaries = append(primaries, primary{spa, base})
+			}
 		case SPALimitMaxLevel:
 			limits.MaxLevel = base
 		case SPALimitMinLevel:

@@ -1484,9 +1484,24 @@ function AAPanel({ trained, available }: AAPanelProps): React.ReactElement {
 // ── Spell Modifiers Panel ─────────────────────────────────────────────────────
 
 function spaLabel(spa: number): string {
-  if (spa === 128) return 'Duration'
-  if (spa === 127) return 'Cast Time'
-  return `SPA ${spa}`
+  switch (spa) {
+    case 124: return 'Spell Damage'
+    case 125: return 'Healing'
+    case 126: return 'Resist Reduction'
+    case 127: return 'Cast Time'
+    case 128: return 'Duration'
+    case 129: return 'Range'
+    case 130: return 'Spell Hate'
+    case 131: return 'Reagent Conserve'
+    case 132: return 'Mana Cost'
+    default: return `SPA ${spa}`
+  }
+}
+
+// Focus SPAs whose magnitude is a reduction (shown with a minus sign): cast
+// time (127) and mana cost (132). Everything else is a bonus shown with a plus.
+function spaSign(spa: number): string {
+  return spa === 127 || spa === 132 ? '−' : '+'
 }
 
 function spellTypeLabel(type: number): string {
@@ -1612,7 +1627,8 @@ function SpellModifiersPanel({ characterID, contributors }: SpellModifiersPanelP
         </p>
         <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
           Pick a spell to see exactly how this character's modifiers apply, after EQEmu's filter and stacking rules
-          (best item-focus + AA percentages summed).
+          (best item-focus + AA percentages summed). Only Duration and Cast Time resolve per-spell here — Spell Damage,
+          Healing, and the other focus types above are listed but not yet resolved.
         </p>
         <div className="relative mb-3">
           <Search size={14} style={{
@@ -1676,7 +1692,7 @@ function ModifierRow({ m }: { m: SpellModifier }): React.ReactElement {
     ? `${m.source_item_name}${m.source_item_slot ? ` (${m.source_item_slot})` : ''}`
     : `${m.source_aa_name}${m.source_aa_rank ? ` rank ${m.source_aa_rank}` : ''}`
   const focusLabel = m.focus_spell_name ? ` · ${m.focus_spell_name}` : ''
-  const sign = m.spa === 127 ? '−' : '+'
+  const sign = spaSign(m.spa)
   return (
     <div
       className="rounded px-3 py-2 text-xs"

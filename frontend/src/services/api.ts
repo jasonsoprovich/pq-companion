@@ -1611,7 +1611,8 @@ export interface SpellModifier {
   source_aa_rank?: number
   focus_spell_id?: number
   focus_spell_name?: string
-  spa: number // 127 cast time, 128 duration
+  spa: number // focus SPA: 124 damage, 125 heal, 126 resist, 127 cast time,
+  // 128 duration, 129 range, 130 hate, 131 reagent, 132 mana cost
   percent: number
   limits: SpellModifierLimits
 }
