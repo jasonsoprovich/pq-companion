@@ -11,6 +11,7 @@ import { useRespawnAlerts } from './hooks/useRespawnAlerts'
 import { useAudioPrefs } from './hooks/useAudioPrefs'
 import { useHighContrast } from './hooks/useHighContrast'
 import { useZoom } from './hooks/useZoom'
+import { useOverlayZoom } from './hooks/useOverlayZoom'
 import { useLogFeedSubscriber } from './hooks/useLogFeed'
 // ItemsPage is the default landing route, so it stays in the initial bundle
 // for an instant first paint. Every other page is code-split below so it loads
@@ -67,11 +68,22 @@ const CharacterTasksPage = lazy(() => import('./pages/CharacterTasksPage'))
 const GearUpgradeFinderPage = lazy(() => import('./pages/GearUpgradeFinderPage'))
 const CharacterSpellsetsPage = lazy(() => import('./pages/CharacterSpellsetsPage'))
 
-function OverlayPage({ children }: { children: React.ReactNode }): React.ReactElement {
+function OverlayPage({
+  children,
+  overlayKey,
+}: {
+  children: React.ReactNode
+  // Canonical overlay name (see lib/overlays.ts); drives this window's own
+  // per-overlay zoom. Omitted for overlays without a zoom control (trigger).
+  overlayKey?: string
+}): React.ReactElement {
   useEffect(() => {
     document.body.style.backgroundColor = 'transparent'
     return () => { document.body.style.backgroundColor = '' }
   }, [])
+  // Apply this window's per-overlay zoom (no-op default of 1.0 when unset).
+  // Called unconditionally with '' for keyless overlays so hook order is stable.
+  useOverlayZoom(overlayKey ?? '')
   // Overlay pages are lazy too; a null fallback keeps the window fully
   // transparent while the (small) chunk loads instead of flashing a backdrop.
   return <Suspense fallback={null}>{children}</Suspense>
@@ -167,18 +179,18 @@ export default function App(): React.ReactElement {
     <HashRouter useTransitions={false}>
       <Routes>
         {/* Standalone overlay windows — no sidebar/titlebar Layout */}
-        <Route path="dps-overlay-window" element={<OverlayPage><DPSOverlayWindowPage /></OverlayPage>} />
-        {DEV_HPS && <Route path="hps-overlay-window" element={<OverlayPage><HPSOverlayWindowPage /></OverlayPage>} />}
-        <Route path="buff-timer-window" element={<OverlayPage><BuffTimerWindowPage /></OverlayPage>} />
-        <Route path="detrim-timer-window" element={<OverlayPage><DetrimTimerWindowPage /></OverlayPage>} />
-        <Route path="custom-timer-window" element={<OverlayPage><CustomTimerWindowPage /></OverlayPage>} />
+        <Route path="dps-overlay-window" element={<OverlayPage overlayKey="dps"><DPSOverlayWindowPage /></OverlayPage>} />
+        {DEV_HPS && <Route path="hps-overlay-window" element={<OverlayPage overlayKey="hps"><HPSOverlayWindowPage /></OverlayPage>} />}
+        <Route path="buff-timer-window" element={<OverlayPage overlayKey="buffTimer"><BuffTimerWindowPage /></OverlayPage>} />
+        <Route path="detrim-timer-window" element={<OverlayPage overlayKey="detrimTimer"><DetrimTimerWindowPage /></OverlayPage>} />
+        <Route path="custom-timer-window" element={<OverlayPage overlayKey="customTimer"><CustomTimerWindowPage /></OverlayPage>} />
         <Route path="trigger-overlay-window" element={<OverlayPage><TriggerOverlayWindowPage /></OverlayPage>} />
-        <Route path="npc-overlay-window" element={<OverlayPage><NPCOverlayWindowPage /></OverlayPage>} />
-        <Route path="threat-overlay-window" element={<OverlayPage><ThreatOverlayWindowPage /></OverlayPage>} />
-        <Route path="roll-tracker-window" element={<OverlayPage><RollTrackerWindowPage /></OverlayPage>} />
-        <Route path="respawn-timer-window" element={<OverlayPage><RespawnTimerWindowPage /></OverlayPage>} />
-        <Route path="ch-chain-window" element={<OverlayPage><CHChainOverlayWindowPage /></OverlayPage>} />
-        <Route path="ch-metronome-window" element={<OverlayPage><CHMetronomeOverlayWindowPage /></OverlayPage>} />
+        <Route path="npc-overlay-window" element={<OverlayPage overlayKey="npc"><NPCOverlayWindowPage /></OverlayPage>} />
+        <Route path="threat-overlay-window" element={<OverlayPage overlayKey="threat"><ThreatOverlayWindowPage /></OverlayPage>} />
+        <Route path="roll-tracker-window" element={<OverlayPage overlayKey="rollTracker"><RollTrackerWindowPage /></OverlayPage>} />
+        <Route path="respawn-timer-window" element={<OverlayPage overlayKey="respawnTimer"><RespawnTimerWindowPage /></OverlayPage>} />
+        <Route path="ch-chain-window" element={<OverlayPage overlayKey="chChain"><CHChainOverlayWindowPage /></OverlayPage>} />
+        <Route path="ch-metronome-window" element={<OverlayPage overlayKey="chMetronome"><CHMetronomeOverlayWindowPage /></OverlayPage>} />
 
         {/* Main app routes — wrapped in full Layout with audio/alert hooks */}
         <Route path="/" element={<MainWindowLayout />}>
