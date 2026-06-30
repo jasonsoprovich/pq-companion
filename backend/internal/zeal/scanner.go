@@ -36,6 +36,9 @@ var inventoryFileRe = regexp.MustCompile(`(?i)^(.+?)-Inventory(?:_pq\.proj)?\.tx
 // spellsetFileRe matches "<CharName>_spellsets.ini" and captures the character name.
 var spellsetFileRe = regexp.MustCompile(`(?i)^(.+?)_spellsets\.ini$`)
 
+// bandolierFileRe matches "<CharName>_bandolier.ini" and captures the character name.
+var bandolierFileRe = regexp.MustCompile(`(?i)^(.+?)_bandolier\.ini$`)
+
 // ScanAllInventories discovers and parses every Zeal inventory export in eqPath.
 //
 // It returns:
@@ -127,6 +130,31 @@ func ScanAllSpellsets(eqPath string) ([]*SpellsetFile, error) {
 			continue
 		}
 		out = append(out, sf)
+	}
+	return out, nil
+}
+
+// ScanAllBandoliers discovers and parses every <CharName>_bandolier.ini file in
+// eqPath. Returns one *BandolierFile per character whose file parses successfully.
+func ScanAllBandoliers(eqPath string) ([]*BandolierFile, error) {
+	pattern := filepath.Join(eqPath, "*_bandolier.ini")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]*BandolierFile, 0, len(matches))
+	for _, path := range matches {
+		base := filepath.Base(path)
+		m := bandolierFileRe.FindStringSubmatch(base)
+		if m == nil {
+			continue
+		}
+		bf, err := ParseBandolier(path, m[1])
+		if err != nil {
+			continue
+		}
+		out = append(out, bf)
 	}
 	return out, nil
 }

@@ -32,10 +32,12 @@ type Watcher struct {
 	spellbook        *Spellbook
 	quarmy           *QuarmyData
 	spellsets        *SpellsetFile
+	bandolier        *BandolierFile
 	invModTime       time.Time
 	spellModTime     time.Time
 	quarmyModTime    time.Time
 	spellsetsModTime time.Time
+	bandolierModTime time.Time
 }
 
 // NewWatcher creates a Watcher. Call Start to begin polling.
@@ -101,6 +103,34 @@ func (w *Watcher) Spellsets() *SpellsetFile {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.spellsets
+}
+
+// Bandolier returns the most recently parsed bandolier for the active character, or nil if none.
+func (w *Watcher) Bandolier() *BandolierFile {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.bandolier
+}
+
+// AllBandoliers scans the EQ directory for every character's bandolier file.
+// Returns a non-configured response when the EQ path is empty.
+func (w *Watcher) AllBandoliers() (*AllBandoliersResponse, error) {
+	cfg := w.cfgMgr.Get()
+	resp := &AllBandoliersResponse{
+		Configured: cfg.EQPath != "",
+		Characters: []*BandolierFile{},
+	}
+	if cfg.EQPath == "" {
+		return resp, nil
+	}
+	chars, err := ScanAllBandoliers(cfg.EQPath)
+	if err != nil {
+		return nil, err
+	}
+	if chars != nil {
+		resp.Characters = chars
+	}
+	return resp, nil
 }
 
 // AllSpellsets scans the EQ directory for every character's spellsets export.
@@ -221,11 +251,42 @@ func (w *Watcher) check() {
 	spellPath := FindSpellbookFile(cfg.EQPath, character)
 	quarmyPath := FindQuarmyFile(cfg.EQPath, character)
 	spellsetsPath := SpellsetPath(cfg.EQPath, character)
+	bandolierPath := BandolierPath(cfg.EQPath, character)
 
 	w.checkInventory(invPath, character)
 	w.checkSpellbook(spellPath, character)
 	w.checkQuarmy(quarmyPath, character)
 	w.checkSpellsets(spellsetsPath, character)
+	w.checkBandolier(bandolierPath, character)
+}
+
+func (w *Watcher) checkBandolier(path, character string) {
+	mt := ModTime(path)
+	if mt.IsZero() {
+		return
+	}
+
+	w.mu.RLock()
+	unchanged := mt.Equal(w.bandolierModTime)
+	w.mu.RUnlock()
+
+	if unchanged {
+		return
+	}
+
+	bf, err := ParseBandolier(path, character)
+	if err != nil {
+		slog.Warn("zeal: parse bandolier", "path", path, "err", err)
+		return
+	}
+
+	w.mu.Lock()
+	w.bandolier = bf
+	w.bandolierModTime = mt
+	w.mu.Unlock()
+
+	slog.Info("zeal: bandolier updated", "character", character, "sets", len(bf.Sets))
+	w.hub.Broadcast(ws.Event{Type: "zeal:bandolier", Data: bf})
 }
 
 func (w *Watcher) checkSpellsets(path, character string) {
