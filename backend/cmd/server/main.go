@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -890,16 +891,33 @@ func main() {
 	rollTracker := rolltracker.New(hub)
 	{
 		p := cfgMgr.Get().Preferences
+		var profile rolltracker.RollProfile
+		if p.RollTrackerProfile != "" {
+			if err := json.Unmarshal([]byte(p.RollTrackerProfile), &profile); err != nil {
+				slog.Warn("parse roll tracker profile, ignoring", "err", err)
+				profile = rolltracker.RollProfile{}
+			}
+		}
 		rollTracker.Configure(
 			rolltracker.WinnerRule(p.RollTrackerWinnerRule),
 			rolltracker.Mode(p.RollTrackerMode),
 			p.RollTrackerAutoStopSeconds,
+			profile,
 		)
-		rollTracker.SetOnChange(func(rule rolltracker.WinnerRule, mode rolltracker.Mode, secs int) {
+		rollTracker.SetOnChange(func(rule rolltracker.WinnerRule, mode rolltracker.Mode, secs int, profile rolltracker.RollProfile) {
 			c := cfgMgr.Get()
 			c.Preferences.RollTrackerWinnerRule = string(rule)
 			c.Preferences.RollTrackerMode = string(mode)
 			c.Preferences.RollTrackerAutoStopSeconds = secs
+			// Persist the profile as a JSON blob; simple-mode profiles are
+			// stored empty so the config stays clean.
+			if profile.Mode == rolltracker.ProfileTiered {
+				if b, err := json.Marshal(profile); err == nil {
+					c.Preferences.RollTrackerProfile = string(b)
+				}
+			} else {
+				c.Preferences.RollTrackerProfile = ""
+			}
 			if err := cfgMgr.Update(c); err != nil {
 				slog.Warn("persist roll tracker settings", "err", err)
 			}

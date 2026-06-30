@@ -220,6 +220,56 @@ func TestAutoSuggestKeepsManualLabel(t *testing.T) {
 	}
 }
 
+func TestProfileValidate(t *testing.T) {
+	// Zero value and explicit simple both normalize to simple, no error.
+	for _, in := range []RollProfile{{}, {Mode: ProfileSimple}} {
+		got, err := in.Validate()
+		if err != nil || got.Mode != ProfileSimple {
+			t.Fatalf("simple normalize: got %+v err %v", got, err)
+		}
+	}
+	// Suffix scheme with no divisor defaults to 100.
+	got, err := RollProfile{
+		Mode:   ProfileTiered,
+		Scheme: SchemeSuffix,
+		Tiers:  []ProfileTier{{Match: 11, Label: "Pick"}},
+	}.Validate()
+	if err != nil || got.Divisor != 100 {
+		t.Fatalf("suffix divisor default: got %+v err %v", got, err)
+	}
+	// Tiered with no tiers, a bad scheme, and duplicate matches all error.
+	bad := []RollProfile{
+		{Mode: ProfileTiered, Scheme: SchemeSuffix},
+		{Mode: ProfileTiered, Scheme: "bogus", Tiers: []ProfileTier{{Match: 1, Label: "x"}}},
+		{Mode: ProfileTiered, Scheme: SchemeExact, Tiers: []ProfileTier{{Match: 111, Label: "a"}, {Match: 111, Label: "b"}}},
+		{Mode: ProfileTiered, Scheme: SchemeExact, Tiers: []ProfileTier{{Match: 111, Label: ""}}},
+		{Mode: "weird"},
+	}
+	for i, p := range bad {
+		if _, err := p.Validate(); err == nil {
+			t.Fatalf("bad profile %d should have errored: %+v", i, p)
+		}
+	}
+}
+
+func TestSetProfileRoundTrips(t *testing.T) {
+	tr := newTrackerForTest()
+	if tr.State().Profile.Mode != ProfileSimple {
+		t.Fatalf("default profile should be simple, got %q", tr.State().Profile.Mode)
+	}
+	p := RollProfile{
+		Mode:    ProfileTiered,
+		Scheme:  SchemeSuffix,
+		Divisor: 100,
+		Tiers:   []ProfileTier{{Match: 11, Label: "Pick"}, {Match: 22, Label: "Upgrade"}},
+	}
+	tr.SetProfile(p)
+	got := tr.State().Profile
+	if got.Mode != ProfileTiered || got.Scheme != SchemeSuffix || len(got.Tiers) != 2 {
+		t.Fatalf("profile not round-tripped through State: %+v", got)
+	}
+}
+
 func TestStopSession(t *testing.T) {
 	tr := newTrackerForTest()
 	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)

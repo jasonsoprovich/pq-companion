@@ -68,6 +68,7 @@ type Tracker struct {
 	rule            WinnerRule
 	mode            Mode
 	autoStopSeconds int
+	profile         RollProfile            // grouping profile; zero value = simple
 	autoStops       map[uint64]*time.Timer // session ID → pending auto-stop
 	nextID          uint64
 
@@ -84,9 +85,9 @@ type Tracker struct {
 	recentCalls []lootCall // chronological; newest last
 
 	// onChange, if set, is invoked (outside the lock) whenever the winner
-	// rule, mode, or auto-stop window changes, so the caller can persist the
-	// new settings. It is never fired by Configure.
-	onChange func(rule WinnerRule, mode Mode, autoStopSeconds int)
+	// rule, mode, auto-stop window, or grouping profile changes, so the
+	// caller can persist the new settings. It is never fired by Configure.
+	onChange func(rule WinnerRule, mode Mode, autoStopSeconds int, profile RollProfile)
 }
 
 // New returns an initialised Tracker with the default WinnerHighest rule.
@@ -96,6 +97,7 @@ func New(hub *ws.Hub) *Tracker {
 		rule:            WinnerHighest,
 		mode:            ModeManual,
 		autoStopSeconds: DefaultAutoStopSeconds,
+		profile:         RollProfile{Mode: ProfileSimple},
 		autoStops:       make(map[uint64]*time.Timer),
 	}
 }
@@ -103,7 +105,7 @@ func New(hub *ws.Hub) *Tracker {
 // Configure seeds the tracker's settings from persisted preferences. Invalid
 // or zero values fall back to the built-in defaults. It does not fire
 // onChange — it's meant to be called once at startup before any events flow.
-func (t *Tracker) Configure(rule WinnerRule, mode Mode, autoStopSeconds int) {
+func (t *Tracker) Configure(rule WinnerRule, mode Mode, autoStopSeconds int, profile RollProfile) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if rule == WinnerHighest || rule == WinnerLowest {
@@ -115,14 +117,30 @@ func (t *Tracker) Configure(rule WinnerRule, mode Mode, autoStopSeconds int) {
 	if autoStopSeconds >= 5 && autoStopSeconds <= 600 {
 		t.autoStopSeconds = autoStopSeconds
 	}
+	if p, err := profile.Validate(); err == nil {
+		t.profile = p
+	}
 }
 
-// SetOnChange registers a callback fired whenever the winner rule, mode, or
-// auto-stop window changes, so settings can be persisted.
-func (t *Tracker) SetOnChange(fn func(rule WinnerRule, mode Mode, autoStopSeconds int)) {
+// SetOnChange registers a callback fired whenever the winner rule, mode,
+// auto-stop window, or grouping profile changes, so settings can be
+// persisted.
+func (t *Tracker) SetOnChange(fn func(rule WinnerRule, mode Mode, autoStopSeconds int, profile RollProfile)) {
 	t.mu.Lock()
 	t.onChange = fn
 	t.mu.Unlock()
+}
+
+// SetProfile swaps the grouping profile. The profile must already be
+// validated by the caller (the API handler normalizes it). Affects only how
+// the UI groups sessions; the session engine is unchanged.
+func (t *Tracker) SetProfile(profile RollProfile) {
+	t.mu.Lock()
+	t.profile = profile
+	t.notifyChangeLocked()
+	state := t.stateLocked()
+	t.mu.Unlock()
+	t.broadcast(state)
 }
 
 // SetItemMatcher enables best-effort loot-item auto-suggest by registering
@@ -268,9 +286,9 @@ func (t *Tracker) notifyChangeLocked() {
 	if t.onChange == nil {
 		return
 	}
-	rule, mode, secs := t.rule, t.mode, t.autoStopSeconds
+	rule, mode, secs, profile := t.rule, t.mode, t.autoStopSeconds, t.profile
 	fn := t.onChange
-	go fn(rule, mode, secs)
+	go fn(rule, mode, secs, profile)
 }
 
 // Handle routes a parsed log event into the tracker. Only roll events do
@@ -579,6 +597,7 @@ func (t *Tracker) stateLocked() State {
 		WinnerRule:      t.rule,
 		Mode:            t.mode,
 		AutoStopSeconds: t.autoStopSeconds,
+		Profile:         t.profile,
 		Sessions:        make([]Session, 0, len(t.sessions)),
 	}
 	for _, s := range t.sessions {

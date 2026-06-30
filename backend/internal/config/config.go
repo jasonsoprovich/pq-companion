@@ -432,6 +432,10 @@ type Preferences struct {
 	RollTrackerWinnerRule      string `yaml:"roll_tracker_winner_rule,omitempty" json:"roll_tracker_winner_rule,omitempty"`
 	RollTrackerMode            string `yaml:"roll_tracker_mode,omitempty" json:"roll_tracker_mode,omitempty"`
 	RollTrackerAutoStopSeconds int    `yaml:"roll_tracker_auto_stop_seconds,omitempty" json:"roll_tracker_auto_stop_seconds,omitempty"`
+	// RollTrackerProfile is the active grouping profile, stored as a JSON
+	// blob (the structured RollProfile lives in the rolltracker package; the
+	// config layer round-trips it opaquely). Empty means the simple default.
+	RollTrackerProfile string `yaml:"roll_tracker_profile,omitempty" json:"roll_tracker_profile,omitempty"`
 
 	// SidebarHidden lists side-nav route keys (e.g. "/loot") the user has
 	// hidden from the navigation menu. Hiding only removes the tab from the

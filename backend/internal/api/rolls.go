@@ -85,9 +85,10 @@ func (h *rollsHandler) clear(w http.ResponseWriter, _ *http.Request) {
 // rollsSettingsRequest carries any subset of the tracker's settings —
 // callers may update one field without resending the others.
 type rollsSettingsRequest struct {
-	WinnerRule      *rolltracker.WinnerRule `json:"winner_rule,omitempty"`
-	Mode            *rolltracker.Mode       `json:"mode,omitempty"`
-	AutoStopSeconds *int                    `json:"auto_stop_seconds,omitempty"`
+	WinnerRule      *rolltracker.WinnerRule  `json:"winner_rule,omitempty"`
+	Mode            *rolltracker.Mode        `json:"mode,omitempty"`
+	AutoStopSeconds *int                     `json:"auto_stop_seconds,omitempty"`
+	Profile         *rolltracker.RollProfile `json:"profile,omitempty"`
 }
 
 func (h *rollsHandler) updateSettings(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +122,14 @@ func (h *rollsHandler) updateSettings(w http.ResponseWriter, r *http.Request) {
 			secs = *req.AutoStopSeconds
 		}
 		h.tracker.SetMode(mode, secs)
+	}
+	if req.Profile != nil {
+		profile, err := req.Profile.Validate()
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid profile: "+err.Error())
+			return
+		}
+		h.tracker.SetProfile(profile)
 	}
 	writeJSON(w, http.StatusOK, h.tracker.State())
 }

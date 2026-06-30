@@ -17,7 +17,10 @@
 // instead of being lumped in with the 0–611 rolls.
 package rolltracker
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // WSEventRolls is the WebSocket event type broadcast on every roll-state
 // change (new roll, session stopped, settings changed, cleared).
@@ -116,6 +119,89 @@ type Session struct {
 	autoSuggested bool
 }
 
+// ProfileMode selects whether rolls are grouped into tiered contests or
+// shown as today's flat per-range sessions.
+type ProfileMode string
+
+const (
+	// ProfileSimple is the default: each /random range is its own session,
+	// winner picked by the global highest/lowest rule. No grouping.
+	ProfileSimple ProfileMode = "simple"
+	// ProfileTiered groups multiple ranges into one contest with ranked
+	// tiers (e.g. "111 pick / 122 upgrade / 133 alt"), the winner taken
+	// from the highest-priority tier that received any rolls.
+	ProfileTiered ProfileMode = "tiered"
+)
+
+// ProfileScheme selects how a tiered profile maps a roll's upper bound to a
+// tier and to a contest.
+type ProfileScheme string
+
+const (
+	// SchemeSuffix derives the tier from max%Divisor and the contest group
+	// from max/Divisor — so "111/122/133" are three tiers of item group 1
+	// and "211/222/233" are item group 2. One profile handles any number
+	// of items. This is the Breakfast Club "1xx" convention.
+	SchemeSuffix ProfileScheme = "suffix"
+	// SchemeExact matches the tier on the exact max value and groups by
+	// time (one contest at a time) — the pickup "need 111 / greed 222"
+	// convention where a single item is rolled at once.
+	SchemeExact ProfileScheme = "exact"
+)
+
+// ProfileTier is one bracket within a tiered profile. Its priority is its
+// index in RollProfile.Tiers: index 0 outranks everything below it.
+type ProfileTier struct {
+	// Match is compared against the derived tier key — max%Divisor under
+	// the suffix scheme, or the raw max under the exact scheme.
+	Match int `json:"match"`
+	// Label is the human name for the bracket (e.g. "Pick", "Greed").
+	Label string `json:"label"`
+}
+
+// RollProfile defines how incoming rolls are grouped into tiered contests.
+// The backend stores, validates, and broadcasts it but does not interpret
+// it — grouping and tier-winner selection are derived client-side, the same
+// way the flat winner rule already is. The zero value is treated as simple.
+type RollProfile struct {
+	Mode    ProfileMode   `json:"mode"`
+	Scheme  ProfileScheme `json:"scheme,omitempty"`
+	Divisor int           `json:"divisor,omitempty"`
+	Tiers   []ProfileTier `json:"tiers,omitempty"`
+}
+
+// Validate reports whether the profile is well-formed, normalizing the zero
+// value to simple. Returns the normalized profile and an error describing
+// the first problem found.
+func (p RollProfile) Validate() (RollProfile, error) {
+	if p.Mode == "" || p.Mode == ProfileSimple {
+		return RollProfile{Mode: ProfileSimple}, nil
+	}
+	if p.Mode != ProfileTiered {
+		return p, fmt.Errorf("mode must be %q or %q", ProfileSimple, ProfileTiered)
+	}
+	if p.Scheme != SchemeSuffix && p.Scheme != SchemeExact {
+		return p, fmt.Errorf("scheme must be %q or %q", SchemeSuffix, SchemeExact)
+	}
+	if p.Scheme == SchemeSuffix && p.Divisor <= 0 {
+		p.Divisor = 100
+	}
+	if len(p.Tiers) == 0 {
+		return p, fmt.Errorf("a tiered profile needs at least one tier")
+	}
+	seen := make(map[int]bool, len(p.Tiers))
+	for _, t := range p.Tiers {
+		if t.Label == "" {
+			return p, fmt.Errorf("every tier needs a label")
+		}
+		if seen[t.Match] {
+			return p, fmt.Errorf("duplicate tier match value %d", t.Match)
+		}
+		seen[t.Match] = true
+	}
+	return p, nil
+}
+
 // State is the full tracker payload broadcast over WebSocket and returned
 // from GET /api/rolls.
 type State struct {
@@ -132,4 +218,8 @@ type State struct {
 	// AutoStopSeconds is the timer-mode session length applied to every
 	// new session. Ignored when Mode == ModeManual.
 	AutoStopSeconds int `json:"auto_stop_seconds"`
+	// Profile is the active grouping profile. The UI uses it to fold the
+	// flat Sessions list into tiered contests; "simple" (the default) means
+	// no grouping.
+	Profile RollProfile `json:"profile"`
 }
