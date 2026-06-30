@@ -1405,15 +1405,17 @@ func (t *Tracker) endFightByNPC(npcName string, ts time.Time) {
 	t.broadcast(snap)
 }
 
-// DiscardActiveFights drops every currently-active fight WITHOUT archiving it,
-// then broadcasts the cleared state. This backs the meter's manual "discard
-// current parse" control: the user is saying "this encounter is junk / over,
-// remove it now" — so unlike a kill or a timeout it must not write the fight to
-// history or fold its damage into the session totals. Completed fights you want
-// to keep are still saved automatically by the kill/timeout paths; this only
-// throws away the in-flight ones on the live meter. No-op when nothing is
-// active. ts is the moment of the discard, used only for the broadcast stamp.
-func (t *Tracker) DiscardActiveFights(ts time.Time) {
+// EndActiveFights finalises every currently-active fight at ts — the same
+// archive path a mob-kill or inactivity timeout takes: each fight is removed
+// from the live meter, folded into the session totals, and saved to combat
+// history. This backs the meter's manual "clear the current parse" control: now
+// that zoning/death no longer auto-close fights, this is how the user says "I'm
+// done with this mob" — it clears the overlay but the parse still lives on in
+// combat history (unlike a true discard, which we deliberately don't offer).
+// No-op when nothing is active. Fights with no useful outgoing damage are
+// dropped by archiveFightLocked rather than saved, matching the kill/timeout
+// behaviour.
+func (t *Tracker) EndActiveFights(ts time.Time) {
 	t.mu.Lock()
 	if len(t.activeFights) == 0 {
 		t.mu.Unlock()
@@ -1423,8 +1425,8 @@ func (t *Tracker) DiscardActiveFights(ts time.Time) {
 		if f.timer != nil {
 			f.timer.Stop()
 		}
+		t.archiveFightLocked(f, ts)
 	}
-	t.activeFights = make(map[string]*Fight)
 	snap := t.snapshot(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)

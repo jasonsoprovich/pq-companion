@@ -2498,7 +2498,7 @@ export default function SettingsPage(): React.ReactElement {
             Combat Meter
           </h2>
           <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            A parse stays on the meter through zoning and death — handy when you evac/Abscond to drop aggro and run back, or die and get rezzed. It ends only when the mob dies, you discard it with the meter’s ✕ button, or it sits idle for the timeout below. Raid-sized fights always get at least a 2-minute window.
+            A parse stays on the meter through zoning and death — handy when you evac/Abscond to drop aggro and run back, or die and get rezzed. It ends only when the mob dies, you clear it with the meter’s ✕ button (which saves it to Combat History), or it sits idle for the timeout below. Raid-sized fights always get at least a 2-minute window.
           </p>
           <div className="flex items-center justify-between">
             <div>

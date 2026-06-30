@@ -339,7 +339,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		r.Post("/threat/reset", threatH.reset)
 		r.Route("/combat", func(r chi.Router) {
 			r.Post("/reset", combatH.reset)
-			r.Post("/discard", combatH.discard)
+			r.Post("/end", combatH.end)
 			r.Route("/history", func(r chi.Router) {
 				r.Get("/", combatH.historyList)
 				r.Delete("/", combatH.historyClear)

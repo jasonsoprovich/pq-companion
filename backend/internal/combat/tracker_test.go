@@ -983,29 +983,30 @@ func TestZoneKeepsAllActiveFights(t *testing.T) {
 	}
 }
 
-// TestDiscardActiveFightsDropsWithoutArchiving confirms the manual discard
-// throws away in-flight fights without writing them to history or the session
-// totals — distinct from a kill/timeout, which archive.
-func TestDiscardActiveFightsDropsWithoutArchiving(t *testing.T) {
+// TestEndActiveFightsArchives confirms the manual "clear parse" control
+// finalises in-flight fights the same way a kill/timeout does — clears the live
+// meter but keeps the fights in the recent-fights list (and history) and folds
+// player damage into the session totals.
+func TestEndActiveFightsArchives(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()
 
 	tr.Handle(hitEvent("You", "a gnoll", 100, now))
 	tr.Handle(hitEvent("You", "a wolf", 80, now.Add(time.Second)))
-	tr.DiscardActiveFights(now.Add(2 * time.Second))
+	tr.EndActiveFights(now.Add(2 * time.Second))
 
 	st := tr.GetState()
 	if st.InCombat {
-		t.Fatal("expected InCombat=false after discard")
+		t.Fatal("expected InCombat=false after ending fights")
 	}
 	if activeFightCount(tr) != 0 {
-		t.Fatalf("expected 0 active fights after discard, got %d", activeFightCount(tr))
+		t.Fatalf("expected 0 active fights after end, got %d", activeFightCount(tr))
 	}
-	if len(st.RecentFights) != 0 {
-		t.Errorf("discard must not archive: expected 0 recent fights, got %d", len(st.RecentFights))
+	if len(st.RecentFights) != 2 {
+		t.Errorf("ending must archive: expected 2 recent fights, got %d", len(st.RecentFights))
 	}
-	if st.SessionDamage != 0 {
-		t.Errorf("discard must not touch session totals: expected 0, got %d", st.SessionDamage)
+	if st.SessionDamage != 180 {
+		t.Errorf("ending must fold player damage into session totals: expected 180, got %d", st.SessionDamage)
 	}
 }
 

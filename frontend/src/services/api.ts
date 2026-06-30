@@ -1174,11 +1174,12 @@ export function resetCombatState(): Promise<void> {
   return post<void>('/api/combat/reset')
 }
 
-// discardActiveFight drops the current in-flight parse(s) from the live meter
-// without archiving them to history or the session totals — the manual "end
-// this encounter now" action. Completed fights still auto-save on kill/timeout.
-export function discardActiveFight(): Promise<void> {
-  return post<void>('/api/combat/discard')
+// endActiveFight finalises the current in-flight parse(s): clears them from the
+// live meter and saves them to combat history (same archive path as a
+// kill/timeout). The manual "I'm done with this mob" action now that
+// zoning/death no longer auto-close fights.
+export function endActiveFight(): Promise<void> {
+  return post<void>('/api/combat/end')
 }
 
 export function getThreatState(): Promise<ThreatState> {

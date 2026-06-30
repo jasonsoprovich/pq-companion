@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Swords, Circle, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users, Trash2, Activity, Hourglass, User, History, Crosshair, XCircle } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
-import { getCombatState, getLogStatus, resetCombatState, discardActiveFight } from '../../services/api'
+import { getCombatState, getLogStatus, resetCombatState, endActiveFight } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import type { CombatState, FightState } from '../../types/combat'
 import type { LogTailerStatus } from '../../types/logEvent'
@@ -497,12 +497,12 @@ export default function DPSPanel({
           </button>
           <CopyFightButton fight={scope === 'window' ? windowFight : combat?.current_fight ?? null} combine={combine} mode={dpsMode} />
           <button
-            onClick={() => { if (combat?.in_combat) discardActiveFight().catch(() => {}) }}
+            onClick={() => { if (combat?.in_combat) endActiveFight().catch(() => {}) }}
             disabled={!combat?.in_combat}
             title={
               combat?.in_combat
-                ? 'Discard the current parse — drop this fight from the meter without saving it to history (use after evac/zone when you’re done with the mob)'
-                : 'No active fight to discard'
+                ? 'End the current parse — clears this fight from the meter and saves it to Combat History (use after evac/zone when you’re done with the mob)'
+                : 'No active fight to end'
             }
             style={{
               background: 'none', border: 'none',

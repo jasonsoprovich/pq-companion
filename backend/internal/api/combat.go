@@ -27,13 +27,13 @@ func (h *combatHandler) reset(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// discard handles POST /api/combat/discard.
-// Drops the currently-active fight(s) from the live meter without archiving
-// them or touching session totals/history. Backs the meter's "discard current
-// parse" button — the manual way to end an encounter now that zoning and death
-// no longer auto-clear it.
-func (h *combatHandler) discard(w http.ResponseWriter, r *http.Request) {
-	h.tracker.DiscardActiveFights(time.Now())
+// end handles POST /api/combat/end.
+// Finalises the currently-active fight(s): clears them from the live meter and
+// saves them to combat history (same archive path as a kill/timeout). Backs the
+// meter's "clear current parse" button — the manual way to end an encounter now
+// that zoning and death no longer auto-clear it.
+func (h *combatHandler) end(w http.ResponseWriter, r *http.Request) {
+	h.tracker.EndActiveFights(time.Now())
 	w.WriteHeader(http.StatusNoContent)
 }
 
