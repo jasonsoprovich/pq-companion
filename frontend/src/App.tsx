@@ -68,6 +68,7 @@ const CharacterTasksPage = lazy(() => import('./pages/CharacterTasksPage'))
 const GearUpgradeFinderPage = lazy(() => import('./pages/GearUpgradeFinderPage'))
 const CharacterSpellsetsPage = lazy(() => import('./pages/CharacterSpellsetsPage'))
 const CharacterBandolierPage = lazy(() => import('./pages/CharacterBandolierPage'))
+const CharacterMacrosPage = lazy(() => import('./pages/CharacterMacrosPage'))
 
 function OverlayPage({
   children,
@@ -243,6 +244,7 @@ export default function App(): React.ReactElement {
             <Route path="spells" element={<SpellChecklistPage />} />
             <Route path="spellsets" element={<CharacterSpellsetsPage />} />
             <Route path="bandolier" element={<CharacterBandolierPage />} />
+            <Route path="macros" element={<CharacterMacrosPage />} />
             <Route path="keys" element={<KeyTrackerPage />} />
             <Route path="lockouts" element={<LockoutTrackerPage />} />
             <Route path="wishlist" element={<WishlistPage />} />

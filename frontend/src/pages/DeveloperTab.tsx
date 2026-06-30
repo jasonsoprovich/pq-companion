@@ -151,6 +151,10 @@ function FlagsPanel(): React.ReactElement {
   const bandolierEnabled = Boolean(config?.preferences?.bandolier_editor_enabled)
   const toggleBandolier = (): void => savePrefs({ bandolier_editor_enabled: !bandolierEnabled })
 
+  // ── Macro editor ──────────────────────────────────────────────────────
+  const macroEnabled = Boolean(config?.preferences?.macro_editor_enabled)
+  const toggleMacro = (): void => savePrefs({ macro_editor_enabled: !macroEnabled })
+
   // setClassMod writes (or clears, when blank) a per-class adjustment.
   const setClassMod = (cls: string, raw: string): void => {
     const next = { ...classMods }
@@ -412,6 +416,45 @@ function FlagsPanel(): React.ReactElement {
             }}
           >
             {bandolierEnabled ? 'Enabled' : 'Disabled'}
+          </button>
+        </div>
+      </section>
+
+      {/* ── Macro editor ─────────────────────────────────────────────────────── */}
+      <section
+        className="rounded-lg p-4"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <div className="mb-3 flex items-center gap-2">
+          <FlaskConical size={14} style={{ color: 'var(--color-primary)' }} />
+          <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            Macro editor
+          </h2>
+        </div>
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+            Adds a <strong>Macros</strong> page (under Characters) for editing your in-game
+            social macros &mdash; the 10 pages of 12 buttons stored in the{' '}
+            <code>[Socials]</code> section of <code>&lt;CharName&gt;_pq.proj.ini</code>. Edits
+            are written <em>surgically</em>: only your macros change, the rest of the client
+            config is left byte-for-byte intact. Off by default until Windows smoke-tested
+            since it edits the live client config; camp out before saving (EQ rewrites the
+            file on logout).
+          </p>
+          <button
+            type="button"
+            onClick={toggleMacro}
+            disabled={!config || saving}
+            className="shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors"
+            style={{
+              backgroundColor: macroEnabled ? 'var(--color-primary)' : 'var(--color-surface-2)',
+              color: macroEnabled ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+              cursor: !config || saving ? 'default' : 'pointer',
+              opacity: !config || saving ? 0.6 : 1,
+            }}
+          >
+            {macroEnabled ? 'Enabled' : 'Disabled'}
           </button>
         </div>
       </section>
