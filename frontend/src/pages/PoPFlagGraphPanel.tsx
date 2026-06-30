@@ -180,6 +180,18 @@ export default function PoPFlagGraphPanel({ flags }: PoPFlagGraphPanelProps): Re
           markerEnd: { type: MarkerType.ArrowClosed, color: '#4b5563', width: 13, height: 13 },
         })
       }
+      // Any-of members feed their anchor with a dashed amber edge — completing
+      // ANY one satisfies the anchor (distinct from the solid AND-prereq edges).
+      if (f.group) {
+        rawEdges.push({
+          id: `grp:${f.id}->${f.group}`,
+          source: f.id,
+          target: f.group,
+          type: 'smoothstep',
+          style: { stroke: '#fb923c', strokeWidth: 1.5, opacity: 0.6, strokeDasharray: '4 3' },
+          markerEnd: { type: MarkerType.ArrowClosed, color: '#fb923c', width: 13, height: 13 },
+        })
+      }
     }
     return { nodes: layoutGraph(rawNodes, rawEdges), edges: rawEdges }
     // eslint-disable-next-line react-hooks/exhaustive-deps

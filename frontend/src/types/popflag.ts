@@ -17,8 +17,14 @@ export interface PoPFlag {
   prereqs: string[]
   level?: number
   // Action bucket for icon/colour coding (see backend popflag.PoPFlag.StepKind):
-  // 'kill' | 'timed_hail' | 'hail' | 'loot'. Optional for forward-compat.
+  // 'kill' | 'timed_hail' | 'hail' | 'loot' | 'zone'. Optional for forward-compat.
   step_kind?: string
+  // Optional rows (keys, keyrings, bonus content) are excluded from the tally
+  // and never block a prereq. Role tags WHY: 'key' | 'keyring' | 'optional'.
+  optional?: boolean
+  role?: string
+  // Any-of group: members carry the anchor milestone ID they roll up to.
+  group?: string
   // Phase-2 completion-detection fields (present in the dataset, unused by the
   // Phase 1 checklist UI).
   qglobal?: string
@@ -34,6 +40,7 @@ export interface PoPFlagStatus extends PoPFlag {
   source?: string // 'manual' | 'seer' | 'auto'
   locked: boolean
   missing?: string[] // prereq IDs not yet done
+  superseded?: boolean // an unchosen member of a satisfied any-of group
 }
 
 export interface PoPProgress {

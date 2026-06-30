@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { getPopFlagDataset, getPopFlags, setPopFlag } from '../services/api'
 import type { PoPFlagStatus, PoPResolved } from '../types/popflag'
-import { STEP_KIND_META, STEP_KIND_ORDER, stepKindMeta } from '../lib/popFlagKind'
+import { STEP_KIND_META, STEP_KIND_ORDER, stepKindMeta, roleMeta, ROLE_META } from '../lib/popFlagKind'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useWebSocket } from '../hooks/useWebSocket'
 import CharacterSubTabs from '../components/CharacterSubTabs'
@@ -23,7 +23,12 @@ const PoPFlagGraphPanel = lazy(() => import('./PoPFlagGraphPanel'))
 function buildEmptyResolved(flags: PoPFlagStatus[]): PoPResolved {
   const tiers = new Map<number, { done: number; total: number }>()
   const zones = new Map<string, { done: number; total: number }>()
+  let total = 0
   for (const f of flags) {
+    // Mirror the backend tally: optional rows (keys/keyrings/bonus) and any-of
+    // members don't count toward completion.
+    if (f.optional || f.group) continue
+    total++
     const t = tiers.get(f.tier) ?? { done: 0, total: 0 }
     t.total++
     tiers.set(f.tier, t)
@@ -38,7 +43,7 @@ function buildEmptyResolved(flags: PoPFlagStatus[]): PoPResolved {
       .map(([tier, c]) => ({ tier, key: tierLabel(tier), label: tierLabel(tier), ...c })),
     zones: [...zones.entries()].map(([zone, c]) => ({ key: zone, label: zone, ...c })),
     done: 0,
-    total: flags.length,
+    total,
   }
 }
 
@@ -138,30 +143,54 @@ function FlagRow({ flag, allFlags, requiredByDone, canToggle, busy, onToggle, on
   // detection via the chip stays allowed.
   const lockedForCheck = flag.locked && !flag.done
   const lockedForUncheck = flag.done && requiredByDone.has(flag.id)
-  const checkDisabled = !canToggle || busy || lockedForCheck || lockedForUncheck
+  // An any-of anchor satisfied via a checked member: toggling the anchor itself
+  // would be a no-op (the member keeps it done), so steer the user to the
+  // member instead.
+  const anchorViaMember =
+    flag.done && allFlags.some((o) => o.group === flag.id && o.done)
+  const checkDisabled =
+    !canToggle || busy || lockedForCheck || lockedForUncheck || anchorViaMember
   const checkTitle = !canToggle
     ? 'Select a character to track'
     : lockedForCheck
       ? `Complete prerequisites first — Needs: ${missingLabels.join(', ')}`
       : lockedForUncheck
         ? 'Required by a completed later step'
-        : flag.done
-          ? 'Mark not done'
-          : 'Mark done'
+        : anchorViaMember
+          ? 'Completed via an option below — uncheck that instead'
+          : flag.done
+            ? 'Mark not done'
+            : 'Mark done'
   // Step-kind accent: a coloured left stripe + icon + chip so a player can tell
   // a raid kill from a must-act-now post-kill hail from solo homework. The
   // timed-hail kind also gets a faint row tint to make the easy-to-miss steps
   // stand out (left as transparent stripe when a kind is missing/unknown).
   const km = stepKindMeta(flag.step_kind)
   const KindIcon = km?.icon
+  // Role badge (key / keyring / optional) for the non-required rows.
+  const rm = roleMeta(flag.role)
+  const RoleIcon = rm?.icon
+  const isMember = !!flag.group
+  // Superseded: an unchosen alternative in a satisfied any-of group — render it
+  // faded + struck as "not needed". Dim optional rows that aren't done so they
+  // read as "nice to have, not required".
+  const dimmed = flag.done || flag.superseded
+  const opacity = flag.superseded
+    ? 0.45
+    : flag.locked && !flag.done
+      ? 0.6
+      : rm && !flag.done
+        ? 0.85
+        : 1
   return (
     <div
       className="flex items-start gap-2 px-4 py-2"
       style={{
         borderTop: '1px solid var(--color-border)',
         borderLeft: `3px solid ${km ? km.color : 'transparent'}`,
-        backgroundColor: km?.kind === 'timed_hail' ? km.bg : undefined,
-        opacity: flag.locked && !flag.done ? 0.6 : 1,
+        backgroundColor: km?.kind === 'timed_hail' && !flag.superseded ? km.bg : undefined,
+        opacity,
+        paddingLeft: isMember ? '2.25rem' : undefined,
       }}
     >
       <button
@@ -188,8 +217,8 @@ function FlagRow({ flag, allFlags, requiredByDone, canToggle, busy, onToggle, on
           <span
             className="text-sm"
             style={{
-              color: flag.done ? 'var(--color-muted)' : 'var(--color-foreground)',
-              textDecoration: flag.done ? 'line-through' : 'none',
+              color: dimmed ? 'var(--color-muted)' : 'var(--color-foreground)',
+              textDecoration: dimmed ? 'line-through' : 'none',
             }}
           >
             {flag.label}
@@ -201,6 +230,25 @@ function FlagRow({ flag, allFlags, requiredByDone, canToggle, busy, onToggle, on
               style={{ color: km.color, backgroundColor: km.bg, border: `1px solid ${km.border}` }}
             >
               {km.label}
+            </span>
+          )}
+          {rm && (
+            <span
+              className="ml-1.5 inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
+              title={rm.tip}
+              style={{ color: rm.color, backgroundColor: rm.bg, border: `1px solid ${rm.border}` }}
+            >
+              {RoleIcon && <RoleIcon size={9} />}
+              {rm.label}
+            </span>
+          )}
+          {flag.superseded && (
+            <span
+              className="ml-1.5 shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
+              title="Another option in this group is done — this one is no longer needed."
+              style={{ color: 'var(--color-muted)', backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+            >
+              not needed
             </span>
           )}
           {flag.locked && !flag.done && (
@@ -540,6 +588,29 @@ export default function PoPFlaggingPage(): React.ReactElement {
           return (
             <span
               key={k}
+              className="inline-flex items-center gap-1 text-[11px]"
+              title={m.tip}
+              style={{ color: m.color }}
+            >
+              <Icon size={12} />
+              {m.label}
+            </span>
+          )
+        })}
+        <span
+          className="mx-1 h-3 w-px shrink-0"
+          style={{ backgroundColor: 'var(--color-border)' }}
+          aria-hidden
+        />
+        <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
+          Not counted
+        </span>
+        {(['key', 'keyring', 'optional'] as const).map((r) => {
+          const m = ROLE_META[r]
+          const Icon = m.icon
+          return (
+            <span
+              key={r}
               className="inline-flex items-center gap-1 text-[11px]"
               title={m.tip}
               style={{ color: m.color }}
