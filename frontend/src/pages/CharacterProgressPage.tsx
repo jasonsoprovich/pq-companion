@@ -1688,11 +1688,11 @@ function SpellModifiersPanel({ characterID, contributors }: SpellModifiersPanelP
 }
 
 function ModifierRow({ m }: { m: SpellModifier }): React.ReactElement {
-  const sourceLabel = m.source === 'item'
-    ? `${m.source_item_name}${m.source_item_slot ? ` (${m.source_item_slot})` : ''}`
-    : `${m.source_aa_name}${m.source_aa_rank ? ` rank ${m.source_aa_rank}` : ''}`
-  const focusLabel = m.focus_spell_name ? ` · ${m.focus_spell_name}` : ''
+  const navigate = useNavigate()
   const sign = spaSign(m.spa)
+  // The source is an item (has a database page) or an AA (no DB page → plain
+  // text). The focus spell, when present, always links to the spell explorer.
+  const itemSource = m.source === 'item' && m.source_item_id
   return (
     <div
       className="rounded px-3 py-2 text-xs"
@@ -1700,8 +1700,42 @@ function ModifierRow({ m }: { m: SpellModifier }): React.ReactElement {
     >
       <div className="flex items-center justify-between gap-2">
         <span style={{ color: 'var(--color-foreground)' }}>
-          <span className="font-medium">{sourceLabel}</span>
-          <span style={{ color: 'var(--color-muted-foreground)' }}>{focusLabel}</span>
+          {itemSource ? (
+            <>
+              <button
+                onClick={() => navigate(`/items?select=${m.source_item_id}`)}
+                className="font-medium underline decoration-dotted"
+                style={{ color: 'var(--color-primary)' }}
+              >
+                {m.source_item_name}
+              </button>
+              {m.source_item_slot ? (
+                <span className="font-medium"> ({m.source_item_slot})</span>
+              ) : null}
+            </>
+          ) : (
+            <span className="font-medium">
+              {m.source === 'item'
+                ? `${m.source_item_name}${m.source_item_slot ? ` (${m.source_item_slot})` : ''}`
+                : `${m.source_aa_name}${m.source_aa_rank ? ` rank ${m.source_aa_rank}` : ''}`}
+            </span>
+          )}
+          {m.focus_spell_name ? (
+            <span style={{ color: 'var(--color-muted-foreground)' }}>
+              {' · '}
+              {m.focus_spell_id ? (
+                <button
+                  onClick={() => navigate(`/spells?select=${m.focus_spell_id}`)}
+                  className="underline decoration-dotted"
+                  style={{ color: 'var(--color-primary)' }}
+                >
+                  {m.focus_spell_name}
+                </button>
+              ) : (
+                m.focus_spell_name
+              )}
+            </span>
+          ) : null}
         </span>
         <span className="font-mono font-semibold" style={{ color: 'var(--color-primary)' }}>
           {sign}{m.percent}% {spaLabel(m.spa)}
@@ -1752,6 +1786,7 @@ function formatDuration(sec: number): string {
 }
 
 function ResolutionDisplay({ r }: { r: SpellModifierResolution }): React.ReactElement {
+  const navigate = useNavigate()
   const ctSign = r.cast_time_percent > 0 ? '−' : ''
   // applied can arrive as null from the API (Go nil slice → JSON null); never
   // read .length / .map without coalescing or the whole panel crashes.
@@ -1762,9 +1797,20 @@ function ResolutionDisplay({ r }: { r: SpellModifierResolution }): React.ReactEl
       style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
     >
       <div className="mb-3 flex items-baseline justify-between gap-2">
-        <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
-          {r.spell_name}
-        </span>
+        {r.spell_id ? (
+          <button
+            onClick={() => navigate(`/spells?select=${r.spell_id}`)}
+            className="text-sm font-semibold underline decoration-dotted"
+            style={{ color: 'var(--color-primary)' }}
+            title="Open in the spell explorer"
+          >
+            {r.spell_name}
+          </button>
+        ) : (
+          <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+            {r.spell_name}
+          </span>
+        )}
         <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
           spell L{r.spell_level} · cast at L{r.caster_level} · {spellTypeLabel(r.spell_type)}
         </span>
