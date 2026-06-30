@@ -80,7 +80,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	lootH := &lootHandler{store: lootStore, mgr: cfgMgr, tailer: tailer}
 	backfillH := &backfillHandler{registry: backfillRegistry, mgr: cfgMgr, tailer: tailer, hub: hub}
 	keyringH := &keyringHandler{store: keyringStore, master: keyringMaster}
-	lockoutsH := &lockoutsHandler{store: lockoutStore}
+	lockoutsH := &lockoutsHandler{store: lockoutStore, db: database}
 	logH := &logHandler{tailer: tailer, mgr: cfgMgr}
 	replayH := &replayHandler{mgr: cfgMgr, replayer: replayer}
 	overlayH := &overlayHandler{npcTracker: npcTracker}

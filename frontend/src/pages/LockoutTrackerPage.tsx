@@ -10,6 +10,7 @@
  * the next `/sll` refresh.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Hourglass, RefreshCw, AlertCircle } from 'lucide-react'
 import { getLockoutForCharacter } from '../services/api'
 import type { LockoutEntry, LockoutSection } from '../types/lockouts'
@@ -64,6 +65,7 @@ interface RowProps {
 }
 
 function LockoutRow({ entry, nowMs }: RowProps): React.ReactElement {
+  const navigate = useNavigate()
   const remainingMs = entry.expires_at > 0 ? entry.expires_at * 1000 - nowMs : 0
   const available = entry.expires_at === 0 || remainingMs <= 0
   // Highlight lockouts about to lift (under an hour) so they stand out.
@@ -78,17 +80,39 @@ function LockoutRow({ entry, nowMs }: RowProps): React.ReactElement {
     ? 'color-mix(in srgb, var(--color-success) 12%, transparent)'
     : 'transparent'
 
+  // Best-effort link: loot rows resolve to an NPC, legacy rows to an item.
+  // Falls back to plain text when the name couldn't be matched.
+  const linkTo =
+    entry.resolved_id && entry.resolved_kind
+      ? `/${entry.resolved_kind === 'item' ? 'items' : 'npcs'}?select=${entry.resolved_id}`
+      : null
+
   return (
     <div
       className="flex items-center gap-2 rounded px-2.5 py-1.5 text-xs"
       style={{ backgroundColor: bg }}
     >
-      <span
-        className="flex-1 font-medium"
-        style={{ color: 'var(--color-foreground)' }}
-      >
-        {entry.target_name}
-      </span>
+      {linkTo ? (
+        <button
+          onClick={() => navigate(linkTo)}
+          className="min-w-0 flex-1 truncate text-left font-medium underline decoration-dotted"
+          style={{ color: 'var(--color-foreground)' }}
+          title={
+            entry.resolved_kind === 'item'
+              ? 'Open in the item database'
+              : 'Open in the NPC database'
+          }
+        >
+          {entry.target_name}
+        </button>
+      ) : (
+        <span
+          className="flex-1 font-medium"
+          style={{ color: 'var(--color-foreground)' }}
+        >
+          {entry.target_name}
+        </span>
+      )}
       <span className="tabular-nums shrink-0" style={{ color }}>
         {available ? 'Available' : formatRemaining(remainingMs)}
       </span>

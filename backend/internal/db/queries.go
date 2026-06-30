@@ -663,6 +663,52 @@ func (db *DB) GetNPCByName(name string) (*NPC, error) {
 	return n, nil
 }
 
+// GetNPCIDByName resolves an in-game NPC display name (spaces, any case) to a
+// single npc_types id, best-effort. EQ display names use spaces; the database
+// stores them with underscores, so spaces are converted before matching.
+// Same-name variants (e.g. multi-id raid bosses) all collapse to the lowest id;
+// the NPC detail page surfaces the rest. Returns (id, true) on a match,
+// (0, false) when nothing matches. Used by the lockout tracker to link
+// raid-boss rows.
+func (db *DB) GetNPCIDByName(name string) (int, bool) {
+	underscored := strings.ReplaceAll(strings.TrimSpace(name), " ", "_")
+	if underscored == "" {
+		return 0, false
+	}
+	var id int
+	if err := db.QueryRow(
+		"SELECT id FROM npc_types WHERE name = ? COLLATE NOCASE ORDER BY id LIMIT 1",
+		underscored,
+	).Scan(&id); err != nil {
+		return 0, false
+	}
+	return id, true
+}
+
+// GetItemIDByName resolves an exact item name (any case) to its canonical item
+// id, best-effort. Item names are usually unique; when duplicates exist the
+// canonical (most-referenced) variant is returned so the link lands on the
+// "main" entry. Returns (id, true) on a match, (0, false) otherwise. Used by
+// the lockout tracker to link legacy-item rows.
+func (db *DB) GetItemIDByName(name string) (int, bool) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return 0, false
+	}
+	var id int
+	if err := db.QueryRow(
+		"SELECT id FROM items WHERE Name = ? COLLATE NOCASE ORDER BY id LIMIT 1",
+		trimmed,
+	).Scan(&id); err != nil {
+		return 0, false
+	}
+	db.ensureVariants()
+	if canon := db.itemVariants.canonicalID(id); canon != 0 {
+		id = canon
+	}
+	return id, true
+}
+
 // GetNPCVariantsByNameInZone returns every npc_types row matching the given
 // name (case-insensitive), each paired with its spawn2 locations. About 24%
 // of NPCs in the Quarm DB share a name with at least one other row — the

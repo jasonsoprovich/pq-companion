@@ -13,6 +13,11 @@ export interface LockoutEntry {
   target_name: string
   expires_at: number
   observed_at: number
+  // Best-effort link target resolved server-side from target_name: 'npc' for
+  // loot (raid-boss) rows, 'item' for legacy rows. Both absent when the name
+  // couldn't be matched in the game database — render the row as plain text.
+  resolved_kind?: 'npc' | 'item'
+  resolved_id?: number
 }
 
 export interface LockoutCharactersResponse {
