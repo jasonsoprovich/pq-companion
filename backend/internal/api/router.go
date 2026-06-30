@@ -234,6 +234,11 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Put("/spellsets", zealH.updateSpellsets)
 			r.Get("/spellsets/all", zealH.allSpellsets)
 			r.Post("/spellsets/parse-file", zealH.parseSpellsetsFile)
+			r.Get("/bandolier", zealH.bandolier)
+			r.Put("/bandolier", zealH.updateBandolier)
+			r.Get("/bandolier/all", zealH.allBandoliers)
+			r.Get("/bandolier/slot-items", zealH.bandolierSlotItems)
+			r.Post("/bandolier/parse-file", zealH.parseBandolierFile)
 		})
 		r.Route("/keys", func(r chi.Router) {
 			r.Get("/", keysH.list)

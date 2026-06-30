@@ -1,11 +1,14 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
@@ -15,6 +18,7 @@ import (
 )
 
 var spellsetFilenameRe = regexp.MustCompile(`(?i)^(.+?)_spellsets\.ini$`)
+var bandolierFilenameRe = regexp.MustCompile(`(?i)^(.+?)_bandolier\.ini$`)
 
 type zealHandler struct {
 	watcher *zeal.Watcher
@@ -293,6 +297,280 @@ func (h *zealHandler) parseSpellsetsFile(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(struct {
 		Spellsets *zeal.SpellsetFile `json:"spellsets"`
 	}{Spellsets: sf})
+}
+
+// GET /api/zeal/bandolier
+// Returns Zeal-exported bandolier sets. With no query, returns the active
+// character's cached sets (or null if none). With ?character=Name, parses that
+// character's <Name>_bandolier.ini directly.
+func (h *zealHandler) bandolier(w http.ResponseWriter, r *http.Request) {
+	resp := struct {
+		Bandolier *zeal.BandolierFile `json:"bandolier"`
+	}{}
+	name := r.URL.Query().Get("character")
+	if name == "" {
+		resp.Bandolier = h.watcher.Bandolier()
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	cfg := h.cfgMgr.Get()
+	if cfg.EQPath == "" {
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	bf, err := zeal.ParseBandolier(zeal.BandolierPath(cfg.EQPath, name), name)
+	if err != nil {
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	resp.Bandolier = bf
+	json.NewEncoder(w).Encode(resp)
+}
+
+// PUT /api/zeal/bandolier
+// Persists a BandolierFile back to <eq_path>/<Character>_bandolier.ini.
+// Body: {"character": "Name", "sets": [{"name": "...", "item_ids": [...]}, ...]}
+//
+// Every non-zero item ID is validated against the character's current inventory
+// AND against the requested slot's worn-slot bit. This is the anti-crash guard:
+// a saved set can never reference an item the character doesn't have or that
+// can't physically go in that slot. Returns the reparsed file on success.
+func (h *zealHandler) updateBandolier(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Character string              `json:"character"`
+		Sets      []zeal.BandolierSet `json:"sets"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if body.Character == "" {
+		http.Error(w, `{"error":"character is required"}`, http.StatusBadRequest)
+		return
+	}
+	cfg := h.cfgMgr.Get()
+	if cfg.EQPath == "" {
+		http.Error(w, `{"error":"EQ path not configured"}`, http.StatusBadRequest)
+		return
+	}
+
+	owned := h.ownedItemIDs(cfg.EQPath, body.Character)
+
+	// Validate slot counts, names, and item ownership/fit up-front so a malformed
+	// request can't corrupt the file or save an unloadable set.
+	seenNames := make(map[string]bool, len(body.Sets))
+	for i, s := range body.Sets {
+		if len(s.ItemIDs) != zeal.BandolierSlotCount {
+			http.Error(w, fmt.Sprintf(`{"error":"set %d (%q) must have %d slots"}`, i, s.Name, zeal.BandolierSlotCount), http.StatusBadRequest)
+			return
+		}
+		if s.Name == "" {
+			http.Error(w, fmt.Sprintf(`{"error":"set %d has empty name"}`, i), http.StatusBadRequest)
+			return
+		}
+		if len([]rune(s.Name)) > 32 {
+			http.Error(w, fmt.Sprintf(`{"error":"set %q name exceeds 32 characters"}`, s.Name), http.StatusBadRequest)
+			return
+		}
+		if strings.ContainsAny(s.Name, "[]\r\n") {
+			http.Error(w, fmt.Sprintf(`{"error":"set %d (%q) contains illegal characters"}`, i, s.Name), http.StatusBadRequest)
+			return
+		}
+		if seenNames[s.Name] {
+			http.Error(w, fmt.Sprintf(`{"error":"duplicate set name %q"}`, s.Name), http.StatusBadRequest)
+			return
+		}
+		seenNames[s.Name] = true
+
+		for slot, id := range s.ItemIDs {
+			if id == 0 {
+				continue // empty slot is always valid
+			}
+			if !owned[id] {
+				http.Error(w, fmt.Sprintf(`{"error":"set %q: item %d is not in %s's inventory"}`, s.Name, id, body.Character), http.StatusBadRequest)
+				return
+			}
+			fits, err := h.itemFitsSlot(id, slot)
+			if err != nil {
+				http.Error(w, `{"error":"failed to validate item slot"}`, http.StatusInternalServerError)
+				return
+			}
+			if !fits {
+				http.Error(w, fmt.Sprintf(`{"error":"set %q: item %d cannot go in the %s slot"}`, s.Name, id, bandolierSlotName(slot)), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	path := zeal.BandolierPath(cfg.EQPath, body.Character)
+	bf := &zeal.BandolierFile{
+		Character: body.Character,
+		Sets:      body.Sets,
+	}
+	if err := zeal.WriteBandolier(path, bf); err != nil {
+		http.Error(w, `{"error":"failed to write bandolier"}`, http.StatusInternalServerError)
+		return
+	}
+
+	reloaded, err := zeal.ParseBandolier(path, body.Character)
+	if err != nil {
+		http.Error(w, `{"error":"wrote file but failed to reparse"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(struct {
+		Bandolier *zeal.BandolierFile `json:"bandolier"`
+	}{Bandolier: reloaded})
+}
+
+// GET /api/zeal/bandolier/all
+// Scans the configured EQ directory for every <CharName>_bandolier.ini and
+// returns one parsed file per character.
+func (h *zealHandler) allBandoliers(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.watcher.AllBandoliers()
+	if err != nil {
+		http.Error(w, `{"error":"failed to scan bandoliers"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(resp)
+}
+
+// GET /api/zeal/bandolier/slot-items?character=Name&slot=0..3&q=search
+// Returns the items the character owns that fit the given bandolier slot,
+// optionally name-filtered. This powers the slot picker and enforces the
+// ownership guard server-side — the UI can only offer items the character has.
+func (h *zealHandler) bandolierSlotItems(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	name := q.Get("character")
+	if name == "" {
+		http.Error(w, `{"error":"character is required"}`, http.StatusBadRequest)
+		return
+	}
+	slot, err := strconv.Atoi(q.Get("slot"))
+	if err != nil || slot < 0 || slot >= zeal.BandolierSlotCount {
+		http.Error(w, `{"error":"slot must be 0..3"}`, http.StatusBadRequest)
+		return
+	}
+	cfg := h.cfgMgr.Get()
+	if cfg.EQPath == "" {
+		writeJSON(w, http.StatusOK, struct {
+			Items []db.BandolierItem `json:"items"`
+		}{Items: []db.BandolierItem{}})
+		return
+	}
+
+	owned := h.ownedItemIDs(cfg.EQPath, name)
+	ids := make([]int, 0, len(owned))
+	for id := range owned {
+		ids = append(ids, id)
+	}
+
+	items, err := h.db.BandolierSlotItems(slot, ids, q.Get("q"))
+	if err != nil {
+		http.Error(w, `{"error":"failed to query slot items"}`, http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Items []db.BandolierItem `json:"items"`
+	}{Items: items})
+}
+
+// POST /api/zeal/bandolier/parse-file
+// Parses an arbitrary bandolier .ini file path (typically chosen via the
+// Electron file dialog when importing another player's sets). The character
+// name is inferred from the filename when possible.
+// Body: {"path": "..."}
+func (h *zealHandler) parseBandolierFile(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if body.Path == "" {
+		http.Error(w, `{"error":"path is required"}`, http.StatusBadRequest)
+		return
+	}
+	if !strings.EqualFold(filepath.Ext(body.Path), ".ini") {
+		http.Error(w, `{"error":"file must have .ini extension"}`, http.StatusBadRequest)
+		return
+	}
+
+	character := ""
+	if m := bandolierFilenameRe.FindStringSubmatch(filepath.Base(body.Path)); m != nil {
+		character = m[1]
+	}
+
+	bf, err := zeal.ParseBandolier(body.Path, character)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"failed to parse: %s"}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+	json.NewEncoder(w).Encode(struct {
+		Bandolier *zeal.BandolierFile `json:"bandolier"`
+	}{Bandolier: bf})
+}
+
+// ownedItemIDs resolves the set of item IDs the named character currently owns,
+// from their Zeal inventory export (falling back to the Quarmy export's
+// inventory section). Includes equipped, bagged, and bank items. Returns an
+// empty set when no export is available.
+func (h *zealHandler) ownedItemIDs(eqPath, character string) map[int]bool {
+	owned := map[int]bool{}
+	add := func(entries []zeal.InventoryEntry) {
+		for _, e := range entries {
+			if e.ID > 0 {
+				owned[e.ID] = true
+			}
+		}
+	}
+	if path := zeal.FindInventoryFile(eqPath, character); path != "" {
+		if inv, err := zeal.ParseInventory(path, character); err == nil {
+			add(inv.Entries)
+		}
+	}
+	if len(owned) == 0 {
+		if path := zeal.FindQuarmyFile(eqPath, character); path != "" {
+			if q, err := zeal.ParseQuarmy(path, character); err == nil {
+				add(q.Inventory)
+			}
+		}
+	}
+	return owned
+}
+
+// itemFitsSlot reports whether item id can be equipped in the given bandolier
+// slot index, by intersecting the item's worn-slot bitmask with the slot bit.
+func (h *zealHandler) itemFitsSlot(id, slot int) (bool, error) {
+	if slot < 0 || slot >= len(db.BandolierSlotBits) {
+		return false, nil
+	}
+	item, err := h.db.GetItem(id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil // owned but not a known DB item — treat as no-fit
+		}
+		return false, err
+	}
+	if item == nil {
+		return false, nil
+	}
+	return item.Slots&db.BandolierSlotBits[slot] != 0, nil
+}
+
+// bandolierSlotName returns the human-readable name for a bandolier slot index.
+func bandolierSlotName(slot int) string {
+	switch slot {
+	case zeal.BandolierPrimary:
+		return "Primary"
+	case zeal.BandolierSecondary:
+		return "Secondary"
+	case zeal.BandolierRange:
+		return "Range"
+	case zeal.BandolierAmmo:
+		return "Ammo"
+	}
+	return "unknown"
 }
 
 // GET /api/zeal/pipe-status
