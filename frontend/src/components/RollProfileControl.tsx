@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Plus, Trash2, ArrowUp, ArrowDown, Check, Layers } from 'lucide-react'
+import { Plus, Trash2, ArrowUp, ArrowDown, Check, Layers, Info, ChevronDown, ChevronRight } from 'lucide-react'
 import type { RollProfile, ProfileScheme, ProfileTier } from '../types/rolls'
 import {
   ROLL_PROFILE_PRESETS,
@@ -38,6 +38,7 @@ export default function RollProfileControl({
 }): React.ReactElement {
   const [selected, setSelected] = useState(() => presetIdFor(profile))
   const [draft, setDraft] = useState<RollProfile>(() => seedDraft(profile))
+  const [infoOpen, setInfoOpen] = useState(false)
 
   // Re-sync when the live profile changes from outside (another window, a WS
   // broadcast), unless the user is mid-edit on a matching custom draft.
@@ -61,6 +62,7 @@ export default function RollProfileControl({
   }
 
   const editing = selected === 'custom'
+  const selectedPreset = ROLL_PROFILE_PRESETS.find((p) => p.id === selected)
   const tiers = draft.tiers ?? []
 
   const patchTier = (idx: number, patch: Partial<ProfileTier>): void => {
@@ -121,7 +123,42 @@ export default function RollProfileControl({
           ))}
           <option value="custom">Custom…</option>
         </select>
+        {!editing && selectedPreset && (
+          <button
+            onClick={() => setInfoOpen((v) => !v)}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-(--color-surface-3)"
+            style={{ color: 'var(--color-muted)' }}
+            title="How this grouping works"
+          >
+            <Info size={12} />
+            {infoOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            <span>How it works</span>
+          </button>
+        )}
       </label>
+
+      {!editing && selectedPreset && infoOpen && (
+        <div
+          className="flex flex-col gap-2 rounded-lg border p-3 text-xs"
+          style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+        >
+          <p style={{ color: 'var(--color-foreground)' }}>{selectedPreset.how}</p>
+          <div className="flex flex-col gap-1">
+            <span
+              className="text-[10px] font-semibold uppercase tracking-wider"
+              style={{ color: 'var(--color-muted)' }}
+            >
+              Examples
+            </span>
+            {selectedPreset.examples.map((ex, i) => (
+              <div key={i} className="flex gap-1.5" style={{ color: 'var(--color-muted)' }}>
+                <span aria-hidden>•</span>
+                <span>{ex}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {editing && (
         <div
