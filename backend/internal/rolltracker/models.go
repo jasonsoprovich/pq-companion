@@ -108,6 +108,12 @@ type Session struct {
 	AutoStopAt time.Time `json:"auto_stop_at,omitempty"`
 	// Rolls is every roll received for this session in arrival order.
 	Rolls []Roll `json:"rolls"`
+
+	// autoSuggested records that the best-effort loot-item auto-suggest has
+	// already had its one shot at this session, so a later matching chat
+	// line doesn't repeatedly re-fill (or fight a label the user typed).
+	// Unexported: internal bookkeeping, never serialized.
+	autoSuggested bool
 }
 
 // State is the full tracker payload broadcast over WebSocket and returned

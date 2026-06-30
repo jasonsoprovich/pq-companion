@@ -904,6 +904,11 @@ func main() {
 				slog.Warn("persist roll tracker settings", "err", err)
 			}
 		})
+		// Best-effort loot-item auto-suggest: resolve a raid/chat line like
+		// "Robe of the Lost Circle 333" to the canonical item name so the
+		// matching roll session is labeled automatically. Best-effort and
+		// always user-overridable.
+		rollTracker.SetItemMatcher(database.MatchItemNameInText)
 	}
 
 	// Central dispatch callbacks, shared by the live tailer and the log
@@ -961,6 +966,7 @@ func main() {
 		}
 		triggerEngine.Handle(ts, msg)
 		chChainMatcher.HandleLine(ts, msg)
+		rollTracker.HandleLine(ts, msg)
 		if keyringConsumer != nil {
 			keyringConsumer.HandleLine(ts, msg)
 		}

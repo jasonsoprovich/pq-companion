@@ -60,6 +60,36 @@ func scanItem(row interface {
 	return &it, nil
 }
 
+// MatchItemNameInText returns the longest game-item name that appears as a
+// case-insensitive substring of text, or ok=false when none does. It backs
+// the roll tracker's best-effort loot-item auto-suggest: given a raid/chat
+// line like "Robe of the Lost Circle 333 pick", it recovers the canonical
+// item name regardless of surrounding words or the roll number.
+//
+// Names shorter than minItemNameMatchLen are ignored so common short item
+// names (e.g. "Bone") don't spuriously match ordinary chatter. LIKE is
+// case-insensitive for ASCII in SQLite, which covers EQ item names; the
+// longest match wins so "Robe of the Lost Circle" beats a bare "Robe".
+func (db *DB) MatchItemNameInText(text string) (string, bool) {
+	text = strings.TrimSpace(text)
+	if len(text) < minItemNameMatchLen {
+		return "", false
+	}
+	const q = `SELECT Name FROM items
+WHERE LENGTH(Name) >= ? AND ? LIKE '%' || Name || '%'
+ORDER BY LENGTH(Name) DESC
+LIMIT 1`
+	var name string
+	if err := db.QueryRow(q, minItemNameMatchLen, text).Scan(&name); err != nil {
+		return "", false
+	}
+	return name, true
+}
+
+// minItemNameMatchLen is the shortest item name (and shortest input text)
+// the loot-item auto-suggest will consider, to keep false positives down.
+const minItemNameMatchLen = 5
+
 // GetItem returns the item with the given ID, or sql.ErrNoRows if not found.
 // Returns sql.ErrNoRows for any ID on the hidden list.
 func (db *DB) GetItem(id int) (*Item, error) {

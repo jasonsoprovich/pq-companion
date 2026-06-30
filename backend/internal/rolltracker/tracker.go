@@ -1,9 +1,12 @@
 package rolltracker
 
 import (
+	"regexp"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/chat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
@@ -25,6 +28,36 @@ const maxSessions = 20
 // rolls from a brand-new drop with the same Max to merge into an old one.
 const staleAfter = 5 * time.Minute
 
+// lootCallTTL bounds how far back the auto-suggest looks for the chat line
+// that named the item. A leader posts "Robe of the Lost Circle 333" and the
+// rolls follow within seconds; two minutes is comfortably wide while keeping
+// stale calls from mislabeling an unrelated later roll on the same number.
+const lootCallTTL = 2 * time.Minute
+
+// maxLootCalls caps the recent-loot-call ring so the buffer can't grow
+// unbounded during a long session of number-heavy chatter.
+const maxLootCalls = 32
+
+// reLootNumber pulls candidate roll bounds (3–4 digit numbers) out of a chat
+// line. Loot is essentially always called with a 3–4 digit /random max;
+// requiring that width skips the 1–2 digit counts common in raid chatter
+// ("inc in 30", "coth 1").
+var reLootNumber = regexp.MustCompile(`\b\d{3,4}\b`)
+
+// ItemMatcher resolves a chat line to the loot-item name it mentions,
+// returning ok=false when nothing convincing matches. It is injected (rather
+// than the tracker importing the game DB directly) so the package stays
+// decoupled and the heuristic is trivially stubbable in tests.
+type ItemMatcher func(line string) (name string, ok bool)
+
+// lootCall is a recent chat line that mentioned one or more 3–4 digit
+// numbers — a candidate "roll <n> for <item>" announcement.
+type lootCall struct {
+	ts      time.Time
+	numbers []int
+	text    string
+}
+
 // Tracker maintains the live set of /random sessions inferred from the
 // EQ log feed. It is safe for concurrent use.
 type Tracker struct {
@@ -42,6 +75,13 @@ type Tracker struct {
 	// while we wait for its matching EventRollResult.
 	pendingRoller string
 	pendingAt     time.Time
+
+	// matchItem, when set, turns on best-effort loot-item auto-suggest:
+	// recent chat lines naming a 3–4 digit number are buffered, and when a
+	// session's Max matches one the line is run through matchItem to label
+	// the session. nil disables the feature entirely.
+	matchItem   ItemMatcher
+	recentCalls []lootCall // chronological; newest last
 
 	// onChange, if set, is invoked (outside the lock) whenever the winner
 	// rule, mode, or auto-stop window changes, so the caller can persist the
@@ -83,6 +123,143 @@ func (t *Tracker) SetOnChange(fn func(rule WinnerRule, mode Mode, autoStopSecond
 	t.mu.Lock()
 	t.onChange = fn
 	t.mu.Unlock()
+}
+
+// SetItemMatcher enables best-effort loot-item auto-suggest by registering
+// the resolver used to turn a chat line into an item name. Passing nil
+// disables auto-suggest. Safe to call once at startup before events flow.
+func (t *Tracker) SetItemMatcher(fn ItemMatcher) {
+	t.mu.Lock()
+	t.matchItem = fn
+	t.mu.Unlock()
+}
+
+// HandleLine feeds a raw (post-timestamp) log line to the auto-suggest
+// heuristic. It buffers chat lines that mention a 3–4 digit number as
+// candidate loot calls and, when the number matches an active unlabeled
+// session, labels it with the item the line names. A no-op unless an
+// ItemMatcher is registered. Wire it to the same raw-line dispatch as the
+// other line consumers.
+func (t *Tracker) HandleLine(ts time.Time, msg string) {
+	t.mu.Lock()
+	matcher := t.matchItem
+	t.mu.Unlock()
+	if matcher == nil {
+		return
+	}
+	// Only genuine player chat — never combat spam, where "for 333 points
+	// of damage" would masquerade as a roll call.
+	parsed, ok := chat.ParseChat(msg)
+	if !ok {
+		return
+	}
+	nums := extractRollNumbers(parsed.Message)
+	if len(nums) == 0 {
+		return
+	}
+
+	t.mu.Lock()
+	t.recentCalls = append(t.recentCalls, lootCall{ts: ts, numbers: nums, text: parsed.Message})
+	t.pruneCallsLocked(ts)
+	// Does this line name a number belonging to an active, still-unlabeled
+	// session? If so, claim the attempt now (under the lock) and resolve
+	// the name outside it.
+	var targets []uint64
+	for _, s := range t.sessions {
+		if s.Active && s.ItemName == "" && !s.autoSuggested && containsInt(nums, s.Max) {
+			s.autoSuggested = true
+			targets = append(targets, s.ID)
+		}
+	}
+	t.mu.Unlock()
+	if len(targets) == 0 {
+		return
+	}
+
+	name, ok := matcher(parsed.Message)
+	if !ok {
+		return
+	}
+	for _, id := range targets {
+		t.applyAutoSuggestion(id, name)
+	}
+}
+
+// recentCallForLocked returns the text of the most recent buffered loot call
+// (within lootCallTTL of now) that mentioned max, or ok=false. mu must be
+// held.
+func (t *Tracker) recentCallForLocked(max int, now time.Time) (string, bool) {
+	for i := len(t.recentCalls) - 1; i >= 0; i-- {
+		c := t.recentCalls[i]
+		if now.Sub(c.ts) > lootCallTTL {
+			break // older entries only; buffer is chronological
+		}
+		if containsInt(c.numbers, max) {
+			return c.text, true
+		}
+	}
+	return "", false
+}
+
+// pruneCallsLocked drops loot calls older than lootCallTTL and trims the
+// buffer to maxLootCalls. mu must be held.
+func (t *Tracker) pruneCallsLocked(now time.Time) {
+	cut := 0
+	for cut < len(t.recentCalls) && now.Sub(t.recentCalls[cut].ts) > lootCallTTL {
+		cut++
+	}
+	if cut > 0 {
+		t.recentCalls = t.recentCalls[cut:]
+	}
+	if len(t.recentCalls) > maxLootCalls {
+		t.recentCalls = t.recentCalls[len(t.recentCalls)-maxLootCalls:]
+	}
+}
+
+// applyAutoSuggestion sets a session's item name from the heuristic, but only
+// while it's still blank — so a label the user typed in the brief window
+// since the attempt was claimed always wins.
+func (t *Tracker) applyAutoSuggestion(id uint64, name string) {
+	t.mu.Lock()
+	var changed bool
+	for _, s := range t.sessions {
+		if s.ID == id && s.ItemName == "" {
+			s.ItemName = name
+			changed = true
+			break
+		}
+	}
+	state := t.stateLocked()
+	t.mu.Unlock()
+	if changed {
+		t.broadcast(state)
+	}
+}
+
+// extractRollNumbers returns the distinct 3–4 digit numbers in a chat line.
+func extractRollNumbers(s string) []int {
+	matches := reLootNumber.FindAllString(s, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	out := make([]int, 0, len(matches))
+	for _, m := range matches {
+		n, err := strconv.Atoi(m)
+		if err != nil || containsInt(out, n) {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
+func containsInt(xs []int, want int) bool {
+	for _, x := range xs {
+		if x == want {
+			return true
+		}
+	}
+	return false
 }
 
 // notifyChangeLocked snapshots the current settings and schedules the
@@ -144,6 +321,7 @@ func (t *Tracker) recordResult(min, max, value int, ts time.Time) {
 			break
 		}
 	}
+	wasFirst := len(sess.Rolls) == 0
 	sess.Rolls = append(sess.Rolls, Roll{
 		Roller:    roller,
 		Value:     value,
@@ -151,9 +329,31 @@ func (t *Tracker) recordResult(min, max, value int, ts time.Time) {
 		Duplicate: dup,
 	})
 	sess.LastRollAt = ts
+
+	// On the session's first roll, see whether a recent chat line already
+	// named the item (the leader's call usually precedes the rolls). Mark
+	// the session attempted now, but run the (DB-backed) matcher after the
+	// lock is released so we never hold mu across I/O.
+	var suggestID uint64
+	var suggestText string
+	if wasFirst && sess.ItemName == "" && !sess.autoSuggested && t.matchItem != nil {
+		if text, ok := t.recentCallForLocked(max, ts); ok {
+			sess.autoSuggested = true
+			suggestID = sess.ID
+			suggestText = text
+		}
+	}
+
+	matcher := t.matchItem
 	state := t.stateLocked()
 	t.mu.Unlock()
 	t.broadcast(state)
+
+	if suggestID != 0 && matcher != nil {
+		if name, ok := matcher(suggestText); ok {
+			t.applyAutoSuggestion(suggestID, name)
+		}
+	}
 }
 
 // sessionForLocked returns the active session for the min–max range,

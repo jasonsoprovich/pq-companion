@@ -1,11 +1,31 @@
 package rolltracker
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 )
+
+// stubMatcher returns an ItemMatcher that recognizes any of the given names
+// as a case-insensitive substring of the line, longest match winning — a
+// DB-free stand-in for db.MatchItemNameInText.
+func stubMatcher(names ...string) ItemMatcher {
+	return func(line string) (string, bool) {
+		low := strings.ToLower(line)
+		best := ""
+		for _, n := range names {
+			if strings.Contains(low, strings.ToLower(n)) && len(n) > len(best) {
+				best = n
+			}
+		}
+		if best == "" {
+			return "", false
+		}
+		return best, true
+	}
+}
 
 func newTrackerForTest() *Tracker {
 	return New(nil)
@@ -130,6 +150,73 @@ func TestSetItemName(t *testing.T) {
 	}
 	if tr.SetItemName(9999, "x") {
 		t.Fatalf("SetItemName should return false for an unknown session")
+	}
+}
+
+func TestAutoSuggestCallBeforeRoll(t *testing.T) {
+	tr := newTrackerForTest()
+	tr.SetItemMatcher(stubMatcher("Robe of the Lost Circle"))
+	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)
+	// Leader announces the item, then the rolls follow.
+	tr.HandleLine(base, "Belnoctourne tells the raid, 'Robe of the Lost Circle 333'")
+	feedRoll(t, tr, "Astrael", 333, 200, base.Add(2*time.Second))
+
+	if got := tr.State().Sessions[0].ItemName; got != "Robe of the Lost Circle" {
+		t.Fatalf("session should be auto-labeled, got %q", got)
+	}
+}
+
+func TestAutoSuggestCallAfterFirstRoll(t *testing.T) {
+	tr := newTrackerForTest()
+	tr.SetItemMatcher(stubMatcher("Sword of Foo"))
+	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)
+	feedRoll(t, tr, "Astrael", 444, 200, base)
+	if tr.State().Sessions[0].ItemName != "" {
+		t.Fatalf("should be unlabeled before any call")
+	}
+	// The call arrives a moment later; the active session still gets labeled.
+	tr.HandleLine(base.Add(time.Second), "Leader tells the raid, 'Sword of Foo 444'")
+	if got := tr.State().Sessions[0].ItemName; got != "Sword of Foo" {
+		t.Fatalf("session should be labeled after the call, got %q", got)
+	}
+}
+
+func TestAutoSuggestNumberMustMatch(t *testing.T) {
+	tr := newTrackerForTest()
+	tr.SetItemMatcher(stubMatcher("Robe of the Lost Circle"))
+	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)
+	// Call names 555 but the roll is a 333 — different drop, no label.
+	tr.HandleLine(base, "Leader tells the raid, 'Robe of the Lost Circle 555'")
+	feedRoll(t, tr, "Astrael", 333, 100, base.Add(time.Second))
+	if got := tr.State().Sessions[0].ItemName; got != "" {
+		t.Fatalf("a 555 call must not label a 333 roll, got %q", got)
+	}
+}
+
+func TestAutoSuggestIgnoresNonChat(t *testing.T) {
+	tr := newTrackerForTest()
+	tr.SetItemMatcher(stubMatcher("Robe of the Lost Circle"))
+	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)
+	// A combat line carries a 333 but isn't player chat — must be ignored,
+	// otherwise damage numbers would masquerade as roll calls.
+	tr.HandleLine(base, "You crush a goblin for 333 points of damage.")
+	feedRoll(t, tr, "Astrael", 333, 100, base.Add(time.Second))
+	if got := tr.State().Sessions[0].ItemName; got != "" {
+		t.Fatalf("non-chat line must not trigger auto-suggest, got %q", got)
+	}
+}
+
+func TestAutoSuggestKeepsManualLabel(t *testing.T) {
+	tr := newTrackerForTest()
+	tr.SetItemMatcher(stubMatcher("Robe of the Lost Circle"))
+	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)
+	feedRoll(t, tr, "Astrael", 333, 100, base)
+	id := tr.State().Sessions[0].ID
+	tr.SetItemName(id, "Officer's Pick")
+	// A later matching call must not clobber the user's label.
+	tr.HandleLine(base.Add(time.Second), "Leader tells the raid, 'Robe of the Lost Circle 333'")
+	if got := tr.State().Sessions[0].ItemName; got != "Officer's Pick" {
+		t.Fatalf("manual label must be preserved, got %q", got)
 	}
 }
 
