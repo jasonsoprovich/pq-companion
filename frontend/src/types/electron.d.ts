@@ -101,6 +101,7 @@ export interface ElectronAPI {
     saveExportBundle: (suggestedName?: string) => Promise<string | null>
     openImportBundle: () => Promise<string | null>
     openSpellsetsFile: () => Promise<string | null>
+    openMacrosFile: () => Promise<string | null>
   }
   shell: {
     openConfigFolder: () => Promise<string>

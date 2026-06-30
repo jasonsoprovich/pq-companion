@@ -166,6 +166,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('dialog:open-import-bundle'),
     openSpellsetsFile: (): Promise<string | null> =>
       ipcRenderer.invoke('dialog:open-spellsets-file'),
+    openMacrosFile: (): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:open-macros-file'),
   },
   shell: {
     openConfigFolder: (): Promise<string> => ipcRenderer.invoke('shell:open-config-folder'),
