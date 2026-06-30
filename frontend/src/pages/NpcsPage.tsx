@@ -918,27 +918,36 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
                       : formatRespawnTime(sg.respawn_time)}
                   </span>
                 </div>
-                {sg.members.map((m) => (
-                  <div
-                    key={m.npc_id}
-                    className="flex items-center justify-between border-t py-0.5 text-sm"
-                    style={{ borderColor: 'var(--color-border)' }}
-                  >
-                    <span
-                      className="truncate"
-                      style={{
-                        color: m.npc_id === npc.id
-                          ? 'var(--color-primary)'
-                          : 'var(--color-foreground)',
-                      }}
+                {sg.members.map((m) => {
+                  const isCurrent = m.npc_id === npc.id
+                  return (
+                    <div
+                      key={m.npc_id}
+                      className="flex items-center justify-between border-t py-0.5 text-sm"
+                      style={{ borderColor: 'var(--color-border)' }}
                     >
-                      {formatNPCName(m.name)}
-                    </span>
-                    <span className="ml-3 shrink-0 text-xs" style={{ color: 'var(--color-muted)' }}>
-                      {m.chance}%
-                    </span>
-                  </div>
-                ))}
+                      {isCurrent ? (
+                        <span
+                          className="truncate"
+                          style={{ color: 'var(--color-primary)' }}
+                        >
+                          {formatNPCName(m.name)}
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => navigate(`/npcs?select=${m.npc_id}`)}
+                          className="min-w-0 truncate text-left underline decoration-dotted"
+                          style={{ color: 'var(--color-foreground)' }}
+                        >
+                          {formatNPCName(m.name)}
+                        </button>
+                      )}
+                      <span className="ml-3 shrink-0 text-xs" style={{ color: 'var(--color-muted)' }}>
+                        {m.chance}%
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             ))}
           </Section>
