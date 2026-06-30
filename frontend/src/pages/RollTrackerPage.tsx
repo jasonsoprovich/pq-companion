@@ -9,8 +9,19 @@ import {
   updateRollsSettings,
   setRollItemName,
 } from '../services/api'
-import type { RollsState, RollSession, WinnerRule } from '../types/rolls'
-import { winnersFor, sortRolls, fmtRollTime, countdownSeconds, buildRollSummary } from '../lib/rollHelpers'
+import type { RollsState, RollSession, WinnerRule, RollProfile } from '../types/rolls'
+import {
+  winnersFor,
+  sortRolls,
+  fmtRollTime,
+  countdownSeconds,
+  buildRollSummary,
+  groupContests,
+  contestOutcome,
+  buildContestSummary,
+  type Contest,
+} from '../lib/rollHelpers'
+import RollProfileControl from '../components/RollProfileControl'
 import { WSEvent } from '../lib/wsEvents'
 
 function SessionCard({
@@ -200,12 +211,229 @@ function SessionCard({
   )
 }
 
+function ContestCard({
+  contest,
+  rule,
+  now,
+  onStop,
+  onRemove,
+  onSetItemName,
+}: {
+  contest: Contest
+  rule: WinnerRule
+  now: number
+  onStop: (id: number) => void
+  onRemove: (id: number) => void
+  onSetItemName: (id: number, name: string) => void
+}): React.ReactElement {
+  const outcome = useMemo(() => contestOutcome(contest, rule), [contest, rule])
+  const summary = useMemo(() => buildContestSummary(contest, rule), [contest, rule])
+  const totalRolls = contest.tiers.reduce((n, t) => n + t.rolls.length, 0)
+  // Countdown shown from the soonest-stopping live session in the contest.
+  const remaining = contest.active
+    ? contest.sessions
+        .map((s) => (s.active ? countdownSeconds(s, now) : null))
+        .filter((v): v is number => v !== null)
+        .sort((a, b) => a - b)[0] ?? null
+    : null
+
+  const [nameDraft, setNameDraft] = useState(contest.itemName)
+  useEffect(() => setNameDraft(contest.itemName), [contest.itemName])
+  const commitName = (): void => {
+    const next = nameDraft.trim()
+    if (next === contest.itemName) return
+    // Apply to every backing session so the label sticks regardless of which
+    // tier represents the contest.
+    for (const s of contest.sessions) onSetItemName(s.id, next)
+  }
+
+  const [copied, setCopied] = useState(false)
+  const handleCopy = (): void => {
+    if (!summary) return
+    navigator.clipboard
+      ?.writeText(summary)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => {})
+  }
+
+  return (
+    <div
+      className="rounded-lg border"
+      style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+    >
+      <div
+        className="flex items-center justify-between gap-3 border-b px-4 py-2"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <Trophy size={16} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+          <div className="min-w-0 flex-1">
+            <input
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={commitName}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+              }}
+              placeholder="Add item name…"
+              className="w-full bg-transparent text-sm font-semibold outline-none placeholder:font-normal placeholder:text-(--color-muted)"
+              style={{ color: 'var(--color-foreground)' }}
+            />
+            <div className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+              {contest.tiers.map((t) => `${t.label} ${t.max}`).join(' · ')} · {totalRolls} roll
+              {totalRolls === 1 ? '' : 's'}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {outcome && (
+            <span
+              className="hidden items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold sm:flex"
+              style={{ backgroundColor: 'var(--color-surface-3)', color: '#facc15' }}
+              title="Winning tier"
+            >
+              {outcome.tierLabel}
+            </span>
+          )}
+          {remaining !== null && (
+            <span
+              className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-mono tabular-nums"
+              style={{
+                backgroundColor: remaining <= 5 ? '#b45309' : 'var(--color-surface-3)',
+                color: remaining <= 5 ? 'white' : 'var(--color-foreground)',
+              }}
+            >
+              <Timer size={11} /> {remaining}s
+            </span>
+          )}
+          {contest.active ? (
+            <span
+              className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-semibold uppercase"
+              style={{ backgroundColor: '#15803d', color: 'white' }}
+            >
+              <Circle size={8} fill="white" /> Live
+            </span>
+          ) : (
+            <span
+              className="rounded px-2 py-0.5 text-[10px] font-semibold uppercase"
+              style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-muted)' }}
+            >
+              Stopped
+            </span>
+          )}
+          <button
+            onClick={handleCopy}
+            disabled={!summary}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-(--color-surface-3) disabled:opacity-30"
+            style={{ border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+            title="Copy the result to paste in game"
+          >
+            {copied ? <Check size={11} /> : <Copy size={11} />} {copied ? 'Copied' : 'Copy'}
+          </button>
+          {contest.active && (
+            <button
+              onClick={() => contest.sessions.forEach((s) => onStop(s.id))}
+              className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-(--color-surface-3)"
+              style={{ border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+              title="Stop accepting new rolls for this contest"
+            >
+              <Square size={11} /> Stop
+            </button>
+          )}
+          <button
+            onClick={() => contest.sessions.forEach((s) => onRemove(s.id))}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-(--color-surface-3)"
+            style={{ border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+            title="Remove this contest"
+          >
+            <X size={11} /> Remove
+          </button>
+        </div>
+      </div>
+
+      <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+        {contest.tiers.map((tier) => {
+          const isWinningTier = outcome?.tierLabel === tier.label
+          const ordered = sortRolls(tier.rolls, rule)
+          return (
+            <div key={tier.label}>
+              <div
+                className="flex items-center justify-between px-4 py-1 text-[11px] font-semibold uppercase tracking-wider"
+                style={{
+                  color: isWinningTier ? '#facc15' : 'var(--color-muted)',
+                  backgroundColor: 'var(--color-surface-2)',
+                }}
+              >
+                <span>
+                  {tier.label} · {tier.max}
+                </span>
+                <span>
+                  {tier.rolls.length} roll{tier.rolls.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              {ordered.length === 0 ? (
+                <div className="px-4 py-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
+                  Waiting for rolls…
+                </div>
+              ) : (
+                <ul>
+                  {ordered.map((r, idx) => {
+                    const isWinner =
+                      isWinningTier && !r.duplicate && outcome?.winners.includes(r.roller)
+                    return (
+                      <li
+                        key={`${r.roller}-${r.timestamp}-${idx}`}
+                        className="flex items-center justify-between px-4 py-1.5 text-sm"
+                        style={{ color: r.duplicate ? 'var(--color-muted)' : 'var(--color-foreground)' }}
+                      >
+                        <div className="flex items-center gap-2">
+                          {isWinner && <Trophy size={13} style={{ color: '#facc15' }} />}
+                          <span
+                            style={{
+                              textDecoration: r.duplicate ? 'line-through' : 'none',
+                              fontWeight: isWinner ? 600 : 400,
+                            }}
+                          >
+                            {r.roller}
+                          </span>
+                          {r.duplicate && (
+                            <span
+                              className="rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
+                              style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-muted)' }}
+                            >
+                              reroll
+                            </span>
+                          )}
+                        </div>
+                        <span
+                          className="tabular-nums font-mono"
+                          style={{ color: isWinner ? '#facc15' : 'var(--color-foreground)' }}
+                        >
+                          {r.value}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function RollTrackerPage(): React.ReactElement {
   const [state, setState] = useState<RollsState>({
     sessions: [],
     winner_rule: 'highest',
     mode: 'manual',
     auto_stop_seconds: 45,
+    profile: { mode: 'simple' },
   })
   const [error, setError] = useState<string | null>(null)
   // 1s tick so countdown badges, "Live" indicators, and the "started Xs
@@ -261,6 +489,15 @@ export default function RollTrackerPage(): React.ReactElement {
     if (mode === state.mode) return
     updateRollsSettings({ mode }).then(setState).catch((e) => setError(String(e)))
   }
+
+  const handleProfile = (profile: RollProfile): void => {
+    updateRollsSettings({ profile }).then(setState).catch((e) => setError(String(e)))
+  }
+
+  const { contests, ungrouped } = useMemo(
+    () => groupContests(state.sessions, state.profile),
+    [state.sessions, state.profile],
+  )
 
   const commitDuration = (): void => {
     const parsed = parseInt(durationDraft, 10)
@@ -383,6 +620,8 @@ export default function RollTrackerPage(): React.ReactElement {
         </div>
       </div>
 
+      <RollProfileControl profile={state.profile} onChange={handleProfile} />
+
       {error && (
         <div
           className="rounded px-3 py-2 text-xs"
@@ -405,7 +644,18 @@ export default function RollTrackerPage(): React.ReactElement {
         </div>
       ) : (
         <div className="flex flex-col gap-3 overflow-y-auto">
-          {state.sessions.map((s) => (
+          {contests.map((c) => (
+            <ContestCard
+              key={c.key}
+              contest={c}
+              rule={state.winner_rule}
+              now={now}
+              onStop={handleStop}
+              onRemove={handleRemove}
+              onSetItemName={handleSetItemName}
+            />
+          ))}
+          {ungrouped.map((s) => (
             <SessionCard
               key={s.id}
               session={s}

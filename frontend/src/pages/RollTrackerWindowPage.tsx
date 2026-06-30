@@ -34,7 +34,17 @@ import {
   setRollItemName,
 } from '../services/api'
 import type { RollsState, RollSession, WinnerRule, RollMode } from '../types/rolls'
-import { winnersFor, sortRolls, countdownSeconds, buildRollSummary } from '../lib/rollHelpers'
+import {
+  winnersFor,
+  sortRolls,
+  countdownSeconds,
+  buildRollSummary,
+  groupContests,
+  contestOutcome,
+  buildContestSummary,
+  type Contest,
+} from '../lib/rollHelpers'
+import { ROLL_PROFILE_PRESETS, presetIdFor } from '../lib/rollProfilePresets'
 import { WSEvent } from '../lib/wsEvents'
 
 function SessionRow({
@@ -219,6 +229,170 @@ function SessionRow({
   )
 }
 
+function ContestRow({
+  contest,
+  rule,
+  onStop,
+  onRemove,
+  onSetItemName,
+}: {
+  contest: Contest
+  rule: WinnerRule
+  onStop: (id: number) => void
+  onRemove: (id: number) => void
+  onSetItemName: (id: number, name: string) => void
+}): React.ReactElement {
+  const outcome = useMemo(() => contestOutcome(contest, rule), [contest, rule])
+  const summary = useMemo(() => buildContestSummary(contest, rule), [contest, rule])
+
+  const [nameDraft, setNameDraft] = useState(contest.itemName)
+  useEffect(() => setNameDraft(contest.itemName), [contest.itemName])
+  const commitName = (): void => {
+    const next = nameDraft.trim()
+    if (next === contest.itemName) return
+    for (const s of contest.sessions) onSetItemName(s.id, next)
+  }
+
+  const [copied, setCopied] = useState(false)
+  const handleCopy = (): void => {
+    if (!summary) return
+    navigator.clipboard
+      ?.writeText(summary)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => {})
+  }
+
+  return (
+    <div style={{ padding: '4px 8px 6px', borderBottom: '1px solid rgba(255,255,255,0.1)', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, flex: 1 }}>
+          <Trophy size={12} style={{ color: '#a5b4fc', flexShrink: 0 }} />
+          <input
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onBlur={commitName}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            }}
+            placeholder="Item name…"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: 'rgba(255,255,255,0.95)',
+              fontSize: 12,
+              fontWeight: 700,
+              textShadow: '0 1px 2px rgba(0,0,0,0.9)',
+            }}
+          />
+          {outcome && (
+            <span style={{ fontSize: 9, color: '#facc15', textTransform: 'uppercase', flexShrink: 0 }}>
+              {outcome.tierLabel}
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button
+            onClick={handleCopy}
+            disabled={!summary}
+            title="Copy result to paste in game"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: summary ? 'pointer' : 'default',
+              padding: '1px 2px',
+              color: copied ? '#22c55e' : 'rgba(255,255,255,0.6)',
+              opacity: summary ? 1 : 0.3,
+            }}
+          >
+            {copied ? <Check size={11} /> : <Copy size={11} />}
+          </button>
+          {contest.active && (
+            <button
+              onClick={() => contest.sessions.forEach((s) => onStop(s.id))}
+              title="Stop this contest"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 2px', color: 'rgba(255,255,255,0.6)' }}
+            >
+              <Square size={11} />
+            </button>
+          )}
+          <button
+            onClick={() => contest.sessions.forEach((s) => onRemove(s.id))}
+            title="Remove this contest"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 2px', color: 'rgba(255,255,255,0.6)' }}
+          >
+            <X size={11} />
+          </button>
+        </div>
+      </div>
+      {contest.tiers.map((tier) => {
+        const isWinningTier = outcome?.tierLabel === tier.label
+        const ordered = sortRolls(tier.rolls, rule)
+        return (
+          <div key={tier.label} style={{ marginTop: 2 }}>
+            <div
+              style={{
+                fontSize: 9,
+                textTransform: 'uppercase',
+                letterSpacing: 0.4,
+                color: isWinningTier ? '#facc15' : 'rgba(255,255,255,0.45)',
+                paddingLeft: 4,
+                textShadow: '0 1px 2px rgba(0,0,0,0.85)',
+              }}
+            >
+              {tier.label} · {tier.max}
+            </div>
+            {ordered.map((r, idx) => {
+              const isWinner = isWinningTier && !r.duplicate && outcome?.winners.includes(r.roller)
+              return (
+                <div
+                  key={`${r.roller}-${r.timestamp}-${idx}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontSize: 11,
+                    color: r.duplicate ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.9)',
+                    paddingLeft: 10,
+                    textShadow: '0 1px 2px rgba(0,0,0,0.85)',
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      textDecoration: r.duplicate ? 'line-through' : 'none',
+                      fontWeight: isWinner ? 700 : 500,
+                    }}
+                  >
+                    {isWinner && <Trophy size={10} style={{ color: '#facc15' }} />}
+                    {r.roller}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: 'monospace',
+                      color: isWinner ? '#facc15' : 'inherit',
+                      fontWeight: isWinner ? 700 : 500,
+                    }}
+                  >
+                    {r.value}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function RollTrackerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
   const chrome = useOverlayChromeFade()
@@ -230,6 +404,7 @@ export default function RollTrackerWindowPage(): React.ReactElement {
     winner_rule: 'highest',
     mode: 'manual',
     auto_stop_seconds: 45,
+    profile: { mode: 'simple' },
   })
   const [now, setNow] = useState(() => Date.now())
   const [durationDraft, setDurationDraft] = useState<string>('')
@@ -264,6 +439,15 @@ export default function RollTrackerWindowPage(): React.ReactElement {
     if (mode === state.mode) return
     updateRollsSettings({ mode }).then(setState).catch(() => {})
   }
+  const handlePreset = (id: string): void => {
+    const preset = ROLL_PROFILE_PRESETS.find((p) => p.id === id)
+    if (preset) updateRollsSettings({ profile: preset.profile }).then(setState).catch(() => {})
+  }
+  const { contests, ungrouped } = useMemo(
+    () => groupContests(state.sessions, state.profile),
+    [state.sessions, state.profile],
+  )
+  const presetId = presetIdFor(state.profile)
   const commitDuration = (): void => {
     const parsed = parseInt(durationDraft, 10)
     if (Number.isNaN(parsed) || parsed < 5 || parsed > 600) {
@@ -399,6 +583,28 @@ export default function RollTrackerWindowPage(): React.ReactElement {
               <ArrowDownAZ size={11} />
             </button>
           </div>
+          <select
+            value={presetId}
+            onChange={(e) => handlePreset(e.target.value)}
+            disabled={presetId === 'custom'}
+            title="Grouping — edit Custom on the Roll Tracker page"
+            style={{
+              background: 'rgba(20,20,24,0.9)',
+              color: 'rgba(255,255,255,0.85)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 3,
+              fontSize: 10,
+              padding: '1px 2px',
+              maxWidth: 104,
+            }}
+          >
+            {ROLL_PROFILE_PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+            {presetId === 'custom' && <option value="custom">Custom</option>}
+          </select>
           <button
             onClick={() => { clearRolls().catch(() => {}) }}
             title="Clear all sessions"
@@ -440,17 +646,29 @@ export default function RollTrackerWindowPage(): React.ReactElement {
             </span>
           </div>
         ) : (
-          state.sessions.map((s) => (
-            <SessionRow
-              key={s.id}
-              session={s}
-              rule={state.winner_rule}
-              now={now}
-              onStop={handleStop}
-              onRemove={handleRemove}
-              onSetItemName={handleSetItemName}
-            />
-          ))
+          <>
+            {contests.map((c) => (
+              <ContestRow
+                key={c.key}
+                contest={c}
+                rule={state.winner_rule}
+                onStop={handleStop}
+                onRemove={handleRemove}
+                onSetItemName={handleSetItemName}
+              />
+            ))}
+            {ungrouped.map((s) => (
+              <SessionRow
+                key={s.id}
+                session={s}
+                rule={state.winner_rule}
+                now={now}
+                onStop={handleStop}
+                onRemove={handleRemove}
+                onSetItemName={handleSetItemName}
+              />
+            ))}
+          </>
         )}
       </div>
     </div>
