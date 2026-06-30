@@ -816,6 +816,9 @@ function setupAutoUpdater(): void {
 // ── Window management ─────────────────────────────────────────────────────────
 
 function closeAllOverlays(): void {
+  // Capture the open set for "restore on launch" before we tear the windows
+  // down — once destroyed, currentlyOpenOverlayNames() would report nothing.
+  snapshotAutoOpenOverlays()
   for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, customTimerWindow, triggerOverlayWindow, npcOverlayWindow, threatOverlayWindow, rollTrackerWindow, respawnTimerWindow, chChainWindow, chMetronomeWindow]) {
     if (win && !win.isDestroyed()) win.destroy()
   }
@@ -2144,6 +2147,23 @@ function currentlyOpenOverlayNames(): OverlayName[] {
   })
 }
 
+// Snapshot which popout overlays are open so "restore overlays on launch" can
+// re-open exactly that set next time. Must run while the overlay windows are
+// still alive — on the X-to-quit path closeAllOverlays() destroys them before
+// before-quit fires, so this is called from BOTH closeAllOverlays() (X path)
+// and before-quit (tray/app.quit path). The one-shot guard means whichever
+// fires first captures the live set and the other becomes a no-op, so a late
+// run can never clobber a good snapshot with an empty list.
+let didSnapshotAutoOpen = false
+function snapshotAutoOpenOverlays(): void {
+  if (didSnapshotAutoOpen) return
+  const store = loadAutoOpenStore()
+  if (!store.enabled) return
+  didSnapshotAutoOpen = true
+  store.overlays = currentlyOpenOverlayNames()
+  saveAutoOpenStore(store)
+}
+
 // Center a window of the given size on the PRIMARY display's work area. We
 // deliberately use the primary monitor (not the overlay's last-known monitor,
 // which may be the very screen it disappeared off of) so a reset always lands
@@ -2578,17 +2598,12 @@ app.on('window-all-closed', () => {
 })
 
 // Snapshot which popout overlays are open as the app quits, so "restore
-// overlays on launch" can re-open exactly that set next time. Runs once, on the
-// first before-quit pass, while the overlay windows are still alive. Only the
-// open set is updated — `enabled` is left untouched.
-let didSnapshotAutoOpen = false
+// overlays on launch" can re-open exactly that set next time. Covers the
+// tray-Quit / app.quit() path, where before-quit fires while the overlays are
+// still alive. The X-to-quit path is covered by closeAllOverlays(); the shared
+// guard makes whichever fires first authoritative.
 app.on('before-quit', () => {
-  if (didSnapshotAutoOpen) return
-  didSnapshotAutoOpen = true
-  const store = loadAutoOpenStore()
-  if (!store.enabled) return
-  store.overlays = currentlyOpenOverlayNames()
-  saveAutoOpenStore(store)
+  snapshotAutoOpenOverlays()
 })
 
 app.on('before-quit', (event) => {
