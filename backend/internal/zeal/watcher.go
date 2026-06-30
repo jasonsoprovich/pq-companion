@@ -33,11 +33,13 @@ type Watcher struct {
 	quarmy           *QuarmyData
 	spellsets        *SpellsetFile
 	bandolier        *BandolierFile
+	macros           *MacroFile
 	invModTime       time.Time
 	spellModTime     time.Time
 	quarmyModTime    time.Time
 	spellsetsModTime time.Time
 	bandolierModTime time.Time
+	macrosModTime    time.Time
 }
 
 // NewWatcher creates a Watcher. Call Start to begin polling.
@@ -110,6 +112,34 @@ func (w *Watcher) Bandolier() *BandolierFile {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.bandolier
+}
+
+// Macros returns the most recently parsed macros for the active character, or nil if none.
+func (w *Watcher) Macros() *MacroFile {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.macros
+}
+
+// AllMacros scans the EQ directory for every character's _pq.proj.ini macros.
+// Returns a non-configured response when the EQ path is empty.
+func (w *Watcher) AllMacros() (*AllMacrosResponse, error) {
+	cfg := w.cfgMgr.Get()
+	resp := &AllMacrosResponse{
+		Configured: cfg.EQPath != "",
+		Characters: []*MacroFile{},
+	}
+	if cfg.EQPath == "" {
+		return resp, nil
+	}
+	chars, err := ScanAllMacros(cfg.EQPath)
+	if err != nil {
+		return nil, err
+	}
+	if chars != nil {
+		resp.Characters = chars
+	}
+	return resp, nil
 }
 
 // AllBandoliers scans the EQ directory for every character's bandolier file.
@@ -252,12 +282,43 @@ func (w *Watcher) check() {
 	quarmyPath := FindQuarmyFile(cfg.EQPath, character)
 	spellsetsPath := SpellsetPath(cfg.EQPath, character)
 	bandolierPath := BandolierPath(cfg.EQPath, character)
+	macroPath := MacroPath(cfg.EQPath, character)
 
 	w.checkInventory(invPath, character)
 	w.checkSpellbook(spellPath, character)
 	w.checkQuarmy(quarmyPath, character)
 	w.checkSpellsets(spellsetsPath, character)
 	w.checkBandolier(bandolierPath, character)
+	w.checkMacros(macroPath, character)
+}
+
+func (w *Watcher) checkMacros(path, character string) {
+	mt := ModTime(path)
+	if mt.IsZero() {
+		return
+	}
+
+	w.mu.RLock()
+	unchanged := mt.Equal(w.macrosModTime)
+	w.mu.RUnlock()
+
+	if unchanged {
+		return
+	}
+
+	mf, err := ParseMacros(path, character)
+	if err != nil {
+		slog.Warn("zeal: parse macros", "path", path, "err", err)
+		return
+	}
+
+	w.mu.Lock()
+	w.macros = mf
+	w.macrosModTime = mt
+	w.mu.Unlock()
+
+	slog.Info("zeal: macros updated", "character", character, "buttons", len(mf.Buttons))
+	w.hub.Broadcast(ws.Event{Type: "zeal:macros", Data: mf})
 }
 
 func (w *Watcher) checkBandolier(path, character string) {

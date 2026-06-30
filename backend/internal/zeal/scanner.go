@@ -39,6 +39,9 @@ var spellsetFileRe = regexp.MustCompile(`(?i)^(.+?)_spellsets\.ini$`)
 // bandolierFileRe matches "<CharName>_bandolier.ini" and captures the character name.
 var bandolierFileRe = regexp.MustCompile(`(?i)^(.+?)_bandolier\.ini$`)
 
+// macroFileRe matches "<CharName>_pq.proj.ini" and captures the character name.
+var macroFileRe = regexp.MustCompile(`(?i)^(.+?)_pq\.proj\.ini$`)
+
 // ScanAllInventories discovers and parses every Zeal inventory export in eqPath.
 //
 // It returns:
@@ -155,6 +158,32 @@ func ScanAllBandoliers(eqPath string) ([]*BandolierFile, error) {
 			continue
 		}
 		out = append(out, bf)
+	}
+	return out, nil
+}
+
+// ScanAllMacros discovers and parses the [Socials] section of every
+// <CharName>_pq.proj.ini file in eqPath. Returns one *MacroFile per character
+// whose file parses successfully.
+func ScanAllMacros(eqPath string) ([]*MacroFile, error) {
+	pattern := filepath.Join(eqPath, "*_pq.proj.ini")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]*MacroFile, 0, len(matches))
+	for _, path := range matches {
+		base := filepath.Base(path)
+		m := macroFileRe.FindStringSubmatch(base)
+		if m == nil {
+			continue
+		}
+		mf, err := ParseMacros(path, m[1])
+		if err != nil {
+			continue
+		}
+		out = append(out, mf)
 	}
 	return out, nil
 }
