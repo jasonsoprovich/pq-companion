@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 
 var spellsetFilenameRe = regexp.MustCompile(`(?i)^(.+?)_spellsets\.ini$`)
 var bandolierFilenameRe = regexp.MustCompile(`(?i)^(.+?)_bandolier\.ini$`)
+var macroFilenameRe = regexp.MustCompile(`(?i)^(.+?)_pq\.proj\.ini$`)
 
 type zealHandler struct {
 	watcher *zeal.Watcher
@@ -571,6 +573,179 @@ func bandolierSlotName(slot int) string {
 		return "Ammo"
 	}
 	return "unknown"
+}
+
+// GET /api/zeal/macros
+// Returns in-game social macros. With no query, returns the active character's
+// cached macros (or null). With ?character=Name, parses that character's
+// <Name>_pq.proj.ini [Socials] section directly.
+func (h *zealHandler) macros(w http.ResponseWriter, r *http.Request) {
+	resp := struct {
+		Macros *zeal.MacroFile `json:"macros"`
+	}{}
+	name := r.URL.Query().Get("character")
+	if name == "" {
+		resp.Macros = h.watcher.Macros()
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	cfg := h.cfgMgr.Get()
+	if cfg.EQPath == "" {
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	mf, err := zeal.ParseMacros(zeal.MacroPath(cfg.EQPath, name), name)
+	if err != nil {
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	resp.Macros = mf
+	json.NewEncoder(w).Encode(resp)
+}
+
+// PUT /api/zeal/macros
+// Surgically rewrites the [Socials] section of <Character>_pq.proj.ini.
+// Body: {"character": "Name", "buttons": [{"page","button","name","color","lines"}, ...]}
+//
+// The file must already exist (it's the live client config — we never fabricate
+// it). Validation rejects out-of-range pages/buttons, wrong line counts, and CR/
+// LF in names/lines (which would corrupt the INI). Returns the reparsed macros.
+func (h *zealHandler) updateMacros(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Character string             `json:"character"`
+		Buttons   []zeal.MacroButton `json:"buttons"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if body.Character == "" {
+		http.Error(w, `{"error":"character is required"}`, http.StatusBadRequest)
+		return
+	}
+	cfg := h.cfgMgr.Get()
+	if cfg.EQPath == "" {
+		http.Error(w, `{"error":"EQ path not configured"}`, http.StatusBadRequest)
+		return
+	}
+
+	for _, b := range body.Buttons {
+		if b.Page < 1 || b.Page > zeal.MacroPageCount {
+			http.Error(w, fmt.Sprintf(`{"error":"page %d out of range (1..%d)"}`, b.Page, zeal.MacroPageCount), http.StatusBadRequest)
+			return
+		}
+		if b.Button < 1 || b.Button > zeal.MacroButtonsPerPage {
+			http.Error(w, fmt.Sprintf(`{"error":"button %d out of range (1..%d)"}`, b.Button, zeal.MacroButtonsPerPage), http.StatusBadRequest)
+			return
+		}
+		if len(b.Lines) != zeal.MacroLineCount {
+			http.Error(w, fmt.Sprintf(`{"error":"button %d/%d must have %d lines"}`, b.Page, b.Button, zeal.MacroLineCount), http.StatusBadRequest)
+			return
+		}
+		if strings.ContainsAny(b.Name, "\r\n") {
+			http.Error(w, fmt.Sprintf(`{"error":"button %d/%d name contains a line break"}`, b.Page, b.Button), http.StatusBadRequest)
+			return
+		}
+		for _, l := range b.Lines {
+			if strings.ContainsAny(l, "\r\n") {
+				http.Error(w, fmt.Sprintf(`{"error":"button %d/%d has a command line with a line break"}`, b.Page, b.Button), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	path := zeal.MacroPath(cfg.EQPath, body.Character)
+	if _, err := os.Stat(path); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"no _pq.proj.ini for %s yet — log in once so the client creates it"}`, body.Character), http.StatusBadRequest)
+		return
+	}
+
+	mf := &zeal.MacroFile{Character: body.Character, Buttons: body.Buttons}
+	if err := zeal.WriteMacros(path, mf); err != nil {
+		http.Error(w, `{"error":"failed to write macros"}`, http.StatusInternalServerError)
+		return
+	}
+
+	reloaded, err := zeal.ParseMacros(path, body.Character)
+	if err != nil {
+		http.Error(w, `{"error":"wrote file but failed to reparse"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(struct {
+		Macros *zeal.MacroFile `json:"macros"`
+	}{Macros: reloaded})
+}
+
+// GET /api/zeal/macros/all
+// Scans the configured EQ directory for every <CharName>_pq.proj.ini and returns
+// the parsed [Socials] macros per character.
+func (h *zealHandler) allMacros(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.watcher.AllMacros()
+	if err != nil {
+		http.Error(w, `{"error":"failed to scan macros"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(resp)
+}
+
+// POST /api/zeal/macros/parse-file
+// Parses an arbitrary _pq.proj.ini file path (chosen via the Electron file
+// dialog when importing another character's macros). Read-only.
+// Body: {"path": "..."}
+func (h *zealHandler) parseMacrosFile(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if body.Path == "" {
+		http.Error(w, `{"error":"path is required"}`, http.StatusBadRequest)
+		return
+	}
+	if !strings.EqualFold(filepath.Ext(body.Path), ".ini") {
+		http.Error(w, `{"error":"file must have .ini extension"}`, http.StatusBadRequest)
+		return
+	}
+
+	character := ""
+	if m := macroFilenameRe.FindStringSubmatch(filepath.Base(body.Path)); m != nil {
+		character = m[1]
+	}
+
+	mf, err := zeal.ParseMacros(body.Path, character)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"failed to parse: %s"}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+	json.NewEncoder(w).Encode(struct {
+		Macros *zeal.MacroFile `json:"macros"`
+	}{Macros: mf})
+}
+
+// GET /api/zeal/text-colors
+// Returns the EQ user-color palette from eqclient.ini, used to render best-
+// effort swatches for social-macro color indices.
+func (h *zealHandler) textColors(w http.ResponseWriter, r *http.Request) {
+	cfg := h.cfgMgr.Get()
+	resp := struct {
+		Configured bool              `json:"configured"`
+		Colors     []zeal.MacroColor `json:"colors"`
+	}{Configured: cfg.EQPath != "", Colors: []zeal.MacroColor{}}
+	if cfg.EQPath == "" {
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	colors, err := zeal.ParseTextColors(cfg.EQPath)
+	if err != nil {
+		http.Error(w, `{"error":"failed to read eqclient.ini colors"}`, http.StatusInternalServerError)
+		return
+	}
+	if colors != nil {
+		resp.Colors = colors
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // GET /api/zeal/pipe-status
