@@ -57,6 +57,41 @@ export interface AllSpellsetsResponse {
   characters: SpellsetFile[]
 }
 
+// Bandolier slot order matches backend zeal.BandolierSlotCount: index
+// 0=Primary, 1=Secondary, 2=Range, 3=Ammo. 0 = empty slot.
+export interface BandolierSet {
+  name: string
+  item_ids: number[] // length 4, 0 = empty slot
+}
+
+export interface BandolierFile {
+  character: string
+  exported_at: string // ISO datetime
+  sets: BandolierSet[]
+}
+
+export interface ZealBandolierResponse {
+  bandolier: BandolierFile | null
+}
+
+export interface AllBandoliersResponse {
+  configured: boolean
+  characters: BandolierFile[]
+}
+
+// BandolierItem is one selectable, owned item from the slot picker.
+export interface BandolierItem {
+  id: number
+  name: string
+  icon: number
+  slots: number
+  item_type: number
+}
+
+export interface BandolierSlotItemsResponse {
+  items: BandolierItem[]
+}
+
 export interface ZealInstallStatus {
   eq_path: string
   installed: boolean

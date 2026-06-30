@@ -9,6 +9,9 @@ import type {
   AllInventoriesResponse,
   ZealSpellsetsResponse,
   AllSpellsetsResponse,
+  ZealBandolierResponse,
+  AllBandoliersResponse,
+  BandolierSlotItemsResponse,
   ZealInstallStatus,
   ZealPipeStatus,
 } from '../types/zeal'
@@ -583,6 +586,36 @@ export function updateSpellsets(
 
 export function parseSpellsetsFile(path: string): Promise<ZealSpellsetsResponse> {
   return post<ZealSpellsetsResponse>('/api/zeal/spellsets/parse-file', { path })
+}
+
+export function getZealBandolier(character?: string): Promise<ZealBandolierResponse> {
+  const qs = character ? `?character=${encodeURIComponent(character)}` : ''
+  return get<ZealBandolierResponse>(`/api/zeal/bandolier${qs}`)
+}
+
+export function getAllBandoliers(): Promise<AllBandoliersResponse> {
+  return get<AllBandoliersResponse>('/api/zeal/bandolier/all')
+}
+
+export function updateBandolier(
+  character: string,
+  sets: { name: string; item_ids: number[] }[],
+): Promise<ZealBandolierResponse> {
+  return put<ZealBandolierResponse>('/api/zeal/bandolier', { character, sets })
+}
+
+export function getBandolierSlotItems(
+  character: string,
+  slot: number,
+  q = '',
+): Promise<BandolierSlotItemsResponse> {
+  const params = new URLSearchParams({ character, slot: String(slot) })
+  if (q) params.set('q', q)
+  return get<BandolierSlotItemsResponse>(`/api/zeal/bandolier/slot-items?${params}`)
+}
+
+export function parseBandolierFile(path: string): Promise<ZealBandolierResponse> {
+  return post<ZealBandolierResponse>('/api/zeal/bandolier/parse-file', { path })
 }
 
 // ── Spell Checklist ────────────────────────────────────────────────────────────
