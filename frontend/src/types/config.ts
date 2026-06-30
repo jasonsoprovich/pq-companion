@@ -67,6 +67,10 @@ export interface Preferences {
   parse_combat_log: boolean
   overlay_dps_enabled: boolean
   overlay_hps_enabled: boolean
+  // Makes entity rows in overlay windows (NPC overlay loot/spells) clickable
+  // links that open the item/spell in the main database explorer. On by
+  // default; missing is treated as enabled.
+  overlay_entity_links_enabled?: boolean
   master_volume: number
   // Voice for any text_to_speech alert whose own voice field is empty
   // ("App default" in the editor). Empty = the OS default voice.

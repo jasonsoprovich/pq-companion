@@ -299,6 +299,15 @@ type Preferences struct {
 	// OverlayHPSEnabled controls whether the HPS floating overlay is shown.
 	OverlayHPSEnabled bool `yaml:"overlay_hps_enabled" json:"overlay_hps_enabled"`
 
+	// OverlayEntityLinksEnabled makes entity rows in overlay windows (e.g. the
+	// NPC info overlay's loot items and castable spells) clickable links that
+	// focus the main window and open that item/spell in the database explorer.
+	// On by default; users who don't want a click pulling focus out of the game
+	// can turn it off, leaving those rows as plain text. Not omitempty so the
+	// default-true value survives a round-trip once written, matching
+	// minimize_to_tray.
+	OverlayEntityLinksEnabled bool `yaml:"overlay_entity_links_enabled" json:"overlay_entity_links_enabled"`
+
 	// MasterVolume scales every trigger / event / timer alert sound and TTS
 	// utterance multiplicatively on top of its per-action volume. Stored as
 	// 0–100 (percent); the frontend converts to 0.0–1.0 at playback time.
@@ -697,6 +706,7 @@ func defaults() Config {
 			ParseCombatLog:              true,
 			OverlayDPSEnabled:           true,
 			OverlayHPSEnabled:           false,
+			OverlayEntityLinksEnabled:   true,
 			MasterVolume:                100,
 			ZoomFactor:                  1.0,
 			NPCOverlayDashboardSections: DefaultNPCOverlaySections(),

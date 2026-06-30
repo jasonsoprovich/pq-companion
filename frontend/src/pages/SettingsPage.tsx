@@ -1838,6 +1838,60 @@ export default function SettingsPage(): React.ReactElement {
           <label className="flex cursor-pointer items-center justify-between py-1 mt-4">
             <div>
               <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                Clickable Links in Overlays
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                Make entity rows in overlay windows — like the NPC overlay's loot
+                items and castable spells — clickable links that bring the main
+                window forward and open that item or spell in the database
+                explorer. Turn off to keep those rows as plain text so a click
+                never pulls focus out of the game. On by default.
+              </p>
+            </div>
+            <div
+              onClick={() =>
+                setConfig({
+                  ...config,
+                  preferences: {
+                    ...config.preferences,
+                    overlay_entity_links_enabled:
+                      config.preferences.overlay_entity_links_enabled === false,
+                  },
+                })
+              }
+              style={{
+                width: 40,
+                height: 22,
+                borderRadius: 11,
+                backgroundColor:
+                  config.preferences.overlay_entity_links_enabled !== false
+                    ? 'var(--color-primary)'
+                    : 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+                position: 'relative',
+                flexShrink: 0,
+                transition: 'background-color 0.15s',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 2,
+                  left: config.preferences.overlay_entity_links_enabled !== false ? 20 : 2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  backgroundColor: '#fff',
+                  transition: 'left 0.15s',
+                }}
+              />
+            </div>
+          </label>
+
+          <label className="flex cursor-pointer items-center justify-between py-1 mt-4">
+            <div>
+              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
                 Restore Overlays on Launch
               </p>
               <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
