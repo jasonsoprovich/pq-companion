@@ -109,6 +109,30 @@ func TestDuplicateRollerFlagged(t *testing.T) {
 	}
 }
 
+func TestSetItemName(t *testing.T) {
+	tr := newTrackerForTest()
+	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)
+	feedRoll(t, tr, "A", 333, 50, base)
+	id := tr.State().Sessions[0].ID
+
+	if !tr.SetItemName(id, "Robe of the Lost Circle") {
+		t.Fatalf("SetItemName should return true for a known session")
+	}
+	if got := tr.State().Sessions[0].ItemName; got != "Robe of the Lost Circle" {
+		t.Fatalf("item name not applied, got %q", got)
+	}
+	// Empty name clears the label.
+	if !tr.SetItemName(id, "") {
+		t.Fatalf("SetItemName('') should still match the session")
+	}
+	if got := tr.State().Sessions[0].ItemName; got != "" {
+		t.Fatalf("empty name should clear the label, got %q", got)
+	}
+	if tr.SetItemName(9999, "x") {
+		t.Fatalf("SetItemName should return false for an unknown session")
+	}
+}
+
 func TestStopSession(t *testing.T) {
 	tr := newTrackerForTest()
 	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)

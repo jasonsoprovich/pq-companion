@@ -286,6 +286,27 @@ func (t *Tracker) Remove(id uint64) bool {
 	return found
 }
 
+// SetItemName labels the session with the given ID with a loot item
+// name (trimmed). An empty name clears the label. Returns true if a
+// matching session was found.
+func (t *Tracker) SetItemName(id uint64, name string) bool {
+	t.mu.Lock()
+	var found bool
+	for _, s := range t.sessions {
+		if s.ID == id {
+			s.ItemName = name
+			found = true
+			break
+		}
+	}
+	state := t.stateLocked()
+	t.mu.Unlock()
+	if found {
+		t.broadcast(state)
+	}
+	return found
+}
+
 // Clear removes every session.
 func (t *Tracker) Clear() {
 	t.mu.Lock()
@@ -367,6 +388,7 @@ func (t *Tracker) stateLocked() State {
 			ID:         s.ID,
 			Min:        s.Min,
 			Max:        s.Max,
+			ItemName:   s.ItemName,
 			StartedAt:  s.StartedAt,
 			LastRollAt: s.LastRollAt,
 			Active:     s.Active,

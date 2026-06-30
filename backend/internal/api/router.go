@@ -353,6 +353,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Route("/sessions/{id}", func(r chi.Router) {
 				r.Post("/stop", rollsH.stop)
 				r.Delete("/", rollsH.remove)
+				r.Put("/item-name", rollsH.setItemName)
 			})
 		})
 		r.Route("/sandbox", func(r chi.Router) {

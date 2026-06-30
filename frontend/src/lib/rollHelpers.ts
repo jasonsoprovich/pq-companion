@@ -41,6 +41,35 @@ export function sortRolls(rolls: Roll[], rule: WinnerRule): Roll[] {
   return copy
 }
 
+/** EQ caps a single chat line near 255 characters; trim the summary so a
+ * paste never gets silently cut off mid-name in game. */
+const maxChatLineLen = 255
+
+/**
+ * buildRollSummary produces a one-line, paste-into-EQ summary of a
+ * session's outcome, e.g. `Robe of the Lost Circle — Belnoctourne (532/611)`.
+ * Falls back to the range when the session has no item label, and lists
+ * co-winners on a tie. Returns '' when there are no rolls yet (so callers
+ * can disable the copy button). The result is clamped to EQ's chat-line
+ * length so it pastes cleanly.
+ */
+export function buildRollSummary(session: RollSession, rule: WinnerRule): string {
+  const winners = winnersFor(session, rule)
+  if (winners.size === 0) return ''
+  // Every winner shares the same winning value (that's how they tied), so
+  // read it off the first winner's first roll.
+  const firstByPlayer = new Map<string, Roll>()
+  for (const r of session.rolls) {
+    if (!firstByPlayer.has(r.roller)) firstByPlayer.set(r.roller, r)
+  }
+  const names = [...winners]
+  const value = firstByPlayer.get(names[0])?.value ?? 0
+  const who = names.length === 1 ? names[0] : `${names.join(' & ')} (tie)`
+  const label = session.item_name.trim() || `Roll ${session.min}–${session.max}`
+  const summary = `${label} — ${who} (${value}/${session.max})`
+  return summary.length > maxChatLineLen ? summary.slice(0, maxChatLineLen) : summary
+}
+
 /**
  * countdownSeconds returns the whole seconds remaining until session
  * auto-stop, or null if there is no scheduled stop. Negative values are

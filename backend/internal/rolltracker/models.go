@@ -90,6 +90,13 @@ type Session struct {
 	StartedAt time.Time `json:"started_at"`
 	// LastRollAt is the timestamp of the most recently received roll.
 	LastRollAt time.Time `json:"last_roll_at"`
+	// ItemName is the loot item this roll is for, e.g. "Robe of the
+	// Lost Circle". Empty until the user labels the session (or a future
+	// best-effort auto-parse fills it in). Purely descriptive — it does
+	// not affect bucketing or winner selection, but it's surfaced in the
+	// UI and the copy-to-paste summary so raid leaders can announce the
+	// result with the item attached.
+	ItemName string `json:"item_name"`
 	// Active is true while new rolls may still arrive. The user toggles
 	// this off via the Stop button — once stopped, late rolls (e.g. a
 	// player rolling on a different drop that happens to share a Max)

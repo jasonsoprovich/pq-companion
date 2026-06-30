@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Dice5, Trash2, Square, Trophy, ArrowDownAZ, ArrowUpAZ, Circle, X, Timer, Hand } from 'lucide-react'
+import { Dice5, Trash2, Square, Trophy, ArrowDownAZ, ArrowUpAZ, Circle, X, Timer, Hand, Copy, Check } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import {
   getRolls,
@@ -7,9 +7,10 @@ import {
   removeRollSession,
   clearRolls,
   updateRollsSettings,
+  setRollItemName,
 } from '../services/api'
 import type { RollsState, RollSession, WinnerRule } from '../types/rolls'
-import { winnersFor, sortRolls, fmtRollTime, countdownSeconds } from '../lib/rollHelpers'
+import { winnersFor, sortRolls, fmtRollTime, countdownSeconds, buildRollSummary } from '../lib/rollHelpers'
 import { WSEvent } from '../lib/wsEvents'
 
 function SessionCard({
@@ -18,16 +19,42 @@ function SessionCard({
   now,
   onStop,
   onRemove,
+  onSetItemName,
 }: {
   session: RollSession
   rule: WinnerRule
   now: number
   onStop: (id: number) => void
   onRemove: (id: number) => void
+  onSetItemName: (id: number, name: string) => void
 }): React.ReactElement {
   const winners = useMemo(() => winnersFor(session, rule), [session, rule])
   const orderedRolls = useMemo(() => sortRolls(session.rolls, rule), [session.rolls, rule])
   const remaining = session.active ? countdownSeconds(session, now) : null
+  const summary = useMemo(() => buildRollSummary(session, rule), [session, rule])
+
+  // Local draft for the item-name field so typing stays smooth between WS
+  // broadcasts. Re-sync whenever the backend value changes (the only other
+  // writer is our own commit, which echoes back identically).
+  const [nameDraft, setNameDraft] = useState(session.item_name)
+  useEffect(() => setNameDraft(session.item_name), [session.item_name])
+  const commitName = (): void => {
+    const next = nameDraft.trim()
+    if (next === session.item_name) return
+    onSetItemName(session.id, next)
+  }
+
+  const [copied, setCopied] = useState(false)
+  const handleCopy = (): void => {
+    if (!summary) return
+    navigator.clipboard
+      ?.writeText(summary)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => {})
+  }
 
   return (
     <div
@@ -38,14 +65,23 @@ function SessionCard({
         className="flex items-center justify-between gap-3 border-b px-4 py-2"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <div className="flex items-center gap-3">
-          <Dice5 size={16} style={{ color: 'var(--color-primary)' }} />
-          <div>
-            <div className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
-              {session.min} – {session.max}
-            </div>
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <Dice5 size={16} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+          <div className="min-w-0 flex-1">
+            <input
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={commitName}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+              }}
+              placeholder="Add item name…"
+              className="w-full bg-transparent text-sm font-semibold outline-none placeholder:font-normal placeholder:text-(--color-muted)"
+              style={{ color: 'var(--color-foreground)' }}
+              title="Label this roll with the item it's for"
+            />
             <div className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-              {session.rolls.length} roll{session.rolls.length === 1 ? '' : 's'} ·
+              {session.min} – {session.max} · {session.rolls.length} roll{session.rolls.length === 1 ? '' : 's'} ·
               {' '}started {fmtRollTime(session.started_at)}
             </div>
           </div>
@@ -78,6 +114,15 @@ function SessionCard({
               Stopped
             </span>
           )}
+          <button
+            onClick={handleCopy}
+            disabled={!summary}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-(--color-surface-3) disabled:opacity-30"
+            style={{ border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+            title="Copy the result to paste in game"
+          >
+            {copied ? <Check size={11} /> : <Copy size={11} />} {copied ? 'Copied' : 'Copy'}
+          </button>
           {session.active && (
             <button
               onClick={() => onStop(session.id)}
@@ -196,6 +241,10 @@ export default function RollTrackerPage(): React.ReactElement {
 
   const handleRemove = (id: number): void => {
     removeRollSession(id).catch((e) => setError(String(e)))
+  }
+
+  const handleSetItemName = (id: number, name: string): void => {
+    setRollItemName(id, name).then(setState).catch((e) => setError(String(e)))
   }
 
   const handleClear = (): void => {
@@ -364,6 +413,7 @@ export default function RollTrackerPage(): React.ReactElement {
               now={now}
               onStop={handleStop}
               onRemove={handleRemove}
+              onSetItemName={handleSetItemName}
             />
           ))}
         </div>

@@ -2091,6 +2091,10 @@ export function clearRolls(): Promise<void> {
   return del('/api/rolls')
 }
 
+export function setRollItemName(id: number, itemName: string): Promise<RollsState> {
+  return put<RollsState>(`/api/rolls/sessions/${id}/item-name`, { item_name: itemName })
+}
+
 export function setRollWinnerRule(rule: WinnerRule): Promise<RollsState> {
   return put<RollsState>('/api/rolls/settings', { winner_rule: rule })
 }

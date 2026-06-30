@@ -4,10 +4,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
 )
+
+// maxItemNameLen bounds the user-supplied loot-item label. EQ item names
+// top out well under this; the cap just stops a pathological paste from
+// bloating the broadcast payload.
+const maxItemNameLen = 128
 
 type rollsHandler struct {
 	tracker *rolltracker.Tracker
@@ -37,6 +43,34 @@ func (h *rollsHandler) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !h.tracker.Remove(id) {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, h.tracker.State())
+}
+
+type rollsItemNameRequest struct {
+	ItemName string `json:"item_name"`
+}
+
+// setItemName labels a session with the loot item it's rolling for. An
+// empty/whitespace name clears the label.
+func (h *rollsHandler) setItemName(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id == 0 {
+		writeError(w, http.StatusBadRequest, "invalid session id")
+		return
+	}
+	var req rollsItemNameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	name := strings.TrimSpace(req.ItemName)
+	if len(name) > maxItemNameLen {
+		name = name[:maxItemNameLen]
+	}
+	if !h.tracker.SetItemName(id, name) {
 		writeError(w, http.StatusNotFound, "session not found")
 		return
 	}

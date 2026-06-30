@@ -12,6 +12,7 @@ export interface RollSession {
   id: number
   min: number
   max: number
+  item_name: string
   started_at: string
   last_roll_at: string
   active: boolean

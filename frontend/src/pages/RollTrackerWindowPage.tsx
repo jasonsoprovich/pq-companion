@@ -16,6 +16,8 @@ import {
   X,
   Timer,
   Hand,
+  Copy,
+  Check,
 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
@@ -29,9 +31,10 @@ import {
   removeRollSession,
   clearRolls,
   updateRollsSettings,
+  setRollItemName,
 } from '../services/api'
 import type { RollsState, RollSession, WinnerRule, RollMode } from '../types/rolls'
-import { winnersFor, sortRolls, countdownSeconds } from '../lib/rollHelpers'
+import { winnersFor, sortRolls, countdownSeconds, buildRollSummary } from '../lib/rollHelpers'
 import { WSEvent } from '../lib/wsEvents'
 
 function SessionRow({
@@ -40,16 +43,39 @@ function SessionRow({
   now,
   onStop,
   onRemove,
+  onSetItemName,
 }: {
   session: RollSession
   rule: WinnerRule
   now: number
   onStop: (id: number) => void
   onRemove: (id: number) => void
+  onSetItemName: (id: number, name: string) => void
 }): React.ReactElement {
   const winners = useMemo(() => winnersFor(session, rule), [session, rule])
   const ordered = useMemo(() => sortRolls(session.rolls, rule), [session.rolls, rule])
   const remaining = session.active ? countdownSeconds(session, now) : null
+  const summary = useMemo(() => buildRollSummary(session, rule), [session, rule])
+
+  const [nameDraft, setNameDraft] = useState(session.item_name)
+  useEffect(() => setNameDraft(session.item_name), [session.item_name])
+  const commitName = (): void => {
+    const next = nameDraft.trim()
+    if (next === session.item_name) return
+    onSetItemName(session.id, next)
+  }
+
+  const [copied, setCopied] = useState(false)
+  const handleCopy = (): void => {
+    if (!summary) return
+    navigator.clipboard
+      ?.writeText(summary)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => {})
+  }
 
   return (
     <div
@@ -60,13 +86,31 @@ function SessionRow({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, flex: 1 }}>
           <Dice5 size={12} style={{ color: '#a5b4fc', flexShrink: 0 }} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.9)' }}>
-            {session.min}–{session.max}
-          </span>
-          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
-            ({session.rolls.length})
+          <input
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onBlur={commitName}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            }}
+            placeholder="Item name…"
+            title="Label this roll with the item it's for"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: 'rgba(255,255,255,0.95)',
+              fontSize: 12,
+              fontWeight: 700,
+              textShadow: '0 1px 2px rgba(0,0,0,0.9)',
+            }}
+          />
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', flexShrink: 0 }}>
+            {session.min}–{session.max} ({session.rolls.length})
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -95,6 +139,21 @@ function SessionRow({
               Stopped
             </span>
           )}
+          <button
+            onClick={handleCopy}
+            disabled={!summary}
+            title="Copy result to paste in game"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: summary ? 'pointer' : 'default',
+              padding: '1px 2px',
+              color: copied ? '#22c55e' : 'rgba(255,255,255,0.6)',
+              opacity: summary ? 1 : 0.3,
+            }}
+          >
+            {copied ? <Check size={11} /> : <Copy size={11} />}
+          </button>
           {session.active && (
             <button
               onClick={() => onStop(session.id)}
@@ -194,6 +253,9 @@ export default function RollTrackerWindowPage(): React.ReactElement {
 
   const handleStop = (id: number): void => { stopRollSession(id).then(setState).catch(() => {}) }
   const handleRemove = (id: number): void => { removeRollSession(id).catch(() => {}) }
+  const handleSetItemName = (id: number, name: string): void => {
+    setRollItemName(id, name).then(setState).catch(() => {})
+  }
   const handleRule = (rule: WinnerRule): void => {
     if (rule === state.winner_rule) return
     updateRollsSettings({ winner_rule: rule }).then(setState).catch(() => {})
@@ -386,6 +448,7 @@ export default function RollTrackerWindowPage(): React.ReactElement {
               now={now}
               onStop={handleStop}
               onRemove={handleRemove}
+              onSetItemName={handleSetItemName}
             />
           ))
         )}
