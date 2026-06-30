@@ -70,6 +70,9 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("config loaded", "path", cfgMgr.Path())
+	// Honor the saved verbose-logging preference for the rest of this session;
+	// the Settings toggle re-applies it live via the config update handler.
+	applog.SetDebug(cfgMgr.Get().Preferences.DebugLogging)
 
 	// Apply any pending app-state import BEFORE opening user.db connections.
 	// Sentinel + staging files live under ~/.pq-companion. A pending import

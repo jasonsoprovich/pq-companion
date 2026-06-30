@@ -375,6 +375,14 @@ type Preferences struct {
 	// Off by default so casual users don't stumble into raw-DB territory.
 	DeveloperMode bool `yaml:"developer_mode,omitempty" json:"developer_mode"`
 
+	// DebugLogging raises the backend log level from Info to Debug, writing
+	// verbose diagnostics (log-file reads/offsets, trigger matches, duplicate-
+	// line guard drops, …) to ~/.pq-companion/logs/server.log. Off by default
+	// to keep the log readable; users turn it on from Settings → Advanced →
+	// Diagnostics when reproducing an intermittent issue, then hand back the
+	// log. Applied to applog at startup and on every config save (no restart).
+	DebugLogging bool `yaml:"debug_logging,omitempty" json:"debug_logging"`
+
 	// PoPEnabled switches the app into Planes of Power era: level cap 65
 	// instead of 60, PoP spells in the class spell lists, the PoP AA tabs,
 	// and Plane of Knowledge as a shopping-route source. Off by default

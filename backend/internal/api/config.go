@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/applog"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/eqconfig"
@@ -142,6 +143,9 @@ func (h *configHandler) update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to save config")
 		return
 	}
+	// Apply the verbose-logging preference live so toggling it in Settings takes
+	// effect without a backend restart.
+	applog.SetDebug(c.Preferences.DebugLogging)
 	// Notify connected overlay windows so they can re-read settings
 	// (e.g. spell-timer display thresholds) without a page reload.
 	if h.hub != nil {

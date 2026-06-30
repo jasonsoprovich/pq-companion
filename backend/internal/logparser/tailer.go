@@ -289,10 +289,17 @@ func (t *Tailer) readLines(logPath string) ([]LogEvent, []rawLine) {
 		return nil, nil
 	}
 	if info.Size() < t.offset {
-		slog.Info("logparser: log file truncated, resetting offset")
-		t.offset = 0
+		// A re-read hazard: the live file is now smaller than where we'd read
+		// to. Seek to the new end rather than rewinding to 0 — rewinding would
+		// re-dispatch every historical line (mass duplicate trigger fires).
+		// Real EQ logs only ever grow, so this path is defensive; logging it at
+		// info level flags the rare case in a bug report.
+		slog.Info("logparser: log file shrank, seeking to end (not replaying)",
+			"prev_offset", t.offset, "new_size", info.Size())
+		t.offset = info.Size()
 		t.remainder = nil
 		t.remainderStable = false
+		return nil, nil
 	}
 	if info.Size() == t.offset {
 		// No new data. EQ writes each line terminated by '\n', but the final
@@ -312,6 +319,7 @@ func (t *Tailer) readLines(logPath string) ([]LogEvent, []rawLine) {
 	}
 
 	buf := make([]byte, toRead)
+	readAt := t.offset
 	n, err := t.file.ReadAt(buf, t.offset)
 	if n > 0 {
 		t.offset += int64(n)
@@ -323,6 +331,12 @@ func (t *Tailer) readLines(logPath string) ([]LogEvent, []rawLine) {
 	if n == 0 {
 		return nil, nil
 	}
+
+	// Verbose diagnostics: the byte range each dispatch came from. If the same
+	// line is ever reported as firing twice, two reads covering an overlapping
+	// [from,to) range are the signature of a re-read (vs. two distinct physical
+	// lines, which always sit at strictly increasing offsets).
+	slog.Debug("logparser: read chunk", "from", readAt, "to", t.offset, "bytes", n)
 
 	return t.parseChunk(buf[:n])
 }
@@ -350,6 +364,12 @@ func (t *Tailer) flushStaleRemainder() ([]LogEvent, []rawLine) {
 	}
 	t.remainder = nil
 	t.remainderStable = false
+
+	// Verbose diagnostics: this idle-only path flushes the final unterminated
+	// line of a session. It's the one place a still-being-written line could be
+	// emitted early, so surface each flush when debugging the "alert fired on a
+	// partial/odd line" reports.
+	slog.Debug("logparser: flushed stale remainder (idle)", "offset", t.offset, "line", msg)
 
 	raws := []rawLine{{ts: ts, msg: msg}}
 	var events []LogEvent

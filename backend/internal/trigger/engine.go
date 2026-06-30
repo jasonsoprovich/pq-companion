@@ -674,7 +674,13 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 	e.histMu.Unlock()
 
 	e.hub.Broadcast(ws.Event{Type: WSEventTriggerFired, Data: event})
-	slog.Debug("trigger fired", "trigger", t.Name, "line", matchedLine)
+	// Verbose diagnostics (enable via Settings → Advanced → Diagnostics): the
+	// id + log timestamp let a bug report distinguish "one line matched several
+	// triggers" (different ids, same log_ts) from "the same line fired the same
+	// trigger more than once" (same id + log_ts = a re-read / duplicate event),
+	// which is the root-cause question for the "alert played N times" reports.
+	slog.Debug("trigger fired",
+		"trigger", t.Name, "id", t.ID, "log_ts", firedAt.Format(time.RFC3339), "line", matchedLine)
 
 	if e.sink != nil && c.timerKey != "" {
 		if durationSecs := resolveTimerDuration(t, extra, match, names); durationSecs > 0 {

@@ -102,6 +102,10 @@ export interface Preferences {
   // (0 = at "POP"). Applies to every respawn timer; disabled by default.
   respawn_alert?: TimerAlertPref
   developer_mode: boolean
+  // Verbose backend logging: raises server.log to debug level (log-file
+  // reads/offsets, trigger fires, …) for diagnosing intermittent issues.
+  // Off by default; toggled in Settings → Advanced → Diagnostics.
+  debug_logging?: boolean
   // Planes of Power era switch: level cap 65, PoP spells/AA tabs, PoK as a
   // shopping source. Off until the expansion launches on Quarm; until then
   // it's a preview toggle in the Developer tab. See lib/era.ts.

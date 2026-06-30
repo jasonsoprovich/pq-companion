@@ -854,7 +854,22 @@ export default function SettingsPage(): React.ReactElement {
           onSave={handleSave}
           saving={saveState === 'saving'}
         />
-        <DiagnosticsSection />
+        <DiagnosticsSection
+          debugLogging={config?.preferences?.debug_logging ?? false}
+          onToggleDebugLogging={() => {
+            const next: Config = {
+              ...config,
+              preferences: {
+                ...config.preferences,
+                debug_logging: !(config?.preferences?.debug_logging ?? false),
+              },
+            }
+            setConfig(next)
+            updateConfig(next)
+              .then((saved) => setOriginalConfig(saved))
+              .catch(() => null)
+          }}
+        />
         </>
         )}
 
@@ -3636,7 +3651,13 @@ function NPCSectionList({
 // hand back ~/.pq-companion/logs/ contents (server.log + electron.log, with
 // rotated siblings). Lives on the Advanced tab — same place a power user
 // would look when "the items page won't load."
-function DiagnosticsSection(): React.ReactElement {
+function DiagnosticsSection({
+  debugLogging,
+  onToggleDebugLogging,
+}: {
+  debugLogging: boolean
+  onToggleDebugLogging: () => void
+}): React.ReactElement {
   const hasShell = typeof window !== 'undefined' && !!window.electron?.shell
   return (
     <section
@@ -3673,6 +3694,27 @@ function DiagnosticsSection(): React.ReactElement {
         <FolderOpen size={13} />
         Open logs folder
       </button>
+
+      {/* Verbose logging: raises the backend log to debug level so an
+          intermittent issue (e.g. a trigger alert firing more than once) leaves
+          a detailed trail in server.log. Off by default to keep the log small
+          and readable; turn it on, reproduce, then attach the log. */}
+      <label className="mt-4 flex cursor-pointer items-start gap-2">
+        <input
+          type="checkbox"
+          checked={debugLogging}
+          onChange={onToggleDebugLogging}
+          className="mt-0.5"
+        />
+        <span className="text-xs" style={{ color: 'var(--color-foreground)' }}>
+          Verbose (debug) logging
+          <span className="block" style={{ color: 'var(--color-muted-foreground)' }}>
+            Records detailed backend diagnostics (log-file reads, trigger fires)
+            to <code>server.log</code>. Enable only while reproducing an issue —
+            it makes the log noisier. Takes effect immediately.
+          </span>
+        </span>
+      </label>
     </section>
   )
 }

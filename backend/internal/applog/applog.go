@@ -19,6 +19,30 @@ import (
 // enough to capture "it broke after I updated" without filling disk.
 const keepSessions = 3
 
+// levelVar is the live log level shared by whichever handler is installed.
+// Defaults to Info; SetDebug flips it to Debug at runtime so verbose
+// diagnostics (tailer reads, trigger dedup drops, …) can be turned on from
+// Settings without restarting the backend. Both the file+stderr handler and
+// the stderr-only fallback reference this same var, so a single Set call
+// re-levels every sink.
+var levelVar = new(slog.LevelVar)
+
+// SetDebug raises the log level to Debug (verbose) when enabled, or lowers it
+// back to Info when disabled. Safe to call at any time — slog.LevelVar is
+// goroutine-safe and the change takes effect immediately for all handlers.
+// Driven by Preferences.DebugLogging (applied on startup and on config save).
+func SetDebug(enabled bool) {
+	if enabled {
+		levelVar.Set(slog.LevelDebug)
+		slog.Info("verbose (debug) logging enabled")
+		return
+	}
+	if levelVar.Level() == slog.LevelDebug {
+		slog.Info("verbose (debug) logging disabled")
+	}
+	levelVar.Set(slog.LevelInfo)
+}
+
 // Init wires slog.Default to a TextHandler that writes to stderr and (if a
 // log dir can be created) to ~/.pq-companion/logs/server.log. Returns the
 // resolved log file path, an io.Closer for the file handle (or nil), and any
@@ -46,7 +70,7 @@ func Init(appVersion string) (logPath string, closer io.Closer, err error) {
 
 	mw := io.MultiWriter(os.Stderr, f)
 	handler := slog.NewTextHandler(mw, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: levelVar,
 	})
 	slog.SetDefault(slog.New(handler))
 
@@ -71,7 +95,7 @@ func Init(appVersion string) (logPath string, closer io.Closer, err error) {
 // can't be set up so we still get consistent log formatting in dev.
 func setStderrOnly() {
 	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: levelVar,
 	})
 	slog.SetDefault(slog.New(handler))
 }
@@ -112,4 +136,3 @@ func numbered(base string, n int) string {
 	stem := base[:len(base)-len(ext)]
 	return fmt.Sprintf("%s.%d%s", stem, n, ext)
 }
-
