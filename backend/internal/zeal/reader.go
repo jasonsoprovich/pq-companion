@@ -379,6 +379,133 @@ func WriteSpellsets(path string, sf *SpellsetFile) error {
 	return nil
 }
 
+// BandolierPath returns the expected Zeal bandolier path for a character.
+// Zeal writes: <eq_path>/<CharName>_bandolier.ini
+func BandolierPath(eqPath, character string) string {
+	return filepath.Join(eqPath, fmt.Sprintf("%s_bandolier.ini", character))
+}
+
+// ParseBandolier reads and parses a Zeal bandolier INI file.
+//
+// Format:
+//
+//	[set name]
+//	0=<item_id>   ; Primary
+//	1=<item_id>   ; Secondary
+//	2=<item_id>   ; Range
+//	3=<item_id>   ; Ammo
+//
+// Item IDs of 0 indicate an empty slot. Slots not present in a section default
+// to 0. Sections are returned in the order they appear in the file (matches the
+// in-game /bandolier list order).
+func ParseBandolier(path, character string) (*BandolierFile, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	out := &BandolierFile{
+		Character:  character,
+		ExportedAt: info.ModTime(),
+		Sets:       []BandolierSet{},
+	}
+
+	var cur *BandolierSet
+	flush := func() {
+		if cur == nil {
+			return
+		}
+		out.Sets = append(out.Sets, *cur)
+		cur = nil
+	}
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ";") || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			flush()
+			name := strings.TrimSpace(line[1 : len(line)-1])
+			cur = &BandolierSet{Name: name, ItemIDs: make([]int, BandolierSlotCount)}
+			continue
+		}
+
+		if cur == nil {
+			continue
+		}
+
+		eq := strings.IndexByte(line, '=')
+		if eq < 0 {
+			continue
+		}
+		slot, err := strconv.Atoi(strings.TrimSpace(line[:eq]))
+		if err != nil || slot < 0 || slot >= BandolierSlotCount {
+			continue
+		}
+		id, err := strconv.Atoi(strings.TrimSpace(line[eq+1:]))
+		if err != nil {
+			continue
+		}
+		cur.ItemIDs[slot] = id
+	}
+	flush()
+
+	return out, scanner.Err()
+}
+
+// WriteBandolier serializes a BandolierFile back to its INI format and writes it
+// to path atomically (temp file + rename). Each set becomes a [section] followed
+// by keys 0..3 = <item_id>; missing slots are written as 0.
+func WriteBandolier(path string, bf *BandolierFile) error {
+	if bf == nil {
+		return fmt.Errorf("nil bandolier file")
+	}
+	var buf strings.Builder
+	for _, s := range bf.Sets {
+		buf.WriteByte('[')
+		buf.WriteString(s.Name)
+		buf.WriteString("]\n")
+		for i := 0; i < BandolierSlotCount; i++ {
+			id := 0
+			if i < len(s.ItemIDs) {
+				id = s.ItemIDs[i]
+			}
+			fmt.Fprintf(&buf, "%d=%d\n", i, id)
+		}
+	}
+
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".bandolier-*.ini")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+	cleanup := func() { _ = os.Remove(tmpPath) }
+	if _, err := tmp.WriteString(buf.String()); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return fmt.Errorf("write temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return fmt.Errorf("close temp: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		cleanup()
+		return fmt.Errorf("rename: %w", err)
+	}
+	return nil
+}
+
 // QuarmyPath returns the expected Zeal quarmy export path for a character.
 // Zeal writes: <eq_path>/<CharName>-Quarmy.txt
 func QuarmyPath(eqPath, character string) string {

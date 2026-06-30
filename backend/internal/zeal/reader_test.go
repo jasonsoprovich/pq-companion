@@ -128,6 +128,103 @@ func TestWriteSpellsetsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestParseBandolier(t *testing.T) {
+	// Mirrors the format GoofyWarriorGuy posted: a value of 0 = empty slot,
+	// and a set ("caen") can have an empty middle slot.
+	content := "[main]\n" +
+		"0=27315\n1=26809\n2=28903\n3=32531\n" +
+		"[Ssbane]\n" +
+		"0=7965\n1=7965\n2=28903\n3=32531\n" +
+		"[caen]\n" +
+		"0=26599\n1=0\n2=28903\n3=32531\n"
+
+	path := writeTemp(t, "Tester_bandolier.ini", content)
+	bf, err := ParseBandolier(path, "Tester")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if bf.Character != "Tester" {
+		t.Errorf("character = %q, want Tester", bf.Character)
+	}
+	if len(bf.Sets) != 3 {
+		t.Fatalf("sets count = %d, want 3", len(bf.Sets))
+	}
+
+	main := bf.Sets[0]
+	if main.Name != "main" {
+		t.Errorf("first name = %q, want main", main.Name)
+	}
+	wantMain := []int{27315, 26809, 28903, 32531}
+	if len(main.ItemIDs) != BandolierSlotCount {
+		t.Fatalf("main slots = %d, want %d", len(main.ItemIDs), BandolierSlotCount)
+	}
+	for i, id := range wantMain {
+		if main.ItemIDs[i] != id {
+			t.Errorf("main slot %d = %d, want %d", i, main.ItemIDs[i], id)
+		}
+	}
+
+	caen := bf.Sets[2]
+	if caen.Name != "caen" {
+		t.Errorf("third name = %q, want caen", caen.Name)
+	}
+	if caen.ItemIDs[BandolierSecondary] != 0 {
+		t.Errorf("caen secondary = %d, want 0 (empty)", caen.ItemIDs[BandolierSecondary])
+	}
+}
+
+func TestParseBandolierMissingSlots(t *testing.T) {
+	// A section that omits some keys should default the missing slots to 0.
+	content := "[partial]\n0=12345\n2=67890\n"
+	path := writeTemp(t, "Tester_bandolier.ini", content)
+	bf, err := ParseBandolier(path, "Tester")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(bf.Sets) != 1 {
+		t.Fatalf("sets = %d, want 1", len(bf.Sets))
+	}
+	want := []int{12345, 0, 67890, 0}
+	for i, id := range want {
+		if bf.Sets[0].ItemIDs[i] != id {
+			t.Errorf("slot %d = %d, want %d", i, bf.Sets[0].ItemIDs[i], id)
+		}
+	}
+}
+
+func TestWriteBandolierRoundTrip(t *testing.T) {
+	original := &BandolierFile{
+		Character: "Tester",
+		Sets: []BandolierSet{
+			{Name: "main", ItemIDs: []int{27315, 26809, 28903, 32531}},
+			{Name: "caen", ItemIDs: []int{26599, 0, 28903, 32531}},
+		},
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Tester_bandolier.ini")
+	if err := WriteBandolier(path, original); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	reloaded, err := ParseBandolier(path, "Tester")
+	if err != nil {
+		t.Fatalf("reparse: %v", err)
+	}
+	if len(reloaded.Sets) != len(original.Sets) {
+		t.Fatalf("len = %d, want %d", len(reloaded.Sets), len(original.Sets))
+	}
+	for i, want := range original.Sets {
+		got := reloaded.Sets[i]
+		if got.Name != want.Name {
+			t.Errorf("set %d name = %q, want %q", i, got.Name, want.Name)
+		}
+		for j, id := range want.ItemIDs {
+			if got.ItemIDs[j] != id {
+				t.Errorf("set %d slot %d = %d, want %d", i, j, got.ItemIDs[j], id)
+			}
+		}
+	}
+}
+
 func TestParseInventory(t *testing.T) {
 	content := "Location\tName\tID\tCount\tSlots\n" +
 		"Head\tIron Cap\t1001\t1\t0\n" +

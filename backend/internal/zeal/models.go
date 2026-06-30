@@ -71,6 +71,42 @@ type AllSpellsetsResponse struct {
 	Characters []*SpellsetFile `json:"characters"`
 }
 
+// BandolierSlotCount is the number of weapon slots per bandolier set. Zeal
+// writes keys 0..3 inside each [section] of <CharName>_bandolier.ini, in the
+// fixed order Primary, Secondary, Range, Ammo (see Zeal bandolier.h:
+// BANDOLIER_SLOTS = {Primary 13, Secondary 14, Range 11, Ammo 21}).
+const BandolierSlotCount = 4
+
+// Bandolier slot indices. These are the INI key positions (0..3), NOT the EQ
+// global inventory slot IDs.
+const (
+	BandolierPrimary   = 0
+	BandolierSecondary = 1
+	BandolierRange     = 2
+	BandolierAmmo      = 3
+)
+
+// BandolierSet is one named weapon/instrument loadout (a section in the .ini).
+// ItemIDs is always exactly BandolierSlotCount entries; 0 indicates an empty
+// slot — Zeal writes 0 for "no item" and leaves that slot untouched on load.
+type BandolierSet struct {
+	Name    string `json:"name"`
+	ItemIDs []int  `json:"item_ids"`
+}
+
+// BandolierFile is the full parsed contents of a <CharName>_bandolier.ini file.
+type BandolierFile struct {
+	Character  string         `json:"character"`
+	ExportedAt time.Time      `json:"exported_at"`
+	Sets       []BandolierSet `json:"sets"`
+}
+
+// AllBandoliersResponse is returned by GET /api/zeal/bandolier/all.
+type AllBandoliersResponse struct {
+	Configured bool             `json:"configured"`
+	Characters []*BandolierFile `json:"characters"`
+}
+
 // AllInventoriesResponse is returned by GET /api/zeal/all-inventories.
 // Configured is false when the EQ path has not been set in config.
 // SharedBank contains deduplicated entries from the most-recently-modified export file.
