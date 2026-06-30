@@ -60,8 +60,17 @@ func TestResolveProgress(t *testing.T) {
 	if r.Done != 2 {
 		t.Errorf("overall done = %d, want 2", r.Done)
 	}
-	if r.Total != len(Flags()) {
-		t.Errorf("overall total = %d, want %d", r.Total, len(Flags()))
+	// Total counts required milestones only — optional rows (keys, keyrings,
+	// bonus content) and any-of members are excluded.
+	wantTotal := 0
+	for _, f := range Flags() {
+		if f.Optional || f.Group != "" {
+			continue
+		}
+		wantTotal++
+	}
+	if r.Total != wantTotal {
+		t.Errorf("overall total = %d, want %d (counted milestones)", r.Total, wantTotal)
 	}
 
 	var poj *Progress
@@ -82,6 +91,57 @@ func TestResolveProgress(t *testing.T) {
 	}
 	if last := r.Tiers[len(r.Tiers)-1]; last.Tier != 5 {
 		t.Errorf("last tier should be 5 (Plane of Time), got %d", last.Tier)
+	}
+}
+
+// TestResolveAnyOfGroup verifies the PoJ Trials any-of: completing ONE member
+// rolls up to the anchor (poj_trial_mark), supersedes the unchosen members, and
+// unlocks the downstream step — while the members themselves never count toward
+// the tally.
+func TestResolveAnyOfGroup(t *testing.T) {
+	states := []State{
+		{FlagID: "poj_preflag", Done: true, Source: SourceManual},
+		{FlagID: "poj_trial_stone", Done: true, Source: SourceManual},
+	}
+	by := statusByID(Resolve(states))
+
+	// Anchor effectively done via the member, carrying the member's source.
+	anchor := by["poj_trial_mark"]
+	if !anchor.Done {
+		t.Errorf("poj_trial_mark anchor should be done via a member")
+	}
+	if anchor.Source != SourceManual {
+		t.Errorf("anchor source = %q, want manual (inherited from member)", anchor.Source)
+	}
+	// The chosen member is done and NOT superseded.
+	if chosen := by["poj_trial_stone"]; !chosen.Done || chosen.Superseded {
+		t.Errorf("chosen member should be done and not superseded: %+v", chosen)
+	}
+	// An unchosen member is superseded (faded "not needed").
+	if other := by["poj_trial_flame"]; other.Done || !other.Superseded {
+		t.Errorf("unchosen member should be superseded and not done: %+v", other)
+	}
+	// Downstream step unlocked by the anchor roll-up.
+	if by["poj_mavuin_return"].Locked {
+		t.Errorf("poj_mavuin_return should be unlocked once a Trial is done")
+	}
+
+	// Members never count: PoJ counted total is the three milestones only.
+	r := Resolve(states)
+	var poj *Progress
+	for i := range r.Zones {
+		if r.Zones[i].Key == "Plane of Justice" {
+			poj = &r.Zones[i]
+		}
+	}
+	if poj == nil {
+		t.Fatal("Plane of Justice zone tally missing")
+	}
+	if poj.Total != 3 {
+		t.Errorf("PoJ counted total = %d, want 3 (members + optional excluded)", poj.Total)
+	}
+	if poj.Done != 2 { // preflag + anchor(via member)
+		t.Errorf("PoJ done = %d, want 2", poj.Done)
 	}
 }
 

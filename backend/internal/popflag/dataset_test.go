@@ -88,7 +88,7 @@ func findCycle(all []PoPFlag) string {
 // TestStepKind guards the per-node action classification that drives the UI's
 // icon/colour coding: every node must carry one of the four known kinds.
 func TestStepKind(t *testing.T) {
-	valid := map[string]bool{"kill": true, "timed_hail": true, "hail": true, "loot": true}
+	valid := map[string]bool{"kill": true, "timed_hail": true, "hail": true, "loot": true, "zone": true}
 	for _, f := range Flags() {
 		if !valid[f.StepKind] {
 			t.Errorf("flag %q has missing/unknown step_kind %q", f.ID, f.StepKind)
@@ -120,6 +120,54 @@ func TestReplacementAnyOf(t *testing.T) {
 		if !found {
 			t.Errorf("flag %q (qglobal %q) must be satisfied_by %q (server deletes %q on replacement)",
 				f.ID, f.Qglobal, repl, f.Qglobal)
+		}
+	}
+}
+
+// TestGroupsAndRoles guards the any-of group and optional/role invariants:
+// members reference a real, non-optional anchor; roles are known and imply
+// Optional; and no optional row is used as a prereq (optional rows must never
+// block another flag).
+func TestGroupsAndRoles(t *testing.T) {
+	all := Flags()
+	byID := map[string]PoPFlag{}
+	for _, f := range all {
+		byID[f.ID] = f
+	}
+	validRole := map[string]bool{"key": true, "keyring": true, "optional": true}
+
+	for _, f := range all {
+		if f.Group != "" {
+			anchor, ok := byID[f.Group]
+			if !ok {
+				t.Errorf("member %q references unknown group anchor %q", f.ID, f.Group)
+			} else if anchor.Group != "" {
+				t.Errorf("member %q anchor %q is itself a member (no nested groups)", f.ID, f.Group)
+			} else if anchor.Optional {
+				t.Errorf("member %q anchor %q must not be optional (the anchor is the counted milestone)", f.ID, f.Group)
+			}
+		}
+		if f.Role != "" {
+			if !validRole[f.Role] {
+				t.Errorf("flag %q has unknown role %q", f.ID, f.Role)
+			}
+			if !f.Optional {
+				t.Errorf("flag %q has role %q but is not optional (a non-empty role implies optional)", f.ID, f.Role)
+			}
+		}
+	}
+
+	// A required (counted) flag must never depend on an optional row — optional
+	// steps must not gate real progress. Optional→optional chains are fine
+	// (e.g. the Seventh Hammer bonus fight needs the Mark of Justice).
+	for _, f := range all {
+		if f.Optional {
+			continue
+		}
+		for _, p := range f.Prereqs {
+			if pre, ok := byID[p]; ok && pre.Optional {
+				t.Errorf("required flag %q lists optional flag %q as a prereq (optional rows must not block progress)", f.ID, p)
+			}
 		}
 	}
 }

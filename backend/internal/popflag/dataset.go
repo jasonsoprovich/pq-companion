@@ -59,6 +59,30 @@ type PoPFlag struct {
 	Prereqs   []string `json:"prereqs"`         // AND-list of flag IDs that gate this one
 	Level     int      `json:"level,omitempty"` // level at which the chain can be skipped to (display)
 
+	// Optional marks a row that is NOT required for THIS character's personal
+	// flagging: one-per-raid door keys, keyring zone-ins, and purely optional
+	// content (Mark of Justice → Seventh Hammer). Optional rows are excluded
+	// from the done/total tallies and are never listed as another flag's prereq,
+	// so they neither count nor block. They are still checkable for personal
+	// note-keeping.
+	Optional bool `json:"optional,omitempty"`
+
+	// Role tags WHY a row is special, for a small secondary badge distinct from
+	// StepKind's action bucket. One of:
+	//   "key"      — a one-per-raid item/turn-in that opens a door for the group.
+	//   "keyring"  — a zone-in that keyrings personal access to the next zone.
+	//   "optional" — skippable bonus content (e.g. the Seventh Hammer fight).
+	// Empty for ordinary required milestones. A non-empty Role implies Optional.
+	Role string `json:"role,omitempty"`
+
+	// Group ties any-of alternatives to the anchor milestone they roll up to:
+	// the value is the ID of that anchor flag. Completing ANY member marks the
+	// anchor done; the unchosen members then render superseded ("not needed").
+	// Members are display granularity only — they are excluded from tallies, and
+	// downstream prereqs reference the anchor, not the members. The canonical
+	// case is the six Plane of Justice Trials, of which any one advances mavuin.
+	Group string `json:"group,omitempty"`
+
 	// StepKind buckets the step by the action a player must take, so the UI can
 	// colour-code and icon them (decouples "what do I do" from done/locked
 	// status). One of:
