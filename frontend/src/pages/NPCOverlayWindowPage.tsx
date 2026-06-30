@@ -8,6 +8,8 @@ import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import { useNPCOverlaySections } from '../hooks/useNPCOverlaySections'
 import { useWishlistItemIds } from '../hooks/useWishlistItemIds'
+import { useOverlayEntityLinks } from '../hooks/useOverlayEntityLinks'
+import { openEntityInMain } from '../lib/overlayNav'
 import { useTargetTimers } from '../hooks/useTargetTimers'
 import { useTargetPlayer } from '../hooks/useTargetPlayer'
 import OverlayLockButton from '../components/OverlayLockButton'
@@ -144,9 +146,13 @@ function NoTarget({ zone }: { zone?: string }): React.ReactElement {
 function LootContent({
   npcId,
   wishlistItemIds,
+  onItemClick,
 }: {
   npcId: number
   wishlistItemIds: Set<number>
+  // When set, item rows become clickable links that open the item in the main
+  // database explorer. Undefined leaves them as plain text.
+  onItemClick?: (itemId: number) => void
 }): React.ReactElement {
   const [loot, setLoot] = useState<NPCLootTable | null>(null)
   const [loading, setLoading] = useState(true)
@@ -189,7 +195,17 @@ function LootContent({
         return (
           <div
             key={`${drop.id}-${item.item_id}`}
-            title={wished ? 'On your wishlist' : undefined}
+            title={
+              onItemClick
+                ? wished
+                  ? 'On your wishlist · click to open in the item database'
+                  : 'Open in the item database'
+                : wished
+                  ? 'On your wishlist'
+                  : undefined
+            }
+            onClick={onItemClick ? () => onItemClick(item.item_id) : undefined}
+            role={onItemClick ? 'button' : undefined}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -202,6 +218,7 @@ function LootContent({
               // row-to-row layout shift.
               borderLeft: wished ? '2px solid #22c55e' : '2px solid transparent',
               backgroundColor: wished ? 'rgba(34,197,94,0.10)' : 'transparent',
+              cursor: onItemClick ? 'pointer' : 'default',
             }}
           >
             <ItemIcon id={item.item_icon} name={item.item_name} size={18} />
@@ -214,6 +231,7 @@ function LootContent({
                 fontSize: 11,
                 color: rarityColor(eff),
                 fontWeight: 500,
+                textDecoration: onItemClick ? 'underline dotted' : undefined,
               }}
             >
               {item.item_name}
@@ -338,6 +356,8 @@ function StatsBody({
   view,
   wishlistItemIds,
   variantLabel,
+  onItemClick,
+  onSpellClick,
 }: {
   npc: NPC
   abilities: SpecialAbility[]
@@ -346,6 +366,8 @@ function StatsBody({
   view: View
   wishlistItemIds: Set<number>
   variantLabel?: string
+  onItemClick?: (itemId: number) => void
+  onSpellClick?: (spellId: number) => void
 }): React.ReactElement {
   const shown = abilities.filter((a) => a.value !== 0)
   return (
@@ -358,7 +380,7 @@ function StatsBody({
         </div>
       )}
       {view === 'loot' ? (
-        <LootContent npcId={npc.id} wishlistItemIds={wishlistItemIds} />
+        <LootContent npcId={npc.id} wishlistItemIds={wishlistItemIds} onItemClick={onItemClick} />
       ) : (
         <>
           {sections.identity && (
@@ -423,6 +445,7 @@ function StatsBody({
                 chipBg: 'rgba(255,255,255,0.08)',
                 chipText: 'rgba(255,255,255,0.85)',
               }}
+              onSpellClick={onSpellClick}
             />
           )}
 
@@ -448,6 +471,13 @@ function NPCContent({
   const abilities = (state.special_abilities ?? []).filter((a) => a.value !== 0)
   const variants = state.variants ?? []
   const isAmbiguous = variants.length >= 2
+
+  // When overlay entity links are enabled, loot items and castable spells
+  // become clickable links that bring the main window forward and open the
+  // entity in the database explorer. Disabled → undefined → plain text.
+  const linksEnabled = useOverlayEntityLinks()
+  const onItemClick = linksEnabled ? (id: number) => openEntityInMain('item', id) : undefined
+  const onSpellClick = linksEnabled ? (id: number) => openEntityInMain('spell', id) : undefined
 
   // Timers tab works for any target (player or NPC). Player lookup only runs
   // when there's no DB record — that's the case where the target is a player.
@@ -542,6 +572,8 @@ function NPCContent({
               view={view}
               wishlistItemIds={wishlistItemIds}
               variantLabel={`${className(v.npc.class)} · L${npcLevelLabel(v.npc)}`}
+              onItemClick={onItemClick}
+              onSpellClick={onSpellClick}
             />
           ))
         ) : (
@@ -552,6 +584,8 @@ function NPCContent({
             sections={sections}
             view={view}
             wishlistItemIds={wishlistItemIds}
+            onItemClick={onItemClick}
+            onSpellClick={onSpellClick}
           />
         )
       ) : view === 'loot' ? (
