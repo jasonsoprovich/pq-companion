@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import {
   AlertTriangle,
+  Download,
   Keyboard,
   RefreshCw,
   Save,
@@ -13,6 +14,7 @@ import {
   getAllMacros,
   getTextColors,
   listCharacters,
+  parseMacrosFile,
   updateMacros,
   type Character,
 } from '../services/api'
@@ -277,6 +279,159 @@ function CharacterTabs({
   )
 }
 
+// ── Import review modal ──────────────────────────────────────────────────────
+
+interface ImportRow {
+  source: MacroButton
+  conflict: boolean // target already has a macro at this page/button
+  include: boolean
+}
+
+interface MacroImportModalProps {
+  sourceCharacter: string
+  targetCharacter: string
+  rows: ImportRow[]
+  palette: Map<number, MacroColor>
+  onChange: (rows: ImportRow[]) => void
+  onConfirm: () => void
+  onCancel: () => void
+}
+
+function MacroImportModal({
+  sourceCharacter,
+  targetCharacter,
+  rows,
+  palette,
+  onChange,
+  onConfirm,
+  onCancel,
+}: MacroImportModalProps): React.ReactElement {
+  useEscapeToClose(onCancel)
+  const includedCount = rows.filter((r) => r.include).length
+  const conflictCount = rows.filter((r) => r.conflict).length
+  const allIncluded = rows.every((r) => r.include)
+
+  function toggle(i: number): void {
+    onChange(rows.map((r, idx) => (idx === i ? { ...r, include: !r.include } : r)))
+  }
+  function setAll(include: boolean): void {
+    onChange(rows.map((r) => ({ ...r, include })))
+  }
+  function setNewOnly(): void {
+    onChange(rows.map((r) => ({ ...r, include: !r.conflict })))
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+      onClick={onCancel}
+    >
+      <div
+        className="flex max-h-[85vh] w-full max-w-xl flex-col rounded-lg border"
+        style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b px-3 py-2" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+              Import macros{sourceCharacter ? ` from ${sourceCharacter}` : ''} → {targetCharacter}
+            </div>
+            <button onClick={onCancel} style={{ color: 'var(--color-muted-foreground)' }} title="Close">
+              <X size={16} />
+            </button>
+          </div>
+          <p className="mt-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+            Each macro imports into the same page/button it occupies in the source.
+            {conflictCount > 0 && ` ${conflictCount} would overwrite an existing macro (flagged below).`}
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={() => setAll(!allIncluded)}
+              className="rounded px-2 py-0.5 text-[11px]"
+              style={{ border: '1px solid var(--color-border)', color: 'var(--color-muted-foreground)' }}
+            >
+              {allIncluded ? 'Deselect all' : 'Select all'}
+            </button>
+            {conflictCount > 0 && (
+              <button
+                onClick={setNewOnly}
+                className="rounded px-2 py-0.5 text-[11px]"
+                style={{ border: '1px solid var(--color-border)', color: 'var(--color-muted-foreground)' }}
+                title="Skip macros that would overwrite an existing one"
+              >
+                Only non-conflicting
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-2">
+          {rows.map((r, i) => {
+            const swatch = cssColor(palette.get(r.source.color))
+            const firstLine = r.source.lines.find((l) => l.trim() !== '')
+            return (
+              <label
+                key={`${r.source.page}-${r.source.button}`}
+                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-(--color-surface-2)"
+              >
+                <input type="checkbox" checked={r.include} onChange={() => toggle(i)} />
+                <span className="w-12 shrink-0 text-[10px] font-mono" style={{ color: 'var(--color-muted)' }}>
+                  P{r.source.page} B{r.source.button}
+                </span>
+                <span
+                  className="inline-block shrink-0 rounded"
+                  style={{ width: 10, height: 10, backgroundColor: swatch ?? 'transparent', border: '1px solid var(--color-border)' }}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs" style={{ color: 'var(--color-foreground)' }}>
+                    {r.source.name || '(unnamed)'}
+                  </span>
+                  {firstLine && (
+                    <span className="block truncate font-mono text-[10px]" style={{ color: 'var(--color-muted)' }}>
+                      {firstLine}
+                    </span>
+                  )}
+                </span>
+                {r.conflict && (
+                  <span
+                    className="shrink-0 rounded px-1.5 py-0.5 text-[10px]"
+                    style={{ backgroundColor: 'var(--color-warning, #f59e0b)', color: '#000' }}
+                    title="Overwrites an existing macro at this position"
+                  >
+                    overwrites
+                  </span>
+                )}
+              </label>
+            )
+          })}
+        </div>
+
+        <div className="flex items-center gap-2 border-t px-3 py-2" style={{ borderColor: 'var(--color-border)' }}>
+          <span className="flex-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+            {includedCount} of {rows.length} selected
+          </span>
+          <button
+            onClick={onCancel}
+            className="rounded px-2 py-1 text-xs"
+            style={{ color: 'var(--color-muted-foreground)', border: '1px solid var(--color-border)' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={includedCount === 0}
+            className="rounded px-3 py-1 text-xs font-medium disabled:opacity-40"
+            style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-primary-foreground, #fff)' }}
+          >
+            Import {includedCount > 0 ? includedCount : ''}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function CharacterMacrosPage(): React.ReactElement {
@@ -293,6 +448,8 @@ export default function CharacterMacrosPage(): React.ReactElement {
 
   const [editing, setEditing] = useState<{ page: number; button: number } | null>(null)
   const [confirmAction, setConfirmAction] = useState<{ type: 'save' } | { type: 'cancel' } | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [importState, setImportState] = useState<{ sourceCharacter: string; rows: ImportRow[] } | null>(null)
 
   const palette = useMemo(() => {
     const m = new Map<number, MacroColor>()
@@ -395,6 +552,63 @@ export default function CharacterMacrosPage(): React.ReactElement {
     setConfirmAction(null)
   }
 
+  async function handleImportClick(): Promise<void> {
+    if (!viewedFile) return
+    setError(null)
+    if (!window.electron?.dialog?.openMacrosFile) {
+      setError('Import requires the desktop app — not available in browser preview.')
+      return
+    }
+    let path: string | null
+    try {
+      path = await window.electron.dialog.openMacrosFile()
+    } catch (err) {
+      setError(`File picker failed: ${(err as Error).message}`)
+      return
+    }
+    if (!path) return
+
+    setImporting(true)
+    try {
+      const res = await parseMacrosFile(path)
+      const source = res.macros
+      if (!source || source.buttons.length === 0) {
+        setError('Selected file contained no macros.')
+        return
+      }
+      if (source.character && source.character.toLowerCase() === viewedFile.character.toLowerCase()) {
+        setError(`That file is ${viewedFile.character}'s own macros — use Refresh to reload from disk.`)
+        return
+      }
+      const existing = new Set(viewedFile.buttons.map((b) => keyOf(b.page, b.button)))
+      const rows: ImportRow[] = source.buttons.map((b) => ({
+        source: b,
+        conflict: existing.has(keyOf(b.page, b.button)),
+        include: true,
+      }))
+      setImportState({ sourceCharacter: source.character || '', rows })
+    } catch (err) {
+      setError(`Failed to parse macros file: ${(err as Error).message}`)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  function handleConfirmImport(): void {
+    if (!importState) return
+    const { rows } = importState
+    mutateViewed((buttons) => {
+      let next = buttons
+      for (const r of rows) {
+        if (!r.include) continue
+        next = next.filter((b) => !(b.page === r.source.page && b.button === r.source.button))
+        if (!buttonIsEmpty(r.source)) next.push({ ...r.source, lines: r.source.lines.slice() })
+      }
+      return next
+    })
+    setImportState(null)
+  }
+
   const editingButton = editing
     ? buttonsByKey.get(keyOf(editing.page, editing.button)) ?? emptyButton(editing.page, editing.button)
     : null
@@ -444,6 +658,15 @@ export default function CharacterMacrosPage(): React.ReactElement {
           title="Write changes to the .ini file"
         >
           <Save size={12} className={saving ? 'animate-pulse' : ''} /> Save
+        </button>
+        <button
+          onClick={handleImportClick}
+          disabled={!viewedFile || saving || importing}
+          className="flex items-center gap-1 rounded px-2 py-1 text-xs disabled:opacity-40"
+          style={{ color: 'var(--color-muted-foreground)', border: '1px solid var(--color-border)' }}
+          title="Import macros from another character's _pq.proj.ini"
+        >
+          <Download size={12} className={importing ? 'animate-pulse' : ''} /> Import
         </button>
         <button
           onClick={load}
@@ -592,6 +815,18 @@ export default function CharacterMacrosPage(): React.ReactElement {
             </p>
           }
           onCancel={() => setConfirmAction(null)}
+        />
+      )}
+
+      {importState && viewedFile && (
+        <MacroImportModal
+          sourceCharacter={importState.sourceCharacter}
+          targetCharacter={viewedFile.character}
+          rows={importState.rows}
+          palette={palette}
+          onChange={(rows) => setImportState((prev) => (prev ? { ...prev, rows } : prev))}
+          onConfirm={handleConfirmImport}
+          onCancel={() => setImportState(null)}
         />
       )}
 
