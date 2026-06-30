@@ -134,6 +134,17 @@ export interface BackupSettings {
   max_backups: number
 }
 
+export interface CombatSettings {
+  // Days of combat history to keep in user.db before pruning. 0 = default
+  // (30), negative = keep forever.
+  retention_days: number
+  // Inactivity window, in seconds, before an active fight (with damage) is
+  // archived and dropped from the live meter. Now the main way a parse ends —
+  // zoning and death no longer auto-clear fights. 0 = default (60). Raids
+  // still floor to the built-in 120s window.
+  fight_timeout_seconds: number
+}
+
 export type TrackingScope = 'self' | 'cast_by_me' | 'anyone'
 
 export type TrackingMode = 'auto' | 'triggers_only'
@@ -272,6 +283,7 @@ export interface Config {
   server_addr: string
   preferences: Preferences
   backup: BackupSettings
+  combat: CombatSettings
   spell_timer: SpellTimerSettings
   ch_chain: CHChainSettings
   dps_class_colors: DPSClassColors

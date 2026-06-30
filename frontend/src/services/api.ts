@@ -1174,6 +1174,13 @@ export function resetCombatState(): Promise<void> {
   return post<void>('/api/combat/reset')
 }
 
+// discardActiveFight drops the current in-flight parse(s) from the live meter
+// without archiving them to history or the session totals — the manual "end
+// this encounter now" action. Completed fights still auto-save on kill/timeout.
+export function discardActiveFight(): Promise<void> {
+  return post<void>('/api/combat/discard')
+}
+
 export function getThreatState(): Promise<ThreatState> {
   return get<ThreatState>('/api/overlay/threat')
 }

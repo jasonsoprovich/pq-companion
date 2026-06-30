@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Swords, Circle, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users, Trash2, Activity, Hourglass, User, History, Crosshair } from 'lucide-react'
+import { Swords, Circle, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users, Trash2, Activity, Hourglass, User, History, Crosshair, XCircle } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
-import { getCombatState, getLogStatus, resetCombatState } from '../../services/api'
+import { getCombatState, getLogStatus, resetCombatState, discardActiveFight } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import type { CombatState, FightState } from '../../types/combat'
 import type { LogTailerStatus } from '../../types/logEvent'
@@ -496,6 +496,24 @@ export default function DPSPanel({
             {dpsModeLabel(dpsMode)}
           </button>
           <CopyFightButton fight={scope === 'window' ? windowFight : combat?.current_fight ?? null} combine={combine} mode={dpsMode} />
+          <button
+            onClick={() => { if (combat?.in_combat) discardActiveFight().catch(() => {}) }}
+            disabled={!combat?.in_combat}
+            title={
+              combat?.in_combat
+                ? 'Discard the current parse — drop this fight from the meter without saving it to history (use after evac/zone when you’re done with the mob)'
+                : 'No active fight to discard'
+            }
+            style={{
+              background: 'none', border: 'none',
+              cursor: combat?.in_combat ? 'pointer' : 'default',
+              padding: '1px 3px', color: 'var(--color-muted)',
+              display: 'flex', alignItems: 'center',
+              opacity: combat?.in_combat ? 1 : 0.4,
+            }}
+          >
+            <XCircle size={12} />
+          </button>
           <button
             onClick={() => resetCombatState().catch(() => {})}
             title="Clear DPS — reset session damage, fight history, and the meter"

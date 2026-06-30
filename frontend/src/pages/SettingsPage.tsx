@@ -2483,10 +2483,66 @@ export default function SettingsPage(): React.ReactElement {
 
         {/* ── DPS Class Colors ───────────────────────────────────────────── */}
         {tab === 'dpscolors' && (
+        <>
+        <section
+          className="rounded-lg p-4 mb-4"
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          <h2
+            className="mb-1 text-sm font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            Combat Meter
+          </h2>
+          <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            A parse stays on the meter through zoning and death — handy when you evac/Abscond to drop aggro and run back, or die and get rezzed. It ends only when the mob dies, you discard it with the meter’s ✕ button, or it sits idle for the timeout below. Raid-sized fights always get at least a 2-minute window.
+          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                Fight Inactivity Timeout
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                How long a fight can go without any damage before it’s archived. Higher values survive longer zone trips; lower values close out parses faster. Default 60.
+              </p>
+            </div>
+            <div className="flex items-center gap-1 shrink-0 ml-3">
+              <input
+                type="number"
+                min={10}
+                max={1800}
+                step={5}
+                value={config.combat?.fight_timeout_seconds ?? 60}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    combat: {
+                      ...config.combat,
+                      fight_timeout_seconds: Math.min(1800, Math.max(10, Number(e.target.value) || 60)),
+                    },
+                  })
+                }
+                className="w-20 rounded px-2 py-1 text-sm text-right"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-foreground)',
+                }}
+              />
+              <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                sec
+              </span>
+            </div>
+          </div>
+        </section>
         <DPSClassColorsSection
           value={config.dps_class_colors ?? DEFAULT_DPS_CLASS_COLORS}
           onChange={(next) => setConfig({ ...config, dps_class_colors: next })}
         />
+        </>
         )}
 
         {/* ── Log Files ──────────────────────────────────────────────────── */}
