@@ -1,6 +1,7 @@
 package rolltracker
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -267,6 +268,32 @@ func TestSetProfileRoundTrips(t *testing.T) {
 	got := tr.State().Profile
 	if got.Mode != ProfileTiered || got.Scheme != SchemeSuffix || len(got.Tiers) != 2 {
 		t.Fatalf("profile not round-tripped through State: %+v", got)
+	}
+}
+
+func TestProfilePersistenceRoundTrip(t *testing.T) {
+	// Mirrors main.go: a profile is marshaled to a JSON blob for config,
+	// then unmarshaled and re-applied via Configure on the next launch.
+	orig := RollProfile{
+		Mode:    ProfileTiered,
+		Scheme:  SchemeSuffix,
+		Divisor: 100,
+		Tiers:   []ProfileTier{{Match: 11, Label: "Pick"}, {Match: 22, Label: "Upgrade"}},
+	}
+	blob, err := json.Marshal(orig)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var restored RollProfile
+	if err := json.Unmarshal(blob, &restored); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	tr := newTrackerForTest()
+	tr.Configure(WinnerHighest, ModeManual, 45, restored)
+	got := tr.State().Profile
+	if got.Mode != ProfileTiered || got.Scheme != SchemeSuffix || got.Divisor != 100 ||
+		len(got.Tiers) != 2 || got.Tiers[0].Label != "Pick" || got.Tiers[1].Match != 22 {
+		t.Fatalf("profile did not survive JSON round-trip + Configure: %+v", got)
 	}
 }
 
