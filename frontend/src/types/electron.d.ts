@@ -4,6 +4,8 @@ export interface ElectronAPI {
   app: {
     getVersion: () => Promise<string>
     relaunch: () => Promise<void>
+    navigateMain: (route: string) => Promise<void>
+    onNavigate: (cb: (route: string) => void) => () => void
   }
   backend: {
     getPort: () => Promise<number>

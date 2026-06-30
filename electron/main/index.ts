@@ -2440,6 +2440,18 @@ ipcMain.handle('app:relaunch', async () => {
 ipcMain.handle('app:version', () => app.getVersion())
 ipcMain.handle('backend:port', () => getBackendPort())
 
+// Drive the MAIN window to a deep link from another window (e.g. an overlay
+// popout whose loot/spell rows link into the database explorer). Overlays have
+// their own router, so they can't navigate the main window directly — they ask
+// the main process to focus the main window and hand it the hash route.
+ipcMain.handle('app:navigate-main', (_event, route: string) => {
+  if (typeof route !== 'string' || !route.startsWith('/')) return
+  showMainWindow()
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('app:navigate', route)
+  }
+})
+
 // Opens ~/.pq-companion in the OS file manager. Used by the Settings page
 // error screen so a user whose backend never came up (AV quarantine, port
 // stuck, etc.) can still reach their config.yaml manually. We open the

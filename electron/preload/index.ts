@@ -5,6 +5,17 @@ contextBridge.exposeInMainWorld('electron', {
   app: {
     getVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
     relaunch: (): Promise<void> => ipcRenderer.invoke('app:relaunch'),
+    // Ask the main process to focus the main window and navigate it to a hash
+    // route. Called from overlay windows so their entity links open in the
+    // main database explorer.
+    navigateMain: (route: string): Promise<void> =>
+      ipcRenderer.invoke('app:navigate-main', route),
+    // Main-window-only: subscribe to deep-link routes pushed from other windows.
+    onNavigate: (cb: (route: string) => void): (() => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, route: string): void => cb(route)
+      ipcRenderer.on('app:navigate', listener)
+      return () => ipcRenderer.removeListener('app:navigate', listener)
+    },
   },
   backend: {
     getPort: (): Promise<number> => ipcRenderer.invoke('backend:port'),

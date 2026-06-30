@@ -1,5 +1,5 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react'
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import OnboardingWizard from './components/OnboardingWizard'
 import { getConfig } from './services/api'
@@ -103,6 +103,13 @@ function MainWindowLayout(): React.ReactElement {
   // Keep the Log Feed populating in the background so it persists across tab
   // navigation. Clearing only happens via the user's Trash button or restart.
   useLogFeedSubscriber()
+
+  // Deep links pushed from overlay windows (e.g. an NPC overlay loot row)
+  // arrive here as hash routes; navigate the main window to them.
+  const navigate = useNavigate()
+  useEffect(() => {
+    return window.electron?.app?.onNavigate?.((route) => navigate(route))
+  }, [navigate])
 
   // 'unknown' until config has been loaded; then either true (skip wizard)
   // or false (show wizard before mounting the main Layout).
