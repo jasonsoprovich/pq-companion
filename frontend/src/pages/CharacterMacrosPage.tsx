@@ -68,12 +68,13 @@ function cssColor(c: MacroColor | undefined): string | null {
 interface ButtonEditorProps {
   initial: MacroButton
   palette: Map<number, MacroColor>
+  hiddenDefaultNote?: boolean
   onSave: (b: MacroButton) => void
   onClear: () => void
   onClose: () => void
 }
 
-function ButtonEditor({ initial, palette, onSave, onClear, onClose }: ButtonEditorProps): React.ReactElement {
+function ButtonEditor({ initial, palette, hiddenDefaultNote, onSave, onClear, onClose }: ButtonEditorProps): React.ReactElement {
   useEscapeToClose(onClose)
   const [name, setName] = useState(initial.name)
   const [color, setColor] = useState(initial.color)
@@ -116,6 +117,22 @@ function ButtonEditor({ initial, palette, onSave, onClear, onClose }: ButtonEdit
         </div>
 
         <div className="flex flex-col gap-3 overflow-y-auto p-3">
+          {hiddenDefaultNote && (
+            <div
+              className="flex items-start gap-2 rounded-md border px-2.5 py-2 text-[11px]"
+              style={{
+                borderColor: 'var(--color-warning, #f59e0b)',
+                backgroundColor: 'color-mix(in srgb, var(--color-warning, #f59e0b) 12%, transparent)',
+                color: 'var(--color-muted-foreground)',
+              }}
+            >
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" style={{ color: 'var(--color-warning, #f59e0b)' }} />
+              <span>
+                This page-1 slot currently holds a built-in EverQuest default that isn&rsquo;t stored in
+                the file. Saving a macro here overrides that default in-game.
+              </span>
+            </div>
+          )}
           {/* Name */}
           <label className="flex flex-col gap-1">
             <span className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
@@ -739,6 +756,25 @@ export default function CharacterMacrosPage(): React.ReactElement {
             by the EverQuest client — log in at least once to generate it.
           </div>
         )}
+        {!loading && !error && viewedFile && page === 1 && (
+          <div
+            className="mb-3 flex items-start gap-2 rounded-md border px-3 py-2 text-[11px]"
+            style={{
+              borderColor: 'var(--color-warning, #f59e0b)',
+              backgroundColor: 'color-mix(in srgb, var(--color-warning, #f59e0b) 12%, transparent)',
+              color: 'var(--color-muted-foreground)',
+            }}
+          >
+            <AlertTriangle size={13} className="mt-0.5 shrink-0" style={{ color: 'var(--color-warning, #f59e0b)' }} />
+            <span>
+              EverQuest pre-fills page 1 with 12 default social buttons that aren&rsquo;t saved to the
+              <code> .ini</code> until you change them, so slots marked{' '}
+              <span style={{ color: 'var(--color-warning, #f59e0b)' }}>EQ default</span> aren&rsquo;t actually
+              empty — they hold a built-in default that only shows in-game. Editing one overrides that
+              default; leaving it alone keeps it intact (saving never touches slots you don&rsquo;t edit).
+            </span>
+          </div>
+        )}
         {!loading && !error && viewedFile && (
           <div
             style={{
@@ -751,6 +787,10 @@ export default function CharacterMacrosPage(): React.ReactElement {
               const b = buttonsByKey.get(keyOf(page, btn))
               const swatch = b ? cssColor(palette.get(b.color)) : null
               const isEmpty = !b || buttonIsEmpty(b)
+              // Page 1 ships 12 built-in EQ defaults that aren't written to the
+              // .ini until changed — so an "empty" page-1 slot really holds a
+              // hidden in-game default, not a free slot. Flag it distinctly.
+              const hiddenDefault = isEmpty && page === 1
               return (
                 <button
                   key={btn}
@@ -758,9 +798,15 @@ export default function CharacterMacrosPage(): React.ReactElement {
                   className="flex flex-col gap-1 rounded-lg border p-2 text-left transition-colors hover:bg-(--color-surface-2)"
                   style={{
                     backgroundColor: 'var(--color-surface)',
-                    borderColor: 'var(--color-border)',
+                    borderColor: hiddenDefault ? 'var(--color-warning, #f59e0b)' : 'var(--color-border)',
+                    borderStyle: hiddenDefault ? 'dashed' : 'solid',
                     minHeight: 64,
                   }}
+                  title={
+                    hiddenDefault
+                      ? 'This slot holds a built-in EverQuest default that is not stored in the file. Editing it overrides that default.'
+                      : undefined
+                  }
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] font-mono" style={{ color: 'var(--color-muted)' }}>
@@ -774,9 +820,16 @@ export default function CharacterMacrosPage(): React.ReactElement {
                     )}
                     <span
                       className="truncate text-xs font-medium"
-                      style={{ color: isEmpty ? 'var(--color-muted)' : 'var(--color-foreground)' }}
+                      style={{
+                        color: hiddenDefault
+                          ? 'var(--color-warning, #f59e0b)'
+                          : isEmpty
+                            ? 'var(--color-muted)'
+                            : 'var(--color-foreground)',
+                        fontStyle: isEmpty ? 'italic' : 'normal',
+                      }}
                     >
-                      {isEmpty ? 'Empty' : b!.name || '(unnamed)'}
+                      {hiddenDefault ? 'EQ default' : isEmpty ? 'Empty' : b!.name || '(unnamed)'}
                     </span>
                   </div>
                   {!isEmpty && b!.lines.find((l) => l.trim() !== '') && (
@@ -795,6 +848,7 @@ export default function CharacterMacrosPage(): React.ReactElement {
         <ButtonEditor
           initial={editingButton}
           palette={palette}
+          hiddenDefaultNote={editing.page === 1 && buttonIsEmpty(editingButton)}
           onSave={handleApply}
           onClear={handleClear}
           onClose={() => setEditing(null)}
