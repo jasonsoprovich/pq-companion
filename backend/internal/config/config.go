@@ -422,6 +422,12 @@ type Preferences struct {
 	// ahead feature whose live-detection paths can only be tuned post-release.
 	PoPFlagsEnabled bool `yaml:"pop_flags_enabled,omitempty" json:"pop_flags_enabled"`
 
+	// BandolierEditorEnabled gates the Zeal bandolier editor (a per-character
+	// editor for <CharName>_bandolier.ini weapon/instrument swap sets). Dev-
+	// gated, off by default until Windows smoke-tested, since it writes a file
+	// the EQ client and Zeal also use.
+	BandolierEditorEnabled bool `yaml:"bandolier_editor_enabled,omitempty" json:"bandolier_editor_enabled"`
+
 	// NPCOverlayDashboardSections controls which optional sections of the
 	// NPC overlay are visible in the dashboard panel. Name, zone, pet
 	// owner, raid/rare badges, and the HP bar are always shown regardless

@@ -3,7 +3,7 @@ import {
   Sword, Sparkles, Skull, Map, Hammer, Activity, Layers, ScrollText, Zap,
   Users, Dice5, UserSearch, MessageSquare, Package, TrendingUp, BookOpen,
   Library, KeyRound, Hourglass, Star, Wand2, ListChecks, Percent, Store, PawPrint,
-  Flag,
+  Flag, Swords,
 } from 'lucide-react'
 import type { Preferences } from '../types/config'
 
@@ -55,6 +55,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/characters/inventory', label: 'Inventory', icon: <Package size={16} /> },
       { to: '/characters/spells', label: 'Spells', icon: <BookOpen size={16} /> },
       { to: '/characters/spellsets', label: 'Spellsets', icon: <Library size={16} /> },
+      { to: '/characters/bandolier', label: 'Bandolier', icon: <Swords size={16} />, flag: 'bandolier_editor_enabled' },
       { to: '/characters/keys', label: 'Keys', icon: <KeyRound size={16} /> },
       { to: '/characters/lockouts', label: 'Lockouts', icon: <Hourglass size={16} /> },
       { to: '/characters/wishlist', label: 'Wishlist', icon: <Star size={16} /> },
@@ -86,6 +87,7 @@ export const NAV_SECTIONS: NavSection[] = [
 export function navFlags(prefs?: Partial<Preferences>): Record<string, boolean> {
   return {
     pop_flags_enabled: Boolean(prefs?.pop_flags_enabled),
+    bandolier_editor_enabled: Boolean(prefs?.bandolier_editor_enabled),
   }
 }
 
