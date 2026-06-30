@@ -22,7 +22,7 @@ import type {
   LockoutCharactersResponse,
   LockoutCharacterResponse,
 } from '../types/lockouts'
-import type { PoPResolved, PoPFlagDatasetResponse, SeerPreviewResponse } from '../types/popflag'
+import type { PoPResolved, PoPFlagDatasetResponse, SeerPreviewResponse, SeerScanResponse } from '../types/popflag'
 import type { Backup, BackupsResponse } from '../types/backup'
 import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { RaidThreatState, TargetState, ThreatState } from '../types/overlay'
@@ -773,6 +773,16 @@ export function commitPopSeer(character: string, text: string): Promise<PoPResol
   return post<PoPResolved>(
     `/api/popflags/${encodeURIComponent(character)}/seer/commit`,
     { text },
+  )
+}
+
+// scanPopSeer asks the backend to read the character's EQ log for the most
+// recent Seer reading. found=false when there's no log / no reading (the modal
+// then falls back to manual paste).
+export function scanPopSeer(character: string): Promise<SeerScanResponse> {
+  return post<SeerScanResponse>(
+    `/api/popflags/${encodeURIComponent(character)}/seer/scan`,
+    {},
   )
 }
 

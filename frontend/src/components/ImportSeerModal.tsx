@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react'
-import { X, ScrollText, CheckCircle2, AlertCircle, Lock } from 'lucide-react'
-import { previewPopSeer, commitPopSeer } from '../services/api'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { X, ScrollText, CheckCircle2, AlertCircle, Lock, FileSearch, RefreshCw } from 'lucide-react'
+import { previewPopSeer, commitPopSeer, scanPopSeer } from '../services/api'
 import type { PoPResolved, SeerPreviewResponse, SeerDetected } from '../types/popflag'
 
 interface ImportSeerModalProps {
@@ -19,6 +19,7 @@ export default function ImportSeerModal({
   const [preview, setPreview] = useState<SeerPreviewResponse | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [scanMsg, setScanMsg] = useState<string | null>(null)
 
   const runPreview = (): void => {
     if (!text.trim()) return
@@ -26,6 +27,32 @@ export default function ImportSeerModal({
     setError(null)
     previewPopSeer(character, text)
       .then((p) => setPreview(p))
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setBusy(false))
+  }
+
+  // Read the character's EQ log for the most recent reading. On a hit we fill
+  // the textarea and preview so the user can just commit; on a miss we point
+  // them at the manual paste box below.
+  const runScan = (): void => {
+    setBusy(true)
+    setError(null)
+    setScanMsg(null)
+    scanPopSeer(character)
+      .then((resp) => {
+        if (!resp.found || !resp.text) {
+          setScanMsg(
+            `No Seer reading found in ${character}'s log. Do the in-game guided meditation (or paste it below).`,
+          )
+          return
+        }
+        setText(resp.text)
+        setPreview({
+          qglobals: resp.qglobals ?? {},
+          detected: resp.detected ?? [],
+          new_count: resp.new_count ?? 0,
+        })
+      })
       .catch((e: Error) => setError(e.message))
       .finally(() => setBusy(false))
   }
@@ -38,6 +65,17 @@ export default function ImportSeerModal({
       .catch((e: Error) => setError(e.message))
       .finally(() => setBusy(false))
   }
+
+  // Auto-scan once on open so the modal lands straight on the preview when a
+  // reading is already in the log — a one-click "check the log" refresh. The
+  // user still confirms before anything is written.
+  const scannedOnce = useRef(false)
+  useEffect(() => {
+    if (scannedOnce.current) return
+    scannedOnce.current = true
+    runScan()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Split detections into new / already-have / manual-blocked buckets.
   const buckets = useMemo(() => {
@@ -81,12 +119,42 @@ export default function ImportSeerModal({
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
             In Plane of Knowledge, sit near Seer Mal Nae`Shi and say{' '}
-            <code style={{ color: 'var(--color-primary)' }}>guided meditation</code>. Copy the
-            lines she prints into your chat and paste them below.
+            <code style={{ color: 'var(--color-primary)' }}>guided meditation</code>. The app can
+            read the lines straight from {character}'s log — no copy-paste needed.
           </p>
+
+          {/* Primary path: scan the log file. */}
+          <button
+            onClick={runScan}
+            disabled={busy}
+            className="flex w-full items-center justify-center gap-2 rounded px-3 py-2 text-xs font-medium"
+            style={{
+              backgroundColor: 'var(--color-primary)',
+              color: 'var(--color-background)',
+              opacity: busy ? 0.6 : 1,
+            }}
+          >
+            {busy ? <RefreshCw size={13} className="animate-spin" /> : <FileSearch size={13} />}
+            Scan {character}'s log for the latest reading
+          </button>
+          {scanMsg && (
+            <div className="flex items-start gap-2 text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+              <AlertCircle size={12} className="mt-0.5 shrink-0" />
+              {scanMsg}
+            </div>
+          )}
+
+          {/* Fallback: manual paste (teammate's reading, a log from another PC). */}
+          <div className="flex items-center gap-2 pt-1">
+            <div className="h-px flex-1" style={{ backgroundColor: 'var(--color-border)' }} />
+            <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
+              or paste manually
+            </span>
+            <div className="h-px flex-1" style={{ backgroundColor: 'var(--color-border)' }} />
+          </div>
           <textarea
             value={text}
-            onChange={(e) => { setText(e.target.value); setPreview(null) }}
+            onChange={(e) => { setText(e.target.value); setPreview(null); setScanMsg(null) }}
             placeholder="Paste the Seer's guided-meditation output here…"
             rows={8}
             className="w-full rounded px-2 py-1.5 text-xs font-mono"

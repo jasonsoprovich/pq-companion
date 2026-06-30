@@ -99,7 +99,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	quarmH := &quarmHandler{cfgMgr: cfgMgr, fetcher: quarm.NewManifestFetcher()}
 	sandboxH := &sandboxHandler{sb: sb, cfgMgr: cfgMgr}
 	savedQueryH := &savedQueryHandler{store: savedQueryStore, cfgMgr: cfgMgr}
-	popflagH := &popflagHandler{store: popflagStore, hub: hub}
+	popflagH := &popflagHandler{store: popflagStore, hub: hub, mgr: cfgMgr}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
@@ -253,6 +253,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/dataset", popflagH.dataset)
 			r.Get("/{character}", popflagH.get)
 			r.Post("/{character}/seer/preview", popflagH.seerPreview)
+			r.Post("/{character}/seer/scan", popflagH.seerScan)
 			r.Post("/{character}/seer/commit", popflagH.seerCommit)
 			r.Post("/{character}/{flagID}", popflagH.setManual)
 		})

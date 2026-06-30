@@ -3,20 +3,25 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/popflag"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
 // popflagHandler serves the curated PoP flag dataset plus per-character
 // progress. The store may be nil when user.db failed to open; dataset reads
-// still work, but per-character reads/writes respond 503.
+// still work, but per-character reads/writes respond 503. mgr resolves the EQ
+// log directory for the "scan log" path (nil-safe).
 type popflagHandler struct {
 	store *popflag.Store
 	hub   *ws.Hub
+	mgr   *config.Manager
 }
 
 // WSEventPopflagSnapshot is broadcast after a Seer reading (paste-in or
@@ -123,20 +128,28 @@ func (h *popflagHandler) seerPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	q := popflag.ParseSeer(req.Text)
-	derived := popflag.DeriveCompletion(q)
-
-	// Current state, to mark already-done and manual-blocked detections.
-	states, err := h.store.Get(character)
+	preview, err := h.buildSeerPreview(character, popflag.ParseSeer(req.Text))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	writeJSON(w, http.StatusOK, preview)
+}
+
+// buildSeerPreview turns a reconstructed qglobal map into the preview response:
+// which flags it marks complete, and how each relates to the character's
+// current state (new / already-have / manual-blocked). Shared by the paste-in
+// preview and the scan-log path.
+func (h *popflagHandler) buildSeerPreview(character string, q map[string]string) (seerPreviewResponse, error) {
+	derived := popflag.DeriveCompletion(q)
+	states, err := h.store.Get(character)
+	if err != nil {
+		return seerPreviewResponse{}, err
 	}
 	cur := make(map[string]popflag.State, len(states))
 	for _, s := range states {
 		cur[s.FlagID] = s
 	}
-
 	resp := seerPreviewResponse{Qglobals: q, Detected: []seerDetected{}}
 	for _, id := range derived {
 		f, ok := popflag.ByID(id)
@@ -152,7 +165,69 @@ func (h *popflagHandler) seerPreview(w http.ResponseWriter, r *http.Request) {
 		}
 		resp.Detected = append(resp.Detected, d)
 	}
-	writeJSON(w, http.StatusOK, resp)
+	return resp, nil
+}
+
+// seerScanResponse is the scan-log result: the same preview the paste path
+// returns, plus the raw recovered text to feed back to seer/commit. Found is
+// false when the character's log holds no Seer reading.
+type seerScanResponse struct {
+	Found    bool              `json:"found"`
+	Text     string            `json:"text,omitempty"`
+	Qglobals map[string]string `json:"qglobals,omitempty"`
+	Detected []seerDetected    `json:"detected,omitempty"`
+	NewCount int               `json:"new_count,omitempty"`
+}
+
+// POST /api/popflags/{character}/seer/scan
+// Scans the character's EQ log for the most recent Seer guided-meditation
+// reading and returns the same preview as the paste path plus the raw text to
+// commit. Responds found=false (200) when the EQ folder isn't configured, the
+// log doesn't exist, or it holds no reading — the UI falls back to paste.
+func (h *popflagHandler) seerScan(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "pop flag store unavailable")
+		return
+	}
+	character := strings.TrimSpace(chi.URLParam(r, "character"))
+	if character == "" {
+		writeError(w, http.StatusBadRequest, "character required")
+		return
+	}
+	eqPath := ""
+	if h.mgr != nil {
+		eqPath = h.mgr.Get().EQPath
+	}
+	if eqPath == "" {
+		writeJSON(w, http.StatusOK, seerScanResponse{Found: false})
+		return
+	}
+	logPath := filepath.Join(eqPath, "eqlog_"+character+"_pq.proj.txt")
+	burst, found, err := popflag.ScanLogForSeer(logPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeJSON(w, http.StatusOK, seerScanResponse{Found: false})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusOK, seerScanResponse{Found: false})
+		return
+	}
+	preview, err := h.buildSeerPreview(character, popflag.ParseSeer(burst.Text))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, seerScanResponse{
+		Found:    true,
+		Text:     burst.Text,
+		Qglobals: preview.Qglobals,
+		Detected: preview.Detected,
+		NewCount: preview.NewCount,
+	})
 }
 
 // POST /api/popflags/{character}/seer/commit

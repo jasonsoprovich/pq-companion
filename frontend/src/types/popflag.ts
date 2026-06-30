@@ -77,3 +77,14 @@ export interface SeerPreviewResponse {
   detected: SeerDetected[]
   new_count: number
 }
+
+// SeerScanResponse is the result of scanning the character's EQ log: the same
+// preview shape plus the raw recovered text to commit. found=false when there's
+// no log file or no reading in it.
+export interface SeerScanResponse {
+  found: boolean
+  text?: string
+  qglobals?: Record<string, string>
+  detected?: SeerDetected[]
+  new_count?: number
+}

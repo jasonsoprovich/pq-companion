@@ -547,7 +547,7 @@ export default function PoPFlaggingPage(): React.ReactElement {
               }}
             >
               <ScrollText size={11} />
-              Import Seer reading
+              Sync from Seer log
             </button>
           )}
           <button
