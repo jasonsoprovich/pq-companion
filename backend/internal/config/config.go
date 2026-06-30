@@ -213,7 +213,24 @@ type CombatSettings struct {
 	// the common "let me see last week's raid" case without growing the DB
 	// beyond a few MB for normal use.
 	RetentionDays int `yaml:"retention_days" json:"retention_days"`
+
+	// FightTimeoutSeconds is the inactivity window, in seconds, after which an
+	// active fight that has recorded damage is archived and dropped from the
+	// live meter. This is now the primary way a parse ends: zoning and player
+	// death no longer force-clear fights (a wizard who zones to drop aggro, or
+	// dies and gets rezzed, keeps the same parse), so the encounter ends only
+	// on the mob's death, the user's manual discard, or this timeout. Raid-
+	// scale encounters still use at least the built-in raid window even when
+	// this is set lower, since raid bosses have long mechanic-driven lulls.
+	// 0 (or missing) means "use the default" (60) — long enough to survive a
+	// zone-out / run-back cycle without splitting the fight.
+	FightTimeoutSeconds int `yaml:"fight_timeout_seconds" json:"fight_timeout_seconds"`
 }
+
+// DefaultFightTimeoutSeconds is the inactivity window applied to an active
+// fight (with damage) when the user hasn't set one. Bumped past the old hard-
+// coded 30s so a zone round-trip to drop aggro keeps the parse alive.
+const DefaultFightTimeoutSeconds = 60
 
 // TrackingScope* are the canonical values for SpellTimerSettings.TrackingScope.
 const (
@@ -698,7 +715,8 @@ func defaults() Config {
 			// not-exist branch of LoadFrom.
 		},
 		Combat: CombatSettings{
-			RetentionDays: 30,
+			RetentionDays:       30,
+			FightTimeoutSeconds: DefaultFightTimeoutSeconds,
 		},
 		CHChain:           DefaultCHChainSettings(),
 		ChatRetentionDays: 30,
@@ -787,6 +805,14 @@ func applyDefaults(cfg *Config) bool {
 	// pruneCombatHistory honours as "skip".
 	if cfg.Combat.RetentionDays == 0 {
 		cfg.Combat.RetentionDays = 30
+		changed = true
+	}
+	// Fight-inactivity timeout: same "0 means use the default" convention as
+	// retention above (a missing field and an explicit 0 are indistinguishable
+	// to the YAML decoder). Backfills configs that predate the setting so the
+	// meter behaves consistently whether or not the field is present.
+	if cfg.Combat.FightTimeoutSeconds == 0 {
+		cfg.Combat.FightTimeoutSeconds = DefaultFightTimeoutSeconds
 		changed = true
 	}
 	// Chat history retention: same convention as Combat — a missing/zero value

@@ -309,6 +309,17 @@ func main() {
 		}
 		return cfgMgr.Get().Character
 	})
+	// Fight inactivity timeout: read live from config so a settings change
+	// applies to the next armed timer. This is the main way a parse ends now
+	// that zoning/death don't force-clear fights. 0 falls back to the tracker's
+	// built-in default; the config layer already backfills it to 60.
+	combatTracker.SetFightTimeoutFn(func() time.Duration {
+		secs := cfgMgr.Get().Combat.FightTimeoutSeconds
+		if secs <= 0 {
+			return 0
+		}
+		return time.Duration(secs) * time.Second
+	})
 
 	// Threat meter: estimates the active character's own per-mob hate from its
 	// own combat log lines, reusing the same mob keys as the combat tracker.

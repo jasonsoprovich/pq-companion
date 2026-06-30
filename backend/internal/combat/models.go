@@ -8,9 +8,11 @@ import "time"
 // WSEventCombat is the WebSocket event type broadcast when combat state changes.
 const WSEventCombat = "overlay:combat"
 
-// fightExpiryWithDamage is the per-NPC inactivity window once a fight has
-// recorded any damage. Matches EQLogParser's FightTimeout (30 s) so a brief
-// lull within an encounter doesn't archive the fight prematurely.
+// fightExpiryWithDamage is the FALLBACK per-NPC inactivity window once a fight
+// has recorded any damage, used only when no timeout provider is wired (tests,
+// legacy callers). In production the value comes from the user's configured
+// Combat.FightTimeoutSeconds via SetFightTimeoutFn (default 60 s) — see
+// Tracker.fightTimeoutLocked. Matches EQLogParser's FightTimeout (30 s).
 const fightExpiryWithDamage = 30 * time.Second
 
 // fightExpiryNoDamage is the per-NPC inactivity window before the fight

@@ -120,6 +120,47 @@ func activeFightFor(tr *Tracker, npcName string) *Fight {
 	return tr.activeFights[npcName]
 }
 
+// TestFightTimeoutHonorsConfig verifies the armed inactivity window: the
+// configured value is used for a damage fight, the raid window floors it when
+// many players are verified, and a pre-damage fight uses the longer no-damage
+// window regardless of config.
+func TestFightTimeoutHonorsConfig(t *testing.T) {
+	tr := newTestTracker(t)
+
+	// The test inspects *Locked helpers directly, so it holds t.mu and sets the
+	// provider field directly rather than via SetFightTimeoutFn (which locks).
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	tr.fightTimeoutFn = func() time.Duration { return 90 * time.Second }
+	damaged := &Fight{hasDamage: true}
+	if got := tr.fightTimeoutLocked(damaged); got != 90*time.Second {
+		t.Errorf("configured damage timeout: got %v, want 90s", got)
+	}
+
+	preDamage := &Fight{hasDamage: false}
+	if got := tr.fightTimeoutLocked(preDamage); got != fightExpiryNoDamage {
+		t.Errorf("pre-damage timeout: got %v, want %v", got, fightExpiryNoDamage)
+	}
+
+	// Configured below the raid floor: a raid-like session still gets the raid
+	// window so long mechanic lulls don't split the fight.
+	tr.fightTimeoutFn = func() time.Duration { return 45 * time.Second }
+	for i := 0; i < raidPlayerThreshold; i++ {
+		tr.verifiedPlayers[string(rune('A'+i))+"player"] = true
+	}
+	if got := tr.fightTimeoutLocked(damaged); got != fightExpiryRaid {
+		t.Errorf("raid-floored timeout: got %v, want %v", got, fightExpiryRaid)
+	}
+
+	// No provider wired → built-in fallback.
+	tr.fightTimeoutFn = nil
+	tr.verifiedPlayers = map[string]bool{}
+	if got := tr.fightTimeoutLocked(damaged); got != fightExpiryWithDamage {
+		t.Errorf("fallback timeout: got %v, want %v", got, fightExpiryWithDamage)
+	}
+}
+
 func TestNoFightInitially(t *testing.T) {
 	tr := newTestTracker(t)
 	st := tr.GetState()
@@ -208,7 +249,11 @@ func TestIncomingDamageTracked(t *testing.T) {
 	}
 }
 
-func TestZoneForcesEndOfFight(t *testing.T) {
+// TestZoneKeepsFightActive verifies a zone change no longer force-ends the
+// fight: a wizard who zones to drop aggro keeps their parse, which continues
+// accumulating when they return (same NPC key) and only archives on kill /
+// timeout / manual discard.
+func TestZoneKeepsFightActive(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()
 
@@ -216,14 +261,17 @@ func TestZoneForcesEndOfFight(t *testing.T) {
 	tr.Handle(zoneEvent(now.Add(time.Second)))
 
 	st := tr.GetState()
-	if st.InCombat {
-		t.Fatal("expected InCombat=false after zone change")
+	if !st.InCombat {
+		t.Fatal("expected InCombat=true: zoning must not end the fight")
 	}
-	if len(st.RecentFights) != 1 {
-		t.Fatalf("expected 1 recent fight, got %d", len(st.RecentFights))
+	if len(st.RecentFights) != 0 {
+		t.Fatalf("expected 0 archived fights after zone, got %d", len(st.RecentFights))
 	}
-	if st.RecentFights[0].TotalDamage != 100 {
-		t.Fatalf("expected recent fight TotalDamage=100, got %d", st.RecentFights[0].TotalDamage)
+	// Returning to the same mob keeps accumulating into the same parse.
+	tr.Handle(hitEvent("You", "a gnoll", 150, now.Add(2*time.Second)))
+	st = tr.GetState()
+	if st.CurrentFight == nil || st.CurrentFight.TotalDamage != 250 {
+		t.Fatalf("expected continued fight TotalDamage=250, got %+v", st.CurrentFight)
 	}
 }
 
@@ -231,13 +279,13 @@ func TestSessionAggregatesAccumulate(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()
 
-	// First fight.
+	// First fight — closed by the mob's death (zoning no longer archives).
 	tr.Handle(hitEvent("You", "a gnoll", 300, now))
-	tr.Handle(zoneEvent(now.Add(time.Second)))
+	tr.Handle(killEvent("You", "a gnoll", now.Add(time.Second)))
 
 	// Second fight.
 	tr.Handle(hitEvent("You", "a skeleton", 200, now.Add(10*time.Second)))
-	tr.Handle(zoneEvent(now.Add(11 * time.Second)))
+	tr.Handle(killEvent("You", "a skeleton", now.Add(11*time.Second)))
 
 	st := tr.GetState()
 	if st.SessionDamage != 500 {
@@ -372,11 +420,10 @@ func TestDeathRecorded(t *testing.T) {
 	if d.Zone != "The North Karana" {
 		t.Errorf("expected Zone=%q, got %q", "The North Karana", d.Zone)
 	}
+	// Death is recorded but no longer ends the fight: you can be rezzed and
+	// continue the same encounter, so the parse survives the death.
 	if !st.InCombat {
-		// death ends the fight
-	}
-	if st.InCombat {
-		t.Fatal("expected InCombat=false after death")
+		t.Fatal("expected InCombat=true: death must not end the fight")
 	}
 }
 
@@ -917,9 +964,10 @@ func TestKillEndsOnlyTheNamedFight(t *testing.T) {
 	}
 }
 
-// TestZoneEndsAllActiveFights confirms that a zone change archives every
-// in-flight fight, not just the most-recent one.
-func TestZoneEndsAllActiveFights(t *testing.T) {
+// TestZoneKeepsAllActiveFights confirms a zone change keeps every in-flight
+// fight active (none archived), the multi-mob analogue of
+// TestZoneKeepsFightActive.
+func TestZoneKeepsAllActiveFights(t *testing.T) {
 	tr := newTestTracker(t)
 	now := time.Now()
 
@@ -927,11 +975,37 @@ func TestZoneEndsAllActiveFights(t *testing.T) {
 	tr.Handle(hitEvent("You", "a wolf", 80, now.Add(time.Second)))
 	tr.Handle(zoneEvent(now.Add(2 * time.Second)))
 
-	if got := activeFightCount(tr); got != 0 {
-		t.Fatalf("expected 0 active fights after zone, got %d", got)
+	if got := activeFightCount(tr); got != 2 {
+		t.Fatalf("expected 2 active fights kept after zone, got %d", got)
 	}
-	if got := len(tr.GetState().RecentFights); got != 2 {
-		t.Errorf("expected 2 archived fights after zone, got %d", got)
+	if got := len(tr.GetState().RecentFights); got != 0 {
+		t.Errorf("expected 0 archived fights after zone, got %d", got)
+	}
+}
+
+// TestDiscardActiveFightsDropsWithoutArchiving confirms the manual discard
+// throws away in-flight fights without writing them to history or the session
+// totals — distinct from a kill/timeout, which archive.
+func TestDiscardActiveFightsDropsWithoutArchiving(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("You", "a gnoll", 100, now))
+	tr.Handle(hitEvent("You", "a wolf", 80, now.Add(time.Second)))
+	tr.DiscardActiveFights(now.Add(2 * time.Second))
+
+	st := tr.GetState()
+	if st.InCombat {
+		t.Fatal("expected InCombat=false after discard")
+	}
+	if activeFightCount(tr) != 0 {
+		t.Fatalf("expected 0 active fights after discard, got %d", activeFightCount(tr))
+	}
+	if len(st.RecentFights) != 0 {
+		t.Errorf("discard must not archive: expected 0 recent fights, got %d", len(st.RecentFights))
+	}
+	if st.SessionDamage != 0 {
+		t.Errorf("discard must not touch session totals: expected 0, got %d", st.SessionDamage)
 	}
 }
 

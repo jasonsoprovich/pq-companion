@@ -322,6 +322,12 @@ type Tracker struct {
 	// (players.Store) in production. May be nil — unresolved combatants
 	// fall through to the frontend's Unknown palette colour.
 	classResolverFn func(name string) string
+
+	// fightTimeoutFn returns the user-configured inactivity window for an
+	// active fight that has recorded damage. Read live so a settings change
+	// applies to the next armed timer without a restart. May be nil or return
+	// <= 0, in which case the tracker falls back to fightExpiryWithDamage.
+	fightTimeoutFn func() time.Duration
 }
 
 // SetHistoryStore wires the persistent fight history store. Called once at
@@ -344,6 +350,17 @@ func (t *Tracker) SetClassResolvers(selfClassFn func() string, classResolverFn f
 	t.mu.Lock()
 	t.selfClassFn = selfClassFn
 	t.classResolverFn = classResolverFn
+	t.mu.Unlock()
+}
+
+// SetFightTimeoutFn wires the provider for the active-fight inactivity window
+// (the user's Combat.FightTimeoutSeconds). Called once at startup; the closure
+// is read each time a fight timer is armed so a settings change takes effect
+// immediately. A nil provider (or one returning <= 0) leaves the tracker on its
+// built-in fallback.
+func (t *Tracker) SetFightTimeoutFn(fn func() time.Duration) {
+	t.mu.Lock()
+	t.fightTimeoutFn = fn
 	t.mu.Unlock()
 }
 
@@ -538,12 +555,20 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 		t.endFightByNPC(data.Target, ev.Timestamp)
 
 	case logparser.EventZone:
+		// Zoning no longer force-ends fights. Wizards (and others) routinely
+		// zone, evac, or Abscond to drop aggro mid-fight and run back; clearing
+		// the parse on every zone wiped those encounters. The fight now persists
+		// and keeps accumulating when the player returns — it ends only on the
+		// mob's death, the inactivity timeout, or a manual discard. A trip that
+		// exceeds the timeout closes the fight naturally (the timer fires while
+		// away); the configurable window is generous enough to survive a normal
+		// zone round-trip. We still record the new zone so a fight archived after
+		// the move (and any death) is attributed to where the player ended up.
 		if data, ok := ev.Data.(logparser.ZoneData); ok {
 			t.mu.Lock()
 			t.currentZone = data.ZoneName
 			t.mu.Unlock()
 		}
-		t.endAllFights(ev.Timestamp, true)
 
 	case logparser.EventPetOwner:
 		data, ok := ev.Data.(logparser.PetOwnerData)
@@ -596,7 +621,12 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 			SlainBy:   slainBy,
 		})
 		t.mu.Unlock()
-		t.endAllFights(ev.Timestamp, true)
+		// Death is recorded but no longer force-ends fights: you can die, get
+		// rezzed, and continue the same encounter, so the parse must survive the
+		// death. If the fight is genuinely over (a wipe), its inactivity timer
+		// closes it naturally. Broadcast so the death count updates live even
+		// though the active fights are untouched.
+		t.broadcastState(ev.Timestamp)
 	}
 }
 
@@ -835,18 +865,40 @@ func (t *Tracker) armFightTimerLocked(f *Fight) {
 	if f.timer != nil {
 		f.timer.Stop()
 	}
-	d := fightExpiryNoDamage
-	if f.hasDamage {
-		d = fightExpiryWithDamage
-		if t.isRaidLikeLocked() {
-			d = fightExpiryRaid
-		}
-	}
+	d := t.fightTimeoutLocked(f)
 	npcName := f.npcName
 	fightID := f.id
 	f.timer = time.AfterFunc(d, func() {
 		t.fightTimerExpired(npcName, fightID)
 	})
+}
+
+// fightTimeoutLocked returns the inactivity window to arm for f. A fight that
+// hasn't yet recorded damage uses the longer pre-engage window; once it has
+// damage it uses the user-configured timeout, floored to the raid window when
+// the session looks like a raid (raid bosses lull longer than a configured
+// group timeout might allow). Caller must hold t.mu.
+func (t *Tracker) fightTimeoutLocked(f *Fight) time.Duration {
+	if !f.hasDamage {
+		return fightExpiryNoDamage
+	}
+	d := t.configuredFightTimeoutLocked()
+	if t.isRaidLikeLocked() && fightExpiryRaid > d {
+		d = fightExpiryRaid
+	}
+	return d
+}
+
+// configuredFightTimeoutLocked resolves the user-configured damage-fight
+// timeout, falling back to the built-in default when no provider is wired or it
+// returns a non-positive value. Caller must hold t.mu.
+func (t *Tracker) configuredFightTimeoutLocked() time.Duration {
+	if t.fightTimeoutFn != nil {
+		if d := t.fightTimeoutFn(); d > 0 {
+			return d
+		}
+	}
+	return fightExpiryWithDamage
 }
 
 // fightTimerExpired archives one fight when its inactivity timer fires.
@@ -1353,12 +1405,15 @@ func (t *Tracker) endFightByNPC(npcName string, ts time.Time) {
 	t.broadcast(snap)
 }
 
-// endAllFights archives every currently-active fight at ts. Used on zone
-// changes and player deaths, where every in-flight fight is invalidated.
-// forced is accepted for API symmetry with the prior implementation; both
-// trigger paths stop timers, so it is currently a no-op flag.
-func (t *Tracker) endAllFights(ts time.Time, forced bool) {
-	_ = forced
+// DiscardActiveFights drops every currently-active fight WITHOUT archiving it,
+// then broadcasts the cleared state. This backs the meter's manual "discard
+// current parse" control: the user is saying "this encounter is junk / over,
+// remove it now" — so unlike a kill or a timeout it must not write the fight to
+// history or fold its damage into the session totals. Completed fights you want
+// to keep are still saved automatically by the kill/timeout paths; this only
+// throws away the in-flight ones on the live meter. No-op when nothing is
+// active. ts is the moment of the discard, used only for the broadcast stamp.
+func (t *Tracker) DiscardActiveFights(ts time.Time) {
 	t.mu.Lock()
 	if len(t.activeFights) == 0 {
 		t.mu.Unlock()
@@ -1368,8 +1423,18 @@ func (t *Tracker) endAllFights(ts time.Time, forced bool) {
 		if f.timer != nil {
 			f.timer.Stop()
 		}
-		t.archiveFightLocked(f, ts)
 	}
+	t.activeFights = make(map[string]*Fight)
+	snap := t.snapshot(ts)
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
+// broadcastState snapshots and broadcasts the current combat state without
+// mutating any fights. Used when something changes that the overlay should see
+// (e.g. a new death record) but the active fights themselves are untouched.
+func (t *Tracker) broadcastState(ts time.Time) {
+	t.mu.Lock()
 	snap := t.snapshot(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)
