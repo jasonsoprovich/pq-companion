@@ -12,18 +12,30 @@ import type { TriggerFired } from '../types/trigger'
  * page the user is on.
  */
 
-// DEDUP_WINDOW_MS: kept in sync with TriggerOverlayWindowPage. A single
-// trigger should never legitimately fire twice for the same matched line
-// inside this window, so collapse duplicates to one audio play.
-const DEDUP_WINDOW_MS = 750
+// IDENTITY_TTL_MS bounds how long a played line's identity is remembered for
+// the duplicate guard below. It only caps memory: a physical log line's
+// identity (trigger + log-second + text) corresponds to exactly one real
+// moment, so any repeat of it is a duplicate no matter how long ago — 60s is
+// far longer than the seconds-late re-delivery this guards against.
+const IDENTITY_TTL_MS = 60_000
 
 export function useAudioEngine(): void {
-  const lastFired = useRef<Map<string, number>>(new Map())
+  // Duplicate guard keyed on the line's IDENTITY (trigger id + log timestamp +
+  // matched text), not on arrival time. The backend's polling log reader can,
+  // in rare idle/filesystem-timing edges, dispatch the same physical line more
+  // than once; those re-deliveries can land seconds apart in wall-clock, so the
+  // old arrival-time window let them through and the alert played 2–3×. Keying
+  // on the immutable line identity collapses any re-delivery to one play while
+  // leaving genuinely distinct lines (different sender/text, or a later second)
+  // to play freely — "one chime per read event," which is what the user wants.
+  // Value is the wall-clock time we first played it, used only for TTL cleanup.
+  // Audio-only: overlay text and trigger history fire per match as before.
+  const playedIdentities = useRef<Map<string, number>>(new Map())
   // Per-trigger repeat-audio cooldown clock: trigger id → last time audio
-  // played for it. Distinct from lastFired (which is keyed on the matched
-  // line) — this collapses a trigger firing on *different* lines in quick
-  // succession (AE mez wearing off several mobs) down to one audio alert.
-  // Keyed by trigger id, so it's naturally bounded by the trigger count.
+  // played for it. Distinct from playedIdentities (keyed on the exact line) —
+  // this collapses a trigger firing on *different* lines in quick succession
+  // (AE mez wearing off several mobs) down to one audio alert. Keyed by
+  // trigger id, so it's naturally bounded by the trigger count.
   const lastAudioByTrigger = useRef<Map<string, number>>(new Map())
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
@@ -33,13 +45,16 @@ export function useAudioEngine(): void {
     if (!fired?.actions) return
 
     const now = Date.now()
-    const key = `${fired.trigger_id}|${fired.matched_line}`
-    const prev = lastFired.current.get(key)
-    if (prev !== undefined && now - prev < DEDUP_WINDOW_MS) return
-    lastFired.current.set(key, now)
-    if (lastFired.current.size > 256) {
-      for (const [k, t] of lastFired.current) {
-        if (now - t > DEDUP_WINDOW_MS) lastFired.current.delete(k)
+    // fired_at is the log line's own timestamp (1-second resolution) for log
+    // triggers, so this key is the physical line's identity. A re-delivery of
+    // the same line repeats it exactly; a genuinely new event differs in text
+    // or second.
+    const key = `${fired.trigger_id}|${fired.fired_at}|${fired.matched_line}`
+    if (playedIdentities.current.has(key)) return
+    playedIdentities.current.set(key, now)
+    if (playedIdentities.current.size > 512) {
+      for (const [k, t] of playedIdentities.current) {
+        if (now - t > IDENTITY_TTL_MS) playedIdentities.current.delete(k)
       }
     }
 
