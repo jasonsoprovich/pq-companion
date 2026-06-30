@@ -107,6 +107,43 @@ type AllBandoliersResponse struct {
 	Characters []*BandolierFile `json:"characters"`
 }
 
+// In-game social/macro layout. The EQ client stores up to 120 macro buttons in
+// the [Socials] section of <CharName>_pq.proj.ini: 10 pages × 12 buttons, each
+// with a name, a color index, and up to 5 command lines.
+const (
+	MacroPageCount      = 10
+	MacroButtonsPerPage = 12
+	MacroLineCount      = 5
+)
+
+// MacroButton is one social/hotbutton macro. Page is 1..MacroPageCount and
+// Button is 1..MacroButtonsPerPage. Lines is always exactly MacroLineCount
+// entries, indexed by line number-1; "" indicates an unused line (positions are
+// significant — an empty Line2 is preserved, not compacted away). Color is the
+// raw EQ user-color palette index (resolved to RGB against eqclient.ini's
+// [TextColors] by the UI), not an RGB value.
+type MacroButton struct {
+	Page   int      `json:"page"`
+	Button int      `json:"button"`
+	Name   string   `json:"name"`
+	Color  int      `json:"color"`
+	Lines  []string `json:"lines"`
+}
+
+// MacroFile is the parsed [Socials] section of a <CharName>_pq.proj.ini file.
+// Only buttons that carry a name or at least one command line are included.
+type MacroFile struct {
+	Character  string        `json:"character"`
+	ExportedAt time.Time     `json:"exported_at"`
+	Buttons    []MacroButton `json:"buttons"`
+}
+
+// AllMacrosResponse is returned by GET /api/zeal/macros/all.
+type AllMacrosResponse struct {
+	Configured bool         `json:"configured"`
+	Characters []*MacroFile `json:"characters"`
+}
+
 // AllInventoriesResponse is returned by GET /api/zeal/all-inventories.
 // Configured is false when the EQ path has not been set in config.
 // SharedBank contains deduplicated entries from the most-recently-modified export file.
