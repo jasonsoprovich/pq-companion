@@ -92,6 +92,45 @@ export interface BandolierSlotItemsResponse {
   items: BandolierItem[]
 }
 
+// In-game social macros from <Char>_pq.proj.ini [Socials]. 10 pages × 12
+// buttons, up to 5 command lines each. color is the EQ user-color palette index
+// (resolved to a swatch via TextColors), not an RGB value.
+export interface MacroButton {
+  page: number // 1..10
+  button: number // 1..12
+  name: string
+  color: number
+  lines: string[] // length 5, '' = unused line (positions significant)
+}
+
+export interface MacroFile {
+  character: string
+  exported_at: string // ISO datetime
+  buttons: MacroButton[]
+}
+
+export interface ZealMacrosResponse {
+  macros: MacroFile | null
+}
+
+export interface AllMacrosResponse {
+  configured: boolean
+  characters: MacroFile[]
+}
+
+// One resolved entry of the EQ user-color palette (best-effort swatch source).
+export interface MacroColor {
+  index: number
+  r: number
+  g: number
+  b: number
+}
+
+export interface TextColorsResponse {
+  configured: boolean
+  colors: MacroColor[]
+}
+
 export interface ZealInstallStatus {
   eq_path: string
   installed: boolean

@@ -12,6 +12,10 @@ import type {
   ZealBandolierResponse,
   AllBandoliersResponse,
   BandolierSlotItemsResponse,
+  ZealMacrosResponse,
+  AllMacrosResponse,
+  MacroButton,
+  TextColorsResponse,
   ZealInstallStatus,
   ZealPipeStatus,
 } from '../types/zeal'
@@ -616,6 +620,30 @@ export function getBandolierSlotItems(
 
 export function parseBandolierFile(path: string): Promise<ZealBandolierResponse> {
   return post<ZealBandolierResponse>('/api/zeal/bandolier/parse-file', { path })
+}
+
+export function getZealMacros(character?: string): Promise<ZealMacrosResponse> {
+  const qs = character ? `?character=${encodeURIComponent(character)}` : ''
+  return get<ZealMacrosResponse>(`/api/zeal/macros${qs}`)
+}
+
+export function getAllMacros(): Promise<AllMacrosResponse> {
+  return get<AllMacrosResponse>('/api/zeal/macros/all')
+}
+
+export function updateMacros(
+  character: string,
+  buttons: MacroButton[],
+): Promise<ZealMacrosResponse> {
+  return put<ZealMacrosResponse>('/api/zeal/macros', { character, buttons })
+}
+
+export function parseMacrosFile(path: string): Promise<ZealMacrosResponse> {
+  return post<ZealMacrosResponse>('/api/zeal/macros/parse-file', { path })
+}
+
+export function getTextColors(): Promise<TextColorsResponse> {
+  return get<TextColorsResponse>('/api/zeal/text-colors')
 }
 
 // ── Spell Checklist ────────────────────────────────────────────────────────────
