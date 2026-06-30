@@ -59,6 +59,38 @@ func TestApplySeerManualPrecedence(t *testing.T) {
 	}
 }
 
+func TestApplySeerOverride(t *testing.T) {
+	s := openTempStore(t)
+	const char = "Osui"
+
+	// User manually retracted potor_saryrn — normally the reading can't change
+	// it (see TestApplySeerManualPrecedence).
+	if err := s.SetManual(char, "potor_saryrn", false); err != nil {
+		t.Fatalf("SetManual: %v", err)
+	}
+
+	q := ParseSeer("The Cipher of the Divine Language appears on your arms.")
+	// Override it: the user chose to accept the reading for this one flag.
+	if _, err := s.ApplySeerOverriding(char, q, "raw", time.Unix(1000, 0), []string{"potor_saryrn"}); err != nil {
+		t.Fatalf("ApplySeerOverriding: %v", err)
+	}
+
+	rows := doneByID(t, s, char)
+	if r := rows["potor_saryrn"]; !r.Done || r.Source != SourceSeer {
+		t.Errorf("overridden flag should now be seer-done: %+v", r)
+	}
+	// A different manual row (not overridden) must still be protected.
+	if err := s.SetManual(char, "pod_grummus", false); err != nil {
+		t.Fatalf("SetManual pod_grummus: %v", err)
+	}
+	if _, err := s.ApplySeerOverriding(char, map[string]string{"grummus": "1"}, "r2", time.Unix(2000, 0), nil); err != nil {
+		t.Fatalf("ApplySeerOverriding 2: %v", err)
+	}
+	if r := doneByID(t, s, char)["pod_grummus"]; r.Done || r.Source != SourceManual {
+		t.Errorf("non-overridden manual row should survive: %+v", r)
+	}
+}
+
 func TestApplySeerRetraction(t *testing.T) {
 	s := openTempStore(t)
 	const char = "Osui"

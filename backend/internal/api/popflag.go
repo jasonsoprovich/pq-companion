@@ -90,6 +90,10 @@ func (h *popflagHandler) setManual(w http.ResponseWriter, r *http.Request) {
 
 type seerRequest struct {
 	Text string `json:"text"`
+	// Override lists flag IDs whose manual setting should yield to this reading
+	// (used to resolve a manual-vs-Seer conflict the preview flagged). Empty for
+	// the default behaviour where manual rows are preserved.
+	Override []string `json:"override,omitempty"`
 }
 
 // seerDetected is one flag a Seer reading marks complete, plus how it relates
@@ -249,7 +253,7 @@ func (h *popflagHandler) seerCommit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := popflag.ParseSeer(req.Text)
-	if _, err := h.store.ApplySeer(character, q, req.Text, time.Now()); err != nil {
+	if _, err := h.store.ApplySeerOverriding(character, q, req.Text, time.Now(), req.Override); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

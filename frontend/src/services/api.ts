@@ -769,10 +769,16 @@ export function previewPopSeer(
   )
 }
 
-export function commitPopSeer(character: string, text: string): Promise<PoPResolved> {
+// commitPopSeer applies a reading. override lists flag IDs whose manual setting
+// should yield to the reading (resolving a manual-vs-Seer conflict).
+export function commitPopSeer(
+  character: string,
+  text: string,
+  override?: string[],
+): Promise<PoPResolved> {
   return post<PoPResolved>(
     `/api/popflags/${encodeURIComponent(character)}/seer/commit`,
-    { text },
+    override && override.length > 0 ? { text, override } : { text },
   )
 }
 

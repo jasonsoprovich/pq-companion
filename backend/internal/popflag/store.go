@@ -234,6 +234,15 @@ type Snapshot struct {
 // seer/auto rows are cleared first so a re-reading can retract a flag the
 // character no longer shows.
 func (s *Store) ApplySeer(character string, qglobals map[string]string, rawText string, observedAt time.Time) ([]string, error) {
+	return s.ApplySeerOverriding(character, qglobals, rawText, observedAt, nil)
+}
+
+// ApplySeerOverriding is ApplySeer plus a caller-supplied list of flag IDs whose
+// manual row should be dropped first, so the reading wins for exactly those
+// flags. This is how the UI lets a user resolve a manual-vs-Seer conflict: a
+// flag they once set by hand but now want to accept from the reading. Manual
+// rows NOT in overrideManual stay protected as usual.
+func (s *Store) ApplySeerOverriding(character string, qglobals map[string]string, rawText string, observedAt time.Time, overrideManual []string) ([]string, error) {
 	if character == "" {
 		return nil, fmt.Errorf("character required")
 	}
@@ -257,6 +266,13 @@ func (s *Store) ApplySeer(character string, qglobals map[string]string, rawText 
 	// Clear non-manual rows so retractions take effect and seer supersedes auto.
 	if _, err := tx.Exec(`DELETE FROM pop_flag_state WHERE character = ? AND source != 'manual'`, character); err != nil {
 		return nil, fmt.Errorf("clear non-manual rows for %q: %w", character, err)
+	}
+	// Drop the manual rows the user chose to override, so the seer insert below
+	// applies the reading's value for them instead of being blocked.
+	for _, id := range overrideManual {
+		if _, err := tx.Exec(`DELETE FROM pop_flag_state WHERE character = ? AND flag_id = ? AND source = 'manual'`, character, id); err != nil {
+			return nil, fmt.Errorf("clear manual override char=%q flag=%q: %w", character, id, err)
+		}
 	}
 	// Insert seer rows; a surviving manual row wins (DO NOTHING).
 	for _, id := range done {
