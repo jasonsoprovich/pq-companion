@@ -398,11 +398,13 @@ type Preferences struct {
 	// have such an effect, and do NOT re-enter Spell Casting Subtlety here.
 	ThreatHatemodPct int `yaml:"threat_hatemod_pct,omitempty" json:"threat_hatemod_pct"`
 
-	// RaidThreatEnabled gates the experimental raid-estimate mode of the Threat
-	// Meter (a per-mob, per-player ESTIMATED hate view derived from observed
-	// damage). Dev-gated, off by default; carries the DPS meter's accuracy
-	// limits plus threat-specific blind spots (DoTs/heals/taunts/out-of-range).
-	RaidThreatEnabled bool `yaml:"raid_threat_enabled,omitempty" json:"raid_threat_enabled"`
+	// RaidThreatEnabled controls the raid-estimate mode of the Threat Meter (a
+	// per-mob, per-player ESTIMATED hate view derived from observed damage). On
+	// by default; it still carries the DPS meter's accuracy limits plus threat-
+	// specific blind spots (DoTs/heals/taunts/out-of-range), so it's configured
+	// (and can be turned off) in Settings > Overlays. No omitempty so an explicit
+	// "off" persists rather than reverting to the default on next load.
+	RaidThreatEnabled bool `yaml:"raid_threat_enabled" json:"raid_threat_enabled"`
 
 	// RaidThreatClassMods is the per-class hate adjustment (class name → signed
 	// percent) the raid-estimate view applies to a player's observed damage, to
@@ -727,6 +729,7 @@ func defaults() Config {
 			OverlayDPSEnabled:           true,
 			OverlayHPSEnabled:           false,
 			OverlayEntityLinksEnabled:   true,
+			RaidThreatEnabled:           true,
 			MasterVolume:                100,
 			ZoomFactor:                  1.0,
 			NPCOverlayDashboardSections: DefaultNPCOverlaySections(),
