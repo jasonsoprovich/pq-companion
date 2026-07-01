@@ -178,6 +178,20 @@ function FlagsPanel(): React.ReactElement {
 
   return (
     <div className="flex flex-col gap-4">
+      <div
+        className="flex items-start gap-2 rounded-lg px-4 py-3"
+        style={{
+          border: '1px solid var(--color-warning, #f59e0b)',
+          backgroundColor: 'color-mix(in srgb, var(--color-warning, #f59e0b) 12%, transparent)',
+        }}
+      >
+        <AlertTriangle size={16} className="mt-0.5 shrink-0" style={{ color: 'var(--color-warning, #f59e0b)' }} />
+        <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+          <strong style={{ color: 'var(--color-warning, #f59e0b)' }}>Active development.</strong>{' '}
+          These features are still being built and tested — expect bugs, incomplete
+          behavior, and breaking changes between releases. Enable them at your own risk.
+        </p>
+      </div>
       <section
         className="rounded-lg p-4"
         style={{
