@@ -919,6 +919,137 @@ func (h *triggerHandler) applyPackUpdate(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, res)
 }
 
+// ── Action templates ─────────────────────────────────────────────────────────
+//
+// Named, reusable Actions lists managed from the trigger editor's Templates
+// menu. At most one is the default; its actions prefill new triggers.
+
+func (h *triggerHandler) listActionTemplates(w http.ResponseWriter, r *http.Request) {
+	list, err := h.store.ListActionTemplates()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if list == nil {
+		list = []*trigger.ActionTemplate{}
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+type actionTemplateRequest struct {
+	Name      string           `json:"name"`
+	Actions   []trigger.Action `json:"actions"`
+	IsDefault bool             `json:"is_default"`
+}
+
+func (h *triggerHandler) createActionTemplate(w http.ResponseWriter, r *http.Request) {
+	var req actionTemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	t := trigger.ActionTemplate{
+		Name:      strings.TrimSpace(req.Name),
+		Actions:   req.Actions,
+		IsDefault: req.IsDefault,
+	}
+	if err := h.store.CreateActionTemplate(&t); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, t)
+}
+
+func (h *triggerHandler) updateActionTemplate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	existing, err := h.store.GetActionTemplate(id)
+	if err != nil {
+		if errors.Is(err, trigger.ErrTemplateNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	var req actionTemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if strings.TrimSpace(req.Name) != "" {
+		existing.Name = strings.TrimSpace(req.Name)
+	}
+	if req.Actions != nil {
+		existing.Actions = req.Actions
+	}
+	existing.IsDefault = req.IsDefault
+	if err := h.store.UpdateActionTemplate(existing); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, existing)
+}
+
+func (h *triggerHandler) deleteActionTemplate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.store.DeleteActionTemplate(id); err != nil {
+		if errors.Is(err, trigger.ErrTemplateNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ── Bulk action edits ────────────────────────────────────────────────────────
+
+type bulkActionsRequest struct {
+	TriggerIDs []string `json:"trigger_ids"`
+	// Operation: "apply_template" replaces each trigger's actions with
+	// Actions; "tts_to_sound" converts text_to_speech actions (and,
+	// optionally, TTS timer alerts) to play_sound with SoundPath/Volume.
+	Operation          string           `json:"operation"`
+	Actions            []trigger.Action `json:"actions"`
+	SoundPath          string           `json:"sound_path"`
+	Volume             float64          `json:"volume"`
+	IncludeTimerAlerts bool             `json:"include_timer_alerts"`
+}
+
+func (h *triggerHandler) bulkEditActions(w http.ResponseWriter, r *http.Request) {
+	var req bulkActionsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if len(req.TriggerIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "trigger_ids is required")
+		return
+	}
+	var res *trigger.BulkResult
+	var err error
+	switch req.Operation {
+	case "apply_template":
+		res, err = trigger.BulkApplyActions(h.store, req.TriggerIDs, req.Actions)
+	case "tts_to_sound":
+		res, err = trigger.BulkConvertTTSToSound(h.store, req.TriggerIDs, req.SoundPath, req.Volume, req.IncludeTimerAlerts)
+	default:
+		writeError(w, http.StatusBadRequest, "unknown operation")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.engine.Reload()
+	writeJSON(w, http.StatusOK, res)
+}
+
 // findBuiltinPack returns the named built-in pack definition, or nil.
 func findBuiltinPack(name string) *trigger.TriggerPack {
 	for _, p := range trigger.AllPacks() {

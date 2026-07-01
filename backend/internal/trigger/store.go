@@ -104,6 +104,20 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Named, reusable Actions lists (see ActionTemplate). is_default marks
+	// at most one template whose actions prefill newly created triggers.
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS action_templates (
+			id         TEXT    NOT NULL PRIMARY KEY,
+			name       TEXT    NOT NULL,
+			actions    TEXT    NOT NULL DEFAULT '[]',
+			is_default INTEGER NOT NULL DEFAULT 0,
+			created_at INTEGER NOT NULL
+		)
+	`); err != nil {
+		return err
+	}
+
 	// Tracks one-time additive pack default updates so each runs at most
 	// once. See ApplyDefaultUpdates / DefaultUpdates for the migration list.
 	if _, err := s.db.Exec(`

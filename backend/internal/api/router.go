@@ -391,6 +391,11 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Post("/import/preview", triggerH.importPreview)
 			r.Post("/import/commit", triggerH.importCommit)
 			r.Get("/export", triggerH.exportPack)
+			r.Get("/action-templates", triggerH.listActionTemplates)
+			r.Post("/action-templates", triggerH.createActionTemplate)
+			r.Put("/action-templates/{id}", triggerH.updateActionTemplate)
+			r.Delete("/action-templates/{id}", triggerH.deleteActionTemplate)
+			r.Post("/bulk-actions", triggerH.bulkEditActions)
 			r.Get("/packs", triggerH.listBuiltinPacks)
 			// Static /packs/updates is registered before the {name} wildcard
 			// so a pack can never shadow it.
