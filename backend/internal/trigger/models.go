@@ -305,6 +305,15 @@ type Trigger struct {
 	// install path; moves never change it.
 	SourcePack string `json:"source_pack,omitempty"`
 
+	// PackKey is the trigger's stable identity within its source pack, used
+	// to match an installed row back to the shipped definition when diffing
+	// pack updates — it survives both user renames (which only change Name)
+	// and developer renames (set PackKey to the old name in the pack def
+	// when renaming, or the rename shows as remove+add). Defaults to the
+	// definition's Name at install time (see packKeyOf). Empty for
+	// user-authored triggers.
+	PackKey string `json:"pack_key,omitempty"`
+
 	// SortOrder is the trigger's manual position within its category, used by
 	// the Triggers page "Manual" sort mode. Lower sorts first; ties fall back
 	// to CreatedAt. Set on create/move to append at the end of the target

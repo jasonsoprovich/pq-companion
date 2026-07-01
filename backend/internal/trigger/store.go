@@ -80,7 +80,25 @@ func (s *Store) migrate() error {
 			sort_order             INTEGER NOT NULL DEFAULT 0,
 			source_pack            TEXT    NOT NULL DEFAULT '',
 			bar_color              TEXT    NOT NULL DEFAULT '',
-			refire_cooldown_secs   INTEGER NOT NULL DEFAULT 0
+			refire_cooldown_secs   INTEGER NOT NULL DEFAULT 0,
+			pack_key               TEXT    NOT NULL DEFAULT ''
+		)
+	`); err != nil {
+		return err
+	}
+
+	// Snapshot of each built-in pack trigger's definition as it was last
+	// installed/updated, keyed by (source_pack, pack_key). The pack-update
+	// diff compares these against the definitions compiled into the current
+	// build: baseline≠shipped = "update available", baseline≠user's row =
+	// "user customized" — so user edits never show up as phantom updates.
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS pack_baselines (
+			source_pack TEXT    NOT NULL,
+			pack_key    TEXT    NOT NULL,
+			definition  TEXT    NOT NULL,
+			updated_at  INTEGER NOT NULL,
+			PRIMARY KEY (source_pack, pack_key)
 		)
 	`); err != nil {
 		return err
@@ -134,6 +152,7 @@ func (s *Store) migrate() error {
 		`ALTER TABLE triggers ADD COLUMN source_pack TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE triggers ADD COLUMN bar_color TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE triggers ADD COLUMN refire_cooldown_secs INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE triggers ADD COLUMN pack_key TEXT NOT NULL DEFAULT ''`,
 		// trigger_categories columns for databases created before category
 		// ordering. Existing rows were all user-created → explicit defaults 1.
 		`ALTER TABLE trigger_categories ADD COLUMN explicit INTEGER NOT NULL DEFAULT 1`,
@@ -147,7 +166,192 @@ func (s *Store) migrate() error {
 	if err := s.backfillSourcePack(); err != nil {
 		return err
 	}
+	if err := s.backfillPackKeysAndBaselines(); err != nil {
+		return err
+	}
 	return nil
+}
+
+// backfillPackKeysAndBaselines bootstraps the pack-update diff system for
+// installs that predate it: stamps pack_key on existing pack triggers (matched
+// against the current build's definitions by name, then by pattern as a
+// fallback for user-renamed rows) and seeds pack_baselines with the current
+// definitions. Seeding baseline = shipped-def means no phantom "updates" show
+// immediately after upgrading, and customizations made before this release
+// read as baseline — i.e. they're preserved, never flagged or overwritten.
+// One-time, ledger-guarded; the install/update paths maintain both from here on.
+func (s *Store) backfillPackKeysAndBaselines() error {
+	const key = "PackBaselines:Seed:v1"
+	applied, err := s.IsDefaultUpdateApplied(key)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+	installed, err := s.InstalledPackNames()
+	if err != nil {
+		return err
+	}
+	for _, p := range AllPacks() {
+		if !installed[p.PackName] {
+			continue
+		}
+		rows, err := s.ListBySourcePack(p.PackName)
+		if err != nil {
+			return err
+		}
+		byName := make(map[string]*Trigger, len(rows))
+		byPattern := make(map[string]*Trigger, len(rows))
+		for _, r := range rows {
+			byName[r.Name] = r
+			byPattern[r.Pattern] = r
+		}
+		claimed := make(map[string]bool, len(rows))
+		for i := range p.Triggers {
+			def := &p.Triggers[i]
+			row := byName[def.Name]
+			if row == nil {
+				row = byPattern[def.Pattern]
+			}
+			if row == nil || row.PackKey != "" || claimed[row.ID] {
+				continue
+			}
+			claimed[row.ID] = true
+			if _, err := s.db.Exec(
+				`UPDATE triggers SET pack_key = ? WHERE id = ?`,
+				packKeyOf(def), row.ID,
+			); err != nil {
+				return fmt.Errorf("backfill pack_key for %s/%s: %w", p.PackName, def.Name, err)
+			}
+		}
+		if err := s.writePackBaselines(p); err != nil {
+			return err
+		}
+	}
+	return s.MarkDefaultUpdateApplied(key)
+}
+
+// writePackBaselines upserts a baseline row for every trigger in the pack's
+// shipped definition, except those whose dedup_key is currently owned by a
+// different installed pack (those aren't installed from this pack, so they
+// must not count as this pack's baseline or they'd read as deleted forever).
+func (s *Store) writePackBaselines(pack TriggerPack) error {
+	for i := range pack.Triggers {
+		def := pack.Triggers[i]
+		if def.DedupKey != "" {
+			owner, err := s.FindByDedupKey(def.DedupKey)
+			if err != nil {
+				return err
+			}
+			if owner != nil && owner.SourcePack != pack.PackName {
+				continue
+			}
+		}
+		if err := s.UpsertPackBaseline(pack.PackName, &def); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UpsertPackBaseline records def (a shipped pack definition, not a user row)
+// as the baseline for (sourcePack, packKeyOf(def)). Identity/user fields are
+// blanked so the stored JSON is a pure definition.
+func (s *Store) UpsertPackBaseline(sourcePack string, def *Trigger) error {
+	d := *def
+	d.ID = ""
+	d.CreatedAt = time.Time{}
+	d.SourcePack = ""
+	d.Characters = nil
+	d.PackKey = packKeyOf(def)
+	blob, err := json.Marshal(d)
+	if err != nil {
+		return fmt.Errorf("marshal baseline %s/%s: %w", sourcePack, d.PackKey, err)
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO pack_baselines (source_pack, pack_key, definition, updated_at)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT(source_pack, pack_key) DO UPDATE SET definition = excluded.definition, updated_at = excluded.updated_at`,
+		sourcePack, d.PackKey, string(blob), time.Now().UTC().Unix(),
+	)
+	if err != nil {
+		return fmt.Errorf("upsert baseline %s/%s: %w", sourcePack, d.PackKey, err)
+	}
+	return nil
+}
+
+// PackBaselines returns the stored baseline definitions for a pack, keyed by
+// pack_key. Rows whose JSON fails to parse are skipped (they'll be rewritten
+// on the next update apply).
+func (s *Store) PackBaselines(sourcePack string) (map[string]*Trigger, error) {
+	rows, err := s.db.Query(
+		`SELECT pack_key, definition FROM pack_baselines WHERE source_pack = ?`, sourcePack,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list baselines for %s: %w", sourcePack, err)
+	}
+	defer rows.Close()
+	out := make(map[string]*Trigger)
+	for rows.Next() {
+		var key, blob string
+		if err := rows.Scan(&key, &blob); err != nil {
+			return nil, err
+		}
+		var t Trigger
+		if err := json.Unmarshal([]byte(blob), &t); err != nil {
+			continue
+		}
+		out[key] = &t
+	}
+	return out, rows.Err()
+}
+
+// DeletePackBaseline removes a single baseline row.
+func (s *Store) DeletePackBaseline(sourcePack, packKey string) error {
+	if _, err := s.db.Exec(
+		`DELETE FROM pack_baselines WHERE source_pack = ? AND pack_key = ?`,
+		sourcePack, packKey,
+	); err != nil {
+		return fmt.Errorf("delete baseline %s/%s: %w", sourcePack, packKey, err)
+	}
+	return nil
+}
+
+// DeletePackBaselines removes every baseline row for a pack (uninstall, or
+// the wipe half of a reinstall).
+func (s *Store) DeletePackBaselines(sourcePack string) error {
+	if _, err := s.db.Exec(
+		`DELETE FROM pack_baselines WHERE source_pack = ?`, sourcePack,
+	); err != nil {
+		return fmt.Errorf("delete baselines for %s: %w", sourcePack, err)
+	}
+	return nil
+}
+
+// ListBySourcePack returns every trigger installed from the named pack,
+// regardless of what display category it has been moved to.
+func (s *Store) ListBySourcePack(sourcePack string) ([]*Trigger, error) {
+	rows, err := s.db.Query(
+		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
+		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
+		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
+		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs, pack_key
+		 FROM triggers WHERE source_pack = ? ORDER BY created_at ASC`, sourcePack,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list triggers for pack %s: %w", sourcePack, err)
+	}
+	defer rows.Close()
+	var triggers []*Trigger
+	for rows.Next() {
+		t, err := scanTrigger(rows)
+		if err != nil {
+			return nil, err
+		}
+		triggers = append(triggers, t)
+	}
+	return triggers, rows.Err()
 }
 
 // backfillSourcePack stamps source_pack for built-in pack triggers created
@@ -622,12 +826,12 @@ func (s *Store) Insert(t *Trigger) error {
 		                       timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		                       display_threshold_secs, characters, timer_alerts, exclude_patterns,
 		                       extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition,
-		                       dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs, pack_key)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName, t.CreatedAt.Unix(),
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
-		string(extraJSON), t.TimerDurationCapture, t.TimerKeyCapture, t.TimerTargetCapture, source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder, t.SourcePack, t.BarColor, t.RefireCooldownSecs,
+		string(extraJSON), t.TimerDurationCapture, t.TimerKeyCapture, t.TimerTargetCapture, source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder, t.SourcePack, t.BarColor, t.RefireCooldownSecs, t.PackKey,
 	)
 	if err != nil {
 		return fmt.Errorf("insert trigger: %w", err)
@@ -661,7 +865,7 @@ func (s *Store) List() ([]*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs
+		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs, pack_key
 		 FROM triggers ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -686,7 +890,7 @@ func (s *Store) Get(id string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs
+		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs, pack_key
 		 FROM triggers WHERE id = ?`, id,
 	)
 	t, err := scanTrigger(row)
@@ -742,12 +946,12 @@ func (s *Store) Update(t *Trigger) error {
 		                     timer_type=?, timer_duration_secs=?, worn_off_pattern=?, spell_id=?,
 		                     display_threshold_secs=?, characters=?, timer_alerts=?, exclude_patterns=?,
 		                     extra_patterns=?, timer_duration_capture=?, timer_key_capture=?, timer_target_capture=?, source=?, pipe_condition=?,
-		                     dedup_key=?, cooldown_secs=?, sort_order=?, source_pack=?, bar_color=?, refire_cooldown_secs=?
+		                     dedup_key=?, cooldown_secs=?, sort_order=?, source_pack=?, bar_color=?, refire_cooldown_secs=?, pack_key=?
 		 WHERE id=?`,
 		t.Name, boolToInt(t.Enabled), t.Pattern, string(actJSON), t.PackName,
 		string(t.TimerType), t.TimerDurationSecs, t.WornOffPattern, t.SpellID,
 		t.DisplayThresholdSecs, string(charJSON), string(alertJSON), string(excludeJSON),
-		string(extraJSON), t.TimerDurationCapture, t.TimerKeyCapture, t.TimerTargetCapture, source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder, t.SourcePack, t.BarColor, t.RefireCooldownSecs,
+		string(extraJSON), t.TimerDurationCapture, t.TimerKeyCapture, t.TimerTargetCapture, source, pipeJSON, t.DedupKey, t.CooldownSecs, t.SortOrder, t.SourcePack, t.BarColor, t.RefireCooldownSecs, t.PackKey,
 		t.ID,
 	)
 	if err != nil {
@@ -783,7 +987,7 @@ func (s *Store) FindByPackAndName(packName, name string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs
+		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs, pack_key
 		 FROM triggers WHERE pack_name = ? AND name = ? LIMIT 1`,
 		packName, name,
 	)
@@ -811,7 +1015,7 @@ func (s *Store) FindByDedupKey(key string) (*Trigger, error) {
 		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
 		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
-		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs
+		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs, pack_key
 		 FROM triggers WHERE dedup_key = ? LIMIT 1`, key,
 	)
 	t, err := scanTrigger(row)
@@ -944,7 +1148,7 @@ func scanTrigger(row scanner) (*Trigger, error) {
 		&t.ID, &t.Name, &enabledInt, &t.Pattern, &actJSON, &t.PackName, &unixSec,
 		&timerType, &t.TimerDurationSecs, &t.WornOffPattern, &t.SpellID,
 		&t.DisplayThresholdSecs, &charJSON, &alertJSON, &excludeJSON,
-		&extraJSON, &t.TimerDurationCapture, &t.TimerKeyCapture, &t.TimerTargetCapture, &source, &pipeJSON, &t.DedupKey, &t.CooldownSecs, &t.SortOrder, &t.SourcePack, &t.BarColor, &t.RefireCooldownSecs,
+		&extraJSON, &t.TimerDurationCapture, &t.TimerKeyCapture, &t.TimerTargetCapture, &source, &pipeJSON, &t.DedupKey, &t.CooldownSecs, &t.SortOrder, &t.SourcePack, &t.BarColor, &t.RefireCooldownSecs, &t.PackKey,
 	); err != nil {
 		return nil, err
 	}

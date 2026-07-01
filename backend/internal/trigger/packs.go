@@ -2786,6 +2786,7 @@ func applyDefaultUpdate(store *Store, u DefaultUpdate) (bool, error) {
 		t.ID = id
 		t.CreatedAt = time.Now().UTC()
 		t.SourcePack = u.PackName
+		t.PackKey = packKeyOf(&t)
 		if so, err := store.NextTriggerSortOrder(u.PackName); err == nil {
 			t.SortOrder = so
 		}
@@ -2859,6 +2860,9 @@ func InstallPack(store *Store, pack TriggerPack) error {
 	if err := store.DeleteByPack(pack.PackName); err != nil {
 		return err
 	}
+	if err := store.DeletePackBaselines(pack.PackName); err != nil {
+		return err
+	}
 	return insertPackTriggers(store, pack)
 }
 
@@ -2866,7 +2870,14 @@ func InstallPack(store *Store, pack TriggerPack) error {
 // against already-installed triggers from other packs. Factored out so both
 // InstallPack (first-time install) and the promote-on-uninstall path can
 // share the skip logic.
+//
+// For built-in packs it also snapshots each inserted trigger's RAW shipped
+// definition (from AllPacks, not the character-defaulted copy the caller may
+// be installing) into pack_baselines, which is what the pack-update diff
+// compares future builds against. User-imported packs have no shipped
+// definition to diff against, so they get no baselines.
 func insertPackTriggers(store *Store, pack TriggerPack) error {
+	raw := rawPackDefs(pack.PackName)
 	now := time.Now().UTC()
 	for i := range pack.Triggers {
 		t := &pack.Triggers[i]
@@ -2893,9 +2904,31 @@ func insertPackTriggers(store *Store, pack TriggerPack) error {
 		t.ID = id
 		t.CreatedAt = now
 		t.SourcePack = pack.PackName
+		t.PackKey = packKeyOf(t)
 		if err := store.Insert(t); err != nil {
 			return err
 		}
+		if def := raw[t.PackKey]; def != nil {
+			if err := store.UpsertPackBaseline(pack.PackName, def); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// rawPackDefs returns the current build's definitions for a built-in pack,
+// keyed by pack_key, or nil when packName isn't a built-in pack.
+func rawPackDefs(packName string) map[string]*Trigger {
+	for _, p := range AllPacks() {
+		if p.PackName != packName {
+			continue
+		}
+		m := make(map[string]*Trigger, len(p.Triggers))
+		for i := range p.Triggers {
+			m[packKeyOf(&p.Triggers[i])] = &p.Triggers[i]
+		}
+		return m
 	}
 	return nil
 }
@@ -2913,6 +2946,9 @@ func insertPackTriggers(store *Store, pack TriggerPack) error {
 // would otherwise look uninstalled.
 func UninstallPack(store *Store, packName string, installedPackNames map[string]bool) error {
 	if err := store.DeleteByPack(packName); err != nil {
+		return err
+	}
+	if err := store.DeletePackBaselines(packName); err != nil {
 		return err
 	}
 	for _, candidate := range AllPacks() {
@@ -2954,7 +2990,11 @@ func promoteOrphanedTriggers(store *Store, pack TriggerPack) error {
 		t.ID = id
 		t.CreatedAt = now
 		t.SourcePack = pack.PackName
+		t.PackKey = packKeyOf(&t)
 		if err := store.Insert(&t); err != nil {
+			return err
+		}
+		if err := store.UpsertPackBaseline(pack.PackName, &pack.Triggers[i]); err != nil {
 			return err
 		}
 		slog.Info("trigger: promoted on uninstall",
