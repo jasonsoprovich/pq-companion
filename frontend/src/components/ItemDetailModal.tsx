@@ -26,6 +26,7 @@ import {
 import { ItemIcon } from './Icon'
 import { ItemTradeskillsTab } from './RecipeView'
 import { SourceNPCLink } from './SourceNPCLink'
+import SpellEffectRow from './SpellEffectRow'
 
 // ── Shared primitives ──────────────────────────────────────────────────────────
 
@@ -56,29 +57,6 @@ function EmptyTabMessage({ message }: { message: string }): React.ReactElement {
 }
 
 // ── Tab content ────────────────────────────────────────────────────────────────
-
-function SpellEffectRow({ label, spellId, name, detail }: { label: string; spellId: number; name: string; detail?: string }): React.ReactElement {
-  const navigate = useNavigate()
-  return (
-    <div className="flex justify-between gap-3 py-0.5 text-sm">
-      <span className="shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>
-      <div className="flex min-w-0 items-baseline justify-end gap-2">
-        {detail && (
-          <span className="shrink-0 text-xs" style={{ color: 'var(--color-foreground)' }}>{detail}</span>
-        )}
-        <button
-          onClick={() => navigate(`/spells?select=${spellId}`)}
-          className="min-w-0 truncate text-right underline decoration-dotted"
-          style={{ color: 'var(--color-primary)' }}
-          title="View spell details"
-        >
-          {name}
-        </button>
-      </div>
-    </div>
-  )
-}
-
 
 function OverviewTab({ item, copied, onCopy }: { item: Item; copied: boolean; onCopy: () => void }): React.ReactElement {
   const flags: string[] = []
@@ -179,9 +157,10 @@ function OverviewTab({ item, copied, onCopy }: { item: Item; copied: boolean; on
               spellId={item.worn_effect}
               name={item.worn_name}
               detail={item.worn_haste_pct && item.worn_haste_pct > 0 ? `+${item.worn_haste_pct}% Haste` : undefined}
+              effectsOnly
             />
           )}
-          {item.focus_effect > 0 && item.focus_name && <SpellEffectRow label="Focus" spellId={item.focus_effect} name={item.focus_name} />}
+          {item.focus_effect > 0 && item.focus_name && <SpellEffectRow label="Focus" spellId={item.focus_effect} name={item.focus_name} effectsOnly />}
         </Section>
       )}
       <Section title="Restrictions">

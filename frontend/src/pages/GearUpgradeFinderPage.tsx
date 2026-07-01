@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Wand2, ChevronDown, ChevronUp, ChevronRight, Star, Loader2, AlertTriangle, Sliders, RotateCcw, Save, Check, LayoutGrid, List, Target, Search, Info } from 'lucide-react'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import { ItemIcon } from '../components/Icon'
 import { SourceNPCLink } from '../components/SourceNPCLink'
 import ItemDetailModal from '../components/ItemDetailModal'
+import SpellHoverCard from '../components/SpellHoverCard'
 import {
   listCharacters,
   getItem,
@@ -785,38 +787,40 @@ function FocusPanel({
 // focus pill carries no star icon — stars are reserved for the wishlist toggle,
 // and a star on a focus pill was being mistaken for one. Colors differ per
 // effect type (focus = amber, click = sky, proc = violet) so they read apart.
+// Each pill is a link into the Spells explorer, with a SpellHoverCard quick
+// view on hover (EFFECTS only for focus — worn foci have no cast/targeting).
 function EffectPills({ cand }: { cand: UpgradeCandidate }): React.ReactElement | null {
+  const navigate = useNavigate()
+  const pill = (
+    key: string, spellId: number, text: string, effectsOnly: boolean,
+    style: React.CSSProperties,
+  ): React.ReactElement => (
+    <SpellHoverCard key={key} spellId={spellId} effectsOnly={effectsOnly}>
+      <button
+        onClick={() => navigate(`/spells?select=${spellId}`)}
+        className="shrink-0 whitespace-nowrap rounded px-1 text-[10px]"
+        style={style}>
+        {text}
+      </button>
+    </SpellHoverCard>
+  )
+
   const pills: React.ReactElement[] = []
-  if (cand.focus_name) {
-    pills.push(
-      <span key="focus" className="shrink-0 whitespace-nowrap rounded px-1 text-[10px]"
-        style={{
-          backgroundColor: cand.priority_focus ? '#eab308' : 'rgba(234,179,8,0.15)',
-          color: cand.priority_focus ? '#1a1a1a' : '#eab308',
-          fontWeight: cand.priority_focus ? 600 : 400,
-        }}
-        title={cand.priority_focus ? `Priority focus: ${cand.focus_name}` : `Focus: ${cand.focus_name}`}>
-        {cand.priority_focus ? `Priority: ${cand.focus_name}` : cand.focus_name}
-      </span>,
-    )
+  if (cand.focus_name && cand.focus_effect > 0) {
+    pills.push(pill('focus', cand.focus_effect,
+      cand.priority_focus ? `Priority: ${cand.focus_name}` : cand.focus_name, true, {
+        backgroundColor: cand.priority_focus ? '#eab308' : 'rgba(234,179,8,0.15)',
+        color: cand.priority_focus ? '#1a1a1a' : '#eab308',
+        fontWeight: cand.priority_focus ? 600 : 400,
+      }))
   }
-  if (cand.click_name) {
-    pills.push(
-      <span key="click" className="shrink-0 whitespace-nowrap rounded px-1 text-[10px]"
-        style={{ backgroundColor: 'rgba(56,189,248,0.16)', color: '#38bdf8' }}
-        title={`Click effect: ${cand.click_name}`}>
-        Click: {cand.click_name}
-      </span>,
-    )
+  if (cand.click_name && cand.click_effect > 0) {
+    pills.push(pill('click', cand.click_effect, `Click: ${cand.click_name}`, false,
+      { backgroundColor: 'rgba(56,189,248,0.16)', color: '#38bdf8' }))
   }
-  if (cand.proc_name) {
-    pills.push(
-      <span key="proc" className="shrink-0 whitespace-nowrap rounded px-1 text-[10px]"
-        style={{ backgroundColor: 'rgba(167,139,250,0.18)', color: '#a78bfa' }}
-        title={`Proc effect: ${cand.proc_name}`}>
-        Proc: {cand.proc_name}
-      </span>,
-    )
+  if (cand.proc_name && cand.proc_effect > 0) {
+    pills.push(pill('proc', cand.proc_effect, `Proc: ${cand.proc_name}`, false,
+      { backgroundColor: 'rgba(167,139,250,0.18)', color: '#a78bfa' }))
   }
   if (pills.length === 0) return null
   return <>{pills}</>

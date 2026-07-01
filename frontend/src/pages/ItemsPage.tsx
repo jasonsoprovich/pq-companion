@@ -30,6 +30,7 @@ import VariantLinks from '../components/VariantLinks'
 import { ItemTradeskillsTab } from '../components/RecipeView'
 import ItemCharactersTab from '../components/ItemCharactersTab'
 import ItemQuestsTab, { questsHaveContent } from '../components/ItemQuestsTab'
+import SpellEffectRow from '../components/SpellEffectRow'
 
 // ── Filter definitions ─────────────────────────────────────────────────────────
 
@@ -670,29 +671,6 @@ function formatNPCName(name: string): string {
   return name.replace(/_/g, ' ')
 }
 
-interface SpellEffectRowProps {
-  label: string
-  spellId: number
-  name: string
-}
-
-function SpellEffectRow({ label, spellId, name }: SpellEffectRowProps): React.ReactElement {
-  const navigate = useNavigate()
-  return (
-    <div className="flex justify-between gap-3 py-0.5 text-sm">
-      <span className="shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>
-      <button
-        onClick={() => navigate(`/spells?select=${spellId}`)}
-        className="min-w-0 truncate text-right underline decoration-dotted"
-        style={{ color: 'var(--color-primary)' }}
-        title="View spell details"
-      >
-        {name}
-      </button>
-    </div>
-  )
-}
-
 interface SourceNPCLinkProps {
   npc: ItemSourceNPC
   showRate?: boolean
@@ -860,10 +838,10 @@ function OverviewTab({ item, copied, onCopy }: OverviewTabProps): React.ReactEle
             <SpellEffectRow label="Proc" spellId={item.proc_effect} name={item.proc_name} />
           )}
           {item.worn_effect > 0 && item.worn_name && (
-            <SpellEffectRow label="Worn" spellId={item.worn_effect} name={item.worn_name} />
+            <SpellEffectRow label="Worn" spellId={item.worn_effect} name={item.worn_name} effectsOnly />
           )}
           {item.focus_effect > 0 && item.focus_name && (
-            <SpellEffectRow label="Focus" spellId={item.focus_effect} name={item.focus_name} />
+            <SpellEffectRow label="Focus" spellId={item.focus_effect} name={item.focus_name} effectsOnly />
           )}
         </Section>
       )}
