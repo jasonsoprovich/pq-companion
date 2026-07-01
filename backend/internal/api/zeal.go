@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
@@ -605,15 +606,21 @@ func (h *zealHandler) macros(w http.ResponseWriter, r *http.Request) {
 
 // PUT /api/zeal/macros
 // Surgically rewrites the [Socials] section of <Character>_pq.proj.ini.
-// Body: {"character": "Name", "buttons": [{"page","button","name","color","lines"}, ...]}
+// Body: {"character": "Name", "buttons": [{"page","button","name","color","lines"}, ...],
+//
+//	"base_modified_at": "<exported_at from the GET, optional>"}
 //
 // The file must already exist (it's the live client config — we never fabricate
 // it). Validation rejects out-of-range pages/buttons, wrong line counts, and CR/
-// LF in names/lines (which would corrupt the INI). Returns the reparsed macros.
+// LF in names/lines (which would corrupt the INI). When base_modified_at is
+// sent and the file's mtime no longer matches, the write is refused with 409 so
+// changes made on disk since the editor loaded (e.g. by the game client) are
+// never clobbered. Returns the reparsed macros.
 func (h *zealHandler) updateMacros(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Character string             `json:"character"`
-		Buttons   []zeal.MacroButton `json:"buttons"`
+		Character      string             `json:"character"`
+		Buttons        []zeal.MacroButton `json:"buttons"`
+		BaseModifiedAt *time.Time         `json:"base_modified_at"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -655,8 +662,13 @@ func (h *zealHandler) updateMacros(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := zeal.MacroPath(cfg.EQPath, body.Character)
-	if _, err := os.Stat(path); err != nil {
+	info, err := os.Stat(path)
+	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"no _pq.proj.ini for %s yet — log in once so the client creates it"}`, body.Character), http.StatusBadRequest)
+		return
+	}
+	if body.BaseModifiedAt != nil && !info.ModTime().Equal(*body.BaseModifiedAt) {
+		http.Error(w, fmt.Sprintf(`{"error":"%s's config file changed on disk since it was loaded — Refresh to pick up the latest macros, then reapply your edits"}`, body.Character), http.StatusConflict)
 		return
 	}
 
@@ -725,8 +737,9 @@ func (h *zealHandler) parseMacrosFile(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/zeal/text-colors
-// Returns the EQ user-color palette from eqclient.ini, used to render best-
-// effort swatches for social-macro color indices.
+// Returns the social color palette: the client's built-in defaults (0–19)
+// overridden per-slot by eqclient.ini [TextColors], used to render best-effort
+// swatches for social-macro color indices.
 func (h *zealHandler) textColors(w http.ResponseWriter, r *http.Request) {
 	cfg := h.cfgMgr.Get()
 	resp := struct {
@@ -737,7 +750,7 @@ func (h *zealHandler) textColors(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
-	colors, err := zeal.ParseTextColors(cfg.EQPath)
+	colors, err := zeal.MacroColorPalette(cfg.EQPath)
 	if err != nil {
 		http.Error(w, `{"error":"failed to read eqclient.ini colors"}`, http.StatusInternalServerError)
 		return

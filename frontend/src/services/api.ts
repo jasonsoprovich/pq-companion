@@ -634,8 +634,13 @@ export function getAllMacros(): Promise<AllMacrosResponse> {
 export function updateMacros(
   character: string,
   buttons: MacroButton[],
+  baseModifiedAt?: string,
 ): Promise<ZealMacrosResponse> {
-  return put<ZealMacrosResponse>('/api/zeal/macros', { character, buttons })
+  return put<ZealMacrosResponse>('/api/zeal/macros', {
+    character,
+    buttons,
+    base_modified_at: baseModifiedAt ?? null,
+  })
 }
 
 export function parseMacrosFile(path: string): Promise<ZealMacrosResponse> {

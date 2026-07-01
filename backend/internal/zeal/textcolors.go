@@ -31,6 +31,56 @@ func EQClientIniPath(eqPath string) string {
 // textColorKeyRe matches a [TextColors] component key: User_<N>_<Red|Green|Blue>.
 var textColorKeyRe = regexp.MustCompile(`(?i)^User_(\d+)_(Red|Green|Blue)$`)
 
+// defaultMacroColors is the client's built-in 20-entry social color palette
+// (indices 0–19), used for any slot eqclient.ini doesn't override. Values match
+// the classic client defaults (same table SockDrawer ships:
+// https://github.com/yeroca/SockDrawer src/utils/colors.tsx).
+var defaultMacroColors = [20][3]int{
+	{240, 240, 240}, // 0 white
+	{240, 180, 0},   // 1 gold
+	{0, 128, 0},     // 2 green
+	{180, 100, 0},   // 3 brown
+	{0, 0, 128},     // 4 navy
+	{240, 0, 240},   // 5 magenta
+	{128, 128, 128}, // 6 gray
+	{200, 200, 200}, // 7 light gray
+	{130, 130, 0},   // 8 olive
+	{96, 96, 96},    // 9 dark gray
+	{0, 0, 0},       // 10 black
+	{140, 0, 0},     // 11 dark red
+	{160, 160, 160}, // 12 silver
+	{240, 0, 0},     // 13 red
+	{0, 240, 0},     // 14 bright green
+	{240, 240, 0},   // 15 yellow
+	{0, 0, 240},     // 16 blue
+	{0, 100, 240},   // 17 sky blue
+	{0, 240, 240},   // 18 cyan
+	{128, 0, 128},   // 19 purple
+}
+
+// MacroColorPalette returns the social color palette for swatch rendering:
+// the built-in defaults for indices 0–19, overridden per-slot by any User_N
+// entries in eqclient.ini [TextColors] (which may also extend past index 19).
+func MacroColorPalette(eqPath string) ([]MacroColor, error) {
+	parsed, err := ParseTextColors(eqPath)
+	if err != nil {
+		return nil, err
+	}
+	byIndex := map[int]MacroColor{}
+	for i, c := range defaultMacroColors {
+		byIndex[i] = MacroColor{Index: i, R: c[0], G: c[1], B: c[2]}
+	}
+	for _, c := range parsed {
+		byIndex[c.Index] = c
+	}
+	out := make([]MacroColor, 0, len(byIndex))
+	for _, c := range byIndex {
+		out = append(out, c)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Index < out[j].Index })
+	return out, nil
+}
+
 // ParseTextColors reads the [TextColors] section of eqclient.ini and returns the
 // user color palette. The palette is what social-macro Color indices reference:
 // the client stores colors as User_<N>_Red/Green/Blue (N is 1-based), and a
