@@ -16,10 +16,16 @@
       explicitly (v4-only) and the renderer targets 127.0.0.1 by URL, but
       the Vite dev server HMR socket runs on localhost — so we keep both
       to avoid coupling this to either choice.
+
+      worker-src includes blob: because Vite's dev HMR client spawns a
+      Web Worker from a blob: URL; without an explicit worker-src it falls
+      back to script-src (which forbids blob:), so the worker is blocked
+      and the console fills with CSP violations. Harmless in production
+      (no blob workers there), needed for a clean dev console.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; media-src 'self' pq-audio:"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; media-src 'self' pq-audio:"
     />
     <title>PQ Companion</title>
     <!--
