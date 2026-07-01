@@ -2058,6 +2058,18 @@ export default function SettingsPage(): React.ReactElement {
         </section>
         )}
 
+        {/* ── Raid threat (estimated) ────────────────────────────────────── */}
+        {tab === 'overlays' && (
+        <RaidThreatCard
+          enabled={config.preferences.raid_threat_enabled ?? true}
+          classMods={config.preferences.raid_threat_class_mods ?? {}}
+          playerMods={config.preferences.raid_threat_player_mods ?? {}}
+          onPatch={(patch) =>
+            setConfig({ ...config, preferences: { ...config.preferences, ...patch } })
+          }
+        />
+        )}
+
         {/* ── Spell Timers ───────────────────────────────────────────────── */}
         {tab === 'spelltimers' && (
         <section
@@ -3209,6 +3221,160 @@ function DPSClassColorsSection({
           )
         })}
       </div>
+    </section>
+  )
+}
+
+// RAID_CLASSES mirrors internal/raidthreat. There is no built-in per-class
+// boost (tanks are handled by modelling taunt); these knobs are opt-in for a
+// known aggro-mod gear/AA setup, so every default is 0.
+const RAID_CLASSES = [
+  'Warrior', 'Shadow Knight', 'Paladin', 'Cleric', 'Druid', 'Shaman',
+  'Ranger', 'Monk', 'Rogue', 'Bard', 'Beastlord',
+  'Necromancer', 'Wizard', 'Magician', 'Enchanter',
+]
+
+// RaidThreatCard configures the Threat overlay's estimated Raid mode: an
+// enable toggle (adds the Solo/Raid switch to the overlay) plus optional
+// per-class and per-player hate adjustments for known aggro-mod setups.
+function RaidThreatCard({
+  enabled,
+  classMods,
+  playerMods,
+  onPatch,
+}: {
+  enabled: boolean
+  classMods: Record<string, number>
+  playerMods: Record<string, number>
+  onPatch: (patch: Record<string, unknown>) => void
+}): React.ReactElement {
+  const [newPlayer, setNewPlayer] = useState('')
+  const [newPlayerPct, setNewPlayerPct] = useState('')
+
+  const setClassMod = (cls: string, raw: string): void => {
+    const next = { ...classMods }
+    if (raw.trim() === '') delete next[cls]
+    else next[cls] = Math.max(-100, Math.min(500, Math.round(Number(raw) || 0)))
+    onPatch({ raid_threat_class_mods: next })
+  }
+  const addPlayerMod = (name: string, raw: string): void => {
+    const n = name.trim()
+    if (n === '') return
+    const next = { ...playerMods, [n]: Math.max(-100, Math.min(500, Math.round(Number(raw) || 0))) }
+    onPatch({ raid_threat_player_mods: next })
+  }
+  const removePlayerMod = (name: string): void => {
+    const next = { ...playerMods }
+    delete next[name]
+    onPatch({ raid_threat_player_mods: next })
+  }
+
+  return (
+    <section
+      className="rounded-lg p-4"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+    >
+      <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+        Raid threat (estimated)
+      </h2>
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          Adds a <strong>Solo / Raid</strong> toggle to the Threat overlay. Raid mode
+          estimates every nearby player&rsquo;s hate from the damage they do — the same
+          data the DPS meter uses — and pins a tank to the top when it sees their taunt
+          land. It is approximate: out-of-range players, others&rsquo; DoTs, heals, and
+          utility casts aren&rsquo;t in your log, so DoT/healer classes read low.
+        </p>
+        <button
+          type="button"
+          onClick={() => onPatch({ raid_threat_enabled: !enabled })}
+          className="shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors"
+          style={{
+            backgroundColor: enabled ? 'var(--color-primary)' : 'var(--color-surface-2)',
+            color: enabled ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          {enabled ? 'Enabled' : 'Disabled'}
+        </button>
+      </div>
+
+      {enabled && (
+        <>
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+              Per-class hate adjustment (%)
+            </p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
+              {RAID_CLASSES.map((cls) => {
+                const set = classMods[cls]
+                return (
+                  <label key={cls} className="flex items-center justify-between gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                    <span className="truncate">{cls}</span>
+                    <input
+                      type="number"
+                      defaultValue={set ?? ''}
+                      key={set ?? 'unset'}
+                      placeholder="0"
+                      onBlur={(e) => setClassMod(cls, e.target.value)}
+                      className="w-14 rounded px-1 py-0.5 text-right text-xs"
+                      style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+                    />
+                  </label>
+                )
+              })}
+            </div>
+            <p className="mt-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+              Blank = 0 (no adjustment). Applied to a player&rsquo;s observed damage —
+              opt-in for known aggro-mod gear/AAs.
+            </p>
+          </div>
+
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+              Per-player override (%)
+            </p>
+            {Object.keys(playerMods).length > 0 && (
+              <div className="mb-2 flex flex-col gap-1">
+                {Object.entries(playerMods).map(([name, pct]) => (
+                  <div key={name} className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                    <span className="w-28 truncate">{name}</span>
+                    <span className="w-12 text-right">{pct > 0 ? '+' : ''}{pct}%</span>
+                    <button type="button" onClick={() => removePlayerMod(name)} title="Remove" style={{ color: '#f87171', cursor: 'pointer' }}>
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <input
+                value={newPlayer}
+                onChange={(e) => setNewPlayer(e.target.value)}
+                placeholder="Player name"
+                className="w-28 rounded px-2 py-0.5 text-xs"
+                style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+              />
+              <input
+                value={newPlayerPct}
+                onChange={(e) => setNewPlayerPct(e.target.value)}
+                type="number"
+                placeholder="%"
+                className="w-14 rounded px-1 py-0.5 text-right text-xs"
+                style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+              />
+              <button
+                type="button"
+                onClick={() => { addPlayerMod(newPlayer, newPlayerPct); setNewPlayer(''); setNewPlayerPct('') }}
+                className="rounded px-2 py-0.5 text-xs"
+                style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </section>
   )
 }
