@@ -36,7 +36,7 @@ import type { RaidThreatState, TargetState, ThreatState } from '../types/overlay
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { RespawnState } from '../types/respawn'
-import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview, PackUpdateSummary, PackDiff, PackUpdateMode, PackUpdateResult } from '../types/trigger'
+import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview, PackUpdateSummary, PackDiff, PackUpdateMode, PackUpdateResult, ActionTemplate, BulkResult } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
 import type { RecipeSummary, RecipeDetail, RecipeTradeskillCount } from '../types/recipe'
@@ -2046,6 +2046,63 @@ export function applyPackUpdate(
     `/api/triggers/packs/${encodeURIComponent(packName)}/update`,
     { mode, keys },
   )
+}
+
+// ── Action templates + bulk edits ────────────────────────────────────────────
+
+export function listActionTemplates(): Promise<ActionTemplate[]> {
+  return get<ActionTemplate[]>('/api/triggers/action-templates')
+}
+
+export function createActionTemplate(
+  name: string,
+  actions: Action[],
+  isDefault: boolean,
+): Promise<ActionTemplate> {
+  return post<ActionTemplate>('/api/triggers/action-templates', {
+    name,
+    actions,
+    is_default: isDefault,
+  })
+}
+
+export function updateActionTemplate(t: ActionTemplate): Promise<ActionTemplate> {
+  return put<ActionTemplate>(
+    `/api/triggers/action-templates/${encodeURIComponent(t.id)}`,
+    { name: t.name, actions: t.actions, is_default: t.is_default },
+  )
+}
+
+export function deleteActionTemplate(id: string): Promise<void> {
+  return del(`/api/triggers/action-templates/${encodeURIComponent(id)}`)
+}
+
+/** Replace the actions of many triggers with a template's actions. */
+export function bulkApplyActions(triggerIds: string[], actions: Action[]): Promise<BulkResult> {
+  return post<BulkResult>('/api/triggers/bulk-actions', {
+    trigger_ids: triggerIds,
+    operation: 'apply_template',
+    actions,
+  })
+}
+
+/**
+ * Convert text_to_speech actions (and optionally TTS timer alerts) on many
+ * triggers to a sound file. volume is 0–1.
+ */
+export function bulkConvertTTSToSound(
+  triggerIds: string[],
+  soundPath: string,
+  volume: number,
+  includeTimerAlerts: boolean,
+): Promise<BulkResult> {
+  return post<BulkResult>('/api/triggers/bulk-actions', {
+    trigger_ids: triggerIds,
+    operation: 'tts_to_sound',
+    sound_path: soundPath,
+    volume,
+    include_timer_alerts: includeTimerAlerts,
+  })
 }
 
 export function importTriggerPack(pack: TriggerPack): Promise<{ status: string; pack_name: string }> {

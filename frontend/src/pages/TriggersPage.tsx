@@ -22,6 +22,7 @@ import {
   Tags,
   GripVertical,
   Check,
+  SlidersHorizontal,
 } from 'lucide-react'
 import {
   DndContext,
@@ -53,6 +54,8 @@ import DecimalInput from '../components/DecimalInput'
 import SpellSearchPicker from '../components/SpellSearchPicker'
 import ImportTriggersModal from '../components/ImportTriggersModal'
 import PackUpdateModal from '../components/PackUpdateModal'
+import ActionTemplatesMenu from '../components/ActionTemplatesMenu'
+import BulkActionsModal from '../components/BulkActionsModal'
 import { buildSpellTriggerPrefill, secsLabel, type SpellTimerTriggerPrefill } from '../lib/spellHelpers'
 import {
   listTriggers,
@@ -65,6 +68,7 @@ import {
   installBuiltinPack,
   removeTriggerPack,
   getPackUpdates,
+  listActionTemplates,
   exportTriggerPack,
   listCharacters,
   listTriggerCategories,
@@ -348,6 +352,9 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
   const [actions, setActions] = useState<Action[]>(
     initial?.actions ?? [{ type: 'overlay_text', text: prefill?.name ?? '', duration_secs: 5, color: '', sound_path: '', volume: 0, voice: '' }],
   )
+  // True once the user edits actions in this session — the async default-
+  // template prefill below must never clobber their work.
+  const actionsTouched = useRef(false)
   const [timerType, setTimerType] = useState<TimerType>(initial?.timer_type ?? prefill?.timerType ?? 'none')
   const [timerDuration, setTimerDuration] = useState(initial?.timer_duration_secs ?? prefill?.timerDurationSecs ?? 0)
   const [timerDurationCapture, setTimerDurationCapture] = useState(initial?.timer_duration_capture ?? '')
@@ -416,6 +423,22 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
 
   useEffect(() => { nameRef.current?.focus() }, [])
 
+  // Plain new triggers start from the default action template when one is
+  // set. Spell-prefilled and edited triggers keep their own actions.
+  useEffect(() => {
+    if (initial || prefill) return
+    listActionTemplates()
+      .then((templates) => {
+        const def = templates.find((t) => t.is_default)
+        if (!def || def.actions.length === 0) return
+        if (actionsTouched.current) return
+        setActions(JSON.parse(JSON.stringify(def.actions)) as Action[])
+      })
+      .catch(() => {})
+    // Run once per form mount; initial/prefill never change after mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const toggleChar = (charName: string) => {
     setSelectedChars((prev) => {
       const next = new Set(prev)
@@ -453,14 +476,17 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
   }
 
   const handleActionChange = (index: number, action: Action) => {
+    actionsTouched.current = true
     setActions((prev) => prev.map((a, i) => (i === index ? action : a)))
   }
 
   const handleActionRemove = (index: number) => {
+    actionsTouched.current = true
     setActions((prev) => prev.filter((_, i) => i !== index))
   }
 
   const handleAddAction = () => {
+    actionsTouched.current = true
     setActions((prev) => [...prev, { type: 'overlay_text', text: '', duration_secs: 5, color: '', sound_path: '', volume: 0, voice: '' }])
   }
 
@@ -1292,18 +1318,27 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
           <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
             Actions
           </label>
-          <button
-            type="button"
-            onClick={handleAddAction}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded"
-            style={{
-              backgroundColor: 'var(--color-surface-2)',
-              color: 'var(--color-muted-foreground)',
-              border: '1px solid var(--color-border)',
-            }}
-          >
-            <Plus size={10} /> Add
-          </button>
+          <div className="flex items-center gap-1.5">
+            <ActionTemplatesMenu
+              currentActions={actions}
+              onApply={(a) => {
+                actionsTouched.current = true
+                setActions(a)
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleAddAction}
+              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                color: 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+            >
+              <Plus size={10} /> Add
+            </button>
+          </div>
         </div>
         {actions.length === 0 && (
           <p className="text-[11px] italic" style={{ color: 'var(--color-muted)' }}>
@@ -2649,6 +2684,8 @@ export default function TriggersPage(): React.ReactElement {
   const [emptyNewMenuOpen, setEmptyNewMenuOpen] = useState(false)
   const [showClearAll, setShowClearAll] = useState(false)
   const [clearingAll, setClearingAll] = useState(false)
+  const [showBulkEdit, setShowBulkEdit] = useState(false)
+  const [bulkEditNotice, setBulkEditNotice] = useState<string | null>(null)
   useEscapeToClose(() => {
     if (!clearingAll) setShowClearAll(false)
   }, showClearAll)
@@ -3175,6 +3212,21 @@ export default function TriggersPage(): React.ReactElement {
               </button>
               {triggers.length > 0 && (
                 <button
+                  onClick={() => setShowBulkEdit(true)}
+                  className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+                  style={{
+                    backgroundColor: 'var(--color-surface-2)',
+                    color: 'var(--color-muted-foreground)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                  title="Change actions on many triggers at once (e.g. convert TTS alerts to a sound file)"
+                >
+                  <SlidersHorizontal size={11} />
+                  Bulk Edit
+                </button>
+              )}
+              {triggers.length > 0 && (
+                <button
                   onClick={() => setShowClearAll(true)}
                   className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
                   style={{
@@ -3267,6 +3319,16 @@ export default function TriggersPage(): React.ReactElement {
           )}
         </div>
       </div>
+
+      {bulkEditNotice && (
+        <div
+          className="flex items-center gap-1.5 px-4 py-1.5 text-xs shrink-0"
+          style={{ color: 'var(--color-success)' }}
+        >
+          <CheckCircle2 size={13} />
+          {bulkEditNotice}
+        </div>
+      )}
 
       {/* Tabs */}
       <div
@@ -3717,6 +3779,22 @@ export default function TriggersPage(): React.ReactElement {
             setShowCreate(true)
             setShowSpellPicker(false)
             setTab('triggers')
+          }}
+        />
+      )}
+
+      {showBulkEdit && (
+        <BulkActionsModal
+          triggers={triggers}
+          onClose={() => setShowBulkEdit(false)}
+          onApplied={(res) => {
+            setShowBulkEdit(false)
+            load()
+            setBulkEditNotice(
+              `Bulk edit applied: ${res.updated} trigger${res.updated !== 1 ? 's' : ''} updated` +
+                (res.skipped ? `, ${res.skipped} unchanged` : '') + '.',
+            )
+            setTimeout(() => setBulkEditNotice(null), 5000)
           }}
         />
       )}

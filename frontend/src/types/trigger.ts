@@ -312,6 +312,26 @@ export interface PackUpdateResult {
   removed: number
 }
 
+// ── Action templates + bulk edits ────────────────────────────────────────────
+
+/**
+ * A named, reusable Actions list saved from the trigger editor. At most one
+ * is the default; its actions prefill newly created triggers.
+ */
+export interface ActionTemplate {
+  id: string
+  name: string
+  actions: Action[]
+  is_default: boolean
+  created_at: string
+}
+
+/** Outcome of a bulk action edit. Skipped = nothing to change (e.g. no TTS). */
+export interface BulkResult {
+  updated: number
+  skipped: number
+}
+
 /** Source app a trigger import file came from, as detected by the backend. */
 export type ImportFormat = 'pqc' | 'gina' | 'eqnag' | 'eqlogparser'
 
