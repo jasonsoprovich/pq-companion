@@ -3,6 +3,7 @@ import { X, Zap, RefreshCw, Shield, Skull, Hourglass, Bell as BellIcon } from 'l
 import { createTrigger, type CreateTriggerRequest } from '../services/api'
 import type { Action, TimerAlertThreshold, TimerType, Trigger } from '../types/trigger'
 import NotificationActionEditor, { NotificationTypeSelect } from './NotificationActionEditor'
+import DecimalInput from './DecimalInput'
 import { useVoices } from '../hooks/useVoices'
 
 export interface TriggerPrefill {
@@ -318,11 +319,10 @@ export default function CreateTriggerModal({
           <>
             <div className="space-y-1">
               <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>Duration (seconds)</label>
-              <input
-                type="number"
+              <DecimalInput
                 min={0}
                 value={duration}
-                onChange={(e) => setDuration(Math.max(0, parseInt(e.target.value) || 0))}
+                onValue={setDuration}
                 className="w-full rounded px-3 py-1.5 text-sm outline-none"
                 style={inputStyle}
                 disabled={submitting}
@@ -345,11 +345,10 @@ export default function CreateTriggerModal({
               <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
                 Display threshold (seconds, 0 = use global default)
               </label>
-              <input
-                type="number"
+              <DecimalInput
                 min={0}
                 value={displayThreshold}
-                onChange={(e) => setDisplayThreshold(Math.max(0, parseInt(e.target.value) || 0))}
+                onValue={setDisplayThreshold}
                 className="w-full rounded px-3 py-1.5 text-sm outline-none"
                 style={inputStyle}
                 disabled={submitting}
@@ -362,11 +361,10 @@ export default function CreateTriggerModal({
               <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
                 Fading alert (seconds remaining, 0 = off)
               </label>
-              <input
-                type="number"
+              <DecimalInput
                 min={0}
                 value={fadeAlertSecs}
-                onChange={(e) => setFadeAlertSecs(Math.max(0, parseInt(e.target.value) || 0))}
+                onValue={setFadeAlertSecs}
                 className="w-full rounded px-3 py-1.5 text-sm outline-none"
                 style={inputStyle}
                 disabled={submitting}
