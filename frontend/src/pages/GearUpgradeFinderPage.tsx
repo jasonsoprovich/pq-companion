@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Wand2, ChevronDown, ChevronUp, ChevronRight, Star, Loader2, AlertTriangle, Sliders, RotateCcw, Save, Check, LayoutGrid, List, Target, Search } from 'lucide-react'
+import { Wand2, ChevronDown, ChevronUp, ChevronRight, Star, Loader2, AlertTriangle, Sliders, RotateCcw, Save, Check, LayoutGrid, List, Target, Search, Info } from 'lucide-react'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import { ItemIcon } from '../components/Icon'
 import { SourceNPCLink } from '../components/SourceNPCLink'
@@ -64,6 +64,13 @@ const SLOTS: { key: string; label: string; bucket: string }[] = [
 const BUCKET_FOR_SLOT: Record<string, string> = Object.fromEntries(
   SLOTS.map((s) => [s.key, s.bucket]),
 )
+
+// The Ammo slot never confers stats or worn effects in game (EQMacEmu's
+// CalcItemBonuses stops before SLOT_AMMO), so upgrade scores are meaningless
+// there. Items are still listed for convenience (throwing weapons, tradeskill
+// trophies), but the score column is blanked and this note explains why.
+const AMMO_NO_STATS_NOTE =
+  'Items in the Ammo slot grant no stats or effects in game, so upgrade scores don’t apply here.'
 
 const CLASS_NAMES = [
   'Warrior', 'Cleric', 'Paladin', 'Ranger', 'Shadow Knight', 'Druid', 'Monk',
@@ -554,6 +561,13 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                 Export via Zeal to compare against what you're wearing.
               </div>
             )}
+            {slot === 'ammo' && (
+              <div className="mb-2 flex items-center gap-2 rounded px-3 py-1.5 text-xs"
+                style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)' }}>
+                <Info size={12} />
+                {AMMO_NO_STATS_NOTE}
+              </div>
+            )}
             {error ? (
               <div className="flex items-center gap-2 py-10 text-sm" style={{ color: 'var(--color-danger)' }}>
                 <AlertTriangle size={16} /> {error}
@@ -583,7 +597,8 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                   {visible.map((c, i) => (
                     <ResultRow key={c.id} rank={i + 1} cand={c} onOpen={openItem}
                       wishlisted={wishEntry(c.id, BUCKET_FOR_SLOT[slot]) !== undefined}
-                      onStar={() => toggleWish(c.id, BUCKET_FOR_SLOT[slot])} />
+                      onStar={() => toggleWish(c.id, BUCKET_FOR_SLOT[slot])}
+                      hideScore={slot === 'ammo'} />
                   ))}
                 </tbody>
               </table>
@@ -810,13 +825,15 @@ function EffectPills({ cand }: { cand: UpgradeCandidate }): React.ReactElement |
 // ── Result row ─────────────────────────────────────────────────────────────────
 
 function ResultRow({
-  rank, cand, onOpen, wishlisted, onStar,
+  rank, cand, onOpen, wishlisted, onStar, hideScore,
 }: {
   rank: number
   cand: UpgradeCandidate
   onOpen: (id: number) => void
   wishlisted: boolean
   onStar: () => void
+  /** Ammo slot: stats don't apply in game, so the score is meaningless. */
+  hideScore?: boolean
 }): React.ReactElement {
   const [open, setOpen] = useState(false)
   const [sources, setSources] = useState<ItemSources | null>(null)
@@ -865,8 +882,12 @@ function ResultRow({
           </div>
         </td>
         <td className="px-2 py-1.5 text-right font-mono text-xs"
-          style={{ color: cand.score > 0 ? '#22c55e' : 'var(--color-muted)' }}>
-          {cand.score > 0 ? '+' : ''}{cand.score.toFixed(0)}
+          style={{ color: !hideScore && cand.score > 0 ? '#22c55e' : 'var(--color-muted)' }}>
+          {hideScore ? (
+            <span title={AMMO_NO_STATS_NOTE}>—</span>
+          ) : (
+            <>{cand.score > 0 ? '+' : ''}{cand.score.toFixed(0)}</>
+          )}
         </td>
         <td className="px-2 py-1.5">
           <DeltaChips cand={cand} />
@@ -1170,8 +1191,10 @@ function OverviewView({
                   )}
                 </td>
                 <td className="px-2 py-1.5 text-right font-mono text-xs"
-                  style={{ color: best ? '#22c55e' : 'var(--color-muted)' }}>
-                  {best ? `+${best.score.toFixed(0)}` : ''}
+                  style={{ color: best && s.slot !== 'ammo' ? '#22c55e' : 'var(--color-muted)' }}>
+                  {s.slot === 'ammo' ? (
+                    <span title={AMMO_NO_STATS_NOTE}>—</span>
+                  ) : best ? `+${best.score.toFixed(0)}` : ''}
                 </td>
               </tr>
             )
