@@ -19,6 +19,7 @@ import { playSoundForTest, speakTextForTest, stopTestPlayback } from '../service
 import { usePositioningSession } from '../hooks/usePositioningSession'
 import { useOverlayTextDefaults } from '../hooks/useOverlayTextDefaults'
 import { resolveOverlayTextStyle, WINDOWS_SAFE_FONTS } from '../lib/overlayTextStyle'
+import DecimalInput from './DecimalInput'
 
 export type NotificationActionType =
   | 'overlay_text'
@@ -204,13 +205,12 @@ export function OverlayTextFields({
           <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
             Duration (s)
           </label>
-          <input
-            type="number"
+          <DecimalInput
             min={1}
             max={30}
-            step="any"
+            fallback={5}
             value={durationSecs}
-            onChange={(e) => onDurationSecsChange(Math.max(1, parseFloat(e.target.value) || 5))}
+            onValue={onDurationSecsChange}
             className="w-14 rounded px-2 py-0.5 text-xs outline-none text-center"
             style={inputStyle}
           />

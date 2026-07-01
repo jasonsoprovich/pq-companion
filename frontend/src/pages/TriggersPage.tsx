@@ -49,6 +49,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { useVoices } from '../hooks/useVoices'
 import NotificationActionEditor, { NotificationTypeSelect } from '../components/NotificationActionEditor'
+import DecimalInput from '../components/DecimalInput'
 import SpellSearchPicker from '../components/SpellSearchPicker'
 import ImportTriggersModal from '../components/ImportTriggersModal'
 import { buildSpellTriggerPrefill, secsLabel, type SpellTimerTriggerPrefill } from '../lib/spellHelpers'
@@ -171,13 +172,11 @@ function TimerAlertRow({ alert, voices, onChange, onRemove }: TimerAlertRowProps
       <div className="flex items-center gap-2 flex-wrap">
         <label className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
           Alert at
-          <input
-            type="number"
+          <DecimalInput
             min={0}
             max={3600}
-            step="any"
             value={alert.seconds}
-            onChange={(e) => onChange({ ...alert, seconds: Math.max(0, parseFloat(e.target.value) || 0) })}
+            onValue={(v) => onChange({ ...alert, seconds: v })}
             style={{ ...inputStyle, width: 60 }}
           />
           s remaining
@@ -845,13 +844,10 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
                   disabled={submitting}
                 />
                 {timerType !== 'none' && (
-                  <input
-                    type="number"
+                  <DecimalInput
                     min={0}
-                    step="any"
                     value={ep.timer_duration_secs ?? 0}
-                    onChange={(e) => {
-                      const v = Math.max(0, parseFloat(e.target.value) || 0)
+                    onValue={(v) => {
                       setExtraPatterns((prev) => prev.map((p, j) => (j === i ? { ...p, timer_duration_secs: v } : p)))
                     }}
                     className="w-16 rounded px-2 py-1.5 text-xs outline-none text-center"
@@ -1002,12 +998,10 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
         <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
           Refire cooldown (seconds)
         </label>
-        <input
-          type="number"
+        <DecimalInput
           min={0}
-          step="any"
           value={refireCooldown}
-          onChange={(e) => setRefireCooldown(Math.max(0, parseFloat(e.target.value) || 0))}
+          onValue={setRefireCooldown}
           className="w-28 rounded px-3 py-1.5 text-xs outline-none"
           style={{ ...inputStyle, border: '1px solid var(--color-border)' }}
           disabled={submitting}
@@ -1115,12 +1109,10 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
                 <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
                   Duration (s)
                 </label>
-                <input
-                  type="number"
+                <DecimalInput
                   min={0}
-                  step="any"
                   value={timerDuration}
-                  onChange={(e) => setTimerDuration(Math.max(0, parseFloat(e.target.value) || 0))}
+                  onValue={setTimerDuration}
                   className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center"
                   style={inputStyle}
                   disabled={submitting}
@@ -1202,12 +1194,10 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
               <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
                 Display threshold (s)
               </label>
-              <input
-                type="number"
+              <DecimalInput
                 min={0}
-                step="any"
                 value={displayThreshold}
-                onChange={(e) => setDisplayThreshold(Math.max(0, parseFloat(e.target.value) || 0))}
+                onValue={setDisplayThreshold}
                 className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center"
                 style={inputStyle}
                 disabled={submitting}
