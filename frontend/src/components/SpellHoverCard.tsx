@@ -68,6 +68,12 @@ interface SpellHoverCardProps {
   spellId: number
   /** Worn/focus effects: show only the EFFECTS section. */
   effectsOnly?: boolean
+  /**
+   * Show the "Click to open in the spell explorer" footer. Turn off when the
+   * trigger sits inside a control that opens something else (e.g. the focus
+   * badge inside a current-item button, where clicking opens the item).
+   */
+  clickHint?: boolean
   /** A single element; mouse handlers are attached to it directly. */
   children: React.ReactElement
 }
@@ -75,6 +81,7 @@ interface SpellHoverCardProps {
 export default function SpellHoverCard({
   spellId,
   effectsOnly,
+  clickHint = true,
   children,
 }: SpellHoverCardProps): React.ReactElement {
   const [spell, setSpell] = useState<Spell | null>(null)
@@ -118,7 +125,7 @@ export default function SpellHoverCard({
       })}
       {anchor && spell && createPortal(
         <CardBox x={anchor.x} y={anchor.y}>
-          <CardBody spell={spell} effectsOnly={effectsOnly} />
+          <CardBody spell={spell} effectsOnly={effectsOnly} clickHint={clickHint} />
         </CardBox>,
         document.body,
       )}
@@ -206,10 +213,11 @@ function CardRow({
 }
 
 function CardBody({
-  spell, effectsOnly,
+  spell, effectsOnly, clickHint,
 }: {
   spell: Spell
   effectsOnly?: boolean
+  clickHint?: boolean
 }): React.ReactElement {
   const levelCap = eraMaxLevel(usePoPEnabled())
 
@@ -262,9 +270,11 @@ function CardBody({
           ))}
         </CardSection>
       )}
-      <div className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
-        Click to open in the spell explorer
-      </div>
+      {clickHint && (
+        <div className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+          Click to open in the spell explorer
+        </div>
+      )}
     </div>
   )
 }

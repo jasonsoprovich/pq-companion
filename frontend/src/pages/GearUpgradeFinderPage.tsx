@@ -441,10 +441,11 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                       style={{ color: 'var(--color-primary)' }}>
                       <ItemIcon id={ci.icon} name={ci.name} size={16} />
                       {ci.name}
-                      {ci.focus_name && (
-                        <span className="rounded px-1 text-[9px]"
-                          style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }}
-                          title={`Focus: ${ci.focus_name}`}>focus</span>
+                      {ci.focus_name && ci.focus_effect > 0 && (
+                        <SpellHoverCard spellId={ci.focus_effect} effectsOnly clickHint={false}>
+                          <span className="rounded px-1 text-[9px]"
+                            style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }}>focus</span>
+                        </SpellHoverCard>
                       )}
                     </button>
                   ))
@@ -1161,10 +1162,11 @@ function OverviewView({
                           className="flex items-center gap-1 text-xs underline decoration-dotted"
                           style={{ color: 'var(--color-muted-foreground)' }}>
                           <ItemIcon id={ci.icon} name={ci.name} size={14} /> {ci.name}
-                          {ci.focus_name && (
-                            <span className="rounded px-1 text-[9px]"
-                              style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }}
-                              title={`Focus: ${ci.focus_name}`}>focus</span>
+                          {ci.focus_name && ci.focus_effect > 0 && (
+                            <SpellHoverCard spellId={ci.focus_effect} effectsOnly clickHint={false}>
+                              <span className="rounded px-1 text-[9px]"
+                                style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }}>focus</span>
+                            </SpellHoverCard>
                           )}
                         </button>
                       ))}
