@@ -52,6 +52,7 @@ import NotificationActionEditor, { NotificationTypeSelect } from '../components/
 import DecimalInput from '../components/DecimalInput'
 import SpellSearchPicker from '../components/SpellSearchPicker'
 import ImportTriggersModal from '../components/ImportTriggersModal'
+import PackUpdateModal from '../components/PackUpdateModal'
 import { buildSpellTriggerPrefill, secsLabel, type SpellTimerTriggerPrefill } from '../lib/spellHelpers'
 import {
   listTriggers,
@@ -63,6 +64,7 @@ import {
   getBuiltinPacks,
   installBuiltinPack,
   removeTriggerPack,
+  getPackUpdates,
   exportTriggerPack,
   listCharacters,
   listTriggerCategories,
@@ -90,6 +92,7 @@ import type {
   PipeConditionKind,
   PipeCondition,
   ExtraPattern,
+  PackUpdateSummary,
 } from '../types/trigger'
 
 const CLASS_NAMES = [
@@ -2059,6 +2062,17 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
   useEscapeToClose(() => setConfirm(null), !!confirm)
   const importInputRef = useRef<HTMLInputElement>(null)
   const [importFile, setImportFile] = useState<File | null>(null)
+  // Pending pack updates (this build's definitions differ from what the
+  // user installed), keyed by pack name; drives the banner + badges.
+  const [updates, setUpdates] = useState<Map<string, PackUpdateSummary>>(new Map())
+  const [updateModal, setUpdateModal] = useState<string | null>(null)
+  const [updateApplied, setUpdateApplied] = useState<string | null>(null)
+
+  const refreshUpdates = useCallback(() => {
+    getPackUpdates()
+      .then((list) => setUpdates(new Map(list.map((u) => [u.pack_name, u]))))
+      .catch(() => setUpdates(new Map()))
+  }, [])
 
   const toggleExpanded = (packName: string) => {
     setExpanded((prev) => {
@@ -2073,7 +2087,8 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
     getBuiltinPacks()
       .then(setPacks)
       .finally(() => setLoading(false))
-  }, [])
+    refreshUpdates()
+  }, [refreshUpdates])
 
   const handleInstall = (packName: string) => {
     if (installedPacks.has(packName)) {
@@ -2090,6 +2105,7 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
       .then(() => {
         setInstalled(packName)
         onInstalled()
+        refreshUpdates()
         setTimeout(() => setInstalled(null), 3000)
       })
       .catch((err: Error) => setError(err.message))
@@ -2106,6 +2122,7 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
     removeTriggerPack(packName)
       .then(() => {
         onInstalled()
+        refreshUpdates()
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setBusy(null))
@@ -2153,6 +2170,31 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Pack updates banner */}
+      {updates.size > 0 && (
+        <div
+          className="rounded-lg p-3 flex items-center gap-2"
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-warning, #f59e0b)',
+          }}
+        >
+          <RefreshCw size={14} style={{ color: 'var(--color-warning, #f59e0b)' }} />
+          <p className="text-xs flex-1" style={{ color: 'var(--color-foreground)' }}>
+            Trigger updates available for {updates.size} installed pack
+            {updates.size !== 1 ? 's' : ''}:{' '}
+            {Array.from(updates.keys()).join(', ')}. Your customizations can
+            be kept — review each pack below.
+          </p>
+        </div>
+      )}
+      {updateApplied && (
+        <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-success)' }}>
+          <CheckCircle2 size={13} />
+          {updateApplied}
+        </div>
+      )}
+
       {/* Import / Export */}
       <div
         className="rounded-lg p-3 space-y-2"
@@ -2220,6 +2262,10 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
             const isOpen = expanded.has(pack.pack_name)
             const isInstalled = installedPacks.has(pack.pack_name)
             const isBusy = busy === pack.pack_name
+            const pending = isInstalled ? updates.get(pack.pack_name) : undefined
+            const pendingCount = pending
+              ? pending.changed + pending.added + pending.removed
+              : 0
             const handleAction = () => {
               if (isInstalled) handleRemove(pack.pack_name)
               else handleInstall(pack.pack_name)
@@ -2263,12 +2309,50 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
                             Active
                           </span>
                         )}
+                        {pendingCount > 0 && (
+                          <span
+                            className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded"
+                            style={{
+                              backgroundColor: 'var(--color-surface-2)',
+                              color: 'var(--color-warning, #f59e0b)',
+                            }}
+                          >
+                            <RefreshCw size={10} />
+                            {pendingCount} update{pendingCount !== 1 ? 's' : ''}
+                          </span>
+                        )}
                       </div>
                       <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted-foreground)' }}>
                         {pack.description}
                       </p>
                     </div>
                   </div>
+                  {pending && pendingCount > 0 && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setUpdateModal(pack.pack_name)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setUpdateModal(pack.pack_name)
+                        }
+                      }}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium shrink-0 cursor-pointer"
+                      style={{
+                        backgroundColor: 'var(--color-surface-2)',
+                        color: 'var(--color-warning, #f59e0b)',
+                        border: '1px solid var(--color-warning, #f59e0b)',
+                      }}
+                    >
+                      <RefreshCw size={11} />
+                      Review updates
+                    </span>
+                  )}
                   <span
                     role="button"
                     tabIndex={0}
@@ -2402,6 +2486,26 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
             onInstalled()
             setInstalled(`${category} (${count})`)
             setTimeout(() => setInstalled(null), 3000)
+          }}
+        />
+      )}
+      {updateModal && (
+        <PackUpdateModal
+          packName={updateModal}
+          onClose={() => setUpdateModal(null)}
+          onApplied={(res) => {
+            const name = updateModal
+            setUpdateModal(null)
+            onInstalled()
+            refreshUpdates()
+            const parts: string[] = []
+            if (res.updated) parts.push(`${res.updated} updated`)
+            if (res.added) parts.push(`${res.added} added`)
+            if (res.removed) parts.push(`${res.removed} removed`)
+            setUpdateApplied(
+              `"${name}" pack updated (${parts.join(', ') || 'no changes'}).`,
+            )
+            setTimeout(() => setUpdateApplied(null), 5000)
           }}
         />
       )}

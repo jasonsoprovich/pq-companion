@@ -237,6 +237,81 @@ export interface TriggerPack {
   triggers: Trigger[]
 }
 
+// ── Built-in pack updates ────────────────────────────────────────────────────
+//
+// A new app release can change the built-in pack definitions compiled into
+// it. The backend snapshots each trigger's definition at install time and
+// diffs it against the current build, so user customizations never read as
+// pending updates. See backend/internal/trigger/packupdate.go.
+
+/** Per-pack pending-update counts for the Packs tab badge/banner. */
+export interface PackUpdateSummary {
+  pack_name: string
+  changed: number
+  added: number
+  removed: number
+  deleted_locally: number
+}
+
+/** One field-level difference between installed baseline and current build. */
+export interface PackFieldDiff {
+  field: string
+  label: string
+  /** Value when the pack was installed/last updated. */
+  old: string
+  /** Value in the current build. */
+  new: string
+  /** The user's current value. */
+  current: string
+  /**
+   * True when the user changed this field after installing — a "keep my
+   * customizations" update leaves their value in place.
+   */
+  user_customized: boolean
+}
+
+export interface PackChangedTrigger {
+  pack_key: string
+  name: string
+  installed_name: string
+  fields: PackFieldDiff[]
+}
+
+export interface PackAddedTrigger {
+  pack_key: string
+  name: string
+  pattern: string
+}
+
+export interface PackRemovedTrigger {
+  pack_key: string
+  name: string
+}
+
+export interface PackDeletedLocalTrigger {
+  pack_key: string
+  name: string
+  pattern: string
+}
+
+export interface PackDiff {
+  pack_name: string
+  changed: PackChangedTrigger[] | null
+  added: PackAddedTrigger[] | null
+  removed: PackRemovedTrigger[] | null
+  deleted_locally: PackDeletedLocalTrigger[] | null
+  up_to_date: number
+}
+
+/** How to apply a pack update: keep user customizations, or full reset. */
+export type PackUpdateMode = 'preserve' | 'reset'
+
+export interface PackUpdateResult {
+  updated: number
+  added: number
+  removed: number
+}
+
 /** Source app a trigger import file came from, as detected by the backend. */
 export type ImportFormat = 'pqc' | 'gina' | 'eqnag' | 'eqlogparser'
 

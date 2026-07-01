@@ -36,7 +36,7 @@ import type { RaidThreatState, TargetState, ThreatState } from '../types/overlay
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { RespawnState } from '../types/respawn'
-import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview } from '../types/trigger'
+import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview, PackUpdateSummary, PackDiff, PackUpdateMode, PackUpdateResult } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
 import type { RecipeSummary, RecipeDetail, RecipeTradeskillCount } from '../types/recipe'
@@ -2021,6 +2021,31 @@ export function installBuiltinPack(packName: string): Promise<{ status: string; 
 
 export function removeTriggerPack(packName: string): Promise<void> {
   return del(`/api/triggers/packs/${encodeURIComponent(packName)}`)
+}
+
+/** Pending-update summaries for every installed built-in pack. */
+export function getPackUpdates(): Promise<PackUpdateSummary[]> {
+  return get<PackUpdateSummary[]>('/api/triggers/packs/updates')
+}
+
+/** Full changelist between an installed pack and the current build. */
+export function getPackDiff(packName: string): Promise<PackDiff> {
+  return get<PackDiff>(`/api/triggers/packs/${encodeURIComponent(packName)}/diff`)
+}
+
+/**
+ * Apply pending pack updates. keys selects triggers by pack_key; empty =
+ * everything pending except locally-deleted triggers (opt-in only).
+ */
+export function applyPackUpdate(
+  packName: string,
+  mode: PackUpdateMode,
+  keys: string[],
+): Promise<PackUpdateResult> {
+  return post<PackUpdateResult>(
+    `/api/triggers/packs/${encodeURIComponent(packName)}/update`,
+    { mode, keys },
+  )
 }
 
 export function importTriggerPack(pack: TriggerPack): Promise<{ status: string; pack_name: string }> {
