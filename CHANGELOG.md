@@ -9,6 +9,49 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.15.0 — 2026-07-01
+
+Text-to-speech gains an adjustable voice rate, and Settings is reorganized
+around a grouped side navigation.
+
+### Highlights
+- **Text-to-Speech Voice Rate** — a new global speed control under Settings ›
+  Overlays speeds up (or slows down) every spoken alert, with a Test button
+  that previews the rate live before you save.
+- **Redesigned Settings** — the crowded top tab bar is replaced by a grouped
+  side navigation, and a new Accessibility section gathers high-contrast mode,
+  app zoom, and per-overlay font/zoom sliders so each popped-out overlay can be
+  sized independently.
+- **Clickable links across overlays and the database** — items and spells in
+  the NPC overlay, spawn-group members, lockout rows, and spell-modifier
+  source/focus spells are now clickable and open directly in the database
+  explorer, gated by a new "Clickable Links in Overlays" toggle.
+- **DPS parse survives zoning and death** — your parse no longer resets when
+  you zone or die; it ends only on a kill, after a configurable inactivity
+  timeout, or when you discard it manually. A new discard button clears the
+  meter while archiving the fight to Combat History.
+- **Roll Tracker tiered grouping** — /random contests can be grouped with
+  configurable presets and a custom editor, results render as contest cards,
+  loot items are auto-suggested from chat, and you can add a manual item label
+  and copy a paste-ready result summary.
+- **Spell Modifiers — full focus coverage** — the Spell Modifiers tab now
+  surfaces every worn focus effect (spell damage, healing, resists, and more),
+  not just the ones Resolve applies.
+- **Raid threat estimation on by default** — the Threat Meter's raid-aware
+  mode ships enabled, with its settings moved into Settings › Overlays.
+- **Fractional trigger timers** — timer durations and refire cooldowns now
+  accept fractional-second values.
+
+### Fixes
+- Spell Modifiers focus limit numbering is corrected (SPA 139/141/142), and
+  haste focuses now honour the minimum-cast-time limit (SPA 143).
+- The Roll Tracker buckets rolls by their full Min–Max range instead of the
+  maximum alone, so overlapping ranges no longer merge.
+- Duplicate trigger alert sounds that fired from the same log line are
+  collapsed to a single play.
+- Open overlays are snapshotted before shutdown, so "restore overlays on
+  launch" works even when quitting from the window's close button.
+
 ## v0.14.1 — 2026-06-28
 
 A Planes of Power flagging tracker arrives, and the Threat Meter gains a
