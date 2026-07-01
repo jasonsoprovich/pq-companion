@@ -378,13 +378,16 @@ func (h *charactersHandler) spellModifiers(w http.ResponseWriter, r *http.Reques
 }
 
 // equipSlots is the set of inventory locations we treat as worn equipment for
-// purposes of summing item stats. Bag/bank contents are ignored.
+// purposes of summing item stats. Bag/bank contents are ignored. Ammo is
+// deliberately absent: EQMacEmu's Client::CalcItemBonuses iterates
+// slotEar1 <= i < slotAmmo ("should not include 21 (SLOT_AMMO)"), so an item
+// in the Ammo slot confers no stats or worn effects in game.
 var equipSlots = map[string]bool{
 	"Charm": true, "Ear": true, "Head": true, "Face": true, "Neck": true,
 	"Shoulders": true, "Arms": true, "Back": true, "Wrist": true,
 	"Range": true, "Hands": true, "Primary": true, "Secondary": true,
 	"Fingers": true, "Chest": true, "Legs": true, "Feet": true, "Waist": true,
-	"PowerSource": true, "Ammo": true,
+	"PowerSource": true,
 }
 
 // statBlock is one column of the Stats panel: a complete set of derived

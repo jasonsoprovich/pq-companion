@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
 
 // TestDerivedStats_OsuiPipeline exercises the full server-side derivation
@@ -103,4 +104,54 @@ func TestDerivedStats_OsuiPipeline(t *testing.T) {
 	}
 	t.Logf("Osui equipped (no buffs): HP=%d Mana=%d AC=%d MR=%d itemAC=%d",
 		equipped.HP, equipped.Mana, equipped.AC, equipped.MR, item.AC)
+}
+
+// TestSumEquipment_AmmoSlotExcluded pins the in-game rule that the Ammo slot
+// confers no stats: EQMacEmu's Client::CalcItemBonuses iterates
+// slotEar1 <= i < slotAmmo ("should not include 21 (SLOT_AMMO)"). A statted
+// item parked in Ammo (e.g. a tradeskill trophy) must not leak into the
+// equipment column.
+func TestSumEquipment_AmmoSlotExcluded(t *testing.T) {
+	_, file, _, _ := runtime.Caller(0)
+	repoRoot := filepath.Join(filepath.Dir(file), "..", "..", "..")
+	dbPath := filepath.Join(repoRoot, "backend", "data", "quarm.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Skip("quarm.db not present")
+	}
+	d, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer d.Close()
+
+	// The fixture item must itself carry stats, or the test proves nothing.
+	amulet, err := d.GetItem(28901) // Shade Stone Amulet: HP 50, Mana 125, AC 20
+	if err != nil || amulet == nil {
+		t.Fatalf("load item 28901: %v", err)
+	}
+	if amulet.HP == 0 && amulet.Mana == 0 && amulet.AC == 0 {
+		t.Fatalf("item 28901 has no stats; pick a different fixture item")
+	}
+
+	dir := t.TempDir()
+	quarmy := "Character\tName\tLastName\tLevel\tClass\tRace\tGender\tDeity\tGuild\tGuildRank\tBaseSTR\tBaseSTA\tBaseCHA\tBaseDEX\tBaseINT\tBaseAGI\tBaseWIS\n" +
+		"Character\tAmmotest\t\t60\t14\t6\t1\t396\t\t0\t60\t65\t95\t75\t114\t90\t83\n" +
+		"Location\tName\tID\tCount\tSlots\n" +
+		"Ammo\tShade Stone Amulet\t28901\t1\t0\n"
+	if err := os.WriteFile(filepath.Join(dir, "Ammotest-Quarmy.txt"), []byte(quarmy), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	// Guard against a vacuous pass: the synthetic export must parse and the
+	// Ammo entry must be visible to the inventory walk.
+	q, err := zeal.ParseQuarmy(filepath.Join(dir, "Ammotest-Quarmy.txt"), "Ammotest")
+	if err != nil || q == nil || len(q.Inventory) != 1 || q.Inventory[0].Location != "Ammo" || q.Inventory[0].ID != 28901 {
+		t.Fatalf("synthetic Quarmy fixture did not parse as expected: %+v err=%v", q, err)
+	}
+
+	h := &charactersHandler{db: d}
+	block, haste := h.sumEquipment(dir, "Ammotest")
+	if block != (statBlock{}) || haste != 0 {
+		t.Errorf("ammo-slot item contributed stats: %+v (haste %d), want all zero", block, haste)
+	}
 }
