@@ -337,6 +337,7 @@ export function speakTextForTest(
   voice = '',
   volume = 1.0,
   onEnd?: () => void,
+  rate?: number,
 ): void {
   stopTestPlayback()
   if (!text || !window.speechSynthesis) {
@@ -345,7 +346,13 @@ export function speakTextForTest(
   }
   const utterance = new SpeechSynthesisUtterance(text)
   utterance.volume = effectiveVolume(volume)
-  utterance.rate = ttsRate
+  // An explicit rate lets a settings preview reflect the live slider value
+  // before it's been saved and pushed back through useAudioPrefs; otherwise
+  // fall back to the configured global rate. Clamped to the same 0.5–2.0 band.
+  utterance.rate =
+    typeof rate === 'number' && rate > 0
+      ? Math.min(2, Math.max(0.5, rate))
+      : ttsRate
   // No deferred speak here — tests run from an editor whose voice dropdown has
   // already primed the list, and the play/stop bookkeeping wants an immediate
   // utterance. Blank voice previews with the app default so the test matches

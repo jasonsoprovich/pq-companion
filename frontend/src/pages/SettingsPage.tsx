@@ -21,6 +21,7 @@ import {
 import type { LogFileInfo } from '../types/logEvent'
 import { applyContrast } from '../hooks/useHighContrast'
 import { applyZoom } from '../hooks/useZoom'
+import { speakTextForTest, stopTestPlayback } from '../services/audio'
 import type { ZealInstallStatus, ZealPipeStatus } from '../types/zeal'
 import type { QuarmClientStatus, QuarmFileStatus } from '../types/quarm'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
@@ -262,6 +263,12 @@ export default function SettingsPage(): React.ReactElement {
   const [updateState, setUpdateState] = useState<UpdateState>('idle')
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const [updateError, setUpdateError] = useState<string | null>(null)
+
+  // Voice Rate preview: previews the live slider value (which may not be
+  // saved yet) so the user can hear the speed before committing. Single
+  // channel via the shared test-playback slot in services/audio.
+  const [ttsPreviewPlaying, setTtsPreviewPlaying] = useState(false)
+  useEffect(() => () => { stopTestPlayback() }, [])
 
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
   const [portTestState, setPortTestState] = useState<'idle' | 'testing'>('idle')
@@ -1464,6 +1471,34 @@ export default function SettingsPage(): React.ReactElement {
                 }
                 style={{ flex: 1 }}
               />
+              <button
+                type="button"
+                onClick={() => {
+                  if (ttsPreviewPlaying) {
+                    stopTestPlayback()
+                    setTtsPreviewPlaying(false)
+                    return
+                  }
+                  setTtsPreviewPlaying(true)
+                  speakTextForTest(
+                    'This is a text to speech voice rate preview.',
+                    config.preferences.default_tts_voice ?? '',
+                    1.0,
+                    () => setTtsPreviewPlaying(false),
+                    config.preferences.tts_rate ?? 1,
+                  )
+                }}
+                className="shrink-0 rounded px-2 py-1 text-xs"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-background)',
+                  cursor: 'pointer',
+                }}
+                title="Preview the selected voice rate"
+              >
+                {ttsPreviewPlaying ? 'Stop' : 'Test'}
+              </button>
             </div>
           </div>
 
