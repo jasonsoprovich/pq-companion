@@ -48,6 +48,24 @@ export function setDefaultTTSVoice(name: string): void {
   defaultTTSVoice = typeof name === 'string' ? name : ''
 }
 
+// Speaking rate applied to every TTS utterance (alerts + test previews).
+// 1.0 = the voice's normal speed; higher is faster. Pushed from
+// Preferences.tts_rate by useAudioPrefs(). The Web Speech spec allows 0.1–10,
+// but voices distort badly outside a narrower band, so we clamp to 0.5–2.0 —
+// the same range the Settings slider exposes.
+let ttsRate = 1.0
+
+/** Set the global TTS speaking rate. Accepts 0.5–2.0; out-of-range is clamped. */
+export function setTTSRate(rate: number): void {
+  if (!Number.isFinite(rate)) return
+  ttsRate = Math.min(2, Math.max(0.5, rate))
+}
+
+/** Returns the current global TTS speaking rate (0.5–2.0). */
+export function getTTSRate(): number {
+  return ttsRate
+}
+
 // Per-trigger repeat-audio cooldown, in milliseconds. After a trigger fires
 // audio, useAudioEngine suppresses further audio from that SAME trigger id for
 // this long, collapsing rapid same-trigger bursts (AE mez breaking several
@@ -234,6 +252,7 @@ export function speakText(text: string, voice = '', volume = 1.0): void {
 
   const utterance = new SpeechSynthesisUtterance(text)
   utterance.volume = effectiveVolume(volume)
+  utterance.rate = ttsRate
   utterance.onerror = (e) => {
     // eslint-disable-next-line no-console
     console.warn('[audio] speakText failed', { text, voice, error: e.error })
@@ -326,6 +345,7 @@ export function speakTextForTest(
   }
   const utterance = new SpeechSynthesisUtterance(text)
   utterance.volume = effectiveVolume(volume)
+  utterance.rate = ttsRate
   // No deferred speak here — tests run from an editor whose voice dropdown has
   // already primed the list, and the play/stop bookkeeping wants an immediate
   // utterance. Blank voice previews with the app default so the test matches

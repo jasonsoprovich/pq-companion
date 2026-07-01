@@ -75,6 +75,10 @@ export interface Preferences {
   // Voice for any text_to_speech alert whose own voice field is empty
   // ("App default" in the editor). Empty = the OS default voice.
   default_tts_voice?: string
+  // Global TTS speaking rate applied to every text_to_speech alert. 1.0 =
+  // normal speed, higher = faster, lower = slower. Clamped 0.5–2.0 at
+  // playback. 0/missing is treated as 1.0.
+  tts_rate?: number
   // Repeat-audio cooldown (seconds): after a trigger plays a sound/TTS,
   // further audio from that SAME trigger is suppressed for this long.
   // Collapses rapid same-trigger bursts (AE mez breaking several mobs) to

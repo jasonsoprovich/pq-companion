@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart, ExternalLink, Eye } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart, ExternalLink, Eye, Gauge } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
@@ -1423,6 +1423,42 @@ export default function SettingsPage(): React.ReactElement {
                     preferences: {
                       ...config.preferences,
                       master_volume: Number(e.target.value),
+                    },
+                  })
+                }
+                style={{ flex: 1 }}
+              />
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="mb-1 flex items-center justify-between">
+              <div>
+                <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  Voice Rate
+                </p>
+                <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Speaking speed for all text-to-speech alerts. 1.0× is normal; higher is faster.
+                </p>
+              </div>
+              <span className="text-xs font-mono shrink-0 ml-3" style={{ color: 'var(--color-muted-foreground)' }}>
+                {(config.preferences.tts_rate ?? 1).toFixed(1)}×
+              </span>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <Gauge size={14} style={{ color: 'var(--color-muted)' }} />
+              <input
+                type="range"
+                min={0.5}
+                max={2}
+                step={0.1}
+                value={config.preferences.tts_rate ?? 1}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    preferences: {
+                      ...config.preferences,
+                      tts_rate: Number(e.target.value),
                     },
                   })
                 }

@@ -320,6 +320,14 @@ type Preferences struct {
 	// playback time. Empty = the OS default voice (pre-existing behaviour).
 	DefaultTTSVoice string `yaml:"default_tts_voice,omitempty" json:"default_tts_voice"`
 
+	// TTSRate is the global speaking rate for every text_to_speech alert,
+	// multiplying the voice's normal speed: 1.0 = normal, higher = faster,
+	// lower = slower. The frontend applies it as SpeechSynthesisUtterance.rate
+	// and clamps to 0.5–2.0 (the range the Settings slider exposes). 0 or
+	// unset falls back to 1.0 at playback time, so existing configs speak at
+	// normal speed. Global, not per-trigger.
+	TTSRate float64 `yaml:"tts_rate,omitempty" json:"tts_rate"`
+
 	// TriggerAudioCooldownSecs rate-limits repeat audio alerts from the SAME
 	// trigger: after a trigger plays a sound or TTS, further audio from that
 	// same trigger is suppressed for this many seconds. It collapses rapid
@@ -731,6 +739,7 @@ func defaults() Config {
 			OverlayEntityLinksEnabled:   true,
 			RaidThreatEnabled:           true,
 			MasterVolume:                100,
+			TTSRate:                     1.0,
 			ZoomFactor:                  1.0,
 			NPCOverlayDashboardSections: DefaultNPCOverlaySections(),
 			NPCOverlayPopoutSections:    DefaultNPCOverlaySections(),
@@ -853,6 +862,14 @@ func applyDefaults(cfg *Config) bool {
 	// (keep forever).
 	if cfg.ChatRetentionDays == 0 {
 		cfg.ChatRetentionDays = 30
+		changed = true
+	}
+	// TTS speaking rate: backfill configs that predate the setting so the
+	// Settings slider reads 1.0 (normal speed) rather than 0. A missing field
+	// and an explicit 0 are indistinguishable to the YAML decoder, and 0 is
+	// not a meaningful rate, so both become the default.
+	if cfg.Preferences.TTSRate == 0 {
+		cfg.Preferences.TTSRate = 1.0
 		changed = true
 	}
 	// DPS class colour palette: fill in any blank entries from the defaults so

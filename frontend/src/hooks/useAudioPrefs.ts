@@ -4,6 +4,7 @@ import {
   setMasterVolume,
   setDefaultTTSVoice,
   setRepeatAudioCooldownMs,
+  setTTSRate,
 } from '../services/audio'
 
 const POLL_INTERVAL = 3000
@@ -16,6 +17,8 @@ const POLL_INTERVAL = 3000
  *     action's per-trigger volume.
  *   - Preferences.default_tts_voice is the voice used by any TTS alert
  *     whose own voice field is empty ("App default").
+ *   - Preferences.tts_rate sets the global speaking rate for every TTS
+ *     alert (1.0 = normal, higher = faster).
  *   - Preferences.trigger_audio_cooldown_secs rate-limits repeat audio from
  *     the same trigger (consumed in useAudioEngine). 0 = off.
  *
@@ -34,6 +37,9 @@ export function useAudioPrefs(): void {
           const value = typeof pct === 'number' && Number.isFinite(pct) ? pct : 100
           setMasterVolume(value / 100)
           setDefaultTTSVoice(c.preferences?.default_tts_voice ?? '')
+          const rate = c.preferences?.tts_rate
+          // Missing/invalid/zero → normal speed (1.0), not the 0.5 clamp floor.
+          setTTSRate(typeof rate === 'number' && rate > 0 ? rate : 1.0)
           const cd = c.preferences?.trigger_audio_cooldown_secs
           setRepeatAudioCooldownMs(
             typeof cd === 'number' && Number.isFinite(cd) ? cd * 1000 : 0,
