@@ -845,6 +845,90 @@ func (h *triggerHandler) installBuiltinPack(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "pack_name": found.PackName})
 }
 
+// listPackUpdates returns a summary of pending updates for every installed
+// built-in pack — the shipped definitions changed since the pack was
+// installed/last updated. Drives the "updates available" banner + per-pack
+// badges on the Packs tab.
+func (h *triggerHandler) listPackUpdates(w http.ResponseWriter, r *http.Request) {
+	summaries, err := trigger.ComputeUpdateSummaries(h.store)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if summaries == nil {
+		summaries = []trigger.PackUpdateSummary{}
+	}
+	writeJSON(w, http.StatusOK, summaries)
+}
+
+// packDiff returns the full changelist for one installed built-in pack:
+// per-trigger changed/added/removed/deleted-locally groups with field-level
+// old/new/current values for the side-by-side compare view.
+func (h *triggerHandler) packDiff(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	pack := findBuiltinPack(name)
+	if pack == nil {
+		writeError(w, http.StatusNotFound, "pack not found")
+		return
+	}
+	diff, err := trigger.ComputePackDiff(h.store, *pack)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, diff)
+}
+
+type applyPackUpdateRequest struct {
+	// Mode: "preserve" (default — user-customized fields, actions and
+	// character lists keep their values) or "reset" (full pack defaults).
+	Mode string `json:"mode"`
+	// Keys selects which triggers (pack_key) to update; empty = everything
+	// pending except locally-deleted triggers, which are opt-in only.
+	Keys []string `json:"keys"`
+}
+
+// applyPackUpdate applies pending pack updates to the user's installed
+// triggers, per the requested mode and selection.
+func (h *triggerHandler) applyPackUpdate(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	pack := findBuiltinPack(name)
+	if pack == nil {
+		writeError(w, http.StatusNotFound, "pack not found")
+		return
+	}
+	var req applyPackUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.Mode == "" {
+		req.Mode = trigger.UpdateModePreserve
+	}
+	// Inserted/reset triggers need per-user character defaults, same as a
+	// fresh pack install; the raw definition stays pristine for baselines.
+	defaulted := *pack
+	defaulted.Triggers = append([]trigger.Trigger(nil), pack.Triggers...)
+	h.applyDefaultCharacters(&defaulted)
+	res, err := trigger.ApplyPackUpdate(h.store, *pack, defaulted, req.Mode, req.Keys)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.engine.Reload()
+	writeJSON(w, http.StatusOK, res)
+}
+
+// findBuiltinPack returns the named built-in pack definition, or nil.
+func findBuiltinPack(name string) *trigger.TriggerPack {
+	for _, p := range trigger.AllPacks() {
+		if p.PackName == name {
+			return &p
+		}
+	}
+	return nil
+}
+
 // removePack removes all triggers belonging to the named pack and then
 // re-installs any shared dedup_key triggers that another still-installed
 // pack would have provided. Used by both built-in packs and user-imported
