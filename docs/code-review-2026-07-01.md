@@ -475,7 +475,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Move all but `electron-updater` to devDependencies; verify
   packaged build still boots.
 
-### [ ] 5.10 Dev-only: stale server-port file latches onto a dead port
+### [x] 5.10 Dev-only: stale server-port file latches onto a dead port
 - **Where:** `electron/main/index.ts:648-670`; Go writes
   `~/.pq-companion/server-port` on bind, never deletes on exit
 - **Severity/confidence:** LOW / certain (dev-only annoyance)
@@ -485,7 +485,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 
 ## Priority 6 — smaller / hygiene
 
-### [ ] 6.1 Stale time.AfterFunc fire races (threat / hate-mod / fight timeout)
+### [x] 6.1 Stale time.AfterFunc fire races (threat / hate-mod / fight timeout)
 - **Where:** `threat/tracker.go:941-948` (`armExpiryLocked` → `endMob`:
   stale fire deletes an actively-refreshed mob's hate), `:600-610`
   (`expireMod`: recast buff deleted for its whole refreshed duration);
@@ -572,7 +572,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   stay on screen presented as the new query's answer.
 - **Fix:** `.catch` → clear results / show error state.
 
-### [ ] 6.11 players.Consumer invokes onPVP callback while holding c.mu
+### [x] 6.11 players.Consumer invokes onPVP callback while holding c.mu
 - **Where:** `players/consumer.go:187-195` (current callback at
   main.go:678-703 is verified non-blocking — nothing deadlocks today)
 - **Severity/confidence:** LOW / possible future hazard
@@ -580,6 +580,13 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   consumers already use).
 
 ### [ ] 6.12 Tailer can't detect log-file replacement at same path
+- **DEFERRED (intentional):** app is Windows-only, where a delete of the open
+  file fails (the item's own mitigation), and EQ appends to the same log
+  across sessions rather than rotating — so the delete+recreate scenario is
+  largely theoretical on the target platform. Adding periodic path-stat +
+  os.SameFile + reopen logic to the hot tailer critical path isn't worth the
+  new failure modes for a LOW/possible item. If Wine/Linux log rotation ever
+  proves real, add the SameFile check in the idle (size==offset) branch only.
 - **Where:** `logparser/tailer.go:284-303` (stats the open handle;
   truncation caught, delete+recreate not)
 - **Severity/confidence:** LOW / possible (largely mitigated on Windows —

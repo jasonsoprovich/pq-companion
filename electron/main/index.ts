@@ -712,6 +712,21 @@ async function showDbMissingDialog(expectedPath: string): Promise<void> {
 // hardcoded fallback. Polls for up to 8 s so we tolerate the user starting
 // Electron before `go run` is fully up. Falls back to DEV_FALLBACK_PORT only
 // if the file genuinely never appears, with a loud console warning.
+// isBackendAlive probes a candidate dev port to confirm our backend is actually
+// listening there (not a stale port-file entry). Short timeout so a dead port
+// fails fast and polling continues.
+async function isBackendAlive(port: number): Promise<boolean> {
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 400)
+    const res = await fetch(`http://127.0.0.1:${port}/api/enums`, { signal: controller.signal })
+    clearTimeout(timer)
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 async function resolveDevBackendPort(): Promise<void> {
   const portFile = join(homedir(), '.pq-companion', 'server-port')
   const deadline = Date.now() + 8000
@@ -719,7 +734,11 @@ async function resolveDevBackendPort(): Promise<void> {
     try {
       const text = await readFile(portFile, 'utf8')
       const port = Number(text.trim())
-      if (Number.isFinite(port) && port > 0 && port < 65536) {
+      // The Go server writes this file on bind but never deletes it on exit, so
+      // a stale file from a previous `go run` would otherwise latch us onto a
+      // dead port. Health-probe before accepting; if it's stale we keep polling
+      // until a fresh server rebinds and (re)writes the file.
+      if (Number.isFinite(port) && port > 0 && port < 65536 && (await isBackendAlive(port))) {
         console.log(`[main] Dev backend port discovered from ${portFile}: ${port}`)
         setBackendPort(port)
         return
