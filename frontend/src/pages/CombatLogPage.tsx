@@ -991,7 +991,23 @@ export default function CombatLogPage(): React.ReactElement {
   const allFights = combat?.recent_fights ?? []
   const deaths = combat?.deaths ?? []
 
-  const visibleFights = useMemo(() => applyFilters(allFights, filters), [allFights, filters])
+  // Coarse tick so the relative time-range filter ("Last 30m", …) ages out
+  // stale fights even with no new combat — cutoff is otherwise captured once in
+  // the memo below and never re-evaluated while idle. Only runs for a relative
+  // range (not "all").
+  const [nowTick, setNowTick] = useState(0)
+  useEffect(() => {
+    if (filters.timeRange === 'all') return
+    const id = setInterval(() => setNowTick((n) => n + 1), 60_000)
+    return () => clearInterval(id)
+  }, [filters.timeRange])
+
+  const visibleFights = useMemo(
+    () => applyFilters(allFights, filters),
+    // nowTick intentionally re-runs the relative time filter on each tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allFights, filters, nowTick],
+  )
 
   const handleClear = useCallback(() => {
     resetCombatState().catch(() => {})

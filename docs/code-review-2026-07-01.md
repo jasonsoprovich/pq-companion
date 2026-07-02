@@ -527,7 +527,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Keep the in-combat capture in a ref; only setState on the
   combat→idle transition.
 
-### [ ] 6.6 audio.ts dedup map grows unbounded
+### [x] 6.6 audio.ts dedup map grows unbounded
 - **Where:** `services/audio.ts:19, 103-109` (`lastFiredAt`)
 - **Severity/confidence:** LOW / certain growth, small impact
 - **Problem:** Retains every unique `tts:${text}` / `sound:${path}` key
@@ -537,7 +537,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Sweep on insert (sibling dedup in `useTriggerClipboard.ts:40-44`
   already prunes at 256).
 
-### [ ] 6.7 Combat Log relative time-range filter never ages out while idle
+### [x] 6.7 Combat Log relative time-range filter never ages out while idle
 - **Where:** `pages/CombatLogPage.tsx:815-819` + `:994`
 - **Severity/confidence:** LOW / certain
 - **Problem:** `cutoff = Date.now() - …` captured in a useMemo keyed only
@@ -556,7 +556,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   broadcast)
 - **Fix:** "Skip REST result once any WS message applied" ref.
 
-### [ ] 6.9 ChatHistoryPage debounced reload timer not cleared on unmount
+### [x] 6.9 ChatHistoryPage debounced reload timer not cleared on unmount
 - **Where:** `pages/ChatHistoryPage.tsx:168-174`
 - **Severity/confidence:** LOW / certain, minor (one wasted fetch)
 - **Fix:** Clear the timer in the effect cleanup.
