@@ -663,7 +663,12 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   overview request)
 - **Fix:** Pass the `worn` map through.
 
-### [ ] 6.20 No graceful shutdown path (design note)
+### [x] 6.20 No graceful shutdown path (design note) — reviewed, no change
+- **Reviewed, accepted as-is:** WAL SQLite tolerates the abrupt taskkill, and
+  the load-bearing invariant (all writes small autocommit/short-tx) still
+  holds — the transactions added this pass (1.6 character delete, 4.3
+  InsertMany, 6.15 import restore) are all bounded/short, not long-running.
+  Revisit only if a long transaction is ever introduced.
 - **Where:** `cmd/server/main.go:1156` (`http.Serve` blocks forever; no
   signal handler; sidecar dies by taskkill; all `defer Close()` never run)
 - **Severity/confidence:** LOW / certain behavior, likely acceptable
