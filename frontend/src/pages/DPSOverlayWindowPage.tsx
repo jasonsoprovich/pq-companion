@@ -7,7 +7,7 @@
  * header strip — hovering the header temporarily disables passthrough so its
  * buttons (clear, lock, close, etc.) stay clickable.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Swords, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass, User, History, Crosshair } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'

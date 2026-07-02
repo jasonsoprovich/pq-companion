@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Gauge, ExternalLink, Trash2 } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useRaidThreatEnabled } from '../../hooks/useRaidThreatEnabled'

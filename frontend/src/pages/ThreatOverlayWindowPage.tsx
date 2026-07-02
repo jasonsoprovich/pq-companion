@@ -3,7 +3,7 @@
  * active character's ESTIMATED personal hate per mob. Renders in a dedicated
  * frameless Electron window. See internal/threat for the hate model.
  */
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Gauge, Trash2 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useRaidThreatEnabled } from '../hooks/useRaidThreatEnabled'
