@@ -2044,7 +2044,14 @@ func (db *DB) GetNPCsByZone(shortName string, limit, offset int) (*SearchResult[
 		SELECT DISTINCT s2.spawngroupID
 		FROM spawn2 s2
 		WHERE s2.zone = ?
-		  AND EXISTS (SELECT 1 FROM npc_types n2 WHERE n2.id = s2.spawngroupID)`
+		  AND EXISTS (SELECT 1 FROM npc_types n2 WHERE n2.id = s2.spawngroupID)
+		  -- Only treat spawngroupID as a direct npc id when the spawngroup has
+		  -- NO spawnentry rows. Otherwise it's a real spawngroup (spawning some
+		  -- OTHER npc via the chain above) whose id merely collides with an
+		  -- unrelated npc_types.id — the keyspaces overlap — which pulled e.g.
+		  -- Plane of Tactics mobs into Crushbone's list (verified: all 25 of
+		  -- Crushbone's second-arm rows were such collisions).
+		  AND NOT EXISTS (SELECT 1 FROM spawnentry se2 WHERE se2.spawngroupID = s2.spawngroupID)`
 
 	var total int
 	countQ := fmt.Sprintf(

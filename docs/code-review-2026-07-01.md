@@ -244,7 +244,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 
 ## Priority 4 — API/DB correctness (secondary)
 
-### [ ] 4.1 GetNPCsByZone solo-spawn heuristic returns provably wrong NPCs
+### [x] 4.1 GetNPCsByZone solo-spawn heuristic returns provably wrong NPCs
 - **Where:** `backend/internal/db/queries.go:2038-2047` (second UNION arm)
 - **Severity/confidence:** MEDIUM / certain (data-verified)
 - **Problem:** Treats `spawn2.spawngroupID` as an `npc_types.id`; keyspaces
