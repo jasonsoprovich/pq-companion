@@ -27,11 +27,58 @@ if (loggerInit.error) {
 // evidence gets written. 'will-quit' fires after teardown, right before exit.
 app.on('will-quit', () => closeLogger())
 
+// isExternalHttpUrl reports whether a URL is a normal web link we're willing to
+// hand to the system browser. Anything that isn't http/https (file://, custom
+// schemes, javascript:, etc.) is refused.
+function isExternalHttpUrl(url: string): boolean {
+  try {
+    const proto = new URL(url).protocol
+    return proto === 'http:' || proto === 'https:'
+  } catch {
+    return false
+  }
+}
+
+// isAppUrl reports whether url is the app's own renderer content: the Vite dev
+// server origin in development, or a packaged file:// URL in production. Routing
+// is hash-based, so in-app navigation only changes the hash (fires
+// did-navigate-in-page, not will-navigate) — only full navigations reach the
+// guard, and anything that isn't our own content is treated as untrusted.
+function isAppUrl(url: string): boolean {
+  if (url.startsWith('file://')) return true
+  const devBase = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+  try {
+    return new URL(url).origin === new URL(devBase).origin
+  } catch {
+    return false
+  }
+}
+
+// hardenWebContents applies navigation defenses to every window:
+//  - window.open / target=_blank: external http(s) links open in the system
+//    browser; every other scheme is denied. No child window is ever created, so
+//    a compromised renderer can't spawn one that inherits the preload bridge.
+//  - will-navigate: confine top-level navigation to the app's own content; a
+//    phished or injected navigation elsewhere is cancelled (and, if it's a web
+//    link, handed to the system browser instead).
+function hardenWebContents(contents: Electron.WebContents): void {
+  contents.setWindowOpenHandler(({ url }) => {
+    if (isExternalHttpUrl(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  contents.on('will-navigate', (event, url) => {
+    if (isAppUrl(url)) return
+    event.preventDefault()
+    if (isExternalHttpUrl(url)) void shell.openExternal(url)
+  })
+}
+
 // Mirror renderer console warnings/errors from every window (main + all
 // overlays) into electron.log. DevTools only shows them per-window and only
 // while open; this gives one persistent stream that survives into packaged
 // builds (where there is no DevTools at all) and can be read after the fact.
 app.on('web-contents-created', (_event, contents) => {
+  hardenWebContents(contents)
   contents.on('console-message', (details) => {
     if (details.level !== 'warning' && details.level !== 'error') return
     const win = BrowserWindow.fromWebContents(contents)
@@ -850,8 +897,7 @@ function createMainWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+      nodeIntegration: false
     },
     show: false // show after ready-to-show to avoid flash
   })
@@ -881,11 +927,9 @@ function createMainWindow(): void {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
-  // Open external links in the system browser, not in Electron
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
-    return { action: 'deny' }
-  })
+  // External-link handling + navigation confinement are applied globally to
+  // every window via hardenWebContents (see the web-contents-created hook), so
+  // no per-window setWindowOpenHandler is needed here.
 
   // Minimize-to-tray: when the preference is on, the 'X' hides the window to
   // the tray instead of closing it. A real quit (tray "Quit", app.quit, OS
@@ -930,8 +974,7 @@ function createDPSOverlay(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+      nodeIntegration: false
     },
   })
 
@@ -987,8 +1030,7 @@ function createHPSOverlay(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+      nodeIntegration: false
     },
   })
 
@@ -1043,8 +1085,7 @@ function createBuffTimerOverlay(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+      nodeIntegration: false
     },
   })
 
@@ -1097,8 +1138,7 @@ function createCHChainOverlay(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+      nodeIntegration: false
     },
   })
 
@@ -1151,8 +1191,7 @@ function createCHMetronomeOverlay(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+      nodeIntegration: false
     },
   })
 
@@ -1207,8 +1246,7 @@ function createDetrimTimerOverlay(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+      nodeIntegration: false
     },
   })
 
@@ -1263,8 +1301,7 @@ function createCustomTimerOverlay(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+      nodeIntegration: false
     },
   })
 
@@ -1319,8 +1356,7 @@ function createRespawnTimerOverlay(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+      nodeIntegration: false
     },
   })
 
@@ -1392,8 +1428,7 @@ function createTriggerOverlay(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+      nodeIntegration: false
     },
   })
 
@@ -1461,8 +1496,7 @@ function createNPCOverlay(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+      nodeIntegration: false
     },
   })
 
@@ -1517,8 +1551,7 @@ function createThreatOverlay(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+      nodeIntegration: false
     },
   })
 
@@ -1573,8 +1606,7 @@ function createRollTrackerOverlay(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+      nodeIntegration: false
     },
   })
 
@@ -2560,9 +2592,19 @@ app.whenReady().then(async () => {
     if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(p)) {
       p = p.substring(1)
     }
+    // Reject anything that isn't a recognized audio extension BEFORE reading.
+    // Otherwise this handler is an arbitrary local-file read primitive
+    // reachable from any of the app's renderers — a compromised renderer could
+    // pull user.db, SSH keys, cookies, etc. Confining reads to audio types
+    // keeps the surface to files the user could already play.
+    const mime = audioMimeType(extname(p).toLowerCase())
+    if (mime === 'application/octet-stream') {
+      // eslint-disable-next-line no-console
+      console.warn('[pq-audio] refused non-audio path', { path: p })
+      return new Response('unsupported media type', { status: 415 })
+    }
     try {
       const data = await readFile(p)
-      const mime = audioMimeType(extname(p).toLowerCase())
       // eslint-disable-next-line no-console
       console.log('[pq-audio] served', { path: p, mime, bytes: data.byteLength })
       return new Response(data, { headers: { 'Content-Type': mime } })
