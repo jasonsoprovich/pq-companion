@@ -322,7 +322,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   Content-Type to text/plain.
 - **Fix:** Use the existing `writeError` helper at every site.
 
-### [ ] 4.7 Gear upgrade finder renders DB failures as "no upgrades"
+### [x] 4.7 Gear upgrade finder renders DB failures as "no upgrades"
 - **Where:** `api/characters_upgrades.go:272-274, 346-348`
 - **Severity/confidence:** MEDIUM / certain
 - **Problem:** `if err != nil { cands = nil }` → 200 with empty

@@ -175,7 +175,11 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	wornLore := h.equippedLoreSet(worn)
 	wc := h.newWornCache()
 	hasteByLoc := h.hasteByLocation(byLoc, worn, wc)
-	current, baselineID, results, considered := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, excludePoP, excludeCrafted, excludeNoDrop, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc)
+	current, baselineID, results, considered, err := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, excludePoP, excludeCrafted, excludeNoDrop, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load upgrade candidates")
+		return
+	}
 
 	writeJSON(w, http.StatusOK, upgradesResponse{
 		Slot:           slot.Key,
@@ -270,7 +274,10 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 		ExcludeNoDrop:  excludeNoDrop,
 	})
 	if err != nil {
-		allCands = nil
+		// A locked/corrupt quarm.db must surface as an error, not an empty
+		// overview that reads as "everything is best-in-slot".
+		writeError(w, http.StatusInternalServerError, "failed to load upgrade candidates")
+		return
 	}
 
 	slots := make([]overviewSlot, 0, len(upgradeSlots))
@@ -333,7 +340,7 @@ func (h *charactersHandler) scoreSlot(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
 	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll, excludePoP, excludeCrafted, excludeNoDrop bool, limit int,
 	prioritySet, equippedFocus, wornLore map[int]bool, wc *wornCache, hasteByLoc map[string]int,
-) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int) {
+) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int, err error) {
 	cands, err := h.db.UpgradeCandidates(db.CandidateFilter{
 		SlotMask:       slot.Mask,
 		ClassBit:       charClassBit(char),
@@ -344,9 +351,12 @@ func (h *charactersHandler) scoreSlot(
 		ExcludeNoDrop:  excludeNoDrop,  // finder-local "Hide NO DROP" toggle (default show)
 	})
 	if err != nil {
-		cands = nil // still return the worn items / empty results below
+		// Propagate: a locked/corrupt quarm.db must not be reported to the user
+		// as "no upgrades" (indistinguishable from best-in-slot).
+		return nil, 0, nil, 0, err
 	}
-	return h.scoreSlotCands(char, ctx, weights, slot, byLoc, showAll, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc, cands)
+	current, baselineID, results, considered = h.scoreSlotCands(char, ctx, weights, slot, byLoc, showAll, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc, cands)
+	return current, baselineID, results, considered, nil
 }
 
 // scoreSlotCands scores a pre-fetched candidate set for one slot against the
