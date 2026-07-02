@@ -174,10 +174,49 @@ func (s *Store) Create(name string, class, race, level int) (Character, error) {
 	return Character{ID: int(id), Name: name, Class: class, Race: race, Level: level}, nil
 }
 
-// Delete removes the character with the given id.
+// Delete removes the character with the given id along with all of its child
+// rows. user.db never enables the foreign_keys pragma (no DSN sets it), so the
+// schema's ON DELETE CASCADE clauses are inert — deleting a character would
+// otherwise orphan its AAs, raid buffs, tasks/subtasks, wishlist, slot layout,
+// and upgrade weights/focus forever (AUTOINCREMENT ids, so silent bloat). We
+// delete the children explicitly in one transaction. Subtasks hang off
+// character_tasks rather than characters directly, so they're cleared first
+// via the parent task ids, before character_tasks itself is removed.
 func (s *Store) Delete(id int) error {
-	_, err := s.db.Exec(`DELETE FROM characters WHERE id=?`, id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("delete character: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.Exec(
+		`DELETE FROM character_task_subtasks
+		   WHERE task_id IN (SELECT id FROM character_tasks WHERE character_id = ?)`,
+		id,
+	); err != nil {
+		return fmt.Errorf("delete character subtasks: %w", err)
+	}
+
+	// Table names are compile-time constants, not user input — safe to
+	// interpolate (a table identifier can't be a bound parameter).
+	for _, tbl := range []string{
+		"character_tasks",
+		"character_aas",
+		"character_raid_buffs",
+		"character_upgrade_weights",
+		"character_upgrade_focus",
+		"character_wishlist",
+		"character_wishlist_slot_layout",
+	} {
+		if _, err := tx.Exec(`DELETE FROM `+tbl+` WHERE character_id = ?`, id); err != nil {
+			return fmt.Errorf("delete %s: %w", tbl, err)
+		}
+	}
+
+	if _, err := tx.Exec(`DELETE FROM characters WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete character: %w", err)
+	}
+	return tx.Commit()
 }
 
 // Get returns the character with the given id.

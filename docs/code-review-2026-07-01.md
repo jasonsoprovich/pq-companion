@@ -93,7 +93,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** One line:
   `delete(a.taunt, logparser.CanonicalNPCName(data.Target))`.
 
-### [ ] 1.6 Deleting a character orphans 8 child tables (foreign_keys never enabled)
+### [x] 1.6 Deleting a character orphans 8 child tables (foreign_keys never enabled)
 - **Where:** `backend/internal/character/store.go:178-181` (`Delete`); no
   user.db DSN sets `_pragma=foreign_keys(1)` (verified by grep)
 - **Severity/confidence:** MEDIUM / certain
