@@ -220,7 +220,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   says page 2; stale `.finally` ends loading while newer request pending.
 - **Fix:** Same `seqRef` pattern as 3.1.
 
-### [ ] 3.4 Combat Log React keys collide for fights starting in the same second
+### [x] 3.4 Combat Log React keys collide for fights starting in the same second
 - **Where:** `pages/CombatLogPage.tsx:1118` (`key={row.fight.start_time}`)
 - **Severity/confidence:** MEDIUM / likely
 - **Problem:** 1-second log timestamp resolution + per-NPC fights → two
@@ -229,7 +229,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   expanded breakdown can attach to a different fight's data.
 - **Fix:** Key on `start_time + primary_target` (or add a backend fight id).
 
-### [ ] 3.5 useHistoryNav: double entry on mount + REPLACE counted as PUSH → Back/Forward drift
+### [x] 3.5 useHistoryNav: double entry on mount + REPLACE counted as PUSH → Back/Forward drift
 - **Where:** `hooks/useHistoryNav.ts:8-28`
 - **Severity/confidence:** MEDIUM / certain (double push), likely (drift)
 - **Problem:** useRef initializer seeds the stack with the initial

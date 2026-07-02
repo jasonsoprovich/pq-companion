@@ -1135,7 +1135,10 @@ export default function CombatLogPage(): React.ReactElement {
                   <SessionBreakRow key={row.key} gapSeconds={row.gapSeconds} />
                 ) : (
                   <FightRow
-                    key={row.fight.start_time}
+                    // start_time alone collides for two mobs pulled in the same
+                    // 1s-resolution log second; include the target so each
+                    // per-NPC fight keeps its own local (expanded/copied) state.
+                    key={`${row.fight.start_time}-${row.fight.primary_target}`}
                     fight={row.fight}
                     index={visibleFights.indexOf(row.fight)}
                     total={total}

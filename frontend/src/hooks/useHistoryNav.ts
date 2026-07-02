@@ -1,9 +1,10 @@
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, useNavigationType } from 'react-router-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 export function useHistoryNav() {
   const navigate = useNavigate()
   const location = useLocation()
+  const navType = useNavigationType() // 'POP' | 'PUSH' | 'REPLACE'
 
   const stackRef = useRef<string[]>([location.pathname + location.search])
   const indexRef = useRef(0)
@@ -19,13 +20,24 @@ export function useHistoryNav() {
       return
     }
     const key = location.pathname + location.search
-    // Truncate forward history on new navigation
+    // POP is the initial mount (the stack initializer already seeded this
+    // location) — pushing again produced [X, X], so canGoBack was true at boot
+    // and the first Back was a no-op that lit Forward. Skip it.
+    if (navType === 'POP') return
+    // REPLACE (index-route redirects like /combat -> /combat/log) is not a new
+    // history step — update the current entry in place instead of pushing, so
+    // the stack stays 1:1 with real browser history and doesn't drift.
+    if (navType === 'REPLACE') {
+      stackRef.current[indexRef.current] = key
+      return
+    }
+    // PUSH: truncate forward history on new navigation, then add.
     stackRef.current = stackRef.current.slice(0, indexRef.current + 1)
     stackRef.current.push(key)
     indexRef.current = stackRef.current.length - 1
     setCanGoBack(indexRef.current > 0)
     setCanGoForward(false)
-  }, [location])
+  }, [location, navType])
 
   const goBack = useCallback(() => {
     if (indexRef.current > 0) {
