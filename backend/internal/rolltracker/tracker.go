@@ -379,6 +379,20 @@ func (t *Tracker) recordResult(min, max, value int, ts time.Time) {
 // stale. Sessions key on both bounds so a "/random 222 611" roll lands
 // in its own 222–611 session instead of the 0–611 one. mu must be held.
 func (t *Tracker) sessionForLocked(min, max int, ts time.Time) *Session {
+	// Sweep stale actives to inactive so they become evictable. In manual mode
+	// nothing else ever clears Active (only timer mode arms an auto-stop), so
+	// without this every lull would spawn a fresh permanently-active session:
+	// maxSessions never bites, and the per-roll stateLocked() deep-copy grows
+	// linearly all night. A session past staleAfter can already never accept
+	// another roll, so flipping it inactive changes no behavior.
+	for _, s := range t.sessions {
+		if s.Active && ts.Sub(s.LastRollAt) > staleAfter {
+			s.Active = false
+			s.AutoStopAt = time.Time{}
+			t.cancelAutoStopLocked(s.ID)
+		}
+	}
+	t.evictOldestStoppedLocked()
 	for _, s := range t.sessions {
 		if s.Min == min && s.Max == max && s.Active && ts.Sub(s.LastRollAt) <= staleAfter {
 			return s

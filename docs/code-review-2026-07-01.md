@@ -152,7 +152,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** `SetMaxOpenConns(2+)` on these stores (WAL supports concurrent
   readers), or queue chat/player writes onto a worker goroutine.
 
-### [ ] 2.4 Roll tracker: Active sessions never evicted in manual mode + full-state broadcast per roll
+### [x] 2.4 Roll tracker: Active sessions never evicted in manual mode + full-state broadcast per roll
 - **Where:** `backend/internal/rolltracker/tracker.go:383, 394, 448-458`
   (eviction skips Active), `:595-619` (`stateLocked` deep-copies
   everything per roll)
