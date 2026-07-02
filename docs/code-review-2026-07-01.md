@@ -79,7 +79,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** `if (socket !== ws) return;` at the top of `onclose`/`onopen`;
   treat CLOSING as "connection pending" in the connect guard.
 
-### [ ] 1.5 Raid-threat taunt offsets deleted under non-canonical mob key
+### [x] 1.5 Raid-threat taunt offsets deleted under non-canonical mob key
 - **Where:** `backend/internal/raidthreat/assembler.go:368-374`
   (`EventKill` handler)
 - **Severity/confidence:** MEDIUM / certain mismatch, likely occurrence

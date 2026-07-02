@@ -368,7 +368,7 @@ func (a *Assembler) Handle(ev logparser.LogEvent) {
 	case logparser.EventKill:
 		if data, ok := ev.Data.(logparser.KillData); ok {
 			a.mu.Lock()
-			delete(a.taunt, data.Target)
+			delete(a.taunt, logparser.CanonicalNPCName(data.Target))
 			delete(a.dismissed, logparser.CanonicalNPCName(data.Target))
 			a.mu.Unlock()
 		}
