@@ -273,6 +273,11 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
   // centered column. Polled like useAudioPrefs so a Settings save is picked
   // up without restarting the overlay window.
   const [defaultPos, setDefaultPos] = useState<{ x: number; y: number } | null>(null)
+  // Ref mirror of defaultPos so the WebSocket/hydrate handlers can read the
+  // latest global default without being re-created (and re-subscribing) on
+  // every 3s poll. These handlers only fire on user action, by which point the
+  // first poll has long resolved.
+  const defaultPosRef = useRef<{ x: number; y: number } | null>(null)
   // Global default text style (Settings → Preferences), same poll. Null until
   // the first fetch resolves — alerts render with the built-in look meanwhile.
   const [styleDefaults, setStyleDefaults] = useState<OverlayTextStyleDefaults | null>(null)
@@ -282,7 +287,9 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
       getConfig()
         .then((c) => {
           if (cancelled) return
-          setDefaultPos(c.preferences?.default_overlay_position ?? null)
+          const dp = c.preferences?.default_overlay_position ?? null
+          defaultPosRef.current = dp
+          setDefaultPos(dp)
           setStyleDefaults({
             default_overlay_text_color: c.preferences?.default_overlay_text_color,
             default_overlay_glow_color: c.preferences?.default_overlay_glow_color,
@@ -374,6 +381,24 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     return { x: 80, y: 80 }
   }, [])
 
+  // Resolve where a positioning-session test card should first appear:
+  //   1. an explicit per-trigger pinned position, if the trigger has one;
+  //   2. otherwise the user's global default overlay position (Settings →
+  //      Preferences) — the same anchor unpinned fired alerts stack from;
+  //   3. otherwise the primary-monitor default.
+  // Everything is clamped onto a real monitor. Without step 2, a trigger with
+  // no pinned position opened its picker centered on the primary display,
+  // ignoring the global default the user had just set.
+  const resolveStartPos = useCallback(
+    (explicit: { x: number; y: number } | null | undefined): { x: number; y: number } => {
+      if (explicit) return clampToViewport(explicit)
+      const d = defaultPosRef.current
+      if (d) return clampToViewport(d)
+      return makeDefaultPos()
+    },
+    [clampToViewport, makeDefaultPos],
+  )
+
   // Garbage-collect expired alerts every 250 ms. Test alerts are sticky and
   // only cleared when the editor ends the positioning session, so they're
   // explicitly excluded from this gc loop.
@@ -445,7 +470,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
           glowColor: active.glow_color || '',
           fontFamily: active.font_family || '',
           fontSize,
-          position: active.position ? clampToViewport(active.position) : makeDefaultPos(),
+          position: resolveStartPos(active.position),
         })
       } catch {
         /* no active session */
@@ -453,7 +478,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     }
     void init()
     return () => { cancelled = true }
-  }, [makeDefaultPos, clampToViewport])
+  }, [resolveStartPos])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === WSEvent.TriggerFired) {
@@ -484,7 +509,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         glowColor: data.glow_color || '',
         fontFamily: data.font_family || '',
         fontSize,
-        position: data.position ? clampToViewport(data.position) : makeDefaultPos(),
+        position: resolveStartPos(data.position),
       })
       return
     }
@@ -498,7 +523,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
       }
       return
     }
-  }, [makeDefaultPos, clampToViewport])
+  }, [resolveStartPos])
 
   useWebSocket(handleMessage)
 
