@@ -284,7 +284,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   the converter's hot-join index pass (see quarm.db regen memory — indexes
   auto-apply during conversion).
 
-### [ ] 4.5 Players store txs read-then-write → SQLITE_BUSY_SNAPSHOT bypasses busy_timeout
+### [x] 4.5 Players store txs read-then-write → SQLITE_BUSY_SNAPSHOT bypasses busy_timeout (done as 2.3 prerequisite)
 - **Where:** `players/store.go` `Upsert` (:327-345), `TouchInteraction`
   (:258-275), `UpdateGuild` (:430-445), `BackfillUpsert` (:495-512)
 - **Severity/confidence:** MEDIUM / likely

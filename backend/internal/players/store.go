@@ -102,7 +102,13 @@ type Store struct {
 // Other packages also open their own connections to the same file under WAL
 // mode; this works because SQLite WAL allows multiple concurrent readers.
 func OpenStore(path string) (*Store, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(30000)", path)
+	// _txlock=immediate: this store's transactions (Upsert, TouchInteraction,
+	// UpdateGuild, BackfillUpsert) read then write within one tx. Under WAL a
+	// deferred tx that upgrades read->write after another connection committed
+	// returns SQLITE_BUSY immediately, bypassing busy_timeout. Taking the write
+	// lock up front makes those txs wait on the busy handler instead — needed
+	// now that the pool allows >1 connection.
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(30000)&_txlock=immediate", path)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open user.db: %w", err)
