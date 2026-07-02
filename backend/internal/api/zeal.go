@@ -69,7 +69,13 @@ func (h *zealHandler) enrichEntries(entries []zeal.InventoryEntry) {
 func (h *zealHandler) inventory(w http.ResponseWriter, r *http.Request) {
 	inv := h.watcher.Inventory()
 	if inv != nil {
-		h.enrichEntries(inv.Entries)
+		// Inventory() returns the watcher's shared cached pointer. Enrich a copy
+		// so we don't mutate Entries in place — concurrent GETs would otherwise
+		// write the same slice elements unsynchronized (trips -race).
+		cp := *inv
+		cp.Entries = append([]zeal.InventoryEntry(nil), inv.Entries...)
+		h.enrichEntries(cp.Entries)
+		inv = &cp
 	}
 	json.NewEncoder(w).Encode(struct {
 		Inventory *zeal.Inventory `json:"inventory"`
@@ -143,7 +149,12 @@ func (h *zealHandler) quarmy(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		q := h.watcher.Quarmy()
 		if q != nil {
-			h.enrichEntries(q.Inventory)
+			// Enrich a copy — Quarmy() hands back the shared cached pointer
+			// (same race as the inventory handler above).
+			cp := *q
+			cp.Inventory = append([]zeal.InventoryEntry(nil), q.Inventory...)
+			h.enrichEntries(cp.Inventory)
+			q = &cp
 		}
 		resp.Quarmy = q
 		json.NewEncoder(w).Encode(resp)

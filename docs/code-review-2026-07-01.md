@@ -330,7 +330,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   "already best in slot"; error not even logged.
 - **Fix:** Return 500 (and log) on DB error.
 
-### [ ] 4.8 Data race: enrichEntries mutates Zeal watcher's shared cached inventory
+### [x] 4.8 Data race: enrichEntries mutates Zeal watcher's shared cached inventory
 - **Where:** `api/zeal.go:39-77, 144-148`
 - **Severity/confidence:** MEDIUM race / benign symptoms likely
 - **Problem:** `watcher.Inventory()`/`Quarmy()` return the cached pointer
