@@ -1,7 +1,9 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -186,28 +188,32 @@ func (h *charactersHandler) aas(w http.ResponseWriter, r *http.Request) {
 		eqClass := char.Class + 1
 
 		available, err = h.db.ListAvailableAAs(eqClass)
-		if err == nil {
-			eligible := make(map[int]bool, len(available))
-			ids := make([]int, len(available))
-			for i, a := range available {
-				ids[i] = a.AAID
-				eligible[a.AAID] = true
+		if err != nil {
+			// Don't swallow: an empty catalog here is indistinguishable from a
+			// real DB failure and would render as "no AAs available".
+			writeError(w, http.StatusInternalServerError, "failed to load AA catalog")
+			return
+		}
+		eligible := make(map[int]bool, len(available))
+		ids := make([]int, len(available))
+		for i, a := range available {
+			ids[i] = a.AAID
+			eligible[a.AAID] = true
+		}
+		// Drop trained entries that aren't eligible for this class. Zeal's
+		// AAIndex export can contain cross-class AAs (e.g. Fleet of Foot
+		// for a Wizard) that the character can't actually use; including
+		// them makes the tab badge disagree with the points-spent total.
+		filtered := trained[:0]
+		for _, t := range trained {
+			if eligible[t.AAID] {
+				filtered = append(filtered, t)
 			}
-			// Drop trained entries that aren't eligible for this class. Zeal's
-			// AAIndex export can contain cross-class AAs (e.g. Fleet of Foot
-			// for a Wizard) that the character can't actually use; including
-			// them makes the tab badge disagree with the points-spent total.
-			filtered := trained[:0]
-			for _, t := range trained {
-				if eligible[t.AAID] {
-					filtered = append(filtered, t)
-				}
-			}
-			trained = filtered
-			names, _ := h.db.LookupAANames(ids)
-			for i := range trained {
-				trained[i].Name = names[trained[i].AAID]
-			}
+		}
+		trained = filtered
+		names, _ := h.db.LookupAANames(ids)
+		for i := range trained {
+			trained[i].Name = names[trained[i].AAID]
 		}
 	}
 	if available == nil {
@@ -328,8 +334,12 @@ func (h *charactersHandler) spellModifiers(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		sp, err := h.db.GetSpell(spellID)
-		if err != nil || sp == nil {
-			writeError(w, http.StatusNotFound, "spell not found")
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "spell not found")
+			} else {
+				writeError(w, http.StatusInternalServerError, "failed to look up spell")
+			}
 			return
 		}
 		spellType := buffmod.SpellTypeBeneficial

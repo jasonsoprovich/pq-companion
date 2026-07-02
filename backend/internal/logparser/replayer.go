@@ -125,6 +125,14 @@ func (r *Replayer) pushStatus() {
 // multiplier (1.0 = real time; min clamped to 0.1, max to 100). displayName
 // is the base file name reported in status. Errors when a session is already
 // active or the file can't be opened.
+// Sentinel errors from Start so the API layer can map them to the right HTTP
+// status (inverted range → 400, already active → 409) instead of lumping every
+// failure into one code. A wrapped open error (neither sentinel) is a 500.
+var (
+	ErrReplayRangeInverted = errors.New("replay: 'to' must be after 'from'")
+	ErrReplayAlreadyActive = errors.New("replay: a session is already active")
+)
+
 func (r *Replayer) Start(path, displayName string, from, to time.Time, speed float64) error {
 	if speed <= 0 {
 		speed = 1
@@ -136,7 +144,7 @@ func (r *Replayer) Start(path, displayName string, from, to time.Time, speed flo
 		speed = 100
 	}
 	if !to.After(from) {
-		return errors.New("replay: 'to' must be after 'from'")
+		return ErrReplayRangeInverted
 	}
 
 	f, err := os.Open(path)
@@ -148,7 +156,7 @@ func (r *Replayer) Start(path, displayName string, from, to time.Time, speed flo
 	if r.state != ReplayIdle {
 		r.mu.Unlock()
 		_ = f.Close()
-		return errors.New("replay: a session is already active")
+		return ErrReplayAlreadyActive
 	}
 	stop := make(chan struct{})
 	r.state = ReplayPlaying

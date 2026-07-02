@@ -354,7 +354,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Severity/confidence:** MEDIUM / certain
 - **Fix:** Batch with `IN (...)`; propagate real errors in statDeltas.
 
-### [ ] 4.10 Misleading status codes (pattern, several handlers)
+### [x] 4.10 Misleading status codes (pattern, several handlers)
 - **Where / what:**
   - `api/wishlist.go:149-152`: any `GetItem` error → 400 "item not found"
     (split `sql.ErrNoRows` from 500, as `items.go` does)

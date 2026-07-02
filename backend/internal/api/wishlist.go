@@ -1,7 +1,9 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -147,7 +149,11 @@ func (h *wishlistHandler) add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.db.GetItem(req.ItemID); err != nil {
-		writeError(w, http.StatusBadRequest, "item not found")
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusBadRequest, "item not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to look up item")
+		}
 		return
 	}
 	for _, slot := range req.Slots {

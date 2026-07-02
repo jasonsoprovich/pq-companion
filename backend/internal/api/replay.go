@@ -3,6 +3,7 @@ package api
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -198,7 +199,14 @@ func (h *replayHandler) start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.replayer.Start(full, filepath.Base(full), from, to, req.Speed); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+		switch {
+		case errors.Is(err, logparser.ErrReplayRangeInverted):
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, logparser.ErrReplayAlreadyActive):
+			writeError(w, http.StatusConflict, err.Error())
+		default: // file-open failure and anything else
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, h.replayer.Status())

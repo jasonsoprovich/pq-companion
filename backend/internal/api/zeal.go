@@ -675,7 +675,13 @@ func (h *zealHandler) updateMacros(w http.ResponseWriter, r *http.Request) {
 	path := zeal.MacroPath(cfg.EQPath, body.Character)
 	info, err := os.Stat(path)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("no _pq.proj.ini for %s yet — log in once so the client creates it", body.Character))
+		if os.IsNotExist(err) {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("no _pq.proj.ini for %s yet — log in once so the client creates it", body.Character))
+		} else {
+			// A permission error / unreadable path is a real failure, not "the
+			// file hasn't been created yet".
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("stat config file: %s", err))
+		}
 		return
 	}
 	if body.BaseModifiedAt != nil && !info.ModTime().Equal(*body.BaseModifiedAt) {
