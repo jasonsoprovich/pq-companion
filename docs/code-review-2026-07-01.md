@@ -583,6 +583,15 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Periodic path-based re-stat comparing inode/identity.
 
 ### [ ] 6.13 ApplyPackUpdate non-transactional: row vs baseline can desync
+- **DEFERRED (intentional):** a correct transaction here needs tx-variants of
+  ~10 trigger Store methods (Insert/Update/Delete/UpsertPackBaseline/
+  DeletePackBaseline + the reads it interleaves: NextTriggerSortOrder,
+  FindByDedupKey, PackBaselines, ListBySourcePack) plus the sort-order
+  visibility fix (same class as 4.3). That's a large, invasive refactor of a
+  shipped, intricate feature for a LOW/possible desync (a field reads as
+  "user customized" and stops following pack changes — soft degradation, not
+  data loss). Left for a dedicated pass; the `execer` pattern from 4.3's
+  InsertMany is the starting point.
 - **Where:** `trigger/packupdate.go:411-578` (failure between
   `store.Update` and `UpsertPackBaseline`)
 - **Severity/confidence:** LOW / possible
@@ -598,7 +607,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   DB-insert failure path right below already does `os.Remove(zipPath)`.)
 - **Fix:** Mirror the `os.Remove` on the creation-failure path.
 
-### [ ] 6.15 ApplyPendingImport partial failure presents as total data loss
+### [x] 6.15 ApplyPendingImport partial failure presents as total data loss
 - **Where:** `appbackup/manager.go:280-311` + `main.go:91-96`
 - **Severity/confidence:** LOW / possible (AV lock on Windows is the
   realistic case)

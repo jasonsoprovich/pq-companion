@@ -276,31 +276,49 @@ func (m *Manager) ApplyPendingImport() (bool, error) {
 
 	ts := time.Now().Format("20060102-150405")
 
-	// Move existing user.db aside, then replace.
+	// Move existing user.db aside, then replace. Track the set-aside path so we
+	// can put it back if the install fails — otherwise a rename failure here
+	// leaves NO user.db at the expected path, startup silently creates a fresh
+	// empty one, and the user's real data sits orphaned in the .preimport file
+	// with nothing telling them.
+	var asideDB string
 	if _, err := os.Stat(m.userDBPath); err == nil {
-		aside := m.userDBPath + "." + ts + ".preimport"
-		if err := os.Rename(m.userDBPath, aside); err != nil {
+		asideDB = m.userDBPath + "." + ts + ".preimport"
+		if err := os.Rename(m.userDBPath, asideDB); err != nil {
 			return false, fmt.Errorf("set aside existing user.db: %w", err)
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(m.userDBPath), 0o755); err != nil {
+		if asideDB != "" {
+			_ = os.Rename(asideDB, m.userDBPath) // restore original
+		}
 		return false, fmt.Errorf("ensure user.db parent dir: %w", err)
 	}
 	if err := os.Rename(stagedDB, m.userDBPath); err != nil {
+		if asideDB != "" {
+			_ = os.Rename(asideDB, m.userDBPath) // restore original
+		}
 		return false, fmt.Errorf("install staged user.db: %w", err)
 	}
 
 	// Move existing backups dir aside, then replace with the staged one.
+	var asideBackups string
 	if info, err := os.Stat(m.backupsDirPath); err == nil && info.IsDir() {
-		aside := m.backupsDirPath + "." + ts + ".preimport"
-		if err := os.Rename(m.backupsDirPath, aside); err != nil {
+		asideBackups = m.backupsDirPath + "." + ts + ".preimport"
+		if err := os.Rename(m.backupsDirPath, asideBackups); err != nil {
 			return false, fmt.Errorf("set aside existing backups dir: %w", err)
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(m.backupsDirPath), 0o755); err != nil {
+		if asideBackups != "" {
+			_ = os.Rename(asideBackups, m.backupsDirPath) // restore original
+		}
 		return false, fmt.Errorf("ensure backups dir parent: %w", err)
 	}
 	if err := os.Rename(stagedBackups, m.backupsDirPath); err != nil {
+		if asideBackups != "" {
+			_ = os.Rename(asideBackups, m.backupsDirPath) // restore original
+		}
 		return false, fmt.Errorf("install staged backups dir: %w", err)
 	}
 
