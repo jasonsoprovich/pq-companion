@@ -36,6 +36,8 @@ export default function LootTrackerPage(): React.ReactElement {
   const [rows, setRows] = useState<LootEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Monotonic token so a slow earlier request can't clobber a newer one.
+  const seqRef = useRef(0)
   const [search, setSearch] = useState('')
   const [playerFilter, setPlayerFilter] = useState('')
   const [zoneFilter, setZoneFilter] = useState('')
@@ -85,12 +87,13 @@ export default function LootTrackerPage(): React.ReactElement {
   }, [selectedChar])
 
   const load = useCallback(() => {
+    const seq = ++seqRef.current
     setLoading(true)
     setError(null)
     listLoot({ character: selectedChar || undefined, search, player: playerFilter, zone: zoneFilter, sort: 'desc', limit: 5000 })
-      .then((r) => setRows(r.loot))
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false))
+      .then((r) => { if (seq === seqRef.current) setRows(r.loot) })
+      .catch((e: Error) => { if (seq === seqRef.current) setError(e.message) })
+      .finally(() => { if (seq === seqRef.current) setLoading(false) })
   }, [selectedChar, search, playerFilter, zoneFilter])
 
   // Wait for meta to resolve the active character before the first loot

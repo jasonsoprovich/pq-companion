@@ -76,6 +76,8 @@ export default function ChatHistoryPage(): React.ReactElement {
   // the newest edge if the user is already pinned there.
   const bodyRef = useRef<HTMLDivElement>(null)
   const pendingScroll = useRef<{ top: number; height: number; atTop: boolean; atBottom: boolean } | null>(null)
+  // Monotonic token so a slow earlier fetch can't clobber a newer one.
+  const seqRef = useRef(0)
   const snapshotScroll = useCallback(() => {
     const el = bodyRef.current
     if (!el) return
@@ -122,20 +124,23 @@ export default function ChatHistoryPage(): React.ReactElement {
   // swallows transient fetch errors so a momentary failure never blanks the
   // view. Scroll is preserved across the silent data swap.
   const load = useCallback((background = false) => {
+    // Monotonic token: bump per call so a slow earlier fetch (foreground or
+    // background) can't overwrite a newer one's results out of order.
+    const seq = ++seqRef.current
     if (!background) setLoading(true)
     setError(null)
     const from = dateToUnix(fromDate, false)
     const to = dateToUnix(toDate, true)
     if (channel === 'tell') {
       listChatConversations({ character: selectedChar || undefined, search, from, to, sort: sortDir, limit: 2000 })
-        .then((r) => { if (background) snapshotScroll(); setConvos(r.conversations); setFeed([]) })
-        .catch((e: Error) => { if (!background) setError(e.message) })
-        .finally(() => { if (!background) setLoading(false) })
+        .then((r) => { if (seq !== seqRef.current) return; if (background) snapshotScroll(); setConvos(r.conversations); setFeed([]) })
+        .catch((e: Error) => { if (seq === seqRef.current && !background) setError(e.message) })
+        .finally(() => { if (seq === seqRef.current && !background) setLoading(false) })
     } else {
       getChatFeed({ character: selectedChar || undefined, channel, search, from, to, sort: sortDir, limit: 3000 })
-        .then((r) => { if (background) snapshotScroll(); setFeed(r.messages); setConvos([]) })
-        .catch((e: Error) => { if (!background) setError(e.message) })
-        .finally(() => { if (!background) setLoading(false) })
+        .then((r) => { if (seq !== seqRef.current) return; if (background) snapshotScroll(); setFeed(r.messages); setConvos([]) })
+        .catch((e: Error) => { if (seq === seqRef.current && !background) setError(e.message) })
+        .finally(() => { if (seq === seqRef.current && !background) setLoading(false) })
     }
   }, [channel, selectedChar, search, fromDate, toDate, sortDir, snapshotScroll])
 

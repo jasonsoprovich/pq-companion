@@ -64,10 +64,15 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Monotonic token so a slow earlier request can't clobber a newer one.
+  // runSearch bumps it; loadMore only reads it, so a query change discards an
+  // in-flight "Show more" instead of appending a stale page.
+  const seqRef = useRef(0)
 
   // When a class is selected, fetch all spells for that class so the user can
   // scroll the full list. Otherwise paginate via "Show more".
   const runSearch = useCallback((q: string, cls: number, min: string, max: string) => {
+    const seq = ++seqRef.current
     setLoading(true)
     setError(null)
     const minLvl = parseInt(min) || 0
@@ -75,24 +80,27 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
     const limit = cls >= 0 ? 1000 : SPELL_PAGE_SIZE
     searchSpells(q, limit, 0, cls, minLvl, maxLvl)
       .then((res) => {
+        if (seq !== seqRef.current) return
         setSpells(res.items ?? [])
         setTotal(res.total)
       })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false))
+      .catch((err: Error) => { if (seq === seqRef.current) setError(err.message) })
+      .finally(() => { if (seq === seqRef.current) setLoading(false) })
   }, [])
 
   const loadMore = useCallback(() => {
+    const seq = seqRef.current
     setLoadingMore(true)
     const minLvl = parseInt(minLevel) || 0
     const maxLvl = parseInt(maxLevel) || 0
     searchSpells(query, SPELL_PAGE_SIZE, spells.length, classIndex, minLvl, maxLvl)
       .then((res) => {
+        if (seq !== seqRef.current) return
         setSpells((prev) => [...prev, ...(res.items ?? [])])
         setTotal(res.total)
       })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoadingMore(false))
+      .catch((err: Error) => { if (seq === seqRef.current) setError(err.message) })
+      .finally(() => { if (seq === seqRef.current) setLoadingMore(false) })
   }, [query, classIndex, minLevel, maxLevel, spells.length])
 
   useEffect(() => {

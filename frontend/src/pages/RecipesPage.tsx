@@ -39,6 +39,10 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Monotonic token so a slow earlier request can't clobber a newer one.
+  // runSearch bumps it; loadMore only reads it, so a query change discards an
+  // in-flight "Show more" instead of appending a stale page.
+  const seqRef = useRef(0)
   // Re-render this pane when favorites change so the favorites-only list stays
   // current after a star toggle elsewhere.
   useFavoriteRecipes()
@@ -71,37 +75,42 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   )
 
   const runSearch = useCallback(() => {
+    const seq = ++seqRef.current
     setLoading(true)
     setError(null)
     if (favoritesOnly) {
       listFavoriteRecipes()
         .then((rows) => {
+          if (seq !== seqRef.current) return
           const filtered = rows.filter(matchesFilters)
           setItems(filtered)
           setTotal(filtered.length)
         })
-        .catch((err: Error) => setError(err.message))
-        .finally(() => setLoading(false))
+        .catch((err: Error) => { if (seq === seqRef.current) setError(err.message) })
+        .finally(() => { if (seq === seqRef.current) setLoading(false) })
       return
     }
     searchRecipes(query, RECIPE_PAGE_SIZE, 0, apiFilter())
       .then((res) => {
+        if (seq !== seqRef.current) return
         setItems(res.items ?? [])
         setTotal(res.total)
       })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false))
+      .catch((err: Error) => { if (seq === seqRef.current) setError(err.message) })
+      .finally(() => { if (seq === seqRef.current) setLoading(false) })
   }, [favoritesOnly, query, apiFilter, matchesFilters])
 
   const loadMore = useCallback(() => {
+    const seq = seqRef.current
     setLoadingMore(true)
     searchRecipes(query, RECIPE_PAGE_SIZE, items.length, apiFilter())
       .then((res) => {
+        if (seq !== seqRef.current) return
         setItems((prev) => [...prev, ...(res.items ?? [])])
         setTotal(res.total)
       })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoadingMore(false))
+      .catch((err: Error) => { if (seq === seqRef.current) setError(err.message) })
+      .finally(() => { if (seq === seqRef.current) setLoadingMore(false) })
   }, [query, apiFilter, items.length])
 
   useEffect(() => {

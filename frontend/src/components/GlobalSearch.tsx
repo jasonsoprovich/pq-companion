@@ -101,6 +101,10 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Monotonic token so a slow earlier request can't clobber a newer one (or
+  // repopulate after the query was cleared). Each run bumps it; only the latest
+  // applies.
+  const seqRef = useRef(0)
 
   // Reset state when opened
   useEffect(() => {
@@ -114,6 +118,7 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
 
   // Debounced search
   const runSearch = useCallback((q: string) => {
+    const seq = ++seqRef.current
     if (!q.trim()) {
       setResults(null)
       setLoading(false)
@@ -122,11 +127,12 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
     setLoading(true)
     globalSearch(q, 5)
       .then((res) => {
+        if (seq !== seqRef.current) return
         setResults(res)
         setActiveIndex(0)
       })
-      .catch(() => setResults(null))
-      .finally(() => setLoading(false))
+      .catch(() => { if (seq === seqRef.current) setResults(null) })
+      .finally(() => { if (seq === seqRef.current) setLoading(false) })
   }, [])
 
   useEffect(() => {

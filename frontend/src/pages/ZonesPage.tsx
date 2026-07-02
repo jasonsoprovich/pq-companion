@@ -64,17 +64,21 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Monotonic token so a slow earlier request can't clobber a newer one.
+  const seqRef = useRef(0)
 
   const runSearch = useCallback((q: string, exp: number | null) => {
+    const seq = ++seqRef.current
     setLoading(true)
     setError(null)
     searchZones(q, exp !== null ? { expansion: exp } : {}, 1000, 0)
       .then((res) => {
+        if (seq !== seqRef.current) return
         setZones(res.items ?? [])
         setTotal(res.total)
       })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false))
+      .catch((err: Error) => { if (seq === seqRef.current) setError(err.message) })
+      .finally(() => { if (seq === seqRef.current) setLoading(false) })
   }, [])
 
   useEffect(() => {

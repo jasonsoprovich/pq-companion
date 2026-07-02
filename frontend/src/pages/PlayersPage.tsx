@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { UserSearch, RefreshCw, Trash2, AlertCircle, EyeOff, X, ArrowUp, ArrowDown, Swords, StickyNote, Bell, BellOff } from 'lucide-react'
 import { listPlayers, deletePlayer, clearPlayers, getPlayerHistory, updatePlayerNote, updatePlayerManual, getConfig, updateConfig } from '../services/api'
@@ -427,6 +427,10 @@ export default function PlayersPage(): React.ReactElement {
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Monotonic token so a slow earlier request can't clobber a newer one.
+  // load bumps it; loadMore only reads it, so a filter change discards an
+  // in-flight "Show more" instead of appending a stale page.
+  const seqRef = useRef(0)
   const [search, setSearch] = useState('')
   const [classFilter, setClassFilter] = useState<string>('')
   const [zoneFilter, setZoneFilter] = useState<string>('')
@@ -473,20 +477,23 @@ export default function PlayersPage(): React.ReactElement {
   }
 
   const load = useCallback(() => {
+    const seq = ++seqRef.current
     setLoading(true)
     setError(null)
     listPlayers({ search, class: classFilter, zone: zoneFilter, guild: guildFilter, pvp: pvpOnly, withinMinutes: recentMinutes, limit: PLAYER_PAGE_SIZE })
       .then((r) => {
+        if (seq !== seqRef.current) return
         setPlayers(r.players)
         // Fall back to the page length when talking to a backend that
         // predates the total field (stale dev sidecar).
         setTotal(r.total ?? r.players.length)
       })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false))
+      .catch((err: Error) => { if (seq === seqRef.current) setError(err.message) })
+      .finally(() => { if (seq === seqRef.current) setLoading(false) })
   }, [search, classFilter, zoneFilter, guildFilter, pvpOnly, recentMinutes])
 
   const loadMore = useCallback(() => {
+    const seq = seqRef.current
     setLoadingMore(true)
     listPlayers({
       search,
@@ -499,11 +506,12 @@ export default function PlayersPage(): React.ReactElement {
       offset: players.length,
     })
       .then((r) => {
+        if (seq !== seqRef.current) return
         setPlayers((prev) => [...prev, ...r.players])
         setTotal((t) => r.total ?? t)
       })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoadingMore(false))
+      .catch((err: Error) => { if (seq === seqRef.current) setError(err.message) })
+      .finally(() => { if (seq === seqRef.current) setLoadingMore(false) })
   }, [search, classFilter, zoneFilter, guildFilter, pvpOnly, recentMinutes, players.length])
 
   useEffect(() => {

@@ -178,7 +178,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 
 ## Priority 3 — frontend correctness cluster
 
-### [ ] 3.1 Stale-response races on every debounced search
+### [x] 3.1 Stale-response races on every debounced search
 - **Where (no guard):** `components/GlobalSearch.tsx:116-130` (also
   repopulates after query cleared), `components/ItemSearchModal.tsx:54-61`,
   `components/SpellSearchPicker.tsx:34-39`, `pages/ItemsPage.tsx:430-440`,
@@ -529,7 +529,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Severity/confidence:** LOW / certain, minor (one wasted fetch)
 - **Fix:** Clear the timer in the effect cleanup.
 
-### [ ] 6.10 SpellSearchPicker search failure silently swallowed
+### [x] 6.10 SpellSearchPicker search failure silently swallowed (done alongside 3.1)
 - **Where:** `components/SpellSearchPicker.tsx:34-39`
 - **Severity/confidence:** LOW / certain
 - **Problem:** No `.catch` → unhandled rejection; previous query's results

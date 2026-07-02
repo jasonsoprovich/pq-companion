@@ -55,28 +55,36 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   const [error, setError] = useState<string | null>(null)
   const [showPlaceholders, setShowPlaceholders] = useCachedState('npcs.showPlaceholders', true)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Monotonic token so a slow earlier request can't clobber a newer one.
+  // runSearch bumps it; loadMore only reads it, so a query change discards an
+  // in-flight "Show more" instead of appending a stale page.
+  const seqRef = useRef(0)
 
   const runSearch = useCallback((q: string, placeholders: boolean) => {
+    const seq = ++seqRef.current
     setLoading(true)
     setError(null)
     searchNPCs(q, NPC_PAGE_SIZE, 0, placeholders)
       .then((res) => {
+        if (seq !== seqRef.current) return
         setNpcs(res.items ?? [])
         setTotal(res.total)
       })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false))
+      .catch((err: Error) => { if (seq === seqRef.current) setError(err.message) })
+      .finally(() => { if (seq === seqRef.current) setLoading(false) })
   }, [])
 
   const loadMore = useCallback(() => {
+    const seq = seqRef.current
     setLoadingMore(true)
     searchNPCs(query, NPC_PAGE_SIZE, npcs.length, showPlaceholders)
       .then((res) => {
+        if (seq !== seqRef.current) return
         setNpcs((prev) => [...prev, ...(res.items ?? [])])
         setTotal(res.total)
       })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoadingMore(false))
+      .catch((err: Error) => { if (seq === seqRef.current) setError(err.message) })
+      .finally(() => { if (seq === seqRef.current) setLoadingMore(false) })
   }, [query, showPlaceholders, npcs.length])
 
   useEffect(() => {

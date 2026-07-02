@@ -24,6 +24,8 @@ export default function SpellSearchPicker({
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Monotonic token so a slow earlier request can't clobber a newer one.
+  const seqRef = useRef(0)
 
   useEscapeToClose(onClose)
 
@@ -32,10 +34,14 @@ export default function SpellSearchPicker({
   }, [])
 
   const run = useCallback((q: string) => {
+    const seq = ++seqRef.current
     setLoading(true)
     searchSpells(q, 30, 0)
-      .then((r) => setResults(r.items ?? []))
-      .finally(() => setLoading(false))
+      .then((r) => { if (seq === seqRef.current) setResults(r.items ?? []) })
+      // Without a catch the rejection was swallowed and the previous query's
+      // results stayed on screen presented as the new query's answer.
+      .catch(() => { if (seq === seqRef.current) setResults([]) })
+      .finally(() => { if (seq === seqRef.current) setLoading(false) })
   }, [])
 
   useEffect(() => {
