@@ -9,6 +9,43 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.15.1 — 2026-07-02
+
+A broad stability, performance, and security hardening pass, plus trigger
+action templates, bulk editing, and non-destructive pack updates.
+
+### Highlights
+- **Trigger action templates & bulk editing** — apply a saved action template
+  to many triggers at once, convert TTS alerts to sounds in bulk (including
+  timer alerts), and pick exactly which triggers a bulk edit touches.
+- **Non-destructive pack updates** — when a built-in trigger pack ships
+  changes, a review panel on the Packs tab shows a per-field diff and lets you
+  preserve your customizations or reset to the new defaults, install by
+  install.
+- **Spell quick-view tooltips** — hover any spell-effect link (and the focus
+  badges on gear upgrades) for an instant summary without leaving the page.
+- **Per-monitor default overlay text** — the Default Overlay Text Position
+  setting now includes a monitor selector for multi-display setups.
+
+### Fixes
+- Gear upgrade scores and character-info stats no longer count Ammo-slot
+  items, and the Ammo slot explains why it isn't scored.
+- Add Proc effects now resolve to real spell names, and the Player Size
+  wording is corrected.
+- The loot list no longer flickers on reload, drops a stray tab-bar
+  scrollbar, and caps how many rows it renders.
+- Item search clears a stuck "Searching…" state on short queries or reopen,
+  and search terms escape all LIKE wildcards so special characters match
+  literally.
+- Zone NPC lists no longer pull in collision/placeholder NPCs, and NPC
+  locations correlate zone and coordinates correctly.
+- Combat-log fights get unique keys so history navigation tracks the right
+  fight, and deleting a character now removes its child records.
+- The overlay-text position picker starts at the global default, and a
+  recovery dialog now appears if the backend fails to start.
+- Numerous performance and reliability improvements to the combat meter,
+  overlays, database pools, config writes, and backup handling.
+
 ## v0.15.0 — 2026-07-01
 
 Text-to-speech gains an adjustable voice rate, and Settings is reorganized
