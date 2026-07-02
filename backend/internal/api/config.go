@@ -134,7 +134,10 @@ func (h *configHandler) get(w http.ResponseWriter, r *http.Request) {
 
 // update replaces the configuration with the request body and persists it.
 func (h *configHandler) update(w http.ResponseWriter, r *http.Request) {
-	var c config.Config
+	// Decode over the current config, not a zero Config: a field the frontend
+	// omits (older/partial client) then keeps its existing value instead of
+	// decoding to the zero value and silently wiping that setting.
+	c := h.mgr.Get()
 	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return

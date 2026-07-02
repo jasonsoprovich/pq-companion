@@ -1017,6 +1017,18 @@ func (m *Manager) Update(c Config) error {
 	return m.save()
 }
 
+// Modify applies mutate to the live config under the manager lock, then
+// persists it. Unlike Get()+Update() (a read-copy, then a wholesale replace),
+// the read-modify-write is atomic — so concurrent backend writers (roll-tracker
+// persist, character auto-detect, …) can no longer clobber each other's fields
+// by writing back a stale copy.
+func (m *Manager) Modify(mutate func(*Config)) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mutate(&m.cfg)
+	return m.save()
+}
+
 // save writes the current config to disk (must be called with m.mu held).
 //
 // The write is atomic: marshal to a temp file in the same directory, then

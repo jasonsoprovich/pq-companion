@@ -34,7 +34,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Write to a temp file in the same dir, then `os.Rename` over the
   target (same pattern `appbackup.Export` already uses).
 
-### [ ] 1.2 Config lost-update races across three uncoordinated writers
+### [x] 1.2 Config lost-update races across three uncoordinated writers
 - **Where:** `config/config.go:1006-1018` (`Update`),
   `cmd/server/main.go:918-937` (roll tracker persist),
   `cmd/server/main.go:1027-1040` (character auto-detect),

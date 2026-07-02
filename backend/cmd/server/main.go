@@ -919,20 +919,21 @@ func main() {
 			profile,
 		)
 		rollTracker.SetOnChange(func(rule rolltracker.WinnerRule, mode rolltracker.Mode, secs int, profile rolltracker.RollProfile) {
-			c := cfgMgr.Get()
-			c.Preferences.RollTrackerWinnerRule = string(rule)
-			c.Preferences.RollTrackerMode = string(mode)
-			c.Preferences.RollTrackerAutoStopSeconds = secs
-			// Persist the profile as a JSON blob; simple-mode profiles are
-			// stored empty so the config stays clean.
-			if profile.Mode == rolltracker.ProfileTiered {
-				if b, err := json.Marshal(profile); err == nil {
-					c.Preferences.RollTrackerProfile = string(b)
+			err := cfgMgr.Modify(func(c *config.Config) {
+				c.Preferences.RollTrackerWinnerRule = string(rule)
+				c.Preferences.RollTrackerMode = string(mode)
+				c.Preferences.RollTrackerAutoStopSeconds = secs
+				// Persist the profile as a JSON blob; simple-mode profiles are
+				// stored empty so the config stays clean.
+				if profile.Mode == rolltracker.ProfileTiered {
+					if b, err := json.Marshal(profile); err == nil {
+						c.Preferences.RollTrackerProfile = string(b)
+					}
+				} else {
+					c.Preferences.RollTrackerProfile = ""
 				}
-			} else {
-				c.Preferences.RollTrackerProfile = ""
-			}
-			if err := cfgMgr.Update(c); err != nil {
+			})
+			if err != nil {
 				slog.Warn("persist roll tracker settings", "err", err)
 			}
 		})
@@ -1031,9 +1032,15 @@ func main() {
 		// previously-pinned character after a camp/login cycle.
 		cfg := cfgMgr.Get()
 		if cfg.Character != "" && !strings.EqualFold(cfg.Character, character) {
-			cfg.Character = ""
-			cfg.CharacterClass = -1
-			if err := cfgMgr.Update(cfg); err != nil {
+			err := cfgMgr.Modify(func(c *config.Config) {
+				// Re-check under the lock: another writer may have already
+				// changed Character since the Get() above.
+				if c.Character != "" && !strings.EqualFold(c.Character, character) {
+					c.Character = ""
+					c.CharacterClass = -1
+				}
+			})
+			if err != nil {
 				slog.Warn("logparser: could not clear manual character override", "err", err)
 			}
 		}
