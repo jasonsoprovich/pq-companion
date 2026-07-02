@@ -465,7 +465,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Re-check staleness (`time.Since(lastTouched) >= timeout` or a
   generation counter) inside the callback under the lock before deleting.
 
-### [ ] 6.2 Trigger overlay GC tick re-renders 4×/sec even when empty
+### [x] 6.2 Trigger overlay GC tick re-renders 4×/sec even when empty
 - **Where:** `pages/TriggerOverlayWindowPage.tsx:380-391`
 - **Severity/confidence:** LOW / certain
 - **Problem:** `setAlerts(prev => prev.filter(...))` always returns a new

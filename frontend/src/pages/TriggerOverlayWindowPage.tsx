@@ -380,7 +380,13 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
   useEffect(() => {
     gcTimer.current = setInterval(() => {
       const now = Date.now()
-      setAlerts((prev) => prev.filter((a) => now < a.expiresAt + 500))
+      setAlerts((prev) => {
+        const next = prev.filter((a) => now < a.expiresAt + 500)
+        // Return the same reference when nothing expired so React bails on the
+        // update — otherwise this fires ~14k no-op re-renders/hour in a
+        // hidden-but-alive overlay window.
+        return next.length === prev.length ? prev : next
+      })
       for (const [k, t] of lastFired.current) {
         if (now - t > DEDUP_WINDOW_MS) lastFired.current.delete(k)
       }
