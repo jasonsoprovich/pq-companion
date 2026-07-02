@@ -278,7 +278,11 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Wrap in a transaction (or at minimum always reload on error
   paths); return 500 for store errors.
 
-### [ ] 4.4 Exact-name NPC/item lookups full-scan; N+1 amplified by lockouts endpoint
+### [x] 4.4 Exact-name NPC/item lookups full-scan; N+1 amplified by lockouts endpoint
+- **Note:** Indexes added to the converter's finalize pass; they take effect
+  on the NEXT quarm.db regeneration / data release (the currently-bundled db
+  won't have them until then). Verified on a copy: both lookups now SEARCH via
+  the NOCASE index instead of SCAN.
 - **Where:** `db/queries.go:653-746` (`GetNPCByName`, `GetNPCIDByName`,
   `GetItemIDByName` + variants); `api/lockouts.go:82-85`
 - **Severity/confidence:** MEDIUM / certain (EXPLAIN-verified)

@@ -64,6 +64,13 @@ func finalizeSchema(cfg Config, db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS "npc_types__loottable_id" ON "npc_types" ("loottable_id")`,
 		`CREATE INDEX IF NOT EXISTS "npc_types__merchant_id" ON "npc_types" ("merchant_id")`,
 		`CREATE INDEX IF NOT EXISTS "spawnentry__npcID" ON "spawnentry" ("npcID")`,
+		// Case-insensitive name lookups. Exact-name queries use
+		// `name = ? COLLATE NOCASE` (NPC overlay target resolution, lockouts,
+		// item name→id), which can't use a BINARY-collated index: npc_types.name
+		// had no index at all (full scan per lookup), and items' name index is
+		// BINARY. Matching NOCASE indexes make these seeks.
+		`CREATE INDEX IF NOT EXISTS "npc_types__name_nocase" ON "npc_types" ("name" COLLATE NOCASE)`,
+		`CREATE INDEX IF NOT EXISTS "items__name_nocase" ON "items" ("Name" COLLATE NOCASE)`,
 		// Populates sqlite_stat1 so the planner picks index-driven join orders
 		// instead of guessing from row-count heuristics.
 		`ANALYZE`,
