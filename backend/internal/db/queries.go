@@ -452,21 +452,35 @@ func collectItems(rows *sql.Rows) ([]Item, error) {
 
 // GetItemSources returns all the ways to obtain the item with the given ID.
 func (db *DB) GetItemSources(itemID int) (*ItemSources, error) {
-	const zoneJoin = `
-		LEFT JOIN spawnentry se ON se.npcid = n.id
-		LEFT JOIN spawngroup sg ON sg.id = se.spawngroupid
-		LEFT JOIN spawn2 s2 ON s2.spawngroupID = sg.id
-		LEFT JOIN zone z ON z.short_name = s2.zone`
+	// Representative-zone subqueries. Previously the query LEFT JOINed the
+	// spawn chain and took independent MIN(z.long_name) / MIN(s2.zone) — for a
+	// multi-zone NPC those two MINs came from different rows, so the label and
+	// the nav short-name pointed at different zones (e.g. Sea_King showed label
+	// "Erud's Crossing" but short-name "erudnext"). Both subqueries select from
+	// the same row set ordered identically (alphabetically-first s2.zone,
+	// LIMIT 1), so the long_name and short_name are always the same zone.
+	const zoneShortSubquery = `COALESCE((
+		SELECT s2z.zone
+		FROM spawnentry sez
+		JOIN spawn2 s2z ON s2z.spawngroupID = sez.spawngroupid
+		WHERE sez.npcid = n.id
+		ORDER BY s2z.zone LIMIT 1), '')`
+	const zoneNameSubquery = `COALESCE((
+		SELECT z2.long_name
+		FROM spawnentry sez
+		JOIN spawn2 s2z ON s2z.spawngroupID = sez.spawngroupid
+		LEFT JOIN zone z2 ON z2.short_name = s2z.zone
+		WHERE sez.npcid = n.id
+		ORDER BY s2z.zone LIMIT 1), '')`
 
 	dropRows, err := db.Query(`
 		SELECT n.id, n.name,
-		       COALESCE(MIN(z.long_name), '') AS zone_name,
-		       COALESCE(MIN(s2.zone), '') AS zone_short_name,
+		       `+zoneNameSubquery+` AS zone_name,
+		       `+zoneShortSubquery+` AS zone_short_name,
 		       ROUND(MAX(CAST(lte.probability AS REAL) * lde.chance / 100.0), 2) AS drop_rate
 		FROM npc_types n
 		JOIN loottable_entries lte ON lte.loottable_id = n.loottable_id
 		JOIN lootdrop_entries lde ON lde.lootdrop_id = lte.lootdrop_id
-		`+zoneJoin+`
 		WHERE lde.item_id = ? AND n.loottable_id > 0
 		GROUP BY n.id
 		ORDER BY drop_rate DESC, n.name
@@ -482,11 +496,10 @@ func (db *DB) GetItemSources(itemID int) (*ItemSources, error) {
 
 	merchantRows, err := db.Query(`
 		SELECT n.id, n.name,
-		       COALESCE(MIN(z.long_name), '') AS zone_name,
-		       COALESCE(MIN(s2.zone), '') AS zone_short_name
+		       `+zoneNameSubquery+` AS zone_name,
+		       `+zoneShortSubquery+` AS zone_short_name
 		FROM npc_types n
 		JOIN merchantlist ml ON ml.merchantid = n.merchant_id
-		`+zoneJoin+`
 		WHERE ml.item = ? AND n.merchant_id > 0
 		GROUP BY n.id
 		ORDER BY n.name
@@ -1824,8 +1837,19 @@ func (db *DB) GetSpellVendorOptions(spellIDs []int) ([]SpellVendorOption, error)
 		       n.id           AS vendor_id,
 		       n.name         AS vendor_name,
 		       MIN(i.price)   AS price,
-		       MIN(s2.x)      AS x,
-		       MIN(s2.y)      AS y
+		       -- x and y must come from the SAME spawn point. Independent
+		       -- MIN(s2.x)/MIN(s2.y) paired the min-x of one spot with the
+		       -- min-y of another, yielding a phantom coordinate no vendor
+		       -- actually stands on. Pick one row per (vendor, zone) ordered
+		       -- identically so both coords are that single spawn point.
+		       (SELECT s2b.x FROM spawnentry se2
+		          JOIN spawn2 s2b ON s2b.spawngroupID = se2.spawngroupid
+		          WHERE se2.npcid = n.id AND s2b.zone = s2.zone
+		          ORDER BY s2b.x, s2b.y LIMIT 1) AS x,
+		       (SELECT s2b.y FROM spawnentry se2
+		          JOIN spawn2 s2b ON s2b.spawngroupID = se2.spawngroupid
+		          WHERE se2.npcid = n.id AND s2b.zone = s2.zone
+		          ORDER BY s2b.x, s2b.y LIMIT 1) AS y
 		FROM items i
 		JOIN spells_new sn ON sn.id = i.scrolleffect
 		JOIN merchantlist ml ON ml.item = i.id

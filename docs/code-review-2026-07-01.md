@@ -254,7 +254,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Stronger guard (e.g. spawngroup has no `spawnentry` rows) or
   remove the arm.
 
-### [ ] 4.2 Independent MIN() aggregates pair values from different rows
+### [x] 4.2 Independent MIN() aggregates pair values from different rows
 - **Where:** `db/queries.go:461-497` (`GetItemSources`), `:1826-1828`
   (`GetSpellVendorOptions`)
 - **Severity/confidence:** MEDIUM / certain (data-verified)
