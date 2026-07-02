@@ -14,8 +14,8 @@
  * Edits are staged into the page's config state; the page's Save button
  * persists them like every other preference.
  */
-import React from 'react'
-import { Crosshair, Check, X as XIcon } from 'lucide-react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { Crosshair, Check, X as XIcon, Monitor } from 'lucide-react'
 import type { Config } from '../../types/config'
 import { useVoices } from '../../hooks/useVoices'
 import { usePositioningSession } from '../../hooks/usePositioningSession'
@@ -77,6 +77,36 @@ export default function AlertDefaultsSettings({
     testFontSize: resolved.fontSize,
     testDurationSecs: 8,
   })
+
+  // Which monitor the trigger overlay (and this positioning card) lives on.
+  // The trigger overlay covers exactly one chosen display — the same global
+  // choice surfaced on the Overlays dashboard — so on multi-monitor setups the
+  // card can otherwise pop up on a screen the user isn't looking at (or clamp
+  // off-view). Mirroring the picker here lets them send the card to the right
+  // monitor before dragging, instead of dragging between monitors. Hidden on
+  // single-monitor setups. This targets the overlay window directly (persisted
+  // in overlayDisplay.json) and is independent of the saved config position.
+  const [displays, setDisplays] = useState<
+    Array<{ id: number; label: string; width: number; height: number; isPrimary: boolean; isCurrent: boolean }>
+  >([])
+  const refreshDisplays = useCallback((): void => {
+    window.electron?.screen?.listDisplays?.()
+      .then((list) => setDisplays(list ?? []))
+      .catch(() => {})
+  }, [])
+  useEffect(() => { refreshDisplays() }, [refreshDisplays])
+  // Re-read displays when a session opens so a monitor plugged/unplugged since
+  // mount (and the current-display flag) is fresh before the card appears.
+  useEffect(() => { if (positioning) refreshDisplays() }, [positioning, refreshDisplays])
+  const currentDisplayId = displays.find((d) => d.isCurrent)?.id
+  const handleDisplayChange = useCallback(
+    (id: number): void => {
+      window.electron?.overlay?.setDisplay?.(id)
+        .then(() => refreshDisplays())
+        .catch(() => {})
+    },
+    [refreshDisplays],
+  )
 
   return (
     <>
@@ -144,6 +174,35 @@ export default function AlertDefaultsSettings({
             {positioning ? 'Done — Keep Position' : 'Set Default Position'}
           </button>
         </div>
+        {displays.length > 1 && (
+          <div
+            className="mt-1 flex items-center gap-1.5"
+            title="Which monitor trigger alert text and the positioning card appear on"
+          >
+            <Monitor size={11} style={{ color: 'var(--color-muted-foreground)' }} />
+            <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+              Monitor
+            </label>
+            <select
+              value={currentDisplayId ?? ''}
+              onChange={(e) => handleDisplayChange(Number(e.target.value))}
+              className="text-xs rounded px-1.5 py-1 outline-none max-w-xs"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+                cursor: 'pointer',
+              }}
+            >
+              {displays.map((d, i) => (
+                <option key={d.id} value={d.id}>
+                  {`${d.label || `Display ${i + 1}`} (${d.width}×${d.height})`}
+                  {d.isPrimary ? ' • Primary' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         {position && (
           <div
             className="mt-1 flex items-center gap-1.5 text-[10px] rounded px-2 py-1 max-w-xs"
