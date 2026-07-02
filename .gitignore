@@ -14,6 +14,7 @@
 !/docs/trigger-pack-rollback-2026-06-10.md
 !/docs/cloud-tts-plan.md
 !/docs/legacy-packs-2026-06-10/
+!/docs/code-review-2026-07-01.md
 
 # ── Environment & secrets ─────────────────────────────────────────────────────
 .env
