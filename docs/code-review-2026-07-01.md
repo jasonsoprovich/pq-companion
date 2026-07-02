@@ -266,7 +266,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Correlate the aggregates (pick one row per NPC — e.g. window
   function or a min-by-zoneid join) instead of independent MINs.
 
-### [ ] 4.3 Bulk trigger edits: DB failures → 400, partial writes left live without engine.Reload()
+### [x] 4.3 Bulk trigger edits: DB failures → 400, partial writes left live without engine.Reload()
 - **Where:** `api/triggers.go:1045-1048` (bulk), `:532-570` (import commit)
 - **Severity/confidence:** MEDIUM / certain
 - **Problem:** `BulkApplyActions`/`BulkConvertTTSToSound` update one at a

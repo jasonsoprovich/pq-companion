@@ -528,7 +528,15 @@ func (h *triggerHandler) importCommit(w http.ResponseWriter, r *http.Request) {
 	pack := trigger.TriggerPack{PackName: category, Triggers: req.Triggers}
 	h.applyDefaultCharacters(&pack)
 
-	imported := 0
+	// Fetch the base sort order once: the whole batch is inserted in a single
+	// transaction below, so a per-trigger NextTriggerSortOrder query would see
+	// none of the pending rows and hand every trigger the same order. Offset by
+	// the loop index instead to preserve the selected order.
+	baseOrder := 0
+	if order, err := h.store.NextTriggerSortOrder(category); err == nil {
+		baseOrder = order
+	}
+	triggers := make([]*trigger.Trigger, 0, len(pack.Triggers))
 	for i := range pack.Triggers {
 		t := pack.Triggers[i]
 		t.PackName = category
@@ -541,9 +549,7 @@ func (h *triggerHandler) importCommit(w http.ResponseWriter, r *http.Request) {
 		}
 		t.ID = id
 		t.CreatedAt = time.Now().UTC()
-		if order, err := h.store.NextTriggerSortOrder(category); err == nil {
-			t.SortOrder = order
-		}
+		t.SortOrder = baseOrder + i
 		if t.Actions == nil {
 			t.Actions = []trigger.Action{}
 		}
@@ -562,17 +568,19 @@ func (h *triggerHandler) importCommit(w http.ResponseWriter, r *http.Request) {
 		if t.Source == "" {
 			t.Source = trigger.SourceLog
 		}
-		if err := h.store.Insert(&t); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		imported++
+		triggers = append(triggers, &t)
+	}
+	// All-or-nothing: a mid-batch failure rolls back every insert, so a retry
+	// can't duplicate the survivors under fresh IDs.
+	if err := h.store.InsertMany(triggers); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	h.engine.Reload()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":   "ok",
 		"category": category,
-		"imported": imported,
+		"imported": len(triggers),
 	})
 }
 
@@ -1031,6 +1039,12 @@ func (h *triggerHandler) bulkEditActions(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "trigger_ids is required")
 		return
 	}
+	// Validate user input up front so the only errors the bulk ops can return
+	// are store failures (mapped to 500 below, not 400).
+	if req.Operation == "tts_to_sound" && req.SoundPath == "" {
+		writeError(w, http.StatusBadRequest, "sound_path is required")
+		return
+	}
 	var res *trigger.BulkResult
 	var err error
 	switch req.Operation {
@@ -1042,11 +1056,14 @@ func (h *triggerHandler) bulkEditActions(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "unknown operation")
 		return
 	}
+	// Reload regardless of outcome: a mid-loop failure may have committed some
+	// updates, so the running engine must re-sync with the DB either way. Both
+	// bulk ops are idempotent, so a retry after a partial failure is safe.
+	h.engine.Reload()
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.engine.Reload()
 	writeJSON(w, http.StatusOK, res)
 }
 

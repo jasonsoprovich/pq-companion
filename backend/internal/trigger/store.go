@@ -797,8 +797,35 @@ func (s *Store) BackfillCharactersIfNeeded(names []string) error {
 	return nil
 }
 
+// execer is the subset of *sql.DB / *sql.Tx that insertWith needs, so a
+// single insert body serves both the standalone Insert and the transactional
+// InsertMany.
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
 // Insert saves a new trigger to the database.
-func (s *Store) Insert(t *Trigger) error {
+func (s *Store) Insert(t *Trigger) error { return s.insertWith(s.db, t) }
+
+// InsertMany inserts every trigger in one transaction: either all land or none
+// do. Used by the import wizard so a mid-batch failure can't leave a partial
+// import behind (a retry would otherwise re-insert the survivors under fresh
+// IDs, duplicating them).
+func (s *Store) InsertMany(ts []*Trigger) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	for _, t := range ts {
+		if err := s.insertWith(tx, t); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *Store) insertWith(ex execer, t *Trigger) error {
 	actJSON, err := json.Marshal(t.Actions)
 	if err != nil {
 		return fmt.Errorf("marshal actions: %w", err)
@@ -835,7 +862,7 @@ func (s *Store) Insert(t *Trigger) error {
 		t.TimerType = TimerTypeNone
 	}
 	source, pipeJSON := normalizeSourceAndCondition(t)
-	_, err = s.db.Exec(
+	_, err = ex.Exec(
 		`INSERT INTO triggers (id, name, enabled, pattern, actions, pack_name, created_at,
 		                       timer_type, timer_duration_secs, worn_off_pattern, spell_id,
 		                       display_threshold_secs, characters, timer_alerts, exclude_patterns,
