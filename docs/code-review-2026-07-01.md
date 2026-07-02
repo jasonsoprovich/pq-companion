@@ -206,7 +206,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** `setLoading(false)` in the `<2` branch and the open-reset
   effect (or move `setLoading(true)` inside the timeout).
 
-### [ ] 3.3 Combat History pagination: stale fetch overwrites newer page/filter
+### [x] 3.3 Combat History pagination: stale fetch overwrites newer page/filter
 - **Where:** `pages/CombatHistoryPage.tsx:1136-1158` (`fetchPage`)
 - **Severity/confidence:** MEDIUM / certain mechanism, likely occurrence
 - **Problem:** No sequence guard; double-Next or Apply-during-fetch can

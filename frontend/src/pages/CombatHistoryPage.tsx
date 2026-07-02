@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import {
   Activity,
@@ -1102,6 +1102,8 @@ export default function CombatHistoryPage(): React.ReactElement {
   // immediately though — see the effect below.
   const [appliedFilter, setAppliedFilter] = useState<UIFilter>(EMPTY_FILTER)
   const [offset, setOffset] = useState(0)
+  // Monotonic token so a slow earlier page fetch can't clobber a newer one.
+  const seqRef = useRef(0)
   const [data, setData] = useState<HistoryListResponse | null>(null)
   const [facets, setFacets] = useState<HistoryFacets>({ characters: [], zones: [] })
   const [error, setError] = useState<string | null>(null)
@@ -1134,6 +1136,10 @@ export default function CombatHistoryPage(): React.ReactElement {
   }, [refreshFacets])
 
   const fetchPage = useCallback(() => {
+    // Monotonic token: double-Next or Apply-during-fetch could otherwise leave
+    // an older response resolving last, showing a stale page while the
+    // paginator says a newer one. Only the latest request applies.
+    const seq = ++seqRef.current
     setLoading(true)
     const range = resolveDateRange(appliedFilter)
     listCombatHistory({
@@ -1146,11 +1152,12 @@ export default function CombatHistoryPage(): React.ReactElement {
       offset,
     })
       .then((res) => {
+        if (seq !== seqRef.current) return
         setData(res)
         setError(null)
       })
-      .catch((e) => setError(e.message ?? String(e)))
-      .finally(() => setLoading(false))
+      .catch((e) => { if (seq === seqRef.current) setError(e.message ?? String(e)) })
+      .finally(() => { if (seq === seqRef.current) setLoading(false) })
   }, [appliedFilter, offset])
 
   useEffect(() => {
