@@ -49,7 +49,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   backend callers; in the PUT handler, decode over `h.mgr.Get()` instead of
   a zero struct.
 
-### [ ] 1.3 Sidecar spawn failure / early crash → permanent black screen, no diagnostics
+### [x] 1.3 Sidecar spawn failure / early crash → permanent black screen, no diagnostics
 - **Where:** `electron/main/index.ts:680-728` (spawn, no `'error'`
   listener; `'exit'` handler at :723 only logs), `:535-540`
   (`getBackendPort()` promise never settles), `logger.ts:67-69`

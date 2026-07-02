@@ -806,12 +806,56 @@ function startSidecar(): void {
     appendLine('BACKEND-ERR', chunk)
   })
 
+  // If the process can't even be spawned (ENOENT, EACCES, AV quarantine), the
+  // 'error' event fires and no BACKEND_PORT ever arrives — without this the
+  // renderer's backend:port IPC hangs forever on a black screen.
+  sidecarProcess.on('error', (err) => {
+    console.error('[main] Backend spawn error:', err)
+    appendLine('MAIN', `backend spawn error: ${err.message}`)
+    void handleBackendStartFailure(`could not launch the backend: ${err.message}`)
+  })
+
   sidecarProcess.on('exit', (code) => {
     console.log(`[main] Backend exited with code ${code}`)
     sidecarProcess = null
+    // Exiting before a port was ever resolved is a startup failure (the normal
+    // case has backendPort set and this is a shutdown). Surface it instead of
+    // leaving the window black.
+    if (backendPort === null) {
+      void handleBackendStartFailure(`the backend exited (code ${code}) before it was ready`)
+    }
   })
 
   console.log(`[main] Backend sidecar started (pid ${sidecarProcess.pid})`)
+}
+
+// handleBackendStartFailure shows a recovery dialog (mirrors showDbMissingDialog)
+// when the sidecar fails to launch or exits before signalling its port, then
+// quits — rather than hanging on a permanent black screen with no diagnostics.
+let backendFailureHandled = false
+async function handleBackendStartFailure(reason: string): Promise<void> {
+  if (backendFailureHandled || isQuittingApp) return
+  backendFailureHandled = true
+  const logsDir = join(homedir(), '.pq-companion', 'logs')
+  const { response } = await dialog.showMessageBox({
+    type: 'error',
+    title: 'Backend failed to start',
+    message: "PQ Companion's backend service could not start.",
+    detail:
+      `The helper process (pq-companion-server.exe) ${reason}.\n\n` +
+      'The most common cause is antivirus quarantining or blocking the file. ' +
+      'Open Windows Security → Virus & threat protection → Protection history, ' +
+      'look for "pq-companion-server.exe", restore it, and add an exclusion for ' +
+      'the install folder. Then relaunch PQ Companion.\n\n' +
+      `See the logs at:\n${logsDir}`,
+    buttons: ['Quit', 'Open logs folder'],
+    defaultId: 0,
+  })
+  if (response === 1) {
+    void shell.openPath(logsDir)
+  }
+  isQuittingApp = true
+  app.quit()
 }
 
 function stopSidecar(): Promise<void> {
