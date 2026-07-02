@@ -105,6 +105,15 @@ function isDuplicate(key: string): boolean {
   const last = lastFiredAt.get(key) ?? 0
   if (now - last < AUDIO_DEDUP_MS) return true
   lastFiredAt.set(key, now)
+  // Sweep entries older than the dedup window (they can never match again) so
+  // the map doesn't grow unbounded. TTS keys are capture-substituted
+  // (per-sender, per-mob), so a long session would otherwise accumulate one
+  // entry per distinct utterance forever. Gated on size to stay cheap.
+  if (lastFiredAt.size > 256) {
+    for (const [k, t] of lastFiredAt) {
+      if (now - t >= AUDIO_DEDUP_MS) lastFiredAt.delete(k)
+    }
+  }
   return false
 }
 
