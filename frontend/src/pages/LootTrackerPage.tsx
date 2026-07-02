@@ -21,9 +21,15 @@ function formatTimestamp(unix: number): string {
 type SortField = 'time' | 'item' | 'player' | 'zone'
 type SortDir = 'asc' | 'desc'
 
+// Rows rendered before the "Show more" button — the tracker can hold
+// thousands of entries and a 5-column grid row per entry makes the full
+// list expensive to mount at once.
+const DISPLAY_STEP = 500
+
 export default function LootTrackerPage(): React.ReactElement {
   const [characters, setCharacters] = useState<string[]>([])
   const [selectedChar, setSelectedChar] = useState<string>('')
+  const [metaLoaded, setMetaLoaded] = useState(false)
   const [players, setPlayers] = useState<string[]>([])
   const [zones, setZones] = useState<string[]>([])
 
@@ -75,9 +81,8 @@ export default function LootTrackerPage(): React.ReactElement {
         })
       })
       .catch(() => { /* best effort */ })
+      .finally(() => setMetaLoaded(true))
   }, [selectedChar])
-
-  useEffect(() => { loadMeta() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(() => {
     setLoading(true)
@@ -88,7 +93,10 @@ export default function LootTrackerPage(): React.ReactElement {
       .finally(() => setLoading(false))
   }, [selectedChar, search, playerFilter, zoneFilter])
 
-  useEffect(() => { load() }, [load])
+  // Wait for meta to resolve the active character before the first loot
+  // fetch — loading immediately would fetch the unfiltered list, then
+  // refetch for the resolved character, flashing the table twice.
+  useEffect(() => { if (metaLoaded) load() }, [load, metaLoaded])
 
   // Refresh player/zone dropdowns when switching character.
   useEffect(() => { loadMeta() }, [selectedChar]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -102,6 +110,9 @@ export default function LootTrackerPage(): React.ReactElement {
   useWebSocket(onWs)
 
   const showNPC = useMemo(() => rows.some((r) => r.npc), [rows])
+
+  const [displayLimit, setDisplayLimit] = useState(DISPLAY_STEP)
+  useEffect(() => { setDisplayLimit(DISPLAY_STEP) }, [selectedChar, search, playerFilter, zoneFilter])
 
   const sortedRows = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1
@@ -158,26 +169,44 @@ export default function LootTrackerPage(): React.ReactElement {
         </div>
       </div>
 
-      {/* Character tabs */}
-      {characters.length > 1 && (
-        <div className="border-b px-3 pt-2 shrink-0 flex items-end gap-1 overflow-x-auto" style={{ borderColor: 'var(--color-border)' }}>
-          {characters.map((name) => {
-            const active = name === selectedChar
-            return (
-              <button key={name} onClick={() => setSelectedChar(name)}
-                className="rounded-t px-3 py-1.5 text-xs font-medium whitespace-nowrap"
-                style={{
-                  backgroundColor: active ? 'var(--color-surface)' : 'transparent',
-                  color: active ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
-                  border: '1px solid', borderColor: active ? 'var(--color-border)' : 'transparent',
-                  borderBottom: active ? '1px solid var(--color-surface)' : '1px solid transparent', marginBottom: -1,
-                }}>
-                {name}
-              </button>
-            )
-          })}
+      {/* Character tabs. The outer div carries the border; the inner scroll
+          container overhangs it by 1px (instead of each tab carrying a
+          negative margin) so the active tab's surface-colored bottom border
+          covers the row border without creating a 1px vertical overflow —
+          overflow-x:auto forces overflow-y to auto too, and that overflow
+          rendered as a stray scrollbar on the right of the row. While meta
+          is still loading, reserve the bar's height with one invisible tab
+          so the content below doesn't jump when the tabs resolve. */}
+      {!metaLoaded ? (
+        <div className="border-b shrink-0" style={{ borderColor: 'var(--color-border)' }} aria-hidden>
+          <div className="px-3 pt-2 flex items-end gap-1 overflow-x-auto" style={{ marginBottom: -1 }}>
+            <button className="rounded-t px-3 py-1.5 text-xs font-medium whitespace-nowrap"
+              style={{ visibility: 'hidden', border: '1px solid transparent' }} tabIndex={-1}>
+              &nbsp;
+            </button>
+          </div>
         </div>
-      )}
+      ) : characters.length > 1 ? (
+        <div className="border-b shrink-0" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="px-3 pt-2 flex items-end gap-1 overflow-x-auto" style={{ marginBottom: -1 }}>
+            {characters.map((name) => {
+              const active = name === selectedChar
+              return (
+                <button key={name} onClick={() => setSelectedChar(name)}
+                  className="rounded-t px-3 py-1.5 text-xs font-medium whitespace-nowrap"
+                  style={{
+                    backgroundColor: active ? 'var(--color-surface)' : 'transparent',
+                    color: active ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
+                    border: '1px solid', borderColor: active ? 'var(--color-border)' : 'transparent',
+                    borderBottom: active ? '1px solid var(--color-surface)' : '1px solid transparent',
+                  }}>
+                  {name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {/* Filters */}
       <div className="border-b px-4 py-2 shrink-0 flex items-center gap-2 flex-wrap" style={{ borderColor: 'var(--color-border)' }}>
@@ -205,10 +234,13 @@ export default function LootTrackerPage(): React.ReactElement {
         )}
       </div>
 
-      {/* Body */}
+      {/* Body. Refetches (filter keystrokes, character switches, WS-driven
+          reloads) keep the current table rendered and just dim it — swapping
+          the whole table for a spinner made the page flash on every reload.
+          The centered spinner only shows before the first rows arrive. */}
       <div className="flex-1 overflow-y-auto p-4">
         <MissingLogNotice />
-        {loading && (
+        {loading && rows.length === 0 && (
           <div className="flex flex-1 items-center justify-center py-12">
             <RefreshCw size={18} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
           </div>
@@ -229,15 +261,15 @@ export default function LootTrackerPage(): React.ReactElement {
           </div>
         )}
 
-        {!loading && !error && rows.length > 0 && (
-          <>
+        {!error && rows.length > 0 && (
+          <div style={{ opacity: loading ? 0.6 : 1, transition: 'opacity 150ms' }}>
             <div className="grid gap-x-3 text-xs" style={{ gridTemplateColumns: gridCols, color: 'var(--color-muted-foreground)' }}>
               <SortHeader label="Time" field="time" activeField={sortField} dir={sortDir} onClick={handleSort} />
               <SortHeader label="Item" field="item" activeField={sortField} dir={sortDir} onClick={handleSort} />
               <SortHeader label="Looted by" field="player" activeField={sortField} dir={sortDir} onClick={handleSort} />
               <SortHeader label="Zone" field="zone" activeField={sortField} dir={sortDir} onClick={handleSort} />
               {showNPC && <span className="font-semibold border-b pb-1" style={{ color: 'var(--color-muted)', borderColor: 'var(--color-border)' }}>NPC</span>}
-              {sortedRows.map((r) => {
+              {sortedRows.slice(0, displayLimit).map((r) => {
                 const mine = r.player.toLowerCase() === selectedChar.toLowerCase()
                 return (
                   <React.Fragment key={r.id}>
@@ -268,12 +300,24 @@ export default function LootTrackerPage(): React.ReactElement {
                 )
               })}
             </div>
+            {sortedRows.length > displayLimit && (
+              <div className="mt-3 flex items-center gap-3">
+                <button onClick={() => setDisplayLimit((l) => l + DISPLAY_STEP)}
+                  className="text-xs px-2 py-1 rounded"
+                  style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)', border: '1px solid var(--color-border)' }}>
+                  Show {Math.min(DISPLAY_STEP, sortedRows.length - displayLimit)} more
+                </button>
+                <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                  Showing {displayLimit} of {sortedRows.length}
+                </span>
+              </div>
+            )}
             {!showNPC && (
               <p className="mt-3 text-[11px]" style={{ color: 'var(--color-muted)' }}>
                 EverQuest loot lines don't name the source corpse, so the NPC column isn't available.
               </p>
             )}
-          </>
+          </div>
         )}
       </div>
 

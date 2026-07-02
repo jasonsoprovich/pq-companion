@@ -231,42 +231,50 @@ export default function ChatHistoryPage(): React.ReactElement {
       {/* Character tabs. While metadata is still loading we reserve the bar's
           height so a multi-character bar doesn't pop in late and shove the
           content down. Once loaded, the bar shows only when there's more than
-          one character to switch between. */}
+          one character to switch between. The outer div carries the border;
+          the inner scroll container overhangs it by 1px (instead of each tab
+          carrying a negative margin) so the active tab's bottom border covers
+          the row border without creating a 1px vertical overflow —
+          overflow-x:auto forces overflow-y to auto too, and that overflow
+          rendered as a stray scrollbar on the right of the row. */}
       {!metaLoaded ? (
         // Reserved-height placeholder: same markup as the real bar with one
         // invisible tab, so the row occupies the exact final height and the
         // content below never jumps when the tabs resolve.
-        <div className="border-b px-3 pt-2 shrink-0 flex items-end gap-1 overflow-x-auto" style={{ borderColor: 'var(--color-border)' }} aria-hidden>
-          <button
-            className="rounded-t px-3 py-1.5 text-xs font-medium whitespace-nowrap"
-            style={{ visibility: 'hidden', border: '1px solid transparent', marginBottom: -1 }}
-            tabIndex={-1}
-          >
-            &nbsp;
-          </button>
+        <div className="border-b shrink-0" style={{ borderColor: 'var(--color-border)' }} aria-hidden>
+          <div className="px-3 pt-2 flex items-end gap-1 overflow-x-auto" style={{ marginBottom: -1 }}>
+            <button
+              className="rounded-t px-3 py-1.5 text-xs font-medium whitespace-nowrap"
+              style={{ visibility: 'hidden', border: '1px solid transparent' }}
+              tabIndex={-1}
+            >
+              &nbsp;
+            </button>
+          </div>
         </div>
       ) : characters.length > 1 ? (
-        <div className="border-b px-3 pt-2 shrink-0 flex items-end gap-1 overflow-x-auto" style={{ borderColor: 'var(--color-border)' }}>
-          {characters.map((name) => {
-            const active = name === selectedChar
-            return (
-              <button
-                key={name}
-                onClick={() => setSelectedChar(name)}
-                className="rounded-t px-3 py-1.5 text-xs font-medium whitespace-nowrap"
-                style={{
-                  backgroundColor: active ? 'var(--color-surface)' : 'transparent',
-                  color: active ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
-                  border: '1px solid',
-                  borderColor: active ? 'var(--color-border)' : 'transparent',
-                  borderBottom: active ? '1px solid var(--color-surface)' : '1px solid transparent',
-                  marginBottom: -1,
-                }}
-              >
-                {name}
-              </button>
-            )
-          })}
+        <div className="border-b shrink-0" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="px-3 pt-2 flex items-end gap-1 overflow-x-auto" style={{ marginBottom: -1 }}>
+            {characters.map((name) => {
+              const active = name === selectedChar
+              return (
+                <button
+                  key={name}
+                  onClick={() => setSelectedChar(name)}
+                  className="rounded-t px-3 py-1.5 text-xs font-medium whitespace-nowrap"
+                  style={{
+                    backgroundColor: active ? 'var(--color-surface)' : 'transparent',
+                    color: active ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
+                    border: '1px solid',
+                    borderColor: active ? 'var(--color-border)' : 'transparent',
+                    borderBottom: active ? '1px solid var(--color-surface)' : '1px solid transparent',
+                  }}
+                >
+                  {name}
+                </button>
+              )
+            })}
+          </div>
         </div>
       ) : null}
 
