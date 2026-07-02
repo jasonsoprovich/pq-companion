@@ -136,7 +136,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   `strings.HasSuffix` pre-filter before running each regex, or bucket by
   final word / last N bytes. Eliminates ~all of the scan.
 
-### [ ] 2.3 Per-line SQLite writes share MaxOpenConns(1) with slow HTTP reads — dispatch chain can stall
+### [x] 2.3 Per-line SQLite writes share MaxOpenConns(1) with slow HTTP reads — dispatch chain can stall
 - **Where:** `backend/internal/chat/store.go:56` + `chat/consumer.go`
   (Insert in `HandleLine`); `players/store.go:114` +
   `players/consumer.go:107,126,159-182`; unindexed `LIKE '%…%'` at

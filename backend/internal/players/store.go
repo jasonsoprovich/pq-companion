@@ -117,7 +117,12 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("ping user.db: %w", err)
 	}
-	db.SetMaxOpenConns(1)
+	// Small pool (was 1) so a /who-burst write on the parse goroutine isn't
+	// stuck behind a slow HTTP read holding the only connection. WAL allows
+	// concurrent readers; _txlock=immediate (above) keeps the read-then-write
+	// txs safe against BUSY_SNAPSHOT now that >1 connection is possible.
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		db.Close()

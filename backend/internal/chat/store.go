@@ -53,7 +53,15 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("ping user.db: %w", err)
 	}
-	db.SetMaxOpenConns(1)
+	// Allow a small pool instead of a single connection. Chat lines are
+	// Exec'd on the log-parse goroutine (HandleLine); with one connection a
+	// slow Chat History LIKE scan on the HTTP side held the only connection and
+	// blocked that write, stalling the whole serial dispatch chain (triggers,
+	// spell timers, DPS meter) behind it. WAL allows concurrent readers, and
+	// all writes here are simple autocommit statements (no read-then-write tx),
+	// so busy_timeout covers any writer contention.
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		db.Close()
