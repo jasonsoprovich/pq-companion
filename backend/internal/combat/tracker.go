@@ -1,6 +1,7 @@
 package combat
 
 import (
+	"context"
 	"log/slog"
 	"regexp"
 	"sort"
@@ -237,6 +238,15 @@ type Tracker struct {
 
 	mu           sync.Mutex
 	fightCounter int
+
+	// dirty marks that combat state changed since the last broadcast. Per-hit
+	// and per-heal updates set it instead of broadcasting inline; RunLiveTicker
+	// coalesces them into one broadcast per second (raid AoE spam would
+	// otherwise re-marshal the whole state — merged fight + up to 20 archived
+	// FightSummaries + every death record — hundreds of times a second).
+	// Transition events (fight start/end, death, reset) still broadcast
+	// immediately so the overlay reacts without up to a 1 s lag.
+	dirty bool
 
 	// activeFights holds every Fight currently in flight, keyed by NPC name.
 	// A multi-mob pull populates one entry per mob; each expires
@@ -700,7 +710,7 @@ func (t *Tracker) Reset() {
 	t.sessionHeal = 0
 	t.deaths = []DeathRecord{}
 	t.pendingCrits = make(map[string][]int)
-	snap := t.snapshot(time.Now())
+	snap := t.flushLocked(time.Now())
 	t.mu.Unlock()
 
 	t.broadcast(snap)
@@ -912,7 +922,7 @@ func (t *Tracker) fightTimerExpired(npcName string, fightID int) {
 	}
 	endTime := f.lastTouched
 	t.archiveFightLocked(f, endTime)
-	snap := t.snapshot(endTime)
+	snap := t.flushLocked(endTime)
 	t.mu.Unlock()
 	t.broadcast(snap)
 }
@@ -923,6 +933,8 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	data.Actor = canonicalNPCName(data.Actor)
 	data.Target = canonicalNPCName(data.Target)
 	t.mu.Lock()
+
+	wasInCombat := len(t.activeFights) > 0
 
 	// Charm-break detection: if a known pet starts attacking the player,
 	// it is no longer ours — drop the stale owner mapping so the row stops
@@ -1019,10 +1031,11 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 
 	t.armFightTimerLocked(f)
 
-	snap := t.snapshot(ts)
+	snap, now := t.coalesceLocked(ts, wasInCombat)
 	t.mu.Unlock()
-
-	t.broadcast(snap)
+	if now {
+		t.broadcast(snap)
+	}
 }
 
 // recordHeal attributes a heal event to the most-recently-touched active
@@ -1041,6 +1054,7 @@ func (t *Tracker) recordHeal(ts time.Time, data logparser.HealData) {
 	// pet's owner buffs aren't logged on our client, but someone healing the
 	// pet is. Do this before the active-fight gate so the binding lands even
 	// for an out-of-combat top-off.
+	wasInCombat := len(t.activeFights) > 0
 	t.inferPetOwnerFromHealLocked(data.Actor, data.Target)
 	f := t.mostRecentActiveFightLocked()
 	if f == nil {
@@ -1064,10 +1078,11 @@ func (t *Tracker) recordHeal(ts time.Time, data logparser.HealData) {
 	f.lastTouched = ts
 	t.armFightTimerLocked(f)
 
-	snap := t.snapshot(ts)
+	snap, now := t.coalesceLocked(ts, wasInCombat)
 	t.mu.Unlock()
-
-	t.broadcast(snap)
+	if now {
+		t.broadcast(snap)
+	}
 }
 
 // recordMiss extends the activity timer of the fight that the miss touches.
@@ -1400,7 +1415,7 @@ func (t *Tracker) endFightByNPC(npcName string, ts time.Time) {
 		f.timer.Stop()
 	}
 	t.archiveFightLocked(f, ts)
-	snap := t.snapshot(ts)
+	snap := t.flushLocked(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)
 }
@@ -1427,7 +1442,7 @@ func (t *Tracker) EndActiveFights(ts time.Time) {
 		}
 		t.archiveFightLocked(f, ts)
 	}
-	snap := t.snapshot(ts)
+	snap := t.flushLocked(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)
 }
@@ -1437,7 +1452,7 @@ func (t *Tracker) EndActiveFights(ts time.Time) {
 // (e.g. a new death record) but the active fights themselves are untouched.
 func (t *Tracker) broadcastState(ts time.Time) {
 	t.mu.Lock()
-	snap := t.snapshot(ts)
+	snap := t.flushLocked(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)
 }
@@ -1718,6 +1733,54 @@ func (t *Tracker) broadcast(state CombatState) {
 		Type: WSEventCombat,
 		Data: state,
 	})
+}
+
+// flushLocked clears the dirty flag and returns a fresh snapshot for an
+// immediate broadcast. Used by transition events (fight start/end, timeout,
+// death, reset) that must reach the overlay without waiting for the ticker.
+// Clearing dirty here avoids a redundant re-broadcast on the next tick.
+// mu must be held.
+func (t *Tracker) flushLocked(now time.Time) CombatState {
+	t.dirty = false
+	return t.snapshot(now)
+}
+
+// coalesceLocked records that combat state changed and decides whether to
+// broadcast now. Steady-state per-hit/per-heal updates only mark dirty (the
+// ticker flushes them at 1 Hz); the in-combat edge (idle->combat or
+// combat->idle) broadcasts immediately so overlay visibility flips without a
+// perceptible lag. Returns (snapshot, true) only when the caller should
+// broadcast after unlocking. mu must be held.
+func (t *Tracker) coalesceLocked(now time.Time, wasInCombat bool) (CombatState, bool) {
+	t.dirty = true
+	if (len(t.activeFights) > 0) != wasInCombat {
+		return t.flushLocked(now), true
+	}
+	return CombatState{}, false
+}
+
+// RunLiveTicker coalesces per-hit combat broadcasts: it flushes the accumulated
+// state at most once per interval while there is something new to send. Mirrors
+// threat.Tracker.RunLiveTicker. Launch once at startup; returns when ctx is
+// cancelled.
+func (t *Tracker) RunLiveTicker(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			t.mu.Lock()
+			if !t.dirty {
+				t.mu.Unlock()
+				continue
+			}
+			snap := t.flushLocked(time.Now())
+			t.mu.Unlock()
+			t.broadcast(snap)
+		}
+	}
 }
 
 func safeDivide(numerator, denominator float64) float64 {

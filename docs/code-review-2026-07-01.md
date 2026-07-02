@@ -108,7 +108,13 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 
 ## Priority 2 — raid-time performance (hot path)
 
-### [ ] 2.1 Combat meter re-marshals entire state (incl. 20 archived fights) per damage/heal line
+### [x] 2.1 Combat meter re-marshals entire state (incl. 20 archived fights) per damage/heal line
+- **Note:** Fixed via the 1 Hz coalescing ticker (dominant cost was the
+  per-hit frequency: merge + RecentFights embed + marshal, hundreds/sec →
+  1/sec). Deliberately did NOT split RecentFields/deaths into a leaner
+  payload — at 1 Hz that embed is negligible and a lean-payload protocol
+  split would need a matching frontend "absent = unchanged" change (risk not
+  worth it). Transitions (fight start/end, death, reset) stay immediate.
 - **Where:** `backend/internal/combat/tracker.go:1022-1025` (recordHit),
   `:1067-1070` (recordHeal), `:1544-1552` (snapshot);
   `cmd/server/main.go:949-950` also broadcasts each parsed event separately

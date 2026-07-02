@@ -364,6 +364,13 @@ func main() {
 	// events instead of freezing at its last value.
 	go threatTracker.RunLiveTicker(context.Background(), time.Second)
 
+	// Coalesce combat-meter broadcasts: per-hit/heal updates mark the state
+	// dirty and this ticker flushes them at most once a second, instead of
+	// re-marshaling the whole combat state (merged fight + archived fights +
+	// deaths) on every damage line during raid AoE spam. Fight-start/end and
+	// death transitions still broadcast immediately.
+	go combatTracker.RunLiveTicker(context.Background(), time.Second)
+
 	// Raid-estimate threat: an experimental per-mob, per-player ESTIMATED hate
 	// view assembled from the combat tracker's observed damage (×class/player
 	// hate mods) plus this character's high-fidelity personal hate. Dev-gated;
