@@ -177,6 +177,11 @@ export default function ChatHistoryPage(): React.ReactElement {
     reloadTimer.current = setTimeout(() => load(true), 500)
   }, [load])
   useWebSocket(onWs)
+  // Clear the pending debounce on unmount so a queued reload doesn't fire into
+  // an unmounted component.
+  useEffect(() => () => {
+    if (reloadTimer.current) clearTimeout(reloadTimer.current)
+  }, [])
 
   function toggle(peer: string) {
     setExpanded((prev) => {
