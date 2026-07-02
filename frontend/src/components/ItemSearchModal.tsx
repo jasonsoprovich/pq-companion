@@ -33,6 +33,10 @@ export default function ItemSearchModal({
   const [loading, setLoading] = useState(false)
   const [activeIdx, setActiveIdx] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  // Monotonic token so a slow earlier request can't clobber a newer one. The
+  // debounce cancels not-yet-fired timeouts, but a fetch already in flight when
+  // the query changes is not cancelled and could resolve out of order.
+  const seqRef = useRef(0)
 
   // Reset on open.
   useEffect(() => {
@@ -54,13 +58,15 @@ export default function ItemSearchModal({
     }
     setLoading(true)
     const handle = setTimeout(() => {
+      const seq = ++seqRef.current
       searchItems(q, 20, 0)
         .then((r) => {
+          if (seq !== seqRef.current) return
           setResults(r.items ?? [])
           setActiveIdx(0)
         })
-        .catch(() => setResults([]))
-        .finally(() => setLoading(false))
+        .catch(() => { if (seq === seqRef.current) setResults([]) })
+        .finally(() => { if (seq === seqRef.current) setLoading(false) })
     }, 200)
     return () => clearTimeout(handle)
   }, [q, open])
