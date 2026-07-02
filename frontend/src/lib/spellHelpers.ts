@@ -427,10 +427,14 @@ function minCasterLevel(classLevels?: number[], levelCap = SERVER_LEVEL_CAP): nu
  * `levelCap` bounds the high end of those ranges to the active era cap (60
  * pre-PoP, 65 with pop_enabled); defaults to the pre-PoP cap.
  *
+ * `spellNames` resolves spell IDs referenced by effect base values (SPA 85
+ * Add Proc — see effectSpellRef) to display names; without it those slots
+ * fall back to "Spell #N".
+ *
  * Returns empty string for sentinel/blank slots and for ID/base combinations
  * that should not render.
  */
-export function effectDescription(id: number, base: number, buffduration: number, max?: number, formula?: number, classLevels?: number[], levelCap = SERVER_LEVEL_CAP): string {
+export function effectDescription(id: number, base: number, buffduration: number, max?: number, formula?: number, classLevels?: number[], levelCap = SERVER_LEVEL_CAP, spellNames?: ReadonlyMap<number, string>): string {
   if (id === 254 || id === 255 || id === 320) return ''
 
   const sign = base > 0 ? '+' : ''
@@ -538,6 +542,16 @@ export function effectDescription(id: number, base: number, buffduration: number
     case 59: // Damage Shield
       if (base === 0) return ''
       return `Damage Shield: ${Math.abs(base)} per hit`
+    case 85: { // Add Proc — base is the proc spell's ID, not a magnitude
+      if (base <= 0) return ''
+      return `Add Proc: ${spellNames?.get(base) ?? `Spell #${base}`}`
+    }
+    case 89: { // Player Size — base is % of normal size (66 = shrink to 66%)
+      if (base <= 0 || base === 100) return ''
+      return base > 100
+        ? `Increase Player Size by ${base - 100}%`
+        : `Decrease Player Size by ${100 - base}%`
+    }
     case 69: // Max HP
       if (base === 0) return ''
       return `${sign}${base} Max HP`
@@ -630,4 +644,14 @@ export function effectDescription(id: number, base: number, buffduration: number
       return `${label}: ${sign}${base}`
     }
   }
+}
+
+/**
+ * Spell ID referenced by an effect slot's base value, or null when the slot's
+ * base is a plain magnitude. Currently SPA 85 (Add Proc), whose base is the
+ * proc spell's ID — callers use this to fetch the name effectDescription
+ * substitutes via its `spellNames` map.
+ */
+export function effectSpellRef(id: number, base: number): number | null {
+  return id === 85 && base > 0 ? base : null
 }

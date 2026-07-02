@@ -19,18 +19,19 @@
  */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { getSpell } from '../services/api'
-import { loadEnums } from '../lib/enumsCache'
+import { fetchSpellCached } from '../lib/spellCache'
 import {
   durationLabel,
   durationScales,
   effectDescription,
+  effectSpellRef,
   msLabel,
   resistLabel,
   skillLabel,
   targetLabel,
 } from '../lib/spellHelpers'
 import { usePoPEnabled } from '../hooks/usePoPEnabled'
+import { useSpellRefNames } from '../hooks/useSpellRefNames'
 import { maxLevel as eraMaxLevel } from '../lib/era'
 import type { Spell } from '../types/spell'
 
@@ -38,30 +39,18 @@ const OPEN_DELAY_MS = 300
 const CURSOR_OFFSET = 12
 const EDGE_PAD = 8
 
-const spellCache = new Map<number, Spell>()
-const inFlight = new Map<number, Promise<Spell>>()
-
-function fetchSpellCached(id: number): Promise<Spell> {
-  const hit = spellCache.get(id)
-  if (hit) return Promise.resolve(hit)
-  let p = inFlight.get(id)
-  if (!p) {
-    // Enum labels (target/resist/skill) read a module-level catalog loaded at
-    // app boot; await it alongside the spell so a cold hover never renders
-    // "Unknown (n)" placeholders.
-    p = Promise.all([getSpell(id), loadEnums()])
-      .then(([s]) => {
-        spellCache.set(id, s)
-        inFlight.delete(id)
-        return s
-      })
-      .catch((err) => {
-        inFlight.delete(id)
-        throw err
-      })
-    inFlight.set(id, p)
-  }
-  return p
+// Fetch the spell plus any spells its effect slots reference (SPA 85 proc
+// spell IDs) so the card's first paint already has proc names resolved.
+function fetchSpellWithRefs(id: number): Promise<Spell> {
+  return fetchSpellCached(id).then(async (s) => {
+    await Promise.all(
+      s.effect_ids.map((eid, i) => {
+        const ref = effectSpellRef(eid, s.effect_base_values[i] ?? 0)
+        return ref ? fetchSpellCached(ref).catch(() => null) : null
+      }),
+    )
+    return s
+  })
 }
 
 interface SpellHoverCardProps {
@@ -105,7 +94,7 @@ export default function SpellHoverCard({
     hovered.current = true
     timer.current = window.setTimeout(() => {
       timer.current = null
-      fetchSpellCached(spellId)
+      fetchSpellWithRefs(spellId)
         .then((s) => {
           if (hovered.current) {
             setSpell(s)
@@ -220,6 +209,7 @@ function CardBody({
   clickHint?: boolean
 }): React.ReactElement {
   const levelCap = eraMaxLevel(usePoPEnabled())
+  const refNames = useSpellRefNames(spell)
 
   // Same effect-slot walk as the Spells explorer detail panel.
   const effects = spell.effect_ids
@@ -231,6 +221,7 @@ function CardBody({
       spell.effect_formulas?.[i] ?? 0,
       spell.class_levels,
       levelCap,
+      refNames,
     ))
     .filter((d) => d !== '')
 

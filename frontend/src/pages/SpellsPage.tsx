@@ -23,6 +23,7 @@ import VariantLinks from '../components/VariantLinks'
 import SpellAcquisition from '../components/SpellAcquisition'
 import { useCachedState } from '../hooks/useCachedState'
 import { usePoPEnabled } from '../hooks/usePoPEnabled'
+import { useSpellRefNames } from '../hooks/useSpellRefNames'
 import { maxLevel as eraMaxLevel } from '../lib/era'
 
 const SPELL_CLASSES: { index: number; abbr: string; full: string }[] = [
@@ -338,6 +339,7 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
   const [showTriggerModal, setShowTriggerModal] = useState(false)
   const [rawOpen, setRawOpen] = useState(false)
   const rawFetcher = useCallback(() => getSpellRaw(spell!.id), [spell?.id])
+  const refNames = useSpellRefNames(spell)
 
   useEffect(() => {
     if (!spell) { setCrossRefs(null); return }
@@ -377,6 +379,7 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
         spell.effect_formulas?.[i] ?? 0,
         spell.class_levels,
         levelCap,
+        refNames,
       ),
     }))
     .filter((e) => e.description !== '')
