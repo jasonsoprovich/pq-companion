@@ -20,7 +20,12 @@ if (loggerInit.error) {
 } else if (loggerInit.logPath) {
   console.log(`[main] electron log: ${loggerInit.logPath}`)
 }
-app.on('before-quit', () => closeLogger())
+// Close the logger on 'will-quit', not 'before-quit'. The quit sequence
+// preventDefault()s the first before-quit pass and runs up to 5s of async
+// teardown (taskkill, overlay snapshots) — closing the fd that early would
+// silently no-op every appendLine() during exactly the phase where update-wedge
+// evidence gets written. 'will-quit' fires after teardown, right before exit.
+app.on('will-quit', () => closeLogger())
 
 // Mirror renderer console warnings/errors from every window (main + all
 // overlays) into electron.log. DevTools only shows them per-window and only

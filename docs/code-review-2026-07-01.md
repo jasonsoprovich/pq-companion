@@ -385,7 +385,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Cheapest robust fix: Go server treats stdin EOF as "parent
   died, exit" (stdio is already piped).
 
-### [ ] 5.4 closeLogger() runs at the start of the quit sequence — shutdown is unlogged
+### [x] 5.4 closeLogger() runs at the start of the quit sequence — shutdown is unlogged
 - **Where:** `electron/main/index.ts:23` (before-quit closeLogger
   registered first) vs `:2632-2643` (real teardown handler)
 - **Severity/confidence:** LOW / certain
