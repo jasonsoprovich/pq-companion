@@ -414,7 +414,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   be written.
 - **Fix:** Move `closeLogger()` to `will-quit`/`quit` (or register last).
 
-### [ ] 5.5 window:drag:start leaks one 'closed' listener per drag
+### [x] 5.5 window:drag:start leaks one 'closed' listener per drag
 - **Where:** `electron/main/index.ts:1653`
 - **Severity/confidence:** LOW / certain
 - **Problem:** `win.once('closed', …)` per drag, never removed →
@@ -422,7 +422,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Register the `once('closed')` a single time at window creation,
   or remove it in `stopDrag`.
 
-### [ ] 5.6 Persist-on-close of window bounds is a dead no-op
+### [x] 5.6 Persist-on-close of window bounds is a dead no-op
 - **Where:** `electron/main/index.ts:331-345, 436-441, 478-499`
 - **Severity/confidence:** LOW / certain
 - **Problem:** 'close' handlers route through the 500 ms debounce; timer
@@ -461,7 +461,11 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   passed via env, checked in middleware. At minimum sanitize the
   `character` field (reject path separators / `..`).
 
-### [ ] 5.9 Renderer-only libraries shipped twice (installer bloat)
+### [x] 5.9 Renderer-only libraries shipped twice (installer bloat)
+- Moved 9 renderer-only libs to devDependencies (only electron-updater is
+  imported by the main process → stays prod). `npm run build` bundles them
+  all into out/renderer cleanly. Packaged-boot smoke still wants a Windows
+  build (electron-builder asar), but node_modules is unchanged in dev.
 - **Where:** `package.json:20-31`
 - **Severity/confidence:** LOW / certain
 - **Problem:** `react-router-dom`, `lucide-react`, `@dnd-kit/*`,
