@@ -1,5 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { X, RefreshCw, FolderOpen, Play, Square as SquareIcon, Volume2 } from 'lucide-react'
+import {
+  X,
+  RefreshCw,
+  FolderOpen,
+  Play,
+  Square as SquareIcon,
+  Volume2,
+  CheckSquare,
+  Square,
+  MinusSquare,
+  ChevronRight,
+  ChevronDown,
+  Search,
+} from 'lucide-react'
 import {
   listActionTemplates,
   bulkApplyActions,
@@ -7,8 +20,6 @@ import {
 } from '../services/api'
 import { playSoundForTest, stopTestPlayback } from '../services/audio'
 import type { Action, ActionTemplate, BulkResult, Trigger } from '../types/trigger'
-
-const ALL_SCOPE = '__all__'
 
 type BulkOperation = 'tts_to_sound' | 'apply_template'
 
@@ -18,18 +29,27 @@ interface BulkActionsModalProps {
   onApplied: (result: BulkResult) => void
 }
 
+type CatState = 'none' | 'some' | 'all'
+
 /**
- * Bulk action editor: pick a scope (one category or all triggers) and either
- * convert every text-to-speech alert to a sound file — the "packs ship TTS
- * but I use sounds" fix — or stamp a saved action template onto every
- * trigger in scope.
+ * Bulk action editor: hand-pick the triggers to edit — grouped by category
+ * with per-trigger checkboxes and tri-state category toggles — then either
+ * convert every text-to-speech alert to a sound file (the "packs ship TTS
+ * but I use sounds" fix) or stamp a saved action template onto every trigger
+ * selected.
  */
 export default function BulkActionsModal({
   triggers,
   onClose,
   onApplied,
 }: BulkActionsModalProps): React.ReactElement {
-  const [scope, setScope] = useState<string>(ALL_SCOPE)
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(triggers.map((t) => t.id)),
+  )
+  const [search, setSearch] = useState('')
+  const [collapsed, setCollapsed] = useState<Set<string>>(
+    () => new Set(triggers.map((t) => t.pack_name ?? '')),
+  )
   const [operation, setOperation] = useState<BulkOperation>('tts_to_sound')
   const [templates, setTemplates] = useState<ActionTemplate[]>([])
   const [templateId, setTemplateId] = useState<string>('')
@@ -58,26 +78,42 @@ export default function BulkActionsModal({
     return () => stopTestPlayback()
   }, [])
 
-  // Categories with counts, Uncategorized last.
-  const categories = useMemo(() => {
-    const counts = new Map<string, number>()
+  // Triggers grouped by category (pack_name), Uncategorized last, sorted by
+  // name within each group.
+  const grouped = useMemo(() => {
+    const map = new Map<string, Trigger[]>()
     for (const t of triggers) {
       const key = t.pack_name ?? ''
-      counts.set(key, (counts.get(key) ?? 0) + 1)
+      const arr = map.get(key)
+      if (arr) arr.push(t)
+      else map.set(key, [t])
     }
-    return Array.from(counts.entries()).sort((a, b) => {
+    const entries = Array.from(map.entries())
+    entries.sort((a, b) => {
       if (a[0] === '') return 1
       if (b[0] === '') return -1
       return a[0].localeCompare(b[0])
     })
+    for (const [, arr] of entries) arr.sort((x, y) => x.name.localeCompare(y.name))
+    return entries
   }, [triggers])
 
-  const scoped = useMemo(
-    () =>
-      scope === ALL_SCOPE
-        ? triggers
-        : triggers.filter((t) => (t.pack_name ?? '') === scope),
-    [triggers, scope],
+  const query = search.trim().toLowerCase()
+
+  // Groups filtered by the search box. When searching, empty groups drop out.
+  const visibleGroups = useMemo(() => {
+    if (!query) return grouped
+    return grouped
+      .map(
+        ([key, arr]) =>
+          [key, arr.filter((t) => t.name.toLowerCase().includes(query))] as const,
+      )
+      .filter(([, arr]) => arr.length > 0)
+  }, [grouped, query])
+
+  const selectedTriggers = useMemo(
+    () => triggers.filter((t) => selected.has(t.id)),
+    [triggers, selected],
   )
 
   const hasTTS = (t: Trigger) =>
@@ -86,13 +122,51 @@ export default function BulkActionsModal({
       (t.timer_alerts ?? []).some((a) => a.type === 'text_to_speech'))
 
   const affected = useMemo(
-    () => (operation === 'tts_to_sound' ? scoped.filter(hasTTS) : scoped),
+    () =>
+      operation === 'tts_to_sound'
+        ? selectedTriggers.filter(hasTTS)
+        : selectedTriggers,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scoped, operation, includeTimerAlerts],
+    [selectedTriggers, operation, includeTimerAlerts],
   )
 
+  const toggleOne = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const setMany = (ids: string[], on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const id of ids) {
+        if (on) next.add(id)
+        else next.delete(id)
+      }
+      return next
+    })
+
+  const catState = (arr: Trigger[]): CatState => {
+    let sel = 0
+    for (const t of arr) if (selected.has(t.id)) sel++
+    if (sel === 0) return 'none'
+    if (sel === arr.length) return 'all'
+    return 'some'
+  }
+
+  const toggleCollapse = (key: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+
   const template = templates.find((t) => t.id === templateId)
-  const canBrowse = typeof window !== 'undefined' && !!window.electron?.dialog?.selectSoundFile
+  const canBrowse =
+    typeof window !== 'undefined' && !!window.electron?.dialog?.selectSoundFile
   const canApply =
     affected.length > 0 &&
     !applying &&
@@ -135,6 +209,15 @@ export default function BulkActionsModal({
     border: '1px solid var(--color-border)',
   }
 
+  const catIcon = (state: CatState) =>
+    state === 'all' ? (
+      <CheckSquare size={13} style={{ color: 'var(--color-accent)' }} />
+    ) : state === 'some' ? (
+      <MinusSquare size={13} style={{ color: 'var(--color-accent)' }} />
+    ) : (
+      <Square size={13} style={{ color: 'var(--color-muted)' }} />
+    )
+
   return (
     <div
       onClick={() => !applying && onClose()}
@@ -156,7 +239,7 @@ export default function BulkActionsModal({
           backgroundColor: 'var(--color-surface)',
           border: '1px solid var(--color-border)',
           width: '100%',
-          maxWidth: 480,
+          maxWidth: 520,
         }}
       >
         <div className="flex items-center justify-between">
@@ -168,24 +251,158 @@ export default function BulkActionsModal({
           </button>
         </div>
 
-        {/* Scope */}
-        <div className="space-y-1">
-          <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-            Triggers to edit
-          </label>
-          <select
-            value={scope}
-            onChange={(e) => setScope(e.target.value)}
-            className="w-full text-xs px-2 py-1.5 rounded"
-            style={selectStyle}
+        {/* Trigger picker */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <label
+              className="text-[11px] font-medium"
+              style={{ color: 'var(--color-muted-foreground)' }}
+            >
+              Triggers to edit
+            </label>
+            <div className="flex items-center gap-2 text-[11px]">
+              <button
+                onClick={() => setSelected(new Set(triggers.map((t) => t.id)))}
+                className="hover:underline"
+                style={{ color: 'var(--color-accent)' }}
+              >
+                Select all
+              </button>
+              <span style={{ color: 'var(--color-border)' }}>|</span>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="hover:underline"
+                style={{ color: 'var(--color-accent)' }}
+              >
+                None
+              </button>
+            </div>
+          </div>
+
+          <div className="relative">
+            <Search
+              size={12}
+              className="absolute left-2 top-1/2 -translate-y-1/2"
+              style={{ color: 'var(--color-muted)' }}
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Filter by name…"
+              className="w-full text-xs pl-7 pr-2 py-1.5 rounded"
+              style={selectStyle}
+            />
+          </div>
+
+          <div
+            className="rounded overflow-auto"
+            style={{
+              border: '1px solid var(--color-border)',
+              maxHeight: 240,
+            }}
           >
-            <option value={ALL_SCOPE}>All triggers ({triggers.length})</option>
-            {categories.map(([name, count]) => (
-              <option key={name || '__uncat__'} value={name}>
-                {name || 'Uncategorized'} ({count})
-              </option>
-            ))}
-          </select>
+            {visibleGroups.length === 0 ? (
+              <p className="text-[11px] px-2.5 py-3" style={{ color: 'var(--color-muted)' }}>
+                No triggers match “{search.trim()}”.
+              </p>
+            ) : (
+              visibleGroups.map(([key, arr]) => {
+                const state = catState(arr)
+                const isCollapsed = !query && collapsed.has(key)
+                const selCount = arr.filter((t) => selected.has(t.id)).length
+                return (
+                  <div key={key || '__uncat__'}>
+                    {/* Category header */}
+                    <div
+                      className="flex items-center gap-1.5 px-2 py-1.5 sticky top-0"
+                      style={{ backgroundColor: 'var(--color-surface-2)' }}
+                    >
+                      <button
+                        onClick={() => toggleCollapse(key)}
+                        aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+                        className="shrink-0"
+                        style={{ color: 'var(--color-muted)' }}
+                      >
+                        {isCollapsed ? (
+                          <ChevronRight size={13} />
+                        ) : (
+                          <ChevronDown size={13} />
+                        )}
+                      </button>
+                      <button
+                        onClick={() =>
+                          setMany(
+                            arr.map((t) => t.id),
+                            state !== 'all',
+                          )
+                        }
+                        aria-label="Toggle category"
+                        className="shrink-0"
+                      >
+                        {catIcon(state)}
+                      </button>
+                      <button
+                        onClick={() => toggleCollapse(key)}
+                        className="flex-1 min-w-0 flex items-center justify-between text-left"
+                      >
+                        <span
+                          className="truncate text-[11px] font-semibold"
+                          style={{ color: 'var(--color-foreground)' }}
+                        >
+                          {key || 'Uncategorized'}
+                        </span>
+                        <span
+                          className="shrink-0 text-[10px] ml-2"
+                          style={{ color: 'var(--color-muted-foreground)' }}
+                        >
+                          {selCount}/{arr.length}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Trigger rows */}
+                    {!isCollapsed &&
+                      arr.map((t) => {
+                        const on = selected.has(t.id)
+                        return (
+                          <button
+                            key={t.id}
+                            onClick={() => toggleOne(t.id)}
+                            className="flex w-full items-center gap-2 pl-8 pr-2 py-1 text-left"
+                            style={{
+                              backgroundColor: on
+                                ? 'var(--color-surface-2)'
+                                : 'transparent',
+                            }}
+                          >
+                            <span className="shrink-0">
+                              {on ? (
+                                <CheckSquare
+                                  size={13}
+                                  style={{ color: 'var(--color-accent)' }}
+                                />
+                              ) : (
+                                <Square
+                                  size={13}
+                                  style={{ color: 'var(--color-muted)' }}
+                                />
+                              )}
+                            </span>
+                            <span
+                              className="truncate text-xs"
+                              style={{ color: 'var(--color-foreground)' }}
+                            >
+                              {t.name}
+                            </span>
+                          </button>
+                        )
+                      })}
+                  </div>
+                )
+              })
+            )}
+          </div>
         </div>
 
         {/* Operation */}
@@ -217,7 +434,7 @@ export default function BulkActionsModal({
             <span className="text-xs" style={{ color: 'var(--color-foreground)' }}>
               Apply an action template
               <span className="block text-[10px]" style={{ color: 'var(--color-muted-foreground)' }}>
-                Replaces ALL actions on every trigger in scope with the
+                Replaces ALL actions on every selected trigger with the
                 template's actions.
               </span>
             </span>
@@ -312,13 +529,14 @@ export default function BulkActionsModal({
         <p className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
           {operation === 'tts_to_sound' ? (
             <>
-              {affected.length} of {scoped.length} trigger{scoped.length !== 1 ? 's' : ''} in
-              scope use{affected.length === 1 ? 's' : ''} text-to-speech and will be converted.
+              {affected.length} of {selectedTriggers.length} selected trigger
+              {selectedTriggers.length !== 1 ? 's' : ''} use
+              {affected.length === 1 ? 's' : ''} text-to-speech and will be converted.
             </>
           ) : (
             <>
-              The actions of {affected.length} trigger{affected.length !== 1 ? 's' : ''} will be
-              overwritten.
+              The actions of {affected.length} selected trigger
+              {affected.length !== 1 ? 's' : ''} will be overwritten.
             </>
           )}
         </p>
