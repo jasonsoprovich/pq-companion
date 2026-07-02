@@ -184,7 +184,7 @@ func (db *DB) RechargeableMaxCharges(ids []int) (map[int]int, error) {
 // SearchItems returns a filtered, paginated list of items.
 // Zero-value fields in f mean "no filter" (except ItemType: -1 = any).
 func (db *DB) SearchItems(f ItemFilter) (*SearchResult[Item], error) {
-	pattern := "%" + strings.ReplaceAll(f.Query, "%", "\\%") + "%"
+	pattern := "%" + escapeLike(f.Query) + "%"
 
 	where := "Name LIKE ? ESCAPE '\\'"
 	args := []any{pattern}
@@ -840,7 +840,7 @@ func (db *DB) SearchNPCs(query string, limit, offset int, hidePlaceholders bool)
 	// the user can type (e.g. "#Lord_Inquisitor_Seru" surfaces for both
 	// "lord" and "lord inquisitor").
 	normalized := strings.ReplaceAll(query, " ", "_")
-	pattern := "%" + strings.ReplaceAll(normalized, "%", "\\%") + "%"
+	pattern := "%" + escapeLike(normalized) + "%"
 
 	placeholderClause := ""
 	if hidePlaceholders {
@@ -1635,7 +1635,7 @@ func (db *DB) GetSpellByExactName(name string) (*Spell, error) {
 // goodEffectOnly: when true, only beneficial spells (spells_new.goodEffect=1)
 // are returned — used by the raid-buff picker so debuffs/nukes don't appear.
 func (db *DB) SearchSpells(query string, classIndex, minLevel, maxLevel, limit, offset int, goodEffectOnly bool) (*SearchResult[Spell], error) {
-	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
+	pattern := "%" + escapeLike(query) + "%"
 
 	conditions := []string{"s.name LIKE ? ESCAPE '\\'", "s.name != ''"}
 	args := []any{pattern}
@@ -2180,7 +2180,7 @@ type ZoneSearchFilters struct {
 // (see applyExpansionOverride) because the raw zone.expansion column doesn't
 // match player-visible buckets for several Classic/Kunark dungeons.
 func (db *DB) SearchZones(query string, filters ZoneSearchFilters, limit, offset int) (*SearchResult[Zone], error) {
-	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
+	pattern := "%" + escapeLike(query) + "%"
 	hiddenFilter, hiddenArgs := zoneVisibilityFilter(" AND ")
 
 	q := fmt.Sprintf(

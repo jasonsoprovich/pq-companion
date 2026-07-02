@@ -620,7 +620,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Check `rows.Err()`, log scan failures; error out in the
   generator path.
 
-### [ ] 6.17 LIKE escaping handles % but not \ or _
+### [x] 6.17 LIKE escaping handles % but not \ or _
 - **Where:** `db/queries.go:187, 830, 1594, 2121`, `db/recipes.go:93`
 - **Severity/confidence:** LOW / certain
 - **Problem:** Trailing `\` in a search term escapes the appended `%`

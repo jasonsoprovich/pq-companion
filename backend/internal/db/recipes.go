@@ -90,7 +90,7 @@ func productSubquery(col string) string {
 // SearchRecipes returns enabled tradeskill recipes matching the filter,
 // paginated and ordered by trivial then name. Mirrors SearchItems' shape.
 func (db *DB) SearchRecipes(f RecipeFilter) (*SearchResult[RecipeSummary], error) {
-	pattern := "%" + strings.ReplaceAll(f.Query, "%", "\\%") + "%"
+	pattern := "%" + escapeLike(f.Query) + "%"
 	where := "r.enabled = 1 AND r.name LIKE ? ESCAPE '\\'"
 	args := []any{pattern}
 
