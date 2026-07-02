@@ -74,13 +74,13 @@ func (h *logHandler) rawFeed(w http.ResponseWriter, r *http.Request) {
 func (h *logHandler) info(w http.ResponseWriter, r *http.Request) {
 	s := h.tailer.Status()
 	if !s.FileExists || s.FilePath == "" {
-		http.Error(w, `{"error":"log file not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "log file not found")
 		return
 	}
 
 	fi, err := logparser.GetFileInfo(s.FilePath)
 	if err != nil {
-		http.Error(w, `{"error":"could not read log file"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "could not read log file")
 		return
 	}
 	json.NewEncoder(w).Encode(fi)
@@ -125,7 +125,7 @@ func (h *logHandler) browse(w http.ResponseWriter, r *http.Request) {
 func (h *logHandler) cleanup(w http.ResponseWriter, r *http.Request) {
 	s := h.tailer.Status()
 	if !s.FileExists || s.FilePath == "" {
-		http.Error(w, `{"error":"log file not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "log file not found")
 		return
 	}
 

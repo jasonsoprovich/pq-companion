@@ -118,7 +118,7 @@ func (h *zealHandler) spellbook(w http.ResponseWriter, r *http.Request) {
 func (h *zealHandler) allInventories(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.watcher.AllInventories()
 	if err != nil {
-		http.Error(w, `{"error":"failed to scan inventories"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to scan inventories")
 		return
 	}
 	for _, c := range resp.Characters {
@@ -207,16 +207,16 @@ func (h *zealHandler) updateSpellsets(w http.ResponseWriter, r *http.Request) {
 		Spellsets []zeal.Spellset `json:"spellsets"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	if body.Character == "" {
-		http.Error(w, `{"error":"character is required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "character is required")
 		return
 	}
 	cfg := h.cfgMgr.Get()
 	if cfg.EQPath == "" {
-		http.Error(w, `{"error":"EQ path not configured"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "EQ path not configured")
 		return
 	}
 
@@ -225,19 +225,19 @@ func (h *zealHandler) updateSpellsets(w http.ResponseWriter, r *http.Request) {
 	seenNames := make(map[string]bool, len(body.Spellsets))
 	for i, s := range body.Spellsets {
 		if len(s.SpellIDs) != zeal.SpellsetSlotCount {
-			http.Error(w, fmt.Sprintf(`{"error":"spellset %d (%q) must have %d slots"}`, i, s.Name, zeal.SpellsetSlotCount), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("spellset %d (%q) must have %d slots", i, s.Name, zeal.SpellsetSlotCount))
 			return
 		}
 		if s.Name == "" {
-			http.Error(w, fmt.Sprintf(`{"error":"spellset %d has empty name"}`, i), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("spellset %d has empty name", i))
 			return
 		}
 		if strings.ContainsAny(s.Name, "[]\r\n") {
-			http.Error(w, fmt.Sprintf(`{"error":"spellset %d (%q) contains illegal characters"}`, i, s.Name), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("spellset %d (%q) contains illegal characters", i, s.Name))
 			return
 		}
 		if seenNames[s.Name] {
-			http.Error(w, fmt.Sprintf(`{"error":"duplicate spellset name %q"}`, s.Name), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("duplicate spellset name %q", s.Name))
 			return
 		}
 		seenNames[s.Name] = true
@@ -249,14 +249,14 @@ func (h *zealHandler) updateSpellsets(w http.ResponseWriter, r *http.Request) {
 		Spellsets: body.Spellsets,
 	}
 	if err := zeal.WriteSpellsets(path, sf); err != nil {
-		http.Error(w, `{"error":"failed to write spellsets"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to write spellsets")
 		return
 	}
 
 	// Reparse so the response reflects the on-disk file (including its new mod time).
 	reloaded, err := zeal.ParseSpellsets(path, body.Character)
 	if err != nil {
-		http.Error(w, `{"error":"wrote file but failed to reparse"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "wrote file but failed to reparse")
 		return
 	}
 	json.NewEncoder(w).Encode(struct {
@@ -275,15 +275,15 @@ func (h *zealHandler) parseSpellsetsFile(w http.ResponseWriter, r *http.Request)
 		Path string `json:"path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	if body.Path == "" {
-		http.Error(w, `{"error":"path is required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "path is required")
 		return
 	}
 	if !strings.EqualFold(filepath.Ext(body.Path), ".ini") {
-		http.Error(w, `{"error":"file must have .ini extension"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "file must have .ini extension")
 		return
 	}
 
@@ -294,7 +294,7 @@ func (h *zealHandler) parseSpellsetsFile(w http.ResponseWriter, r *http.Request)
 
 	sf, err := zeal.ParseSpellsets(body.Path, character)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"failed to parse: %s"}`, err.Error()), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse: %s", err.Error()))
 		return
 	}
 	json.NewEncoder(w).Encode(struct {
@@ -344,16 +344,16 @@ func (h *zealHandler) updateBandolier(w http.ResponseWriter, r *http.Request) {
 		Sets      []zeal.BandolierSet `json:"sets"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	if body.Character == "" {
-		http.Error(w, `{"error":"character is required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "character is required")
 		return
 	}
 	cfg := h.cfgMgr.Get()
 	if cfg.EQPath == "" {
-		http.Error(w, `{"error":"EQ path not configured"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "EQ path not configured")
 		return
 	}
 
@@ -364,23 +364,23 @@ func (h *zealHandler) updateBandolier(w http.ResponseWriter, r *http.Request) {
 	seenNames := make(map[string]bool, len(body.Sets))
 	for i, s := range body.Sets {
 		if len(s.ItemIDs) != zeal.BandolierSlotCount {
-			http.Error(w, fmt.Sprintf(`{"error":"set %d (%q) must have %d slots"}`, i, s.Name, zeal.BandolierSlotCount), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("set %d (%q) must have %d slots", i, s.Name, zeal.BandolierSlotCount))
 			return
 		}
 		if s.Name == "" {
-			http.Error(w, fmt.Sprintf(`{"error":"set %d has empty name"}`, i), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("set %d has empty name", i))
 			return
 		}
 		if len([]rune(s.Name)) > 32 {
-			http.Error(w, fmt.Sprintf(`{"error":"set %q name exceeds 32 characters"}`, s.Name), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("set %q name exceeds 32 characters", s.Name))
 			return
 		}
 		if strings.ContainsAny(s.Name, "[]\r\n") {
-			http.Error(w, fmt.Sprintf(`{"error":"set %d (%q) contains illegal characters"}`, i, s.Name), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("set %d (%q) contains illegal characters", i, s.Name))
 			return
 		}
 		if seenNames[s.Name] {
-			http.Error(w, fmt.Sprintf(`{"error":"duplicate set name %q"}`, s.Name), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("duplicate set name %q", s.Name))
 			return
 		}
 		seenNames[s.Name] = true
@@ -390,16 +390,16 @@ func (h *zealHandler) updateBandolier(w http.ResponseWriter, r *http.Request) {
 				continue // empty slot is always valid
 			}
 			if !owned[id] {
-				http.Error(w, fmt.Sprintf(`{"error":"set %q: item %d is not in %s's inventory"}`, s.Name, id, body.Character), http.StatusBadRequest)
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("set %q: item %d is not in %s's inventory", s.Name, id, body.Character))
 				return
 			}
 			fits, err := h.itemFitsSlot(id, slot)
 			if err != nil {
-				http.Error(w, `{"error":"failed to validate item slot"}`, http.StatusInternalServerError)
+				writeError(w, http.StatusInternalServerError, "failed to validate item slot")
 				return
 			}
 			if !fits {
-				http.Error(w, fmt.Sprintf(`{"error":"set %q: item %d cannot go in the %s slot"}`, s.Name, id, bandolierSlotName(slot)), http.StatusBadRequest)
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("set %q: item %d cannot go in the %s slot", s.Name, id, bandolierSlotName(slot)))
 				return
 			}
 		}
@@ -411,13 +411,13 @@ func (h *zealHandler) updateBandolier(w http.ResponseWriter, r *http.Request) {
 		Sets:      body.Sets,
 	}
 	if err := zeal.WriteBandolier(path, bf); err != nil {
-		http.Error(w, `{"error":"failed to write bandolier"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to write bandolier")
 		return
 	}
 
 	reloaded, err := zeal.ParseBandolier(path, body.Character)
 	if err != nil {
-		http.Error(w, `{"error":"wrote file but failed to reparse"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "wrote file but failed to reparse")
 		return
 	}
 	json.NewEncoder(w).Encode(struct {
@@ -431,7 +431,7 @@ func (h *zealHandler) updateBandolier(w http.ResponseWriter, r *http.Request) {
 func (h *zealHandler) allBandoliers(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.watcher.AllBandoliers()
 	if err != nil {
-		http.Error(w, `{"error":"failed to scan bandoliers"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to scan bandoliers")
 		return
 	}
 	json.NewEncoder(w).Encode(resp)
@@ -445,12 +445,12 @@ func (h *zealHandler) bandolierSlotItems(w http.ResponseWriter, r *http.Request)
 	q := r.URL.Query()
 	name := q.Get("character")
 	if name == "" {
-		http.Error(w, `{"error":"character is required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "character is required")
 		return
 	}
 	slot, err := strconv.Atoi(q.Get("slot"))
 	if err != nil || slot < 0 || slot >= zeal.BandolierSlotCount {
-		http.Error(w, `{"error":"slot must be 0..3"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "slot must be 0..3")
 		return
 	}
 	cfg := h.cfgMgr.Get()
@@ -469,7 +469,7 @@ func (h *zealHandler) bandolierSlotItems(w http.ResponseWriter, r *http.Request)
 
 	items, err := h.db.BandolierSlotItems(slot, ids, q.Get("q"))
 	if err != nil {
-		http.Error(w, `{"error":"failed to query slot items"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to query slot items")
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
@@ -487,15 +487,15 @@ func (h *zealHandler) parseBandolierFile(w http.ResponseWriter, r *http.Request)
 		Path string `json:"path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	if body.Path == "" {
-		http.Error(w, `{"error":"path is required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "path is required")
 		return
 	}
 	if !strings.EqualFold(filepath.Ext(body.Path), ".ini") {
-		http.Error(w, `{"error":"file must have .ini extension"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "file must have .ini extension")
 		return
 	}
 
@@ -506,7 +506,7 @@ func (h *zealHandler) parseBandolierFile(w http.ResponseWriter, r *http.Request)
 
 	bf, err := zeal.ParseBandolier(body.Path, character)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"failed to parse: %s"}`, err.Error()), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse: %s", err.Error()))
 		return
 	}
 	json.NewEncoder(w).Encode(struct {
@@ -623,39 +623,39 @@ func (h *zealHandler) updateMacros(w http.ResponseWriter, r *http.Request) {
 		BaseModifiedAt *time.Time         `json:"base_modified_at"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	if body.Character == "" {
-		http.Error(w, `{"error":"character is required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "character is required")
 		return
 	}
 	cfg := h.cfgMgr.Get()
 	if cfg.EQPath == "" {
-		http.Error(w, `{"error":"EQ path not configured"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "EQ path not configured")
 		return
 	}
 
 	for _, b := range body.Buttons {
 		if b.Page < 1 || b.Page > zeal.MacroPageCount {
-			http.Error(w, fmt.Sprintf(`{"error":"page %d out of range (1..%d)"}`, b.Page, zeal.MacroPageCount), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("page %d out of range (1..%d)", b.Page, zeal.MacroPageCount))
 			return
 		}
 		if b.Button < 1 || b.Button > zeal.MacroButtonsPerPage {
-			http.Error(w, fmt.Sprintf(`{"error":"button %d out of range (1..%d)"}`, b.Button, zeal.MacroButtonsPerPage), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("button %d out of range (1..%d)", b.Button, zeal.MacroButtonsPerPage))
 			return
 		}
 		if len(b.Lines) != zeal.MacroLineCount {
-			http.Error(w, fmt.Sprintf(`{"error":"button %d/%d must have %d lines"}`, b.Page, b.Button, zeal.MacroLineCount), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("button %d/%d must have %d lines", b.Page, b.Button, zeal.MacroLineCount))
 			return
 		}
 		if strings.ContainsAny(b.Name, "\r\n") {
-			http.Error(w, fmt.Sprintf(`{"error":"button %d/%d name contains a line break"}`, b.Page, b.Button), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("button %d/%d name contains a line break", b.Page, b.Button))
 			return
 		}
 		for _, l := range b.Lines {
 			if strings.ContainsAny(l, "\r\n") {
-				http.Error(w, fmt.Sprintf(`{"error":"button %d/%d has a command line with a line break"}`, b.Page, b.Button), http.StatusBadRequest)
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("button %d/%d has a command line with a line break", b.Page, b.Button))
 				return
 			}
 		}
@@ -664,23 +664,23 @@ func (h *zealHandler) updateMacros(w http.ResponseWriter, r *http.Request) {
 	path := zeal.MacroPath(cfg.EQPath, body.Character)
 	info, err := os.Stat(path)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"no _pq.proj.ini for %s yet — log in once so the client creates it"}`, body.Character), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("no _pq.proj.ini for %s yet — log in once so the client creates it", body.Character))
 		return
 	}
 	if body.BaseModifiedAt != nil && !info.ModTime().Equal(*body.BaseModifiedAt) {
-		http.Error(w, fmt.Sprintf(`{"error":"%s's config file changed on disk since it was loaded — Refresh to pick up the latest macros, then reapply your edits"}`, body.Character), http.StatusConflict)
+		writeError(w, http.StatusConflict, fmt.Sprintf("%s's config file changed on disk since it was loaded — Refresh to pick up the latest macros, then reapply your edits", body.Character))
 		return
 	}
 
 	mf := &zeal.MacroFile{Character: body.Character, Buttons: body.Buttons}
 	if err := zeal.WriteMacros(path, mf); err != nil {
-		http.Error(w, `{"error":"failed to write macros"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to write macros")
 		return
 	}
 
 	reloaded, err := zeal.ParseMacros(path, body.Character)
 	if err != nil {
-		http.Error(w, `{"error":"wrote file but failed to reparse"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "wrote file but failed to reparse")
 		return
 	}
 	json.NewEncoder(w).Encode(struct {
@@ -694,7 +694,7 @@ func (h *zealHandler) updateMacros(w http.ResponseWriter, r *http.Request) {
 func (h *zealHandler) allMacros(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.watcher.AllMacros()
 	if err != nil {
-		http.Error(w, `{"error":"failed to scan macros"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to scan macros")
 		return
 	}
 	json.NewEncoder(w).Encode(resp)
@@ -709,15 +709,15 @@ func (h *zealHandler) parseMacrosFile(w http.ResponseWriter, r *http.Request) {
 		Path string `json:"path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	if body.Path == "" {
-		http.Error(w, `{"error":"path is required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "path is required")
 		return
 	}
 	if !strings.EqualFold(filepath.Ext(body.Path), ".ini") {
-		http.Error(w, `{"error":"file must have .ini extension"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "file must have .ini extension")
 		return
 	}
 
@@ -728,7 +728,7 @@ func (h *zealHandler) parseMacrosFile(w http.ResponseWriter, r *http.Request) {
 
 	mf, err := zeal.ParseMacros(body.Path, character)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"failed to parse: %s"}`, err.Error()), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse: %s", err.Error()))
 		return
 	}
 	json.NewEncoder(w).Encode(struct {
@@ -752,7 +752,7 @@ func (h *zealHandler) textColors(w http.ResponseWriter, r *http.Request) {
 	}
 	colors, err := zeal.MacroColorPalette(cfg.EQPath)
 	if err != nil {
-		http.Error(w, `{"error":"failed to read eqclient.ini colors"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to read eqclient.ini colors")
 		return
 	}
 	if colors != nil {
@@ -793,7 +793,7 @@ func (h *zealHandler) detect(w http.ResponseWriter, r *http.Request) {
 func (h *zealHandler) allSpellsets(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.watcher.AllSpellsets()
 	if err != nil {
-		http.Error(w, `{"error":"failed to scan spellsets"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to scan spellsets")
 		return
 	}
 	json.NewEncoder(w).Encode(resp)

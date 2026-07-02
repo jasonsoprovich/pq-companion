@@ -95,7 +95,7 @@ func componentLocations(locs map[int][]string, comp keys.Component) []string {
 func (h *keysHandler) progress(w http.ResponseWriter, r *http.Request) {
 	allInv, err := h.watcher.AllInventories()
 	if err != nil {
-		http.Error(w, `{"error":"failed to scan inventories"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to scan inventories")
 		return
 	}
 

@@ -307,7 +307,11 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** `_txlock=immediate` on this store's DSN, or issue a write
   before the read.
 
-### [ ] 4.6 Hand-built JSON error bodies invalid when values contain quotes/backslashes
+### [x] 4.6 Hand-built JSON error bodies invalid when values contain quotes/backslashes
+- Also fixed the same anti-pattern found in `api/log.go` (3) and
+  `api/keys.go` (1) — literal-string form, so they only had the text/plain
+  Content-Type issue, but converted for consistency. Zero `http.Error` JSON
+  bodies remain in internal/api.
 - **Where:** `api/zeal.go:228, 236, 240, 297, 367-402, 509, 641-671, 731`;
   `api/backup.go:62, 77, 91, 105, 119, 136`
 - **Severity/confidence:** MEDIUM / certain

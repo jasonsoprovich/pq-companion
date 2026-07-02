@@ -18,7 +18,7 @@ type backupHandler struct {
 func (h *backupHandler) list(w http.ResponseWriter, r *http.Request) {
 	backups, err := h.mgr.List()
 	if err != nil {
-		http.Error(w, `{"error":"failed to list backups"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to list backups")
 		return
 	}
 	if backups == nil {
@@ -33,10 +33,10 @@ func (h *backupHandler) get(w http.ResponseWriter, r *http.Request) {
 	b, err := h.mgr.Get(id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
-		http.Error(w, `{"error":"failed to get backup"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to get backup")
 		return
 	}
 	json.NewEncoder(w).Encode(b)
@@ -49,17 +49,17 @@ func (h *backupHandler) create(w http.ResponseWriter, r *http.Request) {
 		Notes string `json:"notes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	if req.Name == "" {
-		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
 
 	b, err := h.mgr.Create(req.Name, req.Notes)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
@@ -74,7 +74,7 @@ func (h *backupHandler) delete(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, backup.ErrNotFound) {
 			status = http.StatusNotFound
 		}
-		http.Error(w, `{"error":"`+err.Error()+`"}`, status)
+		writeError(w, status, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -88,7 +88,7 @@ func (h *backupHandler) restore(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, backup.ErrNotFound) {
 			status = http.StatusNotFound
 		}
-		http.Error(w, `{"error":"`+err.Error()+`"}`, status)
+		writeError(w, status, err.Error())
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "restored"})
@@ -102,7 +102,7 @@ func (h *backupHandler) lock(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, backup.ErrNotFound) {
 			status = http.StatusNotFound
 		}
-		http.Error(w, `{"error":"`+err.Error()+`"}`, status)
+		writeError(w, status, err.Error())
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "locked"})
@@ -116,7 +116,7 @@ func (h *backupHandler) unlock(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, backup.ErrNotFound) {
 			status = http.StatusNotFound
 		}
-		http.Error(w, `{"error":"`+err.Error()+`"}`, status)
+		writeError(w, status, err.Error())
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "unlocked"})
@@ -128,12 +128,12 @@ func (h *backupHandler) prune(w http.ResponseWriter, r *http.Request) {
 		MaxBackups int `json:"max_backups"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.MaxBackups <= 0 {
-		http.Error(w, `{"error":"max_backups must be a positive integer"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "max_backups must be a positive integer")
 		return
 	}
 	deleted, err := h.mgr.Prune(req.MaxBackups)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]int{"deleted": deleted})
