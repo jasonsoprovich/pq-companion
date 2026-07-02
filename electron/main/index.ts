@@ -380,20 +380,27 @@ const windowToOverlayName = new WeakMap<BrowserWindow, OverlayName>()
 
 const boundsDebounceTimers = new Map<OverlayName, ReturnType<typeof setTimeout>>()
 
+// writeBoundsNow captures and persists the overlay's bounds synchronously.
+// Called from the 'close' handler: the debounced persistBounds would schedule a
+// timer that fires ~500ms later, by which point the window is destroyed and the
+// timer bails on isDestroyed() — losing a move-then-close within that window.
+function writeBoundsNow(name: OverlayName, win: BrowserWindow): void {
+  const existing = boundsDebounceTimers.get(name)
+  if (existing) {
+    clearTimeout(existing)
+    boundsDebounceTimers.delete(name)
+  }
+  if (win.isDestroyed()) return
+  const b = win.getBounds()
+  const store = loadBoundsStore()
+  store[name] = { x: b.x, y: b.y, width: b.width, height: b.height }
+  saveBoundsStore(store)
+}
+
 function persistBounds(name: OverlayName, win: BrowserWindow): void {
   const existing = boundsDebounceTimers.get(name)
   if (existing) clearTimeout(existing)
-  boundsDebounceTimers.set(
-    name,
-    setTimeout(() => {
-      if (win.isDestroyed()) return
-      const b = win.getBounds()
-      const store = loadBoundsStore()
-      store[name] = { x: b.x, y: b.y, width: b.width, height: b.height }
-      saveBoundsStore(store)
-      boundsDebounceTimers.delete(name)
-    }, 500),
-  )
+  boundsDebounceTimers.set(name, setTimeout(() => writeBoundsNow(name, win), 500))
 }
 
 function isOnScreen(bounds: Bounds): boolean {
@@ -486,7 +493,7 @@ function trackOverlayBounds(name: OverlayName, win: BrowserWindow): void {
   win.on('move', () => persistBounds(name, win))
   win.on('resize', () => persistBounds(name, win))
   win.on('close', () => {
-    persistBounds(name, win)
+    writeBoundsNow(name, win) // synchronous: window is about to be destroyed
     // Don't leave a closed overlay armed to re-enter placing mode next open.
     placingOverlays.delete(name)
   })
@@ -527,19 +534,27 @@ let mainStateDebounce: ReturnType<typeof setTimeout> | null = null
 // flag. While maximized we deliberately keep the previously-saved bounds so
 // the restore size survives — getBounds() during maximize returns the
 // maximized rect, which we don't want to treat as the restore size.
+// writeMainWindowStateNow captures and persists the main window's state
+// synchronously — used from 'close', where the debounced version's timer would
+// fire after the window is destroyed and bail (losing a move-then-close).
+function writeMainWindowStateNow(win: BrowserWindow): void {
+  if (mainStateDebounce) {
+    clearTimeout(mainStateDebounce)
+    mainStateDebounce = null
+  }
+  if (win.isDestroyed()) return
+  const state = loadMainWindowState()
+  state.maximized = win.isMaximized()
+  if (!state.maximized) {
+    const b = win.getBounds()
+    state.bounds = { x: b.x, y: b.y, width: b.width, height: b.height }
+  }
+  saveMainWindowState(state)
+}
+
 function persistMainWindowState(win: BrowserWindow): void {
   if (mainStateDebounce) clearTimeout(mainStateDebounce)
-  mainStateDebounce = setTimeout(() => {
-    mainStateDebounce = null
-    if (win.isDestroyed()) return
-    const state = loadMainWindowState()
-    state.maximized = win.isMaximized()
-    if (!state.maximized) {
-      const b = win.getBounds()
-      state.bounds = { x: b.x, y: b.y, width: b.width, height: b.height }
-    }
-    saveMainWindowState(state)
-  }, 500)
+  mainStateDebounce = setTimeout(() => writeMainWindowStateNow(win), 500)
 }
 
 function trackMainWindowBounds(win: BrowserWindow): void {
@@ -547,7 +562,7 @@ function trackMainWindowBounds(win: BrowserWindow): void {
   win.on('resize', () => persistMainWindowState(win))
   win.on('maximize', () => persistMainWindowState(win))
   win.on('unmaximize', () => persistMainWindowState(win))
-  win.on('close', () => persistMainWindowState(win))
+  win.on('close', () => writeMainWindowStateNow(win)) // synchronous before destroy
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -1671,6 +1686,10 @@ ipcMain.handle('window:set-zoom', (event, factor: number) => {
 // loop driven by the global cursor position, which is free to span the whole
 // virtual desktop. The renderer signals drag start/end on the title bar.
 const dragLoops = new WeakMap<BrowserWindow, ReturnType<typeof setInterval>>()
+// Windows that already have a 'closed' cleanup handler, so drag:start doesn't
+// register a fresh once('closed') on every drag — that leaked one listener per
+// drag (MaxListenersExceededWarning after ~10, accumulating closures).
+const dragClosedGuarded = new WeakSet<BrowserWindow>()
 
 function stopDrag(win: BrowserWindow): void {
   const loop = dragLoops.get(win)
@@ -1686,8 +1705,15 @@ ipcMain.handle('window:drag:start', (event) => {
   stopDrag(win) // clear any prior loop (e.g. a missed drag:end)
   const start = win.getBounds()
   const cursorStart = screen.getCursorScreenPoint()
-  // Free the window's own 'closed' handler from a dangling loop.
-  win.once('closed', () => stopDrag(win))
+  // Free any dangling loop if the window closes mid-drag. Registered once per
+  // window (not per drag) so the listener count stays bounded.
+  if (!dragClosedGuarded.has(win)) {
+    dragClosedGuarded.add(win)
+    win.once('closed', () => {
+      stopDrag(win)
+      dragClosedGuarded.delete(win)
+    })
+  }
   const loop = setInterval(() => {
     if (win.isDestroyed()) {
       stopDrag(win)
