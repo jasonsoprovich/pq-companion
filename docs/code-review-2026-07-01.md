@@ -514,7 +514,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   DPS/HPS overlays gate correctly on `in_combat` — reference pattern
   in-repo).
 
-### [ ] 6.4 NPC overlay re-renders full stats/loot tree every second while any spell timer exists
+### [x] 6.4 NPC overlay re-renders full stats/loot tree every second while any spell timer exists
 - **Where:** `pages/NPCOverlayWindowPage.tsx:484` +
   `hooks/useTargetTimers.ts:29-32`
 - **Severity/confidence:** LOW / likely
@@ -546,7 +546,11 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Add a coarse (e.g. 60 s) tick to the memo deps, or compute
   cutoff at render.
 
-### [ ] 6.8 Mount-order race: initial REST snapshot can overwrite a fresher WS broadcast
+### [x] 6.8 Mount-order race: initial REST snapshot can overwrite a fresher WS broadcast
+- **Done:** the 6 initial-REST-vs-WS sites now skip the REST result once a WS
+  message applied (wsAppliedRef). RollTracker mutation sub-case left as-is:
+  the mutation response is authoritative for its own action, so the same ref
+  would wrongly discard it; self-heals next broadcast (LOW/possible).
 - **Where:** `components/overlays/DPSPanel.tsx:445-448` (same in
   HPSPanel, ThreatPanel, CombatLogPage:978, DPSOverlayWindowPage:236,
   ThreatOverlayWindowPage:47); Roll Tracker mutations

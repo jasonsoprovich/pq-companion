@@ -44,17 +44,21 @@ export default function ThreatOverlayWindowPage(): React.ReactElement {
     localStorage.setItem(MODE_KEY, m)
   }
 
+  // Skip an initial REST snapshot that resolves after a WS broadcast already
+  // applied — otherwise the stale fetch clobbers a fresher live update.
+  const wsAppliedRef = useRef(false)
+  const wsRaidAppliedRef = useRef(false)
   useEffect(() => {
-    getThreatState().then(setState).catch(() => {})
+    getThreatState().then((s) => { if (!wsAppliedRef.current) setState(s) }).catch(() => {})
   }, [])
 
   useEffect(() => {
-    if (raidEnabled) getRaidThreatState().then(setRaidState).catch(() => {})
+    if (raidEnabled) getRaidThreatState().then((s) => { if (!wsRaidAppliedRef.current) setRaidState(s) }).catch(() => {})
   }, [raidEnabled])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === WSEvent.OverlayThreat) setState(msg.data as ThreatState)
-    else if (msg.type === WSEvent.OverlayRaidThreat) setRaidState(msg.data as RaidThreatState)
+    if (msg.type === WSEvent.OverlayThreat) { wsAppliedRef.current = true; setState(msg.data as ThreatState) }
+    else if (msg.type === WSEvent.OverlayRaidThreat) { wsRaidAppliedRef.current = true; setRaidState(msg.data as RaidThreatState) }
   }, [])
 
   useWebSocket(handleMessage)

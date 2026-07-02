@@ -975,13 +975,17 @@ export default function CombatLogPage(): React.ReactElement {
   const [combinedView, setCombinedView] = useState(false)
   const { mode: dpsMode, toggle: toggleDPSMode } = useDPSMode()
 
+  // Skip the initial REST snapshot once a WS broadcast has applied, so a
+  // late-resolving fetch can't clobber a fresher live update (mount-order race).
+  const wsAppliedRef = useRef(false)
   useEffect(() => {
-    getCombatState().then(setCombat).catch(() => {})
+    getCombatState().then((s) => { if (!wsAppliedRef.current) setCombat(s) }).catch(() => {})
     getLogStatus().then(setStatus).catch(() => {})
   }, [])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === WSEvent.OverlayCombat) {
+      wsAppliedRef.current = true
       setCombat(msg.data as CombatState)
     }
   }, [])

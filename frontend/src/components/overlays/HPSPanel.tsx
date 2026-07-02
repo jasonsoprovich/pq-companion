@@ -214,8 +214,12 @@ export default function HPSPanel({
   const [showAll, setShowAll] = useState(true)
   const [now, setNow] = useState(() => Date.now())
 
+  // Skip the initial REST snapshot if a WS broadcast already applied — the
+  // stale fetch could otherwise clobber a fresher live update (mount-order
+  // race).
+  const wsAppliedRef = useRef(false)
   useEffect(() => {
-    getCombatState().then(setCombat).catch(() => {})
+    getCombatState().then((s) => { if (!wsAppliedRef.current) setCombat(s) }).catch(() => {})
     getLogStatus().then(setStatus).catch(() => {})
   }, [])
 
@@ -226,7 +230,10 @@ export default function HPSPanel({
   }, [combat?.in_combat])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === WSEvent.OverlayCombat) setCombat(msg.data as CombatState)
+    if (msg.type === WSEvent.OverlayCombat) {
+      wsAppliedRef.current = true
+      setCombat(msg.data as CombatState)
+    }
   }, [])
 
   const wsState = useWebSocket(handleMessage)

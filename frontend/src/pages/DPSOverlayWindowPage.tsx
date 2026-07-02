@@ -233,8 +233,11 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   // or via the manual clear button.
   const [frozenFight, setFrozenFight] = useState<FightState | null>(null)
 
+  // Skip the initial REST snapshot once a WS broadcast has applied, so a
+  // late-resolving fetch can't clobber a fresher live update (mount-order race).
+  const wsAppliedRef = useRef(false)
   useEffect(() => {
-    getCombatState().then(setCombat).catch(() => {})
+    getCombatState().then((s) => { if (!wsAppliedRef.current) setCombat(s) }).catch(() => {})
   }, [])
 
   // Capture the current fight while in combat; once combat ends we keep the
@@ -277,6 +280,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === WSEvent.OverlayCombat) {
+      wsAppliedRef.current = true
       setCombat(msg.data as CombatState)
     }
   }, [])

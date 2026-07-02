@@ -442,8 +442,12 @@ export default function DPSPanel({
     [combat?.recent_fights],
   )
 
+  // Once a WS broadcast has applied, ignore the initial REST snapshot if it
+  // resolves later — otherwise the stale fetch can clobber a fresher live
+  // update (mount-order race).
+  const wsAppliedRef = useRef(false)
   useEffect(() => {
-    getCombatState().then(setCombat).catch(() => {})
+    getCombatState().then((s) => { if (!wsAppliedRef.current) setCombat(s) }).catch(() => {})
     getLogStatus().then(setStatus).catch(() => {})
   }, [])
 
@@ -454,7 +458,10 @@ export default function DPSPanel({
   }, [combat?.in_combat])
 
   const handleMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === WSEvent.OverlayCombat) setCombat(msg.data as CombatState)
+    if (msg.type === WSEvent.OverlayCombat) {
+      wsAppliedRef.current = true
+      setCombat(msg.data as CombatState)
+    }
   }, [])
 
   const wsState = useWebSocket(handleMessage)
