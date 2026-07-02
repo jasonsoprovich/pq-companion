@@ -411,9 +411,16 @@ export default function RollTrackerWindowPage(): React.ReactElement {
 
   useEffect(() => {
     getRolls().then(setState).catch(() => {})
+  }, [])
+
+  // Tick for live countdowns only while a session is active — no point
+  // re-rendering once a second with nothing counting down.
+  const hasActiveSession = state.sessions?.some((s) => s.active) ?? false
+  useEffect(() => {
+    if (!hasActiveSession) return
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
-  }, [])
+  }, [hasActiveSession])
 
   useEffect(() => {
     if (durationDraft === '') setDurationDraft(String(state.auto_stop_seconds))

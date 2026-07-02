@@ -197,9 +197,14 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   // recent callout (see lib/chMetronome.computeAnchorMs). It leaves the existing
   // anchor untouched when no match is found yet, so a missed callout just coasts
   // on the last cycle rather than dropping the countdown.
+  const activeRef = useRef(false)
   const recomputeAnchor = useCallback((timers: ActiveTimer[]) => {
     const anchor = computeAnchorMs(timers, cfgRef.current, chainRef.current, seenRef.current, Date.now())
-    if (anchor != null) anchorRef.current = anchor
+    if (anchor != null) {
+      anchorRef.current = anchor
+      // Force a render so a new anchor re-activates the (possibly idle) tick.
+      setTick((t) => (t + 1) % 1_000_000)
+    }
   }, [])
 
   useEffect(() => {
@@ -243,9 +248,14 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   useWebSocket(handleMessage)
 
   // Drive a smooth 100ms render tick so the big countdown ticks down between
-  // WebSocket pulses and the CAST NOW flash lands on time.
+  // WebSocket pulses and the CAST NOW flash lands on time. Only re-renders
+  // while an anchor is active — when idle, setTick returns the same value so
+  // React bails, avoiding ~14k no-op renders/hour in a hidden-but-open overlay.
+  // A new anchor re-activates via the setTick bump in recomputeAnchor.
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => (t + 1) % 1_000_000), 100)
+    const id = setInterval(() => {
+      if (activeRef.current) setTick((t) => (t + 1) % 1_000_000)
+    }, 100)
     return () => clearInterval(id)
   }, [])
 
@@ -253,6 +263,7 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   const now = Date.now()
   const anchor = anchorRef.current
   const active = anchor != null && now - anchor <= (CH_CAST + ANCHOR_GRACE_SECS) * 1000
+  activeRef.current = active
 
   // Derived timing for the current cycle.
   const elapsed = active ? (now - (anchor as number)) / 1000 : 0 // since watched callout

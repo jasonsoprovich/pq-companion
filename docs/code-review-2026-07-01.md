@@ -504,7 +504,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   array — ~14k no-op renders/hour in a hidden-but-alive window.
 - **Fix:** Return `prev` unchanged when nothing was removed.
 
-### [ ] 6.3 CH Metronome ticks at 10 Hz unconditionally; Roll Tracker at 1 Hz with no sessions
+### [x] 6.3 CH Metronome ticks at 10 Hz unconditionally; Roll Tracker at 1 Hz with no sessions
 - **Where:** `pages/CHMetronomeOverlayWindowPage.tsx:247-250`,
   `components/overlays/CHMetronomePanel.tsx:219-222`;
   `pages/RollTrackerWindowPage.tsx:412-416`,
@@ -521,7 +521,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Move `useTargetTimers` into a child component rendered only for
   the timers view.
 
-### [ ] 6.5 DPS popout frozenFight effect doubles render work per combat message
+### [x] 6.5 DPS popout frozenFight effect doubles render work per combat message
 - **Where:** `pages/DPSOverlayWindowPage.tsx:251-262`
 - **Severity/confidence:** LOW / certain
 - **Fix:** Keep the in-combat capture in a ref; only setState on the
