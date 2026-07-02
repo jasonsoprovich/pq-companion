@@ -202,6 +202,12 @@ type Fight struct {
 	startTime   time.Time
 	lastTouched time.Time
 	hasDamage   bool
+	// timerGen increments each time the inactivity timer is (re)armed. The
+	// callback captures the value and only ends the fight if it still matches —
+	// so fresh activity that re-armed the timer on the SAME fight (same id)
+	// isn't ended by an already-queued stale fire, which would otherwise split
+	// one encounter into two parses.
+	timerGen uint64
 
 	// outgoing tracks attackers (players, pets, AoE-crossfire NPCs) hitting
 	// THIS NPC. Keyed by attacker name.
@@ -878,8 +884,10 @@ func (t *Tracker) armFightTimerLocked(f *Fight) {
 	d := t.fightTimeoutLocked(f)
 	npcName := f.npcName
 	fightID := f.id
+	f.timerGen++
+	gen := f.timerGen
 	f.timer = time.AfterFunc(d, func() {
-		t.fightTimerExpired(npcName, fightID)
+		t.fightTimerExpired(npcName, fightID, gen)
 	})
 }
 
@@ -911,12 +919,14 @@ func (t *Tracker) configuredFightTimeoutLocked() time.Duration {
 	return fightExpiryWithDamage
 }
 
-// fightTimerExpired archives one fight when its inactivity timer fires.
-// fightID guards against archiving a recreated-same-name fight.
-func (t *Tracker) fightTimerExpired(npcName string, fightID int) {
+// fightTimerExpired archives one fight when its inactivity timer fires. fightID
+// guards against archiving a recreated-same-name fight; timerGen additionally
+// guards against a stale fire on the SAME fight after fresh activity re-armed
+// the timer (which would split one encounter into two).
+func (t *Tracker) fightTimerExpired(npcName string, fightID int, gen uint64) {
 	t.mu.Lock()
 	f, ok := t.activeFights[npcName]
-	if !ok || f.id != fightID {
+	if !ok || f.id != fightID || f.timerGen != gen {
 		t.mu.Unlock()
 		return
 	}

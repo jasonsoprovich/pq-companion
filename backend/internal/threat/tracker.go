@@ -63,6 +63,12 @@ type mobState struct {
 	first time.Time
 	last  time.Time
 	timer *time.Timer
+	// expiryGen increments each time the staleness timer is (re)armed. The
+	// timer callback captures the value it was armed with and only ends the mob
+	// if it still matches — so a timer that had already fired and was queued
+	// behind t.mu when fresh activity re-armed the expiry doesn't delete a mob
+	// that's actively being refreshed.
+	expiryGen uint64
 
 	// meleeSum/meleeCount track this character's landed melee swings on the mob,
 	// giving an average swing used to estimate the (otherwise unknown) hate of a
@@ -82,6 +88,10 @@ type mobState struct {
 type modState struct {
 	pct   int
 	timer *time.Timer
+	// gen increments each time the mod is (re)registered; expireMod only drops
+	// the mod if its captured gen still matches, so a recast that refreshed the
+	// buff isn't deleted by a stale, already-queued expiry timer.
+	gen uint64
 }
 
 // pendingCast holds a spell the player has begun casting but whose hate has not
@@ -602,9 +612,11 @@ func (t *Tracker) registerModLocked(spellName string, pct, durationTicks int) {
 		m.timer.Stop()
 		m.timer = nil
 	}
+	m.gen++
 	if durationTicks > 0 {
+		gen := m.gen
 		m.timer = time.AfterFunc(time.Duration(durationTicks)*tickDuration, func() {
-			t.expireMod(spellName)
+			t.expireMod(spellName, gen)
 		})
 	}
 }
@@ -650,14 +662,17 @@ func candidateNames(data logparser.SpellLandedData) []string {
 }
 
 // expireMod drops a hate-mod buff when its duration elapses.
-func (t *Tracker) expireMod(spellName string) {
+func (t *Tracker) expireMod(spellName string, gen uint64) {
 	t.mu.Lock()
-	if m, ok := t.mods[spellName]; ok {
-		if m.timer != nil {
-			m.timer.Stop()
-		}
-		delete(t.mods, spellName)
+	m, ok := t.mods[spellName]
+	if !ok || m.gen != gen {
+		t.mu.Unlock()
+		return // already gone, or refreshed by a recast
 	}
+	if m.timer != nil {
+		m.timer.Stop()
+	}
+	delete(t.mods, spellName)
 	snap := t.snapshotLocked(time.Now())
 	t.mu.Unlock()
 	t.broadcast(snap)
@@ -942,9 +957,33 @@ func (t *Tracker) armExpiryLocked(mob string, m *mobState) {
 	if m.timer != nil {
 		m.timer.Stop()
 	}
+	m.expiryGen++
+	gen := m.expiryGen
 	m.timer = time.AfterFunc(mobExpiry, func() {
-		t.endMob(mob, time.Now())
+		t.endMobExpired(mob, gen)
 	})
+}
+
+// endMobExpired is the staleness-timer callback. It ends the mob only if it
+// hasn't been refreshed since this timer was armed (expiryGen still matches) —
+// otherwise a stale, already-queued fire would drop an actively-engaged mob.
+func (t *Tracker) endMobExpired(mob string, gen uint64) {
+	t.mu.Lock()
+	m, ok := t.mobs[mob]
+	if !ok || m.expiryGen != gen {
+		t.mu.Unlock()
+		return // already gone, or refreshed by newer activity
+	}
+	if m.timer != nil {
+		m.timer.Stop()
+	}
+	delete(t.mobs, mob)
+	if t.lastEngaged == mob {
+		t.lastEngaged = ""
+	}
+	snap := t.snapshotLocked(time.Now())
+	t.mu.Unlock()
+	t.broadcast(snap)
 }
 
 func (t *Tracker) broadcast(state ThreatState) {
