@@ -22,7 +22,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 
 ## Priority 1 — correctness bugs with real user impact
 
-### [ ] 1.1 Config save is non-atomic — crash mid-write bricks the install
+### [x] 1.1 Config save is non-atomic — crash mid-write bricks the install
 - **Where:** `backend/internal/config/config.go:1021-1030` (`save()`)
 - **Severity/confidence:** HIGH / certain
 - **Problem:** `os.WriteFile(m.path, ...)` truncates `config.yaml` in place

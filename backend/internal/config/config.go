@@ -1018,15 +1018,42 @@ func (m *Manager) Update(c Config) error {
 }
 
 // save writes the current config to disk (must be called with m.mu held).
+//
+// The write is atomic: marshal to a temp file in the same directory, then
+// os.Rename over the target. A crash / power loss / disk-full mid-write can
+// then only leave a stray temp file — never a truncated config.yaml that
+// fails to parse on next launch and blocks startup.
 func (m *Manager) save() error {
-	if err := os.MkdirAll(filepath.Dir(m.path), 0o755); err != nil {
+	dir := filepath.Dir(m.path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	data, err := yaml.Marshal(&m.cfg)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(m.path, data, 0o644)
+	tmp, err := os.CreateTemp(dir, ".config-*.yaml.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	// Best-effort cleanup if we bail before the rename succeeds.
+	defer os.Remove(tmpPath)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, m.path)
 }
 
 // Path returns the path to the config file on disk.
