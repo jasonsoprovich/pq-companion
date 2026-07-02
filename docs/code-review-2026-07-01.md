@@ -394,7 +394,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   setWindowOpenHandler to every overlay; add a `will-navigate` guard
   allowing only the app's own origin/file URL.
 
-### [ ] 5.3 Orphaned sidecar on hard crash of Electron main
+### [x] 5.3 Orphaned sidecar on hard crash of Electron main
 - **Where:** `electron/main/index.ts:672-771` (cleanup only on quit
   paths); Go server has no parent-death watchdog
 - **Severity/confidence:** LOW-MEDIUM / likely

@@ -49,6 +49,29 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zealpipe"
 )
 
+// watchParentDeath exits the process when stdin reaches EOF, which happens when
+// the Electron parent (which spawns us with piped stdio) dies. It's armed only
+// when stdin is a pipe: an interactive `go run` has a tty (char device) and
+// /dev/null is also a char device, so neither triggers it — only a supervised
+// sidecar does.
+func watchParentDeath() {
+	fi, err := os.Stdin.Stat()
+	if err != nil || fi.Mode()&os.ModeCharDevice != 0 {
+		return // terminal or /dev/null — not a supervised sidecar
+	}
+	go func() {
+		buf := make([]byte, 256)
+		for {
+			// The parent never writes to our stdin, so this blocks until the
+			// pipe's write end closes (EOF) or errors — i.e. the parent exited.
+			if _, err := os.Stdin.Read(buf); err != nil {
+				slog.Info("parent process closed stdin; exiting sidecar")
+				os.Exit(0)
+			}
+		}
+	}()
+}
+
 func main() {
 	addr := flag.String("addr", "", "HTTP listen address (overrides config server_addr)")
 	dbPath := flag.String("db", defaultDBPath(), "path to quarm.db")
@@ -63,6 +86,12 @@ func main() {
 	} else {
 		slog.Info("file logging enabled", "path", logPath)
 	}
+
+	// Exit if the Electron parent dies. It spawns us with piped stdio, so a
+	// crash / Task Manager kill of the main process closes our stdin's write
+	// end and our read returns EOF. Without this the sidecar lingers, holding
+	// user.db and a lock on the installed exe that wedges the next NSIS update.
+	watchParentDeath()
 
 	cfgMgr, err := config.Load()
 	if err != nil {
