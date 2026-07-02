@@ -32,7 +32,12 @@ function setState(state: WsReadyState): void {
 function connect(): Promise<void> {
   if (
     socket?.readyState === WebSocket.OPEN ||
-    socket?.readyState === WebSocket.CONNECTING
+    socket?.readyState === WebSocket.CONNECTING ||
+    // CLOSING counts as "connection pending": onerror calls ws.close(), which
+    // moves the socket to CLOSING but leaves `socket` set until onclose fires
+    // and schedules the reconnect. Creating a fresh socket during this window
+    // leaks a second live connection into the shared handler set (issue #124).
+    socket?.readyState === WebSocket.CLOSING
   ) {
     return Promise.resolve()
   }
@@ -64,7 +69,11 @@ async function doConnect(): Promise<void> {
   const ws = new WebSocket(wsUrl)
   socket = ws
 
-  ws.onopen = () => setState('open')
+  ws.onopen = () => {
+    // Ignore a stale socket that opened after `socket` was already replaced.
+    if (socket !== ws) return
+    setState('open')
+  }
 
   ws.onmessage = (e) => {
     // The backend may batch multiple JSON objects into one frame, separated by
@@ -82,6 +91,9 @@ async function doConnect(): Promise<void> {
   }
 
   ws.onclose = () => {
+    // A stale socket closing must not null out the current `socket` or
+    // schedule a duplicate reconnect — only the live socket owns that state.
+    if (socket !== ws) return
     socket = null
     setState('closed')
     // Reconnect automatically as long as consumers are mounted.

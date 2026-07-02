@@ -64,7 +64,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   `'exit'` before a port was resolved, show a dialog (reuse the quarm.db
   recovery UX) instead of hanging.
 
-### [ ] 1.4 Singleton WebSocket can duplicate itself — everything fires twice for the rest of the session
+### [x] 1.4 Singleton WebSocket can duplicate itself — everything fires twice for the rest of the session
 - **Where:** `frontend/src/hooks/useWebSocket.ts:84-95` (`onclose`), guard
   at `:33-37`
 - **Severity/confidence:** MEDIUM / certain mechanism, possible occurrence
