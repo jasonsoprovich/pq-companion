@@ -194,7 +194,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** `pages/QuestsPage.tsx:93-108` already implements the correct
   `seqRef` sequence-guard pattern — copy it to every site above.
 
-### [ ] 3.2 ItemSearchModal "Searching…" gets permanently stuck
+### [x] 3.2 ItemSearchModal "Searching…" gets permanently stuck
 - **Where:** `components/ItemSearchModal.tsx:47-64` (loading set
   synchronously, only reset in debounced `.finally`); open-reset effect at
   `:38-44` doesn't reset `loading`

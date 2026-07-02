@@ -40,6 +40,7 @@ export default function ItemSearchModal({
     setQ('')
     setResults([])
     setActiveIdx(0)
+    setLoading(false)
     setTimeout(() => inputRef.current?.focus(), 0)
   }, [open])
 
@@ -48,6 +49,7 @@ export default function ItemSearchModal({
     if (!open) return
     if (q.trim().length < 2) {
       setResults([])
+      setLoading(false)
       return
     }
     setLoading(true)
