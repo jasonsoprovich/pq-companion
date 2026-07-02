@@ -248,16 +248,22 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   // 18 batches the two setCombat calls into a single render, and the
   // in_combat=true intermediate state never reaches this effect — without
   // this fallback the panel would clear the moment the mob died.
+  const latestFightRef = useRef<FightState | null>(null)
   useEffect(() => {
     if (!combat) return
     if (combat.in_combat && combat.current_fight) {
-      setFrozenFight(combat.current_fight)
+      // The render reads current_fight directly while in combat, so frozenFight
+      // isn't displayed now — just stash it in a ref for the freeze-on-end,
+      // avoiding a setState (and re-render) per combat message.
+      latestFightRef.current = combat.current_fight
       return
     }
     const last = combat.recent_fights?.[0]
     if (last) {
       const { end_time: _endTime, ...state } = last
       setFrozenFight(state)
+    } else if (latestFightRef.current) {
+      setFrozenFight(latestFightRef.current)
     }
   }, [combat])
 
