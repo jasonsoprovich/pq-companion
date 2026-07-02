@@ -479,9 +479,10 @@ function NPCContent({
   const onItemClick = linksEnabled ? (id: number) => openEntityInMain('item', id) : undefined
   const onSpellClick = linksEnabled ? (id: number) => openEntityInMain('spell', id) : undefined
 
-  // Timers tab works for any target (player or NPC). Player lookup only runs
-  // when there's no DB record — that's the case where the target is a player.
-  const targetTimers = useTargetTimers(state.target_name)
+  // Player lookup only runs when there's no DB record — that's the case where
+  // the target is a player. (Timer subscription lives in TargetTimersView,
+  // mounted only for the Timers tab, so its 1Hz updates don't re-render the
+  // whole stats/loot tree.)
   const { player, loading: playerLoading } = useTargetPlayer(state.target_name, !npc)
 
   return (
@@ -559,7 +560,7 @@ function NPCContent({
       </div>
 
       {view === 'timers' ? (
-        <TargetTimerList timers={targetTimers} />
+        <TargetTimersView targetName={state.target_name} />
       ) : npc ? (
         isAmbiguous ? (
           variants.map((v) => (
@@ -597,6 +598,15 @@ function NPCContent({
       )}
     </div>
   )
+}
+
+// TargetTimersView isolates the ~1Hz spell-timer subscription (useTargetTimers)
+// so it only mounts when the Timers tab is active. Previously the hook lived at
+// the top of the body, so any active timer re-rendered the whole stats/loot
+// tree every second even on the other tabs.
+function TargetTimersView({ targetName }: { targetName: string | undefined }): React.ReactElement {
+  const timers = useTargetTimers(targetName)
+  return <TargetTimerList timers={timers} />
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────────
