@@ -122,10 +122,19 @@ func (h *spellsHandler) statDeltas(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "too many ids")
 		return
 	}
-	out := make(map[string]spellStatDeltaEntry, len(body.IDs))
+	// One batched query instead of up to 200 GetSpell round-trips. A real DB
+	// error now surfaces as 500 rather than being swallowed per-id (which
+	// produced a 200 with silently wrong buff totals). Unresolved ids are still
+	// simply omitted from the response.
+	spells, err := h.db.GetSpells(body.IDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load spells")
+		return
+	}
+	out := make(map[string]spellStatDeltaEntry, len(spells))
 	for _, id := range body.IDs {
-		sp, err := h.db.GetSpell(id)
-		if err != nil || sp == nil {
+		sp := spells[id]
+		if sp == nil {
 			continue
 		}
 		icon := sp.NewIcon

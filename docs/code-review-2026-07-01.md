@@ -339,7 +339,12 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   unsynchronized — trips `-race` immediately.
 - **Fix:** Enrich into a copy.
 
-### [ ] 4.9 N+1 query storms: charm pets + spell statDeltas
+### [x] 4.9 N+1 query storms: charm pets + spell statDeltas
+- **Done:** statDeltas — added db.GetSpells (IN batch), propagate real DB
+  errors as 500 (was the actual bug: swallowed errors → wrong buff totals).
+- **Deferred:** charm.go SummarizeNPCCaster-per-candidate — dev-gated
+  (charm_pet_finder_enabled) and latency-only, no correctness bug. Batching
+  it is a larger refactor; left for a later pass.
 - **Where:** `api/charm.go:251` (SummarizeNPCCaster per candidate →
   hundreds of queries in caster-heavy zones; dev-gated, latency only);
   `api/spells.go:126-129` (up to 200 individual `GetSpell` calls where one

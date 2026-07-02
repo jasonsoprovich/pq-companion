@@ -1582,6 +1582,37 @@ func (db *DB) GetSpell(id int) (*Spell, error) {
 	return sp, nil
 }
 
+// GetSpells fetches many spells in one query, keyed by id. Ids with no
+// matching spell are simply absent from the map. Batches what would otherwise
+// be N GetSpell round-trips (e.g. the stat-delta endpoint's up-to-200 buff ids).
+func (db *DB) GetSpells(ids []int) (map[int]*Spell, error) {
+	if len(ids) == 0 {
+		return map[int]*Spell{}, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	q := fmt.Sprintf("SELECT %s FROM spells_new s WHERE s.id IN (%s)", spellColumns, placeholders)
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get spells: %w", err)
+	}
+	defer rows.Close()
+	db.ensureVariants()
+	out := make(map[int]*Spell, len(ids))
+	for rows.Next() {
+		sp, err := scanSpell(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan spell: %w", err)
+		}
+		sp.VariantIDs, sp.CanonicalID = db.spellVariants.variantFields(sp.ID)
+		out[sp.ID] = sp
+	}
+	return out, rows.Err()
+}
+
 // GetSpellByExactName returns the first spell whose name matches exactly
 // (case-insensitive). Returns nil, nil when no match is found.
 func (db *DB) GetSpellByExactName(name string) (*Spell, error) {
