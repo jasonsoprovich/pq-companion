@@ -634,7 +634,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   defeating the warm 64 MiB page cache the pool exists for.
 - **Fix:** One line: `SetMaxIdleConns(4)`.
 
-### [ ] 6.19 Redundant wide queries in upgrades overview
+### [x] 6.19 Redundant wide queries in upgrades overview
 - **Where:** `api/characters_upgrades.go:735-754`
   (`equippedItemsForSlot` re-fetches each worn item via `GetItem` — each
   nesting a `GetSpell` — though `resolveWornItems` exists and the `worn`

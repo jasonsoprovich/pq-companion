@@ -175,7 +175,7 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	wornLore := h.equippedLoreSet(worn)
 	wc := h.newWornCache()
 	hasteByLoc := h.hasteByLocation(byLoc, worn, wc)
-	current, baselineID, results, considered, err := h.scoreSlot(char, ctx, weights, slot, byLoc, showAll, excludePoP, excludeCrafted, excludeNoDrop, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc)
+	current, baselineID, results, considered, err := h.scoreSlot(char, ctx, weights, slot, byLoc, worn, showAll, excludePoP, excludeCrafted, excludeNoDrop, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load upgrade candidates")
 		return
@@ -288,7 +288,7 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 				slotCands = append(slotCands, c)
 			}
 		}
-		current, _, results, considered := h.scoreSlotCands(char, ctx, weights, s, byLoc, false, 1, prioritySet, equippedFocus, wornLore, wc, hasteByLoc, slotCands)
+		current, _, results, considered := h.scoreSlotCands(char, ctx, weights, s, byLoc, worn, false, 1, prioritySet, equippedFocus, wornLore, wc, hasteByLoc, slotCands)
 		var best *upgradeResult
 		if len(results) > 0 {
 			best = &results[0]
@@ -338,7 +338,7 @@ func charClassBit(char character.Character) int {
 // query and calls scoreSlotCands directly.
 func (h *charactersHandler) scoreSlot(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
-	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll, excludePoP, excludeCrafted, excludeNoDrop bool, limit int,
+	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, worn map[int]*db.Item, showAll, excludePoP, excludeCrafted, excludeNoDrop bool, limit int,
 	prioritySet, equippedFocus, wornLore map[int]bool, wc *wornCache, hasteByLoc map[string]int,
 ) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int, err error) {
 	cands, err := h.db.UpgradeCandidates(db.CandidateFilter{
@@ -355,7 +355,7 @@ func (h *charactersHandler) scoreSlot(
 		// as "no upgrades" (indistinguishable from best-in-slot).
 		return nil, 0, nil, 0, err
 	}
-	current, baselineID, results, considered = h.scoreSlotCands(char, ctx, weights, slot, byLoc, showAll, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc, cands)
+	current, baselineID, results, considered = h.scoreSlotCands(char, ctx, weights, slot, byLoc, worn, showAll, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc, cands)
 	return current, baselineID, results, considered, nil
 }
 
@@ -366,7 +366,7 @@ func (h *charactersHandler) scoreSlot(
 // ranked results (truncated to limit), and how many candidates were considered.
 func (h *charactersHandler) scoreSlotCands(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
-	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, showAll bool, limit int,
+	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, worn map[int]*db.Item, showAll bool, limit int,
 	prioritySet, equippedFocus, wornLore map[int]bool, wc *wornCache, hasteByLoc map[string]int,
 	cands []db.UpgradeCandidate,
 ) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int) {
@@ -389,7 +389,7 @@ func (h *charactersHandler) scoreSlotCands(
 	// current is just the one in THIS physical slot (slot.Index), which is what
 	// we display and rank against. An empty second slot → empty baseline → the
 	// candidate ranks against nothing, which is correct for a bare slot.
-	allWorn := h.equippedItemsForSlot(byLoc, slot, wc)
+	allWorn := h.equippedItemsForSlot(byLoc, slot, wc, worn)
 	current = make([]upgradeCurrentItem, 0, 1)
 	if slot.Index < len(allWorn) {
 		current = append(current, allWorn[slot.Index])
@@ -405,13 +405,13 @@ func (h *charactersHandler) scoreSlotCands(
 
 	// Exclude every item worn at this Location (both paired slots), so the other
 	// earring/ring you already wear is never suggested as an upgrade.
-	worn := make(map[int]bool, len(allWorn))
+	wornHere := make(map[int]bool, len(allWorn))
 	for _, ci := range allWorn {
-		worn[ci.ID] = true
+		wornHere[ci.ID] = true
 	}
 	results = make([]upgradeResult, 0, len(cands))
 	for _, c := range cands {
-		if worn[c.ID] {
+		if wornHere[c.ID] {
 			continue // don't suggest what's already equipped in this slot
 		}
 		if wornLore[c.ID] {
@@ -741,14 +741,16 @@ func (h *charactersHandler) loadEquipped(eqPath, charName string) (byLoc map[str
 }
 
 // equippedItemsForSlot resolves the worn items in a logical slot from a
-// pre-parsed equipped map.
-func (h *charactersHandler) equippedItemsForSlot(byLoc map[string][]zeal.InventoryEntry, slot upgradeSlot, wc *wornCache) []upgradeCurrentItem {
+// pre-parsed equipped map, looking each up in the already-resolved worn map
+// (resolveWornItems) rather than re-issuing a wide GetItem (each of which nests
+// a GetSpell) per worn piece — ~25-40 redundant queries per overview request.
+func (h *charactersHandler) equippedItemsForSlot(byLoc map[string][]zeal.InventoryEntry, slot upgradeSlot, wc *wornCache, worn map[int]*db.Item) []upgradeCurrentItem {
 	// Always a non-nil slice so it marshals to [] not null — the frontend
 	// reads .length/.map on it directly.
 	items := make([]upgradeCurrentItem, 0)
 	for _, entry := range byLoc[slot.Location] {
-		item, err := h.db.GetItem(entry.ID)
-		if err != nil || item == nil {
+		item := worn[entry.ID]
+		if item == nil {
 			continue
 		}
 		items = append(items, upgradeCurrentItem{
