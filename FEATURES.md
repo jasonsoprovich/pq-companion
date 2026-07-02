@@ -1383,6 +1383,46 @@ Parse and edit Zeal `_spellsets.ini` exports.
   Flowing Thought counts flavor-named worn FT effects; Log Feed browse search is
   fast and cancellable on large logs
 
+## Unreleased — Stability, Performance & Hardening Pass
+
+A full-app code-review pass focused on correctness, raid-time performance, and
+hardening — no new features, but a broad sweep of reliability fixes.
+
+- **Reliability** — settings are now saved atomically, so a crash or power loss
+  mid-save can no longer corrupt `config.yaml` and leave the app unable to
+  start; concurrent settings writes no longer revert or silently wipe each
+  other's values; if the background service fails to launch (usually antivirus
+  quarantine), you now get a clear recovery dialog explaining how to fix it
+  instead of a blank window; a failed backup *import* now restores your original
+  data instead of appearing to lose it; and deleting a character now removes all
+  of its associated data (AAs, tasks, wishlist, etc.) instead of leaving orphans
+- **Fewer duplicate alerts** — fixed a WebSocket reconnect edge case that could
+  duplicate the live connection, which doubled meter/log updates and could fire
+  trigger alerts twice (a likely contributor to "audio alerts multiply" reports)
+- **Raid-time performance** — the DPS/HPS meter now coalesces its live updates to
+  once a second instead of re-sending the whole state on every hit during AoE
+  spam; unclassified log lines are matched far faster; per-line database writes
+  no longer stall behind slow searches; and the CH metronome, roll tracker, NPC
+  overlay, and DPS pop-out no longer re-render when idle
+- **Database explorer accuracy** — a zone's NPC list no longer includes unrelated
+  mobs from other zones; item and spell "found in" links now point at the right
+  zone (e.g. Sea King → Erudin, not Erud's Crossing); and name lookups are
+  index-backed (takes effect with the next game-database update)
+- **UI fixes** — search boxes across Items, Spells, NPCs, Zones, Recipes,
+  Players, Loot, Chat, and global search no longer flash stale results when a
+  slower earlier request lands late; Combat History pagination is race-free; the
+  "Searching…" state can no longer get stuck; Combat Log rows keep the right
+  expanded state when two mobs are pulled in the same second; and the
+  database-explorer Back/Forward buttons track correctly
+- **Security hardening** — the internal audio file handler is confined to audio
+  files only, all app windows now run sandboxed with locked-down navigation and
+  external-link handling, the Zeal file writers reject path-traversal in
+  character names, and the background service now shuts down if the app is
+  force-killed instead of lingering
+- **Fewer misleading errors** — API endpoints now distinguish "not found" from a
+  real database error (so a locked database no longer reads as "no upgrades" or
+  "no AAs"), and error messages containing Windows paths are always valid JSON
+
 ## Phase 11 — Project Website
 _Planned_
 

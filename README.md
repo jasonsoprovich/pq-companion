@@ -2,7 +2,7 @@
 
 A desktop companion app for [Project Quarm](https://www.projectquarm.com/) — the EverQuest classic emulated server. It sits alongside the game and gives you the tools you wish were built into the client.
 
-> **Status:** Feature-complete and in active maintenance. See [FEATURES.md](FEATURES.md) for the full list of what's implemented.
+> **Status:** Feature-complete and in active maintenance — recently through a full stability, performance, and security-hardening pass (atomic settings saves, coalesced raid-time meter updates, sandboxed windows, and a batch of correctness fixes). See [FEATURES.md](FEATURES.md) for the full list of what's implemented and the latest changes.
 
 **🌐 Website: [pq-companion.com](https://pq-companion.com)** — the best place to start: feature tour, screenshots, setup walkthrough, quick-start guide, and the full changelog.
 
