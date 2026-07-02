@@ -33,7 +33,13 @@ type Consumer struct {
 
 	onPVP        func(name, zone, source string)
 	lastPVPAlert map[string]time.Time // lowercased name → wall-clock time of last alert
+	// pendingPVP queues alerts raised while c.mu is held; firePendingPVP fires
+	// them after the lock is released so the user callback never runs under the
+	// lock (a blocking callback would otherwise stall every consumer op).
+	pendingPVP []pvpSighting
 }
+
+type pvpSighting struct{ name, zone, source string }
 
 // NewConsumer constructs a consumer wired to the given store.
 func NewConsumer(store *Store) *Consumer {
@@ -65,6 +71,7 @@ func (c *Consumer) Handle(ev logparser.LogEvent) {
 		c.flushLocked(c.zone)
 		c.zone = zd.ZoneName
 		c.mu.Unlock()
+		c.firePendingPVP()
 
 	case logparser.EventWhoEntry:
 		wd, ok := ev.Data.(logparser.WhoEntryData)
@@ -93,6 +100,7 @@ func (c *Consumer) Handle(ev logparser.LogEvent) {
 		c.zone = ws.Zone
 		c.flushLocked(ws.Zone)
 		c.mu.Unlock()
+		c.firePendingPVP()
 
 	case logparser.EventGuildStat:
 		gs, ok := ev.Data.(logparser.GuildStatData)
@@ -128,18 +136,21 @@ func (c *Consumer) HandleLine(ts time.Time, msg string) {
 	}
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.onPVP == nil {
+		c.mu.Unlock()
 		return
 	}
 	flagged, err := c.store.PVPNames()
 	if err != nil {
+		c.mu.Unlock()
 		slog.Warn("players: pvp flag lookup failed", "err", err)
 		return
 	}
 	if flagged[strings.ToLower(name)] {
 		c.alertPVPLocked(name, c.zone, "group")
 	}
+	c.mu.Unlock()
+	c.firePendingPVP()
 }
 
 // RecordTell records a direct tell exchanged with another player (either
@@ -191,5 +202,27 @@ func (c *Consumer) alertPVPLocked(name, zone, source string) {
 		return
 	}
 	c.lastPVPAlert[key] = now
-	c.onPVP(name, zone, source)
+	// Queue; the caller drains via firePendingPVP after releasing c.mu.
+	c.pendingPVP = append(c.pendingPVP, pvpSighting{name, zone, source})
+}
+
+// firePendingPVP invokes the PVP callback for every alert queued by
+// alertPVPLocked, outside c.mu. Call it after releasing the lock; a no-op when
+// nothing is queued.
+func (c *Consumer) firePendingPVP() {
+	c.mu.Lock()
+	if len(c.pendingPVP) == 0 {
+		c.mu.Unlock()
+		return
+	}
+	fn := c.onPVP
+	alerts := c.pendingPVP
+	c.pendingPVP = nil
+	c.mu.Unlock()
+	if fn == nil {
+		return
+	}
+	for _, a := range alerts {
+		fn(a.name, a.zone, a.source)
+	}
 }
