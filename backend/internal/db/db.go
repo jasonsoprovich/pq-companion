@@ -81,5 +81,9 @@ func Open(path string) (*DB, error) {
 	// serializing through one connection. Each connection carries its own page
 	// cache, so this is capped low to bound memory.
 	db.SetMaxOpenConns(4)
+	// Keep all 4 warm. Default idle is 2, so under load conns 3-4 would close
+	// and reopen cold — each reopen throwing away the 64 MiB page cache this
+	// pool exists to keep warm.
+	db.SetMaxIdleConns(4)
 	return &DB{DB: db}, nil
 }

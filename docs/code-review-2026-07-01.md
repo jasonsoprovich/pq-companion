@@ -595,7 +595,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   (silent zero results); `_` is an unintended single-char wildcard.
 - **Fix:** Reuse the correct `escapeLike` from `db/bandolier.go:104-107`.
 
-### [ ] 6.18 SetMaxOpenConns(4) without SetMaxIdleConns(4) on quarm.db pool
+### [x] 6.18 SetMaxOpenConns(4) without SetMaxIdleConns(4) on quarm.db pool
 - **Where:** `db/db.go:83`
 - **Severity/confidence:** LOW / possible
 - **Problem:** Default idle is 2 — under load conns 3-4 close/reopen cold,
