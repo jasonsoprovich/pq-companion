@@ -373,7 +373,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 
 ## Priority 5 — Electron hardening & lifecycle
 
-### [ ] 5.1 pq-audio:// protocol handler = unrestricted arbitrary-file-read primitive
+### [x] 5.1 pq-audio:// protocol handler = unrestricted arbitrary-file-read primitive
 - **Where:** `electron/main/index.ts:2543-2569` (handler), `:50-61`
   (registered standard + secure + supportFetchAPI + bypassCSP)
 - **Severity/confidence:** MEDIUM / likely (requires renderer compromise)
@@ -383,7 +383,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** At minimum gate on `audioMimeType()` returning a known audio
   type (reject octet-stream); better, confine to configured sound dirs.
 
-### [ ] 5.2 Navigation/window.open hardening gaps + unvalidated shell.openExternal
+### [x] 5.2 Navigation/window.open hardening gaps + unvalidated shell.openExternal
 - **Where:** `electron/main/index.ts:880-883` (main window
   setWindowOpenHandler → `shell.openExternal(url)` with no scheme check);
   11 popout overlays + trigger overlay have **no** setWindowOpenHandler
@@ -432,7 +432,10 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** In the 'close' handler, capture bounds synchronously and write
   immediately.
 
-### [ ] 5.7 sandbox: false on all 13 windows for no reason
+### [x] 5.7 sandbox: false on all 13 windows for no reason
+- **Needs Windows smoke:** preload only uses contextBridge/ipcRenderer +
+  process.versions (all sandbox-safe), verified. Removed sandbox:false from
+  all 13 windows so it defaults on.
 - **Where:** `electron/main/index.ts:849` + every `create*Overlay`
 - **Severity/confidence:** LOW / certain
 - **Problem:** Preload uses only contextBridge/ipcRenderer (works fine
@@ -441,7 +444,13 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Remove the line (sandbox is default-on since Electron 20);
   needs a Windows smoke test.
 
-### [ ] 5.8 Wildcard CORS + no auth on local API; macros PUT allows path traversal
+### [x] 5.8 Wildcard CORS + no auth on local API; macros PUT allows path traversal
+- **Done:** path traversal — isSafeCharacterName guard on all zeal write
+  PUTs (macros/bandolier/spellsets) + bandolierSlotItems (rejects
+  separators/`..`/control chars before any filepath.Join).
+- **Deferred:** per-launch bearer token + wildcard CORS. Larger cross-cutting
+  change (Go middleware + Electron env plumbing + frontend api client);
+  accepted-risk class per the review. Left for a dedicated pass.
 - **Where:** `api/router.go:48-59`; `api/zeal.go` macros PUT (`character`
   field reaches `filepath.Join(eqPath, character+"_pq.proj.ini")`
   unsanitized — `..\` escapes the EQ dir)

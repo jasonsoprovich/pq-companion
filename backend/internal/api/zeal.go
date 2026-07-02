@@ -36,6 +36,23 @@ type zealHandler struct {
 // (entries are returned without the enrichment) — these fields are decorative /
 // supplementary and shouldn't fail the inventory request. MaxCharges is set only
 // for rechargeable click items, which flags them for the Rechargeable Items view.
+// isSafeCharacterName rejects a character name that could escape the EQ
+// directory when composed into a file path (e.g. `..\..\foo`). Every zeal file
+// path is filepath.Join(eqPath, "<character>_something") with the name coming
+// from the request, so an unsanitized name is a path-traversal write/read.
+// Real EQ names are plain letters, so this never rejects a legitimate one.
+func isSafeCharacterName(name string) bool {
+	if name == "" || strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
+		return false
+	}
+	for _, r := range name {
+		if r < 0x20 { // control chars, incl. NUL
+			return false
+		}
+	}
+	return true
+}
+
 func (h *zealHandler) enrichEntries(entries []zeal.InventoryEntry) {
 	if len(entries) == 0 || h.db == nil {
 		return
@@ -225,6 +242,10 @@ func (h *zealHandler) updateSpellsets(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "character is required")
 		return
 	}
+	if !isSafeCharacterName(body.Character) {
+		writeError(w, http.StatusBadRequest, "invalid character name")
+		return
+	}
 	cfg := h.cfgMgr.Get()
 	if cfg.EQPath == "" {
 		writeError(w, http.StatusBadRequest, "EQ path not configured")
@@ -362,6 +383,10 @@ func (h *zealHandler) updateBandolier(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "character is required")
 		return
 	}
+	if !isSafeCharacterName(body.Character) {
+		writeError(w, http.StatusBadRequest, "invalid character name")
+		return
+	}
 	cfg := h.cfgMgr.Get()
 	if cfg.EQPath == "" {
 		writeError(w, http.StatusBadRequest, "EQ path not configured")
@@ -457,6 +482,10 @@ func (h *zealHandler) bandolierSlotItems(w http.ResponseWriter, r *http.Request)
 	name := q.Get("character")
 	if name == "" {
 		writeError(w, http.StatusBadRequest, "character is required")
+		return
+	}
+	if !isSafeCharacterName(name) {
+		writeError(w, http.StatusBadRequest, "invalid character name")
 		return
 	}
 	slot, err := strconv.Atoi(q.Get("slot"))
@@ -639,6 +668,10 @@ func (h *zealHandler) updateMacros(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Character == "" {
 		writeError(w, http.StatusBadRequest, "character is required")
+		return
+	}
+	if !isSafeCharacterName(body.Character) {
+		writeError(w, http.StatusBadRequest, "invalid character name")
 		return
 	}
 	cfg := h.cfgMgr.Get()
