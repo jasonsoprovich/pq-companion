@@ -1,6 +1,7 @@
 package db
 
 import (
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -50,11 +51,18 @@ func (db *DB) buildQuestSearchIndex() {
 			for rows.Next() {
 				var id int
 				var name string
-				if err := rows.Scan(&id, &name); err == nil {
-					names[id] = name
+				if err := rows.Scan(&id, &name); err != nil {
+					slog.Warn("quest search index: scan item row", "err", err)
+					continue
 				}
+				names[id] = name
+			}
+			if err := rows.Err(); err != nil {
+				slog.Warn("quest search index: iterate item rows", "err", err)
 			}
 			rows.Close()
+		} else {
+			slog.Warn("quest search index: query items", "err", err)
 		}
 		zoneLong := map[string]string{}
 		resolveZone := func(short string) string {

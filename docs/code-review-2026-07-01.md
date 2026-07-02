@@ -609,7 +609,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** On rename failure, restore the preimport file (or surface a
   startup error the frontend can display).
 
-### [ ] 6.16 Silent truncation in lazy index builders
+### [x] 6.16 Silent truncation in lazy index builders
 - **Where:** `db/variants.go:184-199`, `db/pop_index.go:96-103, 163-180`,
   `db/quest_search.go:49-58`
 - **Severity/confidence:** LOW / likely

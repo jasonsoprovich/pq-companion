@@ -96,9 +96,18 @@ func (db *DB) buildPoPGated() (map[int]bool, error) {
 	if rows, err := db.Query(`SELECT id FROM items WHERE min_expansion >= ?`, popExpansion); err == nil {
 		for rows.Next() {
 			var id int
-			if err := rows.Scan(&id); err == nil {
-				gated[id] = true
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, err
 			}
+			gated[id] = true
+		}
+		// This function also backs the cmd/pop-index generator, so a
+		// mid-iteration error must fail loudly rather than bake an incomplete
+		// pop_gated.json into a release.
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
 		}
 		rows.Close()
 	} else {
@@ -175,6 +184,10 @@ func (db *DB) buildPoPGated() (map[int]bool, error) {
 			if itemID > 0 && zone != "" {
 				classify(itemID, zone)
 			}
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
 		}
 		rows.Close()
 	}

@@ -191,9 +191,14 @@ func (db *DB) buildItemVariants() (*variantIndex, error) {
 			}
 			for rows.Next() {
 				var id, n int
-				if scanErr := rows.Scan(&id, &n); scanErr == nil {
-					score[id] += n
+				if scanErr := rows.Scan(&id, &n); scanErr != nil {
+					slog.Warn("variant index: scan reference row", "table", src.table, "err", scanErr)
+					continue
 				}
+				score[id] += n
+			}
+			if rerr := rows.Err(); rerr != nil {
+				slog.Warn("variant index: iterate reference rows", "table", src.table, "err", rerr)
 			}
 			rows.Close()
 		}
