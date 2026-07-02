@@ -165,6 +165,14 @@ func (t *Tracker) HandleLine(ts time.Time, msg string) {
 	if matcher == nil {
 		return
 	}
+	// Cheap pre-filter before the ~16-regex chat parse (which the chat consumer
+	// already ran on this same line): a loot call must mention a 3-4 digit roll
+	// number, so a line without one can't be one. Reuses reLootNumber on the
+	// raw line — a necessary condition, since parsing only strips the speaker
+	// prefix and never introduces a number.
+	if !reLootNumber.MatchString(msg) {
+		return
+	}
 	// Only genuine player chat — never combat spam, where "for 333 points
 	// of damage" would masquerade as a roll call.
 	parsed, ok := chat.ParseChat(msg)

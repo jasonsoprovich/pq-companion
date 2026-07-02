@@ -170,7 +170,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Auto-flip `Active=false` once a session passes `staleAfter`
   (it can already never accept another roll).
 
-### [ ] 2.5 Roll tracker re-runs the chat regex battery on every raw line
+### [x] 2.5 Roll tracker re-runs the chat regex battery on every raw line
 - **Where:** `rolltracker/tracker.go:161-174` (`SetItemMatcher`, wired
   unconditionally at main.go:943)
 - **Severity/confidence:** LOW / certain duplication, possible measurable
