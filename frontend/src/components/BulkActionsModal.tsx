@@ -504,8 +504,11 @@ export default function BulkActionsModal({
           <div className="space-y-1">
             {templates.length === 0 ? (
               <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                No templates saved yet. Open any trigger, set up its actions,
-                and use the Templates button to save them first.
+                No templates saved yet. To make one: open any trigger, add the
+                actions you want (overlay text, sound, TTS…) in its Actions
+                section, click the <strong>Templates</strong> button there, type
+                a name, and Save. That same Templates menu is where you rename,
+                update, or delete templates.
               </p>
             ) : (
               <select
@@ -521,6 +524,12 @@ export default function BulkActionsModal({
                   </option>
                 ))}
               </select>
+            )}
+            {templates.length > 0 && (
+              <p className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+                Create, rename, update, or delete templates from the{' '}
+                <strong>Templates</strong> button in a trigger's Actions section.
+              </p>
             )}
           </div>
         )}
