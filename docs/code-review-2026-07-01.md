@@ -558,7 +558,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
   preserve-mode merges silently stop following future pack changes.
 - **Fix:** Wrap update + baseline upsert in one transaction.
 
-### [ ] 6.14 Failed backup creation leaves orphaned partial zip
+### [x] 6.14 Failed backup creation leaves orphaned partial zip
 - **Where:** `backup/manager.go:122-126`
 - **Severity/confidence:** LOW / certain
 - **Problem:** No DB row → invisible to List/Prune/Delete, yet

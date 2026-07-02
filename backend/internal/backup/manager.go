@@ -122,6 +122,10 @@ func (m *Manager) create(name, notes, triggerReason string) (*Backup, error) {
 	zipPath := filepath.Join(backupDir, id+".zip")
 	sizeBytes, err := createZip(zipPath, files)
 	if err != nil {
+		// A failed createZip can leave a partial zip with no DB row —
+		// invisible to List/Prune/Delete yet still globbed by the app-backup
+		// exporter. Remove it, mirroring the store.Insert failure path below.
+		_ = os.Remove(zipPath)
 		return nil, fmt.Errorf("create zip: %w", err)
 	}
 
