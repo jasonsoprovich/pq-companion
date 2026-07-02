@@ -3,6 +3,7 @@ package logparser
 import (
 	"regexp"
 	"sort"
+	"strings"
 	"sync/atomic"
 )
 
@@ -146,6 +147,13 @@ func (c *CastIndex) Match(line string) *CastMatch {
 		return buildMatch(MatchSelf, "", cands)
 	}
 	for _, oe := range c.otherByPattern {
+		// Each pattern is `^(name)<suffix>$`, so the line must end with the
+		// literal suffix for the regex to have any chance of matching. This
+		// cheap byte compare skips the ~1,600 regex runs that would otherwise
+		// fire per unclassified line (every emote, NPC say, system message).
+		if !strings.HasSuffix(line, oe.suffix) {
+			continue
+		}
 		if sub := oe.re.FindStringSubmatch(line); sub != nil {
 			return buildMatch(MatchOther, sub[1], oe.candidates)
 		}

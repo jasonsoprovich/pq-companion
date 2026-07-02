@@ -123,7 +123,7 @@ paths, port selection, auto-update wiring, electron-builder file globs.
 - **Fix:** Broadcast `RecentFights`/death records only on archive/death
   events; throttle per-hit combat broadcasts to the existing 1 Hz ticker.
 
-### [ ] 2.2 Cast-index fallback runs ~1,600 regexes linearly per unclassified line
+### [x] 2.2 Cast-index fallback runs ~1,600 regexes linearly per unclassified line
 - **Where:** `backend/internal/logparser/castindex.go:141-154`, invoked
   from `classifyMessage` (parser.go:813-820); with raw-feed enabled,
   `dispatchLine` (main.go:990-991) classifies unmatched lines a second time
