@@ -318,6 +318,9 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
               justifyContent: 'center',
               gap: 6,
               padding: 16,
+              // Idle placeholder — fade with the chrome, it isn't live content.
+              opacity: chrome ? 1 : 0,
+              transition: 'opacity 0.4s ease',
             }}
           >
             <Skull size={22} style={{ opacity: 0.15, color: '#ef4444' }} />

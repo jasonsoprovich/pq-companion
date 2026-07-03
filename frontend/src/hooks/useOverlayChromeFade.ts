@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getConfig } from '../services/api'
 import { useOverlayPositionMode } from './useOverlayPositionMode'
 
@@ -20,22 +20,50 @@ const DEFAULT_FADE_DELAY_MS = 2500
  * when false, with a CSS transition between the two. Always returns true
  * while the preference is off.
  *
- * Hover is tracked with mouseenter/mouseleave on the document element — the
- * overlay fills its frameless window, so entering the page IS entering the
- * overlay. This sidesteps the rootInteractionProps/headerInteractionProps
- * split in useOverlayLock (which wires hover into only one region depending
- * on the locked mode), and it works while locked too: setIgnoreMouseEvents is
- * applied with forward:true, so enter/leave keep flowing during passthrough.
+ * Activity is tracked by mouse *movement* over the window rather than paired
+ * mouseenter/mouseleave. The overlay fills its frameless window, so any move
+ * within the page is a move over the overlay; each move shows the chrome and
+ * restarts a fade countdown, and the chrome fades once movement stops for the
+ * delay. This works while locked too — setIgnoreMouseEvents is applied with
+ * forward:true, so move events keep flowing during passthrough.
+ *
+ * Why movement and not mouseenter/mouseleave: in an Electron overlay the
+ * leave event is frequently dropped. Toggling passthrough
+ * (setIgnoreMouseEvents) under a moving cursor confuses Chromium's boundary
+ * tracking, so after a few rapid hovers a mouseleave never arrives, the old
+ * `hovered` flag stuck true, and the chrome stayed visible forever (never
+ * responding to hover again). Absence of movement can't be "dropped", so the
+ * countdown always eventually fires and the fade self-heals.
  */
 export function useOverlayChromeFade(): boolean {
   const [enabled, setEnabled] = useState(false)
   const [delayMs, setDelayMs] = useState(DEFAULT_FADE_DELAY_MS)
-  const [hovered, setHovered] = useState(false)
   const [chromeVisible, setChromeVisible] = useState(true)
   const fadeTimer = useRef<number | null>(null)
+  // Read inside the movement handler (a stable listener) so live config
+  // changes take effect without re-subscribing.
+  const enabledRef = useRef(enabled)
+  enabledRef.current = enabled
+  const delayRef = useRef(delayMs)
+  delayRef.current = delayMs
   // While positioning overlays the chrome must stay visible so a faded-out or
   // empty overlay is still visible and grabbable.
   const positionMode = useOverlayPositionMode()
+
+  const clearFade = useCallback(() => {
+    if (fadeTimer.current !== null) {
+      window.clearTimeout(fadeTimer.current)
+      fadeTimer.current = null
+    }
+  }, [])
+
+  const scheduleFade = useCallback(() => {
+    clearFade()
+    fadeTimer.current = window.setTimeout(() => {
+      fadeTimer.current = null
+      setChromeVisible(false)
+    }, delayRef.current)
+  }, [clearFade])
 
   // Poll the config so a settings change is picked up live, mirroring
   // useOverlayOpacity.
@@ -57,37 +85,39 @@ export function useOverlayChromeFade(): boolean {
   }, [])
 
   useEffect(() => {
-    const el = document.documentElement
-    const onEnter = (): void => setHovered(true)
-    const onLeave = (): void => setHovered(false)
-    el.addEventListener('mouseenter', onEnter)
-    el.addEventListener('mouseleave', onLeave)
-    return () => {
-      el.removeEventListener('mouseenter', onEnter)
-      el.removeEventListener('mouseleave', onLeave)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (fadeTimer.current !== null) {
-      window.clearTimeout(fadeTimer.current)
-      fadeTimer.current = null
-    }
-    if (!enabled || hovered) {
+    // Any movement over the overlay = active: show chrome, restart countdown.
+    const onMove = (): void => {
+      if (!enabledRef.current) return
       setChromeVisible(true)
-      return
+      scheduleFade()
     }
-    fadeTimer.current = window.setTimeout(() => {
-      fadeTimer.current = null
-      setChromeVisible(false)
-    }, delayMs)
+    // A leave, when it does arrive, is a fast path to start the countdown; the
+    // movement handler is the reliable backstop when it doesn't.
+    const onLeave = (): void => {
+      if (!enabledRef.current) return
+      scheduleFade()
+    }
+    window.addEventListener('mousemove', onMove)
+    document.documentElement.addEventListener('mouseleave', onLeave)
     return () => {
-      if (fadeTimer.current !== null) {
-        window.clearTimeout(fadeTimer.current)
-        fadeTimer.current = null
-      }
+      window.removeEventListener('mousemove', onMove)
+      document.documentElement.removeEventListener('mouseleave', onLeave)
+      clearFade()
     }
-  }, [enabled, hovered, delayMs])
+  }, [scheduleFade, clearFade])
+
+  // React to the preference toggling: off → chrome pinned on; on → reveal the
+  // chrome and start the countdown so an untouched overlay fades shortly after
+  // it opens (matching the prior behaviour), without needing a first hover.
+  useEffect(() => {
+    if (!enabled) {
+      clearFade()
+      setChromeVisible(true)
+    } else {
+      setChromeVisible(true)
+      scheduleFade()
+    }
+  }, [enabled, delayMs, scheduleFade, clearFade])
 
   return chromeVisible || positionMode
 }

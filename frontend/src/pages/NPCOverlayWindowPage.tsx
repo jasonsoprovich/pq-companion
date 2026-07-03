@@ -129,9 +129,14 @@ function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => voi
 
 // ── No-target state ────────────────────────────────────────────────────────────
 
-function NoTarget({ zone }: { zone?: string }): React.ReactElement {
+function NoTarget({ zone, chrome = true }: { zone?: string; chrome?: boolean }): React.ReactElement {
   return (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12 }}>
+    <div style={{
+      display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'center', gap: 6, padding: 12,
+      // Idle placeholder — fade with the chrome, it isn't live content.
+      opacity: chrome ? 1 : 0, transition: 'opacity 0.4s ease',
+    }}>
       <Crosshair size={24} style={{ color: 'rgba(255,255,255,0.2)' }} />
       <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0 }}>No target</p>
       {zone && <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', margin: 0 }}>{zone}</p>}
@@ -730,7 +735,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
       ) : target.has_target ? (
         <NPCContent state={target} view={view} sections={sections} wishlistItemIds={wishlistItemIds} />
       ) : (
-        <NoTarget zone={target.current_zone} />
+        <NoTarget zone={target.current_zone} chrome={chrome} />
       )}
     </div>
   )
