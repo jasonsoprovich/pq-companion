@@ -101,3 +101,45 @@ func (h *appBackupHandler) cancelImport(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
+
+// stageReset handles POST /api/app/reset. Body: {"mode": "data"|"factory"}.
+// Writes a reset sentinel; the actual wipe runs at next startup before any
+// user.db/config is opened. Returns a restart_required flag.
+func (h *appBackupHandler) stageReset(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Mode string `json:"mode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.Mode != appbackup.ResetModeData && body.Mode != appbackup.ResetModeFactory {
+		writeError(w, http.StatusBadRequest, `mode must be "data" or "factory"`)
+		return
+	}
+	if err := h.mgr.StageReset(body.Mode); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"mode":             body.Mode,
+		"restart_required": true,
+	})
+}
+
+// resetPending handles GET /api/app/reset/pending. Reports whether a reset is
+// staged for the next startup and, if so, its mode.
+func (h *appBackupHandler) resetPending(w http.ResponseWriter, r *http.Request) {
+	pending, mode := h.mgr.HasPendingReset()
+	writeJSON(w, http.StatusOK, map[string]any{"pending": pending, "mode": mode})
+}
+
+// cancelReset handles DELETE /api/app/reset. Drops a staged reset so the next
+// startup does nothing extra.
+func (h *appBackupHandler) cancelReset(w http.ResponseWriter, r *http.Request) {
+	if err := h.mgr.CancelStagedReset(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}

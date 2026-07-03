@@ -93,6 +93,28 @@ func main() {
 	// user.db and a lock on the installed exe that wedges the next NSIS update.
 	watchParentDeath()
 
+	// Apply any pending app reset BEFORE config is loaded and user.db is opened.
+	// A "data" reset wipes user.db + backups but keeps config.yaml; a "factory"
+	// reset also moves config.yaml aside so config.Load below recreates defaults
+	// and the app reopens to onboarding. Moving config.yaml aside must precede
+	// config.Load, hence this runs first. Set-aside files get a .prereset suffix
+	// for recovery.
+	if home, hErr := os.UserHomeDir(); hErr == nil {
+		appHome := filepath.Join(home, ".pq-companion")
+		rm := appbackup.New(
+			filepath.Join(appHome, "user.db"),
+			filepath.Join(appHome, "backups"),
+			appHome,
+			filepath.Join(appHome, "config.yaml"),
+			runtimeAppVersion(),
+		)
+		if mode, rErr := rm.ApplyPendingReset(); rErr != nil {
+			slog.Error("apply pending app reset", "err", rErr)
+		} else if mode != "" {
+			slog.Info("applied pending app reset; moved data aside", "mode", mode)
+		}
+	}
+
 	cfgMgr, err := config.Load()
 	if err != nil {
 		slog.Error("load config", "err", err)
@@ -116,7 +138,7 @@ func main() {
 		// Move any backups from the legacy <exe_dir>/backups location before
 		// the import swap runs, so a pending import sees the up-to-date set.
 		backup.MigrateLegacyDir(backupsDir)
-		appBackup := appbackup.New(userDBPath, backupsDir, appHome, runtimeAppVersion())
+		appBackup := appbackup.New(userDBPath, backupsDir, appHome, filepath.Join(appHome, "config.yaml"), runtimeAppVersion())
 		applied, err := appBackup.ApplyPendingImport()
 		if err != nil {
 			slog.Error("apply pending app import", "err", err)
@@ -1153,6 +1175,7 @@ func main() {
 		filepath.Join(home, ".pq-companion", "user.db"),
 		filepath.Join(home, ".pq-companion", "backups"),
 		filepath.Join(home, ".pq-companion"),
+		filepath.Join(home, ".pq-companion", "config.yaml"),
 		runtimeAppVersion(),
 	)
 

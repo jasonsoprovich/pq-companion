@@ -38,17 +38,22 @@ type Manager struct {
 	// the import sentinel live under it.
 	appHome string
 
+	// configPath is the on-disk path to config.yaml (~/.pq-companion/config.yaml).
+	// Only a factory reset touches it; a data reset leaves it in place.
+	configPath string
+
 	// appVersion is the running app's version string, stamped into manifests.
 	appVersion string
 }
 
 // New constructs a Manager. All paths are absolute; the caller resolves them
 // from the same sources the rest of the app uses (os.UserHomeDir + exe-dir).
-func New(userDBPath, backupsDirPath, appHome, appVersion string) *Manager {
+func New(userDBPath, backupsDirPath, appHome, configPath, appVersion string) *Manager {
 	return &Manager{
 		userDBPath:     userDBPath,
 		backupsDirPath: backupsDirPath,
 		appHome:        appHome,
+		configPath:     configPath,
 		appVersion:     appVersion,
 	}
 }

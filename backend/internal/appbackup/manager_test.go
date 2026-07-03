@@ -76,7 +76,7 @@ func TestExportImportRoundtrip(t *testing.T) {
 	writeBackupZip(t, srcBackups, "alpha.zip", "alpha-payload")
 	writeBackupZip(t, srcBackups, "beta.zip", "beta-payload")
 
-	mgr := New(srcDB, srcBackups, srcHome, "test-1.0.0")
+	mgr := New(srcDB, srcBackups, srcHome, filepath.Join(srcHome, "config.yaml"), "test-1.0.0")
 
 	exportDest := filepath.Join(t.TempDir(), "out")
 	bundlePath, manifest, err := mgr.Export(exportDest)
@@ -110,7 +110,7 @@ func TestExportImportRoundtrip(t *testing.T) {
 	dstDB := filepath.Join(dstHome, "user.db")
 	dstBackups := filepath.Join(dstHome, "backups")
 
-	dstMgr := New(dstDB, dstBackups, dstHome, "test-1.0.0")
+	dstMgr := New(dstDB, dstBackups, dstHome, filepath.Join(dstHome, "config.yaml"), "test-1.0.0")
 
 	if _, err := dstMgr.StageImport(bundlePath); err != nil {
 		t.Fatalf("StageImport: %v", err)
@@ -160,7 +160,7 @@ func TestApplyPreservesPriorUserDB(t *testing.T) {
 	makeUserDB(t, srcDB)
 	writeBackupZip(t, srcBackups, "one.zip", "src-content")
 
-	srcMgr := New(srcDB, srcBackups, srcHome, "v1")
+	srcMgr := New(srcDB, srcBackups, srcHome, filepath.Join(srcHome, "config.yaml"), "v1")
 	bundle, _, err := srcMgr.Export(filepath.Join(t.TempDir(), "b"))
 	if err != nil {
 		t.Fatalf("Export: %v", err)
@@ -179,7 +179,7 @@ func TestApplyPreservesPriorUserDB(t *testing.T) {
 	}
 	writeBackupZip(t, dstBackups, "preexisting.zip", "preexisting-content")
 
-	dstMgr := New(dstDB, dstBackups, dstHome, "v1")
+	dstMgr := New(dstDB, dstBackups, dstHome, filepath.Join(dstHome, "config.yaml"), "v1")
 	if _, err := dstMgr.StageImport(bundle); err != nil {
 		t.Fatalf("StageImport: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestStageImportRefusesFutureFormat(t *testing.T) {
 	if err := writeBogusFutureBundle(bundlePath); err != nil {
 		t.Fatalf("build bogus bundle: %v", err)
 	}
-	mgr := New(filepath.Join(tmp, "user.db"), filepath.Join(tmp, "backups"), tmp, "v1")
+	mgr := New(filepath.Join(tmp, "user.db"), filepath.Join(tmp, "backups"), tmp, filepath.Join(tmp, "config.yaml"), "v1")
 	_, err := mgr.StageImport(bundlePath)
 	if err == nil {
 		t.Fatal("StageImport should refuse future format bundle")

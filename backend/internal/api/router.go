@@ -314,6 +314,9 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Post("/import", appBackupH.stageImport)
 			r.Get("/import/pending", appBackupH.pendingStatus)
 			r.Delete("/import", appBackupH.cancelImport)
+			r.Post("/reset", appBackupH.stageReset)
+			r.Get("/reset/pending", appBackupH.resetPending)
+			r.Delete("/reset", appBackupH.cancelReset)
 		})
 		r.Route("/log", func(r chi.Router) {
 			r.Get("/status", logH.status)
