@@ -14,6 +14,7 @@ import { useTargetTimers } from '../hooks/useTargetTimers'
 import { useTargetPlayer } from '../hooks/useTargetPlayer'
 import OverlayLockButton from '../components/OverlayLockButton'
 import TargetPinButton from '../components/TargetPinButton'
+import CopyTargetStatsButton from '../components/CopyTargetStatsButton'
 import { ItemIcon } from '../components/Icon'
 import { ResistChip } from '../components/ResistChip'
 import NPCCasterSummarySection from '../components/overlays/NPCCasterSummarySection'
@@ -703,6 +704,9 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
           className="no-drag"
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
+          {target?.npc_data && (
+            <CopyTargetStatsButton state={target} idleColor="rgba(255,255,255,0.4)" size={13} />
+          )}
           {(target?.has_target || pinned) && (
             <TargetPinButton pinned={pinned} onToggle={togglePin} />
           )}

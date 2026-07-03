@@ -12,6 +12,7 @@ import { className, bodyTypeName, npcRunSpeedPct, npcLevelLabel } from '../../li
 import { cleanLootDropLabel, effectiveDropPct, rarityColor } from '../../lib/lootHelpers'
 import OverlayWindow from '../OverlayWindow'
 import TargetPinButton from '../TargetPinButton'
+import CopyTargetStatsButton from '../CopyTargetStatsButton'
 import ItemDetailModal from '../ItemDetailModal'
 import { ItemIcon } from '../Icon'
 import { ResistChip } from '../ResistChip'
@@ -753,6 +754,7 @@ export default function NPCPanel({
         }
         headerRight={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {target?.npc_data && <CopyTargetStatsButton state={target} />}
             {(target?.has_target || pinned) && (
               <TargetPinButton pinned={pinned} onToggle={togglePin} />
             )}

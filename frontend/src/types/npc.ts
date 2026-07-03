@@ -159,11 +159,19 @@ export interface CasterHighlight {
 
 // NamedSpell references a spell by id + name. chance/kind are only present for
 // procs ("attack" | "range" | "defensive"); omitted for signature casts.
+// recast_secs/ae_type/ae_range/resist_type/resist_diff carry the raid-relevant
+// combat detail, populated for signature casts and used by the overlay's
+// "copy target stats" clipboard line. Absent when a spell lacks the attribute.
 export interface NamedSpell {
   spell_id: number
   spell_name: string
   chance?: number
   kind?: string
+  recast_secs?: number
+  ae_type?: string // "PBAE" | "TAE" | "AE"
+  ae_range?: number
+  resist_type?: string // "MR" | "FR" | "CR" | "PR" | "DR"
+  resist_diff?: number
 }
 
 // ClassListSummary is an inherited parent spell list collapsed to a count.
