@@ -24,6 +24,14 @@ const PERTINENT_ABILITY_CODES = new Set([
   19, 20, 22, 23, 35, // Immune to Melee, Magic, Non-Bane Melee, Non-Magical Melee, Harm-from-Client
 ])
 
+// EverQuest's chat paste buffer has a hard limit around 409 characters — paste
+// silently fails if the clipboard exceeds it. Cap at 400 to stay safely under.
+const MAX_CLIPBOARD_LEN = 400
+
+// ASCII marker appended to the spells list when it's trimmed to fit. EQ's font
+// doesn't render the Unicode ellipsis, so use three dots.
+const TRUNCATION_MARK = ', ...'
+
 // Abbreviates a max-HP figure the way a raid callout wants it: 1.9M, 45K, 8,200.
 function fmtHP(hp: number): string {
   if (hp >= 1_000_000) return `${(hp / 1_000_000).toFixed(hp >= 10_000_000 ? 0 : 1)}M`
@@ -55,6 +63,25 @@ function fmtSpell(s: NamedSpell): string {
   return parts.length > 0 ? `${s.spell_name} (${parts.join(', ')})` : s.spell_name
 }
 
+// Appends as many spells as fit under the clipboard cap, dropping lowest-priority
+// casts from the end (the signature list is priority-ordered) and marking the
+// list as trimmed. Falls back to the bare base line if not even one spell fits.
+function fitWithinLimit(base: string, spellStrs: string[]): string {
+  const withSpells = (n: number, trimmed: boolean): string =>
+    `${base} | Spells: ${spellStrs.slice(0, n).join(', ')}${trimmed ? TRUNCATION_MARK : ''}`
+
+  const full = withSpells(spellStrs.length, false)
+  if (full.length <= MAX_CLIPBOARD_LEN) return full
+
+  for (let n = spellStrs.length - 1; n >= 1; n--) {
+    const line = withSpells(n, true)
+    if (line.length <= MAX_CLIPBOARD_LEN) return line
+  }
+  // Even a single spell overflows (or the base alone is oversized) — drop the
+  // spells segment, and hard-slice as a last resort so paste always works.
+  return base.length <= MAX_CLIPBOARD_LEN ? base : base.slice(0, MAX_CLIPBOARD_LEN)
+}
+
 export function buildTargetStatsLine(state: TargetState | null): string | null {
   const npc = state?.npc_data
   if (!state || !npc) return null
@@ -69,10 +96,10 @@ export function buildTargetStatsLine(state: TargetState | null): string | null {
   const tags = buildTags(state.special_abilities ?? [])
   if (tags.length > 0) segments.push(tags.join(', '))
 
+  const base = segments.join(' | ')
   const signature = state.caster_summary?.signature ?? []
-  if (signature.length > 0) {
-    segments.push(`Spells: ${signature.map(fmtSpell).join(', ')}`)
+  if (signature.length === 0) {
+    return base.length <= MAX_CLIPBOARD_LEN ? base : base.slice(0, MAX_CLIPBOARD_LEN)
   }
-
-  return segments.join(' | ')
+  return fitWithinLimit(base, signature.map(fmtSpell))
 }
