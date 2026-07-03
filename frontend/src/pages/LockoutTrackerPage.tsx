@@ -38,6 +38,18 @@ function formatRemaining(ms: number): string {
   return parts.join(' ')
 }
 
+/** Short absolute date+time for a unix-seconds instant in the user's local
+ *  timezone, e.g. "07/04 3:25 PM". Uses the locale's default ordering. */
+const absoluteFmt = new Intl.DateTimeFormat(undefined, {
+  month: '2-digit',
+  day: '2-digit',
+  hour: 'numeric',
+  minute: '2-digit',
+})
+function formatAbsolute(unixSec: number): string {
+  return absoluteFmt.format(new Date(unixSec * 1000))
+}
+
 /** Human "x ago" string for a unix-seconds timestamp relative to nowMs. */
 function formatAgo(unixSec: number, nowMs: number): string {
   const sec = Math.max(0, Math.floor(nowMs / 1000) - unixSec)
@@ -116,6 +128,15 @@ function LockoutRow({ entry, nowMs }: RowProps): React.ReactElement {
       <span className="tabular-nums shrink-0" style={{ color }}>
         {available ? 'Available' : formatRemaining(remainingMs)}
       </span>
+      {!available && (
+        <span
+          className="tabular-nums shrink-0 text-right"
+          style={{ color: 'var(--color-muted-foreground)' }}
+          title={`Unlocks ${new Date(entry.expires_at * 1000).toLocaleString()}`}
+        >
+          {formatAbsolute(entry.expires_at)}
+        </span>
+      )}
     </div>
   )
 }
