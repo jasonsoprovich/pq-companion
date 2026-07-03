@@ -19,6 +19,31 @@
 const lastFiredAt = new Map<string, number>()
 const AUDIO_DEDUP_MS = 750
 
+// Cross-renderer single-owner gate. The dedup above only collapses repeats
+// WITHIN one renderer — each renderer process has its own module state, so if
+// more than one main-route renderer runs the audio hooks at once (a duplicate /
+// ghost main window), each plays the same trigger sound independently and the
+// user hears it 2–3×. The main process designates exactly one webContents as
+// primary (window:is-primary); MainWindowLayout resolves it once at mount and
+// calls setAudioOwner. Non-owner renderers stay silent. Defaults to true so a
+// browser dev preview (no Electron IPC) and the brief window before the IPC
+// resolves both still play — a real fire arrives long after mount.
+let isAudioOwner = true
+
+/** Set whether this renderer is allowed to emit trigger/alert audio. */
+export function setAudioOwner(owner: boolean): void {
+  isAudioOwner = owner
+}
+
+// Per-renderer identity for the duplicate-audio diagnostic. Generated once at
+// module load, so every renderer process gets a distinct value. playSound /
+// speakText log it on each play; the Electron main process captures renderer
+// console output tagged with the window title (see hardenWebContents), so a
+// recurrence shows whether one window played N times (one nonce repeated =
+// single-renderer bug) or N windows each played once (distinct nonces =
+// duplicate main renderers, which the owner gate above then suppresses).
+const RENDERER_AUDIO_ID = Math.random().toString(36).slice(2, 8)
+
 // Master volume scales every playback (sound + TTS, including test previews)
 // on top of the per-action volume. Stored as 0.0–1.0; updated from
 // Preferences.master_volume by useAudioPrefs(). Default 1.0 = no dampening.
@@ -215,7 +240,14 @@ function audioUrl(filePath: string): string {
  */
 export function playSound(filePath: string, volume = 1.0): void {
   if (!filePath) return
+  if (!isAudioOwner) return
   if (isDuplicate(`sound:${filePath}`)) return
+
+  // Duplicate-audio diagnostic: emitted once per actual play. If a single fire
+  // triggers multiple serves, matching these across window titles / nonces in
+  // the Electron log pinpoints whether it's one renderer or several.
+  // eslint-disable-next-line no-console
+  console.warn('[audio-diag] play sound', { r: RENDERER_AUDIO_ID, path: filePath })
 
   const audio = new Audio(audioUrl(filePath))
   audio.volume = effectiveVolume(volume)
@@ -249,7 +281,11 @@ export function playSound(filePath: string, volume = 1.0): void {
  */
 export function speakText(text: string, voice = '', volume = 1.0): void {
   if (!text || !window.speechSynthesis) return
+  if (!isAudioOwner) return
   if (isDuplicate(`tts:${text}`)) return
+
+  // eslint-disable-next-line no-console
+  console.warn('[audio-diag] speak tts', { r: RENDERER_AUDIO_ID, text })
 
   // NOTE: do NOT call speechSynthesis.cancel() here. We used to, on the
   // theory that it kept rapid alerts from piling up, but it cancels the

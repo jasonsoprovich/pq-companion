@@ -20,6 +20,7 @@ export interface ElectronAPI {
     maximize: () => Promise<void>
     close: () => Promise<void>
     isMaximized: () => Promise<boolean>
+    isPrimary: () => Promise<boolean>
     dragStart: () => Promise<void>
     dragEnd: () => Promise<void>
     setZoom: (factor: number) => Promise<void>

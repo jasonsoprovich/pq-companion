@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-d
 import Layout from './components/Layout'
 import OnboardingWizard from './components/OnboardingWizard'
 import { getConfig } from './services/api'
+import { setAudioOwner } from './services/audio'
 import { loadEnums } from './lib/enumsCache'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useTriggerClipboard } from './hooks/useTriggerClipboard'
@@ -105,6 +106,19 @@ function MainWindowLayout(): React.ReactElement {
   // Keep the Log Feed populating in the background so it persists across tab
   // navigation. Clearing only happens via the user's Trash button or restart.
   useLogFeedSubscriber()
+
+  // Only the one canonical main window may emit trigger/alert audio. Resolve
+  // this window's primacy once and hand it to the audio service; a duplicate /
+  // ghost main renderer resolves false and stays silent, so a single fire can't
+  // play the same sound from two renderers at once. Defaults to owner=true, so
+  // a browser dev preview (no IPC) is unaffected.
+  useEffect(() => {
+    let cancelled = false
+    window.electron?.window?.isPrimary?.()
+      .then((primary) => { if (!cancelled) setAudioOwner(Boolean(primary)) })
+      .catch(() => { /* no IPC (dev preview): stay owner */ })
+    return () => { cancelled = true }
+  }, [])
 
   // Deep links pushed from overlay windows (e.g. an NPC overlay loot row)
   // arrive here as hash routes; navigate the main window to them.

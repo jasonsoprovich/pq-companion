@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('electron', {
     maximize: (): Promise<void> => ipcRenderer.invoke('window:maximize'),
     close: (): Promise<void> => ipcRenderer.invoke('window:close'),
     isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:is-maximized'),
+    isPrimary: (): Promise<boolean> => ipcRenderer.invoke('window:is-primary'),
     dragStart: (): Promise<void> => ipcRenderer.invoke('window:drag:start'),
     dragEnd: (): Promise<void> => ipcRenderer.invoke('window:drag:end'),
     setZoom: (factor: number): Promise<void> => ipcRenderer.invoke('window:set-zoom', factor),

@@ -1725,6 +1725,22 @@ ipcMain.handle('window:maximize', () => {
 ipcMain.handle('window:close', () => mainWindow?.close())
 ipcMain.handle('window:is-maximized', () => mainWindow?.isMaximized() ?? false)
 
+// True only for the one canonical main window's webContents. Trigger/alert
+// audio is meant to play in exactly one place, but audio duplication reports
+// ("the tell beep played 3×") point to more than one renderer running the
+// audio engine at once — the per-renderer dedup in the frontend can't collapse
+// plays across separate renderer processes. Renderers gate playback on this so
+// only the current mainWindow ever emits sound; any stray/duplicate main-route
+// renderer (a ghost window that outlived its replacement) stays silent. Overlay
+// windows never mount the audio hooks, so they're unaffected either way.
+ipcMain.handle('window:is-primary', (event) => {
+  return (
+    !!mainWindow &&
+    !mainWindow.isDestroyed() &&
+    event.sender.id === mainWindow.webContents.id
+  )
+})
+
 // The renderer mirrors the persisted "Minimize to Tray" preference here on
 // startup and whenever the user toggles it, so the close handler and tray
 // icon stay in sync without the main process needing to parse config.yaml.
