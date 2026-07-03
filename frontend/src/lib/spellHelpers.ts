@@ -444,10 +444,14 @@ function minCasterLevel(classLevels?: number[], levelCap = SERVER_LEVEL_CAP): nu
  * Add Proc — see effectSpellRef) to display names; without it those slots
  * fall back to "Spell #N".
  *
+ * `itemNames` resolves item IDs referenced by effect base values (SPA 32
+ * Summon Item / SPA 109 Summon Item Into Bag — see effectItemRef) to display
+ * names; without it those slots fall back to "Item #N".
+ *
  * Returns empty string for sentinel/blank slots and for ID/base combinations
  * that should not render.
  */
-export function effectDescription(id: number, base: number, buffduration: number, max?: number, formula?: number, classLevels?: number[], levelCap = SERVER_LEVEL_CAP, spellNames?: ReadonlyMap<number, string>): string {
+export function effectDescription(id: number, base: number, buffduration: number, max?: number, formula?: number, classLevels?: number[], levelCap = SERVER_LEVEL_CAP, spellNames?: ReadonlyMap<number, string>, itemNames?: ReadonlyMap<number, string>): string {
   if (id === 254 || id === 255 || id === 320) return ''
 
   const sign = base > 0 ? '+' : ''
@@ -559,6 +563,14 @@ export function effectDescription(id: number, base: number, buffduration: number
       if (base <= 0) return ''
       return `Add Proc: ${spellNames?.get(base) ?? `Spell #${base}`}`
     }
+    case 32: { // Summon Item — base is the summoned item's ID, not a magnitude
+      if (base <= 0) return ''
+      return `Summon Item: ${itemNames?.get(base) ?? `Item #${base}`}`
+    }
+    case 109: { // Summon Item Into Bag — base is the summoned item's ID
+      if (base <= 0) return ''
+      return `Summon Item Into Bag: ${itemNames?.get(base) ?? `Item #${base}`}`
+    }
     case 89: { // Player Size — base is % of normal size (66 = shrink to 66%)
       if (base <= 0 || base === 100) return ''
       return base > 100
@@ -667,4 +679,14 @@ export function effectDescription(id: number, base: number, buffduration: number
  */
 export function effectSpellRef(id: number, base: number): number | null {
   return id === 85 && base > 0 ? base : null
+}
+
+/**
+ * Item ID referenced by an effect slot's base value, or null when the slot's
+ * base is a plain magnitude. Covers SPA 32 (Summon Item) and SPA 109 (Summon
+ * Item Into Bag), whose base is the summoned item's ID — callers use this to
+ * fetch the name effectDescription substitutes via its `itemNames` map.
+ */
+export function effectItemRef(id: number, base: number): number | null {
+  return (id === 32 || id === 109) && base > 0 ? base : null
 }

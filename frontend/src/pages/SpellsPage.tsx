@@ -24,6 +24,7 @@ import SpellAcquisition from '../components/SpellAcquisition'
 import { useCachedState } from '../hooks/useCachedState'
 import { usePoPEnabled } from '../hooks/usePoPEnabled'
 import { useSpellRefNames } from '../hooks/useSpellRefNames'
+import { useItemRefNames } from '../hooks/useItemRefNames'
 import { maxLevel as eraMaxLevel } from '../lib/era'
 
 const SPELL_CLASSES: { index: number; abbr: string; full: string }[] = [
@@ -348,6 +349,7 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
   const [rawOpen, setRawOpen] = useState(false)
   const rawFetcher = useCallback(() => getSpellRaw(spell!.id), [spell?.id])
   const refNames = useSpellRefNames(spell)
+  const itemNames = useItemRefNames(spell)
 
   useEffect(() => {
     if (!spell) { setCrossRefs(null); return }
@@ -388,6 +390,7 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
         spell.class_levels,
         levelCap,
         refNames,
+        itemNames,
       ),
     }))
     .filter((e) => e.description !== '')

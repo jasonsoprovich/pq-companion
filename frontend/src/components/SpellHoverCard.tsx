@@ -32,6 +32,7 @@ import {
 } from '../lib/spellHelpers'
 import { usePoPEnabled } from '../hooks/usePoPEnabled'
 import { useSpellRefNames } from '../hooks/useSpellRefNames'
+import { useItemRefNames } from '../hooks/useItemRefNames'
 import { maxLevel as eraMaxLevel } from '../lib/era'
 import type { Spell } from '../types/spell'
 
@@ -210,6 +211,7 @@ function CardBody({
 }): React.ReactElement {
   const levelCap = eraMaxLevel(usePoPEnabled())
   const refNames = useSpellRefNames(spell)
+  const itemNames = useItemRefNames(spell)
 
   // Same effect-slot walk as the Spells explorer detail panel.
   const effects = spell.effect_ids
@@ -222,6 +224,7 @@ function CardBody({
       spell.class_levels,
       levelCap,
       refNames,
+      itemNames,
     ))
     .filter((d) => d !== '')
 

@@ -27,6 +27,7 @@ import ShoppingRoutePanel from '../components/ShoppingRoutePanel'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { usePoPEnabled } from '../hooks/usePoPEnabled'
 import { useSpellRefNames } from '../hooks/useSpellRefNames'
+import { useItemRefNames } from '../hooks/useItemRefNames'
 import { maxLevel as eraMaxLevel } from '../lib/era'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import {
@@ -134,6 +135,7 @@ function SpellDetailModal({ spell, onClose, onOpenInExplorer }: SpellDetailModal
   const isScalingDuration = durationScales(spell.buff_duration_formula, spell.buff_duration)
   const zoneType = zoneTypeLabel(spell.zone_type)
   const refNames = useSpellRefNames(spell)
+  const itemNames = useItemRefNames(spell)
 
   const activeEffects = spell.effect_ids
     .map((id, i) => ({
@@ -148,6 +150,7 @@ function SpellDetailModal({ spell, onClose, onOpenInExplorer }: SpellDetailModal
         spell.class_levels,
         levelCap,
         refNames,
+        itemNames,
       ),
     }))
     .filter((e) => e.description !== '')
