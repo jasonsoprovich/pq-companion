@@ -1744,6 +1744,26 @@ func (db *DB) GetSpellsByClass(classIndex, maxLevel, limit, offset int) (*Search
 		whereClause += " AND " + clause
 	}
 
+	// Drop Quarm's non-scribable "Mass X" tradeskill duplicates. spells_new
+	// ships an AE-craft mirror ("Mass Enchant Clay", "Mass Imbue Amber",
+	// "Mass Distill Mana", ...) at the same class level as each real
+	// enchant/imbue/mana spell, but these are server-side auto-grants with no
+	// teaching scroll — a player can never scribe them, so they'd otherwise
+	// sit on the checklist as permanent false-missing rows next to the plain
+	// spell the player actually owns (reported for the Enchanter enchant-ore
+	// line). Exclude a "Mass X" row only when it has no scroll of its own AND
+	// its scribable base "X" exists, so any legitimately learnable "Mass"
+	// spell (one with its own scroll) is untouched.
+	whereClause += ` AND NOT (
+		s.name LIKE 'Mass %'
+		AND NOT EXISTS (SELECT 1 FROM items i WHERE i.scrolleffect = s.id)
+		AND EXISTS (
+			SELECT 1 FROM spells_new b
+			WHERE b.name = substr(s.name, 6)
+			AND EXISTS (SELECT 1 FROM items i2 WHERE i2.scrolleffect = b.id)
+		)
+	)`
+
 	var total int
 	if err := db.QueryRow(
 		fmt.Sprintf("SELECT COUNT(*) FROM spells_new s WHERE %s", whereClause),

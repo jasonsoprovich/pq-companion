@@ -404,6 +404,38 @@ func TestGetSpellsByClass_EraLevelCap(t *testing.T) {
 	}
 }
 
+// TestGetSpellsByClass_ExcludesMassCraftDuplicates verifies that Quarm's
+// non-scribable "Mass X" tradeskill mirrors (e.g. Mass Enchant Clay/Silver,
+// which have no teaching scroll and duplicate a real scribable spell at the
+// same level) are dropped from the class list, while the plain scribable
+// spells a player actually owns remain. See GetSpellsByClass.
+func TestGetSpellsByClass_ExcludesMassCraftDuplicates(t *testing.T) {
+	d := openTestDB(t)
+	const enchanter = 13 // 0-based class index
+
+	res, err := d.GetSpellsByClass(enchanter, 60, 2000, 0)
+	if err != nil {
+		t.Fatalf("GetSpellsByClass: %v", err)
+	}
+	byID := make(map[int]string, len(res.Items))
+	for _, sp := range res.Items {
+		byID[sp.ID] = sp.Name
+	}
+
+	// Non-scribable "Mass X" duplicates must be gone.
+	for _, id := range []int{3986, 3991, 3987} { // Mass Enchant Clay/Silver/Electrum
+		if name, ok := byID[id]; ok {
+			t.Errorf("Mass-craft duplicate %d (%q) should be excluded", id, name)
+		}
+	}
+	// The real, scribable spells the player owns must remain.
+	for _, id := range []int{1359, 667, 668} { // Enchant Clay/Silver/Electrum
+		if _, ok := byID[id]; !ok {
+			t.Errorf("scribable spell %d should remain in the class list", id)
+		}
+	}
+}
+
 // ─── Zones ────────────────────────────────────────────────────────────────────
 
 func TestGetZoneByShortName(t *testing.T) {
