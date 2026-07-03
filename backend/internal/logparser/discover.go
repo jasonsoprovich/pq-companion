@@ -7,6 +7,16 @@ import (
 	"strings"
 )
 
+// reservedLogNames are eqlog_*_pq.proj.txt basenames that do not correspond to
+// a real character. The EQ client writes to eqlog_Everquest_pq.proj.txt while
+// sitting at the login / server-select screen (before a character is chosen),
+// so that file appears in any logging-enabled install and would otherwise show
+// up as a bogus "Everquest" character tab in Chat History, Loot Tracker, etc.
+// Matched case-insensitively.
+var reservedLogNames = map[string]bool{
+	"everquest": true,
+}
+
 // DiscoveredCharacter describes a character found on disk via their EQ log file.
 type DiscoveredCharacter struct {
 	// Name is the character name (no server suffix).
@@ -38,7 +48,7 @@ func DiscoverCharacters(eqPath string) []DiscoveredCharacter {
 		base := filepath.Base(path)
 		name := strings.TrimPrefix(base, "eqlog_")
 		name = strings.TrimSuffix(name, "_pq.proj.txt")
-		if name == "" {
+		if name == "" || reservedLogNames[strings.ToLower(name)] {
 			continue
 		}
 		out = append(out, DiscoveredCharacter{
