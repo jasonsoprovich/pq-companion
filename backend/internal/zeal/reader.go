@@ -206,9 +206,11 @@ func ParseSpellbook(path, character string) (*Spellbook, error) {
 		Character:  character,
 		ExportedAt: modTime,
 		SpellIDs:   []int{},
+		Names:      []string{},
 	}
 
 	seen := make(map[int]bool)
+	seenName := make(map[string]bool)
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -216,38 +218,68 @@ func ParseSpellbook(path, character string) (*Spellbook, error) {
 			continue
 		}
 
-		id, ok := parseSpellbookLine(line)
-		if ok && id > 0 && !seen[id] {
+		id, name, ok := parseSpellbookLine(line)
+		if !ok || id <= 0 {
+			continue
+		}
+		if !seen[id] {
 			seen[id] = true
 			sb.SpellIDs = append(sb.SpellIDs, id)
+		}
+		if name != "" {
+			key := strings.ToLower(name)
+			if !seenName[key] {
+				seenName[key] = true
+				sb.Names = append(sb.Names, name)
+			}
 		}
 	}
 
 	return sb, scanner.Err()
 }
 
-// parseSpellbookLine extracts a spell ID from a spellbook export line.
-// Handles: "1234", "3\t1234", "1234\tSome Spell Name"
-func parseSpellbookLine(line string) (int, bool) {
-	parts := strings.SplitN(line, "\t", 3)
+// parseSpellbookLine extracts a spell ID (and, when present, the spell name)
+// from a spellbook export line. Handles every /outputfile variant:
+//
+//	"1234"                       → id only
+//	"3\t1234"                    → slot\tspell_id
+//	"1234\tSome Spell Name"      → spell_id\tname
+//	"26\t1359\t8\tEnchant Clay"  → index\tspell_id\tlevel\tname (modern format)
+//
+// The id keeps the legacy heuristic (prefer the 2nd field, which is the spell
+// id in the slot/index-led formats, else the 1st). The name is the trailing
+// field when it is non-numeric, so name-based matching keeps working even if
+// the exported spell id ever diverges from the bundled quarm.db id.
+func parseSpellbookLine(line string) (id int, name string, ok bool) {
+	parts := strings.Split(line, "\t")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
 
-	// Single token: must be the spell ID.
 	if len(parts) == 1 {
-		id, err := strconv.Atoi(strings.TrimSpace(parts[0]))
-		return id, err == nil
+		n, err := strconv.Atoi(parts[0])
+		return n, "", err == nil
 	}
 
-	// Two tokens: either "slot\tspell_id" or "spell_id\tname".
-	// Try second field first (slot\tspell_id is common in Zeal).
-	if id, err := strconv.Atoi(strings.TrimSpace(parts[1])); err == nil {
-		return id, true
-	}
-	// Fall back to first field.
-	if id, err := strconv.Atoi(strings.TrimSpace(parts[0])); err == nil {
-		return id, true
+	// Prefer the 2nd field (slot\tspell_id / index\tspell_id\t...), then the 1st
+	// (spell_id\tname).
+	if n, err := strconv.Atoi(parts[1]); err == nil {
+		id = n
+	} else if n, err := strconv.Atoi(parts[0]); err == nil {
+		id = n
+	} else {
+		return 0, "", false
 	}
 
-	return 0, false
+	// The name is the last field when it isn't itself a number (rules out the
+	// slot\tspell_id form, whose trailing field is the id).
+	if last := parts[len(parts)-1]; last != "" {
+		if _, err := strconv.Atoi(last); err != nil {
+			name = last
+		}
+	}
+
+	return id, name, true
 }
 
 // SpellsetPath returns the expected Zeal spellsets export path for a character.

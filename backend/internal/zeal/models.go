@@ -39,6 +39,12 @@ type Spellbook struct {
 	Character  string    `json:"character"`
 	ExportedAt time.Time `json:"exported_at"`
 	SpellIDs   []int     `json:"spell_ids"`
+	// Names holds the spell names from exports that include a name column
+	// (the modern /outputfile format: Index\tSpellId\tLevel\tName). Empty for
+	// id-only or slot\tid exports. Consumers match a spell as "known" by id OR
+	// name, so an owned spell still registers when the live-server spell id has
+	// drifted from the bundled quarm.db id.
+	Names []string `json:"names"`
 }
 
 // State is the combined in-memory snapshot held by the Watcher.

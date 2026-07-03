@@ -53,16 +53,29 @@ export function castableClassesShort(classLevels: number[]): string {
  * if ANY ID in its variant group is present in `rawKnown`, every ID in the group
  * is added to the result. Callers can then keep doing `known.has(spell.id)` /
  * `known.has(gemSpellId)` and match regardless of which duplicate was scribed.
+ *
+ * `knownNames` (the spell names from a Zeal export that carries a name column)
+ * is an additional match key: a spell whose name appears in that set is marked
+ * known even when NONE of its ids match. This keeps owned spells registering
+ * when the exported spell id has drifted from the bundled quarm.db id — the
+ * ids move between server patches, the names don't.
  */
 export function expandKnownSpellIds(
   rawKnown: Iterable<number>,
-  spells: Iterable<{ id: number; variant_ids?: number[] }>,
+  spells: Iterable<{ id: number; name?: string; variant_ids?: number[] }>,
+  knownNames?: Iterable<string>,
 ): Set<number> {
   const known = new Set(rawKnown)
+  const names = new Set<string>()
+  if (knownNames) {
+    for (const n of knownNames) names.add(n.trim().toLowerCase())
+  }
   for (const s of spells) {
-    if (!s.variant_ids || s.variant_ids.length === 0) continue
-    const group = [s.id, ...s.variant_ids]
-    if (group.some((id) => known.has(id))) {
+    const group = [s.id, ...(s.variant_ids ?? [])]
+    const matched =
+      group.some((id) => known.has(id)) ||
+      (s.name != null && names.has(s.name.trim().toLowerCase()))
+    if (matched) {
       for (const id of group) known.add(id)
     }
   }

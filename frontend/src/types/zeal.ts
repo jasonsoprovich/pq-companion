@@ -21,6 +21,10 @@ export interface Spellbook {
   character: string
   exported_at: string // ISO datetime
   spell_ids: number[]
+  // Spell names from exports that carry a name column (modern /outputfile
+  // format). Used as a fallback match when the exported spell id has drifted
+  // from the bundled quarm.db id. Absent on id-only exports.
+  names?: string[]
 }
 
 export interface ZealInventoryResponse {

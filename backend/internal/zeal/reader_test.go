@@ -384,6 +384,57 @@ func TestParseSpellbook_Deduplication(t *testing.T) {
 	}
 }
 
+// TestParseSpellbook_ModernFormat covers the current /outputfile export:
+// a header row plus tab-delimited Index\tSpellId\tLevel\tName lines (CRLF).
+// Both the spell ids AND the names must be captured — names are the fallback
+// match key when the exported id has drifted from the bundled quarm.db id.
+func TestParseSpellbook_ModernFormat(t *testing.T) {
+	content := "Index\tSpellId\tLevel\tName\r\n" +
+		"26\t1359\t8\tEnchant Clay\r\n" +
+		"27\t667\t8\tEnchant Silver\r\n" +
+		"57\t668\t16\tEnchant Electrum\r\n"
+	path := writeTemp(t, "Rockei_pq.proj-Spellbook.txt", content)
+	sb, err := ParseSpellbook(path, "Rockei")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	wantIDs := []int{1359, 667, 668}
+	if len(sb.SpellIDs) != len(wantIDs) {
+		t.Fatalf("spell ids = %v, want %v", sb.SpellIDs, wantIDs)
+	}
+	for i, id := range wantIDs {
+		if sb.SpellIDs[i] != id {
+			t.Errorf("spell id[%d] = %d, want %d", i, sb.SpellIDs[i], id)
+		}
+	}
+	wantNames := []string{"Enchant Clay", "Enchant Silver", "Enchant Electrum"}
+	if len(sb.Names) != len(wantNames) {
+		t.Fatalf("names = %v, want %v", sb.Names, wantNames)
+	}
+	for i, n := range wantNames {
+		if sb.Names[i] != n {
+			t.Errorf("name[%d] = %q, want %q", i, sb.Names[i], n)
+		}
+	}
+}
+
+// TestParseSpellbook_IDOnlyNoNames confirms id-only and slot\tid exports yield
+// no names (nothing to match on), so name-fallback simply doesn't engage.
+func TestParseSpellbook_IDOnlyNoNames(t *testing.T) {
+	content := "1200\n2\t2100\n"
+	path := writeTemp(t, "Old_pq.proj-Spellbook.txt", content)
+	sb, err := ParseSpellbook(path, "Old")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(sb.SpellIDs) != 2 {
+		t.Errorf("expected 2 spell ids, got %v", sb.SpellIDs)
+	}
+	if len(sb.Names) != 0 {
+		t.Errorf("expected no names, got %v", sb.Names)
+	}
+}
+
 func TestInventoryPath(t *testing.T) {
 	got := InventoryPath("/eq", "Aradune")
 	want := filepath.Join("/eq", "Aradune-Inventory.txt")
