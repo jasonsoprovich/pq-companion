@@ -9,6 +9,22 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.15.2 — 2026-07-02
+
+Lockout unlock times at a glance, plus overlay and trigger-audio fixes.
+
+### Highlights
+- **Lockouts** — each active lockout now shows the absolute unlock date and
+  time in your local timezone (e.g. `07/04 3:25 PM`) right next to the live
+  countdown, so you can see exactly when something frees up without doing the
+  math. Hover for the full date/time.
+
+### Fixes
+- Idle spell-timer overlays now reliably fade their placeholder text, with a
+  self-healing pass that clears overlays that previously stayed stuck.
+- Fixed trigger sounds occasionally duplicating by adding a single-owner
+  playback gate.
+
 ## v0.15.1 — 2026-07-02
 
 A broad stability, performance, and security hardening pass, plus trigger
