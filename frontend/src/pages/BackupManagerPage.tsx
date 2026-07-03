@@ -18,6 +18,7 @@ import {
   Download,
   Upload,
   FolderOpen,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   listBackups,
@@ -32,8 +33,11 @@ import {
   exportAppBackup,
   previewAppImport,
   stageAppImport,
+  resetApp,
   type AppBackupManifest,
+  type AppResetMode,
 } from '../services/api'
+import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import type { Backup } from '../types/backup'
 import type { Config, BackupSettings } from '../types/config'
 
@@ -668,8 +672,18 @@ function AppTransferPanel(): React.ReactElement {
     try {
       await stageAppImport(importPreview.path)
       setImportStaged(true)
+      // The import is prepared; it only takes effect on the next launch, when
+      // the backend swaps the files in before opening the database. Relaunch
+      // immediately so the user gets one obvious outcome instead of being left
+      // in a "staged — now what?" limbo (the original source of confusion). In
+      // the browser preview there's no relaunch bridge, so the staged panel
+      // stays up with a manual restart button as a fallback.
+      if (window.electron?.app?.relaunch) {
+        await window.electron.app.relaunch()
+      }
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : String(err))
+      setImportStaged(false)
     } finally {
       setBusy(false)
     }
@@ -746,16 +760,17 @@ function AppTransferPanel(): React.ReactElement {
             Contains {importPreview.manifest.stats.backup_count} EQ-config backup(s), {formatBytes(importPreview.manifest.stats.total_size_bytes)} total.
           </p>
           <p className="mt-2" style={{ color: 'var(--color-danger)' }}>
-            This will replace your current app data on next restart. The current user.db and backups folder will be renamed aside (with a <code className="font-mono">.preimport</code> suffix) for recovery, not deleted.
+            This replaces your current app data and restarts the app to apply it. Your existing data is renamed aside (with a <code className="font-mono">.preimport</code> suffix) for recovery, not deleted.
           </p>
           <div className="flex items-center gap-2 mt-2">
             <button
               onClick={handleConfirmImport}
               disabled={busy}
-              className="text-xs px-2 py-1 rounded disabled:opacity-50"
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium disabled:opacity-50"
               style={{ backgroundColor: 'var(--color-danger)', color: 'var(--color-background)' }}
             >
-              Stage import
+              {busy ? <RefreshCw size={11} className="animate-spin" /> : <Upload size={11} />}
+              {busy ? 'Importing…' : 'Import & restart'}
             </button>
             <button
               onClick={() => setImportPreview(null)}
@@ -775,11 +790,12 @@ function AppTransferPanel(): React.ReactElement {
           className="rounded border p-3 text-[11px]"
           style={{ borderColor: 'var(--color-primary)', backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)' }}
         >
-          <p className="font-semibold mb-1" style={{ color: 'var(--color-foreground)' }}>
-            Import staged — restart required
+          <p className="font-semibold mb-1 flex items-center gap-1.5" style={{ color: 'var(--color-foreground)' }}>
+            <CheckCircle2 size={13} style={{ color: 'var(--color-success)' }} />
+            Import ready — restart to finish
           </p>
           <p className="mb-2">
-            The bundle's files are ready. Restart the app now to apply them. The swap happens before any database connection opens, so it's safe.
+            Your bundle is prepared. Restart the app to apply it — the swap happens before any database connection opens, so it's safe. (The app normally restarts on its own; use this if it hasn't.)
           </p>
           <button
             onClick={handleRestart}
@@ -802,6 +818,177 @@ function AppTransferPanel(): React.ReactElement {
           {errorMessage}
         </p>
       )}
+    </div>
+  )
+}
+
+// ── Reset panel ────────────────────────────────────────────────────────────────
+//
+// Two destructive "start over" actions. Both stage a reset and restart — the
+// wipe runs at next startup before the database is opened, and the old data is
+// moved aside with a .prereset suffix for recovery (never hard-deleted here).
+//
+//  • Reset app data — clears characters, chat, loot, triggers, tasks, etc. but
+//    keeps settings and your EQ folder path (no re-onboarding).
+//  • Factory reset — also clears settings, reopening the onboarding wizard.
+
+const RESET_MODES: Record<AppResetMode, {
+  title: string
+  blurb: string
+  confirmWord: string
+}> = {
+  data: {
+    title: 'Reset app data',
+    blurb: 'Erases all tracked data — characters, chat history, loot, triggers, tasks, wishlists, notes, flags, and combat history — but keeps your settings and EQ folder path. Default trigger packs are restored fresh.',
+    confirmWord: 'RESET',
+  },
+  factory: {
+    title: 'Factory reset',
+    blurb: 'Erases everything, including your settings and EQ folder path. The app reopens to the first-time setup wizard, exactly like a fresh install.',
+    confirmWord: 'RESET',
+  },
+}
+
+function ResetPanel(): React.ReactElement {
+  const [mode, setMode] = useState<AppResetMode | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  async function handleConfirm(m: AppResetMode) {
+    setErrorMessage(null)
+    try {
+      await resetApp(m)
+      // The wipe applies at next launch. Relaunch straight away so the user
+      // sees the blank slate immediately rather than a "pending" limbo.
+      if (window.electron?.app?.relaunch) {
+        await window.electron.app.relaunch()
+      } else {
+        setErrorMessage('Reset prepared — restart the app to apply it.')
+      }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err))
+    } finally {
+      setMode(null)
+    }
+  }
+
+  return (
+    <div
+      className="rounded-lg border p-4"
+      style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-danger)' }}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <AlertTriangle size={16} style={{ color: 'var(--color-danger)' }} />
+        <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+          Reset
+        </span>
+        <span
+          className="text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider"
+          style={{ backgroundColor: 'var(--color-danger)', color: 'var(--color-background)' }}
+        >
+          Danger zone
+        </span>
+      </div>
+      <p className="text-[11px] mb-3" style={{ color: 'var(--color-muted-foreground)' }}>
+        Start over with a clean slate. Your existing data is moved aside (with a <code className="font-mono">.prereset</code> suffix in <code className="font-mono">~/.pq-companion</code>) for recovery — not permanently deleted — but the app treats it as gone. Consider exporting a backup above first.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => { setErrorMessage(null); setMode('data') }}
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium"
+          style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-danger)', border: '1px solid var(--color-danger)' }}
+        >
+          <RotateCcw size={11} />
+          Reset app data
+        </button>
+        <button
+          onClick={() => { setErrorMessage(null); setMode('factory') }}
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium"
+          style={{ backgroundColor: 'var(--color-danger)', color: 'var(--color-background)' }}
+        >
+          <Trash2 size={11} />
+          Factory reset
+        </button>
+      </div>
+
+      {errorMessage && (
+        <p className="text-[11px] mt-2" style={{ color: 'var(--color-danger)' }}>
+          {errorMessage}
+        </p>
+      )}
+
+      {mode && (
+        <ResetConfirmModal
+          mode={mode}
+          onCancel={() => setMode(null)}
+          onConfirm={() => handleConfirm(mode)}
+        />
+      )}
+    </div>
+  )
+}
+
+// Type-to-confirm modal: the destructive button stays disabled until the user
+// types the confirmation word, so a reset can't be triggered by a stray click.
+function ResetConfirmModal({
+  mode, onCancel, onConfirm,
+}: {
+  mode: AppResetMode
+  onCancel: () => void
+  onConfirm: () => void
+}): React.ReactElement {
+  const [typed, setTyped] = useState('')
+  const info = RESET_MODES[mode]
+  const armed = typed.trim().toUpperCase() === info.confirmWord
+  useEscapeToClose(onCancel)
+
+  return (
+    <div
+      onClick={onCancel}
+      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="rounded-lg p-4 space-y-3"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-danger)', width: '100%', maxWidth: 460 }}
+      >
+        <div className="flex items-center gap-2">
+          <AlertTriangle size={16} style={{ color: 'var(--color-danger)' }} />
+          <p className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>{info.title}?</p>
+        </div>
+        <p className="text-xs leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>
+          {info.blurb}
+        </p>
+        <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          Type <code className="font-mono font-semibold" style={{ color: 'var(--color-danger)' }}>{info.confirmWord}</code> to confirm. The app restarts immediately.
+        </p>
+        <input
+          autoFocus
+          type="text"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && armed) onConfirm() }}
+          placeholder={info.confirmWord}
+          className="w-full text-sm rounded px-2 py-1.5 outline-none"
+          style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+        />
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            onClick={onCancel}
+            className="text-xs px-3 py-1.5 rounded font-medium"
+            style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-foreground)', border: '1px solid var(--color-border)' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={!armed}
+            className="text-xs px-3 py-1.5 rounded font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ backgroundColor: 'var(--color-danger)', color: '#fff', border: '1px solid transparent' }}
+          >
+            {info.title}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -958,6 +1145,10 @@ export default function BackupManagerPage(): React.ReactElement {
             distinct top-level capability (moves the entire app to another
             device), not a knob within the EQ-config-backup workflow below. */}
         <AppTransferPanel />
+
+        {/* Reset — destructive "start over" controls, kept just under the
+            transfer panel so backup/restore and reset live together. */}
+        <ResetPanel />
 
         {/* Settings panel (inline) */}
         {showSettings && (

@@ -1109,6 +1109,20 @@ export function cancelAppImport(): Promise<{ ok: boolean }> {
   return del<{ ok: boolean }>('/api/app/import')
 }
 
+export type AppResetMode = 'data' | 'factory'
+
+export function resetApp(mode: AppResetMode): Promise<{ mode: AppResetMode; restart_required: boolean }> {
+  return post<{ mode: AppResetMode; restart_required: boolean }>('/api/app/reset', { mode })
+}
+
+export function getAppResetPending(): Promise<{ pending: boolean; mode: string }> {
+  return get<{ pending: boolean; mode: string }>('/api/app/reset/pending')
+}
+
+export function cancelAppReset(): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>('/api/app/reset')
+}
+
 // ── Log Parser ─────────────────────────────────────────────────────────────────
 
 export function getLogStatus(): Promise<LogTailerStatus> {
