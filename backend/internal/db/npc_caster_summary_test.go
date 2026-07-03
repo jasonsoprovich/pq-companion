@@ -128,6 +128,53 @@ func TestBuildHighlights(t *testing.T) {
 	}
 }
 
+func TestCasterSpellRowNamedSpell(t *testing.T) {
+	cases := []struct {
+		name string
+		row  casterSpellRow
+		want NamedSpell
+	}{
+		{
+			name: "AI recast_delay wins over spell recast_time, rounded to seconds",
+			row:  casterSpellRow{spellID: 1, name: "Word of Command", targetType: 4, aoeRange: 35, recastDelayMS: 30000, recastTimeMS: 12000, resistType: 1, resistDiff: -100},
+			want: NamedSpell{SpellID: 1, SpellName: "Word of Command", RecastSecs: 30, AEType: "PBAE", AERange: 35, ResistType: "MR", ResistDiff: -100},
+		},
+		{
+			name: "falls back to spell recast_time when AI delay unset",
+			row:  casterSpellRow{spellID: 2, name: "Fling", targetType: 4, aoeRange: 200, recastDelayMS: -1, recastTimeMS: 45000},
+			want: NamedSpell{SpellID: 2, SpellName: "Fling", RecastSecs: 45, AEType: "PBAE", AERange: 200},
+		},
+		{
+			name: "targeted AE classifies as TAE",
+			row:  casterSpellRow{spellID: 3, name: "Silence of the Shadows", targetType: 8, aoeRange: 80, recastDelayMS: 30000},
+			want: NamedSpell{SpellID: 3, SpellName: "Silence of the Shadows", RecastSecs: 30, AEType: "TAE", AERange: 80},
+		},
+		{
+			name: "single-target with no recast/resist stays bare",
+			row:  casterSpellRow{spellID: 4, name: "Reckoning", targetType: 5},
+			want: NamedSpell{SpellID: 4, SpellName: "Reckoning"},
+		},
+		{
+			name: "zero resist_diff suppresses the resist token",
+			row:  casterSpellRow{spellID: 5, name: "Plague", targetType: 5, resistType: 5, resistDiff: 0},
+			want: NamedSpell{SpellID: 5, SpellName: "Plague"},
+		},
+		{
+			name: "bare radius on a non-AE targettype is generic AE",
+			row:  casterSpellRow{spellID: 6, name: "Cloud", targetType: 5, aoeRange: 40},
+			want: NamedSpell{SpellID: 6, SpellName: "Cloud", AEType: "AE", AERange: 40},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.row.namedSpell()
+			if got != tc.want {
+				t.Errorf("namedSpell()\n got  %+v\n want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
 // internalDBPath mirrors the db_test helper but stays in package db so the
 // integration test can reach unexported helpers if needed.
 func internalDBPath(t *testing.T) string {

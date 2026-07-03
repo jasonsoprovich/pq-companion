@@ -38,11 +38,22 @@ type CasterHighlight struct {
 
 // NamedSpell is a spell referenced by id + name. Chance/Kind are populated only
 // for procs ("attack"|"range"|"defensive"); they're omitted for signature casts.
+//
+// RecastSecs/AEType/AERange/ResistType/ResistDiff are the raid-relevant combat
+// details, populated for Signature spells so the overlay's "copy target stats"
+// button can print e.g. "Word of Command (30s, 35 PBAE, -100 MR)". They stay
+// zero/empty for procs and for spells lacking that attribute.
 type NamedSpell struct {
 	SpellID   int    `json:"spell_id"`
 	SpellName string `json:"spell_name"`
 	Chance    int    `json:"chance,omitempty"`
 	Kind      string `json:"kind,omitempty"`
+
+	RecastSecs int    `json:"recast_secs,omitempty"` // effective recast, seconds
+	AEType     string `json:"ae_type,omitempty"`     // "PBAE" | "TAE" | "AE"
+	AERange    int    `json:"ae_range,omitempty"`    // AE radius (game units)
+	ResistType string `json:"resist_type,omitempty"` // "MR"|"FR"|"CR"|"PR"|"DR"
+	ResistDiff int    `json:"resist_diff,omitempty"` // resist adjust; neg = easier
 }
 
 // ClassListSummary is an inherited parent list collapsed to a count.
@@ -65,16 +76,20 @@ const completeHealMinBase = 5000
 // the spells_new columns needed to classify a spell, plus its source list.
 // Internal to the summarizer.
 type casterSpellRow struct {
-	spellID    int
-	name       string
-	targetType int
-	aoeRange   int
-	category   int
-	baseValue1 int
-	effects    [12]int
-	ownList    bool // belongs to the NPC's own list (not an inherited parent)
-	sourceID   int
-	sourceName string
+	spellID       int
+	name          string
+	targetType    int
+	aoeRange      int
+	category      int
+	baseValue1    int
+	effects       [12]int
+	recastDelayMS int // npc_spells_entries.recast_delay; -1 = use spell default
+	recastTimeMS  int // spells_new.recast_time
+	resistType    int // spells_new.resisttype (1=magic..5=disease)
+	resistDiff    int // spells_new.ResistDiff; negative = easier to land
+	ownList       bool // belongs to the NPC's own list (not an inherited parent)
+	sourceID      int
+	sourceName    string
 }
 
 // hasEffect reports whether any of the 12 effect slots carries the given SPA.
@@ -94,6 +109,51 @@ func (r casterSpellRow) hasTargetType(tts ...int) bool {
 		}
 	}
 	return false
+}
+
+// resistAbbrevs maps spells_new.resisttype to the short label used in-game
+// (and on the copy-to-clipboard line). Only the five checkable resists are
+// named; unresistable/chromatic/etc. carry no adjust worth printing.
+var resistAbbrevs = map[int]string{1: "MR", 2: "FR", 3: "CR", 4: "PR", 5: "DR"}
+
+// namedSpell distills a row into the combat-detail-bearing NamedSpell used for
+// signature casts: effective recast (seconds), AE type + radius, and resist
+// adjust. Fields stay zero/empty when the spell lacks that attribute.
+func (r casterSpellRow) namedSpell() NamedSpell {
+	ns := NamedSpell{SpellID: r.spellID, SpellName: r.name}
+
+	// Effective recast: the NPC AI list's own recast_delay takes precedence
+	// (that's the mob's re-use cadence); fall back to the spell's recast_time.
+	// Both are milliseconds; -1/0 means "unset". Round to the nearest second.
+	ms := 0
+	if r.recastDelayMS > 0 {
+		ms = r.recastDelayMS
+	} else if r.recastTimeMS > 0 {
+		ms = r.recastTimeMS
+	}
+	if ms > 0 {
+		ns.RecastSecs = (ms + 500) / 1000
+	}
+
+	// AE classification: PB targettypes centre on the caster; targeted-AE
+	// targettypes centre on the victim. A bare positive radius with a
+	// non-AE targettype is labelled generically.
+	switch {
+	case r.hasTargetType(2, 4, 40):
+		ns.AEType, ns.AERange = "PBAE", r.aoeRange
+	case r.hasTargetType(8, 20, 24, 25):
+		ns.AEType, ns.AERange = "TAE", r.aoeRange
+	case r.aoeRange > 0:
+		ns.AEType, ns.AERange = "AE", r.aoeRange
+	}
+
+	// Resist adjust only reads meaningfully for the five checkable resists and
+	// only when there's an actual non-zero modifier.
+	if abbrev, ok := resistAbbrevs[r.resistType]; ok && r.resistDiff != 0 {
+		ns.ResistType, ns.ResistDiff = abbrev, r.resistDiff
+	}
+
+	return ns
 }
 
 // SummarizeNPCCaster builds the overlay caster summary for an NPC. Returns
@@ -178,7 +238,7 @@ func (db *DB) SummarizeNPCCaster(npcID int) (*NPCCasterSummary, error) {
 			}
 			seenSig[r.spellID] = true
 			if len(out.Signature) < signatureCap {
-				out.Signature = append(out.Signature, NamedSpell{SpellID: r.spellID, SpellName: r.name})
+				out.Signature = append(out.Signature, r.namedSpell())
 			} else {
 				out.SignatureOverflow++
 			}
@@ -211,7 +271,9 @@ func (db *DB) fetchCasterSpellRows(listID int, listName string, ownList bool) ([
 		       COALESCE(s.effectid5, 254), COALESCE(s.effectid6, 254),
 		       COALESCE(s.effectid7, 254), COALESCE(s.effectid8, 254),
 		       COALESCE(s.effectid9, 254), COALESCE(s.effectid10, 254),
-		       COALESCE(s.effectid11, 254), COALESCE(s.effectid12, 254)
+		       COALESCE(s.effectid11, 254), COALESCE(s.effectid12, 254),
+		       COALESCE(e.recast_delay, 0), COALESCE(s.recast_time, 0),
+		       COALESCE(s.resisttype, 0), COALESCE(s.ResistDiff, 0)
 		FROM npc_spells_entries e
 		LEFT JOIN spells_new s ON s.id = e.spellid
 		WHERE e.npc_spells_id = ?
@@ -230,6 +292,7 @@ func (db *DB) fetchCasterSpellRows(listID int, listName string, ownList bool) ([
 			&r.effects[0], &r.effects[1], &r.effects[2], &r.effects[3],
 			&r.effects[4], &r.effects[5], &r.effects[6], &r.effects[7],
 			&r.effects[8], &r.effects[9], &r.effects[10], &r.effects[11],
+			&r.recastDelayMS, &r.recastTimeMS, &r.resistType, &r.resistDiff,
 		); err != nil {
 			return nil, fmt.Errorf("scan caster spell row: %w", err)
 		}
