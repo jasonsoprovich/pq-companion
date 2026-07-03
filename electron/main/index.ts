@@ -2710,9 +2710,72 @@ app.whenReady().then(async () => {
     }
     try {
       const data = await readFile(p)
+      const total = data.byteLength
+
+      // Chromium's media element (HTMLAudioElement) requests media resources
+      // with a `Range` header and expects proper HTTP range semantics back.
+      // When it gets a bare 200 with no Accept-Ranges / Content-Range, its
+      // resource loader re-issues the request and RESTARTS playback from the
+      // top — the same file was served 2–3× for a single Audio().play() and
+      // the user heard the sound stutter/double "then cut off". This was the
+      // long-standing "audio duplication" bug for custom-sound users (TTS,
+      // which never touches this protocol, was immune). Honor Range with a
+      // 206 + Content-Range, and always advertise Accept-Ranges + Content-
+      // Length so the media stack fetches once and plays once.
+      const baseHeaders: Record<string, string> = {
+        'Content-Type': mime,
+        'Accept-Ranges': 'bytes',
+        // These files are immutable for the life of a play; let Chromium reuse
+        // the buffered resource instead of re-fetching mid-playback.
+        'Cache-Control': 'no-cache',
+      }
+
+      const range = request.headers.get('Range')
+      const match = range ? /^bytes=(\d*)-(\d*)$/.exec(range.trim()) : null
+      if (match) {
+        // Parse `bytes=start-end`; either side may be omitted (suffix/open).
+        let start = match[1] === '' ? NaN : parseInt(match[1], 10)
+        let end = match[2] === '' ? NaN : parseInt(match[2], 10)
+        if (Number.isNaN(start)) {
+          // Suffix range: bytes=-N → last N bytes.
+          const suffix = Number.isNaN(end) ? total : end
+          start = Math.max(0, total - suffix)
+          end = total - 1
+        } else if (Number.isNaN(end)) {
+          end = total - 1
+        }
+        // Clamp and validate. An unsatisfiable range gets a 416 per spec.
+        if (start > end || start >= total) {
+          return new Response('range not satisfiable', {
+            status: 416,
+            headers: { 'Content-Range': `bytes */${total}`, 'Accept-Ranges': 'bytes' },
+          })
+        }
+        end = Math.min(end, total - 1)
+        const chunk = data.subarray(start, end + 1)
+        // eslint-disable-next-line no-console
+        console.log('[pq-audio] served (range)', {
+          path: p,
+          mime,
+          range: `${start}-${end}/${total}`,
+          bytes: chunk.byteLength,
+        })
+        return new Response(chunk, {
+          status: 206,
+          headers: {
+            ...baseHeaders,
+            'Content-Range': `bytes ${start}-${end}/${total}`,
+            'Content-Length': String(chunk.byteLength),
+          },
+        })
+      }
+
       // eslint-disable-next-line no-console
-      console.log('[pq-audio] served', { path: p, mime, bytes: data.byteLength })
-      return new Response(data, { headers: { 'Content-Type': mime } })
+      console.log('[pq-audio] served', { path: p, mime, bytes: total })
+      return new Response(data, {
+        status: 200,
+        headers: { ...baseHeaders, 'Content-Length': String(total) },
+      })
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('[pq-audio] failed to read', { path: p, err: String(err) })

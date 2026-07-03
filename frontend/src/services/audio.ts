@@ -246,8 +246,13 @@ export function playSound(filePath: string, volume = 1.0): void {
   // Duplicate-audio diagnostic: emitted once per actual play. If a single fire
   // triggers multiple serves, matching these across window titles / nonces in
   // the Electron log pinpoints whether it's one renderer or several.
+  // Fields are inlined into the message string, not passed as an object: the
+  // Electron main-process console capture only serializes the formatted
+  // message, so an object arg lands in the log as "[object Object]" and the
+  // renderer id / path are lost (which is exactly what happened the first time
+  // we tried to debug this).
   // eslint-disable-next-line no-console
-  console.warn('[audio-diag] play sound', { r: RENDERER_AUDIO_ID, path: filePath })
+  console.warn(`[audio-diag] play sound r=${RENDERER_AUDIO_ID} path=${filePath}`)
 
   const audio = new Audio(audioUrl(filePath))
   audio.volume = effectiveVolume(volume)
@@ -285,7 +290,7 @@ export function speakText(text: string, voice = '', volume = 1.0): void {
   if (isDuplicate(`tts:${text}`)) return
 
   // eslint-disable-next-line no-console
-  console.warn('[audio-diag] speak tts', { r: RENDERER_AUDIO_ID, text })
+  console.warn(`[audio-diag] speak tts r=${RENDERER_AUDIO_ID} text=${text}`)
 
   // NOTE: do NOT call speechSynthesis.cancel() here. We used to, on the
   // theory that it kept rapid alerts from piling up, but it cancels the
