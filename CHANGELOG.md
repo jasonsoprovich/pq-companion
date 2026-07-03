@@ -9,6 +9,26 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.15.4 — 2026-07-03
+
+Start-over controls, plus a fix for a phantom "Everquest" character tab.
+
+### Highlights
+- **App reset** — a new "Danger zone" in Settings → EQ Config Backups can wipe
+  PQ Companion back to a clean slate. *Reset app data* clears your tracked data
+  (characters, chat, loot, triggers, tasks, notes, flags, combat history) but
+  keeps your settings and EQ folder path; *Factory reset* also clears settings
+  and reopens the first-time setup. Both ask you to type `RESET` to confirm, and
+  your old data is set aside for recovery. Your EverQuest game files and logs are
+  never touched.
+- **Clearer app import** — moving your setup to another device now imports in one
+  obvious "Import & restart" step instead of a confusing multi-stage prompt.
+
+### Fixes
+- Chat History and Loot Tracker no longer show a phantom "Everquest" character
+  tab. It came from the log EverQuest writes at the login/server-select screen;
+  that file is now ignored during character discovery.
+
 ## v0.15.3 — 2026-07-03
 
 Copy a target's stats to your clipboard, plus spellbook checklist accuracy fixes.
