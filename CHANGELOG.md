@@ -9,6 +9,25 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.15.3 — 2026-07-03
+
+Copy a target's stats to your clipboard, plus spellbook checklist accuracy fixes.
+
+### Highlights
+- **Target overlay** — a new button copies the current target's stats to your
+  clipboard, formatted to paste straight into EQ chat (capped so it fits the
+  in-game input limit).
+- **NPC caster summary** — the caster signature now includes recast time, AE
+  flag, and resist type for a fuller at-a-glance read of an NPC's spells.
+
+### Fixes
+- Spell Checklist no longer flags owned Enchanter enchant-ore spells (Enchant
+  Clay/Silver/Electrum, etc.) as missing — it now matches your spellbook by
+  name when server spell ids have drifted, and hides the non-scribable "Mass
+  Enchant" duplicates that could never be learned.
+- Summon Item spell effects now resolve to the actual item name instead of a
+  raw id.
+
 ## v0.15.2 — 2026-07-02
 
 Lockout unlock times at a glance, plus overlay and trigger-audio fixes.
