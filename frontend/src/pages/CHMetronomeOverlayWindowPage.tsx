@@ -373,6 +373,10 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
           justifyContent: 'center',
           gap: 8,
           padding: '8px 10px',
+          // While idle this is just placeholder text/track — fade it with the
+          // chrome. During an active chain it's live cast timing: keep it lit.
+          opacity: active || chrome ? 1 : 0,
+          transition: 'opacity 0.4s ease',
         }}
       >
         <div

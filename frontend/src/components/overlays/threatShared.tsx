@@ -81,7 +81,9 @@ function ThreatRow({ mob, max }: { mob: MobThreat; max: number }): React.ReactEl
   )
 }
 
-export function ThreatContent({ state }: { state: ThreatState | null }): React.ReactElement {
+export function ThreatContent(
+  { state, chrome = true }: { state: ThreatState | null; chrome?: boolean },
+): React.ReactElement {
   if (state === null) {
     return (
       <div style={emptyWrap}>
@@ -92,7 +94,8 @@ export function ThreatContent({ state }: { state: ThreatState | null }): React.R
 
   if (!state.in_combat || state.mobs.length === 0) {
     return (
-      <div style={emptyWrap}>
+      // Idle placeholder — fade with the chrome, it isn't live content.
+      <div style={{ ...emptyWrap, opacity: chrome ? 1 : 0, transition: 'opacity 0.4s ease' }}>
         <ShieldAlert size={26} style={{ opacity: 0.2 }} />
         <p style={{ fontSize: 12, margin: 0 }}>No threat tracked</p>
         <p style={{ fontSize: 11, margin: 0, opacity: 0.7, textAlign: 'center' }}>
@@ -339,7 +342,9 @@ function RaidMobCard({
   )
 }
 
-export function RaidThreatContent({ state }: { state: RaidThreatState | null }): React.ReactElement {
+export function RaidThreatContent(
+  { state, chrome = true }: { state: RaidThreatState | null; chrome?: boolean },
+): React.ReactElement {
   const palette = useDPSClassColors()
 
   if (state === null) {
@@ -352,7 +357,8 @@ export function RaidThreatContent({ state }: { state: RaidThreatState | null }):
 
   if (!state.in_combat || state.mobs.length === 0) {
     return (
-      <div style={emptyWrap}>
+      // Idle placeholder — fade with the chrome, it isn't live content.
+      <div style={{ ...emptyWrap, opacity: chrome ? 1 : 0, transition: 'opacity 0.4s ease' }}>
         <Users size={26} style={{ opacity: 0.2 }} />
         <p style={{ fontSize: 12, margin: 0 }}>No raid threat tracked</p>
         <p style={{ fontSize: 11, margin: 0, opacity: 0.7, textAlign: 'center' }}>

@@ -579,7 +579,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
       ) : fight ? (
         <FightTable fight={fight} showAll={showAll} combine={combine} mode={dpsMode} palette={palette} />
       ) : (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: chrome ? 1 : 0, transition: 'opacity 0.4s ease' }}>
           {windowMode ? <History size={24} style={{ opacity: 0.15 }} /> : <Swords size={24} style={{ opacity: 0.15 }} />}
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: 0 }}>
             {windowMode ? 'No completed fights yet' : 'Not in combat'}

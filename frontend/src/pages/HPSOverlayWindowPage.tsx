@@ -288,7 +288,7 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
       ) : combat.in_combat && fight ? (
         <HealTable fight={fight} showAll={showAll} />
       ) : (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: chrome ? 1 : 0, transition: 'opacity 0.4s ease' }}>
           <HeartPulse size={24} style={{ opacity: 0.15 }} />
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: 0 }}>Not in combat</p>
         </div>

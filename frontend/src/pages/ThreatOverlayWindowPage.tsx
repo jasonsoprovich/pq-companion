@@ -147,7 +147,9 @@ export default function ThreatOverlayWindowPage(): React.ReactElement {
       </div>
 
       {/* ── Threat body ──────────────────────────────────────────────────── */}
-      {effMode === 'raid' ? <RaidThreatContent state={raidState} /> : <ThreatContent state={state} />}
+      {effMode === 'raid'
+        ? <RaidThreatContent state={raidState} chrome={chrome} />
+        : <ThreatContent state={state} chrome={chrome} />}
     </div>
   )
 }

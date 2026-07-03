@@ -343,6 +343,9 @@ export default function CustomTimerWindowPage(): React.ReactElement {
               justifyContent: 'center',
               gap: 6,
               padding: 16,
+              // Idle placeholder — fade with the chrome, it isn't live content.
+              opacity: chrome ? 1 : 0,
+              transition: 'opacity 0.4s ease',
             }}
           >
             <Hourglass size={22} style={{ opacity: 0.15, color: '#38bdf8' }} />

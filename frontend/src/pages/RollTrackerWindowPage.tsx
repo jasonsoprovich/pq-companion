@@ -643,7 +643,7 @@ export default function RollTrackerWindowPage(): React.ReactElement {
           of centering. */}
       <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
         {state.sessions.length === 0 ? (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 16 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 16, opacity: chrome ? 1 : 0, transition: 'opacity 0.4s ease' }}>
             <Dice5 size={22} style={{ opacity: 0.15, color: '#a5b4fc' }} />
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: 0 }}>
               No rolls yet
