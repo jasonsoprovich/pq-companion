@@ -47,6 +47,36 @@ func TestMeleeSwingHate(t *testing.T) {
 	}
 }
 
+func TestBackstabHate(t *testing.T) {
+	cases := []struct {
+		name       string
+		dmg, level int
+		want       int
+	}{
+		{
+			// Level 60 rogue, ~14-dmg piercer: skill capped at 252 →
+			// (252*0.02 + 2) * 14 = 7.04 * 14 = 98 (matches Quarmy's ~97).
+			name: "level 60 piercer", dmg: 14, level: 60, want: 98,
+		},
+		{
+			// Below the skill cap the multiplier is smaller: level 40 → skill 200 →
+			// (200*0.02 + 2) * 14 = 6.0 * 14 = 84.
+			name: "level 40 piercer", dmg: 14, level: 40, want: 84,
+		},
+		{
+			// Unknown / no weapon → 0 so the meter falls back to observed damage.
+			name: "no weapon", dmg: 0, level: 60, want: 0,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := BackstabHate(tc.dmg, tc.level); got != tc.want {
+				t.Errorf("BackstabHate = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestMeleeSwingHate2HBonus(t *testing.T) {
 	// A 2H weapon adds level- and delay-scaled bonus terms on top of the base.
 	// Warrior 60, a 2H slasher (itemType 1) with delay 40:

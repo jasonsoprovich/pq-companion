@@ -28,16 +28,25 @@ type meleeSwingHateProvider struct {
 	getItem    func(id int) (*db.Item, error)
 	getChar    func(name string) (character.Character, bool, error)
 
-	mu        sync.Mutex
-	cachedAt  time.Time
-	cachedVal int
+	mu             sync.Mutex
+	cachedAt       time.Time
+	cachedVal      int
+	cachedBackstab int
 }
 
-func (p *meleeSwingHateProvider) value() int {
+// value returns the flat per-swing melee hate; backstab returns the flat hate of
+// a single backstab (0 unless the primary is a piercer). Both share one cache
+// refreshed together, since both derive from the same primary-weapon lookup.
+func (p *meleeSwingHateProvider) value() int    { return p.cached().swing }
+func (p *meleeSwingHateProvider) backstab() int { return p.cached().backstab }
+
+type meleeHateValues struct{ swing, backstab int }
+
+func (p *meleeSwingHateProvider) cached() meleeHateValues {
 	now := time.Now()
 	p.mu.Lock()
 	if !p.cachedAt.IsZero() && now.Sub(p.cachedAt) < meleeHateRefreshTTL {
-		v := p.cachedVal
+		v := meleeHateValues{p.cachedVal, p.cachedBackstab}
 		p.mu.Unlock()
 		return v
 	}
@@ -47,21 +56,22 @@ func (p *meleeSwingHateProvider) value() int {
 
 	p.mu.Lock()
 	p.cachedAt = now
-	p.cachedVal = v
+	p.cachedVal = v.swing
+	p.cachedBackstab = v.backstab
 	p.mu.Unlock()
 	return v
 }
 
-func (p *meleeSwingHateProvider) compute() int {
+func (p *meleeSwingHateProvider) compute() meleeHateValues {
 	name := p.activeName()
 	if name == "" {
-		return 0
+		return meleeHateValues{}
 	}
 	// The watcher holds one parsed inventory; only use it when it's the active
 	// character's, never another character's stale export.
 	inv := p.inventory()
 	if inv == nil || !strings.EqualFold(inv.Character, name) {
-		return 0
+		return meleeHateValues{}
 	}
 	primaryID := 0
 	for _, e := range inv.Entries {
@@ -71,17 +81,25 @@ func (p *meleeSwingHateProvider) compute() int {
 		}
 	}
 	if primaryID <= 0 {
-		return 0
+		return meleeHateValues{}
 	}
 	item, err := p.getItem(primaryID)
 	if err != nil || item == nil || !isMeleeWeaponType(item.ItemType) {
-		return 0
+		return meleeHateValues{}
 	}
 	ch, ok, err := p.getChar(name)
 	if err != nil || !ok || ch.Level <= 0 || ch.Class < 0 {
-		return 0
+		return meleeHateValues{}
 	}
-	return threat.MeleeSwingHate(item.Damage, item.Delay, item.ItemType, ch.Level, ch.Class)
+	out := meleeHateValues{
+		swing: threat.MeleeSwingHate(item.Damage, item.Delay, item.ItemType, ch.Level, ch.Class),
+	}
+	// Backstab needs a piercer in the primary (1H/2H Piercing); otherwise the
+	// meter leaves backstab hate to its observed-damage fallback.
+	if isPiercerType(item.ItemType) {
+		out.backstab = threat.BackstabHate(item.Damage, ch.Level)
+	}
+	return out
 }
 
 // isMeleeWeaponType reports whether an items.itemtype is a melee weapon (1H/2H
@@ -93,4 +111,10 @@ func isMeleeWeaponType(t int) bool {
 		return true
 	}
 	return false
+}
+
+// isPiercerType reports whether an items.itemtype is a piercing weapon (1H or 2H
+// Piercing) — the only weapons that can backstab.
+func isPiercerType(t int) bool {
+	return t == 2 || t == 35
 }

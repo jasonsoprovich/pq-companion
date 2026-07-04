@@ -3,6 +3,7 @@ package threat
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -155,6 +156,12 @@ type Tracker struct {
 	// Supplied by the wiring layer (it reads the Zeal inventory + character row).
 	meleeSwingHateFn func() int
 
+	// backstabHateFn returns the flat hate of a single backstab — its base
+	// damage ((skill*0.02)+2)*weaponDamage, not the large rolled number — from
+	// the equipped primary piercer. 0 means the weapon isn't a known piercer, in
+	// which case a backstab line falls back to observed damage. May be nil.
+	backstabHateFn func() int
+
 	// nowFn is the receive clock for the live (rolling-window) rate: hate
 	// samples are stamped with it and the window is measured against it. It is
 	// deliberately NOT the event's log timestamp — both the live tailer and the
@@ -211,6 +218,26 @@ func (t *Tracker) meleeSwingHate() int {
 	return fn()
 }
 
+// SetBackstabHateFn installs the flat backstab-hate provider (see backstabHateFn).
+func (t *Tracker) SetBackstabHateFn(fn func() int) {
+	t.mu.Lock()
+	t.backstabHateFn = fn
+	t.mu.Unlock()
+}
+
+// backstabHate returns the current flat backstab hate, or 0 when no provider is
+// wired or the equipped primary isn't a known piercer. Read outside t.mu (the
+// provider may do I/O), like meleeSwingHate.
+func (t *Tracker) backstabHate() int {
+	t.mu.Lock()
+	fn := t.backstabHateFn
+	t.mu.Unlock()
+	if fn == nil {
+		return 0
+	}
+	return fn()
+}
+
 // effectiveHatemodLocked is the total hate modifier currently in effect: the
 // static gear/AA value plus every active hate-mod buff. Caller must hold t.mu.
 func (t *Tracker) effectiveHatemodLocked() int {
@@ -253,6 +280,9 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 			// spell's BASE damage, resolved here (see recordSpellDamage), NOT the
 			// observed amount a crit or partial resist would distort.
 			t.recordSpellDamage(data.Target, data.Damage, ev.Timestamp)
+		case strings.EqualFold(data.Skill, "backstab"):
+			// Backstab: hate is its flat base damage, not the large rolled number.
+			t.recordBackstab(data.Target, data.Damage, ev.Timestamp)
 		case data.SpellName == "":
 			// Melee swing (a verb skill). Feeds the miss-hate average.
 			t.recordDamage(data.Target, data.Damage, true, ev.Timestamp)
@@ -568,6 +598,31 @@ func (t *Tracker) recordMiss(mob string, ts time.Time) {
 		amount = float64(m.meleeSum) / float64(m.meleeCount)
 	}
 	t.addHateLocked(mob, amount, ts, false) // melee miss — no hatemod
+	snap := t.snapshotLocked(ts)
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
+// recordBackstab credits a backstab's hate — the flat base-damage value from the
+// equipped primary piercer, NOT the large rolled backstab number (the server
+// adds a backstab's hate with a zero damage component). Falls back to the
+// observed damage when the weapon isn't a known piercer. Melee-type hate, so the
+// hate modifier never applies.
+func (t *Tracker) recordBackstab(mob string, dmg int, ts time.Time) {
+	mob = logparser.CanonicalNPCName(mob)
+	if mob == "" || mob == "You" {
+		return
+	}
+	amount := t.backstabHate()
+	if amount <= 0 {
+		amount = dmg // weapon unknown or not a piercer — coarse fallback
+	}
+	if amount <= 0 {
+		return
+	}
+	t.mu.Lock()
+	t.addHateLocked(mob, float64(amount), ts, false) // melee — no hatemod
+	t.lastEngaged = mob
 	snap := t.snapshotLocked(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)

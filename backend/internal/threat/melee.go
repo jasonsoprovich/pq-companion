@@ -84,6 +84,34 @@ func meleeDamageBonus(delay, itemType, level, class int) int {
 	return bonus
 }
 
+// backstabSkillCap is the era backstab skill ceiling; a rogue reaches it around
+// the level cap. It approximates the trained skill from level, since the
+// character export doesn't carry per-skill values.
+const backstabSkillCap = 252
+
+// BackstabHate returns the flat hate a single backstab puts on its target.
+//
+// Per Client::DoBackstab in the EQMacEmu fork, a backstab's hate is its BASE
+// damage — ((backstabSkill*0.02)+2) * weaponDamage — and it is added with a zero
+// damage component, so (like a normal swing) the large rolled backstab number
+// never contributes hate of its own; only this base does. weaponDamage is the
+// equipped primary piercer's damage rating. Returns 0 for a non-positive weapon.
+//
+// The backstab skill isn't in the character export, so it's approximated as
+// 5*level capped at the era ceiling (a rogue is at or near the cap by 60). The
+// skill term only moves the multiplier between ~6 and ~7, so the estimate stays
+// within a few percent of the server value (matches Quarmy's ~97 at level 60).
+func BackstabHate(weaponDamage, level int) int {
+	if weaponDamage <= 0 {
+		return 0
+	}
+	skill := level * 5
+	if skill > backstabSkillCap {
+		skill = backstabSkillCap
+	}
+	return int((float64(skill)*0.02 + 2.0) * float64(weaponDamage))
+}
+
 // isWarriorClass mirrors Mob::IsWarriorClass: the melee and hybrid classes that
 // receive the damage bonus (every class but the pure casters).
 func isWarriorClass(class int) bool {

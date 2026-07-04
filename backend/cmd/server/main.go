@@ -410,6 +410,10 @@ func main() {
 		getChar:    charStore.GetByName,
 	}
 	threatTracker.SetMeleeSwingHateFn(meleeHate.value)
+	// Backstab hate is its flat base damage (skill/weapon-derived), not the large
+	// rolled backstab number — so it needs the same primary-weapon lookup, gated
+	// to a piercer.
+	threatTracker.SetBackstabHateFn(meleeHate.backstab)
 	// Drive the live (rolling-window) hate rate: rebroadcast once a second while
 	// any mob is tracked so the per-second meter decays on screen between log
 	// events instead of freezing at its last value.
