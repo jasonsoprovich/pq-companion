@@ -80,6 +80,32 @@ a future data source fix this?" column against the new capabilities.
 
 ---
 
+### 1.5 Threat meter can't see off-hand attribution or hate-only weapon procs
+
+- **Limitation:** The personal threat meter is a *live log parser*, so two hate
+  sources a *theoretical* projector (e.g. Quarmy's gear-based hate/min) can
+  compute are invisible to it: (a) **off-hand swings** — the meter credits every
+  melee swing the primary weapon's flat value (damage + main-hand damage bonus),
+  but the server gives off-hand swings the off-hand weapon's damage with **no**
+  bonus, so a dual-wielder's melee hate reads slightly high; (b) **hate-only
+  weapon procs** (SPA 92 with no damage, e.g. Enraging Blow) — they contribute
+  large hate but appear in the log only as an un-cast spell land-message with no
+  damage line, so they register **zero** hate. Damage procs are unaffected (their
+  damage line is captured). Backstab is modeled correctly (flat base damage).
+- **Root cause:** The log never tags which hand a swing came from ("You slash X"
+  is identical for both), and weapon procs fire without a "You begin casting"
+  line, so they bypass the begin-cast→land matching the meter uses for spell
+  hate. Both are knowable only by *projecting* from equipped gear (proc PPM,
+  per-hand swing rates), not from what the log reports happened.
+- **Sources checked:** Log (no hand tag on swings; proc lands have no cast to
+  match). DB (`quarm.db` has weapon proc spell IDs + SPA 92 values). Zeal
+  (equipped primary/secondary, but no per-swing hand or proc-fire signal).
+- **Could a future data source fix this?** **Partially.** A Zeal per-swing
+  hand/proc event would let the live meter attribute both exactly. Absent that,
+  the only fix is an *optional theoretical hate/min projection* (like Quarmy)
+  built from equipped gear — a separate model from the live meter, kept apart to
+  avoid double-counting procs the damage line already captures.
+
 ## 2. Healing / HPS tracking
 
 ### 2.1 Cannot accurately compute HPS for other players' heals
