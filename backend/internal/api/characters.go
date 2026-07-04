@@ -316,6 +316,18 @@ func (h *charactersHandler) spellModifiers(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// No Quarmy export yet (e.g. an alt that hasn't been exported) → there are no
+	// focuses to report. Degrade to an empty result like the rest of the
+	// character page instead of 500-ing, which just spams the console; the
+	// modifiers panel already renders its own empty state.
+	if zeal.FindQuarmyFile(cfg.EQPath, char.Name) == "" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"character":    char.Name,
+			"contributors": []buffmod.Modifier{},
+		})
+		return
+	}
+
 	res, err := buffmod.Compute(cfg.EQPath, char.Name, h.db)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("compute modifiers: %s", err))
