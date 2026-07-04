@@ -408,14 +408,26 @@ var equipSlots = map[string]bool{
 // populated by walking each equipped item's worneffect spell and parsing
 // its SPA effect slots — see parseWornEffect.
 type statBlock struct {
-	HP         int `json:"hp"`
-	Mana       int `json:"mana"`
-	AC         int `json:"ac"`
+	HP   int `json:"hp"`
+	Mana int `json:"mana"`
+	AC   int `json:"ac"`
 	// Avoidance and Mitigation are the two halves of the displayed AC (see
 	// eqstat.ACBreakdown): the chance-to-be-hit half and the damage-per-hit
 	// half. Surfaced for the Tanking view; they combine into AC.
 	Avoidance  int `json:"avoidance"`
 	Mitigation int `json:"mitigation"`
+	// Tanking softcap view: EffectiveMit is the mitigation left after the class
+	// softcap's diminishing returns; Softcap is that cap (class base + shield AC);
+	// OverCapPct is the percent of each point past the cap that still counts;
+	// HitChancePct is a level-NPCLevel NPC's chance to land a melee hit.
+	EffectiveMit int     `json:"effective_mit"`
+	Softcap      int     `json:"softcap"`
+	OverCapPct   float64 `json:"over_cap_pct"`
+	HitChancePct float64 `json:"hit_chance_pct"`
+	NPCLevel     int     `json:"npc_level"`
+	// ShieldAC is the worn shield's AC, used to raise the mitigation softcap. It
+	// rides on the equipment block only (json-hidden — it's an input, not a stat).
+	ShieldAC   int `json:"-"`
 	STR        int `json:"str"`
 	STA        int `json:"sta"`
 	AGI        int `json:"agi"`
@@ -766,6 +778,11 @@ func (h *charactersHandler) sumEquipment(eqPath, charName string) (block statBlo
 		block.HP += item.HP
 		block.Mana += item.Mana
 		block.AC += item.AC
+		// A worn shield (item type 8, Secondary slot) raises the mitigation
+		// softcap by its AC — captured separately for the Tanking view.
+		if entry.Location == "Secondary" && item.ItemType == 8 {
+			block.ShieldAC += item.AC
+		}
 		block.STR += item.Strength
 		block.STA += item.Stamina
 		block.AGI += item.Agility
@@ -1039,33 +1056,41 @@ func (h *charactersHandler) deriveBlock(
 	}
 	haste += overhasteV3
 
-	acb := eqstat.ACBreakdownFor(class, level, race, itemAC, spellAC, totAGI, skills.defense, 0)
+	// tankingRefNPCLevel benchmarks defense against an even-con level-60 boss
+	// (the classic "vs level 60 NPC" reference), matching the Quarmy tanking tab.
+	const tankingRefNPCLevel = 60
+	tank := eqstat.Tanking(class, level, race, itemAC, spellAC, totAGI, skills.defense, 0, item.ShieldAC, tankingRefNPCLevel)
 	return statBlock{
-		HP:         eqstat.MaxHP(class, level, totSTA, itemHP, buffHP, 0, aa.HPPct),
-		Mana:       eqstat.MaxMana(class, level, totWIS, totINT, flatMana),
-		AC:         acb.DisplayedAC,
-		Avoidance:  acb.Avoidance,
-		Mitigation: acb.Mitigation,
-		STR:        totSTR,
-		STA:        totSTA,
-		AGI:        totAGI,
-		DEX:        totDEX,
-		WIS:        totWIS,
-		INT:        totINT,
-		CHA:        totCHA,
-		MR:         res.MR,
-		CR:         res.CR,
-		FR:         res.FR,
-		DR:         res.DR,
-		PR:         res.PR,
-		Attack:     attack,
-		Haste:      haste,
-		SpellHaste: spellHaste,
-		Regen:      regen,
-		ManaRegen:  manaRegen,
-		FT:         ft,
-		DmgShield:  dmgShield,
-		ATKRating:  eqstat.DisplayedATK(class, level, totSTR, attack, skills.offense, skills.weapon),
+		HP:           eqstat.MaxHP(class, level, totSTA, itemHP, buffHP, 0, aa.HPPct),
+		Mana:         eqstat.MaxMana(class, level, totWIS, totINT, flatMana),
+		AC:           tank.DisplayedAC,
+		Avoidance:    tank.Avoidance,
+		Mitigation:   tank.Mitigation,
+		EffectiveMit: tank.EffectiveMit,
+		Softcap:      tank.Softcap,
+		OverCapPct:   tank.OverCapPct,
+		HitChancePct: tank.HitChancePct,
+		NPCLevel:     tank.NPCLevel,
+		STR:          totSTR,
+		STA:          totSTA,
+		AGI:          totAGI,
+		DEX:          totDEX,
+		WIS:          totWIS,
+		INT:          totINT,
+		CHA:          totCHA,
+		MR:           res.MR,
+		CR:           res.CR,
+		FR:           res.FR,
+		DR:           res.DR,
+		PR:           res.PR,
+		Attack:       attack,
+		Haste:        haste,
+		SpellHaste:   spellHaste,
+		Regen:        regen,
+		ManaRegen:    manaRegen,
+		FT:           ft,
+		DmgShield:    dmgShield,
+		ATKRating:    eqstat.DisplayedATK(class, level, totSTR, attack, skills.offense, skills.weapon),
 		Breakdown: statBreakdown{
 			// attack = item.Attack + aa.Attack + Σ buff; regen/manaRegen
 			// similarly start from item + AA before the buff loop adds in.

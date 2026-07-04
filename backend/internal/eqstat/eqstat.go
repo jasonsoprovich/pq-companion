@@ -634,6 +634,134 @@ func DisplayedAC(class, level, race, itemAC, spellAC, agi, defenseSkill, weight 
 	return ACBreakdownFor(class, level, race, itemAC, spellAC, agi, defenseSkill, weight).DisplayedAC
 }
 
+// ── Tanking: mitigation softcap + hit chance ───────────────────────────────
+//
+// The displayed mitigation is a "raw" number; in combat only part of it counts
+// once it passes a per-class softcap. Sourced from TAKP (the Al'Kabor lineage
+// Project Quarm shares): wiki.takp.info "AC Softcaps by Class" and "Calculating
+// NPC Offense and To-Hit".
+
+// mitigationSoftcap is the per-class base AC-mitigation softcap. A shield's AC
+// adds directly to it (a knight with a 55-AC shield caps at 403+55=458). The
+// Combat Stability AA further raises it, but that AA isn't tracked yet, so a
+// maxed plate tank's real softcap is a little above this.
+func mitigationSoftcap(class int) int {
+	switch class {
+	case Warrior:
+		return 430
+	case Paladin, ShadowKnight, Cleric, Bard:
+		return 403
+	case Ranger, Shaman:
+		return 375
+	default: // Druid, Beastlord, Monk, Rogue, and the pure casters
+		return 350
+	}
+}
+
+// mitigationOverCapReturn is the fraction of each mitigation point past the
+// softcap that still reduces damage, by class and era. TAKP gives the values at
+// level 60 and 65; a character at 65+ (PoP) uses the higher column.
+func mitigationOverCapReturn(class, level int) float64 {
+	pop := level >= 65
+	switch class {
+	case Warrior:
+		if pop {
+			return 1.0 / 3.0 // 33.3%
+		}
+		return 0.20
+	case Paladin, ShadowKnight:
+		if pop {
+			return 0.25
+		}
+		return 1.0 / 6.0 // 16.7%
+	case Bard:
+		if pop {
+			return 1.0 / 6.0
+		}
+		return 0.125
+	case Ranger, Beastlord:
+		if pop {
+			return 1.0 / 7.0 // 14.3%
+		}
+		return 0.10
+	case Monk, Rogue:
+		if pop {
+			return 1.0 / 12.0 // 8.3%
+		}
+		return 0.05
+	default: // casters + priests: 5% at every era
+		return 0.05
+	}
+}
+
+// npcToHit is a level-L NPC's default to-hit rating (TAKP: MIN(level,50)·10+12),
+// before any per-NPC Accuracy bonus. A common (non-raid) mob has Accuracy 0.
+func npcToHit(level int) int {
+	if level > 50 {
+		level = 50
+	}
+	return level*10 + 12
+}
+
+// npcHitChancePct ports Mob::AvoidanceCheck (EQMacEmu): the percent chance an
+// attacker of the given to-hit lands a melee hit on a defender of the given
+// avoidance. Both sides get a +10 bias; the attacker's to-hit is scaled ×1.21.
+func npcHitChancePct(toHit, avoidance int) float64 {
+	t := float64(toHit) + 10
+	a := float64(avoidance) + 10
+	var hit float64
+	if t*1.21 > a {
+		hit = 1.0 - a/(t*1.21*2.0)
+	} else {
+		hit = t * 1.21 / (a * 2.0)
+	}
+	if hit < 0 {
+		hit = 0
+	} else if hit > 1 {
+		hit = 1
+	}
+	return hit * 100
+}
+
+// TankingStats is the combat-defense view behind the displayed AC: the
+// avoidance/mitigation split, the mitigation softcap and how much of the raw
+// mitigation survives it, and a reference NPC's chance to land a hit.
+type TankingStats struct {
+	Avoidance    int     // roll-to-be-hit half of displayed AC
+	Mitigation   int     // raw (pre-softcap) mitigation half
+	EffectiveMit int     // mitigation after the class softcap's diminishing returns
+	Softcap      int     // class base softcap + shield AC
+	OverCapPct   float64 // percent of each point past the softcap that still counts
+	DisplayedAC  int     // (avoidance + raw mitigation) × 1000 / 847
+	NPCLevel     int     // the reference attacker level for HitChancePct
+	HitChancePct float64 // that NPC's chance to land a melee hit on this character
+}
+
+// Tanking computes the full tanking view. shieldAC is the worn shield's AC (0 if
+// none), which raises the mitigation softcap; npcLevel is the reference attacker
+// level for the hit-chance benchmark (e.g. 60). See mitigationSoftcap /
+// npcToHit for sources.
+func Tanking(class, level, race, itemAC, spellAC, agi, defenseSkill, weight, shieldAC, npcLevel int) TankingStats {
+	av := avoidance(defenseSkill, agi, level)
+	raw := mitigation(class, level, race, itemAC, spellAC, agi, defenseSkill, weight)
+	softcap := mitigationSoftcap(class) + shieldAC
+	ret := mitigationOverCapReturn(class, level)
+	eff := raw
+	if raw > softcap {
+		eff = softcap + int(float64(raw-softcap)*ret+0.5)
+	}
+	return TankingStats{
+		Avoidance:    av,
+		Mitigation:   raw,
+		EffectiveMit: eff,
+		Softcap:      softcap,
+		OverCapPct:   ret * 100,
+		DisplayedAC:  (av + raw) * 1000 / 847,
+		NPCLevel:     npcLevel,
+		HitChancePct: npcHitChancePct(npcToHit(npcLevel), av),
+	}
+}
+
 // ── Attack rating ──────────────────────────────────────────────────────────
 
 // DisplayedATK reproduces the client inventory-window ATK rating, ported from

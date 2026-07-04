@@ -151,6 +151,51 @@ func TestDisplayedACPlateTank(t *testing.T) {
 	}
 }
 
+func TestNPCToHit(t *testing.T) {
+	// TAKP: to-hit = MIN(level,50)*10 + 12. Caps at level 50.
+	if got := npcToHit(60); got != 512 {
+		t.Errorf("npcToHit(60) = %d, want 512", got)
+	}
+	if got := npcToHit(40); got != 412 {
+		t.Errorf("npcToHit(40) = %d, want 412", got)
+	}
+}
+
+func TestNPCHitChance(t *testing.T) {
+	// A level-60 NPC (to-hit 512) vs avoidance 500: t=522, a=510,
+	// 522*1.21=631.62 > 510 → 1 - 510/(631.62*2) = 0.5963 → ~59.6%
+	// (Quarmy shows 59.2% for a comparable plate tank).
+	if got := npcHitChancePct(512, 500); got < 59.3 || got > 59.9 {
+		t.Errorf("npcHitChancePct(512,500) = %.2f, want ~59.6", got)
+	}
+	// Low avoidance (caster, 301): much higher hit chance ~75%.
+	if got := npcHitChancePct(512, 301); got < 75.0 || got > 75.8 {
+		t.Errorf("npcHitChancePct(512,301) = %.2f, want ~75.4", got)
+	}
+}
+
+func TestTankingSoftcap(t *testing.T) {
+	// Warrior, raw mitigation over the 430 softcap: only 20% of each point past
+	// the cap counts at level 60. Item AC 600 → mitigation 900 (see plate test):
+	//   effective = 430 + (900-430)*0.20 = 430 + 94 = 524.
+	tk := Tanking(Warrior, 60, RaceHuman, 600, 100, 100, 210, 0, 0, 60)
+	if tk.Mitigation != 900 {
+		t.Fatalf("raw mitigation = %d, want 900", tk.Mitigation)
+	}
+	if tk.Softcap != 430 {
+		t.Errorf("softcap = %d, want 430", tk.Softcap)
+	}
+	if tk.EffectiveMit != 524 {
+		t.Errorf("effective mitigation = %d, want 524", tk.EffectiveMit)
+	}
+	// A 50-AC shield raises the cap to 480, so more mitigation survives:
+	//   effective = 480 + (900-480)*0.20 = 480 + 84 = 564.
+	withShield := Tanking(Warrior, 60, RaceHuman, 600, 100, 100, 210, 0, 50, 60)
+	if withShield.Softcap != 480 || withShield.EffectiveMit != 564 {
+		t.Errorf("with shield: softcap=%d eff=%d, want 480/564", withShield.Softcap, withShield.EffectiveMit)
+	}
+}
+
 func TestDisplayedATKWarrior(t *testing.T) {
 	// L60 Warrior at cap: weapon skill 250, offense skill 245, item ATK 200,
 	// STR 255. strBonus = (2*255-150)/3 = 360/3 = 120.

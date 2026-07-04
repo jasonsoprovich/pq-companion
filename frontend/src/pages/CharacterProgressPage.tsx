@@ -685,6 +685,7 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
   const emptySplit = { base: 0, item: 0, aa: 0, buff: 0 }
   const block: StatBlock = (derived && derived[mode]) || {
     hp: 0, mana: 0, ac: 0, avoidance: 0, mitigation: 0,
+    effective_mit: 0, softcap: 0, over_cap_pct: 0, hit_chance_pct: 0, npc_level: 60,
     str: stats.base_str, sta: stats.base_sta, agi: stats.base_agi, dex: stats.base_dex,
     wis: stats.base_wis, int: stats.base_int, cha: stats.base_cha,
     pr: 0, mr: 0, dr: 0, fr: 0, cr: 0,
@@ -732,25 +733,47 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
             className="mb-4 -mt-1 rounded px-3 py-2 text-xs"
             style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
           >
-            <div className="mb-1 flex items-center justify-between">
+            <div className="mb-1.5 flex items-center justify-between">
               <span className="font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
                 Tanking
               </span>
-              <span style={{ color: 'var(--color-muted-foreground)' }}>
-                (avoidance + mitigation) &times; 1000 &divide; 847
+              <span
+                title="The client shows (avoidance + raw mitigation) × 1000 ÷ 847."
+                style={{ color: 'var(--color-muted-foreground)' }}
+              >
+                displayed AC {block.ac}
               </span>
             </div>
+
+            {/* Avoidance → chance a reference NPC lands a hit */}
             <div className="flex items-center justify-between" style={{ color: 'var(--color-foreground)' }}>
-              <span title="Chance to be hit at all — from AGI, Defense skill.">
+              <span title="Chance to be hit at all — from AGI, Defense skill (Combat Agility AA not yet counted).">
                 Avoidance <strong>{block.avoidance}</strong>
               </span>
-              <span title="Damage taken per landed hit — from item/spell AC, AGI, Defense skill.">
-                Mitigation <strong>{block.mitigation}</strong>
-              </span>
               <span style={{ color: 'var(--color-muted-foreground)' }}>
-                = AC {block.ac}
+                {block.hit_chance_pct.toFixed(1)}% hit chance vs L{block.npc_level} NPC
               </span>
             </div>
+
+            {/* Raw mitigation → effective after the class softcap */}
+            <div className="mt-0.5 flex items-center justify-between" style={{ color: 'var(--color-foreground)' }}>
+              <span title="Damage taken per landed hit — from item/spell AC, AGI, Defense skill.">
+                Mitigation <strong>{block.mitigation}</strong> raw
+                {block.effective_mit < block.mitigation && (
+                  <> &rarr; <strong>{block.effective_mit}</strong> effective</>
+                )}
+              </span>
+              <span style={{ color: 'var(--color-muted-foreground)' }}>
+                {block.mitigation > block.softcap
+                  ? `softcap ${block.softcap}, ${block.over_cap_pct.toFixed(1)}% past`
+                  : `under softcap ${block.softcap}`}
+              </span>
+            </div>
+
+            <p className="mt-1.5 text-[10px] leading-tight" style={{ color: 'var(--color-muted)' }}>
+              Softcaps &amp; NPC to-hit per TAKP (Al&rsquo;Kabor). Shield AC raises the
+              cap; Combat Stability/Agility AAs aren&rsquo;t counted yet.
+            </p>
           </div>
         )}
 

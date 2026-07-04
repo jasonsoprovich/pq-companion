@@ -1792,6 +1792,12 @@ export interface StatBlock {
   // avoidance + mitigation are the two halves behind the displayed AC (the
   // chance-to-be-hit half and the damage-per-hit half); they combine into `ac`.
   avoidance: number; mitigation: number
+  // Tanking softcap view: effective_mit is the mitigation left after the class
+  // softcap's diminishing returns; softcap is that cap (class base + shield AC);
+  // over_cap_pct is the % of each point past the cap that still counts;
+  // hit_chance_pct is a level-npc_level NPC's chance to land a melee hit.
+  effective_mit: number; softcap: number; over_cap_pct: number
+  hit_chance_pct: number; npc_level: number
   str: number; sta: number; agi: number; dex: number
   wis: number; int: number; cha: number
   pr: number; mr: number; dr: number; fr: number; cr: number
