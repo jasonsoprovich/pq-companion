@@ -67,14 +67,14 @@ func TestParseSnapshot(t *testing.T) {
 	if snap.OnPersonCopper != 0 {
 		t.Errorf("OnPersonCopper = %d, want 0", snap.OnPersonCopper)
 	}
-	if snap.BankCopper != 14209255 {
-		t.Errorf("BankCopper = %d, want 14209255", snap.BankCopper)
+	if snap.BankCopper != 25822255 {
+		t.Errorf("BankCopper = %d, want 25822255", snap.BankCopper)
 	}
 
 	// Feane has 7 Trader's Satchels (General1-7); General8 is a Small Box and
-	// must be excluded. There are 43 non-empty slots across the satchels.
-	if len(snap.Satchel) != 43 {
-		t.Errorf("satchel has %d entries, want 43", len(snap.Satchel))
+	// must be excluded. There are 47 non-empty slots across the satchels.
+	if len(snap.Satchel) != 47 {
+		t.Errorf("satchel has %d entries, want 47", len(snap.Satchel))
 	}
 
 	got := make(map[int]string)
@@ -86,7 +86,7 @@ func TestParseSnapshot(t *testing.T) {
 		32330: "Goranga Spear",          // General1
 		10595: "Scaled Wolf Hide Cloak", // General1
 		2350:  "Incandescent Mask",      // General1
-		2749:  "Damaged Hopper Hide",    // General7 (stack of 13)
+		10022: "Amber",                  // General7 (stack of 8)
 	}
 	for id, name := range want {
 		if got[id] != name {
@@ -100,10 +100,10 @@ func TestParseSnapshot(t *testing.T) {
 		}
 	}
 
-	// Stacked count is preserved (Damaged Hopper Hide x13).
+	// Stacked count is preserved (Amber x8).
 	for _, it := range snap.Satchel {
-		if it.ItemID == 2749 && it.Count != 13 {
-			t.Errorf("Damaged Hopper Hide count = %d, want 13", it.Count)
+		if it.ItemID == 10022 && it.Count != 8 {
+			t.Errorf("Amber count = %d, want 8", it.Count)
 		}
 	}
 }
