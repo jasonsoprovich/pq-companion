@@ -83,6 +83,7 @@ import {
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName } from '../hooks/useActivePlayerName'
 import { WSEvent } from '../lib/wsEvents'
+import { compileTriggerRegex } from '../lib/triggerRegex'
 import type {
   Trigger,
   TriggerFired,
@@ -458,9 +459,10 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
 
   const validatePattern = (p: string) => {
     try {
-      // The backend accepts Go (?P<name>…) named groups; JS only knows
-      // (?<name>…). Normalize before validating so documented syntax passes.
-      new RegExp(p.replace(/\(\?P</g, '(?<'))
+      // The backend matches with Go/RE2, which accepts named groups and inline
+      // flags JS rejects. Translate before validating so documented syntax
+      // passes (see lib/triggerRegex).
+      compileTriggerRegex(p)
       setPatternError(null)
       return true
     } catch (e) {
@@ -561,7 +563,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
         .filter((s) => s.length > 0)
       const errs: string[] = []
       for (const ex of excludeList) {
-        try { new RegExp(ex) } catch (e) { errs.push(`${ex} — ${(e as Error).message}`) }
+        try { compileTriggerRegex(ex) } catch (e) { errs.push(`${ex} — ${(e as Error).message}`) }
       }
       if (errs.length > 0) {
         setExcludeErrors(errs)
@@ -575,7 +577,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
       const extraErrs: string[] = []
       for (const ep of extraList) {
         try {
-          new RegExp(ep.pattern.replace(/\(\?P</g, '(?<'))
+          compileTriggerRegex(ep.pattern)
         } catch (e) {
           extraErrs.push(`${ep.pattern} — ${(e as Error).message}`)
         }

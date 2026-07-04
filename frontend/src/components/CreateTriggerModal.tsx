@@ -5,6 +5,7 @@ import type { Action, TimerAlertThreshold, TimerType, Trigger } from '../types/t
 import NotificationActionEditor, { NotificationTypeSelect } from './NotificationActionEditor'
 import DecimalInput from './DecimalInput'
 import { useVoices } from '../hooks/useVoices'
+import { compileTriggerRegex } from '../lib/triggerRegex'
 
 export interface TriggerPrefill {
   name: string
@@ -130,9 +131,10 @@ export default function CreateTriggerModal({
 
   const validatePattern = (p: string) => {
     try {
-      // The backend accepts Go (?P<name>…) named groups; JS only knows
-      // (?<name>…). Normalize before validating so documented syntax passes.
-      new RegExp(p.replace(/\(\?P</g, '(?<'))
+      // The backend matches with Go/RE2, which accepts named groups and inline
+      // flags JS rejects. Translate before validating so documented syntax
+      // passes (see lib/triggerRegex).
+      compileTriggerRegex(p)
       setPatternError(null)
       return true
     } catch (e) {
@@ -145,7 +147,7 @@ export default function CreateTriggerModal({
     e.preventDefault()
     if (!name.trim() || !pattern.trim()) return
     if (!validatePattern(pattern)) return
-    if (wornOff && !(() => { try { new RegExp(wornOff); return true } catch { return false } })()) {
+    if (wornOff && !(() => { try { compileTriggerRegex(wornOff); return true } catch { return false } })()) {
       setPatternError('invalid worn-off regex')
       return
     }
