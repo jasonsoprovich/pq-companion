@@ -229,7 +229,21 @@ func (w *Watcher) RefreshAllPersonas() {
 		if err := w.charStore.ReplaceAAs(c.ID, aas); err != nil {
 			slog.Warn("zeal: refresh personas: save aas", "character", c.Name, "err", err)
 		}
+		if err := w.charStore.ReplaceTradeskills(c.ID, toTradeskillEntries(data.Tradeskills)); err != nil {
+			slog.Warn("zeal: refresh personas: save tradeskills", "character", c.Name, "err", err)
+		}
 	}
+}
+
+// toTradeskillEntries maps parsed quarmy tradeskills to the character store's
+// entry type. Present only when the export carries a SkillID section (Zeal
+// 1.4.3+); older exports yield an empty slice, which clears any stale rows.
+func toTradeskillEntries(src []TradeskillEntry) []character.TradeskillEntry {
+	out := make([]character.TradeskillEntry, len(src))
+	for i, ts := range src {
+		out[i] = character.TradeskillEntry{SkillID: ts.SkillID, Value: ts.Value}
+	}
+	return out
 }
 
 // AllInventories scans the EQ directory for all character inventory exports and
@@ -502,5 +516,8 @@ func (w *Watcher) checkQuarmy(path, charName string) {
 	}
 	if err := w.charStore.ReplaceAAs(char.ID, aas); err != nil {
 		slog.Warn("zeal: save character aas", "character", charName, "err", err)
+	}
+	if err := w.charStore.ReplaceTradeskills(char.ID, toTradeskillEntries(data.Tradeskills)); err != nil {
+		slog.Warn("zeal: save character tradeskills", "character", charName, "err", err)
 	}
 }

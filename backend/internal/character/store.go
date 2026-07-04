@@ -32,6 +32,17 @@ type AAEntry struct {
 	Name string `json:"name,omitempty"`
 }
 
+// TradeskillEntry is a character's value in one tradeskill, from the quarmy
+// "SkillID\tValue" section. Value is the raw server value; the API layer fills
+// in Name and Cap and marks Untrained for the 254/255 sentinels.
+type TradeskillEntry struct {
+	SkillID   int    `json:"skill_id"`
+	Value     int    `json:"value"`
+	Name      string `json:"name,omitempty"`
+	Cap       int    `json:"cap,omitempty"`
+	Untrained bool   `json:"untrained"`
+}
+
 // Store persists character profiles in user.db.
 type Store struct {
 	db *sql.DB
@@ -99,6 +110,20 @@ func (s *Store) migrate() error {
 			aa_id        INTEGER NOT NULL,
 			rank         INTEGER NOT NULL DEFAULT 1,
 			PRIMARY KEY (character_id, aa_id),
+			FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+		)
+	`); err != nil {
+		return err
+	}
+	// Tradeskill values from the quarmy "SkillID\tValue" section (Zeal 1.4.3+).
+	// One row per skill id; value is the raw server value (254/255 = untrained
+	// sentinels, kept as-is and classified at read time).
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS character_tradeskills (
+			character_id INTEGER NOT NULL,
+			skill_id     INTEGER NOT NULL,
+			value        INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (character_id, skill_id),
 			FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
 		)
 	`); err != nil {
@@ -202,6 +227,7 @@ func (s *Store) Delete(id int) error {
 	for _, tbl := range []string{
 		"character_tasks",
 		"character_aas",
+		"character_tradeskills",
 		"character_raid_buffs",
 		"character_upgrade_weights",
 		"character_upgrade_focus",
@@ -314,6 +340,50 @@ func (s *Store) ListAAs(characterID int) ([]AAEntry, error) {
 			return nil, err
 		}
 		out = append(out, aa)
+	}
+	return out, rows.Err()
+}
+
+// ReplaceTradeskills replaces all stored tradeskill values for the character
+// with the given id. Values are stored raw (including 254/255 sentinels).
+func (s *Store) ReplaceTradeskills(characterID int, skills []TradeskillEntry) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.Exec(`DELETE FROM character_tradeskills WHERE character_id=?`, characterID); err != nil {
+		return err
+	}
+	for _, ts := range skills {
+		if _, err := tx.Exec(
+			`INSERT INTO character_tradeskills (character_id, skill_id, value) VALUES (?, ?, ?)`,
+			characterID, ts.SkillID, ts.Value,
+		); err != nil {
+			return fmt.Errorf("insert tradeskill %d: %w", ts.SkillID, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// ListTradeskills returns the raw stored tradeskill values for a character,
+// ordered by skill id. Name/Cap/Untrained are left for the API layer to fill.
+func (s *Store) ListTradeskills(characterID int) ([]TradeskillEntry, error) {
+	rows, err := s.db.Query(
+		`SELECT skill_id, value FROM character_tradeskills WHERE character_id=? ORDER BY skill_id`,
+		characterID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TradeskillEntry
+	for rows.Next() {
+		var ts TradeskillEntry
+		if err := rows.Scan(&ts.SkillID, &ts.Value); err != nil {
+			return nil, err
+		}
+		out = append(out, ts)
 	}
 	return out, rows.Err()
 }

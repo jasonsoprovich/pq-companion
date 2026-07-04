@@ -176,6 +176,18 @@ type AAEntry struct {
 	Rank int `json:"rank"`
 }
 
+// TradeskillEntry is one skill from the quarmy.txt "SkillID\tValue" section
+// (added in Zeal 1.4.3). SkillID is the EQMacEmu SkillType id (55=Fishing,
+// 57=Tinkering, 58=Research, …). Value is the raw server value: a real trained
+// value is 0–250, but the server also exports the sentinels 254 and 255 for
+// skills the character can never train (255 = class-locked, 254 = race-locked
+// but flagged trainable, e.g. gnome-only Tinkering on a non-gnome). We store
+// the raw value and let the display layer classify sentinels as "untrained".
+type TradeskillEntry struct {
+	SkillID int `json:"skill_id"`
+	Value   int `json:"value"`
+}
+
 // QuarmyData is the parsed contents of a <CharName>-Quarmy.txt file.
 // It contains character identity (level/class/race), stats, inventory, and AAs.
 //
@@ -186,12 +198,13 @@ type AAEntry struct {
 //
 // Callers persisting to user.db must convert Class to the app's 0-indexed scheme.
 type QuarmyData struct {
-	Character  string           `json:"character"`
-	ExportedAt time.Time        `json:"exported_at"`
-	Level      int              `json:"level"`
-	Class      int              `json:"class"`
-	Race       int              `json:"race"`
-	Stats      CharStats        `json:"stats"`
-	Inventory  []InventoryEntry `json:"inventory"`
-	AAs        []AAEntry        `json:"aas"`
+	Character   string            `json:"character"`
+	ExportedAt  time.Time         `json:"exported_at"`
+	Level       int               `json:"level"`
+	Class       int               `json:"class"`
+	Race        int               `json:"race"`
+	Stats       CharStats         `json:"stats"`
+	Inventory   []InventoryEntry  `json:"inventory"`
+	AAs         []AAEntry         `json:"aas"`
+	Tradeskills []TradeskillEntry `json:"tradeskills"`
 }

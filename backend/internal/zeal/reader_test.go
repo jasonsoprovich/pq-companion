@@ -555,6 +555,49 @@ func TestParseQuarmy_RealOsui(t *testing.T) {
 	}
 }
 
+func TestParseQuarmy_Tradeskills(t *testing.T) {
+	// The Zeal 1.4.3+ export adds a "SkillID\tValue" section after the AAs.
+	// testdata/ is gitignored, so skip when the fixture isn't present.
+	path := filepath.Join("..", "..", "..", "testdata", "TAKPv22", "Osui-Quarmy_pq.proj.txt")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skipf("testdata fixture %s not present", path)
+	}
+	data, err := ParseQuarmy(path, "Osui")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The stats/inventory/AA sections must still parse with the extra section.
+	if len(data.AAs) == 0 {
+		t.Error("expected AAs to still parse alongside the tradeskill section")
+	}
+	if len(data.Inventory) == 0 {
+		t.Error("expected inventory to still parse")
+	}
+
+	byID := make(map[int]int, len(data.Tradeskills))
+	for _, ts := range data.Tradeskills {
+		byID[ts.SkillID] = ts.Value
+	}
+	// Research (58) is genuinely trained; Tinkering (57) and Make Poison (56)
+	// are the 254/255 untrained sentinels for a non-gnome Enchanter.
+	if got := byID[58]; got != 55 {
+		t.Errorf("Research (58) value = %d, want 55", got)
+	}
+	if got := byID[57]; got != 254 {
+		t.Errorf("Tinkering (57) value = %d, want 254 (untrained sentinel)", got)
+	}
+	if got := byID[56]; got != 255 {
+		t.Errorf("Make Poison (56) value = %d, want 255 (untrained sentinel)", got)
+	}
+	if got := byID[55]; got != 1 {
+		t.Errorf("Fishing (55) value = %d, want 1", got)
+	}
+	// The Checksum trailer must not leak into the tradeskill rows.
+	if _, ok := byID[0]; ok {
+		t.Error("tradeskills contain an unexpected skill id 0 (checksum leaked?)")
+	}
+}
+
 func TestQuarmyPath(t *testing.T) {
 	got := QuarmyPath("/eq", "Aradune")
 	want := filepath.Join("/eq", "Aradune-Quarmy.txt")

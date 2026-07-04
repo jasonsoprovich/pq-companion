@@ -1765,6 +1765,14 @@ export function getCharacterSkills(id: number): Promise<SkillsResponse> {
   return get<SkillsResponse>(`/api/characters/${id}/skills`)
 }
 
+export function getCharacterTradeskills(
+  id: number,
+): Promise<import('../types/skill').TradeskillsResponse> {
+  return get<import('../types/skill').TradeskillsResponse>(
+    `/api/characters/${id}/tradeskills`,
+  )
+}
+
 export function getZealQuarmy(character?: string): Promise<{ quarmy: QuarmyData | null }> {
   const qs = character ? `?character=${encodeURIComponent(character)}` : ''
   return get<{ quarmy: QuarmyData | null }>(`/api/zeal/quarmy${qs}`)

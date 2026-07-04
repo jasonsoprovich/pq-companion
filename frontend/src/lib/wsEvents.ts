@@ -24,6 +24,9 @@ export const WSEvent = {
   WishlistChanged: 'wishlist:changed',
   ZealConnected: 'zeal:connected',
   ZealDisconnected: 'zeal:disconnected',
+  // Broadcast by the zeal watcher when a character's quarmy export is
+  // (re)parsed on /camp or /outputfile — carries fresh stats/AAs/tradeskills.
+  ZealQuarmy: 'zeal:quarmy',
 } as const
 
 export type WSEventType = (typeof WSEvent)[keyof typeof WSEvent]

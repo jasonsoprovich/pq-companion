@@ -16,6 +16,20 @@ export interface SkillsResponse {
   skills: SkillView[]
 }
 
+// Mirrors backend character.TradeskillEntry (enriched by the API layer). From
+// the quarmy "SkillID\tValue" section added in Zeal 1.4.3.
+export interface TradeskillView {
+  skill_id: number
+  value: number       // raw server value; 254/255 = untrained sentinels
+  name?: string       // resolved tradeskill name, e.g. "Research"
+  cap?: number        // class/level cap from skill_caps; 0/absent = unknown
+  untrained: boolean  // true for the 254/255 sentinels (can never train)
+}
+
+export interface TradeskillsResponse {
+  tradeskills: TradeskillView[]
+}
+
 // Broadcast payload for the WSEvent.SkillsUpdate event.
 export interface SkillUpdate {
   character: string

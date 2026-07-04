@@ -6,7 +6,7 @@ import {
   getCharacterSpellModifiers, searchSpells,
   getCharacterRaidBuffs, setCharacterRaidBuffs, getSpellStatDeltas,
   getTimerState, MAX_RAID_BUFF_SLOTS, getCharacterDerivedStats,
-  getCharacterSkills,
+  getCharacterSkills, getCharacterTradeskills,
 } from '../services/api'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
@@ -19,7 +19,7 @@ import type {
 } from '../services/api'
 import type { Spell } from '../types/spell'
 import type { Item } from '../types/item'
-import type { SkillView } from '../types/skill'
+import type { SkillView, TradeskillView } from '../types/skill'
 import { DEV_SKILLS } from '../lib/devFlags'
 import { usePoPEnabled } from '../hooks/usePoPEnabled'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
@@ -84,7 +84,7 @@ function StatBar({ label, value, max = 255 }: StatBarProps): React.ReactElement 
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-type Tab = 'stats' | 'gear' | 'aas' | 'modifiers' | 'skills'
+type Tab = 'stats' | 'gear' | 'aas' | 'modifiers' | 'tradeskills' | 'skills'
 
 interface TabButtonProps {
   active: boolean
@@ -308,6 +308,7 @@ export default function CharacterProgressPage(): React.ReactElement {
             <TabButton active={tab === 'modifiers'} onClick={() => setTab('modifiers')}>
               Spell Modifiers {modifiers && modifiers.length > 0 ? `(${modifiers.length})` : ''}
             </TabButton>
+            <TabButton active={tab === 'tradeskills'} onClick={() => setTab('tradeskills')}>Tradeskills</TabButton>
             {DEV_SKILLS && (
               <TabButton active={tab === 'skills'} onClick={() => setTab('skills')}>Skills</TabButton>
             )}
@@ -333,6 +334,9 @@ export default function CharacterProgressPage(): React.ReactElement {
                     contributors={modifiers}
                   />
                 </ErrorBoundary>
+              )}
+              {tab === 'tradeskills' && (
+                <TradeskillPanel characterID={activeChar?.id ?? null} />
               )}
               {DEV_SKILLS && tab === 'skills' && (
                 <SkillsPanel characterID={activeChar?.id ?? null} />
@@ -1943,6 +1947,103 @@ function ResolutionDisplay({ r }: { r: SpellModifierResolution }): React.ReactEl
 }
 
 // ── Skills ──────────────────────────────────────────────────────────────────
+
+// TradeskillPanel shows the character's tradeskill values from the quarmy
+// export (Zeal 1.4.3+). Trained skills get a value/cap bar; the 254/255
+// "untrained" sentinels (skills the class/race can never train) are collapsed
+// into a muted footnote so they don't clutter the useful rows.
+function TradeskillPanel({ characterID }: { characterID: number | null }): React.ReactElement {
+  const [skills, setSkills] = useState<TradeskillView[] | null>(null)
+  const [error, setError] = useState(false)
+
+  const load = useCallback(() => {
+    if (!characterID) { setSkills([]); return }
+    getCharacterTradeskills(characterID)
+      .then((r) => setSkills(r.tradeskills ?? []))
+      .catch(() => setError(true))
+  }, [characterID])
+
+  useEffect(() => { setSkills(null); setError(false); load() }, [load])
+
+  // Re-import (a /camp or /outputfile) refreshes the character's quarmy data.
+  const handle = useCallback((msg: WsMessage) => {
+    if (msg.type === WSEvent.ZealQuarmy) load()
+  }, [load])
+  useWebSocket(handle)
+
+  if (!characterID) {
+    return <EmptyState message="No character selected" hint="Pick a character to see their tradeskills." />
+  }
+  if (error) {
+    return <EmptyState message="Couldn't load tradeskills" hint="Try again shortly." />
+  }
+  if (skills === null) {
+    return <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>Loading…</p>
+  }
+  if (skills.length === 0) {
+    return (
+      <EmptyState
+        message="No tradeskill data yet"
+        hint="Tradeskill levels come from the Zeal quarmy export added in Zeal 1.4.3. Update Zeal, then /camp (or /outputfile quarmy) so the export includes them, and they'll appear here with their class/level caps."
+      />
+    )
+  }
+
+  const trained = skills.filter((s) => !s.untrained)
+  const untrained = skills.filter((s) => s.untrained)
+
+  return (
+    <div className="space-y-3">
+      {trained.length === 0 ? (
+        <p className="px-1 text-xs" style={{ color: 'var(--color-muted)' }}>
+          This character has no trained tradeskills.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {trained
+            .slice()
+            .sort((a, b) => b.value - a.value)
+            .map((s) => <TradeskillRow key={s.skill_id} s={s} />)}
+        </div>
+      )}
+      {untrained.length > 0 && (
+        <p className="px-1 text-xs" style={{ color: 'var(--color-muted)' }}>
+          Untrained (class or race can&apos;t learn these):{' '}
+          {untrained
+            .map((s) => s.name || `Skill ${s.skill_id}`)
+            .sort((a, b) => a.localeCompare(b))
+            .join(', ')}
+          .
+        </p>
+      )}
+    </div>
+  )
+}
+
+function TradeskillRow({ s }: { s: TradeskillView }): React.ReactElement {
+  const cap = s.cap ?? 0
+  const hasCap = cap > 0
+  const pct = hasCap ? Math.min(100, Math.round((s.value / cap) * 100)) : 0
+  const atCap = hasCap && s.value >= cap
+  return (
+    <div
+      className="rounded px-3 py-2"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+    >
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span style={{ color: 'var(--color-foreground)' }}>{s.name || `Skill ${s.skill_id}`}</span>
+        <span className="font-mono tabular-nums" style={{ color: atCap ? '#22c55e' : 'var(--color-foreground)' }}>
+          {s.value}{hasCap ? ` / ${cap}` : ''}{atCap ? ' ✓' : ''}
+        </span>
+      </div>
+      {hasCap && (
+        <div className="mt-1 h-1 overflow-hidden rounded" style={{ backgroundColor: 'var(--color-surface-3)' }}>
+          <div style={{ width: `${pct}%`, height: '100%', backgroundColor: atCap ? '#22c55e' : 'var(--color-primary)' }} />
+        </div>
+      )}
+    </div>
+  )
+}
 
 function SkillsPanel({ characterID }: { characterID: number | null }): React.ReactElement {
   const [skills, setSkills] = useState<SkillView[] | null>(null)

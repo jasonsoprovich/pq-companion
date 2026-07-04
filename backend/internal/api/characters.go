@@ -14,6 +14,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db/enums"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/eqstat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/era"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
@@ -223,6 +224,64 @@ func (h *charactersHandler) aas(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"trained":   trained,
 		"available": available,
+	})
+}
+
+// untrainedTradeskillValue is the lowest raw value the server exports to mean
+// "this character can never train this skill" (255 = class-locked, 254 =
+// race-locked but flagged trainable, e.g. gnome-only Tinkering on a non-gnome).
+// Real trained values are 0–250, so anything at/above this is a sentinel.
+const untrainedTradeskillValue = 254
+
+// tradeskills returns the character's tradeskill values from the quarmy export
+// (Zeal 1.4.3+), each enriched with its skill name and the class/level cap.
+// Sentinel values (254/255) are flagged Untrained rather than shown as a level.
+// An empty list means the export predates the SkillID section — the frontend
+// prompts the user to update Zeal.
+func (h *charactersHandler) tradeskills(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	char, ok, err := h.store.Get(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+
+	skills, err := h.store.ListTradeskills(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if skills == nil {
+		skills = []character.TradeskillEntry{}
+	}
+
+	// classIdx in skill_caps is 1-indexed (1=Warrior … 15=Beastlord); our
+	// character store keeps Class 0-indexed, so add one. A Class of -1 (not
+	// set) yields classIdx 0, which SkillCap treats as "no cap known".
+	classIdx := char.Class + 1
+	for i := range skills {
+		skills[i].Name = enums.TradeskillName(skills[i].SkillID)
+		if skills[i].Value >= untrainedTradeskillValue {
+			skills[i].Untrained = true
+			continue
+		}
+		if h.db != nil {
+			if cap, err := h.db.SkillCap(skills[i].SkillID, classIdx, char.Level); err == nil {
+				skills[i].Cap = cap
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"tradeskills": skills,
 	})
 }
 

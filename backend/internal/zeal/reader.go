@@ -545,10 +545,12 @@ func QuarmyPath(eqPath, character string) string {
 }
 
 // ParseQuarmy reads and parses a Zeal quarmy export file.
-// The file has three sections separated by header rows:
+// The file has up to four sections separated by header rows:
 //  1. Character stats header + one data row (BaseSTR … BaseWIS)
 //  2. Inventory section (identical format to -Inventory.txt)
 //  3. AA section: "AAIndex\tRank" header followed by id\trank rows
+//  4. Tradeskill section: "SkillID\tValue" header followed by id\tvalue rows
+//     (added in Zeal 1.4.3; absent in older exports)
 //
 // Returns a non-nil QuarmyData even if individual sections are missing.
 func ParseQuarmy(path, character string) (*QuarmyData, error) {
@@ -564,17 +566,19 @@ func ParseQuarmy(path, character string) (*QuarmyData, error) {
 	}
 
 	data := &QuarmyData{
-		Character:  character,
-		ExportedAt: info.ModTime(),
-		Inventory:  []InventoryEntry{},
-		AAs:        []AAEntry{},
+		Character:   character,
+		ExportedAt:  info.ModTime(),
+		Inventory:   []InventoryEntry{},
+		AAs:         []AAEntry{},
+		Tradeskills: []TradeskillEntry{},
 	}
 
 	type section int
 	const (
-		secStats     section = iota // lines 1-2: char header + data
-		secInventory                // lines 3+: inventory
-		secAA                       // after "AAIndex" header
+		secStats       section = iota // lines 1-2: char header + data
+		secInventory                  // lines 3+: inventory
+		secAA                         // after "AAIndex" header
+		secTradeskills                // after "SkillID" header (Zeal 1.4.3+)
 	)
 
 	cur := secStats
@@ -593,6 +597,9 @@ func ParseQuarmy(path, character string) (*QuarmyData, error) {
 		switch {
 		case firstField == "aaindex":
 			cur = secAA
+			continue
+		case firstField == "skillid":
+			cur = secTradeskills
 			continue
 		case firstField == "location":
 			cur = secInventory
@@ -638,6 +645,18 @@ func ParseQuarmy(path, character string) (*QuarmyData, error) {
 				rank, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
 				if err1 == nil && err2 == nil && rank > 0 {
 					data.AAs = append(data.AAs, AAEntry{ID: id, Rank: rank})
+				}
+			}
+
+		case secTradeskills:
+			parts := strings.SplitN(line, "\t", 2)
+			if len(parts) == 2 {
+				id, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+				val, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+				// Keep the raw value (incl. 254/255 sentinels); the display
+				// layer decides what counts as "untrained".
+				if err1 == nil && err2 == nil {
+					data.Tradeskills = append(data.Tradeskills, TradeskillEntry{SkillID: id, Value: val})
 				}
 			}
 		}
