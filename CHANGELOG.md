@@ -9,6 +9,17 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.15.5 — 2026-07-04
+
+A fix for custom trigger sounds playing two or three times.
+
+### Fixes
+- Custom trigger sound files no longer play multiple times — and cut off
+  mid-sound — when a trigger fires. The app's internal audio scheme now
+  serves sound files with proper range support, so each alert plays exactly
+  once. This only affected people who replaced the built-in text-to-speech
+  with their own audio files; text-to-speech alerts were never affected.
+
 ## v0.15.4 — 2026-07-03
 
 Start-over controls, plus a fix for a phantom "Everquest" character tab.
