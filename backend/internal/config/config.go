@@ -407,12 +407,19 @@ type Preferences struct {
 	ThreatHatemodPct int `yaml:"threat_hatemod_pct,omitempty" json:"threat_hatemod_pct"`
 
 	// RaidThreatEnabled controls the raid-estimate mode of the Threat Meter (a
-	// per-mob, per-player ESTIMATED hate view derived from observed damage). On
-	// by default; it still carries the DPS meter's accuracy limits plus threat-
-	// specific blind spots (DoTs/heals/taunts/out-of-range), so it's configured
-	// (and can be turned off) in Settings > Overlays. No omitempty so an explicit
-	// "off" persists rather than reverting to the default on next load.
-	RaidThreatEnabled bool `yaml:"raid_threat_enabled" json:"raid_threat_enabled"`
+	// per-mob, per-player ESTIMATED hate view derived from observed damage).
+	// Experimental and OFF by default: it carries the DPS meter's accuracy
+	// limits plus threat-specific blind spots (DoTs/heals/taunts/out-of-range),
+	// which mislead in many raid setups. Gated behind a Developer-tab flag —
+	// enabling it there adds the Solo/Raid toggle to the Threat overlay and the
+	// per-class/player tuning card in Settings > Overlays.
+	RaidThreatEnabled bool `yaml:"raid_threat_enabled,omitempty" json:"raid_threat_enabled"`
+
+	// RaidThreatMigratedOff marks the one-time migration that turned the raid-
+	// estimate threat mode off (it previously defaulted on) when it became an
+	// experimental, Developer-tab-gated feature. The marker keeps the migration
+	// from re-disabling a user who deliberately re-enables raid mode.
+	RaidThreatMigratedOff bool `yaml:"raid_threat_migrated_off,omitempty" json:"raid_threat_migrated_off,omitempty"`
 
 	// RaidThreatClassMods is the per-class hate adjustment (class name → signed
 	// percent) the raid-estimate view applies to a player's observed damage, to
@@ -737,7 +744,7 @@ func defaults() Config {
 			OverlayDPSEnabled:           true,
 			OverlayHPSEnabled:           false,
 			OverlayEntityLinksEnabled:   true,
-			RaidThreatEnabled:           true,
+			RaidThreatEnabled:           false,
 			MasterVolume:                100,
 			TTSRate:                     1.0,
 			ZoomFactor:                  1.0,
@@ -793,9 +800,11 @@ func LoadFrom(path string) (*Manager, error) {
 			return nil, err
 		}
 		// File does not exist — write defaults so the user has a template.
-		// New files are born already-migrated; the marker only matters for
-		// pre-existing configs that had "anyone" as the prior default.
+		// New files are born already-migrated; the markers only matter for
+		// pre-existing configs (the "anyone" spell-timer default, and the
+		// raid-threat-on default that predates the Developer-tab gate).
 		cfg.SpellTimer.CastByMeMigrationDone = true
+		cfg.Preferences.RaidThreatMigratedOff = true
 		m := &Manager{cfg: cfg, path: path}
 		if saveErr := m.save(); saveErr != nil {
 			// Non-fatal: we can operate without a file on disk.
@@ -834,6 +843,18 @@ func applyDefaults(cfg *Config) bool {
 			cfg.SpellTimer.TrackingScope = TrackingScopeCastByMe
 		}
 		cfg.SpellTimer.CastByMeMigrationDone = true
+		changed = true
+	}
+
+	// One-time migration: raid-estimate threat mode used to default on. It is
+	// now an experimental, Developer-tab-gated feature that is off by default,
+	// because its per-player estimates mislead in many raid setups. Force it
+	// off once for existing configs (which persisted the old on-by-default via
+	// the previously-omitempty-less field); a later re-enable in the Developer
+	// tab sticks because the marker keeps this from running again.
+	if !cfg.Preferences.RaidThreatMigratedOff {
+		cfg.Preferences.RaidThreatEnabled = false
+		cfg.Preferences.RaidThreatMigratedOff = true
 		changed = true
 	} else if cfg.SpellTimer.TrackingScope == "" {
 		cfg.SpellTimer.TrackingScope = TrackingScopeCastByMe

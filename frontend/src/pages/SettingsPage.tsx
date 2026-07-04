@@ -2130,9 +2130,10 @@ export default function SettingsPage(): React.ReactElement {
         )}
 
         {/* ── Raid threat (estimated) ────────────────────────────────────── */}
-        {tab === 'overlays' && (
+        {/* Only shown once raid mode is enabled from the Developer tab; the
+            gate lives there so normal users never see this experimental card. */}
+        {tab === 'overlays' && (config.preferences.raid_threat_enabled ?? false) && (
         <RaidThreatCard
-          enabled={config.preferences.raid_threat_enabled ?? true}
           classMods={config.preferences.raid_threat_class_mods ?? {}}
           playerMods={config.preferences.raid_threat_player_mods ?? {}}
           onPatch={(patch) =>
@@ -3305,16 +3306,15 @@ const RAID_CLASSES = [
   'Necromancer', 'Wizard', 'Magician', 'Enchanter',
 ]
 
-// RaidThreatCard configures the Threat overlay's estimated Raid mode: an
-// enable toggle (adds the Solo/Raid switch to the overlay) plus optional
-// per-class and per-player hate adjustments for known aggro-mod setups.
+// RaidThreatCard configures the Threat overlay's estimated Raid mode: optional
+// per-class and per-player hate adjustments for known aggro-mod setups. It is
+// only rendered once raid mode is enabled from the Developer tab (the enable
+// toggle lives there), so this card is pure tuning.
 function RaidThreatCard({
-  enabled,
   classMods,
   playerMods,
   onPatch,
 }: {
-  enabled: boolean
   classMods: Record<string, number>
   playerMods: Record<string, number>
   onPatch: (patch: Record<string, unknown>) => void
@@ -3348,30 +3348,16 @@ function RaidThreatCard({
       <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
         Raid threat (estimated)
       </h2>
-      <div className="flex items-start justify-between gap-4">
-        <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-          Adds a <strong>Solo / Raid</strong> toggle to the Threat overlay. Raid mode
-          estimates every nearby player&rsquo;s hate from the damage they do — the same
-          data the DPS meter uses — and pins a tank to the top when it sees their taunt
-          land. It is approximate: out-of-range players, others&rsquo; DoTs, heals, and
-          utility casts aren&rsquo;t in your log, so DoT/healer classes read low.
-        </p>
-        <button
-          type="button"
-          onClick={() => onPatch({ raid_threat_enabled: !enabled })}
-          className="shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors"
-          style={{
-            backgroundColor: enabled ? 'var(--color-primary)' : 'var(--color-surface-2)',
-            color: enabled ? 'var(--color-background)' : 'var(--color-muted-foreground)',
-            border: '1px solid var(--color-border)',
-          }}
-        >
-          {enabled ? 'Enabled' : 'Disabled'}
-        </button>
-      </div>
+      <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+        Raid mode is <strong>enabled</strong> (toggle it in Settings &rsaquo;
+        Developer). It estimates every nearby player&rsquo;s hate from the damage
+        they do — the same data the DPS meter uses — and pins a tank to the top
+        when it sees their taunt land. It is approximate: out-of-range players,
+        others&rsquo; DoTs, heals, and utility casts aren&rsquo;t in your log, so
+        DoT/healer classes read low.
+      </p>
 
-      {enabled && (
-        <>
+      <>
           <div className="mt-4">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
               Per-class hate adjustment (%)
@@ -3445,7 +3431,6 @@ function RaidThreatCard({
             </div>
           </div>
         </>
-      )}
     </section>
   )
 }

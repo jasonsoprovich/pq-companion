@@ -137,6 +137,10 @@ function FlagsPanel(): React.ReactElement {
   const macroEnabled = Boolean(config?.preferences?.macro_editor_enabled)
   const toggleMacro = (): void => savePrefs({ macro_editor_enabled: !macroEnabled })
 
+  // ── Raid-wide threat meter ────────────────────────────────────────────
+  const raidThreatEnabled = Boolean(config?.preferences?.raid_threat_enabled)
+  const toggleRaidThreat = (): void => savePrefs({ raid_threat_enabled: !raidThreatEnabled })
+
   return (
     <div className="flex flex-col gap-4">
       <div
@@ -199,6 +203,46 @@ function FlagsPanel(): React.ReactElement {
             {error}
           </p>
         )}
+      </section>
+
+      {/* ── Raid-wide threat meter ────────────────────────────────────────── */}
+      <section
+        className="rounded-lg p-4"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <div className="mb-3 flex items-center gap-2">
+          <FlaskConical size={14} style={{ color: 'var(--color-primary)' }} />
+          <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            Raid-wide threat meter
+          </h2>
+        </div>
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+            Adds a <strong>Solo / Raid</strong> toggle to the Threat overlay. Raid
+            mode estimates every nearby player&rsquo;s hate from the damage in your
+            log. It is unreliable: out-of-range players, other players&rsquo; DoTs,
+            heals, taunts, and utility casts aren&rsquo;t in your log, so DoT and
+            healer classes read far too low and callouts can mislead. The Solo
+            (personal) meter is always available and unaffected by this toggle —
+            enable Raid mode only if you want to experiment with it. Per-class and
+            per-player tuning appears in Settings &rsaquo; Overlays once enabled.
+          </p>
+          <button
+            type="button"
+            onClick={toggleRaidThreat}
+            disabled={!config || saving}
+            className="shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors"
+            style={{
+              backgroundColor: raidThreatEnabled ? 'var(--color-primary)' : 'var(--color-surface-2)',
+              color: raidThreatEnabled ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+              cursor: !config || saving ? 'default' : 'pointer',
+              opacity: !config || saving ? 0.6 : 1,
+            }}
+          >
+            {raidThreatEnabled ? 'Enabled' : 'Disabled'}
+          </button>
+        </div>
       </section>
 
       {/* ── PoP flagging ──────────────────────────────────────────────────── */}
