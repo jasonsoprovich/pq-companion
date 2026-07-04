@@ -597,6 +597,44 @@ These are inherent to log-file parsing and affect multiple features:
 
 ---
 
+## 14. Bazaar / Trader tracking
+
+### 14.1 No signal logs an actual bazaar sale — inference is snapshot-diff only
+
+- **Limitation:** The Trader Tracker infers what sold by diffing the Trader's
+  Satchel (item 17899) between two inventory snapshots. It cannot see an
+  individual sale as it happens, cannot attribute a sale to a buyer, and cannot
+  distinguish "an item sold" from "the trader pulled the item off the bar" — both
+  read as a satchel count decrease. Prices come from the append-only `BZR_*.ini`
+  reference, so a sale is valued at the *listed* price, not the price it actually
+  went for if it had changed.
+- **Root cause:** Entering `/trader` reboots the client, so the normal
+  export-on-camp never fires, and nothing — not the eqlog, not any bazaar file —
+  writes a line when an item sells. The only durable signal is the inventory
+  itself.
+- **Bazaar Manager log (`bzrlog_<server>_<Char>.txt`) checked and rejected as a
+  source (Zeal 1.4.x):** This file logs the Bazaar Manager window opening
+  ("*N items were found in Trader Satchels*"), per-item **price-set** events
+  ("*Item: X price set to (Np), INI file updated.*"), and "*Bazaar Trader Mode
+  OFF*". It does **not** log any sale, and it never records satchel *contents* or
+  per-item quantities — only an aggregate count. So it cannot tell us *which*
+  item left the satchel or for how much. Its price-set lines are redundant with
+  the `BZR_*.ini` we already read. Its only unique data — trader-mode ON/OFF
+  timestamps and the aggregate item-count checkpoints — would at best let us
+  anchor snapshots to a known time or sanity-check a count; it does not close the
+  blind spot, so it is intentionally **not** parsed.
+- **Sources checked:** Inventory/Quarmy export (satchel contents — the only sale
+  signal), `BZR_*.ini` (listed prices, append-only), `bzrlog_*` (aggregate counts
+  + price-set + mode ON/OFF, no sale/contents), Log (no bazaar sale lines), Zeal
+  (no bazaar/sale field today).
+- **Could a future data source fix this?** **Partially.** A Zeal field (or a
+  server-side sales feed) that emitted a per-item sale event — item, quantity,
+  and sale price — would make the tracker exact instead of snapshot-inferred.
+  Absent that, `bzrlog_*` mode-ON/OFF times could be added later purely as
+  temporal anchors, but they add a parser without resolving the core limitation.
+
+---
+
 ## Template for new entries
 
 ```
