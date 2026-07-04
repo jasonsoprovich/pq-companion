@@ -1789,6 +1789,9 @@ export interface StatBreakdown {
 
 export interface StatBlock {
   hp: number; mana: number; ac: number
+  // avoidance + mitigation are the two halves behind the displayed AC (the
+  // chance-to-be-hit half and the damage-per-hit half); they combine into `ac`.
+  avoidance: number; mitigation: number
   str: number; sta: number; agi: number; dex: number
   wis: number; int: number; cha: number
   pr: number; mr: number; dr: number; fr: number; cr: number

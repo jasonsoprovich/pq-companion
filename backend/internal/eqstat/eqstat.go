@@ -606,13 +606,32 @@ func NaturalHPRegen(level, race int) int {
 	return amount
 }
 
+// ACBreakdown is the split behind the displayed AC: the avoidance and mitigation
+// halves and the client-shown total. Avoidance is the roll-to-be-hit half (AGI,
+// Defense skill); Mitigation is the damage-per-landed-hit half (item/spell AC,
+// AGI, Defense). DisplayedAC = (Avoidance + Mitigation) × 1000 / 847.
+type ACBreakdown struct {
+	Avoidance   int
+	Mitigation  int
+	DisplayedAC int
+}
+
+// ACBreakdownFor returns the avoidance/mitigation split and the displayed AC for
+// a character. Same inputs as DisplayedAC; use it when the UI wants the two
+// halves (a "Tanking" view) rather than only the combined number. Like
+// DisplayedAC it uses the displayed (ignoreCap) mitigation — the number the
+// client shows, before the in-combat softcap.
+func ACBreakdownFor(class, level, race, itemAC, spellAC, agi, defenseSkill, weight int) ACBreakdown {
+	av := avoidance(defenseSkill, agi, level)
+	mit := mitigation(class, level, race, itemAC, spellAC, agi, defenseSkill, weight)
+	return ACBreakdown{Avoidance: av, Mitigation: mit, DisplayedAC: (av + mit) * 1000 / 847}
+}
+
 // DisplayedAC reproduces the client inventory-window AC:
 // (avoidance + mitigation) × 1000 / 847, integer-truncated. This is the number
 // the EQ client shows — it ignores the in-combat AC softcap.
 func DisplayedAC(class, level, race, itemAC, spellAC, agi, defenseSkill, weight int) int {
-	av := avoidance(defenseSkill, agi, level)
-	mit := mitigation(class, level, race, itemAC, spellAC, agi, defenseSkill, weight)
-	return (av + mit) * 1000 / 847
+	return ACBreakdownFor(class, level, race, itemAC, spellAC, agi, defenseSkill, weight).DisplayedAC
 }
 
 // ── Attack rating ──────────────────────────────────────────────────────────

@@ -684,7 +684,7 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
   // vitals read zero until the derived blocks resolve.
   const emptySplit = { base: 0, item: 0, aa: 0, buff: 0 }
   const block: StatBlock = (derived && derived[mode]) || {
-    hp: 0, mana: 0, ac: 0,
+    hp: 0, mana: 0, ac: 0, avoidance: 0, mitigation: 0,
     str: stats.base_str, sta: stats.base_sta, agi: stats.base_agi, dex: stats.base_dex,
     wis: stats.base_wis, int: stats.base_int, cha: stats.base_cha,
     pr: 0, mr: 0, dr: 0, fr: 0, cr: 0,
@@ -726,6 +726,33 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
           <VitalRow label="AC" value={block.ac} />
           <VitalRow label="ATK" value={block.atk_rating} />
         </div>
+
+        {includesGear && (block.avoidance > 0 || block.mitigation > 0) && (
+          <div
+            className="mb-4 -mt-1 rounded px-3 py-2 text-xs"
+            style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+          >
+            <div className="mb-1 flex items-center justify-between">
+              <span className="font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+                Tanking
+              </span>
+              <span style={{ color: 'var(--color-muted-foreground)' }}>
+                (avoidance + mitigation) &times; 1000 &divide; 847
+              </span>
+            </div>
+            <div className="flex items-center justify-between" style={{ color: 'var(--color-foreground)' }}>
+              <span title="Chance to be hit at all — from AGI, Defense skill.">
+                Avoidance <strong>{block.avoidance}</strong>
+              </span>
+              <span title="Damage taken per landed hit — from item/spell AC, AGI, Defense skill.">
+                Mitigation <strong>{block.mitigation}</strong>
+              </span>
+              <span style={{ color: 'var(--color-muted-foreground)' }}>
+                = AC {block.ac}
+              </span>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-3">
           <StatBar label="STR" value={capped(block.str)} max={STAT_CAP} />

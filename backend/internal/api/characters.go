@@ -411,6 +411,11 @@ type statBlock struct {
 	HP         int `json:"hp"`
 	Mana       int `json:"mana"`
 	AC         int `json:"ac"`
+	// Avoidance and Mitigation are the two halves of the displayed AC (see
+	// eqstat.ACBreakdown): the chance-to-be-hit half and the damage-per-hit
+	// half. Surfaced for the Tanking view; they combine into AC.
+	Avoidance  int `json:"avoidance"`
+	Mitigation int `json:"mitigation"`
 	STR        int `json:"str"`
 	STA        int `json:"sta"`
 	AGI        int `json:"agi"`
@@ -1034,10 +1039,13 @@ func (h *charactersHandler) deriveBlock(
 	}
 	haste += overhasteV3
 
+	acb := eqstat.ACBreakdownFor(class, level, race, itemAC, spellAC, totAGI, skills.defense, 0)
 	return statBlock{
 		HP:         eqstat.MaxHP(class, level, totSTA, itemHP, buffHP, 0, aa.HPPct),
 		Mana:       eqstat.MaxMana(class, level, totWIS, totINT, flatMana),
-		AC:         eqstat.DisplayedAC(class, level, race, itemAC, spellAC, totAGI, skills.defense, 0),
+		AC:         acb.DisplayedAC,
+		Avoidance:  acb.Avoidance,
+		Mitigation: acb.Mitigation,
 		STR:        totSTR,
 		STA:        totSTA,
 		AGI:        totAGI,
