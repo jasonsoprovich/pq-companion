@@ -178,7 +178,7 @@ func TestTankingSoftcap(t *testing.T) {
 	// Warrior, raw mitigation over the 430 softcap: only 20% of each point past
 	// the cap counts at level 60. Item AC 600 → mitigation 900 (see plate test):
 	//   effective = 430 + (900-430)*0.20 = 430 + 94 = 524.
-	tk := Tanking(Warrior, 60, RaceHuman, 600, 100, 100, 210, 0, 0, 60)
+	tk := Tanking(Warrior, 60, RaceHuman, 600, 100, 100, 210, 0, 0, 0, 0, 60)
 	if tk.Mitigation != 900 {
 		t.Fatalf("raw mitigation = %d, want 900", tk.Mitigation)
 	}
@@ -190,9 +190,36 @@ func TestTankingSoftcap(t *testing.T) {
 	}
 	// A 50-AC shield raises the cap to 480, so more mitigation survives:
 	//   effective = 480 + (900-480)*0.20 = 480 + 84 = 564.
-	withShield := Tanking(Warrior, 60, RaceHuman, 600, 100, 100, 210, 0, 50, 60)
+	withShield := Tanking(Warrior, 60, RaceHuman, 600, 100, 100, 210, 0, 50, 0, 0, 60)
 	if withShield.Softcap != 480 || withShield.EffectiveMit != 564 {
 		t.Errorf("with shield: softcap=%d eff=%d, want 480/564", withShield.Softcap, withShield.EffectiveMit)
+	}
+}
+
+func TestTankingCombatAAs(t *testing.T) {
+	base := Tanking(Warrior, 60, RaceHuman, 600, 100, 100, 210, 0, 0, 0, 0, 60)
+
+	// Combat Stability (rank 3 = +10%) multiplies the softcap: 430*1.10 = 473,
+	// so effective = 473 + (900-473)*0.20 = 473 + 85 = 558 (up from 524).
+	cs := Tanking(Warrior, 60, RaceHuman, 600, 100, 100, 210, 0, 0, 0, 10, 60)
+	if cs.Softcap != 473 {
+		t.Errorf("Combat Stability softcap = %d, want 473", cs.Softcap)
+	}
+	if cs.EffectiveMit != 558 {
+		t.Errorf("Combat Stability effective mit = %d, want 558", cs.EffectiveMit)
+	}
+
+	// Combat Agility (rank 3 = +10%) scales the hit-roll avoidance but leaves the
+	// displayed avoidance alone, so a mob's hit chance drops.
+	ca := Tanking(Warrior, 60, RaceHuman, 600, 100, 100, 210, 0, 0, 10, 0, 60)
+	if ca.Avoidance != base.Avoidance {
+		t.Errorf("displayed avoidance changed with Combat Agility: %d vs %d", ca.Avoidance, base.Avoidance)
+	}
+	if ca.AvoidCombat != base.Avoidance*110/100 {
+		t.Errorf("combat avoidance = %d, want %d", ca.AvoidCombat, base.Avoidance*110/100)
+	}
+	if ca.HitChancePct >= base.HitChancePct {
+		t.Errorf("Combat Agility should lower hit chance: %.2f vs base %.2f", ca.HitChancePct, base.HitChancePct)
 	}
 }
 

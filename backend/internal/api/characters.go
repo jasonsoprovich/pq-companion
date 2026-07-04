@@ -414,8 +414,12 @@ type statBlock struct {
 	// Avoidance and Mitigation are the two halves of the displayed AC (see
 	// eqstat.ACBreakdown): the chance-to-be-hit half and the damage-per-hit
 	// half. Surfaced for the Tanking view; they combine into AC.
-	Avoidance  int `json:"avoidance"`
-	Mitigation int `json:"mitigation"`
+	Avoidance int `json:"avoidance"`
+	// AvoidCombat is avoidance with Combat Agility folded in — the value the melee
+	// hit roll uses (and what HitChancePct is computed from); Avoidance is the
+	// client-displayed value that leaves it out.
+	AvoidCombat int `json:"avoid_combat"`
+	Mitigation  int `json:"mitigation"`
 	// Tanking softcap view: EffectiveMit is the mitigation left after the class
 	// softcap's diminishing returns; Softcap is that cap (class base + shield AC);
 	// OverCapPct is the percent of each point past the cap that still counts;
@@ -1059,12 +1063,14 @@ func (h *charactersHandler) deriveBlock(
 	// tankingRefNPCLevel benchmarks defense against an even-con level-60 boss
 	// (the classic "vs level 60 NPC" reference), matching the Quarmy tanking tab.
 	const tankingRefNPCLevel = 60
-	tank := eqstat.Tanking(class, level, race, itemAC, spellAC, totAGI, skills.defense, 0, item.ShieldAC, tankingRefNPCLevel)
+	tank := eqstat.Tanking(class, level, race, itemAC, spellAC, totAGI, skills.defense, 0,
+		item.ShieldAC, aa.AvoidMeleePct, aa.CombatStabilityPct, tankingRefNPCLevel)
 	return statBlock{
 		HP:           eqstat.MaxHP(class, level, totSTA, itemHP, buffHP, 0, aa.HPPct),
 		Mana:         eqstat.MaxMana(class, level, totWIS, totINT, flatMana),
 		AC:           tank.DisplayedAC,
 		Avoidance:    tank.Avoidance,
+		AvoidCombat:  tank.AvoidCombat,
 		Mitigation:   tank.Mitigation,
 		EffectiveMit: tank.EffectiveMit,
 		Softcap:      tank.Softcap,

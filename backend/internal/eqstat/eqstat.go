@@ -727,10 +727,11 @@ func npcHitChancePct(toHit, avoidance int) float64 {
 // avoidance/mitigation split, the mitigation softcap and how much of the raw
 // mitigation survives it, and a reference NPC's chance to land a hit.
 type TankingStats struct {
-	Avoidance    int     // roll-to-be-hit half of displayed AC
+	Avoidance    int     // displayed roll-to-be-hit half (excludes Combat Agility, like the client)
+	AvoidCombat  int     // avoidance used in the hit roll (with Combat Agility / SE_AvoidMeleeChance)
 	Mitigation   int     // raw (pre-softcap) mitigation half
 	EffectiveMit int     // mitigation after the class softcap's diminishing returns
-	Softcap      int     // class base softcap + shield AC
+	Softcap      int     // class base softcap × Combat Stability, + shield AC
 	OverCapPct   float64 // percent of each point past the softcap that still counts
 	DisplayedAC  int     // (avoidance + raw mitigation) × 1000 / 847
 	NPCLevel     int     // the reference attacker level for HitChancePct
@@ -738,13 +739,20 @@ type TankingStats struct {
 }
 
 // Tanking computes the full tanking view. shieldAC is the worn shield's AC (0 if
-// none), which raises the mitigation softcap; npcLevel is the reference attacker
-// level for the hit-chance benchmark (e.g. 60). See mitigationSoftcap /
-// npcToHit for sources.
-func Tanking(class, level, race, itemAC, spellAC, agi, defenseSkill, weight, shieldAC, npcLevel int) TankingStats {
+// none), which adds to the mitigation softcap; combatStabilityPct is the
+// SE_CombatStability AA bonus (multiplies the softcap); avoidMeleePct is the
+// SE_AvoidMeleeChance AA bonus (Combat Agility / Lightning Reflexes — scales the
+// avoidance used in the hit roll, not the displayed AC); npcLevel is the
+// reference attacker level for the hit-chance benchmark (e.g. 60). See
+// mitigationSoftcap / npcToHit for sources.
+func Tanking(class, level, race, itemAC, spellAC, agi, defenseSkill, weight, shieldAC, avoidMeleePct, combatStabilityPct, npcLevel int) TankingStats {
 	av := avoidance(defenseSkill, agi, level)
+	// Combat Agility raises the avoidance used in the melee hit roll (server-side
+	// AvoidanceCheck); the client's displayed AC leaves it out.
+	avCombat := av * (100 + avoidMeleePct) / 100
 	raw := mitigation(class, level, race, itemAC, spellAC, agi, defenseSkill, weight)
-	softcap := mitigationSoftcap(class) + shieldAC
+	// Combat Stability multiplies the class softcap; a worn shield's AC adds on top.
+	softcap := mitigationSoftcap(class)*(100+combatStabilityPct)/100 + shieldAC
 	ret := mitigationOverCapReturn(class, level)
 	eff := raw
 	if raw > softcap {
@@ -752,13 +760,14 @@ func Tanking(class, level, race, itemAC, spellAC, agi, defenseSkill, weight, shi
 	}
 	return TankingStats{
 		Avoidance:    av,
+		AvoidCombat:  avCombat,
 		Mitigation:   raw,
 		EffectiveMit: eff,
 		Softcap:      softcap,
 		OverCapPct:   ret * 100,
 		DisplayedAC:  (av + raw) * 1000 / 847,
 		NPCLevel:     npcLevel,
-		HitChancePct: npcHitChancePct(npcToHit(npcLevel), av),
+		HitChancePct: npcHitChancePct(npcToHit(npcLevel), avCombat),
 	}
 }
 

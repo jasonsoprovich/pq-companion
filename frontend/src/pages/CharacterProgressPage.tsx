@@ -684,7 +684,7 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
   // vitals read zero until the derived blocks resolve.
   const emptySplit = { base: 0, item: 0, aa: 0, buff: 0 }
   const block: StatBlock = (derived && derived[mode]) || {
-    hp: 0, mana: 0, ac: 0, avoidance: 0, mitigation: 0,
+    hp: 0, mana: 0, ac: 0, avoidance: 0, avoid_combat: 0, mitigation: 0,
     effective_mit: 0, softcap: 0, over_cap_pct: 0, hit_chance_pct: 0, npc_level: 60,
     str: stats.base_str, sta: stats.base_sta, agi: stats.base_agi, dex: stats.base_dex,
     wis: stats.base_wis, int: stats.base_int, cha: stats.base_cha,
@@ -747,8 +747,11 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
 
             {/* Avoidance → chance a reference NPC lands a hit */}
             <div className="flex items-center justify-between" style={{ color: 'var(--color-foreground)' }}>
-              <span title="Chance to be hit at all — from AGI, Defense skill (Combat Agility AA not yet counted).">
+              <span title="Displayed avoidance is from AGI + Defense skill. Combat Agility raises the avoidance used in the hit roll (shown after the arrow) but not the client AC.">
                 Avoidance <strong>{block.avoidance}</strong>
+                {block.avoid_combat > block.avoidance && (
+                  <> &rarr; <strong>{block.avoid_combat}</strong> in combat</>
+                )}
               </span>
               <span style={{ color: 'var(--color-muted-foreground)' }}>
                 {block.hit_chance_pct.toFixed(1)}% hit chance vs L{block.npc_level} NPC
@@ -771,8 +774,9 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
             </div>
 
             <p className="mt-1.5 text-[10px] leading-tight" style={{ color: 'var(--color-muted)' }}>
-              Softcaps &amp; NPC to-hit per TAKP (Al&rsquo;Kabor). Shield AC raises the
-              cap; Combat Stability/Agility AAs aren&rsquo;t counted yet.
+              Softcaps &amp; NPC to-hit per TAKP (Al&rsquo;Kabor). Shield AC and the
+              Combat Stability AA raise the cap; Combat Agility raises hit-roll
+              avoidance.
             </p>
           </div>
         )}

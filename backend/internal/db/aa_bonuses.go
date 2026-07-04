@@ -29,6 +29,15 @@ type AABonuses struct {
 	// the server (CheckAggroAmount/CheckHealAggroAmount) to spell and heal hate
 	// only, never melee.
 	Hatemod int
+	// AvoidMeleePct is the percent avoidance bonus from SE_AvoidMeleeChance AAs
+	// (Combat Agility, Lightning Reflexes). The server scales avoidance by it in
+	// the melee hit roll (Mob::AvoidanceCheck); the client's displayed AC ignores
+	// it, so it lowers a mob's hit chance without changing the shown AC.
+	AvoidMeleePct int
+	// CombatStabilityPct is the percent mitigation-softcap bonus from
+	// SE_CombatStability AAs (Combat Stability). It multiplies the class AC
+	// mitigation softcap, so more raw mitigation survives the diminishing returns.
+	CombatStabilityPct int
 }
 
 // aa_effects effectid (SE_*) codes we translate into stat bonuses. These match
@@ -51,6 +60,8 @@ const (
 	seResistMagic   = 50
 	seChangeAggro   = 114 // SE_ChangeAggro — signed hate-generation modifier %
 	seSpellHateMod  = 130 // SE_SpellHateMod — signed hate-generation modifier %
+	seAvoidMelee    = 172 // SE_AvoidMeleeChance — Combat Agility / Lightning Reflexes, avoidance %
+	seCombatStab    = 259 // SE_CombatStability — Combat Stability, mitigation-softcap %
 )
 
 // AAStatBonuses resolves a character's trained AAs into their aggregate passive
@@ -198,6 +209,10 @@ func (db *DB) AAStatBonuses(trained []TrainedAA) (AABonuses, error) {
 			b.Attack += base1
 		case seChangeAggro, seSpellHateMod:
 			b.Hatemod += base1
+		case seAvoidMelee:
+			b.AvoidMeleePct += base1
+		case seCombatStab:
+			b.CombatStabilityPct += base1
 		}
 	}
 	return b, erows.Err()

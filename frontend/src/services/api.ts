@@ -1792,6 +1792,9 @@ export interface StatBlock {
   // avoidance + mitigation are the two halves behind the displayed AC (the
   // chance-to-be-hit half and the damage-per-hit half); they combine into `ac`.
   avoidance: number; mitigation: number
+  // avoid_combat is avoidance with Combat Agility folded in — the value the melee
+  // hit roll (and hit_chance_pct) uses; avoidance is the client-displayed value.
+  avoid_combat: number
   // Tanking softcap view: effective_mit is the mitigation left after the class
   // softcap's diminishing returns; softcap is that cap (class base + shield AC);
   // over_cap_pct is the % of each point past the cap that still counts;
