@@ -37,3 +37,17 @@ export interface QuarmClientStatus {
   manifest_version?: string
   manifest_error?: string
 }
+
+// EqwStatus is the eqw.dll (EQW-TAKP) version check surfaced by
+// /api/eqw/status. eqw.dll ships alongside eqgame.dll but has no PE version
+// resource and isn't in the Quarm manifest, so it's checked by scanning the
+// binary's build stamp and comparing against the newest GitHub release tag —
+// mirrors backend/internal/eqw/status.go; keep the two in sync.
+export interface EqwStatus {
+  eq_path: string
+  installed: boolean
+  dll_path?: string
+  version?: string
+  latest_version?: string
+  update_available: boolean
+}

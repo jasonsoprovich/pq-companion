@@ -6,7 +6,7 @@ import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
 import AlertDefaultsSettings from '../components/settings/AlertDefaultsSettings'
 import TimerAlertPrefEditor from '../components/settings/TimerAlertPrefEditor'
-import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, type ServerInfo, type TestPortResult } from '../services/api'
+import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, getEqwStatus, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config, DPSClassColors, NPCOverlaySections, TimerAlertPref } from '../types/config'
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
 import { withTimerAlertDefaults } from '../lib/timerAlerts'
@@ -23,12 +23,13 @@ import { applyContrast } from '../hooks/useHighContrast'
 import { applyZoom } from '../hooks/useZoom'
 import { speakTextForTest, stopTestPlayback } from '../services/audio'
 import type { ZealInstallStatus, ZealPipeStatus } from '../types/zeal'
-import type { QuarmClientStatus, QuarmFileStatus } from '../types/quarm'
+import type { QuarmClientStatus, QuarmFileStatus, EqwStatus } from '../types/quarm'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 
 const ZEAL_RELEASE_URL = 'https://github.com/CoastalRedwood/Zeal/releases/latest'
 const QUARM_PATCHER_RELEASE_URL = 'https://github.com/Pkelly668/QuarmPatcher/releases/latest'
+const EQW_RELEASE_URL = 'https://github.com/CoastalRedwood/eqw_takp/releases/latest'
 
 // Community / project links surfaced on the About tab.
 const DISCORD_URL = 'https://discord.gg/Srj4FXcRaz'
@@ -215,6 +216,88 @@ function QuarmFileRow({ file }: { file: QuarmFileStatus }): React.ReactElement {
   )
 }
 
+// EqwFileRow renders the eqw.dll (EQW-TAKP) verdict alongside the eqgame.dll
+// rows. Unlike eqgame.dll, eqw.dll is optional (windowed-mode wrapper) and has
+// no manifest entry, so "not installed" is neutral, not an error, and the check
+// is version-vs-latest rather than an MD5 match.
+function EqwFileRow({ status }: { status: EqwStatus }): React.ReactElement {
+  const verdict = (() => {
+    if (!status.installed)
+      return { label: 'Not installed', color: 'var(--color-muted)', icon: <FileText size={12} /> }
+    if (status.update_available)
+      return { label: 'Update available', color: '#f59e0b', icon: <AlertTriangle size={12} /> }
+    if (!status.version)
+      return { label: 'Unknown', color: 'var(--color-muted)', icon: <FileText size={12} /> }
+    if (status.latest_version)
+      return { label: 'Up to date', color: '#22c55e', icon: <CheckCircle2 size={12} /> }
+    return { label: 'Installed', color: 'var(--color-muted)', icon: <FileText size={12} /> }
+  })()
+
+  return (
+    <div
+      className="mb-2 rounded px-3 py-2 text-xs last:mb-0"
+      style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+    >
+      <div className="flex items-center justify-between">
+        <code style={{ color: 'var(--color-foreground)' }}>eqw.dll</code>
+        <span
+          className="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px]"
+          style={{ color: verdict.color, border: `1px solid ${verdict.color}` }}
+        >
+          {verdict.icon}
+          {verdict.label}
+        </span>
+      </div>
+
+      {status.installed ? (
+        <div className="mt-1 space-y-0.5" style={{ color: 'var(--color-muted-foreground)' }}>
+          <div>
+            Installed:{' '}
+            <span style={{ color: 'var(--color-foreground)' }}>
+              {status.version ? `v${status.version}` : 'version unreadable'}
+            </span>
+            {status.latest_version && (
+              <>
+                {' · '}Latest:{' '}
+                <span style={{ color: 'var(--color-foreground)' }}>v{status.latest_version}</span>
+              </>
+            )}
+          </div>
+          {status.update_available && (
+            <p>
+              A newer EQW-TAKP is available.{' '}
+              <a
+                href={EQW_RELEASE_URL}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="underline"
+                style={{ color: 'var(--color-primary)' }}
+              >
+                Get it here
+              </a>
+              .
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="mt-1" style={{ color: 'var(--color-muted-foreground)' }}>
+          The windowed-mode wrapper isn&apos;t present. This is optional — install{' '}
+          <a
+            href={EQW_RELEASE_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="underline"
+            style={{ color: 'var(--color-primary)' }}
+          >
+            EQW-TAKP
+          </a>{' '}
+          only if you run the client in windowed mode.
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function SettingsPage(): React.ReactElement {
   const [searchParams] = useSearchParams()
   // Allow deep-linking to a specific tab via ?tab= (e.g. links to the Logs tab
@@ -284,6 +367,10 @@ export default function SettingsPage(): React.ReactElement {
   const [quarmStatus, setQuarmStatus] = useState<QuarmClientStatus | null>(null)
   const [quarmChecking, setQuarmChecking] = useState(false)
   const [quarmError, setQuarmError] = useState<string | null>(null)
+  // eqw.dll (EQW-TAKP) rides in the same "EQ Client Version" section but has
+  // its own endpoint (string-scan + GitHub tag, not the manifest). A failed
+  // fetch is non-fatal — we just hide its row rather than error the section.
+  const [eqwStatus, setEqwStatus] = useState<EqwStatus | null>(null)
 
   const [logLargeFile, setLogLargeFile] = useState(false)
   const [logFileInfo, setLogFileInfo] = useState<LogFileInfo | null>(null)
@@ -337,6 +424,13 @@ export default function SettingsPage(): React.ReactElement {
       setQuarmStatus(null)
     } finally {
       setQuarmChecking(false)
+    }
+    // eqw.dll is a best-effort add-on to the same section; keep it out of the
+    // main try so a failed eqw fetch never surfaces as an EQ-client error.
+    try {
+      setEqwStatus(await getEqwStatus())
+    } catch {
+      setEqwStatus(null)
     }
   }
 
@@ -1305,6 +1399,17 @@ export default function SettingsPage(): React.ReactElement {
             >
               Quarm Patcher manifest
             </a>
+            , and checks <code>eqw.dll</code> (the optional windowed-mode wrapper)
+            against the latest{' '}
+            <a
+              href={EQW_RELEASE_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="underline"
+              style={{ color: 'var(--color-primary)' }}
+            >
+              EQW-TAKP release
+            </a>
             . Informational only — PQ Companion does not patch game files.
           </p>
 
@@ -1318,6 +1423,8 @@ export default function SettingsPage(): React.ReactElement {
           {!quarmError && quarmStatus && quarmStatus.files.map((f) => (
             <QuarmFileRow key={f.name} file={f} />
           ))}
+
+          {!quarmError && eqwStatus && <EqwFileRow status={eqwStatus} />}
 
           {!quarmStatus && !quarmError && !quarmChecking && (
             <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>

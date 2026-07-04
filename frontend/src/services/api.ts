@@ -548,6 +548,10 @@ export function getQuarmClientStatus(): Promise<import('../types/quarm').QuarmCl
   return get<import('../types/quarm').QuarmClientStatus>('/api/quarm/client-status')
 }
 
+export function getEqwStatus(): Promise<import('../types/quarm').EqwStatus> {
+  return get<import('../types/quarm').EqwStatus>('/api/eqw/status')
+}
+
 // ── Zeal ───────────────────────────────────────────────────────────────────────
 
 export function detectZeal(path?: string): Promise<ZealInstallStatus> {

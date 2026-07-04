@@ -14,6 +14,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/eqw"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/keyring"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/lockout"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
@@ -97,6 +98,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	raw := &rawHandler{db: database}
 	enumsH := &enumsHandler{}
 	quarmH := &quarmHandler{cfgMgr: cfgMgr, fetcher: quarm.NewManifestFetcher()}
+	eqwH := &eqwHandler{cfgMgr: cfgMgr, latest: eqw.NewLatestFetcher()}
 	sandboxH := &sandboxHandler{sb: sb, cfgMgr: cfgMgr}
 	savedQueryH := &savedQueryHandler{store: savedQueryStore, cfgMgr: cfgMgr}
 	popflagH := &popflagHandler{store: popflagStore, hub: hub, mgr: cfgMgr}
@@ -222,6 +224,9 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		})
 		r.Route("/quarm", func(r chi.Router) {
 			r.Get("/client-status", quarmH.clientStatus)
+		})
+		r.Route("/eqw", func(r chi.Router) {
+			r.Get("/status", eqwH.status)
 		})
 		r.Route("/zeal", func(r chi.Router) {
 			r.Get("/detect", zealH.detect)
