@@ -67,9 +67,10 @@ const (
 )
 
 // ComputeBuffStatDelta walks the 12 effect slots of a buff spell and returns
-// the aggregated stat contributions in BuffStatDelta form. For formula 102
-// (linear scale by level), the spell's `max` value is used — i.e. the
-// best-case scaled value, matching how pqdi.cc renders scaled buffs.
+// the aggregated stat contributions in BuffStatDelta form. Level-scaling
+// effects are evaluated at the server level cap via ApplyLevelFormula — i.e.
+// the best-case "at cap" value, matching how pqdi.cc, quarmy, and this app's
+// own spell database page render scaled buffs.
 //
 // Haste is reported as the largest single-slot SPA 11/119 contribution within
 // this spell. The caller is responsible for stacking rules across spells
@@ -91,14 +92,13 @@ func ComputeBuffStatDelta(spell *Spell) BuffStatDelta {
 			continue
 		}
 
-		// In buff context, formula 102 scales by caster level — without a
-		// caster-level input we use the spell's max as the best-case value.
-		// All currently observed beneficial buff spells use formula 100
-		// (static) so this is forward-looking; formula 100 paths use base.
-		val := base
-		if spell.EffectFormulas[i] == 102 && spell.EffectMaxValues[i] > base {
-			val = spell.EffectMaxValues[i]
-		}
+		// Level-scaling formulas (101–105, 109, 110, 119, 121) grow the effect
+		// with caster level; we evaluate at the server cap so the value matches
+		// what a level-60 main receives — the same best-case the spell database
+		// page and quarmy show. Static formulas (0/100) return base unchanged.
+		// e.g. Khura's Focusing HP is SPA 69 base 250 formula 104 → 250+60*3=430,
+		// not the raw 250. Formula 100 buffs (Aego AC/HP) are untouched.
+		val := ApplyLevelFormula(spell.EffectFormulas[i], base, spell.EffectMaxValues[i], ServerLevelCap)
 
 		switch spa {
 		case spaBuffHitpoints:
