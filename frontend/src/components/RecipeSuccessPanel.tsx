@@ -18,6 +18,7 @@ import type {
 } from '../types/recipe'
 import type { TradeskillView } from '../types/skill'
 import { tradeskillLabel } from '../lib/enumsCache'
+import { decodeSlots, slotsLabel } from '../lib/itemHelpers'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
@@ -76,7 +77,6 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
 
   const [result, setResult] = useState<TradeskillChance | null>(null)
   const [estimate, setEstimate] = useState<SkillUpEstimate | null>(null)
-  const [statBonus, setStatBonus] = useState('')
   const [maelin, setMaelin] = useState(false)
 
   // Load characters once; default the selection to the active character (or the
@@ -193,7 +193,6 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
   }, [haveSkill, recipe.trivial, recipe.no_fail, rawSkill, effMod, aaReduce])
 
   // Skill-up estimate — how many combines to raise the skill toward trivial.
-  const statBonusNum = Math.max(0, parseInt(statBonus) || 0)
   useEffect(() => {
     if (common || charId == null || !haveSkill) {
       setEstimate(null)
@@ -206,7 +205,6 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
         trivial: recipe.trivial,
         mod: effMod,
         aa: aaReduce,
-        statBonus: statBonusNum,
         skillupBonus: maelin ? MAELIN_SKILLUP_PCT : 0,
         nofail: recipe.no_fail,
       })
@@ -216,7 +214,7 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
     return () => clearTimeout(t)
   }, [
     common, charId, haveSkill, recipe.tradeskill, recipe.trivial,
-    recipe.no_fail, rawSkill, effMod, aaReduce, statBonusNum, maelin,
+    recipe.no_fail, rawSkill, effMod, aaReduce, maelin,
   ])
 
   function selectChar(id: number) {
@@ -312,8 +310,6 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
           <SkillUpSection
             estimate={estimate}
             label={label}
-            statBonus={statBonus}
-            onStatBonus={setStatBonus}
             maelin={maelin}
             onMaelin={setMaelin}
           />
@@ -342,31 +338,44 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
             {showMods && (
               <div className="mt-2 flex flex-col gap-1.5">
                 <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                  Pick any skill-boosting {label} items — owned or not. In-game only
-                  the strongest one applies, so this uses the highest, not the sum.
+                  Pick any skill-boosting {label} items — owned or not. These raise
+                  success (not skill-up speed). In-game only the strongest applies, so
+                  this uses the highest, not the sum. Each one takes its gear slot (shown
+                  on hover), so you’d swap out whatever you normally wear there.
                 </p>
                 <div className="max-h-44 overflow-y-auto pr-1">
-                  {mods.map((m) => (
-                    <label
-                      key={m.item_id}
-                      className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs"
-                      style={{ color: 'var(--color-foreground)' }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedMods.has(m.item_id)}
-                        onChange={() => toggleMod(m.item_id)}
-                      />
-                      <ItemIcon id={m.icon} name={m.name} size={18} />
-                      <span className="min-w-0 flex-1 truncate">{m.name}</span>
-                      <span
-                        className="shrink-0 font-mono tabular-nums"
-                        style={{ color: 'var(--color-muted)' }}
+                  {mods.map((m) => {
+                    const list = decodeSlots(m.slots)
+                    const slotShort = list.length > 1 ? `${list[0]}+` : list[0] ?? ''
+                    const slotFull = slotsLabel(m.slots)
+                    return (
+                      <label
+                        key={m.item_id}
+                        title={`${m.name} — +${m.value}% ${label} skill${slotFull ? ` · slot: ${slotFull}` : ''}`}
+                        className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs"
+                        style={{ color: 'var(--color-foreground)' }}
                       >
-                        +{m.value}%
-                      </span>
-                    </label>
-                  ))}
+                        <input
+                          type="checkbox"
+                          checked={selectedMods.has(m.item_id)}
+                          onChange={() => toggleMod(m.item_id)}
+                        />
+                        <ItemIcon id={m.icon} name={m.name} size={18} />
+                        <span className="min-w-0 flex-1 truncate">{m.name}</span>
+                        {slotShort && (
+                          <span className="shrink-0 text-[10px]" style={{ color: 'var(--color-muted)' }}>
+                            {slotShort}
+                          </span>
+                        )}
+                        <span
+                          className="shrink-0 font-mono tabular-nums"
+                          style={{ color: 'var(--color-muted)' }}
+                        >
+                          +{m.value}%
+                        </span>
+                      </label>
+                    )
+                  })}
                 </div>
                 <label className="mt-1 flex items-center gap-2 text-xs" style={{ color: 'var(--color-muted)' }}>
                   Other (+%)
@@ -474,18 +483,16 @@ function AANote({ aa }: { aa: TradeskillAA | null }): React.ReactElement | null 
 }
 
 // SkillUpSection shows how many combines it takes to raise the skill toward the
-// recipe's trivial, plus an optional "crafting stat gear" adjustment (the quarmy
-// export only carries naked base stats).
+// recipe's trivial. Skill-up speed tracks the character's stats, so the estimate
+// uses their real total (base + equipped gear).
 interface SkillUpSectionProps {
   estimate: SkillUpEstimate
   label: string
-  statBonus: string
-  onStatBonus: (v: string) => void
   maelin: boolean
   onMaelin: (v: boolean) => void
 }
 
-function SkillUpSection({ estimate: e, label, statBonus, onStatBonus, maelin, onMaelin }: SkillUpSectionProps): React.ReactElement {
+function SkillUpSection({ estimate: e, label, maelin, onMaelin }: SkillUpSectionProps): React.ReactElement {
   return (
     <div className="mt-3 border-t pt-2" style={{ borderColor: 'var(--color-border)' }}>
       <div className="mb-1">
@@ -522,29 +529,14 @@ function SkillUpSection({ estimate: e, label, statBonus, onStatBonus, maelin, on
             most combines don’t raise skill.
           </p>
           <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-            Based on {e.stat_name} {e.trade_stat}; failures skill up at half rate.
-            Assumes you make this recipe the whole way.
+            Based on {e.stat_name} {e.trade_stat}
+            {e.stat_source === 'base+gear' ? ' (base + equipped gear)' : ' (base stats)'}
+            ; failures skill up at half rate. Assumes you make this recipe the whole way
+            {e.stat_source === 'base+gear' ? ' in your current gear' : ''}.
           </p>
           <label className="mt-0.5 flex cursor-pointer items-center gap-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
             <input type="checkbox" checked={maelin} onChange={(ev) => onMaelin(ev.target.checked)} />
             Maelin&apos;s Magical Concoction (+{MAELIN_SKILLUP_PCT}% skill-up rate)
-          </label>
-          <label className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-            + crafting stat gear
-            <input
-              type="number"
-              min={0}
-              max={255}
-              value={statBonus}
-              onChange={(ev) => onStatBonus(ev.target.value)}
-              placeholder="0"
-              className="w-16 rounded px-2 py-1 outline-none"
-              style={{
-                backgroundColor: 'var(--color-surface-2)',
-                color: 'var(--color-foreground)',
-                border: '1px solid var(--color-border)',
-              }}
-            />
           </label>
         </div>
       )}

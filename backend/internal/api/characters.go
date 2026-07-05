@@ -302,12 +302,27 @@ func (h *charactersHandler) skillupEstimate(w http.ResponseWriter, r *http.Reque
 	trivial := queryInt(r, "trivial", 0)
 	mod := queryInt(r, "mod", 0)
 	aa := queryInt(r, "aa", 0)
-	statBonus := queryInt(r, "stat_bonus", 0)
 	skillupBonus := queryInt(r, "skillup_bonus", 0)
 	nofail := r.URL.Query().Get("nofail") == "1"
 
-	tradeStat, statName := tradeskill.TradeStat(ts, char.BaseSTR, char.BaseDEX, char.BaseINT, char.BaseWIS)
-	tradeStat += statBonus
+	// Skill-up speed tracks the character's actual stats, so use base + equipped
+	// gear (the same total the character sheet shows), not naked base stats.
+	// Falls back to base when the EQ path / quarmy export isn't available.
+	str, dex, intel, wis := char.BaseSTR, char.BaseDEX, char.BaseINT, char.BaseWIS
+	statSource := "base"
+	if cfg := h.mgr.Get(); cfg.EQPath != "" {
+		if equip, _ := h.sumEquipment(cfg.EQPath, char.Name); equip != (statBlock{}) {
+			str += equip.STR
+			dex += equip.DEX
+			intel += equip.INT
+			wis += equip.WIS
+			statSource = "base+gear"
+		}
+	}
+	// The server reads capped attributes (255 in this era), so clamp before the
+	// governing-stat rule — an uncapped item sum would overstate skill-up speed.
+	str, dex, intel, wis = capStat(str), capStat(dex), capStat(intel), capStat(wis)
+	tradeStat, statName := tradeskill.TradeStat(ts, str, dex, intel, wis)
 
 	classIdx := char.Class + 1
 	difficulty, err := h.db.SkillDifficulty(ts, classIdx)
@@ -324,7 +339,21 @@ func (h *charactersHandler) skillupEstimate(w http.ResponseWriter, r *http.Reque
 
 	res := tradeskill.EstimateSkillUp(current, trivial, skillCap, tradeStat, difficulty, mod, aa, skillupBonus, nofail)
 	res.StatName = statName
+	res.StatSource = statSource
 	writeJSON(w, http.StatusOK, res)
+}
+
+// capStat clamps an attribute to the era's 255 hard cap (AAs that raise the cap
+// aren't modeled), matching the capped value the server's GetINT/GetWIS/etc.
+// return for the tradeskill skill-up roll.
+func capStat(v int) int {
+	if v > 255 {
+		return 255
+	}
+	if v < 0 {
+		return 0
+	}
+	return v
 }
 
 // untrainedTradeskillValue is the lowest raw value the server exports to mean

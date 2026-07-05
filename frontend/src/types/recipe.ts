@@ -49,6 +49,7 @@ export interface TradeskillModifier {
   name: string
   icon: number
   value: number
+  slots: number  // wearable-slot bitmask (which slot you'd swap it into)
 }
 
 // Mirrors backend internal/tradeskill.Result (GET /api/tradeskills/chance).
@@ -94,6 +95,7 @@ export interface SkillUpEstimate {
   difficulty: number
   trade_stat: number    // effective governing stat used
   stat_name: string     // attributes that drive it, e.g. "WIS/INT"
+  stat_source: string   // "base+gear" (base + equipped) or "base"
   points_to_go: number
   attempts_to_next: number    // combines to gain the next single point
   attempts_to_target: number  // combines to reach target_skill

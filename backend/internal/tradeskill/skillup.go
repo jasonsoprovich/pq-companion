@@ -27,10 +27,11 @@ type SkillUpResult struct {
 	CurrentSkill int     `json:"current_skill"`
 	TargetSkill  int     `json:"target_skill"` // where skill-ups stop: min(trivial, cap)
 	Trivial      int     `json:"trivial"`
-	Cap          int     `json:"cap"`        // class/level skill cap (0 = unknown)
-	Difficulty   float64 `json:"difficulty"` // skill_difficulty for this tradeskill
-	TradeStat    int     `json:"trade_stat"` // effective governing stat used
-	StatName     string  `json:"stat_name"`  // which attributes drive it, e.g. "WIS/INT"
+	Cap          int     `json:"cap"`         // class/level skill cap (0 = unknown)
+	Difficulty   float64 `json:"difficulty"`  // skill_difficulty for this tradeskill
+	TradeStat    int     `json:"trade_stat"`  // effective governing stat used
+	StatName     string  `json:"stat_name"`   // which attributes drive it, e.g. "WIS/INT"
+	StatSource   string  `json:"stat_source"` // "base+gear" (base stats + equipped) or "base"
 
 	PointsToGo       int     `json:"points_to_go"`
 	AttemptsToNext   float64 `json:"attempts_to_next"`   // to gain the next single point
