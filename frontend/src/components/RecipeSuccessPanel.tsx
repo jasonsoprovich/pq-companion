@@ -3,11 +3,17 @@ import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import {
   listCharacters,
   getCharacterTradeskills,
+  getCharacterTradeskillAA,
   getTradeskillModifiers,
   getTradeskillChance,
 } from '../services/api'
 import type { Character } from '../services/api'
-import type { RecipeDetail, TradeskillModifier, TradeskillChance } from '../types/recipe'
+import type {
+  RecipeDetail,
+  TradeskillModifier,
+  TradeskillChance,
+  TradeskillAA,
+} from '../types/recipe'
 import type { TradeskillView } from '../types/skill'
 import { tradeskillLabel } from '../lib/enumsCache'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
@@ -55,6 +61,7 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
   const [charId, setCharId] = useState<number | null>(null)
   const [skills, setSkills] = useState<TradeskillView[] | null>(null)
   const [skillsError, setSkillsError] = useState(false)
+  const [aaInfo, setAaInfo] = useState<TradeskillAA | null>(null)
 
   const [mods, setMods] = useState<TradeskillModifier[]>([])
   const [selectedMods, setSelectedMods] = useState<Set<number>>(new Set())
@@ -93,15 +100,33 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
       .catch(() => setSkillsError(true))
   }, [common, charId])
 
+  // The character's failure-reduction Mastery AA for this discipline (auto-
+  // applied). Only Alchemy/Jewelry/Make Poison have one — applies is false
+  // otherwise.
+  const loadAA = useCallback(() => {
+    if (common || charId == null) {
+      setAaInfo(null)
+      return
+    }
+    getCharacterTradeskillAA(charId, recipe.tradeskill)
+      .then(setAaInfo)
+      .catch(() => setAaInfo(null))
+  }, [common, charId, recipe.tradeskill])
+
   useEffect(() => {
     setSkills(null)
+    setAaInfo(null)
     loadSkills()
-  }, [loadSkills])
+    loadAA()
+  }, [loadSkills, loadAA])
 
-  // A re-camp / re-export refreshes the character's skills.
+  // A re-camp / re-export refreshes the character's skills and AAs.
   const onWs = useCallback((msg: WsMessage) => {
-    if (msg.type === WSEvent.ZealQuarmy) loadSkills()
-  }, [loadSkills])
+    if (msg.type === WSEvent.ZealQuarmy) {
+      loadSkills()
+      loadAA()
+    }
+  }, [loadSkills, loadAA])
   useWebSocket(onWs)
 
   // Load the modifier catalog for this discipline (skipped for common combines).
@@ -135,6 +160,8 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
     return picks.length ? Math.max(...picks) : 0
   }, [mods, selectedMods, manualMod])
 
+  const aaReduce = aaInfo?.applies ? aaInfo.reduce_pct : 0
+
   // Recompute odds whenever the inputs change. The endpoint is a localhost
   // pure-function call, so a short debounce (for the manual field) is plenty.
   useEffect(() => {
@@ -147,13 +174,14 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
         trivial: recipe.trivial,
         skill: rawSkill,
         mod: effMod,
+        aa: aaReduce,
         nofail: recipe.no_fail,
       })
         .then(setResult)
         .catch(() => setResult(null))
     }, 150)
     return () => clearTimeout(t)
-  }, [haveSkill, recipe.trivial, recipe.no_fail, rawSkill, effMod])
+  }, [haveSkill, recipe.trivial, recipe.no_fail, rawSkill, effMod, aaReduce])
 
   function selectChar(id: number) {
     setCharId(id)
@@ -233,6 +261,7 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
             cap={skillEntry.cap ?? 0}
             effMod={effMod}
             skillNeeded={recipe.skill_needed}
+            aa={aaInfo}
           />
         )}
 
@@ -335,9 +364,10 @@ interface OddsBodyProps {
   cap: number
   effMod: number
   skillNeeded: number
+  aa: TradeskillAA | null
 }
 
-function OddsBody({ result, label, rawSkill, cap, effMod, skillNeeded }: OddsBodyProps): React.ReactElement {
+function OddsBody({ result, label, rawSkill, cap, effMod, skillNeeded, aa }: OddsBodyProps): React.ReactElement {
   const belowMin = skillNeeded > 0 && rawSkill < skillNeeded
 
   return (
@@ -364,7 +394,27 @@ function OddsBody({ result, label, rawSkill, cap, effMod, skillNeeded }: OddsBod
       )}
 
       {result && <FloorNote result={result} effMod={effMod} />}
+
+      <AANote aa={aa} />
     </div>
+  )
+}
+
+// AANote surfaces the auto-applied Mastery AA (or nudges toward training it).
+// Only shown for the three disciplines the server honors (applies === true).
+function AANote({ aa }: { aa: TradeskillAA | null }): React.ReactElement | null {
+  if (!aa?.applies) return null
+  if (aa.rank > 0) {
+    return (
+      <p className="text-[11px]" style={{ color: '#22c55e' }}>
+        {aa.name} {aa.rank} applied — −{aa.reduce_pct}% failure.
+      </p>
+    )
+  }
+  return (
+    <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+      Training {aa.name} would cut failure by up to 50%.
+    </p>
   )
 }
 

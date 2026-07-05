@@ -19,6 +19,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/era"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/tradeskill"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
 
@@ -224,6 +225,53 @@ func (h *charactersHandler) aas(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"trained":   trained,
 		"available": available,
+	})
+}
+
+// tradeskillAAResponse reports the character's tradeskill combine-failure
+// reduction AA for one discipline. Applies is false for disciplines the server
+// has no such AA for (all but Alchemy, Jewelry Making, and Make Poison).
+type tradeskillAAResponse struct {
+	Applies   bool   `json:"applies"`
+	Name      string `json:"name,omitempty"`
+	EqmacID   int    `json:"eqmac_id,omitempty"`
+	Rank      int    `json:"rank"`
+	ReducePct int    `json:"reduce_pct"`
+}
+
+// tradeskillAA resolves the character's failure-reduction AA rank for a
+// tradeskill (query param) and the percentage it grants, so the recipe success
+// calculator can apply it automatically. See internal/tradeskill.MasteryFor.
+func (h *charactersHandler) tradeskillAA(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	ts := queryInt(r, "tradeskill", -1)
+	m, ok := tradeskill.MasteryFor(ts)
+	if !ok {
+		writeJSON(w, http.StatusOK, tradeskillAAResponse{Applies: false})
+		return
+	}
+	trained, err := h.store.ListAAs(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	rank := 0
+	for _, a := range trained {
+		if a.AAID == m.EqmacID {
+			rank = a.Rank
+			break
+		}
+	}
+	writeJSON(w, http.StatusOK, tradeskillAAResponse{
+		Applies:   true,
+		Name:      m.Name,
+		EqmacID:   m.EqmacID,
+		Rank:      rank,
+		ReducePct: tradeskill.FailReducePct(rank),
 	})
 }
 

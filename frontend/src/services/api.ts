@@ -46,6 +46,7 @@ import type {
   RecipeTradeskillCount,
   TradeskillModifier,
   TradeskillChance,
+  TradeskillAA,
 } from '../types/recipe'
 import type {
   TraderCharacter,
@@ -1832,6 +1833,17 @@ export function getCharacterTradeskills(
 ): Promise<import('../types/skill').TradeskillsResponse> {
   return get<import('../types/skill').TradeskillsResponse>(
     `/api/characters/${id}/tradeskills`,
+  )
+}
+
+// The character's failure-reduction Mastery AA (rank + percent) for a
+// tradeskill, so the recipe success calculator can apply it automatically.
+export function getCharacterTradeskillAA(
+  id: number,
+  tradeskill: number,
+): Promise<TradeskillAA> {
+  return get<TradeskillAA>(
+    `/api/characters/${id}/tradeskill-aa?tradeskill=${tradeskill}`,
   )
 }
 

@@ -66,3 +66,16 @@ export interface TradeskillChance {
   floor_reachable: boolean
   at_floor: boolean   // already at the 5% floor at this eff skill
 }
+
+// Mirrors backend tradeskillAAResponse (GET /api/characters/{id}/tradeskill-aa).
+// The character's combine-failure-reduction Mastery AA for one discipline.
+// applies is false for tradeskills the server has no such AA for (everything
+// except Alchemy, Jewelry Making, and Make Poison). reduce_pct feeds the chance
+// endpoint's `aa` param.
+export interface TradeskillAA {
+  applies: boolean
+  name?: string
+  eqmac_id?: number
+  rank: number
+  reduce_pct: number
+}
