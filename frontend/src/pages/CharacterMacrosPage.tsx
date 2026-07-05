@@ -34,20 +34,25 @@ const LINE_COUNT = 5
 // The 12 built-in socials EQ pre-fills page 1 with. They live only in the
 // client (never written to the .ini until edited). Socials number down the
 // left column then down the right in the in-game Actions window, so 1–6 is
-// the left column and 7–12 the right.
-const PAGE1_DEFAULT_NAMES: Record<number, string> = {
-  1: 'Afk',
-  2: 'Anon',
-  3: 'Split',
-  4: 'Bug',
-  5: 'Consider',
-  6: 'Duel',
-  7: 'Feedback',
-  8: 'Hail',
-  9: 'Played',
-  10: 'Time',
-  11: 'GM List',
-  12: 'Wave',
+// the left column and 7–12 the right. Names and commands are ground-truthed
+// from a client that wrote all 12 defaults to disk after each was touched.
+interface Page1Default {
+  name: string
+  command: string
+}
+const PAGE1_DEFAULTS: Record<number, Page1Default> = {
+  1: { name: 'Afk', command: '/afk' },
+  2: { name: 'Anon', command: '/anon' },
+  3: { name: 'Split', command: '/split' },
+  4: { name: 'Bug', command: '/bug' },
+  5: { name: 'Consider', command: '/con' },
+  6: { name: 'Duel', command: '/duel' },
+  7: { name: 'Feedback', command: '/feedback' },
+  8: { name: 'Hail', command: '/hail' },
+  9: { name: 'Played', command: '/played' },
+  10: { name: 'Time', command: '/time' },
+  11: { name: 'GM List', command: '/who all GM' },
+  12: { name: 'Wave', command: '/wave' },
 }
 
 function keyOf(page: number, button: number): number {
@@ -87,13 +92,13 @@ function cssColor(c: MacroColor | undefined): string | null {
 interface ButtonEditorProps {
   initial: MacroButton
   palette: Map<number, MacroColor>
-  hiddenDefaultName?: string
+  hiddenDefault?: Page1Default
   onSave: (b: MacroButton) => void
   onClear: () => void
   onClose: () => void
 }
 
-function ButtonEditor({ initial, palette, hiddenDefaultName, onSave, onClear, onClose }: ButtonEditorProps): React.ReactElement {
+function ButtonEditor({ initial, palette, hiddenDefault, onSave, onClear, onClose }: ButtonEditorProps): React.ReactElement {
   useEscapeToClose(onClose)
   const [name, setName] = useState(initial.name)
   const [color, setColor] = useState(initial.color)
@@ -141,7 +146,7 @@ function ButtonEditor({ initial, palette, hiddenDefaultName, onSave, onClear, on
         </div>
 
         <div className="flex flex-col gap-3 overflow-y-auto p-3">
-          {hiddenDefaultName && (
+          {hiddenDefault && (
             <div
               className="flex items-start gap-2 rounded-md border px-2.5 py-2 text-[11px]"
               style={{
@@ -153,7 +158,8 @@ function ButtonEditor({ initial, palette, hiddenDefaultName, onSave, onClear, on
               <AlertTriangle size={13} className="mt-0.5 shrink-0" style={{ color: 'var(--color-warning, #f59e0b)' }} />
               <span>
                 This page-1 slot currently holds the built-in{' '}
-                <span style={{ color: 'var(--color-foreground)' }}>{hiddenDefaultName}</span> social,
+                <span style={{ color: 'var(--color-foreground)' }}>{hiddenDefault.name}</span> social
+                (<code style={{ color: 'var(--color-foreground)' }}>{hiddenDefault.command}</code>),
                 which isn&rsquo;t stored in the file. Saving a macro here overrides that default in-game.
               </span>
             </div>
@@ -234,7 +240,7 @@ function ButtonEditor({ initial, palette, hiddenDefaultName, onSave, onClear, on
                   type="text"
                   value={l}
                   onChange={(e) => setLine(i, e.target.value)}
-                  placeholder={i === 0 ? '/say Hello' : ''}
+                  placeholder={i === 0 ? (hiddenDefault?.command ?? '/say Hello') : ''}
                   className="flex-1 rounded px-2 py-1 font-mono text-xs outline-none"
                   style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
                 />
@@ -797,9 +803,9 @@ export default function CharacterMacrosPage(): React.ReactElement {
             <span>
               EverQuest pre-fills page 1 with 12 default social buttons (Hail, Afk, Consider, …) that
               aren&rsquo;t saved to the <code>.ini</code> until you change them. Slots shown dashed hold
-              those built-in defaults — the name is shown for reference, but the commands only exist
-              in-game. Editing one overrides that default; leaving it alone keeps it intact (saving
-              never touches slots you don&rsquo;t edit).
+              those built-in defaults — the name and command are shown for reference, but they only
+              exist in-game until edited. Editing one overrides that default; leaving it alone keeps it
+              intact (saving never touches slots you don&rsquo;t edit).
             </span>
           </div>
         )}
@@ -819,7 +825,7 @@ export default function CharacterMacrosPage(): React.ReactElement {
               // .ini until changed — so an "empty" page-1 slot really holds a
               // hidden in-game default, not a free slot. Show its default name.
               const hiddenDefault = isEmpty && page === 1
-              const defaultName = hiddenDefault ? PAGE1_DEFAULT_NAMES[btn] : undefined
+              const dflt = hiddenDefault ? PAGE1_DEFAULTS[btn] : undefined
               return (
                 <button
                   key={btn}
@@ -832,8 +838,8 @@ export default function CharacterMacrosPage(): React.ReactElement {
                     minHeight: 64,
                   }}
                   title={
-                    hiddenDefault
-                      ? `This slot holds the built-in ${defaultName} social, which is not stored in the file. Editing it overrides that default.`
+                    hiddenDefault && dflt
+                      ? `This slot holds the built-in ${dflt.name} social (${dflt.command}), which is not stored in the file. Editing it overrides that default.`
                       : undefined
                   }
                 >
@@ -858,12 +864,12 @@ export default function CharacterMacrosPage(): React.ReactElement {
                         fontStyle: isEmpty ? 'italic' : 'normal',
                       }}
                     >
-                      {hiddenDefault ? defaultName : isEmpty ? 'Empty' : b!.name || '(unnamed)'}
+                      {hiddenDefault ? dflt?.name : isEmpty ? 'Empty' : b!.name || '(unnamed)'}
                     </span>
                   </div>
-                  {hiddenDefault && (
-                    <span className="truncate text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                      built-in EQ default
+                  {hiddenDefault && dflt && (
+                    <span className="truncate font-mono text-[10px]" style={{ color: 'var(--color-muted)' }}>
+                      {dflt.command}
                     </span>
                   )}
                   {!isEmpty && b!.lines.find((l) => l.trim() !== '') && (
@@ -882,9 +888,9 @@ export default function CharacterMacrosPage(): React.ReactElement {
         <ButtonEditor
           initial={editingButton}
           palette={palette}
-          hiddenDefaultName={
+          hiddenDefault={
             editing.page === 1 && buttonIsEmpty(editingButton)
-              ? PAGE1_DEFAULT_NAMES[editing.button]
+              ? PAGE1_DEFAULTS[editing.button]
               : undefined
           }
           onSave={handleApply}
