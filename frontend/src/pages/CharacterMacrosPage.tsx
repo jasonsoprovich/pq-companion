@@ -945,11 +945,22 @@ export default function CharacterMacrosPage(): React.ReactElement {
                 title={`Page ${p}${count ? ` (${count} macro${count === 1 ? '' : 's'})` : ''}`}
               >
                 {p}
-                {count > 0 && p !== page && (
-                  <span className="ml-1 text-[9px]" style={{ color: 'var(--color-primary)' }}>
-                    ●
-                  </span>
-                )}
+                {/* Always render the dot so its width is reserved on every
+                    tab — colored when the page has macros, transparent
+                    otherwise — so tabs don't grow/shrink on click. */}
+                <span
+                  className="ml-1 text-[9px]"
+                  style={{
+                    color:
+                      count > 0
+                        ? p === page
+                          ? 'var(--color-background)'
+                          : 'var(--color-primary)'
+                        : 'transparent',
+                  }}
+                >
+                  ●
+                </span>
               </button>
             )
           })}
@@ -1016,7 +1027,12 @@ export default function CharacterMacrosPage(): React.ReactElement {
                   className="flex flex-col gap-1 rounded-lg border p-2 text-left transition-colors hover:bg-(--color-surface-2)"
                   style={{
                     backgroundColor: 'var(--color-surface)',
-                    borderColor: hiddenDefault ? 'var(--color-warning, #f59e0b)' : 'var(--color-border)',
+                    // Dashed warning tint marks a page-1 slot holding a hidden
+                    // built-in default. Kept dim (40% warning) so a full page of
+                    // them doesn't read as an all-caps alert.
+                    borderColor: hiddenDefault
+                      ? 'color-mix(in srgb, var(--color-warning, #f59e0b) 40%, transparent)'
+                      : 'var(--color-border)',
                     borderStyle: hiddenDefault ? 'dashed' : 'solid',
                     minHeight: 64,
                   }}
@@ -1040,7 +1056,7 @@ export default function CharacterMacrosPage(): React.ReactElement {
                       className="truncate text-xs font-medium"
                       style={{
                         color: hiddenDefault
-                          ? 'var(--color-warning, #f59e0b)'
+                          ? 'color-mix(in srgb, var(--color-warning, #f59e0b) 70%, var(--color-muted))'
                           : isEmpty
                             ? 'var(--color-muted)'
                             : 'var(--color-foreground)',
