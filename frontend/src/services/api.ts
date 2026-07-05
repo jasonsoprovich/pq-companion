@@ -40,7 +40,13 @@ import type { RespawnState } from '../types/respawn'
 import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview, PackUpdateSummary, PackDiff, PackUpdateMode, PackUpdateResult, ActionTemplate, BulkResult } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
-import type { RecipeSummary, RecipeDetail, RecipeTradeskillCount } from '../types/recipe'
+import type {
+  RecipeSummary,
+  RecipeDetail,
+  RecipeTradeskillCount,
+  TradeskillModifier,
+  TradeskillChance,
+} from '../types/recipe'
 import type {
   TraderCharacter,
   TraderListing,
@@ -263,6 +269,38 @@ export function getRecipe(id: number): Promise<RecipeDetail> {
 
 export function getRecipeTradeskills(): Promise<RecipeTradeskillCount[]> {
   return get<RecipeTradeskillCount[]>('/api/recipes/tradeskills')
+}
+
+// Catalog of items that boost a tradeskill skill (for the success calculator's
+// modifier picker), best bonus first, regardless of ownership.
+export function getTradeskillModifiers(
+  skillId: number,
+): Promise<TradeskillModifier[]> {
+  return get<{ modifiers: TradeskillModifier[] }>(
+    `/api/tradeskills/${skillId}/modifiers`,
+  ).then((r) => r.modifiers ?? [])
+}
+
+export interface TradeskillChanceParams {
+  trivial: number
+  skill: number
+  mod?: number    // item skill-mod % (max of selected modifiers, not a sum)
+  aa?: number     // AA fail-reduction %
+  nofail?: boolean
+}
+
+// Combine success/failure odds for a recipe at a given skill + modifiers.
+export function getTradeskillChance(
+  p: TradeskillChanceParams,
+): Promise<TradeskillChance> {
+  const params = new URLSearchParams({
+    trivial: String(p.trivial),
+    skill: String(p.skill),
+  })
+  if (p.mod && p.mod > 0) params.set('mod', String(p.mod))
+  if (p.aa && p.aa > 0) params.set('aa', String(p.aa))
+  if (p.nofail) params.set('nofail', '1')
+  return get<TradeskillChance>(`/api/tradeskills/chance?${params}`)
 }
 
 export function getRecipeRaw(id: number): Promise<RawRow> {

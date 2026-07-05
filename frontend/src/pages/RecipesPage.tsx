@@ -15,6 +15,7 @@ import { ItemIcon } from '../components/Icon'
 import RawDataModal from '../components/RawDataModal'
 import FavoriteRecipeStar from '../components/FavoriteRecipeStar'
 import { RecipeBody } from '../components/RecipeView'
+import RecipeSuccessPanel from '../components/RecipeSuccessPanel'
 import { useFavoriteRecipes } from '../lib/favoriteRecipes'
 
 const RECIPE_PAGE_SIZE = 50
@@ -332,7 +333,12 @@ function DetailPanel({ recipe }: { recipe: RecipeSummary | null }): React.ReactE
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {loading && <p className="text-sm" style={{ color: 'var(--color-muted)' }}>Loading…</p>}
         {error && <p className="text-sm" style={{ color: 'var(--color-destructive)' }}>Couldn’t load recipe.</p>}
-        {detail && <RecipeBody recipe={detail} />}
+        {detail && (
+          <>
+            <RecipeBody recipe={detail} />
+            <RecipeSuccessPanel recipe={detail} />
+          </>
+        )}
       </div>
 
       <RawDataModal open={rawOpen} title={recipe.name} fetcher={rawFetcher} onClose={() => setRawOpen(false)} />

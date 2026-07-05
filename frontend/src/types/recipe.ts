@@ -40,3 +40,29 @@ export interface RecipeTradeskillCount {
   tradeskill: number
   count: number
 }
+
+// Mirrors backend db.TradeskillModifier. An item that boosts a tradeskill skill
+// when worn; value is a percentage bonus. Only the single highest worn item
+// applies (mods don't stack) — see internal/tradeskill.
+export interface TradeskillModifier {
+  item_id: number
+  name: string
+  icon: number
+  value: number
+}
+
+// Mirrors backend internal/tradeskill.Result (GET /api/tradeskills/chance).
+export interface TradeskillChance {
+  raw_skill: number
+  skill_mod: number  // item skill-mod % applied (max, not sum)
+  eff_skill: number  // raw skill after the mod %, capped at 252
+  success: number    // 0-100, one decimal
+  failure: number
+  at_trivial: boolean // eff skill >= trivial (no more skill-ups)
+  no_fail: boolean
+  // Raw skill (with no modifiers) needed to reach the 5% failure floor — the
+  // canonical breakpoint. floor_reachable is false when it exceeds the 252 cap.
+  floor_skill: number
+  floor_reachable: boolean
+  at_floor: boolean   // already at the 5% floor at this eff skill
+}
