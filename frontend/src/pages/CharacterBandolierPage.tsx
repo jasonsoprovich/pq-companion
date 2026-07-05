@@ -25,6 +25,7 @@ import type { BandolierFile, BandolierItem } from '../types/zeal'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { ItemIcon } from '../components/Icon'
+import ItemHoverCard from '../components/ItemHoverCard'
 
 const CLASS_NAMES = [
   'Warrior', 'Cleric', 'Paladin', 'Ranger', 'Shadow Knight', 'Druid', 'Monk',
@@ -191,19 +192,20 @@ function SlotPicker({
           {!loading &&
             !error &&
             items.map((it) => (
-              <button
-                key={it.id}
-                onClick={() => onPick(it)}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-(--color-surface-2)"
-              >
-                <ItemIcon id={it.icon} name={it.name} size={20} />
-                <span className="text-xs" style={{ color: 'var(--color-foreground)' }}>
-                  {it.name}
-                </span>
-                {it.id === currentItemId && (
-                  <Check size={14} className="ml-auto" style={{ color: 'var(--color-primary)' }} />
-                )}
-              </button>
+              <ItemHoverCard key={it.id} itemId={it.id} clickHint="Click to select for this slot">
+                <button
+                  onClick={() => onPick(it)}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-(--color-surface-2)"
+                >
+                  <ItemIcon id={it.icon} name={it.name} size={20} />
+                  <span className="text-xs" style={{ color: 'var(--color-foreground)' }}>
+                    {it.name}
+                  </span>
+                  {it.id === currentItemId && (
+                    <Check size={14} className="ml-auto" style={{ color: 'var(--color-primary)' }} />
+                  )}
+                </button>
+              </ItemHoverCard>
             ))}
         </div>
       </div>
@@ -349,11 +351,10 @@ function BandolierCard({
         {set.item_ids.map((id, idx) => {
           const info = id > 0 ? itemsById.get(id) : undefined
           const isEmpty = id <= 0
-          return (
+          const button = (
             <button
-              key={idx}
               onClick={() => onSlotClick(idx)}
-              className="flex items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-(--color-surface-2)"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-(--color-surface-2)"
               style={{ border: '1px solid var(--color-border)' }}
             >
               <span
@@ -379,6 +380,13 @@ function BandolierCard({
                 </span>
               )}
             </button>
+          )
+          return isEmpty ? (
+            <div key={idx}>{button}</div>
+          ) : (
+            <ItemHoverCard key={idx} itemId={id} clickHint="Click to change this slot">
+              {button}
+            </ItemHoverCard>
           )
         })}
       </div>
