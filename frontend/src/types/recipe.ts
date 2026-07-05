@@ -79,3 +79,22 @@ export interface TradeskillAA {
   rank: number
   reduce_pct: number
 }
+
+// Mirrors backend internal/tradeskill.SkillUpResult
+// (GET /api/characters/{id}/skillup-estimate). Estimated combines to raise a
+// tradeskill toward a recipe's trivial.
+export interface SkillUpEstimate {
+  current_skill: number
+  target_skill: number  // where skill-ups stop: min(trivial, class/level cap)
+  trivial: number
+  cap: number           // class/level cap (0 = unknown)
+  difficulty: number
+  trade_stat: number    // effective governing stat used
+  stat_name: string     // attributes that drive it, e.g. "WIS/INT"
+  points_to_go: number
+  attempts_to_next: number    // combines to gain the next single point
+  attempts_to_target: number  // combines to reach target_skill
+  maxed: boolean        // already at/above target — no skill-ups from this recipe
+  at_cap: boolean       // target is the class/level cap, not trivial
+  impractical: boolean  // effectively can't skill up (no stat/difficulty)
+}

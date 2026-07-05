@@ -275,6 +275,57 @@ func (h *charactersHandler) tradeskillAA(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// skillupEstimate estimates how many combines it takes to raise the character's
+// skill toward a recipe's trivial, from their stats (for the governing
+// tradeStat), the quarm.db skill difficulty, and their class/level skill cap.
+// The caller passes the current raw skill and the recipe's trivial (both already
+// on hand in the panel); mod/aa/nofail feed the per-attempt success chance.
+// stat_bonus lets the UI add crafting +stat gear the export doesn't capture.
+func (h *charactersHandler) skillupEstimate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	char, ok, err := h.store.Get(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+
+	ts := queryInt(r, "tradeskill", -1)
+	current := queryInt(r, "skill", 0)
+	trivial := queryInt(r, "trivial", 0)
+	mod := queryInt(r, "mod", 0)
+	aa := queryInt(r, "aa", 0)
+	statBonus := queryInt(r, "stat_bonus", 0)
+	nofail := r.URL.Query().Get("nofail") == "1"
+
+	tradeStat, statName := tradeskill.TradeStat(ts, char.BaseSTR, char.BaseDEX, char.BaseINT, char.BaseWIS)
+	tradeStat += statBonus
+
+	classIdx := char.Class + 1
+	difficulty, err := h.db.SkillDifficulty(ts, classIdx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	skillCap := 0
+	if char.Class >= 0 && char.Level > 0 {
+		if c, capErr := h.db.SkillCap(ts, classIdx, char.Level); capErr == nil {
+			skillCap = c
+		}
+	}
+
+	res := tradeskill.EstimateSkillUp(current, trivial, skillCap, tradeStat, difficulty, mod, aa, nofail)
+	res.StatName = statName
+	writeJSON(w, http.StatusOK, res)
+}
+
 // untrainedTradeskillValue is the lowest raw value the server exports to mean
 // "this character can never train this skill" (255 = class-locked, 254 =
 // race-locked but flagged trainable, e.g. gnome-only Tinkering on a non-gnome).

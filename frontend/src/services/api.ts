@@ -47,6 +47,7 @@ import type {
   TradeskillModifier,
   TradeskillChance,
   TradeskillAA,
+  SkillUpEstimate,
 } from '../types/recipe'
 import type {
   TraderCharacter,
@@ -1845,6 +1846,34 @@ export function getCharacterTradeskillAA(
   return get<TradeskillAA>(
     `/api/characters/${id}/tradeskill-aa?tradeskill=${tradeskill}`,
   )
+}
+
+export interface SkillUpEstimateParams {
+  tradeskill: number
+  skill: number    // current raw skill
+  trivial: number
+  mod?: number     // item skill-mod % (helps success -> faster skilling)
+  aa?: number      // AA fail-reduction %
+  statBonus?: number // extra governing stat from crafting gear the export misses
+  nofail?: boolean
+}
+
+// Estimated combines to raise the character's tradeskill toward a recipe's
+// trivial (the other half of the calculator — how long the grind is).
+export function getSkillUpEstimate(
+  id: number,
+  p: SkillUpEstimateParams,
+): Promise<SkillUpEstimate> {
+  const params = new URLSearchParams({
+    tradeskill: String(p.tradeskill),
+    skill: String(p.skill),
+    trivial: String(p.trivial),
+  })
+  if (p.mod && p.mod > 0) params.set('mod', String(p.mod))
+  if (p.aa && p.aa > 0) params.set('aa', String(p.aa))
+  if (p.statBonus && p.statBonus > 0) params.set('stat_bonus', String(p.statBonus))
+  if (p.nofail) params.set('nofail', '1')
+  return get<SkillUpEstimate>(`/api/characters/${id}/skillup-estimate?${params}`)
 }
 
 export function getZealQuarmy(character?: string): Promise<{ quarmy: QuarmyData | null }> {

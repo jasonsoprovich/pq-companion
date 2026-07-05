@@ -1,6 +1,29 @@
 package db
 
-import "fmt"
+import (
+	"database/sql"
+	"fmt"
+)
+
+// SkillDifficulty returns the EQMacEmu skill-up difficulty for a tradeskill,
+// from quarm.db skill_difficulty. classIdx is 1-indexed (1=Warrior … 15=
+// Beastlord); tradeskill difficulties are class-invariant but the table is
+// keyed per class, so query the character's class. Returns 0 (and no error)
+// when the tradeskill has no row — the caller treats that as "unknown".
+func (db *DB) SkillDifficulty(skillID, classIdx int) (float64, error) {
+	var d float64
+	err := db.QueryRow(
+		`SELECT difficulty FROM skill_difficulty WHERE skillid = ? AND class = ? LIMIT 1`,
+		skillID, classIdx,
+	).Scan(&d)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("skill difficulty %d/%d: %w", skillID, classIdx, err)
+	}
+	return d, nil
+}
 
 // TradeskillModifier is an item that boosts a tradeskill skill when worn. Value
 // is a percentage bonus to that skill: EQMac's Client::GetSkill applies it as

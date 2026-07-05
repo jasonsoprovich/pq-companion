@@ -6,6 +6,7 @@ import {
   getCharacterTradeskillAA,
   getTradeskillModifiers,
   getTradeskillChance,
+  getSkillUpEstimate,
 } from '../services/api'
 import type { Character } from '../services/api'
 import type {
@@ -13,6 +14,7 @@ import type {
   TradeskillModifier,
   TradeskillChance,
   TradeskillAA,
+  SkillUpEstimate,
 } from '../types/recipe'
 import type { TradeskillView } from '../types/skill'
 import { tradeskillLabel } from '../lib/enumsCache'
@@ -69,6 +71,8 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
   const [showMods, setShowMods] = useState(false)
 
   const [result, setResult] = useState<TradeskillChance | null>(null)
+  const [estimate, setEstimate] = useState<SkillUpEstimate | null>(null)
+  const [statBonus, setStatBonus] = useState('')
 
   // Load characters once; default the selection to the active character (or the
   // last-used one), so the panel is useful immediately.
@@ -183,6 +187,32 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
     return () => clearTimeout(t)
   }, [haveSkill, recipe.trivial, recipe.no_fail, rawSkill, effMod, aaReduce])
 
+  // Skill-up estimate — how many combines to raise the skill toward trivial.
+  const statBonusNum = Math.max(0, parseInt(statBonus) || 0)
+  useEffect(() => {
+    if (common || charId == null || !haveSkill) {
+      setEstimate(null)
+      return
+    }
+    const t = setTimeout(() => {
+      getSkillUpEstimate(charId, {
+        tradeskill: recipe.tradeskill,
+        skill: rawSkill,
+        trivial: recipe.trivial,
+        mod: effMod,
+        aa: aaReduce,
+        statBonus: statBonusNum,
+        nofail: recipe.no_fail,
+      })
+        .then(setEstimate)
+        .catch(() => setEstimate(null))
+    }, 200)
+    return () => clearTimeout(t)
+  }, [
+    common, charId, haveSkill, recipe.tradeskill, recipe.trivial,
+    recipe.no_fail, rawSkill, effMod, aaReduce, statBonusNum,
+  ])
+
   function selectChar(id: number) {
     setCharId(id)
     localStorage.setItem(CHAR_KEY, String(id))
@@ -262,6 +292,16 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
             effMod={effMod}
             skillNeeded={recipe.skill_needed}
             aa={aaInfo}
+          />
+        )}
+
+        {/* Skill-up estimate */}
+        {!common && haveSkill && estimate && (
+          <SkillUpSection
+            estimate={estimate}
+            label={label}
+            statBonus={statBonus}
+            onStatBonus={setStatBonus}
           />
         )}
 
@@ -415,6 +455,73 @@ function AANote({ aa }: { aa: TradeskillAA | null }): React.ReactElement | null 
     <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
       Training {aa.name} would cut failure by up to 50%.
     </p>
+  )
+}
+
+// SkillUpSection shows how many combines it takes to raise the skill toward the
+// recipe's trivial, plus an optional "crafting stat gear" adjustment (the quarmy
+// export only carries naked base stats).
+interface SkillUpSectionProps {
+  estimate: SkillUpEstimate
+  label: string
+  statBonus: string
+  onStatBonus: (v: string) => void
+}
+
+function SkillUpSection({ estimate: e, label, statBonus, onStatBonus }: SkillUpSectionProps): React.ReactElement {
+  return (
+    <div className="mt-3 border-t pt-2" style={{ borderColor: 'var(--color-border)' }}>
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
+        Skill-ups
+      </div>
+
+      {e.maxed ? (
+        <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+          {e.at_cap
+            ? `At your class/level ${label} cap (${e.cap}) — no more skill-ups here.`
+            : `Skill ${e.current_skill} is at/above this recipe's trivial — it no longer raises ${label}.`}
+        </p>
+      ) : e.impractical ? (
+        <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+          Not enough stat data to estimate skill-ups.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          <div className="flex items-baseline gap-2">
+            <span className="text-base font-bold tabular-nums" style={{ color: 'var(--color-foreground)' }}>
+              ≈{e.attempts_to_target.toLocaleString()}
+            </span>
+            <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
+              combines to trivial (skill {e.target_skill}, +{e.points_to_go})
+            </span>
+          </div>
+          <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+            ≈{e.attempts_to_next.toLocaleString()} per skill-up at skill {e.current_skill}.
+          </p>
+          <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+            Based on {e.stat_name} {e.trade_stat}; failures skill up at half rate.
+            Assumes you make this recipe the whole way.
+          </p>
+          <label className="mt-0.5 flex items-center gap-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+            + crafting stat gear
+            <input
+              type="number"
+              min={0}
+              max={255}
+              value={statBonus}
+              onChange={(ev) => onStatBonus(ev.target.value)}
+              placeholder="0"
+              className="w-16 rounded px-2 py-1 outline-none"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                color: 'var(--color-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+            />
+          </label>
+        </div>
+      )}
+    </div>
   )
 }
 
