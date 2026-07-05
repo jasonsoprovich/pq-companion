@@ -27,6 +27,18 @@ type BandolierItem struct {
 	ItemType int    `json:"item_type"`
 }
 
+// BandolierSlotFilter narrows the picker to items a specific character can
+// actually equip. It is intentionally zero-value-safe: an unset field disables
+// that check, so a character whose class/race/level aren't known yet (no Quarmy
+// export imported) falls back to ownership + slot filtering only rather than an
+// empty list. The caller precomputes the item bitmask bits so this layer stays
+// free of class/race enum knowledge.
+type BandolierSlotFilter struct {
+	ClassBit int // items.classes bit for the character's class; 0 = don't filter
+	RaceBit  int // items.races bit for the character's race; 0 = don't filter
+	Level    int // character level; <= 0 = don't filter on reqlevel
+}
+
 // BandolierSlotItems returns the items the character owns (ownedIDs) that fit
 // the given bandolier slot, optionally filtered by a case-insensitive name
 // search. ownedIDs is the authoritative ownership guard: the picker can never
@@ -34,8 +46,9 @@ type BandolierItem struct {
 // item that would fail (or be skipped) when Zeal applies it in-game.
 //
 // Returns an empty slice (never an error) when ownedIDs is empty or the slot
-// index is out of range.
-func (db *DB) BandolierSlotItems(slotIndex int, ownedIDs []int, search string) ([]BandolierItem, error) {
+// index is out of range. The filter further restricts results to items the
+// character can equip (class/race/level); see BandolierSlotFilter.
+func (db *DB) BandolierSlotItems(slotIndex int, ownedIDs []int, search string, filter BandolierSlotFilter) ([]BandolierItem, error) {
 	if slotIndex < 0 || slotIndex >= len(BandolierSlotBits) {
 		return []BandolierItem{}, nil
 	}
@@ -66,6 +79,22 @@ func (db *DB) BandolierSlotItems(slotIndex int, ownedIDs []int, search string) (
 	args := []any{slotBit}
 	for _, id := range ids {
 		args = append(args, id)
+	}
+
+	// Equip guardrails: only surface items this character can actually wear.
+	// Each check is skipped when the corresponding metadata is unknown so the
+	// picker degrades to ownership + slot rather than showing nothing.
+	if filter.ClassBit != 0 {
+		where += " AND (i.classes & ?) != 0"
+		args = append(args, filter.ClassBit)
+	}
+	if filter.RaceBit != 0 {
+		where += " AND (i.races & ?) != 0"
+		args = append(args, filter.RaceBit)
+	}
+	if filter.Level > 0 {
+		where += " AND i.reqlevel <= ?"
+		args = append(args, filter.Level)
 	}
 
 	if s := strings.TrimSpace(search); s != "" {

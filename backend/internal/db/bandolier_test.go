@@ -41,7 +41,7 @@ func TestBandolierSlotItems_OwnershipAndSlotGate(t *testing.T) {
 		}
 	}
 
-	got, err := d.BandolierSlotItems(0 /*Primary*/, owned, "")
+	got, err := d.BandolierSlotItems(0 /*Primary*/, owned, "", db.BandolierSlotFilter{})
 	if err != nil {
 		t.Fatalf("BandolierSlotItems: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestBandolierSlotItems_Search(t *testing.T) {
 	if len(term) == 0 {
 		t.Skip("primary item has no name")
 	}
-	got, err := d.BandolierSlotItems(0, owned, term[0])
+	got, err := d.BandolierSlotItems(0, owned, term[0], db.BandolierSlotFilter{})
 	if err != nil {
 		t.Fatalf("BandolierSlotItems(search): %v", err)
 	}
@@ -110,10 +110,93 @@ func TestBandolierSlotItems_Search(t *testing.T) {
 	}
 }
 
+func TestBandolierSlotItems_ClassAndLevelGuardrails(t *testing.T) {
+	d := openTestDB(t)
+
+	const primaryBit = 0x002000
+	primary, err := d.UpgradeCandidates(db.CandidateFilter{SlotMask: primaryBit, MaxLevel: 60})
+	if err != nil {
+		t.Fatalf("UpgradeCandidates(primary): %v", err)
+	}
+	if len(primary) < 5 {
+		t.Skipf("not enough primary items in DB: %d", len(primary))
+	}
+	owned := make([]int, 0, len(primary))
+	byID := map[int]db.UpgradeCandidate{}
+	for _, c := range primary {
+		owned = append(owned, c.ID)
+		byID[c.ID] = c
+	}
+
+	// Zero-value filter must match the ungated result exactly (graceful fallback).
+	base, err := d.BandolierSlotItems(0, owned, "", db.BandolierSlotFilter{})
+	if err != nil {
+		t.Fatalf("BandolierSlotItems(base): %v", err)
+	}
+
+	// Class gate: pick a class bit that only some owned primaries allow, so the
+	// filter must both keep the allowed ones and drop the rest.
+	var classBit int
+	for cls := 0; cls <= 14; cls++ {
+		bit := 1 << cls
+		allowed, blocked := 0, 0
+		for _, c := range base {
+			if byID[c.ID].Classes&bit != 0 {
+				allowed++
+			} else {
+				blocked++
+			}
+		}
+		if allowed > 0 && blocked > 0 {
+			classBit = bit
+			break
+		}
+	}
+	if classBit == 0 {
+		t.Skip("no class discriminates the owned primary set")
+	}
+
+	got, err := d.BandolierSlotItems(0, owned, "", db.BandolierSlotFilter{ClassBit: classBit})
+	if err != nil {
+		t.Fatalf("BandolierSlotItems(class): %v", err)
+	}
+	for _, it := range got {
+		if byID[it.ID].Classes&classBit == 0 {
+			t.Errorf("item %d (%q) returned but class bit %#x not in classes %#x",
+				it.ID, it.Name, classBit, byID[it.ID].Classes)
+		}
+	}
+	for _, c := range base {
+		want := byID[c.ID].Classes&classBit != 0
+		found := false
+		for _, it := range got {
+			if it.ID == c.ID {
+				found = true
+				break
+			}
+		}
+		if want != found {
+			t.Errorf("class filter mismatch for item %d (%q): want present=%v got=%v", c.ID, c.Name, want, found)
+		}
+	}
+
+	// Level gate: no item with reqlevel above the character level may survive.
+	const lvl = 5
+	lvlGot, err := d.BandolierSlotItems(0, owned, "", db.BandolierSlotFilter{Level: lvl})
+	if err != nil {
+		t.Fatalf("BandolierSlotItems(level): %v", err)
+	}
+	for _, it := range lvlGot {
+		if byID[it.ID].ReqLevel > lvl {
+			t.Errorf("item %d (%q) reqlevel %d survived level-%d filter", it.ID, it.Name, byID[it.ID].ReqLevel, lvl)
+		}
+	}
+}
+
 func TestBandolierSlotItems_EmptyAndOutOfRange(t *testing.T) {
 	d := openTestDB(t)
 
-	got, err := d.BandolierSlotItems(0, nil, "")
+	got, err := d.BandolierSlotItems(0, nil, "", db.BandolierSlotFilter{})
 	if err != nil {
 		t.Fatalf("empty owned: %v", err)
 	}
@@ -121,7 +204,7 @@ func TestBandolierSlotItems_EmptyAndOutOfRange(t *testing.T) {
 		t.Errorf("empty owned returned %d items, want 0", len(got))
 	}
 
-	got, err = d.BandolierSlotItems(99, []int{1001}, "")
+	got, err = d.BandolierSlotItems(99, []int{1001}, "", db.BandolierSlotFilter{})
 	if err != nil {
 		t.Fatalf("out-of-range slot: %v", err)
 	}

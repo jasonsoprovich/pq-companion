@@ -15,6 +15,7 @@ import (
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db/enums"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zealpipe"
 )
@@ -507,7 +508,21 @@ func (h *zealHandler) bandolierSlotItems(w http.ResponseWriter, r *http.Request)
 		ids = append(ids, id)
 	}
 
-	items, err := h.db.BandolierSlotItems(slot, ids, q.Get("q"))
+	// Build the equip guardrail from the character's class/race/level, which the
+	// client supplies from the persona it already loaded. Each is optional: an
+	// absent or out-of-range value leaves that check off (see BandolierSlotFilter).
+	var filter db.BandolierSlotFilter
+	if lvl, err := strconv.Atoi(q.Get("level")); err == nil && lvl > 0 {
+		filter.Level = lvl
+	}
+	if cls, err := strconv.Atoi(q.Get("class")); err == nil && cls >= 0 && cls <= 14 {
+		filter.ClassBit = 1 << cls
+	}
+	if race, err := strconv.Atoi(q.Get("race")); err == nil {
+		filter.RaceBit = enums.RaceBitForCharRace(race)
+	}
+
+	items, err := h.db.BandolierSlotItems(slot, ids, q.Get("q"), filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to query slot items")
 		return

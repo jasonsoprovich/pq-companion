@@ -616,9 +616,15 @@ export function getBandolierSlotItems(
   character: string,
   slot: number,
   q = '',
+  equip?: { class?: number; race?: number; level?: number },
 ): Promise<BandolierSlotItemsResponse> {
   const params = new URLSearchParams({ character, slot: String(slot) })
   if (q) params.set('q', q)
+  // Equip guardrail hints — backend filters the picker to gear this character
+  // can actually wear. Each is optional; omit unknown/unset values.
+  if (equip?.class !== undefined && equip.class >= 0) params.set('class', String(equip.class))
+  if (equip?.race !== undefined && equip.race > 0) params.set('race', String(equip.race))
+  if (equip?.level !== undefined && equip.level > 0) params.set('level', String(equip.level))
   return get<BandolierSlotItemsResponse>(`/api/zeal/bandolier/slot-items?${params}`)
 }
 

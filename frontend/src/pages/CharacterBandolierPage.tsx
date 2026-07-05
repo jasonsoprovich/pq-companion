@@ -67,6 +67,7 @@ interface SlotPickerProps {
   slot: number
   currentItemId: number
   setName: string
+  equip: { class?: number; race?: number; level?: number }
   onPick: (item: BandolierItem | null) => void // null = clear the slot
   onClose: () => void
 }
@@ -76,6 +77,7 @@ function SlotPicker({
   slot,
   currentItemId,
   setName,
+  equip,
   onPick,
   onClose,
 }: SlotPickerProps): React.ReactElement {
@@ -90,7 +92,7 @@ function SlotPicker({
     let cancelled = false
     setLoading(true)
     const t = setTimeout(() => {
-      getBandolierSlotItems(character, slot, query.trim())
+      getBandolierSlotItems(character, slot, query.trim(), equip)
         .then((res) => {
           if (cancelled) return
           setItems(res.items ?? [])
@@ -145,8 +147,8 @@ function SlotPicker({
             />
           </div>
           <p className="mt-1.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-            Only items currently in {character}'s inventory are shown — a set can't
-            reference an item the character doesn't have.
+            Only items in {character}'s inventory that this character can equip in
+            this slot (class, race, and level permitting) are shown.
           </p>
         </div>
 
@@ -761,6 +763,11 @@ export default function CharacterBandolierPage(): React.ReactElement {
           slot={picker.slot}
           currentItemId={pickerSet.item_ids[picker.slot] ?? EMPTY}
           setName={pickerSet.name}
+          equip={{
+            class: viewedChar?.class,
+            race: viewedChar?.race,
+            level: viewedChar?.level,
+          }}
           onPick={handlePick}
           onClose={() => setPicker(null)}
         />
