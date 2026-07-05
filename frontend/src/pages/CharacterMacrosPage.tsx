@@ -183,7 +183,7 @@ function ButtonEditor({ initial, palette, hiddenDefault, onSave, onClear, onClos
           {/* Color */}
           <div className="flex flex-col gap-1">
             <span className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
-              Label color (EQ palette index — swatch is approximate)
+              Label color (EQ social palette index)
             </span>
             <div className="flex items-center gap-2">
               <span
@@ -663,7 +663,6 @@ export default function CharacterMacrosPage(): React.ReactElement {
   const editingButton = editing
     ? buttonsByKey.get(keyOf(editing.page, editing.button)) ?? emptyButton(editing.page, editing.button)
     : null
-  const isLoggedIn = viewed !== '' && viewed === active
 
   return (
     <div className="flex h-full flex-col" style={{ backgroundColor: 'var(--color-background)' }}>
@@ -730,14 +729,18 @@ export default function CharacterMacrosPage(): React.ReactElement {
         </button>
       </div>
 
-      {viewedFile && isLoggedIn && (
+      {viewedFile && (
         <div
           className="flex shrink-0 items-center gap-2 border-b px-4 py-1.5 text-[11px]"
           style={{ borderColor: 'var(--color-border)', color: 'var(--color-warning, #f59e0b)' }}
         >
-          <AlertTriangle size={12} />
-          {viewed} appears to be logged in. EverQuest rewrites this file on logout, so
-          saved macro edits will be overwritten — camp out before saving.
+          <AlertTriangle size={12} className="shrink-0" />
+          <span>
+            Save while {viewed} is camped out of the game. EverQuest only reads socials at
+            login and rewrites this file when it saves them (on camp/logout, or when you edit
+            a social in-game) — so edits saved while that character is in-game won&rsquo;t take
+            effect and will be overwritten.
+          </span>
         </div>
       )}
 
