@@ -13,7 +13,7 @@ import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
-import { getThreatState, getRaidThreatState, resetThreat } from '../services/api'
+import { getThreatState, getRaidThreatState, resetThreat, resetRaidThreat } from '../services/api'
 import {
   ThreatContent,
   RaidThreatContent,
@@ -107,25 +107,23 @@ export default function ThreatOverlayWindowPage(): React.ReactElement {
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {raidEnabled && <ThreatModeToggle mode={effMode} onChange={chooseMode} />}
-          {effMode === 'personal' && (
-            <button
-              onClick={() => resetThreat().catch(() => {})}
-              title="Reset threat"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                padding: '1px 5px',
-                borderRadius: 3,
-                border: '1px solid rgba(255,255,255,0.1)',
-                backgroundColor: 'transparent',
-                color: 'rgba(255,255,255,0.4)',
-                cursor: 'pointer',
-                lineHeight: 1,
-              }}
-            >
-              <Trash2 size={11} />
-            </button>
-          )}
+          <button
+            onClick={() => (effMode === 'raid' ? resetRaidThreat() : resetThreat()).catch(() => {})}
+            title={effMode === 'raid' ? 'Clear raid threat' : 'Reset threat'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '1px 5px',
+              borderRadius: 3,
+              border: '1px solid rgba(255,255,255,0.1)',
+              backgroundColor: 'transparent',
+              color: 'rgba(255,255,255,0.4)',
+              cursor: 'pointer',
+              lineHeight: 1,
+            }}
+          >
+            <Trash2 size={11} />
+          </button>
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeThreat()}

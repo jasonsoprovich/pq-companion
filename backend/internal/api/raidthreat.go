@@ -20,6 +20,14 @@ func (h *raidThreatHandler) state(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.assembler.GetState())
 }
 
+// dismissAll handles DELETE /api/overlay/raidthreat.
+// Suppresses every mob currently shown in the raid threat view (the overlay's
+// header "clear" button) until each mob's fight lifecycle resets.
+func (h *raidThreatHandler) dismissAll(w http.ResponseWriter, r *http.Request) {
+	h.assembler.DismissAll()
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // dismissMob handles DELETE /api/overlay/raidthreat/{name}.
 // Suppresses a single mob from the raid threat view (the overlay's per-card
 // "x" button) until its fight lifecycle resets.

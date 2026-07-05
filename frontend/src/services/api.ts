@@ -1306,6 +1306,10 @@ export function dismissRaidThreatMob(name: string): Promise<void> {
   return del(`/api/overlay/raidthreat/${encodeURIComponent(name)}`)
 }
 
+export function resetRaidThreat(): Promise<void> {
+  return del('/api/overlay/raidthreat')
+}
+
 // ── Combat history (persisted) ─────────────────────────────────────────────
 
 export function listCombatHistory(filter: HistoryFilter = {}): Promise<HistoryListResponse> {

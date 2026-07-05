@@ -349,6 +349,25 @@ func (a *Assembler) DismissMob(name string) bool {
 	return true
 }
 
+// DismissAll suppresses every mob currently shown in the raid threat view (the
+// overlay's header "clear" button). Like DismissMob, each mob is held in the
+// dismissed set until its own fight lifecycle resets (kill / zone / death)
+// rather than reappearing on the next tick. Returns the number of mobs cleared.
+func (a *Assembler) DismissAll() int {
+	shown := a.GetState().Mobs
+	if len(shown) == 0 {
+		return 0
+	}
+	a.mu.Lock()
+	for _, m := range shown {
+		a.dismissed[m.Name] = true
+		delete(a.taunt, m.Name)
+	}
+	a.mu.Unlock()
+	a.broadcast(a.GetState())
+	return len(shown)
+}
+
 // Handle processes the parsed log events the assembler reacts to: taunts (which
 // drive the taunt model) and the lifecycle events that clear it. No-op while
 // the feature is disabled.

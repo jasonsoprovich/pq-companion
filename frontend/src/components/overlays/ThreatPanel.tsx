@@ -3,7 +3,7 @@ import { Gauge, ExternalLink, Trash2 } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useRaidThreatEnabled } from '../../hooks/useRaidThreatEnabled'
 import { WSEvent } from '../../lib/wsEvents'
-import { getThreatState, getRaidThreatState, resetThreat } from '../../services/api'
+import { getThreatState, getRaidThreatState, resetThreat, resetRaidThreat } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import type { ThreatState, RaidThreatState } from '../../types/overlay'
 import {
@@ -89,15 +89,13 @@ export default function ThreatPanel({
       headerRight={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {raidEnabled && <ThreatModeToggle mode={effMode} onChange={chooseMode} />}
-          {effMode === 'personal' && (
-            <button
-              onClick={() => resetThreat().catch(() => {})}
-              title="Reset threat"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}
-            >
-              <Trash2 size={12} />
-            </button>
-          )}
+          <button
+            onClick={() => (effMode === 'raid' ? resetRaidThreat() : resetThreat()).catch(() => {})}
+            title={effMode === 'raid' ? 'Clear raid threat' : 'Reset threat'}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}
+          >
+            <Trash2 size={12} />
+          </button>
           {window.electron?.overlay && (
             <button
               onClick={() => window.electron.overlay.toggleThreat()}
