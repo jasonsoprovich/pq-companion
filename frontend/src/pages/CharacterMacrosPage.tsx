@@ -2,8 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import {
   AlertTriangle,
+  Check,
+  Copy,
   Download,
   Keyboard,
+  Plus,
   RefreshCw,
   Save,
   Trash2,
@@ -21,6 +24,9 @@ import {
 import type { MacroButton, MacroColor, MacroFile } from '../types/zeal'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { ConfirmModal } from '../components/ConfirmModal'
+import { BuffPicker } from '../components/BuffPicker'
+import { SpellIcon } from '../components/Icon'
+import { fetchSpellCached, getCachedSpell } from '../lib/spellCache'
 
 const CLASS_NAMES = [
   'Warrior', 'Cleric', 'Paladin', 'Ranger', 'Shadow Knight', 'Druid', 'Monk',
@@ -85,6 +91,169 @@ function fileIsDirty(a: MacroFile | null, b: MacroFile | null): boolean {
 function cssColor(c: MacroColor | undefined): string | null {
   if (!c) return null
   return `rgb(${c.r}, ${c.g}, ${c.b})`
+}
+
+// ── /cancelbuff builder ──────────────────────────────────────────────────────
+
+// Zeal's /cancelbuff (as of the up-to-5-ids patch) removes beneficial buffs by
+// spell id, up to 5 in one line: `/cancelbuff 278 39 145`. The builder below
+// lets the user pick those buffs by name instead of hunting down raw ids.
+const CANCELBUFF_MAX = 5
+
+// A line is a /cancelbuff command when its first token is /cancelbuff.
+function isCancelbuffLine(line: string): boolean {
+  return /^\s*\/cancelbuff(\s|$)/i.test(line)
+}
+
+// Pull the positive-integer spell ids off a /cancelbuff line — de-duped and
+// capped at the 5 Zeal accepts. Non-numeric tokens (a half-typed id) are simply
+// ignored rather than fought with, so manual editing never breaks the builder.
+function parseCancelbuffIds(line: string): number[] {
+  const m = line.match(/^\s*\/cancelbuff\b(.*)$/i)
+  if (!m) return []
+  const ids: number[] = []
+  for (const tok of m[1].trim().split(/\s+/)) {
+    if (!tok) continue
+    const n = Number(tok)
+    if (Number.isInteger(n) && n > 0 && !ids.includes(n)) ids.push(n)
+    if (ids.length >= CANCELBUFF_MAX) break
+  }
+  return ids
+}
+
+function serializeCancelbuff(ids: number[]): string {
+  return ids.length ? `/cancelbuff ${ids.join(' ')}` : '/cancelbuff'
+}
+
+// CancelbuffBuilder renders under any command line that starts with /cancelbuff.
+// It shows the referenced spell ids as named chips (icon + name resolved from
+// the shared spell cache) and adds new ones via the beneficial-spell BuffPicker,
+// rewriting the underlying line as the selection changes.
+function CancelbuffBuilder({
+  line,
+  onChange,
+}: {
+  line: string
+  onChange: (next: string) => void
+}): React.ReactElement {
+  const [picking, setPicking] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [, bump] = useState(0)
+
+  const ids = parseCancelbuffIds(line)
+  const idsKey = ids.join(',')
+  const full = ids.length >= CANCELBUFF_MAX
+
+  // Resolve ids -> spell (name + icon) from the shared session cache; async
+  // misses re-render via bump once they land.
+  useEffect(() => {
+    const missing = ids.filter((id) => !getCachedSpell(id))
+    if (missing.length === 0) return
+    let cancelled = false
+    Promise.all(missing.map((id) => fetchSpellCached(id).catch(() => null))).then(() => {
+      if (!cancelled) bump((v) => v + 1)
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey])
+
+  useEffect(() => {
+    if (!copied) return
+    const t = window.setTimeout(() => setCopied(false), 1500)
+    return () => window.clearTimeout(t)
+  }, [copied])
+
+  function addId(id: number): void {
+    if (ids.includes(id) || full) return
+    onChange(serializeCancelbuff([...ids, id]))
+  }
+  function removeId(id: number): void {
+    onChange(serializeCancelbuff(ids.filter((x) => x !== id)))
+  }
+  function copy(): void {
+    navigator.clipboard
+      ?.writeText(serializeCancelbuff(ids))
+      .then(() => setCopied(true))
+      .catch(() => {})
+  }
+
+  return (
+    <div
+      className="flex flex-col gap-1.5 rounded-md border px-2.5 py-2"
+      style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-2)' }}
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+          Cancel-buff builder
+        </span>
+        <span
+          className="text-[10px]"
+          style={{ color: full ? 'var(--color-warning, #f59e0b)' : 'var(--color-muted)' }}
+        >
+          {ids.length}/{CANCELBUFF_MAX}
+        </span>
+        <div className="flex-1" />
+        {ids.length > 0 && (
+          <button
+            onClick={copy}
+            className="flex items-center gap-1 text-[10px]"
+            style={{ color: 'var(--color-muted-foreground)' }}
+            title="Copy the /cancelbuff command to the clipboard"
+          >
+            {copied ? <Check size={11} /> : <Copy size={11} />} {copied ? 'Copied' : 'Copy'}
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {ids.map((id) => {
+          const s = getCachedSpell(id)
+          return (
+            <span
+              key={id}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+              }}
+            >
+              {s && <SpellIcon id={s.new_icon} name={s.name} size={16} />}
+              <span className="max-w-[150px] truncate" title={s ? `${s.name} (#${id})` : `Spell #${id}`}>
+                {s ? s.name : `Spell #${id}`}
+              </span>
+              <button onClick={() => removeId(id)} title="Remove" style={{ color: 'var(--color-muted-foreground)' }}>
+                <X size={11} />
+              </button>
+            </span>
+          )
+        })}
+        <button
+          onClick={() => setPicking(true)}
+          disabled={full}
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] disabled:opacity-40"
+          style={{ border: '1px dashed var(--color-primary)', color: 'var(--color-primary)' }}
+          title={full ? 'Zeal allows at most 5 buffs per /cancelbuff' : 'Search a buff by name to add its spell id'}
+        >
+          <Plus size={11} /> Add buff
+        </button>
+      </div>
+      {picking && (
+        <BuffPicker
+          currentSpellId={0}
+          existingSpellIDs={ids}
+          heading="Add a buff to strip (search by name)"
+          alreadyPickedLabel="Already in this command"
+          onPick={(s) => {
+            addId(s.id)
+            setPicking(false)
+          }}
+          onClose={() => setPicking(false)}
+        />
+      )}
+    </div>
+  )
 }
 
 // ── Button editor modal ──────────────────────────────────────────────────────
@@ -231,19 +400,30 @@ function ButtonEditor({ initial, palette, hiddenDefault, onSave, onClear, onClos
             <span className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
               Command lines (run top to bottom)
             </span>
+            <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+              Tip: start a line with <code style={{ color: 'var(--color-foreground)' }}>/cancelbuff</code> to
+              build a buff-strip hotkey by name (no spell ids to look up).
+            </span>
             {lines.map((l, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span className="w-4 text-right text-[10px] font-mono" style={{ color: 'var(--color-muted)' }}>
-                  {i + 1}
-                </span>
-                <input
-                  type="text"
-                  value={l}
-                  onChange={(e) => setLine(i, e.target.value)}
-                  placeholder={i === 0 ? (hiddenDefault?.command ?? '/say Hello') : ''}
-                  className="flex-1 rounded px-2 py-1 font-mono text-xs outline-none"
-                  style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
-                />
+              <div key={i} className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <span className="w-4 text-right text-[10px] font-mono" style={{ color: 'var(--color-muted)' }}>
+                    {i + 1}
+                  </span>
+                  <input
+                    type="text"
+                    value={l}
+                    onChange={(e) => setLine(i, e.target.value)}
+                    placeholder={i === 0 ? (hiddenDefault?.command ?? '/say Hello') : ''}
+                    className="flex-1 rounded px-2 py-1 font-mono text-xs outline-none"
+                    style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+                  />
+                </div>
+                {isCancelbuffLine(l) && (
+                  <div className="ml-6">
+                    <CancelbuffBuilder line={l} onChange={(v) => setLine(i, v)} />
+                  </div>
+                )}
               </div>
             ))}
           </div>

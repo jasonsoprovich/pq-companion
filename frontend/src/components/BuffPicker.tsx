@@ -19,12 +19,24 @@ interface BuffPickerProps {
   onPick: (spell: Spell) => void
   onClear?: () => void
   onClose: () => void
+  // Optional copy overrides so the same picker reads correctly in other
+  // contexts (e.g. the /cancelbuff macro builder, where "slot" makes no sense).
+  heading?: string
+  alreadyPickedLabel?: string
 }
 
 const SEARCH_LIMIT = 60
 const DEBOUNCE_MS = 200
 
-export function BuffPicker({ currentSpellId, existingSpellIDs, onPick, onClear, onClose }: BuffPickerProps): React.ReactElement {
+export function BuffPicker({
+  currentSpellId,
+  existingSpellIDs,
+  onPick,
+  onClear,
+  onClose,
+  heading = 'Pick a buff for this slot',
+  alreadyPickedLabel = 'Already in another slot',
+}: BuffPickerProps): React.ReactElement {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Spell[]>([])
   const [loading, setLoading] = useState(false)
@@ -87,7 +99,7 @@ export function BuffPicker({ currentSpellId, existingSpellIDs, onPick, onClear, 
           <Search size={14} style={{ color: 'var(--color-muted)' }} />
           <div className="flex-1 min-w-0">
             <div className="text-xs" style={{ color: 'var(--color-muted)' }}>
-              Pick a buff for this slot
+              {heading}
             </div>
             <input
               type="text"
@@ -137,7 +149,7 @@ export function BuffPicker({ currentSpellId, existingSpellIDs, onPick, onClear, 
                     {s.name}
                   </div>
                   <div className="mt-0.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                    {isCurrent ? 'Current selection' : isAlreadyPicked ? 'Already in another slot' : 'Beneficial buff'}
+                    {isCurrent ? 'Current selection' : isAlreadyPicked ? alreadyPickedLabel : 'Beneficial buff'}
                   </div>
                 </div>
               </button>
