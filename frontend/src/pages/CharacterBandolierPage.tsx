@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import {
+  Backpack,
   Check,
   Pencil,
   Plus,
@@ -15,10 +16,12 @@ import {
 import {
   getAllBandoliers,
   getAllInventories,
+  getBandolierBag,
   getBandolierSlotItems,
   getItem,
   listCharacters,
   updateBandolier,
+  updateBandolierBag,
   type Character,
 } from '../services/api'
 import type { BandolierFile, BandolierItem } from '../types/zeal'
@@ -486,6 +489,11 @@ export default function CharacterBandolierPage(): React.ReactElement {
     | null
   >(null)
   const [justAddedIdx, setJustAddedIdx] = useState<number | null>(null)
+  // Preferred storage bag (zeal.ini [Zeal_<Char>] BandolierBagSlot), per
+  // character. 0 = disabled/none. Saved to disk immediately on change since it
+  // lives in a different file from the sets and has no local-draft workflow.
+  const [bagSlot, setBagSlot] = useState(0)
+  const [bagSaving, setBagSaving] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -566,6 +574,21 @@ export default function CharacterBandolierPage(): React.ReactElement {
     if (viewed && names.includes(viewed)) return
     setViewed(names.find((n) => n === active) ?? names[0])
   }, [files, active, viewed])
+
+  // Load the viewed character's preferred storage bag from zeal.ini.
+  useEffect(() => {
+    if (!viewed) {
+      setBagSlot(0)
+      return
+    }
+    let cancelled = false
+    getBandolierBag(viewed)
+      .then((st) => !cancelled && setBagSlot(st.found ? st.slot : 0))
+      .catch(() => !cancelled && setBagSlot(0))
+    return () => {
+      cancelled = true
+    }
+  }, [viewed])
 
   const viewedFile = files.find((f) => f.character === viewed) ?? null
   const viewedHasFile = hasFile.has(viewed)
@@ -663,6 +686,21 @@ export default function CharacterBandolierPage(): React.ReactElement {
     setConfirmAction(null)
   }
 
+  function handleBagChange(next: number): void {
+    if (!viewed) return
+    const prev = bagSlot
+    setBagSlot(next) // optimistic
+    setBagSaving(true)
+    setError(null)
+    updateBandolierBag(viewed, next)
+      .then((st) => setBagSlot(st.found ? st.slot : 0))
+      .catch((err: Error) => {
+        setBagSlot(prev) // revert on failure
+        setError(`Failed to save preferred bag: ${err.message}`)
+      })
+      .finally(() => setBagSaving(false))
+  }
+
   const pickerSet = picker && viewedFile ? viewedFile.sets[picker.setIndex] : null
   const invStamp = invExportedAt.get(viewed)
 
@@ -725,6 +763,40 @@ export default function CharacterBandolierPage(): React.ReactElement {
           <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
       </div>
+
+      {filenames.length > 0 && viewed && (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b px-4 py-2 text-[12px]"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          <Backpack size={14} style={{ color: 'var(--color-muted)' }} />
+          <label className="flex items-center gap-2" style={{ color: 'var(--color-muted-foreground)' }}>
+            Preferred storage bag
+            <select
+              value={bagSlot}
+              disabled={bagSaving}
+              onChange={(e) => handleBagChange(Number(e.target.value))}
+              className="rounded px-2 py-1 text-xs outline-none disabled:opacity-50"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+              }}
+            >
+              <option value={0}>Disabled</option>
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                <option key={n} value={n}>
+                  Bag {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span style={{ color: 'var(--color-muted)' }}>
+            — where {viewed}'s swapped-out gear is stored first. Saved to{' '}
+            <code>zeal.ini</code> immediately; camp out so Zeal doesn't overwrite it.
+          </span>
+        </div>
+      )}
 
       {viewedFile && invStamp && (
         <div

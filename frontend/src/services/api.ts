@@ -12,6 +12,7 @@ import type {
   ZealBandolierResponse,
   AllBandoliersResponse,
   BandolierSlotItemsResponse,
+  BandolierBagStatus,
   ZealMacrosResponse,
   AllMacrosResponse,
   MacroButton,
@@ -626,6 +627,19 @@ export function getBandolierSlotItems(
   if (equip?.race !== undefined && equip.race > 0) params.set('race', String(equip.race))
   if (equip?.level !== undefined && equip.level > 0) params.set('level', String(equip.level))
   return get<BandolierSlotItemsResponse>(`/api/zeal/bandolier/slot-items?${params}`)
+}
+
+export function getBandolierBag(character: string): Promise<BandolierBagStatus> {
+  return get<BandolierBagStatus>(
+    `/api/zeal/bandolier/bag?character=${encodeURIComponent(character)}`,
+  )
+}
+
+export function updateBandolierBag(
+  character: string,
+  slot: number,
+): Promise<BandolierBagStatus> {
+  return put<BandolierBagStatus>('/api/zeal/bandolier/bag', { character, slot })
 }
 
 export function parseBandolierFile(path: string): Promise<ZealBandolierResponse> {

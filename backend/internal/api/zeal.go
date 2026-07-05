@@ -16,6 +16,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db/enums"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/eqconfig"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zealpipe"
 )
@@ -530,6 +531,64 @@ func (h *zealHandler) bandolierSlotItems(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, struct {
 		Items []db.BandolierItem `json:"items"`
 	}{Items: items})
+}
+
+// GET /api/zeal/bandolier/bag?character=Name
+// Returns the character's preferred bandolier storage bag from zeal.ini's
+// [Zeal_<Char>] section. Found is false when unset (never written), which the
+// UI distinguishes from an explicit 0 (disabled).
+func (h *zealHandler) bandolierBag(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("character")
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "character is required")
+		return
+	}
+	if !isSafeCharacterName(name) {
+		writeError(w, http.StatusBadRequest, "invalid character name")
+		return
+	}
+	cfg := h.cfgMgr.Get()
+	status := eqconfig.BandolierBagStatus{}
+	if cfg.EQPath != "" {
+		status = eqconfig.ReadBandolierBagSlot(cfg.EQPath, name)
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+// PUT /api/zeal/bandolier/bag  {"character":"Name","slot":0..8}
+// Writes the character's preferred storage bag (0=disabled) into zeal.ini's
+// [Zeal_<Char>] section, leaving every other section untouched.
+func (h *zealHandler) updateBandolierBag(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Character string `json:"character"`
+		Slot      int    `json:"slot"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.Character == "" {
+		writeError(w, http.StatusBadRequest, "character is required")
+		return
+	}
+	if !isSafeCharacterName(body.Character) {
+		writeError(w, http.StatusBadRequest, "invalid character name")
+		return
+	}
+	if body.Slot < 0 || body.Slot > 8 {
+		writeError(w, http.StatusBadRequest, "slot must be 0..8")
+		return
+	}
+	cfg := h.cfgMgr.Get()
+	if cfg.EQPath == "" {
+		writeError(w, http.StatusBadRequest, "EQ path not configured")
+		return
+	}
+	if err := eqconfig.SetBandolierBagSlot(cfg.EQPath, body.Character, body.Slot); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to write bag slot")
+		return
+	}
+	writeJSON(w, http.StatusOK, eqconfig.ReadBandolierBagSlot(cfg.EQPath, body.Character))
 }
 
 // POST /api/zeal/bandolier/parse-file

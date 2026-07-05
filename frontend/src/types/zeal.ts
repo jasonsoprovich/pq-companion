@@ -96,6 +96,13 @@ export interface BandolierSlotItemsResponse {
   items: BandolierItem[]
 }
 
+// Per-character preferred bandolier storage bag from zeal.ini [Zeal_<Char>].
+// slot: 0 = disabled, 1..8 = pack slot. found=false when never set.
+export interface BandolierBagStatus {
+  found: boolean
+  slot: number
+}
+
 // In-game social macros from <Char>_pq.proj.ini [Socials]. 10 pages × 12
 // buttons, up to 5 command lines each. color is the EQ user-color palette index
 // (resolved to a swatch via TextColors), not an RGB value.

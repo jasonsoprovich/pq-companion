@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -20,6 +21,10 @@ const (
 	logKey          = "Log"
 	zealSection     = "Zeal" // [Zeal] ExportOnCamp=true in zeal.ini
 	exportOnCampKey = "ExportOnCamp"
+
+	// Per-character bandolier storage bag lives under [Zeal_<Char>] in zeal.ini.
+	bandolierBagKey = "BandolierBagSlot"
+	bandolierBagMax = 8 // 0 = disabled, 1..8 = pack slot
 )
 
 // newlineOf returns the dominant line ending used by content so rewrites match
@@ -124,6 +129,86 @@ func setINIKey(content, section, key, value string) string {
 	return strings.Join(out, nl)
 }
 
+// getINIValueInSection returns the first value for key within the named section
+// (case-insensitive), or ok=false when the section or key is absent. Unlike
+// getINIValue it does not leak values from other sections — required for
+// per-character keys that repeat across sections.
+func getINIValueInSection(content, section, key string) (string, bool) {
+	inTarget := false
+	for _, line := range splitLines(content) {
+		t := strings.TrimSpace(line)
+		if t == "" || strings.HasPrefix(t, ";") || strings.HasPrefix(t, "#") {
+			continue
+		}
+		if strings.HasPrefix(t, "[") && strings.HasSuffix(t, "]") {
+			inTarget = strings.EqualFold(strings.TrimSpace(t[1:len(t)-1]), section)
+			continue
+		}
+		if !inTarget {
+			continue
+		}
+		eq := strings.IndexByte(line, '=')
+		if eq >= 0 && strings.EqualFold(strings.TrimSpace(line[:eq]), key) {
+			return strings.TrimSpace(line[eq+1:]), true
+		}
+	}
+	return "", false
+}
+
+// setINIKeyInSection sets key=value but ONLY within the named section. Unlike
+// setINIKey it never rewrites an occurrence of the key in a different section,
+// which is essential for per-character keys (BandolierBagSlot) that repeat
+// across the [Zeal_<Char>] sections — a whole-file replace would clobber the
+// wrong character's value. Comments, ordering, and line endings are preserved.
+func setINIKeyInSection(content, section, key, value string) string {
+	nl := newlineOf(content)
+	lines := splitLines(content)
+
+	out := make([]string, 0, len(lines)+3)
+	inTarget := false
+	done := false // key written (replaced or inserted)
+	sectionExists := false
+
+	for _, line := range lines {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "[") && strings.HasSuffix(t, "]") {
+			// Leaving the target section without having written the key: insert
+			// it at the section's end, before this new header.
+			if inTarget && !done {
+				out = append(out, key+"="+value)
+				done = true
+			}
+			inTarget = strings.EqualFold(strings.TrimSpace(t[1:len(t)-1]), section)
+			if inTarget {
+				sectionExists = true
+			}
+			out = append(out, line)
+			continue
+		}
+		if inTarget && !done && t != "" && !strings.HasPrefix(t, ";") && !strings.HasPrefix(t, "#") {
+			if eq := strings.IndexByte(line, '='); eq >= 0 &&
+				strings.EqualFold(strings.TrimSpace(line[:eq]), key) {
+				out = append(out, line[:eq+1]+value)
+				done = true
+				continue
+			}
+		}
+		out = append(out, line)
+	}
+
+	if inTarget && !done { // target section ran to EOF
+		out = append(out, key+"="+value)
+		done = true
+	}
+	if !sectionExists && !done { // section not present anywhere → append it
+		if len(out) > 0 && strings.TrimSpace(out[len(out)-1]) != "" {
+			out = append(out, "")
+		}
+		out = append(out, "["+section+"]", key+"="+value)
+	}
+	return strings.Join(out, nl)
+}
+
 // ── eqclient.ini logging ──────────────────────────────────────────────────────
 
 // LogStatus describes the eqclient.ini Log setting. Found is false when the
@@ -169,6 +254,71 @@ func SetExportOnCamp(eqPath string, enabled bool) error {
 		return os.WriteFile(path, []byte(content), 0o644)
 	}
 	return writeINI(path, zealSection, exportOnCampKey, boolStr(enabled, "true", "false"))
+}
+
+// ── zeal.ini per-character BandolierBagSlot ─────────────────────────────────────
+
+// zealCharSection is the per-character zeal.ini section, e.g. "Zeal_Osui". Zeal
+// namespaces per-character settings this way (distinct from the global [Zeal]).
+func zealCharSection(character string) string {
+	return "Zeal_" + character
+}
+
+// BandolierBagStatus reports a character's preferred bandolier storage bag.
+// Slot is 0 (disabled) to 8; Found is false when the file, section, or key is
+// absent so callers can distinguish "unset" from an explicit 0/disabled.
+type BandolierBagStatus struct {
+	Found bool `json:"found"`
+	Slot  int  `json:"slot"`
+}
+
+// ReadBandolierBagSlot reads the character's BandolierBagSlot from zeal.ini's
+// [Zeal_<Char>] section. A present-but-unparseable value reports Found with
+// Slot 0 (treated as disabled) rather than an error.
+func ReadBandolierBagSlot(eqPath, character string) BandolierBagStatus {
+	if strings.TrimSpace(eqPath) == "" || strings.TrimSpace(character) == "" {
+		return BandolierBagStatus{}
+	}
+	b, err := os.ReadFile(filepath.Join(eqPath, zealINI))
+	if err != nil {
+		return BandolierBagStatus{}
+	}
+	v, ok := getINIValueInSection(string(b), zealCharSection(character), bandolierBagKey)
+	if !ok {
+		return BandolierBagStatus{}
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 0 || n > bandolierBagMax {
+		return BandolierBagStatus{Found: true}
+	}
+	return BandolierBagStatus{Found: true, Slot: n}
+}
+
+// SetBandolierBagSlot writes the character's BandolierBagSlot (0=disabled, 1..8)
+// under [Zeal_<Char>] in zeal.ini, preserving every other section. The file is
+// created with just this section when absent.
+func SetBandolierBagSlot(eqPath, character string, slot int) error {
+	if strings.TrimSpace(character) == "" {
+		return fmt.Errorf("character is required")
+	}
+	if slot < 0 || slot > bandolierBagMax {
+		return fmt.Errorf("bag slot must be 0..%d", bandolierBagMax)
+	}
+	path := filepath.Join(eqPath, zealINI)
+	section := zealCharSection(character)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		content := "[" + section + "]\r\n" + bandolierBagKey + "=" + strconv.Itoa(slot) + "\r\n"
+		return os.WriteFile(path, []byte(content), 0o644)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", filepath.Base(path), err)
+	}
+	updated := setINIKeyInSection(string(b), section, bandolierBagKey, strconv.Itoa(slot))
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", filepath.Base(path), err)
+	}
+	return nil
 }
 
 // writeINI reads path, sets the key, and writes it back (file must exist).

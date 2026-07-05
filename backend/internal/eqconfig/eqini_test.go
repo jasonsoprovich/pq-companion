@@ -91,3 +91,83 @@ func TestSetExportOnCampCreatesFile(t *testing.T) {
 		t.Errorf("ExportOnCamp not written: %q", string(b))
 	}
 }
+
+func TestSetBandolierBagSlot_ScopedToCharacterSection(t *testing.T) {
+	// Two characters each carry their own BandolierBagSlot. Updating one must
+	// not touch the other — the whole-file setINIKey would clobber the first
+	// match, so this guards the section-scoped writer.
+	in := "[Zeal_Osui]\r\nBandolierBagSlot=3\r\nAutoAASwitchLow=60\r\n" +
+		"[Zeal_Nariana]\r\nBandolierBagSlot=5\r\n"
+	out := setINIKeyInSection(in, "Zeal_Nariana", "BandolierBagSlot", "7")
+
+	if osui, ok := getINIValueInSection(out, "Zeal_Osui", "BandolierBagSlot"); !ok || osui != "3" {
+		t.Errorf("Osui bag changed to %q (ok=%v), want 3", osui, ok)
+	}
+	if nar, ok := getINIValueInSection(out, "Zeal_Nariana", "BandolierBagSlot"); !ok || nar != "7" {
+		t.Errorf("Nariana bag = %q (ok=%v), want 7", nar, ok)
+	}
+	if !strings.Contains(out, "AutoAASwitchLow=60") {
+		t.Errorf("unrelated key lost: %q", out)
+	}
+	if !strings.Contains(out, "\r\n") {
+		t.Errorf("CRLF not preserved: %q", out)
+	}
+	// Exactly one BandolierBagSlot per character (no duplicates introduced).
+	if n := strings.Count(out, "BandolierBagSlot="); n != 2 {
+		t.Errorf("expected 2 BandolierBagSlot lines, got %d: %q", n, out)
+	}
+}
+
+func TestSetBandolierBagSlot_InsertAndCreate(t *testing.T) {
+	// Insert into an existing section that lacks the key.
+	in := "[Zeal_Osui]\r\nAutoAASwitchLow=60\r\n"
+	out := setINIKeyInSection(in, "Zeal_Osui", "BandolierBagSlot", "4")
+	if v, ok := getINIValueInSection(out, "Zeal_Osui", "BandolierBagSlot"); !ok || v != "4" {
+		t.Errorf("insert failed: %q (ok=%v) in %q", v, ok, out)
+	}
+
+	// Append a brand-new section when the character has none.
+	in2 := "[Zeal]\r\nExportOnCamp=true\r\n"
+	out2 := setINIKeyInSection(in2, "Zeal_Feane", "BandolierBagSlot", "2")
+	if v, ok := getINIValueInSection(out2, "Zeal_Feane", "BandolierBagSlot"); !ok || v != "2" {
+		t.Errorf("append-section failed: %q (ok=%v) in %q", v, ok, out2)
+	}
+	if !strings.Contains(out2, "ExportOnCamp=true") {
+		t.Errorf("global [Zeal] section lost: %q", out2)
+	}
+}
+
+func TestReadSetBandolierBagRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+
+	// Read on a missing file → not found.
+	if st := ReadBandolierBagSlot(dir, "Osui"); st.Found {
+		t.Errorf("expected not-found on missing file, got %+v", st)
+	}
+
+	// Set creates the file with the character section.
+	if err := SetBandolierBagSlot(dir, "Osui", 3); err != nil {
+		t.Fatalf("SetBandolierBagSlot: %v", err)
+	}
+	if st := ReadBandolierBagSlot(dir, "Osui"); !st.Found || st.Slot != 3 {
+		t.Errorf("after set 3, ReadBandolierBagSlot=%+v", st)
+	}
+
+	// 0 = disabled, still found.
+	if err := SetBandolierBagSlot(dir, "Osui", 0); err != nil {
+		t.Fatalf("SetBandolierBagSlot(0): %v", err)
+	}
+	if st := ReadBandolierBagSlot(dir, "Osui"); !st.Found || st.Slot != 0 {
+		t.Errorf("after set 0, ReadBandolierBagSlot=%+v, want found+0", st)
+	}
+
+	// Another character reads independently.
+	if st := ReadBandolierBagSlot(dir, "Nariana"); st.Found {
+		t.Errorf("Nariana should be unset, got %+v", st)
+	}
+
+	// Out of range rejected.
+	if err := SetBandolierBagSlot(dir, "Osui", 9); err == nil {
+		t.Errorf("expected error for slot 9")
+	}
+}

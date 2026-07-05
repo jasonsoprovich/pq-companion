@@ -244,6 +244,8 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Put("/bandolier", zealH.updateBandolier)
 			r.Get("/bandolier/all", zealH.allBandoliers)
 			r.Get("/bandolier/slot-items", zealH.bandolierSlotItems)
+			r.Get("/bandolier/bag", zealH.bandolierBag)
+			r.Put("/bandolier/bag", zealH.updateBandolierBag)
 			r.Post("/bandolier/parse-file", zealH.parseBandolierFile)
 			r.Get("/macros", zealH.macros)
 			r.Put("/macros", zealH.updateMacros)
