@@ -941,6 +941,10 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
   const [files, setFiles] = useState<SpellsetFile[]>([])
   const [originalFiles, setOriginalFiles] = useState<SpellsetFile[]>([])
   const [characters, setCharacters] = useState<Character[]>([])
+  // Characters that actually have a <Char>_spellsets.ini on disk. Others show a
+  // virtual empty file so they still get a page; the real file is created when
+  // the user adds a spellset and saves.
+  const [hasFile, setHasFile] = useState<Set<string>>(new Set())
   const [viewed, setViewed] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -972,9 +976,20 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
     Promise.all([getAllSpellsets(), listCharacters()])
       .then(([sets, chars]) => {
         const fresh = sets.characters ?? []
-        setFiles(fresh)
-        setOriginalFiles(deepCloneFiles(fresh))
-        setCharacters(chars.characters ?? [])
+        const personas = chars.characters ?? []
+        const realNames = new Set(fresh.map((f) => f.character))
+        // Every loaded character gets a page: use its real file when present,
+        // else a virtual empty one (created on first save).
+        const merged: SpellsetFile[] = personas.map(
+          (p) => fresh.find((f) => f.character === p.name) ?? { character: p.name, exported_at: '', spellsets: [] },
+        )
+        for (const f of fresh) {
+          if (!personas.some((p) => p.name === f.character)) merged.push(f)
+        }
+        setFiles(merged)
+        setOriginalFiles(deepCloneFiles(merged))
+        setCharacters(personas)
+        setHasFile(realNames)
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
@@ -1004,6 +1019,7 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
   }, [files, active, viewed])
 
   const viewedFile = files.find((f) => f.character === viewed) ?? null
+  const viewedHasFile = hasFile.has(viewed)
   const viewedChar = characters.find((c) => c.name === viewed) ?? null
   const classIndex = viewedChar?.class ?? -1
   const characterLevel = viewedChar?.level ?? 0
@@ -1212,6 +1228,7 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
           else next.push(deepCloneFiles([saved])[0])
           return next
         })
+        setHasFile((prev) => new Set(prev).add(saved.character))
       })
       .catch((err: Error) => setError(`Save failed: ${err.message}`))
       .finally(() => {
@@ -1450,8 +1467,25 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
         )}
         {!loading && !error && filenames.length === 0 && (
           <div className="text-sm text-center py-12" style={{ color: 'var(--color-muted)' }}>
-            No spellset exports found. Camp out of EverQuest with Zeal enabled to
-            generate <code>&lt;CharName&gt;_spellsets.ini</code> in your EQ folder.
+            No characters loaded yet. Import a character (or point the app at your
+            EQ folder) and they'll appear here with a spellsets page.
+          </div>
+        )}
+        {!loading && !error && viewedFile && !viewedHasFile && (
+          <div
+            className="mb-4 flex items-start gap-2 rounded-md border px-3 py-2 text-[12px]"
+            style={{
+              borderColor: 'var(--color-primary)',
+              backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
+              color: 'var(--color-muted-foreground)',
+            }}
+          >
+            <Plus size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--color-primary)' }} />
+            <span>
+              {viewed} has no spellset file yet. Add a spellset below and click{' '}
+              <strong>Save</strong> to create{' '}
+              <code>{viewed}_spellsets.ini</code> in your EQ folder.
+            </span>
           </div>
         )}
         {!loading && !error && viewedFile && (
@@ -1535,9 +1569,11 @@ export default function CharacterSpellsetsPage(): React.ReactElement {
           message={
             <div className="space-y-2">
               <p>
-                Overwrite <code>{viewedFile.character}_spellsets.ini</code> with the current
-                changes? This file controls the in-game spell-set dropdown, so {viewedFile.character} should
-                be camped out of the game before saving.
+                {viewedHasFile ? 'Overwrite' : 'Create'}{' '}
+                <code>{viewedFile.character}_spellsets.ini</code>{' '}
+                {viewedHasFile ? 'with the current changes' : 'with these spellsets'}? This file
+                controls the in-game spell-set dropdown, so {viewedFile.character} should be camped
+                out of the game before saving.
               </p>
             </div>
           }
