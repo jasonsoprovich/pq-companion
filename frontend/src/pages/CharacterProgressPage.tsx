@@ -53,11 +53,17 @@ function isEquipmentSlot(location: string): boolean {
 interface StatBarProps {
   label: string
   value: number
+  // Naked base attribute (race + class + creation points, from the quarmy
+  // export). When supplied, the amount added on top (value - base, i.e. AA
+  // grants plus gear/buffs depending on the view) renders as a green "+N"
+  // beside the base — the way quarmy shows base stats with their bonuses.
+  base?: number
   max?: number
 }
 
-function StatBar({ label, value, max = 255 }: StatBarProps): React.ReactElement {
+function StatBar({ label, value, base, max = 255 }: StatBarProps): React.ReactElement {
   const pct = Math.min(100, Math.round((value / max) * 100))
+  const bonus = base !== undefined ? value - base : 0
   return (
     <div className="flex items-center gap-3">
       <span
@@ -75,8 +81,14 @@ function StatBar({ label, value, max = 255 }: StatBarProps): React.ReactElement 
           style={{ width: `${pct}%`, backgroundColor: 'var(--color-primary)', opacity: 0.8 }}
         />
       </div>
-      <span className="text-xs font-mono w-8 text-right" style={{ color: 'var(--color-foreground)' }}>
-        {value}
+      <span
+        className="text-xs font-mono text-right"
+        style={{ color: 'var(--color-foreground)', minWidth: '4.5rem' }}
+      >
+        {bonus > 0 ? base : value}
+        {bonus > 0 && (
+          <span style={{ color: 'var(--color-success)' }}> +{bonus}</span>
+        )}
       </span>
     </div>
   )
@@ -786,13 +798,13 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
         )}
 
         <div className="space-y-3">
-          <StatBar label="STR" value={capped(block.str)} max={STAT_CAP} />
-          <StatBar label="STA" value={capped(block.sta)} max={STAT_CAP} />
-          <StatBar label="AGI" value={capped(block.agi)} max={STAT_CAP} />
-          <StatBar label="DEX" value={capped(block.dex)} max={STAT_CAP} />
-          <StatBar label="WIS" value={capped(block.wis)} max={STAT_CAP} />
-          <StatBar label="INT" value={capped(block.int)} max={STAT_CAP} />
-          <StatBar label="CHA" value={capped(block.cha)} max={STAT_CAP} />
+          <StatBar label="STR" value={capped(block.str)} base={stats.base_str} max={STAT_CAP} />
+          <StatBar label="STA" value={capped(block.sta)} base={stats.base_sta} max={STAT_CAP} />
+          <StatBar label="AGI" value={capped(block.agi)} base={stats.base_agi} max={STAT_CAP} />
+          <StatBar label="DEX" value={capped(block.dex)} base={stats.base_dex} max={STAT_CAP} />
+          <StatBar label="WIS" value={capped(block.wis)} base={stats.base_wis} max={STAT_CAP} />
+          <StatBar label="INT" value={capped(block.int)} base={stats.base_int} max={STAT_CAP} />
+          <StatBar label="CHA" value={capped(block.cha)} base={stats.base_cha} max={STAT_CAP} />
         </div>
 
         <div className="mt-4 grid grid-cols-5 gap-2">
