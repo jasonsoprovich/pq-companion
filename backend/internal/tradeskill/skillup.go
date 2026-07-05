@@ -67,7 +67,14 @@ func TradeStat(tradeskill, str, dex, intel, wis int) (int, string) {
 // point where skill-ups stop (the lower of trivial and the class/level cap).
 // skillMod/aaReduce/nofail feed the per-attempt success chance, since a
 // successful combine skills up at twice the rate of a failed one.
-func EstimateSkillUp(current, trivial, cap, tradeStat int, difficulty float64, skillMod, aaReduce int, nofail bool) SkillUpResult {
+//
+// skillupBonusPct is a skill-up-RATE multiplier from buffs — on Quarm this is
+// Maelin's Magical Concoction (SPA 504, +75%). It scales the per-attempt
+// skill-up probability by (100+pct)/100 (capped at certain success), which is
+// the natural reading of a "skillup rate" multiplier; the exact server math for
+// this custom effect isn't published, so treat the boosted number as an
+// estimate.
+func EstimateSkillUp(current, trivial, cap, tradeStat int, difficulty float64, skillMod, aaReduce, skillupBonusPct int, nofail bool) SkillUpResult {
 	target := trivial
 	atCap := false
 	if cap > 0 && cap < target {
@@ -95,10 +102,15 @@ func EstimateSkillUp(current, trivial, cap, tradeStat int, difficulty float64, s
 	p1succ := realRollProb(float64(tradeStat) * 10.0 / (difficulty * 1.0))
 	p1fail := realRollProb(float64(tradeStat) * 10.0 / (difficulty * 2.0))
 
+	rateMult := 1.0 + float64(skillupBonusPct)/100.0
+
 	total := 0.0
 	for s := current; s < target; s++ {
 		p := Chance(s, trivial, skillMod, aaReduce, nofail).Success / 100.0
-		pUp := skillRollProb(s) * (p*p1succ + (1-p)*p1fail)
+		pUp := skillRollProb(s) * (p*p1succ + (1-p)*p1fail) * rateMult
+		if pUp > 1 {
+			pUp = 1
+		}
 		if pUp <= 0 {
 			res.Impractical = true
 			return res

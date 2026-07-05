@@ -303,6 +303,7 @@ func (h *charactersHandler) skillupEstimate(w http.ResponseWriter, r *http.Reque
 	mod := queryInt(r, "mod", 0)
 	aa := queryInt(r, "aa", 0)
 	statBonus := queryInt(r, "stat_bonus", 0)
+	skillupBonus := queryInt(r, "skillup_bonus", 0)
 	nofail := r.URL.Query().Get("nofail") == "1"
 
 	tradeStat, statName := tradeskill.TradeStat(ts, char.BaseSTR, char.BaseDEX, char.BaseINT, char.BaseWIS)
@@ -321,7 +322,7 @@ func (h *charactersHandler) skillupEstimate(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	res := tradeskill.EstimateSkillUp(current, trivial, skillCap, tradeStat, difficulty, mod, aa, nofail)
+	res := tradeskill.EstimateSkillUp(current, trivial, skillCap, tradeStat, difficulty, mod, aa, skillupBonus, nofail)
 	res.StatName = statName
 	writeJSON(w, http.StatusOK, res)
 }

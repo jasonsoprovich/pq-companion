@@ -221,7 +221,12 @@ export function RecipeBody({ recipe, depth = 0, onNavigate }: RecipeBodyProps): 
     <div className="flex flex-col gap-2 py-1">
       <div className="flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--color-muted)' }}>
         <span style={{ color: 'var(--color-muted-foreground)' }}>{tradeskillLabel(recipe.tradeskill)}</span>
-        <span>· Trivial {recipe.trivial}</span>
+        <span
+          className="cursor-help decoration-dotted underline-offset-2 hover:underline"
+          title="Trivial: the skill level at which this recipe stops raising your skill. It does NOT mean 100% success — you can still fail combines above trivial."
+        >
+          · Trivial {recipe.trivial}
+        </span>
         {recipe.skill_needed > 0 && <span>· Min skill {recipe.skill_needed}</span>}
         {recipe.no_fail && (
           <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-primary)' }}>

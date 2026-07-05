@@ -1855,6 +1855,7 @@ export interface SkillUpEstimateParams {
   mod?: number     // item skill-mod % (helps success -> faster skilling)
   aa?: number      // AA fail-reduction %
   statBonus?: number // extra governing stat from crafting gear the export misses
+  skillupBonus?: number // skill-up RATE % (Maelin's Magical Concoction = 75)
   nofail?: boolean
 }
 
@@ -1872,6 +1873,7 @@ export function getSkillUpEstimate(
   if (p.mod && p.mod > 0) params.set('mod', String(p.mod))
   if (p.aa && p.aa > 0) params.set('aa', String(p.aa))
   if (p.statBonus && p.statBonus > 0) params.set('stat_bonus', String(p.statBonus))
+  if (p.skillupBonus && p.skillupBonus > 0) params.set('skillup_bonus', String(p.skillupBonus))
   if (p.nofail) params.set('nofail', '1')
   return get<SkillUpEstimate>(`/api/characters/${id}/skillup-estimate?${params}`)
 }

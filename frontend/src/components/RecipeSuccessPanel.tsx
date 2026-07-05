@@ -34,6 +34,10 @@ function isCommonCombine(tradeskill: number): boolean {
 // recipe-to-recipe (which remounts this panel) keeps your selection.
 const CHAR_KEY = 'tsCalcCharId'
 
+// Maelin's Magical Concoction (spell 3999) grants SPA 504, a +75% tradeskill
+// skill-up rate for an hour. It's the only source of this effect on Quarm.
+const MAELIN_SKILLUP_PCT = 75
+
 // Colour the odds by how safe the combine is. Mirrors the app's convention of
 // green = good, amber = caution, red = bad.
 function successColor(success: number): string {
@@ -73,6 +77,7 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
   const [result, setResult] = useState<TradeskillChance | null>(null)
   const [estimate, setEstimate] = useState<SkillUpEstimate | null>(null)
   const [statBonus, setStatBonus] = useState('')
+  const [maelin, setMaelin] = useState(false)
 
   // Load characters once; default the selection to the active character (or the
   // last-used one), so the panel is useful immediately.
@@ -202,6 +207,7 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
         mod: effMod,
         aa: aaReduce,
         statBonus: statBonusNum,
+        skillupBonus: maelin ? MAELIN_SKILLUP_PCT : 0,
         nofail: recipe.no_fail,
       })
         .then(setEstimate)
@@ -210,7 +216,7 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
     return () => clearTimeout(t)
   }, [
     common, charId, haveSkill, recipe.tradeskill, recipe.trivial,
-    recipe.no_fail, rawSkill, effMod, aaReduce, statBonusNum,
+    recipe.no_fail, rawSkill, effMod, aaReduce, statBonusNum, maelin,
   ])
 
   function selectChar(id: number) {
@@ -238,12 +244,17 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
         className="flex items-center justify-between gap-2 border-b px-3 py-2"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <span
-          className="text-[11px] font-semibold uppercase tracking-widest"
-          style={{ color: 'var(--color-muted)' }}
-        >
-          Success Chance
-        </span>
+        <div className="min-w-0">
+          <span
+            className="text-[11px] font-semibold uppercase tracking-widest"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            Success Chance
+          </span>
+          <span className="ml-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+            how often you keep the product
+          </span>
+        </div>
         {!common && chars.length > 0 && (
           <select
             value={charId ?? ''}
@@ -291,6 +302,7 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
             cap={skillEntry.cap ?? 0}
             effMod={effMod}
             skillNeeded={recipe.skill_needed}
+            trivial={recipe.trivial}
             aa={aaInfo}
           />
         )}
@@ -302,6 +314,8 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
             label={label}
             statBonus={statBonus}
             onStatBonus={setStatBonus}
+            maelin={maelin}
+            onMaelin={setMaelin}
           />
         )}
 
@@ -404,10 +418,11 @@ interface OddsBodyProps {
   cap: number
   effMod: number
   skillNeeded: number
+  trivial: number
   aa: TradeskillAA | null
 }
 
-function OddsBody({ result, label, rawSkill, cap, effMod, skillNeeded, aa }: OddsBodyProps): React.ReactElement {
+function OddsBody({ result, label, rawSkill, cap, effMod, skillNeeded, trivial, aa }: OddsBodyProps): React.ReactElement {
   const belowMin = skillNeeded > 0 && rawSkill < skillNeeded
 
   return (
@@ -433,7 +448,7 @@ function OddsBody({ result, label, rawSkill, cap, effMod, skillNeeded, aa }: Odd
         </p>
       )}
 
-      {result && <FloorNote result={result} effMod={effMod} />}
+      {result && <FloorNote result={result} trivial={trivial} effMod={effMod} />}
 
       <AANote aa={aa} />
     </div>
@@ -466,20 +481,27 @@ interface SkillUpSectionProps {
   label: string
   statBonus: string
   onStatBonus: (v: string) => void
+  maelin: boolean
+  onMaelin: (v: boolean) => void
 }
 
-function SkillUpSection({ estimate: e, label, statBonus, onStatBonus }: SkillUpSectionProps): React.ReactElement {
+function SkillUpSection({ estimate: e, label, statBonus, onStatBonus, maelin, onMaelin }: SkillUpSectionProps): React.ReactElement {
   return (
     <div className="mt-3 border-t pt-2" style={{ borderColor: 'var(--color-border)' }}>
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
-        Skill-ups
+      <div className="mb-1">
+        <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
+          Skill-ups
+        </span>
+        <span className="ml-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+          how fast your skill rises
+        </span>
       </div>
 
       {e.maxed ? (
         <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
           {e.at_cap
             ? `At your class/level ${label} cap (${e.cap}) — no more skill-ups here.`
-            : `Skill ${e.current_skill} is at/above this recipe's trivial — it no longer raises ${label}.`}
+            : `Skill ${e.current_skill} has reached this recipe's trivial (${e.trivial}) — it no longer raises ${label}, though you can still make it.`}
         </p>
       ) : e.impractical ? (
         <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
@@ -492,17 +514,22 @@ function SkillUpSection({ estimate: e, label, statBonus, onStatBonus }: SkillUpS
               ≈{e.attempts_to_target.toLocaleString()}
             </span>
             <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
-              combines to trivial (skill {e.target_skill}, +{e.points_to_go})
+              combines until it goes trivial at skill {e.target_skill} (+{e.points_to_go} to go)
             </span>
           </div>
           <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-            ≈{e.attempts_to_next.toLocaleString()} per skill-up at skill {e.current_skill}.
+            ≈{e.attempts_to_next.toLocaleString()} combines per skill-up at skill {e.current_skill} —
+            most combines don’t raise skill.
           </p>
           <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
             Based on {e.stat_name} {e.trade_stat}; failures skill up at half rate.
             Assumes you make this recipe the whole way.
           </p>
-          <label className="mt-0.5 flex items-center gap-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+          <label className="mt-0.5 flex cursor-pointer items-center gap-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+            <input type="checkbox" checked={maelin} onChange={(ev) => onMaelin(ev.target.checked)} />
+            Maelin&apos;s Magical Concoction (+{MAELIN_SKILLUP_PCT}% skill-up rate)
+          </label>
+          <label className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
             + crafting stat gear
             <input
               type="number"
@@ -550,7 +577,7 @@ function ChanceBar({ result }: { result: TradeskillChance }): React.ReactElement
   )
 }
 
-function FloorNote({ result, effMod }: { result: TradeskillChance; effMod: number }): React.ReactElement | null {
+function FloorNote({ result, trivial, effMod }: { result: TradeskillChance; trivial: number; effMod: number }): React.ReactElement | null {
   if (result.no_fail) {
     return (
       <p className="text-[11px]" style={{ color: '#22c55e' }}>
@@ -574,15 +601,30 @@ function FloorNote({ result, effMod }: { result: TradeskillChance; effMod: numbe
     )
   }
   const gap = Math.max(0, result.floor_skill - result.eff_skill)
+  // For low-trivial recipes the 5% floor sits ABOVE trivial — a common source
+  // of confusion, since "trivial" only stops skill-ups, not failures. Say so.
+  const floorAboveTrivial = result.floor_skill > trivial
+  const failAtTrivial = Math.round(100 - result.success_at_trivial)
   return (
-    <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-      {effMod > 0 ? (
-        <>+{gap} more effective skill reaches the 5% failure floor.</>
-      ) : (
-        <>
-          Reach skill {result.floor_skill} (+{gap}) for the 5% failure floor.
-        </>
+    <>
+      {floorAboveTrivial && (
+        <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+          Trivial {trivial} stops skill-ups, not failures — even at skill {trivial} you’d
+          still fail ~{failAtTrivial}%.
+        </p>
       )}
-    </p>
+      <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+        {effMod > 0 ? (
+          <>+{gap} more effective skill reaches the 5% failure floor.</>
+        ) : floorAboveTrivial ? (
+          <>
+            Success keeps climbing past trivial — the 5% fail floor is at skill{' '}
+            {result.floor_skill}, reached by skilling up on higher recipes.
+          </>
+        ) : (
+          <>Reach skill {result.floor_skill} (+{gap}) for the 5% failure floor.</>
+        )}
+      </p>
+    </>
   )
 }

@@ -58,6 +58,9 @@ export interface TradeskillChance {
   eff_skill: number  // raw skill after the mod %, capped at 252
   success: number    // 0-100, one decimal
   failure: number
+  // Success % once raw skill reaches trivial (same mods) — usually ~66%, the
+  // "trivial stops skill-ups, not failures" number.
+  success_at_trivial: number
   at_trivial: boolean // eff skill >= trivial (no more skill-ups)
   no_fail: boolean
   // Raw skill (with no modifiers) needed to reach the 5% failure floor — the

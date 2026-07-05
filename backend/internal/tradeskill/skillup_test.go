@@ -53,29 +53,29 @@ func TestRollProbs(t *testing.T) {
 
 func TestEstimateSkillUp(t *testing.T) {
 	// Already at/above where skill-ups stop.
-	maxed := EstimateSkillUp(120, 100, 0, 200, 4, 0, 0, false)
+	maxed := EstimateSkillUp(120, 100, 0, 200, 4, 0, 0, 0, false)
 	if !maxed.Maxed || maxed.AttemptsToTarget != 0 {
 		t.Errorf("expected maxed, got %+v", maxed)
 	}
 
 	// Capped by class/level below trivial.
-	capped := EstimateSkillUp(50, 200, 100, 150, 4, 0, 0, false)
+	capped := EstimateSkillUp(50, 200, 100, 150, 4, 0, 0, 0, false)
 	if !capped.AtCap || capped.TargetSkill != 100 || capped.PointsToGo != 50 {
 		t.Errorf("expected cap at 100 with 50 to go, got %+v", capped)
 	}
 
 	// No stat or no difficulty -> impractical.
-	if !EstimateSkillUp(50, 200, 0, 0, 4, 0, 0, false).Impractical {
+	if !EstimateSkillUp(50, 200, 0, 0, 4, 0, 0, 0, false).Impractical {
 		t.Error("tradeStat 0 should be impractical")
 	}
-	if !EstimateSkillUp(50, 200, 0, 100, 0, 0, 0, false).Impractical {
+	if !EstimateSkillUp(50, 200, 0, 100, 0, 0, 0, 0, false).Impractical {
 		t.Error("difficulty 0 should be impractical")
 	}
 
 	// Single-point case, hand-computed: current 100, trivial 101, tradeStat 200,
 	// difficulty 4. p(success)=75.75%; p1succ=.4995 p1fail=.24925; P2(100)=.5;
 	// pUp = .5*(.7575*.4995 + .2425*.24925) ≈ .2194 -> ~4.56 attempts.
-	one := EstimateSkillUp(100, 101, 0, 200, 4, 0, 0, false)
+	one := EstimateSkillUp(100, 101, 0, 200, 4, 0, 0, 0, false)
 	if one.PointsToGo != 1 {
 		t.Errorf("PointsToGo=%d, want 1", one.PointsToGo)
 	}
@@ -88,17 +88,29 @@ func TestEstimateSkillUp(t *testing.T) {
 
 	// Skilling up gets slower as you approach the cap: attempts-to-next at a
 	// near-cap skill should exceed that at a low skill.
-	low := EstimateSkillUp(50, 250, 0, 150, 4, 0, 0, false)
-	high := EstimateSkillUp(185, 250, 0, 150, 4, 0, 0, false)
+	low := EstimateSkillUp(50, 250, 0, 150, 4, 0, 0, 0, false)
+	high := EstimateSkillUp(185, 250, 0, 150, 4, 0, 0, 0, false)
 	if !(high.AttemptsToNext > low.AttemptsToNext) {
 		t.Errorf("expected near-cap slower: low=%v high=%v", low.AttemptsToNext, high.AttemptsToNext)
 	}
 
 	// A higher item skill-mod (more successes) should not increase the estimate.
-	noMod := EstimateSkillUp(60, 120, 0, 120, 4, 0, 0, false)
-	withMod := EstimateSkillUp(60, 120, 0, 120, 4, 15, 0, false)
+	noMod := EstimateSkillUp(60, 120, 0, 120, 4, 0, 0, 0, false)
+	withMod := EstimateSkillUp(60, 120, 0, 120, 4, 15, 0, 0, false)
 	if withMod.AttemptsToTarget > noMod.AttemptsToTarget {
 		t.Errorf("mod should not slow skilling: noMod=%v withMod=%v",
 			noMod.AttemptsToTarget, withMod.AttemptsToTarget)
+	}
+
+	// Maelin's (+75% skill-up rate) should cut the estimated combines: at these
+	// inputs pUp stays well below 1, so a 75% boost divides attempts by ~1.75.
+	base := EstimateSkillUp(50, 250, 0, 120, 4, 0, 0, 0, false)
+	maelin := EstimateSkillUp(50, 250, 0, 120, 4, 0, 0, 75, false)
+	if !(maelin.AttemptsToTarget < base.AttemptsToTarget) {
+		t.Errorf("skillup bonus should lower attempts: base=%v maelin=%v",
+			base.AttemptsToTarget, maelin.AttemptsToTarget)
+	}
+	if ratio := base.AttemptsToTarget / maelin.AttemptsToTarget; ratio < 1.5 || ratio > 1.9 {
+		t.Errorf("expected ~1.75x fewer attempts, got %.2fx", ratio)
 	}
 }

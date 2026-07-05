@@ -38,6 +38,12 @@ type Result struct {
 	Success float64 `json:"success"` // combine success %, 0–100, one decimal
 	Failure float64 `json:"failure"` // 100 - Success
 
+	// SuccessAtTrivial is the success % once raw skill reaches the recipe's
+	// trivial (same modifiers applied). Trivial marks where skill-ups STOP, not
+	// where failures stop — for most recipes this is only ~66%, which is why
+	// "trivial" is not the same as "guaranteed".
+	SuccessAtTrivial float64 `json:"success_at_trivial"`
+
 	AtTrivial bool `json:"at_trivial"` // effSkill >= trivial (no more skill-ups)
 	NoFail    bool `json:"no_fail"`    // recipe cannot fail
 
@@ -89,13 +95,10 @@ func floorEffSkill(trivial int) int {
 	return trivial + 29
 }
 
-// Chance computes the combine outcome for a recipe (trivial, nofail) at a raw
-// skill with an item skill-mod percentage and an AA fail-reduction percentage.
-// aaFailReducePct is 0 for characters without the relevant AA.
-func Chance(rawSkill, trivial, skillModPct, aaFailReducePct int, nofail bool) Result {
-	eff := EffectiveSkill(rawSkill, skillModPct)
-
-	chance := rawChance(eff, trivial)
+// finalChance applies the 5/95 clamp, nofail, and AA fail-reduction to the raw
+// curve for an effective skill, rounded to one decimal.
+func finalChance(effSkill, trivial, aaFailReducePct int, nofail bool) float64 {
+	chance := rawChance(effSkill, trivial)
 	if chance < 5 {
 		chance = 5
 	} else if chance > 95 {
@@ -107,21 +110,33 @@ func Chance(rawSkill, trivial, skillModPct, aaFailReducePct int, nofail bool) Re
 	if aaFailReducePct > 0 && chance < 100 {
 		chance += (100 - chance) * float64(aaFailReducePct) / 100
 	}
-	chance = math.Round(chance*10) / 10
+	return math.Round(chance*10) / 10
+}
+
+// Chance computes the combine outcome for a recipe (trivial, nofail) at a raw
+// skill with an item skill-mod percentage and an AA fail-reduction percentage.
+// aaFailReducePct is 0 for characters without the relevant AA.
+func Chance(rawSkill, trivial, skillModPct, aaFailReducePct int, nofail bool) Result {
+	eff := EffectiveSkill(rawSkill, skillModPct)
+	chance := finalChance(eff, trivial, aaFailReducePct, nofail)
+	// Success once the raw skill first reaches trivial (mods still applied) —
+	// the "trivial is where skill-ups stop, not where failures stop" number.
+	atTrivial := finalChance(EffectiveSkill(trivial, skillModPct), trivial, aaFailReducePct, nofail)
 
 	target := floorEffSkill(trivial)
 	reachable := target <= hardSkillCap
 
 	return Result{
-		RawSkill:       rawSkill,
-		SkillMod:       skillModPct,
-		EffSkill:       eff,
-		Success:        chance,
-		Failure:        math.Round((100-chance)*10) / 10,
-		AtTrivial:      eff >= trivial,
-		NoFail:         nofail,
-		FloorSkill:     target,
-		FloorReachable: reachable,
-		AtFloor:        nofail || (reachable && eff >= target),
+		RawSkill:         rawSkill,
+		SkillMod:         skillModPct,
+		EffSkill:         eff,
+		Success:          chance,
+		Failure:          math.Round((100-chance)*10) / 10,
+		SuccessAtTrivial: atTrivial,
+		AtTrivial:        eff >= trivial,
+		NoFail:           nofail,
+		FloorSkill:       target,
+		FloorReachable:   reachable,
+		AtFloor:          nofail || (reachable && eff >= target),
 	}
 }

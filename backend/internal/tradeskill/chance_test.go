@@ -93,3 +93,21 @@ func TestChance(t *testing.T) {
 func round1(f float64) float64 {
 	return float64(int(f*10+0.5)) / 10
 }
+
+func TestSuccessAtTrivial(t *testing.T) {
+	// trivial < 68: success at trivial is always 66% (34% fail) — the "trivial
+	// isn't safe" number, independent of current skill.
+	for _, cur := range []int{1, 20, 37, 100} {
+		if got := Chance(cur, 37, 0, 0, false).SuccessAtTrivial; got != 66 {
+			t.Errorf("trivial 37 at skill %d: SuccessAtTrivial=%v, want 66", cur, got)
+		}
+	}
+	// trivial >= 68: 0.25*trivial + 51.5 -> at 100 that's 76.5%.
+	if got := Chance(50, 100, 0, 0, false).SuccessAtTrivial; got != 76.5 {
+		t.Errorf("trivial 100: SuccessAtTrivial=%v, want 76.5", got)
+	}
+	// A no-fail recipe is 100% at trivial too.
+	if got := Chance(1, 50, 0, 0, true).SuccessAtTrivial; got != 100 {
+		t.Errorf("nofail: SuccessAtTrivial=%v, want 100", got)
+	}
+}
