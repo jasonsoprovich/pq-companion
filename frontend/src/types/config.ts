@@ -127,10 +127,6 @@ export interface Preferences {
   // Planes of Power flagging tracker (dev-gated, off by default; preview until
   // PoP launches on Quarm).
   pop_flags_enabled?: boolean
-  // Zeal bandolier editor (dev-gated, off by default until Windows smoke-tested).
-  bandolier_editor_enabled?: boolean
-  // In-game macro editor (dev-gated, off by default; edits the live client config).
-  macro_editor_enabled?: boolean
   npc_overlay_dashboard_sections: NPCOverlaySections
   npc_overlay_popout_sections: NPCOverlaySections
   // Per-overlay locked behaviour, keyed by canonical overlay name. Missing

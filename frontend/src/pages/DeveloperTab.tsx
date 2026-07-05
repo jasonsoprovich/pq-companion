@@ -129,14 +129,6 @@ function FlagsPanel(): React.ReactElement {
   const popFlagsEnabled = Boolean(config?.preferences?.pop_flags_enabled)
   const togglePopFlags = (): void => savePrefs({ pop_flags_enabled: !popFlagsEnabled })
 
-  // ── Bandolier editor ──────────────────────────────────────────────────
-  const bandolierEnabled = Boolean(config?.preferences?.bandolier_editor_enabled)
-  const toggleBandolier = (): void => savePrefs({ bandolier_editor_enabled: !bandolierEnabled })
-
-  // ── Macro editor ──────────────────────────────────────────────────────
-  const macroEnabled = Boolean(config?.preferences?.macro_editor_enabled)
-  const toggleMacro = (): void => savePrefs({ macro_editor_enabled: !macroEnabled })
-
   // ── Raid-wide threat meter ────────────────────────────────────────────
   const raidThreatEnabled = Boolean(config?.preferences?.raid_threat_enabled)
   const toggleRaidThreat = (): void => savePrefs({ raid_threat_enabled: !raidThreatEnabled })
@@ -283,82 +275,6 @@ function FlagsPanel(): React.ReactElement {
         </div>
       </section>
 
-      {/* ── Bandolier editor ─────────────────────────────────────────────────── */}
-      <section
-        className="rounded-lg p-4"
-        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-      >
-        <div className="mb-3 flex items-center gap-2">
-          <FlaskConical size={14} style={{ color: 'var(--color-primary)' }} />
-          <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
-            Bandolier editor
-          </h2>
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-            Adds a <strong>Bandolier</strong> page (under Characters): edit Zeal&rsquo;s
-            <code> &lt;CharName&gt;_bandolier.ini</code> weapon/instrument swap sets the
-            same way the Spellsets editor works. The slot picker only offers items the
-            character actually owns, so a saved set can&rsquo;t reference an item Zeal
-            would fail to equip. Off by default until Windows smoke-tested &mdash; it
-            writes a file the EQ client and Zeal also use.
-          </p>
-          <button
-            type="button"
-            onClick={toggleBandolier}
-            disabled={!config || saving}
-            className="shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors"
-            style={{
-              backgroundColor: bandolierEnabled ? 'var(--color-primary)' : 'var(--color-surface-2)',
-              color: bandolierEnabled ? 'var(--color-background)' : 'var(--color-muted-foreground)',
-              border: '1px solid var(--color-border)',
-              cursor: !config || saving ? 'default' : 'pointer',
-              opacity: !config || saving ? 0.6 : 1,
-            }}
-          >
-            {bandolierEnabled ? 'Enabled' : 'Disabled'}
-          </button>
-        </div>
-      </section>
-
-      {/* ── Macro editor ─────────────────────────────────────────────────────── */}
-      <section
-        className="rounded-lg p-4"
-        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-      >
-        <div className="mb-3 flex items-center gap-2">
-          <FlaskConical size={14} style={{ color: 'var(--color-primary)' }} />
-          <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
-            Macro editor
-          </h2>
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-            Adds a <strong>Macros</strong> page (under Characters) for editing your in-game
-            social macros &mdash; the 10 pages of 12 buttons stored in the{' '}
-            <code>[Socials]</code> section of <code>&lt;CharName&gt;_pq.proj.ini</code>. Edits
-            are written <em>surgically</em>: only your macros change, the rest of the client
-            config is left byte-for-byte intact. Off by default until Windows smoke-tested
-            since it edits the live client config; camp out before saving (EQ rewrites the
-            file on logout).
-          </p>
-          <button
-            type="button"
-            onClick={toggleMacro}
-            disabled={!config || saving}
-            className="shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors"
-            style={{
-              backgroundColor: macroEnabled ? 'var(--color-primary)' : 'var(--color-surface-2)',
-              color: macroEnabled ? 'var(--color-background)' : 'var(--color-muted-foreground)',
-              border: '1px solid var(--color-border)',
-              cursor: !config || saving ? 'default' : 'pointer',
-              opacity: !config || saving ? 0.6 : 1,
-            }}
-          >
-            {macroEnabled ? 'Enabled' : 'Disabled'}
-          </button>
-        </div>
-      </section>
     </div>
   )
 }
