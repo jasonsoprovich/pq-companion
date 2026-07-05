@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import {
   listCharacters,
@@ -46,6 +47,58 @@ function successColor(success: number): string {
   if (success >= 80) return '#84cc16'
   if (success >= 50) return '#eab308'
   return '#ef4444'
+}
+
+// TextTooltip is a lightweight hover tooltip that shows almost immediately —
+// the native `title` attribute has a browser-fixed ~1s delay we can't tune. It
+// clones its single child to attach hover handlers (no wrapper DOM, so it fits
+// tight flex rows) and portals the card to <body> so the picker's scroll
+// container can't clip it.
+function TextTooltip({ content, children, delayMs = 120 }: {
+  content: React.ReactNode
+  children: React.ReactElement
+  delayMs?: number
+}): React.ReactElement {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const show = (e: React.MouseEvent) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => {
+      setPos({
+        top: r.bottom + 6,
+        left: Math.min(r.left, window.innerWidth - 280),
+      })
+    }, delayMs)
+  }
+  const hide = () => {
+    if (timer.current) clearTimeout(timer.current)
+    setPos(null)
+  }
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
+
+  return (
+    <>
+      {React.cloneElement(children, { onMouseEnter: show, onMouseLeave: hide })}
+      {pos &&
+        createPortal(
+          <div
+            className="pointer-events-none fixed z-[9999] max-w-[260px] rounded px-2 py-1 text-[11px] shadow-lg"
+            style={{
+              top: pos.top,
+              left: pos.left,
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            {content}
+          </div>,
+          document.body,
+        )}
+    </>
+  )
 }
 
 interface Props {
@@ -349,31 +402,42 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
                     const slotShort = list.length > 1 ? `${list[0]}+` : list[0] ?? ''
                     const slotFull = slotsLabel(m.slots)
                     return (
-                      <label
+                      <TextTooltip
                         key={m.item_id}
-                        title={`${m.name} — +${m.value}% ${label} skill${slotFull ? ` · slot: ${slotFull}` : ''}`}
-                        className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs"
-                        style={{ color: 'var(--color-foreground)' }}
+                        content={
+                          <div>
+                            <div className="font-semibold">{m.name}</div>
+                            <div>+{m.value}% {label} skill</div>
+                            {slotFull && (
+                              <div style={{ color: 'var(--color-muted)' }}>Slot: {slotFull}</div>
+                            )}
+                          </div>
+                        }
                       >
-                        <input
-                          type="checkbox"
-                          checked={selectedMods.has(m.item_id)}
-                          onChange={() => toggleMod(m.item_id)}
-                        />
-                        <ItemIcon id={m.icon} name={m.name} size={18} />
-                        <span className="min-w-0 flex-1 truncate">{m.name}</span>
-                        {slotShort && (
-                          <span className="shrink-0 text-[10px]" style={{ color: 'var(--color-muted)' }}>
-                            {slotShort}
-                          </span>
-                        )}
-                        <span
-                          className="shrink-0 font-mono tabular-nums"
-                          style={{ color: 'var(--color-muted)' }}
+                        <label
+                          className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs"
+                          style={{ color: 'var(--color-foreground)' }}
                         >
-                          +{m.value}%
-                        </span>
-                      </label>
+                          <input
+                            type="checkbox"
+                            checked={selectedMods.has(m.item_id)}
+                            onChange={() => toggleMod(m.item_id)}
+                          />
+                          <ItemIcon id={m.icon} name={m.name} size={18} />
+                          <span className="min-w-0 flex-1 truncate">{m.name}</span>
+                          {slotShort && (
+                            <span className="shrink-0 text-[10px]" style={{ color: 'var(--color-muted)' }}>
+                              {slotShort}
+                            </span>
+                          )}
+                          <span
+                            className="shrink-0 font-mono tabular-nums"
+                            style={{ color: 'var(--color-muted)' }}
+                          >
+                            +{m.value}%
+                          </span>
+                        </label>
+                      </TextTooltip>
                     )
                   })}
                 </div>
@@ -433,6 +497,9 @@ interface OddsBodyProps {
 
 function OddsBody({ result, label, rawSkill, cap, effMod, skillNeeded, trivial, aa }: OddsBodyProps): React.ReactElement {
   const belowMin = skillNeeded > 0 && rawSkill < skillNeeded
+  // A skill-mod is a % of your skill, so at low skill it can round down to no
+  // gain (e.g. +10% of 1 = 1). Flag that instead of showing a no-op "→ 1".
+  const modNoGain = effMod > 0 && !!result && result.eff_skill <= rawSkill
 
   return (
     <div className="flex flex-col gap-2">
@@ -442,9 +509,9 @@ function OddsBody({ result, label, rawSkill, cap, effMod, skillNeeded, trivial, 
           {rawSkill}
           {cap > 0 ? ` / ${cap}` : ''}
         </span>
-        {effMod > 0 && result && (
+        {effMod > 0 && result && result.eff_skill > rawSkill && (
           <span className="font-mono tabular-nums" style={{ color: 'var(--color-primary)' }}>
-            → {result.eff_skill} eff
+            → {result.eff_skill} effective skill
           </span>
         )}
       </div>
@@ -454,6 +521,13 @@ function OddsBody({ result, label, rawSkill, cap, effMod, skillNeeded, trivial, 
       {belowMin && (
         <p className="text-[11px]" style={{ color: '#eab308' }}>
           Requires skill {skillNeeded} to attempt this combine.
+        </p>
+      )}
+
+      {modNoGain && (
+        <p className="text-[11px]" style={{ color: '#eab308' }}>
+          +{effMod}% skill rounds to no gain at skill {rawSkill} — skill-mods are a
+          percentage of your skill, so they only help once it’s higher.
         </p>
       )}
 
