@@ -110,6 +110,47 @@ func TestItemVariants_OrphanCollapsed(t *testing.T) {
 	}
 }
 
+func TestItemVariants_DistinctGearKeptVisible(t *testing.T) {
+	d := openTestDB(t)
+
+	// "Mask of Secrets" ships as two genuinely different items that merely share
+	// a name: 5772 (Chardok, AC 7) and 26779 (Aten Ha Ra, AC 30 with a focus).
+	// Both are real equippable gear with their own loot references, so both must
+	// stay visible in search rather than one collapsing under the other.
+	res, err := d.SearchItems(db.ItemFilter{Query: "Mask of Secrets", ItemType: -1, Limit: 50})
+	if err != nil {
+		t.Fatalf("search items: %v", err)
+	}
+	seen := map[int]bool{}
+	for _, it := range res.Items {
+		if it.Name == "Mask of Secrets" {
+			seen[it.ID] = true
+		}
+	}
+	for _, want := range []int{5772, 26779} {
+		if !seen[want] {
+			t.Errorf("Mask of Secrets %d missing from search results %v", want, seen)
+		}
+	}
+
+	// They are distinct items, not variants of one another, so neither should
+	// list the other as a hidden variant or link to it as a canonical.
+	for _, id := range []int{5772, 26779} {
+		it, err := d.GetItem(id)
+		if err != nil {
+			t.Fatalf("get item %d: %v", id, err)
+		}
+		if it.CanonicalID != 0 {
+			t.Errorf("Mask of Secrets %d should be its own canonical, got CanonicalID %d", id, it.CanonicalID)
+		}
+		for _, v := range it.VariantIDs {
+			if v == 5772 || v == 26779 {
+				t.Errorf("Mask of Secrets %d should not list the other as a variant, got %v", id, it.VariantIDs)
+			}
+		}
+	}
+}
+
 func TestItemVariants_NonDuplicateUnaffected(t *testing.T) {
 	d := openTestDB(t)
 	// Find any item whose name is unique, confirm it carries no variant info.

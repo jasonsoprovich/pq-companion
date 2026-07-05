@@ -167,14 +167,107 @@ func buildVariantIndex(groups map[string][]int, score map[int]int) *variantIndex
 	return vi
 }
 
+// itemVariantRow is one duplicate-name item row with the two derived facts the
+// item collapse needs: whether it is a "substantial" equippable item (real gear
+// a player equips, as opposed to a quest note or sparse stub) and its gameplay
+// identity signature (equal signatures ⇒ effectively the same item).
+type itemVariantRow struct {
+	id          int
+	name        string
+	substantial bool
+	sig         string
+}
+
+// itemSignatureCols are the gameplay-identity columns that decide whether two
+// same-name rows are the same item or genuinely different ones. Cosmetic and
+// economic fields (icon, price, weight, reclevel, size) are deliberately left
+// out so trivially-differing copies still collapse. Effect-id columns are
+// normalized (any value ≤ 0 → 0) in code, since "no effect" is stored as both
+// 0 and -1 across the dump.
+var itemSignatureCols = []string{
+	"itemtype", "slots", "classes", "races",
+	"ac", "hp", "mana",
+	"astr", "asta", "aagi", "adex", "awis", "aint", "acha",
+	"mr", "cr", "dr", "fr", "pr",
+	"focustype", "damage", "delay", `"range"`,
+	// effect ids (normalized): a distinct clicky/proc/worn/focus is a distinct item.
+	"focuseffect", "clickeffect", "proceffect", "worneffect", "scrolleffect",
+}
+
+// itemEffectCols is the subset of the signature that stores an effect id, where
+// both 0 and -1 mean "none" and must be normalized so they don't spuriously
+// split otherwise-identical rows.
+var itemEffectCols = map[string]bool{
+	"focuseffect": true, "clickeffect": true, "proceffect": true,
+	"worneffect": true, "scrolleffect": true,
+}
+
 // buildItemVariants groups items by name and scores each duplicate row by how
-// many live game-data rows reference it (see itemRefSources).
+// many live game-data rows reference it (see itemRefSources). Unlike a plain
+// name group, genuinely distinct equippable gear that happens to share a name
+// (e.g. the Chardok vs. Aten Ha Ra "Mask of Secrets") is kept visible; only
+// junk, sparse orphans, and byte-identical copies collapse — see
+// buildItemVariantIndex.
 func (db *DB) buildItemVariants() (*variantIndex, error) {
-	groups, dupIDs, err := dupNameGroups(db,
-		"SELECT id, Name FROM items WHERE Name IN "+
-			"(SELECT Name FROM items GROUP BY Name HAVING COUNT(*) > 1)")
+	cols := append([]string{"id", "Name"}, itemSignatureCols...)
+	q := fmt.Sprintf(
+		"SELECT %s FROM items WHERE Name IN "+
+			"(SELECT Name FROM items GROUP BY Name HAVING COUNT(*) > 1)",
+		strings.Join(cols, ", "))
+	rows, err := db.Query(q)
 	if err != nil {
 		return nil, fmt.Errorf("query duplicate items: %w", err)
+	}
+	defer rows.Close()
+
+	byName := make(map[string][]itemVariantRow)
+	substantialSet := make(map[int]bool)
+	var dupIDs []int
+	for rows.Next() {
+		var id int
+		var name string
+		vals := make([]int, len(itemSignatureCols))
+		dest := make([]any, 0, len(itemSignatureCols)+2)
+		dest = append(dest, &id, &name)
+		for i := range vals {
+			dest = append(dest, &vals[i])
+		}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, fmt.Errorf("scan duplicate item: %w", err)
+		}
+
+		var sig strings.Builder
+		substantial := false
+		var slots int
+		for i, col := range itemSignatureCols {
+			v := vals[i]
+			if itemEffectCols[col] && v < 0 {
+				v = 0 // "none" is stored as both 0 and -1; treat alike.
+			}
+			if col == "slots" {
+				slots = v
+			}
+			// A row is substantial if it is equippable and carries any real
+			// stat or effect — the mark of gear a player would treat as its own
+			// item rather than an orphaned/placeholder copy.
+			if col != "itemtype" && col != "slots" && col != "classes" &&
+				col != "races" && col != "focustype" && col != "delay" &&
+				col != `"range"` && v > 0 {
+				substantial = true
+			}
+			fmt.Fprintf(&sig, "%d|", v)
+		}
+		substantial = substantial && slots != 0
+
+		r := itemVariantRow{id: id, name: name, substantial: substantial, sig: sig.String()}
+		byName[name] = append(byName[name], r)
+		if substantial {
+			substantialSet[id] = true
+		}
+		dupIDs = append(dupIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	score := make(map[int]int)
@@ -203,7 +296,132 @@ func (db *DB) buildItemVariants() (*variantIndex, error) {
 			rows.Close()
 		}
 	}
-	return buildVariantIndex(groups, score), nil
+	return buildItemVariantIndex(byName, substantialSet, score), nil
+}
+
+// buildItemVariantIndex collapses duplicate-name item rows, but — unlike the
+// generic buildVariantIndex — keeps genuinely distinct equippable gear visible.
+//
+// Within a name group: if two or more substantial rows have differing identity
+// signatures, they are different items (a quality tier, focus effect, or slot
+// apart), so each distinct signature is kept as its own canonical row. Junk,
+// sparse orphans, and byte-identical copies collapse into whichever kept row
+// they belong to. When a group has at most one distinct substantial signature
+// (spell scrolls, quest notes, plain orphans) it collapses to a single
+// canonical exactly as before.
+func buildItemVariantIndex(byName map[string][]itemVariantRow, substantialSet map[int]bool, score map[int]int) *variantIndex {
+	vi := &variantIndex{
+		canonicalOf: make(map[int]int),
+		groupOf:     make(map[int][]int),
+	}
+	var nonCanon []int
+
+	for _, group := range byName {
+		if len(group) < 2 {
+			continue
+		}
+
+		// Distinct signatures among the substantial (real-gear) rows.
+		subSigs := make(map[string]bool)
+		for _, r := range group {
+			if r.substantial {
+				subSigs[r.sig] = true
+			}
+		}
+
+		// Partition the group into buckets that will each collapse to one
+		// canonical. With fewer than two distinct substantial signatures the
+		// whole group is one bucket (legacy behaviour); otherwise each distinct
+		// substantial signature is its own bucket and the leftover junk rows
+		// ride along on the primary (best-referenced) bucket.
+		buckets := make(map[string][]int)
+		if len(subSigs) < 2 {
+			ids := make([]int, len(group))
+			for i, r := range group {
+				ids[i] = r.id
+			}
+			buckets["*"] = ids
+		} else {
+			for _, r := range group {
+				if r.substantial {
+					buckets[r.sig] = append(buckets[r.sig], r.id)
+				}
+			}
+			primary := primaryBucketKey(buckets, score)
+			for _, r := range group {
+				if !r.substantial {
+					buckets[primary] = append(buckets[primary], r.id)
+				}
+			}
+		}
+
+		for _, ids := range buckets {
+			sort.Ints(ids)
+			canon := pickItemCanonical(ids, substantialSet, score)
+			vi.groupOf[canon] = ids
+			for _, id := range ids {
+				vi.canonicalOf[id] = canon
+				if id != canon {
+					nonCanon = append(nonCanon, id)
+				}
+			}
+		}
+	}
+
+	sort.Ints(nonCanon)
+	parts := make([]string, len(nonCanon))
+	for i, id := range nonCanon {
+		parts[i] = strconv.Itoa(id)
+	}
+	vi.notInBody = strings.Join(parts, ",")
+	return vi
+}
+
+// pickItemCanonical returns the canonical id for one bucket: the highest-scoring
+// row, tie-broken by lowest id (ids arrive sorted ascending). When the bucket
+// contains any substantial row, non-substantial rows are never eligible, so a
+// junk copy can never be chosen over the real gear it shadows.
+func pickItemCanonical(ids []int, substantialSet map[int]bool, score map[int]int) int {
+	hasSub := false
+	for _, id := range ids {
+		if substantialSet[id] {
+			hasSub = true
+			break
+		}
+	}
+	canon, best := -1, -1
+	for _, id := range ids {
+		if hasSub && !substantialSet[id] {
+			continue
+		}
+		if canon == -1 || score[id] > best {
+			best = score[id]
+			canon = id
+		}
+	}
+	return canon
+}
+
+// primaryBucketKey returns the bucket whose canonical is best-referenced (tie:
+// lowest canonical id). Leftover junk rows attach here so they surface as
+// variants of the group's most prominent item.
+func primaryBucketKey(buckets map[string][]int, score map[int]int) string {
+	bestKey, bestScore, bestID := "", -1, 0
+	for key, ids := range buckets {
+		canon, cScore := 0, -1
+		for _, id := range ids {
+			if score[id] > cScore || canon == 0 {
+				cScore = score[id]
+				canon = id
+			} else if score[id] == cScore && id < canon {
+				canon = id
+			}
+		}
+		if bestKey == "" || cScore > bestScore || (cScore == bestScore && canon < bestID) {
+			bestKey, bestScore, bestID = key, cScore, canon
+		}
+	}
+	return bestKey
 }
 
 // buildSpellVariants groups spells by name and scores each duplicate row by how
@@ -242,29 +460,6 @@ func (db *DB) buildSpellVariants() (*variantIndex, error) {
 		return nil, err
 	}
 	return buildVariantIndex(groups, score), nil
-}
-
-// dupNameGroups runs a "SELECT id, Name ..." query and returns the rows grouped
-// by name plus a flat list of every id seen.
-func dupNameGroups(db *DB, query string) (map[string][]int, []int, error) {
-	rows, err := db.Query(query)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer rows.Close()
-
-	groups := make(map[string][]int)
-	var all []int
-	for rows.Next() {
-		var id int
-		var name string
-		if err := rows.Scan(&id, &name); err != nil {
-			return nil, nil, err
-		}
-		groups[name] = append(groups[name], id)
-		all = append(all, id)
-	}
-	return groups, all, rows.Err()
 }
 
 // intList joins ids into a comma-separated literal for inlining into SQL.
