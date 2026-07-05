@@ -40,7 +40,12 @@ var spellsetFileRe = regexp.MustCompile(`(?i)^(.+?)_spellsets\.ini$`)
 var bandolierFileRe = regexp.MustCompile(`(?i)^(.+?)_bandolier\.ini$`)
 
 // macroFileRe matches "<CharName>_pq.proj.ini" and captures the character name.
-var macroFileRe = regexp.MustCompile(`(?i)^(.+?)_pq\.proj\.ini$`)
+// EQ character names never contain an underscore, so the capture is restricted
+// to an underscore-free name. That deliberately excludes the client's OTHER
+// per-character config files that share the _pq.proj.ini suffix — window
+// layouts (UI_<Char>_pq.proj.ini) and bazaar state (BZR_<Char>_pq.proj.ini) —
+// which would otherwise be scanned as bogus "characters" in the macro editor.
+var macroFileRe = regexp.MustCompile(`(?i)^([^_]+)_pq\.proj\.ini$`)
 
 // ScanAllInventories discovers and parses every Zeal inventory export in eqPath.
 //

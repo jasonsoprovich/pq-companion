@@ -171,3 +171,39 @@ func TestScanAllInventories_MultipleCharacters(t *testing.T) {
 		t.Error("CharB: Lucid Shard (22190) not detected")
 	}
 }
+
+// ScanAllMacros must return one entry per real character and must NOT treat the
+// client's other _pq.proj.ini config files (UI_<Char> window layouts, BZR_<Char>
+// bazaar state) as characters — their prefixes contain an underscore, which real
+// EQ names never do.
+func TestScanAllMacros_ExcludesUIandBZR(t *testing.T) {
+	dir := t.TempDir()
+	socials := "[Socials]\nPage1Button1Name=Hi\nPage1Button1Color=0\nPage1Button1Line1=/say hi\n"
+	files := map[string]string{
+		"Osui_pq.proj.ini":      socials,
+		"Feane_pq.proj.ini":     socials,
+		"BZR_Feane_pq.proj.ini": "[ItemToSell]\nSlot0=nothing\n",
+		"UI_Osui_pq.proj.ini":   "[Main]\nX=100\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+
+	macros, err := ScanAllMacros(dir)
+	if err != nil {
+		t.Fatalf("ScanAllMacros: %v", err)
+	}
+
+	got := make(map[string]bool)
+	for _, mf := range macros {
+		got[mf.Character] = true
+	}
+	if len(got) != 2 || !got["Osui"] || !got["Feane"] {
+		t.Fatalf("characters = %v, want exactly Osui and Feane", got)
+	}
+	if got["BZR_Feane"] || got["UI_Osui"] {
+		t.Errorf("client config files leaked as characters: %v", got)
+	}
+}

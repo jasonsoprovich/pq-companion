@@ -23,7 +23,10 @@ import (
 
 var spellsetFilenameRe = regexp.MustCompile(`(?i)^(.+?)_spellsets\.ini$`)
 var bandolierFilenameRe = regexp.MustCompile(`(?i)^(.+?)_bandolier\.ini$`)
-var macroFilenameRe = regexp.MustCompile(`(?i)^(.+?)_pq\.proj\.ini$`)
+
+// Underscore-free name only: EQ character names have no underscore, so this
+// skips the client's UI_/BZR_ prefixed _pq.proj.ini config files.
+var macroFilenameRe = regexp.MustCompile(`(?i)^([^_]+)_pq\.proj\.ini$`)
 
 type zealHandler struct {
 	watcher *zeal.Watcher
