@@ -16,11 +16,13 @@ import type { TargetState, SpecialAbility, NamedSpell } from '../types/overlay'
 const IMMUNE_TO_SLOW = 12
 
 // Curated "pertinent to a pull" ability codes: dangerous melee specials plus the
-// CC / damage immunities a raid actually plans around. Code 12 is intentionally
-// excluded — it's surfaced by the Slowable/Unslowable tag instead.
+// rare damage immunities that actually change how a raid engages. The CC
+// immunities (Mez/Charm/Stun/Snare/Fear/Dispel) are deliberately omitted — they're
+// expected on nearly every boss, so they just crowd out the useful info (and the
+// signature Spells) in a target callout. Code 12 is excluded too — it's surfaced
+// by the Slowable/Unslowable tag instead.
 const PERTINENT_ABILITY_CODES = new Set([
   1, 2, 3, 4, 5, 6, 7, // Summon, Enrage, Rampage, Area Rampage, Flurry, Triple Attack, Dual Wield
-  13, 14, 15, 16, 17, 18, // Immune to Mez, Charm, Stun, Snare, Fear, Dispel
   19, 20, 22, 23, 35, // Immune to Melee, Magic, Non-Bane Melee, Non-Magical Melee, Harm-from-Client
 ])
 
