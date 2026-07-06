@@ -652,6 +652,19 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 	// the shared trigger. Done for every fire so {1}/{name} in overlay or TTS
 	// text resolve to the matched values.
 	builtins := e.builtinTokens()
+	// When the trigger designates a capture group as its target
+	// (TimerTargetCapture), bind {target}/{t} in the action text to that
+	// captured value too — not just the grey "on <target>" timer suffix. This
+	// lets an alert/TTS message show the entity named on THIS log line (a
+	// groupmate's slow victim, a weapon-proc target) that the global
+	// combat-target token can't see. Only override when the group actually
+	// matched; an unmatched branch (e.g. a self-cast alternation) keeps the
+	// global current-target fallback from builtinTokens.
+	if t.TimerTargetCapture != "" {
+		if tv := resolveTimerTarget(t, match, names); tv != "" {
+			builtins["target"], builtins["t"] = tv, tv
+		}
+	}
 	actions := make([]Action, len(t.Actions))
 	copy(actions, t.Actions)
 	for i := range actions {

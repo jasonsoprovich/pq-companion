@@ -1258,6 +1258,55 @@ func TestEngine_CharacterTokenPattern(t *testing.T) {
 	}
 }
 
+// TestEngine_TargetCaptureBindsActionToken verifies that a trigger's
+// TimerTargetCapture group also fills {target}/{t} in alert & TTS text (not
+// only the grey timer suffix), overriding the global current-target provider —
+// so a custom trigger can show who a groupmate's spell or a weapon proc hit,
+// taken straight from the matched line. When the group doesn't participate in
+// the match (self-cast branch), {target} falls back to the combat target. This
+// is a plain alert (no timer), the case a GINA user hits copying a proc trigger.
+func TestEngine_TargetCaptureBindsActionToken(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	e := NewEngine(s, hub, nil, nil)
+	// Provider returns a different mob to prove the line capture wins over it.
+	e.SetTargetProvider(func() string { return "a bystander" })
+
+	tr := &Trigger{
+		ID:      "earthcall",
+		Name:    "Earthcall proc",
+		Enabled: true,
+		// The group is named "mob", not "target", to prove the binding follows
+		// TimerTargetCapture rather than only a literally-named {target} group.
+		Pattern:            `^(?:You gain the protection of the earth\.|(?P<mob>[A-Za-z' ]+) is ensnared by the roots of the earth\.)$`,
+		TimerTargetCapture: "mob",
+		Actions: []Action{
+			{Type: ActionOverlayText, Text: "Earthcall on {target}!", DurationSecs: 5},
+		},
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	// Proc on a mob: the captured name fills {target}, beating the provider.
+	e.Handle(time.Now(), "a sand giant is ensnared by the roots of the earth.")
+	// Self-cast branch: no capture participates, {target} falls back to provider.
+	e.Handle(time.Now(), "You gain the protection of the earth.")
+
+	hist := e.GetHistory()
+	if len(hist) != 2 {
+		t.Fatalf("expected 2 fired events, got %d", len(hist))
+	}
+	if got, want := hist[0].Actions[0].Text, "Earthcall on a sand giant!"; got != want {
+		t.Errorf("capture-target text = %q, want %q", got, want)
+	}
+	if got, want := hist[1].Actions[0].Text, "Earthcall on a bystander!"; got != want {
+		t.Errorf("self-cast fallback text = %q, want %q", got, want)
+	}
+}
+
 func TestEngine_CaptureSubstitutionInActions(t *testing.T) {
 	s, e := openTestEngine(t)
 

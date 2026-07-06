@@ -87,6 +87,10 @@ export default function CreateTriggerModal({
   const [fadeAlertSecs, setFadeAlertSecs] = useState(prefill.timerAlerts?.[0]?.seconds ?? 0)
   // Optional per-trigger bar color; '' = automatic overlay color.
   const [barColor, setBarColor] = useState(prefill.barColor ?? '')
+  // Capture group whose text is the spell/proc target — fills {target} in the
+  // alert/TTS text and the "on <target>" timer suffix. Works with or without a
+  // timer, so a proc trigger can name who it hit.
+  const [targetCapture, setTargetCapture] = useState('')
   const [action, setAction] = useState<Action>(() => buildInitialAction(prefill))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -113,6 +117,7 @@ export default function CreateTriggerModal({
     setDisplayThreshold(prefill.displayThresholdSecs ?? 0)
     setFadeAlertSecs(prefill.timerAlerts?.[0]?.seconds ?? 0)
     setBarColor(prefill.barColor ?? '')
+    setTargetCapture('')
     setAction(buildInitialAction(prefill))
     setError(null)
     setPatternError(null)
@@ -187,6 +192,8 @@ export default function CreateTriggerModal({
       spell_id: prefill.spellId ?? 0,
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
       bar_color: timerType === 'none' ? '' : barColor,
+      // Kept regardless of timer type: it also fills {target} in the alert text.
+      timer_target_capture: targetCapture.trim(),
       timer_alerts,
     }
 
@@ -280,8 +287,27 @@ export default function CreateTriggerModal({
             <span className="font-mono">{'{name}'}</span> for named groups like{' '}
             <span className="font-mono">(?P&lt;name&gt;…)</span>. Built-ins:{' '}
             <span className="font-mono">{'{c}'}</span> = your character (works in the
-            pattern too), <span className="font-mono">{'{target}'}</span> = current target.
+            pattern too), <span className="font-mono">{'{target}'}</span> = the mob you’re
+            fighting — or set “Target from capture” below to pull it from the matched line.
           </p>
+          <div className="flex items-center gap-2 flex-wrap pt-0.5">
+            <label className="text-[11px] font-medium shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+              Target from capture
+            </label>
+            <input
+              type="text"
+              value={targetCapture}
+              onChange={(e) => setTargetCapture(e.target.value)}
+              placeholder="e.g. target"
+              className="w-24 rounded px-2 py-0.5 text-xs outline-none text-center font-mono"
+              style={inputStyle}
+              disabled={submitting}
+              title="Name (or number) of a capture group holding who the spell/proc hit. Its text fills {target} in the alert & TTS text (and the 'on <target>' timer suffix). Capture it from the line, e.g. (?P<target>[A-Za-z' ]+) is ensnared. Empty = fall back to the mob you're currently fighting."
+            />
+            <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+              fills <span className="font-mono">{'{target}'}</span> from the line
+            </span>
+          </div>
         </div>
 
         {/* Timer type */}

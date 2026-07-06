@@ -218,15 +218,19 @@ type Trigger struct {
 	TimerKeyCapture string `json:"timer_key_capture,omitempty"`
 
 	// TimerTargetCapture names a capture group ("1", "2", or a named group)
-	// whose matched text becomes the timer's target name — the grey "on
-	// <target>" suffix the buff/detrimental overlays render for spells cast on
-	// others. Use it on a "lands on other" pattern that includes the target,
-	// e.g. capture the name in `(?P<target>[A-Z][a-zA-Z']{2,14}) experiences
-	// visions of grandeur\.` and set TimerTargetCapture="target". The target
-	// also becomes part of the timer key, so casting the same buff on several
-	// people tracks one row each (matching the built-in spell-landed timers).
-	// When the group doesn't participate in the match (e.g. the self-cast
-	// branch of an alternation), the target is empty and no suffix shows.
+	// whose matched text is the spell/proc's target. It does two things:
+	//   1. Feeds the grey "on <target>" suffix the buff/detrimental overlays
+	//      render, and becomes part of the timer key so the same buff cast on
+	//      several people tracks one row each (matching the spell-landed timers).
+	//   2. Binds the {target}/{t} action token for that firing, so alert and
+	//      TTS text can show the entity named on the matched line — a groupmate's
+	//      slow victim, a weapon-proc target — which the global current-target
+	//      token (the mob you're personally fighting) can't see.
+	// Works for timer triggers and plain alerts alike. Use it on a pattern that
+	// includes the target, e.g. capture the name in `(?P<target>[A-Za-z' ]+) is
+	// ensnared\.` and set TimerTargetCapture="target". When the group doesn't
+	// participate in the match (e.g. the self-cast branch of an alternation), no
+	// suffix shows and {target} falls back to the current combat target.
 	TimerTargetCapture string `json:"timer_target_capture,omitempty"`
 
 	// RefireCooldownSecs suppresses the trigger from firing again for this many

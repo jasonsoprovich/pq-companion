@@ -602,8 +602,10 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
         source === 'pipe' || timerType === 'none' ? '' : timerDurationCapture.trim(),
       timer_key_capture:
         source === 'pipe' || timerType === 'none' ? '' : timerKeyCapture.trim(),
-      timer_target_capture:
-        source === 'pipe' || timerType === 'none' ? '' : timerTargetCapture.trim(),
+      // Kept for plain alerts too (not just timers): the captured target now
+      // also fills {target} in the alert/TTS text, so a proc/groupmate-cast
+      // trigger with no timer can still show who it hit.
+      timer_target_capture: source === 'pipe' ? '' : timerTargetCapture.trim(),
       worn_off_pattern: source === 'pipe' || timerType === 'none' ? '' : wornOffPattern.trim(),
       spell_id: initial?.spell_id ?? prefill?.spellId ?? 0,
       refire_cooldown_secs: Math.max(0, refireCooldown),
@@ -824,8 +826,31 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
             <span className="font-mono">{'{name}'}</span> for named groups like{' '}
             <span className="font-mono">(?P&lt;name&gt;…)</span>. Built-ins:{' '}
             <span className="font-mono">{'{c}'}</span> = your character (works in the
-            pattern too), <span className="font-mono">{'{target}'}</span> = current target.
+            pattern too), <span className="font-mono">{'{target}'}</span> = the mob you’re
+            fighting — or set “Target from capture” below to pull it from the matched line
+            (a groupmate’s slow victim, a proc target).
           </p>
+          {source === 'log' && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                Target from capture
+              </label>
+              <input
+                type="text"
+                value={timerTargetCapture}
+                onChange={(e) => setTimerTargetCapture(e.target.value)}
+                placeholder="e.g. target"
+                className="w-24 rounded px-2 py-0.5 text-xs outline-none text-center font-mono"
+                style={inputStyle}
+                disabled={submitting}
+                title="Name (or number) of a capture group holding who the spell/proc hit. Its text fills {target} in the alert & TTS text AND shows as the grey 'on <target>' suffix on timers. Capture it from the line itself, e.g. (?P<target>[A-Za-z' ]+) is ensnared. Empty (or an unmatched self-cast branch) = fall back to the mob you're currently fighting."
+              />
+              <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                fills <span className="font-mono">{'{target}'}</span> &amp; the “on &lt;name&gt;” timer
+                suffix; capture like <span className="font-mono">(?P&lt;target&gt;[A-Za-z&#39; ]+)</span>
+              </span>
+            </div>
+          )}
 
           {/* Additional patterns — any enabled pattern fires the trigger. */}
           <div className="space-y-1 pt-1">
@@ -1198,26 +1223,6 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
                 />
                 <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
                   one timer per captured spell name; empty = trigger name
-                </span>
-              </div>
-            )}
-            {source === 'log' && (
-              <div className="flex items-center gap-1.5">
-                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Target from capture
-                </label>
-                <input
-                  type="text"
-                  value={timerTargetCapture}
-                  onChange={(e) => setTimerTargetCapture(e.target.value)}
-                  placeholder="e.g. target"
-                  className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center font-mono"
-                  style={inputStyle}
-                  disabled={submitting}
-                  title="Capture group number or name whose text is the spell's target — shown as the grey 'on <target>' suffix in the buff/detrim overlay. Capture it from a 'lands on other' pattern, e.g. (?P<target>[A-Z][a-zA-Z']{2,14}) experiences visions of grandeur. Empty (or an unmatched group, like a self-cast branch) = no suffix."
-                />
-                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                  shows “on &lt;name&gt;”; capture from the lands-on-other line
                 </span>
               </div>
             )}
