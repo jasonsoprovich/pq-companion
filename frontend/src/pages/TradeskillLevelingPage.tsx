@@ -366,7 +366,7 @@ function PlanView({ plan, loading }: { plan: TradeskillLevelingPlan; loading: bo
 
       {/* Warnings */}
       {plan.warnings?.map((w, i) => (
-        <Note key={i} tone="warn">{w}</Note>
+        <Note key={i} tone="warn">{sentenceCase(w)}</Note>
       ))}
       {costPartial && (
         <Note tone="muted">
@@ -575,8 +575,18 @@ function Note({ tone, children }: {
   const Icon = tone === 'muted' ? Info : AlertTriangle
   return (
     <div className="flex items-start gap-2 text-xs" style={{ color }}>
-      <Icon size={14} className="mt-0.5 shrink-0" />
+      {/* h-4 matches the text-xs line height so the icon centers on the first
+          line (and stays there when the text wraps). */}
+      <span className="flex h-4 shrink-0 items-center">
+        <Icon size={13} />
+      </span>
       <span>{children}</span>
     </div>
   )
+}
+
+// sentenceCase upper-cases the first letter so warnings read uniformly,
+// regardless of whether the solver or the API produced them.
+function sentenceCase(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s
 }
