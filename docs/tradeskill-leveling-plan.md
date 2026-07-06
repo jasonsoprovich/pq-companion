@@ -156,9 +156,19 @@ Notes:
    (90b424c). Fastest fully auto; Cheapest = vendor-cost-where-known, farmed
    items flagged. Sub-combines *flagged* (not yet recursively costed). Shipped
    public (no dev flag). Pending owner Windows smoke before release.
-2. **Phase 2 — sub-combine DAG resolution.** Recursive cost + skill-requirement;
-   warn when a step needs another tradeskill (e.g. Tailoring needing Brewing
-   intermediates like Paeala Bark Tannin). Fold sub-combine combines into totals.
+2. **Phase 2 — sub-combine DAG resolution. ✅ COMPLETE (2026-07-06, commits
+   7d06025 backend / 2af76ec frontend).** New `db.costResolver` (whole recipe
+   DAG in memory, memoized, cycle-guarded) prices each component by the cheapest
+   of buy-or-sub-craft-from-vendor across ALL producing recipes; cheapest cost
+   fell markedly (BS 1→188 vendor-only ~5.38M → 3.53M copper). Sub-combine
+   detection refined to only genuine "must craft it" (non-vendor) components,
+   picking the lowest-trivial producer. The endpoint enriches each stage's
+   sub-combines with discipline + trivial and warns on cross-tradeskill
+   dependencies (Common Combine excluded — needs no skill); the page renders them
+   as recipe-linked chips (cross ones amber).
+   **Decision: sub-combine *combines* are NOT folded into the main combine total**
+   — they don't skill the main tradeskill, so counting them would misrepresent
+   the skill-up estimate. They're surfaced as dependencies, not added to the count.
 3. **Phase 3 — curated cost/sourcing overlay (optional).** Hand-maintained JSON
    (like `quest_sources.json`) adding "buy from NPC X in zone Y / farm rate" so
    "cheapest plat" becomes complete rather than partial.
