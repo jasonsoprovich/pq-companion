@@ -1423,6 +1423,47 @@ hardening — no new features, but a broad sweep of reliability fixes.
   real database error (so a locked database no longer reads as "no upgrades" or
   "no AAs"), and error messages containing Windows paths are always valid JSON
 
+## v0.16.0 — Tradeskill Leveling Planner, Combine Success Calculator, Bandolier & Macro Editors, Tanking View
+
+- **Tradeskill Leveling** — a new page that computes a staged plan to raise any
+  tradeskill from your current skill to a target, choosing recipes by skill-up
+  band and total cost. Pick "fastest" (fewest combines) or "cheapest" (least
+  plat), with recursive sub-combine costing that accounts for intermediate
+  items you must craft and warns when a step crosses into another tradeskill.
+  Paths are derived entirely from the Quarm database (`internal/tsplan` DP
+  solver, `POST /characters/{id}/tradeskill-plan`)
+- **Combine success calculator** — the Recipes page now shows per-recipe success
+  and failure percentages from your skill and crafting-stat gear (ported from
+  EQMacEmu), including the trivial breakpoint where combines can no longer fail
+  and a skill-up chance estimate. Jewelcraft, Alchemy, and Poison Mastery AAs
+  and Maelin Starpyre's skill-up buff are applied automatically, with a
+  gear-modifier picker and modifier-slot tooltips
+- **Tradeskills tab** — characters now display their trained tradeskill values
+  from the Zeal 1.4.3 quarmy export, classifying class- and race-locked
+  untrained skills
+- **Bandolier & Macro editors** — now public. Edit your Zeal weapon-swap
+  bandolier sets (guarded to gear you own and can equip, gated by class, race,
+  and level, with item hover cards and a per-character preferred storage bag)
+  and your in-game social macros (a surgical `[Socials]` editor that preserves
+  the rest of the file), including a new `/cancelbuff` builder that turns a
+  buff-name search into cancel-by-name macro lines. Macros can be imported from
+  another character
+- **Tanking view** — the character Stats tab now splits avoidance vs.
+  mitigation, models the mitigation softcap and melee hit chance, and folds in
+  Combat Stability and Combat Agility AAs
+- **Stat bars** — base attributes now show their base value plus the green AA
+  bonus separately, with a tooltip explaining the source, and food/drink stats
+  are applied to equipped totals
+- **EQ client check** — Settings version-checks `eqw.dll` (EQW-TAKP) alongside
+  the eqgame.dll / Zeal checks
+- Fixes: an empty tradeskill leveling plan no longer black-screens the page;
+  custom trigger alerts show the captured target, not just pack triggers; the
+  regex editor accepts Go inline-flag patterns like `(?i)`; buff stat bonuses
+  scale with level so buffed HP matches in-game values; distinct same-named
+  items stay visible in search and gear upgrades; copied target stats drop
+  crowd-control immunities; and the spell-modifiers view returns empty instead
+  of erroring when no Quarmy export is present
+
 ## Phase 11 — Project Website
 _Planned_
 

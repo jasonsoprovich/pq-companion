@@ -9,6 +9,53 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.16.0 — 2026-07-06
+
+A big tradeskill release: plan the cheapest path to max skill, see your
+odds on every combine, plus new Bandolier and Macro editors and a deeper
+character stats view.
+
+### Highlights
+- **Tradeskill Leveling** — a new page that builds a step-by-step plan to
+  raise any tradeskill to your target, picking recipes by skill-up band and
+  total cost. Choose "fastest" (fewest combines) or "cheapest" (least plat),
+  and it factors in the cost of sub-combines you have to craft along the
+  way, warning when a step pulls in a different tradeskill.
+- **Combine success chances** — the recipe view now shows your success and
+  failure percentage for each combine from your skill and crafting-stat
+  gear, including the trivial breakpoint where you can no longer fail, plus
+  a skill-up chance estimate. Jewelcraft/Alchemy/Poison Mastery AAs and
+  Maelin's skill-up buff are applied automatically.
+- **Tradeskills tab** — characters now show their trained tradeskill values,
+  read from the Zeal 1.4.3 export.
+- **Bandolier & Macro editors** — now available to everyone. Edit
+  weapon-swap bandolier sets (guarded to gear you actually own and can
+  equip) and your in-game social macros directly, including a new
+  `/cancelbuff` builder that turns a buff search into ready-made
+  cancel-by-name macro lines.
+- **Tanking view** — the character Stats tab now splits avoidance vs.
+  mitigation, models the mitigation softcap and melee hit chance, and folds
+  in Combat Stability and Agility AAs.
+- **Clearer stat bars** — base attributes now show their base value plus the
+  green AA bonus separately, with a tooltip explaining the source.
+- **EQ client check** — Settings now version-checks `eqw.dll` (EQW-TAKP)
+  alongside the existing eqgame.dll / Zeal check.
+
+### Fixes
+- An empty tradeskill leveling plan no longer black-screens the page.
+- Custom trigger alerts now show the captured target in the alert text, not
+  just triggers from imported packs.
+- The regex editor accepts Go inline-flag patterns (e.g. `(?i)`) instead of
+  marking them invalid.
+- Buff stat bonuses now scale with your level, so buffed HP and similar
+  stats match in-game values more closely.
+- Food and drink stats are now applied to your equipped stats.
+- Distinct items that share a name stay visible in search and gear upgrades
+  instead of collapsing into one.
+- Copied target stats no longer include crowd-control immunities.
+- The spell-modifiers view returns empty instead of erroring when no Quarmy
+  export is present.
+
 ## v0.15.5 — 2026-07-04
 
 A fix for custom trigger sounds playing two or three times.
