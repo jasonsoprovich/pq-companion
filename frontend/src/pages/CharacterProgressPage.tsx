@@ -50,13 +50,22 @@ function isEquipmentSlot(location: string): boolean {
 
 // ── Stat display ──────────────────────────────────────────────────────────────
 
+// Full attribute name for the base-view AA-bonus tooltip. The only always-on
+// source that adds to a naked base attribute is the matching Innate X AA, so
+// the green "+N" in the Base view is always an AA grant.
+const STAT_FULL_NAME: Record<string, string> = {
+  STR: 'Strength', STA: 'Stamina', AGI: 'Agility', DEX: 'Dexterity',
+  WIS: 'Wisdom', INT: 'Intelligence', CHA: 'Charisma',
+}
+
 interface StatBarProps {
   label: string
   value: number
   // Naked base attribute (race + class + creation points, from the quarmy
-  // export). When supplied, the amount added on top (value - base, i.e. AA
-  // grants plus gear/buffs depending on the view) renders as a green "+N"
-  // beside the base — the way quarmy shows base stats with their bonuses.
+  // export). When supplied AND less than value, the difference renders as a
+  // green "+N" beside the base — quarmy-style. Only passed in the Base view,
+  // where that difference is purely an always-on AA grant (an Innate X AA);
+  // the other views show combined totals for readability/comparison.
   base?: number
   max?: number
 }
@@ -64,6 +73,7 @@ interface StatBarProps {
 function StatBar({ label, value, base, max = 255 }: StatBarProps): React.ReactElement {
   const pct = Math.min(100, Math.round((value / max) * 100))
   const bonus = base !== undefined ? value - base : 0
+  const statName = STAT_FULL_NAME[label] ?? label
   return (
     <div className="flex items-center gap-3">
       <span
@@ -87,7 +97,12 @@ function StatBar({ label, value, base, max = 255 }: StatBarProps): React.ReactEl
       >
         {bonus > 0 ? base : value}
         {bonus > 0 && (
-          <span style={{ color: 'var(--color-success)' }}> +{bonus}</span>
+          <span
+            style={{ color: 'var(--color-success)', cursor: 'help' }}
+            title={`+${bonus} from your Innate ${statName} AA (an always-on Alternate Advancement bonus, not part of the character's true base)`}
+          >
+            {' '}+{bonus}
+          </span>
         )}
       </span>
     </div>
@@ -798,13 +813,15 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
         )}
 
         <div className="space-y-3">
-          <StatBar label="STR" value={capped(block.str)} base={stats.base_str} max={STAT_CAP} />
-          <StatBar label="STA" value={capped(block.sta)} base={stats.base_sta} max={STAT_CAP} />
-          <StatBar label="AGI" value={capped(block.agi)} base={stats.base_agi} max={STAT_CAP} />
-          <StatBar label="DEX" value={capped(block.dex)} base={stats.base_dex} max={STAT_CAP} />
-          <StatBar label="WIS" value={capped(block.wis)} base={stats.base_wis} max={STAT_CAP} />
-          <StatBar label="INT" value={capped(block.int)} base={stats.base_int} max={STAT_CAP} />
-          <StatBar label="CHA" value={capped(block.cha)} base={stats.base_cha} max={STAT_CAP} />
+          {/* Green "+N" AA bonus is shown in the Base view only; +Equipment /
+              +Buffs show combined totals for readability and comparison. */}
+          <StatBar label="STR" value={capped(block.str)} base={mode === 'base' ? stats.base_str : undefined} max={STAT_CAP} />
+          <StatBar label="STA" value={capped(block.sta)} base={mode === 'base' ? stats.base_sta : undefined} max={STAT_CAP} />
+          <StatBar label="AGI" value={capped(block.agi)} base={mode === 'base' ? stats.base_agi : undefined} max={STAT_CAP} />
+          <StatBar label="DEX" value={capped(block.dex)} base={mode === 'base' ? stats.base_dex : undefined} max={STAT_CAP} />
+          <StatBar label="WIS" value={capped(block.wis)} base={mode === 'base' ? stats.base_wis : undefined} max={STAT_CAP} />
+          <StatBar label="INT" value={capped(block.int)} base={mode === 'base' ? stats.base_int : undefined} max={STAT_CAP} />
+          <StatBar label="CHA" value={capped(block.cha)} base={mode === 'base' ? stats.base_cha : undefined} max={STAT_CAP} />
         </div>
 
         <div className="mt-4 grid grid-cols-5 gap-2">
