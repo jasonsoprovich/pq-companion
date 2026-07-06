@@ -355,14 +355,15 @@ func (h *charactersHandler) governingStat(char character.Character, ts int) (tra
 // means "level to the class/level cap". AllowFarming/SwitchPenalty nil take
 // per-objective defaults.
 type tradeskillPlanRequest struct {
-	Tradeskill    int      `json:"tradeskill"`
-	TargetSkill   int      `json:"target_skill"`
-	StartSkill    *int     `json:"start_skill"`
-	Objective     string   `json:"objective"`
-	AllowFarming  *bool    `json:"allow_farming"`
-	SkillMod      int      `json:"skill_mod"`
-	SkillupBonus  int      `json:"skillup_bonus"`
-	SwitchPenalty *float64 `json:"switch_penalty"`
+	Tradeskill            int      `json:"tradeskill"`
+	TargetSkill           int      `json:"target_skill"`
+	StartSkill            *int     `json:"start_skill"`
+	Objective             string   `json:"objective"`
+	AllowFarming          *bool    `json:"allow_farming"`
+	AvoidOtherTradeskills bool     `json:"avoid_other_tradeskills"` // exclude recipes needing another discipline
+	SkillMod              int      `json:"skill_mod"`
+	SkillupBonus          int      `json:"skillup_bonus"`
+	SwitchPenalty         *float64 `json:"switch_penalty"`
 }
 
 // subCombineInfo describes a crafted sub-component a stage's recipe depends on,
@@ -505,9 +506,14 @@ func (h *charactersHandler) tradeskillPlan(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	cands := make([]tsplan.RecipeCandidate, len(recipes))
-	for i, rc := range recipes {
-		cands[i] = tsplan.RecipeCandidate{
+	cands := make([]tsplan.RecipeCandidate, 0, len(recipes))
+	for _, rc := range recipes {
+		// "Stay in this discipline" mode drops recipes that would force crafting
+		// in another skill-gated tradeskill.
+		if req.AvoidOtherTradeskills && rc.RequiresCrossTradeskill {
+			continue
+		}
+		cands = append(cands, tsplan.RecipeCandidate{
 			RecipeID:            rc.RecipeID,
 			Name:                rc.Name,
 			Trivial:             rc.Trivial,
@@ -517,7 +523,7 @@ func (h *charactersHandler) tradeskillPlan(w http.ResponseWriter, r *http.Reques
 			VendorCost:          float64(rc.VendorCost),
 			VendorCostKnown:     rc.VendorCostKnown,
 			SubCombineRecipeIDs: rc.SubCombineRecipeIDs,
-		}
+		})
 	}
 
 	allowFarming := true

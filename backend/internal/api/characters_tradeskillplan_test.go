@@ -183,3 +183,60 @@ func TestResolveSubCombines_Blacksmithing(t *testing.T) {
 	t.Logf("blacksmithing sub-combines: %d distinct, %d cross-tradeskill warnings: %v",
 		len(info), len(warnings), warnings)
 }
+
+// TestTradeskillPlan_AvoidOtherTradeskills verifies the "stay in this discipline"
+// mode: dropping recipes that require another skill-gated tradeskill yields a
+// plan with no cross-tradeskill warning.
+func TestTradeskillPlan_AvoidOtherTradeskills(t *testing.T) {
+	_, file, _, _ := runtime.Caller(0)
+	repoRoot := filepath.Join(filepath.Dir(file), "..", "..", "..")
+	dbPath := filepath.Join(repoRoot, "backend", "data", "quarm.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Skip("quarm.db not present")
+	}
+	d, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer d.Close()
+
+	h := &charactersHandler{db: d}
+	recipes, err := d.RecipesForTradeskill(63)
+	if err != nil {
+		t.Fatalf("recipes: %v", err)
+	}
+
+	// The flag must be meaningful — some recipes cross, some stay in-discipline.
+	var anyCross, anyClean bool
+	var cands []tsplan.RecipeCandidate
+	for _, rc := range recipes {
+		if rc.RequiresCrossTradeskill {
+			anyCross = true
+			continue // avoid mode drops these
+		}
+		anyClean = true
+		cands = append(cands, mapCandidates([]db.LevelingRecipe{rc})...)
+	}
+	if !anyCross {
+		t.Skip("no cross-tradeskill blacksmithing recipes in fixture")
+	}
+	if !anyClean {
+		t.Fatal("expected some in-discipline blacksmithing recipes")
+	}
+
+	plan := tsplan.Solve(cands, tsplan.Params{
+		StartSkill: 1, TargetSkill: 188,
+		TradeStat: 100, Difficulty: 3.0,
+		Objective: tsplan.Fastest, AllowFarming: true, SwitchPenalty: 5,
+		TrivialCeiling: tradeskillPlanTrivialCeiling,
+	})
+	if len(plan.Stages) == 0 {
+		t.Fatalf("avoid-others plan produced no stages; warnings=%v", plan.Warnings)
+	}
+	_, warnings := h.resolveSubCombines(plan.Stages, 63)
+	if len(warnings) != 0 {
+		t.Errorf("avoid-others plan still has cross-tradeskill warnings: %v", warnings)
+	}
+	t.Logf("avoid-others blacksmithing 1->188: %d stages, reached %d (%d cross recipes excluded)",
+		len(plan.Stages), plan.ReachedSkill, len(recipes)-len(cands))
+}

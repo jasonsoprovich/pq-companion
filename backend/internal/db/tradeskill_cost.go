@@ -32,8 +32,14 @@ type costResolver struct {
 	components  map[int][]recipeComp // recipe id -> its consumed components
 	yield       map[int]int          // recipe id -> primary product successcount
 	trivial     map[int]int          // recipe id -> trivial
+	recipeTS    map[int]int          // recipe id -> tradeskill discipline
 	memo        map[int]itemAcquisition
 	inProgress  map[int]bool
+
+	// withinMemo memoizes obtainableWithin for the ONE target discipline a given
+	// resolver is queried against (a resolver is built per plan request).
+	withinMemo map[int]bool
+	withinProg map[int]bool
 }
 
 func (db *DB) newCostResolver() (*costResolver, error) {
@@ -43,8 +49,11 @@ func (db *DB) newCostResolver() (*costResolver, error) {
 		components:  map[int][]recipeComp{},
 		yield:       map[int]int{},
 		trivial:     map[int]int{},
+		recipeTS:    map[int]int{},
 		memo:        map[int]itemAcquisition{},
 		inProgress:  map[int]bool{},
+		withinMemo:  map[int]bool{},
+		withinProg:  map[int]bool{},
 	}
 
 	vrows, err := db.Query(`
@@ -70,7 +79,7 @@ func (db *DB) newCostResolver() (*costResolver, error) {
 	// are excluded — a one-off quest combine isn't a repeatable way to craft a
 	// sub-component.
 	erows, err := db.Query(`
-		SELECT tre.recipe_id, r.trivial, tre.item_id, tre.componentcount, tre.successcount, tre.iscontainer
+		SELECT tre.recipe_id, r.trivial, r.tradeskill, tre.item_id, tre.componentcount, tre.successcount, tre.iscontainer
 		FROM tradeskill_recipe_entries tre
 		JOIN tradeskill_recipe r ON r.id = tre.recipe_id
 		WHERE r.enabled = 1 AND r.quest = 0
@@ -80,11 +89,12 @@ func (db *DB) newCostResolver() (*costResolver, error) {
 	}
 	defer erows.Close()
 	for erows.Next() {
-		var recipeID, triv, itemID, cc, sc, isCon int
-		if err := erows.Scan(&recipeID, &triv, &itemID, &cc, &sc, &isCon); err != nil {
+		var recipeID, triv, ts, itemID, cc, sc, isCon int
+		if err := erows.Scan(&recipeID, &triv, &ts, &itemID, &cc, &sc, &isCon); err != nil {
 			return nil, fmt.Errorf("scan recipe graph: %w", err)
 		}
 		r.trivial[recipeID] = triv
+		r.recipeTS[recipeID] = ts
 		switch {
 		case isCon != 0:
 			// Containers are durable vessels, not consumed materials.
@@ -103,22 +113,80 @@ func (db *DB) newCostResolver() (*costResolver, error) {
 // craftableSubcombine reports the producing recipe for an item that must be
 // CRAFTED to obtain (not vendor-sold) — a genuine sub-combine dependency — or
 // (0,false) if the item is vendor-sold or not craftable. When several recipes
-// make it, the lowest-trivial one is returned (the easiest to make, and the
-// most era-appropriate). Self-production is ignored.
-func (r *costResolver) craftableSubcombine(itemID, consumingRecipe int) (int, bool) {
+// make it, a producer in the target discipline (or Common Combine) is preferred
+// over one in another discipline, and among equals the lowest-trivial (easiest,
+// most era-appropriate). This keeps the displayed sub-combine consistent with
+// whether the recipe truly forces a cross-tradeskill dependency. Self-production
+// is ignored.
+func (r *costResolver) craftableSubcombine(itemID, consumingRecipe, targetTS int) (int, bool) {
 	if _, vendorSold := r.vendorPrice[itemID]; vendorSold {
 		return 0, false // you'd just buy it
 	}
-	bestID, bestTriv := 0, 0
+	bestID, bestTriv, bestInDisc := 0, 0, false
 	for _, pid := range r.producedBy[itemID] {
 		if pid == consumingRecipe {
 			continue
 		}
-		if bestID == 0 || r.trivial[pid] < bestTriv {
-			bestID, bestTriv = pid, r.trivial[pid]
+		ts := r.recipeTS[pid]
+		inDisc := ts == targetTS || ts == 0 || ts == 75
+		triv := r.trivial[pid]
+		better := bestID == 0 ||
+			(inDisc && !bestInDisc) || // prefer in-discipline producers
+			(inDisc == bestInDisc && triv < bestTriv) // then lowest trivial
+		if better {
+			bestID, bestTriv, bestInDisc = pid, triv, inDisc
 		}
 	}
 	return bestID, bestID != 0
+}
+
+// obtainableWithin reports whether one unit of itemID can be obtained WITHOUT
+// crafting in a skill-gated discipline other than targetTS — i.e. it's
+// vendor-sold, or a raw/farmed/dropped item (not craftable, so no skill needed),
+// or craftable via a chain that stays in targetTS or Common Combine (0/75). It
+// returns false only when the item MUST be crafted in a different skill-gated
+// tradeskill. Memoized for the resolver's single target discipline.
+func (r *costResolver) obtainableWithin(itemID, targetTS int) bool {
+	if v, ok := r.withinMemo[itemID]; ok {
+		return v
+	}
+	if r.withinProg[itemID] {
+		return false // cycle: this in-discipline path can't complete
+	}
+	if _, sold := r.vendorPrice[itemID]; sold {
+		r.withinMemo[itemID] = true
+		return true
+	}
+	producers, ok := r.producedBy[itemID]
+	if !ok {
+		// Not craftable — a raw/farmed/dropped item. Getting it needs no
+		// tradeskill, so it never forces a cross-discipline dependency.
+		r.withinMemo[itemID] = true
+		return true
+	}
+
+	r.withinProg[itemID] = true
+	result := false
+	for _, pid := range producers {
+		ts := r.recipeTS[pid]
+		if ts != targetTS && ts != 0 && ts != 75 {
+			continue // a different skill-gated discipline — not this path
+		}
+		allIn := true
+		for _, comp := range r.components[pid] {
+			if !r.obtainableWithin(comp.itemID, targetTS) {
+				allIn = false
+				break
+			}
+		}
+		if allIn {
+			result = true
+			break
+		}
+	}
+	r.withinProg[itemID] = false
+	r.withinMemo[itemID] = result
+	return result
 }
 
 // cost returns the cheapest acquisition for one unit of itemID — the min of its

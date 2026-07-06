@@ -300,8 +300,14 @@ type LevelingRecipe struct {
 	VendorCostKnown bool `json:"vendor_cost_known"`
 
 	// SubCombineRecipeIDs are the recipes that produce this recipe's crafted
-	// components (DAG edges). Phase 1 only surfaces them; Phase 2 costs them.
+	// components (DAG edges).
 	SubCombineRecipeIDs []int `json:"sub_combine_recipe_ids,omitempty"`
+
+	// RequiresCrossTradeskill is true when at least one component can ONLY be
+	// obtained by crafting in a different skill-gated discipline (recursively) —
+	// i.e. leveling on this recipe forces another tradeskill. Lets the planner
+	// offer a "stay in this discipline" mode.
+	RequiresCrossTradeskill bool `json:"requires_cross_tradeskill,omitempty"`
 }
 
 // RecipesForTradeskill returns every enabled, non-quest recipe for one
@@ -414,10 +420,15 @@ func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
 			} else {
 				lr.VendorCostKnown = false
 			}
+			// A component obtainable only by crafting in another skill-gated
+			// discipline makes this recipe a cross-tradeskill dependency.
+			if !resolver.obtainableWithin(itemID, tradeskill) {
+				lr.RequiresCrossTradeskill = true
+			}
 			// Only a component you must CRAFT (not vendor-sold but produced by
 			// another recipe) is a real sub-combine dependency; one you can buy is
 			// not, even if some recipe also makes it.
-			if pid, ok := resolver.craftableSubcombine(itemID, recipeID); ok {
+			if pid, ok := resolver.craftableSubcombine(itemID, recipeID, tradeskill); ok {
 				seen := subSeen[recipeID]
 				if seen == nil {
 					seen = map[int]bool{}
