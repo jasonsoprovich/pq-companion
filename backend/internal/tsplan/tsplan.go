@@ -96,6 +96,15 @@ type Params struct {
 	Objective     Objective
 	AllowFarming  bool    // false = drop recipes whose cost is unknown (farmed/dropped)
 	SwitchPenalty float64 // per-stage penalty in objective units (combines / plat) to curb fragmentation
+
+	// TrivialCeiling bounds how far below a recipe's trivial you may start
+	// grinding it: recipe X is usable at skill s only when X.Trivial - s <=
+	// TrivialCeiling. This keeps a stage from grinding a high-trivial recipe up
+	// from far below (miserable early success, absurd combine counts) — the
+	// guides' "stay within ~25 of your skill" rule. It matters most for the
+	// Cheapest objective, which minimizes plat and would otherwise ignore how
+	// many combines a cheap high-trivial recipe takes. 0 disables the bound.
+	TrivialCeiling int
 }
 
 // Stage is one leg of the plan: grind Recipe from FromSkill up to ToSkill.
@@ -185,7 +194,7 @@ func Solve(recipes []RecipeCandidate, p Params) Plan {
 
 	// How high can we actually climb from start? (The DB may lack recipes to
 	// bridge a gap.) Cap the plan at the highest reachable breakpoint.
-	maxReach := reachableCeiling(cands, start, target)
+	maxReach := reachableCeiling(cands, start, target, p.TrivialCeiling)
 	if maxReach < target {
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
 			"available recipes only reach skill %d (target %d) — no recipe grinds past that",
@@ -256,9 +265,16 @@ func (c candidate) combines(s int) float64 {
 	return c.cum[s]
 }
 
+// startableAt reports whether grinding c may BEGIN at skill s under the trivial
+// ceiling (s must be within `ceiling` of the recipe's trivial). ceiling <= 0
+// disables the bound.
+func (c candidate) startableAt(s, ceiling int) bool {
+	return ceiling <= 0 || s >= c.src.Trivial-ceiling
+}
+
 // reachableCeiling returns the highest skill reachable from start by chaining
 // candidates (each landing on its stop).
-func reachableCeiling(cands []candidate, start, target int) int {
+func reachableCeiling(cands []candidate, start, target, ceiling int) int {
 	reach := make([]bool, target+1)
 	reach[start] = true
 	maxReach := start
@@ -268,7 +284,7 @@ func reachableCeiling(cands []candidate, start, target int) int {
 		}
 		for i := range cands {
 			c := &cands[i]
-			if c.stop > s && c.stop <= target && !math.IsInf(c.combines(s), 1) {
+			if c.stop > s && c.stop <= target && c.startableAt(s, ceiling) && !math.IsInf(c.combines(s), 1) {
 				reach[c.stop] = true
 				if c.stop > maxReach {
 					maxReach = c.stop
@@ -293,7 +309,7 @@ func runDP(cands []candidate, p Params, start, target int) []int {
 	for s := target - 1; s >= start; s-- {
 		for i := range cands {
 			c := &cands[i]
-			if c.stop <= s || c.stop > target {
+			if c.stop <= s || c.stop > target || !c.startableAt(s, p.TrivialCeiling) {
 				continue
 			}
 			base := c.combines(s)

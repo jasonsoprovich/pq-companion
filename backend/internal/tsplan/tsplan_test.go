@@ -213,6 +213,39 @@ func TestPlan_SwitchPenaltyConsolidates(t *testing.T) {
 	}
 }
 
+func TestPlan_TrivialCeilingBlocksFarStart(t *testing.T) {
+	// A single cheap high-trivial recipe would otherwise let cheapest grind
+	// 10->90 in one stage. A tight ceiling forbids starting it until skill is
+	// within the band, so with no bridging recipe the plan can't leave start.
+	wide := vendorRecipe(1, 90, 1)
+	pp := baseParams(10, 90, Cheapest)
+	pp.TrivialCeiling = 20 // may only start recipe 1 at skill >= 70
+	p := Solve([]RecipeCandidate{wide}, pp)
+	if len(p.Stages) != 0 {
+		t.Fatalf("ceiling should block the far-below start, got stages %+v", p.Stages)
+	}
+
+	// Add bridging recipes within the band and the plan chains up to the target.
+	recipes := []RecipeCandidate{
+		wide,
+		vendorRecipe(2, 30, 1),
+		vendorRecipe(3, 50, 1),
+		vendorRecipe(4, 70, 1),
+	}
+	p = Solve(recipes, pp)
+	assertMonotonic(t, p, 10)
+	if p.ReachedSkill != 90 {
+		t.Fatalf("with bridging recipes ReachedSkill = %d, want 90", p.ReachedSkill)
+	}
+	// Every stage must respect the band: trivial - fromSkill <= ceiling.
+	for i, s := range p.Stages {
+		if s.Trivial-s.FromSkill > pp.TrivialCeiling {
+			t.Errorf("stage %d starts %d below trivial %d, exceeds ceiling %d",
+				i, s.Trivial-s.FromSkill, s.Trivial, pp.TrivialCeiling)
+		}
+	}
+}
+
 func TestPlan_StageNotes(t *testing.T) {
 	r := vendorRecipe(1, 60, 1)
 	r.Container = "Forge"

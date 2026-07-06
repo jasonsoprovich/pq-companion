@@ -347,6 +347,10 @@ func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
 		idx[out[i].RecipeID] = i
 	}
 	subSeen := make(map[int]map[int]bool, len(out))
+	// A recipe with no consumed components can't be "ground" for skill-ups (it's
+	// a transform/recharge/degenerate row, e.g. a no-cost trivial-255 combine),
+	// and would look free to the cost optimizer. Drop such recipes at the end.
+	hasComponent := make(map[int]bool, len(out))
 
 	// Resolve "which recipe produces this item" once, grouped, instead of a
 	// correlated subquery per entry (that turned an on-demand call into seconds
@@ -407,6 +411,7 @@ func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
 				lr.Yield = successCount // primary product's per-combine output
 			}
 		case componentCount > 0:
+			hasComponent[recipeID] = true
 			if hasVendor != 0 {
 				lr.VendorCost += componentCount * price
 			} else {
@@ -426,7 +431,17 @@ func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
 			}
 		}
 	}
-	return out, erows.Err()
+	if err := erows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make([]LevelingRecipe, 0, len(out))
+	for i := range out {
+		if hasComponent[out[i].RecipeID] {
+			result = append(result, out[i])
+		}
+	}
+	return result, nil
 }
 
 // recipeProducers maps each craftable item id to the lowest enabled recipe id

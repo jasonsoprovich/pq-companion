@@ -20,6 +20,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/tradeskill"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/tsplan"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
 
@@ -305,24 +306,7 @@ func (h *charactersHandler) skillupEstimate(w http.ResponseWriter, r *http.Reque
 	skillupBonus := queryInt(r, "skillup_bonus", 0)
 	nofail := r.URL.Query().Get("nofail") == "1"
 
-	// Skill-up speed tracks the character's actual stats, so use base + equipped
-	// gear (the same total the character sheet shows), not naked base stats.
-	// Falls back to base when the EQ path / quarmy export isn't available.
-	str, dex, intel, wis := char.BaseSTR, char.BaseDEX, char.BaseINT, char.BaseWIS
-	statSource := "base"
-	if cfg := h.mgr.Get(); cfg.EQPath != "" {
-		if equip, _ := h.sumEquipment(cfg.EQPath, char.Name); equip != (statBlock{}) {
-			str += equip.STR
-			dex += equip.DEX
-			intel += equip.INT
-			wis += equip.WIS
-			statSource = "base+gear"
-		}
-	}
-	// The server reads capped attributes (255 in this era), so clamp before the
-	// governing-stat rule — an uncapped item sum would overstate skill-up speed.
-	str, dex, intel, wis = capStat(str), capStat(dex), capStat(intel), capStat(wis)
-	tradeStat, statName := tradeskill.TradeStat(ts, str, dex, intel, wis)
+	tradeStat, statName, statSource := h.governingStat(char, ts)
 
 	classIdx := char.Class + 1
 	difficulty, err := h.db.SkillDifficulty(ts, classIdx)
@@ -341,6 +325,229 @@ func (h *charactersHandler) skillupEstimate(w http.ResponseWriter, r *http.Reque
 	res.StatName = statName
 	res.StatSource = statSource
 	writeJSON(w, http.StatusOK, res)
+}
+
+// governingStat resolves the effective governing attribute (and its label /
+// source) that drives skill-up speed for a tradeskill: base attributes plus
+// equipped gear when the EQ path is known, clamped to the era's 255 cap, run
+// through the per-tradeskill governing-stat rule. Shared by skillupEstimate and
+// tradeskillPlan.
+func (h *charactersHandler) governingStat(char character.Character, ts int) (tradeStat int, statName, statSource string) {
+	str, dex, intel, wis := char.BaseSTR, char.BaseDEX, char.BaseINT, char.BaseWIS
+	statSource = "base"
+	if cfg := h.mgr.Get(); cfg.EQPath != "" {
+		if equip, _ := h.sumEquipment(cfg.EQPath, char.Name); equip != (statBlock{}) {
+			str += equip.STR
+			dex += equip.DEX
+			intel += equip.INT
+			wis += equip.WIS
+			statSource = "base+gear"
+		}
+	}
+	str, dex, intel, wis = capStat(str), capStat(dex), capStat(intel), capStat(wis)
+	tradeStat, statName = tradeskill.TradeStat(ts, str, dex, intel, wis)
+	return tradeStat, statName, statSource
+}
+
+// tradeskillPlanRequest is the POST body for tradeskillPlan. StartSkill nil means
+// "read the character's current skill from the quarmy export"; TargetSkill <= 0
+// means "level to the class/level cap". AllowFarming/SwitchPenalty nil take
+// per-objective defaults.
+type tradeskillPlanRequest struct {
+	Tradeskill    int      `json:"tradeskill"`
+	TargetSkill   int      `json:"target_skill"`
+	StartSkill    *int     `json:"start_skill"`
+	Objective     string   `json:"objective"`
+	AllowFarming  *bool    `json:"allow_farming"`
+	SkillMod      int      `json:"skill_mod"`
+	SkillupBonus  int      `json:"skillup_bonus"`
+	SwitchPenalty *float64 `json:"switch_penalty"`
+}
+
+// tradeskillPlanResponse embeds the solver's plan and echoes the resolved inputs
+// (cap, governing stat, difficulty, auto-applied AA) so the UI can explain the
+// numbers. Stage/plan costs are in copper (CostUnit).
+type tradeskillPlanResponse struct {
+	tsplan.Plan
+	Tradeskill  int     `json:"tradeskill"`
+	SkillName   string  `json:"skill_name"`
+	ClassCap    int     `json:"class_cap"`
+	StatName    string  `json:"stat_name"`
+	StatSource  string  `json:"stat_source"`
+	TradeStat   int     `json:"trade_stat"`
+	Difficulty  float64 `json:"difficulty"`
+	AAReducePct int     `json:"aa_reduce_pct"`
+	CostUnit    string  `json:"cost_unit"`
+}
+
+// tradeskillPlanTrivialCeiling is how far below a recipe's trivial the planner
+// will start grinding it (the guides' "stay within ~25 of your skill" band, a
+// touch looser so sparse-recipe disciplines don't leave gaps). It mainly stops
+// the cheapest objective from grinding a cheap high-trivial recipe up from far
+// below at an absurd combine count.
+const tradeskillPlanTrivialCeiling = 40
+
+// tradeskillPlan builds an optimized leveling plan for a character and a
+// tradeskill: an ordered list of "grind recipe X from skill A to B" stages that
+// minimizes combines (objective "fastest") or vendor plat ("cheapest"). It
+// resolves the character's current skill, class/level cap, governing stat,
+// skill difficulty, and mastery-AA fail-reduction, then runs the pure tsplan
+// solver over the discipline's recipes. Cheapest cost is partial by nature —
+// farmed/dropped components have no price (see Plan.CostComplete).
+func (h *charactersHandler) tradeskillPlan(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var req tradeskillPlanRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Tradeskill < 0 {
+		writeError(w, http.StatusBadRequest, "tradeskill is required")
+		return
+	}
+	obj := tsplan.Fastest
+	switch req.Objective {
+	case "", string(tsplan.Fastest):
+		obj = tsplan.Fastest
+	case string(tsplan.Cheapest):
+		obj = tsplan.Cheapest
+	default:
+		writeError(w, http.StatusBadRequest, "objective must be 'fastest' or 'cheapest'")
+		return
+	}
+
+	char, ok, err := h.store.Get(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+
+	ts := req.Tradeskill
+	classIdx := char.Class + 1
+
+	difficulty, err := h.db.SkillDifficulty(ts, classIdx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	skillCap := 0
+	if char.Class >= 0 && char.Level > 0 {
+		if c, capErr := h.db.SkillCap(ts, classIdx, char.Level); capErr == nil {
+			skillCap = c
+		}
+	}
+
+	// Current skill: caller override, else the character's exported value (a
+	// 254/255 sentinel means untrained → plan from 0).
+	start := 0
+	if req.StartSkill != nil {
+		start = *req.StartSkill
+	} else if skills, listErr := h.store.ListTradeskills(id); listErr == nil {
+		for _, s := range skills {
+			if s.SkillID == ts {
+				if s.Value < untrainedTradeskillValue {
+					start = s.Value
+				}
+				break
+			}
+		}
+	}
+
+	// Target: caller value, else level all the way to the class/level cap.
+	target := req.TargetSkill
+	if target <= 0 {
+		if skillCap <= 0 {
+			writeError(w, http.StatusBadRequest, "target_skill is required (no class cap known to default to)")
+			return
+		}
+		target = skillCap
+	}
+
+	tradeStat, statName, statSource := h.governingStat(char, ts)
+
+	// Auto-apply the character's tradeskill mastery-AA fail-reduction, if any.
+	aaReduce := 0
+	if m, ok := tradeskill.MasteryFor(ts); ok {
+		if trained, listErr := h.store.ListAAs(id); listErr == nil {
+			for _, a := range trained {
+				if a.AAID == m.EqmacID {
+					aaReduce = tradeskill.FailReducePct(a.Rank)
+					break
+				}
+			}
+		}
+	}
+
+	recipes, err := h.db.RecipesForTradeskill(ts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	cands := make([]tsplan.RecipeCandidate, len(recipes))
+	for i, rc := range recipes {
+		cands[i] = tsplan.RecipeCandidate{
+			RecipeID:            rc.RecipeID,
+			Name:                rc.Name,
+			Trivial:             rc.Trivial,
+			NoFail:              rc.NoFail,
+			Yield:               rc.Yield,
+			Container:           rc.Container,
+			VendorCost:          float64(rc.VendorCost),
+			VendorCostKnown:     rc.VendorCostKnown,
+			SubCombineRecipeIDs: rc.SubCombineRecipeIDs,
+		}
+	}
+
+	allowFarming := true
+	if req.AllowFarming != nil {
+		allowFarming = *req.AllowFarming
+	}
+	// A modest switch penalty keeps "fastest" from fragmenting into one-point
+	// hops; "cheapest" is already cost-shaped, so it defaults to none. Both are
+	// overridable for tuning.
+	switchPenalty := 5.0
+	if obj == tsplan.Cheapest {
+		switchPenalty = 0
+	}
+	if req.SwitchPenalty != nil {
+		switchPenalty = *req.SwitchPenalty
+	}
+
+	plan := tsplan.Solve(cands, tsplan.Params{
+		StartSkill:     start,
+		TargetSkill:    target,
+		ClassCap:       skillCap,
+		TradeStat:      tradeStat,
+		Difficulty:     difficulty,
+		SkillMod:       req.SkillMod,
+		AAReduce:       aaReduce,
+		SkillupBonus:   req.SkillupBonus,
+		Objective:      obj,
+		AllowFarming:   allowFarming,
+		SwitchPenalty:  switchPenalty,
+		TrivialCeiling: tradeskillPlanTrivialCeiling,
+	})
+
+	writeJSON(w, http.StatusOK, tradeskillPlanResponse{
+		Plan:        plan,
+		Tradeskill:  ts,
+		SkillName:   enums.TradeskillName(ts),
+		ClassCap:    skillCap,
+		StatName:    statName,
+		StatSource:  statSource,
+		TradeStat:   tradeStat,
+		Difficulty:  difficulty,
+		AAReducePct: aaReduce,
+		CostUnit:    "copper",
+	})
 }
 
 // capStat clamps an attribute to the era's 255 hard cap (AAs that raise the cap

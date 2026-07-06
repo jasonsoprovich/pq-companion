@@ -201,6 +201,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/{id}/tradeskills", charactersH.tradeskills)
 			r.Get("/{id}/tradeskill-aa", charactersH.tradeskillAA)
 			r.Get("/{id}/skillup-estimate", charactersH.skillupEstimate)
+			r.Post("/{id}/tradeskill-plan", charactersH.tradeskillPlan)
 			r.Get("/{id}/skills", skillsH.get)
 			r.Get("/{id}/spell-modifiers", charactersH.spellModifiers)
 			r.Get("/{id}/equipped-stats", charactersH.equippedStats)
