@@ -122,6 +122,102 @@ func TestSearchRecipes_AnyTradeskill(t *testing.T) {
 	}
 }
 
+func TestRecipesForTradeskill_ResearchStructure(t *testing.T) {
+	d := openTestDB(t)
+	recipes, err := d.RecipesForTradeskill(58) // Research
+	if err != nil {
+		t.Fatalf("recipes for tradeskill 58: %v", err)
+	}
+	if len(recipes) == 0 {
+		t.Fatal("expected Research recipes, got none")
+	}
+
+	var lastTrivial int
+	var mez *db.LevelingRecipe
+	for i := range recipes {
+		r := &recipes[i]
+		if r.RecipeID <= 0 {
+			t.Errorf("recipe with non-positive id: %+v", r)
+		}
+		if r.Trivial < lastTrivial {
+			t.Errorf("recipes not ordered by trivial: %d after %d", r.Trivial, lastTrivial)
+		}
+		lastTrivial = r.Trivial
+
+		// A recipe must never list itself as a sub-combine, and edges are deduped.
+		seen := map[int]bool{}
+		for _, pid := range r.SubCombineRecipeIDs {
+			if pid == r.RecipeID {
+				t.Errorf("recipe %d lists itself as a sub-combine", r.RecipeID)
+			}
+			if seen[pid] {
+				t.Errorf("recipe %d has duplicate sub-combine %d", r.RecipeID, pid)
+			}
+			seen[pid] = true
+		}
+		if r.RecipeID == 791 {
+			mez = r
+		}
+	}
+
+	if mez == nil {
+		t.Fatal("expected recipe 791 (Mesmerization) in Research set")
+	}
+	if mez.Trivial != 21 {
+		t.Errorf("recipe 791 trivial = %d, want 21", mez.Trivial)
+	}
+	if mez.Container != "Enchanters Lexicon" {
+		t.Errorf("recipe 791 container = %q, want Enchanters Lexicon", mez.Container)
+	}
+}
+
+// Blacksmithing (63) is the canonical sub-combine discipline (sheet metal,
+// etc.), so at least one recipe must expose a DAG edge, and some recipe must be
+// fully vendor-costable (ore + water are merchant-sold).
+func TestRecipesForTradeskill_BlacksmithingSubCombines(t *testing.T) {
+	d := openTestDB(t)
+	recipes, err := d.RecipesForTradeskill(63)
+	if err != nil {
+		t.Fatalf("recipes for tradeskill 63: %v", err)
+	}
+	if len(recipes) == 0 {
+		t.Fatal("expected Blacksmithing recipes, got none")
+	}
+
+	anySub, anyKnownCost := false, false
+	for i := range recipes {
+		r := &recipes[i]
+		if len(r.SubCombineRecipeIDs) > 0 {
+			anySub = true
+			for _, pid := range r.SubCombineRecipeIDs {
+				if pid == r.RecipeID {
+					t.Errorf("recipe %d references itself as sub-combine", r.RecipeID)
+				}
+			}
+		}
+		if r.VendorCostKnown && r.VendorCost > 0 {
+			anyKnownCost = true
+		}
+	}
+	if !anySub {
+		t.Error("expected at least one Blacksmithing recipe with a sub-combine edge")
+	}
+	if !anyKnownCost {
+		t.Error("expected at least one fully vendor-costable Blacksmithing recipe")
+	}
+}
+
+func TestRecipesForTradeskill_Empty(t *testing.T) {
+	d := openTestDB(t)
+	recipes, err := d.RecipesForTradeskill(99999) // no such tradeskill
+	if err != nil {
+		t.Fatalf("recipes for bogus tradeskill: %v", err)
+	}
+	if len(recipes) != 0 {
+		t.Errorf("expected no recipes, got %d", len(recipes))
+	}
+}
+
 func TestGetRecipeTradeskills(t *testing.T) {
 	d := openTestDB(t)
 	skills, err := d.GetRecipeTradeskills()

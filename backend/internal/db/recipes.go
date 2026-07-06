@@ -276,6 +276,183 @@ func (db *DB) GetRecipeSummariesByIDs(ids []int) ([]RecipeSummary, error) {
 	return out, rows.Err()
 }
 
+// LevelingRecipe is a recipe reduced to what the leveling planner
+// (internal/tsplan) needs: the skill gate (Trivial), a per-combine vendor cost,
+// and the sub-combine edges. It is the DB-side shape; the API maps it to
+// tsplan.RecipeCandidate, keeping the db package independent of the solver
+// (mirrors how SpellVendorOption feeds shoproute).
+//
+// VendorCost is the summed base copper price of one combine's worth of
+// COMPONENTS (containers are durable vessels and excluded). VendorCostKnown is
+// true only when every component is sold by at least one merchant — a single
+// farmed/dropped component (no merchant row) makes the cost unknowable and flips
+// it false, which is what lets the planner treat the recipe as farm-only.
+type LevelingRecipe struct {
+	RecipeID  int    `json:"recipe_id"`
+	Name      string `json:"name"`
+	Trivial   int    `json:"trivial"`
+	NoFail    bool   `json:"no_fail"`
+	Yield     int    `json:"yield"`               // successcount of the primary product
+	Container string `json:"container,omitempty"` // primary combine vessel label (a stage note)
+
+	VendorCost      int  `json:"vendor_cost"` // base copper for one combine's components
+	VendorCostKnown bool `json:"vendor_cost_known"`
+
+	// SubCombineRecipeIDs are the recipes that produce this recipe's crafted
+	// components (DAG edges). Phase 1 only surfaces them; Phase 2 costs them.
+	SubCombineRecipeIDs []int `json:"sub_combine_recipe_ids,omitempty"`
+}
+
+// RecipesForTradeskill returns every enabled, non-quest recipe for one
+// tradeskill discipline, reduced to the leveling planner's inputs. Quest recipes
+// are excluded because they are one-off combines (unique components, often
+// script-handled), not the repeatable grind recipes a leveling path is built
+// from. Recipes are ordered by trivial then name so a caller can see the
+// discipline's natural progression.
+func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
+	rows, err := db.Query(`
+		SELECT id, name, trivial, nofail
+		FROM tradeskill_recipe
+		WHERE tradeskill = ? AND enabled = 1 AND quest = 0
+		ORDER BY trivial, name, id`, tradeskill)
+	if err != nil {
+		return nil, fmt.Errorf("leveling recipe headers %d: %w", tradeskill, err)
+	}
+	defer rows.Close()
+
+	out := []LevelingRecipe{}
+	for rows.Next() {
+		var (
+			lr     LevelingRecipe
+			nofail int
+		)
+		if err := rows.Scan(&lr.RecipeID, &lr.Name, &lr.Trivial, &nofail); err != nil {
+			return nil, fmt.Errorf("scan leveling recipe: %w", err)
+		}
+		lr.NoFail = nofail != 0
+		lr.VendorCostKnown = true // holds until a component proves otherwise
+		out = append(out, lr)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return out, nil
+	}
+
+	// Index recipe id -> slice position (out is now fixed-size, so &out[i] is
+	// stable) and a per-recipe set to dedupe sub-combine edges.
+	idx := make(map[int]int, len(out))
+	for i := range out {
+		idx[out[i].RecipeID] = i
+	}
+	subSeen := make(map[int]map[int]bool, len(out))
+
+	// Resolve "which recipe produces this item" once, grouped, instead of a
+	// correlated subquery per entry (that turned an on-demand call into seconds
+	// on large disciplines). producedBy[item] = lowest enabled recipe id that
+	// yields it.
+	producedBy, err := db.recipeProducers()
+	if err != nil {
+		return nil, err
+	}
+
+	erows, err := db.Query(`
+		SELECT tre.recipe_id, tre.item_id,
+		       COALESCE(i.name, ''), COALESCE(i.price, 0),
+		       tre.successcount, tre.componentcount, tre.iscontainer,
+		       CASE WHEN i.id IS NOT NULL
+		                 AND EXISTS (SELECT 1 FROM merchantlist m WHERE m.item = i.id)
+		            THEN 1 ELSE 0 END AS has_vendor
+		FROM tradeskill_recipe_entries tre
+		JOIN tradeskill_recipe r ON r.id = tre.recipe_id
+		LEFT JOIN items i ON i.id = tre.item_id
+		WHERE r.tradeskill = ? AND r.enabled = 1 AND r.quest = 0
+		ORDER BY tre.recipe_id, tre.id`, tradeskill)
+	if err != nil {
+		return nil, fmt.Errorf("leveling recipe entries %d: %w", tradeskill, err)
+	}
+	defer erows.Close()
+
+	for erows.Next() {
+		var (
+			recipeID, itemID, price             int
+			name                                string
+			successCount, componentCount, isCon int
+			hasVendor                           int
+		)
+		if err := erows.Scan(&recipeID, &itemID, &name, &price,
+			&successCount, &componentCount, &isCon, &hasVendor); err != nil {
+			return nil, fmt.Errorf("scan leveling entry: %w", err)
+		}
+		i, ok := idx[recipeID]
+		if !ok {
+			continue
+		}
+		lr := &out[i]
+
+		switch {
+		case isCon != 0:
+			// First container is the label; a container with no items row is a
+			// bagtype/combine-station code (e.g. Forge), resolved to its name.
+			if lr.Container == "" {
+				if name == "" {
+					lr.Container = enums.ContainerTypeName(itemID)
+				} else {
+					lr.Container = name
+				}
+			}
+		case successCount > 0:
+			if lr.Yield == 0 {
+				lr.Yield = successCount // primary product's per-combine output
+			}
+		case componentCount > 0:
+			if hasVendor != 0 {
+				lr.VendorCost += componentCount * price
+			} else {
+				lr.VendorCostKnown = false
+			}
+			// A crafted component (produced by some OTHER recipe) is a DAG edge.
+			if pid, ok := producedBy[itemID]; ok && pid != recipeID {
+				seen := subSeen[recipeID]
+				if seen == nil {
+					seen = map[int]bool{}
+					subSeen[recipeID] = seen
+				}
+				if !seen[pid] {
+					seen[pid] = true
+					lr.SubCombineRecipeIDs = append(lr.SubCombineRecipeIDs, pid)
+				}
+			}
+		}
+	}
+	return out, erows.Err()
+}
+
+// recipeProducers maps each craftable item id to the lowest enabled recipe id
+// that yields it — the reverse index used to detect sub-combine dependencies.
+func (db *DB) recipeProducers() (map[int]int, error) {
+	rows, err := db.Query(`
+		SELECT pe.item_id, MIN(pr.id)
+		FROM tradeskill_recipe_entries pe
+		JOIN tradeskill_recipe pr ON pr.id = pe.recipe_id
+		WHERE pe.successcount > 0 AND pr.enabled = 1
+		GROUP BY pe.item_id`)
+	if err != nil {
+		return nil, fmt.Errorf("recipe producers: %w", err)
+	}
+	defer rows.Close()
+	m := map[int]int{}
+	for rows.Next() {
+		var itemID, recipeID int
+		if err := rows.Scan(&itemID, &recipeID); err != nil {
+			return nil, fmt.Errorf("scan recipe producer: %w", err)
+		}
+		m[itemID] = recipeID
+	}
+	return m, rows.Err()
+}
+
 // GetRecipeTradeskills returns the distinct tradeskill disciplines that have at
 // least one enabled recipe, with their recipe counts, ordered by id.
 func (db *DB) GetRecipeTradeskills() ([]RecipeTradeskillCount, error) {
