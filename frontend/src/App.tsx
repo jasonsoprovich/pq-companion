@@ -34,6 +34,7 @@ const CharmPetFinderPage = lazy(() => import('./pages/CharmPetFinderPage'))
 const PoPFlaggingPage = lazy(() => import('./pages/PoPFlaggingPage'))
 const ZonesPage = lazy(() => import('./pages/ZonesPage'))
 const RecipesPage = lazy(() => import('./pages/RecipesPage'))
+const TradeskillLevelingPage = lazy(() => import('./pages/TradeskillLevelingPage'))
 const QuestsPage = lazy(() => import('./pages/QuestsPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const InventoryPage = lazy(() => import('./pages/InventoryPage'))
@@ -227,6 +228,7 @@ export default function App(): React.ReactElement {
           <Route path="pop-flags" element={<PoPFlaggingPage />} />
           <Route path="zones" element={<ZonesPage />} />
           <Route path="recipes" element={<RecipesPage />} />
+          <Route path="tradeskill-leveling" element={<TradeskillLevelingPage />} />
           <Route path="quests" element={<QuestsPage />} />
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="backup-manager" element={<Navigate to="/settings" replace />} />

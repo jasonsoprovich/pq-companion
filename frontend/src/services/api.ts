@@ -1876,6 +1876,38 @@ export function getSkillUpEstimate(
   return get<SkillUpEstimate>(`/api/characters/${id}/skillup-estimate?${params}`)
 }
 
+export interface TradeskillLevelingParams {
+  tradeskill: number
+  targetSkill?: number // omit/0 = level to the class cap
+  startSkill?: number  // omit = read from the Zeal export
+  objective?: import('../types/tradeskill').TradeskillObjective
+  allowFarming?: boolean // default true; false restricts to vendor-buyable recipes
+  skillMod?: number    // worn item skill-mod %
+  skillupBonus?: number // skill-up RATE % (Maelin's = 75)
+}
+
+// Build an optimized leveling plan for a character + tradeskill: an ordered list
+// of "grind recipe X from skill A to B" stages minimizing combines ("fastest")
+// or vendor plat ("cheapest"). Costs come back in copper.
+export function getTradeskillLevelingPlan(
+  id: number,
+  p: TradeskillLevelingParams,
+): Promise<import('../types/tradeskill').TradeskillLevelingPlan> {
+  const body: Record<string, unknown> = {
+    tradeskill: p.tradeskill,
+    target_skill: p.targetSkill ?? 0,
+    objective: p.objective ?? 'fastest',
+    allow_farming: p.allowFarming ?? true,
+    skill_mod: p.skillMod ?? 0,
+    skillup_bonus: p.skillupBonus ?? 0,
+  }
+  if (p.startSkill !== undefined) body.start_skill = p.startSkill
+  return post<import('../types/tradeskill').TradeskillLevelingPlan>(
+    `/api/characters/${id}/tradeskill-plan`,
+    body,
+  )
+}
+
 export function getZealQuarmy(character?: string): Promise<{ quarmy: QuarmyData | null }> {
   const qs = character ? `?character=${encodeURIComponent(character)}` : ''
   return get<{ quarmy: QuarmyData | null }>(`/api/zeal/quarmy${qs}`)

@@ -3,7 +3,7 @@ import {
   Sword, Sparkles, Skull, Map, Hammer, Activity, Layers, ScrollText, Zap,
   Users, Dice5, UserSearch, MessageSquare, Package, TrendingUp, BookOpen,
   Library, KeyRound, Hourglass, Star, Wand2, ListChecks, Percent, Store, PawPrint,
-  Flag, Swords, Keyboard,
+  Flag, Swords, Keyboard, Route,
 } from 'lucide-react'
 import type { Preferences } from '../types/config'
 
@@ -41,6 +41,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/npcs', label: 'NPCs', icon: <Skull size={16} /> },
       { to: '/zones', label: 'Zones', icon: <Map size={16} /> },
       { to: '/recipes', label: 'Recipes', icon: <Hammer size={16} /> },
+      { to: '/tradeskill-leveling', label: 'Tradeskill Leveling', icon: <Route size={16} /> },
       { to: '/quests', label: 'Quests', icon: <ScrollText size={16} /> },
       { to: '/charm-pet-finder', label: 'Charm Pet Finder', icon: <PawPrint size={16} /> },
       { to: '/resist-calc', label: 'Resist Calculator', icon: <Percent size={16} /> },
