@@ -756,7 +756,11 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
           <VitalRow label="HP" value={block.hp} />
           {showMana && <VitalRow label="Mana" value={block.mana} />}
           <VitalRow label="AC" value={block.ac} />
-          <VitalRow label="ATK" value={block.atk_rating} />
+          <VitalRow
+            label="ATK"
+            value={block.atk_rating}
+            tooltip="Estimated assuming capped melee skills. The character export carries no combat-skill values, so casters who haven't trained Offense/weapon skills to cap will see a lower ATK in-game."
+          />
         </div>
 
         {includesGear && (block.avoidance > 0 || block.mitigation > 0) && (
@@ -1031,13 +1035,42 @@ function BreakdownRow({
   )
 }
 
-function VitalRow({ label, value }: { label: string; value: number }): React.ReactElement {
+function VitalRow({ label, value, tooltip }: { label: string; value: number; tooltip?: string }): React.ReactElement {
   return (
     <div
-      className="rounded px-3 py-2"
+      className="relative rounded px-3 py-2"
       style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
     >
-      <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>{label}</p>
+      {tooltip ? (
+        <span className="group relative flex w-fit cursor-help items-center gap-1">
+          <span
+            className="text-[10px] uppercase tracking-wide"
+            style={{ color: 'var(--color-muted)', textDecoration: 'underline dotted', textUnderlineOffset: '2px' }}
+          >
+            {label}
+          </span>
+          <span
+            aria-hidden
+            className="inline-flex h-3 w-3 items-center justify-center rounded-full text-[9px] font-bold leading-none"
+            style={{ border: '1px solid var(--color-border)', color: 'var(--color-muted-foreground)' }}
+          >
+            i
+          </span>
+          <span
+            role="tooltip"
+            className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden max-w-[16rem] whitespace-normal rounded border px-2 py-1.5 text-[10px] italic leading-snug shadow-lg group-hover:block"
+            style={{
+              background: 'var(--color-surface-2)',
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-muted-foreground)',
+            }}
+          >
+            {tooltip}
+          </span>
+        </span>
+      ) : (
+        <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>{label}</p>
+      )}
       <p className="font-mono text-sm" style={{ color: 'var(--color-primary)' }}>{value}</p>
     </div>
   )
