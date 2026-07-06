@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  AlertTriangle, Coins, ExternalLink, Gauge, Info, Route,
+  AlertTriangle, Coins, ExternalLink, Gauge, Hammer, Info, Route,
 } from 'lucide-react'
 import {
   listCharacters,
@@ -16,6 +16,7 @@ import type {
   TradeskillLevelingPlan,
   TradeskillObjective,
   LevelingStage,
+  SubCombineInfo,
 } from '../types/tradeskill'
 import { tradeskillLabel } from '../lib/enumsCache'
 import { priceLabel } from '../lib/itemHelpers'
@@ -393,7 +394,12 @@ function PlanView({ plan, loading }: { plan: TradeskillLevelingPlan; loading: bo
             </thead>
             <tbody>
               {plan.stages.map((s, i) => (
-                <StageRow key={`${s.recipe_id}-${i}`} stage={s} last={i === plan.stages.length - 1} />
+                <StageRow
+                  key={`${s.recipe_id}-${i}`}
+                  stage={s}
+                  subCombines={plan.sub_combines}
+                  last={i === plan.stages.length - 1}
+                />
               ))}
             </tbody>
           </table>
@@ -403,7 +409,11 @@ function PlanView({ plan, loading }: { plan: TradeskillLevelingPlan; loading: bo
   )
 }
 
-function StageRow({ stage, last }: { stage: LevelingStage; last: boolean }): React.ReactElement {
+function StageRow({ stage, subCombines, last }: {
+  stage: LevelingStage
+  subCombines?: Record<string, SubCombineInfo>
+  last: boolean
+}): React.ReactElement {
   return (
     <tr
       style={{ borderTop: last ? undefined : undefined, borderBottom: last ? 'none' : '1px solid var(--color-border)' }}
@@ -433,6 +443,7 @@ function StageRow({ stage, last }: { stage: LevelingStage; last: boolean }): Rea
             ))}
           </div>
         )}
+        <SubCombineChips ids={stage.sub_combine_recipe_ids} lookup={subCombines} />
       </td>
       <td className="px-3 py-2 text-right font-mono text-xs tabular-nums" style={{ color: 'var(--color-muted)' }}>
         {stage.trivial}
@@ -444,6 +455,42 @@ function StageRow({ stage, last }: { stage: LevelingStage; last: boolean }): Rea
         {stage.cost_known ? priceLabel(Math.round(stage.cost)) : 'farmed'}
       </td>
     </tr>
+  )
+}
+
+// SubCombineChips lists a stage's crafted intermediates ("must make it yourself"),
+// each linking to its recipe. Cross-tradeskill ones are highlighted amber since
+// they need a different, skill-gated discipline.
+function SubCombineChips({ ids, lookup }: {
+  ids?: number[]
+  lookup?: Record<string, SubCombineInfo>
+}): React.ReactElement | null {
+  if (!ids?.length || !lookup) return null
+  const items = ids.map((id) => lookup[String(id)]).filter(Boolean) as SubCombineInfo[]
+  if (items.length === 0) return null
+  return (
+    <div className="mt-0.5 flex flex-wrap gap-1">
+      {items.map((sc) => (
+        <Link
+          key={sc.recipe_id}
+          to={`/recipes?select=${sc.recipe_id}`}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] hover:underline"
+          style={
+            sc.cross_tradeskill
+              ? { backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }
+              : { backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }
+          }
+          title={
+            sc.cross_tradeskill
+              ? `Also needs ${sc.tradeskill_name} — craft "${sc.name}" (trivial ${sc.trivial}) first`
+              : `Craft "${sc.name}" (trivial ${sc.trivial}) first`
+          }
+        >
+          <Hammer size={9} />
+          {sc.tradeskill_name} {sc.trivial} · {sc.name}
+        </Link>
+      ))}
+    </div>
   )
 }
 

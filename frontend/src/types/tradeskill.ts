@@ -20,6 +20,18 @@ export interface LevelingStage {
   notes?: string[]
 }
 
+// A crafted intermediate a stage's recipe depends on. cross_tradeskill is true
+// when it belongs to a different, skill-gated discipline (e.g. a Blacksmithing
+// path needing a Brewing intermediate).
+export interface SubCombineInfo {
+  recipe_id: number
+  name: string
+  tradeskill: number
+  tradeskill_name: string
+  trivial: number
+  cross_tradeskill: boolean
+}
+
 export interface TradeskillLevelingPlan {
   objective: TradeskillObjective
   start_skill: number
@@ -42,4 +54,8 @@ export interface TradeskillLevelingPlan {
   difficulty: number
   aa_reduce_pct: number
   cost_unit: string // "copper"
+
+  // Detail for every sub-combine referenced by a stage, keyed by recipe id
+  // (string). Absent when the plan has no crafted sub-components.
+  sub_combines?: Record<string, SubCombineInfo>
 }
