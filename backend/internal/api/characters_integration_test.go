@@ -155,3 +155,52 @@ func TestSumEquipment_AmmoSlotExcluded(t *testing.T) {
 		t.Errorf("ammo-slot item contributed stats: %+v (haste %d), want all zero", block, haste)
 	}
 }
+
+// TestSumEquipment_EdibleBonuses pins EQMacEmu Client::CalcEdibleBonuses: the
+// first food and first drink found while scanning general slots (and their bag
+// contents) in order contribute their stats; a second food/drink, and any
+// food/drink outside the general inventory (bank), are ignored.
+func TestSumEquipment_EdibleBonuses(t *testing.T) {
+	_, file, _, _ := runtime.Caller(0)
+	repoRoot := filepath.Join(filepath.Dir(file), "..", "..", "..")
+	dbPath := filepath.Join(repoRoot, "backend", "data", "quarm.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Skip("quarm.db not present")
+	}
+	d, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer d.Close()
+
+	// Fixtures (type 14 food / type 15 drink):
+	//   7759  Talionn's Finest Stew  food  +3 WIS +3 INT   (first food → applies)
+	//   22871 Paludal Beetle Crunch  food  +1 WIS          (second food → ignored)
+	//   5805  Vile Sarnak Brew       drink +50 mana        (first drink → applies)
+	dir := t.TempDir()
+	quarmy := "Character\tName\tLastName\tLevel\tClass\tRace\tGender\tDeity\tGuild\tGuildRank\tBaseSTR\tBaseSTA\tBaseCHA\tBaseDEX\tBaseINT\tBaseAGI\tBaseWIS\n" +
+		"Character\tFoodtest\t\t60\t14\t6\t1\t396\t\t0\t60\t65\t95\t75\t114\t90\t83\n" +
+		"Location\tName\tID\tCount\tSlots\n" +
+		"General1-Slot1\tTalionn's Finest Stew\t7759\t1\t0\n" +
+		"General1-Slot2\tPaludal Beetle Crunchies\t22871\t1\t0\n" +
+		"General2\tVile Sarnak Brew\t5805\t1\t0\n" +
+		"Bank1\tTalionn's Finest Stew\t7759\t1\t0\n"
+	if err := os.WriteFile(filepath.Join(dir, "Foodtest-Quarmy.txt"), []byte(quarmy), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	h := &charactersHandler{db: d}
+	block, _ := h.sumEquipment(dir, "Foodtest")
+
+	// Only the first food (stew: +3 WIS +3 INT) and first drink (brew: +50 mana)
+	// apply. The second food's +1 WIS and the bank food are excluded.
+	if block.WIS != 3 {
+		t.Errorf("WIS = %d, want 3 (first food only; second food +1 and bank food must not count)", block.WIS)
+	}
+	if block.INT != 3 {
+		t.Errorf("INT = %d, want 3 (first food)", block.INT)
+	}
+	if block.Mana != 50 {
+		t.Errorf("Mana = %d, want 50 (first drink)", block.Mana)
+	}
+}

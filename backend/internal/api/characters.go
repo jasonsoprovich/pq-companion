@@ -979,26 +979,12 @@ func (h *charactersHandler) sumEquipment(eqPath, charName string) (block statBlo
 		if err != nil || item == nil {
 			continue
 		}
-		block.HP += item.HP
-		block.Mana += item.Mana
-		block.AC += item.AC
+		addItemBaseStats(item, &block)
 		// A worn shield (item type 8, Secondary slot) raises the mitigation
 		// softcap by its AC — captured separately for the Tanking view.
 		if entry.Location == "Secondary" && item.ItemType == 8 {
 			block.ShieldAC += item.AC
 		}
-		block.STR += item.Strength
-		block.STA += item.Stamina
-		block.AGI += item.Agility
-		block.DEX += item.Dexterity
-		block.WIS += item.Wisdom
-		block.INT += item.Intelligence
-		block.CHA += item.Charisma
-		block.PR += item.PoisonResist
-		block.MR += item.MagicResist
-		block.DR += item.DiseaseResist
-		block.FR += item.FireResist
-		block.CR += item.ColdResist
 
 		if item.WornEffect > 0 {
 			worn, err := h.db.GetSpell(item.WornEffect)
@@ -1009,12 +995,86 @@ func (h *charactersHandler) sumEquipment(eqPath, charName string) (block statBlo
 			}
 		}
 	}
+	// Stat food/drink: the client applies the stats of the first food and first
+	// drink item it finds in general inventory (see addEdibleBonuses).
+	h.addEdibleBonuses(q.Inventory, &block)
 	block.Haste = bestHaste
 	// Item Flowing Thought is capped at 15 per EQ's worn-mana-regen rule.
 	if block.FT > itemFTCap {
 		block.FT = itemFTCap
 	}
 	return block, bestHaste
+}
+
+// EQMacEmu item types for consumables (common/item_data.h).
+const (
+	itemTypeFood  = 14
+	itemTypeDrink = 15
+)
+
+// addItemBaseStats folds one item's flat attribute/vital/resist stats into the
+// block. Worn effects, shield AC, and haste are handled separately by the
+// caller — this is just the raw item stat columns, shared by the worn-slot and
+// food/drink passes.
+func addItemBaseStats(item *db.Item, block *statBlock) {
+	block.HP += item.HP
+	block.Mana += item.Mana
+	block.AC += item.AC
+	block.STR += item.Strength
+	block.STA += item.Stamina
+	block.AGI += item.Agility
+	block.DEX += item.Dexterity
+	block.WIS += item.Wisdom
+	block.INT += item.Intelligence
+	block.CHA += item.Charisma
+	block.PR += item.PoisonResist
+	block.MR += item.MagicResist
+	block.DR += item.DiseaseResist
+	block.FR += item.FireResist
+	block.CR += item.ColdResist
+}
+
+// addEdibleBonuses applies the stats of the first food and first drink item in
+// the character's general inventory, matching EQMacEmu Client::CalcEdibleBonuses:
+// the client "eats"/"drinks" the first food (item type 14) and first drink
+// (item type 15) it finds while scanning the eight general slots and their bag
+// contents in order, and applies that item's full stats (e.g. Paludal Beetle
+// Crunchies grants +1 WIS). Only one of each type applies.
+//
+// Zeal emits general slots and their bag contents in scan order, so iterating
+// the parsed inventory in file order — restricted to the "General" slots, which
+// excludes worn/ammo/bank/cursor exactly as the client does — reproduces the
+// client's scan. Food/drink HP restoration is a current-HP effect, not a
+// max-HP bonus, so only the item's stat columns are surfaced.
+func (h *charactersHandler) addEdibleBonuses(inv []zeal.InventoryEntry, block *statBlock) {
+	foundFood, foundDrink := false, false
+	for _, entry := range inv {
+		if foundFood && foundDrink {
+			break
+		}
+		if entry.ID <= 0 || !strings.HasPrefix(entry.Location, "General") {
+			continue
+		}
+		item, err := h.db.GetItem(entry.ID)
+		if err != nil || item == nil {
+			continue
+		}
+		switch item.ItemType {
+		case itemTypeFood:
+			if foundFood {
+				continue
+			}
+			foundFood = true
+		case itemTypeDrink:
+			if foundDrink {
+				continue
+			}
+			foundDrink = true
+		default:
+			continue
+		}
+		addItemBaseStats(item, block)
+	}
 }
 
 // overhasteSpellIDs are the only sources of v3 "overhaste" on Project Quarm —
