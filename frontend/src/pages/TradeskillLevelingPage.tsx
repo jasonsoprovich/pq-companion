@@ -338,7 +338,7 @@ function PlanView({ plan, loading }: { plan: TradeskillLevelingPlan; loading: bo
         />
         <Stat value={plan.total_combines.toLocaleString()} label="combines" />
         <Stat
-          value={plan.total_cost > 0 ? priceLabel(plan.total_cost) : '—'}
+          value={plan.total_cost > 0 ? priceLabel(Math.round(plan.total_cost)) : '—'}
           label={costPartial ? 'known vendor cost' : 'vendor cost'}
         />
         <div className="ml-auto text-right text-[11px]" style={{ color: 'var(--color-muted)' }}>
@@ -388,7 +388,7 @@ function PlanView({ plan, loading }: { plan: TradeskillLevelingPlan; loading: bo
                 <th className="px-3 py-2 font-semibold">Make</th>
                 <th className="px-3 py-2 text-right font-semibold">Trivial</th>
                 <th className="px-3 py-2 text-right font-semibold">Combines</th>
-                <th className="px-3 py-2 text-right font-semibold">Cost ea.</th>
+                <th className="px-3 py-2 text-right font-semibold">Cost</th>
               </tr>
             </thead>
             <tbody>
@@ -404,7 +404,6 @@ function PlanView({ plan, loading }: { plan: TradeskillLevelingPlan; loading: bo
 }
 
 function StageRow({ stage, last }: { stage: LevelingStage; last: boolean }): React.ReactElement {
-  const perCombine = stage.cost_known ? stage.cost : 0
   return (
     <tr
       style={{ borderTop: last ? undefined : undefined, borderBottom: last ? 'none' : '1px solid var(--color-border)' }}
@@ -442,11 +441,7 @@ function StageRow({ stage, last }: { stage: LevelingStage; last: boolean }): Rea
         {stage.combines.toLocaleString()}
       </td>
       <td className="px-3 py-2 text-right text-xs tabular-nums" style={{ color: 'var(--color-muted)' }}>
-        {stage.no_fail
-          ? 'no-fail'
-          : stage.cost_known
-            ? priceLabel(perCombine)
-            : 'farmed'}
+        {stage.cost_known ? priceLabel(Math.round(stage.cost)) : 'farmed'}
       </td>
     </tr>
   )

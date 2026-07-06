@@ -348,7 +348,7 @@ func emit(out *Plan, cands []candidate, choice []int, start, target int) {
 			Recipe:              c.src.Name,
 			Trivial:             c.src.Trivial,
 			Combines:            combines,
-			Cost:                math.Round(cost*100) / 100,
+			Cost:                math.Round(cost), // whole copper; fractional copper is meaningless
 			CostKnown:           c.known,
 			Container:           c.src.Container,
 			NoFail:              c.src.NoFail,
@@ -373,5 +373,5 @@ func emit(out *Plan, cands []candidate, choice []int, start, target int) {
 		s = c.stop
 	}
 	out.ReachedSkill = s
-	out.TotalCost = math.Round(out.TotalCost*100) / 100
+	out.TotalCost = math.Round(out.TotalCost)
 }
