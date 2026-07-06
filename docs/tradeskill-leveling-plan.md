@@ -134,9 +134,9 @@ Notes:
 | Pure solver | `internal/shoproute` | `internal/tsplan` — `Plan()`, `Stage`, objective enum. Reuses `tradeskill.EstimateSkillUp` for scoring. Zero DB/HTTP deps. Table-driven tests. |
 | DB queries | `GetSpellVendorOptions` etc. | `internal/db`: `RecipesForTradeskill(tsID)` returning recipes + components joined to vendor prices; helper flagging which components are craftable (DAG edges). |
 | API | `POST /api/spells/shopping-route` | **[BUILT — commit 6cf615b]** `POST /api/characters/{id}/tradeskill-plan` (character-scoped, not `/tradeskills/plan` — reuses skillup-estimate's stat wiring). Body `{tradeskill, target_skill?, start_skill?, objective, allow_farming?, ...}`; start defaults to Zeal export, target to class cap. Auto-resolves cap/stat/difficulty/mastery-AA. `TrivialCeiling` default 40. |
-| Frontend | `ShoppingRoutePanel.tsx` | New **Leveling** page/tab. Pick tradeskill + character (auto-fill current skill from Zeal export), objective toggle (Fastest / Cheapest), farming toggle. Staged table: range · recipe (link) · trivial · ~combines · ~cost · notes. Running totals. Frozen-plan / "Re-plan" pattern. |
-| Types | `types/spell.ts` | `types/tradeskill.ts` additions (`LevelingPlan`, `LevelingStage`). |
-| Gating | `flag: 'pop_flags_enabled'` in `sidebarNav.tsx` | new `tradeskill_planner_enabled` flag: `config.go` field → `config.ts` mirror → `navFlags()` + nav item `flag:`. |
+| Frontend | `ShoppingRoutePanel.tsx` | **[BUILT — commit 90b424c]** `TradeskillLevelingPage.tsx` (Database nav). Pick tradeskill + character (auto-fills current skill + cap from Zeal export), objective toggle (Fastest / Cheapest), farming + Maelin toggles. Staged table: range · recipe (links `/recipes?select=`) · trivial · combines · per-combine cost (pp/gp/sp/cp). Summary totals; warning / partial-cost / mastery-AA notes. Debounced re-fetch on input change. |
+| Types | `types/spell.ts` | **[BUILT]** `types/tradeskill.ts` (`TradeskillLevelingPlan`, `LevelingStage`) + `getTradeskillLevelingPlan` in `api.ts`. |
+| Gating | `flag: 'pop_flags_enabled'` in `sidebarNav.tsx` | **NONE (decided 2026-07-06).** Feature is read-only (no file/DB writes), so it ships public — a plain Database nav item, no dev flag. Owner does manual smoke before release. |
 
 ## Era gating
 
@@ -150,11 +150,12 @@ Notes:
 
 ## Phasing
 
-1. **Phase 1 — DB-derived planner, both objective modes.** `internal/tsplan`
-   **[BUILT — solver + tests, commit 5d24f4b]** + `RecipesForTradeskill` query +
-   `POST /api/tradeskills/plan` + Leveling page **[remaining]**.
-   Fastest fully auto; Cheapest = vendor-cost-where-known, farmed items flagged.
-   Sub-combines *flagged* (not yet recursively costed). Dev-flag gated.
+1. **Phase 1 — DB-derived planner, both objective modes. ✅ COMPLETE (2026-07-06).**
+   `internal/tsplan` (5d24f4b) + `RecipesForTradeskill` (9b68c18) +
+   `POST /characters/{id}/tradeskill-plan` (6cf615b) + `TradeskillLevelingPage`
+   (90b424c). Fastest fully auto; Cheapest = vendor-cost-where-known, farmed
+   items flagged. Sub-combines *flagged* (not yet recursively costed). Shipped
+   public (no dev flag). Pending owner Windows smoke before release.
 2. **Phase 2 — sub-combine DAG resolution.** Recursive cost + skill-requirement;
    warn when a step needs another tradeskill (e.g. Tailoring needing Brewing
    intermediates like Paeala Bark Tannin). Fold sub-combine combines into totals.
