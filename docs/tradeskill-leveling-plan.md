@@ -87,9 +87,21 @@ Two *separate* rolls — conflating them is the classic builder mistake:
 partial** — real for vendor-stocked components, "farmed / unknown cost" otherwise.
 The UI must label cheapest as partial, never imply a complete plat figure.
 
-## Algorithm (`internal/tsplan`, new pure package)
+## Algorithm (`internal/tsplan`, new pure package) — BUILT
 
-Greedy breakpoint chaining, analogous to shoproute's greedy set-cover:
+Implemented as an **optimal shortest-path DP over skill levels**, not the greedy
+first sketched below (DP is barely more code and is exact; each transition
+"grind recipe X from skill s to min(trivial, cap, target)" has additive cost, so
+Dijkstra/DP applies cleanly). Reuses a newly-extracted
+`tradeskill.SkillUpChanceAt` (per-attempt CheckIncreaseTradeskill probability) so
+the mechanic stays single-sourced with `EstimateSkillUp`. A `SwitchPenalty` param
+(objective units) curbs fragmentation; no-farming mode drops unknown-cost recipes;
+cap-exceeded and unreachable-target both degrade to a partial plan + warning.
+`Solve(recipes []RecipeCandidate, Params) Plan`. Table-driven tests cover chain
+ordering, cheapest-vs-fastest divergence, farming toggle, cap clamp, unreachable,
+switch-penalty consolidation, and stage notes.
+
+Original greedy sketch (superseded by the DP above):
 
 ```
 plan(tradeskill, startSkill, targetSkill, cap, char stats, objective, allowFarming):
@@ -138,8 +150,9 @@ Notes:
 
 ## Phasing
 
-1. **Phase 1 — DB-derived planner, both objective modes.** `internal/tsplan` +
-   `RecipesForTradeskill` query + `POST /api/tradeskills/plan` + Leveling page.
+1. **Phase 1 — DB-derived planner, both objective modes.** `internal/tsplan`
+   **[BUILT — solver + tests, commit 5d24f4b]** + `RecipesForTradeskill` query +
+   `POST /api/tradeskills/plan` + Leveling page **[remaining]**.
    Fastest fully auto; Cheapest = vendor-cost-where-known, farmed items flagged.
    Sub-combines *flagged* (not yet recursively costed). Dev-flag gated.
 2. **Phase 2 — sub-combine DAG resolution.** Recursive cost + skill-requirement;
