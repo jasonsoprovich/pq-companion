@@ -169,9 +169,19 @@ Notes:
    **Decision: sub-combine *combines* are NOT folded into the main combine total**
    — they don't skill the main tradeskill, so counting them would misrepresent
    the skill-up estimate. They're surfaced as dependencies, not added to the count.
-3. **Phase 3 — curated cost/sourcing overlay (optional).** Hand-maintained JSON
-   (like `quest_sources.json`) adding "buy from NPC X in zone Y / farm rate" so
-   "cheapest plat" becomes complete rather than partial.
+3. **Phase 3 — "stay in this tradeskill" mode. ✅ COMPLETE (2026-07-06, commits
+   8fb612e backend / b01db91 frontend).** Re-scoped from the original curated-cost
+   idea per user request after noticing some paths pull in other disciplines. New
+   recursive `costResolver.obtainableWithin(item, targetSkill)` (vendor / farmed /
+   in-discipline-or-Common-Combine craftable) flags `RequiresCrossTradeskill` per
+   recipe; the endpoint's `avoid_other_tradeskills` option and a page checkbox drop
+   those. `craftableSubcombine` now prefers an in-discipline producer so the
+   displayed sub-combine matches whether the recipe truly forces another skill.
+   Real data: blacksmithing 1→188 still reaches 188 in-discipline.
+
+4. **Phase 4 — curated cost/sourcing overlay (deferred, optional).** Hand-maintained
+   JSON (like `quest_sources.json`) adding "buy from NPC X in zone Y / farm rate"
+   so "cheapest plat" becomes complete rather than partial. Not yet needed.
 
 ## Open questions for build time
 
