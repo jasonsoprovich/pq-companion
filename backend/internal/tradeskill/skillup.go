@@ -99,19 +99,9 @@ func EstimateSkillUp(current, trivial, cap, tradeStat int, difficulty float64, s
 		return res
 	}
 
-	// The stat/difficulty roll is independent of skill level, so compute it once.
-	p1succ := realRollProb(float64(tradeStat) * 10.0 / (difficulty * 1.0))
-	p1fail := realRollProb(float64(tradeStat) * 10.0 / (difficulty * 2.0))
-
-	rateMult := 1.0 + float64(skillupBonusPct)/100.0
-
 	total := 0.0
 	for s := current; s < target; s++ {
-		p := Chance(s, trivial, skillMod, aaReduce, nofail).Success / 100.0
-		pUp := skillRollProb(s) * (p*p1succ + (1-p)*p1fail) * rateMult
-		if pUp > 1 {
-			pUp = 1
-		}
+		pUp := SkillUpChanceAt(s, trivial, skillMod, aaReduce, skillupBonusPct, tradeStat, difficulty, nofail)
 		if pUp <= 0 {
 			res.Impractical = true
 			return res
@@ -124,6 +114,35 @@ func EstimateSkillUp(current, trivial, cap, tradeStat int, difficulty float64, s
 	}
 	res.AttemptsToTarget = math.Round(total)
 	return res
+}
+
+// SkillUpChanceAt returns the probability that a single combine of a recipe with
+// the given trivial, performed at raw skill `skill`, yields a +1 skill-up — the
+// per-attempt atom of EstimateSkillUp (which sums 1/chance across a skill range).
+// It reuses the same two-roll CheckIncreaseTradeskill model:
+//
+//	pUp = P2(skill) * ( success * P1succ + (1-success) * P1fail ) * (1 + bonus%)
+//
+// Returns 0 when the combine can't skill up: skill already at/above trivial
+// (trivial combines never grant points), or degenerate stat/difficulty. The
+// leveling planner (internal/tsplan) calls this per skill point to build a plan;
+// keeping the math here means both callers stay pinned to the same formula.
+func SkillUpChanceAt(skill, trivial, skillMod, aaReduce, skillupBonusPct, tradeStat int, difficulty float64, nofail bool) float64 {
+	if skill >= trivial || difficulty <= 0 || tradeStat <= 0 {
+		return 0
+	}
+	p1succ := realRollProb(float64(tradeStat) * 10.0 / (difficulty * 1.0))
+	p1fail := realRollProb(float64(tradeStat) * 10.0 / (difficulty * 2.0))
+	p := Chance(skill, trivial, skillMod, aaReduce, nofail).Success / 100.0
+	rateMult := 1.0 + float64(skillupBonusPct)/100.0
+	pUp := skillRollProb(skill) * (p*p1succ + (1-p)*p1fail) * rateMult
+	if pUp > 1 {
+		pUp = 1
+	}
+	if pUp < 0 {
+		pUp = 0
+	}
+	return pUp
 }
 
 // realRollProb is P(random.Real(1,1000) < stat) — the stat/difficulty check.
