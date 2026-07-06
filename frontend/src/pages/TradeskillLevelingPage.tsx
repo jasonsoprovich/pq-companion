@@ -53,6 +53,7 @@ export default function TradeskillLevelingPage(): React.ReactElement {
   const [target, setTarget] = useState<number | ''>('')
   const [objective, setObjective] = useState<TradeskillObjective>('fastest')
   const [allowFarming, setAllowFarming] = useState(true)
+  const [avoidOther, setAvoidOther] = useState(false)
   const [maelin, setMaelin] = useState(false)
 
   const [plan, setPlan] = useState<TradeskillLevelingPlan | null>(null)
@@ -166,6 +167,7 @@ export default function TradeskillLevelingPage(): React.ReactElement {
         targetSkill: targetNum,
         objective,
         allowFarming,
+        avoidOtherTradeskills: avoidOther,
         skillupBonus: maelin ? MAELIN_SKILLUP_PCT : 0,
       })
         .then((p) => {
@@ -180,7 +182,7 @@ export default function TradeskillLevelingPage(): React.ReactElement {
         })
     }, 300)
     return () => clearTimeout(t)
-  }, [charId, tsId, start, target, objective, allowFarming, maelin])
+  }, [charId, tsId, start, target, objective, allowFarming, avoidOther, maelin])
 
   const label = tsId != null ? tradeskillLabel(tsId) : ''
   const targetInvalid =
@@ -274,6 +276,15 @@ export default function TradeskillLevelingPage(): React.ReactElement {
           <label className="flex cursor-pointer items-center gap-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
             <input type="checkbox" checked={allowFarming} onChange={(e) => setAllowFarming(e.target.checked)} />
             Allow farmed / dropped components
+          </label>
+
+          <label
+            className="flex cursor-pointer items-center gap-1.5 text-xs"
+            style={{ color: 'var(--color-muted)' }}
+            title="Only use recipes you can level with this tradeskill alone — no crafting in another discipline"
+          >
+            <input type="checkbox" checked={avoidOther} onChange={(e) => setAvoidOther(e.target.checked)} />
+            Stay in this tradeskill
           </label>
 
           <label className="flex cursor-pointer items-center gap-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>

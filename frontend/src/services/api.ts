@@ -1882,6 +1882,7 @@ export interface TradeskillLevelingParams {
   startSkill?: number  // omit = read from the Zeal export
   objective?: import('../types/tradeskill').TradeskillObjective
   allowFarming?: boolean // default true; false restricts to vendor-buyable recipes
+  avoidOtherTradeskills?: boolean // drop recipes needing another skill-gated discipline
   skillMod?: number    // worn item skill-mod %
   skillupBonus?: number // skill-up RATE % (Maelin's = 75)
 }
@@ -1898,6 +1899,7 @@ export function getTradeskillLevelingPlan(
     target_skill: p.targetSkill ?? 0,
     objective: p.objective ?? 'fastest',
     allow_farming: p.allowFarming ?? true,
+    avoid_other_tradeskills: p.avoidOtherTradeskills ?? false,
     skill_mod: p.skillMod ?? 0,
     skillup_bonus: p.skillupBonus ?? 0,
   }
