@@ -361,9 +361,8 @@ func emit(out *Plan, cands []candidate, choice []int, start, target int) {
 			stage.Notes = append(stage.Notes, "some components are farmed or dropped — plat cost unknown")
 			out.CostComplete = false
 		}
-		if len(c.src.SubCombineRecipeIDs) > 0 {
-			stage.Notes = append(stage.Notes, "requires crafted sub-component(s)")
-		}
+		// SubCombineRecipeIDs stay on the stage as data; callers render them with
+		// their own detail (name / tradeskill / trivial), not a generic note.
 
 		out.Stages = append(out.Stages, stage)
 		out.TotalCombines += combines

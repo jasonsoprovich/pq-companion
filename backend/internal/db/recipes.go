@@ -282,11 +282,12 @@ func (db *DB) GetRecipeSummariesByIDs(ids []int) ([]RecipeSummary, error) {
 // tsplan.RecipeCandidate, keeping the db package independent of the solver
 // (mirrors how SpellVendorOption feeds shoproute).
 //
-// VendorCost is the summed base copper price of one combine's worth of
-// COMPONENTS (containers are durable vessels and excluded). VendorCostKnown is
-// true only when every component is sold by at least one merchant — a single
-// farmed/dropped component (no merchant row) makes the cost unknowable and flips
-// it false, which is what lets the planner treat the recipe as farm-only.
+// VendorCost is the copper to obtain one combine's worth of COMPONENTS the
+// cheapest way — buying each, or sub-crafting it from vendor materials when it
+// isn't sold (containers are durable vessels and excluded). VendorCostKnown is
+// false when some component is neither vendor-sold nor craftable from vendor
+// materials (i.e. must be farmed/dropped), which is what lets the planner treat
+// the recipe as farm-only.
 type LevelingRecipe struct {
 	RecipeID  int    `json:"recipe_id"`
 	Name      string `json:"name"`
@@ -352,22 +353,18 @@ func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
 	// and would look free to the cost optimizer. Drop such recipes at the end.
 	hasComponent := make(map[int]bool, len(out))
 
-	// Resolve "which recipe produces this item" once, grouped, instead of a
-	// correlated subquery per entry (that turned an on-demand call into seconds
-	// on large disciplines). producedBy[item] = lowest enabled recipe id that
-	// yields it.
-	producedBy, err := db.recipeProducers()
+	// The cost resolver holds the whole recipe DAG in memory so we can price a
+	// recipe by the CHEAPEST way to obtain each component (buy it, or sub-craft
+	// it from vendor materials) and tell a genuine "must craft it" sub-combine
+	// from a component you'd just buy.
+	resolver, err := db.newCostResolver()
 	if err != nil {
 		return nil, err
 	}
 
 	erows, err := db.Query(`
-		SELECT tre.recipe_id, tre.item_id,
-		       COALESCE(i.name, ''), COALESCE(i.price, 0),
-		       tre.successcount, tre.componentcount, tre.iscontainer,
-		       CASE WHEN i.id IS NOT NULL
-		                 AND EXISTS (SELECT 1 FROM merchantlist m WHERE m.item = i.id)
-		            THEN 1 ELSE 0 END AS has_vendor
+		SELECT tre.recipe_id, tre.item_id, COALESCE(i.name, ''),
+		       tre.successcount, tre.componentcount, tre.iscontainer
 		FROM tradeskill_recipe_entries tre
 		JOIN tradeskill_recipe r ON r.id = tre.recipe_id
 		LEFT JOIN items i ON i.id = tre.item_id
@@ -380,13 +377,12 @@ func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
 
 	for erows.Next() {
 		var (
-			recipeID, itemID, price             int
+			recipeID, itemID                    int
 			name                                string
 			successCount, componentCount, isCon int
-			hasVendor                           int
 		)
-		if err := erows.Scan(&recipeID, &itemID, &name, &price,
-			&successCount, &componentCount, &isCon, &hasVendor); err != nil {
+		if err := erows.Scan(&recipeID, &itemID, &name,
+			&successCount, &componentCount, &isCon); err != nil {
 			return nil, fmt.Errorf("scan leveling entry: %w", err)
 		}
 		i, ok := idx[recipeID]
@@ -412,13 +408,16 @@ func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
 			}
 		case componentCount > 0:
 			hasComponent[recipeID] = true
-			if hasVendor != 0 {
-				lr.VendorCost += componentCount * price
+			// Cheapest acquisition: vendor price, or sub-craft from vendor mats.
+			if ic := resolver.cost(itemID); ic.known {
+				lr.VendorCost += componentCount * ic.copper
 			} else {
 				lr.VendorCostKnown = false
 			}
-			// A crafted component (produced by some OTHER recipe) is a DAG edge.
-			if pid, ok := producedBy[itemID]; ok && pid != recipeID {
+			// Only a component you must CRAFT (not vendor-sold but produced by
+			// another recipe) is a real sub-combine dependency; one you can buy is
+			// not, even if some recipe also makes it.
+			if pid, ok := resolver.craftableSubcombine(itemID, recipeID); ok {
 				seen := subSeen[recipeID]
 				if seen == nil {
 					seen = map[int]bool{}
@@ -442,30 +441,6 @@ func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
 		}
 	}
 	return result, nil
-}
-
-// recipeProducers maps each craftable item id to the lowest enabled recipe id
-// that yields it — the reverse index used to detect sub-combine dependencies.
-func (db *DB) recipeProducers() (map[int]int, error) {
-	rows, err := db.Query(`
-		SELECT pe.item_id, MIN(pr.id)
-		FROM tradeskill_recipe_entries pe
-		JOIN tradeskill_recipe pr ON pr.id = pe.recipe_id
-		WHERE pe.successcount > 0 AND pr.enabled = 1
-		GROUP BY pe.item_id`)
-	if err != nil {
-		return nil, fmt.Errorf("recipe producers: %w", err)
-	}
-	defer rows.Close()
-	m := map[int]int{}
-	for rows.Next() {
-		var itemID, recipeID int
-		if err := rows.Scan(&itemID, &recipeID); err != nil {
-			return nil, fmt.Errorf("scan recipe producer: %w", err)
-		}
-		m[itemID] = recipeID
-	}
-	return m, rows.Err()
 }
 
 // GetRecipeTradeskills returns the distinct tradeskill disciplines that have at

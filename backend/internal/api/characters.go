@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -364,20 +365,33 @@ type tradeskillPlanRequest struct {
 	SwitchPenalty *float64 `json:"switch_penalty"`
 }
 
+// subCombineInfo describes a crafted sub-component a stage's recipe depends on,
+// so the UI can name it and flag when it belongs to a DIFFERENT tradeskill.
+type subCombineInfo struct {
+	RecipeID        int    `json:"recipe_id"`
+	Name            string `json:"name"`
+	Tradeskill      int    `json:"tradeskill"`
+	TradeskillName  string `json:"tradeskill_name"`
+	Trivial         int    `json:"trivial"`
+	CrossTradeskill bool   `json:"cross_tradeskill"` // producer differs from the plan's discipline
+}
+
 // tradeskillPlanResponse embeds the solver's plan and echoes the resolved inputs
 // (cap, governing stat, difficulty, auto-applied AA) so the UI can explain the
-// numbers. Stage/plan costs are in copper (CostUnit).
+// numbers. Stage/plan costs are in copper (CostUnit). SubCombines maps a
+// sub-combine recipe id (as a string, for JSON) to its detail.
 type tradeskillPlanResponse struct {
 	tsplan.Plan
-	Tradeskill  int     `json:"tradeskill"`
-	SkillName   string  `json:"skill_name"`
-	ClassCap    int     `json:"class_cap"`
-	StatName    string  `json:"stat_name"`
-	StatSource  string  `json:"stat_source"`
-	TradeStat   int     `json:"trade_stat"`
-	Difficulty  float64 `json:"difficulty"`
-	AAReducePct int     `json:"aa_reduce_pct"`
-	CostUnit    string  `json:"cost_unit"`
+	Tradeskill  int                       `json:"tradeskill"`
+	SkillName   string                    `json:"skill_name"`
+	ClassCap    int                       `json:"class_cap"`
+	StatName    string                    `json:"stat_name"`
+	StatSource  string                    `json:"stat_source"`
+	TradeStat   int                       `json:"trade_stat"`
+	Difficulty  float64                   `json:"difficulty"`
+	AAReducePct int                       `json:"aa_reduce_pct"`
+	CostUnit    string                    `json:"cost_unit"`
+	SubCombines map[string]subCombineInfo `json:"sub_combines,omitempty"`
 }
 
 // tradeskillPlanTrivialCeiling is how far below a recipe's trivial the planner
@@ -536,6 +550,12 @@ func (h *charactersHandler) tradeskillPlan(w http.ResponseWriter, r *http.Reques
 		TrivialCeiling: tradeskillPlanTrivialCeiling,
 	})
 
+	// Enrich each stage's crafted sub-components with their discipline and
+	// trivial, and warn when a step secretly needs ANOTHER tradeskill (e.g. a
+	// Tailoring recipe that depends on a Brewing intermediate).
+	subCombines, crossWarnings := h.resolveSubCombines(plan.Stages, ts)
+	plan.Warnings = append(plan.Warnings, crossWarnings...)
+
 	writeJSON(w, http.StatusOK, tradeskillPlanResponse{
 		Plan:        plan,
 		Tradeskill:  ts,
@@ -547,7 +567,67 @@ func (h *charactersHandler) tradeskillPlan(w http.ResponseWriter, r *http.Reques
 		Difficulty:  difficulty,
 		AAReducePct: aaReduce,
 		CostUnit:    "copper",
+		SubCombines: subCombines,
 	})
+}
+
+// resolveSubCombines looks up the producing recipe for every sub-combine
+// referenced across the plan's stages, returning per-recipe detail (keyed by id
+// string) and aggregate warnings for cross-tradeskill dependencies. Best-effort:
+// on a lookup error it returns no detail rather than failing the plan.
+func (h *charactersHandler) resolveSubCombines(stages []tsplan.Stage, planTS int) (map[string]subCombineInfo, []string) {
+	idSet := map[int]bool{}
+	for _, s := range stages {
+		for _, id := range s.SubCombineRecipeIDs {
+			idSet[id] = true
+		}
+	}
+	if len(idSet) == 0 {
+		return nil, nil
+	}
+	ids := make([]int, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	summaries, err := h.db.GetRecipeSummariesByIDs(ids)
+	if err != nil {
+		return nil, nil
+	}
+
+	info := make(map[string]subCombineInfo, len(summaries))
+	crossNames := map[string]bool{} // distinct other disciplines this path needs
+	for _, s := range summaries {
+		// A different discipline is a real dependency only if it's skill-gated;
+		// Common Combine (0) and the Quarm variant (75) need no skill, so a
+		// sub-component made that way isn't a cross-tradeskill requirement.
+		cross := s.Tradeskill != planTS && s.Tradeskill != 0 && s.Tradeskill != 75
+		info[strconv.Itoa(s.ID)] = subCombineInfo{
+			RecipeID:        s.ID,
+			Name:            s.Name,
+			Tradeskill:      s.Tradeskill,
+			TradeskillName:  enums.TradeskillName(s.Tradeskill),
+			Trivial:         s.Trivial,
+			CrossTradeskill: cross,
+		}
+		if cross {
+			crossNames[enums.TradeskillName(s.Tradeskill)] = true
+		}
+	}
+
+	// One heads-up naming the other disciplines (no skill number — the per-stage
+	// detail carries the specific recipe + trivial). Sorted for determinism.
+	if len(crossNames) == 0 {
+		return info, nil
+	}
+	names := make([]string, 0, len(crossNames))
+	for n := range crossNames {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	warning := fmt.Sprintf(
+		"This path also needs %s for crafted sub-components you must make yourself.",
+		strings.Join(names, ", "))
+	return info, []string{warning}
 }
 
 // capStat clamps an attribute to the era's 255 hard cap (AAs that raise the cap

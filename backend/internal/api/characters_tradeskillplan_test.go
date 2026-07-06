@@ -125,3 +125,61 @@ func TestTradeskillPlanPipeline_Blacksmithing(t *testing.T) {
 	t.Logf("blacksmithing cheapest (vendor-only) %d->%d: %d stages, %d copper, reached %d",
 		start, target, len(cheap.Stages), int(cheap.TotalCost), cheap.ReachedSkill)
 }
+
+// TestResolveSubCombines_Blacksmithing exercises the API's sub-combine
+// enrichment on real recipes: each referenced sub-combine resolves to a named
+// discipline, cross-tradeskill flags match, and a cross-tradeskill dependency
+// yields a warning.
+func TestResolveSubCombines_Blacksmithing(t *testing.T) {
+	_, file, _, _ := runtime.Caller(0)
+	repoRoot := filepath.Join(filepath.Dir(file), "..", "..", "..")
+	dbPath := filepath.Join(repoRoot, "backend", "data", "quarm.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Skip("quarm.db not present")
+	}
+	d, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer d.Close()
+
+	h := &charactersHandler{db: d}
+	recipes, err := d.RecipesForTradeskill(63)
+	if err != nil {
+		t.Fatalf("recipes: %v", err)
+	}
+
+	// Gather sub-combine ids across the whole discipline into one synthetic stage.
+	var subIDs []int
+	for _, r := range recipes {
+		subIDs = append(subIDs, r.SubCombineRecipeIDs...)
+	}
+	if len(subIDs) == 0 {
+		t.Skip("no blacksmithing sub-combines in fixture")
+	}
+	stage := tsplan.Stage{SubCombineRecipeIDs: subIDs}
+
+	info, warnings := h.resolveSubCombines([]tsplan.Stage{stage}, 63)
+	if len(info) == 0 {
+		t.Fatal("expected sub-combine detail, got none")
+	}
+	hasCross := false
+	for _, sc := range info {
+		if sc.TradeskillName == "" {
+			t.Errorf("sub-combine %d (%s) has empty tradeskill name", sc.RecipeID, sc.Name)
+		}
+		wantCross := sc.Tradeskill != 63 && sc.Tradeskill != 0 && sc.Tradeskill != 75
+		if sc.CrossTradeskill != wantCross {
+			t.Errorf("sub-combine %d cross flag %v but tradeskill %d (plan 63)",
+				sc.RecipeID, sc.CrossTradeskill, sc.Tradeskill)
+		}
+		if sc.CrossTradeskill {
+			hasCross = true
+		}
+	}
+	if hasCross && len(warnings) == 0 {
+		t.Error("cross-tradeskill sub-combines present but no warning produced")
+	}
+	t.Logf("blacksmithing sub-combines: %d distinct, %d cross-tradeskill warnings: %v",
+		len(info), len(warnings), warnings)
+}

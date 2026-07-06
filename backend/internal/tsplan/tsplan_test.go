@@ -258,7 +258,9 @@ func TestPlan_StageNotes(t *testing.T) {
 	if !strings.Contains(notes, "Forge") {
 		t.Fatalf("expected container note, got %q", notes)
 	}
-	if !strings.Contains(notes, "sub-component") {
-		t.Fatalf("expected sub-combine note, got %q", notes)
+	// Sub-combine ids ride on the stage as data (callers render their detail),
+	// not as a generic note.
+	if len(p.Stages[0].SubCombineRecipeIDs) != 1 || p.Stages[0].SubCombineRecipeIDs[0] != 99 {
+		t.Fatalf("expected sub-combine id 99 on stage, got %v", p.Stages[0].SubCombineRecipeIDs)
 	}
 }
