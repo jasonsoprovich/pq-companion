@@ -336,6 +336,10 @@ function PlanView({ plan, loading }: { plan: TradeskillLevelingPlan; loading: bo
   const label = plan.skill_name || tradeskillLabel(plan.tradeskill)
   const partial = plan.reached_skill < plan.target_skill
   const costPartial = plan.objective === 'cheapest' && !plan.cost_complete
+  // A plan with no steps may arrive with stages null (e.g. every recipe filtered
+  // out), so normalize before reading it.
+  const stages = plan.stages ?? []
+  const warnings = plan.warnings ?? []
 
   return (
     <div className="flex flex-col gap-3" style={{ opacity: loading ? 0.6 : 1 }}>
@@ -365,7 +369,7 @@ function PlanView({ plan, loading }: { plan: TradeskillLevelingPlan; loading: bo
       </div>
 
       {/* Warnings */}
-      {plan.warnings?.map((w, i) => (
+      {warnings.map((w, i) => (
         <Note key={i} tone="warn">{sentenceCase(w)}</Note>
       ))}
       {costPartial && (
@@ -381,10 +385,14 @@ function PlanView({ plan, loading }: { plan: TradeskillLevelingPlan; loading: bo
       )}
 
       {/* Stages */}
-      {plan.stages.length === 0 ? (
-        <Note tone="muted">
-          Nothing to do — {plan.skill_name || 'this skill'} is already at the target.
-        </Note>
+      {stages.length === 0 ? (
+        // The warnings above already explain an empty plan (at target, or every
+        // recipe filtered out); only add a fallback when there are none.
+        warnings.length === 0 ? (
+          <Note tone="muted">
+            No leveling steps for these settings.
+          </Note>
+        ) : null
       ) : (
         <div
           className="overflow-hidden rounded-lg border"
@@ -404,12 +412,12 @@ function PlanView({ plan, loading }: { plan: TradeskillLevelingPlan; loading: bo
               </tr>
             </thead>
             <tbody>
-              {plan.stages.map((s, i) => (
+              {stages.map((s, i) => (
                 <StageRow
                   key={`${s.recipe_id}-${i}`}
                   stage={s}
                   subCombines={plan.sub_combines}
-                  last={i === plan.stages.length - 1}
+                  last={i === stages.length - 1}
                 />
               ))}
             </tbody>

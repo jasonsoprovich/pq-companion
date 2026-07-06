@@ -1,9 +1,24 @@
 package tsplan
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
+
+// An empty plan must serialize stages as [] not null, so the frontend can read
+// stages.length without guarding against null (a crash that black-screened the
+// page when every recipe was filtered out).
+func TestPlan_EmptyStagesSerializeAsArray(t *testing.T) {
+	p := Solve(nil, baseParams(1, 100, Fastest))
+	b, err := json.Marshal(p)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"stages":[]`) {
+		t.Fatalf("expected \"stages\":[] in JSON, got %s", b)
+	}
+}
 
 // baseParams returns realistic stat/difficulty inputs so SkillUpChanceAt yields
 // finite, positive combine estimates. Individual tests override the window,

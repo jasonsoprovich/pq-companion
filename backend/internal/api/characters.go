@@ -562,6 +562,14 @@ func (h *charactersHandler) tradeskillPlan(w http.ResponseWriter, r *http.Reques
 	subCombines, crossWarnings := h.resolveSubCombines(plan.Stages, ts)
 	plan.Warnings = append(plan.Warnings, crossWarnings...)
 
+	// If "stay in this discipline" filtered out every recipe, say so plainly —
+	// otherwise the solver only reports the generic "no usable recipe".
+	if req.AvoidOtherTradeskills && len(cands) == 0 && len(recipes) > 0 {
+		plan.Warnings = append(plan.Warnings, fmt.Sprintf(
+			"Every %s recipe here needs another tradeskill — turn off \"Stay in this tradeskill\" to plan a path.",
+			enums.TradeskillName(ts)))
+	}
+
 	writeJSON(w, http.StatusOK, tradeskillPlanResponse{
 		Plan:        plan,
 		Tradeskill:  ts,

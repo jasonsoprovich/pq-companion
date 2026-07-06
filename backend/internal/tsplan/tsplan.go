@@ -162,6 +162,7 @@ func Solve(recipes []RecipeCandidate, p Params) Plan {
 		TargetSkill:  p.TargetSkill,
 		ReachedSkill: p.StartSkill,
 		CostComplete: true,
+		Stages:       []Stage{}, // never nil, so it marshals as [] not null
 	}
 
 	start := p.StartSkill
