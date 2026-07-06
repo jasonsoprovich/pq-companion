@@ -133,7 +133,7 @@ Notes:
 |---|---|---|
 | Pure solver | `internal/shoproute` | `internal/tsplan` — `Plan()`, `Stage`, objective enum. Reuses `tradeskill.EstimateSkillUp` for scoring. Zero DB/HTTP deps. Table-driven tests. |
 | DB queries | `GetSpellVendorOptions` etc. | `internal/db`: `RecipesForTradeskill(tsID)` returning recipes + components joined to vendor prices; helper flagging which components are craftable (DAG edges). |
-| API | `POST /api/spells/shopping-route` | `POST /api/tradeskills/plan` — body `{tradeskill, character_id, current_skill, target_skill, objective, allow_farming}` → staged plan + warnings. Char id resolves cap + governing stat (reuse skillup-estimate wiring). |
+| API | `POST /api/spells/shopping-route` | **[BUILT — commit 6cf615b]** `POST /api/characters/{id}/tradeskill-plan` (character-scoped, not `/tradeskills/plan` — reuses skillup-estimate's stat wiring). Body `{tradeskill, target_skill?, start_skill?, objective, allow_farming?, ...}`; start defaults to Zeal export, target to class cap. Auto-resolves cap/stat/difficulty/mastery-AA. `TrivialCeiling` default 40. |
 | Frontend | `ShoppingRoutePanel.tsx` | New **Leveling** page/tab. Pick tradeskill + character (auto-fill current skill from Zeal export), objective toggle (Fastest / Cheapest), farming toggle. Staged table: range · recipe (link) · trivial · ~combines · ~cost · notes. Running totals. Frozen-plan / "Re-plan" pattern. |
 | Types | `types/spell.ts` | `types/tradeskill.ts` additions (`LevelingPlan`, `LevelingStage`). |
 | Gating | `flag: 'pop_flags_enabled'` in `sidebarNav.tsx` | new `tradeskill_planner_enabled` flag: `config.go` field → `config.ts` mirror → `navFlags()` + nav item `flag:`. |
