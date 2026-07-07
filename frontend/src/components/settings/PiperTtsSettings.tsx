@@ -65,9 +65,16 @@ export default function PiperTtsSettings({
   const canBrowse =
     typeof window !== 'undefined' && !!window.electron?.dialog?.selectPiperExe
 
-  // Persist immediately (not the parent's debounced autosave) so the backend
-  // re-detects the new paths and usePiperStatus refetches on config:updated.
-  function save(patch: Partial<Preferences>): void {
+  // Stage an edit into the parent's draft; it debounce-autosaves (600ms). Used
+  // for the path text inputs so typing doesn't fire a PUT — and a re-detect
+  // (which spawns a piper --version probe) — on every keystroke.
+  function stage(patch: Partial<Preferences>): void {
+    setConfig({ ...config, preferences: { ...config.preferences, ...patch } })
+  }
+  // Persist immediately for discrete actions (toggle, file-picker result) so
+  // the backend re-detects and usePiperStatus refetches on config:updated
+  // without waiting for the debounce.
+  function saveNow(patch: Partial<Preferences>): void {
     const next: Config = { ...config, preferences: { ...config.preferences, ...patch } }
     setConfig(next)
     void updateConfig(next)
@@ -75,11 +82,11 @@ export default function PiperTtsSettings({
 
   async function browseExe(): Promise<void> {
     const p = await window.electron?.dialog?.selectPiperExe?.()
-    if (p) save({ piper_exe_path: p })
+    if (p) saveNow({ piper_exe_path: p })
   }
   async function browseModel(): Promise<void> {
     const p = await window.electron?.dialog?.selectPiperModel?.()
-    if (p) save({ piper_model_path: p })
+    if (p) saveNow({ piper_model_path: p })
   }
 
   async function testVoice(): Promise<void> {
@@ -185,7 +192,7 @@ export default function PiperTtsSettings({
             {enabled ? 'Enabled' : 'Disabled'}
           </span>
           <div
-            onClick={() => save({ piper_enabled: !enabled })}
+            onClick={() => saveNow({ piper_enabled: !enabled })}
             className="relative h-5 w-9 rounded-full transition-colors"
             style={{ backgroundColor: enabled ? 'var(--color-primary)' : 'var(--color-surface-2)' }}
           >
@@ -241,7 +248,7 @@ export default function PiperTtsSettings({
             label="Piper executable"
             value={prefs.piper_exe_path ?? ''}
             placeholder="C:\piper\piper.exe"
-            onChange={(v) => save({ piper_exe_path: v })}
+            onChange={(v) => stage({ piper_exe_path: v })}
             onBrowse={browseExe}
             ok={status?.exe_found ?? false}
             note={
@@ -256,7 +263,7 @@ export default function PiperTtsSettings({
             label="Voice model (.onnx)"
             value={prefs.piper_model_path ?? ''}
             placeholder="C:\piper\en_US-amy-medium.onnx"
-            onChange={(v) => save({ piper_model_path: v })}
+            onChange={(v) => stage({ piper_model_path: v })}
             onBrowse={browseModel}
             ok={(status?.model_found ?? false) && (status?.model_config_found ?? false)}
             note={
