@@ -185,6 +185,11 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
   const [mode, setMode] = useState<'slot' | 'overview'>('slot')
   const [overview, setOverview] = useState<UpgradesOverviewResponse | null>(null)
   const [overviewLoading, setOverviewLoading] = useState(false)
+  // Overview column sorting is hoisted here so it survives OverviewView's
+  // unmount when the user switches to the by-slot tab and back.
+  const [overviewSortCol, setOverviewSortCol] =
+    useState<'slot' | 'best' | 'score' | null>(null)
+  const [overviewSortDir, setOverviewSortDir] = useState<'asc' | 'desc'>('asc')
 
   // The viewed character's wishlist (all buckets), for the star toggles.
   const [wishlist, setWishlist] = useState<WishlistEntry[]>([])
@@ -552,6 +557,10 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
               onPickSlot={(key) => { setSlot(key); setMode('slot') }}
               isWishlisted={(id, bucket) => wishEntry(id, bucket) !== undefined}
               onToggleWish={toggleWish}
+              sortCol={overviewSortCol}
+              sortDir={overviewSortDir}
+              setSortCol={setOverviewSortCol}
+              setSortDir={setOverviewSortDir}
             />
           ) : (
           /* Results */
@@ -1037,6 +1046,7 @@ function WishStar({ on, onClick }: { on: boolean; onClick: () => void }): React.
 
 function OverviewView({
   overview, loading, onOpen, onPickSlot, isWishlisted, onToggleWish,
+  sortCol, sortDir, setSortCol, setSortDir,
 }: {
   overview: UpgradesOverviewResponse | null
   loading: boolean
@@ -1044,11 +1054,14 @@ function OverviewView({
   onPickSlot: (key: string) => void
   isWishlisted: (id: number, bucket: string) => boolean
   onToggleWish: (id: number, bucket: string) => void
-}): React.ReactElement {
   // Column sorting. `null` col = backend's natural slot order. Rows whose best
-  // upgrade is null always sink to the bottom regardless of direction.
-  const [sortCol, setSortCol] = useState<'slot' | 'best' | 'score' | null>(null)
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  // upgrade is null always sink to the bottom regardless of direction. State is
+  // owned by the page so it persists across tab switches.
+  sortCol: 'slot' | 'best' | 'score' | null
+  sortDir: 'asc' | 'desc'
+  setSortCol: React.Dispatch<React.SetStateAction<'slot' | 'best' | 'score' | null>>
+  setSortDir: React.Dispatch<React.SetStateAction<'asc' | 'desc'>>
+}): React.ReactElement {
 
   const handleSort = useCallback((col: 'slot' | 'best' | 'score') => {
     if (sortCol === col) {
