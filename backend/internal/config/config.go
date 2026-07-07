@@ -500,6 +500,23 @@ type Preferences struct {
 	// position here; keys absent from the list keep their default order after
 	// the listed ones. Empty/omitted = default order.
 	SidebarOrder []string `yaml:"sidebar_order,omitempty" json:"sidebar_order,omitempty"`
+
+	// ── Local TTS (Piper) ─────────────────────────────────────────────────
+	// Opt-in, power-user local neural TTS. Piper is a user-installed external
+	// program (like Zeal/EQW) — PQC bundles nothing. When enabled and pointed
+	// at a valid piper executable + .onnx voice model, a trigger/alert voice of
+	// "piper:local" is synthesized to a cached WAV by the Go backend and played
+	// through the normal sound pipeline. Any failure falls back to Web Speech.
+	// See docs/piper-tts-plan.md. All fields default to zero (disabled), so
+	// upgrading users are unaffected and no migration is needed.
+	PiperEnabled   bool   `yaml:"piper_enabled,omitempty" json:"piper_enabled"`
+	PiperExePath   string `yaml:"piper_exe_path,omitempty" json:"piper_exe_path"`
+	PiperModelPath string `yaml:"piper_model_path,omitempty" json:"piper_model_path"`
+	// PiperMode selects synthesis transport: "spawn" (v1, per-phrase subprocess)
+	// or "http" (phase 2, warm local server). Empty is treated as "spawn".
+	PiperMode string `yaml:"piper_mode,omitempty" json:"piper_mode"`
+	// PiperServerURL is the base URL of a local piper http_server (Mode B only).
+	PiperServerURL string `yaml:"piper_server_url,omitempty" json:"piper_server_url"`
 }
 
 // TimerAlertPref is a global default "fading soon" notification for the Custom

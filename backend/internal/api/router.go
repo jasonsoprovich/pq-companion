@@ -3,6 +3,7 @@ package api
 
 import (
 	"net/http"
+	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -20,6 +21,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/loot"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/pipertts"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/popflag"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/quarm"
@@ -100,6 +102,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	enumsH := &enumsHandler{}
 	quarmH := &quarmHandler{cfgMgr: cfgMgr, fetcher: quarm.NewManifestFetcher()}
 	eqwH := &eqwHandler{cfgMgr: cfgMgr, latest: eqw.NewLatestFetcher()}
+	piperH := &piperHandler{cfgMgr: cfgMgr, svc: pipertts.NewService(filepath.Dir(cfgMgr.Path()))}
 	sandboxH := &sandboxHandler{sb: sb, cfgMgr: cfgMgr}
 	savedQueryH := &savedQueryHandler{store: savedQueryStore, cfgMgr: cfgMgr}
 	popflagH := &popflagHandler{store: popflagStore, hub: hub, mgr: cfgMgr}
@@ -236,6 +239,11 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		})
 		r.Route("/eqw", func(r chi.Router) {
 			r.Get("/status", eqwH.status)
+		})
+		r.Route("/piper", func(r chi.Router) {
+			r.Get("/status", piperH.status)
+			r.Post("/synthesize", piperH.synthesize)
+			r.Post("/clear-cache", piperH.clearCache)
 		})
 		r.Route("/zeal", func(r chi.Router) {
 			r.Get("/detect", zealH.detect)
