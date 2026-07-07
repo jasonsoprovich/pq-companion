@@ -74,6 +74,7 @@ export interface GlobalSearchResult {
 }
 
 import { getBackendBaseUrl } from './backendUrl'
+import { isPiperVoice } from '../lib/piper'
 
 // A GET can fail to even reach the backend during the brief startup window
 // before the sidecar is accepting connections — fetch rejects with a TypeError
@@ -2193,12 +2194,42 @@ export interface CreateTriggerRequest {
   pack_name?: string
 }
 
+/**
+ * Warm the Piper WAV cache for a saved trigger's static (token-free) TTS text,
+ * so the first fire of a Piper-voiced callout is instant instead of paying the
+ * one-time cold-spawn model-load lag. Best-effort and fire-and-forget: failures
+ * (Piper disabled/misconfigured) are swallowed — the lazy fire-time synthesis +
+ * Web Speech fallback still cover correctness. Token-bearing text ("{spell}") is
+ * skipped since its resolved value isn't known until fire time.
+ */
+function prewarmPiperVoices(trigger: Trigger): void {
+  const phrases = new Set<string>()
+  const consider = (voice: string | undefined, text: string | undefined): void => {
+    if (isPiperVoice(voice) && text && !text.includes('{')) phrases.add(text)
+  }
+  for (const a of trigger.actions ?? []) {
+    if (a.type === 'text_to_speech') consider(a.voice, a.text)
+  }
+  for (const t of trigger.timer_alerts ?? []) {
+    if (t.type === 'text_to_speech') consider(t.voice, t.tts_template)
+  }
+  for (const text of phrases) {
+    piperSynthesize(text).catch(() => {})
+  }
+}
+
 export function createTrigger(req: CreateTriggerRequest): Promise<Trigger> {
-  return post<Trigger>('/api/triggers', req)
+  return post<Trigger>('/api/triggers', req).then((t) => {
+    prewarmPiperVoices(t)
+    return t
+  })
 }
 
 export function updateTrigger(id: string, req: CreateTriggerRequest): Promise<Trigger> {
-  return put<Trigger>(`/api/triggers/${encodeURIComponent(id)}`, req)
+  return put<Trigger>(`/api/triggers/${encodeURIComponent(id)}`, req).then((t) => {
+    prewarmPiperVoices(t)
+    return t
+  })
 }
 
 export function deleteTrigger(id: string): Promise<void> {
