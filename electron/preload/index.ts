@@ -169,6 +169,10 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('dialog:open-spellsets-file'),
     openMacrosFile: (): Promise<string | null> =>
       ipcRenderer.invoke('dialog:open-macros-file'),
+    selectPiperExe: (): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:select-piper-exe'),
+    selectPiperModel: (): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:select-piper-model'),
   },
   shell: {
     openConfigFolder: (): Promise<string> => ipcRenderer.invoke('shell:open-config-folder'),

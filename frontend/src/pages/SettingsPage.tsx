@@ -5,6 +5,7 @@ import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
 import AlertDefaultsSettings from '../components/settings/AlertDefaultsSettings'
+import PiperTtsSettings from '../components/settings/PiperTtsSettings'
 import TimerAlertPrefEditor from '../components/settings/TimerAlertPrefEditor'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, getEqwStatus, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config, DPSClassColors, NPCOverlaySections, TimerAlertPref } from '../types/config'
@@ -1650,6 +1651,8 @@ export default function SettingsPage(): React.ReactElement {
           </div>
 
           <AlertDefaultsSettings config={config} setConfig={setConfig} />
+
+          <PiperTtsSettings config={config} setConfig={setConfig} />
 
           <label className="flex cursor-pointer items-center justify-between py-1 mt-4">
             <div>

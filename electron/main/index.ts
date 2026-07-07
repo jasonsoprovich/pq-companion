@@ -2577,6 +2577,36 @@ ipcMain.handle('dialog:open-macros-file', async () => {
   return result.canceled ? null : result.filePaths[0]
 })
 
+ipcMain.handle('dialog:select-piper-exe', async () => {
+  // The piper program: a frozen standalone piper.exe or a pip console script.
+  // No extension filter on non-Windows; on Windows default to .exe but allow
+  // All Files so a batch/Python wrapper can be picked.
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    title: 'Select Piper Executable',
+    filters:
+      process.platform === 'win32'
+        ? [
+            { name: 'Executable', extensions: ['exe', 'bat', 'cmd'] },
+            { name: 'All Files', extensions: ['*'] },
+          ]
+        : [{ name: 'All Files', extensions: ['*'] }],
+  })
+  return result.canceled ? null : result.filePaths[0]
+})
+
+ipcMain.handle('dialog:select-piper-model', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    title: 'Select Piper Voice Model (.onnx)',
+    filters: [
+      { name: 'Piper Voice Model', extensions: ['onnx'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  })
+  return result.canceled ? null : result.filePaths[0]
+})
+
 // ── IPC handlers — restart for import application ────────────────────────────
 
 ipcMain.handle('app:relaunch', async () => {

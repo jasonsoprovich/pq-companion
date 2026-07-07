@@ -103,6 +103,8 @@ export interface ElectronAPI {
     openImportBundle: () => Promise<string | null>
     openSpellsetsFile: () => Promise<string | null>
     openMacrosFile: () => Promise<string | null>
+    selectPiperExe: () => Promise<string | null>
+    selectPiperModel: () => Promise<string | null>
   }
   shell: {
     openConfigFolder: () => Promise<string>
