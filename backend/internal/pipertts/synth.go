@@ -98,9 +98,13 @@ func synthesizeToFile(ctx context.Context, cfg Config, text, outPath string) err
 	defer cancel()
 
 	// Args as a slice — no shell, no interpolation. Text goes in on stdin.
+	// Use the short flags -m/-f: both the frozen MIT standalone (rhasspy/piper)
+	// and the maintained piper1-gpl build accept them, whereas the long
+	// --output_file spelling isn't guaranteed on the latter. Both read the
+	// phrase from stdin by default (no positional text arg).
 	cmd := exec.CommandContext(ctx, cfg.ExePath,
-		"--model", cfg.ModelPath,
-		"--output_file", tmpPath,
+		"-m", cfg.ModelPath,
+		"-f", tmpPath,
 	)
 	cmd.Stdin = strings.NewReader(text)
 	var stderr bytes.Buffer
