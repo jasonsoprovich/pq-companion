@@ -179,9 +179,15 @@ Notes:
    displayed sub-combine matches whether the recipe truly forces another skill.
    Real data: blacksmithing 1→188 still reaches 188 in-discipline.
 
-4. **Phase 4 — curated cost/sourcing overlay (deferred, optional).** Hand-maintained
-   JSON (like `quest_sources.json`) adding "buy from NPC X in zone Y / farm rate"
-   so "cheapest plat" becomes complete rather than partial. Not yet needed.
+4. **Phase 4 — curated cost/sourcing overlay. ❌ WON'T DO (2026-07-07,
+   issue #148 closed).** The idea was a hand-maintained JSON (like
+   `quest_sources.json`) assigning farmed/dropped components an estimated plat
+   cost so "cheapest plat" became complete rather than partial. Declined:
+   farmed/non-vendor item prices on a live server fluctuate constantly and there
+   is no realistic, reliable source to keep such an overlay accurate — a stale
+   estimate would be worse than the honest "farmed" label the planner already
+   shows. The Cheapest objective stays partial by design for farmed components;
+   that partial-cost note is the correct, durable behavior.
 
 ## Open questions for build time
 
