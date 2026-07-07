@@ -138,6 +138,18 @@ export interface Preferences {
   // Flat list of side-nav route keys in preferred display order; items are
   // ordered within their section by position here.
   sidebar_order?: string[]
+  // ── Local TTS (Piper) ──────────────────────────────────────────────────
+  // Opt-in, user-installed local neural TTS (see docs/piper-tts-plan.md).
+  // When enabled and pointed at a valid piper executable + .onnx voice model,
+  // a trigger/alert voice of PIPER_VOICE_ID ("piper:local") is synthesized to
+  // a cached WAV by the backend and played through the normal sound pipeline;
+  // any failure falls back to Web Speech. All fields default off/empty.
+  piper_enabled?: boolean
+  piper_exe_path?: string
+  piper_model_path?: string
+  // "spawn" (v1) | "http" (phase 2). Empty/missing = "spawn".
+  piper_mode?: string
+  piper_server_url?: string
 }
 
 export interface BackupSettings {

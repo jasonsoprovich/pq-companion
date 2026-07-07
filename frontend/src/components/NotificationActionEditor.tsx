@@ -19,6 +19,7 @@ import { playSoundForTest, speakTextForTest, stopTestPlayback } from '../service
 import { usePositioningSession } from '../hooks/usePositioningSession'
 import { useOverlayTextDefaults } from '../hooks/useOverlayTextDefaults'
 import { resolveOverlayTextStyle, WINDOWS_SAFE_FONTS } from '../lib/overlayTextStyle'
+import { voiceLabel } from '../lib/piper'
 import DecimalInput from './DecimalInput'
 
 export type NotificationActionType =
@@ -525,7 +526,7 @@ export function TextToSpeechFields({
             >
               <option value="">App default</option>
               {voices.map((v) => (
-                <option key={v} value={v}>{v}</option>
+                <option key={v} value={v}>{voiceLabel(v)}</option>
               ))}
             </select>
           ) : (

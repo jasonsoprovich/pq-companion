@@ -18,6 +18,8 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Crosshair, Check, X as XIcon, Monitor } from 'lucide-react'
 import type { Config } from '../../types/config'
 import { useVoices } from '../../hooks/useVoices'
+import { useTTSVoices } from '../../hooks/usePiperStatus'
+import { voiceLabel } from '../../lib/piper'
 import { usePositioningSession } from '../../hooks/usePositioningSession'
 import { ColorOverrideField } from '../NotificationActionEditor'
 import {
@@ -36,7 +38,7 @@ export default function AlertDefaultsSettings({
   config,
   setConfig,
 }: AlertDefaultsSettingsProps): React.ReactElement {
-  const voices = useVoices()
+  const voices = useTTSVoices(useVoices())
   const defaultVoice = config.preferences.default_tts_voice ?? ''
   const position = config.preferences.default_overlay_position ?? null
 
@@ -138,7 +140,7 @@ export default function AlertDefaultsSettings({
         >
           <option value="">System default</option>
           {voices.map((v) => (
-            <option key={v} value={v}>{v}</option>
+            <option key={v} value={v}>{voiceLabel(v)}</option>
           ))}
         </select>
       </div>

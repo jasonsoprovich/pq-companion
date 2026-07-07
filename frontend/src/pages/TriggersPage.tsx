@@ -49,6 +49,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { useVoices } from '../hooks/useVoices'
+import { useTTSVoices } from '../hooks/usePiperStatus'
 import NotificationActionEditor, { NotificationTypeSelect } from '../components/NotificationActionEditor'
 import DecimalInput from '../components/DecimalInput'
 import SpellSearchPicker from '../components/SpellSearchPicker'
@@ -247,7 +248,7 @@ interface ActionEditorProps {
 }
 
 function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps): React.ReactElement {
-  const voices = useVoices()
+  const voices = useTTSVoices(useVoices())
   const volume0to100 = Math.round((action.volume || 1.0) * 100)
 
   return (
@@ -383,7 +384,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
     initial?.extra_patterns ?? [],
   )
   const [extraErrors, setExtraErrors] = useState<string[]>([])
-  const voices = useVoices()
+  const voices = useTTSVoices(useVoices())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [patternError, setPatternError] = useState<string | null>(null)

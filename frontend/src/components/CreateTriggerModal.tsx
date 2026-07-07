@@ -5,6 +5,7 @@ import type { Action, TimerAlertThreshold, TimerType, Trigger } from '../types/t
 import NotificationActionEditor, { NotificationTypeSelect } from './NotificationActionEditor'
 import DecimalInput from './DecimalInput'
 import { useVoices } from '../hooks/useVoices'
+import { useTTSVoices } from '../hooks/usePiperStatus'
 import { compileTriggerRegex } from '../lib/triggerRegex'
 
 export interface TriggerPrefill {
@@ -95,7 +96,7 @@ export default function CreateTriggerModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [patternError, setPatternError] = useState<string | null>(null)
-  const voices = useVoices()
+  const voices = useTTSVoices(useVoices())
 
   // Dismiss on Escape. Backdrop click already works via the outer div's
   // onClick handler; this covers the keyboard path.

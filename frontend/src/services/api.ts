@@ -595,6 +595,26 @@ export function getEqwStatus(): Promise<import('../types/quarm').EqwStatus> {
   return get<import('../types/quarm').EqwStatus>('/api/eqw/status')
 }
 
+// ── Piper (local TTS) ─────────────────────────────────────────────────────────
+
+export function getPiperStatus(): Promise<import('../lib/piper').PiperStatus> {
+  return get<import('../lib/piper').PiperStatus>('/api/piper/status')
+}
+
+/**
+ * Synthesize `text` in the configured Piper voice, returning the cached WAV
+ * path (generated on a cache miss). Rejects when Piper is disabled,
+ * misconfigured, or the spawn fails — callers use that to fall back to Web
+ * Speech, so a rejection here is a normal, non-fatal outcome.
+ */
+export function piperSynthesize(text: string): Promise<{ path: string }> {
+  return post<{ path: string }>('/api/piper/synthesize', { text })
+}
+
+export function clearPiperCache(): Promise<{ removed: number }> {
+  return post<{ removed: number }>('/api/piper/clear-cache')
+}
+
 // ── Zeal ───────────────────────────────────────────────────────────────────────
 
 export function detectZeal(path?: string): Promise<ZealInstallStatus> {

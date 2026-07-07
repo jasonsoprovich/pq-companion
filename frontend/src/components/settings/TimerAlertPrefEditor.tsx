@@ -10,6 +10,7 @@ import NotificationActionEditor, {
   type NotificationActionType,
 } from '../NotificationActionEditor'
 import { useVoices } from '../../hooks/useVoices'
+import { useTTSVoices } from '../../hooks/usePiperStatus'
 import type { TimerAlertPref } from '../../types/config'
 
 interface TimerAlertPrefEditorProps {
@@ -32,7 +33,7 @@ export default function TimerAlertPrefEditor({
   secondsHint,
   ttsPlaceholder,
 }: TimerAlertPrefEditorProps): React.ReactElement {
-  const voices = useVoices()
+  const voices = useTTSVoices(useVoices())
 
   const inputStyle: React.CSSProperties = {
     backgroundColor: 'var(--color-surface-2)',

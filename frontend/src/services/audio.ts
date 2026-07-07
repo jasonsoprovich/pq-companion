@@ -2,8 +2,13 @@
  * audio.ts — Audio playback and TTS service for the PQ Companion audio engine.
  *
  * playSound  — plays a local file via an HTML5 Audio element.
- * speakText  — speaks text aloud via the Web Speech Synthesis API.
+ * speakText  — speaks text aloud via the Web Speech Synthesis API, OR, when the
+ *              selected voice is the Piper local voice, asks the backend to
+ *              synthesize a cached WAV and plays that through playSound. Any
+ *              Piper failure falls back to Web Speech so an alert is never lost.
  */
+import { isPiperVoice } from '../lib/piper'
+import { piperSynthesize } from './api'
 
 // Deduplication: track when each unique audio key was last fired.
 // Prevents the same sound/utterance from playing twice when multiple alert
@@ -71,6 +76,30 @@ let defaultTTSVoice = ''
 /** Set the fallback TTS voice name used when an alert has no voice of its own. */
 export function setDefaultTTSVoice(name: string): void {
   defaultTTSVoice = typeof name === 'string' ? name : ''
+}
+
+// Optional hook invoked when a Piper synthesis attempt fails and playback falls
+// back to a Web Speech voice. The app can wire this to a non-blocking toast so
+// the user learns their Piper setup isn't working; unset, it just logs. Kept as
+// a pluggable callback so this leaf service stays decoupled from the React
+// notification layer. Never throws into the audio path.
+let piperFallbackNotifier: ((message: string) => void) | null = null
+
+/** Register a callback fired (once per failure) when Piper falls back to Web Speech. */
+export function setPiperFallbackNotifier(fn: ((message: string) => void) | null): void {
+  piperFallbackNotifier = typeof fn === 'function' ? fn : null
+}
+
+function notifyPiperFallback(err: unknown): void {
+  const detail = err instanceof Error ? err.message : String(err)
+  const message = `Piper voice unavailable — using the default voice. (${detail})`
+  // eslint-disable-next-line no-console
+  console.warn('[audio] piper fallback:', message)
+  try {
+    piperFallbackNotifier?.(message)
+  } catch {
+    // A broken notifier must never break the audio path.
+  }
 }
 
 // Speaking rate applied to every TTS utterance (alerts + test previews).
@@ -285,12 +314,41 @@ export function playSound(filePath: string, volume = 1.0): void {
  * @param volume  Speech volume in the range 0.0–1.0. Defaults to 1.0.
  */
 export function speakText(text: string, voice = '', volume = 1.0): void {
-  if (!text || !window.speechSynthesis) return
+  if (!text) return
   if (!isAudioOwner) return
   if (isDuplicate(`tts:${text}`)) return
 
   // eslint-disable-next-line no-console
   console.warn(`[audio-diag] speak tts r=${RENDERER_AUDIO_ID} text=${text}`)
+
+  // A "piper:" voice is synthesized by the backend into a cached WAV and played
+  // as a sound file; anything else is a local Web Speech voice. The effective
+  // voice honours the app-default fallback, so a default of Piper routes here.
+  if (isPiperVoice(voice || defaultTTSVoice)) {
+    piperSynthesize(text)
+      .then(({ path }) => {
+        // playSound has its own owner check and a sound-keyed dedup window,
+        // distinct from the tts key consumed above, so this plays exactly once
+        // through the GC-safe activePlaybacks pipeline.
+        if (path) playSound(path, volume)
+      })
+      .catch((err: unknown) => {
+        notifyPiperFallback(err)
+        speakViaWebSpeech(text, '', volume) // OS default voice as the fallback
+      })
+    return
+  }
+
+  speakViaWebSpeech(text, voice, volume)
+}
+
+/**
+ * Speak via the Web Speech Synthesis API with the given voice name (empty =
+ * app default / OS default). The production TTS path and the Piper fallback
+ * both funnel through here.
+ */
+function speakViaWebSpeech(text: string, voice: string, volume: number): void {
+  if (!window.speechSynthesis) return
 
   // NOTE: do NOT call speechSynthesis.cancel() here. We used to, on the
   // theory that it kept rapid alerts from piling up, but it cancels the
@@ -390,7 +448,38 @@ export function speakTextForTest(
   rate?: number,
 ): void {
   stopTestPlayback()
-  if (!text || !window.speechSynthesis) {
+  if (!text) {
+    onEnd?.()
+    return
+  }
+
+  // Piper preview: synthesize (cache hit = instant, miss = a one-time spawn)
+  // then play the WAV as a file test. On any failure, preview the Web Speech
+  // fallback so the button still resolves and the user hears *something*.
+  if (isPiperVoice(voice || defaultTTSVoice)) {
+    piperSynthesize(text)
+      .then(({ path }) => {
+        if (path) playSoundForTest(path, volume, onEnd)
+        else onEnd?.()
+      })
+      .catch((err: unknown) => {
+        notifyPiperFallback(err)
+        speakViaWebSpeechForTest(text, '', volume, onEnd, rate)
+      })
+    return
+  }
+
+  speakViaWebSpeechForTest(text, voice, volume, onEnd, rate)
+}
+
+function speakViaWebSpeechForTest(
+  text: string,
+  voice: string,
+  volume: number,
+  onEnd?: () => void,
+  rate?: number,
+): void {
+  if (!window.speechSynthesis) {
     onEnd?.()
     return
   }
