@@ -67,7 +67,11 @@ func DetectStatus(ctx context.Context, cfg Config) Status {
 		if info, err := os.Stat(st.ModelPath); err == nil && info.Mode().IsRegular() {
 			st.ModelFound = true
 		}
-		if info, err := os.Stat(st.ModelPath + ".onnx.json"); err == nil && info.Mode().IsRegular() {
+		// The standard piper-voices convention keeps the ".onnx" in the sidecar
+		// name (ModelPath already ends in ".onnx", so appending just ".json"
+		// yields "<voice>.onnx.json" — NOT ModelPath + ".onnx.json", which would
+		// double the extension into "<voice>.onnx.onnx.json" and never match).
+		if info, err := os.Stat(st.ModelPath + ".json"); err == nil && info.Mode().IsRegular() {
 			st.ModelConfigFound = true
 		} else if info, err := os.Stat(modelConfigPath(st.ModelPath)); err == nil && info.Mode().IsRegular() {
 			// Some voices ship "<voice>.json" instead of "<voice>.onnx.json".

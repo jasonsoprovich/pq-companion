@@ -1,6 +1,7 @@
 package pipertts
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,6 +113,36 @@ func TestClearCacheMissingDirIsNoError(t *testing.T) {
 	}
 	if n != 0 {
 		t.Errorf("clearCache on missing dir removed %d, want 0", n)
+	}
+}
+
+// TestDetectStatusModelConfigSidecar is a regression test for a bug where the
+// primary sidecar check appended ".onnx.json" to a ModelPath that ALREADY ends
+// in ".onnx" (producing "<voice>.onnx.onnx.json", which never exists) instead
+// of just ".json". Real files on disk, mirroring the actual piper-voices
+// download convention: "<voice>.onnx" + "<voice>.onnx.json" side by side.
+func TestDetectStatusModelConfigSidecar(t *testing.T) {
+	dir := t.TempDir()
+	exePath := filepath.Join(dir, "piper")
+	modelPath := filepath.Join(dir, "en_US-amy-medium.onnx")
+	sidecarPath := modelPath + ".json" // -> en_US-amy-medium.onnx.json
+
+	for _, p := range []string{exePath, modelPath, sidecarPath} {
+		if err := os.WriteFile(p, []byte("x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	st := DetectStatus(context.Background(), Config{
+		Enabled:   true,
+		ExePath:   exePath,
+		ModelPath: modelPath,
+	})
+	if !st.ModelFound {
+		t.Error("ModelFound should be true")
+	}
+	if !st.ModelConfigFound {
+		t.Errorf("ModelConfigFound should be true for sidecar at %s (this was the bug)", sidecarPath)
 	}
 }
 
