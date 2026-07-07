@@ -69,12 +69,13 @@ func TradeStat(tradeskill, str, dex, intel, wis int) (int, string) {
 // skillMod/aaReduce/nofail feed the per-attempt success chance, since a
 // successful combine skills up at twice the rate of a failed one.
 //
-// skillupBonusPct is a skill-up-RATE multiplier from buffs — on Quarm this is
-// Maelin's Magical Concoction (SPA 504, +75%). It scales the per-attempt
-// skill-up probability by (100+pct)/100 (capped at certain success), which is
-// the natural reading of a "skillup rate" multiplier; the exact server math for
-// this custom effect isn't published, so treat the boosted number as an
-// estimate.
+// skillupBonusPct is a skill-up-RATE bonus from buffs — on Quarm this is
+// Maelin's Magical Concoction (SPA 504, +75%). It boosts ONLY the failure-path
+// skill-up chance: a failed combine already skills up at half the rate of a
+// success (D=2 in Pass 1), and the potion raises just that failure term by
+// +pct% (e.g. 1.5% -> ~2.6% at +75%), leaving the success path untouched. This
+// matches observed Quarm behavior; the exact server math isn't published, so
+// treat the boosted number as an estimate.
 func EstimateSkillUp(current, trivial, cap, tradeStat int, difficulty float64, skillMod, aaReduce, skillupBonusPct int, nofail bool) SkillUpResult {
 	target := trivial
 	atCap := false
@@ -121,7 +122,7 @@ func EstimateSkillUp(current, trivial, cap, tradeStat int, difficulty float64, s
 // per-attempt atom of EstimateSkillUp (which sums 1/chance across a skill range).
 // It reuses the same two-roll CheckIncreaseTradeskill model:
 //
-//	pUp = P2(skill) * ( success * P1succ + (1-success) * P1fail ) * (1 + bonus%)
+//	pUp = P2(skill) * ( success * P1succ + (1-success) * P1fail * (1 + bonus%) )
 //
 // Returns 0 when the combine can't skill up: skill already at/above trivial
 // (trivial combines never grant points), or degenerate stat/difficulty. The
@@ -134,8 +135,11 @@ func SkillUpChanceAt(skill, trivial, skillMod, aaReduce, skillupBonusPct, tradeS
 	p1succ := realRollProb(float64(tradeStat) * 10.0 / (difficulty * 1.0))
 	p1fail := realRollProb(float64(tradeStat) * 10.0 / (difficulty * 2.0))
 	p := Chance(skill, trivial, skillMod, aaReduce, nofail).Success / 100.0
-	rateMult := 1.0 + float64(skillupBonusPct)/100.0
-	pUp := skillRollProb(skill) * (p*p1succ + (1-p)*p1fail) * rateMult
+	// Maelin's Concoction boosts only the FAILURE-path skill-up chance, not the
+	// whole formula — a failed combine already skills up at half rate (D=2 in
+	// Pass 1), and the potion adds +bonus% to that failure term alone.
+	failMult := 1.0 + float64(skillupBonusPct)/100.0
+	pUp := skillRollProb(skill) * (p*p1succ + (1-p)*p1fail*failMult)
 	if pUp > 1 {
 		pUp = 1
 	}

@@ -102,15 +102,31 @@ func TestEstimateSkillUp(t *testing.T) {
 			noMod.AttemptsToTarget, withMod.AttemptsToTarget)
 	}
 
-	// Maelin's (+75% skill-up rate) should cut the estimated combines: at these
-	// inputs pUp stays well below 1, so a 75% boost divides attempts by ~1.75.
+	// Maelin's (+75%) boosts ONLY the failure-path skill-up chance, so it lowers
+	// the estimate but by far less than a flat 75% — the higher your success rate,
+	// the less it helps (successes already skill up at the full rate).
 	base := EstimateSkillUp(50, 250, 0, 120, 4, 0, 0, 0, false)
 	maelin := EstimateSkillUp(50, 250, 0, 120, 4, 0, 0, 75, false)
 	if !(maelin.AttemptsToTarget < base.AttemptsToTarget) {
 		t.Errorf("skillup bonus should lower attempts: base=%v maelin=%v",
 			base.AttemptsToTarget, maelin.AttemptsToTarget)
 	}
-	if ratio := base.AttemptsToTarget / maelin.AttemptsToTarget; ratio < 1.5 || ratio > 1.9 {
-		t.Errorf("expected ~1.75x fewer attempts, got %.2fx", ratio)
+
+	// Failure-only boost, hand-computed at the single-point case above (p=.7575,
+	// p1succ=.4995, p1fail=.24925, P2=.5): boosting just the failure term by 1.75
+	// gives pUp = .5*(.7575*.4995 + .2425*.24925*1.75) ≈ .2421 -> ~4.13 attempts
+	// (vs ~4.56 without) — a ~9% cut, not the ~43% a flat 75% would give.
+	oneMaelin := EstimateSkillUp(100, 101, 0, 200, 4, 0, 0, 75, false)
+	if math.Abs(oneMaelin.AttemptsToNext-4.13) > 0.15 {
+		t.Errorf("AttemptsToNext with Maelin=%v, want ~4.13", oneMaelin.AttemptsToNext)
+	}
+
+	// On a no-fail recipe every combine succeeds, so the failure-only boost is a
+	// no-op — Maelin changes nothing.
+	nf := EstimateSkillUp(100, 101, 0, 200, 4, 0, 0, 0, true)
+	nfMaelin := EstimateSkillUp(100, 101, 0, 200, 4, 0, 0, 75, true)
+	if nf.AttemptsToNext != nfMaelin.AttemptsToNext {
+		t.Errorf("no-fail recipe: Maelin should be a no-op, got %v vs %v",
+			nf.AttemptsToNext, nfMaelin.AttemptsToNext)
 	}
 }

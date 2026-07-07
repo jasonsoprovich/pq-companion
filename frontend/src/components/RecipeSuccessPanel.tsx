@@ -610,7 +610,7 @@ function SkillUpSection({ estimate: e, label, maelin, onMaelin }: SkillUpSection
           </p>
           <label className="mt-0.5 flex cursor-pointer items-center gap-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
             <input type="checkbox" checked={maelin} onChange={(ev) => onMaelin(ev.target.checked)} />
-            Maelin&apos;s Magical Concoction (+{MAELIN_SKILLUP_PCT}% skill-up rate)
+            Maelin&apos;s Magical Concoction (+{MAELIN_SKILLUP_PCT}% skill-up on failed combines)
           </label>
         </div>
       )}
