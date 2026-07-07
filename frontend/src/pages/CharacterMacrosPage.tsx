@@ -5,6 +5,7 @@ import {
   Check,
   Copy,
   Download,
+  GripVertical,
   Keyboard,
   Plus,
   RefreshCw,
@@ -13,6 +14,17 @@ import {
   Undo2,
   X,
 } from 'lucide-react'
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core'
 import {
   getAllMacros,
   getTextColors,
@@ -36,6 +48,16 @@ const CLASS_NAMES = [
 const PAGE_COUNT = 10
 const BUTTONS_PER_PAGE = 12
 const LINE_COUNT = 5
+
+// EverQuest's Actions/Socials window is two columns of six. Buttons number
+// down the left column (1–6) then down the right (7–12). To render that in a
+// row-major CSS grid we feed the cells column-interleaved: 1,7, 2,8, … 6,12 —
+// so each visual row pairs a left-column button with its right-column mate.
+const GRID_ROWS = BUTTONS_PER_PAGE / 2
+const SLOT_ORDER: number[] = Array.from({ length: GRID_ROWS }, (_, r) => [
+  r + 1,
+  r + 1 + GRID_ROWS,
+]).flat()
 
 // The 12 built-in socials EQ pre-fills page 1 with. They live only in the
 // client (never written to the .ini until edited). Socials number down the
@@ -660,6 +682,128 @@ function MacroImportModal({
   )
 }
 
+// ── Macro grid slot (drag to rearrange) ──────────────────────────────────────
+
+interface MacroSlotProps {
+  page: number
+  btn: number
+  button: MacroButton | undefined
+  palette: Map<number, MacroColor>
+  onEdit: () => void
+}
+
+// One cell of the 2×6 macro grid. The whole slot is both draggable (when it
+// holds a macro) and droppable, so a macro can be dragged onto any slot on the
+// page: drop it on another macro to swap the two, or on an empty slot to move
+// it there. Drag uses dnd-kit (pointer-based) — native HTML5 drag is unreliable
+// in Electron on Windows. A short activation distance lets a plain click still
+// open the editor without starting a drag.
+function MacroSlot({ page, btn, button, palette, onEdit }: MacroSlotProps): React.ReactElement {
+  const isEmpty = !button || buttonIsEmpty(button)
+  const id = String(btn)
+  const {
+    setNodeRef: setDragRef,
+    attributes,
+    listeners,
+    isDragging,
+  } = useDraggable({ id, disabled: isEmpty })
+  const { setNodeRef: setDropRef, isOver, active } = useDroppable({ id })
+  const setRef = useCallback(
+    (el: HTMLElement | null) => {
+      setDragRef(el)
+      setDropRef(el)
+    },
+    [setDragRef, setDropRef],
+  )
+
+  const isSource = active != null && String(active.id) === id
+  const swapHint = isOver && !isEmpty && !isSource // drop onto a macro → swap
+  const moveHint = isOver && isEmpty // drop onto empty → move here
+
+  const swatch = button && !isEmpty ? cssColor(palette.get(button.color)) : null
+  // Page 1 ships 12 built-in EQ defaults that aren't written to the .ini until
+  // changed — so an "empty" page-1 slot really holds a hidden in-game default.
+  const hiddenDefault = isEmpty && page === 1
+  const dflt = hiddenDefault ? PAGE1_DEFAULTS[btn] : undefined
+  const firstLine = button?.lines.find((l) => l.trim() !== '')
+
+  return (
+    <div
+      ref={setRef}
+      onClick={onEdit}
+      {...attributes}
+      {...listeners}
+      className="flex touch-none flex-col gap-1 rounded-lg border p-2 text-left transition-colors hover:bg-(--color-surface-2)"
+      style={{
+        backgroundColor: 'var(--color-surface)',
+        // Dashed warning tint marks a page-1 slot holding a hidden built-in
+        // default. Kept dim (40% warning) so a full page of them doesn't read
+        // as an all-caps alert. Drop hints override the border while hovered.
+        borderColor: swapHint
+          ? 'var(--color-warning, #f59e0b)'
+          : moveHint
+            ? 'var(--color-primary)'
+            : hiddenDefault
+              ? 'color-mix(in srgb, var(--color-warning, #f59e0b) 40%, transparent)'
+              : 'var(--color-border)',
+        borderStyle: hiddenDefault && !swapHint && !moveHint ? 'dashed' : 'solid',
+        minHeight: 64,
+        cursor: isEmpty ? 'pointer' : 'grab',
+        opacity: isDragging ? 0.4 : 1,
+      }}
+      title={
+        hiddenDefault && dflt
+          ? `This slot holds the built-in ${dflt.name} social (${dflt.command}), which is not stored in the file. Editing it overrides that default. Drag a macro here to move it into this slot.`
+          : isEmpty
+            ? undefined
+            : 'Click to edit · drag onto another slot to move or swap'
+      }
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] font-mono" style={{ color: 'var(--color-muted)' }}>
+          {btn}
+        </span>
+        {!isEmpty && (
+          <span
+            className="inline-block rounded"
+            style={{ width: 10, height: 10, backgroundColor: swatch ?? 'transparent', border: '1px solid var(--color-border)' }}
+          />
+        )}
+        <span
+          className="truncate text-xs font-medium"
+          style={{
+            color: hiddenDefault
+              ? 'color-mix(in srgb, var(--color-warning, #f59e0b) 70%, var(--color-muted))'
+              : isEmpty
+                ? 'var(--color-muted)'
+                : 'var(--color-foreground)',
+            fontStyle: isEmpty ? 'italic' : 'normal',
+          }}
+        >
+          {hiddenDefault ? dflt?.name : isEmpty ? 'Empty' : button!.name || '(unnamed)'}
+        </span>
+        {!isEmpty && (
+          <GripVertical
+            size={12}
+            className="ml-auto shrink-0"
+            style={{ color: 'var(--color-muted)' }}
+          />
+        )}
+      </div>
+      {hiddenDefault && dflt && (
+        <span className="truncate font-mono text-[10px]" style={{ color: 'var(--color-muted)' }}>
+          {dflt.command}
+        </span>
+      )}
+      {!isEmpty && firstLine && (
+        <span className="truncate font-mono text-[10px]" style={{ color: 'var(--color-muted)' }}>
+          {firstLine}
+        </span>
+      )}
+    </div>
+  )
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function CharacterMacrosPage(): React.ReactElement {
@@ -678,6 +822,14 @@ export default function CharacterMacrosPage(): React.ReactElement {
   const [confirmAction, setConfirmAction] = useState<{ type: 'save' } | { type: 'cancel' } | null>(null)
   const [importing, setImporting] = useState(false)
   const [importState, setImportState] = useState<{ sourceCharacter: string; rows: ImportRow[] } | null>(null)
+  const [draggingBtn, setDraggingBtn] = useState<number | null>(null)
+
+  // Pointer-based drag with a 6px activation distance: a plain click still opens
+  // the editor, only a real drag rearranges. dnd-kit (not native HTML5 drag)
+  // because native drag is unreliable in Electron on Windows.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  )
 
   const palette = useMemo(() => {
     const m = new Map<number, MacroColor>()
@@ -750,6 +902,34 @@ export default function CharacterMacrosPage(): React.ReactElement {
     const { page: p, button } = editing
     mutateViewed((buttons) => buttons.filter((b) => !(b.page === p && b.button === button)))
     setEditing(null)
+  }
+
+  // Rearrange within the current page: drop a macro onto an empty slot to move
+  // it there, or onto another macro to swap the two. Only the two buttons'
+  // slot numbers change — names, colors, and command lines ride along.
+  function handleReorder(srcBtn: number, destBtn: number): void {
+    if (srcBtn === destBtn) return
+    mutateViewed((buttons) => {
+      const src = buttons.find((b) => b.page === page && b.button === srcBtn)
+      if (!src) return buttons
+      const dest = buttons.find((b) => b.page === page && b.button === destBtn)
+      return buttons.map((b) => {
+        if (b.page === page && b.button === srcBtn) return { ...b, button: destBtn }
+        if (dest && b.page === page && b.button === destBtn) return { ...b, button: srcBtn }
+        return b
+      })
+    })
+  }
+
+  function handleDragStart(e: DragStartEvent): void {
+    setDraggingBtn(Number(e.active.id))
+  }
+
+  function handleDragEnd(e: DragEndEvent): void {
+    setDraggingBtn(null)
+    const { active, over } = e
+    if (!over) return
+    handleReorder(Number(active.id), Number(over.id))
   }
 
   function handleSave(): void {
@@ -1004,82 +1184,63 @@ export default function CharacterMacrosPage(): React.ReactElement {
           </div>
         )}
         {!loading && !error && viewedFile && (
-          <div
-            style={{
-              display: 'grid',
-              gap: 10,
-              gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
-            }}
-          >
-            {Array.from({ length: BUTTONS_PER_PAGE }, (_, i) => i + 1).map((btn) => {
-              const b = buttonsByKey.get(keyOf(page, btn))
-              const swatch = b ? cssColor(palette.get(b.color)) : null
-              const isEmpty = !b || buttonIsEmpty(b)
-              // Page 1 ships 12 built-in EQ defaults that aren't written to the
-              // .ini until changed — so an "empty" page-1 slot really holds a
-              // hidden in-game default, not a free slot. Show its default name.
-              const hiddenDefault = isEmpty && page === 1
-              const dflt = hiddenDefault ? PAGE1_DEFAULTS[btn] : undefined
-              return (
-                <button
-                  key={btn}
-                  onClick={() => setEditing({ page, button: btn })}
-                  className="flex flex-col gap-1 rounded-lg border p-2 text-left transition-colors hover:bg-(--color-surface-2)"
-                  style={{
-                    backgroundColor: 'var(--color-surface)',
-                    // Dashed warning tint marks a page-1 slot holding a hidden
-                    // built-in default. Kept dim (40% warning) so a full page of
-                    // them doesn't read as an all-caps alert.
-                    borderColor: hiddenDefault
-                      ? 'color-mix(in srgb, var(--color-warning, #f59e0b) 40%, transparent)'
-                      : 'var(--color-border)',
-                    borderStyle: hiddenDefault ? 'dashed' : 'solid',
-                    minHeight: 64,
-                  }}
-                  title={
-                    hiddenDefault && dflt
-                      ? `This slot holds the built-in ${dflt.name} social (${dflt.command}), which is not stored in the file. Editing it overrides that default.`
-                      : undefined
-                  }
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-mono" style={{ color: 'var(--color-muted)' }}>
-                      {btn}
-                    </span>
-                    {!isEmpty && (
+          <>
+            <p className="mb-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+              Laid out like the in-game Actions window (two columns of six). Click a slot to
+              edit it, or drag a macro onto another slot to <b>swap</b> the two — or onto an
+              empty slot to <b>move</b> it there.
+            </p>
+            <DndContext
+              sensors={sensors}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragCancel={() => setDraggingBtn(null)}
+            >
+              <div
+                style={{
+                  display: 'grid',
+                  gap: 10,
+                  gridTemplateColumns: '1fr 1fr',
+                  maxWidth: 560,
+                }}
+              >
+                {SLOT_ORDER.map((btn) => (
+                  <MacroSlot
+                    key={btn}
+                    page={page}
+                    btn={btn}
+                    button={buttonsByKey.get(keyOf(page, btn))}
+                    palette={palette}
+                    onEdit={() => setEditing({ page, button: btn })}
+                  />
+                ))}
+              </div>
+              <DragOverlay>
+                {draggingBtn != null && (() => {
+                  const b = buttonsByKey.get(keyOf(page, draggingBtn))
+                  if (!b) return null
+                  const swatch = cssColor(palette.get(b.color))
+                  return (
+                    <div
+                      className="flex items-center gap-1.5 rounded-lg border px-2 py-2 text-xs font-medium shadow-lg"
+                      style={{
+                        backgroundColor: 'var(--color-surface-2)',
+                        borderColor: 'var(--color-primary)',
+                        color: 'var(--color-foreground)',
+                        cursor: 'grabbing',
+                      }}
+                    >
                       <span
                         className="inline-block rounded"
                         style={{ width: 10, height: 10, backgroundColor: swatch ?? 'transparent', border: '1px solid var(--color-border)' }}
                       />
-                    )}
-                    <span
-                      className="truncate text-xs font-medium"
-                      style={{
-                        color: hiddenDefault
-                          ? 'color-mix(in srgb, var(--color-warning, #f59e0b) 70%, var(--color-muted))'
-                          : isEmpty
-                            ? 'var(--color-muted)'
-                            : 'var(--color-foreground)',
-                        fontStyle: isEmpty ? 'italic' : 'normal',
-                      }}
-                    >
-                      {hiddenDefault ? dflt?.name : isEmpty ? 'Empty' : b!.name || '(unnamed)'}
-                    </span>
-                  </div>
-                  {hiddenDefault && dflt && (
-                    <span className="truncate font-mono text-[10px]" style={{ color: 'var(--color-muted)' }}>
-                      {dflt.command}
-                    </span>
-                  )}
-                  {!isEmpty && b!.lines.find((l) => l.trim() !== '') && (
-                    <span className="truncate font-mono text-[10px]" style={{ color: 'var(--color-muted)' }}>
-                      {b!.lines.find((l) => l.trim() !== '')}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
+                      <span className="truncate">{b.name || '(unnamed)'}</span>
+                    </div>
+                  )
+                })()}
+              </DragOverlay>
+            </DndContext>
+          </>
         )}
       </div>
 
