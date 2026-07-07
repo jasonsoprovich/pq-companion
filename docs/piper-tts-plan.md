@@ -1,9 +1,15 @@
 # Piper TTS (User-Installed Local Voice) — Implementation Plan
 
-> **Status:** Planned / not implemented. Research + design captured so we can
-> resume easily later. Nothing here is built yet.
+> **Status:** Phase 1 (Mode A) **implemented** 2026-07-07 (issue #147). Built as
+> a standalone `internal/pipertts` package (not the shared `internal/tts`
+> abstraction of §7 — Piper is the only provider today; that can be generalized
+> when cloud TTS lands). The voice ref is carried as a namespaced prefix string
+> (`piper:local`) in the existing `voice` field rather than a new structured
+> column (§6 alternative), so it flows through the Go trigger models / WS /
+> config untouched. Phases 2–3 (warm http_server, cache GC, cloud convergence)
+> remain future work.
 >
-> **Last updated:** 2026-07-06
+> **Last updated:** 2026-07-07
 >
 > **Sibling doc:** [`cloud-tts-plan.md`](cloud-tts-plan.md). Piper reuses almost
 > all of that plan's infrastructure (the generate→cache→replay reframe, the
