@@ -308,6 +308,13 @@ type LevelingRecipe struct {
 	// i.e. leveling on this recipe forces another tradeskill. Lets the planner
 	// offer a "stay in this discipline" mode.
 	RequiresCrossTradeskill bool `json:"requires_cross_tradeskill,omitempty"`
+
+	// RaceRestrict is the EQ race id required to use this recipe's combine
+	// container (a cultural newbie-armor kit), or 0 if any race can make it.
+	// quarm.db carries no race data on containers, so this comes from a small
+	// curated table — see cultural.go. The planner drops recipes a character's
+	// race can't make.
+	RaceRestrict int `json:"race_restrict,omitempty"`
 }
 
 // RecipesForTradeskill returns every enabled, non-quest recipe for one
@@ -407,6 +414,9 @@ func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
 				} else {
 					lr.Container = name
 				}
+				// Cultural kits (Vale/Fier`Dal/Erudite) are race-locked; quarm.db
+				// has no race data on them, so tag from the curated table.
+				lr.RaceRestrict = ContainerRaceRestrict(lr.Container)
 			}
 		case successCount > 0:
 			if lr.Yield == 0 {

@@ -508,6 +508,13 @@ func (h *charactersHandler) tradeskillPlan(w http.ResponseWriter, r *http.Reques
 	}
 	cands := make([]tsplan.RecipeCandidate, 0, len(recipes))
 	for _, rc := range recipes {
+		// Cultural recipes need a race-locked combine container (Vale/Fier`Dal/
+		// Erudite kit) the character can't obtain — drop them so the plan stays
+		// something this character can actually grind. Race 0 = unknown/not
+		// imported: don't filter (we can't tell), better to over-offer than hide.
+		if rc.RaceRestrict != 0 && char.Race > 0 && rc.RaceRestrict != char.Race {
+			continue
+		}
 		// "Stay in this discipline" mode drops recipes that would force crafting
 		// in another skill-gated tradeskill.
 		if req.AvoidOtherTradeskills && rc.RequiresCrossTradeskill {
