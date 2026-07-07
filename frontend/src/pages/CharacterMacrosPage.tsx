@@ -9,6 +9,7 @@ import {
   Keyboard,
   Plus,
   RefreshCw,
+  RotateCcw,
   Save,
   Trash2,
   Undo2,
@@ -93,6 +94,36 @@ function emptyButton(page: number, button: number): MacroButton {
 
 function buttonIsEmpty(b: MacroButton): boolean {
   return b.name.trim() === '' && b.lines.every((l) => l.trim() === '')
+}
+
+// EverQuest pre-seeds page 1 with twelve built-in socials and only writes them
+// to the .ini once changed. We surface them as ordinary (pre-filled) slots so
+// page 1 looks and drags exactly like every other page, then strip any the user
+// left untouched (isPage1Default) back out at save time — so an unedited default
+// is never actually written to the file, preserving EQ's own behavior.
+function page1DefaultButton(button: number): MacroButton {
+  const d = PAGE1_DEFAULTS[button]
+  return { page: 1, button, name: d.name, color: 0, lines: [d.command, '', '', '', ''] }
+}
+
+function withPage1Defaults(file: MacroFile): MacroFile {
+  const present = new Set(file.buttons.filter((b) => b.page === 1).map((b) => b.button))
+  const buttons = file.buttons.slice()
+  for (let n = 1; n <= BUTTONS_PER_PAGE; n++) {
+    if (!present.has(n)) buttons.push(page1DefaultButton(n))
+  }
+  return { ...file, buttons }
+}
+
+// True when a page-1 slot still holds its pristine built-in default (matching
+// name, color 0, and only the default command). These are dropped at save so
+// the file only ever gains defaults the user actually customized or moved.
+function isPage1Default(b: MacroButton): boolean {
+  if (b.page !== 1) return false
+  const d = PAGE1_DEFAULTS[b.button]
+  if (!d) return false
+  const cmds = b.lines.filter((l) => l.trim() !== '')
+  return b.name === d.name && b.color === 0 && cmds.length === 1 && cmds[0] === d.command
 }
 
 function deepCloneFiles(files: MacroFile[]): MacroFile[] {
@@ -283,13 +314,12 @@ function CancelbuffBuilder({
 interface ButtonEditorProps {
   initial: MacroButton
   palette: Map<number, MacroColor>
-  hiddenDefault?: Page1Default
   onSave: (b: MacroButton) => void
   onClear: () => void
   onClose: () => void
 }
 
-function ButtonEditor({ initial, palette, hiddenDefault, onSave, onClear, onClose }: ButtonEditorProps): React.ReactElement {
+function ButtonEditor({ initial, palette, onSave, onClear, onClose }: ButtonEditorProps): React.ReactElement {
   useEscapeToClose(onClose)
   const [name, setName] = useState(initial.name)
   const [color, setColor] = useState(initial.color)
@@ -337,24 +367,6 @@ function ButtonEditor({ initial, palette, hiddenDefault, onSave, onClear, onClos
         </div>
 
         <div className="flex flex-col gap-3 overflow-y-auto p-3">
-          {hiddenDefault && (
-            <div
-              className="flex items-start gap-2 rounded-md border px-2.5 py-2 text-[11px]"
-              style={{
-                borderColor: 'var(--color-warning, #f59e0b)',
-                backgroundColor: 'color-mix(in srgb, var(--color-warning, #f59e0b) 12%, transparent)',
-                color: 'var(--color-muted-foreground)',
-              }}
-            >
-              <AlertTriangle size={13} className="mt-0.5 shrink-0" style={{ color: 'var(--color-warning, #f59e0b)' }} />
-              <span>
-                This page-1 slot currently holds the built-in{' '}
-                <span style={{ color: 'var(--color-foreground)' }}>{hiddenDefault.name}</span> social
-                (<code style={{ color: 'var(--color-foreground)' }}>{hiddenDefault.command}</code>),
-                which isn&rsquo;t stored in the file. Saving a macro here overrides that default in-game.
-              </span>
-            </div>
-          )}
           {/* Name */}
           <label className="flex flex-col gap-1">
             <span className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
@@ -436,7 +448,7 @@ function ButtonEditor({ initial, palette, hiddenDefault, onSave, onClear, onClos
                     type="text"
                     value={l}
                     onChange={(e) => setLine(i, e.target.value)}
-                    placeholder={i === 0 ? (hiddenDefault?.command ?? '/say Hello') : ''}
+                    placeholder={i === 0 ? '/say Hello' : ''}
                     className="flex-1 rounded px-2 py-1 font-mono text-xs outline-none"
                     style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
                   />
@@ -685,7 +697,6 @@ function MacroImportModal({
 // ── Macro grid slot (drag to rearrange) ──────────────────────────────────────
 
 interface MacroSlotProps {
-  page: number
   btn: number
   button: MacroButton | undefined
   palette: Map<number, MacroColor>
@@ -697,8 +708,9 @@ interface MacroSlotProps {
 // page: drop it on another macro to swap the two, or on an empty slot to move
 // it there. Drag uses dnd-kit (pointer-based) — native HTML5 drag is unreliable
 // in Electron on Windows. A short activation distance lets a plain click still
-// open the editor without starting a drag.
-function MacroSlot({ page, btn, button, palette, onEdit }: MacroSlotProps): React.ReactElement {
+// open the editor without starting a drag. Page 1's built-in socials arrive as
+// ordinary pre-filled buttons, so they render and drag just like any other.
+function MacroSlot({ btn, button, palette, onEdit }: MacroSlotProps): React.ReactElement {
   const isEmpty = !button || buttonIsEmpty(button)
   const id = String(btn)
   const {
@@ -721,10 +733,6 @@ function MacroSlot({ page, btn, button, palette, onEdit }: MacroSlotProps): Reac
   const moveHint = isOver && isEmpty // drop onto empty → move here
 
   const swatch = button && !isEmpty ? cssColor(palette.get(button.color)) : null
-  // Page 1 ships 12 built-in EQ defaults that aren't written to the .ini until
-  // changed — so an "empty" page-1 slot really holds a hidden in-game default.
-  const hiddenDefault = isEmpty && page === 1
-  const dflt = hiddenDefault ? PAGE1_DEFAULTS[btn] : undefined
   const firstLine = button?.lines.find((l) => l.trim() !== '')
 
   return (
@@ -736,27 +744,21 @@ function MacroSlot({ page, btn, button, palette, onEdit }: MacroSlotProps): Reac
       className="flex touch-none flex-col gap-1 rounded-lg border p-2 text-left transition-colors hover:bg-(--color-surface-2)"
       style={{
         backgroundColor: 'var(--color-surface)',
-        // Dashed warning tint marks a page-1 slot holding a hidden built-in
-        // default. Kept dim (40% warning) so a full page of them doesn't read
-        // as an all-caps alert. Drop hints override the border while hovered.
+        // Border is neutral except while a drag hovers: amber = swap with the
+        // macro under the cursor, primary = move into this empty slot.
         borderColor: swapHint
           ? 'var(--color-warning, #f59e0b)'
           : moveHint
             ? 'var(--color-primary)'
-            : hiddenDefault
-              ? 'color-mix(in srgb, var(--color-warning, #f59e0b) 40%, transparent)'
-              : 'var(--color-border)',
-        borderStyle: hiddenDefault && !swapHint && !moveHint ? 'dashed' : 'solid',
+            : 'var(--color-border)',
         minHeight: 64,
         cursor: isEmpty ? 'pointer' : 'grab',
         opacity: isDragging ? 0.4 : 1,
       }}
       title={
-        hiddenDefault && dflt
-          ? `This slot holds the built-in ${dflt.name} social (${dflt.command}), which is not stored in the file. Editing it overrides that default. Drag a macro here to move it into this slot.`
-          : isEmpty
-            ? undefined
-            : 'Click to edit · drag onto another slot to move or swap'
+        isEmpty
+          ? undefined
+          : 'Click to edit · drag onto another slot to move or swap'
       }
     >
       <div className="flex items-center gap-1.5">
@@ -772,15 +774,11 @@ function MacroSlot({ page, btn, button, palette, onEdit }: MacroSlotProps): Reac
         <span
           className="truncate text-xs font-medium"
           style={{
-            color: hiddenDefault
-              ? 'color-mix(in srgb, var(--color-warning, #f59e0b) 70%, var(--color-muted))'
-              : isEmpty
-                ? 'var(--color-muted)'
-                : 'var(--color-foreground)',
+            color: isEmpty ? 'var(--color-muted)' : 'var(--color-foreground)',
             fontStyle: isEmpty ? 'italic' : 'normal',
           }}
         >
-          {hiddenDefault ? dflt?.name : isEmpty ? 'Empty' : button!.name || '(unnamed)'}
+          {isEmpty ? 'Empty' : button!.name || '(unnamed)'}
         </span>
         {!isEmpty && (
           <GripVertical
@@ -790,11 +788,6 @@ function MacroSlot({ page, btn, button, palette, onEdit }: MacroSlotProps): Reac
           />
         )}
       </div>
-      {hiddenDefault && dflt && (
-        <span className="truncate font-mono text-[10px]" style={{ color: 'var(--color-muted)' }}>
-          {dflt.command}
-        </span>
-      )}
       {!isEmpty && firstLine && (
         <span className="truncate font-mono text-[10px]" style={{ color: 'var(--color-muted)' }}>
           {firstLine}
@@ -819,7 +812,9 @@ export default function CharacterMacrosPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null)
 
   const [editing, setEditing] = useState<{ page: number; button: number } | null>(null)
-  const [confirmAction, setConfirmAction] = useState<{ type: 'save' } | { type: 'cancel' } | null>(null)
+  const [confirmAction, setConfirmAction] = useState<
+    { type: 'save' } | { type: 'cancel' } | { type: 'reset-page1' } | null
+  >(null)
   const [importing, setImporting] = useState(false)
   const [importState, setImportState] = useState<{ sourceCharacter: string; rows: ImportRow[] } | null>(null)
   const [draggingBtn, setDraggingBtn] = useState<number | null>(null)
@@ -842,7 +837,9 @@ export default function CharacterMacrosPage(): React.ReactElement {
     setError(null)
     Promise.all([getAllMacros(), listCharacters(), getTextColors()])
       .then(([macros, chars, tc]) => {
-        const fresh = macros.characters ?? []
+        // Pre-seed page 1's built-in socials so it looks and drags like every
+        // other page. Untouched defaults are stripped again at save time.
+        const fresh = (macros.characters ?? []).map(withPage1Defaults)
         setFiles(fresh)
         setOriginalFiles(deepCloneFiles(fresh))
         setCharacters(chars.characters ?? [])
@@ -932,17 +929,35 @@ export default function CharacterMacrosPage(): React.ReactElement {
     handleReorder(Number(active.id), Number(over.id))
   }
 
+  // Restore page 1 to EverQuest's twelve built-in socials, replacing whatever
+  // is there. Untouched defaults are stripped again at save, so this simply
+  // drops any page-1 customizations back to the game's originals.
+  function handleResetPage1(): void {
+    mutateViewed((buttons) => {
+      const others = buttons.filter((b) => b.page !== 1)
+      const defaults = Array.from({ length: BUTTONS_PER_PAGE }, (_, i) => page1DefaultButton(i + 1))
+      return [...others, ...defaults]
+    })
+    setConfirmAction(null)
+  }
+
   function handleSave(): void {
     if (!viewedFile) return
     setSaving(true)
     setError(null)
+    // Drop page-1 slots still holding their pristine built-in default — EQ
+    // supplies those itself, so writing them would only bloat the file. Ones
+    // the user edited or moved no longer match and are kept.
+    const toSave = viewedFile.buttons.filter((b) => !isPage1Default(b))
     // exported_at is the file's mtime when loaded; the backend refuses the
     // write (409) if the file changed on disk since, so a stale editor never
     // clobbers edits the game client (or anything else) made meanwhile.
-    updateMacros(viewedFile.character, viewedFile.buttons, viewedFile.exported_at)
+    updateMacros(viewedFile.character, toSave, viewedFile.exported_at)
       .then((res) => {
         if (!res.macros) return
-        const saved = res.macros
+        // Re-seed page-1 defaults into the round-tripped file so the editor
+        // keeps showing a full page 1 (and stays not-dirty).
+        const saved = withPage1Defaults(res.macros)
         setFiles((prev) => prev.map((f) => (f.character === saved.character ? saved : f)))
         setOriginalFiles((prev) => {
           const without = prev.filter((f) => f.character !== saved.character)
@@ -1096,10 +1111,11 @@ export default function CharacterMacrosPage(): React.ReactElement {
         >
           <AlertTriangle size={12} className="shrink-0" />
           <span>
-            Save while {viewed} is camped out of the game. EverQuest only reads socials at
-            login and rewrites this file when it saves them (on camp/logout, or when you edit
-            a social in-game) — so edits saved while that character is in-game won&rsquo;t take
-            effect and will be overwritten.
+            EverQuest loads these socials when {viewed} logs in or zones, and rewrites this file
+            when the client saves them (on camp/logout, or when you edit a social in-game). After
+            saving here while {viewed} is in-game, <b>zone</b> (or relog) to load the changes.
+            Saving while camped out is safest — a save the client makes on camp can overwrite
+            edits you haven&rsquo;t loaded yet.
           </span>
         </div>
       )}
@@ -1164,32 +1180,32 @@ export default function CharacterMacrosPage(): React.ReactElement {
             by the EverQuest client — log in at least once to generate it.
           </div>
         )}
-        {!loading && !error && viewedFile && page === 1 && (
-          <div
-            className="mb-3 flex items-start gap-2 rounded-md border px-3 py-2 text-[11px]"
-            style={{
-              borderColor: 'var(--color-warning, #f59e0b)',
-              backgroundColor: 'color-mix(in srgb, var(--color-warning, #f59e0b) 12%, transparent)',
-              color: 'var(--color-muted-foreground)',
-            }}
-          >
-            <AlertTriangle size={13} className="mt-0.5 shrink-0" style={{ color: 'var(--color-warning, #f59e0b)' }} />
-            <span>
-              EverQuest pre-fills page 1 with 12 default social buttons (Hail, Afk, Consider, …) that
-              aren&rsquo;t saved to the <code>.ini</code> until you change them. Slots shown dashed hold
-              those built-in defaults — the name and command are shown for reference, but they only
-              exist in-game until edited. Editing one overrides that default; leaving it alone keeps it
-              intact (saving never touches slots you don&rsquo;t edit).
-            </span>
-          </div>
-        )}
         {!loading && !error && viewedFile && (
           <>
-            <p className="mb-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-              Laid out like the in-game Actions window (two columns of six). Click a slot to
-              edit it, or drag a macro onto another slot to <b>swap</b> the two — or onto an
-              empty slot to <b>move</b> it there.
-            </p>
+            <div className="mb-2 flex items-start gap-3">
+              <p className="flex-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                Laid out like the in-game Actions window (two columns of six). Click a slot to
+                edit it, or drag a macro onto another slot to <b>swap</b> the two — or onto an
+                empty slot to <b>move</b> it there.
+                {page === 1 && (
+                  <>
+                    {' '}Page 1 starts with EverQuest&rsquo;s built-in socials; a default you never
+                    change isn&rsquo;t written to the file.
+                  </>
+                )}
+              </p>
+              {page === 1 && (
+                <button
+                  onClick={() => setConfirmAction({ type: 'reset-page1' })}
+                  disabled={saving}
+                  className="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs disabled:opacity-40"
+                  style={{ color: 'var(--color-muted-foreground)', border: '1px solid var(--color-border)' }}
+                  title="Restore page 1's twelve built-in default socials"
+                >
+                  <RotateCcw size={12} /> Reset page 1
+                </button>
+              )}
+            </div>
             <DndContext
               sensors={sensors}
               onDragStart={handleDragStart}
@@ -1207,7 +1223,6 @@ export default function CharacterMacrosPage(): React.ReactElement {
                 {SLOT_ORDER.map((btn) => (
                   <MacroSlot
                     key={btn}
-                    page={page}
                     btn={btn}
                     button={buttonsByKey.get(keyOf(page, btn))}
                     palette={palette}
@@ -1248,11 +1263,6 @@ export default function CharacterMacrosPage(): React.ReactElement {
         <ButtonEditor
           initial={editingButton}
           palette={palette}
-          hiddenDefault={
-            editing.page === 1 && buttonIsEmpty(editingButton)
-              ? PAGE1_DEFAULTS[editing.button]
-              : undefined
-          }
           onSave={handleApply}
           onClear={handleClear}
           onClose={() => setEditing(null)}
@@ -1268,8 +1278,9 @@ export default function CharacterMacrosPage(): React.ReactElement {
             <p>
               Overwrite the <code>[Socials]</code> section of{' '}
               <code>{viewedFile.character}_pq.proj.ini</code>? Only your macros are
-              touched — the rest of the file is left exactly as-is. {viewedFile.character}{' '}
-              should be camped out of the game so the client doesn&rsquo;t overwrite the save on logout.
+              touched — the rest of the file is left exactly as-is. If {viewedFile.character} is
+              in-game, zone or relog afterward to load the changes; saving while camped out is
+              safest, so the client doesn&rsquo;t overwrite the save on logout.
             </p>
           }
           onCancel={() => setConfirmAction(null)}
@@ -1298,6 +1309,23 @@ export default function CharacterMacrosPage(): React.ReactElement {
             <p>
               Revert unsaved changes to <code>{viewedFile.character}</code>'s macros? The .ini
               file on disk is unaffected.
+            </p>
+          }
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
+
+      {confirmAction?.type === 'reset-page1' && viewedFile && (
+        <ConfirmModal
+          title="Reset page 1 to defaults?"
+          confirmLabel="Reset page 1"
+          tone="danger"
+          onConfirm={handleResetPage1}
+          message={
+            <p>
+              Replace page 1 with EverQuest&rsquo;s twelve built-in socials (Afk, Anon, Hail, …),
+              discarding any macros you&rsquo;ve put there? Other pages are untouched, and nothing is
+              written to disk until you Save.
             </p>
           }
           onCancel={() => setConfirmAction(null)}
