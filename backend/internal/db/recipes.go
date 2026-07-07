@@ -54,6 +54,13 @@ type RecipeDetail struct {
 	Containers       []RecipeEntry `json:"containers"`
 	Components       []RecipeEntry `json:"components"`
 	Products         []RecipeEntry `json:"products"`
+
+	// RaceRestrict is the EQ race id required to craft this recipe when its only
+	// combine container is a race-locked cultural kit (0 = any race). Derived from
+	// the curated table in cultural.go, since quarm.db carries no race data. A
+	// recipe with any unrestricted container option stays 0 (that vessel works for
+	// everyone). See containersRaceRestrict.
+	RaceRestrict int `json:"race_restrict,omitempty"`
 }
 
 // RecipeTradeskillCount reports how many enabled recipes exist for a tradeskill
@@ -238,6 +245,7 @@ func (db *DB) GetRecipe(id int) (*RecipeDetail, error) {
 			d.Components = append(d.Components, e)
 		}
 	}
+	d.RaceRestrict = containersRaceRestrict(d.Containers)
 	return &d, rows.Err()
 }
 

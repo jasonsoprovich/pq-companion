@@ -18,7 +18,7 @@ import type {
   SkillUpEstimate,
 } from '../types/recipe'
 import type { TradeskillView } from '../types/skill'
-import { tradeskillLabel } from '../lib/enumsCache'
+import { tradeskillLabel, charRaceLabel } from '../lib/enumsCache'
 import { decodeSlots, slotsLabel } from '../lib/itemHelpers'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
@@ -205,6 +205,20 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
       .catch(() => setMods([]))
   }, [recipe.tradeskill, common])
 
+  const selectedChar = useMemo(
+    () => chars.find((c) => c.id === charId) ?? null,
+    [chars, charId],
+  )
+  // Race-locked cultural recipe (Vale/Fier`Dal/Erudite kit): flag when the
+  // selected character's race can't obtain the container. race 0/-1 = unknown,
+  // don't flag (we can't tell). Backend derives race_restrict from a curated map.
+  const raceRestrict = recipe.race_restrict ?? 0
+  const raceMismatch =
+    raceRestrict > 0 &&
+    selectedChar != null &&
+    selectedChar.race > 0 &&
+    selectedChar.race !== raceRestrict
+
   const skillEntry = useMemo(
     () => skills?.find((s) => s.skill_id === recipe.tradeskill) ?? null,
     [skills, recipe.tradeskill],
@@ -329,6 +343,15 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
       </div>
 
       <div className="px-3 py-3">
+        {raceRestrict > 0 && (
+          <RaceRestrictNote
+            raceId={raceRestrict}
+            mismatch={raceMismatch}
+            charName={selectedChar?.name}
+            charRace={selectedChar?.race ?? 0}
+          />
+        )}
+
         {common ? (
           <CommonCombineBody result={result} />
         ) : skillsError ? (
@@ -470,6 +493,35 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
 }
 
 // ── Bodies ───────────────────────────────────────────────────────────────────
+
+// RaceRestrictNote flags a race-locked cultural recipe. When the selected
+// character's race can't obtain the container it's an amber "can't craft"
+// warning; otherwise a neutral "X-only cultural recipe" note.
+function RaceRestrictNote({ raceId, mismatch, charName, charRace }: {
+  raceId: number
+  mismatch: boolean
+  charName?: string
+  charRace: number
+}): React.ReactElement {
+  const race = charRaceLabel(raceId)
+  if (mismatch) {
+    return (
+      <div
+        className="mb-3 rounded border px-2 py-1.5 text-[11px]"
+        style={{ borderColor: '#eab308', color: '#eab308', backgroundColor: 'var(--color-surface-2)' }}
+      >
+        {charName ?? 'This character'}
+        {charRace > 0 ? ` (${charRaceLabel(charRace)})` : ''} can’t craft this — it’s a{' '}
+        {race}-only cultural recipe, made in a {race} kit only {race}s can obtain.
+      </div>
+    )
+  }
+  return (
+    <p className="mb-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+      {race}-only cultural recipe — requires a {race} kit only {race}s can obtain.
+    </p>
+  )
+}
 
 function CommonCombineBody({ result }: { result: TradeskillChance | null }): React.ReactElement {
   return (

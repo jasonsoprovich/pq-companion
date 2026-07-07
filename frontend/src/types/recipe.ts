@@ -34,6 +34,10 @@ export interface RecipeDetail extends RecipeSummary {
   containers: RecipeEntry[]
   components: RecipeEntry[]
   products: RecipeEntry[]
+  // EQ race id required to craft this recipe when its only combine container is a
+  // race-locked cultural kit (0/absent = any race). quarm.db has no race data on
+  // containers — this comes from a curated table (backend cultural.go).
+  race_restrict?: number
 }
 
 export interface RecipeTradeskillCount {

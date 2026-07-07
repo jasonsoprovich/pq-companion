@@ -44,3 +44,24 @@ func ContainerRaceRestrict(container string) int {
 	}
 	return culturalContainerRace[normalizeContainerName(container)]
 }
+
+// containersRaceRestrict resolves a recipe's race restriction from its full set
+// of combine containers (an OR set — any one suffices). A recipe is race-locked
+// only when EVERY container is a cultural kit for the SAME race; if any vessel is
+// open to all races, or the restricted kits span multiple races, anyone (or any
+// of several races) can craft it, so it returns 0.
+func containersRaceRestrict(containers []RecipeEntry) int {
+	race := 0
+	for _, c := range containers {
+		r := ContainerRaceRestrict(c.ItemName)
+		if r == 0 {
+			return 0 // an unrestricted vessel exists — open to all races
+		}
+		if race == 0 {
+			race = r
+		} else if race != r {
+			return 0 // restricted to different races — not a single-race lock
+		}
+	}
+	return race
+}

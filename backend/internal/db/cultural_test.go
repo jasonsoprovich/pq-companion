@@ -24,3 +24,30 @@ func TestContainerRaceRestrict(t *testing.T) {
 		}
 	}
 }
+
+func TestContainersRaceRestrict(t *testing.T) {
+	con := func(names ...string) []RecipeEntry {
+		out := make([]RecipeEntry, len(names))
+		for i, n := range names {
+			out[i] = RecipeEntry{ItemName: n}
+		}
+		return out
+	}
+	cases := []struct {
+		name       string
+		containers []RecipeEntry
+		want       int
+	}{
+		{"single cultural", con("Vale Sewing Kit"), 11},
+		{"cultural + generic → open to all", con("Vale Sewing Kit", "Collapsible Sewing Kit"), 0},
+		{"two kits same race", con("Fier`Dal Sewing Kit", "Fierdal Fletching Kit"), 4},
+		{"two kits different races", con("Vale Sewing Kit", "Erudite Sewing Kit"), 0},
+		{"only generic", con("Collapsible Sewing Kit"), 0},
+		{"no containers", nil, 0},
+	}
+	for _, tc := range cases {
+		if got := containersRaceRestrict(tc.containers); got != tc.want {
+			t.Errorf("%s: containersRaceRestrict = %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
