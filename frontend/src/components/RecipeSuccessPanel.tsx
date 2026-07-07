@@ -211,6 +211,7 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
   )
   const untrained = !!skillEntry?.untrained
   const rawSkill = skillEntry && !untrained ? skillEntry.value : 0
+  const skillCap = skillEntry?.cap ?? 0
   const haveSkill = common || (skillEntry != null && !untrained)
 
   // In-game only the strongest worn skill-mod applies, so take the max of the
@@ -237,13 +238,14 @@ export default function RecipeSuccessPanel({ recipe }: Props): React.ReactElemen
         skill: rawSkill,
         mod: effMod,
         aa: aaReduce,
+        cap: skillCap,
         nofail: recipe.no_fail,
       })
         .then(setResult)
         .catch(() => setResult(null))
     }, 150)
     return () => clearTimeout(t)
-  }, [haveSkill, recipe.trivial, recipe.no_fail, rawSkill, effMod, aaReduce])
+  }, [haveSkill, recipe.trivial, recipe.no_fail, rawSkill, effMod, aaReduce, skillCap])
 
   // Skill-up estimate — how many combines to raise the skill toward trivial.
   useEffect(() => {
@@ -531,7 +533,7 @@ function OddsBody({ result, label, rawSkill, cap, effMod, skillNeeded, trivial, 
         </p>
       )}
 
-      {result && <FloorNote result={result} trivial={trivial} effMod={effMod} />}
+      {result && <FloorNote result={result} label={label} trivial={trivial} effMod={effMod} />}
 
       <AANote aa={aa} />
     </div>
@@ -643,7 +645,7 @@ function ChanceBar({ result }: { result: TradeskillChance }): React.ReactElement
   )
 }
 
-function FloorNote({ result, trivial, effMod }: { result: TradeskillChance; trivial: number; effMod: number }): React.ReactElement | null {
+function FloorNote({ result, label, trivial, effMod }: { result: TradeskillChance; label: string; trivial: number; effMod: number }): React.ReactElement | null {
   if (result.no_fail) {
     return (
       <p className="text-[11px]" style={{ color: '#22c55e' }}>
@@ -658,11 +660,25 @@ function FloorNote({ result, trivial, effMod }: { result: TradeskillChance; triv
       </p>
     )
   }
-  if (!result.floor_reachable) {
+  // The 5% floor is out of reach even at the character's MAX skill (their
+  // class/level cap). The honest best case is the failure at that cap — not the
+  // current-skill failure, which is higher while they're below cap.
+  if (!result.floor_reachable_at_cap) {
+    const capKnown = result.cap_skill > 0
     return (
       <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-        This recipe’s trivial is high enough that it never drops below{' '}
-        {result.failure}% failure, even at max skill.
+        {capKnown ? (
+          <>
+            Even at your max {label} skill ({result.cap_skill}) this recipe stays
+            around {result.failure_at_cap}% failure — its trivial is too high to
+            reach the 5% floor.
+          </>
+        ) : (
+          <>
+            This recipe’s trivial is high enough that it never reaches the 5%
+            failure floor, even at max skill.
+          </>
+        )}
       </p>
     )
   }

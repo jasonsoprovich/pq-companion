@@ -69,6 +69,13 @@ export interface TradeskillChance {
   floor_skill: number
   floor_reachable: boolean
   at_floor: boolean   // already at the 5% floor at this eff skill
+  // The character's max attainable skill (class/level cap), echoed from the
+  // request (0 = unknown), and the odds there with the same mod — the honest
+  // "even at max skill" best case, not the current-skill failure.
+  cap_skill: number
+  success_at_cap: number
+  failure_at_cap: number
+  floor_reachable_at_cap: boolean
 }
 
 // Mirrors backend tradeskillAAResponse (GET /api/characters/{id}/tradeskill-aa).

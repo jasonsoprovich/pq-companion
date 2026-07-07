@@ -36,7 +36,11 @@ func (h *tradeskillHandler) chance(w http.ResponseWriter, r *http.Request) {
 	raw := queryInt(r, "skill", 0)
 	mod := queryInt(r, "mod", 0)
 	aa := queryInt(r, "aa", 0)
+	// The character's class/level skill cap (max attainable skill), so the panel
+	// can show the honest best-case failure "even at max skill" rather than the
+	// current-skill failure. 0 = unknown.
+	cap := queryInt(r, "cap", 0)
 	q := r.URL.Query()
 	nofail := q.Get("nofail") == "1" || q.Get("nofail") == "true"
-	writeJSON(w, http.StatusOK, tradeskill.Chance(raw, trivial, mod, aa, nofail))
+	writeJSON(w, http.StatusOK, tradeskill.Chance(raw, trivial, mod, aa, cap, nofail))
 }

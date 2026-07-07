@@ -134,7 +134,7 @@ func SkillUpChanceAt(skill, trivial, skillMod, aaReduce, skillupBonusPct, tradeS
 	}
 	p1succ := realRollProb(float64(tradeStat) * 10.0 / (difficulty * 1.0))
 	p1fail := realRollProb(float64(tradeStat) * 10.0 / (difficulty * 2.0))
-	p := Chance(skill, trivial, skillMod, aaReduce, nofail).Success / 100.0
+	p := Chance(skill, trivial, skillMod, aaReduce, 0, nofail).Success / 100.0
 	// Maelin's Concoction boosts only the FAILURE-path skill-up chance, not the
 	// whole formula — a failed combine already skills up at half rate (D=2 in
 	// Pass 1), and the potion adds +bonus% to that failure term alone.

@@ -288,6 +288,7 @@ export interface TradeskillChanceParams {
   skill: number
   mod?: number    // item skill-mod % (max of selected modifiers, not a sum)
   aa?: number     // AA fail-reduction %
+  cap?: number    // character's class/level skill cap (max attainable skill)
   nofail?: boolean
 }
 
@@ -301,6 +302,7 @@ export function getTradeskillChance(
   })
   if (p.mod && p.mod > 0) params.set('mod', String(p.mod))
   if (p.aa && p.aa > 0) params.set('aa', String(p.aa))
+  if (p.cap && p.cap > 0) params.set('cap', String(p.cap))
   if (p.nofail) params.set('nofail', '1')
   return get<TradeskillChance>(`/api/tradeskills/chance?${params}`)
 }

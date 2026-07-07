@@ -54,6 +54,18 @@ type Result struct {
 	FloorSkill     int  `json:"floor_skill"`
 	FloorReachable bool `json:"floor_reachable"`
 	AtFloor        bool `json:"at_floor"` // already at the 5% floor at this eff skill
+
+	// CapSkill is the character's max attainable skill (their class/level cap),
+	// echoed from the request; 0 when unknown. SuccessAtCap/FailureAtCap are the
+	// odds at that cap with the same item mod applied (effective skill clamped to
+	// 252) — the best this recipe will ever do for this character. When the 5%
+	// floor is out of reach, this is what "even at max skill" actually means, so
+	// the UI can report the true best-case failure instead of the current one.
+	// FloorReachableAtCap is whether the 5% floor is reachable at that cap.
+	CapSkill            int     `json:"cap_skill"`
+	SuccessAtCap        float64 `json:"success_at_cap"`
+	FailureAtCap        float64 `json:"failure_at_cap"`
+	FloorReachableAtCap bool    `json:"floor_reachable_at_cap"`
 }
 
 // EffectiveSkill applies an item skill-mod percentage to a raw skill and clamps
@@ -115,8 +127,10 @@ func finalChance(effSkill, trivial, aaFailReducePct int, nofail bool) float64 {
 
 // Chance computes the combine outcome for a recipe (trivial, nofail) at a raw
 // skill with an item skill-mod percentage and an AA fail-reduction percentage.
-// aaFailReducePct is 0 for characters without the relevant AA.
-func Chance(rawSkill, trivial, skillModPct, aaFailReducePct int, nofail bool) Result {
+// aaFailReducePct is 0 for characters without the relevant AA. skillCap is the
+// character's max attainable skill (class/level cap); pass 0 when unknown to
+// skip the cap-based best-case fields.
+func Chance(rawSkill, trivial, skillModPct, aaFailReducePct, skillCap int, nofail bool) Result {
 	eff := EffectiveSkill(rawSkill, skillModPct)
 	chance := finalChance(eff, trivial, aaFailReducePct, nofail)
 	// Success once the raw skill first reaches trivial (mods still applied) —
@@ -126,17 +140,35 @@ func Chance(rawSkill, trivial, skillModPct, aaFailReducePct int, nofail bool) Re
 	target := floorEffSkill(trivial)
 	reachable := target <= hardSkillCap
 
+	// Best case at the character's max attainable skill: their class/level cap
+	// with the same item mod (effective skill still clamped to 252). This is the
+	// honest "even at max skill" number — the current-skill failure is NOT the
+	// floor for a below-cap character. Falls back to the hard-cap reachability
+	// when no cap is known.
+	floorAtCap := reachable
+	var successAtCap, failureAtCap float64
+	if skillCap > 0 {
+		maxEff := EffectiveSkill(skillCap, skillModPct)
+		successAtCap = finalChance(maxEff, trivial, aaFailReducePct, nofail)
+		failureAtCap = math.Round((100-successAtCap)*10) / 10
+		floorAtCap = target <= maxEff
+	}
+
 	return Result{
-		RawSkill:         rawSkill,
-		SkillMod:         skillModPct,
-		EffSkill:         eff,
-		Success:          chance,
-		Failure:          math.Round((100-chance)*10) / 10,
-		SuccessAtTrivial: atTrivial,
-		AtTrivial:        eff >= trivial,
-		NoFail:           nofail,
-		FloorSkill:       target,
-		FloorReachable:   reachable,
-		AtFloor:          nofail || (reachable && eff >= target),
+		RawSkill:            rawSkill,
+		SkillMod:            skillModPct,
+		EffSkill:            eff,
+		Success:             chance,
+		Failure:             math.Round((100-chance)*10) / 10,
+		SuccessAtTrivial:    atTrivial,
+		AtTrivial:           eff >= trivial,
+		NoFail:              nofail,
+		FloorSkill:          target,
+		FloorReachable:      reachable,
+		AtFloor:             nofail || (reachable && eff >= target),
+		CapSkill:            skillCap,
+		SuccessAtCap:        successAtCap,
+		FailureAtCap:        failureAtCap,
+		FloorReachableAtCap: floorAtCap,
 	}
 }
