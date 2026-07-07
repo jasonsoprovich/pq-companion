@@ -4,12 +4,18 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/keyring"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/keys"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
 
 type keysHandler struct {
 	watcher *zeal.Watcher
+	// keyring is the per-character /keys key-ring store. Assembled keys are
+	// keyring items: once earned they're consumed out of inventory onto the
+	// key ring, so they never appear in the Zeal inventory export. Without
+	// this cross-reference a fully-keyed character reads as "not assembled".
+	keyring *keyring.Store
 }
 
 // GET /api/keys
@@ -22,10 +28,11 @@ func (h *keysHandler) list(w http.ResponseWriter, r *http.Request) {
 
 // characterProgress tracks which component item IDs a single character holds.
 type characterProgress struct {
-	Character string           `json:"character"`
-	HasExport bool             `json:"has_export"`
-	HaveIDs   map[int]bool     `json:"-"` // internal lookup set
-	HaveLocs  map[int][]string `json:"-"` // item ID → raw Zeal locations (bag/bank slots)
+	Character  string           `json:"character"`
+	HasExport  bool             `json:"has_export"`
+	HaveIDs    map[int]bool     `json:"-"` // internal lookup set
+	HaveLocs   map[int][]string `json:"-"` // item ID → raw Zeal locations (bag/bank slots)
+	KeyRingIDs map[int]bool     `json:"-"` // key_items on this character's /keys key ring
 }
 
 // keyProgress is the per-key section of the progress response.
@@ -53,9 +60,10 @@ type characterKeyProgress struct {
 type componentStatus struct {
 	ItemID     int      `json:"item_id"`
 	ItemName   string   `json:"item_name"`
-	Have       bool     `json:"have"`                // present in this character's inventory
-	SharedBank bool     `json:"shared_bank"`         // present in shared bank (counts for all)
-	Locations  []string `json:"locations,omitempty"` // raw Zeal locations of the held item (bag/bank slots)
+	Have       bool     `json:"have"`                  // present in this character's inventory
+	SharedBank bool     `json:"shared_bank"`           // present in shared bank (counts for all)
+	OnKeyRing  bool     `json:"on_key_ring,omitempty"` // on the /keys key ring (consumed from inventory)
+	Locations  []string `json:"locations,omitempty"`   // raw Zeal locations of the held item (bag/bank slots)
 }
 
 // progressResponse is the full GET /api/keys/progress response.
@@ -88,6 +96,27 @@ func componentLocations(locs map[int][]string, comp keys.Component) []string {
 		out = append(out, locs[alt]...)
 	}
 	return out
+}
+
+// keyRingIDs returns the set of key_item IDs on the given character's /keys
+// key ring, as observed from parsed log output. Returns an empty (non-nil)
+// set when the store is unavailable or the lookup fails, so callers can index
+// it unconditionally. Assembled keys never appear in the inventory export —
+// they're consumed onto the key ring — so this is how the tracker learns a
+// character is fully keyed.
+func (h *keysHandler) keyRingIDs(character string) map[int]bool {
+	ids := map[int]bool{}
+	if h.keyring == nil {
+		return ids
+	}
+	entries, err := h.keyring.ListByCharacter(character)
+	if err != nil {
+		return ids
+	}
+	for _, e := range entries {
+		ids[e.KeyItem] = true
+	}
+	return ids
 }
 
 // GET /api/keys/progress
@@ -125,10 +154,11 @@ func (h *keysHandler) progress(w http.ResponseWriter, r *http.Request) {
 	chars := make([]characterProgress, 0, len(allInv.Characters))
 	for _, inv := range allInv.Characters {
 		cp := characterProgress{
-			Character: inv.Character,
-			HasExport: true,
-			HaveIDs:   make(map[int]bool, len(inv.Entries)),
-			HaveLocs:  make(map[int][]string, len(inv.Entries)),
+			Character:  inv.Character,
+			HasExport:  true,
+			HaveIDs:    make(map[int]bool, len(inv.Entries)),
+			HaveLocs:   make(map[int][]string, len(inv.Entries)),
+			KeyRingIDs: h.keyRingIDs(inv.Character),
 		}
 		for _, e := range inv.Entries {
 			cp.HaveIDs[e.ID] = true
@@ -192,11 +222,17 @@ func (h *keysHandler) progress(w http.ResponseWriter, r *http.Request) {
 				fi := *kd.FinalItem
 				have := cp.HaveIDs[fi.ItemID]
 				inShared := !have && sharedIDs[fi.ItemID]
+				// Assembled keys are keyring items: once earned they're
+				// consumed onto the /keys key ring and leave inventory, so a
+				// fully-keyed character won't have the item in their Zeal
+				// export. Treat a matching key-ring entry as "keyed".
+				onRing := !have && !inShared && cp.KeyRingIDs[fi.ItemID]
 				cs := &componentStatus{
 					ItemID:     fi.ItemID,
 					ItemName:   fi.ItemName,
 					Have:       have,
 					SharedBank: inShared,
+					OnKeyRing:  onRing,
 				}
 				if have {
 					cs.Locations = componentLocations(cp.HaveLocs, fi)

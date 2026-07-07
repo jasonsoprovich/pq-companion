@@ -25,6 +25,12 @@ export interface ComponentStatus {
   item_name: string
   have: boolean
   shared_bank: boolean
+  /**
+   * Present on the character's /keys key ring. Assembled keys are consumed
+   * out of inventory onto the key ring, so a fully-keyed character shows
+   * on_key_ring rather than have.
+   */
+  on_key_ring?: boolean
   /** Raw Zeal locations (e.g. "General1:Slot3", "Bank2") of the held item. */
   locations?: string[]
 }

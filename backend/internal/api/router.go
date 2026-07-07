@@ -74,7 +74,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	charactersH := &charactersHandler{store: charStore, mgr: cfgMgr, db: database, watcher: zealWatcher}
 	search := &searchHandler{db: database}
 	zealH := &zealHandler{watcher: zealWatcher, cfgMgr: cfgMgr, db: database, pipe: pipeSupervisor, latest: zeal.NewLatestFetcher()}
-	keysH := &keysHandler{watcher: zealWatcher}
+	keysH := &keysHandler{watcher: zealWatcher, keyring: keyringStore}
 	backupH := &backupHandler{mgr: backupMgr}
 	appBackupH := &appBackupHandler{mgr: appBackupMgr}
 	playersH := &playersHandler{store: playerStore}

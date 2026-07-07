@@ -41,7 +41,13 @@ function formatLocations(locs?: string[]): string {
 }
 
 function hasFinalKey(chars: CharacterKeyProgress[]): boolean {
-  return chars.some((c) => c.final_item && (c.final_item.have || c.final_item.shared_bank))
+  // on_key_ring covers the completed case where the assembled key was consumed
+  // out of inventory onto the /keys key ring (so it's absent from the export).
+  return chars.some(
+    (c) =>
+      c.final_item &&
+      (c.final_item.have || c.final_item.shared_bank || c.final_item.on_key_ring)
+  )
 }
 
 function hasIntermediateItem(chars: CharacterKeyProgress[]): boolean {
@@ -259,6 +265,22 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
                                   </span>
                                 )}
                               </div>
+                            ) : fi?.on_key_ring ? (
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span title="Keyed — on the /keys key ring">
+                                  <CheckCircle2
+                                    size={14}
+                                    className="inline-block"
+                                    style={{ color: 'var(--color-success)' }}
+                                  />
+                                </span>
+                                <span
+                                  className="text-[9px] leading-tight"
+                                  style={{ color: 'var(--color-muted)' }}
+                                >
+                                  key ring
+                                </span>
+                              </div>
                             ) : fi?.shared_bank ? (
                               <div className="flex flex-col items-center gap-0.5">
                                 <span
@@ -330,7 +352,9 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
                       {hasExportChars.map((charProg) => {
                         const ii = charProg.intermediate_item
                         const doneViaFinal = !!(
-                          charProg.final_item?.have || charProg.final_item?.shared_bank
+                          charProg.final_item?.have ||
+                          charProg.final_item?.shared_bank ||
+                          charProg.final_item?.on_key_ring
                         )
                         // Only the character's own held intermediate has a real
                         // slot; if it's complete only because the final key exists,
@@ -415,7 +439,7 @@ function KeyCard({ keyDef, chars, defaultOpen = false }: KeyCardProps): React.Re
                       {/* Per-character status */}
                       {hasExportChars.map((charProg) => {
                         const cs = charProg.components[ci]
-                        const keyedViaFinal = !!(charProg.final_item && (charProg.final_item.have || charProg.final_item.shared_bank))
+                        const keyedViaFinal = !!(charProg.final_item && (charProg.final_item.have || charProg.final_item.shared_bank || charProg.final_item.on_key_ring))
                         const coveredByIntermediate = !!(
                           ci < coverCount &&
                           charProg.intermediate_item &&
