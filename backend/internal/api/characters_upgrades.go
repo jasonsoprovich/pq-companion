@@ -775,8 +775,11 @@ func statLineFromBlock(b statBlock) upgrade.StatLine {
 		WIS: b.WIS, INT: b.INT, CHA: b.CHA,
 		MR: b.MR, FR: b.FR, CR: b.CR, DR: b.DR, PR: b.PR,
 		// Attack and mana regen are the headroom references for the soft-capped
-		// ATK (250) and Flowing Thought (15) scoring terms.
-		Attack: b.Attack, ManaRegen: b.FT + b.ManaRegen,
+		// ATK (250) and Flowing Thought (15) scoring terms. Only worn FT counts
+		// against the item FT cap — b.ManaRegen (AA/buff flat regen) is uncapped
+		// and never item-sourced, so folding it in here would falsely report the
+		// 15 cap as reached and hide real FT upgrades.
+		Attack: b.Attack, ManaRegen: b.FT,
 	}
 }
 
@@ -813,7 +816,10 @@ func (wc *wornCache) contribution(wornEffect, wornLevel int) upgrade.StatLine {
 			STR: blk.STR, STA: blk.STA, AGI: blk.AGI, DEX: blk.DEX,
 			WIS: blk.WIS, INT: blk.INT, CHA: blk.CHA,
 			MR: blk.MR, FR: blk.FR, CR: blk.CR, DR: blk.DR, PR: blk.PR,
-			Attack: blk.Attack, ManaRegen: blk.FT + blk.ManaRegen, Haste: haste,
+			// A worn effect's mana regen is always Flowing Thought (SPA 15 →
+			// blk.FT); parseWornEffect never sets blk.ManaRegen, so FT is the
+			// item's whole contribution to the cap-scored mana-regen axis.
+			Attack: blk.Attack, ManaRegen: blk.FT, Haste: haste,
 		}
 	}
 	wc.m[key] = sl
