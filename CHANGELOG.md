@@ -9,6 +9,34 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.16.1 — 2026-07-08
+
+Local neural text-to-speech arrives with Piper support, plus a redesigned
+macro editor and cultural-recipe awareness for tradeskills.
+
+### Highlights
+- **Piper TTS** — hook up a locally-installed Piper neural voice for trigger
+  text-to-speech alerts. PQ Companion detects your Piper install, spawns it
+  to synthesize speech (with a warm-process mode to avoid cold-start lag),
+  caches generated audio, and falls back to the browser's built-in voice if
+  anything goes wrong. Configure it from Settings → General.
+- **Macro editor redesign** — the in-game macro grid now matches
+  EverQuest's actual 2-column social layout, with drag-to-rearrange slots
+  and a one-click reset for page 1 defaults.
+- **Cultural recipes** — the recipe browser and Tradeskill Leveling planner
+  now flag race-locked cultural recipes so you don't get steered into a
+  combine your character can't perform.
+
+### Fixes
+- Key Tracker now counts keys on your key ring as keyed, not just
+  inventory copies.
+- Gear Upgrade Finder remembers your sort order across tab switches, and
+  Flowing Thought headroom only counts a worn copy.
+- Tradeskill success chance now reports the failure floor at max skill
+  instead of your current skill.
+- Maelin's Concoction skill-up buff only applies to the failure-path
+  skill-up chance, matching its actual effect.
+
 ## v0.16.0 — 2026-07-06
 
 A big tradeskill release: plan the cheapest path to max skill, see your

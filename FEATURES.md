@@ -1464,6 +1464,29 @@ hardening — no new features, but a broad sweep of reliability fixes.
   crowd-control immunities; and the spell-modifiers view returns empty instead
   of erroring when no Quarmy export is present
 
+## v0.16.1 — Piper TTS, Macro Editor Redesign, Cultural Recipe Awareness
+
+- **Piper TTS** — trigger text-to-speech alerts can now use a
+  locally-installed Piper neural voice instead of the browser's built-in
+  speech synthesis. PQ Companion detects your Piper executable and voice
+  model, spawns it to synthesize speech (with an optional warm-process mode
+  to avoid cold-start lag on every alert), caches generated audio by
+  content hash, and falls back to the browser voice if anything goes
+  wrong. Piper is a user-installed external tool (like Zeal/EQW) — nothing
+  is bundled. Configure it from Settings → General
+- **Macro editor redesign** — the in-game macro grid now mirrors
+  EverQuest's actual 2-column social layout, with drag-to-rearrange slots
+  and a one-click reset back to the page 1 defaults
+- **Cultural recipe awareness** — the recipe browser and Tradeskill
+  Leveling planner now flag race-locked cultural recipes so a plan never
+  steers you into a combine your character's race can't perform
+- Fixes: Key Tracker counts keys on your key ring (not just inventory
+  copies) as keyed; Gear Upgrade Finder remembers your sort order across
+  tab switches and Flowing Thought AC headroom only counts a worn copy;
+  the combine success calculator reports the failure floor at max skill
+  instead of current skill; and Maelin Starpyre's skill-up buff only
+  boosts the failure-path skill-up chance, matching its actual effect
+
 ## Phase 11 — Project Website
 _Planned_
 
