@@ -27,26 +27,59 @@ func (h *piperHandler) piperConfig() pipertts.Config {
 		ExePath:   p.PiperExePath,
 		ModelPath: p.PiperModelPath,
 		Mode:      p.PiperMode,
-		ServerURL: p.PiperServerURL,
 	}
 }
 
-// GET /api/piper/status
-// Reports whether the configured piper executable + voice model are present and
-// valid (and the piper version, best-effort). Powers the Settings status card.
-func (h *piperHandler) status(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, pipertts.DetectStatus(r.Context(), h.piperConfig()))
+// piperStatusResponse composes the pure install-detection check with the
+// Service's live warm-worker and cache state into the single JSON object the
+// Settings card fetches.
+type piperStatusResponse struct {
+	pipertts.Status
+	Mode        string `json:"mode"`
+	WarmRunning bool   `json:"warm_running"`
+	WarmError   string `json:"warm_error,omitempty"`
+	CacheFiles  int    `json:"cache_files"`
+	CacheBytes  int64  `json:"cache_bytes"`
 }
 
-// POST /api/piper/synthesize  body: {"text": "..."}  ->  {"path": "..."}
+// GET /api/piper/status
+// Reports whether the configured piper executable + voice model are present
+// and valid (and the piper version, best-effort), plus the current mode,
+// whether a warm worker is alive, and cache size. Powers the Settings status
+// card. As a side effect, reconciles the warm worker against the live config
+// (stopping — never starting — one that no longer matches), so a stale warm
+// worker doesn't linger after the user disables Piper or changes its path;
+// the frontend already re-fetches this on every config save.
+func (h *piperHandler) status(w http.ResponseWriter, r *http.Request) {
+	cfg := h.piperConfig()
+	h.svc.ReconcileWarm(cfg)
+	base := pipertts.DetectStatus(r.Context(), cfg)
+	running, warmErr := h.svc.WarmStatus()
+	files, bytes, _ := h.svc.CacheStats()
+	writeJSON(w, http.StatusOK, piperStatusResponse{
+		Status:      base,
+		Mode:        cfg.EffectiveMode(),
+		WarmRunning: running,
+		WarmError:   warmErr,
+		CacheFiles:  files,
+		CacheBytes:  bytes,
+	})
+}
+
+// POST /api/piper/synthesize  body: {"text": "...", "force"?: bool}  ->  {"path": "..."}
 // Returns the cached WAV path for text in the configured Piper voice,
 // synthesizing + caching on a miss. Used by the trigger-save pre-generate step,
 // the settings "Test voice" button, and lazy fire-time fallback. A disabled or
 // misconfigured install (or a spawn failure) responds 503 so the frontend can
 // fall back to Web Speech without treating it as a hard error.
+//
+// force (used only by "Test voice") bypasses the cache-hit shortcut — see
+// Service.Synthesize's doc for why that matters for actually exercising the
+// currently selected spawn/warm mode.
 func (h *piperHandler) synthesize(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Text string `json:"text"`
+		Text  string `json:"text"`
+		Force bool   `json:"force"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -56,7 +89,7 @@ func (h *piperHandler) synthesize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "text is required")
 		return
 	}
-	path, err := h.svc.Synthesize(r.Context(), h.piperConfig(), req.Text)
+	path, err := h.svc.Synthesize(r.Context(), h.piperConfig(), req.Text, req.Force)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return

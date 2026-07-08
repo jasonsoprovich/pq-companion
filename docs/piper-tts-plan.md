@@ -1,13 +1,29 @@
 # Piper TTS (User-Installed Local Voice) — Implementation Plan
 
-> **Status:** Phase 1 (Mode A) **implemented** 2026-07-07 (issue #147). Built as
-> a standalone `internal/pipertts` package (not the shared `internal/tts`
-> abstraction of §7 — Piper is the only provider today; that can be generalized
-> when cloud TTS lands). The voice ref is carried as a namespaced prefix string
+> **Status:** Phase 1 (Mode A) **implemented** 2026-07-07, Phase 2 (warm mode +
+> cache GC) **implemented** 2026-07-07 (issue #147). Built as a standalone
+> `internal/pipertts` package (not the shared `internal/tts` abstraction of §7
+> — Piper is the only provider today; that can be generalized when cloud TTS
+> lands). The voice ref is carried as a namespaced prefix string
 > (`piper:local`) in the existing `voice` field rather than a new structured
 > column (§6 alternative), so it flows through the Go trigger models / WS /
-> config untouched. Phases 2–3 (warm http_server, cache GC, cloud convergence)
-> remain future work.
+> config untouched.
+>
+> **Phase 2 supersedes this doc's original §2 "Mode B" plan.** The Python
+> `piper.http_server` module turned out to be unviable as the warm-mode
+> mechanism — it isn't part of the C++ standalone binary this doc recommends
+> (§3), and `pip install piper-tts` is currently broken on Apple Silicon.
+> Instead, warm mode runs the **same standalone binary** with `--output_dir`
+> instead of `-f`: it loads the voice model once and loops on stdin
+> indefinitely (one phrase in, one WAV path out), kept alive as a single
+> persistent subprocess (`internal/pipertts/warm.go`) across requests, falling
+> back to the Phase 1 per-request spawn on any failure. No Python, no HTTP
+> server, no daemon mode, no `piper_server_url` config field (removed — it had
+> zero consumers). Cache GC is a simple filesystem-only age sweep (30-day
+> hardcoded retention, mtime-touched on every cache hit as the LRU mechanism,
+> no new config field or DB table) run daily alongside the existing chat-
+> retention purge in `cmd/server/main.go`. Phase 3 (cloud TTS convergence)
+> remains deferred/out of scope, per user direction.
 >
 > **Last updated:** 2026-07-07
 >

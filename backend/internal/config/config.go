@@ -512,11 +512,11 @@ type Preferences struct {
 	PiperEnabled   bool   `yaml:"piper_enabled,omitempty" json:"piper_enabled"`
 	PiperExePath   string `yaml:"piper_exe_path,omitempty" json:"piper_exe_path"`
 	PiperModelPath string `yaml:"piper_model_path,omitempty" json:"piper_model_path"`
-	// PiperMode selects synthesis transport: "spawn" (v1, per-phrase subprocess)
-	// or "http" (phase 2, warm local server). Empty is treated as "spawn".
+	// PiperMode selects synthesis strategy: "spawn" (default, a fresh
+	// subprocess per phrase) or "warm" (Phase 2, one persistent subprocess
+	// kept alive across requests so the voice model only loads once). Empty
+	// is treated as "spawn".
 	PiperMode string `yaml:"piper_mode,omitempty" json:"piper_mode"`
-	// PiperServerURL is the base URL of a local piper http_server (Mode B only).
-	PiperServerURL string `yaml:"piper_server_url,omitempty" json:"piper_server_url"`
 }
 
 // TimerAlertPref is a global default "fading soon" notification for the Custom

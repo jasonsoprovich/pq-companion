@@ -32,6 +32,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/loot"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/pipertts"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/popflag"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/raidthreat"
@@ -838,6 +839,28 @@ func main() {
 			}
 		}()
 	}
+
+	// Piper local-TTS cache retention: reclaim generated WAVs that have gone
+	// unused for a while (touched on every cache hit, so anything still in
+	// active use never ages out — see internal/pipertts/cache.go). Same
+	// run-once-then-daily shape as the chat purge above; independent of
+	// whether Piper is currently enabled, since disabling it shouldn't strand
+	// old cache files forever.
+	go func() {
+		sweep := func() {
+			if n, err := pipertts.SweepOldCache(filepath.Dir(cfgMgr.Path())); err != nil {
+				slog.Warn("piper tts cache sweep failed", "err", err)
+			} else if n > 0 {
+				slog.Info("piper tts cache sweep", "deleted", n)
+			}
+		}
+		sweep()
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			sweep()
+		}
+	}()
 
 	// Zeal IPC supervisor: discovers the eqgame.exe Zeal pipe and forwards
 	// live state into every downstream consumer that benefits from real-time,

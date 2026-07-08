@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestVoiceName(t *testing.T) {
@@ -27,15 +28,18 @@ func TestVoiceName(t *testing.T) {
 	}
 }
 
-func TestSpawnMode(t *testing.T) {
-	if !(Config{Mode: ""}).spawnMode() {
-		t.Error("empty mode should default to spawn")
+func TestEffectiveMode(t *testing.T) {
+	if got := (Config{Mode: ""}).EffectiveMode(); got != "spawn" {
+		t.Errorf("empty mode should default to spawn, got %q", got)
 	}
-	if !(Config{Mode: "spawn"}).spawnMode() {
-		t.Error("spawn mode should be spawn")
+	if got := (Config{Mode: "spawn"}).EffectiveMode(); got != "spawn" {
+		t.Errorf("spawn mode should stay spawn, got %q", got)
 	}
-	if (Config{Mode: "http"}).spawnMode() {
-		t.Error("http mode should not be spawn")
+	if got := (Config{Mode: "warm"}).EffectiveMode(); got != "warm" {
+		t.Errorf("warm mode should stay warm, got %q", got)
+	}
+	if got := (Config{Mode: "bogus"}).EffectiveMode(); got != "spawn" {
+		t.Errorf("unrecognized mode should fall back to spawn, got %q", got)
 	}
 }
 
@@ -113,6 +117,113 @@ func TestClearCacheMissingDirIsNoError(t *testing.T) {
 	}
 	if n != 0 {
 		t.Errorf("clearCache on missing dir removed %d, want 0", n)
+	}
+}
+
+func TestSweepOldCacheAgeBoundary(t *testing.T) {
+	base := t.TempDir()
+	dir := cacheDir(base)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldPath := filepath.Join(dir, "old.wav")
+	freshPath := filepath.Join(dir, "fresh.wav")
+	for _, p := range []string{oldPath, freshPath} {
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(oldPath, old, old); err != nil {
+		t.Fatal(err)
+	}
+	// freshPath keeps its just-written (now) mtime.
+
+	n, err := sweepOldCache(base, 24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("sweepOldCache removed %d, want 1", n)
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Error("old.wav should have been removed")
+	}
+	if _, err := os.Stat(freshPath); err != nil {
+		t.Error("fresh.wav should NOT have been removed")
+	}
+}
+
+func TestSweepOldCacheMissingDirIsNoError(t *testing.T) {
+	n, err := sweepOldCache(t.TempDir(), 24*time.Hour)
+	if err != nil {
+		t.Errorf("sweepOldCache on missing dir should not error, got %v", err)
+	}
+	if n != 0 {
+		t.Errorf("sweepOldCache on missing dir removed %d, want 0", n)
+	}
+}
+
+func TestTouchCacheFileRescuesFromSweep(t *testing.T) {
+	base := t.TempDir()
+	dir := cacheDir(base)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, "active.wav")
+	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(p, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	touchCacheFile(p) // simulates a cache hit refreshing the mtime
+
+	n, err := sweepOldCache(base, 24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("sweepOldCache removed %d files, want 0 (touch should have rescued it)", n)
+	}
+	if _, err := os.Stat(p); err != nil {
+		t.Error("active.wav should still exist after touch + sweep")
+	}
+}
+
+func TestCacheStats(t *testing.T) {
+	base := t.TempDir()
+	dir := cacheDir(base)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	contents := map[string]string{"a.wav": "1234", "b.wav": "12345678", "notes.txt": "ignored"}
+	for name, content := range contents {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files, bytes, err := cacheStats(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files != 2 {
+		t.Errorf("cacheStats files = %d, want 2 (non-.wav should be excluded)", files)
+	}
+	if bytes != 12 { // "1234" (4) + "12345678" (8)
+		t.Errorf("cacheStats bytes = %d, want 12", bytes)
+	}
+}
+
+func TestCacheStatsMissingDirIsNoError(t *testing.T) {
+	files, bytes, err := cacheStats(t.TempDir())
+	if err != nil {
+		t.Errorf("cacheStats on missing dir should not error, got %v", err)
+	}
+	if files != 0 || bytes != 0 {
+		t.Errorf("cacheStats on missing dir = (%d, %d), want (0, 0)", files, bytes)
 	}
 }
 

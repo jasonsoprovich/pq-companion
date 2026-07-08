@@ -48,12 +48,14 @@ var errSynthUnavailable = errors.New("piper not available")
 // enforces synthTimeout (killing the process on expiry), and caps the output
 // size. The file at outPath is written atomically: piper renders to a temp file
 // in the same directory which is renamed into place only on success.
+//
+// This is the universal cold path: used directly when cfg.Mode is "spawn"
+// (default), AND as the fallback when cfg.Mode is "warm" but the persistent
+// worker fails to start or fails a request — so it must synthesize regardless
+// of cfg.Mode, never gate on it.
 func synthesizeToFile(ctx context.Context, cfg Config, text, outPath string) error {
 	if !cfg.Enabled {
 		return fmt.Errorf("%w: disabled", errSynthUnavailable)
-	}
-	if !cfg.spawnMode() {
-		return fmt.Errorf("%w: mode %q not supported (v1 is spawn only)", errSynthUnavailable, cfg.Mode)
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {
