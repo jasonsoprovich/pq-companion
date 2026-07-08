@@ -5,16 +5,27 @@ import { PIPER_VOICE_ID, type PiperStatus } from '../lib/piper'
 import { useWebSocket } from './useWebSocket'
 import type { WsMessage } from './useWebSocket'
 
+export interface UsePiperStatusResult {
+  status: PiperStatus | null
+  /**
+   * Re-fetches status immediately. Exposed for callers that just triggered a
+   * synthesis directly (e.g. Settings "Test voice") — a config:updated event
+   * won't fire for that, so without an explicit refresh the warm-worker
+   * health dot wouldn't update until some later, unrelated config change.
+   */
+  refresh: () => void
+}
+
 /**
  * Fetches the backend's Piper (local TTS) install status and keeps it fresh
- * when the config changes. Returns null until the first fetch resolves.
+ * when the config changes. status is null until the first fetch resolves.
  *
  * The status drives the Settings card and gates whether the Piper voice is
  * offered in voice dropdowns — see useTTSVoices. We refetch on `config:updated`
  * so editing the exe/model path (or toggling Piper) re-detects without a
  * manual refresh.
  */
-export function usePiperStatus(): PiperStatus | null {
+export function usePiperStatus(): UsePiperStatusResult {
   const [status, setStatus] = useState<PiperStatus | null>(null)
 
   const refresh = useCallback(() => {
@@ -37,7 +48,7 @@ export function usePiperStatus(): PiperStatus | null {
   )
   useWebSocket(onMessage)
 
-  return status
+  return { status, refresh }
 }
 
 /**
@@ -46,7 +57,7 @@ export function usePiperStatus(): PiperStatus | null {
  * useVoices() in the alert/trigger voice dropdowns.
  */
 export function useTTSVoices(baseVoices: string[]): string[] {
-  const piper = usePiperStatus()
+  const { status: piper } = usePiperStatus()
   if (piper?.enabled && piper.ready) {
     return [PIPER_VOICE_ID, ...baseVoices]
   }

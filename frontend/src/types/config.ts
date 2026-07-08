@@ -147,9 +147,10 @@ export interface Preferences {
   piper_enabled?: boolean
   piper_exe_path?: string
   piper_model_path?: string
-  // "spawn" (v1) | "http" (phase 2). Empty/missing = "spawn".
+  // "spawn" (default, a fresh subprocess per phrase) | "warm" (Phase 2, one
+  // persistent subprocess kept alive across requests). Empty/missing =
+  // "spawn".
   piper_mode?: string
-  piper_server_url?: string
 }
 
 export interface BackupSettings {

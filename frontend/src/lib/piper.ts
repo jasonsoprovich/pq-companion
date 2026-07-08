@@ -29,7 +29,10 @@ export function voiceLabel(voice: string): string {
   return voice === PIPER_VOICE_ID ? PIPER_VOICE_LABEL : voice
 }
 
-/** Backend Piper install status (GET /api/piper/status). Mirrors the Go Status. */
+/**
+ * Backend Piper install status (GET /api/piper/status). Mirrors the Go
+ * piperStatusResponse (pipertts.Status flattened + mode/warm/cache fields).
+ */
 export interface PiperStatus {
   enabled: boolean
   exe_path?: string
@@ -41,4 +44,15 @@ export interface PiperStatus {
   voice_name?: string
   ready: boolean
   error?: string
+  // "spawn" | "warm" — the currently configured synthesis mode.
+  mode?: string
+  // Whether a persistent warm-mode worker is currently alive. Meaningless
+  // when mode is "spawn" (there is never a persistent worker in that mode).
+  warm_running?: boolean
+  // Most recent warm-worker failure, if any (e.g. it crashed and hasn't been
+  // replaced by a new request yet).
+  warm_error?: string
+  // Cached TTS WAV count / total size, for the "Clear cache" UI.
+  cache_files?: number
+  cache_bytes?: number
 }

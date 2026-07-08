@@ -22,6 +22,12 @@ const VOICE_CATALOG = 'https://huggingface.co/rhasspy/piper-voices/tree/main'
 
 const TEST_PHRASE = 'Piper text to speech is working.'
 
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
 // A colored status dot: green = ok, red = problem, gray = unknown/not set.
 function Dot({ state }: { state: 'on' | 'off' | 'unknown' }): React.ReactElement {
   const color =
@@ -54,9 +60,10 @@ export default function PiperTtsSettings({
   config,
   setConfig,
 }: PiperTtsSettingsProps): React.ReactElement {
-  const status = usePiperStatus()
+  const { status, refresh: refreshStatus } = usePiperStatus()
   const prefs = config.preferences
   const enabled = prefs.piper_enabled ?? false
+  const mode = prefs.piper_mode === 'warm' ? 'warm' : 'spawn'
 
   const [testing, setTesting] = useState(false)
   const [testError, setTestError] = useState<string | null>(null)
@@ -98,8 +105,13 @@ export default function PiperTtsSettings({
     setTestError(null)
     setTesting(true)
     try {
-      const { path } = await piperSynthesize(TEST_PHRASE)
+      // force: true bypasses the cache so this genuinely exercises the
+      // currently selected mode's live synthesis path — the cache key is
+      // mode-independent, so a normal (non-forced) call would just replay
+      // whatever's already cached and never actually start a warm worker.
+      const { path } = await piperSynthesize(TEST_PHRASE, true)
       playSoundForTest(path, 1.0, () => setTesting(false))
+      refreshStatus() // update the warm-worker health dot without waiting for a config change
     } catch (e) {
       setTesting(false)
       setTestError((e as Error).message)
@@ -302,6 +314,61 @@ export default function PiperTtsSettings({
             </div>
           )}
 
+          {/* Synthesis mode */}
+          <div>
+            <div className="mb-1 text-sm" style={{ color: 'var(--color-foreground)' }}>
+              Synthesis mode
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => saveNow({ piper_mode: 'spawn' })}
+                className="flex-1 rounded px-2.5 py-1.5 text-left text-xs font-medium"
+                style={{
+                  backgroundColor: mode === 'spawn' ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                  color: mode === 'spawn' ? '#fff' : 'var(--color-muted-foreground)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                Spawn per phrase
+                <div className="text-[10px] font-normal opacity-80">
+                  Simple; a new phrase may lag briefly
+                </div>
+              </button>
+              <button
+                onClick={() => saveNow({ piper_mode: 'warm' })}
+                className="flex-1 rounded px-2.5 py-1.5 text-left text-xs font-medium"
+                style={{
+                  backgroundColor: mode === 'warm' ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                  color: mode === 'warm' ? '#fff' : 'var(--color-muted-foreground)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                Keep Piper running (warm)
+                <div className="text-[10px] font-normal opacity-80">
+                  Faster; uses a bit of background memory
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Warm worker health — only meaningful in warm mode */}
+          {mode === 'warm' && status?.ready && (
+            <div
+              className="flex items-center gap-2 rounded px-2 py-1.5"
+              style={{ backgroundColor: 'var(--color-surface-2)' }}
+            >
+              <Dot state={status.warm_running ? 'on' : status.warm_error ? 'off' : 'unknown'} />
+              <span className="flex-1 text-xs" style={{ color: 'var(--color-foreground)' }}>
+                Warm worker
+                <span className="ml-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                  {status.warm_running
+                    ? 'running'
+                    : status.warm_error || 'starts on first use'}
+                </span>
+              </span>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -328,6 +395,12 @@ export default function PiperTtsSettings({
             >
               <Trash2 size={11} /> Clear TTS cache
             </button>
+            {status && (status.cache_files ?? 0) > 0 && (
+              <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                {status.cache_files} file{status.cache_files === 1 ? '' : 's'},{' '}
+                {formatBytes(status.cache_bytes ?? 0)}
+              </span>
+            )}
             {cacheMsg && (
               <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
                 {cacheMsg}
@@ -342,9 +415,9 @@ export default function PiperTtsSettings({
           )}
 
           <p className="text-[11px] leading-relaxed" style={{ color: 'var(--color-muted)' }}>
-            Generated speech is cached, and callouts you save are pre-generated so
-            they fire instantly. The first time a brand-new phrase is spoken it may
-            lag briefly on slow hardware while Piper loads the model.
+            {mode === 'warm'
+              ? 'Warm mode keeps Piper loaded in the background, so even brand-new phrases synthesize almost instantly — only the very first phrase after enabling (or after a restart) pays a one-time model-load cost. Unused cached files are automatically cleared after 30 days.'
+              : 'Generated speech is cached, and callouts you save are pre-generated so they fire instantly. The first time a brand-new phrase is spoken it may lag briefly on slow hardware while Piper loads the model. Unused cached files are automatically cleared after 30 days.'}
           </p>
         </div>
       )}

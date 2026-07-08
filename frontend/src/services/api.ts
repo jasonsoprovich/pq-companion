@@ -607,9 +607,15 @@ export function getPiperStatus(): Promise<import('../lib/piper').PiperStatus> {
  * path (generated on a cache miss). Rejects when Piper is disabled,
  * misconfigured, or the spawn fails — callers use that to fall back to Web
  * Speech, so a rejection here is a normal, non-fatal outcome.
+ *
+ * Pass `force: true` to bypass the cache and always regenerate — used by the
+ * Settings "Test voice" button, since the cache key is mode-independent (a
+ * phrase generated once is replayable regardless of spawn/warm mode), so a
+ * normal cache hit would never actually exercise the currently selected
+ * mode's live synthesis path.
  */
-export function piperSynthesize(text: string): Promise<{ path: string }> {
-  return post<{ path: string }>('/api/piper/synthesize', { text })
+export function piperSynthesize(text: string, force = false): Promise<{ path: string }> {
+  return post<{ path: string }>('/api/piper/synthesize', { text, force })
 }
 
 export function clearPiperCache(): Promise<{ removed: number }> {
