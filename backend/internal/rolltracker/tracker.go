@@ -44,6 +44,14 @@ const maxLootCalls = 32
 // ("inc in 30", "coth 1").
 var reLootNumber = regexp.MustCompile(`\b\d{3,4}\b`)
 
+// reLootSuffixNumber matches a leading-digit-omitted loot call token like
+// "x11" or "x22" — shorthand some guilds use to denote a roll tier bracket
+// (the "1xx pick / 122 upgrade / 133 alt" suffix scheme) without committing
+// to which item's group digit it belongs to. It's treated as a suffix
+// wildcard: it matches any active session whose Max ends in those digits,
+// regardless of the leading digit(s).
+var reLootSuffixNumber = regexp.MustCompile(`(?i)\bx(\d{2,3})\b`)
+
 // ItemMatcher resolves a chat line to the loot-item name it mentions,
 // returning ok=false when nothing convincing matches. It is injected (rather
 // than the tracker importing the game DB directly) so the package stays
@@ -51,11 +59,30 @@ var reLootNumber = regexp.MustCompile(`\b\d{3,4}\b`)
 type ItemMatcher func(line string) (name string, ok bool)
 
 // lootCall is a recent chat line that mentioned one or more 3–4 digit
-// numbers — a candidate "roll <n> for <item>" announcement.
+// numbers, or "x"-prefixed suffix shorthand (e.g. "x11") — a candidate
+// "roll <n> for <item>" announcement.
 type lootCall struct {
-	ts      time.Time
-	numbers []int
-	text    string
+	ts       time.Time
+	numbers  []int
+	suffixes []lootSuffix
+	text     string
+}
+
+// lootSuffix is a suffix-only loot number, as written in "x11"-style
+// shorthand: the digits are known but the leading (group) digit isn't, so
+// it matches any Max that ends in those digits.
+type lootSuffix struct {
+	value int // the suffix digits, parsed as an int (e.g. 11)
+	width int // number of suffix digits (e.g. 2), so "x11" doesn't also match a Max ending in "011"
+}
+
+// matchesSuffix reports whether max ends in the given suffix's digits.
+func (sfx lootSuffix) matchesSuffix(max int) bool {
+	mod := 1
+	for i := 0; i < sfx.width; i++ {
+		mod *= 10
+	}
+	return max%mod == sfx.value
 }
 
 // Tracker maintains the live set of /random sessions inferred from the
@@ -167,10 +194,10 @@ func (t *Tracker) HandleLine(ts time.Time, msg string) {
 	}
 	// Cheap pre-filter before the ~16-regex chat parse (which the chat consumer
 	// already ran on this same line): a loot call must mention a 3-4 digit roll
-	// number, so a line without one can't be one. Reuses reLootNumber on the
-	// raw line — a necessary condition, since parsing only strips the speaker
-	// prefix and never introduces a number.
-	if !reLootNumber.MatchString(msg) {
+	// number or an "x11"-style suffix shorthand, so a line without either can't
+	// be one. Reuses the regexes on the raw line — a necessary condition,
+	// since parsing only strips the speaker prefix and never introduces one.
+	if !reLootNumber.MatchString(msg) && !reLootSuffixNumber.MatchString(msg) {
 		return
 	}
 	// Only genuine player chat — never combat spam, where "for 333 points
@@ -180,19 +207,20 @@ func (t *Tracker) HandleLine(ts time.Time, msg string) {
 		return
 	}
 	nums := extractRollNumbers(parsed.Message)
-	if len(nums) == 0 {
+	suffixes := extractLootSuffixes(parsed.Message)
+	if len(nums) == 0 && len(suffixes) == 0 {
 		return
 	}
 
 	t.mu.Lock()
-	t.recentCalls = append(t.recentCalls, lootCall{ts: ts, numbers: nums, text: parsed.Message})
+	t.recentCalls = append(t.recentCalls, lootCall{ts: ts, numbers: nums, suffixes: suffixes, text: parsed.Message})
 	t.pruneCallsLocked(ts)
-	// Does this line name a number belonging to an active, still-unlabeled
-	// session? If so, claim the attempt now (under the lock) and resolve
-	// the name outside it.
+	// Does this line name a number (exact or suffix-shorthand) belonging to
+	// an active, still-unlabeled session? If so, claim the attempt now
+	// (under the lock) and resolve the name outside it.
 	var targets []uint64
 	for _, s := range t.sessions {
-		if s.Active && s.ItemName == "" && !s.autoSuggested && containsInt(nums, s.Max) {
+		if s.Active && s.ItemName == "" && !s.autoSuggested && callMatchesMax(nums, suffixes, s.Max) {
 			s.autoSuggested = true
 			targets = append(targets, s.ID)
 		}
@@ -220,7 +248,7 @@ func (t *Tracker) recentCallForLocked(max int, now time.Time) (string, bool) {
 		if now.Sub(c.ts) > lootCallTTL {
 			break // older entries only; buffer is chronological
 		}
-		if containsInt(c.numbers, max) {
+		if callMatchesMax(c.numbers, c.suffixes, max) {
 			return c.text, true
 		}
 	}
@@ -279,7 +307,52 @@ func extractRollNumbers(s string) []int {
 	return out
 }
 
+// extractLootSuffixes returns the distinct "x11"-style suffix tokens in a
+// chat line.
+func extractLootSuffixes(s string) []lootSuffix {
+	matches := reLootSuffixNumber.FindAllStringSubmatch(s, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	out := make([]lootSuffix, 0, len(matches))
+	for _, m := range matches {
+		digits := m[1]
+		n, err := strconv.Atoi(digits)
+		if err != nil {
+			continue
+		}
+		sfx := lootSuffix{value: n, width: len(digits)}
+		if !containsSuffix(out, sfx) {
+			out = append(out, sfx)
+		}
+	}
+	return out
+}
+
+// callMatchesMax reports whether a loot call's extracted numbers or
+// suffix-shorthand tokens identify the given session Max.
+func callMatchesMax(nums []int, suffixes []lootSuffix, max int) bool {
+	if containsInt(nums, max) {
+		return true
+	}
+	for _, sfx := range suffixes {
+		if sfx.matchesSuffix(max) {
+			return true
+		}
+	}
+	return false
+}
+
 func containsInt(xs []int, want int) bool {
+	for _, x := range xs {
+		if x == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsSuffix(xs []lootSuffix, want lootSuffix) bool {
 	for _, x := range xs {
 		if x == want {
 			return true

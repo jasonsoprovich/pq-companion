@@ -207,6 +207,35 @@ func TestAutoSuggestIgnoresNonChat(t *testing.T) {
 	}
 }
 
+func TestAutoSuggestXSuffixShorthand(t *testing.T) {
+	tr := newTrackerForTest()
+	tr.SetItemMatcher(stubMatcher("Robe of Secrets"))
+	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)
+	// Some guilds call out the tier suffixes without the leading group
+	// digit ("x11 x22 x33" instead of spelling out "311 322 333"), leaving
+	// the actual roll number's group digit implicit. The real /random calls
+	// still carry the full number.
+	tr.HandleLine(base, "Belnoctourne tells the raid, 'Robe of Secrets x11 x22 x33'")
+	feedRoll(t, tr, "Astrael", 311, 5, base.Add(time.Second))
+
+	if got := tr.State().Sessions[0].ItemName; got != "Robe of Secrets" {
+		t.Fatalf("session should be auto-labeled via suffix shorthand, got %q", got)
+	}
+}
+
+func TestAutoSuggestXSuffixMustMatchTier(t *testing.T) {
+	tr := newTrackerForTest()
+	tr.SetItemMatcher(stubMatcher("Robe of Secrets"))
+	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)
+	// Call names the "x11" (pick) tier only; a 322 (upgrade tier) roll on a
+	// different item must not pick it up.
+	tr.HandleLine(base, "Belnoctourne tells the raid, 'Robe of Secrets x11'")
+	feedRoll(t, tr, "Astrael", 322, 5, base.Add(time.Second))
+	if got := tr.State().Sessions[0].ItemName; got != "" {
+		t.Fatalf("an x11 call must not label a 322 roll, got %q", got)
+	}
+}
+
 func TestAutoSuggestKeepsManualLabel(t *testing.T) {
 	tr := newTrackerForTest()
 	tr.SetItemMatcher(stubMatcher("Robe of the Lost Circle"))
