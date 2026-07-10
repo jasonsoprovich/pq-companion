@@ -263,11 +263,20 @@ func (r *Replayer) run(f *os.File, stop <-chan struct{}) {
 		prevTS = ts
 
 		// Same per-line order as the live tailer: raw line first (triggers),
-		// then the parsed event for every other consumer.
+		// then the parsed event for every other consumer. Consumers are handed
+		// the real dispatch time, not the line's original log timestamp — the
+		// spell timer and trigger engines compute expiresAt as
+		// (timestamp + duration), so a historical timestamp (anything but
+		// "just now") produces an expiry already in the past and the overlay
+		// disappears within a frame of appearing. ts/prevTS (the parsed log
+		// time) still drive pacing, range filtering, and position reporting
+		// below — only the timestamp forwarded to downstream state is remapped.
+		dispatchTS := time.Now()
 		if r.lineHandler != nil {
-			r.lineHandler(ts, msg)
+			r.lineHandler(dispatchTS, msg)
 		}
 		if ev, ok := ParseLine(scanner.Text()); ok {
+			ev.Timestamp = dispatchTS
 			r.handler(ev)
 		}
 
