@@ -973,6 +973,7 @@ type captureSink struct {
 	spellID  int
 	target   string
 	barColor string
+	alerts   json.RawMessage
 	calls    int
 
 	stopName    string
@@ -981,7 +982,7 @@ type captureSink struct {
 }
 
 func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string) {
-	s.name, s.category, s.duration, s.spellID, s.target, s.barColor = name, category, durationSecs, spellID, targetName, barColor
+	s.name, s.category, s.duration, s.spellID, s.target, s.barColor, s.alerts = name, category, durationSecs, spellID, targetName, barColor, alerts
 	s.calls++
 }
 func (s *captureSink) StopExternal(name string, spellID int) {
@@ -1031,6 +1032,47 @@ func TestEngine_CustomTimerWithCaptureDuration(t *testing.T) {
 	}
 	if stored.TimerDurationCapture != "2" || stored.TimerType != TimerTypeCustom {
 		t.Errorf("persisted trigger = capture %q type %q", stored.TimerDurationCapture, stored.TimerType)
+	}
+}
+
+// TestEngine_FadingSoonAlertSubstitutesCaptures verifies fading-soon
+// (TimerAlerts) TTS templates resolve capture references the same way action
+// text does (#149). Before the fix, TimerAlerts were marshaled straight from
+// the trigger definition with no substitution, so a template like
+// "Slow fading on {S1}" reached the frontend/TTS engine with the literal
+// token "{S1}" still in it instead of the captured NPC name.
+func TestEngine_FadingSoonAlertSubstitutesCaptures(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	sink := &captureSink{}
+	e := NewEngine(s, hub, sink, nil)
+
+	tr := &Trigger{
+		ID: "fs-1", Name: "Slow Debuff", Enabled: true,
+		Pattern:           `^(.+) is slowed by Xin Va\.$`,
+		TimerType:         TimerTypeDetrimental,
+		TimerDurationSecs: 120,
+		TimerAlerts: []TimerAlert{
+			{ID: "a1", Seconds: 10, Type: TimerAlertTypeTextToSpeech, TTSTemplate: "Slow fading on {S1}"},
+		},
+		Actions:   []Action{{Type: ActionOverlayText, Text: "{S1} slowed"}},
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	e.Handle(time.Now(), "a gnoll is slowed by Xin Va.")
+	if sink.calls != 1 {
+		t.Fatalf("calls = %d, want 1", sink.calls)
+	}
+	var alerts []TimerAlert
+	if err := json.Unmarshal(sink.alerts, &alerts); err != nil {
+		t.Fatalf("unmarshal alerts: %v", err)
+	}
+	if len(alerts) != 1 || alerts[0].TTSTemplate != "Slow fading on a gnoll" {
+		t.Errorf("tts_template = %+v, want %q", alerts, "Slow fading on a gnoll")
 	}
 }
 

@@ -406,8 +406,9 @@ func (e *Engine) firePipe(t *Trigger, matchedLine string, firedAt time.Time) {
 	// Pipe triggers have no regex captures, but built-in tokens
 	// ({c}/{target}) still substitute into action text. Copy-on-write,
 	// same as fire().
+	builtins := e.builtinTokens()
 	actions := t.Actions
-	if builtins := e.builtinTokens(); len(builtins) > 0 {
+	if len(builtins) > 0 {
 		actions = make([]Action, len(t.Actions))
 		copy(actions, t.Actions)
 		for i := range actions {
@@ -432,12 +433,7 @@ func (e *Engine) firePipe(t *Trigger, matchedLine string, firedAt time.Time) {
 	slog.Debug("trigger fired (pipe)", "trigger", t.Name, "match", matchedLine)
 
 	if e.sink != nil && t.TimerDurationSecs > 0 && timerCategory(t.TimerType) != "" {
-		var alertJSON json.RawMessage
-		if len(t.TimerAlerts) > 0 {
-			if buf, err := json.Marshal(t.TimerAlerts); err == nil {
-				alertJSON = buf
-			}
-		}
+		alertJSON := marshalTimerAlerts(t.TimerAlerts, nil, nil, builtins)
 		e.sink.StartExternal(timerKeyFor(t), timerCategory(t.TimerType),
 			t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID, "", t.BarColor)
 	}
@@ -571,6 +567,29 @@ func substituteCaptures(template string, match []string, names []string, builtin
 	return template
 }
 
+// marshalTimerAlerts resolves capture references ({1}, $1, {name}, {target})
+// in each fading-soon threshold's TTSTemplate the same way substituteCaptures
+// does for action text (#149), then marshals the result for the spelltimer
+// sink. {spell} is deliberately left untouched — the spell name isn't known
+// at fire time and is filled in client-side (useTimerAlerts.ts) once the
+// timer carries a resolved SpellName. Returns nil when there are no alerts,
+// matching the previous zero-value alertJSON behavior.
+func marshalTimerAlerts(alerts []TimerAlert, match []string, names []string, builtins map[string]string) json.RawMessage {
+	if len(alerts) == 0 {
+		return nil
+	}
+	resolved := make([]TimerAlert, len(alerts))
+	copy(resolved, alerts)
+	for i := range resolved {
+		resolved[i].TTSTemplate = substituteCaptures(resolved[i].TTSTemplate, match, names, builtins)
+	}
+	buf, err := json.Marshal(resolved)
+	if err != nil {
+		return nil
+	}
+	return buf
+}
+
 // builtinTokens assembles the implicit substitution values available to every
 // action: the active character ({c}/{char}/{self}) and the current combat
 // target ({target}/{t}). Empty values are omitted so unresolved tokens stay
@@ -697,12 +716,7 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 
 	if e.sink != nil && c.timerKey != "" {
 		if durationSecs := resolveTimerDuration(t, extra, match, names); durationSecs > 0 {
-			var alertJSON json.RawMessage
-			if len(t.TimerAlerts) > 0 {
-				if buf, err := json.Marshal(t.TimerAlerts); err == nil {
-					alertJSON = buf
-				}
-			}
+			alertJSON := marshalTimerAlerts(t.TimerAlerts, match, names, builtins)
 			key := resolveTimerKey(t, c.timerKey, match, names)
 			target := resolveTimerTarget(t, match, names)
 			spellID := t.SpellID
