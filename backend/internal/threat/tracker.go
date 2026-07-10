@@ -356,6 +356,18 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 // commitPending) — so an interrupted or fizzled cast generates nothing. The cast
 // line names no target, so any offensive hate is attributed to the current
 // target (Zeal pipe) or the most recently engaged mob, captured now.
+//
+// EQ casts serially, so beginning a new cast means any still-unresolved prior
+// pending has already resolved server-side — its own land/resist text just
+// hasn't reached the log yet (a spell's resolution message can lag behind the
+// next cast starting, e.g. Concussion's aggro-shed landing after the wizard
+// has already begun their next nuke). A non-direct-damage pending has no other
+// resolution path waiting for it, so it is credited now as an aggro-only land
+// rather than silently losing its hate, mirroring commitPending's
+// resist/immune treatment (offensive hate lands; a hate-mod buff is not
+// registered, since we never saw it actually take hold). A direct-damage
+// pending is left alone for its own damage line (recordSpellDamage) to
+// resolve, so a same-window nuke isn't double-counted.
 func (t *Tracker) recordCast(spellName string, ts time.Time) {
 	t.mu.Lock()
 	target := t.castTargetLocked()
@@ -365,24 +377,33 @@ func (t *Tracker) recordCast(spellName string, ts time.Time) {
 	info := t.calc.Classify(spellName, target)
 
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	// A new cast supersedes any unresolved prior pending (EQ casts serially), so
-	// even a cast that generates no hate clears the slot — a stale pending must
-	// not survive to bind to this cast's later resolve event.
+	changed := false
+	if old := t.pending; old != nil && !old.directDamage && ts.Sub(old.at) <= castResolveWindow {
+		changed = t.applyPendingLocked(old, ts, commitAggroOnly)
+	}
+
 	if !info.Found || (info.OffensiveHate == 0 && info.DamageHate == 0 && info.HatemodPct == 0) {
 		t.pending = nil
+	} else {
+		t.pending = &pendingCast{
+			spellName:     spellName,
+			target:        target,
+			offensiveHate: info.OffensiveHate,
+			damageHate:    info.DamageHate,
+			directDamage:  info.DirectDamage,
+			hatemodPct:    info.HatemodPct,
+			durationTicks: info.DurationTicks,
+			at:            ts,
+		}
+	}
+
+	if !changed {
+		t.mu.Unlock()
 		return
 	}
-	t.pending = &pendingCast{
-		spellName:     spellName,
-		target:        target,
-		offensiveHate: info.OffensiveHate,
-		damageHate:    info.DamageHate,
-		directDamage:  info.DirectDamage,
-		hatemodPct:    info.HatemodPct,
-		durationTicks: info.DurationTicks,
-		at:            ts,
-	}
+	snap := t.snapshotLocked(ts)
+	t.mu.Unlock()
+	t.broadcast(snap)
 }
 
 // commitMode selects how a resolved cast's pending hate is applied.
@@ -421,29 +442,7 @@ func (t *Tracker) commitPending(ts time.Time, mode commitMode) {
 		return
 	}
 	t.pending = nil
-
-	changed := false
-	if mode != commitDrop {
-		switch {
-		case p.hatemodPct != 0:
-			// A hate-mod self-buff applies only on a true land; a resist/immune
-			// means it never took hold.
-			if mode == commitLand {
-				t.registerModLocked(p.spellName, p.hatemodPct, p.durationTicks)
-				changed = true
-			}
-		default:
-			// Offensive (aggro) + base damage hate. Both land on a successful cast
-			// AND on a full resist — a resisted detrimental spell still adds the
-			// same CheckAggroAmount hate (EQMacEmu ResistSpell).
-			hate := p.offensiveHate + p.damageHate
-			if hate != 0 && p.target != "" {
-				t.addHateLocked(p.target, float64(hate), ts, true) // spell hate
-				t.lastEngaged = p.target
-				changed = true
-			}
-		}
-	}
+	changed := t.applyPendingLocked(p, ts, mode)
 
 	if !changed {
 		t.mu.Unlock()
@@ -452,6 +451,38 @@ func (t *Tracker) commitPending(ts time.Time, mode commitMode) {
 	snap := t.snapshotLocked(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)
+}
+
+// applyPendingLocked applies a resolved pending cast's hate per mode and
+// reports whether the tracker's displayed state changed. Shared by
+// commitPending (a real land/resist/interrupt event) and recordCast (a new
+// cast implicitly superseding an unresolved one). Caller must hold t.mu.
+func (t *Tracker) applyPendingLocked(p *pendingCast, ts time.Time, mode commitMode) bool {
+	if mode == commitDrop {
+		return false
+	}
+	switch {
+	case p.hatemodPct != 0:
+		// A hate-mod self-buff applies only on a true land; a resist/immune
+		// (or an implicit supersede, where we never saw it resolve) means it
+		// never took hold.
+		if mode == commitLand {
+			t.registerModLocked(p.spellName, p.hatemodPct, p.durationTicks)
+			return true
+		}
+		return false
+	default:
+		// Offensive (aggro) + base damage hate. Both land on a successful cast
+		// AND on a full resist — a resisted detrimental spell still adds the
+		// same CheckAggroAmount hate (EQMacEmu ResistSpell).
+		hate := p.offensiveHate + p.damageHate
+		if hate != 0 && p.target != "" {
+			t.addHateLocked(p.target, float64(hate), ts, true) // spell hate
+			t.lastEngaged = p.target
+			return true
+		}
+		return false
+	}
 }
 
 // castTargetLocked returns the mob a no-target spell cast should be attributed

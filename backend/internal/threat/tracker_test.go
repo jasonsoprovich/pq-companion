@@ -816,6 +816,34 @@ func TestStalePendingDropped(t *testing.T) {
 	}
 }
 
+// TestNextCastSupersedesPendingStillCreditsHate guards the real-world
+// Concussion report (Narya, Discord, 2026-07-09): a wizard's aggro-shed lands
+// with a delayed "lands" message, and the wizard's next nuke begins casting
+// before that message reaches the log. Before the fix, recordCast silently
+// dropped the still-unresolved Concussion pending when the new cast overwrote
+// it, losing its -400 hate entirely. Now a superseded non-direct-damage
+// pending is credited as an aggro-only land at supersede time — EQ casts
+// serially, so beginning a new cast means the previous one already resolved
+// server-side even though its own text hasn't shown up yet.
+func TestNextCastSupersedesPendingStillCreditsHate(t *testing.T) {
+	spells := fakeSpells{
+		"Concussion": spellWithInstantHate("Concussion", -400),
+		"Ice Comet":  {Name: "Ice Comet"}, // no hate-relevant effects; just occupies the pending slot
+	}
+	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
+	t0 := time.Now()
+
+	tr.Handle(hit("a gnoll", 1000, t0))
+	tr.Handle(cast("Concussion", t0.Add(time.Second)))
+	// The wizard's next cast begins before Concussion's own "lands" message
+	// reaches the log — no land() call for Concussion in between.
+	tr.Handle(cast("Ice Comet", t0.Add(2*time.Second)))
+
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 600 {
+		t.Errorf("hate after superseded Concussion = %d, want 600 (1000 - 400)", got)
+	}
+}
+
 // liveFor returns the live (rolling-window) hate rate for a mob, or -1 if
 // untracked.
 func liveFor(s ThreatState, mob string) float64 {
