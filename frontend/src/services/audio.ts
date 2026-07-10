@@ -271,7 +271,16 @@ export function playSound(filePath: string, volume = 1.0): void {
   if (!filePath) return
   if (!isAudioOwner) return
   if (isDuplicate(`sound:${filePath}`)) return
+  playSoundNow(filePath, volume)
+}
 
+/**
+ * Actually starts playback of a local sound file, bypassing the owner check
+ * and dedup window (callers that need those apply them before calling this).
+ * Shared by playSound (fire-and-forget sound effects, which are allowed to
+ * overlap) and the Piper TTS queue below (which serializes on `onEnd`).
+ */
+function playSoundNow(filePath: string, volume: number, onEnd?: () => void): void {
   // Duplicate-audio diagnostic: emitted once per actual play. If a single fire
   // triggers multiple serves, matching these across window titles / nonces in
   // the Electron log pinpoints whether it's one renderer or several.
@@ -288,10 +297,14 @@ export function playSound(filePath: string, volume = 1.0): void {
   // Retain the element until playback finishes so it isn't garbage-collected
   // mid-sound (see activePlaybacks above), then release it.
   activePlaybacks.add(audio)
+  let released = false
   const release = (): void => {
+    if (released) return
+    released = true
     activePlaybacks.delete(audio)
     audio.removeEventListener('ended', release)
     audio.removeEventListener('error', release)
+    onEnd?.()
   }
   audio.addEventListener('ended', release)
   audio.addEventListener('error', release)
@@ -303,6 +316,33 @@ export function playSound(filePath: string, volume = 1.0): void {
     // eslint-disable-next-line no-console
     console.warn('[audio] playSound failed', { filePath, error: err })
   })
+}
+
+// Piper TTS renders each utterance to a WAV and plays it through the same
+// Audio-element pipeline as sound-effect triggers (playSound above). Sound
+// effects are meant to overlap — two alert dings firing together should be
+// heard together — but overlapping *speech* is unintelligible: a burst of
+// triggers within the same second (Larcen's report — two Piper triggers
+// firing seconds apart played on top of each other) needs to speak one after
+// another, the same way the Web Speech engine already queues natively (see
+// the no-cancel() note in speakViaWebSpeech). This is a dedicated FIFO for
+// Piper playback only, so ordinary sound effects are unaffected.
+const piperQueue: Array<{ filePath: string; volume: number }> = []
+let piperQueueDraining = false
+
+function enqueuePiperAudio(filePath: string, volume: number): void {
+  piperQueue.push({ filePath, volume })
+  if (!piperQueueDraining) drainPiperQueue()
+}
+
+function drainPiperQueue(): void {
+  const next = piperQueue.shift()
+  if (!next) {
+    piperQueueDraining = false
+    return
+  }
+  piperQueueDraining = true
+  playSoundNow(next.filePath, next.volume, drainPiperQueue)
 }
 
 /**
@@ -327,10 +367,11 @@ export function speakText(text: string, voice = '', volume = 1.0): void {
   if (isPiperVoice(voice || defaultTTSVoice)) {
     piperSynthesize(text)
       .then(({ path }) => {
-        // playSound has its own owner check and a sound-keyed dedup window,
-        // distinct from the tts key consumed above, so this plays exactly once
-        // through the GC-safe activePlaybacks pipeline.
-        if (path) playSound(path, volume)
+        // Queued (not playSound) so a burst of Piper triggers speaks one
+        // utterance at a time instead of overlapping — see the piperQueue
+        // comment below. Still funnels through the same GC-safe
+        // activePlaybacks pipeline once its turn comes up.
+        if (path) enqueuePiperAudio(path, volume)
       })
       .catch((err: unknown) => {
         notifyPiperFallback(err)
