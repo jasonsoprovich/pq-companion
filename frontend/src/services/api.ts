@@ -2401,6 +2401,7 @@ export interface TriggerTestOverlayRequest {
   // preview. Re-posting the same test_id restyles the card in place.
   glow_color?: string
   font_family?: string
+  align?: string
   position?: { x: number; y: number } | null
 }
 
@@ -2427,6 +2428,7 @@ export interface ActiveTriggerTest {
   font_size?: number
   glow_color?: string
   font_family?: string
+  align?: string
   position?: { x: number; y: number } | null
 }
 

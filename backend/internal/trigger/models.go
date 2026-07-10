@@ -79,6 +79,15 @@ type Action struct {
 	// global default font, or the renderer's system-ui stack when that is
 	// unset too.
 	FontFamily string `json:"font_family,omitempty"`
+	// Align controls how a pinned Position anchors relative to the text:
+	// "left" keeps the saved point as the text's left edge (so the text
+	// grows rightward as its length changes), "center" keeps the point at
+	// the text's horizontal center (grows evenly both ways), "right" keeps
+	// it as the right edge (grows leftward). Also used as the CSS text-align
+	// of the rendered text. Empty = "left", the pre-existing behaviour, so
+	// upgrading users see no change. Has no visible effect on unpinned
+	// (stacking) alerts.
+	Align string `json:"align,omitempty"`
 }
 
 // TimerAlertType identifies the kind of audio alert fired when a timer-bound

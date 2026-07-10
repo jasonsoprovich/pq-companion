@@ -296,8 +296,17 @@ function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps):
         onFontFamilyChange={(v) => onChange(index, { ...action, font_family: v })}
         fontSize={action.font_size ?? 0}
         onFontSizeChange={(v) => onChange(index, { ...action, font_size: v })}
+        align={action.align ?? ''}
+        onAlignChange={(v) => onChange(index, { ...action, align: v })}
         onStyleReset={() =>
-          onChange(index, { ...action, color: '', glow_color: '', font_family: '', font_size: 0 })
+          onChange(index, {
+            ...action,
+            color: '',
+            glow_color: '',
+            font_family: '',
+            font_size: 0,
+            align: '',
+          })
         }
         position={action.position ?? null}
         onPositionChange={(p) => onChange(index, { ...action, position: p })}

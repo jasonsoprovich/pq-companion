@@ -52,6 +52,9 @@ export interface Action {
   /** Overlay font family (a font installed on the user's machine);
    *  empty/omit = global default, falling back to the system-ui stack. */
   font_family?: string
+  /** Anchor/text alignment for a pinned Position: 'left' | 'center' | 'right'.
+   *  empty/omit = global default, falling back to 'left'. */
+  align?: string
 }
 
 /**

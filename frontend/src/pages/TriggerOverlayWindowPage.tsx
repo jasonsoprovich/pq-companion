@@ -13,19 +13,24 @@ import {
   resolveOverlayTextStyle,
   overlayTextShadow,
   overlayFontFamilyCSS,
+  overlayAnchorTransform,
+  overlayAlignItems,
+  toOverlayTextAlign,
   type OverlayTextStyleDefaults,
+  type OverlayTextAlign,
 } from '../lib/overlayTextStyle'
 
 interface TestAlert {
   testId: string
   text: string
   color: string
-  // Resolved glow/font from the editor, so the test card is a faithful
-  // preview of the alert's final look. Empty glow falls back to the text
-  // color (the renderer's own default).
+  // Resolved glow/font/align from the editor, so the test card is a
+  // faithful preview of the alert's final look. Empty glow falls back to
+  // the text color (the renderer's own default).
   glowColor: string
   fontFamily: string
   fontSize: number
+  align: OverlayTextAlign
   position: { x: number; y: number }
 }
 
@@ -37,6 +42,7 @@ interface TriggerTestPayload {
   font_size?: number
   glow_color?: string
   font_family?: string
+  align?: string
   position?: { x: number; y: number } | null
 }
 
@@ -78,7 +84,7 @@ function AlertCard({
   // Style resolves per-action override → global default → built-in look.
   const overlayAction = entry.event.actions.find((a) => a.type === 'overlay_text')
   const text = overlayAction?.text || entry.event.trigger_name
-  const { color, glowColor, fontFamily, fontSize } = resolveOverlayTextStyle(overlayAction, styleDefaults)
+  const { color, glowColor, fontFamily, fontSize, align } = resolveOverlayTextStyle(overlayAction, styleDefaults)
   const position = overlayAction?.position
 
   // Live trigger alerts render as text-only — no card background or border —
@@ -101,6 +107,7 @@ function AlertCard({
               position: 'fixed',
               left: Math.min(Math.max(0, position.x), Math.max(0, window.innerWidth - 40)),
               top: Math.min(Math.max(0, position.y), Math.max(0, window.innerHeight - 24)),
+              transform: overlayAnchorTransform(align),
               zIndex: 10,
             }
           : { padding: '4px 8px' }),
@@ -114,7 +121,7 @@ function AlertCard({
           color,
           fontFamily: overlayFontFamilyCSS(fontFamily),
           textShadow: overlayTextShadow(glowColor),
-          textAlign: 'center',
+          textAlign: position ? align : 'center',
           userSelect: 'none',
           whiteSpace: 'nowrap',
         }}
@@ -166,7 +173,7 @@ function TestAlertCard({ alert, onPositionCommit, onDone, onCancel }: TestAlertC
     onPositionCommit(pos)
   }
 
-  const { color, glowColor, fontFamily, fontSize, text } = alert
+  const { color, glowColor, fontFamily, fontSize, align, text } = alert
 
   return (
     <div
@@ -178,6 +185,7 @@ function TestAlertCard({ alert, onPositionCommit, onDone, onCancel }: TestAlertC
         position: 'fixed',
         left: pos.x,
         top: pos.y,
+        transform: overlayAnchorTransform(align),
         padding: '10px 14px',
         borderRadius: 6,
         backgroundColor: 'rgba(10,10,12,0.85)',
@@ -199,7 +207,7 @@ function TestAlertCard({ alert, onPositionCommit, onDone, onCancel }: TestAlertC
           color,
           fontFamily: overlayFontFamilyCSS(fontFamily),
           textShadow: overlayTextShadow(glowColor || color),
-          textAlign: 'center',
+          textAlign: align,
         }}
       >
         {text || 'Test Overlay'}
@@ -295,6 +303,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
             default_overlay_glow_color: c.preferences?.default_overlay_glow_color,
             default_overlay_font_family: c.preferences?.default_overlay_font_family,
             default_overlay_font_size: c.preferences?.default_overlay_font_size,
+            default_overlay_text_align: c.preferences?.default_overlay_text_align,
           })
         })
         .catch(() => {})
@@ -470,6 +479,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
           glowColor: active.glow_color || '',
           fontFamily: active.font_family || '',
           fontSize,
+          align: toOverlayTextAlign(active.align),
           position: resolveStartPos(active.position),
         })
       } catch {
@@ -509,6 +519,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         glowColor: data.glow_color || '',
         fontFamily: data.font_family || '',
         fontSize,
+        align: toOverlayTextAlign(data.align),
         position: resolveStartPos(data.position),
       })
       return
@@ -606,7 +617,7 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
                 top: Math.min(Math.max(0, defaultPos.y), Math.max(0, window.innerHeight - 24)),
                 display: 'flex',
                 flexDirection: 'column',
-                alignItems: 'flex-start',
+                alignItems: overlayAlignItems(resolveOverlayTextStyle(null, styleDefaults).align),
                 gap: 6,
               }
             : {

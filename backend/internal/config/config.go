@@ -358,6 +358,11 @@ type Preferences struct {
 	DefaultOverlayGlowColor  string `yaml:"default_overlay_glow_color,omitempty" json:"default_overlay_glow_color"`
 	DefaultOverlayFontFamily string `yaml:"default_overlay_font_family,omitempty" json:"default_overlay_font_family"`
 	DefaultOverlayFontSize   int    `yaml:"default_overlay_font_size,omitempty" json:"default_overlay_font_size"`
+	// DefaultOverlayTextAlign is the fallback anchor/text alignment ("left",
+	// "center", "right") for every overlay_text alert whose own Align is
+	// unset. Also drives which edge of the unpinned alert stack anchors at
+	// DefaultOverlayPosition. Empty = "left", the pre-existing behaviour.
+	DefaultOverlayTextAlign string `yaml:"default_overlay_text_align,omitempty" json:"default_overlay_text_align"`
 
 	// CustomTimerAlert is the default audio cue attached to manually-added
 	// Custom Timer countdowns. When Enabled, the Custom Timers overlay's

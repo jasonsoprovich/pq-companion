@@ -98,6 +98,7 @@ export interface Preferences {
   default_overlay_glow_color?: string
   default_overlay_font_family?: string
   default_overlay_font_size?: number
+  default_overlay_text_align?: string
   // Default fading-soon alert armed on manually-added Custom Timers (the
   // overlay quick-add form lets the player toggle it off per timer). Disabled
   // by default. See TimerAlertPref.

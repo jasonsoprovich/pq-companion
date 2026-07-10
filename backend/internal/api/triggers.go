@@ -739,6 +739,7 @@ type testOverlayRequest struct {
 	// as-is. Re-posting the same test_id restyles the card in place.
 	GlowColor  string                  `json:"glow_color,omitempty"`
 	FontFamily string                  `json:"font_family,omitempty"`
+	Align      string                  `json:"align,omitempty"`
 	Position   *trigger.ActionPosition `json:"position,omitempty"`
 }
 

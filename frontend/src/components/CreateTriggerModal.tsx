@@ -462,8 +462,17 @@ export default function CreateTriggerModal({
               onFontFamilyChange={(v) => setAction((prev) => ({ ...prev, font_family: v }))}
               fontSize={action.font_size ?? 0}
               onFontSizeChange={(v) => setAction((prev) => ({ ...prev, font_size: v }))}
+              align={action.align ?? ''}
+              onAlignChange={(v) => setAction((prev) => ({ ...prev, align: v }))}
               onStyleReset={() =>
-                setAction((prev) => ({ ...prev, color: '', glow_color: '', font_family: '', font_size: 0 }))
+                setAction((prev) => ({
+                  ...prev,
+                  color: '',
+                  glow_color: '',
+                  font_family: '',
+                  font_size: 0,
+                  align: '',
+                }))
               }
               position={action.position ?? null}
               onPositionChange={(p) => setAction((prev) => ({ ...prev, position: p }))}

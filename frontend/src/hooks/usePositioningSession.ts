@@ -29,6 +29,8 @@ export interface PositioningSessionOptions {
   testGlowColor?: string
   testFontFamily?: string
   testFontSize?: number
+  /** Anchor/text alignment for the test card; 'left' | 'center' | 'right'. */
+  testAlign?: string
   testDurationSecs: number
 }
 
@@ -49,6 +51,7 @@ export function usePositioningSession({
   testGlowColor = '',
   testFontFamily = '',
   testFontSize = 0,
+  testAlign = '',
   testDurationSecs,
 }: PositioningSessionOptions): PositioningSession {
   // A per-editor session id is round-tripped through the test endpoints so
@@ -116,6 +119,7 @@ export function usePositioningSession({
       glow_color: testGlowColor || undefined,
       font_family: testFontFamily || undefined,
       font_size: testFontSize > 0 ? testFontSize : undefined,
+      align: testAlign || undefined,
       // duration_secs is informational only — sticky session, no auto-dismiss.
       duration_secs: Math.max(8, testDurationSecs || 5),
       position: positionRef.current,
@@ -128,7 +132,7 @@ export function usePositioningSession({
   // doesn't move). Debounced so color-picker drags don't spam the wire.
   // lastSentStyleRef suppresses the no-op re-fire right after start().
   const styleKey = JSON.stringify([
-    testText, testColor, testGlowColor, testFontFamily, testFontSize, testDurationSecs,
+    testText, testColor, testGlowColor, testFontFamily, testFontSize, testAlign, testDurationSecs,
   ])
   const lastSentStyleRef = useRef<string | null>(null)
   const buildPayloadRef = useRef(buildPayload)

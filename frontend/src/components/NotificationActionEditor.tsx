@@ -14,11 +14,22 @@
  * this initial extraction and wired up in subsequent tasks.
  */
 import React, { useEffect, useState } from 'react'
-import { Volume2, FolderOpen, Play, Square, Crosshair, Check, X as XIcon } from 'lucide-react'
+import {
+  Volume2,
+  FolderOpen,
+  Play,
+  Square,
+  Crosshair,
+  Check,
+  X as XIcon,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+} from 'lucide-react'
 import { playSoundForTest, speakTextForTest, stopTestPlayback } from '../services/audio'
 import { usePositioningSession } from '../hooks/usePositioningSession'
 import { useOverlayTextDefaults } from '../hooks/useOverlayTextDefaults'
-import { resolveOverlayTextStyle, WINDOWS_SAFE_FONTS } from '../lib/overlayTextStyle'
+import { resolveOverlayTextStyle, WINDOWS_SAFE_FONTS, type OverlayTextAlign } from '../lib/overlayTextStyle'
 import { voiceLabel } from '../lib/piper'
 import DecimalInput from './DecimalInput'
 
@@ -68,11 +79,14 @@ interface OverlayTextFieldsProps {
   /** Per-action font size in px; 0 = inherit the app-default style. */
   fontSize?: number
   onFontSizeChange?: (v: number) => void
+  /** Per-action anchor/text alignment; '' = inherit the app-default style. */
+  align?: string
+  onAlignChange?: (v: string) => void
   /**
-   * Clears color/glow/font/size back to "App default" in ONE state update.
-   * A dedicated callback (rather than four onChange calls) because parents
-   * that spread a props-captured action object would clobber each other's
-   * resets if called sequentially.
+   * Clears color/glow/font/size/align back to "App default" in ONE state
+   * update. A dedicated callback (rather than five onChange calls) because
+   * parents that spread a props-captured action object would clobber each
+   * other's resets if called sequentially.
    */
   onStyleReset?: () => void
   textPlaceholder?: string
@@ -144,6 +158,76 @@ export function ColorOverrideField({
   )
 }
 
+const ALIGN_OPTIONS: ReadonlyArray<{ key: OverlayTextAlign; icon: typeof AlignLeft; label: string }> = [
+  { key: 'left', icon: AlignLeft, label: 'Left' },
+  { key: 'center', icon: AlignCenter, label: 'Center' },
+  { key: 'right', icon: AlignRight, label: 'Right' },
+]
+
+/**
+ * Left/center/right anchor picker for an overlay_text alert's pinned
+ * Position: which point of the text the saved x/y coordinate represents, so
+ * the alert grows in a consistent direction as its text length changes
+ * instead of always anchoring at the left edge. Also sets the text's CSS
+ * text-align. Same inherit-vs-override semantics as ColorOverrideField.
+ *
+ * Exported for the Settings page's global-default style controls.
+ */
+export function AlignOverrideField({
+  value,
+  resolved,
+  onChange,
+  resetTitle,
+}: {
+  value: string
+  resolved: OverlayTextAlign
+  onChange: (v: string) => void
+  resetTitle: string
+}): React.ReactElement {
+  return (
+    <div className="flex items-center gap-1.5">
+      <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+        Align
+      </label>
+      <div className="flex items-center rounded overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+        {ALIGN_OPTIONS.map(({ key, icon: Icon, label }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onChange(key)}
+            className="flex items-center justify-center px-1.5 py-1"
+            style={{
+              backgroundColor: resolved === key ? 'var(--color-primary)' : 'var(--color-surface-2)',
+              color: resolved === key ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              cursor: 'pointer',
+              border: 'none',
+            }}
+            title={`Anchor the pinned position at the text's ${label.toLowerCase()} edge`}
+          >
+            <Icon size={12} />
+          </button>
+        ))}
+      </div>
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          className="flex items-center justify-center rounded p-0.5"
+          style={{
+            backgroundColor: 'transparent',
+            color: 'var(--color-muted)',
+            border: '1px solid var(--color-border)',
+            cursor: 'pointer',
+          }}
+          title={resetTitle}
+        >
+          <XIcon size={9} />
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function OverlayTextFields({
   text,
   onTextChange,
@@ -157,17 +241,19 @@ export function OverlayTextFields({
   onFontFamilyChange,
   fontSize = 0,
   onFontSizeChange,
+  align = '',
+  onAlignChange,
   onStyleReset,
   textPlaceholder = 'Display text (e.g. MEZ BROKE!)',
   position,
   onPositionChange,
 }: OverlayTextFieldsProps): React.ReactElement {
-  const hasStyleOverride = Boolean(color || glowColor || fontFamily || fontSize > 0)
+  const hasStyleOverride = Boolean(color || glowColor || fontFamily || fontSize > 0 || align)
   // App-default style (Settings → Preferences), fetched once so the swatches
   // and size placeholder can show what an inherited field actually renders as.
   const styleDefaults = useOverlayTextDefaults()
   const resolved = resolveOverlayTextStyle(
-    { color, glow_color: glowColor, font_family: fontFamily, font_size: fontSize },
+    { color, glow_color: glowColor, font_family: fontFamily, font_size: fontSize, align },
     styleDefaults,
   )
 
@@ -184,6 +270,7 @@ export function OverlayTextFields({
     testGlowColor: resolved.glowColor,
     testFontFamily: resolved.fontFamily,
     testFontSize: resolved.fontSize,
+    testAlign: resolved.align,
     testDurationSecs: durationSecs,
   })
 
@@ -287,6 +374,12 @@ export function OverlayTextFields({
             title="Overlay font size in pixels (blank = app default)"
           />
         </div>
+        <AlignOverrideField
+          value={align}
+          resolved={resolved.align}
+          onChange={(v) => onAlignChange?.(v)}
+          resetTitle="Reset to the app-default alignment"
+        />
         {hasStyleOverride && onStyleReset && (
           <button
             type="button"
@@ -298,7 +391,7 @@ export function OverlayTextFields({
               border: '1px solid var(--color-border)',
               cursor: 'pointer',
             }}
-            title="Reset color, glow, font, and size to the app-default style"
+            title="Reset color, glow, font, size, and alignment to the app-default style"
           >
             <XIcon size={9} />
             Reset Style
@@ -644,6 +737,8 @@ interface NotificationActionEditorProps {
   onFontFamilyChange?: (v: string) => void
   fontSize?: number
   onFontSizeChange?: (v: number) => void
+  align?: string
+  onAlignChange?: (v: string) => void
   onStyleReset?: () => void
   position?: { x: number; y: number } | null
   onPositionChange?: (p: { x: number; y: number } | null) => void
@@ -696,6 +791,8 @@ export default function NotificationActionEditor(
         onFontFamilyChange={props.onFontFamilyChange}
         fontSize={props.fontSize}
         onFontSizeChange={props.onFontSizeChange}
+        align={props.align}
+        onAlignChange={props.onAlignChange}
         onStyleReset={props.onStyleReset}
         textPlaceholder={props.overlayTextPlaceholder}
         position={props.position}

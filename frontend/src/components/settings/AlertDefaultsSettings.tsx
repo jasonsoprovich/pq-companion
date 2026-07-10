@@ -21,7 +21,7 @@ import { useVoices } from '../../hooks/useVoices'
 import { useTTSVoices } from '../../hooks/usePiperStatus'
 import { voiceLabel } from '../../lib/piper'
 import { usePositioningSession } from '../../hooks/usePositioningSession'
-import { ColorOverrideField } from '../NotificationActionEditor'
+import { ColorOverrideField, AlignOverrideField } from '../NotificationActionEditor'
 import {
   resolveOverlayTextStyle,
   overlayTextShadow,
@@ -57,6 +57,7 @@ export default function AlertDefaultsSettings({
   const glowColor = config.preferences.default_overlay_glow_color ?? ''
   const fontFamily = config.preferences.default_overlay_font_family ?? ''
   const fontSize = config.preferences.default_overlay_font_size ?? 0
+  const align = config.preferences.default_overlay_text_align ?? ''
   const resolved = resolveOverlayTextStyle(null, config.preferences)
 
   function setStylePref(patch: Partial<Config['preferences']>): void {
@@ -77,6 +78,7 @@ export default function AlertDefaultsSettings({
     testGlowColor: resolved.glowColor,
     testFontFamily: resolved.fontFamily,
     testFontSize: resolved.fontSize,
+    testAlign: resolved.align,
     testDurationSecs: 8,
   })
 
@@ -307,7 +309,13 @@ export default function AlertDefaultsSettings({
               title="Overlay font size in pixels (blank = 20)"
             />
           </div>
-          {Boolean(textColor || glowColor || fontFamily || fontSize > 0) && (
+          <AlignOverrideField
+            value={align}
+            resolved={resolved.align}
+            onChange={(v) => setStylePref({ default_overlay_text_align: v })}
+            resetTitle="Reset to the classic anchor/alignment (left)"
+          />
+          {Boolean(textColor || glowColor || fontFamily || fontSize > 0 || align) && (
             <button
               type="button"
               onClick={() =>
@@ -316,6 +324,7 @@ export default function AlertDefaultsSettings({
                   default_overlay_glow_color: '',
                   default_overlay_font_family: '',
                   default_overlay_font_size: 0,
+                  default_overlay_text_align: '',
                 })
               }
               className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]"
@@ -325,7 +334,7 @@ export default function AlertDefaultsSettings({
                 border: '1px solid var(--color-border)',
                 cursor: 'pointer',
               }}
-              title="Reset color, glow, font, and size to the classic look (white text, matching glow, system font, 20px)"
+              title="Reset color, glow, font, size, and alignment to the classic look (white text, matching glow, system font, 20px, left-anchored)"
             >
               <XIcon size={9} />
               Reset Style
@@ -333,14 +342,18 @@ export default function AlertDefaultsSettings({
           )}
         </div>
         {/* Live preview on a dark backdrop, rendered exactly like the overlay
-            (same shadow + font fallback helpers). */}
+            (same shadow + font fallback helpers). Scrolls rather than clips
+            when the text is wider than the box, and justifies by the
+            resolved alignment so it doubles as a preview of the anchor
+            behavior a pinned position would use. */}
         <div
-          className="mt-2 rounded px-3 py-2 max-w-md flex items-center justify-center"
+          className="mt-2 rounded px-3 py-2 max-w-md flex items-center overflow-x-auto"
           style={{
             backgroundColor: 'rgba(10,10,12,0.9)',
             border: '1px solid var(--color-border)',
             minHeight: 48,
-            overflow: 'hidden',
+            justifyContent:
+              resolved.align === 'center' ? 'center' : resolved.align === 'right' ? 'flex-end' : 'flex-start',
           }}
         >
           <span

@@ -13,12 +13,17 @@
  * changing only this file.
  */
 
+/** Anchor/text alignment for an overlay_text alert. Doubles as the CSS
+ *  text-align keyword. */
+export type OverlayTextAlign = 'left' | 'center' | 'right'
+
 /** The per-action style fields of an overlay_text Action (all optional). */
 export interface OverlayTextStyleOverride {
   color?: string
   glow_color?: string
   font_family?: string
   font_size?: number
+  align?: string
 }
 
 /** The global-default style fields of Preferences (all optional). */
@@ -27,6 +32,7 @@ export interface OverlayTextStyleDefaults {
   default_overlay_glow_color?: string
   default_overlay_font_family?: string
   default_overlay_font_size?: number
+  default_overlay_text_align?: string
 }
 
 export interface ResolvedOverlayTextStyle {
@@ -36,10 +42,18 @@ export interface ResolvedOverlayTextStyle {
   /** Empty string = no override (inherit the window's system-ui stack). */
   fontFamily: string
   fontSize: number
+  align: OverlayTextAlign
 }
 
 export const BUILTIN_TEXT_COLOR = '#ffffff'
 export const BUILTIN_FONT_SIZE = 20
+export const BUILTIN_TEXT_ALIGN: OverlayTextAlign = 'left'
+
+/** Narrows an arbitrary string (e.g. from JSON) to a valid OverlayTextAlign,
+ *  falling back to the built-in 'left' for anything else. */
+export function toOverlayTextAlign(raw: string | null | undefined): OverlayTextAlign {
+  return raw === 'center' || raw === 'right' ? raw : BUILTIN_TEXT_ALIGN
+}
 
 /**
  * Fonts that ship with every stock Windows 10/11 install. Offering only
@@ -86,7 +100,30 @@ export function resolveOverlayTextStyle(
       ? defaults.default_overlay_font_size
       : 0
   const fontSize = actionSize || defaultSize || BUILTIN_FONT_SIZE
-  return { color, glowColor, fontFamily, fontSize }
+  const align = toOverlayTextAlign(action?.align || defaults?.default_overlay_text_align)
+  return { color, glowColor, fontFamily, fontSize, align }
+}
+
+/**
+ * CSS transform anchoring a positioned alert's box on its saved point
+ * according to `align`: 'left' leaves the point as the box's left edge (the
+ * pre-existing behaviour, no transform), 'center' keeps the point at the
+ * box's horizontal center, 'right' keeps it as the right edge. Pair with
+ * `left: position.x` on the same element.
+ */
+export function overlayAnchorTransform(align: OverlayTextAlign): string | undefined {
+  if (align === 'center') return 'translateX(-50%)'
+  if (align === 'right') return 'translateX(-100%)'
+  return undefined
+}
+
+/** Maps an align value to the CSS `align-items` keyword for a flex column
+ *  stack anchored at a single point (left/center/right → flex-start/center/
+ *  flex-end). */
+export function overlayAlignItems(align: OverlayTextAlign): 'flex-start' | 'center' | 'flex-end' {
+  if (align === 'center') return 'center'
+  if (align === 'right') return 'flex-end'
+  return 'flex-start'
 }
 
 /**
