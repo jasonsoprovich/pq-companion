@@ -879,3 +879,45 @@ func TestLiveTPSReplaySafe(t *testing.T) {
 		t.Errorf("live tps for replayed (historical) event = %v, want 100", got)
 	}
 }
+
+// TestConcussionRealLogText guards a real-world path every other instant-hate
+// test skips: it drives the tracker through logparser.ParseLine + the actual
+// CastIndex, using Concussion's real cast_on_you/cast_on_other text from
+// spells_new, instead of injecting synthetic EventSpellCast/EventSpellLanded
+// values directly. Reported (issue: Concussion doesn't lower threat) — this
+// confirms the aggro-shed text-matching path itself isn't the culprit; the
+// -400 SPA-92 value already applies correctly (see spaInstantHate).
+func TestConcussionRealLogText(t *testing.T) {
+	logparser.SetCastIndex(logparser.NewCastIndex([]logparser.CastMessage{
+		{
+			SpellID:     752,
+			SpellName:   "Concussion",
+			CastOnYou:   "You stagger from a blow to the head.",
+			CastOnOther: " staggers from a blow to the head.",
+		},
+	}))
+	defer logparser.SetCastIndex(nil)
+
+	spells := fakeSpells{"Concussion": spellWithInstantHate("Concussion", -400)}
+	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
+	t0 := time.Now()
+
+	tr.Handle(hit("a gnoll", 1000, t0))
+
+	const layout = "[Mon Jan 02 15:04:05 2006]"
+	castEv, ok := logparser.ParseLine(t0.Add(time.Second).Format(layout) + " You begin casting Concussion.")
+	if !ok {
+		t.Fatal("begin-casting line did not parse")
+	}
+	tr.Handle(castEv)
+
+	landEv, ok := logparser.ParseLine(t0.Add(2*time.Second).Format(layout) + " A gnoll staggers from a blow to the head.")
+	if !ok {
+		t.Fatal("landed line did not parse")
+	}
+	tr.Handle(landEv)
+
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 600 {
+		t.Errorf("hate after Concussion = %d, want 600 (1000 - 400)", got)
+	}
+}
