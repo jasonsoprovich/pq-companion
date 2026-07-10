@@ -5,7 +5,7 @@
  * per-overlay controls (show/hide the dashboard panel, pop the window out,
  * recenter it) and the bulk actions (Pop Out All, Reset Positions, Reset
  * Layout, monitor picker). The only standalone Electron overlay without an
- * in-dashboard panel is HPS (gated behind SHOW_HPS).
+ * in-dashboard panel is HPS (gated behind SHOW_HPS_PANEL).
  *
  * Layout (positions, sizes, visibility) is persisted to localStorage and
  * restored on next mount. Drag/resize snaps to a 16px grid.
@@ -27,29 +27,22 @@ import CustomTimerPanel from '../components/overlays/CustomTimerPanel'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { clearTimers } from '../services/api'
 import {
-  DASHBOARD_PANEL_KEYS,
   DASHBOARD_PANEL_LABELS,
   DEFAULT_DASHBOARD_LAYOUT,
+  SHOW_HPS_PANEL,
+  VISIBLE_DASHBOARD_PANEL_KEYS,
   loadDashboardLayout,
   saveDashboardLayout,
   type DashboardLayout,
   type DashboardPanelKey,
 } from '../services/dashboardLayout'
+import { useOverlayPopouts } from '../hooks/useOverlayPopouts'
 
 const SNAP_GRID = 16
 // Extra empty space kept below/right of the lowest/rightmost visible panel
 // so panels never sit flush against the scroll container edge and users can
 // still grab the bottom resize handle once scrolled to the end.
 const CANVAS_PADDING = 120
-
-// HPS tracking is wired up end-to-end (panel, dashboard layout, popout window)
-// but no log-parsing pipeline currently produces healer stats, so the UI is
-// hidden. Flip this flag to true once the backend emits real heal data.
-const SHOW_HPS = false
-
-const VISIBLE_PANEL_KEYS: DashboardPanelKey[] = SHOW_HPS
-  ? DASHBOARD_PANEL_KEYS
-  : DASHBOARD_PANEL_KEYS.filter((k) => k !== 'hps')
 
 // Maps each dashboard panel to its standalone popout window: the canonical
 // overlay name (used for popout open-state polling and per-overlay position
@@ -339,9 +332,10 @@ export default function OverlaysDashboard(): React.ReactElement {
   // new initial values.
   const [layoutVersion, setLayoutVersion] = useState(0)
 
-  // Panel keys actually offered in the UI: hps is gated by SHOW_HPS (module
-  // level); the rest (including the Threat Meter) are always available.
-  const visiblePanelKeys = VISIBLE_PANEL_KEYS
+  // Panel keys actually offered in the UI: hps is gated by SHOW_HPS_PANEL
+  // (shared with the sidebar's pop-out-all toggle); the rest (including the
+  // Threat Meter) are always available.
+  const visiblePanelKeys = VISIBLE_DASHBOARD_PANEL_KEYS
 
   useEffect(() => {
     saveDashboardLayout(layout)
@@ -448,23 +442,10 @@ export default function OverlaysDashboard(): React.ReactElement {
     clearTimers('all').catch(() => {})
   }, [])
 
-  // Tracks whether any standalone popout window is currently open. Polled
-  // because Electron doesn't push window-state changes to this renderer.
-  const [anyPopoutOpen, setAnyPopoutOpen] = useState(false)
-
-  useEffect(() => {
-    if (!window.electron?.overlay?.anyPopoutOpen) return
-    let cancelled = false
-    const check = (): void => {
-      window.electron.overlay
-        .anyPopoutOpen()
-        .then((v) => { if (!cancelled) setAnyPopoutOpen(v) })
-        .catch(() => {})
-    }
-    check()
-    const id = setInterval(check, 1500)
-    return () => { cancelled = true; clearInterval(id) }
-  }, [])
+  // Tracks whether any standalone popout window is currently open, and drives
+  // the open-all/close-all toggle — shared with the sidebar's quick-toggle
+  // button so both stay in sync via the same polled IPC state.
+  const { anyPopoutOpen, toggle: handleTogglePopouts, refresh: refreshAnyPopoutOpen } = useOverlayPopouts()
 
   // Re-read popout open-state on demand — used when the Manage overlays menu
   // opens so the "Pop Out All / Close All Popouts" label and per-overlay Pop
@@ -473,11 +454,9 @@ export default function OverlaysDashboard(): React.ReactElement {
   // (e.g. restored by "Restore overlays on launch"): the label must start on
   // "Close All Popouts" rather than briefly showing the wrong text.
   const refreshPopouts = useCallback(() => {
-    const o = window.electron?.overlay
-    if (!o) return
-    o.anyPopoutOpen?.().then(setAnyPopoutOpen).catch(() => {})
-    o.popoutStates?.().then(setPopoutStates).catch(() => {})
-  }, [])
+    refreshAnyPopoutOpen()
+    window.electron?.overlay?.popoutStates?.().then(setPopoutStates).catch(() => {})
+  }, [refreshAnyPopoutOpen])
 
   // Multi-monitor: pick which monitor trigger alert text (and the positioning
   // card) appears on. The trigger overlay covers exactly that one monitor —
@@ -517,22 +496,6 @@ export default function OverlaysDashboard(): React.ReactElement {
     }
     return { width: maxRight + CANVAS_PADDING, height: maxBottom + CANVAS_PADDING }
   }, [layout, visiblePanelKeys])
-
-  const handleTogglePopouts = useCallback(() => {
-    const o = window.electron?.overlay
-    if (!o) return
-    if (anyPopoutOpen) {
-      o.closeAllPopouts().catch(() => {})
-      setAnyPopoutOpen(false)
-    } else {
-      // Only pop out overlays the user has toggled visible in the dashboard —
-      // a panel hidden here shouldn't open as a floating window. Trigger Alerts
-      // has no dashboard toggle and is always included by the main process.
-      const visiblePanels = visiblePanelKeys.filter((k) => layout[k].visible)
-      o.openAllPopouts(visiblePanels).catch(() => {})
-      setAnyPopoutOpen(true)
-    }
-  }, [anyPopoutOpen, layout, visiblePanelKeys])
 
   return (
     <div
@@ -672,7 +635,7 @@ export default function OverlaysDashboard(): React.ReactElement {
             onLayoutChange={handleLayoutChange('threat')}
           />
         )}
-        {SHOW_HPS && layout.hps.visible && (
+        {SHOW_HPS_PANEL && layout.hps.visible && (
           <HPSPanel
             key={`hps-${layoutVersion}`}
             defaultX={layout.hps.x}

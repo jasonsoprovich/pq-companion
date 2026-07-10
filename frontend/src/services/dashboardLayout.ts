@@ -48,6 +48,16 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayout = {
 export const DASHBOARD_PANEL_KEYS: DashboardPanelKey[] =
   ['buff', 'detrim', 'dps', 'npc', 'threat', 'hps', 'rolls', 'respawn', 'chChain', 'chMetronome', 'custom']
 
+// HPS tracking is wired up end-to-end (panel, dashboard layout, popout window)
+// but no log-parsing pipeline currently produces healer stats, so the UI is
+// hidden. Flip this flag to true once the backend emits real heal data.
+export const SHOW_HPS_PANEL = false
+
+// Panel keys actually offered in the UI — hps is gated by SHOW_HPS_PANEL.
+export const VISIBLE_DASHBOARD_PANEL_KEYS: DashboardPanelKey[] = SHOW_HPS_PANEL
+  ? DASHBOARD_PANEL_KEYS
+  : DASHBOARD_PANEL_KEYS.filter((k) => k !== 'hps')
+
 export const DASHBOARD_PANEL_LABELS: Record<DashboardPanelKey, string> = {
   buff: 'Buff Timers',
   detrim: 'Detrimental Timers',
