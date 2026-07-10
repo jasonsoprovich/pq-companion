@@ -45,6 +45,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/threat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trader"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/wishlistwatch"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zealpipe"
@@ -690,6 +691,45 @@ func main() {
 	})
 	triggerEngine.Reload()
 
+	// Wishlist watcher: alerts when an item on any character's wishlist
+	// appears in the active character's log. Not a trigger — see
+	// internal/wishlistwatch for why — but it broadcasts a synthetic
+	// trigger:fired event so the existing overlay/TTS/sound pipeline renders
+	// it, the same approach the PVP warning below uses.
+	wishlistWatcher := wishlistwatch.NewWatcher(
+		hub, cfgMgr, activeChar,
+		func() ([]wishlistwatch.CharacterInfo, error) {
+			chars, err := charStore.List()
+			if err != nil {
+				return nil, err
+			}
+			out := make([]wishlistwatch.CharacterInfo, len(chars))
+			for i, c := range chars {
+				out[i] = wishlistwatch.CharacterInfo{ID: c.ID, Name: c.Name}
+			}
+			return out, nil
+		},
+		func(characterID int) ([]wishlistwatch.WishlistEntry, error) {
+			entries, err := charStore.ListWishlist(characterID)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]wishlistwatch.WishlistEntry, len(entries))
+			for i, e := range entries {
+				out[i] = wishlistwatch.WishlistEntry{CharacterID: e.CharacterID, ItemID: e.ItemID}
+			}
+			return out, nil
+		},
+		func(itemID int) (wishlistwatch.ItemInfo, bool) {
+			it, err := database.GetItem(itemID)
+			if err != nil || it == nil {
+				return wishlistwatch.ItemInfo{}, false
+			}
+			return wishlistwatch.ItemInfo{Name: it.Name}, true
+		},
+	)
+	wishlistWatcher.Rebuild()
+
 	if keyringStore != nil {
 		keyringConsumer = keyring.NewConsumer(keyringStore, keyringMaster, activeChar)
 		keyringConsumer.SetOnSnapshot(func(character string) {
@@ -1085,6 +1125,7 @@ func main() {
 			}
 		}
 		triggerEngine.Handle(ts, msg)
+		wishlistWatcher.HandleLine(msg)
 		chChainMatcher.HandleLine(ts, msg)
 		rollTracker.HandleLine(ts, msg)
 		if keyringConsumer != nil {
@@ -1245,7 +1286,7 @@ func main() {
 		go traderCapturer.Start(context.Background())
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

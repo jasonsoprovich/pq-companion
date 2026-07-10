@@ -13,6 +13,7 @@ import {
   List as ListIcon,
   ChevronsDownUp,
   ChevronsUpDown,
+  Bell,
 } from 'lucide-react'
 import {
   DndContext,
@@ -51,6 +52,7 @@ import ItemSearchModal from '../components/ItemSearchModal'
 import WishlistSlotPicker from '../components/WishlistSlotPicker'
 import ItemDetailModal from '../components/ItemDetailModal'
 import { ConfirmModal } from '../components/ConfirmModal'
+import WishlistAlertSettings from '../components/WishlistAlertSettings'
 import { ItemIcon } from '../components/Icon'
 import { WISHLIST_SLOT_ORDER, GENERAL_BUCKET, validSlotsForItem, isMultiSlotItem } from '../lib/wishlistSlots'
 
@@ -487,6 +489,7 @@ export default function WishlistPage(): React.ReactElement {
 
   // Item picker state
   const [searchOpen, setSearchOpen] = useState(false)
+  const [alertsOpen, setAlertsOpen] = useState(false)
   const [picker, setPicker] = useState<{ item: Item; currentSlots: string[] } | null>(null)
   const [detailItem, setDetailItem] = useState<Item | null>(null)
   const [pendingDelete, setPendingDelete] = useState<WishlistEntry | null>(null)
@@ -802,9 +805,22 @@ export default function WishlistPage(): React.ReactElement {
         )}
 
         <button
+          onClick={() => setAlertsOpen(true)}
+          className="ml-auto flex items-center gap-1.5 text-xs px-2.5 py-1 rounded"
+          style={{
+            backgroundColor: 'var(--color-surface-2)',
+            color: 'var(--color-muted-foreground)',
+            border: '1px solid var(--color-border)',
+          }}
+          title="Alert when a wishlisted item appears in your log"
+        >
+          <Bell size={12} />
+          Alerts
+        </button>
+        <button
           onClick={() => setSearchOpen(true)}
           disabled={!viewedCharID}
-          className="ml-auto flex items-center gap-1.5 text-xs px-2.5 py-1 rounded disabled:opacity-50"
+          className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded disabled:opacity-50"
           style={{
             backgroundColor: 'var(--color-primary)',
             color: 'var(--color-surface)',
@@ -926,6 +942,7 @@ export default function WishlistPage(): React.ReactElement {
       </div>
 
       {/* Modals */}
+      <WishlistAlertSettings open={alertsOpen} onClose={() => setAlertsOpen(false)} />
       <ItemSearchModal
         open={searchOpen}
         title="Add item to wishlist"

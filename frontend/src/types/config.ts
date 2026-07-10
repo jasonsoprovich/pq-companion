@@ -45,6 +45,35 @@ export interface TimerAlertPref {
   tts_volume: number
 }
 
+/**
+ * Wishlist watcher: an alert fired when a wishlisted item's name appears
+ * anywhere in the active character's log (loot lines, chat, raid calls, ...).
+ * Mirrors backend config.WishlistWatchSettings.
+ */
+export interface WishlistWatchSettings {
+  enabled: boolean
+  // Extends alerts to every character's wishlist, not just the active
+  // one — including no-drop items. Intended for swapping in an alt to loot
+  // for another character (e.g. one camped outside a raid). Off by default.
+  include_other_chars?: boolean
+  // Alert text. {item} and {character} tokens expand to the matched item's
+  // name and the wishlisting character. Empty = the backend default.
+  template?: string
+  // Suppresses a repeat alert for the SAME item within this window (seconds),
+  // so a spammed auction line or echoed loot message doesn't fire repeatedly.
+  // 0/missing = backend default (30s).
+  cooldown_secs?: number
+  overlay_enabled?: boolean
+  overlay_color?: string
+  overlay_duration_secs?: number
+  tts_enabled?: boolean
+  tts_voice?: string
+  tts_volume?: number
+  sound_enabled?: boolean
+  sound_path?: string
+  sound_volume?: number
+}
+
 export interface Preferences {
   overlay_opacity: number
   // Fade overlay chrome (background, border, title bar) to transparent a few
@@ -152,6 +181,8 @@ export interface Preferences {
   // persistent subprocess kept alive across requests). Empty/missing =
   // "spawn".
   piper_mode?: string
+  // Wishlist watcher settings. See WishlistWatchSettings.
+  wishlist_watch: WishlistWatchSettings
 }
 
 export interface BackupSettings {

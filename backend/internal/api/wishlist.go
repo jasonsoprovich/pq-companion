@@ -10,26 +10,32 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/wishlistwatch"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
 // wishlistHandler handles per-character wishlist endpoints.
 type wishlistHandler struct {
-	store *character.Store
-	db    *db.DB
-	hub   *ws.Hub
+	store   *character.Store
+	db      *db.DB
+	hub     *ws.Hub
+	watcher *wishlistwatch.Watcher // may be nil (e.g. in tests)
 }
 
 // broadcastChanged notifies listeners (e.g. the NPC loot overlay, which
 // highlights wishlisted drops) that the character's wishlist membership
-// changed and any cached item-id set should be refetched. Fired only on
-// add/remove — reordering doesn't change membership.
+// changed and any cached item-id set should be refetched. Also rebuilds the
+// wishlist watcher's item-name match set. Fired only on add/remove —
+// reordering doesn't change membership.
 func (h *wishlistHandler) broadcastChanged(charID int) {
 	if h.hub != nil {
 		h.hub.Broadcast(ws.Event{
 			Type: "wishlist:changed",
 			Data: map[string]int{"character_id": charID},
 		})
+	}
+	if h.watcher != nil {
+		h.watcher.Rebuild()
 	}
 }
 

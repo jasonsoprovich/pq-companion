@@ -522,7 +522,65 @@ type Preferences struct {
 	// kept alive across requests so the voice model only loads once). Empty
 	// is treated as "spawn".
 	PiperMode string `yaml:"piper_mode,omitempty" json:"piper_mode"`
+
+	// WishlistWatch configures the wishlist watcher: an alert fired when a
+	// wishlisted item's name appears anywhere in the active character's log
+	// (loot lines, chat, raid calls, ...). See internal/wishlistwatch. Off by
+	// default — opt-in like the other alert-style preview features.
+	WishlistWatch WishlistWatchSettings `yaml:"wishlist_watch,omitempty" json:"wishlist_watch"`
 }
+
+// WishlistWatchSettings configures the wishlist watcher's matching scope and
+// alert actions. Mirrors the fields of trigger.Action (overlay text / TTS /
+// sound) rather than importing that type, matching the existing convention
+// (see OverlayPosition) of keeping config decoupled from the trigger package.
+type WishlistWatchSettings struct {
+	// Enabled turns the watcher on.
+	Enabled bool `yaml:"enabled,omitempty" json:"enabled"`
+
+	// IncludeOtherChars extends alerts to every character's wishlist, not
+	// just the active one — including no-drop items. The intended use is
+	// swapping in an alt to loot for another character (e.g. one camped
+	// outside a raid). Off by default: most users only want reminders about
+	// their own active character's wishlist.
+	IncludeOtherChars bool `yaml:"include_other_chars,omitempty" json:"include_other_chars"`
+
+	// Template is the alert text. {item} and {character} tokens expand to the
+	// matched item's name and the wishlisting character at fire time. Empty
+	// falls back to DefaultWishlistWatchTemplate.
+	Template string `yaml:"template,omitempty" json:"template"`
+
+	// CooldownSecs suppresses a repeat alert for the SAME item within this
+	// window, so a spammed auction line or an echoed loot message doesn't
+	// fire repeatedly. 0 means "use the default" (DefaultWishlistWatchCooldownSecs) —
+	// the YAML decoder can't tell a missing field from an explicit 0, so a
+	// deliberate "no cooldown" isn't representable here, matching the
+	// existing convention for this class of setting (e.g. ChatRetentionDays).
+	CooldownSecs int `yaml:"cooldown_secs,omitempty" json:"cooldown_secs"`
+
+	// Overlay text alert fields, mirroring trigger.Action's overlay_text case.
+	OverlayEnabled      bool    `yaml:"overlay_enabled,omitempty" json:"overlay_enabled"`
+	OverlayColor        string  `yaml:"overlay_color,omitempty" json:"overlay_color"`
+	OverlayDurationSecs float64 `yaml:"overlay_duration_secs,omitempty" json:"overlay_duration_secs"`
+
+	// Text-to-speech alert fields. Volume is 0-100, matching TimerAlertPref.
+	TTSEnabled bool   `yaml:"tts_enabled,omitempty" json:"tts_enabled"`
+	TTSVoice   string `yaml:"tts_voice,omitempty" json:"tts_voice"`
+	TTSVolume  int    `yaml:"tts_volume,omitempty" json:"tts_volume"`
+
+	// Sound alert fields. Volume is 0-100, matching TimerAlertPref.
+	SoundEnabled bool   `yaml:"sound_enabled,omitempty" json:"sound_enabled"`
+	SoundPath    string `yaml:"sound_path,omitempty" json:"sound_path"`
+	SoundVolume  int    `yaml:"sound_volume,omitempty" json:"sound_volume"`
+}
+
+// DefaultWishlistWatchTemplate is the alert text used when the user hasn't
+// customized WishlistWatchSettings.Template.
+const DefaultWishlistWatchTemplate = "{item} is on {character}'s wishlist"
+
+// DefaultWishlistWatchCooldownSecs is the per-item repeat-alert suppression
+// window used when WishlistWatchSettings.CooldownSecs is unset.
+const DefaultWishlistWatchCooldownSecs = 30
 
 // TimerAlertPref is a global default "fading soon" notification for the Custom
 // Timer and Respawn overlays — the settings-page counterpart to a trigger's
@@ -760,6 +818,10 @@ func defaults() Config {
 			ZoomFactor:                  1.0,
 			NPCOverlayDashboardSections: DefaultNPCOverlaySections(),
 			NPCOverlayPopoutSections:    DefaultNPCOverlaySections(),
+			WishlistWatch: WishlistWatchSettings{
+				Template:     DefaultWishlistWatchTemplate,
+				CooldownSecs: DefaultWishlistWatchCooldownSecs,
+			},
 		},
 		Backup: BackupSettings{
 			AutoBackup: false,
@@ -988,6 +1050,17 @@ func applyDefaults(cfg *Config) bool {
 	if cfg.Preferences.RespawnAlert != nil &&
 		cfg.Preferences.RespawnAlert.TTSTemplate == legacyRespawnTTSTemplate {
 		cfg.Preferences.RespawnAlert.TTSTemplate = DefaultRespawnTTSTemplate
+		changed = true
+	}
+	// Wishlist watcher: backfill template/cooldown so the feature has sensible
+	// values whenever the user enables it. Enabled itself is left as loaded —
+	// off by default, opt-in only.
+	if cfg.Preferences.WishlistWatch.Template == "" {
+		cfg.Preferences.WishlistWatch.Template = DefaultWishlistWatchTemplate
+		changed = true
+	}
+	if cfg.Preferences.WishlistWatch.CooldownSecs == 0 {
+		cfg.Preferences.WishlistWatch.CooldownSecs = DefaultWishlistWatchCooldownSecs
 		changed = true
 	}
 	return changed
