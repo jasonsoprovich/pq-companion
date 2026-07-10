@@ -189,10 +189,12 @@ function ReplayPanel({
   status,
   prefs,
   onPrefsChange,
+  onStatusChange,
 }: {
   status: ReplayStatus
   prefs: ReplayPrefs
   onPrefsChange: (patch: Partial<ReplayPrefs>) => void
+  onStatusChange: (status: ReplayStatus) => void
 }): React.ReactElement {
   const [files, setFiles] = useState<ReplayFile[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -224,7 +226,9 @@ function ReplayPanel({
       from: fromStr ? new Date(fromStr).toISOString() : undefined,
       to: toStr ? new Date(toStr).toISOString() : undefined,
       speed,
-    }).catch((err: Error) => setError(err.message))
+    })
+      .then(onStatusChange)
+      .catch((err: Error) => setError(err.message))
   }
 
   const active = status.state !== 'idle'
@@ -316,7 +320,7 @@ function ReplayPanel({
         )}
         {status.state === 'playing' && (
           <button
-            onClick={() => pauseReplay().catch(() => {})}
+            onClick={() => pauseReplay().then(onStatusChange).catch(() => {})}
             className="flex items-center gap-1 rounded px-2 py-1 text-xs"
             style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-foreground)', border: '1px solid var(--color-border)' }}
           >
@@ -326,7 +330,7 @@ function ReplayPanel({
         )}
         {status.state === 'paused' && (
           <button
-            onClick={() => resumeReplay().catch(() => {})}
+            onClick={() => resumeReplay().then(onStatusChange).catch(() => {})}
             className="flex items-center gap-1 rounded px-2 py-1 text-xs"
             style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-background)' }}
           >
@@ -336,7 +340,7 @@ function ReplayPanel({
         )}
         {active && (
           <button
-            onClick={() => stopReplay().catch(() => {})}
+            onClick={() => stopReplay().then(onStatusChange).catch(() => {})}
             className="flex items-center gap-1 rounded px-2 py-1 text-xs"
             style={{ backgroundColor: 'var(--color-surface-2)', color: '#f87171', border: '1px solid var(--color-border)' }}
           >
@@ -810,6 +814,7 @@ export default function LogFeedPage(): React.ReactElement {
           status={replayStatus}
           prefs={replayPrefs}
           onPrefsChange={patchReplayPrefs}
+          onStatusChange={setReplayStatus}
         />
       )}
 
