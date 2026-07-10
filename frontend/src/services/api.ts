@@ -1981,6 +1981,10 @@ export interface StatBlock {
   hit_chance_pct: number; npc_level: number
   str: number; sta: number; agi: number; dex: number
   wis: number; int: number; cha: number
+  // ..._raw is the uncapped base+item+AA+buff total behind str/sta/.../cha
+  // above (before the stat-cap clamp) — how far over cap gear pushes a stat.
+  str_raw: number; sta_raw: number; agi_raw: number; dex_raw: number
+  wis_raw: number; int_raw: number; cha_raw: number
   pr: number; mr: number; dr: number; fr: number; cr: number
   attack: number; haste: number; spell_haste: number; regen: number
   mana_regen: number; ft: number; dmg_shield: number
@@ -2015,6 +2019,9 @@ export interface DerivedStats {
   equipped: StatBlock
   buffed: StatBlock
   live: StatBlock
+  // stat_cap is the level's attribute cap (255, +5/level past 60) — the same
+  // across all four layers today.
+  stat_cap: number
 }
 
 export function getCharacterDerivedStats(

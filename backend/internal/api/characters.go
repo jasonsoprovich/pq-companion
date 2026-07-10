@@ -939,14 +939,24 @@ type statBlock struct {
 	NPCLevel     int     `json:"npc_level"`
 	// ShieldAC is the worn shield's AC, used to raise the mitigation softcap. It
 	// rides on the equipment block only (json-hidden — it's an input, not a stat).
-	ShieldAC   int `json:"-"`
-	STR        int `json:"str"`
-	STA        int `json:"sta"`
-	AGI        int `json:"agi"`
-	DEX        int `json:"dex"`
-	WIS        int `json:"wis"`
-	INT        int `json:"int"`
-	CHA        int `json:"cha"`
+	ShieldAC int `json:"-"`
+	STR      int `json:"str"`
+	STA      int `json:"sta"`
+	AGI      int `json:"agi"`
+	DEX      int `json:"dex"`
+	WIS      int `json:"wis"`
+	INT      int `json:"int"`
+	CHA      int `json:"cha"`
+	// Raw fields carry the uncapped base+item+AA+buff total (before
+	// eqstat.CapAttribute clamps it into STR/STA/.../CHA above), so the UI can
+	// show how far over the stat cap a character's gear pushes them.
+	STRRaw     int `json:"str_raw"`
+	STARaw     int `json:"sta_raw"`
+	AGIRaw     int `json:"agi_raw"`
+	DEXRaw     int `json:"dex_raw"`
+	WISRaw     int `json:"wis_raw"`
+	INTRaw     int `json:"int_raw"`
+	CHARaw     int `json:"cha_raw"`
 	PR         int `json:"pr"`
 	MR         int `json:"mr"`
 	DR         int `json:"dr"`
@@ -1434,6 +1444,10 @@ type derivedStatsResponse struct {
 	Equipped  statBlock `json:"equipped"`
 	Buffed    statBlock `json:"buffed"`
 	Live      statBlock `json:"live"`
+	// StatCap is the level's attribute cap (see eqstat.MaxStat) — the same
+	// across all four layers today. Surfaced so the UI can compare it against
+	// each layer's ...Raw fields to show how far over cap gear pushes a stat.
+	StatCap int `json:"stat_cap"`
 }
 
 // derivedStats computes the character's HP, Mana, AC, attributes, resists, and
@@ -1502,6 +1516,7 @@ func (h *charactersHandler) derivedStats(w http.ResponseWriter, r *http.Request)
 		Equipped:  h.deriveBlock(char, aa, spellHaste, skills, itemBlock, itemHaste, nil),
 		Buffed:    h.deriveBlock(char, aa, spellHaste, skills, itemBlock, itemHaste, presetBuffs),
 		Live:      h.deriveBlock(char, aa, spellHaste, skills, itemBlock, itemHaste, liveBuffs),
+		StatCap:   eqstat.MaxStat(char.Level, 0),
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -1609,13 +1624,22 @@ func (h *charactersHandler) deriveBlock(
 	}
 
 	// Total attributes = base + additive, each capped at the level's stat cap.
-	totSTR := eqstat.CapAttribute(char.BaseSTR+addSTR, level, 0)
-	totSTA := eqstat.CapAttribute(char.BaseSTA+addSTA, level, 0)
-	totAGI := eqstat.CapAttribute(char.BaseAGI+addAGI, level, 0)
-	totDEX := eqstat.CapAttribute(char.BaseDEX+addDEX, level, 0)
-	totWIS := eqstat.CapAttribute(char.BaseWIS+addWIS, level, 0)
-	totINT := eqstat.CapAttribute(char.BaseINT+addINT, level, 0)
-	totCHA := eqstat.CapAttribute(char.BaseCHA+addCHA, level, 0)
+	// The raw (pre-cap) sum is kept alongside so the UI can show how far over
+	// cap the character's gear pushes them.
+	rawSTR := char.BaseSTR + addSTR
+	rawSTA := char.BaseSTA + addSTA
+	rawAGI := char.BaseAGI + addAGI
+	rawDEX := char.BaseDEX + addDEX
+	rawWIS := char.BaseWIS + addWIS
+	rawINT := char.BaseINT + addINT
+	rawCHA := char.BaseCHA + addCHA
+	totSTR := eqstat.CapAttribute(rawSTR, level, 0)
+	totSTA := eqstat.CapAttribute(rawSTA, level, 0)
+	totAGI := eqstat.CapAttribute(rawAGI, level, 0)
+	totDEX := eqstat.CapAttribute(rawDEX, level, 0)
+	totWIS := eqstat.CapAttribute(rawWIS, level, 0)
+	totINT := eqstat.CapAttribute(rawINT, level, 0)
+	totCHA := eqstat.CapAttribute(rawCHA, level, 0)
 
 	res := eqstat.Resistance(class, level, race, addRes, eqstat.Resists{})
 
@@ -1652,6 +1676,13 @@ func (h *charactersHandler) deriveBlock(
 		WIS:          totWIS,
 		INT:          totINT,
 		CHA:          totCHA,
+		STRRaw:       rawSTR,
+		STARaw:       rawSTA,
+		AGIRaw:       rawAGI,
+		DEXRaw:       rawDEX,
+		WISRaw:       rawWIS,
+		INTRaw:       rawINT,
+		CHARaw:       rawCHA,
 		MR:           res.MR,
 		CR:           res.CR,
 		FR:           res.FR,

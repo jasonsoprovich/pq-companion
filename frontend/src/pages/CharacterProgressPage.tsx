@@ -68,11 +68,17 @@ interface StatBarProps {
   // the other views show combined totals for readability/comparison.
   base?: number
   max?: number
+  // Uncapped base+item+AA+buff total for this layer (StatBlock's ..._raw
+  // field). When it exceeds max, the bar shows "(+over) raw/max" instead of
+  // the normal value — how far over the stat cap gear pushes the character,
+  // and what the stat would be if uncapped (requested by GoofyWarriorGuy).
+  raw?: number
 }
 
-function StatBar({ label, value, base, max = 255 }: StatBarProps): React.ReactElement {
+function StatBar({ label, value, base, max = 255, raw }: StatBarProps): React.ReactElement {
   const pct = Math.min(100, Math.round((value / max) * 100))
   const bonus = base !== undefined ? value - base : 0
+  const overCap = raw !== undefined ? raw - max : 0
   const statName = STAT_FULL_NAME[label] ?? label
   return (
     <div className="flex items-center gap-3">
@@ -95,14 +101,28 @@ function StatBar({ label, value, base, max = 255 }: StatBarProps): React.ReactEl
         className="text-xs font-mono text-right"
         style={{ color: 'var(--color-foreground)', minWidth: '4.5rem' }}
       >
-        {bonus > 0 ? base : value}
-        {bonus > 0 && (
-          <span
-            style={{ color: 'var(--color-success)', cursor: 'help' }}
-            title={`+${bonus} from your Innate ${statName} AA (an always-on Alternate Advancement bonus, not part of the character's true base)`}
-          >
-            {' '}+{bonus}
-          </span>
+        {overCap > 0 ? (
+          <>
+            <span
+              style={{ color: 'var(--color-warning, #f59e0b)', cursor: 'help' }}
+              title={`${statName} is ${overCap} over the ${max} cap from your gear/AAs — it would be ${raw} uncapped`}
+            >
+              +{overCap}
+            </span>{' '}
+            {raw}/{max}
+          </>
+        ) : (
+          <>
+            {bonus > 0 ? base : value}
+            {bonus > 0 && (
+              <span
+                style={{ color: 'var(--color-success)', cursor: 'help' }}
+                title={`+${bonus} from your Innate ${statName} AA (an always-on Alternate Advancement bonus, not part of the character's true base)`}
+              >
+                {' '}+{bonus}
+              </span>
+            )}
+          </>
         )}
       </span>
     </div>
@@ -719,6 +739,9 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
     effective_mit: 0, softcap: 0, over_cap_pct: 0, hit_chance_pct: 0, npc_level: 60,
     str: stats.base_str, sta: stats.base_sta, agi: stats.base_agi, dex: stats.base_dex,
     wis: stats.base_wis, int: stats.base_int, cha: stats.base_cha,
+    str_raw: stats.base_str, sta_raw: stats.base_sta, agi_raw: stats.base_agi,
+    dex_raw: stats.base_dex, wis_raw: stats.base_wis, int_raw: stats.base_int,
+    cha_raw: stats.base_cha,
     pr: 0, mr: 0, dr: 0, fr: 0, cr: 0,
     attack: 0, haste: 0, spell_haste: 0, regen: 0, mana_regen: 0, ft: 0, dmg_shield: 0,
     atk_rating: 0,
@@ -734,7 +757,8 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
   // optimistically show Mana (it reads 0 and is replaced on first fetch).
   const showMana = derived == null || ![0, 6, 7, 8].includes(derived.class)
 
-  const capped = (v: number) => Math.min(STAT_CAP, v)
+  const statCap = derived?.stat_cap ?? STAT_CAP
+  const capped = (v: number) => Math.min(statCap, v)
   const gearMissing = includesGear && !derived
 
   return (
@@ -819,13 +843,13 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
         <div className="space-y-3">
           {/* Green "+N" AA bonus is shown in the Base view only; +Equipment /
               +Buffs show combined totals for readability and comparison. */}
-          <StatBar label="STR" value={capped(block.str)} base={mode === 'base' ? stats.base_str : undefined} max={STAT_CAP} />
-          <StatBar label="STA" value={capped(block.sta)} base={mode === 'base' ? stats.base_sta : undefined} max={STAT_CAP} />
-          <StatBar label="AGI" value={capped(block.agi)} base={mode === 'base' ? stats.base_agi : undefined} max={STAT_CAP} />
-          <StatBar label="DEX" value={capped(block.dex)} base={mode === 'base' ? stats.base_dex : undefined} max={STAT_CAP} />
-          <StatBar label="WIS" value={capped(block.wis)} base={mode === 'base' ? stats.base_wis : undefined} max={STAT_CAP} />
-          <StatBar label="INT" value={capped(block.int)} base={mode === 'base' ? stats.base_int : undefined} max={STAT_CAP} />
-          <StatBar label="CHA" value={capped(block.cha)} base={mode === 'base' ? stats.base_cha : undefined} max={STAT_CAP} />
+          <StatBar label="STR" value={capped(block.str)} base={mode === 'base' ? stats.base_str : undefined} max={statCap} raw={block.str_raw} />
+          <StatBar label="STA" value={capped(block.sta)} base={mode === 'base' ? stats.base_sta : undefined} max={statCap} raw={block.sta_raw} />
+          <StatBar label="AGI" value={capped(block.agi)} base={mode === 'base' ? stats.base_agi : undefined} max={statCap} raw={block.agi_raw} />
+          <StatBar label="DEX" value={capped(block.dex)} base={mode === 'base' ? stats.base_dex : undefined} max={statCap} raw={block.dex_raw} />
+          <StatBar label="WIS" value={capped(block.wis)} base={mode === 'base' ? stats.base_wis : undefined} max={statCap} raw={block.wis_raw} />
+          <StatBar label="INT" value={capped(block.int)} base={mode === 'base' ? stats.base_int : undefined} max={statCap} raw={block.int_raw} />
+          <StatBar label="CHA" value={capped(block.cha)} base={mode === 'base' ? stats.base_cha : undefined} max={statCap} raw={block.cha_raw} />
         </div>
 
         <div className="mt-4 grid grid-cols-5 gap-2">
