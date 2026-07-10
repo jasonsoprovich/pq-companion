@@ -106,6 +106,37 @@ a future data source fix this?" column against the new capabilities.
   built from equipped gear — a separate model from the live meter, kept apart to
   avoid double-counting procs the damage line already captures.
 
+### 1.6 Threat meter can misattribute a no-damage spell's hate to a stale target
+
+- **Limitation:** A detrimental spell that lands or resists with no matching
+  Zeal pipe target set (no Zeal connected, or the pipe target hasn't updated
+  yet) is attributed to `lastEngaged` — the mob this character last damaged.
+  If the very first action against a freshly-engaged mob is a no-damage cast
+  (an aggro-shed like Concussion, a mez, a slow) rather than a melee swing or
+  nuke, `lastEngaged` is still the *previous* mob, so the cast's hate lands on
+  the wrong (stale) target. Confirmed against a real raid log (Ethearra/Narya,
+  2026-07-09 Sanctus Seru): 4 of 34 logged Concussion casts were attributed to
+  a previously-fought trash mob instead of the actual cast target, because no
+  melee/damage line from this character had touched the new mob yet.
+- **Root cause:** The log line for the cast itself ("You begin casting X.")
+  never names a target — the meter infers one from the live Zeal pipe target
+  or, absent that, the last mob this character actually damaged. A landed
+  spell's own resolve line often DOES name the true target (e.g. "A Praetorian
+  Veneratius staggers..."), but a resist line never does ("Your target
+  resisted the X spell." — no name at all), and using the resolve line's name
+  when present is unsafe in a raid: the parser can't tell OUR resolve line
+  apart from another player's unrelated spell landing on a different mob in
+  the same window, so trusting it would misattribute far more often than it
+  fixes (dense raid logs constantly emit other casters' land messages).
+- **Sources checked:** Log (cast line has no target; land line sometimes does,
+  resist line never does). Zeal (`SetPipeTarget` gives the true live target
+  when connected — this is the actual fix, already used when available).
+- **Could a future data source fix this?** **Yes, and mostly already does.**
+  A live Zeal pipe target eliminates this case entirely (it wins over
+  `lastEngaged` in `castTargetLocked`). The gap is only: no Zeal running, or a
+  cast that beats the pipe's target update. No further log-only fix improves
+  this without regressing the more common dense-raid case above.
+
 ## 2. Healing / HPS tracking
 
 ### 2.1 Cannot accurately compute HPS for other players' heals
