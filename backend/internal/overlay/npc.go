@@ -90,6 +90,15 @@ type NPCTracker struct {
 	pipePlayerY      float64
 	pipePlayerZ      float64
 	pipePlayerKnown  bool // false until first MsgPlayer arrives
+
+	// pipeConnected is true while the Zeal pipe is live. SetPipeTarget is
+	// authoritative real-time player input in that state, so log-driven
+	// inference (Handle) must not overwrite it — a Necromancer's DoT combat
+	// lines keep naming the original DoT target long after the player has
+	// manually retargeted (e.g. onto a friendly PC), which would otherwise
+	// yank the overlay back onto the mob every tick. Log inference is only
+	// trusted as a fallback when no pipe is available.
+	pipeConnected bool
 }
 
 // NewNPCTracker returns an initialised NPCTracker. Inject the WebSocket hub
@@ -111,7 +120,11 @@ func (t *NPCTracker) Handle(ev logparser.LogEvent) {
 			return
 		}
 		// Only update when the player is the attacker; ignore NPC→player hits.
-		if data.Actor == "You" && data.Target != "" && data.Target != "You" {
+		// Skip when the pipe is connected: DoT ticks keep generating "You hit
+		// <mob>" lines against the original DoT target even after the player
+		// retargets elsewhere, which would fight the pipe's authoritative
+		// SetPipeTarget updates.
+		if !t.isPipeConnected() && data.Actor == "You" && data.Target != "" && data.Target != "You" {
 			t.setTarget(data.Target)
 		}
 
@@ -121,7 +134,7 @@ func (t *NPCTracker) Handle(ev logparser.LogEvent) {
 		if !ok {
 			return
 		}
-		if data.Actor == "You" && data.Target != "" && data.Target != "You" {
+		if !t.isPipeConnected() && data.Actor == "You" && data.Target != "" && data.Target != "You" {
 			t.setTarget(data.Target)
 		}
 
@@ -131,7 +144,7 @@ func (t *NPCTracker) Handle(ev logparser.LogEvent) {
 		if !ok {
 			return
 		}
-		if data.TargetName != "" {
+		if !t.isPipeConnected() && data.TargetName != "" {
 			t.setTarget(data.TargetName)
 		}
 
@@ -180,6 +193,22 @@ func (t *NPCTracker) SetPipeTarget(displayName string) {
 // signal.
 func (t *NPCTracker) ClearPipeTarget() {
 	t.clearTarget()
+}
+
+// SetPipeConnected records whether the Zeal pipe is currently live. Called
+// from the pipe supervisor's OnConnect/OnDisconnect hooks. While connected,
+// Handle() defers entirely to pipe-sourced targeting (see isPipeConnected);
+// once disconnected, log-driven inference resumes as the fallback.
+func (t *NPCTracker) SetPipeConnected(connected bool) {
+	t.mu.Lock()
+	t.pipeConnected = connected
+	t.mu.Unlock()
+}
+
+func (t *NPCTracker) isPipeConnected() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.pipeConnected
 }
 
 // SetPipeHPPercent updates the current target's HP percentage from a Zeal

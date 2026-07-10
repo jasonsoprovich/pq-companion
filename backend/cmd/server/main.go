@@ -963,6 +963,7 @@ func main() {
 		// Frontend listens for this and shows a one-shot "Zeal connected"
 		// notification. Re-fires on every reconnect — the toast component
 		// dedupes if it's been shown recently.
+		npcTracker.SetPipeConnected(true)
 		hub.Broadcast(ws.Event{Type: "zeal:connected", Data: map[string]any{
 			"pipe_name": pipeName,
 			"pid":       pid,
@@ -972,6 +973,7 @@ func main() {
 		// Drop pipe-only state from all consumers so stale values don't
 		// linger after Zeal goes away. Log-driven paths continue to work via
 		// the normal Handle() flow.
+		npcTracker.SetPipeConnected(false)
 		npcTracker.ResetPipeFields()
 		combatTracker.ResetPipeState()
 		respawnEngine.ResetPipeZone()
