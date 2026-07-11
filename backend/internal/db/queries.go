@@ -818,6 +818,16 @@ func (db *DB) GetNPCVariantsByNameInZone(name, zoneShortName string) ([]NPCVaria
 	return variants, nil
 }
 
+// PlaceholderPrefixes are the leading tokens Project Quarm uses on
+// "placeholder"/unique npc_types rows (templates and name-conflict-avoidance
+// rows that share base stats with the named version, e.g. "#Foo", "##_Foo").
+// The in-game display name (log lines, /con) never includes the prefix, so an
+// exact match against the bare name misses these rows. Try the longest
+// variants first so the most-specific match wins. Shared by any caller that
+// looks up npc_types by the player-visible name (overlay target tracking,
+// respawn timers, etc).
+var PlaceholderPrefixes = []string{"###_", "###", "##_", "##", "#_", "#"}
+
 // nonPlayerNPCClause filters out rows in npc_types that do not reference
 // real in-game NPCs: empty/placeholder names ("", "#", "_") and the
 // Invisible Man race (127), which EQEmu uses exclusively for invisible

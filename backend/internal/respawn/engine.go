@@ -167,6 +167,26 @@ func (e *Engine) onKill(displayName string, diedAt time.Time) {
 		return
 	}
 	if len(infos) == 0 {
+		// Many Project Quarm named/unique mobs live in npc_types under a
+		// prefixed name (e.g. "#an_enraged_disciple") to avoid name
+		// conflicts, but the kill log line never includes the prefix. Retry
+		// with each placeholder prefix before giving up — see
+		// db.PlaceholderPrefixes.
+		for _, p := range db.PlaceholderPrefixes {
+			alt := p + dbName
+			altInfos, altErr := e.db.GetRespawnTimesInZone(alt, zoneShort)
+			if altErr != nil {
+				slog.Warn("respawn: DB error looking up respawn times",
+					"npc", alt, "zone", zoneShort, "err", altErr)
+				continue
+			}
+			if len(altInfos) > 0 {
+				infos = altInfos
+				break
+			}
+		}
+	}
+	if len(infos) == 0 {
 		// No spawn data (trash, players slain by mobs, named with no DB row,
 		// or wrong zone). Per design we don't create a timer.
 		slog.Info("respawn: kill skipped (no respawn data)",

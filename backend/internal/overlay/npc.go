@@ -418,14 +418,6 @@ func (t *NPCTracker) clearTarget() {
 	t.broadcast(snap)
 }
 
-// placeholderPrefixes are the leading tokens Project Quarm uses on
-// "placeholder" npc_types rows (templates spawned by quest scripts that
-// share base stats with the named version). The /con line never includes
-// the prefix, so an exact match against the bare display name misses every
-// time. Both spaced ("## Foo" → "##_Foo") and unspaced ("#Foo") forms exist
-// in the DB — try the longest variants first so the most-specific match wins.
-var placeholderPrefixes = []string{"###_", "###", "##_", "##", "#_", "#"}
-
 // lookupNPCVariants converts the log display name (spaces) to the DB name
 // format (underscores) and returns:
 //   - primary: the single best-pick NPC (always the first variant by id when
@@ -581,7 +573,7 @@ func (t *NPCTracker) fetchVariants(dbName, zoneShort string) []db.NPCVariant {
 	} else {
 		add(bare)
 	}
-	for _, p := range placeholderPrefixes {
+	for _, p := range db.PlaceholderPrefixes {
 		alt := p + dbName
 		c2, err := t.db.GetNPCVariantsByNameInZone(alt, zoneShort)
 		if err != nil {
