@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Shield, ExternalLink, Plus, Trash2, Circle, CheckCircle2, AlertTriangle, ArrowDownNarrowWide, Clock, X } from 'lucide-react'
+import { Shield, ExternalLink, Plus, Trash2, Circle, CheckCircle2, AlertTriangle, ArrowDownNarrowWide, Clock, Pin, X } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import { useActivePlayerName, targetSuffix } from '../../hooks/useActivePlayerName'
@@ -80,6 +80,9 @@ function BuffRow({ timer, activePlayer, appearance }: { timer: ActiveTimer; acti
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
           <SpellIcon id={timer.icon} name={timer.spell_name} size={16} loading="eager" />
+          {timer.pinned && (
+            <Pin size={10} style={{ color, flexShrink: 0 }} fill="currentColor" />
+          )}
           <span style={{ fontSize: appearance.nameFontSize, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
             {timer.spell_name}
             {onTarget && (

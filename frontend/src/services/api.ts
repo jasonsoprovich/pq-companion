@@ -2187,6 +2187,12 @@ export interface CreateTriggerRequest {
   display_threshold_secs?: number
   /** Optional per-trigger timer-bar color ("" = automatic overlay color). */
   bar_color?: string
+  /**
+   * Keeps this trigger's timer(s) pinned to the top of their overlay,
+   * ahead of the normal ascending-remaining-time sort. Backend replaces
+   * the stored value on every full update — omitting it resets to false.
+   */
+  pinned?: boolean
   characters?: string[]
   timer_alerts?: TimerAlertThreshold[]
   exclude_patterns?: string[]

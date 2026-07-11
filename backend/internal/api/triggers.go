@@ -65,6 +65,7 @@ type triggerRequest struct {
 	RefireCooldownSecs   *float64               `json:"refire_cooldown_secs,omitempty"`
 	DisplayThresholdSecs float64                `json:"display_threshold_secs"`
 	BarColor             string                 `json:"bar_color"`
+	Pinned               bool                   `json:"pinned"`
 	Characters           []string               `json:"characters"`
 	TimerAlerts          []trigger.TimerAlert   `json:"timer_alerts"`
 	ExcludePatterns      []string               `json:"exclude_patterns"`
@@ -156,6 +157,7 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 		SpellID:              req.SpellID,
 		DisplayThresholdSecs: req.DisplayThresholdSecs,
 		BarColor:             strings.TrimSpace(req.BarColor),
+		Pinned:               req.Pinned,
 		Characters:           req.Characters,
 		TimerAlerts:          req.TimerAlerts,
 		ExcludePatterns:      req.ExcludePatterns,
@@ -239,6 +241,7 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	existing.DisplayThresholdSecs = req.DisplayThresholdSecs
 	existing.BarColor = strings.TrimSpace(req.BarColor)
+	existing.Pinned = req.Pinned
 	existing.Characters = req.Characters
 	existing.TimerAlerts = req.TimerAlerts
 	existing.ExcludePatterns = req.ExcludePatterns

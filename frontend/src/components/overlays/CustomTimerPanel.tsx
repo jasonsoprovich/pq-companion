@@ -8,7 +8,7 @@
  * window.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Bell, BellOff, Hourglass, Palette, Trash2, ExternalLink, X } from 'lucide-react'
+import { Bell, BellOff, Hourglass, Palette, Pin, Trash2, ExternalLink, X } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useDisplayThresholds, passesThreshold } from '../../hooks/useDisplayThresholds'
 import { useTimerAppearance, type TimerAppearance } from '../../hooks/useTimerAppearance'
@@ -99,7 +99,11 @@ function TimerRow({ timer, appearance }: { timer: ActiveTimer; appearance: Timer
       />
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
-          <Hourglass size={12} style={{ color, flexShrink: 0 }} />
+          {timer.pinned ? (
+            <Pin size={12} style={{ color, flexShrink: 0 }} fill="currentColor" />
+          ) : (
+            <Hourglass size={12} style={{ color, flexShrink: 0 }} />
+          )}
           <span style={{ fontSize: appearance.nameFontSize, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
             {timer.spell_name}
             {timer.target_name && (

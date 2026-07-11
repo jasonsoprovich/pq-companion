@@ -973,6 +973,7 @@ type captureSink struct {
 	spellID  int
 	target   string
 	barColor string
+	pinned   bool
 	alerts   json.RawMessage
 	calls    int
 
@@ -981,8 +982,8 @@ type captureSink struct {
 	stops       int
 }
 
-func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string) {
-	s.name, s.category, s.duration, s.spellID, s.target, s.barColor, s.alerts = name, category, durationSecs, spellID, targetName, barColor, alerts
+func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool) {
+	s.name, s.category, s.duration, s.spellID, s.target, s.barColor, s.pinned, s.alerts = name, category, durationSecs, spellID, targetName, barColor, pinned, alerts
 	s.calls++
 }
 func (s *captureSink) StopExternal(name string, spellID int) {
@@ -1032,6 +1033,47 @@ func TestEngine_CustomTimerWithCaptureDuration(t *testing.T) {
 	}
 	if stored.TimerDurationCapture != "2" || stored.TimerType != TimerTypeCustom {
 		t.Errorf("persisted trigger = capture %q type %q", stored.TimerDurationCapture, stored.TimerType)
+	}
+}
+
+// TestEngine_PinnedTriggerDispatchesPinnedFlag verifies a trigger's Pinned
+// setting reaches the spelltimer sink on both the primary timer and its
+// cooldown timer, and round-trips through the store.
+func TestEngine_PinnedTriggerDispatchesPinnedFlag(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	sink := &captureSink{}
+	e := NewEngine(s, hub, sink, nil)
+
+	tr := &Trigger{
+		ID: "pin-1", Name: "Raid Signature", Enabled: true,
+		Pattern:           `^Emperor prepares to cast\.$`,
+		TimerType:         TimerTypeCustom,
+		TimerDurationSecs: 30,
+		CooldownSecs:      60,
+		Pinned:            true,
+		Actions:           []Action{{Type: ActionOverlayText, Text: "incoming"}},
+		CreatedAt:         time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	// One dispatch for the primary duration timer, one for the CooldownSecs
+	// cooldown timer — captureSink's scalar fields hold the most recent call,
+	// and both dispatches carry the trigger's Pinned flag.
+	e.Handle(time.Now(), "Emperor prepares to cast.")
+	if sink.calls != 2 || !sink.pinned {
+		t.Errorf("timer dispatch = %+v, want 2 calls with pinned=true", sink)
+	}
+
+	stored, err := s.Get("pin-1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !stored.Pinned {
+		t.Errorf("persisted trigger Pinned = false, want true")
 	}
 }
 

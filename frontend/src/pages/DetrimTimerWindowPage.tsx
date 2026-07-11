@@ -5,7 +5,7 @@
  * Shows timers with category in: 'debuff' | 'dot' | 'mez' | 'stun'.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Skull, Trash2, X } from 'lucide-react'
+import { Skull, Trash2, Pin, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName } from '../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresholds'
@@ -122,6 +122,9 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, flex: 1 }}>
           <SpellIcon id={timer.icon} name={timer.spell_name} size={16} loading="eager" />
+          {timer.pinned && (
+            <Pin size={10} style={{ color, flexShrink: 0 }} fill="currentColor" />
+          )}
           <span
             style={{
               fontSize: 12,

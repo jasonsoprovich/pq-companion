@@ -23,6 +23,7 @@ import {
   GripVertical,
   Check,
   SlidersHorizontal,
+  Pin,
 } from 'lucide-react'
 import {
   DndContext,
@@ -377,6 +378,8 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
   const [displayThreshold, setDisplayThreshold] = useState(initial?.display_threshold_secs ?? 0)
   // Optional per-trigger bar color; '' = automatic overlay color.
   const [barColor, setBarColor] = useState(initial?.bar_color ?? '')
+  // Pins this trigger's timer(s) to the top of their overlay.
+  const [pinned, setPinned] = useState(initial?.pinned ?? false)
   const [timerAlerts, setTimerAlerts] = useState<TimerAlertThreshold[]>(
     initial?.timer_alerts ?? prefill?.timerAlerts ?? [],
   )
@@ -621,6 +624,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
       refire_cooldown_secs: Math.max(0, refireCooldown),
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
       bar_color: timerType === 'none' ? '' : barColor,
+      pinned: timerType === 'none' ? false : pinned,
       characters: Array.from(selectedChars),
       timer_alerts: timerType === 'none' ? [] : timerAlerts,
       exclude_patterns: source === 'pipe' ? [] : excludeList,
@@ -1283,6 +1287,16 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
               )}
             </div>
 
+            <div className="flex items-center gap-1.5">
+              <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                Pin to top
+              </label>
+              <Toggle checked={pinned} onChange={setPinned} />
+              <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                keep this timer above unpinned timers in its overlay
+              </span>
+            </div>
+
             {/* Fading-soon alerts */}
             <div className="space-y-2 pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
               <div className="flex items-center justify-between">
@@ -1497,6 +1511,8 @@ function TriggerRow({
       worn_off_pattern: trigger.worn_off_pattern,
       spell_id: trigger.spell_id,
       display_threshold_secs: trigger.display_threshold_secs,
+      bar_color: trigger.bar_color ?? '',
+      pinned: trigger.pinned ?? false,
       characters: trigger.characters,
       timer_alerts: trigger.timer_alerts ?? [],
       exclude_patterns: trigger.exclude_patterns ?? [],
@@ -1567,6 +1583,11 @@ function TriggerRow({
             <span className="text-sm font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
               {trigger.name}
             </span>
+            {trigger.pinned && trigger.timer_type && trigger.timer_type !== 'none' && (
+              <span className="shrink-0 flex items-center" title="Pinned to top of its overlay">
+                <Pin size={11} style={{ color: 'var(--color-primary)' }} fill="currentColor" />
+              </span>
+            )}
             {trigger.timer_type && trigger.timer_type !== 'none' && (
               <span
                 className="text-[10px] px-1.5 py-0.5 rounded shrink-0 font-medium capitalize"
@@ -3019,6 +3040,8 @@ export default function TriggersPage(): React.ReactElement {
       worn_off_pattern: t.worn_off_pattern,
       spell_id: t.spell_id,
       display_threshold_secs: t.display_threshold_secs,
+      bar_color: t.bar_color ?? '',
+      pinned: t.pinned ?? false,
       characters: t.characters,
       timer_alerts: t.timer_alerts ?? [],
       exclude_patterns: t.exclude_patterns ?? [],

@@ -71,7 +71,7 @@ func (h *timerHandler) startCustom(w http.ResponseWriter, r *http.Request) {
 	// Alerts pass straight through to the timer's TimerAlerts (nil = silent).
 	// Color "" (default) keeps the overlay's automatic bar color.
 	h.engine.StartExternal(req.Name, string(spelltimer.CategoryCustom),
-		req.DurationSecs, 0, time.Now(), req.Alerts, 0, "", req.Color)
+		req.DurationSecs, 0, time.Now(), req.Alerts, 0, "", req.Color, false)
 	w.WriteHeader(http.StatusNoContent)
 }
 

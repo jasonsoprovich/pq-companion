@@ -103,6 +103,14 @@ type ActiveTimer struct {
 	// carry a Trigger.BarColor; spell-landed-driven timers leave it empty.
 	BarColor string `json:"bar_color,omitempty"`
 
+	// Pinned keeps this timer floating at the top of its overlay, ahead of
+	// the normal ascending-remaining-time sort — set from Trigger.Pinned so
+	// raid leaders can keep signature-spell/boss timers visible without them
+	// shifting down the list as unrelated timers count lower. Always false
+	// for spell-landed-driven timers unless merged with trigger metadata
+	// that carries it (see StartExternal's same-spell-name merge).
+	Pinned bool `json:"pinned,omitempty"`
+
 	// IsCharm marks a timer whose source spell is a Charm effect (SPA 22).
 	// Charm represents an ongoing pet the player controls, so — unlike a
 	// debuff or mez — its timer must survive the death of *other* mobs.

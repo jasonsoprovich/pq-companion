@@ -332,6 +332,13 @@ type Trigger struct {
 	// to CreatedAt. Set on create/move to append at the end of the target
 	// category; rewritten in bulk when the user drags rows into a custom order.
 	SortOrder int `json:"sort_order"`
+
+	// Pinned keeps this trigger's timer(s) floating at the top of whichever
+	// overlay they render in (buff/detrimental/custom), ahead of the normal
+	// ascending-remaining-time sort. Lets raid leaders keep signature-spell
+	// and boss-mechanic timers visible without them shifting down the list
+	// as unrelated timers count lower. False (default) = normal sort order.
+	Pinned bool `json:"pinned,omitempty"`
 }
 
 // TriggerFired is the payload of a WSEventTriggerFired WebSocket event and a

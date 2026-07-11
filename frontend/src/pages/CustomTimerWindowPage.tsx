@@ -5,7 +5,7 @@
  * Renders in a dedicated frameless Electron window; no sidebar or title bar.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Bell, BellOff, Hourglass, Trash2, X } from 'lucide-react'
+import { Bell, BellOff, Hourglass, Pin, Trash2, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresholds'
 import { useCustomTimerAlertPref } from '../hooks/useCustomTimerAlertPref'
@@ -110,7 +110,11 @@ function TimerRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
-          <Hourglass size={13} style={{ color, flexShrink: 0 }} />
+          {timer.pinned ? (
+            <Pin size={13} style={{ color, flexShrink: 0 }} fill="currentColor" />
+          ) : (
+            <Hourglass size={13} style={{ color, flexShrink: 0 }} />
+          )}
           <span
             style={{
               fontSize: 12,

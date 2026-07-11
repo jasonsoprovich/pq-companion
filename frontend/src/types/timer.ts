@@ -58,6 +58,12 @@ export interface ActiveTimer {
    * only on trigger-driven (and manual custom) timers that carry a color.
    */
   bar_color?: string
+  /**
+   * True when this timer's source trigger is pinned — it sorts ahead of
+   * unpinned timers regardless of remaining time. Absent/false = normal
+   * ascending-remaining-time sort.
+   */
+  pinned?: boolean
 }
 
 export interface TimerState {

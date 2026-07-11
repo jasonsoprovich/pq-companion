@@ -181,6 +181,7 @@ type pendingArm struct {
 	DisplayThresholdSecs float64
 	TimerAlerts          json.RawMessage
 	BarColor             string
+	Pinned               bool
 	ArmedAt              time.Time
 }
 
@@ -684,7 +685,7 @@ func divergenceKey(names []string) string {
 // apply the active character's item/AA duration focuses to durationSecs —
 // matching the spell-landed pipeline. 0 means "use durationSecs as given"
 // (custom triggers without a spell anchor, tests).
-func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string) {
+func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool) {
 	if name == "" || durationSecs <= 0 {
 		return
 	}
@@ -729,6 +730,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 			DisplayThresholdSecs: displayThresholdSecs,
 			TimerAlerts:          alerts,
 			BarColor:             barColor,
+			Pinned:               pinned,
 			ArmedAt:              startedAt,
 		}
 		e.mu.Unlock()
@@ -759,6 +761,9 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 			if barColor != "" {
 				existing.BarColor = barColor
 			}
+			if pinned {
+				existing.Pinned = true
+			}
 			snap := e.snapshot(time.Now())
 			e.mu.Unlock()
 			slog.Debug("timer-debug: trigger metadata merged onto existing timer",
@@ -786,6 +791,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 		DisplayThresholdSecs: displayThresholdSecs,
 		TimerAlerts:          alerts,
 		BarColor:             barColor,
+		Pinned:               pinned,
 		IsCharm:              isCharm,
 	}
 	e.timers[key] = timer
@@ -1112,6 +1118,9 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		if existing.BarColor != "" {
 			timer.BarColor = existing.BarColor
 		}
+		if existing.Pinned {
+			timer.Pinned = true
+		}
 		delete(e.timers, existingKey)
 		break
 	}
@@ -1133,6 +1142,9 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		}
 		if arm.BarColor != "" {
 			timer.BarColor = arm.BarColor
+		}
+		if arm.Pinned {
+			timer.Pinned = true
 		}
 		slog.Debug("timer-debug: pending arm promoted to landed timer",
 			"spell", spellName,
@@ -1789,9 +1801,18 @@ func (e *Engine) snapshot(now time.Time) TimerState {
 		entry.RemainingSeconds = remaining
 		timers = append(timers, entry)
 	}
-	// Sort ascending by remaining time so the most urgent timers appear first.
+	// Pinned timers float to the top as a group — set via Trigger.Pinned, this
+	// keeps raid/boss timers visible without them shifting down the list as
+	// unrelated timers count lower. Within each group (pinned, then unpinned),
+	// sort ascending by remaining time so the most urgent timer leads.
+	less := func(a, b ActiveTimer) bool {
+		if a.Pinned != b.Pinned {
+			return a.Pinned
+		}
+		return a.RemainingSeconds < b.RemainingSeconds
+	}
 	for i := 1; i < len(timers); i++ {
-		for j := i; j > 0 && timers[j].RemainingSeconds < timers[j-1].RemainingSeconds; j-- {
+		for j := i; j > 0 && less(timers[j], timers[j-1]); j-- {
 			timers[j], timers[j-1] = timers[j-1], timers[j]
 		}
 	}

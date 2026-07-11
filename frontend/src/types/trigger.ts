@@ -214,6 +214,12 @@ export interface Trigger {
    */
   sort_order: number
   /**
+   * Keeps this trigger's timer(s) floating at the top of whichever overlay
+   * they render in (buff/detrimental/custom), ahead of the normal
+   * ascending-remaining-time sort. False (default) = normal sort order.
+   */
+  pinned?: boolean
+  /**
    * Which pack this trigger was installed from, independent of pack_name
    * (its display category). Lets a pack trigger moved into a custom
    * category still be tagged with its origin and removed on pack

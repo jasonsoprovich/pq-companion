@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Skull, ExternalLink, Plus, Trash2, Circle, CheckCircle2, AlertTriangle, X } from 'lucide-react'
+import { Skull, ExternalLink, Plus, Trash2, Circle, CheckCircle2, AlertTriangle, Pin, X } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import { useActivePlayerName } from '../../hooks/useActivePlayerName'
@@ -95,6 +95,9 @@ function DetrimRow({ timer, activePlayer, appearance }: { timer: ActiveTimer; ac
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, paddingLeft: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
           <SpellIcon id={timer.icon} name={timer.spell_name} size={16} loading="eager" />
+          {timer.pinned && (
+            <Pin size={10} style={{ color, flexShrink: 0 }} fill="currentColor" />
+          )}
           <span style={{ fontSize: appearance.nameFontSize, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
             {timer.spell_name}
             {target && (
