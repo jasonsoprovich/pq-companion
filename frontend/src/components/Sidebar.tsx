@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
+import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Star } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import CharacterSwitcher from './CharacterSwitcher'
 import { useHistoryNav } from '../hooks/useHistoryNav'
 import { useWindowDrag } from '../hooks/useWindowDrag'
-import { visibleNavSections, orderItems, type NavItem } from '../lib/sidebarNav'
+import { visibleNavSections, orderItems, favoriteItems, type NavItem } from '../lib/sidebarNav'
 import { useSidebarPrefs } from '../hooks/useSidebarPrefs'
 
 function SidebarLink({ to, label, icon }: NavItem): React.ReactElement {
@@ -49,7 +49,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const { canGoBack, canGoForward, goBack, goForward } = useHistoryNav()
   const onDragMouseDown = useWindowDrag()
-  const { hidden, order, flags } = useSidebarPrefs()
+  const { hidden, order, favorites, flags } = useSidebarPrefs()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed)
 
   const toggleSection = (id: string): void => {
@@ -65,16 +65,21 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   }
 
   // Apply the user's hide/order prefs to each section; drop sections that end
-  // up empty so their header doesn't dangle.
+  // up empty so their header doesn't dangle. Favorited items also appear in a
+  // pinned "Favorites" section prepended at the top — a shortcut, not a move,
+  // so the item stays put in its normal section too.
   const sections = useMemo(() => {
     const hiddenSet = new Set(hidden)
-    return visibleNavSections(flags)
+    const visible = visibleNavSections(flags)
+    const base = visible
       .map((s) => ({
         ...s,
         items: orderItems(s.items, order).filter((i) => !hiddenSet.has(i.to)),
       }))
       .filter((s) => s.items.length > 0)
-  }, [hidden, order, flags])
+    const favs = favoriteItems(visible, favorites, order).filter((i) => !hiddenSet.has(i.to))
+    return favs.length > 0 ? [{ id: 'favorites', label: 'Favorites', items: favs }, ...base] : base
+  }, [hidden, order, favorites, flags])
 
   useEffect(() => {
     const poll = () => {
@@ -160,7 +165,10 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
                     transform: isCollapsed ? 'rotate(-90deg)' : 'none',
                   }}
                 />
-                <span className="text-[10px] font-semibold uppercase tracking-widest">
+                <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest">
+                  {section.id === 'favorites' && (
+                    <Star size={10} fill="currentColor" style={{ color: 'var(--color-primary)' }} />
+                  )}
                   {section.label}
                 </span>
               </button>

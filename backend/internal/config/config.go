@@ -506,6 +506,12 @@ type Preferences struct {
 	// the listed ones. Empty/omitted = default order.
 	SidebarOrder []string `yaml:"sidebar_order,omitempty" json:"sidebar_order,omitempty"`
 
+	// SidebarFavorites lists side-nav route keys the user has starred as
+	// favorites. Favorited items render in a pinned "Favorites" section at
+	// the top of the sidebar, in addition to their normal section. A hidden
+	// item is never shown, even if favorited. Empty/omitted = no favorites.
+	SidebarFavorites []string `yaml:"sidebar_favorites,omitempty" json:"sidebar_favorites,omitempty"`
+
 	// ── Local TTS (Piper) ─────────────────────────────────────────────────
 	// Opt-in, power-user local neural TTS. Piper is a user-installed external
 	// program (like Zeal/EQW) — PQC bundles nothing. When enabled and pointed

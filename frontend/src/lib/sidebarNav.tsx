@@ -105,6 +105,16 @@ export function visibleNavSections(flags: Record<string, boolean>): NavSection[]
     .filter((s) => s.items.length > 0)
 }
 
+// favoriteItems flattens `sections` (pass the output of visibleNavSections so
+// flag-gated items are already excluded) and returns just the items whose
+// `to` is in `favorites`, ordered by the user's sidebar order preference.
+// Callers are responsible for excluding hidden items.
+export function favoriteItems(sections: NavSection[], favorites: string[], order: string[]): NavItem[] {
+  const favSet = new Set(favorites)
+  const items = sections.flatMap((s) => s.items).filter((i) => favSet.has(i.to))
+  return orderItems(items, order)
+}
+
 // orderItems sorts a section's items by their position in `order`; items absent
 // from `order` keep their default relative position after the listed ones.
 export function orderItems(items: NavItem[], order: string[]): NavItem[] {

@@ -7,17 +7,19 @@ import { navFlags } from '../lib/sidebarNav'
 export interface SidebarPrefs {
   hidden: string[]
   order: string[]
+  favorites: string[]
   flags: Record<string, boolean>
 }
 
 /**
- * Returns the user's sidebar hide/order preferences plus the flag map that
- * gates dev-preview tabs, read on mount and re-fetched on the `config:updated`
- * WebSocket event so toggling tabs (or feature flags) in Settings updates the
- * live sidebar immediately. Defaults to "nothing hidden, default order".
+ * Returns the user's sidebar hide/order/favorites preferences plus the flag
+ * map that gates dev-preview tabs, read on mount and re-fetched on the
+ * `config:updated` WebSocket event so toggling tabs (or feature flags) in
+ * Settings updates the live sidebar immediately. Defaults to "nothing hidden,
+ * default order, no favorites".
  */
 export function useSidebarPrefs(): SidebarPrefs {
-  const [prefs, setPrefs] = useState<SidebarPrefs>({ hidden: [], order: [], flags: navFlags() })
+  const [prefs, setPrefs] = useState<SidebarPrefs>({ hidden: [], order: [], favorites: [], flags: navFlags() })
 
   const read = useCallback(() => {
     getConfig()
@@ -25,6 +27,7 @@ export function useSidebarPrefs(): SidebarPrefs {
         setPrefs({
           hidden: c.preferences?.sidebar_hidden ?? [],
           order: c.preferences?.sidebar_order ?? [],
+          favorites: c.preferences?.sidebar_favorites ?? [],
           flags: navFlags(c.preferences),
         })
       })

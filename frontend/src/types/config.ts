@@ -168,6 +168,10 @@ export interface Preferences {
   // Flat list of side-nav route keys in preferred display order; items are
   // ordered within their section by position here.
   sidebar_order?: string[]
+  // Side-nav route keys the user has starred as favorites; these render in a
+  // pinned "Favorites" section at the top of the sidebar in addition to their
+  // normal section. A hidden item is never shown, even if favorited.
+  sidebar_favorites?: string[]
   // ── Local TTS (Piper) ──────────────────────────────────────────────────
   // Opt-in, user-installed local neural TTS (see docs/piper-tts-plan.md).
   // When enabled and pointed at a valid piper executable + .onnx voice model,

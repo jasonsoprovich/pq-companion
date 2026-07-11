@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { PanelLeft, ChevronUp, ChevronDown, RotateCcw, Eye, EyeOff } from 'lucide-react'
+import { PanelLeft, ChevronUp, ChevronDown, RotateCcw, Eye, EyeOff, Star } from 'lucide-react'
 import { getConfig, updateConfig } from '../../services/api'
 import type { Config } from '../../types/config'
 import { NAV_SECTIONS, visibleNavSections, navFlags, orderItems, type NavItem, type NavSection } from '../../lib/sidebarNav'
@@ -12,6 +12,7 @@ export default function SidebarNavSettings(): React.ReactElement {
   const [cfg, setCfg] = useState<Config | null>(null)
   const [secOrder, setSecOrder] = useState<SecOrder>({})
   const [hidden, setHidden] = useState<Set<string>>(new Set())
+  const [favorites, setFavorites] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
 
   const itemByKey = useMemo(() => {
@@ -32,6 +33,7 @@ export default function SidebarNavSettings(): React.ReactElement {
     })
     setSecOrder(next)
     setHidden(new Set(c.preferences?.sidebar_hidden ?? []))
+    setFavorites(new Set(c.preferences?.sidebar_favorites ?? []))
   }
 
   useEffect(() => {
@@ -44,7 +46,7 @@ export default function SidebarNavSettings(): React.ReactElement {
   // sidebar reflects the change immediately. Only the currently-visible tabs'
   // order is written; tabs hidden by a disabled flag fall back to their default
   // position (via orderItems) until the flag is re-enabled.
-  async function persist(nextOrder: SecOrder, nextHidden: Set<string>) {
+  async function persist(nextOrder: SecOrder, nextHidden: Set<string>, nextFavorites: Set<string>) {
     if (!cfg) return
     setSaving(true)
     const flatOrder = sections.flatMap((s) => nextOrder[s.id] ?? [])
@@ -54,6 +56,7 @@ export default function SidebarNavSettings(): React.ReactElement {
         ...cfg.preferences,
         sidebar_order: flatOrder,
         sidebar_hidden: Array.from(nextHidden),
+        sidebar_favorites: Array.from(nextFavorites),
       },
     }
     setCfg(next)
@@ -70,7 +73,15 @@ export default function SidebarNavSettings(): React.ReactElement {
     if (next.has(key)) next.delete(key)
     else next.add(key)
     setHidden(next)
-    persist(secOrder, next)
+    persist(secOrder, next, favorites)
+  }
+
+  function toggleFavorite(key: string) {
+    const next = new Set(favorites)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    setFavorites(next)
+    persist(secOrder, hidden, next)
   }
 
   function move(sectionId: string, key: string, dir: -1 | 1) {
@@ -81,7 +92,7 @@ export default function SidebarNavSettings(): React.ReactElement {
     ;[list[i], list[j]] = [list[j], list[i]]
     const next = { ...secOrder, [sectionId]: list }
     setSecOrder(next)
-    persist(next, hidden)
+    persist(next, hidden, favorites)
   }
 
   function resetDefaults() {
@@ -89,7 +100,8 @@ export default function SidebarNavSettings(): React.ReactElement {
     sections.forEach((s) => { next[s.id] = s.items.map((i) => i.to) })
     setSecOrder(next)
     setHidden(new Set())
-    persist(next, new Set())
+    setFavorites(new Set())
+    persist(next, new Set(), new Set())
   }
 
   const visibleCount = sections.reduce((n, s) => n + s.items.filter((i) => !hidden.has(i.to)).length, 0)
@@ -106,8 +118,9 @@ export default function SidebarNavSettings(): React.ReactElement {
         <div className="mb-3 flex items-center justify-between gap-2">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>
             Show, hide, and reorder the side navigation tabs. Hiding a tab only removes it from the sidebar — the
-            page is still reachable. The search, back/forward, character switcher, and settings controls can't be
-            hidden.
+            page is still reachable. Starring a tab pins it to a Favorites section at the top of the sidebar, in
+            addition to its normal section. The search, back/forward, character switcher, and settings controls
+            can't be hidden.
           </p>
           <button
             onClick={resetDefaults}
@@ -136,6 +149,7 @@ export default function SidebarNavSettings(): React.ReactElement {
                     const item = itemByKey.get(key)
                     if (!item) return null
                     const isHidden = hidden.has(key)
+                    const isFavorite = favorites.has(key)
                     return (
                       <div
                         key={key}
@@ -144,6 +158,15 @@ export default function SidebarNavSettings(): React.ReactElement {
                       >
                         <span style={{ color: 'var(--color-muted-foreground)' }}>{item.icon}</span>
                         <span className="flex-1 text-sm" style={{ color: 'var(--color-foreground)' }}>{item.label}</span>
+                        <button
+                          onClick={() => toggleFavorite(key)}
+                          disabled={saving}
+                          className="rounded p-1"
+                          style={{ color: isFavorite ? 'var(--color-primary)' : 'var(--color-muted-foreground)' }}
+                          title={isFavorite ? 'Favorited — click to remove' : 'Click to favorite (pins to top of sidebar)'}
+                        >
+                          <Star size={15} fill={isFavorite ? 'currentColor' : 'none'} />
+                        </button>
                         <button
                           onClick={() => move(section.id, key, -1)}
                           disabled={idx === 0 || saving}
