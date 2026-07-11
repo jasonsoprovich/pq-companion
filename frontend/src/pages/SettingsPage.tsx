@@ -4,7 +4,7 @@ import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, Re
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
-import AlertDefaultsSettings from '../components/settings/AlertDefaultsSettings'
+import { TtsVoiceDefault, OverlayTextDefaults } from '../components/settings/AlertDefaultsSettings'
 import PiperTtsSettings from '../components/settings/PiperTtsSettings'
 import TimerAlertPrefEditor from '../components/settings/TimerAlertPrefEditor'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, getEqwStatus, type ServerInfo, type TestPortResult } from '../services/api'
@@ -53,7 +53,7 @@ import DeveloperTab from './DeveloperTab'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'accessibility' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backups' | 'advanced' | 'about' | 'developer'
+type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backups' | 'advanced' | 'about' | 'developer'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -66,7 +66,7 @@ interface TabBarProps {
 // tab not listed here (e.g. a future addition) still renders, ungrouped, at the
 // end — so forgetting to register one degrades gracefully rather than hiding it.
 const TAB_GROUPS: { label: string; ids: Tab[] }[] = [
-  { label: 'General', ids: ['general', 'accessibility'] },
+  { label: 'General', ids: ['general', 'audio', 'accessibility'] },
   { label: 'Interface', ids: ['navigation', 'overlays', 'spelltimers', 'dpscolors'] },
   { label: 'System', ids: ['logs', 'backups', 'advanced'] },
   { label: 'About', ids: ['about', 'developer'] },
@@ -304,7 +304,7 @@ export default function SettingsPage(): React.ReactElement {
   // Allow deep-linking to a specific tab via ?tab= (e.g. links to the Logs tab
   // for backfill). Falls back to General for unknown/absent values.
   const [tab, setTab] = useState<Tab>(() => {
-    const valid: Tab[] = ['general', 'accessibility', 'navigation', 'overlays', 'spelltimers', 'dpscolors', 'logs', 'backups', 'advanced', 'about', 'developer']
+    const valid: Tab[] = ['general', 'audio', 'accessibility', 'navigation', 'overlays', 'spelltimers', 'dpscolors', 'logs', 'backups', 'advanced', 'about', 'developer']
     const t = searchParams.get('tab') ?? ''
     return (valid as string[]).includes(t) ? (t as Tab) : 'general'
   })
@@ -661,11 +661,12 @@ export default function SettingsPage(): React.ReactElement {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'general', label: 'General', icon: <Settings size={13} /> },
+    { id: 'audio', label: 'Audio', icon: <Volume2 size={13} /> },
     { id: 'accessibility', label: 'Accessibility', icon: <Eye size={13} /> },
     { id: 'navigation', label: 'Navigation', icon: <PanelLeft size={13} /> },
     { id: 'overlays', label: 'Overlays', icon: <Layers size={13} /> },
     { id: 'spelltimers', label: 'Spell Timers', icon: <Sparkles size={13} /> },
-    { id: 'dpscolors', label: 'DPS Class Colors', icon: <Palette size={13} /> },
+    { id: 'dpscolors', label: 'DPS Meters', icon: <Palette size={13} /> },
     { id: 'logs', label: 'Logs', icon: <FileText size={13} /> },
     { id: 'backups', label: 'EQ Config Backups', icon: <HardDrive size={13} /> },
     { id: 'advanced', label: 'Advanced', icon: <Wifi size={13} /> },
@@ -1506,7 +1507,75 @@ export default function SettingsPage(): React.ReactElement {
             </div>
           </label>
 
-          <div className="mt-4">
+          <label className="flex cursor-pointer items-center justify-between py-1 mt-4">
+            <div>
+              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                Minimize to Tray
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                Hide to system tray instead of closing when the window is dismissed.
+              </p>
+            </div>
+            <div
+              onClick={() => {
+                const next = !config.preferences.minimize_to_tray
+                setConfig({
+                  ...config,
+                  preferences: {
+                    ...config.preferences,
+                    minimize_to_tray: next,
+                  },
+                })
+                // Apply immediately so the close behaviour / tray icon update
+                // without waiting for a restart or config reload.
+                void window.electron?.window?.setMinimizeToTray(next)
+              }}
+              style={{
+                width: 40,
+                height: 22,
+                borderRadius: 11,
+                backgroundColor: config.preferences.minimize_to_tray
+                  ? 'var(--color-primary)'
+                  : 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+                position: 'relative',
+                flexShrink: 0,
+                transition: 'background-color 0.15s',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 2,
+                  left: config.preferences.minimize_to_tray ? 20 : 2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  backgroundColor: '#fff',
+                  transition: 'left 0.15s',
+                }}
+              />
+            </div>
+          </label>
+
+        </section>
+        )}
+
+        {/* ── Audio ──────────────────────────────────────────────────────── */}
+        {tab === 'audio' && (
+        <section
+          className="rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <h2
+            className="mb-3 text-sm font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            Audio
+          </h2>
+
+          <div>
             <div className="mb-1 flex items-center justify-between">
               <div>
                 <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
@@ -1650,62 +1719,9 @@ export default function SettingsPage(): React.ReactElement {
             </div>
           </div>
 
-          <AlertDefaultsSettings config={config} setConfig={setConfig} />
+          <TtsVoiceDefault config={config} setConfig={setConfig} />
 
           <PiperTtsSettings config={config} setConfig={setConfig} />
-
-          <label className="flex cursor-pointer items-center justify-between py-1 mt-4">
-            <div>
-              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-                Minimize to Tray
-              </p>
-              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                Hide to system tray instead of closing when the window is dismissed.
-              </p>
-            </div>
-            <div
-              onClick={() => {
-                const next = !config.preferences.minimize_to_tray
-                setConfig({
-                  ...config,
-                  preferences: {
-                    ...config.preferences,
-                    minimize_to_tray: next,
-                  },
-                })
-                // Apply immediately so the close behaviour / tray icon update
-                // without waiting for a restart or config reload.
-                void window.electron?.window?.setMinimizeToTray(next)
-              }}
-              style={{
-                width: 40,
-                height: 22,
-                borderRadius: 11,
-                backgroundColor: config.preferences.minimize_to_tray
-                  ? 'var(--color-primary)'
-                  : 'var(--color-surface-2)',
-                border: '1px solid var(--color-border)',
-                cursor: 'pointer',
-                position: 'relative',
-                flexShrink: 0,
-                transition: 'background-color 0.15s',
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 2,
-                  left: config.preferences.minimize_to_tray ? 20 : 2,
-                  width: 16,
-                  height: 16,
-                  borderRadius: '50%',
-                  backgroundColor: '#fff',
-                  transition: 'left 0.15s',
-                }}
-              />
-            </div>
-          </label>
-
         </section>
         )}
 
@@ -2130,6 +2146,22 @@ export default function SettingsPage(): React.ReactElement {
               />
             </div>
           </label>
+        </section>
+        )}
+
+        {/* ── Default overlay text position/style ──────────────────────────── */}
+        {tab === 'overlays' && (
+        <section
+          className="rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <h2
+            className="mb-3 text-sm font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            Default Overlay Text
+          </h2>
+          <OverlayTextDefaults config={config} setConfig={setConfig} />
         </section>
         )}
 

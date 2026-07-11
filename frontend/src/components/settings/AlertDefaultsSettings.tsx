@@ -1,15 +1,14 @@
 /**
- * AlertDefaultsSettings — Settings → Preferences controls for the global
+ * TtsVoiceDefault / OverlayTextDefaults — Settings controls for the global
  * trigger-alert defaults:
  *
- *   - Default TTS Voice: the voice used by any text_to_speech alert whose own
- *     voice field is "App default" (empty). Per-trigger voices still win.
- *   - Default Overlay Text Position: where overlay_text alerts that have no
- *     per-trigger pinned position anchor their stack, set via the same
- *     drag-to-position session the trigger editor uses.
- *   - Default Overlay Text Style: color, glow color, font, and size used by
- *     every overlay_text alert whose own action leaves the field on
- *     "App default". Per-trigger overrides in the editor always win.
+ *   - Default TTS Voice (Audio tab): the voice used by any text_to_speech
+ *     alert whose own voice field is "App default" (empty). Per-trigger
+ *     voices still win.
+ *   - Default Overlay Text Position / Style (Overlays tab): where and how
+ *     overlay_text alerts render when a trigger has no pinned position or
+ *     style of its own, set via the same drag-to-position session the
+ *     trigger editor uses. Per-trigger overrides in the editor always win.
  *
  * Edits are staged into the page's config state; the page's Save button
  * persists them like every other preference.
@@ -34,12 +33,53 @@ interface AlertDefaultsSettingsProps {
   setConfig: (c: Config) => void
 }
 
-export default function AlertDefaultsSettings({
+export function TtsVoiceDefault({
   config,
   setConfig,
 }: AlertDefaultsSettingsProps): React.ReactElement {
   const voices = useTTSVoices(useVoices())
   const defaultVoice = config.preferences.default_tts_voice ?? ''
+
+  return (
+    <div className="mt-4">
+      <div className="mb-1">
+        <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+          Default TTS Voice
+        </p>
+        <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          Spoken by every trigger and alert whose voice is set to &ldquo;App default&rdquo;.
+          Triggers with their own voice keep it.
+        </p>
+      </div>
+      <select
+        value={defaultVoice}
+        onChange={(e) =>
+          setConfig({
+            ...config,
+            preferences: { ...config.preferences, default_tts_voice: e.target.value },
+          })
+        }
+        className="mt-1 w-full max-w-xs rounded px-2 py-1 text-xs outline-none"
+        style={{
+          backgroundColor: 'var(--color-surface-2)',
+          border: '1px solid var(--color-border)',
+          color: 'var(--color-foreground)',
+          appearance: 'none',
+        }}
+      >
+        <option value="">System default</option>
+        {voices.map((v) => (
+          <option key={v} value={v}>{voiceLabel(v)}</option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+export function OverlayTextDefaults({
+  config,
+  setConfig,
+}: AlertDefaultsSettingsProps): React.ReactElement {
   const position = config.preferences.default_overlay_position ?? null
 
   function setPosition(p: { x: number; y: number } | null): void {
@@ -114,39 +154,6 @@ export default function AlertDefaultsSettings({
 
   return (
     <>
-      <div className="mt-4">
-        <div className="mb-1">
-          <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-            Default TTS Voice
-          </p>
-          <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Spoken by every trigger and alert whose voice is set to &ldquo;App default&rdquo;.
-            Triggers with their own voice keep it.
-          </p>
-        </div>
-        <select
-          value={defaultVoice}
-          onChange={(e) =>
-            setConfig({
-              ...config,
-              preferences: { ...config.preferences, default_tts_voice: e.target.value },
-            })
-          }
-          className="mt-1 w-full max-w-xs rounded px-2 py-1 text-xs outline-none"
-          style={{
-            backgroundColor: 'var(--color-surface-2)',
-            border: '1px solid var(--color-border)',
-            color: 'var(--color-foreground)',
-            appearance: 'none',
-          }}
-        >
-          <option value="">System default</option>
-          {voices.map((v) => (
-            <option key={v} value={v}>{voiceLabel(v)}</option>
-          ))}
-        </select>
-      </div>
-
       <div className="mt-4">
         <div className="mb-1 flex items-center justify-between gap-3">
           <div>
