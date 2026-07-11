@@ -2434,50 +2434,106 @@ func GroupAlertsPack() TriggerPack {
 // RaidAlertsPack returns raid-event overlays: Divine Intervention procs,
 // mobs gating away, and assist calls in raid chat.
 func RaidAlertsPack() TriggerPack {
-	return TriggerPack{
-		PackName:    "Raid Alerts",
-		Description: "Divine Intervention procs, mobs casting gate, and assist calls in raid chat.",
-		Triggers: []Trigger{
-			{
-				// The DI proc line — complementary to the Cleric pack's
-				// Divine Intervention buff timer (which this same line clears).
-				Name:     "Divine Intervention",
-				Enabled:  true,
-				Pattern:  `^(\w+) has been rescued by divine intervention!$`,
-				PackName: "Raid Alerts",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "DIVINE INTERVENTION — {1}", DurationSecs: 8, Color: "#ffd700"},
-					{Type: ActionTextToSpeech, Text: "Divine intervention on {1}", Volume: 1.0},
-				},
-			},
-			{
-				Name:     "Mob Gating",
-				Enabled:  true,
-				Pattern:  `^(.+) begins to cast the gate spell\.$`,
-				PackName: "Raid Alerts",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "GATE: {1}", DurationSecs: 6, Color: "#ff8800"},
-					{Type: ActionTextToSpeech, Text: "{1} is gating", Volume: 1.0},
-				},
-			},
-			{
-				// "Krazak tells the raid,  'ASSIST Vox >>>'" → "ASSIST Vox", and
-				// the "kill" calling style "'< --- Kill Qua Zethon Xakra -->'" →
-				// "ASSIST Qua Zethon Xakra". The keyword is case-insensitive and
-				// word-bounded so "skill"/"killing"/"killed" don't false-fire;
-				// the target capture runs from the first letter after the keyword
-				// up to a trailing decoration character (- < > | ! ', covering
-				// >>>, -->, <--) or the closing quote. Double-quoted for the
-				// backtick in the mob-name class.
-				Name:     "Raid Assist Call",
-				Enabled:  true,
-				Pattern:  "(?i)^(\\w+) tells the raid,\\s*'.*?\\b(?:assist|kill)\\b\\W*([A-Za-z][A-Za-z`' ]*?)(?:\\s*[-<>|!']|$)",
-				PackName: "Raid Alerts",
-				Actions: []Action{
-					{Type: ActionOverlayText, Text: "ASSIST {2}", DurationSecs: 5, Color: "#ff4444"},
-				},
+	triggers := []Trigger{
+		{
+			// The DI proc line — complementary to the Cleric pack's
+			// Divine Intervention buff timer (which this same line clears).
+			Name:     "Divine Intervention",
+			Enabled:  true,
+			Pattern:  `^(\w+) has been rescued by divine intervention!$`,
+			PackName: "Raid Alerts",
+			Actions: []Action{
+				{Type: ActionOverlayText, Text: "DIVINE INTERVENTION — {1}", DurationSecs: 8, Color: "#ffd700"},
+				{Type: ActionTextToSpeech, Text: "Divine intervention on {1}", Volume: 1.0},
 			},
 		},
+		{
+			Name:     "Mob Gating",
+			Enabled:  true,
+			Pattern:  `^(.+) begins to cast the gate spell\.$`,
+			PackName: "Raid Alerts",
+			Actions: []Action{
+				{Type: ActionOverlayText, Text: "GATE: {1}", DurationSecs: 6, Color: "#ff8800"},
+				{Type: ActionTextToSpeech, Text: "{1} is gating", Volume: 1.0},
+			},
+		},
+		{
+			// "Krazak tells the raid,  'ASSIST Vox >>>'" → "ASSIST Vox", and
+			// the "kill" calling style "'< --- Kill Qua Zethon Xakra -->'" →
+			// "ASSIST Qua Zethon Xakra". The keyword is case-insensitive and
+			// word-bounded so "skill"/"killing"/"killed" don't false-fire;
+			// the target capture runs from the first letter after the keyword
+			// up to a trailing decoration character (- < > | ! ', covering
+			// >>>, -->, <--) or the closing quote. Double-quoted for the
+			// backtick in the mob-name class.
+			Name:     "Raid Assist Call",
+			Enabled:  true,
+			Pattern:  "(?i)^(\\w+) tells the raid,\\s*'.*?\\b(?:assist|kill)\\b\\W*([A-Za-z][A-Za-z`' ]*?)(?:\\s*[-<>|!']|$)",
+			PackName: "Raid Alerts",
+			Actions: []Action{
+				{Type: ActionOverlayText, Text: "ASSIST {2}", DurationSecs: 5, Color: "#ff4444"},
+			},
+		},
+	}
+	triggers = append(triggers, raidSignatureSpellAlerts()...)
+	return TriggerPack{
+		PackName:    "Raid Alerts",
+		Description: "Divine Intervention procs, mobs casting gate, assist calls, and signature-spell recast warnings for Ring War raid targets.",
+		Triggers:    triggers,
+	}
+}
+
+// raidSignatureSpellAlerts returns recast-warning triggers for a handful of
+// high-impact signature spells cast by Kunark "Ring War" raid targets (Aten
+// Ha Ra, Lord Inquisitor Seru, Vyzh`dra, Shei Vinitras, etc). The pattern
+// only matches on the spell's own land text — which NPC cast it is
+// irrelevant, so the same trigger covers every mob that has it in its spell
+// set. Each pattern matches both branches of the land message ("cast on
+// you" and "cast on other") so the timer restarts regardless of which raid
+// member the spell actually lands on.
+//
+// TimerDurationSecs is the spell's own recast_time from spells_new — the
+// best available proxy for how often a scripted boss re-casts it, since
+// there's no other way to know the real cadence without the first cast
+// landing in the log. TimerAlerts fires a TTS warning 5 seconds before the
+// timer would hit zero (i.e. 5 seconds before the boss can cast it again),
+// overriding the pack's default 10-second detrimental warning. The Actions
+// overlay banner confirms each observed cast. Leaving TimerTargetCapture
+// unset means the timer carries no bound NPC name, so it's swept by the
+// spelltimer engine's orphan-cleanup on the next kill — "cleared when the
+// boss dies" falls out of that for free without needing to identify which
+// NPC was casting it.
+func raidSignatureSpellAlerts() []Trigger {
+	spell := func(name, landOnYou, landOnOtherSuffix string, spellID int, recastSecs float64) Trigger {
+		return Trigger{
+			Name:              name,
+			Enabled:           true,
+			Pattern:           `^(?:` + landOnYou + `|[A-Z][a-zA-Z']{2,14}` + landOnOtherSuffix + `)$`,
+			PackName:          "Raid Alerts",
+			TimerType:         TimerTypeDetrimental,
+			TimerDurationSecs: recastSecs,
+			SpellID:           spellID,
+			BarColor:          "#ff3333",
+			TimerAlerts: []TimerAlert{
+				{
+					ID:          "raid-sig-warn-5s",
+					Seconds:     5,
+					Type:        TimerAlertTypeTextToSpeech,
+					TTSTemplate: "{spell} in 5 seconds",
+					TTSVolume:   100,
+				},
+			},
+			Actions: []Action{
+				{Type: ActionOverlayText, Text: strings.ToUpper(name) + " CAST", DurationSecs: 4, Color: "#ff4444"},
+			},
+		}
+	}
+	return []Trigger{
+		spell("Fling", `A massive force knocks you into the air\.`, ` is knocked into the air by a massive force\.`, 2167, 45),
+		spell("Silence of the Shadows", `Your mind is assaulted by horrifying visions\.`, `'s mind is assaulted by horrifying visions\.`, 2164, 30),
+		spell("Torturing Winds", `You are stricken by torturing winds\.`, ` is stricken by torturing winds\.`, 2061, 45),
+		spell("Caustic Mist", `Your skin begins to rot\.`, `'s flesh begins to liquefy\.`, 2814, 24),
+		spell("Touch of Vinitras", `Your soul fades into darkness\.`, `'s soul fades into darkness\.`, 2859, 120),
 	}
 }
 
@@ -2717,6 +2773,34 @@ func DefaultUpdates() []DefaultUpdate {
 			Key:           "SpellBreaks:PetSpellWornOff:add-v1",
 			PackName:      "Spell Breaks",
 			InsertTrigger: func() *Trigger { t := petSpellWornOff("Spell Breaks"); return &t }(),
+		},
+		{
+			// 2026-07-10: add the five Ring War signature-spell recast
+			// warnings to existing Raid Alerts installs, one insert per
+			// spell (InsertTrigger only adds one trigger per update).
+			Key:           "RaidAlerts:SigSpell:Fling:add-v1",
+			PackName:      "Raid Alerts",
+			InsertTrigger: func() *Trigger { t := raidSignatureSpellAlerts()[0]; return &t }(),
+		},
+		{
+			Key:           "RaidAlerts:SigSpell:SilenceOfTheShadows:add-v1",
+			PackName:      "Raid Alerts",
+			InsertTrigger: func() *Trigger { t := raidSignatureSpellAlerts()[1]; return &t }(),
+		},
+		{
+			Key:           "RaidAlerts:SigSpell:TorturingWinds:add-v1",
+			PackName:      "Raid Alerts",
+			InsertTrigger: func() *Trigger { t := raidSignatureSpellAlerts()[2]; return &t }(),
+		},
+		{
+			Key:           "RaidAlerts:SigSpell:CausticMist:add-v1",
+			PackName:      "Raid Alerts",
+			InsertTrigger: func() *Trigger { t := raidSignatureSpellAlerts()[3]; return &t }(),
+		},
+		{
+			Key:           "RaidAlerts:SigSpell:TouchOfVinitras:add-v1",
+			PackName:      "Raid Alerts",
+			InsertTrigger: func() *Trigger { t := raidSignatureSpellAlerts()[4]; return &t }(),
 		},
 	}
 }
