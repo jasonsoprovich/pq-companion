@@ -314,12 +314,24 @@ function CancelbuffBuilder({
 interface ButtonEditorProps {
   initial: MacroButton
   palette: Map<number, MacroColor>
+  buttons: MacroButton[]
   onSave: (b: MacroButton) => void
   onClear: () => void
   onClose: () => void
+  onMove: (source: MacroButton, destPage: number, destButton: number) => void
+  onClone: (source: MacroButton, destPage: number, destButton: number) => void
 }
 
-function ButtonEditor({ initial, palette, onSave, onClear, onClose }: ButtonEditorProps): React.ReactElement {
+function ButtonEditor({
+  initial,
+  palette,
+  buttons,
+  onSave,
+  onClear,
+  onClose,
+  onMove,
+  onClone,
+}: ButtonEditorProps): React.ReactElement {
   useEscapeToClose(onClose)
   const [name, setName] = useState(initial.name)
   const [color, setColor] = useState(initial.color)
@@ -328,6 +340,8 @@ function ButtonEditor({ initial, palette, onSave, onClear, onClose }: ButtonEdit
     while (l.length < LINE_COUNT) l.push('')
     return l.slice(0, LINE_COUNT)
   })
+  const [destPage, setDestPage] = useState(initial.page)
+  const [destButton, setDestButton] = useState(initial.button)
 
   const swatch = cssColor(palette.get(color))
   // Clickable chips for the choices the in-game color list offers (0–19).
@@ -345,6 +359,11 @@ function ButtonEditor({ initial, palette, onSave, onClear, onClose }: ButtonEdit
   function save(): void {
     onSave({ ...initial, name, color, lines: lines.slice() })
   }
+
+  const isSameSlot = destPage === initial.page && destButton === initial.button
+  const destOccupant = buttons.find(
+    (b) => b.page === destPage && b.button === destButton && !buttonIsEmpty(b),
+  )
 
   return (
     <div
@@ -461,6 +480,96 @@ function ButtonEditor({ initial, palette, onSave, onClear, onClose }: ButtonEdit
               </div>
             ))}
           </div>
+
+          {/* Move / clone to another page or slot */}
+          {!buttonIsEmpty(initial) && (
+            <div
+              className="flex flex-col gap-2 rounded-md border p-2.5"
+              style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-2)' }}
+            >
+              <span className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+                Move or clone to another slot
+              </span>
+              <div className="flex items-center gap-2">
+                <label className="flex flex-1 flex-col gap-1">
+                  <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+                    Destination page
+                  </span>
+                  <select
+                    value={destPage}
+                    onChange={(e) => setDestPage(Number(e.target.value))}
+                    className="rounded px-2 py-1 text-xs outline-none"
+                    style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+                  >
+                    {Array.from({ length: PAGE_COUNT }, (_, i) => i + 1).map((p) => (
+                      <option key={p} value={p}>
+                        Page {p}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-1 flex-col gap-1">
+                  <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+                    Destination slot
+                  </span>
+                  <select
+                    value={destButton}
+                    onChange={(e) => setDestButton(Number(e.target.value))}
+                    className="rounded px-2 py-1 text-xs outline-none"
+                    style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+                  >
+                    {Array.from({ length: BUTTONS_PER_PAGE }, (_, i) => i + 1).map((n) => {
+                      const occupant = buttons.find(
+                        (b) => b.page === destPage && b.button === n && !buttonIsEmpty(b),
+                      )
+                      return (
+                        <option key={n} value={n}>
+                          Button {n}
+                          {occupant ? ` — ${occupant.name || '(unnamed)'}` : ''}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => onMove(initial, destPage, destButton)}
+                  disabled={isSameSlot}
+                  className="rounded px-2 py-1 text-xs disabled:opacity-40"
+                  style={{ border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+                  title={
+                    isSameSlot
+                      ? 'Choose a different page or slot first'
+                      : destOccupant
+                        ? `Swap with Page ${destPage} Button ${destButton} (${destOccupant.name || '(unnamed)'})`
+                        : `Move to Page ${destPage} Button ${destButton}`
+                  }
+                >
+                  Move here
+                </button>
+                <button
+                  onClick={() => onClone(initial, destPage, destButton)}
+                  disabled={isSameSlot}
+                  className="rounded px-2 py-1 text-xs disabled:opacity-40"
+                  style={{ border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+                  title={
+                    isSameSlot
+                      ? 'Choose a different page or slot first'
+                      : destOccupant
+                        ? `Overwrite Page ${destPage} Button ${destButton} (${destOccupant.name || '(unnamed)'}) with a copy`
+                        : `Copy to Page ${destPage} Button ${destButton}`
+                  }
+                >
+                  Clone here
+                </button>
+              </div>
+              <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+                Uses this slot&rsquo;s saved content — Apply any edits first. Moving into an occupied
+                slot swaps the two; cloning into one asks before overwriting it.
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2 border-t px-3 py-2" style={{ borderColor: 'var(--color-border)' }}>
@@ -694,137 +803,6 @@ function MacroImportModal({
   )
 }
 
-// ── Page tab (drop target for cross-page moves) ──────────────────────────────
-
-// A page-number tab in the strip above the grid. Besides switching pages on
-// click, it's a dnd-kit drop target: dragging a macro slot onto another
-// page's tab moves it there (same button number, swapping with whatever
-// already occupies that slot — see handleMoveToPage). Disabled as a drop
-// target for the currently-viewed page since dropping there is a no-op.
-function PageTab({
-  p,
-  active,
-  count,
-  onClick,
-}: {
-  p: number
-  active: boolean
-  count: number
-  onClick: () => void
-}): React.ReactElement {
-  const { setNodeRef, isOver } = useDroppable({ id: `page-${p}`, disabled: active })
-  return (
-    <button
-      ref={setNodeRef}
-      onClick={onClick}
-      className="rounded px-2.5 py-1 text-xs font-medium transition-colors"
-      style={{
-        backgroundColor: active ? 'var(--color-primary)' : 'var(--color-surface-2)',
-        color: active ? 'var(--color-background)' : 'var(--color-muted-foreground)',
-        border: isOver ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
-        boxShadow: isOver ? '0 0 0 2px var(--color-primary)' : 'none',
-      }}
-      title={`Page ${p}${count ? ` (${count} macro${count === 1 ? '' : 's'})` : ''}${
-        active ? '' : ' — drag a macro here to move it to this page'
-      }`}
-    >
-      {p}
-      {/* Always render the dot so its width is reserved on every
-          tab — colored when the page has macros, transparent
-          otherwise — so tabs don't grow/shrink on click. */}
-      <span
-        className="ml-1 text-[9px]"
-        style={{ color: count > 0 ? (active ? 'var(--color-background)' : 'var(--color-primary)') : 'transparent' }}
-      >
-        ●
-      </span>
-    </button>
-  )
-}
-
-// ── Slot context menu (right-click move/copy to page) ────────────────────────
-
-interface SlotContextMenuProps {
-  x: number
-  y: number
-  currentPage: number
-  pageHasMacros: (p: number) => boolean
-  onPick: (destPage: number, mode: 'move' | 'copy') => void
-  onClose: () => void
-}
-
-// Right-click menu for moving or copying a macro to another page without a
-// two-step drag. Move swaps with whatever occupies the destination slot;
-// copy leaves the source in place and (via the caller) confirms before
-// overwriting an occupied destination.
-function SlotContextMenu({ x, y, currentPage, pageHasMacros, onPick, onClose }: SlotContextMenuProps): React.ReactElement {
-  useEscapeToClose(onClose)
-  useEffect(() => {
-    window.addEventListener('mousedown', onClose)
-    window.addEventListener('contextmenu', onClose)
-    window.addEventListener('blur', onClose)
-    return () => {
-      window.removeEventListener('mousedown', onClose)
-      window.removeEventListener('contextmenu', onClose)
-      window.removeEventListener('blur', onClose)
-    }
-  }, [onClose])
-
-  const left = Math.min(x, window.innerWidth - 230)
-  const top = Math.min(y, window.innerHeight - 200)
-  const pages = Array.from({ length: PAGE_COUNT }, (_, i) => i + 1)
-
-  function pageRow(mode: 'move' | 'copy'): React.ReactElement {
-    return (
-      <div className="flex flex-wrap gap-1 px-2 pb-2">
-        {pages.map((p) => (
-          <button
-            key={p}
-            disabled={p === currentPage}
-            onClick={() => onPick(p, mode)}
-            className="rounded px-1.5 py-0.5 text-[11px] disabled:opacity-30"
-            style={{
-              border: '1px solid var(--color-border)',
-              color: 'var(--color-foreground)',
-              backgroundColor: 'var(--color-surface-2)',
-            }}
-            title={`${mode === 'move' ? 'Move' : 'Copy'} to page ${p}`}
-          >
-            {p}
-            {pageHasMacros(p) && (
-              <span className="ml-0.5 text-[9px]" style={{ color: 'var(--color-primary)' }}>
-                ●
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-    )
-  }
-
-  return (
-    <div
-      className="fixed z-50 rounded-lg border py-1.5 shadow-lg"
-      style={{ left, top, backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)', minWidth: 210 }}
-      onClick={(e) => e.stopPropagation()}
-      onMouseDown={(e) => e.stopPropagation()}
-      onContextMenu={(e) => e.preventDefault()}
-    >
-      <div className="px-2 pb-1 text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
-        Move to page
-      </div>
-      {pageRow('move')}
-      <div
-        className="border-t px-2 pb-1 pt-1.5 text-[10px] uppercase tracking-wide"
-        style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
-      >
-        Copy to page
-      </div>
-      {pageRow('copy')}
-    </div>
-  )
-}
-
 // ── Macro grid slot (drag to rearrange) ──────────────────────────────────────
 
 interface MacroSlotProps {
@@ -832,20 +810,20 @@ interface MacroSlotProps {
   button: MacroButton | undefined
   palette: Map<number, MacroColor>
   onEdit: () => void
-  onContextMenu: (e: React.MouseEvent) => void
 }
 
 // One cell of the 2×6 macro grid. The whole slot is both draggable (when it
 // holds a macro) and droppable, so a macro can be dragged onto any slot on the
-// page: drop it on another macro to swap the two, or on an empty slot to move
-// it there. It can also be dragged onto one of the page-number tabs above the
-// grid to move it to another page. Drag uses dnd-kit (pointer-based) — native
-// HTML5 drag is unreliable in Electron on Windows. A short activation distance
-// lets a plain click still open the editor without starting a drag. Page 1's
-// built-in socials arrive as ordinary pre-filled buttons, so they render and
-// drag just like any other. Right-click opens a move/copy-to-page menu, for
-// moving macros between pages without a two-step drag.
-function MacroSlot({ btn, button, palette, onEdit, onContextMenu }: MacroSlotProps): React.ReactElement {
+// SAME page: drop it on another macro to swap the two, or on an empty slot to
+// move it there. Moving to a DIFFERENT page is handled inside the button
+// editor instead (destination page/slot pickers) — a cross-page drag turned
+// out to be unpredictable once the destination page could already hold a
+// macro at that slot. Drag uses dnd-kit (pointer-based) — native HTML5 drag is
+// unreliable in Electron on Windows. A short activation distance lets a plain
+// click still open the editor without starting a drag. Page 1's built-in
+// socials arrive as ordinary pre-filled buttons, so they render and drag just
+// like any other.
+function MacroSlot({ btn, button, palette, onEdit }: MacroSlotProps): React.ReactElement {
   const isEmpty = !button || buttonIsEmpty(button)
   const id = String(btn)
   const {
@@ -874,10 +852,6 @@ function MacroSlot({ btn, button, palette, onEdit, onContextMenu }: MacroSlotPro
     <div
       ref={setRef}
       onClick={onEdit}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        if (!isEmpty) onContextMenu(e)
-      }}
       {...attributes}
       {...listeners}
       className="flex touch-none flex-col gap-1 rounded-lg border p-2 text-left transition-colors hover:bg-(--color-surface-2)"
@@ -897,7 +871,7 @@ function MacroSlot({ btn, button, palette, onEdit, onContextMenu }: MacroSlotPro
       title={
         isEmpty
           ? undefined
-          : 'Click to edit · drag to move or swap · right-click to move/copy to another page'
+          : 'Click to edit · drag onto another slot to move or swap'
       }
     >
       <div className="flex items-center gap-1.5">
@@ -955,13 +929,12 @@ export default function CharacterMacrosPage(): React.ReactElement {
     | { type: 'save' }
     | { type: 'cancel' }
     | { type: 'reset-page1' }
-    | { type: 'copy-overwrite'; srcButton: number; destPage: number }
+    | { type: 'relocate-conflict'; mode: 'move' | 'clone'; source: MacroButton; destPage: number; destButton: number }
     | null
   >(null)
   const [importing, setImporting] = useState(false)
   const [importState, setImportState] = useState<{ sourceCharacter: string; rows: ImportRow[] } | null>(null)
   const [draggingBtn, setDraggingBtn] = useState<number | null>(null)
-  const [contextMenu, setContextMenu] = useState<{ button: number; x: number; y: number } | null>(null)
 
   // Pointer-based drag with a 6px activation distance: a plain click still opens
   // the editor, only a real drag rearranges. dnd-kit (not native HTML5 drag)
@@ -1062,46 +1035,38 @@ export default function CharacterMacrosPage(): React.ReactElement {
     })
   }
 
-  // Move a macro from the current page to the same button slot on another
-  // page. If that slot is already occupied there, the two macros swap places
-  // (mirrors handleReorder's same-page swap), so a drag or menu pick never
-  // loses data.
-  function handleMoveToPage(srcButton: number, destPage: number): void {
-    if (destPage === page) return
-    mutateViewed((buttons) => {
-      const src = buttons.find((b) => b.page === page && b.button === srcButton)
-      if (!src) return buttons
-      const dest = buttons.find((b) => b.page === destPage && b.button === srcButton)
-      return buttons.map((b) => {
-        if (b === src) return { ...b, page: destPage }
-        if (dest && b === dest) return { ...b, page }
-        return b
-      })
-    })
-  }
-
-  // Copy a macro to the same button slot on another page, leaving the source
-  // in place. Unlike a move this can overwrite the destination outright, so
-  // an occupied target asks for confirmation first.
-  function handleCopyToPage(srcButton: number, destPage: number): void {
-    if (destPage === page || !viewedFile) return
-    const src = viewedFile.buttons.find((b) => b.page === page && b.button === srcButton)
-    if (!src || buttonIsEmpty(src)) return
-    const dest = viewedFile.buttons.find((b) => b.page === destPage && b.button === srcButton)
-    if (dest && !buttonIsEmpty(dest)) {
-      setConfirmAction({ type: 'copy-overwrite', srcButton, destPage })
+  // Move or clone a macro to another page/slot, from the button editor's
+  // destination pickers. Move into an occupied slot swaps the two macros
+  // (nothing is lost, so no confirmation needed); clone into an occupied slot
+  // would overwrite it outright, so both cases still ask first — a swap is a
+  // surprising side effect, and an overwrite is destructive.
+  function handleRelocate(mode: 'move' | 'clone', source: MacroButton, destPage: number, destButton: number): void {
+    if (destPage === source.page && destButton === source.button) return
+    const occupant = viewedFile?.buttons.find(
+      (b) => b.page === destPage && b.button === destButton && !buttonIsEmpty(b),
+    )
+    if (occupant) {
+      setConfirmAction({ type: 'relocate-conflict', mode, source, destPage, destButton })
       return
     }
-    applyCopyToPage(srcButton, destPage)
+    applyRelocate(mode, source, destPage, destButton)
   }
 
-  function applyCopyToPage(srcButton: number, destPage: number): void {
+  function applyRelocate(mode: 'move' | 'clone', source: MacroButton, destPage: number, destButton: number): void {
     mutateViewed((buttons) => {
-      const src = buttons.find((b) => b.page === page && b.button === srcButton)
-      if (!src) return buttons
-      const without = buttons.filter((b) => !(b.page === destPage && b.button === srcButton))
-      return [...without, { ...src, page: destPage, lines: src.lines.slice() }]
+      const occupant = buttons.find((b) => b.page === destPage && b.button === destButton)
+      let next = buttons.filter((b) => !(b.page === destPage && b.button === destButton))
+      if (mode === 'move') {
+        next = next.filter((b) => !(b.page === source.page && b.button === source.button))
+        if (occupant && !buttonIsEmpty(occupant)) {
+          next.push({ ...occupant, page: source.page, button: source.button })
+        }
+      }
+      next.push({ ...source, page: destPage, button: destButton, lines: source.lines.slice() })
+      return next
     })
+    setEditing(null)
+    setConfirmAction(null)
   }
 
   function handleDragStart(e: DragStartEvent): void {
@@ -1112,12 +1077,7 @@ export default function CharacterMacrosPage(): React.ReactElement {
     setDraggingBtn(null)
     const { active, over } = e
     if (!over) return
-    const overId = String(over.id)
-    if (overId.startsWith('page-')) {
-      handleMoveToPage(Number(active.id), Number(overId.slice('page-'.length)))
-      return
-    }
-    handleReorder(Number(active.id), Number(overId))
+    handleReorder(Number(active.id), Number(over.id))
   }
 
   // Restore page 1 to EverQuest's twelve built-in socials, replacing whatever
@@ -1311,75 +1271,99 @@ export default function CharacterMacrosPage(): React.ReactElement {
         </div>
       )}
 
-      <DndContext
-        sensors={sensors}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragCancel={() => setDraggingBtn(null)}
-      >
-        {/* Page selector — also a drop target: dragging a macro onto another
-            page's tab moves it there. */}
-        {viewedFile && (
-          <div
-            className="flex shrink-0 items-center gap-1 overflow-x-auto border-b px-4 py-1.5"
-            style={{ borderColor: 'var(--color-border)' }}
-          >
-            {Array.from({ length: PAGE_COUNT }, (_, i) => i + 1).map((p) => (
-              <PageTab
+      {/* Page selector */}
+      {viewedFile && (
+        <div
+          className="flex shrink-0 items-center gap-1 overflow-x-auto border-b px-4 py-1.5"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          {Array.from({ length: PAGE_COUNT }, (_, i) => i + 1).map((p) => {
+            const count = viewedFile.buttons.filter((b) => b.page === p).length
+            return (
+              <button
                 key={p}
-                p={p}
-                active={p === page}
-                count={viewedFile.buttons.filter((b) => b.page === p).length}
                 onClick={() => setPage(p)}
-              />
-            ))}
+                className="rounded px-2.5 py-1 text-xs font-medium transition-colors"
+                style={{
+                  backgroundColor: p === page ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                  color: p === page ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+                  border: '1px solid var(--color-border)',
+                }}
+                title={`Page ${p}${count ? ` (${count} macro${count === 1 ? '' : 's'})` : ''}`}
+              >
+                {p}
+                {/* Always render the dot so its width is reserved on every
+                    tab — colored when the page has macros, transparent
+                    otherwise — so tabs don't grow/shrink on click. */}
+                <span
+                  className="ml-1 text-[9px]"
+                  style={{
+                    color:
+                      count > 0
+                        ? p === page
+                          ? 'var(--color-background)'
+                          : 'var(--color-primary)'
+                        : 'transparent',
+                  }}
+                >
+                  ●
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {loading && (
+          <div className="flex items-center justify-center py-12">
+            <RefreshCw size={16} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
           </div>
         )}
-
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          {loading && (
-            <div className="flex items-center justify-center py-12">
-              <RefreshCw size={16} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
-            </div>
-          )}
-          {!loading && error && (
-            <p className="py-12 text-center text-sm" style={{ color: 'var(--color-danger, #ef4444)' }}>
-              {error}
-            </p>
-          )}
-          {!loading && !error && filenames.length === 0 && (
-            <div className="py-12 text-center text-sm" style={{ color: 'var(--color-muted)' }}>
-              No character config files found. <code>&lt;CharName&gt;_pq.proj.ini</code> is created
-              by the EverQuest client — log in at least once to generate it.
-            </div>
-          )}
-          {!loading && !error && viewedFile && (
-            <>
-              <div className="mb-2 flex items-start gap-3">
-                <p className="flex-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                  Laid out like the in-game Actions window (two columns of six). Click a slot to
-                  edit it, drag a macro onto another slot to <b>swap</b> the two (or an empty
-                  slot to <b>move</b> it there), or drag onto a page number above to move it to
-                  that page. Right-click a macro to move or copy it to another page directly.
-                  {page === 1 && (
-                    <>
-                      {' '}Page 1 starts with EverQuest&rsquo;s built-in socials; a default you never
-                      change isn&rsquo;t written to the file.
-                    </>
-                  )}
-                </p>
+        {!loading && error && (
+          <p className="py-12 text-center text-sm" style={{ color: 'var(--color-danger, #ef4444)' }}>
+            {error}
+          </p>
+        )}
+        {!loading && !error && filenames.length === 0 && (
+          <div className="py-12 text-center text-sm" style={{ color: 'var(--color-muted)' }}>
+            No character config files found. <code>&lt;CharName&gt;_pq.proj.ini</code> is created
+            by the EverQuest client — log in at least once to generate it.
+          </div>
+        )}
+        {!loading && !error && viewedFile && (
+          <>
+            <div className="mb-2 flex items-start gap-3">
+              <p className="flex-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                Laid out like the in-game Actions window (two columns of six). Click a slot to
+                edit it, drag a macro onto another slot to <b>swap</b> the two (or an empty
+                slot to <b>move</b> it there). To move or clone a macro onto another{' '}
+                <b>page</b>, open it and use the picker at the bottom of the editor.
                 {page === 1 && (
-                  <button
-                    onClick={() => setConfirmAction({ type: 'reset-page1' })}
-                    disabled={saving}
-                    className="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs disabled:opacity-40"
-                    style={{ color: 'var(--color-muted-foreground)', border: '1px solid var(--color-border)' }}
-                    title="Restore page 1's twelve built-in default socials"
-                  >
-                    <RotateCcw size={12} /> Reset page 1
-                  </button>
+                  <>
+                    {' '}Page 1 starts with EverQuest&rsquo;s built-in socials; a default you never
+                    change isn&rsquo;t written to the file.
+                  </>
                 )}
-              </div>
+              </p>
+              {page === 1 && (
+                <button
+                  onClick={() => setConfirmAction({ type: 'reset-page1' })}
+                  disabled={saving}
+                  className="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs disabled:opacity-40"
+                  style={{ color: 'var(--color-muted-foreground)', border: '1px solid var(--color-border)' }}
+                  title="Restore page 1's twelve built-in default socials"
+                >
+                  <RotateCcw size={12} /> Reset page 1
+                </button>
+              )}
+            </div>
+            <DndContext
+              sensors={sensors}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragCancel={() => setDraggingBtn(null)}
+            >
               <div
                 style={{
                   display: 'grid',
@@ -1395,7 +1379,6 @@ export default function CharacterMacrosPage(): React.ReactElement {
                     button={buttonsByKey.get(keyOf(page, btn))}
                     palette={palette}
                     onEdit={() => setEditing({ page, button: btn })}
-                    onContextMenu={(e) => setContextMenu({ button: btn, x: e.clientX, y: e.clientY })}
                   />
                 ))}
               </div>
@@ -1423,33 +1406,21 @@ export default function CharacterMacrosPage(): React.ReactElement {
                   )
                 })()}
               </DragOverlay>
-            </>
-          )}
-        </div>
-      </DndContext>
+            </DndContext>
+          </>
+        )}
+      </div>
 
-      {contextMenu && viewedFile && (
-        <SlotContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          currentPage={page}
-          pageHasMacros={(p) => viewedFile.buttons.filter((b) => b.page === p).length > 0}
-          onPick={(destPage, mode) => {
-            if (mode === 'move') handleMoveToPage(contextMenu.button, destPage)
-            else handleCopyToPage(contextMenu.button, destPage)
-            setContextMenu(null)
-          }}
-          onClose={() => setContextMenu(null)}
-        />
-      )}
-
-      {editing && editingButton && (
+      {editing && editingButton && viewedFile && (
         <ButtonEditor
           initial={editingButton}
           palette={palette}
+          buttons={viewedFile.buttons}
           onSave={handleApply}
           onClear={handleClear}
           onClose={() => setEditing(null)}
+          onMove={(source, destPage, destButton) => handleRelocate('move', source, destPage, destButton)}
+          onClone={(source, destPage, destButton) => handleRelocate('clone', source, destPage, destButton)}
         />
       )}
 
@@ -1499,20 +1470,28 @@ export default function CharacterMacrosPage(): React.ReactElement {
         />
       )}
 
-      {confirmAction?.type === 'copy-overwrite' && viewedFile && (
+      {confirmAction?.type === 'relocate-conflict' && viewedFile && (
         <ConfirmModal
-          title="Overwrite macro?"
-          confirmLabel="Overwrite"
+          title={confirmAction.mode === 'move' ? 'Swap macros?' : 'Overwrite macro?'}
+          confirmLabel={confirmAction.mode === 'move' ? 'Swap' : 'Overwrite'}
           tone="danger"
-          onConfirm={() => {
-            applyCopyToPage(confirmAction.srcButton, confirmAction.destPage)
-            setConfirmAction(null)
-          }}
+          onConfirm={() =>
+            applyRelocate(confirmAction.mode, confirmAction.source, confirmAction.destPage, confirmAction.destButton)
+          }
           message={
-            <p>
-              Page {confirmAction.destPage} button {confirmAction.srcButton} already has a macro.
-              Copying here replaces it — the original on page {page} is unaffected.
-            </p>
+            confirmAction.mode === 'move' ? (
+              <p>
+                Page {confirmAction.destPage} button {confirmAction.destButton} already has a macro.
+                Moving here swaps it with page {confirmAction.source.page} button{' '}
+                {confirmAction.source.button}.
+              </p>
+            ) : (
+              <p>
+                Page {confirmAction.destPage} button {confirmAction.destButton} already has a macro.
+                Cloning here replaces it — the original on page {confirmAction.source.page} is
+                unaffected.
+              </p>
+            )
           }
           onCancel={() => setConfirmAction(null)}
         />
