@@ -440,13 +440,28 @@ var placeholderPrefixes = []string{"###_", "###", "##_", "##", "#_", "#"}
 //     that actually spawn in the player's current zone.
 //  2. If that finds nothing, retry with placeholder prefixes ("## ", etc.)
 //     against the same zone, then fall back to a global name search.
-//  3. With >1 candidate variants in zone and a known player position, keep
-//     only variants whose nearest spawn point is within tieToleranceYards of
-//     the closest. This picks raid-boss variants apart by location (Kaas Thox
-//     at y=318 vs y=-321) while keeping shared-spawngroup variants (shissar
-//     necro/SK at identical coords) bundled as a set.
-//  4. With no player position, keep all zone matches as the variant set —
-//     honest about not knowing, lets the UI surface alternatives.
+//  3. With >1 candidate variants in zone, a known player position, AND none
+//     of the candidates flagged raid_target, keep only variants whose nearest
+//     spawn point is within tieToleranceYards of the closest. This picks
+//     ordinary same-name mobs apart by location while keeping shared-
+//     spawngroup variants (shissar necro/SK at identical coords) bundled.
+//     Skipped entirely when a candidate is a raid boss (see step 3a) because
+//     raid mobs are routinely dragged far from their spawn2 coordinates
+//     before anyone else in the raid targets them, making "distance to
+//     spawn point" meaningless.
+//  3a. Raid bosses (Kaas Thox Xi Aten Ha Ra, Thall Va Xakra, Cazic Thule,
+//     the Fear adds) are frequently pulled hundreds of yards from their
+//     spawn2 row to a raid's preferred fight spot before most of the raid
+//     ever targets them. At that point the player's live position is close
+//     to neither variant's static spawn coordinate, so picking whichever
+//     spawn point happens to be nearer is a coin flip, not disambiguation —
+//     and a wrong pick hides the other variant's loot table (and any
+//     wishlist highlight on it) entirely. Safer to always surface the full
+//     variant set for raid bosses and let the frontend render every
+//     candidate's loot table.
+//  4. With no player position (or the raid_target skip above), keep all
+//     zone matches as the variant set — honest about not knowing, lets the
+//     UI surface alternatives.
 func (t *NPCTracker) lookupNPCVariants(
 	displayName, zoneShort string,
 	playerKnown bool, px, py float64,
@@ -470,9 +485,14 @@ func (t *NPCTracker) lookupNPCVariants(
 	}
 
 	// Position-based disambiguation only applies when multiple variants in
-	// the same zone are still in play AND we actually have a player position
-	// from Zeal. Otherwise we surface all candidates.
-	if len(candidates) > 1 && playerKnown && zoneShort != "" {
+	// the same zone are still in play, we actually have a player position
+	// from Zeal, AND none of the candidates is a raid boss — raid targets
+	// get pulled far from their spawn2 coordinates before most of the raid
+	// targets them, so "nearest to the player's current position" stops
+	// being a meaningful signal (see lookupNPCVariants doc comment). In that
+	// case we skip filtering and let every candidate flow through as a
+	// variant instead of risking a coin-flip pick that hides a loot table.
+	if len(candidates) > 1 && playerKnown && zoneShort != "" && !anyRaidTarget(candidates) {
 		candidates = filterVariantsByPlayerPosition(candidates, px, py)
 	}
 
@@ -593,6 +613,17 @@ func sortVariantsByStrength(variants []db.NPCVariant) {
 		}
 		return a.ID < b.ID
 	})
+}
+
+// anyRaidTarget reports whether any candidate is flagged raid_target in the
+// DB. Used to skip position-based variant filtering — see lookupNPCVariants.
+func anyRaidTarget(variants []db.NPCVariant) bool {
+	for _, v := range variants {
+		if v.NPC.RaidTarget == 1 {
+			return true
+		}
+	}
+	return false
 }
 
 // tieToleranceYards is how close two variants' nearest-spawn distances must

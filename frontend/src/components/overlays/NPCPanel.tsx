@@ -404,13 +404,17 @@ function NoTarget({ zone }: { zone?: string }): React.ReactElement {
   )
 }
 
-// OtherVariants collapses the non-primary same-name rows behind a disclosure.
+// OtherVariants shows the non-primary same-name rows behind a disclosure.
 // Quarm gives many bosses several rows that all spawn in one zone (a raid boss
 // plus low-HP siblings, e.g. Cazic Thule 450k vs 32k); the backend headlines
 // the strongest and hands the rest here so they stay reachable without stacking
 // full cards and burying the real target. The HP in each label makes the
-// distinction obvious. Collapsed by default; key by primary id upstream so it
-// resets when the target changes.
+// distinction obvious. Expanded by default — collapsing hides the other
+// variant's loot table (and any wishlist highlight on it), and for raid
+// bosses dragged far from their spawn point the backend can't reliably tell
+// which row is the actual target, so both loot tables need to be visible
+// without an extra click. Key by primary id upstream so state resets when
+// the target changes.
 function OtherVariants({
   variants,
   sections,
@@ -424,7 +428,7 @@ function OtherVariants({
   onItemClick: (id: number) => void
   wishlistItemIds: Set<number>
 }): React.ReactElement {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
   return (
     <div className="flex flex-col gap-2">
       <button

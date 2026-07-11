@@ -346,10 +346,13 @@ func TestNPCTracker_VariantSetForSharedSpawngroupRNG(t *testing.T) {
 	}
 }
 
-// Integration: targeting Kaas Thox in Vex Thal with the player standing at
-// the north spawn point should resolve to the north variant only — its
-// 600+ yard separation from the south variant blows past the tie tolerance.
-func TestNPCTracker_DistinctSpawnPicksByPosition(t *testing.T) {
+// Integration: targeting Kaas Thox in Vex Thal — a raid boss — should always
+// surface both variants regardless of player position. Raid bosses are
+// routinely dragged far from their spawn2 coordinates before most of the raid
+// targets them, so position-based filtering would silently hide whichever
+// variant the player wasn't standing near, and with it that variant's loot
+// table. Even standing right at the north spawn point, both must come back.
+func TestNPCTracker_RaidBossKeepsBothVariantsRegardlessOfPosition(t *testing.T) {
 	tr := newRealDBTracker(t)
 	// Vex Thal zoneidnumber is 158 (verified in the DB earlier).
 	tr.SetPipePlayerSnapshot(158, 141, 318, 130)
@@ -358,16 +361,17 @@ func TestNPCTracker_DistinctSpawnPicksByPosition(t *testing.T) {
 	if !st.HasTarget {
 		t.Fatal("HasTarget = false, want true")
 	}
-	if len(st.Variants) != 0 {
-		t.Errorf("Variants len = %d, want 0 (position should single out one variant)", len(st.Variants))
+	if len(st.Variants) != 2 {
+		t.Errorf("Variants len = %d, want 2 (raid boss: position filtering must be skipped)", len(st.Variants))
 	}
 	if st.NPCData == nil {
-		t.Fatal("NPCData = nil, want a single resolved variant")
+		t.Fatal("NPCData = nil, want a primary pick")
 	}
-	// The north spawn is npc_id 158437 with loottable 12519. If we picked the
-	// south variant (158464, loot 96732) we'd be showing the wrong loot.
+	// Both candidates tie on raid_target and HP, so the deterministic
+	// lowest-id pick (158437, loottable 12519) headlines; 158464 (loottable
+	// 96732) still rides along in Variants so its loot isn't hidden.
 	if st.NPCData.ID != 158437 {
-		t.Errorf("Picked npc_id %d, want 158437 (north spawn variant)", st.NPCData.ID)
+		t.Errorf("Picked npc_id %d, want 158437 (lowest id tiebreak)", st.NPCData.ID)
 	}
 }
 
