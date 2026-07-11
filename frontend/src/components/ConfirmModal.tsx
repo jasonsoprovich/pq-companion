@@ -15,6 +15,12 @@ export interface ConfirmModalProps {
   tone?: 'primary' | 'danger'
   onConfirm: () => void
   onCancel: () => void
+  // Optional second action for prompts with two non-cancel choices (e.g.
+  // "swap" vs "replace"). Rendered between Cancel and the primary Confirm
+  // button. Omit for the ordinary two-button confirm/cancel prompt.
+  secondaryLabel?: string
+  secondaryTone?: 'primary' | 'danger'
+  onSecondary?: () => void
 }
 
 export function ConfirmModal({
@@ -24,9 +30,13 @@ export function ConfirmModal({
   tone = 'primary',
   onConfirm,
   onCancel,
+  secondaryLabel,
+  secondaryTone = 'primary',
+  onSecondary,
 }: ConfirmModalProps): React.ReactElement {
   useEscapeToClose(onCancel)
   const confirmBg = tone === 'danger' ? 'var(--color-danger, #ef4444)' : 'var(--color-primary)'
+  const secondaryBg = secondaryTone === 'danger' ? 'var(--color-danger, #ef4444)' : 'var(--color-primary)'
   return (
     <div
       onClick={onCancel}
@@ -72,6 +82,19 @@ export function ConfirmModal({
           >
             Cancel
           </button>
+          {secondaryLabel && onSecondary && (
+            <button
+              onClick={onSecondary}
+              className="px-3 py-1.5 text-sm font-medium rounded"
+              style={{
+                backgroundColor: 'transparent',
+                color: secondaryBg,
+                border: `1px solid ${secondaryBg}`,
+              }}
+            >
+              {secondaryLabel}
+            </button>
+          )}
           <button
             onClick={onConfirm}
             className="px-3 py-1.5 text-sm font-medium rounded"

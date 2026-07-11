@@ -542,7 +542,7 @@ function ButtonEditor({
                     isSameSlot
                       ? 'Choose a different page or slot first'
                       : destOccupant
-                        ? `Swap with Page ${destPage} Button ${destButton} (${destOccupant.name || '(unnamed)'})`
+                        ? `Page ${destPage} Button ${destButton} has "${destOccupant.name || '(unnamed)'}" — asks whether to swap or replace it`
                         : `Move to Page ${destPage} Button ${destButton}`
                   }
                 >
@@ -566,7 +566,8 @@ function ButtonEditor({
               </div>
               <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
                 Uses this slot&rsquo;s saved content — Apply any edits first. Moving into an occupied
-                slot swaps the two; cloning into one asks before overwriting it.
+                slot asks whether to swap the two or replace the one there; cloning into one asks
+                before overwriting it.
               </span>
             </div>
           )}
@@ -1036,10 +1037,11 @@ export default function CharacterMacrosPage(): React.ReactElement {
   }
 
   // Move or clone a macro to another page/slot, from the button editor's
-  // destination pickers. Move into an occupied slot swaps the two macros
-  // (nothing is lost, so no confirmation needed); clone into an occupied slot
-  // would overwrite it outright, so both cases still ask first — a swap is a
-  // surprising side effect, and an overwrite is destructive.
+  // destination pickers. An occupied destination always asks first: for move
+  // the choice is swap (nothing lost, the occupant lands in the source's old
+  // slot) or replace (the occupant is discarded and the source slot is
+  // cleared); clone can only overwrite, since it doesn't have a source slot
+  // to relocate the occupant into.
   function handleRelocate(mode: 'move' | 'clone', source: MacroButton, destPage: number, destButton: number): void {
     if (destPage === source.page && destButton === source.button) return
     const occupant = viewedFile?.buttons.find(
@@ -1052,13 +1054,23 @@ export default function CharacterMacrosPage(): React.ReactElement {
     applyRelocate(mode, source, destPage, destButton)
   }
 
-  function applyRelocate(mode: 'move' | 'clone', source: MacroButton, destPage: number, destButton: number): void {
+  // swap=true (the default): a move into an occupied slot relocates the
+  // occupant into the source's old slot. swap=false ("replace"): the
+  // occupant is discarded outright and the source slot ends up empty. Only
+  // meaningful for mode 'move' — clone never has anything to swap back.
+  function applyRelocate(
+    mode: 'move' | 'clone',
+    source: MacroButton,
+    destPage: number,
+    destButton: number,
+    swap = true,
+  ): void {
     mutateViewed((buttons) => {
       const occupant = buttons.find((b) => b.page === destPage && b.button === destButton)
       let next = buttons.filter((b) => !(b.page === destPage && b.button === destButton))
       if (mode === 'move') {
         next = next.filter((b) => !(b.page === source.page && b.button === source.button))
-        if (occupant && !buttonIsEmpty(occupant)) {
+        if (swap && occupant && !buttonIsEmpty(occupant)) {
           next.push({ ...occupant, page: source.page, button: source.button })
         }
       }
@@ -1472,18 +1484,33 @@ export default function CharacterMacrosPage(): React.ReactElement {
 
       {confirmAction?.type === 'relocate-conflict' && viewedFile && (
         <ConfirmModal
-          title={confirmAction.mode === 'move' ? 'Swap macros?' : 'Overwrite macro?'}
+          title={confirmAction.mode === 'move' ? 'Swap or replace macro?' : 'Overwrite macro?'}
           confirmLabel={confirmAction.mode === 'move' ? 'Swap' : 'Overwrite'}
-          tone="danger"
+          tone={confirmAction.mode === 'move' ? 'primary' : 'danger'}
           onConfirm={() =>
-            applyRelocate(confirmAction.mode, confirmAction.source, confirmAction.destPage, confirmAction.destButton)
+            applyRelocate(confirmAction.mode, confirmAction.source, confirmAction.destPage, confirmAction.destButton, true)
+          }
+          secondaryLabel={confirmAction.mode === 'move' ? 'Replace' : undefined}
+          secondaryTone="danger"
+          onSecondary={
+            confirmAction.mode === 'move'
+              ? () =>
+                  applyRelocate(
+                    confirmAction.mode,
+                    confirmAction.source,
+                    confirmAction.destPage,
+                    confirmAction.destButton,
+                    false,
+                  )
+              : undefined
           }
           message={
             confirmAction.mode === 'move' ? (
               <p>
                 Page {confirmAction.destPage} button {confirmAction.destButton} already has a macro.
-                Moving here swaps it with page {confirmAction.source.page} button{' '}
-                {confirmAction.source.button}.
+                <b> Swap</b> exchanges it with page {confirmAction.source.page} button{' '}
+                {confirmAction.source.button}. <b>Replace</b> discards it instead, leaving page{' '}
+                {confirmAction.source.page} button {confirmAction.source.button} empty.
               </p>
             ) : (
               <p>
