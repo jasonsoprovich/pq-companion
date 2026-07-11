@@ -262,7 +262,7 @@ func (t *Tailer) readLines(logPath string) ([]LogEvent, []rawLine) {
 	}
 
 	if t.file == nil {
-		f, err := os.Open(logPath)
+		f, err := openShared(logPath)
 		if err != nil {
 			if !errors.Is(err, os.ErrNotExist) {
 				slog.Warn("logparser: open log file", "path", logPath, "err", err)

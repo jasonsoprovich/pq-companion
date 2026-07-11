@@ -3,7 +3,6 @@ package logparser
 import (
 	"bytes"
 	"context"
-	"os"
 	"strings"
 )
 
@@ -44,7 +43,7 @@ func BrowseLines(ctx context.Context, path string, beforeOffset int64, query, ev
 	if limit <= 0 {
 		limit = 300
 	}
-	f, err := os.Open(path)
+	f, err := openShared(path)
 	if err != nil {
 		return nil, err
 	}

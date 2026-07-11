@@ -45,7 +45,7 @@ func GetFileInfo(path string) (FileInfo, error) {
 		LargeFile: size >= LogSizeWarningThreshold,
 	}
 
-	f, err := os.Open(path)
+	f, err := openShared(path)
 	if err != nil {
 		return info, err
 	}
@@ -133,7 +133,7 @@ func BackupAndPurge(logPath string) (string, error) {
 }
 
 func copyFile(src, dst string) error {
-	in, err := os.Open(src)
+	in, err := openShared(src)
 	if err != nil {
 		return err
 	}
@@ -152,7 +152,7 @@ func copyFile(src, dst string) error {
 }
 
 func filterLines(path string, cutoff time.Time) ([]string, error) {
-	f, err := os.Open(path)
+	f, err := openShared(path)
 	if err != nil {
 		return nil, err
 	}

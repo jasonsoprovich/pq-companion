@@ -147,7 +147,7 @@ func (r *Replayer) Start(path, displayName string, from, to time.Time, speed flo
 		return ErrReplayRangeInverted
 	}
 
-	f, err := os.Open(path)
+	f, err := openShared(path)
 	if err != nil {
 		return fmt.Errorf("replay: open log: %w", err)
 	}
