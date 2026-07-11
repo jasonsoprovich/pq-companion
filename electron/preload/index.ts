@@ -59,6 +59,14 @@ contextBridge.exposeInMainWorld('electron', {
     openCustomTimer: (): Promise<void> => ipcRenderer.invoke('overlay:customtimer:open'),
     closeCustomTimer: (): Promise<void> => ipcRenderer.invoke('overlay:customtimer:close'),
     toggleCustomTimer: (): Promise<void> => ipcRenderer.invoke('overlay:customtimer:toggle'),
+    // Named timer-group Custom Timers windows (one per user-created group,
+    // alongside the original/default window above).
+    openCustomTimerGroup: (groupId: string, groupName: string): Promise<void> =>
+      ipcRenderer.invoke('overlay:customtimer:group:open', groupId, groupName),
+    closeCustomTimerGroup: (groupId: string): Promise<void> =>
+      ipcRenderer.invoke('overlay:customtimer:group:close', groupId),
+    toggleCustomTimerGroup: (groupId: string, groupName: string): Promise<void> =>
+      ipcRenderer.invoke('overlay:customtimer:group:toggle', groupId, groupName),
     openTrigger: (): Promise<void> => ipcRenderer.invoke('overlay:trigger:open'),
     closeTrigger: (): Promise<void> => ipcRenderer.invoke('overlay:trigger:close'),
     toggleTrigger: (): Promise<void> => ipcRenderer.invoke('overlay:trigger:toggle'),

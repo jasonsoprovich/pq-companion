@@ -48,6 +48,9 @@ export interface ElectronAPI {
     openCustomTimer: () => Promise<void>
     closeCustomTimer: () => Promise<void>
     toggleCustomTimer: () => Promise<void>
+    openCustomTimerGroup: (groupId: string, groupName: string) => Promise<void>
+    closeCustomTimerGroup: (groupId: string) => Promise<void>
+    toggleCustomTimerGroup: (groupId: string, groupName: string) => Promise<void>
     openTrigger: () => Promise<void>
     closeTrigger: () => Promise<void>
     toggleTrigger: () => Promise<void>

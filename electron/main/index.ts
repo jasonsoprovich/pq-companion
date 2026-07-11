@@ -244,8 +244,19 @@ function audioMimeType(ext: string): string {
 type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome'
 type Bounds = { x: number; y: number; width: number; height: number }
 
-type BoundsStore = Partial<Record<OverlayName, Bounds>>
-type LockStore = Partial<Record<OverlayName, boolean>>
+// A window's identity for bounds/lock persistence and the generic per-window
+// IPC handlers (lock get/set, drag-resize bounds tracking). Every overlay
+// type maps 1:1 to its OverlayName except Custom Timers, which can have
+// multiple instances — one per user-created timer group — keyed as
+// `customTimer:<groupId>`. The bare 'customTimer' key is unchanged: it's
+// still the original/default window, so existing users' saved position and
+// lock state carry over untouched. Named-group windows are additive and
+// deliberately excluded from the OverlayName-keyed systems below (auto-open
+// on launch, move-to-display, reset-position) — see createCustomTimerGroupOverlay.
+type WindowKey = OverlayName | `customTimer:${string}`
+
+type BoundsStore = Partial<Record<WindowKey, Bounds>>
+type LockStore = Partial<Record<WindowKey, boolean>>
 
 // Default bounds for each popout overlay — used both when an overlay first
 // opens with no saved position and when the user resets an overlay's position.
@@ -308,11 +319,11 @@ function saveLockStore(store: LockStore): void {
   }
 }
 
-function getOverlayLocked(name: OverlayName): boolean {
+function getOverlayLocked(name: WindowKey): boolean {
   return loadLockStore()[name] === true
 }
 
-function setOverlayLocked(name: OverlayName, locked: boolean): void {
+function setOverlayLocked(name: WindowKey, locked: boolean): void {
   const store = loadLockStore()
   store[name] = locked
   saveLockStore(store)
@@ -362,7 +373,7 @@ let overlayPositionMode = false
 // Apply the correct mouse-input state to a freshly created overlay window:
 // fully interactive while positioning, otherwise click-through + non-resizable
 // when locked. (Unlocked overlays stay interactive, the window default.)
-function applyInitialOverlayInput(win: BrowserWindow, name: OverlayName): void {
+function applyInitialOverlayInput(win: BrowserWindow, name: WindowKey): void {
   if (overlayPositionMode) {
     win.setIgnoreMouseEvents(false)
     win.setResizable(true)
@@ -376,15 +387,15 @@ function applyInitialOverlayInput(win: BrowserWindow, name: OverlayName): void {
 
 // Map a BrowserWindow back to its overlay name so IPC handlers can look up
 // which overlay is sending lock state changes.
-const windowToOverlayName = new WeakMap<BrowserWindow, OverlayName>()
+const windowToOverlayName = new WeakMap<BrowserWindow, WindowKey>()
 
-const boundsDebounceTimers = new Map<OverlayName, ReturnType<typeof setTimeout>>()
+const boundsDebounceTimers = new Map<WindowKey, ReturnType<typeof setTimeout>>()
 
 // writeBoundsNow captures and persists the overlay's bounds synchronously.
 // Called from the 'close' handler: the debounced persistBounds would schedule a
 // timer that fires ~500ms later, by which point the window is destroyed and the
 // timer bails on isDestroyed() — losing a move-then-close within that window.
-function writeBoundsNow(name: OverlayName, win: BrowserWindow): void {
+function writeBoundsNow(name: WindowKey, win: BrowserWindow): void {
   const existing = boundsDebounceTimers.get(name)
   if (existing) {
     clearTimeout(existing)
@@ -397,7 +408,7 @@ function writeBoundsNow(name: OverlayName, win: BrowserWindow): void {
   saveBoundsStore(store)
 }
 
-function persistBounds(name: OverlayName, win: BrowserWindow): void {
+function persistBounds(name: WindowKey, win: BrowserWindow): void {
   const existing = boundsDebounceTimers.get(name)
   if (existing) clearTimeout(existing)
   boundsDebounceTimers.set(name, setTimeout(() => writeBoundsNow(name, win), 500))
@@ -482,14 +493,14 @@ function overlayDisplayBounds(): Bounds {
   return { x: b.x, y: b.y, width: b.width, height: b.height }
 }
 
-function getRestoredBounds(name: OverlayName, defaults: Bounds): Bounds {
+function getRestoredBounds(name: WindowKey, defaults: Bounds): Bounds {
   const store = loadBoundsStore()
   const saved = store[name]
   if (saved && isOnScreen(saved)) return saved
   return defaults
 }
 
-function trackOverlayBounds(name: OverlayName, win: BrowserWindow): void {
+function trackOverlayBounds(name: WindowKey, win: BrowserWindow): void {
   win.on('move', () => persistBounds(name, win))
   win.on('resize', () => persistBounds(name, win))
   win.on('close', () => {
@@ -573,6 +584,11 @@ let chChainWindow: BrowserWindow | null = null
 let chMetronomeWindow: BrowserWindow | null = null
 let detrimTimerWindow: BrowserWindow | null = null
 let customTimerWindow: BrowserWindow | null = null
+// Named Custom Timers windows (one per user-created timer group), keyed by
+// TimerGroup.id. Separate from customTimerWindow (the original/default
+// window) so its behavior — auto-open on launch, move-to-display,
+// reset-position — is entirely untouched by this additive feature.
+const customTimerGroupWindows = new Map<string, BrowserWindow>()
 let triggerOverlayWindow: BrowserWindow | null = null
 let npcOverlayWindow: BrowserWindow | null = null
 let threatOverlayWindow: BrowserWindow | null = null
@@ -950,6 +966,9 @@ function closeAllOverlays(): void {
   // down — once destroyed, currentlyOpenOverlayNames() would report nothing.
   snapshotAutoOpenOverlays()
   for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, customTimerWindow, triggerOverlayWindow, npcOverlayWindow, threatOverlayWindow, rollTrackerWindow, respawnTimerWindow, chChainWindow, chMetronomeWindow]) {
+    if (win && !win.isDestroyed()) win.destroy()
+  }
+  for (const win of customTimerGroupWindows.values()) {
     if (win && !win.isDestroyed()) win.destroy()
   }
 }
@@ -1404,6 +1423,76 @@ function createCustomTimerOverlay(): void {
 
   customTimerWindow.on('closed', () => {
     customTimerWindow = null
+  })
+}
+
+// customTimerWindowKey returns the bounds/lock persistence key for a named
+// timer group's window. Empty groupId is intentionally not routed here —
+// callers use createCustomTimerOverlay()/'customTimer' for the default window.
+function customTimerWindowKey(groupId: string): WindowKey {
+  return `customTimer:${groupId}`
+}
+
+// Opens (or focuses) a named Custom Timers window for the given TimerGroup.
+// Mirrors createCustomTimerOverlay() but keyed by groupId so multiple can
+// coexist alongside the original/default window. groupName is passed through
+// to the renderer via the URL only for a window-title-ish display; the
+// renderer fetches the authoritative group list itself.
+function createCustomTimerGroupOverlay(groupId: string, groupName: string): void {
+  if (!groupId) return
+  const existing = customTimerGroupWindows.get(groupId)
+  if (existing && !existing.isDestroyed()) {
+    existing.focus()
+    return
+  }
+
+  const key = customTimerWindowKey(groupId)
+  const { x, y, width, height } = getRestoredBounds(key, OVERLAY_DEFAULTS.customTimer)
+  const win = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    minWidth: 200,
+    minHeight: 140,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+  })
+  customTimerGroupWindows.set(groupId, win)
+
+  win.once('ready-to-show', () => {
+    win.show()
+  })
+
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  windowToOverlayName.set(win, key)
+  applyInitialOverlayInput(win, key)
+  trackOverlayBounds(key, win)
+
+  const query = `group=${encodeURIComponent(groupId)}&name=${encodeURIComponent(groupName)}`
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    win.loadURL(`${rendererUrl}/#/custom-timer-window?${query}`)
+  } else {
+    win.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: `/custom-timer-window?${query}`,
+    })
+  }
+
+  win.on('closed', () => {
+    customTimerGroupWindows.delete(groupId)
   })
 }
 
@@ -1983,6 +2072,28 @@ ipcMain.handle('overlay:customtimer:toggle', () => {
     customTimerWindow.close()
   } else {
     createCustomTimerOverlay()
+  }
+})
+
+// Named timer-group Custom Timers windows — parameterized by groupId so a
+// single set of channels covers any number of groups, rather than one
+// channel triple per group (which isn't knowable ahead of time anyway,
+// since groups are user-created).
+ipcMain.handle('overlay:customtimer:group:open', (_event, groupId: string, groupName: string) => {
+  createCustomTimerGroupOverlay(groupId, groupName)
+})
+
+ipcMain.handle('overlay:customtimer:group:close', (_event, groupId: string) => {
+  const win = customTimerGroupWindows.get(groupId)
+  if (win && !win.isDestroyed()) win.close()
+})
+
+ipcMain.handle('overlay:customtimer:group:toggle', (_event, groupId: string, groupName: string) => {
+  const win = customTimerGroupWindows.get(groupId)
+  if (win && !win.isDestroyed()) {
+    win.close()
+  } else {
+    createCustomTimerGroupOverlay(groupId, groupName)
   }
 })
 
