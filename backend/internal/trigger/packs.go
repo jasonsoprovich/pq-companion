@@ -2503,6 +2503,11 @@ func RaidAlertsPack() TriggerPack {
 // spelltimer engine's orphan-cleanup on the next kill — "cleared when the
 // boss dies" falls out of that for free without needing to identify which
 // NPC was casting it.
+//
+// RefireCooldownSecs suppresses the duplicate lines a single AE cast
+// produces (one broadcast line per raid member hit) from each restarting
+// the timer and re-firing the banner/TTS — see the comment on the field
+// literal for why.
 func raidSignatureSpellAlerts() []Trigger {
 	spell := func(name, landOnYou, landOnOtherSuffix string, spellID int, recastSecs float64) Trigger {
 		return Trigger{
@@ -2514,6 +2519,14 @@ func raidSignatureSpellAlerts() []Trigger {
 			TimerDurationSecs: recastSecs,
 			SpellID:           spellID,
 			BarColor:          "#ff3333",
+			// These are PBAE-style effects that hit every nearby raid member
+			// in the same instant, and EQ's cast_on_other line is broadcast
+			// per-victim — so a single cast can produce several matching log
+			// lines within the same second (one per person hit). Without a
+			// refire lockout, each of those duplicate lines would restart
+			// the timer and re-fire the overlay/TTS actions, stacking
+			// several banners on screen for one actual cast.
+			RefireCooldownSecs: 3,
 			TimerAlerts: []TimerAlert{
 				{
 					ID:          "raid-sig-warn-5s",
@@ -2698,6 +2711,10 @@ type DefaultUpdate struct {
 	// but only if it's currently 0 (unset), so we add a missing cooldown
 	// without overwriting a value the user changed by hand. 0 = leave as-is.
 	SetCooldownSecs int
+	// SetRefireCooldownSecs, when > 0, sets the trigger's silent anti-spam
+	// refire lockout — same "only if currently 0" semantics as
+	// SetCooldownSecs. 0 = leave as-is.
+	SetRefireCooldownSecs float64
 	// InsertTrigger, when non-nil, adds a brand-new trigger to PackName for
 	// users who already have that pack installed (a fresh InstallPack would
 	// wipe their customizations, so it can't be used). Skipped when the pack
@@ -2801,6 +2818,41 @@ func DefaultUpdates() []DefaultUpdate {
 			Key:           "RaidAlerts:SigSpell:TouchOfVinitras:add-v1",
 			PackName:      "Raid Alerts",
 			InsertTrigger: func() *Trigger { t := raidSignatureSpellAlerts()[4]; return &t }(),
+		},
+		{
+			// 2026-07-10: the five signature-spell triggers above shipped
+			// without a refire lockout, so a single AE cast (broadcast as
+			// one land-message line per raid member hit) stacked several
+			// duplicate banner/TTS firings. Retrofit the cooldown onto
+			// rows the add-v1 updates already inserted.
+			Key:                   "RaidAlerts:SigSpell:Fling:refire-cooldown-v1",
+			PackName:              "Raid Alerts",
+			TriggerName:           "Fling",
+			SetRefireCooldownSecs: 3,
+		},
+		{
+			Key:                   "RaidAlerts:SigSpell:SilenceOfTheShadows:refire-cooldown-v1",
+			PackName:              "Raid Alerts",
+			TriggerName:           "Silence of the Shadows",
+			SetRefireCooldownSecs: 3,
+		},
+		{
+			Key:                   "RaidAlerts:SigSpell:TorturingWinds:refire-cooldown-v1",
+			PackName:              "Raid Alerts",
+			TriggerName:           "Torturing Winds",
+			SetRefireCooldownSecs: 3,
+		},
+		{
+			Key:                   "RaidAlerts:SigSpell:CausticMist:refire-cooldown-v1",
+			PackName:              "Raid Alerts",
+			TriggerName:           "Caustic Mist",
+			SetRefireCooldownSecs: 3,
+		},
+		{
+			Key:                   "RaidAlerts:SigSpell:TouchOfVinitras:refire-cooldown-v1",
+			PackName:              "Raid Alerts",
+			TriggerName:           "Touch of Vinitras",
+			SetRefireCooldownSecs: 3,
 		},
 	}
 }
@@ -2924,13 +2976,19 @@ func applyDefaultUpdate(store *Store, u DefaultUpdate) (bool, error) {
 		changed = true
 	}
 
+	// Set a missing refire-cooldown lockout, leaving a user-customized value alone.
+	if u.SetRefireCooldownSecs > 0 && t.RefireCooldownSecs == 0 {
+		t.RefireCooldownSecs = u.SetRefireCooldownSecs
+		changed = true
+	}
+
 	if !changed {
 		return false, nil
 	}
 	if err := store.Update(t); err != nil {
 		return false, err
 	}
-	slog.Info("trigger: default update applied", "key", u.Key, "pack", u.PackName, "trigger", u.TriggerName, "added_excludes", added, "set_cooldown", u.SetCooldownSecs)
+	slog.Info("trigger: default update applied", "key", u.Key, "pack", u.PackName, "trigger", u.TriggerName, "added_excludes", added, "set_cooldown", u.SetCooldownSecs, "set_refire_cooldown", u.SetRefireCooldownSecs)
 	return true, nil
 }
 
