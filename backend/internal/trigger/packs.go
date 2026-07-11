@@ -2229,14 +2229,17 @@ func GeneralTriggersPack() TriggerPack {
 				// not just group members — so a charmed/normal pet killing an
 				// NPC would otherwise fire GROUP DEATH. Player names are always
 				// a single capitalized word, so anything else as the victim is
-				// an NPC: exclude victims that start lowercase ("a poacher",
+				// an NPC/pet: exclude victims that start lowercase ("a poacher",
 				// "an ulthork", "the guardian") or are multi-word ("Trooper
-				// Coglee", "Verina Tomb"). Single-word named NPCs (e.g.
-				// "Sontalak") are textually indistinguishable from a player and
-				// can still leak — that needs NPC-awareness, not regex.
+				// Coglee", "Verina Tomb", "Eye of Zomm", a player's mount).
+				// The multi-word check isn't anchored to exactly two words so
+				// it also catches 3+ word victims like "Eye of Zomm". Single-
+				// word named NPCs (e.g. "Sontalak") are textually
+				// indistinguishable from a player and can still leak — that
+				// needs NPC-awareness, not regex.
 				ExcludePatterns: []string{
 					`^[a-z]`,
-					`^\S+ \S+ has been slain by`,
+					`^\S+ \S+.*has been slain by`,
 				},
 			},
 			{
