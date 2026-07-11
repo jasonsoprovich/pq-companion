@@ -1639,8 +1639,8 @@ func (db *DB) GetSpellByExactName(name string) (*Spell, error) {
 }
 
 // SearchSpells searches spells by name with optional class and level filters.
-// classIndex: -1 = all classes (excludes NPC-only spells), 0–14 = filter to
-// that player class, 15 = NPC-only (every classes1–classes15 column is 255).
+// classIndex: -1 = all spells including NPC-only, 0–14 = filter to that
+// player class, 15 = NPC-only (every classes1–classes15 column is 255).
 // minLevel/maxLevel: 0 = no bound; only applied when classIndex is 0–14.
 // goodEffectOnly: when true, only beneficial spells (spells_new.goodEffect=1)
 // are returned — used by the raid-buff picker so debuffs/nukes don't appear.
@@ -1671,8 +1671,6 @@ func (db *DB) SearchSpells(query string, classIndex, minLevel, maxLevel, limit, 
 		}
 	case classIndex == 15:
 		conditions = append(conditions, npcOnlyExpr)
-	default:
-		conditions = append(conditions, "NOT "+npcOnlyExpr)
 	}
 
 	if goodEffectOnly {
