@@ -5,6 +5,7 @@
  * Renders in a dedicated frameless Electron window; no sidebar or title bar.
  */
 import React, { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Bell, BellOff, Hourglass, Pin, Trash2, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresholds'
@@ -16,7 +17,7 @@ import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
-import { clearTimers, getTimerState, removeTimer, startCustomTimer } from '../services/api'
+import { getTimerState, removeTimer, startCustomTimer } from '../services/api'
 import type { ActiveTimer, TimerState } from '../types/timer'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -169,6 +170,15 @@ function TimerRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function CustomTimerWindowPage(): React.ReactElement {
+  // Present (non-empty) only when the main process opened this window for a
+  // named TimerGroup (see createCustomTimerGroupOverlay) — the default/
+  // original window loads with no query string at all. Locked-mode
+  // preference still resolves via the shared 'customTimer' key (a single
+  // per-type setting, not per-window — see useOverlayLock).
+  const [searchParams] = useSearchParams()
+  const groupId = searchParams.get('group') ?? ''
+  const groupName = searchParams.get('name') ?? ''
+
   const opacity = useOverlayOpacity()
   const chrome = useOverlayChromeFade()
   const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
@@ -198,7 +208,7 @@ export default function CustomTimerWindowPage(): React.ReactElement {
   useWebSocket(handleMessage)
 
   const timers = (state?.timers ?? [])
-    .filter((t) => t.category === 'custom')
+    .filter((t) => t.category === 'custom' && (groupId ? t.custom_group === groupId : !t.custom_group))
     .filter((t) => passesThreshold(t, thresholds))
 
   const handleAdd = (e: React.FormEvent): void => {
@@ -214,12 +224,19 @@ export default function CustomTimerWindowPage(): React.ReactElement {
     const alerts = bellOn
       ? customAlertThresholds({ ...withTimerAlertDefaults(alertPref, 'custom'), enabled: true })
       : undefined
-    startCustomTimer(newName.trim(), secs, alerts)
+    startCustomTimer(newName.trim(), secs, alerts, undefined, groupId || undefined)
       .then(() => {
         setNewName('')
         setNewDuration('')
       })
       .catch(() => setAddError(true))
+  }
+
+  // clearTimers('custom') would wipe every custom timer across every window
+  // (default + every named group), not just this one — so a per-window
+  // "Clear" removes only the timers this window is currently showing.
+  const handleClear = (): void => {
+    Promise.all(timers.map((t) => removeTimer(t.id))).catch(() => {})
   }
 
   const quickInputStyle: React.CSSProperties = {
@@ -274,7 +291,7 @@ export default function CustomTimerWindowPage(): React.ReactElement {
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <Hourglass size={11} style={{ color: '#38bdf8' }} />
           <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>
-            Timers
+            {groupName || 'Timers'}
           </span>
           {timers.length > 0 && (
             <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginLeft: 2 }}>
@@ -287,8 +304,8 @@ export default function CustomTimerWindowPage(): React.ReactElement {
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
           <button
-            onClick={() => clearTimers('custom').catch(() => {})}
-            title="Clear all custom timers"
+            onClick={handleClear}
+            title="Clear all timers in this window"
             style={{
               display: 'flex',
               alignItems: 'center',

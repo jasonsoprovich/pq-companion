@@ -24,6 +24,7 @@ import {
   Check,
   SlidersHorizontal,
   Pin,
+  Hourglass,
 } from 'lucide-react'
 import {
   DndContext,
@@ -79,9 +80,12 @@ import {
   deleteTriggerCategory,
   reorderTriggers,
   reorderTriggerCategories,
+  listTimerGroups,
+  createTimerGroup,
   type CreateTriggerRequest,
   type Character,
 } from '../services/api'
+import TimerGroupsModal from '../components/TimerGroupsModal'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName } from '../hooks/useActivePlayerName'
 import { WSEvent } from '../lib/wsEvents'
@@ -91,6 +95,7 @@ import type {
   TriggerFired,
   TriggerPack,
   TriggerCategory,
+  TimerGroup,
   Action,
   TimerType,
   TimerAlertThreshold,
@@ -338,11 +343,16 @@ interface TriggerFormProps {
   /** Called after the form creates a new category inline, so the parent
    *  can refresh its category list. */
   onCategoriesChanged: () => void
+  /** Timer groups for the Custom Timers window picker (timer_type='custom'). */
+  timerGroups: TimerGroup[]
+  /** Called after the form creates a new timer group inline, so the parent
+   *  can refresh its group list. */
+  onTimerGroupsChanged: () => void
   onSaved: (t: Trigger) => void
   onCancel: () => void
 }
 
-function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSaved, onCancel }: TriggerFormProps): React.ReactElement {
+function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerGroups, onTimerGroupsChanged, onSaved, onCancel }: TriggerFormProps): React.ReactElement {
   const [name, setName] = useState(initial?.name ?? prefill?.name ?? '')
   // Category (pack_name). Defaults to the trigger's current category on edit,
   // Uncategorized ('') on create. The "__new__" sentinel opens an inline
@@ -380,6 +390,15 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
   const [barColor, setBarColor] = useState(initial?.bar_color ?? '')
   // Pins this trigger's timer(s) to the top of their overlay.
   const [pinned, setPinned] = useState(initial?.pinned ?? false)
+  // Which Custom Timers window this trigger's timer appears in (only used
+  // when timerType === 'custom'). '' = the original/default window. The
+  // "__new__" sentinel opens an inline create input, mirroring the category
+  // picker above.
+  const [customGroupID, setCustomGroupID] = useState(initial?.custom_group_id ?? '')
+  const [creatingGroup, setCreatingGroup] = useState(false)
+  const [newGroupName, setNewGroupName] = useState('')
+  const [addingGroup, setAddingGroup] = useState(false)
+  const [groupError, setGroupError] = useState<string | null>(null)
   const [timerAlerts, setTimerAlerts] = useState<TimerAlertThreshold[]>(
     initial?.timer_alerts ?? prefill?.timerAlerts ?? [],
   )
@@ -530,6 +549,31 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
       .finally(() => setAddingCat(false))
   }
 
+  const handleGroupSelect = (v: string) => {
+    if (v === '__new__') {
+      setCreatingGroup(true)
+      setGroupError(null)
+      return
+    }
+    setCustomGroupID(v)
+  }
+
+  const handleAddGroup = () => {
+    const trimmed = newGroupName.trim()
+    if (!trimmed) return
+    setAddingGroup(true)
+    setGroupError(null)
+    createTimerGroup(trimmed)
+      .then((group) => {
+        setCustomGroupID(group.id)
+        setCreatingGroup(false)
+        setNewGroupName('')
+        onTimerGroupsChanged()
+      })
+      .catch((err: Error) => setGroupError(err.message))
+      .finally(() => setAddingGroup(false))
+  }
+
   const buildPipeCondition = (): PipeCondition | null => {
     switch (pipeKind) {
       case 'target_hp_below': {
@@ -625,9 +669,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
       bar_color: timerType === 'none' ? '' : barColor,
       pinned: timerType === 'none' ? false : pinned,
-      // No group picker in the editor yet (Phase 2C) — preserve whatever
-      // group an existing trigger was already assigned to.
-      custom_group_id: timerType === 'custom' ? (initial?.custom_group_id ?? '') : '',
+      custom_group_id: timerType === 'custom' ? customGroupID : '',
       characters: Array.from(selectedChars),
       timer_alerts: timerType === 'none' ? [] : timerAlerts,
       exclude_patterns: source === 'pipe' ? [] : excludeList,
@@ -1300,6 +1342,89 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
               </span>
             </div>
 
+            {timerType === 'custom' && (
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Custom Timers window
+                </label>
+                {creatingGroup ? (
+                  <div className="space-y-1">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="New window name"
+                        value={newGroupName}
+                        onChange={(e) => setNewGroupName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); handleAddGroup() }
+                          else if (e.key === 'Escape') { e.preventDefault(); setCreatingGroup(false); setGroupError(null) }
+                        }}
+                        className="flex-1 rounded px-3 py-1.5 text-sm outline-none"
+                        style={inputStyle}
+                        disabled={addingGroup}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddGroup}
+                        disabled={addingGroup || !newGroupName.trim()}
+                        className="rounded px-3 py-1.5 text-xs font-semibold"
+                        style={{
+                          backgroundColor: 'var(--color-primary)',
+                          color: 'var(--color-background)',
+                          border: '1px solid transparent',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setCreatingGroup(false); setGroupError(null); setNewGroupName('') }}
+                        disabled={addingGroup}
+                        className="rounded px-3 py-1.5 text-xs"
+                        style={{
+                          backgroundColor: 'var(--color-surface-2)',
+                          color: 'var(--color-muted-foreground)',
+                          border: '1px solid var(--color-border)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {groupError && (
+                      <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>{groupError}</p>
+                    )}
+                  </div>
+                ) : (
+                  <select
+                    value={customGroupID}
+                    onChange={(e) => handleGroupSelect(e.target.value)}
+                    className="w-full rounded px-3 py-1.5 text-sm outline-none"
+                    style={inputStyle}
+                    disabled={submitting}
+                  >
+                    <option value="">Custom Timers (default window)</option>
+                    {timerGroups.map((g) => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                    {/* Defensive: keep the current value selectable even if the
+                        group list hasn't loaded or doesn't include it yet
+                        (e.g. the group was just deleted elsewhere). */}
+                    {customGroupID && !timerGroups.some((g) => g.id === customGroupID) && (
+                      <option value={customGroupID}>(unknown window)</option>
+                    )}
+                    <option value="__new__">+ New window…</option>
+                  </select>
+                )}
+                <p className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                  Split raid/boss timers into their own popout window — manage windows from
+                  Timer Groups in the toolbar above.
+                </p>
+              </div>
+            )}
+
             {/* Fading-soon alerts */}
             <div className="space-y-2 pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
               <div className="flex items-center justify-between">
@@ -1444,6 +1569,8 @@ interface TriggerRowProps {
   trigger: Trigger
   categories: TriggerCategory[]
   onCategoriesChanged: () => void
+  timerGroups: TimerGroup[]
+  onTimerGroupsChanged: () => void
   onDeleted: (id: string) => void
   onUpdated: (t: Trigger) => void
 }
@@ -1452,6 +1579,8 @@ function TriggerRow({
   trigger,
   categories,
   onCategoriesChanged,
+  timerGroups,
+  onTimerGroupsChanged,
   onDeleted,
   onUpdated,
 }: TriggerRowProps): React.ReactElement {
@@ -1541,6 +1670,8 @@ function TriggerRow({
         initial={trigger}
         categories={categories}
         onCategoriesChanged={onCategoriesChanged}
+        timerGroups={timerGroups}
+        onTimerGroupsChanged={onTimerGroupsChanged}
         onSaved={(t) => {
           onUpdated(t)
           setIsEditing(false)
@@ -1790,6 +1921,8 @@ interface CategorySectionProps {
   onTriggerDeleted: (id: string) => void
   onTriggerUpdated: (t: Trigger) => void
   onCategoriesChanged: () => void
+  timerGroups: TimerGroup[]
+  onTimerGroupsChanged: () => void
 }
 
 function CategorySection({
@@ -1808,6 +1941,8 @@ function CategorySection({
   onTriggerDeleted,
   onTriggerUpdated,
   onCategoriesChanged,
+  timerGroups,
+  onTimerGroupsChanged,
 }: CategorySectionProps): React.ReactElement {
   const packName = group.packName
   const isUncategorized = packName === '__uncategorized__'
@@ -1988,6 +2123,8 @@ function CategorySection({
                 trigger={t}
                 categories={categories}
                 onCategoriesChanged={onCategoriesChanged}
+                timerGroups={timerGroups}
+                onTimerGroupsChanged={onTimerGroupsChanged}
                 onDeleted={onTriggerDeleted}
                 onUpdated={onTriggerUpdated}
               />
@@ -2748,6 +2885,8 @@ export default function TriggersPage(): React.ReactElement {
     return new Set()
   })
   const [categories, setCategories] = useState<TriggerCategory[]>([])
+  const [timerGroups, setTimerGroups] = useState<TimerGroup[]>([])
+  const [showTimerGroups, setShowTimerGroups] = useState(false)
   // Inline category management on the section headers: which category is being
   // renamed (+ its edit-box value), which is pending delete (opens the modal),
   // and whether a New Category create is in flight.
@@ -2779,6 +2918,12 @@ export default function TriggersPage(): React.ReactElement {
       .catch(() => {})
   }, [])
 
+  const reloadTimerGroups = useCallback(() => {
+    listTimerGroups()
+      .then(setTimerGroups)
+      .catch(() => {})
+  }, [])
+
   const load = useCallback(() => {
     setLoading(true)
     setError(null)
@@ -2787,7 +2932,8 @@ export default function TriggersPage(): React.ReactElement {
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
     reloadCategories()
-  }, [reloadCategories])
+    reloadTimerGroups()
+  }, [reloadCategories, reloadTimerGroups])
 
   useEffect(() => { load() }, [load])
 
@@ -3255,6 +3401,19 @@ export default function TriggersPage(): React.ReactElement {
                 <Tags size={11} />
                 New Category
               </button>
+              <button
+                onClick={() => setShowTimerGroups(true)}
+                className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-muted-foreground)',
+                  border: '1px solid var(--color-border)',
+                }}
+                title="Manage named Custom Timers windows (raid/boss timers separate from the default window)"
+              >
+                <Hourglass size={11} />
+                Timer Groups
+              </button>
               {triggers.length > 0 && (
                 <button
                   onClick={() => setShowBulkEdit(true)}
@@ -3556,6 +3715,8 @@ export default function TriggersPage(): React.ReactElement {
                     prefill={createPrefill}
                     categories={categories}
                     onCategoriesChanged={reloadCategories}
+                    timerGroups={timerGroups}
+                    onTimerGroupsChanged={reloadTimerGroups}
                     onSaved={handleCreated}
                     onCancel={handleCancelCreate}
                   />
@@ -3703,6 +3864,8 @@ export default function TriggersPage(): React.ReactElement {
                       onTriggerDeleted={handleDeleted}
                       onTriggerUpdated={handleUpdated}
                       onCategoriesChanged={reloadCategories}
+                      timerGroups={timerGroups}
+                      onTimerGroupsChanged={reloadTimerGroups}
                     />
                   ))}
                 </SortableContext>
@@ -3730,6 +3893,14 @@ export default function TriggersPage(): React.ReactElement {
       {/* Tab: Packs */}
       {tab === 'packs' && (
         <PacksTab installedPacks={installedPacks} onInstalled={load} />
+      )}
+
+      {showTimerGroups && (
+        <TimerGroupsModal
+          groups={timerGroups}
+          onChanged={reloadTimerGroups}
+          onClose={() => setShowTimerGroups(false)}
+        />
       )}
 
       {deletingCategory && (

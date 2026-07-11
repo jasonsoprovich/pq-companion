@@ -15,7 +15,7 @@ import { useTimerAppearance, type TimerAppearance } from '../../hooks/useTimerAp
 import { useCustomTimerAlertPref } from '../../hooks/useCustomTimerAlertPref'
 import { customAlertThresholds, withTimerAlertDefaults } from '../../lib/timerAlerts'
 import { WSEvent } from '../../lib/wsEvents'
-import { clearTimers, getTimerState, removeTimer, startCustomTimer } from '../../services/api'
+import { getTimerState, removeTimer, startCustomTimer } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import type { ActiveTimer, TimerState } from '../../types/timer'
 
@@ -164,8 +164,11 @@ export default function CustomTimerPanel({
   }, [])
   useWebSocket(handleMessage)
 
+  // Named timer groups (see TimerGroupsModal) get their own popped-out
+  // window; this in-dashboard card and the default popout both show only
+  // the default/unassigned group so the two "custom" surfaces stay in sync.
   const timers = (state?.timers ?? [])
-    .filter((t) => t.category === 'custom')
+    .filter((t) => t.category === 'custom' && !t.custom_group)
     .filter((t) => passesThreshold(t, thresholds))
 
   const handleAdd = (e: React.FormEvent): void => {
@@ -214,8 +217,8 @@ export default function CustomTimerPanel({
       headerRight={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
-            onClick={() => clearTimers('custom').catch(() => {})}
-            title="Clear all custom timers"
+            onClick={() => Promise.all(timers.map((t) => removeTimer(t.id))).catch(() => {})}
+            title="Clear all timers in this window"
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}
           >
             <Trash2 size={12} />
