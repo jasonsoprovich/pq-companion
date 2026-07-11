@@ -11,7 +11,7 @@
  * restored on next mount. Drag/resize snaps to a 16px grid.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, ExternalLink, Layers, X, Crosshair, ChevronDown, Move, ListChecks, Trash2 } from 'lucide-react'
+import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, ExternalLink, Layers, X, Crosshair, ChevronDown, Move, ListChecks, Trash2, Hourglass } from 'lucide-react'
 import type { OverlayName } from '../lib/overlays'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
@@ -25,7 +25,9 @@ import CHChainPanel from '../components/overlays/CHChainPanel'
 import CHMetronomePanel from '../components/overlays/CHMetronomePanel'
 import CustomTimerPanel from '../components/overlays/CustomTimerPanel'
 import { ConfirmModal } from '../components/ConfirmModal'
-import { clearTimers } from '../services/api'
+import TimerGroupsModal from '../components/TimerGroupsModal'
+import { clearTimers, listTimerGroups } from '../services/api'
+import type { TimerGroup } from '../types/trigger'
 import {
   DASHBOARD_PANEL_LABELS,
   DEFAULT_DASHBOARD_LAYOUT,
@@ -33,10 +35,21 @@ import {
   VISIBLE_DASHBOARD_PANEL_KEYS,
   loadDashboardLayout,
   saveDashboardLayout,
+  loadGroupPanelLayouts,
+  saveGroupPanelLayouts,
+  defaultGroupPanelLayout,
   type DashboardLayout,
   type DashboardPanelKey,
+  type GroupPanelLayouts,
+  type PanelLayout,
 } from '../services/dashboardLayout'
 import { useOverlayPopouts } from '../hooks/useOverlayPopouts'
+
+// Bounds/lock persistence + IPC key for a named timer group's window —
+// mirrors electron/main/index.ts's customTimerWindowKey.
+function groupWindowKey(groupId: string): string {
+  return `customTimer:${groupId}`
+}
 
 const SNAP_GRID = 16
 // Extra empty space kept below/right of the lowest/rightmost visible panel
@@ -116,6 +129,12 @@ function OverlaysManager({
   displays,
   currentDisplayId,
   onDisplayChange,
+  groups,
+  groupLayout,
+  onToggleGroupVisible,
+  onToggleGroupPopout,
+  onResetGroupPosition,
+  onMoveGroupPanel,
 }: {
   panelKeys: DashboardPanelKey[]
   labels: Record<DashboardPanelKey, string>
@@ -135,6 +154,14 @@ function OverlaysManager({
   displays: Array<{ id: number; label: string; width: number; height: number; isPrimary: boolean; isCurrent: boolean }>
   currentDisplayId?: number
   onDisplayChange: (id: number) => void
+  // Named Custom Timers windows (see TimerGroupsModal) — rendered as extra
+  // rows below the fixed panels above, same 4 controls.
+  groups: TimerGroup[]
+  groupLayout: GroupPanelLayouts
+  onToggleGroupVisible: (id: string) => void
+  onToggleGroupPopout: (id: string) => void
+  onResetGroupPosition: (id: string) => void
+  onMoveGroupPanel: (id: string) => void
 }): React.ReactElement {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -318,6 +345,49 @@ function OverlaysManager({
                 </React.Fragment>
               )
             })}
+            {groups.map((g) => {
+              const key = groupWindowKey(g.id)
+              const dashOn = groupLayout[g.id]?.visible ?? false
+              const popOn = !!popoutStates[key]
+              const placing = placingNames.includes(key)
+              return (
+                <React.Fragment key={g.id}>
+                  <span
+                    className="truncate text-xs"
+                    style={{ color: 'var(--color-foreground)', paddingTop: 5, paddingBottom: 5 }}
+                  >
+                    {g.name}
+                  </span>
+                  <RowIconButton
+                    active={dashOn}
+                    onClick={() => onToggleGroupVisible(g.id)}
+                    title={dashOn ? `Hide ${g.name} panel in the dashboard` : `Show ${g.name} panel in the dashboard`}
+                  >
+                    {dashOn ? <Eye size={12} /> : <EyeOff size={12} />}
+                  </RowIconButton>
+                  <RowIconButton
+                    active={popOn}
+                    onClick={() => onToggleGroupPopout(g.id)}
+                    title={popOn ? `Close the ${g.name} pop-out window` : `Pop out ${g.name} as a floating window`}
+                  >
+                    <ExternalLink size={12} />
+                  </RowIconButton>
+                  <RowIconButton
+                    active={placing}
+                    onClick={() => onMoveGroupPanel(g.id)}
+                    title={placing ? `Done positioning ${g.name}` : `Move ${g.name} — pops it out and lets you drag it anywhere, even a Display-only HUD`}
+                  >
+                    <Move size={12} />
+                  </RowIconButton>
+                  <RowIconButton
+                    onClick={() => onResetGroupPosition(g.id)}
+                    title={`Recenter the ${g.name} pop-out on the primary monitor and unlock it`}
+                  >
+                    <Crosshair size={12} />
+                  </RowIconButton>
+                </React.Fragment>
+              )
+            })}
           </div>
         </div>
       )}
@@ -419,6 +489,88 @@ export default function OverlaysDashboard(): React.ReactElement {
     setLayoutVersion((v) => v + 1)
   }, [])
 
+  // ── Named timer-group dashboard panels ──────────────────────────────────
+  // Mirrors the fixed-panel state/handlers above, but keyed by TimerGroup.id
+  // instead of a compile-time DashboardPanelKey — see dashboardLayout.ts.
+  const [timerGroups, setTimerGroups] = useState<TimerGroup[]>([])
+  const [groupLayout, setGroupLayout] = useState<GroupPanelLayouts>(() => loadGroupPanelLayouts())
+  const [showTimerGroups, setShowTimerGroups] = useState(false)
+
+  const reloadTimerGroups = useCallback(() => {
+    listTimerGroups().then(setTimerGroups).catch(() => {})
+  }, [])
+
+  useEffect(() => { reloadTimerGroups() }, [reloadTimerGroups])
+
+  // A group the dashboard hasn't seen before (just created, or from before
+  // this feature existed) gets a default hidden panel layout the first time
+  // it shows up in the list.
+  useEffect(() => {
+    setGroupLayout((prev) => {
+      let changed = false
+      const next = { ...prev }
+      timerGroups.forEach((g, i) => {
+        if (!next[g.id]) {
+          next[g.id] = defaultGroupPanelLayout(i)
+          changed = true
+        }
+      })
+      return changed ? next : prev
+    })
+  }, [timerGroups])
+
+  useEffect(() => {
+    saveGroupPanelLayouts(groupLayout)
+  }, [groupLayout])
+
+  const updateGroupPanel = useCallback((id: string, patch: Partial<PanelLayout>) => {
+    setGroupLayout((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] ?? defaultGroupPanelLayout(0)), ...patch },
+    }))
+  }, [])
+
+  const handleGroupLayoutChange = useCallback(
+    (id: string) =>
+      (b: { x: number; y: number; width: number; height: number }) => {
+        updateGroupPanel(id, { x: b.x, y: b.y, width: b.width, height: b.height })
+      },
+    [updateGroupPanel],
+  )
+
+  const toggleGroupVisible = useCallback(
+    (id: string) => updateGroupPanel(id, { visible: !(groupLayout[id]?.visible ?? false) }),
+    [groupLayout, updateGroupPanel],
+  )
+
+  const toggleGroupPopout = useCallback((id: string) => {
+    const g = timerGroups.find((x) => x.id === id)
+    window.electron?.overlay?.toggleCustomTimerGroup(id, g?.name ?? '')
+    const key = groupWindowKey(id)
+    setPopoutStates((s) => ({ ...s, [key]: !s[key] }))
+  }, [timerGroups])
+
+  const resetGroupPanelPosition = useCallback((id: string) => {
+    window.electron?.overlay?.resetPosition?.(groupWindowKey(id))
+  }, [])
+
+  const toggleMoveGroupPanel = useCallback((id: string) => {
+    const key = groupWindowKey(id)
+    const isPlacing = placingNames.includes(key)
+    if (isPlacing) {
+      window.electron?.overlay?.place?.(key, false)
+      setPlacingNames((p) => p.filter((n) => n !== key))
+      return
+    }
+    if (!popoutStates[key]) {
+      const g = timerGroups.find((x) => x.id === id)
+      window.electron?.overlay?.toggleCustomTimerGroup(id, g?.name ?? '')
+      setPopoutStates((s) => ({ ...s, [key]: true }))
+    }
+    window.electron?.overlay?.place?.(key, true)
+    setPlacingNames((p) => [...p, key])
+  }, [placingNames, popoutStates, timerGroups])
+
   // Recenter every popped-out overlay window on the primary monitor and unlock
   // them. This is the recovery path for an overlay that's drifted off-screen
   // (where a locked window can't reach its own unlock button). Distinct from
@@ -494,8 +646,14 @@ export default function OverlaysDashboard(): React.ReactElement {
       if (p.x + p.width > maxRight) maxRight = p.x + p.width
       if (p.y + p.height > maxBottom) maxBottom = p.y + p.height
     }
+    for (const g of timerGroups) {
+      const p = groupLayout[g.id]
+      if (!p?.visible) continue
+      if (p.x + p.width > maxRight) maxRight = p.x + p.width
+      if (p.y + p.height > maxBottom) maxBottom = p.y + p.height
+    }
     return { width: maxRight + CANVAS_PADDING, height: maxBottom + CANVAS_PADDING }
-  }, [layout, visiblePanelKeys])
+  }, [layout, visiblePanelKeys, timerGroups, groupLayout])
 
   return (
     <div
@@ -525,6 +683,19 @@ export default function OverlaysDashboard(): React.ReactElement {
         <div className="min-w-0 flex-1" />
 
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setShowTimerGroups(true)}
+            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              color: 'var(--color-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+            title="Create and manage named Custom Timers windows (raid/boss timers separate from the default window)"
+          >
+            <Hourglass size={11} />
+            Custom Timers
+          </button>
           <OverlaysManager
             panelKeys={visiblePanelKeys}
             labels={DASHBOARD_PANEL_LABELS}
@@ -544,6 +715,12 @@ export default function OverlaysDashboard(): React.ReactElement {
             displays={displays}
             currentDisplayId={currentDisplayId}
             onDisplayChange={handleDisplayChange}
+            groups={timerGroups}
+            groupLayout={groupLayout}
+            onToggleGroupVisible={toggleGroupVisible}
+            onToggleGroupPopout={toggleGroupPopout}
+            onResetGroupPosition={resetGroupPanelPosition}
+            onMoveGroupPanel={toggleMoveGroupPanel}
           />
         </div>
       </div>
@@ -701,6 +878,23 @@ export default function OverlaysDashboard(): React.ReactElement {
             onLayoutChange={handleLayoutChange('custom')}
           />
         )}
+        {timerGroups.map((g) => {
+          const p = groupLayout[g.id]
+          if (!p?.visible) return null
+          return (
+            <CustomTimerPanel
+              key={`group-${g.id}-${layoutVersion}`}
+              groupId={g.id}
+              groupName={g.name}
+              defaultX={p.x}
+              defaultY={p.y}
+              defaultWidth={p.width}
+              defaultHeight={p.height}
+              snapGridSize={SNAP_GRID}
+              onLayoutChange={handleGroupLayoutChange(g.id)}
+            />
+          )
+        })}
       </div>
 
       {showResetConfirm && (
@@ -719,6 +913,13 @@ export default function OverlaysDashboard(): React.ReactElement {
           confirmLabel="Clear All Timers"
           onConfirm={confirmClearTimers}
           onCancel={() => setShowClearTimersConfirm(false)}
+        />
+      )}
+      {showTimerGroups && (
+        <TimerGroupsModal
+          groups={timerGroups}
+          onChanged={reloadTimerGroups}
+          onClose={() => setShowTimerGroups(false)}
         />
       )}
     </div>

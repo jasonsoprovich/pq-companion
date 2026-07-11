@@ -69,10 +69,10 @@ export const DASHBOARD_PANEL_LABELS: Record<DashboardPanelKey, string> = {
   respawn: 'Respawn Timers',
   chChain: 'CH Chain',
   chMetronome: 'CH Metronome',
-  custom: 'Custom Timers',
+  custom: 'Custom Timers (default)',
 }
 
-function isPanelLayout(v: unknown): v is PanelLayout {
+export function isPanelLayout(v: unknown): v is PanelLayout {
   if (!v || typeof v !== 'object') return false
   const o = v as Record<string, unknown>
   return (
@@ -106,4 +106,49 @@ export function saveDashboardLayout(layout: DashboardLayout): void {
   } catch {
     // localStorage may be unavailable / full — ignore.
   }
+}
+
+// ── Named timer-group dashboard panels ──────────────────────────────────────
+//
+// Unlike the fixed panels above, a group panel's key (TimerGroup.id) is
+// dynamic and unbounded — it can't live in the DashboardPanelKey union or the
+// DEFAULT_DASHBOARD_LAYOUT record, both of which need a value for every
+// possible key. So group layouts get their own parallel store, keyed by
+// group id, persisted separately. Same shape (PanelLayout), same
+// drag/resize/visibility semantics — just an open-ended key space instead of
+// a closed one.
+const GROUP_STORAGE_KEY = 'pq-overlay-dashboard-group-layout-v1'
+
+export type GroupPanelLayouts = Record<string, PanelLayout>
+
+export function loadGroupPanelLayouts(): GroupPanelLayouts {
+  try {
+    const raw = localStorage.getItem(GROUP_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const out: GroupPanelLayouts = {}
+    for (const [id, candidate] of Object.entries(parsed)) {
+      if (isPanelLayout(candidate)) out[id] = candidate
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+export function saveGroupPanelLayouts(layouts: GroupPanelLayouts): void {
+  try {
+    localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(layouts))
+  } catch {
+    // localStorage may be unavailable / full — ignore.
+  }
+}
+
+// Default layout for a group panel the user has never positioned before.
+// Staggered by index so several newly-added groups don't stack exactly on
+// top of each other before the user drags them apart. Starts hidden (like
+// most fixed panels default to) — a group panel is opt-in, not automatic.
+export function defaultGroupPanelLayout(index: number): PanelLayout {
+  const offset = (index % 6) * 24
+  return { x: 16 + offset, y: 16 + offset, width: 280, height: 280, visible: false }
 }

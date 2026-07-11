@@ -24,7 +24,6 @@ import {
   Check,
   SlidersHorizontal,
   Pin,
-  Hourglass,
 } from 'lucide-react'
 import {
   DndContext,
@@ -85,7 +84,6 @@ import {
   type CreateTriggerRequest,
   type Character,
 } from '../services/api'
-import TimerGroupsModal from '../components/TimerGroupsModal'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName } from '../hooks/useActivePlayerName'
 import { WSEvent } from '../lib/wsEvents'
@@ -1420,7 +1418,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
                 )}
                 <p className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
                   Split raid/boss timers into their own popout window — manage windows from
-                  Timer Groups in the toolbar above.
+                  Custom Timers in the Overlays dashboard.
                 </p>
               </div>
             )}
@@ -2885,8 +2883,10 @@ export default function TriggersPage(): React.ReactElement {
     return new Set()
   })
   const [categories, setCategories] = useState<TriggerCategory[]>([])
+  // Timer groups are managed from the Overlays dashboard's "Custom Timers"
+  // button (TimerGroupsModal) — fetched here only to populate the trigger
+  // editor's window picker.
   const [timerGroups, setTimerGroups] = useState<TimerGroup[]>([])
-  const [showTimerGroups, setShowTimerGroups] = useState(false)
   // Inline category management on the section headers: which category is being
   // renamed (+ its edit-box value), which is pending delete (opens the modal),
   // and whether a New Category create is in flight.
@@ -3401,19 +3401,6 @@ export default function TriggersPage(): React.ReactElement {
                 <Tags size={11} />
                 New Category
               </button>
-              <button
-                onClick={() => setShowTimerGroups(true)}
-                className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-                style={{
-                  backgroundColor: 'var(--color-surface-2)',
-                  color: 'var(--color-muted-foreground)',
-                  border: '1px solid var(--color-border)',
-                }}
-                title="Manage named Custom Timers windows (raid/boss timers separate from the default window)"
-              >
-                <Hourglass size={11} />
-                Timer Groups
-              </button>
               {triggers.length > 0 && (
                 <button
                   onClick={() => setShowBulkEdit(true)}
@@ -3893,14 +3880,6 @@ export default function TriggersPage(): React.ReactElement {
       {/* Tab: Packs */}
       {tab === 'packs' && (
         <PacksTab installedPacks={installedPacks} onInstalled={load} />
-      )}
-
-      {showTimerGroups && (
-        <TimerGroupsModal
-          groups={timerGroups}
-          onChanged={reloadTimerGroups}
-          onClose={() => setShowTimerGroups(false)}
-        />
       )}
 
       {deletingCategory && (

@@ -20,6 +20,11 @@ import OverlayWindow from '../OverlayWindow'
 import type { ActiveTimer, TimerState } from '../../types/timer'
 
 interface CustomTimerPanelProps {
+  // When set, this panel shows a named timer group's window instead of the
+  // default/original Custom Timers window — see TimerGroupsModal. groupName
+  // is only used for the header label; groupId is the actual filter key.
+  groupId?: string
+  groupName?: string
   defaultX?: number
   defaultY?: number
   defaultWidth?: number
@@ -134,6 +139,8 @@ function TimerRow({ timer, appearance }: { timer: ActiveTimer; appearance: Timer
 }
 
 export default function CustomTimerPanel({
+  groupId,
+  groupName,
   defaultX = 24,
   defaultY = 24,
   defaultWidth = 304,
@@ -164,11 +171,11 @@ export default function CustomTimerPanel({
   }, [])
   useWebSocket(handleMessage)
 
-  // Named timer groups (see TimerGroupsModal) get their own popped-out
-  // window; this in-dashboard card and the default popout both show only
-  // the default/unassigned group so the two "custom" surfaces stay in sync.
+  // Named timer groups (see TimerGroupsModal) can be added to the dashboard
+  // as their own panel, same as the default/unassigned one — each filters to
+  // exactly its own group's timers.
   const timers = (state?.timers ?? [])
-    .filter((t) => t.category === 'custom' && !t.custom_group)
+    .filter((t) => t.category === 'custom' && (groupId ? t.custom_group === groupId : !t.custom_group))
     .filter((t) => passesThreshold(t, thresholds))
 
   const handleAdd = (e: React.FormEvent): void => {
@@ -208,7 +215,7 @@ export default function CustomTimerPanel({
       title={
         <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <Hourglass size={13} style={{ color: '#38bdf8' }} />
-          Custom Timers
+          {groupName || 'Custom Timers'}
           {timers.length > 0 && (
             <span style={{ fontSize: 10, color: 'var(--color-muted)', fontWeight: 400 }}>{timers.length}</span>
           )}
@@ -225,7 +232,10 @@ export default function CustomTimerPanel({
           </button>
           {window.electron?.overlay && (
             <button
-              onClick={() => window.electron.overlay.toggleCustomTimer()}
+              onClick={() => {
+                if (groupId) window.electron.overlay.toggleCustomTimerGroup(groupId, groupName ?? '')
+                else window.electron.overlay.toggleCustomTimer()
+              }}
               title="Pop out as floating overlay"
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}
             >
@@ -259,97 +269,100 @@ export default function CustomTimerPanel({
         )}
       </div>
 
-      {/* Quick-add form — start a manual countdown by name + duration */}
-      <form
-        onSubmit={handleAdd}
-        style={{
-          display: 'flex',
-          gap: 4,
-          padding: '5px 8px',
-          borderTop: '1px solid var(--color-border)',
-          backgroundColor: 'var(--color-surface-2)',
-          flexShrink: 0,
-        }}
-      >
-        <input
-          type="text"
-          value={newName}
-          onChange={(e) => { setNewName(e.target.value); setAddError(false) }}
-          placeholder="Timer name"
-          style={{ ...quickInputStyle, flex: 1 }}
-        />
-        <input
-          type="text"
-          value={newDuration}
-          onChange={(e) => { setNewDuration(e.target.value); setAddError(false) }}
-          placeholder="5m / 300 / 6:40"
-          title="Duration: seconds (300), colon notation (6:40), or units (6m40s)"
-          style={{ ...quickInputStyle, width: 78 }}
-        />
-        {newColor !== '' && (
+      {/* Quick-add form — default panel only. A named group panel is fed
+          exclusively by triggers assigned to it, same as its popped-out window. */}
+      {!groupId && (
+        <form
+          onSubmit={handleAdd}
+          style={{
+            display: 'flex',
+            gap: 4,
+            padding: '5px 8px',
+            borderTop: '1px solid var(--color-border)',
+            backgroundColor: 'var(--color-surface-2)',
+            flexShrink: 0,
+          }}
+        >
           <input
-            type="color"
-            value={newColor}
-            onChange={(e) => setNewColor(e.target.value)}
-            title="Bar color for this timer"
-            style={{ width: 26, height: 24, padding: 0, borderRadius: 3, border: '1px solid var(--color-border)', background: 'transparent', cursor: 'pointer', flexShrink: 0 }}
+            type="text"
+            value={newName}
+            onChange={(e) => { setNewName(e.target.value); setAddError(false) }}
+            placeholder="Timer name"
+            style={{ ...quickInputStyle, flex: 1 }}
           />
-        )}
-        <button
-          type="button"
-          onClick={() => setNewColor(newColor ? '' : '#38bdf8')}
-          title={newColor ? 'Custom bar color (click for automatic)' : 'Automatic bar color (click to pick a color)'}
-          aria-pressed={newColor !== ''}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            padding: '2px 6px',
-            borderRadius: 3,
-            border: '1px solid var(--color-border)',
-            backgroundColor: newColor ? 'rgba(56,189,248,0.2)' : 'var(--color-surface)',
-            color: newColor ? 'var(--color-foreground)' : 'var(--color-muted)',
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          <Palette size={12} />
-        </button>
-        <button
-          type="button"
-          onClick={() => setAlertOverride(!bellOn)}
-          title={bellOn ? 'Alert when this timer finishes (click to mute)' : 'No alert for new timers (click to enable)'}
-          aria-pressed={bellOn}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            padding: '2px 6px',
-            borderRadius: 3,
-            border: '1px solid var(--color-border)',
-            backgroundColor: bellOn ? 'rgba(56,189,248,0.2)' : 'var(--color-surface)',
-            color: bellOn ? 'var(--color-foreground)' : 'var(--color-muted)',
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          {bellOn ? <Bell size={12} /> : <BellOff size={12} />}
-        </button>
-        <button
-          type="submit"
-          style={{
-            fontSize: 11,
-            padding: '2px 8px',
-            borderRadius: 3,
-            border: '1px solid var(--color-border)',
-            backgroundColor: 'rgba(56,189,248,0.2)',
-            color: 'var(--color-foreground)',
-            cursor: 'pointer',
-            lineHeight: 1.4,
-            flexShrink: 0,
-          }}
-        >
-          Start
-        </button>
-      </form>
+          <input
+            type="text"
+            value={newDuration}
+            onChange={(e) => { setNewDuration(e.target.value); setAddError(false) }}
+            placeholder="5m / 300 / 6:40"
+            title="Duration: seconds (300), colon notation (6:40), or units (6m40s)"
+            style={{ ...quickInputStyle, width: 78 }}
+          />
+          {newColor !== '' && (
+            <input
+              type="color"
+              value={newColor}
+              onChange={(e) => setNewColor(e.target.value)}
+              title="Bar color for this timer"
+              style={{ width: 26, height: 24, padding: 0, borderRadius: 3, border: '1px solid var(--color-border)', background: 'transparent', cursor: 'pointer', flexShrink: 0 }}
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => setNewColor(newColor ? '' : '#38bdf8')}
+            title={newColor ? 'Custom bar color (click for automatic)' : 'Automatic bar color (click to pick a color)'}
+            aria-pressed={newColor !== ''}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '2px 6px',
+              borderRadius: 3,
+              border: '1px solid var(--color-border)',
+              backgroundColor: newColor ? 'rgba(56,189,248,0.2)' : 'var(--color-surface)',
+              color: newColor ? 'var(--color-foreground)' : 'var(--color-muted)',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            <Palette size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setAlertOverride(!bellOn)}
+            title={bellOn ? 'Alert when this timer finishes (click to mute)' : 'No alert for new timers (click to enable)'}
+            aria-pressed={bellOn}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '2px 6px',
+              borderRadius: 3,
+              border: '1px solid var(--color-border)',
+              backgroundColor: bellOn ? 'rgba(56,189,248,0.2)' : 'var(--color-surface)',
+              color: bellOn ? 'var(--color-foreground)' : 'var(--color-muted)',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            {bellOn ? <Bell size={12} /> : <BellOff size={12} />}
+          </button>
+          <button
+            type="submit"
+            style={{
+              fontSize: 11,
+              padding: '2px 8px',
+              borderRadius: 3,
+              border: '1px solid var(--color-border)',
+              backgroundColor: 'rgba(56,189,248,0.2)',
+              color: 'var(--color-foreground)',
+              cursor: 'pointer',
+              lineHeight: 1.4,
+              flexShrink: 0,
+            }}
+          >
+            Start
+          </button>
+        </form>
+      )}
     </OverlayWindow>
   )
 }

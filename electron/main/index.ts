@@ -2288,7 +2288,7 @@ ipcMain.handle('overlay:rolltracker:toggle', () => {
 // would also stop trigger alerts from rendering, so it's left alone by the
 // bulk close as well.
 function userPopoutWindows(): BrowserWindow[] {
-  return [
+  const fixed = [
     dpsOverlayWindow,
     hpsOverlayWindow,
     buffTimerWindow,
@@ -2301,18 +2301,32 @@ function userPopoutWindows(): BrowserWindow[] {
     chChainWindow,
     chMetronomeWindow,
   ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
+  return [...fixed, ...customTimerGroupWindows.values()].filter((w) => !w.isDestroyed())
 }
 
 ipcMain.handle('overlay:popouts:any-open', () => userPopoutWindows().length > 0)
 
-ipcMain.handle('overlay:popouts:open-all', (_event, panels?: string[]) => {
+// A requested panel is either a plain dashboard panel key (existing behavior)
+// or, for a named timer group panel, an object carrying both its id and
+// current display name — main process has no independent way to know a
+// group's name, so the renderer (which has the live TimerGroup list) sends it.
+type PopoutRequestEntry = string | { key: `customTimer:${string}`; name: string }
+
+ipcMain.handle('overlay:popouts:open-all', (_event, panels?: PopoutRequestEntry[]) => {
   // `panels` is the set of dashboard panel keys the user has toggled visible
-  // (buff/detrim/dps/npc/rolls/respawn/chChain/chMetronome/custom). Only those
-  // overlays pop out, so the
+  // (buff/detrim/dps/npc/rolls/respawn/chChain/chMetronome/custom), plus any
+  // visible named timer-group panels. Only those overlays pop out, so the
   // button respects the dashboard view instead of opening everything. When the
-  // argument is omitted (legacy callers), fall back to opening all panels.
+  // argument is omitted (legacy callers), fall back to opening all fixed panels
+  // (groups are never included in that fallback — there's no way to enumerate
+  // them without the renderer's input).
   const all = !Array.isArray(panels)
-  const want = new Set(panels ?? [])
+  const want = new Set<string>()
+  const groupWants: Array<{ id: string; name: string }> = []
+  for (const p of panels ?? []) {
+    if (typeof p === 'string') want.add(p)
+    else groupWants.push({ id: p.key.slice('customTimer:'.length), name: p.name })
+  }
   const wants = (key: string): boolean => all || want.has(key)
 
   if (wants('dps') && (!dpsOverlayWindow || dpsOverlayWindow.isDestroyed())) createDPSOverlay()
@@ -2325,6 +2339,10 @@ ipcMain.handle('overlay:popouts:open-all', (_event, panels?: string[]) => {
   if (wants('respawn') && (!respawnTimerWindow || respawnTimerWindow.isDestroyed())) createRespawnTimerOverlay()
   if (wants('chChain') && (!chChainWindow || chChainWindow.isDestroyed())) createCHChainOverlay()
   if (wants('chMetronome') && (!chMetronomeWindow || chMetronomeWindow.isDestroyed())) createCHMetronomeOverlay()
+  for (const g of groupWants) {
+    const win = customTimerGroupWindows.get(g.id)
+    if (!win || win.isDestroyed()) createCustomTimerGroupOverlay(g.id, g.name)
+  }
 
   // Trigger Alerts has no in-dashboard panel or visibility toggle, so it isn't
   // something the user can "disable in the dashboard view". It always pops out
@@ -2346,6 +2364,12 @@ ipcMain.handle('overlay:popouts:states', () => {
   for (const name of RESETTABLE_OVERLAYS) {
     const win = overlayWindowByName(name)
     states[name] = !!win && !win.isDestroyed()
+  }
+  // Only currently-open named groups can be reported — Electron doesn't know
+  // the full group list (that's backend/renderer state), just which windows
+  // it has actually created this session.
+  for (const [groupId, win] of customTimerGroupWindows) {
+    states[customTimerWindowKey(groupId)] = !win.isDestroyed()
   }
   return states
 })

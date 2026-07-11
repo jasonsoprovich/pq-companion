@@ -83,7 +83,10 @@ contextBridge.exposeInMainWorld('electron', {
     closeRespawnTimer: (): Promise<void> => ipcRenderer.invoke('overlay:respawntimer:close'),
     toggleRespawnTimer: (): Promise<void> => ipcRenderer.invoke('overlay:respawntimer:toggle'),
     anyPopoutOpen: (): Promise<boolean> => ipcRenderer.invoke('overlay:popouts:any-open'),
-    openAllPopouts: (panels?: string[]): Promise<void> =>
+    // A panel entry is a plain dashboard panel key, or {key, name} for a
+    // named timer-group panel — main process needs the group's display name
+    // to create its window and has no independent way to know it.
+    openAllPopouts: (panels?: Array<string | { key: string; name: string }>): Promise<void> =>
       ipcRenderer.invoke('overlay:popouts:open-all', panels),
     closeAllPopouts: (): Promise<void> => ipcRenderer.invoke('overlay:popouts:close-all'),
     popoutStates: (): Promise<Record<string, boolean>> =>
