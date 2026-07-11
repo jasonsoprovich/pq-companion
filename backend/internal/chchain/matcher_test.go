@@ -16,7 +16,7 @@ type capture struct {
 
 type fakeSink struct{ calls []capture }
 
-func (f *fakeSink) StartExternal(name, category string, dur, _ float64, _ time.Time, _ json.RawMessage, _ int, _, _ string, _ bool) {
+func (f *fakeSink) StartExternal(name, category string, dur, _ float64, _ time.Time, _ json.RawMessage, _ int, _, _ string, _ bool, _ string) {
 	f.calls = append(f.calls, capture{name, category, dur})
 }
 

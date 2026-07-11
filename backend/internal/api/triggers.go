@@ -62,16 +62,19 @@ type triggerRequest struct {
 	// the existing value (matching how cooldown_secs is left untouched). A
 	// present value — including 0 to clear it — replaces it. The editor always
 	// sends it; bulk paths (toggle, move category) omit it.
-	RefireCooldownSecs   *float64               `json:"refire_cooldown_secs,omitempty"`
-	DisplayThresholdSecs float64                `json:"display_threshold_secs"`
-	BarColor             string                 `json:"bar_color"`
-	Pinned               bool                   `json:"pinned"`
-	Characters           []string               `json:"characters"`
-	TimerAlerts          []trigger.TimerAlert   `json:"timer_alerts"`
-	ExcludePatterns      []string               `json:"exclude_patterns"`
-	ExtraPatterns        []trigger.ExtraPattern `json:"extra_patterns"`
-	Source               string                 `json:"source,omitempty"`
-	PipeCondition        *trigger.PipeCondition `json:"pipe_condition,omitempty"`
+	RefireCooldownSecs   *float64 `json:"refire_cooldown_secs,omitempty"`
+	DisplayThresholdSecs float64  `json:"display_threshold_secs"`
+	BarColor             string   `json:"bar_color"`
+	Pinned               bool     `json:"pinned"`
+	// CustomGroupID selects which Custom Timers window a timer_type="custom"
+	// trigger's timer appears in. Empty = the original/default window.
+	CustomGroupID   string                 `json:"custom_group_id"`
+	Characters      []string               `json:"characters"`
+	TimerAlerts     []trigger.TimerAlert   `json:"timer_alerts"`
+	ExcludePatterns []string               `json:"exclude_patterns"`
+	ExtraPatterns   []trigger.ExtraPattern `json:"extra_patterns"`
+	Source          string                 `json:"source,omitempty"`
+	PipeCondition   *trigger.PipeCondition `json:"pipe_condition,omitempty"`
 	// PackName is the trigger's category. Pointer so an omitted field on
 	// update leaves the existing category untouched (a present value — even
 	// "" for Uncategorized — replaces it). nil on create defaults to "".
@@ -158,6 +161,7 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 		DisplayThresholdSecs: req.DisplayThresholdSecs,
 		BarColor:             strings.TrimSpace(req.BarColor),
 		Pinned:               req.Pinned,
+		CustomGroupID:        strings.TrimSpace(req.CustomGroupID),
 		Characters:           req.Characters,
 		TimerAlerts:          req.TimerAlerts,
 		ExcludePatterns:      req.ExcludePatterns,
@@ -242,6 +246,7 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	existing.DisplayThresholdSecs = req.DisplayThresholdSecs
 	existing.BarColor = strings.TrimSpace(req.BarColor)
 	existing.Pinned = req.Pinned
+	existing.CustomGroupID = strings.TrimSpace(req.CustomGroupID)
 	existing.Characters = req.Characters
 	existing.TimerAlerts = req.TimerAlerts
 	existing.ExcludePatterns = req.ExcludePatterns
@@ -704,6 +709,108 @@ func (h *triggerHandler) reorderTriggers(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ── Timer groups ──────────────────────────────────────────────────────────
+//
+// A timer group is a user-created Custom Timers window (see
+// trigger.TimerGroup), letting raid leaders split signature-spell/boss
+// timers into their own overlay separate from general trigger timers. CRUD
+// mirrors the category endpoints above.
+
+// listTimerGroups returns every user-created timer group.
+func (h *triggerHandler) listTimerGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := h.store.ListTimerGroups()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if groups == nil {
+		groups = []trigger.TimerGroup{}
+	}
+	writeJSON(w, http.StatusOK, groups)
+}
+
+type timerGroupRequest struct {
+	Name string `json:"name"`
+}
+
+// createTimerGroup persists a new, empty Custom Timers window.
+func (h *triggerHandler) createTimerGroup(w http.ResponseWriter, r *http.Request) {
+	var req timerGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	group, err := h.store.CreateTimerGroup(req.Name)
+	if err != nil {
+		writeTimerGroupError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, group)
+}
+
+type renameTimerGroupRequest struct {
+	NewName string `json:"new_name"`
+}
+
+// renameTimerGroup renames a timer group in place.
+func (h *triggerHandler) renameTimerGroup(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req renameTimerGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if err := h.store.RenameTimerGroup(id, req.NewName); err != nil {
+		writeTimerGroupError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteTimerGroup removes a timer group. Its triggers fall back to the
+// default Custom Timers window (custom_group_id = ”) — never deleted.
+func (h *triggerHandler) deleteTimerGroup(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.store.DeleteTimerGroup(id); err != nil {
+		writeTimerGroupError(w, err)
+		return
+	}
+	h.engine.Reload()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type reorderTimerGroupsRequest struct {
+	Order []string `json:"order"`
+}
+
+// reorderTimerGroups persists a new display order for timer group windows.
+func (h *triggerHandler) reorderTimerGroups(w http.ResponseWriter, r *http.Request) {
+	var req reorderTimerGroupsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if err := h.store.ReorderTimerGroups(req.Order); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// writeTimerGroupError maps timer group sentinel errors to HTTP status codes.
+func writeTimerGroupError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, trigger.ErrTimerGroupNameEmpty):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, trigger.ErrTimerGroupExists):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, trigger.ErrTimerGroupNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, err.Error())
+	}
 }
 
 // writeCategoryError maps category sentinel errors to HTTP status codes.

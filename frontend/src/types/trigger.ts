@@ -220,6 +220,12 @@ export interface Trigger {
    */
   pinned?: boolean
   /**
+   * Which Custom Timers window this trigger's timer appears in, when
+   * timer_type is 'custom'. References TimerGroup.id. Empty/absent = the
+   * original/default Custom Timers window. Ignored for buff/detrimental.
+   */
+  custom_group_id?: string
+  /**
    * Which pack this trigger was installed from, independent of pack_name
    * (its display category). Lets a pack trigger moved into a custom
    * category still be tagged with its origin and removed on pack
@@ -385,4 +391,20 @@ export interface TriggerCategory {
   custom: boolean     // true = user-created (always visible, editable)
   explicit: boolean   // true = has a persisted row (visible even when empty)
   sort_order: number  // display order; lower sorts first
+}
+
+/**
+ * A user-created Custom Timers window, letting raid leaders split
+ * signature-spell/boss timers into their own overlay separate from general
+ * trigger timers. Referenced by Trigger.custom_group_id via id (not name),
+ * so renaming never needs to cascade. The implicit default window
+ * (custom_group_id === '' / absent) has no TimerGroup row — the frontend
+ * renders it separately as the original "Custom Timers" window.
+ */
+export interface TimerGroup {
+  id: string
+  name: string
+  count: number      // triggers currently assigned to this group
+  sort_order: number // display order; lower sorts first
+  created_at: string
 }

@@ -37,7 +37,7 @@ import type { RaidThreatState, TargetState, ThreatState } from '../types/overlay
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { RespawnState } from '../types/respawn'
-import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview, PackUpdateSummary, PackDiff, PackUpdateMode, PackUpdateResult, ActionTemplate, BulkResult } from '../types/trigger'
+import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, TimerGroup, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview, PackUpdateSummary, PackDiff, PackUpdateMode, PackUpdateResult, ActionTemplate, BulkResult } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
 import type {
@@ -1430,18 +1430,22 @@ export function removeTimer(id: string): Promise<void> {
  * Start a manual countdown on the Custom Timers overlay (no trigger needed).
  * Optional `alerts` arms fading-soon sound/TTS cues on the timer (built from
  * the user's global Custom-timer alert preference); omit for a silent timer.
+ * `groupId` targets a specific Custom Timers window (TimerGroup.id); omit
+ * for the original/default window.
  */
 export function startCustomTimer(
   name: string,
   durationSecs: number,
   alerts?: TimerAlertThreshold[],
   color?: string,
+  groupId?: string,
 ): Promise<void> {
   return post<void>('/api/overlay/timers/custom', {
     name,
     duration_secs: durationSecs,
     ...(alerts && alerts.length > 0 ? { alerts } : {}),
     ...(color ? { color } : {}),
+    ...(groupId ? { group_id: groupId } : {}),
   })
 }
 
@@ -2193,6 +2197,12 @@ export interface CreateTriggerRequest {
    * the stored value on every full update — omitting it resets to false.
    */
   pinned?: boolean
+  /**
+   * Which Custom Timers window this trigger's timer appears in, when
+   * timer_type is 'custom'. Empty = the original/default window. Backend
+   * replaces the stored value on every full update, same as pinned.
+   */
+  custom_group_id?: string
   characters?: string[]
   timer_alerts?: TimerAlertThreshold[]
   exclude_patterns?: string[]
@@ -2385,6 +2395,31 @@ export function deleteTriggerCategory(name: string, deleteTriggers = false): Pro
 // reorderTriggerCategories persists the display order of category sections.
 export function reorderTriggerCategories(order: string[]): Promise<void> {
   return post<void>('/api/triggers/categories/order', { order })
+}
+
+// ── Timer groups ─────────────────────────────────────────────────────────────
+
+export function listTimerGroups(): Promise<TimerGroup[]> {
+  return get<TimerGroup[]>('/api/triggers/timer-groups')
+}
+
+export function createTimerGroup(name: string): Promise<TimerGroup> {
+  return post<TimerGroup>('/api/triggers/timer-groups', { name })
+}
+
+export function renameTimerGroup(id: string, newName: string): Promise<void> {
+  return put<void>(`/api/triggers/timer-groups/${encodeURIComponent(id)}`, { new_name: newName })
+}
+
+// deleteTimerGroup removes a timer group. Its triggers fall back to the
+// default Custom Timers window (custom_group_id='') — never deleted.
+export function deleteTimerGroup(id: string): Promise<void> {
+  return del(`/api/triggers/timer-groups/${encodeURIComponent(id)}`)
+}
+
+// reorderTimerGroups persists the display order of Custom Timers windows.
+export function reorderTimerGroups(order: string[]): Promise<void> {
+  return post<void>('/api/triggers/timer-groups/order', { order })
 }
 
 // reorderTriggers persists the manual order of the given trigger IDs (their

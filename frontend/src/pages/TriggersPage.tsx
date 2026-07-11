@@ -625,6 +625,9 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, onSave
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
       bar_color: timerType === 'none' ? '' : barColor,
       pinned: timerType === 'none' ? false : pinned,
+      // No group picker in the editor yet (Phase 2C) — preserve whatever
+      // group an existing trigger was already assigned to.
+      custom_group_id: timerType === 'custom' ? (initial?.custom_group_id ?? '') : '',
       characters: Array.from(selectedChars),
       timer_alerts: timerType === 'none' ? [] : timerAlerts,
       exclude_patterns: source === 'pipe' ? [] : excludeList,
@@ -1513,6 +1516,7 @@ function TriggerRow({
       display_threshold_secs: trigger.display_threshold_secs,
       bar_color: trigger.bar_color ?? '',
       pinned: trigger.pinned ?? false,
+      custom_group_id: trigger.custom_group_id ?? '',
       characters: trigger.characters,
       timer_alerts: trigger.timer_alerts ?? [],
       exclude_patterns: trigger.exclude_patterns ?? [],
@@ -3042,6 +3046,7 @@ export default function TriggersPage(): React.ReactElement {
       display_threshold_secs: t.display_threshold_secs,
       bar_color: t.bar_color ?? '',
       pinned: t.pinned ?? false,
+      custom_group_id: t.custom_group_id ?? '',
       characters: t.characters,
       timer_alerts: t.timer_alerts ?? [],
       exclude_patterns: t.exclude_patterns ?? [],

@@ -974,6 +974,7 @@ type captureSink struct {
 	target   string
 	barColor string
 	pinned   bool
+	group    string
 	alerts   json.RawMessage
 	calls    int
 
@@ -982,8 +983,8 @@ type captureSink struct {
 	stops       int
 }
 
-func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool) {
-	s.name, s.category, s.duration, s.spellID, s.target, s.barColor, s.pinned, s.alerts = name, category, durationSecs, spellID, targetName, barColor, pinned, alerts
+func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string) {
+	s.name, s.category, s.duration, s.spellID, s.target, s.barColor, s.pinned, s.group, s.alerts = name, category, durationSecs, spellID, targetName, barColor, pinned, customGroup, alerts
 	s.calls++
 }
 func (s *captureSink) StopExternal(name string, spellID int) {

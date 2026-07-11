@@ -228,7 +228,7 @@ func TestStartExternal_DedupsAgainstSpellLandedTimer(t *testing.T) {
 	}
 
 	// User trigger fires with the same spell name moments later.
-	e.StartExternal("Visions of Grandeur", "buff", 1620, 0, now.Add(time.Second), nil, 0, "", "", false)
+	e.StartExternal("Visions of Grandeur", "buff", 1620, 0, now.Add(time.Second), nil, 0, "", "", false, "")
 
 	// Still only the one entry — the trigger's would-be entry was suppressed.
 	if len(e.timers) != 1 {
@@ -243,7 +243,7 @@ func TestStartExternal_DedupsAgainstSpellLandedTimer(t *testing.T) {
 // spell already in the timer map) should create its entry as before.
 func TestStartExternal_CreatesEntryWhenNoSpellMatch(t *testing.T) {
 	e := newTestEngine()
-	e.StartExternal("AE Incoming", "debuff", 30, 0, time.Now(), nil, 0, "", "", false)
+	e.StartExternal("AE Incoming", "debuff", 30, 0, time.Now(), nil, 0, "", "", false, "")
 
 	if len(e.timers) != 1 {
 		t.Fatalf("expected 1 timer, got %d", len(e.timers))
@@ -261,7 +261,7 @@ func TestStartExternal_CreatesEntryWhenNoSpellMatch(t *testing.T) {
 // the frontend can apply the override instead of the global default.
 func TestStartExternal_CopiesDisplayThreshold(t *testing.T) {
 	e := newTestEngine()
-	e.StartExternal("Long Buff", "buff", 7200, 600, time.Now(), nil, 0, "", "", false)
+	e.StartExternal("Long Buff", "buff", 7200, 600, time.Now(), nil, 0, "", "", false, "")
 
 	got, ok := e.timers[timerKey("Long Buff", "")]
 	if !ok {
@@ -280,10 +280,10 @@ func TestStartExternal_CopiesDisplayThreshold(t *testing.T) {
 func TestSnapshot_PinnedTimersSortFirst(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
-	e.StartExternal("Short Unpinned", "debuff", 5, 0, now, nil, 0, "", "", false)
-	e.StartExternal("Long Pinned", "custom", 300, 0, now, nil, 0, "", "", true)
-	e.StartExternal("Short Pinned", "custom", 10, 0, now, nil, 0, "", "", true)
-	e.StartExternal("Long Unpinned", "buff", 600, 0, now, nil, 0, "", "", false)
+	e.StartExternal("Short Unpinned", "debuff", 5, 0, now, nil, 0, "", "", false, "")
+	e.StartExternal("Long Pinned", "custom", 300, 0, now, nil, 0, "", "", true, "")
+	e.StartExternal("Short Pinned", "custom", 10, 0, now, nil, 0, "", "", true, "")
+	e.StartExternal("Long Unpinned", "buff", 600, 0, now, nil, 0, "", "", false, "")
 
 	state := e.GetState()
 	if len(state.Timers) != 4 {
@@ -320,7 +320,7 @@ func TestOnSpellLanded_TriggersOnlyModeSuppressesAutoTimers(t *testing.T) {
 	}
 
 	// Triggers still create timers in this mode — that's the whole point.
-	e.StartExternal("Manual VoG", "buff", 1620, 0, time.Now(), nil, 0, "", "", false)
+	e.StartExternal("Manual VoG", "buff", 1620, 0, time.Now(), nil, 0, "", "", false, "")
 	if len(e.timers) != 1 {
 		t.Errorf("triggers should still create timers in triggers_only mode, got %d", len(e.timers))
 	}
@@ -346,7 +346,7 @@ func TestStartExternal_MergesMetadataOntoExistingTimer(t *testing.T) {
 	}
 
 	alerts := json.RawMessage(`[{"id":"x","seconds":300,"type":"tts"}]`)
-	e.StartExternal("Koadic's Endless Intellect", "buff", 4500, 300, now.Add(50*time.Millisecond), alerts, 0, "", "", false)
+	e.StartExternal("Koadic's Endless Intellect", "buff", 4500, 300, now.Add(50*time.Millisecond), alerts, 0, "", "", false, "")
 
 	if len(e.timers) != 1 {
 		t.Fatalf("expected 1 timer (merge, not duplicate), got %d", len(e.timers))
@@ -372,7 +372,7 @@ func TestStartExternal_DefersMezTimerToSpellLanded(t *testing.T) {
 	now := time.Now()
 	alerts := json.RawMessage(`[{"id":"fade","seconds":5,"type":"tts"}]`)
 
-	e.StartExternal("Mesmerize", "debuff", 24, 8, now, alerts, 0, "", "", false)
+	e.StartExternal("Mesmerize", "debuff", 24, 8, now, alerts, 0, "", "", false, "")
 
 	if len(e.timers) != 0 {
 		t.Fatalf("mez cast-begin must not create a visible timer, got %d", len(e.timers))
@@ -395,7 +395,7 @@ func TestStartExternal_DefersMezTimerToSpellLanded(t *testing.T) {
 func TestStopExternal_ClearsPendingArm(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
-	e.StartExternal("Dazzle", "debuff", 96, 0, now, nil, 0, "", "", false)
+	e.StartExternal("Dazzle", "debuff", 96, 0, now, nil, 0, "", "", false, "")
 	if _, ok := e.pendingArms["Dazzle"]; !ok {
 		t.Fatal("setup: Dazzle arm not stored")
 	}
@@ -416,7 +416,7 @@ func TestStartExternal_ExpiresStalePendingArms(t *testing.T) {
 
 	// Any StartExternal call triggers gcPendingArmsLocked; use an unrelated
 	// non-deferred trigger so we don't reseed the slot.
-	e.StartExternal("AE Incoming", "debuff", 30, 0, time.Now(), nil, 0, "", "", false)
+	e.StartExternal("AE Incoming", "debuff", 30, 0, time.Now(), nil, 0, "", "", false, "")
 
 	if _, ok := e.pendingArms["Mesmerization"]; ok {
 		t.Error("stale pending arm should have been GC'd")
@@ -538,7 +538,7 @@ func TestStartExternal_DedupsBySpellIDAcrossNames(t *testing.T) {
 
 	// Enchanter pack trigger fires with the combined name + linked SpellID and
 	// a display-threshold override.
-	e.StartExternal("Speed of the Shissar/Brood", "buff", 1800, 120, now, nil, 1939, "", "", false)
+	e.StartExternal("Speed of the Shissar/Brood", "buff", 1800, 120, now, nil, 1939, "", "", false, "")
 
 	if len(e.timers) != 1 {
 		t.Fatalf("expected the trigger to merge into the existing timer, got %d rows", len(e.timers))

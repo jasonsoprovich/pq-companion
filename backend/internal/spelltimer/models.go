@@ -111,6 +111,13 @@ type ActiveTimer struct {
 	// that carries it (see StartExternal's same-spell-name merge).
 	Pinned bool `json:"pinned,omitempty"`
 
+	// CustomGroup selects which Custom Timers window this timer renders in
+	// (a TimerGroup.ID from the trigger package, kept as a plain string here
+	// the same way Category avoids importing the trigger package). Only
+	// meaningful when Category is CategoryCustom; empty means the original/
+	// default Custom Timers window.
+	CustomGroup string `json:"custom_group,omitempty"`
+
 	// IsCharm marks a timer whose source spell is a Charm effect (SPA 22).
 	// Charm represents an ongoing pet the player controls, so — unlike a
 	// debuff or mez — its timer must survive the death of *other* mobs.

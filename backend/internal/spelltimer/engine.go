@@ -182,6 +182,7 @@ type pendingArm struct {
 	TimerAlerts          json.RawMessage
 	BarColor             string
 	Pinned               bool
+	CustomGroup          string
 	ArmedAt              time.Time
 }
 
@@ -685,7 +686,7 @@ func divergenceKey(names []string) string {
 // apply the active character's item/AA duration focuses to durationSecs —
 // matching the spell-landed pipeline. 0 means "use durationSecs as given"
 // (custom triggers without a spell anchor, tests).
-func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool) {
+func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string) {
 	if name == "" || durationSecs <= 0 {
 		return
 	}
@@ -731,6 +732,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 			TimerAlerts:          alerts,
 			BarColor:             barColor,
 			Pinned:               pinned,
+			CustomGroup:          customGroup,
 			ArmedAt:              startedAt,
 		}
 		e.mu.Unlock()
@@ -764,6 +766,9 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 			if pinned {
 				existing.Pinned = true
 			}
+			if customGroup != "" {
+				existing.CustomGroup = customGroup
+			}
 			snap := e.snapshot(time.Now())
 			e.mu.Unlock()
 			slog.Debug("timer-debug: trigger metadata merged onto existing timer",
@@ -792,6 +797,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 		TimerAlerts:          alerts,
 		BarColor:             barColor,
 		Pinned:               pinned,
+		CustomGroup:          customGroup,
 		IsCharm:              isCharm,
 	}
 	e.timers[key] = timer
@@ -1121,6 +1127,9 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		if existing.Pinned {
 			timer.Pinned = true
 		}
+		if existing.CustomGroup != "" {
+			timer.CustomGroup = existing.CustomGroup
+		}
 		delete(e.timers, existingKey)
 		break
 	}
@@ -1145,6 +1154,9 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		}
 		if arm.Pinned {
 			timer.Pinned = true
+		}
+		if arm.CustomGroup != "" {
+			timer.CustomGroup = arm.CustomGroup
 		}
 		slog.Debug("timer-debug: pending arm promoted to landed timer",
 			"spell", spellName,

@@ -339,6 +339,14 @@ type Trigger struct {
 	// and boss-mechanic timers visible without them shifting down the list
 	// as unrelated timers count lower. False (default) = normal sort order.
 	Pinned bool `json:"pinned,omitempty"`
+
+	// CustomGroupID selects which Custom Timers window this trigger's timer
+	// appears in, when TimerType is "custom". References TimerGroup.ID.
+	// Empty (default) means the original/default Custom Timers window — no
+	// TimerGroup row is needed for it, so existing triggers and their saved
+	// window position are unaffected. Ignored for buff/detrimental timers,
+	// which always render in their single dedicated overlay.
+	CustomGroupID string `json:"custom_group_id,omitempty"`
 }
 
 // TriggerFired is the payload of a WSEventTriggerFired WebSocket event and a

@@ -89,7 +89,7 @@ func TestOnSpellLanded_AoEMezTracksPerTarget(t *testing.T) {
 	// Cast-begin stashes the trigger's metadata as a deferred-render pending
 	// arm (no visible timer yet) and records the recent local cast the
 	// detrimental scope filter requires for non-self targets.
-	e.StartExternal("Mesmerization", "mez", 24, 8, now, nil, 0, "", "", false)
+	e.StartExternal("Mesmerization", "mez", 24, 8, now, nil, 0, "", "", false, "")
 	e.mu.Lock()
 	e.lastCastSpell = "Mesmerization"
 	e.lastCastAt = now

@@ -441,6 +441,13 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Post("/order", triggerH.reorderTriggers)
 			r.Put("/categories/{name}", triggerH.renameCategory)
 			r.Delete("/categories/{name}", triggerH.deleteCategory)
+			r.Get("/timer-groups", triggerH.listTimerGroups)
+			r.Post("/timer-groups", triggerH.createTimerGroup)
+			// Static /timer-groups/order is registered before the {id} wildcard
+			// so a group can never shadow it (same reasoning as categories/order).
+			r.Post("/timer-groups/order", triggerH.reorderTimerGroups)
+			r.Put("/timer-groups/{id}", triggerH.renameTimerGroup)
+			r.Delete("/timer-groups/{id}", triggerH.deleteTimerGroup)
 			r.Post("/test-overlay", triggerH.testOverlay)
 			r.Get("/test-overlay/active", triggerH.testOverlayActive)
 			r.Post("/test-overlay/position", triggerH.testOverlayPosition)

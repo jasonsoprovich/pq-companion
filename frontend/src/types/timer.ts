@@ -64,6 +64,12 @@ export interface ActiveTimer {
    * ascending-remaining-time sort.
    */
   pinned?: boolean
+  /**
+   * Which Custom Timers window this timer renders in (a TimerGroup.id).
+   * Only meaningful when category is 'custom'. Absent/empty = the
+   * original/default Custom Timers window.
+   */
+  custom_group?: string
 }
 
 export interface TimerState {

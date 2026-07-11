@@ -52,6 +52,9 @@ func (h *timerHandler) startCustom(w http.ResponseWriter, r *http.Request) {
 		DurationSecs float64         `json:"duration_secs"`
 		Alerts       json.RawMessage `json:"alerts,omitempty"`
 		Color        string          `json:"color,omitempty"`
+		// GroupID targets a specific Custom Timers window (TimerGroup.ID).
+		// Empty (default) = the original/default window.
+		GroupID string `json:"group_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -71,7 +74,7 @@ func (h *timerHandler) startCustom(w http.ResponseWriter, r *http.Request) {
 	// Alerts pass straight through to the timer's TimerAlerts (nil = silent).
 	// Color "" (default) keeps the overlay's automatic bar color.
 	h.engine.StartExternal(req.Name, string(spelltimer.CategoryCustom),
-		req.DurationSecs, 0, time.Now(), req.Alerts, 0, "", req.Color, false)
+		req.DurationSecs, 0, time.Now(), req.Alerts, 0, "", req.Color, false, req.GroupID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
