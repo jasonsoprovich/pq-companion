@@ -336,7 +336,15 @@ function setOverlayLocked(name: WindowKey, locked: boolean): void {
 // made at boot, before the backend port is even resolved. `overlays` is the
 // last-known open set (canonical overlay names, excluding the always-on
 // trigger overlay); it's refreshed when the toggle is enabled and again on quit.
-type AutoOpenStore = { enabled: boolean; overlays: OverlayName[] }
+//
+// A named Custom Timers window can't be represented as a bare OverlayName (its
+// identity is a groupId, and re-creating it needs a display name too, which the
+// backend — not reachable this early in boot — would otherwise have to supply).
+// So an entry is either a plain OverlayName (unchanged, existing behavior) or an
+// object carrying the group's WindowKey + the name last seen when it was open.
+type AutoOpenGroupEntry = { key: `customTimer:${string}`; groupName: string }
+type AutoOpenEntry = OverlayName | AutoOpenGroupEntry
+type AutoOpenStore = { enabled: boolean; overlays: AutoOpenEntry[] }
 
 function autoOpenFilePath(): string {
   return join(app.getPath('userData'), 'overlayAutoOpen.json')
@@ -586,9 +594,17 @@ let detrimTimerWindow: BrowserWindow | null = null
 let customTimerWindow: BrowserWindow | null = null
 // Named Custom Timers windows (one per user-created timer group), keyed by
 // TimerGroup.id. Separate from customTimerWindow (the original/default
-// window) so its behavior — auto-open on launch, move-to-display,
-// reset-position — is entirely untouched by this additive feature.
+// window) so its own behavior stays untouched by this additive feature.
+// Named windows get full parity with every other overlay — auto-open on
+// launch, move-to-display, reset-position — via the WindowKey-aware
+// versions of those systems below (see overlayWindowByName, isValidWindowKey).
 const customTimerGroupWindows = new Map<string, BrowserWindow>()
+// Group name for each currently-open group window, tracked alongside the
+// window itself so "restore on launch" can re-create it (createCustomTimerGroupOverlay
+// needs a display name, not just the id) without querying the Go backend —
+// which isn't up yet this early in boot. Refreshed every time the window is
+// (re)opened, so it's current as of the last open even across a rename.
+const customTimerGroupNames = new Map<string, string>()
 let triggerOverlayWindow: BrowserWindow | null = null
 let npcOverlayWindow: BrowserWindow | null = null
 let threatOverlayWindow: BrowserWindow | null = null
@@ -963,7 +979,7 @@ function setupAutoUpdater(): void {
 
 function closeAllOverlays(): void {
   // Capture the open set for "restore on launch" before we tear the windows
-  // down — once destroyed, currentlyOpenOverlayNames() would report nothing.
+  // down — once destroyed, currentlyOpenAutoOpenEntries() would report nothing.
   snapshotAutoOpenOverlays()
   for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, customTimerWindow, triggerOverlayWindow, npcOverlayWindow, threatOverlayWindow, rollTrackerWindow, respawnTimerWindow, chChainWindow, chMetronomeWindow]) {
     if (win && !win.isDestroyed()) win.destroy()
@@ -1429,7 +1445,7 @@ function createCustomTimerOverlay(): void {
 // customTimerWindowKey returns the bounds/lock persistence key for a named
 // timer group's window. Empty groupId is intentionally not routed here —
 // callers use createCustomTimerOverlay()/'customTimer' for the default window.
-function customTimerWindowKey(groupId: string): WindowKey {
+function customTimerWindowKey(groupId: string): `customTimer:${string}` {
   return `customTimer:${groupId}`
 }
 
@@ -1440,6 +1456,7 @@ function customTimerWindowKey(groupId: string): WindowKey {
 // renderer fetches the authoritative group list itself.
 function createCustomTimerGroupOverlay(groupId: string, groupName: string): void {
   if (!groupId) return
+  customTimerGroupNames.set(groupId, groupName)
   const existing = customTimerGroupWindows.get(groupId)
   if (existing && !existing.isDestroyed()) {
     existing.focus()
@@ -1493,6 +1510,10 @@ function createCustomTimerGroupOverlay(groupId: string, groupName: string): void
 
   win.on('closed', () => {
     customTimerGroupWindows.delete(groupId)
+    // Name is kept even after close — resetOverlayPosition/move-to-display
+    // work on closed overlays too (matching every other overlay type), and
+    // a closed-but-still-in-the-auto-open-snapshot group needs its name to
+    // survive until the next explicit open/snapshot overwrites it.
   })
 }
 
@@ -2339,7 +2360,7 @@ ipcMain.handle('overlay:auto-open:set-enabled', (_event, enabled: boolean) => {
   // Snapshot the currently-open set the moment the user turns this on, so even
   // an abrupt exit (no before-quit) still restores something sensible. The set
   // is refreshed again on quit to track windows opened/closed afterwards.
-  if (store.enabled) store.overlays = currentlyOpenOverlayNames()
+  if (store.enabled) store.overlays = currentlyOpenAutoOpenEntries()
   saveAutoOpenStore(store)
 })
 
@@ -2353,7 +2374,25 @@ ipcMain.handle('overlay:auto-open:set-enabled', (_event, enabled: boolean) => {
 // "trigger" overlay, which has no free position to reset.
 const RESETTABLE_OVERLAYS = Object.keys(OVERLAY_DEFAULTS) as Array<Exclude<OverlayName, 'trigger'>>
 
-function overlayWindowByName(name: OverlayName): BrowserWindow | null {
+// True for any fixed OverlayName in RESETTABLE_OVERLAYS, or a named Custom
+// Timers group's WindowKey (`customTimer:<groupId>`). Gates every IPC handler
+// below (reset-position, move-to-display, placing mode) so a bogus/unrelated
+// name string can't reach overlayWindowByName.
+function isValidWindowKey(name: string): name is WindowKey {
+  return (RESETTABLE_OVERLAYS as string[]).includes(name) || name.startsWith('customTimer:')
+}
+
+// Default bounds for a fresh/reset window. Named groups all share the plain
+// 'customTimer' default size — there's no per-group default to look up.
+function defaultBoundsFor(name: WindowKey): Bounds {
+  if (name.startsWith('customTimer:')) return OVERLAY_DEFAULTS.customTimer
+  return OVERLAY_DEFAULTS[name as Exclude<OverlayName, 'trigger'>]
+}
+
+function overlayWindowByName(name: WindowKey): BrowserWindow | null {
+  if (name.startsWith('customTimer:')) {
+    return customTimerGroupWindows.get(name.slice('customTimer:'.length)) ?? null
+  }
   switch (name) {
     case 'dps': return dpsOverlayWindow
     case 'hps': return hpsOverlayWindow
@@ -2390,14 +2429,22 @@ function createOverlayByName(name: OverlayName): void {
   }
 }
 
-// Canonical names of every popout overlay currently open (excludes the
-// always-on trigger overlay, which isn't user-toggled). Used to snapshot what
-// to restore on the next launch.
-function currentlyOpenOverlayNames(): OverlayName[] {
-  return RESETTABLE_OVERLAYS.filter((name) => {
+// Every popout overlay currently open (excludes the always-on trigger
+// overlay, which isn't user-toggled) — fixed overlay types plus any open
+// named Custom Timers group windows. Used to snapshot what to restore on
+// the next launch.
+function currentlyOpenAutoOpenEntries(): AutoOpenEntry[] {
+  const fixed: AutoOpenEntry[] = RESETTABLE_OVERLAYS.filter((name) => {
     const win = overlayWindowByName(name)
     return !!win && !win.isDestroyed()
   })
+  const groups: AutoOpenEntry[] = []
+  for (const [groupId, win] of customTimerGroupWindows) {
+    if (win && !win.isDestroyed()) {
+      groups.push({ key: customTimerWindowKey(groupId), groupName: customTimerGroupNames.get(groupId) ?? '' })
+    }
+  }
+  return [...fixed, ...groups]
 }
 
 // Snapshot which popout overlays are open so "restore overlays on launch" can
@@ -2413,7 +2460,7 @@ function snapshotAutoOpenOverlays(): void {
   const store = loadAutoOpenStore()
   if (!store.enabled) return
   didSnapshotAutoOpen = true
-  store.overlays = currentlyOpenOverlayNames()
+  store.overlays = currentlyOpenAutoOpenEntries()
   saveAutoOpenStore(store)
 }
 
@@ -2435,8 +2482,8 @@ function centeredOnPrimary(size: Bounds): Bounds {
 // locked state, so a stuck "locked + off-screen" overlay becomes immediately
 // movable again. Updates the saved bounds too, so an overlay that's currently
 // closed also re-opens centered.
-function resetOverlayPosition(name: Exclude<OverlayName, 'trigger'>): void {
-  const target = centeredOnPrimary(OVERLAY_DEFAULTS[name])
+function resetOverlayPosition(name: WindowKey): void {
+  const target = centeredOnPrimary(defaultBoundsFor(name))
 
   // Persist centered bounds and clear the lock regardless of open/closed state.
   const store = loadBoundsStore()
@@ -2456,13 +2503,18 @@ function resetOverlayPosition(name: Exclude<OverlayName, 'trigger'>): void {
 }
 
 ipcMain.handle('overlay:reset-position', (_event, name: string) => {
-  if ((RESETTABLE_OVERLAYS as string[]).includes(name)) {
-    resetOverlayPosition(name as Exclude<OverlayName, 'trigger'>)
-  }
+  if (isValidWindowKey(name)) resetOverlayPosition(name)
 })
 
 ipcMain.handle('overlay:reset-all-positions', () => {
   for (const name of RESETTABLE_OVERLAYS) resetOverlayPosition(name)
+  // Only currently-open named groups — Electron has no record of a group
+  // that's never been opened this session (that list lives in the Go
+  // backend). A closed group's stale position can still be reset
+  // individually once it's known to the frontend (Timer Groups screen).
+  for (const groupId of customTimerGroupWindows.keys()) {
+    resetOverlayPosition(customTimerWindowKey(groupId))
+  }
 })
 
 // Center a window of the given size on a specific display's work area.
@@ -2488,6 +2540,16 @@ ipcMain.handle('overlay:display-ids', () => {
     const b = win && !win.isDestroyed() ? win.getBounds() : store[name] ?? OVERLAY_DEFAULTS[name]
     out[name] = screen.getDisplayMatching(b).id
   }
+  // Named Custom Timers windows: report for every key ever positioned (open
+  // or closed), same as fixed overlays above, so a closed group's monitor
+  // picker still shows where it'll reopen.
+  for (const key of Object.keys(store)) {
+    if (!key.startsWith('customTimer:')) continue
+    const windowKey = key as WindowKey
+    const win = overlayWindowByName(windowKey)
+    const b = win && !win.isDestroyed() ? win.getBounds() : store[windowKey] ?? OVERLAY_DEFAULTS.customTimer
+    out[key] = screen.getDisplayMatching(b).id
+  }
   return out
 })
 
@@ -2500,10 +2562,10 @@ ipcMain.handle('overlay:display-ids', () => {
 // which overlays are placing and notifies their windows.
 const placingOverlays = new Set<string>()
 
-function setPlacing(name: string, on: boolean): void {
+function setPlacing(name: WindowKey, on: boolean): void {
   if (on) placingOverlays.add(name)
   else placingOverlays.delete(name)
-  const win = overlayWindowByName(name as OverlayName)
+  const win = overlayWindowByName(name)
   if (win && !win.isDestroyed()) {
     if (on) {
       // Re-home an off-screen overlay onto the primary monitor first so its
@@ -2516,10 +2578,10 @@ function setPlacing(name: string, on: boolean): void {
 }
 
 ipcMain.handle('overlay:place:start', (_event, name: string) => {
-  if ((RESETTABLE_OVERLAYS as string[]).includes(name)) setPlacing(name, true)
+  if (isValidWindowKey(name)) setPlacing(name, true)
 })
 ipcMain.handle('overlay:place:stop', (_event, name: string) => {
-  if ((RESETTABLE_OVERLAYS as string[]).includes(name)) setPlacing(name, false)
+  if (isValidWindowKey(name)) setPlacing(name, false)
 })
 // Called by the overlay's own "Done" button — resolve the window to its name.
 ipcMain.handle('overlay:place:stop-self', (event) => {
@@ -2541,15 +2603,14 @@ ipcMain.handle('overlay:place:names', () => Array.from(placingOverlays))
 // reliable multi-monitor path — dragging frameless always-on-top windows
 // across monitors is unreliable on Windows, so users pick a monitor instead.
 ipcMain.handle('overlay:move-to-display', (_event, name: string, displayId: number) => {
-  if (!(RESETTABLE_OVERLAYS as string[]).includes(name)) return
+  if (!isValidWindowKey(name)) return
   const target = screen.getAllDisplays().find((d) => d.id === displayId)
   if (!target) return
-  const oname = name as Exclude<OverlayName, 'trigger'>
-  const win = overlayWindowByName(oname)
-  const size = win && !win.isDestroyed() ? win.getBounds() : loadBoundsStore()[oname] ?? OVERLAY_DEFAULTS[oname]
+  const win = overlayWindowByName(name)
+  const size = win && !win.isDestroyed() ? win.getBounds() : loadBoundsStore()[name] ?? defaultBoundsFor(name)
   const bounds = centeredOnDisplay(target, { width: size.width, height: size.height })
   const store = loadBoundsStore()
-  store[oname] = bounds
+  store[name] = bounds
   saveBoundsStore(store)
   if (win && !win.isDestroyed()) win.setBounds(bounds)
 })
@@ -2591,6 +2652,7 @@ ipcMain.handle('overlay:lock:set', (event, locked: boolean) => {
 function broadcastPositionMode(): void {
   const targets: Array<BrowserWindow | null> = [mainWindow]
   for (const name of RESETTABLE_OVERLAYS) targets.push(overlayWindowByName(name))
+  for (const win of customTimerGroupWindows.values()) targets.push(win)
   for (const win of targets) {
     if (win && !win.isDestroyed()) {
       win.webContents.send('overlay:position-mode-changed', overlayPositionMode)
@@ -2937,12 +2999,20 @@ app.whenReady().then(async () => {
   // Restore overlays on launch: if the user enabled it, re-open the popout
   // windows that were open when they last quit. Each restores to its saved
   // bounds/lock state via the normal create path, so they come back in place.
+  // A named group entry carries its own display name (see AutoOpenGroupEntry)
+  // so this needs no backend round-trip — the backend isn't reachable yet.
   const autoOpen = loadAutoOpenStore()
   if (autoOpen.enabled) {
-    for (const name of autoOpen.overlays) {
-      if (name === 'trigger') continue
-      const win = overlayWindowByName(name)
-      if (!win || win.isDestroyed()) createOverlayByName(name)
+    for (const entry of autoOpen.overlays) {
+      if (typeof entry === 'string') {
+        if (entry === 'trigger') continue
+        const win = overlayWindowByName(entry)
+        if (!win || win.isDestroyed()) createOverlayByName(entry)
+      } else if (entry.key.startsWith('customTimer:')) {
+        const groupId = entry.key.slice('customTimer:'.length)
+        const win = customTimerGroupWindows.get(groupId)
+        if (!win || win.isDestroyed()) createCustomTimerGroupOverlay(groupId, entry.groupName)
+      }
     }
   }
 

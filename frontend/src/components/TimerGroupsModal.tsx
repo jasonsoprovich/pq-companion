@@ -1,9 +1,16 @@
-import React, { useState } from 'react'
-import { X, Plus, Pencil, Trash2, ExternalLink, Check, Hourglass } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { X, Plus, Pencil, Trash2, ExternalLink, Check, Hourglass, Crosshair } from 'lucide-react'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { ConfirmModal } from './ConfirmModal'
 import { createTimerGroup, renameTimerGroup, deleteTimerGroup } from '../services/api'
 import type { TimerGroup } from '../types/trigger'
+
+// Same bounds/lock persistence key the main process uses for a named group's
+// window (see electron/main/index.ts customTimerWindowKey) — shared here so
+// reset-position/move-to-display target the right window.
+function groupWindowKey(groupId: string): string {
+  return `customTimer:${groupId}`
+}
 
 interface TimerGroupsModalProps {
   groups: TimerGroup[]
@@ -58,6 +65,27 @@ export default function TimerGroupsModal({ groups, onChanged, onClose }: TimerGr
   const [deletingGroup, setDeletingGroup] = useState<TimerGroup | null>(null)
   const [busyID, setBusyID] = useState<string | null>(null)
 
+  // Which monitor each group's window currently lives on (open or closed —
+  // see the main process's overlay:display-ids), mirroring Settings' Overlay
+  // Lock Behaviour card. Only shown when more than one display is present.
+  const [displays, setDisplays] = useState<Array<{ id: number; label: string; isPrimary: boolean }>>([])
+  const [windowDisplays, setWindowDisplays] = useState<Record<string, number>>({})
+  useEffect(() => {
+    let cancelled = false
+    window.electron?.screen?.listDisplays?.()
+      .then((list) => { if (!cancelled) setDisplays(list ?? []) })
+      .catch(() => {})
+    const poll = (): void => {
+      window.electron?.overlay?.displayIds?.()
+        .then((m) => { if (!cancelled && m) setWindowDisplays(m) })
+        .catch(() => {})
+    }
+    poll()
+    const id = setInterval(poll, 1500)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [])
+  const multiMonitor = displays.length > 1
+
   const handleAdd = (): void => {
     const trimmed = newName.trim()
     if (!trimmed) return
@@ -107,6 +135,11 @@ export default function TimerGroupsModal({ groups, onChanged, onClose }: TimerGr
 
   const popOutDefault = (): void => { window.electron?.overlay?.toggleCustomTimer() }
   const popOutGroup = (g: TimerGroup): void => { window.electron?.overlay?.toggleCustomTimerGroup(g.id, g.name) }
+  const resetGroupPosition = (g: TimerGroup): void => { window.electron?.overlay?.resetPosition?.(groupWindowKey(g.id)) }
+  const moveGroupToDisplay = (g: TimerGroup, displayId: number): void => {
+    window.electron?.overlay?.moveToDisplay?.(groupWindowKey(g.id), displayId)
+    setWindowDisplays((m) => ({ ...m, [groupWindowKey(g.id)]: displayId })) // optimistic; poll reconciles
+  }
 
   return (
     <>
@@ -214,6 +247,30 @@ export default function TimerGroupsModal({ groups, onChanged, onClose }: TimerGr
                     <span className="text-[10px] shrink-0" style={{ color: 'var(--color-muted)' }}>
                       {g.count} trigger{g.count === 1 ? '' : 's'}
                     </span>
+                    {multiMonitor && (
+                      <select
+                        value={windowDisplays[groupWindowKey(g.id)] ?? ''}
+                        onChange={(e) => moveGroupToDisplay(g, Number(e.target.value))}
+                        className="rounded px-1 py-1 text-[11px] outline-none"
+                        style={{
+                          maxWidth: 88,
+                          backgroundColor: 'var(--color-surface)',
+                          border: '1px solid var(--color-border)',
+                          color: 'var(--color-foreground)',
+                          cursor: 'pointer',
+                        }}
+                        title={`Send ${g.name} to a specific monitor`}
+                      >
+                        {displays.map((d, i) => (
+                          <option key={d.id} value={d.id}>
+                            {d.label || `Display ${i + 1}`}{d.isPrimary ? ' (primary)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <RowIconButton onClick={() => resetGroupPosition(g)} title="Reset position — recenter on the primary monitor and unlock">
+                      <Crosshair size={12} />
+                    </RowIconButton>
                     <RowIconButton onClick={() => popOutGroup(g)} title="Open/close this window">
                       <ExternalLink size={12} />
                     </RowIconButton>
