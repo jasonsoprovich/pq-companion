@@ -322,7 +322,10 @@ export default function CustomTimerWindowPage(): React.ReactElement {
           </button>
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
-            onClick={() => window.electron?.overlay?.closeCustomTimer()}
+            onClick={() => {
+              if (groupId) window.electron?.overlay?.closeCustomTimerGroup(groupId)
+              else window.electron?.overlay?.closeCustomTimer()
+            }}
             style={{
               fontSize: 11,
               lineHeight: 1,
@@ -379,73 +382,77 @@ export default function CustomTimerWindowPage(): React.ReactElement {
         )}
       </div>
 
-      {/* ── Quick-add form — fades with the rest of the chrome ───────────── */}
-      <form
-        onSubmit={handleAdd}
-        className="no-drag"
-        style={{
-          display: 'flex',
-          gap: 4,
-          padding: '5px 8px',
-          borderTop: '1px solid rgba(255,255,255,0.1)',
-          backgroundColor: 'rgba(255,255,255,0.04)',
-          flexShrink: 0,
-          opacity: chrome ? 1 : 0,
-          pointerEvents: chrome ? 'auto' : 'none',
-          transition: 'opacity 0.4s ease',
-        }}
-      >
-        <input
-          type="text"
-          value={newName}
-          onChange={(e) => { setNewName(e.target.value); setAddError(false) }}
-          placeholder="Timer name"
-          style={{ ...quickInputStyle, flex: 1 }}
-        />
-        <input
-          type="text"
-          value={newDuration}
-          onChange={(e) => { setNewDuration(e.target.value); setAddError(false) }}
-          placeholder="5m / 300 / 6:40"
-          title="Duration: seconds (300), colon notation (6:40), or units (6m40s)"
-          style={{ ...quickInputStyle, width: 78 }}
-        />
-        <button
-          type="button"
-          onClick={() => setAlertOverride(!bellOn)}
-          title={bellOn ? 'Alert when this timer finishes (click to mute)' : 'No alert for new timers (click to enable)'}
-          aria-pressed={bellOn}
+      {/* ── Quick-add form — default window only. Named group windows are
+          fed exclusively by triggers assigned to them (see the trigger
+          editor's "Custom Timers window" picker) — no manual add here. ── */}
+      {!groupId && (
+        <form
+          onSubmit={handleAdd}
+          className="no-drag"
           style={{
             display: 'flex',
-            alignItems: 'center',
-            padding: '2px 6px',
-            borderRadius: 3,
-            border: '1px solid rgba(255,255,255,0.15)',
-            backgroundColor: bellOn ? 'rgba(56,189,248,0.2)' : 'rgba(255,255,255,0.04)',
-            color: bellOn ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.4)',
-            cursor: 'pointer',
+            gap: 4,
+            padding: '5px 8px',
+            borderTop: '1px solid rgba(255,255,255,0.1)',
+            backgroundColor: 'rgba(255,255,255,0.04)',
             flexShrink: 0,
+            opacity: chrome ? 1 : 0,
+            pointerEvents: chrome ? 'auto' : 'none',
+            transition: 'opacity 0.4s ease',
           }}
         >
-          {bellOn ? <Bell size={12} /> : <BellOff size={12} />}
-        </button>
-        <button
-          type="submit"
-          style={{
-            fontSize: 11,
-            padding: '2px 8px',
-            borderRadius: 3,
-            border: '1px solid rgba(255,255,255,0.15)',
-            backgroundColor: 'rgba(56,189,248,0.2)',
-            color: 'rgba(255,255,255,0.85)',
-            cursor: 'pointer',
-            lineHeight: 1.4,
-            flexShrink: 0,
-          }}
-        >
-          Start
-        </button>
-      </form>
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => { setNewName(e.target.value); setAddError(false) }}
+            placeholder="Timer name"
+            style={{ ...quickInputStyle, flex: 1 }}
+          />
+          <input
+            type="text"
+            value={newDuration}
+            onChange={(e) => { setNewDuration(e.target.value); setAddError(false) }}
+            placeholder="5m / 300 / 6:40"
+            title="Duration: seconds (300), colon notation (6:40), or units (6m40s)"
+            style={{ ...quickInputStyle, width: 78 }}
+          />
+          <button
+            type="button"
+            onClick={() => setAlertOverride(!bellOn)}
+            title={bellOn ? 'Alert when this timer finishes (click to mute)' : 'No alert for new timers (click to enable)'}
+            aria-pressed={bellOn}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '2px 6px',
+              borderRadius: 3,
+              border: '1px solid rgba(255,255,255,0.15)',
+              backgroundColor: bellOn ? 'rgba(56,189,248,0.2)' : 'rgba(255,255,255,0.04)',
+              color: bellOn ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.4)',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            {bellOn ? <Bell size={12} /> : <BellOff size={12} />}
+          </button>
+          <button
+            type="submit"
+            style={{
+              fontSize: 11,
+              padding: '2px 8px',
+              borderRadius: 3,
+              border: '1px solid rgba(255,255,255,0.15)',
+              backgroundColor: 'rgba(56,189,248,0.2)',
+              color: 'rgba(255,255,255,0.85)',
+              cursor: 'pointer',
+              lineHeight: 1.4,
+              flexShrink: 0,
+            }}
+          >
+            Start
+          </button>
+        </form>
+      )}
     </div>
   )
 }
