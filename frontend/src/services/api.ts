@@ -1725,6 +1725,24 @@ export function getCharacterUpgrades(
   return get<UpgradesResponse>(`/api/characters/${id}/upgrades?${p.toString()}`)
 }
 
+export interface EquippedSlotEntry {
+  slot: string
+  slot_label: string
+  item_ids: number[]
+}
+
+export interface EquippedInSlotsResponse {
+  has_gear: boolean
+  slots: EquippedSlotEntry[]
+}
+
+// getEquippedInSlots returns what a character currently has worn in each
+// physical slot matching an item's slots bitmask — the baseline the item
+// compare view diffs a candidate item against.
+export function getEquippedInSlots(charID: number, slotsMask: number): Promise<EquippedInSlotsResponse> {
+  return get<EquippedInSlotsResponse>(`/api/characters/${charID}/equipped-in-slots?slots=${slotsMask}`)
+}
+
 export function getCharacterUpgradeWeights(id: number): Promise<UpgradeWeightsResponse> {
   return get<UpgradeWeightsResponse>(`/api/characters/${id}/upgrade-weights`)
 }

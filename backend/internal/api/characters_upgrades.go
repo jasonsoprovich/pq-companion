@@ -195,6 +195,71 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// equippedSlotEntry is one physical slot's worn item, for the item-compare
+// "vs equipped" view. ItemIDs has 0 or 1 entries — empty when that slot is bare.
+type equippedSlotEntry struct {
+	Slot      string `json:"slot"`
+	SlotLabel string `json:"slot_label"`
+	ItemIDs   []int  `json:"item_ids"`
+}
+
+type equippedInSlotsResponse struct {
+	HasGear bool                 `json:"has_gear"`
+	Slots   []equippedSlotEntry `json:"slots"`
+}
+
+// equippedInSlots handles GET /api/characters/{id}/equipped-in-slots?slots=<mask>.
+// Given an item's slots bitmask (item.slots), it returns what the character
+// currently has worn in each matching physical slot — the baseline the item
+// compare view diffs a candidate item against. Item stats aren't included
+// here; the frontend fetches full item data via GET /items/{id} so the diff
+// runs through the same renderer as a plain item-vs-item compare.
+func (h *charactersHandler) equippedInSlots(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	char, ok, err := h.store.Get(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "character not found")
+		return
+	}
+	cfg := h.mgr.Get()
+	if cfg.EQPath == "" {
+		writeError(w, http.StatusBadRequest, "eq_path not configured")
+		return
+	}
+	mask, err := strconv.Atoi(r.URL.Query().Get("slots"))
+	if err != nil || mask <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid or missing slots mask")
+		return
+	}
+
+	byLoc, hasGear := h.loadEquipped(cfg.EQPath, char.Name)
+	worn := h.resolveWornItems(byLoc)
+	wc := h.newWornCache()
+
+	slots := make([]equippedSlotEntry, 0)
+	for _, s := range upgradeSlots {
+		if s.Mask&mask == 0 {
+			continue
+		}
+		allWorn := h.equippedItemsForSlot(byLoc, s, wc, worn)
+		ids := make([]int, 0, 1)
+		if s.Index < len(allWorn) {
+			ids = append(ids, allWorn[s.Index].ID)
+		}
+		slots = append(slots, equippedSlotEntry{Slot: s.Key, SlotLabel: s.Label, ItemIDs: ids})
+	}
+
+	writeJSON(w, http.StatusOK, equippedInSlotsResponse{HasGear: hasGear, Slots: slots})
+}
+
 // overviewSlot is one slot's best upgrade in the all-slots overview.
 type overviewSlot struct {
 	Slot         string               `json:"slot"`
