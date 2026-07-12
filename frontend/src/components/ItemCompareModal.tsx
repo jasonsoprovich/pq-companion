@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Plus, X } from 'lucide-react'
+import { Pin, PinOff, Plus, X } from 'lucide-react'
 import type { Item } from '../types/item'
 import {
   activeStatRows,
@@ -9,6 +9,7 @@ import {
   hasCombatRow,
   weaponRatio,
 } from '../lib/itemCompare'
+import { ITEM_SLOTS, primarySlotFor } from '../lib/itemSlots'
 import { getEquippedInSlots, getItem, listCharacters, type Character } from '../services/api'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { ItemIcon } from './Icon'
@@ -30,18 +31,29 @@ export default function ItemCompareModal({ open, initialItem, onClose }: ItemCom
   const [items, setItems] = useState<Item[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
 
+  // The slot every column is compared within — drives both "Add Item" search
+  // results and which equipped item (if any) is fetched as the baseline.
+  // Changing it drops any compared item that no longer fits.
+  const [slotFilter, setSlotFilter] = useState<number | null>(null)
+  // In freeform mode (no character selected) there's no automatic baseline,
+  // so the user can pin one of the compared items as the delta reference.
+  const [pinnedItemID, setPinnedItemID] = useState<number | null>(null)
+
   const [characters, setCharacters] = useState<Character[]>([])
   const [selectedCharID, setSelectedCharID] = useState<number | null>(null)
   const [baselineItem, setBaselineItem] = useState<Item | null>(null)
   const [baselineLabel, setBaselineLabel] = useState<string | null>(null)
   const [equippedState, setEquippedState] = useState<EquippedState>('idle')
-  const autoSelected = useRef(false)
+  const autoSelectedChar = useRef(false)
 
-  // Reset to just the seed item each time the modal is (re)opened for a new item.
+  // Reset to just the seed item (and its slot) each time the modal is
+  // (re)opened for a new item.
   const [seededFor, setSeededFor] = useState<number | null>(null)
   if (open && initialItem && seededFor !== initialItem.id) {
     setSeededFor(initialItem.id)
     setItems([initialItem])
+    setSlotFilter(primarySlotFor(initialItem.slots)?.value ?? null)
+    setPinnedItemID(null)
   }
 
   // Load the character list once, defaulting to the app's active character.
@@ -51,8 +63,8 @@ export default function ItemCompareModal({ open, initialItem, onClose }: ItemCom
     listCharacters().then((r) => {
       if (cancelled) return
       setCharacters(r.characters)
-      if (!autoSelected.current) {
-        autoSelected.current = true
+      if (!autoSelectedChar.current) {
+        autoSelectedChar.current = true
         const match = r.characters.find((c) => c.name === active)
         if (match) setSelectedCharID(match.id)
       }
@@ -60,11 +72,10 @@ export default function ItemCompareModal({ open, initialItem, onClose }: ItemCom
     return () => { cancelled = true }
   }, [open, active])
 
-  // Compare-vs-equipped baseline is keyed off the ORIGINAL viewed item's
-  // slot(s) — the item the user opened Compare from — not every column
-  // currently in the table, since candidates are expected to share its slot.
+  // Compare-vs-equipped baseline follows the current slot filter, so pivoting
+  // the slot (e.g. Legs → Chest) re-fetches what's equipped in the new slot.
   useEffect(() => {
-    if (!open || !selectedCharID || !initialItem) {
+    if (!open || !selectedCharID || slotFilter === null) {
       setBaselineItem(null)
       setBaselineLabel(null)
       setEquippedState('idle')
@@ -72,7 +83,7 @@ export default function ItemCompareModal({ open, initialItem, onClose }: ItemCom
     }
     let cancelled = false
     setEquippedState('loading')
-    getEquippedInSlots(selectedCharID, initialItem.slots)
+    getEquippedInSlots(selectedCharID, slotFilter)
       .then((resp) => {
         if (cancelled) return
         if (!resp.has_gear) {
@@ -97,7 +108,7 @@ export default function ItemCompareModal({ open, initialItem, onClose }: ItemCom
       })
       .catch(() => { if (!cancelled) setEquippedState('error') })
     return () => { cancelled = true }
-  }, [open, selectedCharID, initialItem])
+  }, [open, selectedCharID, slotFilter])
 
   useEffect(() => {
     if (!open) return
@@ -119,10 +130,27 @@ export default function ItemCompareModal({ open, initialItem, onClose }: ItemCom
 
   function removeItem(id: number) {
     setItems((cur) => cur.filter((i) => i.id !== id))
+    if (pinnedItemID === id) setPinnedItemID(null)
+  }
+
+  function changeSlot(rawValue: string) {
+    const newSlot = rawValue === '' ? null : Number(rawValue)
+    setSlotFilter(newSlot)
+    const kept = newSlot === null ? items : items.filter((i) => (i.slots & newSlot) !== 0)
+    setItems(kept)
+    if (pinnedItemID !== null && !kept.some((i) => i.id === pinnedItemID)) setPinnedItemID(null)
+  }
+
+  function togglePin(id: number) {
+    setPinnedItemID((cur) => (cur === id ? null : id))
   }
 
   const rows = activeStatRows(baselineItem ? [...items, baselineItem] : items)
   const showCombatRow = items.some(hasCombatRow) || (baselineItem != null && hasCombatRow(baselineItem))
+
+  // The pinned item only serves as the delta reference in freeform mode — an
+  // equipped baseline (from a selected character) always takes priority.
+  const pinnedItem = !baselineItem ? items.find((i) => i.id === pinnedItemID) ?? null : null
 
   // "Best" highlighting only considers the candidate columns, not the
   // equipped baseline — the baseline is a reference point, not a contender.
@@ -152,19 +180,35 @@ export default function ItemCompareModal({ open, initialItem, onClose }: ItemCom
           </button>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-5 py-2 text-xs" style={{ borderColor: 'var(--color-border)' }}>
-          <span style={{ color: 'var(--color-muted-foreground)' }}>Compare vs equipped:</span>
-          <select
-            value={selectedCharID ?? ''}
-            onChange={(e) => setSelectedCharID(e.target.value ? Number(e.target.value) : null)}
-            className="rounded px-2 py-1 text-xs outline-none"
-            style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
-          >
-            <option value="">— None —</option>
-            {characters.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+        <div className="flex shrink-0 flex-wrap items-center gap-4 border-b px-5 py-2 text-xs" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="flex items-center gap-2">
+            <span style={{ color: 'var(--color-muted-foreground)' }}>Slot:</span>
+            <select
+              value={slotFilter ?? ''}
+              onChange={(e) => changeSlot(e.target.value)}
+              className="rounded px-2 py-1 text-xs outline-none"
+              style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+            >
+              <option value="">Any</option>
+              {ITEM_SLOTS.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span style={{ color: 'var(--color-muted-foreground)' }}>Compare vs equipped:</span>
+            <select
+              value={selectedCharID ?? ''}
+              onChange={(e) => setSelectedCharID(e.target.value ? Number(e.target.value) : null)}
+              className="rounded px-2 py-1 text-xs outline-none"
+              style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+            >
+              <option value="">— None —</option>
+              {characters.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
           {equippedState === 'loading' && (
             <span style={{ color: 'var(--color-muted)' }}>Loading…</span>
           )}
@@ -208,21 +252,44 @@ export default function ItemCompareModal({ open, initialItem, onClose }: ItemCom
                       </div>
                     </th>
                   )}
-                  {items.map((item) => (
-                    <th key={item.id} className="min-w-[10rem] px-2 pb-2 text-left align-top">
-                      <div className="flex items-start justify-between gap-1">
-                        <div className="flex items-center gap-2">
-                          <ItemIcon id={item.icon} name={item.name} size={24} />
-                          <span className="text-xs font-bold leading-tight" style={{ color: 'var(--color-primary)' }}>
-                            {item.name}
-                          </span>
+                  {items.map((item) => {
+                    const isPinned = pinnedItem?.id === item.id
+                    return (
+                      <th
+                        key={item.id}
+                        className="min-w-[10rem] px-2 pb-2 text-left align-top"
+                        style={isPinned ? { borderBottom: '2px solid var(--color-primary)' } : undefined}
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="flex items-center gap-2">
+                            <ItemIcon id={item.icon} name={item.name} size={24} />
+                            <div className="min-w-0">
+                              {isPinned && (
+                                <div className="truncate text-[9px] font-semibold uppercase tracking-wide" style={{ color: 'var(--color-primary)' }}>
+                                  Reference
+                                </div>
+                              )}
+                              <span className="text-xs font-bold leading-tight" style={{ color: 'var(--color-primary)' }}>
+                                {item.name}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1">
+                            {!baselineItem && (
+                              <button onClick={() => togglePin(item.id)} title={isPinned ? 'Unpin reference' : 'Pin as reference'}>
+                                {isPinned
+                                  ? <PinOff size={12} style={{ color: 'var(--color-primary)' }} />
+                                  : <Pin size={12} style={{ color: 'var(--color-muted)' }} />}
+                              </button>
+                            )}
+                            <button onClick={() => removeItem(item.id)} title="Remove from compare">
+                              <X size={12} style={{ color: 'var(--color-muted)' }} />
+                            </button>
+                          </div>
                         </div>
-                        <button onClick={() => removeItem(item.id)} title="Remove from compare">
-                          <X size={12} style={{ color: 'var(--color-muted)' }} />
-                        </button>
-                      </div>
-                    </th>
-                  ))}
+                      </th>
+                    )
+                  })}
                   {items.length < MAX_COMPARE_ITEMS && (
                     <th className="px-2 pb-2 align-top">
                       <button
@@ -263,19 +330,21 @@ export default function ItemCompareModal({ open, initialItem, onClose }: ItemCom
                 )}
                 {rows.map((row) => {
                   const best = bestValue(row.get)
-                  const baselineValue = baselineItem ? row.get(baselineItem) : null
+                  const referenceItem = baselineItem ?? pinnedItem
+                  const referenceValue = referenceItem ? row.get(referenceItem) : null
                   return (
                     <tr key={row.key} style={{ borderTop: '1px solid var(--color-border)' }}>
                       <td className="px-2 py-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>{row.label}</td>
                       {baselineItem && (
                         <td className="px-2 py-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                          {baselineValue !== 0 ? baselineValue : '—'}
+                          {referenceValue !== 0 ? referenceValue : '—'}
                         </td>
                       )}
                       {items.map((item) => {
                         const value = row.get(item)
                         const isBest = value === best && value !== 0
-                        const delta = baselineValue !== null ? value - baselineValue : null
+                        const isReference = referenceItem?.id === item.id
+                        const delta = referenceValue !== null && !isReference ? value - referenceValue : null
                         return (
                           <td
                             key={item.id}
@@ -304,6 +373,7 @@ export default function ItemCompareModal({ open, initialItem, onClose }: ItemCom
       <ItemSearchModal
         open={pickerOpen}
         title="Add item to compare"
+        slotFilter={slotFilter ?? undefined}
         onSelect={addItem}
         onClose={() => setPickerOpen(false)}
       />

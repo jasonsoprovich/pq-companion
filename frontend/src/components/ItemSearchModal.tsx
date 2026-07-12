@@ -9,6 +9,8 @@ interface ItemSearchModalProps {
   open: boolean
   /** Optional title above the search box (e.g. "Add to Wishlist"). */
   title?: string
+  /** Optional slot bitmask (see lib/itemSlots.ts) — restricts results to items that fit this slot. */
+  slotFilter?: number
   onSelect: (item: Item) => void
   onClose: () => void
 }
@@ -21,6 +23,7 @@ interface ItemSearchModalProps {
 export default function ItemSearchModal({
   open,
   title = 'Find an item',
+  slotFilter,
   onSelect,
   onClose,
 }: ItemSearchModalProps): React.ReactElement | null {
@@ -59,7 +62,7 @@ export default function ItemSearchModal({
     setLoading(true)
     const handle = setTimeout(() => {
       const seq = ++seqRef.current
-      searchItems(q, 20, 0)
+      searchItems(q, 20, 0, slotFilter ? { slot: slotFilter } : {})
         .then((r) => {
           if (seq !== seqRef.current) return
           setResults(r.items ?? [])
@@ -69,7 +72,7 @@ export default function ItemSearchModal({
         .finally(() => { if (seq === seqRef.current) setLoading(false) })
     }, 200)
     return () => clearTimeout(handle)
-  }, [q, open])
+  }, [q, open, slotFilter])
 
   useEffect(() => {
     if (!open) return
