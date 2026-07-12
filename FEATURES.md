@@ -1487,6 +1487,49 @@ hardening — no new features, but a broad sweep of reliability fixes.
   instead of current skill; and Maelin Starpyre's skill-up buff only
   boosts the failure-path skill-up chance, matching its actual effect
 
+## v0.17.0 — Item Compare, Custom Timer Windows, Wishlist Alerts
+
+- **Item Compare** — compare items side-by-side from the item detail view,
+  including a mode that compares a candidate item against whatever a
+  character currently has equipped in that slot
+- **Custom Timer Windows** — named custom timer overlays reached full
+  dashboard parity: multiple simultaneous windows, a Timer Groups UI to
+  organize triggers by window, per-trigger pin to keep a timer atop other
+  overlays, and a working close (X) button on each window
+- **Wishlist alerts** — a synthetic trigger fires when a wishlisted item
+  appears in the combat log, with alert config hidden until the feature's
+  master toggle is enabled
+- **Recipe inventory status** — the recipe browser flags which components
+  of a combine you already have versus what's still missing
+- **Ring War signature-spell warnings** — the Raid Alerts trigger pack adds
+  recast warnings for raid boss signature spells
+- **Sidebar favorites** — pin frequently used nav items to the top of the
+  sidebar
+- **Macro move/copy** — move or copy macros between pages via an explicit
+  picker (replacing cross-page drag), with a Replace option alongside Swap
+  when the target slot is occupied
+- **Pop out all overlays** — one-click sidebar toggle to pop out every
+  dashboard-visible overlay at once
+- **Overlay text alignment** — left/center/right anchor option for pinned
+  overlay text alerts
+- **Stat overage display** — the character stat panel shows how far gear
+  pushes a stat past the level cap instead of silently capping the number
+- Fixes: the installer no longer wipes the updater cache mid-update; the
+  NPC overlay surfaces script-spawned NPC variants that name lookup was
+  missing; NPC-only spells now appear in global search and the All Classes
+  filter; respawn timers retry `#`-prefixed `npc_types` names; the log
+  parser tolerates the active eqlog file being deleted or renamed while
+  tailed; raid signature-spell alerts no longer stack on AE casts; the NPC
+  overlay no longer guesses a raid boss's variant by pulled position;
+  Group Member Died no longer misfires on 3+ word victim names; Roll
+  Tracker recognizes x11-style suffix shorthand; log feed replay play/stop
+  buttons no longer stick at 10x speed; replay dispatch uses real time so
+  timers don't expire on arrival; the target overlay no longer gets yanked
+  off a manually-selected PC by DoT combat lines; fading-soon TTS alerts
+  correctly resolve capture groups; Piper TTS playback queues so
+  overlapping triggers don't talk over each other; and threat credits hate
+  from a superseded pending cast instead of dropping it
+
 ## Phase 11 — Project Website
 _Planned_
 

@@ -9,6 +9,41 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.17.0 — 2026-07-12
+
+Side-by-side item comparison and fully-featured Custom Timer overlay windows headline this release, alongside wishlist alerts, macro reorganization, and a long list of fixes.
+
+### Highlights
+- **Item Compare** — compare items side-by-side, or against a character's currently equipped item, right from the item detail view.
+- **Custom Timer Windows** — named custom timer overlays now have full dashboard parity: support for multiple windows, a Timer Groups UI, per-trigger pin to keep timers atop other overlays, and a working close button.
+- **Wishlist alerts** — get notified when a wishlisted item shows up in your combat log.
+- **Recipe inventory status** — the recipe browser now flags which components you already have versus what's missing.
+- **Ring War signature-spell warnings** — recast alerts for raid boss signature spells.
+- **Sidebar favorites** — pin frequently used nav items to the top of the sidebar.
+- **Macro move/copy** — move or copy macros between pages, with a Replace option alongside Swap on slot conflicts.
+- **Pop out all overlays** — one-click toggle in the sidebar to pop out every overlay at once.
+- **Overlay text alignment** — left/center/right alignment for pinned overlay text alerts.
+- **Stat overage display** — character page shows how far your gear pushes a stat past the level cap.
+
+### Fixes
+- Installer no longer wipes the updater cache mid-update.
+- NPC overlay now surfaces script-spawned NPC variants that name lookup was missing.
+- Item Compare's Add Item button stays reachable as the compare list empties out.
+- Spell search now includes NPC-only spells in global search and the All Classes filter.
+- Respawn timers retry `#`-prefixed `npc_types` names.
+- Log parser no longer breaks when the active eqlog file is deleted or renamed while being tailed.
+- Raid signature-spell alerts no longer stack when a boss AE-casts.
+- Overlay no longer misguesses a raid boss's variant based on pulled position.
+- Group Member Died trigger no longer misfires on 3+ word victim names.
+- Wishlist alert config stays hidden until its master toggle is on.
+- Roll Tracker recognizes x11-style suffix shorthand in loot calls.
+- Log feed replay play/stop buttons no longer get stuck at 10x playback speed.
+- Replay dispatch now uses real time so timers don't expire on arrival.
+- Target overlay no longer gets yanked off a manually-selected PC by DoT combat lines.
+- Fading-soon TTS alerts now correctly resolve capture groups.
+- Piper TTS playback now queues so overlapping triggers don't talk over each other.
+- Threat now credits hate from a superseded pending cast instead of dropping it.
+
 ## v0.16.1 — 2026-07-08
 
 Local neural text-to-speech arrives with Piper support, plus a redesigned
