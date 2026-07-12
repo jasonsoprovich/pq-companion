@@ -6,7 +6,7 @@
  * behavior without duplicating the polling logic.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { loadDashboardLayout, loadGroupPanelLayouts, VISIBLE_DASHBOARD_PANEL_KEYS } from '../services/dashboardLayout'
+import { loadPopoutSelection } from '../services/overlayPopoutSelection'
 import { listTimerGroups } from '../services/api'
 import type { TimerGroup } from '../types/trigger'
 
@@ -47,16 +47,13 @@ export function useOverlayPopouts(): {
       setAnyPopoutOpen(false)
       return
     }
-    // Only pop out overlays the user has toggled visible in the dashboard —
-    // a panel hidden there shouldn't open as a floating window. Trigger
-    // Alerts has no dashboard toggle and is always included by the main
-    // process.
-    const layout = loadDashboardLayout()
-    const panels: Array<string | { key: string; name: string }> =
-      VISIBLE_DASHBOARD_PANEL_KEYS.filter((k) => layout[k].visible)
-    const visibleGroupIds = Object.entries(loadGroupPanelLayouts())
-      .filter(([, l]) => l.visible)
-      .map(([id]) => id)
+    // Pop out exactly the overlays the user last individually popped out via
+    // Manage overlays — dashboard panel visibility is a separate concern and
+    // shouldn't drive which floating windows open. Trigger Alerts has no
+    // popout toggle of its own and is always included by the main process.
+    const selection = loadPopoutSelection()
+    const panels: Array<string | { key: string; name: string }> = [...selection.panels]
+    const visibleGroupIds = selection.groups
     // Group panels need each group's current display name, which only the
     // backend has — main process can't create the window without it.
     const openWithGroups = (groups: TimerGroup[]): void => {
