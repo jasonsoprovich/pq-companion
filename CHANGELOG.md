@@ -9,6 +9,13 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.17.1 — 2026-07-12
+
+Fixes a Pop Out All overlay regression from the previous release.
+
+### Fixes
+- Pop Out All now reopens the overlays you last popped out individually, instead of whatever's currently visible on the dashboard.
+
 ## v0.17.0 — 2026-07-12
 
 Side-by-side item comparison and fully-featured Custom Timer overlay windows headline this release, alongside wishlist alerts, macro reorganization, and a long list of fixes.
