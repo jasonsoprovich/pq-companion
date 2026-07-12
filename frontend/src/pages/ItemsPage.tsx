@@ -25,6 +25,8 @@ import {
 } from '../lib/itemHelpers'
 import { ItemIcon } from '../components/Icon'
 import RawDataModal from '../components/RawDataModal'
+import ItemCompareModal from '../components/ItemCompareModal'
+import { ITEM_SLOTS } from '../lib/itemSlots'
 import WishlistStarButton from '../components/WishlistStarButton'
 import VariantLinks from '../components/VariantLinks'
 import { ItemTradeskillsTab } from '../components/RecipeView'
@@ -67,28 +69,6 @@ const ITEM_RACES: { value: number; label: string }[] = [
   { value: 2048, label: 'Gnome' },
   { value: 4096, label: 'Iksar' },
   { value: 8192, label: 'Vah Shir' },
-]
-
-const ITEM_SLOTS: { value: number; label: string }[] = [
-  { value: 0x000001, label: 'Charm' },
-  { value: 0x000012, label: 'Ear' },
-  { value: 0x000004, label: 'Head' },
-  { value: 0x000008, label: 'Face' },
-  { value: 0x000020, label: 'Neck' },
-  { value: 0x000040, label: 'Shoulder' },
-  { value: 0x000080, label: 'Arms' },
-  { value: 0x000100, label: 'Back' },
-  { value: 0x000600, label: 'Wrist' },
-  { value: 0x000800, label: 'Range' },
-  { value: 0x001000, label: 'Hands' },
-  { value: 0x002000, label: 'Primary' },
-  { value: 0x004000, label: 'Secondary' },
-  { value: 0x018000, label: 'Finger' },
-  { value: 0x020000, label: 'Chest' },
-  { value: 0x040000, label: 'Legs' },
-  { value: 0x080000, label: 'Feet' },
-  { value: 0x100000, label: 'Waist' },
-  { value: 0x800000, label: 'Ammo' },
 ]
 
 // Values match the EQMacEmu ItemType enum used by Quarm (see itemHelpers).
@@ -1010,6 +990,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
   const [activeTab, setActiveTab] = useState<ItemTabKey>('overview')
   const [copied, setCopied] = useState(false)
   const [rawOpen, setRawOpen] = useState(false)
+  const [compareOpen, setCompareOpen] = useState(false)
   const rawFetcher = useCallback(() => getItemRaw(item!.id), [item?.id])
 
   useEffect(() => {
@@ -1062,8 +1043,20 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
           </h2>
           <WishlistStarButton item={item} size={20} />
           <button
-            onClick={() => setRawOpen(true)}
+            onClick={() => setCompareOpen(true)}
             className="ml-auto rounded px-2 py-1 text-xs"
+            style={{
+              backgroundColor: 'var(--color-surface-1)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-muted)',
+            }}
+            title="Compare with other items"
+          >
+            Compare
+          </button>
+          <button
+            onClick={() => setRawOpen(true)}
+            className="rounded px-2 py-1 text-xs"
             style={{
               backgroundColor: 'var(--color-surface-1)',
               border: '1px solid var(--color-border)',
@@ -1129,6 +1122,11 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
         title={item.name}
         fetcher={rawFetcher}
         onClose={() => setRawOpen(false)}
+      />
+      <ItemCompareModal
+        open={compareOpen}
+        initialItem={item}
+        onClose={() => setCompareOpen(false)}
       />
     </div>
   )

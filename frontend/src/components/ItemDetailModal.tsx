@@ -4,6 +4,7 @@ import { Check, Copy, X } from 'lucide-react'
 import { getItemSources, getItemQuests } from '../services/api'
 import { findItemHoldings, type ItemHolding } from '../services/itemHoldings'
 import ItemCharactersTab from './ItemCharactersTab'
+import ItemCompareModal from './ItemCompareModal'
 import ItemQuestsTab, { questsHaveContent } from './ItemQuestsTab'
 import WishlistStarButton from './WishlistStarButton'
 import VariantLinks from './VariantLinks'
@@ -288,6 +289,7 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
   const [holdings, setHoldings] = useState<ItemHolding[]>([])
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [copied, setCopied] = useState(false)
+  const [compareOpen, setCompareOpen] = useState(false)
 
   useEffect(() => {
     setActiveTab('overview')
@@ -355,6 +357,14 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
             </div>
             <div className="shrink-0 mt-0.5 flex items-center gap-2">
               <WishlistStarButton item={item} />
+              <button
+                onClick={() => setCompareOpen(true)}
+                title="Compare with other items"
+                className="rounded px-2 py-1 text-[11px] font-medium"
+                style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-muted-foreground)' }}
+              >
+                Compare
+              </button>
               <button onClick={onClose} title="Close">
                 <X size={16} style={{ color: 'var(--color-muted)' }} />
               </button>
@@ -390,6 +400,12 @@ export default function ItemDetailModal({ item, open, onClose }: ItemDetailModal
           {activeTab === 'characters' && <ItemCharactersTab holdings={holdings} />}
         </div>
       </div>
+
+      <ItemCompareModal
+        open={compareOpen}
+        initialItem={item}
+        onClose={() => setCompareOpen(false)}
+      />
     </div>
   )
 }
