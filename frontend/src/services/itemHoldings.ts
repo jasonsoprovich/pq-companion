@@ -47,3 +47,37 @@ export async function findItemHoldings(itemId: number): Promise<ItemHolding[]> {
   )
   return holdings
 }
+
+export interface ItemHoldingsByItem {
+  // False when no character has ever written a Zeal inventory export — an
+  // empty map in that case means "unknown," not "confirmed missing."
+  configured: boolean
+  map: Map<number, ItemHolding[]>
+}
+
+// findHoldingsForItems batches findItemHoldings across many items in a single
+// pass over the cached inventory snapshot, so a recipe with a dozen
+// components costs one scan instead of one per row.
+export async function findHoldingsForItems(itemIds: number[]): Promise<ItemHoldingsByItem> {
+  const ids = new Set(itemIds.filter((id) => id > 0))
+  const map = new Map<number, ItemHolding[]>()
+  if (ids.size === 0) return { configured: true, map }
+  const res = await allInventoriesCached()
+  const add = (id: number, h: ItemHolding) => {
+    const arr = map.get(id)
+    if (arr) arr.push(h)
+    else map.set(id, [h])
+  }
+  for (const inv of res.characters) {
+    for (const e of inv.entries) {
+      if (ids.has(e.id)) add(e.id, { character: inv.character, location: e.location, count: e.count })
+    }
+  }
+  for (const e of res.shared_bank) {
+    if (ids.has(e.id)) add(e.id, { character: '', location: e.location, count: e.count })
+  }
+  for (const arr of map.values()) {
+    arr.sort((a, b) => a.character.localeCompare(b.character) || a.location.localeCompare(b.location))
+  }
+  return { configured: res.configured, map }
+}

@@ -1,9 +1,11 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronRight, Hammer } from 'lucide-react'
+import { ChevronDown, ChevronRight, Hammer, Check } from 'lucide-react'
 import { getRecipe, getItemSources } from '../services/api'
 import { tradeskillLabel } from '../lib/enumsCache'
 import { priceLabel } from '../lib/itemHelpers'
+import { describeLocation } from '../lib/inventoryLocations'
+import { findHoldingsForItems, type ItemHolding } from '../services/itemHoldings'
 import { ItemIcon } from './Icon'
 import FavoriteRecipeStar from './FavoriteRecipeStar'
 import type { RecipeDetail, RecipeEntry } from '../types/recipe'
@@ -21,15 +23,52 @@ function isLinkableEntry(e: RecipeEntry): boolean {
   return !e.station && e.item_id > 0 && !e.item_name.startsWith('Item #')
 }
 
+// Have/missing indicator for a component row, sourced from the player's Zeal
+// inventory exports. Held in a single spot shows the character + location
+// inline (the "which bag slot" detail is the whole point); held in several
+// spots shows a count instead and leaves the full breakdown to the tooltip.
+function HaveBadge({ entry, holdings }: { entry: RecipeEntry; holdings: ItemHolding[] }): React.ReactElement {
+  const needed = entry.count > 0 ? entry.count : 1
+  const totalHeld = holdings.reduce((sum, h) => sum + h.count, 0)
+  const have = totalHeld >= needed
+  const locSummary =
+    holdings.length === 0
+      ? ''
+      : holdings.length === 1
+        ? `${holdings[0].character || 'Shared Bank'} — ${describeLocation(holdings[0].location)}`
+        : `${totalHeld} across ${holdings.length} spots`
+  const title = have
+    ? `You have this — ${locSummary}`
+    : totalHeld > 0
+      ? `Only have ${totalHeld} of ${needed} needed — ${locSummary}`
+      : 'Not found in any character inventory'
+  return (
+    <span className="flex shrink-0 items-center gap-1.5" title={title}>
+      {have && (
+        <span className="whitespace-nowrap" style={{ color: 'var(--color-muted-foreground)' }}>
+          {locSummary}
+        </span>
+      )}
+      <span className="flex items-center gap-0.5" style={{ color: have ? '#4ade80' : '#f87171' }}>
+        {have ? <Check size={12} /> : <span className="text-[10px] font-semibold uppercase">missing</span>}
+      </span>
+    </span>
+  )
+}
+
 interface EntryRowProps {
   entry: RecipeEntry
   depth: number
   onNavigate?: () => void
+  // Where the player holds this item, and whether that lookup has resolved —
+  // undefined holdingsMap means "not shown" (loading, unsupported role, or
+  // Zeal inventory export not configured).
+  holdingsMap?: Map<number, ItemHolding[]>
 }
 
 // One container/component/product line. Components that are themselves craftable
 // can be expanded in place to reveal the sub-recipe that produces them.
-function EntryRow({ entry, depth, onNavigate }: EntryRowProps): React.ReactElement {
+function EntryRow({ entry, depth, onNavigate, holdingsMap }: EntryRowProps): React.ReactElement {
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState(false)
   const [sub, setSub] = useState<RecipeDetail | null>(null)
@@ -129,6 +168,9 @@ function EntryRow({ entry, depth, onNavigate }: EntryRowProps): React.ReactEleme
           </span>
         )}
         <div className="flex shrink-0 items-center gap-2 text-xs" style={{ color: 'var(--color-muted)' }}>
+          {entry.role === 'component' && linkable && holdingsMap && (
+            <HaveBadge entry={entry} holdings={holdingsMap.get(entry.item_id) ?? []} />
+          )}
           {entry.count > 1 && <span>×{entry.count}</span>}
           {entry.vendor_price != null && entry.vendor_price > 0 && (
             <span title="Base vendor price">{priceLabel(entry.vendor_price)}</span>
@@ -183,9 +225,10 @@ interface EntrySectionProps {
   entries: RecipeEntry[]
   depth: number
   onNavigate?: () => void
+  holdingsMap?: Map<number, ItemHolding[]>
 }
 
-function EntrySection({ title, entries, depth, onNavigate }: EntrySectionProps): React.ReactElement | null {
+function EntrySection({ title, entries, depth, onNavigate, holdingsMap }: EntrySectionProps): React.ReactElement | null {
   if (entries.length === 0) return null
   return (
     <div>
@@ -198,7 +241,7 @@ function EntrySection({ title, entries, depth, onNavigate }: EntrySectionProps):
         )}
       </div>
       {entries.map((e, i) => (
-        <EntryRow key={`${e.item_id}-${i}`} entry={e} depth={depth} onNavigate={onNavigate} />
+        <EntryRow key={`${e.item_id}-${i}`} entry={e} depth={depth} onNavigate={onNavigate} holdingsMap={holdingsMap} />
       ))}
     </div>
   )
@@ -217,6 +260,30 @@ interface RecipeBodyProps {
  * the item-detail Tradeskills tab.
  */
 export function RecipeBody({ recipe, depth = 0, onNavigate }: RecipeBodyProps): React.ReactElement {
+  const [holdingsInfo, setHoldingsInfo] = useState<{ configured: boolean; map: Map<number, ItemHolding[]> } | null>(null)
+
+  useEffect(() => {
+    setHoldingsInfo(null)
+    const ids = recipe.components.filter(isLinkableEntry).map((e) => e.item_id)
+    if (ids.length === 0) {
+      setHoldingsInfo({ configured: true, map: new Map() })
+      return
+    }
+    let cancelled = false
+    findHoldingsForItems(ids)
+      .then((info) => { if (!cancelled) setHoldingsInfo(info) })
+      .catch(() => { if (!cancelled) setHoldingsInfo(null) })
+    return () => { cancelled = true }
+  }, [recipe.id])
+
+  const missingComponents = holdingsInfo?.configured
+    ? recipe.components.filter(isLinkableEntry).filter((e) => {
+        const held = holdingsInfo.map.get(e.item_id) ?? []
+        const totalHeld = held.reduce((sum, h) => sum + h.count, 0)
+        return totalHeld < (e.count > 0 ? e.count : 1)
+      })
+    : []
+
   return (
     <div className="flex flex-col gap-2 py-1">
       <div className="flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--color-muted)' }}>
@@ -240,7 +307,40 @@ export function RecipeBody({ recipe, depth = 0, onNavigate }: RecipeBodyProps): 
         )}
       </div>
       <EntrySection title="Containers" entries={recipe.containers} depth={depth} onNavigate={onNavigate} />
-      <EntrySection title="Components" entries={recipe.components} depth={depth} onNavigate={onNavigate} />
+      <EntrySection
+        title="Components"
+        entries={recipe.components}
+        depth={depth}
+        onNavigate={onNavigate}
+        holdingsMap={holdingsInfo?.configured ? holdingsInfo.map : undefined}
+      />
+      {holdingsInfo && !holdingsInfo.configured && recipe.components.length > 0 && (
+        <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+          Set up Zeal inventory export to see which components you already have.
+        </p>
+      )}
+      {missingComponents.length > 0 && (
+        <div
+          className="rounded border px-3 py-2"
+          style={{ backgroundColor: 'rgba(248,113,113,0.06)', borderColor: 'rgba(248,113,113,0.3)' }}
+        >
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#f87171' }}>
+            Missing ({missingComponents.length})
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {missingComponents.map((e) => (
+              <span
+                key={e.item_id}
+                className="rounded px-1.5 py-0.5 text-[11px]"
+                style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)' }}
+              >
+                {e.item_name}
+                {e.count > 1 && ` ×${e.count}`}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <EntrySection title="Yields" entries={recipe.products} depth={depth} onNavigate={onNavigate} />
     </div>
   )
