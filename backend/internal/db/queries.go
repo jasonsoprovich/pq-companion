@@ -1790,13 +1790,17 @@ func collectSpells(rows *sql.Rows) ([]Spell, error) {
 // then by spell ID. Empty-name spells are excluded. Disciplines (a LoY-era
 // concept) and spells gated above maxLevel — the era's level cap, 60 until
 // Planes of Power launches (see internal/era) — are also excluded, since
-// neither is obtainable on Quarm.
+// neither is obtainable on Quarm. Spells flagged not_player_spell (innate
+// class abilities like Harm Touch and AA-granted spells like the Druid's
+// Spirit of the Wood/Wrath of the Wild) are excluded too — spells_new lists a
+// class/level for them, but no scroll ever has a merchant listing, so they'd
+// otherwise sit on the checklist permanently as false-missing rows.
 func (db *DB) GetSpellsByClass(classIndex, maxLevel, limit, offset int) (*SearchResult[Spell], error) {
 	if classIndex < 0 || classIndex > 14 {
 		return nil, fmt.Errorf("class index %d out of range [0,14]", classIndex)
 	}
 	col := fmt.Sprintf("s.classes%d", classIndex+1)
-	whereClause := fmt.Sprintf("%s BETWEEN 1 AND %d AND s.IsDiscipline = 0 AND s.name != ''", col, maxLevel)
+	whereClause := fmt.Sprintf("%s BETWEEN 1 AND %d AND s.IsDiscipline = 0 AND s.name != '' AND s.not_player_spell = 0", col, maxLevel)
 
 	// Collapse duplicate-name rows to the canonical one (see variants.go).
 	db.ensureVariants()

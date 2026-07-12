@@ -465,6 +465,39 @@ func TestGetSpellsByClass_ExcludesMassCraftDuplicates(t *testing.T) {
 	}
 }
 
+// TestGetSpellsByClass_ExcludesNotPlayerSpell verifies that spells_new rows
+// flagged not_player_spell (innate class abilities and AA-granted spells that
+// list a class/level but were never scribable) are dropped from the class
+// list. See GetSpellsByClass.
+func TestGetSpellsByClass_ExcludesNotPlayerSpell(t *testing.T) {
+	d := openTestDB(t)
+	const druid = 5 // 0-based class index
+
+	res, err := d.GetSpellsByClass(druid, 60, 2000, 0)
+	if err != nil {
+		t.Fatalf("GetSpellsByClass: %v", err)
+	}
+	byID := make(map[int]string, len(res.Items))
+	for _, sp := range res.Items {
+		byID[sp.ID] = sp.Name
+	}
+
+	// AA-granted / innate spells with no teaching scroll must be gone.
+	notPlayerIDs := []int{
+		3693,             // Pure Blood
+		3277, 3278, 3279, // Spirit of the Wood (AA #548)
+		3255, 3256, 3257, // Wrath of the Wild (AA #510)
+		3695, // Frost Zephyr
+		3792, // Circle of Stonebrunt
+		3834, // Healing Water
+	}
+	for _, id := range notPlayerIDs {
+		if name, ok := byID[id]; ok {
+			t.Errorf("not_player_spell %d (%q) should be excluded", id, name)
+		}
+	}
+}
+
 // ─── Zones ────────────────────────────────────────────────────────────────────
 
 func TestGetZoneByShortName(t *testing.T) {
