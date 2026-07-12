@@ -227,9 +227,18 @@ export default function ItemCompareModal({ open, initialItem, onClose }: ItemCom
 
         <div className="flex-1 overflow-auto px-5 py-4">
           {items.length === 0 && !baselineItem ? (
-            <p className="py-8 text-center text-sm" style={{ color: 'var(--color-muted)' }}>
-              No items selected.
-            </p>
+            <div className="flex flex-col items-center gap-3 py-8">
+              <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
+                No items selected.
+              </p>
+              <button
+                onClick={() => setPickerOpen(true)}
+                className="flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium"
+                style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
+              >
+                <Plus size={12} /> Add Item
+              </button>
+            </div>
           ) : (
             <table className="w-full border-collapse text-sm">
               <thead>
