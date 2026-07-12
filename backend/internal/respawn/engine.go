@@ -168,12 +168,14 @@ func (e *Engine) onKill(displayName string, diedAt time.Time) {
 	}
 	if len(infos) == 0 {
 		// Many Project Quarm named/unique mobs live in npc_types under a
-		// prefixed name (e.g. "#an_enraged_disciple") to avoid name
-		// conflicts, but the kill log line never includes the prefix. Retry
-		// with each placeholder prefix before giving up — see
-		// db.PlaceholderPrefixes.
-		for _, p := range db.PlaceholderPrefixes {
-			alt := p + dbName
+		// decorated name (e.g. "#an_enraged_disciple", "Emperor_Ssraeshza_")
+		// to avoid name conflicts, but the kill log line never includes the
+		// decoration. Retry with each placeholder form before giving up —
+		// see db.NPCNameVariantCandidates.
+		for _, alt := range db.NPCNameVariantCandidates(dbName) {
+			if alt == dbName {
+				continue
+			}
 			altInfos, altErr := e.db.GetRespawnTimesInZone(alt, zoneShort)
 			if altErr != nil {
 				slog.Warn("respawn: DB error looking up respawn times",

@@ -375,6 +375,44 @@ func TestNPCTracker_RaidBossKeepsBothVariantsRegardlessOfPosition(t *testing.T) 
 	}
 }
 
+// Integration: targeting Emperor Ssraeshza in his temple should headline the
+// real encounter (npc 162491, "Emperor_Ssraeshza_", loottable 12791, HP
+// 1,250,000) even though the player is standing right next to the decoy row
+// (npc 162065, "#Emperor_Ssraeshza", loottable 0) — the real row is
+// script-spawned with no spawn2 coordinates at all, so it can only surface
+// via db.ScriptSpawnedNPCOverrides, and position filtering must not discard
+// it just because the decoy has coordinates and it doesn't. See the reported
+// bug: the overlay was showing the decoy's stats (no loot table) instead.
+func TestNPCTracker_EmperorSsraeshzaSurfacesScriptSpawnedEncounter(t *testing.T) {
+	tr := newRealDBTracker(t)
+	// ssratemple zoneidnumber is 162; stand at the decoy's own spawn2 coords
+	// (1000, -325) to make sure position filtering can't accidentally help.
+	tr.SetPipePlayerSnapshot(162, 1000, -325, 421)
+	tr.SetPipeTarget("Emperor Ssraeshza")
+	st := tr.GetState()
+	if !st.HasTarget {
+		t.Fatal("HasTarget = false, want true")
+	}
+	if st.NPCData == nil {
+		t.Fatal("NPCData = nil, want a primary pick")
+	}
+	if st.NPCData.ID != 162491 {
+		t.Errorf("Picked npc_id %d, want 162491 (real encounter, not the 162065 decoy)", st.NPCData.ID)
+	}
+	if st.NPCData.LootTableID == 0 {
+		t.Errorf("Picked variant has loottable_id 0, want the real encounter's non-zero loot table")
+	}
+	foundDecoy := false
+	for _, v := range st.Variants {
+		if v.NPC.ID == 162065 {
+			foundDecoy = true
+		}
+	}
+	if !foundDecoy {
+		t.Error("decoy npc 162065 missing from Variants, want it still listed as an alternative")
+	}
+}
+
 // Integration: when no player position is available but zone is, the variant
 // set still surfaces — we can't pick by position so the user sees the
 // alternatives honestly. (The kaas thox case with zone-only.)

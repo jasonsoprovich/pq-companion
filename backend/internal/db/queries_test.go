@@ -238,6 +238,35 @@ func TestGetNPCVariantsByNameInZone_NoMatch(t *testing.T) {
 	}
 }
 
+// NPCNameVariantCandidates must try every leading-prefix, trailing-suffix,
+// and combined form — the trailing "_" convention was missed entirely until
+// the Emperor Ssraeshza report showed "Emperor_Ssraeshza_" was unreachable
+// via prefix-only candidates.
+func TestNPCNameVariantCandidates(t *testing.T) {
+	got := db.NPCNameVariantCandidates("Foo")
+	want := map[string]bool{
+		"Foo": true, "#Foo": true, "##Foo": true, "###Foo": true,
+		"#_Foo": true, "##_Foo": true, "###_Foo": true,
+		"Foo_": true, "#Foo_": true, "##Foo_": true, "###Foo_": true,
+		"#_Foo_": true, "##_Foo_": true, "###_Foo_": true,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d candidates, want %d: %v", len(got), len(want), got)
+	}
+	for _, c := range got {
+		if !want[c] {
+			t.Errorf("unexpected candidate %q", c)
+		}
+		delete(want, c)
+	}
+	if len(want) != 0 {
+		t.Errorf("missing candidates: %v", want)
+	}
+	if got[0] != "Foo" {
+		t.Errorf("first candidate = %q, want bare name %q first", got[0], "Foo")
+	}
+}
+
 func TestGetRespawnTimesInZone(t *testing.T) {
 	d := openTestDB(t)
 

@@ -828,6 +828,58 @@ func (db *DB) GetNPCVariantsByNameInZone(name, zoneShortName string) ([]NPCVaria
 // respawn timers, etc).
 var PlaceholderPrefixes = []string{"###_", "###", "##_", "##", "#_", "#"}
 
+// PlaceholderSuffixes are the trailing tokens Quarm uses for the same
+// name-conflict-avoidance purpose as PlaceholderPrefixes, e.g. a second
+// "Emperor_Ssraeshza_" row alongside "#Emperor_Ssraeshza". Some rows combine
+// both ("#High_Scale_Kirn_"), so NPCNameVariantCandidates crosses these with
+// PlaceholderPrefixes too.
+var PlaceholderSuffixes = []string{"_"}
+
+// NPCNameVariantCandidates returns every db-name form worth trying for a
+// player-visible NPC name: the bare name, each placeholder-prefixed form,
+// each placeholder-suffixed form, and the prefix+suffix combinations. Used by
+// any caller that looks up npc_types by the player-visible name, so a name
+// that only exists in the DB under a decorated form (leading "#", trailing
+// "_", or both) is still reachable.
+func NPCNameVariantCandidates(name string) []string {
+	out := make([]string, 0, 1+len(PlaceholderPrefixes)+len(PlaceholderSuffixes)*(1+len(PlaceholderPrefixes)))
+	out = append(out, name)
+	for _, p := range PlaceholderPrefixes {
+		out = append(out, p+name)
+	}
+	for _, s := range PlaceholderSuffixes {
+		out = append(out, name+s)
+		for _, p := range PlaceholderPrefixes {
+			out = append(out, p+name+s)
+		}
+	}
+	return out
+}
+
+// ScriptSpawnedNPCOverrides names encounters whose "real" npc_types row has
+// zero spawnentry placements anywhere in the game — Project Quarm spawns
+// them purely from a quest script rather than a static spawn2 point — while
+// a same-named decorated row *does* have a spawn2 placement. Since
+// GetNPCVariantsByNameInZone requires a spawn2 join, the decorated row wins
+// (and masks) the zone-scoped lookup on its own before the script-spawned
+// row is ever considered, regardless of how many placeholder-affix forms
+// NPCNameVariantCandidates tries. Keyed by the db-name form used in the
+// log/pipe target text (spaces→underscores, no placeholder decoration);
+// values are the npc_types ids of the script-spawned row(s) to always
+// include as candidates, bypassing the spawn2 requirement, and to exempt
+// from position-based filtering (see lookupNPCVariants in
+// backend/internal/overlay/npc.go — it has no coordinates to filter by).
+//
+// Emperor Ssraeshza (reported 2026-07): npc 162065 "#Emperor_Ssraeshza" has
+// a spawn2 row in ssratemple but loottable_id=0 (a decoy/leftover row); npc
+// 162491 "Emperor_Ssraeshza_" carries the real loottable (12791) and higher
+// HP (1,250,000 vs 1,000,000) but has no spawn2 row at all. Add future
+// script-spawned collisions (e.g. other quest-summoned raid bosses) to this
+// map once confirmed via the same spawnentry-emptiness check.
+var ScriptSpawnedNPCOverrides = map[string][]int{
+	"Emperor_Ssraeshza": {162491},
+}
+
 // nonPlayerNPCClause filters out rows in npc_types that do not reference
 // real in-game NPCs: empty/placeholder names ("", "#", "_") and the
 // Invisible Man race (127), which EQEmu uses exclusively for invisible

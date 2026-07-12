@@ -484,7 +484,12 @@ func (t *NPCTracker) lookupNPCVariants(
 	// being a meaningful signal (see lookupNPCVariants doc comment). In that
 	// case we skip filtering and let every candidate flow through as a
 	// variant instead of risking a coin-flip pick that hides a loot table.
-	if len(candidates) > 1 && playerKnown && zoneShort != "" && !anyRaidTarget(candidates) {
+	// Also skip when a db.ScriptSpawnedNPCOverrides candidate is in play —
+	// it has no spawn2 coordinates by definition (see fetchVariants), so
+	// filterVariantsByPlayerPosition would drop the real encounter in favor
+	// of a decoy row purely for having spawn coordinates.
+	if len(candidates) > 1 && playerKnown && zoneShort != "" &&
+		!anyRaidTarget(candidates) && len(db.ScriptSpawnedNPCOverrides[dbName]) == 0 {
 		candidates = filterVariantsByPlayerPosition(candidates, px, py)
 	}
 
@@ -535,25 +540,24 @@ func (t *NPCTracker) casterSummary(npcID int) *db.NPCCasterSummary {
 	return s
 }
 
-// fetchVariants gathers every same-name npc_types row for the target — both
-// the bare display name and each placeholder-prefixed form ("#Foo", "##_Foo",
-// …) — and returns them as one deduplicated candidate set. Returns nil on a
-// total miss (caller treats as no DB record).
+// fetchVariants gathers every same-name npc_types row for the target — the
+// bare display name plus each placeholder-decorated form ("#Foo", "Foo_",
+// "#Foo_", …, see db.NPCNameVariantCandidates) — and returns them as one
+// deduplicated candidate set. Returns nil on a total miss (caller treats as
+// no DB record).
 //
 // Project Quarm frequently splits one logical NPC across a bare row and a
-// "#"-prefixed row that live in different zones/versions and carry *different*
-// special_abilities. "Venril Sathir", for instance, has a plain row with no
-// Rampage and a "#Venril_Sathir" row that does. The old code returned the
-// bare match and only consulted the prefixes when the bare name found nothing,
-// so whenever both forms existed the "#"-row was never surfaced — and any
-// ability that lived only on it (Rampage being the common one) silently
-// vanished from the overlay even though the DB search page still listed it.
-// Unioning both sets keeps every variant in play; zone/position
-// disambiguation downstream narrows them when Zeal data is available, and the
-// frontend renders the full set otherwise.
-//
-// Bare matches are added first so the deterministic primary pick (lowest id
-// of the bare form) is unchanged for the common single-row case.
+// decorated row that live in different zones/versions and carry *different*
+// stats or special_abilities. "Venril Sathir", for instance, has a plain row
+// with no Rampage and a "#Venril_Sathir" row that does; "Emperor Ssraeshza"
+// has a "#Emperor_Ssraeshza" row with no loot table alongside the real
+// "Emperor_Ssraeshza_" encounter row. The old code returned the bare match
+// and only consulted prefixes when the bare name found nothing, so whenever
+// both forms existed one was never surfaced — and any ability or stat that
+// lived only on it silently vanished from the overlay even though the DB
+// search page still listed it. Unioning every form keeps all variants in
+// play; zone/position disambiguation downstream narrows them when Zeal data
+// is available, and the frontend renders the full set otherwise.
 func (t *NPCTracker) fetchVariants(dbName, zoneShort string) []db.NPCVariant {
 	seen := make(map[int]struct{})
 	var out []db.NPCVariant
@@ -567,20 +571,25 @@ func (t *NPCTracker) fetchVariants(dbName, zoneShort string) []db.NPCVariant {
 		}
 	}
 
-	bare, err := t.db.GetNPCVariantsByNameInZone(dbName, zoneShort)
-	if err != nil {
-		slog.Debug("overlay: variant lookup error", "db_name", dbName, "zone", zoneShort, "err", err)
-	} else {
-		add(bare)
-	}
-	for _, p := range db.PlaceholderPrefixes {
-		alt := p + dbName
-		c2, err := t.db.GetNPCVariantsByNameInZone(alt, zoneShort)
+	for _, candidate := range db.NPCNameVariantCandidates(dbName) {
+		vs, err := t.db.GetNPCVariantsByNameInZone(candidate, zoneShort)
 		if err != nil {
-			slog.Debug("overlay: variant lookup error", "db_name", alt, "zone", zoneShort, "err", err)
+			slog.Debug("overlay: variant lookup error", "db_name", candidate, "zone", zoneShort, "err", err)
 			continue
 		}
-		add(c2)
+		add(vs)
+	}
+	for _, id := range db.ScriptSpawnedNPCOverrides[dbName] {
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		npc, err := t.db.GetNPC(id)
+		if err != nil {
+			slog.Debug("overlay: script-spawned override lookup failed", "npc_id", id, "err", err)
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, db.NPCVariant{NPC: *npc})
 	}
 	if len(out) == 0 {
 		return nil
