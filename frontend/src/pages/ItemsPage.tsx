@@ -25,6 +25,7 @@ import {
 } from '../lib/itemHelpers'
 import { ItemIcon } from '../components/Icon'
 import RawDataModal from '../components/RawDataModal'
+import ItemCompareModal from '../components/ItemCompareModal'
 import WishlistStarButton from '../components/WishlistStarButton'
 import VariantLinks from '../components/VariantLinks'
 import { ItemTradeskillsTab } from '../components/RecipeView'
@@ -1010,6 +1011,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
   const [activeTab, setActiveTab] = useState<ItemTabKey>('overview')
   const [copied, setCopied] = useState(false)
   const [rawOpen, setRawOpen] = useState(false)
+  const [compareOpen, setCompareOpen] = useState(false)
   const rawFetcher = useCallback(() => getItemRaw(item!.id), [item?.id])
 
   useEffect(() => {
@@ -1062,8 +1064,20 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
           </h2>
           <WishlistStarButton item={item} size={20} />
           <button
-            onClick={() => setRawOpen(true)}
+            onClick={() => setCompareOpen(true)}
             className="ml-auto rounded px-2 py-1 text-xs"
+            style={{
+              backgroundColor: 'var(--color-surface-1)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-muted)',
+            }}
+            title="Compare with other items"
+          >
+            Compare
+          </button>
+          <button
+            onClick={() => setRawOpen(true)}
+            className="rounded px-2 py-1 text-xs"
             style={{
               backgroundColor: 'var(--color-surface-1)',
               border: '1px solid var(--color-border)',
@@ -1129,6 +1143,11 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
         title={item.name}
         fetcher={rawFetcher}
         onClose={() => setRawOpen(false)}
+      />
+      <ItemCompareModal
+        open={compareOpen}
+        initialItem={item}
+        onClose={() => setCompareOpen(false)}
       />
     </div>
   )

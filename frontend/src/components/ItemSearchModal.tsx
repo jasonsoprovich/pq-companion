@@ -98,7 +98,10 @@ export default function ItemSearchModal({
     <div
       className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-20"
       style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
-      onClick={onClose}
+      // Now sometimes opened from inside another modal's backdrop (e.g.
+      // ItemCompareModal's "Add item"), so a click here must not bubble up and
+      // close the parent modal too.
+      onClick={(e) => { e.stopPropagation(); onClose() }}
     >
       <div
         className="w-full max-w-xl rounded-lg shadow-2xl"
