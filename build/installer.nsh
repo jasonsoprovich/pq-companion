@@ -16,14 +16,22 @@
 ; ran unconditionally and wiped overlay positions on every upgrade.
 
 !macro customUnInstall
-  ; 1. Always remove the electron-updater download cache. This dir is created
-  ;    fresh on every update download; nothing in it is worth keeping.
-  RMDir /r "$LOCALAPPDATA\pq-companion-updater"
-
-  ; 2. Real uninstall only — skip everything below when running as part of an
-  ;    auto-update (electron-updater invokes the old uninstaller silently
-  ;    before installing the new build).
+  ; Real uninstall only — skip everything below when running as part of an
+  ; auto-update (electron-updater invokes the old uninstaller silently before
+  ; installing the new build).
   ${ifNot} ${isUpdated}
+    ; 1. Remove the electron-updater download cache. This dir is created fresh
+    ;    on every update download; nothing in it is worth keeping. Must be
+    ;    gated the same as everything else below: during an auto-update, the
+    ;    new installer.exe that is driving this whole uninstall step is itself
+    ;    running from inside this directory (pq-companion-updater\pending\).
+    ;    Deleting it out from under the in-progress update is what corrupted
+    ;    installs and left users with a missing .exe requiring a manual
+    ;    reinstall — leftover cache files are harmless (electron-updater
+    ;    overwrites them on the next download) and get cleaned up here on the
+    ;    next real uninstall instead.
+    RMDir /r "$LOCALAPPDATA\pq-companion-updater"
+
     ; %AppData%\PQ Companion — Electron userData. Holds overlayBounds.json,
     ; overlayLockState.json, Chromium Local Storage / IndexedDB / Cache.
     ; Safe to remove on real uninstall; must survive auto-updates.
