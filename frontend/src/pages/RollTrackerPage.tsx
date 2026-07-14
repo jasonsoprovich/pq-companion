@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Dice5, Trash2, Square, Trophy, ArrowDownAZ, ArrowUpAZ, Circle, X, Timer, Hand, Copy, Check } from 'lucide-react'
+import { Dice5, Trash2, Square, Trophy, ArrowDownAZ, ArrowUpAZ, Circle, X, Timer, Hand, Copy, Check, ListOrdered } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import {
   getRolls,
@@ -16,9 +16,11 @@ import {
   fmtRollTime,
   countdownSeconds,
   buildRollSummary,
+  buildPickOrderSummary,
   groupContests,
   contestOutcome,
   buildContestSummary,
+  buildContestPickOrderSummary,
   type Contest,
 } from '../lib/rollHelpers'
 import RollProfileControl from '../components/RollProfileControl'
@@ -43,6 +45,7 @@ function SessionCard({
   const orderedRolls = useMemo(() => sortRolls(session.rolls, rule), [session.rolls, rule])
   const remaining = session.active ? countdownSeconds(session, now) : null
   const summary = useMemo(() => buildRollSummary(session, rule), [session, rule])
+  const pickOrderSummary = useMemo(() => buildPickOrderSummary(session, rule), [session, rule])
 
   // Local draft for the item-name field so typing stays smooth between WS
   // broadcasts. Re-sync whenever the backend value changes (the only other
@@ -133,6 +136,15 @@ function SessionCard({
             title="Copy the result to paste in game"
           >
             {copied ? <Check size={11} /> : <Copy size={11} />} {copied ? 'Copied' : 'Copy'}
+          </button>
+          <button
+            onClick={handleCopyPickOrder}
+            disabled={!pickOrderSummary}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-(--color-surface-3) disabled:opacity-30"
+            style={{ border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+            title="Copy the full pick order to paste in game"
+          >
+            {pickOrderCopied ? <Check size={11} /> : <ListOrdered size={11} />} {pickOrderCopied ? 'Copied' : 'Pick Order'}
           </button>
           {session.active && (
             <button
@@ -228,6 +240,7 @@ function ContestCard({
 }): React.ReactElement {
   const outcome = useMemo(() => contestOutcome(contest, rule), [contest, rule])
   const summary = useMemo(() => buildContestSummary(contest, rule), [contest, rule])
+  const pickOrderSummary = useMemo(() => buildContestPickOrderSummary(contest, rule), [contest, rule])
   const totalRolls = contest.tiers.reduce((n, t) => n + t.rolls.length, 0)
   // Countdown shown from the soonest-stopping live session in the contest.
   const remaining = contest.active
@@ -255,6 +268,18 @@ function ContestCard({
       .then(() => {
         setCopied(true)
         setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => {})
+  }
+
+  const [pickOrderCopied, setPickOrderCopied] = useState(false)
+  const handleCopyPickOrder = (): void => {
+    if (!pickOrderSummary) return
+    navigator.clipboard
+      ?.writeText(pickOrderSummary)
+      .then(() => {
+        setPickOrderCopied(true)
+        setTimeout(() => setPickOrderCopied(false), 1500)
       })
       .catch(() => {})
   }
@@ -332,6 +357,15 @@ function ContestCard({
             title="Copy the result to paste in game"
           >
             {copied ? <Check size={11} /> : <Copy size={11} />} {copied ? 'Copied' : 'Copy'}
+          </button>
+          <button
+            onClick={handleCopyPickOrder}
+            disabled={!pickOrderSummary}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-(--color-surface-3) disabled:opacity-30"
+            style={{ border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+            title="Copy the full pick order to paste in game"
+          >
+            {pickOrderCopied ? <Check size={11} /> : <ListOrdered size={11} />} {pickOrderCopied ? 'Copied' : 'Pick Order'}
           </button>
           {contest.active && (
             <button

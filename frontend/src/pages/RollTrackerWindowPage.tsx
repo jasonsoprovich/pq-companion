@@ -18,6 +18,7 @@ import {
   Hand,
   Copy,
   Check,
+  ListOrdered,
 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
@@ -39,9 +40,11 @@ import {
   sortRolls,
   countdownSeconds,
   buildRollSummary,
+  buildPickOrderSummary,
   groupContests,
   contestOutcome,
   buildContestSummary,
+  buildContestPickOrderSummary,
   type Contest,
 } from '../lib/rollHelpers'
 import { ROLL_PROFILE_PRESETS, presetIdFor } from '../lib/rollProfilePresets'
@@ -66,6 +69,7 @@ function SessionRow({
   const ordered = useMemo(() => sortRolls(session.rolls, rule), [session.rolls, rule])
   const remaining = session.active ? countdownSeconds(session, now) : null
   const summary = useMemo(() => buildRollSummary(session, rule), [session, rule])
+  const pickOrderSummary = useMemo(() => buildPickOrderSummary(session, rule), [session, rule])
 
   const [nameDraft, setNameDraft] = useState(session.item_name)
   useEffect(() => setNameDraft(session.item_name), [session.item_name])
@@ -83,6 +87,18 @@ function SessionRow({
       .then(() => {
         setCopied(true)
         setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => {})
+  }
+
+  const [pickOrderCopied, setPickOrderCopied] = useState(false)
+  const handleCopyPickOrder = (): void => {
+    if (!pickOrderSummary) return
+    navigator.clipboard
+      ?.writeText(pickOrderSummary)
+      .then(() => {
+        setPickOrderCopied(true)
+        setTimeout(() => setPickOrderCopied(false), 1500)
       })
       .catch(() => {})
   }
@@ -164,6 +180,21 @@ function SessionRow({
           >
             {copied ? <Check size={11} /> : <Copy size={11} />}
           </button>
+          <button
+            onClick={handleCopyPickOrder}
+            disabled={!pickOrderSummary}
+            title="Copy full pick order to paste in game"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: pickOrderSummary ? 'pointer' : 'default',
+              padding: '1px 2px',
+              color: pickOrderCopied ? '#22c55e' : 'rgba(255,255,255,0.6)',
+              opacity: pickOrderSummary ? 1 : 0.3,
+            }}
+          >
+            {pickOrderCopied ? <Check size={11} /> : <ListOrdered size={11} />}
+          </button>
           {session.active && (
             <button
               onClick={() => onStop(session.id)}
@@ -244,6 +275,7 @@ function ContestRow({
 }): React.ReactElement {
   const outcome = useMemo(() => contestOutcome(contest, rule), [contest, rule])
   const summary = useMemo(() => buildContestSummary(contest, rule), [contest, rule])
+  const pickOrderSummary = useMemo(() => buildContestPickOrderSummary(contest, rule), [contest, rule])
 
   const [nameDraft, setNameDraft] = useState(contest.itemName)
   useEffect(() => setNameDraft(contest.itemName), [contest.itemName])
@@ -261,6 +293,18 @@ function ContestRow({
       .then(() => {
         setCopied(true)
         setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => {})
+  }
+
+  const [pickOrderCopied, setPickOrderCopied] = useState(false)
+  const handleCopyPickOrder = (): void => {
+    if (!pickOrderSummary) return
+    navigator.clipboard
+      ?.writeText(pickOrderSummary)
+      .then(() => {
+        setPickOrderCopied(true)
+        setTimeout(() => setPickOrderCopied(false), 1500)
       })
       .catch(() => {})
   }
@@ -311,6 +355,21 @@ function ContestRow({
             }}
           >
             {copied ? <Check size={11} /> : <Copy size={11} />}
+          </button>
+          <button
+            onClick={handleCopyPickOrder}
+            disabled={!pickOrderSummary}
+            title="Copy full pick order to paste in game"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: pickOrderSummary ? 'pointer' : 'default',
+              padding: '1px 2px',
+              color: pickOrderCopied ? '#22c55e' : 'rgba(255,255,255,0.6)',
+              opacity: pickOrderSummary ? 1 : 0.3,
+            }}
+          >
+            {pickOrderCopied ? <Check size={11} /> : <ListOrdered size={11} />}
           </button>
           {contest.active && (
             <button

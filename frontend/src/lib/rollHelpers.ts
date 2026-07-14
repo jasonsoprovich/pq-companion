@@ -80,6 +80,72 @@ export function buildRollSummary(session: RollSession, rule: WinnerRule): string
 }
 
 /**
+ * rankRolls dedupes to each player's first roll and buckets the whole field
+ * into ordered tie-groups under the rule — group 0 is the winning value,
+ * group 1 the next distinct value, and so on. Players who never rolled
+ * don't appear.
+ */
+export function rankRolls(rolls: Roll[], rule: WinnerRule): { value: number; names: string[] }[] {
+  const firstByPlayer = new Map<string, Roll>()
+  for (const r of rolls) {
+    if (!firstByPlayer.has(r.roller)) firstByPlayer.set(r.roller, r)
+  }
+  const byValue = new Map<number, string[]>()
+  for (const r of firstByPlayer.values()) {
+    const names = byValue.get(r.value) ?? []
+    names.push(r.roller)
+    byValue.set(r.value, names)
+  }
+  const values = [...byValue.keys()].sort((a, b) => (rule === 'highest' ? b - a : a - b))
+  return values.map((value) => ({ value, names: byValue.get(value)! }))
+}
+
+function formatPickOrderEntry(rank: number, group: { value: number; names: string[] }): string {
+  const suffix = group.names.length > 1 ? `(${group.value},tie)` : `(${group.value})`
+  return `${rank}) ${group.names.join('/')}${suffix}`
+}
+
+/**
+ * buildPickOrderText produces a paste-into-EQ line listing every roller in
+ * rank order, e.g. `Robe of the Lost Circle picks: 1) A(611) 2) B(598) ...`.
+ * Tied rollers share a rank number and are joined with '/'. Entries are
+ * added until the next one would exceed EQ's chat-line length (reserving
+ * room for a trailing "+N more"), so a long roster is truncated at a whole
+ * entry instead of mid-name. Returns '' when there are no rolls yet.
+ */
+function buildPickOrderText(label: string, rolls: Roll[], rule: WinnerRule): string {
+  const ranked = rankRolls(rolls, rule)
+  if (ranked.length === 0) return ''
+  const totalPlayers = ranked.reduce((n, g) => n + g.names.length, 0)
+  let out = `${label} picks: `
+  let usedPlayers = 0
+  for (let i = 0; i < ranked.length; i++) {
+    const group = ranked[i]
+    const entry = formatPickOrderEntry(i + 1, group)
+    const candidate = usedPlayers === 0 ? out + entry : `${out} ${entry}`
+    const remainingAfter = totalPlayers - usedPlayers - group.names.length
+    const suffixLen = remainingAfter > 0 ? ` +${remainingAfter} more`.length : 0
+    if (candidate.length + suffixLen > maxChatLineLen) {
+      const remaining = totalPlayers - usedPlayers
+      return remaining > 0 ? `${out.trimEnd()} +${remaining} more` : out.trimEnd()
+    }
+    out = candidate
+    usedPlayers += group.names.length
+  }
+  return out
+}
+
+/**
+ * buildPickOrderSummary is the session-level entry point for the "Copy Pick
+ * Order" button: the full field, ranked highest/lowest-first per the rule,
+ * for pasting a raid's loot pick order into EQ chat.
+ */
+export function buildPickOrderSummary(session: RollSession, rule: WinnerRule): string {
+  const label = session.item_name.trim() || `Roll ${session.min}–${session.max}`
+  return buildPickOrderText(label, session.rolls, rule)
+}
+
+/**
  * countdownSeconds returns the whole seconds remaining until session
  * auto-stop, or null if there is no scheduled stop. Negative values are
  * clamped to 0 so the UI never shows "−1s" during the brief window
@@ -295,4 +361,21 @@ export function buildContestSummary(contest: Contest, rule: WinnerRule): string 
   return clampChatLine(
     `${label} — ${formatWinners(o.winners)} (${o.value}/${o.tierMax}, ${o.tierLabel})`,
   )
+}
+
+/**
+ * buildContestPickOrderSummary is the tiered-contest counterpart of
+ * buildPickOrderSummary: it ranks the full field within the same tier
+ * contestOutcome would resolve the winner from (the highest-priority tier
+ * that has any rolls), rather than merging ranks across tiers — a low roll
+ * in a better tier still out-picks a high roll in a worse one.
+ */
+export function buildContestPickOrderSummary(contest: Contest, rule: WinnerRule): string {
+  for (const tier of contest.tiers) {
+    if (tier.rolls.length === 0) continue
+    const label = `${contest.itemName.trim() || 'Roll'} (${tier.label})`
+    const text = buildPickOrderText(label, tier.rolls, rule)
+    if (text) return text
+  }
+  return ''
 }
