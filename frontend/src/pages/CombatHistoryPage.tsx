@@ -37,6 +37,7 @@ import {
   playerAggregateDPS,
   type DPSMode,
 } from '../hooks/useDPSMode'
+import { buildDpsFightSummary } from '../lib/dpsClipboard'
 
 // dpsModeIcon — matching helper used elsewhere in the app.
 function dpsModeIcon(mode: DPSMode, size = 11): React.ReactElement {
@@ -712,19 +713,6 @@ function HealerTable({ healers }: { healers: HealerStats[] }): React.ReactElemen
   )
 }
 
-// ── Clipboard helpers ──────────────────────────────────────────────────────────
-
-function buildFightText(fight: StoredFight, combine: boolean, mode: DPSMode): string {
-  const dur = fmtDuration(fight.duration_seconds)
-  const label = dpsModeAbbrev(mode)
-  const lines: string[] = [`[PQ Companion] Fight: ${fight.npc_name} (${dur}) — ${dpsModeLabel(mode)} DPS`]
-  const rows = rollupCombatants(fight.combatants, combine, fight.duration_seconds)
-  for (const c of rows) {
-    lines.push(`${c.name}${petBadge(c.pets)}: ${fmtDPS(dpsForMode(c, mode))} ${label} (${fmt(c.total_damage)} total)`)
-  }
-  return lines.join('\n')
-}
-
 // ── one row + expandable detail ───────────────────────────────────────────────
 
 function FightRow({
@@ -743,7 +731,9 @@ function FightRow({
 
   function handleCopy(e: React.MouseEvent): void {
     e.stopPropagation()
-    navigator.clipboard.writeText(buildFightText(fight, combine, mode)).then(() => {
+    const text = buildDpsFightSummary(fight.npc_name, fight, combine, mode)
+    if (!text) return
+    navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     }).catch(() => {})

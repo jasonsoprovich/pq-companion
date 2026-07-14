@@ -1,4 +1,5 @@
 import type { TargetState, SpecialAbility, NamedSpell } from '../types/overlay'
+import { EQ_CHAT_LINE_MAX } from './eqClipboard'
 
 // Builds the one-line "copy target stats" string a raid leader can paste into
 // chat to call the next target, e.g.:
@@ -26,9 +27,11 @@ const PERTINENT_ABILITY_CODES = new Set([
   19, 20, 22, 23, 35, // Immune to Melee, Magic, Non-Bane Melee, Non-Magical Melee, Harm-from-Client
 ])
 
-// EverQuest's chat paste buffer has a hard limit around 409 characters — paste
-// silently fails if the clipboard exceeds it. Cap at 400 to stay safely under.
-const MAX_CLIPBOARD_LEN = 400
+// Use the app-wide EQ chat-line cap (see eqClipboard.ts) rather than a
+// locally chosen number — this used to be its own 400-char constant, which
+// was inconsistent with the 255 the roll tracker and DPS clipboard features
+// use and risked a paste getting silently cut off past the real send limit.
+const MAX_CLIPBOARD_LEN = EQ_CHAT_LINE_MAX
 
 // ASCII marker appended to the spells list when it's trimmed to fit. EQ's font
 // doesn't render the Unicode ellipsis, so use three dots.

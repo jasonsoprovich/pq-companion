@@ -1,4 +1,5 @@
 import type { RollSession, WinnerRule, Roll, RollProfile } from '../types/rolls'
+import { EQ_CHAT_LINE_MAX, clampChatLine } from './eqClipboard'
 
 export function fmtRollTime(iso: string | undefined): string {
   if (!iso) return ''
@@ -50,14 +51,6 @@ export function sortRolls(rolls: Roll[], rule: WinnerRule): Roll[] {
   const copy = [...rolls]
   copy.sort((a, b) => (rule === 'highest' ? b.value - a.value : a.value - b.value))
   return copy
-}
-
-/** EQ caps a single chat line near 255 characters; trim summaries so a
- * paste never gets silently cut off mid-name in game. */
-const maxChatLineLen = 255
-
-function clampChatLine(s: string): string {
-  return s.length > maxChatLineLen ? s.slice(0, maxChatLineLen) : s
 }
 
 function formatWinners(names: string[]): string {
@@ -125,7 +118,7 @@ function buildPickOrderText(label: string, rolls: Roll[], rule: WinnerRule): str
     const candidate = usedPlayers === 0 ? out + entry : `${out} ${entry}`
     const remainingAfter = totalPlayers - usedPlayers - group.names.length
     const suffixLen = remainingAfter > 0 ? ` +${remainingAfter} more`.length : 0
-    if (candidate.length + suffixLen > maxChatLineLen) {
+    if (candidate.length + suffixLen > EQ_CHAT_LINE_MAX) {
       const remaining = totalPlayers - usedPlayers
       return remaining > 0 ? `${out.trimEnd()} +${remaining} more` : out.trimEnd()
     }

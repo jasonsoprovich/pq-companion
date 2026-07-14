@@ -24,6 +24,7 @@ import type { CombatState, DeathRecord, EntityStats, FightState, FightSummary } 
 import type { LogTailerStatus } from '../types/logEvent'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
 import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, playerAggregateDPS, type DPSMode } from '../hooks/useDPSMode'
+import { buildDpsFightSummary } from '../lib/dpsClipboard'
 import { aggregateRecentFights } from '../lib/rollingWindow'
 import { FightViewToggle } from '../components/FightViewToggle'
 import { groupBySession, fmtSessionGap } from '../lib/sessionGrouping'
@@ -272,7 +273,9 @@ function FightRow({
 
   function handleCopy(e: React.MouseEvent): void {
     e.stopPropagation()
-    navigator.clipboard.writeText(buildFightText(fight, combine, mode)).then(() => {
+    const text = buildDpsFightSummary(fight.primary_target, fight, combine, mode)
+    if (!text) return
+    navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     }).catch(() => {})
@@ -833,18 +836,6 @@ function applyFilters(fights: FightSummary[], filters: FilterState): FightSummar
 }
 
 // ── Clipboard helpers ──────────────────────────────────────────────────────────
-
-function buildFightText(fight: FightSummary, combine: boolean, mode: DPSMode): string {
-  const target = fight.primary_target ?? 'Unknown'
-  const dur = fmtDuration(fight.duration_seconds)
-  const label = dpsModeAbbrev(mode)
-  const lines: string[] = [`[PQ Companion] Fight: ${target} (${dur}) — ${dpsModeLabel(mode)} DPS`]
-  const rows = rollupCombatants(fight.combatants, combine, fight.duration_seconds)
-  for (const c of rows) {
-    lines.push(`${c.name}${petBadge(c.pets)}: ${fmtDPS(dpsForMode(c, mode))} ${label} (${fmt(c.total_damage)} total)`)
-  }
-  return lines.join('\n')
-}
 
 function buildSessionText(fights: FightSummary[], sessionDPS: number): string {
   const lines: string[] = [`[PQ Companion] Session: ${fights.length} fight${fights.length !== 1 ? 's' : ''} | ${fmtDPS(sessionDPS)} DPS avg (me)`]

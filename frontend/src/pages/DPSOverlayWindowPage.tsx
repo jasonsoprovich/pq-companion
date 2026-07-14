@@ -18,6 +18,7 @@ import OverlayLockButton from '../components/OverlayLockButton'
 import { getCombatState, resetCombatState } from '../services/api'
 import type { CombatState, FightState } from '../types/combat'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
+import { buildDpsFightSummary } from '../lib/dpsClipboard'
 import { combatantBarColor } from '../lib/combatantColor'
 import { useDPSClassColors } from '../hooks/useDPSClassColors'
 import type { DPSClassColors } from '../types/config'
@@ -61,17 +62,6 @@ function pct(part: number, total: number): string {
 
 function truncateName(name: string, max = 24): string {
   return name.length > max ? `${name.slice(0, max - 1)}…` : name
-}
-
-// ── Clipboard ──────────────────────────────────────────────────────────────────
-
-function buildFightText(fight: FightState, combine: boolean, mode: DPSMode): string {
-  const rolled = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
-  const label = dpsModeAbbrev(mode).toLowerCase()
-  return rolled
-    .slice(0, 10)
-    .map((c, i) => `#${i + 1} ${c.name}${petBadge(c.pets)} ${Math.round(dpsForMode(c, mode))}${label} ${c.total_damage.toLocaleString()}dmg`)
-    .join(' | ')
 }
 
 // ── Row ────────────────────────────────────────────────────────────────────────
@@ -466,7 +456,9 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           <button
             onClick={() => {
               if (!fight) return
-              navigator.clipboard.writeText(buildFightText(fight, combine, dpsMode)).then(() => {
+              const text = buildDpsFightSummary(fight.primary_target, fight, combine, dpsMode)
+              if (!text) return
+              navigator.clipboard.writeText(text).then(() => {
                 setCopied(true)
                 setTimeout(() => setCopied(false), 1500)
               }).catch(() => {})

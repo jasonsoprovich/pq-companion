@@ -7,6 +7,7 @@ import OverlayWindow from '../OverlayWindow'
 import type { CombatState, FightState } from '../../types/combat'
 import type { LogTailerStatus } from '../../types/logEvent'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../../lib/dpsRollup'
+import { buildDpsFightSummary } from '../../lib/dpsClipboard'
 import { combatantBarColor } from '../../lib/combatantColor'
 import { useDPSClassColors } from '../../hooks/useDPSClassColors'
 import type { DPSClassColors } from '../../types/config'
@@ -62,21 +63,6 @@ function truncateName(name: string, max = 28): string {
   return name.length > max ? `${name.slice(0, max - 1)}…` : name
 }
 
-function buildFightText(fight: FightState, combine: boolean, mode: DPSMode): string {
-  const target = fight.primary_target ?? 'Unknown'
-  const dur = fmtDuration(fight.duration_seconds)
-  const label = dpsModeAbbrev(mode)
-  const lines: string[] = [`[PQ Companion] Fight: ${target} (${dur}) — ${dpsModeLabel(mode)} DPS`]
-  const rows = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
-  for (const c of rows) {
-    const crit = c.crit_count > 0
-      ? `, ${c.crit_count} crit${c.crit_count !== 1 ? 's' : ''} for ${fmt(c.crit_damage)}`
-      : ''
-    lines.push(`${c.name}${petBadge(c.pets)}: ${fmtRate(dpsForMode(c, mode))} ${label} (${fmt(c.total_damage)} total${crit})`)
-  }
-  return lines.join('\n')
-}
-
 function rowTooltip(stat: RolledUpEntity): string {
   const parts = [`${stat.hit_count} hit${stat.hit_count !== 1 ? 's' : ''}`, `max ${fmt(stat.max_hit)}`]
   if (stat.crit_count > 0) {
@@ -90,7 +76,9 @@ function CopyFightButton({ fight, combine, mode }: { fight: FightState | null; c
 
   function handleCopy(): void {
     if (!fight) return
-    navigator.clipboard.writeText(buildFightText(fight, combine, mode)).then(() => {
+    const text = buildDpsFightSummary(fight.primary_target, fight, combine, mode)
+    if (!text) return
+    navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     }).catch(() => {})
