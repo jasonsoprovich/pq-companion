@@ -28,9 +28,7 @@ const PERTINENT_ABILITY_CODES = new Set([
 ])
 
 // Use the app-wide EQ chat-line cap (see eqClipboard.ts) rather than a
-// locally chosen number — this used to be its own 400-char constant, which
-// was inconsistent with the 255 the roll tracker and DPS clipboard features
-// use and risked a paste getting silently cut off past the real send limit.
+// locally chosen number, so every clipboard feature agrees on one figure.
 const MAX_CLIPBOARD_LEN = EQ_CHAT_LINE_MAX
 
 // ASCII marker appended to the spells list when it's trimmed to fit. EQ's font
