@@ -6,6 +6,8 @@ import {
   Archive,
   ChevronDown,
   ChevronRight,
+  Clipboard,
+  ClipboardCheck,
   Hourglass,
   Search,
   Sigma,
@@ -710,6 +712,19 @@ function HealerTable({ healers }: { healers: HealerStats[] }): React.ReactElemen
   )
 }
 
+// ── Clipboard helpers ──────────────────────────────────────────────────────────
+
+function buildFightText(fight: StoredFight, combine: boolean, mode: DPSMode): string {
+  const dur = fmtDuration(fight.duration_seconds)
+  const label = dpsModeAbbrev(mode)
+  const lines: string[] = [`[PQ Companion] Fight: ${fight.npc_name} (${dur}) — ${dpsModeLabel(mode)} DPS`]
+  const rows = rollupCombatants(fight.combatants, combine, fight.duration_seconds)
+  for (const c of rows) {
+    lines.push(`${c.name}${petBadge(c.pets)}: ${fmtDPS(dpsForMode(c, mode))} ${label} (${fmt(c.total_damage)} total)`)
+  }
+  return lines.join('\n')
+}
+
 // ── one row + expandable detail ───────────────────────────────────────────────
 
 function FightRow({
@@ -724,13 +739,23 @@ function FightRow({
   onDelete: () => void
 }): React.ReactElement {
   const [expanded, setExpanded] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  function handleCopy(e: React.MouseEvent): void {
+    e.stopPropagation()
+    navigator.clipboard.writeText(buildFightText(fight, combine, mode)).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }).catch(() => {})
+  }
+
   return (
     <div style={{ borderBottom: '1px solid var(--color-border)' }}>
       <div
         onClick={() => setExpanded((v) => !v)}
         style={{
           display: 'grid',
-          gridTemplateColumns: '20px 140px 60px 90px 90px 1fr 24px',
+          gridTemplateColumns: '20px 140px 60px 90px 90px 1fr 44px',
           gap: '0 12px',
           alignItems: 'center',
           padding: '7px 14px',
@@ -773,25 +798,43 @@ function FightRow({
             </span>
           )}
         </span>
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onDelete()
-          }}
-          title="Delete this fight"
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: 2,
-            color: 'var(--color-muted)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Trash2 size={12} />
-        </button>
+        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+          <button
+            onClick={handleCopy}
+            title="Copy fight summary to clipboard"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 2,
+              color: copied ? '#22c55e' : 'var(--color-muted)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {copied ? <ClipboardCheck size={12} /> : <Clipboard size={12} />}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete()
+            }}
+            title="Delete this fight"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 2,
+              color: 'var(--color-muted)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Trash2 size={12} />
+          </button>
+        </span>
       </div>
       {expanded && (
         <div style={{ padding: '4px 14px 12px', backgroundColor: 'var(--color-surface-2)' }}>
@@ -1285,7 +1328,7 @@ export default function CombatHistoryPage(): React.ReactElement {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '20px 140px 60px 90px 90px 1fr 24px',
+            gridTemplateColumns: '20px 140px 60px 90px 90px 1fr 44px',
             gap: '0 12px',
             padding: '5px 14px',
             fontSize: 10,
