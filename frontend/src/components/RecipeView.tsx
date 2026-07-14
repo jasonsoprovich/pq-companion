@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Hammer, Check } from 'lucide-react'
 import { getRecipe, getItemSources } from '../services/api'
@@ -24,35 +24,87 @@ function isLinkableEntry(e: RecipeEntry): boolean {
 }
 
 // Have/missing indicator for a component row, sourced from the player's Zeal
-// inventory exports. Held in a single spot shows the character + location
-// inline (the "which bag slot" detail is the whole point); held in several
-// spots shows a count instead and leaves the full breakdown to the tooltip.
+// inventory exports. Held in a single spot shows the character, quantity and
+// location inline. Held in several spots shows the total owned and lets the
+// user click through to a per-character/location breakdown, since a hover
+// tooltip alone doesn't tell a heavy user which of several alts to go grab it
+// from.
 function HaveBadge({ entry, holdings }: { entry: RecipeEntry; holdings: ItemHolding[] }): React.ReactElement {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    const onClick = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('mousedown', onClick)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onClick)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
   const needed = entry.count > 0 ? entry.count : 1
   const totalHeld = holdings.reduce((sum, h) => sum + h.count, 0)
   const have = totalHeld >= needed
-  const locSummary =
-    holdings.length === 0
-      ? ''
-      : holdings.length === 1
-        ? `${holdings[0].character || 'Shared Bank'} — ${describeLocation(holdings[0].location)}`
-        : `${totalHeld} across ${holdings.length} spots`
+  const single = holdings.length === 1 ? holdings[0] : null
+
   const title = have
-    ? `You have this — ${locSummary}`
+    ? `You have ${totalHeld}${totalHeld !== needed ? ` (need ${needed})` : ''}`
     : totalHeld > 0
-      ? `Only have ${totalHeld} of ${needed} needed — ${locSummary}`
+      ? `Only have ${totalHeld} of ${needed} needed`
       : 'Not found in any character inventory'
+
   return (
-    <span className="flex shrink-0 items-center gap-1.5" title={title}>
-      {have && (
-        <span className="whitespace-nowrap" style={{ color: 'var(--color-muted-foreground)' }}>
-          {locSummary}
+    <div ref={containerRef} className="relative flex shrink-0 items-center gap-1.5">
+      {single && (
+        <span className="whitespace-nowrap" style={{ color: 'var(--color-muted-foreground)' }} title={title}>
+          {single.character || 'Shared Bank'} — {describeLocation(single.location)}
+          {single.count > 1 && <span className="ml-1">×{single.count}</span>}
         </span>
       )}
-      <span className="flex items-center gap-0.5" style={{ color: have ? '#4ade80' : '#f87171' }}>
+      {holdings.length > 1 && (
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex items-center gap-0.5 whitespace-nowrap underline decoration-dotted"
+          style={{ color: 'var(--color-muted-foreground)' }}
+          title={title}
+        >
+          ×{totalHeld} across {holdings.length} spots
+          {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+        </button>
+      )}
+      <span className="flex items-center gap-0.5" style={{ color: have ? '#4ade80' : '#f87171' }} title={title}>
         {have ? <Check size={12} /> : <span className="text-[10px] font-semibold uppercase">missing</span>}
       </span>
-    </span>
+      {open && holdings.length > 1 && (
+        <div
+          className="absolute right-0 top-full z-40 mt-1 min-w-[180px] rounded border py-1 shadow-lg"
+          style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)' }}
+        >
+          {holdings.map((h, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 px-2 py-0.5 text-xs">
+              <span className="min-w-0 truncate" style={{ color: 'var(--color-foreground)' }}>
+                {h.character || 'Shared Bank'}
+                {h.count > 1 && (
+                  <span className="ml-1" style={{ color: 'var(--color-muted-foreground)' }}>
+                    ×{h.count}
+                  </span>
+                )}
+              </span>
+              <span className="shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                {describeLocation(h.location)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
