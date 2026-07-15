@@ -1,6 +1,7 @@
 # Tradeskill Leveling Optimizer — Feasibility & Implementation Plan
 
-Status: **RESEARCHED + PLANNED, not built** (2026-07-06)
+Status: **Phases 1–3 SHIPPED** (2026-07-06); **Phase 4 won't-do** (issue #148);
+**Phase 5 ("Custom" mode, issue #149) SHIPPED** (2026-07-15)
 Gated to: **Luclin era** (dev flag). PoP/PoK admitted automatically later via DB regen — no code change.
 
 ## Goal
@@ -189,6 +190,60 @@ Notes:
    shows. The Cheapest objective stays partial by design for farmed components;
    that partial-cost note is the correct, durable behavior.
 
+5. **Phase 5 — "Custom" mode (issue #149). ✅ SHIPPED (2026-07-15).**
+   Grimrose/Shakoba (Discord) wanted a
+   way to route around specific recipes the auto-picker favors but the player
+   doesn't want to grind (rare/annoying-to-farm mats, or a recipe that's in
+   `quarm.db` but whose components aren't actually farmable yet in the current
+   era — see LIMITATIONS.md 8.3). Clarified in a 2026-07-12 follow-up
+   (Grimrose, Discord):
+   - **Flow confirmed as recompute-from-full-pool, not row-hiding.** "Build the
+     path from scratch" (Grimrose's words) means: pass the same full candidate
+     list to `tsplan.Solve()` minus the excluded recipe IDs and let it re-derive
+     the whole staged plan, not take a precomputed Fastest/Cheapest plan and
+     strike rows out of it in the UI. This matches what was already scoped —
+     new `ExcludeRecipeIDs []int` request field, filtered out of the candidate
+     slice before `Solve()` runs. **No solver change needed.**
+   - **Large gaps are not an error state — they're normal.** Grimrose's own
+     example: Baking's preferred path from 0 skill starts with fish rolls,
+     trivial 135, so 0–135 is legitimately *one* stage even with zero
+     exclusions. This resolves the open question from the original filing
+     ("does `Plan.Warnings[]` need to gracefully express an unreachable gap
+     when an exclusion removes the only recipe covering a range?") — **no.**
+     A wide stage range from an exclusion looks and behaves exactly like a
+     wide stage range that occurs naturally; the existing `Stage{range}` shape
+     already covers it. Only a genuine dead end (no candidate anywhere above
+     the current skill, i.e. every remaining recipe was excluded) needs the
+     existing partial-plan-plus-warning behavior `Solve()` already has for
+     unreachable targets — that path doesn't need new code either.
+   - **Exclusion criteria beyond "hard to farm":** confirmed to also include
+     recipes that show up in `quarm.db`/PQDI but whose components aren't live
+     yet server-side (data imported ahead of content — same class of issue as
+     other DB-ahead-of-era quirks). The app has no way to detect "recipe rows
+     exist but the drop table for its components isn't populated yet," so this
+     isn't solvable algorithmically — the per-recipe checkbox *is* the fix,
+     letting the player manually route around a recipe the DB thinks is valid
+     but the live server doesn't yet support.
+   Built as a **checkbox layer that composes with Fastest/Cheapest**, not a
+   third mutually-exclusive objective — an exclusion narrows whichever
+   objective is active rather than replacing it. A `Ban` icon on each stage row
+   feeds `ExcludeRecipeIDs []int` into the existing request; the handler
+   filters the candidate list before calling `tsplan.Solve()` (no solver
+   change), the same pattern as `AvoidOtherTradeskills`. A persistent
+   "Excluded" chip strip lets the player see and un-exclude recipes even after
+   they drop out of the plan — a checkbox on the stage row itself has nowhere
+   to live once that row is gone. `Solve()` reports a plain "every recipe was
+   excluded" warning if exclusions leave nothing to plan with, via the same
+   partial-plan-plus-warning path it already used for unreachable targets.
+   Backend: `characters.go` `tradeskillPlanRequest.ExcludeRecipeIDs` + filter in
+   `tradeskillPlan`; test `TestTradeskillPlan_ExcludeRecipeIDs` (excludes the
+   baseline plan's first-stage recipe on real Blacksmithing data, confirms it
+   never reappears and the plan still reaches above start). Frontend:
+   `TradeskillLevelingPage.tsx` (excluded state keyed by recipe id → name, reset
+   on character/discipline change), `api.ts` `excludeRecipeIds`. Added
+   LIMITATIONS.md §8.3 documenting the DB-ahead-of-live-content case this mode
+   mitigates.
+
 ## Open questions for build time
 
 - Candidate-trivial ceiling: fixed "+25" band, or tune per tradeskill?
@@ -197,6 +252,8 @@ Notes:
 - Where to mount: new top-level "Tradeskills" nav section, or a second tab on the
   existing Recipes page? (Leaning: sibling page under the Database section, near
   Recipes.)
+- ~~Phase 5 / Custom mode~~ — resolved and shipped as a checkbox layer (see
+  Phasing above).
 
 ## Sources
 

@@ -420,6 +420,27 @@ These are inherent to log-file parsing and affect multiple features:
   (it's server code); a documented constant set could be hardcoded if Quarm
   publishes it.
 
+### 8.3 The leveling planner can't tell "in the DB" from "live on the server"
+
+- **Limitation:** The tradeskill leveling planner (`TradeskillLevelingPage`)
+  picks recipes purely from `quarm.db`. Occasionally a recipe's row (and its
+  component items) exist in the dump ahead of that content actually being
+  spawnable/droppable on the live server — data imported before the era it
+  belongs to is turned on. The planner has no way to distinguish this from a
+  genuinely obtainable recipe, so it can recommend a path through something
+  the player can't actually farm yet.
+- **Root cause:** `quarm.db` is a static snapshot of the full item/recipe
+  schema; there's no "is this content live yet" flag to join against — that
+  state lives in server-side spawn/loot-table activation, not the dump.
+- **Sources checked:** `quarm.db` (no live/activation flag), Log (no signal
+  until a player actually tries and fails to obtain the component), Zeal
+  (none).
+- **Could a future data source fix this?** **No** reliable one — this is a
+  timing mismatch between data dump and server content rollout, not a data
+  gap. Mitigation is manual: the planner's "Custom" mode (issue #149, per-
+  recipe exclude checkboxes) lets a player route around a specific recipe
+  they know isn't obtainable yet, without the app needing to detect it.
+
 ---
 
 ## 9. Spell acquisition

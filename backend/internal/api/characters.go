@@ -361,6 +361,7 @@ type tradeskillPlanRequest struct {
 	Objective             string   `json:"objective"`
 	AllowFarming          *bool    `json:"allow_farming"`
 	AvoidOtherTradeskills bool     `json:"avoid_other_tradeskills"` // exclude recipes needing another discipline
+	ExcludeRecipeIDs      []int    `json:"exclude_recipe_ids"`      // "Custom" mode: recipes the player rejected, routed around
 	SkillMod              int      `json:"skill_mod"`
 	SkillupBonus          int      `json:"skillup_bonus"`
 	SwitchPenalty         *float64 `json:"switch_penalty"`
@@ -501,6 +502,11 @@ func (h *charactersHandler) tradeskillPlan(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	excluded := make(map[int]bool, len(req.ExcludeRecipeIDs))
+	for _, id := range req.ExcludeRecipeIDs {
+		excluded[id] = true
+	}
+
 	recipes, err := h.db.RecipesForTradeskill(ts)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -518,6 +524,13 @@ func (h *charactersHandler) tradeskillPlan(w http.ResponseWriter, r *http.Reques
 		// "Stay in this discipline" mode drops recipes that would force crafting
 		// in another skill-gated tradeskill.
 		if req.AvoidOtherTradeskills && rc.RequiresCrossTradeskill {
+			continue
+		}
+		// "Custom" mode: the player rejected this recipe (rare/annoying-to-farm
+		// mats, or components not actually live yet despite the DB row existing)
+		// — the plan is recomputed from scratch over what's left, not filtered
+		// after the fact.
+		if excluded[rc.RecipeID] {
 			continue
 		}
 		cands = append(cands, tsplan.RecipeCandidate{
@@ -574,6 +587,12 @@ func (h *charactersHandler) tradeskillPlan(w http.ResponseWriter, r *http.Reques
 	if req.AvoidOtherTradeskills && len(cands) == 0 && len(recipes) > 0 {
 		plan.Warnings = append(plan.Warnings, fmt.Sprintf(
 			"Every %s recipe here needs another tradeskill — turn off \"Stay in this tradeskill\" to plan a path.",
+			enums.TradeskillName(ts)))
+	}
+	// Likewise, if the player's own exclusions left nothing to plan with.
+	if len(excluded) > 0 && len(cands) == 0 && len(recipes) > 0 {
+		plan.Warnings = append(plan.Warnings, fmt.Sprintf(
+			"Every remaining %s recipe was excluded — uncheck one to plan a path.",
 			enums.TradeskillName(ts)))
 	}
 

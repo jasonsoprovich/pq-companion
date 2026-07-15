@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  AlertTriangle, Coins, ExternalLink, Gauge, Hammer, Info, Route,
+  AlertTriangle, Ban, Coins, ExternalLink, Gauge, Hammer, Info, Route, X,
 } from 'lucide-react'
 import {
   listCharacters,
@@ -55,6 +55,12 @@ export default function TradeskillLevelingPage(): React.ReactElement {
   const [allowFarming, setAllowFarming] = useState(true)
   const [avoidOther, setAvoidOther] = useState(false)
   const [maelin, setMaelin] = useState(false)
+  // "Custom" mode: recipes the player rejected (rare/annoying mats, or a recipe
+  // whose components aren't actually live yet despite the DB row existing) —
+  // recipe_id -> display name, so the chip list can still show a name after the
+  // recipe drops out of the plan. Recomputed from the full pool minus this set
+  // (not filtered from an already-built plan), so gaps route around cleanly.
+  const [excluded, setExcluded] = useState<Record<number, string>>({})
 
   const [plan, setPlan] = useState<TradeskillLevelingPlan | null>(null)
   const [loading, setLoading] = useState(false)
@@ -140,7 +146,18 @@ export default function TradeskillLevelingPage(): React.ReactElement {
   }
   function selectSkill(id: number) {
     setTsId(id)
+    setExcluded({})
     localStorage.setItem(SKILL_KEY, String(id))
+  }
+  function excludeRecipe(id: number, name: string) {
+    setExcluded((prev) => ({ ...prev, [id]: name }))
+  }
+  function includeRecipe(id: number) {
+    setExcluded((prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
   }
 
   // Fetch the plan (debounced) whenever an input changes and is valid.
@@ -168,6 +185,7 @@ export default function TradeskillLevelingPage(): React.ReactElement {
         objective,
         allowFarming,
         avoidOtherTradeskills: avoidOther,
+        excludeRecipeIds: Object.keys(excluded).map(Number),
         skillupBonus: maelin ? MAELIN_SKILLUP_PCT : 0,
       })
         .then((p) => {
@@ -182,7 +200,7 @@ export default function TradeskillLevelingPage(): React.ReactElement {
         })
     }, 300)
     return () => clearTimeout(t)
-  }, [charId, tsId, start, target, objective, allowFarming, avoidOther, maelin])
+  }, [charId, tsId, start, target, objective, allowFarming, avoidOther, excluded, maelin])
 
   const label = tsId != null ? tradeskillLabel(tsId) : ''
   const targetInvalid =
@@ -300,6 +318,29 @@ export default function TradeskillLevelingPage(): React.ReactElement {
         </p>
       </div>
 
+      {/* Custom exclusions — recipes routed around; click to bring one back */}
+      {Object.keys(excluded).length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-1.5 rounded-lg border p-2 text-xs"
+          style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+        >
+          <Ban size={12} style={{ color: 'var(--color-muted)' }} />
+          <span style={{ color: 'var(--color-muted)' }}>Excluded (plan routes around these):</span>
+          {Object.entries(excluded).map(([id, name]) => (
+            <button
+              key={id}
+              onClick={() => includeRecipe(Number(id))}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5"
+              style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}
+              title="Include this recipe again"
+            >
+              {name}
+              <X size={10} />
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Status / edge notes */}
       {untrained && (
         <Note tone="warn">
@@ -325,14 +366,20 @@ export default function TradeskillLevelingPage(): React.ReactElement {
       {error && (
         <Note tone="destructive">Couldn’t build a plan. Try again.</Note>
       )}
-      {plan && !targetInvalid && <PlanView plan={plan} loading={loading} />}
+      {plan && !targetInvalid && (
+        <PlanView plan={plan} loading={loading} onExclude={excludeRecipe} />
+      )}
     </div>
   )
 }
 
 // ── Plan view ──────────────────────────────────────────────────────────────────
 
-function PlanView({ plan, loading }: { plan: TradeskillLevelingPlan; loading: boolean }): React.ReactElement {
+function PlanView({ plan, loading, onExclude }: {
+  plan: TradeskillLevelingPlan
+  loading: boolean
+  onExclude: (id: number, name: string) => void
+}): React.ReactElement {
   const label = plan.skill_name || tradeskillLabel(plan.tradeskill)
   const partial = plan.reached_skill < plan.target_skill
   const costPartial = plan.objective === 'cheapest' && !plan.cost_complete
@@ -409,6 +456,7 @@ function PlanView({ plan, loading }: { plan: TradeskillLevelingPlan; loading: bo
                 <th className="px-3 py-2 text-right font-semibold">Trivial</th>
                 <th className="px-3 py-2 text-right font-semibold">Combines</th>
                 <th className="px-3 py-2 text-right font-semibold">Cost</th>
+                <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
@@ -418,6 +466,7 @@ function PlanView({ plan, loading }: { plan: TradeskillLevelingPlan; loading: bo
                   stage={s}
                   subCombines={plan.sub_combines}
                   last={i === stages.length - 1}
+                  onExclude={onExclude}
                 />
               ))}
             </tbody>
@@ -428,10 +477,11 @@ function PlanView({ plan, loading }: { plan: TradeskillLevelingPlan; loading: bo
   )
 }
 
-function StageRow({ stage, subCombines, last }: {
+function StageRow({ stage, subCombines, last, onExclude }: {
   stage: LevelingStage
   subCombines?: Record<string, SubCombineInfo>
   last: boolean
+  onExclude: (id: number, name: string) => void
 }): React.ReactElement {
   return (
     <tr
@@ -472,6 +522,16 @@ function StageRow({ stage, subCombines, last }: {
       </td>
       <td className="px-3 py-2 text-right text-xs tabular-nums" style={{ color: 'var(--color-muted)' }}>
         {stage.cost_known ? priceLabel(Math.round(stage.cost)) : 'farmed'}
+      </td>
+      <td className="px-3 py-2 text-right">
+        <button
+          onClick={() => onExclude(stage.recipe_id, stage.recipe)}
+          className="inline-flex items-center rounded p-1 hover:opacity-100"
+          style={{ color: 'var(--color-muted)', opacity: 0.6 }}
+          title="Exclude this recipe — re-route the plan around it"
+        >
+          <Ban size={13} />
+        </button>
       </td>
     </tr>
   )

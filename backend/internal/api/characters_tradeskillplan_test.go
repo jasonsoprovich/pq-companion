@@ -240,3 +240,67 @@ func TestTradeskillPlan_AvoidOtherTradeskills(t *testing.T) {
 	t.Logf("avoid-others blacksmithing 1->188: %d stages, reached %d (%d cross recipes excluded)",
 		len(plan.Stages), plan.ReachedSkill, len(recipes)-len(cands))
 }
+
+// TestTradeskillPlan_ExcludeRecipeIDs verifies "Custom" mode (issue #149):
+// dropping a recipe the default fastest plan actually uses reroutes the plan
+// around it entirely (that recipe never appears in any stage) rather than
+// leaving a gap, and the plan is recomputed from the full candidate pool minus
+// the exclusion — not filtered from an already-built plan.
+func TestTradeskillPlan_ExcludeRecipeIDs(t *testing.T) {
+	_, file, _, _ := runtime.Caller(0)
+	repoRoot := filepath.Join(filepath.Dir(file), "..", "..", "..")
+	dbPath := filepath.Join(repoRoot, "backend", "data", "quarm.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Skip("quarm.db not present")
+	}
+	d, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer d.Close()
+
+	recipes, err := d.RecipesForTradeskill(63) // Blacksmithing
+	if err != nil {
+		t.Fatalf("recipes: %v", err)
+	}
+	if len(recipes) == 0 {
+		t.Fatal("no blacksmithing recipes")
+	}
+	cands := mapCandidates(recipes)
+
+	const start, target = 1, 188
+	params := tsplan.Params{
+		StartSkill: start, TargetSkill: target,
+		TradeStat: 100, Difficulty: 3.0,
+		Objective: tsplan.Fastest, AllowFarming: true, SwitchPenalty: 5,
+		TrivialCeiling: tradeskillPlanTrivialCeiling,
+	}
+
+	baseline := tsplan.Solve(cands, params)
+	if len(baseline.Stages) == 0 {
+		t.Fatalf("baseline plan produced no stages; warnings=%v", baseline.Warnings)
+	}
+	excludeID := baseline.Stages[0].RecipeID
+
+	filtered := make([]tsplan.RecipeCandidate, 0, len(cands))
+	for _, c := range cands {
+		if c.RecipeID != excludeID {
+			filtered = append(filtered, c)
+		}
+	}
+	rerouted := tsplan.Solve(filtered, params)
+	if len(rerouted.Stages) == 0 {
+		t.Fatalf("rerouted plan produced no stages; warnings=%v", rerouted.Warnings)
+	}
+	assertPlanMonotonic(t, rerouted, start)
+	for _, s := range rerouted.Stages {
+		if s.RecipeID == excludeID {
+			t.Fatalf("excluded recipe %d still appears in rerouted plan", excludeID)
+		}
+	}
+	if rerouted.ReachedSkill <= start {
+		t.Fatalf("rerouted plan reached %d, want above start %d", rerouted.ReachedSkill, start)
+	}
+	t.Logf("blacksmithing exclude-recipe %d: baseline %d stages -> rerouted %d stages, reached %d",
+		excludeID, len(baseline.Stages), len(rerouted.Stages), rerouted.ReachedSkill)
+}
