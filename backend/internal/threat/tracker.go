@@ -477,7 +477,16 @@ func (t *Tracker) applyPendingLocked(p *pendingCast, ts time.Time, mode commitMo
 		// same CheckAggroAmount hate (EQMacEmu ResistSpell).
 		hate := p.offensiveHate + p.damageHate
 		if hate != 0 && p.target != "" {
-			t.addHateLocked(p.target, float64(hate), ts, true) // spell hate
+			// The hate modifier only ever scales a POSITIVE total: EQMacEmu's
+			// spells.cpp SpellOnTarget routes a cast's aggro through
+			// AddToHateList — where aabonuses/spellbonuses/itembonuses.hatemod
+			// (Spell Casting Subtlety AA, Glamorous Visage, ...) applies — only
+			// when CheckAggroAmount's return is > 0. A non-positive total (an
+			// aggro shedder like Concussion, whose SE_InstantHate is itself
+			// "non_modified_aggro" inside CheckAggroAmount and untouched by
+			// SpellAggroMod/focus either) instead goes through
+			// SetHateAmountOnEnt directly, bypassing the modifier entirely.
+			t.addHateLocked(p.target, float64(hate), ts, hate > 0) // spell hate
 			t.lastEngaged = p.target
 			return true
 		}
@@ -513,9 +522,14 @@ func (t *Tracker) ensureMobLocked(mob string, ts time.Time) *mobState {
 // the staleness timer. When applyHatemod is true the effective hate modifier
 // (Spell Casting Subtlety AA + hate-mod buffs + manual gear %) scales the amount;
 // the server applies that modifier to spell and heal hate ONLY, never to melee
-// swings, so melee callers pass false. amount may be negative (an aggro shedder);
-// the displayed value is floored at snapshot time. Does NOT touch lastEngaged —
-// callers that represent "engaging" a mob set that. Caller must hold t.mu.
+// swings, so melee callers pass false. It also never applies to a non-positive
+// total (see applyPendingLocked/recordSpellDamage) — callers pass applyHatemod
+// = amount > 0 for spell hate so an aggro-shedding total like Concussion's
+// -600 is credited unscaled, matching the server bypassing AddToHateList for a
+// non-positive CheckAggroAmount result. amount may still be negative (an aggro
+// shedder); the displayed value is floored at snapshot time. Does NOT touch
+// lastEngaged — callers that represent "engaging" a mob set that. Caller must
+// hold t.mu.
 func (t *Tracker) addHateLocked(mob string, amount float64, ts time.Time, applyHatemod bool) {
 	adjusted := amount
 	if applyHatemod {
@@ -549,7 +563,9 @@ func (t *Tracker) recordSpellDamage(mob string, dmg int, ts time.Time) {
 	t.mu.Lock()
 	if p := t.pending; p != nil && p.directDamage && ts.Sub(p.at) <= castResolveWindow {
 		t.pending = nil
-		t.addHateLocked(mob, float64(p.offensiveHate+p.damageHate), ts, true) // spell hate
+		hate := p.offensiveHate + p.damageHate
+		// See applyPendingLocked: the hate modifier bypasses a non-positive total.
+		t.addHateLocked(mob, float64(hate), ts, hate > 0) // spell hate
 		t.lastEngaged = mob
 		snap := t.snapshotLocked(ts)
 		t.mu.Unlock()

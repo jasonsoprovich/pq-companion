@@ -65,11 +65,25 @@ const (
 
 	// spaInstantHate (SE_InstantHate): flat signed hate (Terror +200..+510;
 	// Jolt/Concussion negative — aggro shed). Added on top of everything else.
+	// Verified against Mob::CheckAggroAmount (SecretsOTheP/EQMacEmu zone/aggro.cpp):
+	// this is stored in a separate "non_modified_aggro" local and added to the
+	// return value completely untouched by SpellAggroMod/focusSpellHateMod — by
+	// design, this term is never itself scaled by any hate modifier.
 	spaInstantHate = 92
 
 	// spaChangeAggro (SE_ChangeAggro) and spaSpellHateMod (SE_SpellHateMod) are
 	// percentage hate-generation modifiers carried by self-buffs (Glamorous
-	// Visage -10, Voice of Terris +10). Tracked as active modifiers, not hate.
+	// Visage -10, Voice of Terris +10) and the Spell Casting Subtlety AA (also
+	// SE_ChangeAggro in the Quarm dump — same effect id as Visage, not 130).
+	// Tracked as active modifiers, not hate.
+	//
+	// Verified against source (zone/spells.cpp SpellOnTarget + zone/attack.cpp
+	// AddToHateList): the modifier only ever scales a cast's TOTAL hate
+	// (CheckAggroAmount's full return, including spaInstantHate) when that
+	// total is positive — SpellOnTarget only calls AddToHateList (where the
+	// modifier lives) when aggro_amount > 0; a non-positive total (an aggro
+	// shedder like Concussion) instead goes through SetHateAmountOnEnt
+	// directly, never touching the modifier. See tracker.go addHateLocked.
 	spaChangeAggro  = 114
 	spaSpellHateMod = 130
 )

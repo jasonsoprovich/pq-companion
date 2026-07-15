@@ -616,6 +616,30 @@ func TestHateModBuffStacksWithStatic(t *testing.T) {
 	}
 }
 
+// The hate modifier (Spell Casting Subtlety AA + Glamorous Visage, both
+// SE_ChangeAggro) must NEVER scale an aggro-shedding cast — EQMacEmu's
+// SpellOnTarget only routes a cast's total hate through the modifier when
+// that total is positive; a negative total (Concussion) is applied directly.
+// Regression for a real report: Subtlety alone shrank Concussion's -600 to
+// -480, and stacking Glamorous Visage on top shrank it further — both wrong.
+func TestAggroShedderIgnoresHatemod(t *testing.T) {
+	spells := fakeSpells{
+		"Ancient: Greater Concussion": spellWithInstantHate("Ancient: Greater Concussion", -600),
+		"Glamorous Visage":            spellHateModBuff("Glamorous Visage", -10, 100),
+	}
+	// Static -20 models a maxed Spell Casting Subtlety AA.
+	tr := NewTracker(nil, NewCalculator(spells, nil), func() int { return -20 })
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 1000, t0))
+	castLand(tr, "Glamorous Visage", t0.Add(time.Second))
+	castLand(tr, "Ancient: Greater Concussion", t0.Add(2*time.Second))
+	// 1000 melee - 600 Concussion = 400, regardless of the -30% combined
+	// hatemod in effect — NOT 1000 - 600*0.7 = 580.
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 400 {
+		t.Errorf("hate after Concussion with -20%% AA + -10%% Visage = %d, want 400 (Concussion's -600 applied unscaled)", got)
+	}
+}
+
 func TestHateModBuffClearedOnZone(t *testing.T) {
 	spells := fakeSpells{"Glamorous Visage": spellHateModBuff("Glamorous Visage", -10, 100)}
 	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
