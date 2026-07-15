@@ -61,6 +61,12 @@ export default function TradeskillLevelingPage(): React.ReactElement {
   // recipe drops out of the plan. Recomputed from the full pool minus this set
   // (not filtered from an already-built plan), so gaps route around cleanly.
   const [excluded, setExcluded] = useState<Record<number, string>>({})
+  // Whether the plan currently being shown applies those exclusions. Excluding
+  // a recipe turns this on automatically; Fastest/Cheapest stay the untouched,
+  // pure computed paths — customActive is what actually applies `excluded` to
+  // the request, so switching back to Fastest/Cheapest never loses the
+  // exclusions, it just stops using them until Custom is reselected.
+  const [customActive, setCustomActive] = useState(false)
 
   const [plan, setPlan] = useState<TradeskillLevelingPlan | null>(null)
   const [loading, setLoading] = useState(false)
@@ -147,17 +153,24 @@ export default function TradeskillLevelingPage(): React.ReactElement {
   function selectSkill(id: number) {
     setTsId(id)
     setExcluded({})
+    setCustomActive(false)
     localStorage.setItem(SKILL_KEY, String(id))
   }
   function excludeRecipe(id: number, name: string) {
     setExcluded((prev) => ({ ...prev, [id]: name }))
+    setCustomActive(true)
   }
   function includeRecipe(id: number) {
     setExcluded((prev) => {
       const next = { ...prev }
       delete next[id]
+      if (Object.keys(next).length === 0) setCustomActive(false)
       return next
     })
+  }
+  function resetExclusions() {
+    setExcluded({})
+    setCustomActive(false)
   }
 
   // Fetch the plan (debounced) whenever an input changes and is valid.
@@ -185,7 +198,7 @@ export default function TradeskillLevelingPage(): React.ReactElement {
         objective,
         allowFarming,
         avoidOtherTradeskills: avoidOther,
-        excludeRecipeIds: Object.keys(excluded).map(Number),
+        excludeRecipeIds: customActive ? Object.keys(excluded).map(Number) : [],
         skillupBonus: maelin ? MAELIN_SKILLUP_PCT : 0,
       })
         .then((p) => {
@@ -200,7 +213,7 @@ export default function TradeskillLevelingPage(): React.ReactElement {
         })
     }, 300)
     return () => clearTimeout(t)
-  }, [charId, tsId, start, target, objective, allowFarming, avoidOther, excluded, maelin])
+  }, [charId, tsId, start, target, objective, allowFarming, avoidOther, excluded, customActive, maelin])
 
   const label = tsId != null ? tradeskillLabel(tsId) : ''
   const targetInvalid =
@@ -278,17 +291,25 @@ export default function TradeskillLevelingPage(): React.ReactElement {
           {/* Objective toggle */}
           <div className="flex overflow-hidden rounded-md border" style={{ borderColor: 'var(--color-border)' }}>
             <ObjButton
-              active={objective === 'fastest'}
-              onClick={() => setObjective('fastest')}
+              active={!customActive && objective === 'fastest'}
+              onClick={() => { setObjective('fastest'); setCustomActive(false) }}
               icon={<Gauge size={13} />}
               label="Fastest"
             />
             <ObjButton
-              active={objective === 'cheapest'}
-              onClick={() => setObjective('cheapest')}
+              active={!customActive && objective === 'cheapest'}
+              onClick={() => { setObjective('cheapest'); setCustomActive(false) }}
               icon={<Coins size={13} />}
               label="Cheapest"
             />
+            {Object.keys(excluded).length > 0 && (
+              <ObjButton
+                active={customActive}
+                onClick={() => setCustomActive(true)}
+                icon={<Ban size={13} />}
+                label="Custom"
+              />
+            )}
           </div>
 
           <label className="flex cursor-pointer items-center gap-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
@@ -312,20 +333,25 @@ export default function TradeskillLevelingPage(): React.ReactElement {
         </div>
 
         <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-          {objective === 'fastest'
-            ? 'Fastest minimizes the number of combines.'
-            : 'Cheapest minimizes vendor plat — farmed/dropped components have no price, so cost can be partial.'}
+          {customActive
+            ? `Custom — ${objective === 'fastest' ? 'fewest combines' : 'cheapest plat'} while routing around your excluded recipes below.`
+            : objective === 'fastest'
+              ? 'Fastest minimizes the number of combines.'
+              : 'Cheapest minimizes vendor plat — farmed/dropped components have no price, so cost can be partial.'}
         </p>
       </div>
 
-      {/* Custom exclusions — recipes routed around; click to bring one back */}
+      {/* Custom exclusions — recipes routed around; click a chip to bring one
+          back, or Reset to drop them all and return to the pure Fastest/
+          Cheapest path. Stays visible even while viewing Fastest/Cheapest so
+          switching to Custom doesn't lose earlier picks. */}
       {Object.keys(excluded).length > 0 && (
         <div
           className="flex flex-wrap items-center gap-1.5 rounded-lg border p-2 text-xs"
           style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
         >
           <Ban size={12} style={{ color: 'var(--color-muted)' }} />
-          <span style={{ color: 'var(--color-muted)' }}>Excluded (plan routes around these):</span>
+          <span style={{ color: 'var(--color-muted)' }}>Excluded:</span>
           {Object.entries(excluded).map(([id, name]) => (
             <button
               key={id}
@@ -338,6 +364,14 @@ export default function TradeskillLevelingPage(): React.ReactElement {
               <X size={10} />
             </button>
           ))}
+          <button
+            onClick={resetExclusions}
+            className="ml-1 underline"
+            style={{ color: 'var(--color-muted)' }}
+            title="Clear all exclusions and return to the pure Fastest/Cheapest path"
+          >
+            Reset
+          </button>
         </div>
       )}
 
