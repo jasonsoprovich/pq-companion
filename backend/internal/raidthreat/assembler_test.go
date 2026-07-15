@@ -284,6 +284,90 @@ func TestTauntOnlyPlayerAppears(t *testing.T) {
 	}
 }
 
+func departureEv(target, spellName string, candidates ...string) logparser.LogEvent {
+	data := logparser.SpellLandedData{
+		Kind:       logparser.SpellLandedKindOther,
+		SpellName:  spellName,
+		TargetName: target,
+	}
+	for _, c := range candidates {
+		data.Candidates = append(data.Candidates, logparser.SpellLandedCandidate{SpellName: c})
+	}
+	return logparser.LogEvent{Type: logparser.EventSpellLanded, Data: data}
+}
+
+// A raid member evacuating/succoring/porting away resets their hate to zero
+// server-side, but our raid estimate is built from combat's cumulative
+// per-attacker damage, which never resets on its own. Regression for a real
+// report: a wizard/druid's own threat meter cleared correctly on their own
+// evac, but everyone else watching the raid meter kept seeing their stale,
+// pre-evac hate.
+func TestDepartureZeroesPlayer(t *testing.T) {
+	a := newAsm(fakeDmg{mob("a dragon",
+		combat.AttackerDamage{Name: "Narya", Class: "Wizard", Damage: 2000},
+		combat.AttackerDamage{Name: "Borg", Class: "Warrior", Damage: 500},
+	)}, nil, nil, nil)
+	a.Handle(departureEv("Narya", "Evacuate"))
+	m := findMob(a.GetState(), "a dragon")
+	if got := findPlayer(m, "Narya"); got == nil || got.Hate != 0 {
+		t.Errorf("Narya after Evacuate = %v, want 0", got)
+	}
+	// Borg is untouched.
+	if got := findPlayer(m, "Borg"); got == nil || got.Hate != 500 {
+		t.Errorf("Borg after Narya's Evacuate = %v, want 500 (unaffected)", got)
+	}
+}
+
+// The ambiguous "creates a mystic portal." text is shared by Succor's zone
+// variants and several unrelated Circle spells — any candidate resolving to a
+// departure spell should trigger the zeroing.
+func TestDepartureAmbiguousCandidateStillApplies(t *testing.T) {
+	a := newAsm(fakeDmg{mob("a dragon",
+		combat.AttackerDamage{Name: "Narya", Class: "Druid", Damage: 1500},
+	)}, nil, nil, nil)
+	a.Handle(departureEv("Narya", "", "Succor: East", "Circle of Karana"))
+	if got := findPlayer(findMob(a.GetState(), "a dragon"), "Narya"); got == nil || got.Hate != 0 {
+		t.Errorf("Narya after ambiguous Succor/Circle candidates = %v, want 0", got)
+	}
+}
+
+func TestDepartureIgnoresUnrelatedSpell(t *testing.T) {
+	a := newAsm(fakeDmg{mob("a dragon",
+		combat.AttackerDamage{Name: "Narya", Class: "Wizard", Damage: 2000},
+	)}, nil, nil, nil)
+	a.Handle(departureEv("Narya", "Complete Heal"))
+	if got := findPlayer(findMob(a.GetState(), "a dragon"), "Narya"); got == nil || got.Hate != 2000 {
+		t.Errorf("Narya after unrelated spell = %v, want 2000 (unaffected)", got)
+	}
+}
+
+func TestDepartureThenDamageAccrues(t *testing.T) {
+	sd := &settableDmg{mobs: []combat.MobDamage{mob("a dragon",
+		combat.AttackerDamage{Name: "Narya", Class: "Wizard", Damage: 2000},
+	)}}
+	a := NewAssembler(nil, sd, fakePersonal(nil),
+		func() bool { return true },
+		func() map[string]int { return nil },
+		func() map[string]int { return nil }, nil)
+	a.Handle(departureEv("Narya", "Evacuate")) // offset = -2000
+	// Narya zones back in and re-engages: cumulative damage climbs to 2300.
+	sd.mobs[0].Attackers[0].Damage = 2300
+	if got := findPlayer(findMob(a.GetState(), "a dragon"), "Narya"); got == nil || got.Hate != 300 {
+		t.Errorf("Narya after re-engaging = %v, want 300 (re-accrued since departure)", got)
+	}
+}
+
+func TestKillClearsDepartureOffset(t *testing.T) {
+	a := newAsm(fakeDmg{mob("a dragon",
+		combat.AttackerDamage{Name: "Narya", Class: "Wizard", Damage: 2000},
+	)}, nil, nil, nil)
+	a.Handle(departureEv("Narya", "Evacuate"))
+	a.Handle(logparser.LogEvent{Type: logparser.EventKill, Data: logparser.KillData{Killer: "You", Target: "a dragon"}})
+	if got := findPlayer(findMob(a.GetState(), "a dragon"), "Narya"); got == nil || got.Hate != 2000 {
+		t.Errorf("Narya after kill = %v, want 2000 (departure offset cleared)", got)
+	}
+}
+
 func TestKillClearsTauntOffset(t *testing.T) {
 	a := newAsm(fakeDmg{mob("a dragon",
 		combat.AttackerDamage{Name: "Narya", Class: "Wizard", Damage: 2000},

@@ -3,6 +3,7 @@ package raidthreat
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,6 +66,14 @@ type Assembler struct {
 	// player taunts (so their displayed hate becomes top+10) and carried until
 	// the mob dies / the player zones. Observed damage accrues on top of it.
 	taunt map[string]map[string]int64
+	// left holds a per-mob, per-player additive (negative) hate offset set when
+	// that player is seen leaving the zone (Evacuate/Succor/Call of the
+	// Hero/a Circle spell/...), zeroing their displayed hate on every mob they
+	// were on — the server clears a departing player's hate list entirely, but
+	// combat's per-attacker damage (our proxy for others' hate) is a cumulative
+	// total that never resets on its own. See applyDeparture. Cleared on the
+	// same kill / zone / death lifecycle as taunt.
+	left map[string]map[string]int64
 	// dismissed holds mobs the user manually removed via the overlay's per-card
 	// "x". The view is otherwise stateless (rebuilt from live combat each
 	// snapshot), so without this a removed mob would reappear on the next tick.
@@ -86,6 +95,7 @@ func NewAssembler(hub *ws.Hub, dmg DamageSource, personal PersonalSource,
 		playerModsFn: playerModsFn,
 		selfNameFn:   selfNameFn,
 		taunt:        make(map[string]map[string]int64),
+		left:         make(map[string]map[string]int64),
 		dismissed:    make(map[string]bool),
 	}
 }
@@ -221,6 +231,25 @@ func (a *Assembler) GetState() RaidThreatState {
 			}
 		}
 	}
+	// Layer departure offsets the same way, zeroing a player who was seen
+	// leaving the zone (see applyDeparture) — their cumulative damage keeps
+	// climbing in the combat tracker, but their real hate is gone.
+	for mob, offs := range a.left {
+		m := base[mob]
+		if m == nil {
+			continue
+		}
+		for player, off := range offs {
+			e := m[player]
+			if e == nil {
+				continue
+			}
+			e.Hate += off
+			if e.Hate < 0 {
+				e.Hate = 0
+			}
+		}
+	}
 	a.mu.Unlock()
 
 	state := RaidThreatState{Mobs: make([]RaidMob, 0, len(base)), LastUpdated: now}
@@ -321,6 +350,85 @@ func (a *Assembler) applyTaunt(mob, taunter string) {
 	a.taunt[mob][taunter] = top + tauntBump - taunterBase
 }
 
+// isDepartureSpell reports whether spellName is one of the zone-departure
+// spells whose cast_on_other text ("<Name> creates a mystic portal.", "<Name>
+// creates a shimmering portal.", "<Name> steps into a mystic portal.") is
+// visible to everyone nearby — Evacuate/Succor (and every zone-specific
+// variant, e.g. "Evacuate: North"), Call of the Hero, and the druid/wizard
+// Circle line. All of them mean the same thing for raid threat purposes: this
+// player is about to leave (or has just left) the zone, so the server clears
+// their hate on every mob. Matched by name rather than SPA/effect, since
+// these are simple teleport spells with no hate-related SPA in common.
+func isDepartureSpell(name string) bool {
+	switch {
+	case name == "":
+		return false
+	case strings.HasPrefix(name, "Evacuate"):
+		return true // Evacuate, Lesser Evacuate, Evacuate: <zone>
+	case strings.HasPrefix(name, "Succor"):
+		return true // Succor, Lesser Succor, Succor: <zone>
+	case strings.HasPrefix(name, "Circle of "):
+		return true // druid/wizard self-teleport line
+	case strings.HasPrefix(name, "Allure of the Pool"):
+		return true
+	case strings.HasPrefix(name, "Random Teleport"):
+		return true
+	}
+	switch name {
+	case "Call of the Hero", "Guide Evacuation", "Trakanon's Touch",
+		"BurningTouch", "BurningTouch2", "Word of Passage", "Exodus", "Call of Alarm":
+		return true
+	}
+	return false
+}
+
+// candidateSpellNames returns the spell name(s) a landed-spell event may refer
+// to: the resolved name when the cast text is unambiguous, else every
+// candidate that shares the ambiguous text — mirrors threat.candidateNames.
+func candidateSpellNames(data logparser.SpellLandedData) []string {
+	if data.SpellName != "" {
+		return []string{data.SpellName}
+	}
+	names := make([]string, 0, len(data.Candidates))
+	for _, c := range data.Candidates {
+		names = append(names, c.SpellName)
+	}
+	return names
+}
+
+// applyDeparture zeroes target's displayed hate on every mob it currently
+// holds hate on, recording the offset needed to cancel its current base (+
+// any existing taunt/departure offset). Future damage from a player who
+// returns and re-engages accrues on top of this new baseline, same as taunt.
+func (a *Assembler) applyDeparture(target string) {
+	if target == "" {
+		return
+	}
+	if a.selfNameFn != nil {
+		if sn := a.selfNameFn(); sn != "" && target == sn {
+			target = "You" // the emote/land text names the character
+		}
+	}
+	base := a.collectBase()
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for mob, players := range base {
+		e, ok := players[target]
+		if !ok {
+			continue
+		}
+		displayed := e.Hate + a.taunt[mob][target] + a.left[mob][target]
+		if displayed == 0 {
+			continue
+		}
+		if a.left[mob] == nil {
+			a.left[mob] = make(map[string]int64)
+		}
+		a.left[mob][target] -= displayed
+	}
+}
+
 // DismissMob suppresses a mob from the raid threat view (the overlay's per-card
 // "x"). The view is rebuilt from live combat each snapshot, so the mob is held
 // in a dismissed set until its fight lifecycle resets (kill / zone / death)
@@ -344,6 +452,7 @@ func (a *Assembler) DismissMob(name string) bool {
 	a.mu.Lock()
 	a.dismissed[name] = true
 	delete(a.taunt, name)
+	delete(a.left, name)
 	a.mu.Unlock()
 	a.broadcast(a.GetState())
 	return true
@@ -362,6 +471,7 @@ func (a *Assembler) DismissAll() int {
 	for _, m := range shown {
 		a.dismissed[m.Name] = true
 		delete(a.taunt, m.Name)
+		delete(a.left, m.Name)
 	}
 	a.mu.Unlock()
 	a.broadcast(a.GetState())
@@ -384,10 +494,24 @@ func (a *Assembler) Handle(ev logparser.LogEvent) {
 		a.applyTaunt(data.Mob, data.Taunter)
 		a.broadcast(a.GetState()) // reflect the jump immediately, not on the next tick
 
+	case logparser.EventSpellLanded:
+		data, ok := ev.Data.(logparser.SpellLandedData)
+		if !ok || data.Kind != logparser.SpellLandedKindOther || data.TargetName == "" {
+			return
+		}
+		for _, name := range candidateSpellNames(data) {
+			if isDepartureSpell(name) {
+				a.applyDeparture(data.TargetName)
+				a.broadcast(a.GetState()) // reflect the drop immediately
+				break
+			}
+		}
+
 	case logparser.EventKill:
 		if data, ok := ev.Data.(logparser.KillData); ok {
 			a.mu.Lock()
 			delete(a.taunt, logparser.CanonicalNPCName(data.Target))
+			delete(a.left, logparser.CanonicalNPCName(data.Target))
 			delete(a.dismissed, logparser.CanonicalNPCName(data.Target))
 			a.mu.Unlock()
 		}
@@ -395,6 +519,7 @@ func (a *Assembler) Handle(ev logparser.LogEvent) {
 	case logparser.EventZone, logparser.EventDeath:
 		a.mu.Lock()
 		a.taunt = make(map[string]map[string]int64)
+		a.left = make(map[string]map[string]int64)
 		a.dismissed = make(map[string]bool)
 		a.mu.Unlock()
 
