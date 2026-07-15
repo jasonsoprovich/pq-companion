@@ -70,6 +70,18 @@ function SessionCard({
       .catch(() => {})
   }
 
+  const [pickOrderCopied, setPickOrderCopied] = useState(false)
+  const handleCopyPickOrder = (): void => {
+    if (!pickOrderSummary) return
+    navigator.clipboard
+      ?.writeText(pickOrderSummary)
+      .then(() => {
+        setPickOrderCopied(true)
+        setTimeout(() => setPickOrderCopied(false), 1500)
+      })
+      .catch(() => {})
+  }
+
   return (
     <div
       className="rounded-lg border"
