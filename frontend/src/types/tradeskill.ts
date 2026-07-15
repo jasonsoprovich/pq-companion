@@ -14,6 +14,10 @@ export interface LevelingStage {
   combines: number
   cost: number // copper for this leg (0 when unknown)
   cost_known: boolean
+  // Combine success % (0-100) at from_skill — the worst case for this stage,
+  // since it only rises as skill climbs toward trivial. A distinct roll from
+  // the skill-up chance `combines` is derived from.
+  success_chance_pct: number
   container?: string
   no_fail?: boolean
   sub_combine_recipe_ids?: number[]

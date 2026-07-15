@@ -119,6 +119,12 @@ type Stage struct {
 	Cost      float64 `json:"cost"`       // vendor plat for this leg; 0 when unknown
 	CostKnown bool    `json:"cost_known"` // false if any ingredient is farmed/dropped
 
+	// SuccessChancePct is the combine success chance (0-100) at FromSkill — the
+	// worst case for this stage, since it only rises as skill climbs toward
+	// Trivial. A distinct roll from the skill-up chance Combines is derived
+	// from; see tradeskill.Chance.
+	SuccessChancePct float64 `json:"success_chance_pct"`
+
 	Container           string   `json:"container,omitempty"`
 	NoFail              bool     `json:"no_fail,omitempty"`
 	SubCombineRecipeIDs []int    `json:"sub_combine_recipe_ids,omitempty"`
@@ -213,7 +219,7 @@ func Solve(recipes []RecipeCandidate, p Params) Plan {
 		return out
 	}
 
-	emit(&out, cands, choice, start, target)
+	emit(&out, cands, choice, start, target, p)
 	return out
 }
 
@@ -331,7 +337,7 @@ func runDP(cands []candidate, p Params, start, target int) []int {
 }
 
 // emit walks the chosen chain from start and fills the plan's stages and totals.
-func emit(out *Plan, cands []candidate, choice []int, start, target int) {
+func emit(out *Plan, cands []candidate, choice []int, start, target int, p Params) {
 	s := start
 	for s < target {
 		i := choice[s]
@@ -341,6 +347,7 @@ func emit(out *Plan, cands []candidate, choice []int, start, target int) {
 		c := cands[i]
 		combines := int(math.Round(c.combines(s)))
 		cost := c.combines(s) * c.costPer
+		successPct := tradeskill.Chance(s, c.src.Trivial, p.SkillMod, p.AAReduce, p.ClassCap, c.src.NoFail).Success
 
 		stage := Stage{
 			FromSkill:           s,
@@ -351,6 +358,7 @@ func emit(out *Plan, cands []candidate, choice []int, start, target int) {
 			Combines:            combines,
 			Cost:                math.Round(cost), // whole copper; fractional copper is meaningless
 			CostKnown:           c.known,
+			SuccessChancePct:    successPct,
 			Container:           c.src.Container,
 			NoFail:              c.src.NoFail,
 			SubCombineRecipeIDs: c.src.SubCombineRecipeIDs,

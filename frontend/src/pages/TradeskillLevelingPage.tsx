@@ -1,16 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  AlertTriangle, Ban, Coins, ExternalLink, Gauge, Hammer, Info, Route, X,
+  AlertTriangle, Ban, ChevronDown, ChevronRight, Coins, ExternalLink, Gauge, Hammer, Info, Route, X,
 } from 'lucide-react'
 import {
   listCharacters,
   getRecipeTradeskills,
   getCharacterTradeskills,
   getTradeskillLevelingPlan,
+  getRecipe,
   type Character,
 } from '../services/api'
-import type { RecipeTradeskillCount } from '../types/recipe'
+import type { RecipeTradeskillCount, RecipeDetail } from '../types/recipe'
 import type { TradeskillView } from '../types/skill'
 import type {
   TradeskillLevelingPlan,
@@ -23,6 +24,7 @@ import { priceLabel } from '../lib/itemHelpers'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
+import { RecipeBody } from '../components/RecipeView'
 
 const CHAR_KEY = 'tsLevelCharId'
 const SKILL_KEY = 'tsLevelSkill'
@@ -38,6 +40,15 @@ const FALLBACK_TARGET = 250
 // so there is nothing to level — keep them out of the picker.
 function isCommonCombine(ts: number): boolean {
   return ts === 0 || ts === 75
+}
+
+// Colour a combine success % by how safe it is. Mirrors the recipe success
+// calculator's convention (green = good, amber = caution, red = bad).
+function successColor(pct: number): string {
+  if (pct >= 95) return '#22c55e'
+  if (pct >= 80) return '#84cc16'
+  if (pct >= 50) return '#eab308'
+  return '#ef4444'
 }
 
 export default function TradeskillLevelingPage(): React.ReactElement {
@@ -485,9 +496,13 @@ function PlanView({ plan, loading, onExclude }: {
                 className="text-left text-[11px] uppercase tracking-wider"
                 style={{ color: 'var(--color-muted)', backgroundColor: 'var(--color-surface-2)' }}
               >
+                <th className="px-3 py-2" />
                 <th className="px-3 py-2 font-semibold">Skill</th>
                 <th className="px-3 py-2 font-semibold">Make</th>
                 <th className="px-3 py-2 text-right font-semibold">Trivial</th>
+                <th className="px-3 py-2 text-right font-semibold" title="Combine success chance at the start of this stage — rises as skill climbs toward trivial">
+                  Chance
+                </th>
                 <th className="px-3 py-2 text-right font-semibold">Combines</th>
                 <th className="px-3 py-2 text-right font-semibold">Cost</th>
                 <th className="px-3 py-2" />
@@ -517,57 +532,114 @@ function StageRow({ stage, subCombines, last, onExclude }: {
   last: boolean
   onExclude: (id: number, name: string) => void
 }): React.ReactElement {
+  const [expanded, setExpanded] = useState(false)
+  const [detail, setDetail] = useState<RecipeDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState(false)
+
+  function toggle() {
+    if (expanded) {
+      setExpanded(false)
+      return
+    }
+    setExpanded(true)
+    if (detail) return
+    setDetailLoading(true)
+    setDetailError(false)
+    getRecipe(stage.recipe_id)
+      .then((r) => setDetail(r))
+      .catch(() => setDetailError(true))
+      .finally(() => setDetailLoading(false))
+  }
+
+  const rowBorder = { borderBottom: last && !expanded ? 'none' : '1px solid var(--color-border)' }
+
   return (
-    <tr
-      style={{ borderTop: last ? undefined : undefined, borderBottom: last ? 'none' : '1px solid var(--color-border)' }}
-    >
-      <td className="px-3 py-2 font-mono text-xs tabular-nums" style={{ color: 'var(--color-muted)' }}>
-        {stage.from_skill}<span className="mx-0.5">→</span>{stage.to_skill}
-      </td>
-      <td className="px-3 py-2">
-        <Link
-          to={`/recipes?select=${stage.recipe_id}`}
-          className="inline-flex items-center gap-1 hover:underline"
-          style={{ color: 'var(--color-primary)' }}
+    <>
+      <tr style={rowBorder}>
+        <td className="py-2 pl-3">
+          <button
+            onClick={toggle}
+            className="flex items-center justify-center"
+            title={expanded ? 'Hide ingredients' : 'Show ingredients, success chance, and what you have'}
+          >
+            {expanded ? (
+              <ChevronDown size={13} style={{ color: 'var(--color-muted)' }} />
+            ) : (
+              <ChevronRight size={13} style={{ color: 'var(--color-muted)' }} />
+            )}
+          </button>
+        </td>
+        <td className="px-3 py-2 font-mono text-xs tabular-nums" style={{ color: 'var(--color-muted)' }}>
+          {stage.from_skill}<span className="mx-0.5">→</span>{stage.to_skill}
+        </td>
+        <td className="px-3 py-2">
+          <Link
+            to={`/recipes?select=${stage.recipe_id}`}
+            className="inline-flex items-center gap-1 hover:underline"
+            style={{ color: 'var(--color-primary)' }}
+          >
+            {stage.recipe}
+            <ExternalLink size={11} className="opacity-60" />
+          </Link>
+          {(stage.notes?.length ?? 0) > 0 && (
+            <div className="mt-0.5 flex flex-wrap gap-1">
+              {stage.notes!.map((n, i) => (
+                <span
+                  key={i}
+                  className="rounded px-1.5 py-0.5 text-[10px]"
+                  style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}
+                >
+                  {n}
+                </span>
+              ))}
+            </div>
+          )}
+          <SubCombineChips ids={stage.sub_combine_recipe_ids} lookup={subCombines} />
+        </td>
+        <td className="px-3 py-2 text-right font-mono text-xs tabular-nums" style={{ color: 'var(--color-muted)' }}>
+          {stage.trivial}
+        </td>
+        <td
+          className="px-3 py-2 text-right font-mono text-xs tabular-nums"
+          style={{ color: successColor(stage.success_chance_pct) }}
+          title="Combine success at the start of this stage — rises as skill climbs toward trivial"
         >
-          {stage.recipe}
-          <ExternalLink size={11} className="opacity-60" />
-        </Link>
-        {(stage.notes?.length ?? 0) > 0 && (
-          <div className="mt-0.5 flex flex-wrap gap-1">
-            {stage.notes!.map((n, i) => (
-              <span
-                key={i}
-                className="rounded px-1.5 py-0.5 text-[10px]"
-                style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}
-              >
-                {n}
-              </span>
-            ))}
-          </div>
-        )}
-        <SubCombineChips ids={stage.sub_combine_recipe_ids} lookup={subCombines} />
-      </td>
-      <td className="px-3 py-2 text-right font-mono text-xs tabular-nums" style={{ color: 'var(--color-muted)' }}>
-        {stage.trivial}
-      </td>
-      <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">
-        {stage.combines.toLocaleString()}
-      </td>
-      <td className="px-3 py-2 text-right text-xs tabular-nums" style={{ color: 'var(--color-muted)' }}>
-        {stage.cost_known ? priceLabel(Math.round(stage.cost)) : 'farmed'}
-      </td>
-      <td className="px-3 py-2 text-right">
-        <button
-          onClick={() => onExclude(stage.recipe_id, stage.recipe)}
-          className="inline-flex items-center rounded p-1 hover:opacity-100"
-          style={{ color: 'var(--color-muted)', opacity: 0.6 }}
-          title="Exclude this recipe — re-route the plan around it"
-        >
-          <Ban size={13} />
-        </button>
-      </td>
-    </tr>
+          {Math.round(stage.success_chance_pct)}%
+        </td>
+        <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">
+          {stage.combines.toLocaleString()}
+        </td>
+        <td className="px-3 py-2 text-right text-xs tabular-nums" style={{ color: 'var(--color-muted)' }}>
+          {stage.cost_known ? priceLabel(Math.round(stage.cost)) : 'farmed'}
+        </td>
+        <td className="px-3 py-2 text-right">
+          <button
+            onClick={() => onExclude(stage.recipe_id, stage.recipe)}
+            className="inline-flex items-center rounded p-1 hover:opacity-100"
+            style={{ color: 'var(--color-muted)', opacity: 0.6 }}
+            title="Exclude this recipe — re-route the plan around it"
+          >
+            <Ban size={13} />
+          </button>
+        </td>
+      </tr>
+      {expanded && (
+        <tr style={{ borderBottom: last ? 'none' : '1px solid var(--color-border)' }}>
+          <td colSpan={8} className="px-3 pb-2" style={{ backgroundColor: 'var(--color-surface-2)' }}>
+            {detailLoading && (
+              <p className="py-1 text-xs" style={{ color: 'var(--color-muted)' }}>Loading ingredients…</p>
+            )}
+            {detailError && (
+              <p className="py-1 text-xs" style={{ color: 'var(--color-destructive)' }}>
+                Couldn’t load this recipe’s ingredients.
+              </p>
+            )}
+            {detail && <RecipeBody recipe={detail} />}
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/tradeskill"
 )
 
 // An empty plan must serialize stages as [] not null, so the frontend can read
@@ -277,5 +279,27 @@ func TestPlan_StageNotes(t *testing.T) {
 	// not as a generic note.
 	if len(p.Stages[0].SubCombineRecipeIDs) != 1 || p.Stages[0].SubCombineRecipeIDs[0] != 99 {
 		t.Fatalf("expected sub-combine id 99 on stage, got %v", p.Stages[0].SubCombineRecipeIDs)
+	}
+}
+
+// TestPlan_SuccessChancePct verifies each stage carries the combine success %
+// at its FromSkill (a distinct roll from the skill-up chance Combines is
+// derived from), matching tradeskill.Chance exactly for the same inputs.
+func TestPlan_SuccessChancePct(t *testing.T) {
+	recipes := []RecipeCandidate{
+		vendorRecipe(1, 30, 1),
+		vendorRecipe(2, 60, 1),
+	}
+	params := baseParams(10, 60, Fastest)
+	p := Solve(recipes, params)
+	if len(p.Stages) != 2 {
+		t.Fatalf("expected 2 stages, got %d", len(p.Stages))
+	}
+	for i, s := range p.Stages {
+		want := tradeskill.Chance(s.FromSkill, s.Trivial, params.SkillMod, params.AAReduce, params.ClassCap, s.NoFail).Success
+		if s.SuccessChancePct != want {
+			t.Fatalf("stage %d: SuccessChancePct = %v, want %v (tradeskill.Chance at skill %d, trivial %d)",
+				i, s.SuccessChancePct, want, s.FromSkill, s.Trivial)
+		}
 	}
 }
