@@ -211,6 +211,73 @@ func TestWatcher_CooldownSuppressesRepeat(t *testing.T) {
 	}
 }
 
+func TestWatcher_FocusEffectMessageDoesNotFire(t *testing.T) {
+	world := &testWorld{
+		chars: []CharacterInfo{{ID: 1, Name: "Khura"}, {ID: 2, Name: "Grokii"}},
+		wishlists: map[int][]WishlistEntry{
+			2: {{CharacterID: 2, ItemID: 100}},
+		},
+		items: map[int]ItemInfo{100: {Name: "Robe of the Lost Circle"}},
+	}
+	watcher, fb, cfgMgr := newTestWatcher(t, world)
+	watcher.activeChar = func() string { return "Khura" }
+	enableWishlistWatch(t, cfgMgr, func(s *config.WishlistWatchSettings) {
+		s.OverlayEnabled = true
+		s.IncludeOtherChars = true
+	})
+	watcher.Rebuild()
+
+	effectLines := []string{
+		"Your Robe of the Lost Circle begins to glow.",
+		"Your Robe of the Lost Circle shimmers briefly.",
+		"Your Robe of the Lost Circle flickers with a pale light.",
+		"Your Robe of the Lost Circle feeds you with power.",
+		"Your Robe of the Lost Circle sparkles.",
+		"Your Robe of the Lost Circle feels alive with power.",
+		"Your Robe of the Lost Circle pulses with light as your vision sharpens.",
+	}
+	for _, line := range effectLines {
+		watcher.HandleLine(line)
+	}
+	if len(fb.events) != 0 {
+		t.Fatalf("expected focus/clicky effect lines to be filtered out, got %d events", len(fb.events))
+	}
+
+	// A real loot line for the same item should still fire normally.
+	watcher.HandleLine("You have looted a Robe of the Lost Circle.")
+	if len(fb.events) != 1 {
+		t.Fatalf("expected a genuine loot line to still fire, got %d events", len(fb.events))
+	}
+}
+
+func TestWatcher_MultipleCharactersWishlistEnumerated(t *testing.T) {
+	world := &testWorld{
+		chars: []CharacterInfo{{ID: 1, Name: "Bardo"}, {ID: 2, Name: "Clerus"}, {ID: 3, Name: "Bltfoo"}},
+		wishlists: map[int][]WishlistEntry{
+			1: {{CharacterID: 1, ItemID: 300}},
+			2: {{CharacterID: 2, ItemID: 300}},
+		},
+		items: map[int]ItemInfo{300: {Name: "PoMischief Card"}},
+	}
+	watcher, fb, cfgMgr := newTestWatcher(t, world)
+	watcher.activeChar = func() string { return "Bltfoo" }
+	enableWishlistWatch(t, cfgMgr, func(s *config.WishlistWatchSettings) {
+		s.OverlayEnabled = true
+		s.IncludeOtherChars = true
+	})
+	watcher.Rebuild()
+
+	watcher.HandleLine("Bltfoo says, 'I found a PoMischief Card'")
+
+	if len(fb.events) != 1 {
+		t.Fatalf("expected exactly 1 event enumerating both wishlisters, got %d", len(fb.events))
+	}
+	fired := fb.events[0].Data.(trigger.TriggerFired)
+	if fired.MatchedLine != "PoMischief Card is on Bardo and Clerus's wishlist" {
+		t.Errorf("unexpected alert text: %q", fired.MatchedLine)
+	}
+}
+
 func TestWatcher_DisabledDoesNothing(t *testing.T) {
 	world := &testWorld{
 		chars: []CharacterInfo{{ID: 1, Name: "Khura"}},

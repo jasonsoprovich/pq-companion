@@ -181,7 +181,8 @@ export default function WishlistAlertSettings({
                     />
                     <p className="mt-1 text-[10px]" style={{ color: 'var(--color-muted)' }}>
                       {'{item}'} and {'{character}'} expand to the matched item and the
-                      wishlisting character.
+                      wishlisting character(s) — {'{character}'} lists every character that
+                      has the item wishlisted, e.g. &ldquo;Bard and Cleric&rdquo;.
                     </p>
                   </div>
 

@@ -167,6 +167,13 @@ func compileMatcher(names []string) *regexp.Regexp {
 	return re
 }
 
+// itemEffectRe matches EQ's "Your <item> <effect phrase>." lines: focus
+// effect procs and clicky activations that happen to name the item worn or
+// used. These aren't a loot/sale/link event — the item is already owned by
+// whoever is playing, not something to alert on — so lines matching this
+// shape are excluded before the wishlist match even runs.
+var itemEffectRe = regexp.MustCompile(`(?i)^Your .+ (?:begins to glow|shimmers briefly|flickers with a pale light|feeds you with power|sparkles|feels alive with power|pulses with light as your vision sharpens)\.?\s*$`)
+
 // HandleLine scans a raw log line for wishlisted item names and fires
 // alerts for any match. Called alongside trigger.Engine.Handle from the same
 // dispatch path, so live and replayed lines both drive it.
@@ -183,6 +190,10 @@ func (w *Watcher) HandleLine(msg string) {
 		return
 	}
 
+	if itemEffectRe.MatchString(msg) {
+		return
+	}
+
 	active := ""
 	if w.activeChar != nil {
 		active = w.activeChar()
@@ -195,15 +206,29 @@ func (w *Watcher) HandleLine(msg string) {
 			continue
 		}
 		matched[key] = true
+
+		// Group eligible entries by ItemID (not just name) so an alert
+		// enumerates every character wishlisting this exact item, and two
+		// different items that happen to share a display name still fire
+		// — and cooldown — independently.
+		byItem := make(map[int][]matchEntry)
+		var order []int
 		for _, e := range byName[key] {
 			isOwn := active != "" && strings.EqualFold(e.CharacterName, active)
 			if !isOwn && !prefs.IncludeOtherChars {
 				continue
 			}
-			if w.onCooldown(e.ItemID, prefs.CooldownSecs) {
+			if _, seen := byItem[e.ItemID]; !seen {
+				order = append(order, e.ItemID)
+			}
+			byItem[e.ItemID] = append(byItem[e.ItemID], e)
+		}
+
+		for _, itemID := range order {
+			if w.onCooldown(itemID, prefs.CooldownSecs) {
 				continue
 			}
-			w.fire(prefs, e)
+			w.fire(prefs, byItem[itemID])
 		}
 	}
 }
@@ -225,10 +250,29 @@ func (w *Watcher) onCooldown(itemID, cooldownSecs int) bool {
 	return false
 }
 
-// fire builds the configured alert actions for e and broadcasts a synthetic
-// trigger:fired event, exactly as the /who PVP warning does.
-func (w *Watcher) fire(prefs config.WishlistWatchSettings, e matchEntry) {
-	text := expandTemplate(prefs.Template, e.ItemName, e.CharacterName)
+// fire builds the configured alert actions for entries — every wishlisting
+// character for a single ItemID — and broadcasts one synthetic
+// trigger:fired event, exactly as the /who PVP warning does. When the item
+// is on more than one character's wishlist, {character} expands to all of
+// them (e.g. "Bard and Cleric") instead of picking just one.
+func (w *Watcher) fire(prefs config.WishlistWatchSettings, entries []matchEntry) {
+	if len(entries) == 0 {
+		return
+	}
+	e := entries[0]
+
+	names := make([]string, 0, len(entries))
+	seenChar := make(map[string]bool)
+	for _, entry := range entries {
+		key := strings.ToLower(entry.CharacterName)
+		if seenChar[key] {
+			continue
+		}
+		seenChar[key] = true
+		names = append(names, entry.CharacterName)
+	}
+
+	text := expandTemplate(prefs.Template, e.ItemName, joinNames(names))
 
 	var actions []trigger.Action
 	if prefs.OverlayEnabled {
@@ -275,4 +319,21 @@ func expandTemplate(tmpl, item, character string) string {
 		tmpl = config.DefaultWishlistWatchTemplate
 	}
 	return strings.NewReplacer("{item}", item, "{character}", character).Replace(tmpl)
+}
+
+// joinNames formats character names as a natural English list — "A",
+// "A and B", or "A, B, and C" — so the default template's "{character}'s
+// wishlist" wording still reads sensibly when an item is wishlisted by more
+// than one character.
+func joinNames(names []string) string {
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return names[0]
+	case 2:
+		return names[0] + " and " + names[1]
+	default:
+		return strings.Join(names[:len(names)-1], ", ") + ", and " + names[len(names)-1]
+	}
 }
