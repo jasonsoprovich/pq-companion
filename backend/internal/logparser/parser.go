@@ -133,6 +133,12 @@ var (
 	reCharmBroken = regexp.MustCompile(`^Your charm spell has worn off\.$`)
 	reFeignDeath  = regexp.MustCompile(`^You feign death\.$`)
 
+	// Successful Rogue Evade — Hide used in combat (/attack off) against an
+	// engaged NPC target. Self-only message (SimpleMessage, never broadcast),
+	// so only the active character's own log ever shows it. See
+	// EventRogueEvade.
+	reRogueEvade = regexp.MustCompile(`^You duck away from the main combat\.$`)
+
 	// Player-verification chat patterns. Anything matching one of these
 	// proves the speaker is another player: NPCs in EQ never use the
 	// guild/raid/group channels or send tells. Used by the combat
@@ -386,6 +392,14 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		return LogEvent{
 			Type: EventFeignDeath,
 			Data: nil,
+		}, true
+	}
+
+	// "You duck away from the main combat." — a successful Rogue Evade.
+	if reRogueEvade.MatchString(msg) {
+		return LogEvent{
+			Type: EventRogueEvade,
+			Data: RogueEvadeData{},
 		}, true
 	}
 

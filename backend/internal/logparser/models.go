@@ -163,6 +163,16 @@ const (
 	// EventSkillUp is emitted on "You have become better at <Skill>! (<rank>)".
 	// Feeds the per-character Skill Tracker with the new skill value.
 	EventSkillUp EventType = "log:skill_up"
+
+	// EventRogueEvade is emitted on the active character's "You duck away from
+	// the main combat." line — a successful Rogue Evade (Hide used in combat
+	// with /attack off against an engaged NPC target). EQMacEmu's
+	// Mob::RogueEvade sets the rogue's hate on that mob to a random 40-70% of
+	// its current value (floored at 100), a self-only SimpleMessage never seen
+	// by anyone else's log — so only the personal threat meter can model it.
+	// Carries no data; the failure message ("Your attempts at ducking away
+	// from combat fail.") changes nothing and isn't modelled.
+	EventRogueEvade EventType = "log:rogue_evade"
 )
 
 // LogEvent is the parsed representation of a single EQ log line.
@@ -320,6 +330,9 @@ type TauntData struct {
 // race, so consumers handle this by removing every illusion timer on the
 // active player.
 type IllusionFadeData struct{}
+
+// RogueEvadeData carries no data — see EventRogueEvade.
+type RogueEvadeData struct{}
 
 // CritHitData is the structured payload for EventCritHit. PQ's "Scores a
 // critical hit!(N)" line names only the actor and the crit damage amount —

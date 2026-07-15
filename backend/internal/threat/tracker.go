@@ -49,6 +49,17 @@ const feignResidualMinLevel = 35
 // player is still on its hate list (at the bottom), rather than safely off it.
 const feignResidualHate = 64
 
+// rogueEvadeExpectedPct / rogueEvadeMinHate model Mob::RogueEvade
+// (SecretsOTheP/EQMacEmu zone/aggro.cpp): a successful Rogue Evade ("You duck
+// away from the main combat.") sets the rogue's hate on the current target to
+// a random 40-70% of its prior value, floored at 100. The per-attempt roll
+// isn't observable from the log (the success message carries no number), so
+// the meter uses the range's midpoint as its best single-shot estimate.
+const (
+	rogueEvadeExpectedPct = 55
+	rogueEvadeMinHate     = 100
+)
+
 // hateSample is one post-hatemod hate increment with the time it landed, kept
 // in a short rolling buffer per mob to compute the live (windowed) rate.
 type hateSample struct {
@@ -348,6 +359,9 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 	case logparser.EventFeignDeath:
 		// A successful feign is NOT a clean wipe on raid mobs — see feignDeath.
 		t.feignDeath(ev.Timestamp)
+
+	case logparser.EventRogueEvade:
+		t.recordRogueEvade(ev.Timestamp)
 	}
 }
 
@@ -894,6 +908,33 @@ func (t *Tracker) feignDeath(ts time.Time) {
 			t.lastEngaged = ""
 		}
 	}
+	snap := t.snapshotLocked(ts)
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
+// recordRogueEvade applies a successful Rogue Evade to the current target
+// (pipe target, else the most recently engaged mob) — see rogueEvadeExpectedPct.
+// Unlike every other hate change, this directly rescales the running total
+// rather than adding a signed amount: the server itself does the same
+// (SetHateAmountOnEnt to a fraction of the current value), and the modifier
+// never applies (RogueEvade doesn't go through CheckAggroAmount/AddToHateList
+// at all). No-op if there's no tracked hate on the current target.
+func (t *Tracker) recordRogueEvade(ts time.Time) {
+	t.mu.Lock()
+	mob := t.castTargetLocked()
+	m := t.mobs[mob]
+	if mob == "" || m == nil {
+		t.mu.Unlock()
+		return
+	}
+	m.hate = m.hate * rogueEvadeExpectedPct / 100
+	if m.hate < rogueEvadeMinHate {
+		m.hate = rogueEvadeMinHate
+	}
+	m.recent = nil // the drop isn't a "hate added" sample; keep the live-rate window honest
+	m.last = ts
+	t.armExpiryLocked(mob, m)
 	snap := t.snapshotLocked(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)

@@ -744,6 +744,53 @@ func TestFeignDeathResidualOnRaidMobs(t *testing.T) {
 	}
 }
 
+// ── Rogue Evade ──────────────────────────────────────────────────────────
+
+func rogueEvade(ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{Type: logparser.EventRogueEvade, Timestamp: ts, Data: logparser.RogueEvadeData{}}
+}
+
+func TestRogueEvadeRescalesCurrentTarget(t *testing.T) {
+	tr := NewTracker(nil, nil, nil)
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 1000, t0))
+	tr.Handle(rogueEvade(t0.Add(time.Second)))
+	// 1000 * 55% (range midpoint) = 550.
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 550 {
+		t.Errorf("hate after evade = %d, want 550 (1000 * 55%%)", got)
+	}
+}
+
+func TestRogueEvadeFlooredAtMinimum(t *testing.T) {
+	tr := NewTracker(nil, nil, nil)
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 50, t0)) // 55% of 50 = 27, below the server's 100 floor
+	tr.Handle(rogueEvade(t0.Add(time.Second)))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != rogueEvadeMinHate {
+		t.Errorf("hate after evade on low total = %d, want %d (floored)", got, rogueEvadeMinHate)
+	}
+}
+
+func TestRogueEvadeNotScaledByHatemod(t *testing.T) {
+	// RogueEvade never goes through CheckAggroAmount/AddToHateList, so a
+	// hate modifier in effect must not change the 55% estimate.
+	tr := NewTracker(nil, nil, func() int { return 50 })
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 1000, t0))
+	tr.Handle(rogueEvade(t0.Add(time.Second)))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 550 {
+		t.Errorf("hate after evade with +50%% hatemod = %d, want 550 (modifier never applies)", got)
+	}
+}
+
+func TestRogueEvadeNoTargetIgnored(t *testing.T) {
+	tr := NewTracker(nil, nil, nil)
+	tr.Handle(rogueEvade(time.Now()))
+	if s := tr.GetState(); s.InCombat {
+		t.Error("InCombat = true, want false (evade with no tracked target is a no-op)")
+	}
+}
+
 // ── Cast → resolve deferral: hate applies on land/resist, not cast-begin ────
 
 func resist(spell string, ts time.Time) logparser.LogEvent {

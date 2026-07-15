@@ -351,6 +351,20 @@ func TestParseLine(t *testing.T) {
 			wantData: nil,
 		},
 
+		// --- Rogue Evade ---
+		{
+			name:     "rogue evade: success",
+			line:     "[Mon Apr 13 06:00:00 2026] You duck away from the main combat.",
+			wantOK:   true,
+			wantType: EventRogueEvade,
+			wantData: nil,
+		},
+		{
+			name:   "rogue evade: failure produces no event",
+			line:   "[Mon Apr 13 06:00:00 2026] Your attempts at ducking away from combat fail.",
+			wantOK: false,
+		},
+
 		// --- Verified-player chat lines ---
 		// Single-capitalised-word speaker + tell channel. Used by the
 		// combat tracker to learn which names are players so single-word
