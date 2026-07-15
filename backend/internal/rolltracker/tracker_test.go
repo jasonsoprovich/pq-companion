@@ -223,6 +223,21 @@ func TestAutoSuggestXSuffixShorthand(t *testing.T) {
 	}
 }
 
+func TestAutoSuggestGluedTierLetter(t *testing.T) {
+	tr := newTrackerForTest()
+	tr.SetItemMatcher(stubMatcher("Robe of Secrets"))
+	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)
+	// Some guilds glue the tier abbreviation directly onto the number with
+	// no space ("511p 522u 533a" for pick/upgrade/alt) rather than spelling
+	// it out. The glued letter must not swallow the roll number.
+	tr.HandleLine(base, "Belnoctourne tells the raid, 'robe of secrets 511p 522u 533a'")
+	feedRoll(t, tr, "Astrael", 533, 5, base.Add(time.Second))
+
+	if got := tr.State().Sessions[0].ItemName; got != "Robe of Secrets" {
+		t.Fatalf("session should be auto-labeled despite glued tier letter, got %q", got)
+	}
+}
+
 func TestAutoSuggestXSuffixMustMatchTier(t *testing.T) {
 	tr := newTrackerForTest()
 	tr.SetItemMatcher(stubMatcher("Robe of Secrets"))

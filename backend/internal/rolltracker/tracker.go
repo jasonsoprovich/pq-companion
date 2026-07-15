@@ -41,8 +41,13 @@ const maxLootCalls = 32
 // reLootNumber pulls candidate roll bounds (3–4 digit numbers) out of a chat
 // line. Loot is essentially always called with a 3–4 digit /random max;
 // requiring that width skips the 1–2 digit counts common in raid chatter
-// ("inc in 30", "coth 1").
-var reLootNumber = regexp.MustCompile(`\b\d{3,4}\b`)
+// ("inc in 30", "coth 1"). The optional trailing letter accommodates
+// tier shorthand glued directly onto the number with no space ("511p",
+// "522u", "533a" for pick/upgrade/alt) — the same shorthand style as the
+// "x11" suffix format below, just spelled the other direction. A second
+// glued-on letter ("511pick", "333rd") fails the trailing \b and is left
+// unmatched rather than guessed at.
+var reLootNumber = regexp.MustCompile(`\b(\d{3,4})[A-Za-z]?\b`)
 
 // reLootSuffixNumber matches a leading-digit-omitted loot call token like
 // "x11" or "x22" — shorthand some guilds use to denote a roll tier bracket
@@ -290,15 +295,16 @@ func (t *Tracker) applyAutoSuggestion(id uint64, name string) {
 	}
 }
 
-// extractRollNumbers returns the distinct 3–4 digit numbers in a chat line.
+// extractRollNumbers returns the distinct 3–4 digit numbers in a chat line,
+// ignoring any glued-on tier-letter suffix ("511p" → 511).
 func extractRollNumbers(s string) []int {
-	matches := reLootNumber.FindAllString(s, -1)
+	matches := reLootNumber.FindAllStringSubmatch(s, -1)
 	if len(matches) == 0 {
 		return nil
 	}
 	out := make([]int, 0, len(matches))
 	for _, m := range matches {
-		n, err := strconv.Atoi(m)
+		n, err := strconv.Atoi(m[1])
 		if err != nil || containsInt(out, n) {
 			continue
 		}
