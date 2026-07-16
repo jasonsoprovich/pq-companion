@@ -1557,6 +1557,23 @@ hardening — no new features, but a broad sweep of reliability fixes.
   checklist no longer flags innate/AA-only spells as missing from a
   vendor
 
+## v0.17.3 — Lockout Auto-Capture, Compressed Log Backups
+
+- **Lockout auto-capture** — lockouts are now recorded the instant a kill
+  notice lands, instead of waiting for a manual `/sll`; `/sll` remains
+  authoritative and overwrites auto-captured rows with second-precision
+  data on the next full snapshot
+- **Smaller log backups** — Archive & Purge now writes a compressed
+  `.bak.zip` instead of a raw text copy, and a new Export Debug Logs
+  button (Settings > Advanced) bundles the app's logs into one file for
+  bug reports
+- Fixes: the personal threat meter now credits a successful Taunt; two-word
+  attack verbs like "harm touch" no longer mis-parse into a garbled
+  phantom mob name, and Harm Touch's real damage is credited to threat;
+  NPC search no longer filters out real named/scripted mobs with a `#`
+  prefix as placeholders; and self-authored raid chat tells are parsed
+  correctly instead of being silently dropped
+
 ## Phase 11 — Project Website
 _Planned_
 

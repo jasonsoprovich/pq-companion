@@ -9,6 +9,20 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.17.3 — 2026-07-16
+
+Lockout Tracker auto-captures from kill notices, log backups get smaller, and the threat meter picks up a batch of combat-parsing accuracy fixes.
+
+### Highlights
+- **Lockout auto-capture** — lockouts are now recorded the instant a kill notice lands, instead of waiting for a manual `/sll`; `/sll` still overwrites with authoritative second-precision data on the next snapshot.
+- **Smaller log backups** — Archive & Purge now writes a compressed `.bak.zip` instead of a raw text copy, and a new Export Debug Logs button (Settings > Advanced) bundles the app's logs into one file for bug reports.
+
+### Fixes
+- The personal threat meter now credits a successful Taunt (it was silently dropped before).
+- Two-word attack verbs like "harm touch" no longer mis-parse into a garbled phantom mob name, and Harm Touch's real damage is now credited to threat.
+- NPC search no longer filters out real named/scripted mobs with a `#` prefix as placeholders.
+- Self-authored raid chat tells are now parsed correctly instead of being silently dropped.
+
 ## v0.17.2 — 2026-07-15
 
 Tradeskill leveling gets per-stage detail, the threat meter models more real combat behavior, and copy buttons round out Roll Tracker and Combat History.
