@@ -893,9 +893,13 @@ var ScriptSpawnedNPCOverrides = map[string][]int{
 const nonPlayerNPCClause = " AND n.name != '' AND n.name != '#' AND n.name != '_' AND n.race != 127"
 
 // SearchNPCs searches NPCs by name (case-insensitive substring match).
-// When hidePlaceholders is true, entries with level 0, class 0, or names
-// starting with "#" are also excluded on top of the always-on
-// nonPlayerNPCClause filter.
+// When hidePlaceholders is true, entries with level 0 or class 0 are also
+// excluded on top of the always-on nonPlayerNPCClause filter. A leading
+// "#" is NOT treated as a placeholder signal: Quarm uses that prefix on
+// many real named/scripted mobs (e.g. "#Lord_Inquisitor_Seru",
+// "#Zlakas_the_Slayer") that have normal level/class values, so filtering
+// on it hid legitimate search results without ever catching an actual
+// level-0/class-0 stub row.
 func (db *DB) SearchNPCs(query string, limit, offset int, hidePlaceholders bool) (*SearchResult[NPC], error) {
 	// EQEmu stores NPC names with underscores; the UI displays spaces. Map
 	// query whitespace to underscores so what the user sees matches what
@@ -906,7 +910,7 @@ func (db *DB) SearchNPCs(query string, limit, offset int, hidePlaceholders bool)
 
 	placeholderClause := ""
 	if hidePlaceholders {
-		placeholderClause = " AND n.name NOT LIKE '#%' AND n.level > 0 AND n.class > 0"
+		placeholderClause = " AND n.level > 0 AND n.class > 0"
 	}
 	filterClause := nonPlayerNPCClause + placeholderClause
 
