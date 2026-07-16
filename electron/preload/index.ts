@@ -174,6 +174,8 @@ contextBridge.exposeInMainWorld('electron', {
     selectSoundFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-sound-file'),
     saveExportBundle: (suggestedName?: string): Promise<string | null> =>
       ipcRenderer.invoke('dialog:save-export-bundle', suggestedName),
+    saveDebugLogs: (): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:save-debug-logs'),
     openImportBundle: (): Promise<string | null> =>
       ipcRenderer.invoke('dialog:open-import-bundle'),
     openSpellsetsFile: (): Promise<string | null> =>

@@ -1,6 +1,7 @@
 package logparser
 
 import (
+	"archive/zip"
 	"bufio"
 	"fmt"
 	"io"
@@ -91,7 +92,7 @@ func BackupAndPurge(logPath string) (string, error) {
 	dir := filepath.Dir(logPath)
 	base := filepath.Base(logPath)
 	name := strings.TrimSuffix(base, ".txt")
-	backupName := name + "." + time.Now().Format("2006-01-02") + ".bak.txt"
+	backupName := name + "." + time.Now().Format("2006-01-02") + ".bak.zip"
 	backupPath := filepath.Join(dir, backupName)
 
 	origInfo, err := os.Stat(logPath)
@@ -99,18 +100,16 @@ func BackupAndPurge(logPath string) (string, error) {
 		return "", fmt.Errorf("stat log file: %w", err)
 	}
 
-	// Step 1: Copy original to backup.
-	if err := copyFile(logPath, backupPath); err != nil {
+	// Step 1: Zip original into backup. EQ log text compresses heavily, so
+	// this keeps repeated purges from silently filling the user's disk.
+	if err := zipFile(logPath, backupPath, base, origInfo); err != nil {
 		return "", fmt.Errorf("create backup: %w", err)
 	}
 
-	// Step 2: Verify backup integrity.
-	backupInfo, err := os.Stat(backupPath)
-	if err != nil {
+	// Step 2: Verify backup integrity by comparing the zip entry's
+	// uncompressed size against the original file.
+	if err := verifyZipEntry(backupPath, base, origInfo.Size()); err != nil {
 		return backupPath, fmt.Errorf("verify backup: %w", err)
-	}
-	if backupInfo.Size() != origInfo.Size() {
-		return backupPath, fmt.Errorf("backup size mismatch: orig=%d backup=%d", origInfo.Size(), backupInfo.Size())
 	}
 
 	// Step 3: Filter lines to the past purgeKeepDays days.
@@ -132,7 +131,9 @@ func BackupAndPurge(logPath string) (string, error) {
 	return backupPath, nil
 }
 
-func copyFile(src, dst string) error {
+// zipFile writes src (opened with sharing flags so it works while the log is
+// being tailed) into a single-entry zip at dst.
+func zipFile(src, dst, entryName string, srcInfo os.FileInfo) error {
 	in, err := openShared(src)
 	if err != nil {
 		return err
@@ -145,10 +146,48 @@ func copyFile(src, dst string) error {
 	}
 	defer func() { _ = out.Close() }()
 
-	if _, err := io.Copy(out, in); err != nil {
+	w := zip.NewWriter(out)
+	hdr, err := zip.FileInfoHeader(srcInfo)
+	if err != nil {
+		w.Close()
+		return err
+	}
+	hdr.Name = entryName
+	hdr.Method = zip.Deflate
+
+	entry, err := w.CreateHeader(hdr)
+	if err != nil {
+		w.Close()
+		return err
+	}
+	if _, err := io.Copy(entry, in); err != nil {
+		w.Close()
+		return err
+	}
+	if err := w.Close(); err != nil {
 		return err
 	}
 	return out.Sync()
+}
+
+// verifyZipEntry confirms zipPath contains an entry named entryName whose
+// uncompressed size matches wantSize.
+func verifyZipEntry(zipPath, entryName string, wantSize int64) error {
+	r, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		if f.Name == entryName {
+			if int64(f.UncompressedSize64) != wantSize {
+				return fmt.Errorf("size mismatch: orig=%d backup=%d", wantSize, f.UncompressedSize64)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("entry %q not found in zip", entryName)
 }
 
 func filterLines(path string, cutoff time.Time) ([]string, error) {

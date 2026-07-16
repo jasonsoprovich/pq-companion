@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart, ExternalLink, Eye, Gauge } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart, ExternalLink, Eye, Gauge, Download } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
 import { TtsVoiceDefault, OverlayTextDefaults } from '../components/settings/AlertDefaultsSettings'
 import PiperTtsSettings from '../components/settings/PiperTtsSettings'
 import TimerAlertPrefEditor from '../components/settings/TimerAlertPrefEditor'
-import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, getEqwStatus, type ServerInfo, type TestPortResult } from '../services/api'
+import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, exportDebugLogs, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, getEqwStatus, type ServerInfo, type TestPortResult } from '../services/api'
 import type { Config, DPSClassColors, NPCOverlaySections, TimerAlertPref } from '../types/config'
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
 import { withTimerAlertDefaults } from '../lib/timerAlerts'
@@ -2866,7 +2866,7 @@ export default function SettingsPage(): React.ReactElement {
             )}
           </h2>
           <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Archives the current EverQuest log file to a <code className="font-mono">.bak.txt</code> next to it, then trims the live log to the last 30 days of entries. Files over 75 MB are flagged for cleanup. Unrelated to the EQ Config Backups tab — that one protects your <code className="font-mono">.ini</code> files.
+            Archives the current EverQuest log file to a <code className="font-mono">.bak.zip</code> next to it, then trims the live log to the last 30 days of entries. Files over 75 MB are flagged for cleanup. Unrelated to the EQ Config Backups tab — that one protects your <code className="font-mono">.ini</code> files.
           </p>
 
           {/* Load file info */}
@@ -4023,6 +4023,26 @@ function DiagnosticsSection({
   onToggleDebugLogging: () => void
 }): React.ReactElement {
   const hasShell = typeof window !== 'undefined' && !!window.electron?.shell
+  const hasSaveDialog = typeof window !== 'undefined' && !!window.electron?.dialog?.saveDebugLogs
+  const [exportState, setExportState] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
+  const [exportResult, setExportResult] = useState<string | null>(null)
+
+  async function handleExportDebugLogs() {
+    if (!window.electron?.dialog?.saveDebugLogs) return
+    const dest = await window.electron.dialog.saveDebugLogs()
+    if (!dest) return
+    setExportState('running')
+    setExportResult(null)
+    try {
+      const res = await exportDebugLogs(dest)
+      setExportResult(res.export_path)
+      setExportState('done')
+    } catch (err) {
+      setExportResult(err instanceof Error ? err.message : String(err))
+      setExportState('error')
+    }
+  }
+
   return (
     <section
       className="mt-4 rounded-lg p-4"
@@ -4040,24 +4060,53 @@ function DiagnosticsSection({
         sessions of <code>server.log</code> (backend) and <code>electron.log</code>{' '}
         (UI shell). Attach those to a bug report so the cause can be diagnosed.
       </p>
-      <button
-        type="button"
-        onClick={() => {
-          if (window.electron?.shell) {
-            window.electron.shell.openLogsFolder().catch(() => null)
-          }
-        }}
-        disabled={!hasShell}
-        className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
-        style={{
-          backgroundColor: 'var(--color-surface-2)',
-          border: '1px solid var(--color-border)',
-          color: 'var(--color-foreground)',
-        }}
-      >
-        <FolderOpen size={13} />
-        Open logs folder
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (window.electron?.shell) {
+              window.electron.shell.openLogsFolder().catch(() => null)
+            }
+          }}
+          disabled={!hasShell}
+          className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+          style={{
+            backgroundColor: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-foreground)',
+          }}
+        >
+          <FolderOpen size={13} />
+          Open logs folder
+        </button>
+        <button
+          type="button"
+          onClick={handleExportDebugLogs}
+          disabled={!hasSaveDialog || exportState === 'running'}
+          className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+          style={{
+            backgroundColor: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-foreground)',
+          }}
+        >
+          {exportState === 'running' ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+          Export debug logs (.zip)
+        </button>
+      </div>
+
+      {exportState === 'done' && exportResult && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: '#22c55e' }}>
+          <CheckCircle2 size={12} />
+          Exported to {exportResult}
+        </p>
+      )}
+      {exportState === 'error' && exportResult && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: '#f87171' }}>
+          <AlertTriangle size={12} />
+          {exportResult}
+        </p>
+      )}
 
       {/* Verbose logging: raises the backend log to debug level so an
           intermittent issue (e.g. a trigger alert firing more than once) leaves

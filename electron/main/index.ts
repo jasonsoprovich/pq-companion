@@ -2741,6 +2741,17 @@ ipcMain.handle('dialog:save-export-bundle', async (_event, suggestedName?: strin
   return result.canceled ? null : result.filePath
 })
 
+ipcMain.handle('dialog:save-debug-logs', async () => {
+  const result = await dialog.showSaveDialog({
+    title: 'Export Debug Logs',
+    defaultPath: `pq-companion-debug-logs-${new Date().toISOString().slice(0, 10)}.zip`,
+    filters: [
+      { name: 'Zip Archive', extensions: ['zip'] },
+    ],
+  })
+  return result.canceled ? null : result.filePath
+})
+
 ipcMain.handle('dialog:open-import-bundle', async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openFile'],

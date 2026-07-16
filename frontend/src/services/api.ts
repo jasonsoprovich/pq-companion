@@ -1230,6 +1230,12 @@ export function cleanupLog(): Promise<{ backup_path: string }> {
   return post<{ backup_path: string }>('/api/log/cleanup', {})
 }
 
+// Zips the app's own diagnostic logs (server.log + electron.log, plus any
+// rotated siblings) to destinationPath for easy sharing in a bug report.
+export function exportDebugLogs(destinationPath: string): Promise<{ export_path: string }> {
+  return post<{ export_path: string }>('/api/log/export-debug', { destination_path: destinationPath })
+}
+
 // Toggle whether the live feed also surfaces unrecognised lines (chat, system
 // messages) as log:raw events so they can be searched there. The backend holds
 // the flag, so it persists across renderer navigation until restart.

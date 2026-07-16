@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/applog"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 )
@@ -137,4 +138,29 @@ func (h *logHandler) cleanup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{"backup_path": backupPath})
+}
+
+// exportDebug handles POST /api/log/export-debug — zips the app's own
+// diagnostic logs (server.log + electron.log and any rotated siblings) into
+// a single archive so the user can attach one small file to a bug report.
+// Body: {"destination_path": "<abs path>"}.
+func (h *logHandler) exportDebug(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		DestinationPath string `json:"destination_path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.DestinationPath == "" {
+		writeError(w, http.StatusBadRequest, "destination_path is required")
+		return
+	}
+
+	exportPath, err := applog.ExportDebugLogs(body.DestinationPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"export_path": exportPath})
 }

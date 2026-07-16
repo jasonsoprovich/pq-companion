@@ -6,6 +6,7 @@
 package applog
 
 import (
+	"archive/zip"
 	"fmt"
 	"io"
 	"log/slog"
@@ -107,6 +108,74 @@ func logsDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".pq-companion", "logs"), nil
+}
+
+// ExportDebugLogs zips every file directly under ~/.pq-companion/logs/
+// (server*.log written by this process, electron*.log written by the
+// Electron main process — both land in the same directory) into a single
+// archive at destPath, so a user can share one small file for a bug report
+// instead of hunting down and attaching several. Returns destPath on success.
+func ExportDebugLogs(destPath string) (string, error) {
+	dir, err := logsDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve logs dir: %w", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("read logs dir: %w", err)
+	}
+
+	out, err := os.Create(destPath)
+	if err != nil {
+		return "", fmt.Errorf("create export file: %w", err)
+	}
+	defer func() { _ = out.Close() }()
+
+	w := zip.NewWriter(out)
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if err := addLogFileToZip(w, filepath.Join(dir, e.Name()), e.Name()); err != nil {
+			w.Close()
+			return "", fmt.Errorf("add %s to zip: %w", e.Name(), err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		return "", fmt.Errorf("finalize zip: %w", err)
+	}
+	if err := out.Sync(); err != nil {
+		return "", fmt.Errorf("sync export file: %w", err)
+	}
+	return destPath, nil
+}
+
+func addLogFileToZip(w *zip.Writer, src, entryName string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+
+	hdr, err := zip.FileInfoHeader(info)
+	if err != nil {
+		return err
+	}
+	hdr.Name = entryName
+	hdr.Method = zip.Deflate
+
+	entry, err := w.CreateHeader(hdr)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(entry, in)
+	return err
 }
 
 // rotate renames server.log → server.1.log → server.2.log → ..., dropping
