@@ -416,6 +416,43 @@ func main() {
 	// rolled backstab number — so it needs the same primary-weapon lookup, gated
 	// to a piercer.
 	threatTracker.SetBackstabHateFn(meleeHate.backstab)
+	// selfNameFn resolves the active character's display name so a taunt
+	// emote (or, for the raid assembler below, a departure spell) naming the
+	// player can be recognised as "us". Shared by both the personal meter and
+	// the raid-wide assembler so they agree on who "You" is.
+	selfNameFn := func() string {
+		if tailer != nil {
+			if name := tailer.ActiveCharacter(); name != "" {
+				return name
+			}
+		}
+		return cfgMgr.Get().Character
+	}
+	threatTracker.SetSelfNameFn(selfNameFn)
+	// A successful Taunt sets hate to topHate+10 server-side, but this meter
+	// only ever sees the active character's own outgoing damage — it has no
+	// way to know what "the top" is on its own. Estimate it from the combat
+	// tracker's raid-wide observed damage (the same data source the raid
+	// threat assembler uses), which is always being collected for the DPS
+	// meter regardless of whether the raid threat feature is enabled.
+	threatTracker.SetTopHateFn(func(mob string) int64 {
+		var top int64
+		for _, md := range combatTracker.RaidThreatDamage() {
+			if md.Mob != mob {
+				continue
+			}
+			for _, atk := range md.Attackers {
+				if atk.Name == "You" {
+					continue
+				}
+				if atk.Damage > top {
+					top = atk.Damage
+				}
+			}
+			break
+		}
+		return top
+	})
 	// Drive the live (rolling-window) hate rate: rebroadcast once a second while
 	// any mob is tracked so the per-second meter decays on screen between log
 	// events instead of freezing at its last value.
@@ -436,14 +473,7 @@ func main() {
 		func() bool { return cfgMgr.Get().Preferences.RaidThreatEnabled },
 		func() map[string]int { return cfgMgr.Get().Preferences.RaidThreatClassMods },
 		func() map[string]int { return cfgMgr.Get().Preferences.RaidThreatPlayerMods },
-		func() string { // self name, so a taunt emote naming the player maps to "You"
-			if tailer != nil {
-				if name := tailer.ActiveCharacter(); name != "" {
-					return name
-				}
-			}
-			return cfgMgr.Get().Character
-		},
+		selfNameFn, // so a taunt emote naming the player maps to "You"
 	)
 	go raidThreatAssembler.RunTicker(context.Background(), time.Second)
 

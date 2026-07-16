@@ -60,6 +60,11 @@ const (
 	rogueEvadeMinHate     = 100
 )
 
+// tauntBump is the hate a successful taunt adds above the current top of the
+// list (EQMacEmu Mob::Taunt: myHate = topHate + 10). Mirrors raidthreat's
+// constant of the same name/value.
+const tauntBump = 10
+
 // hateSample is one post-hatemod hate increment with the time it landed, kept
 // in a short rolling buffer per mob to compute the live (windowed) rate.
 type hateSample struct {
@@ -173,6 +178,22 @@ type Tracker struct {
 	// which case a backstab line falls back to observed damage. May be nil.
 	backstabHateFn func() int
 
+	// topHateFn returns the best-known current hate on a mob held by anyone
+	// OTHER than the active character (an estimate derived from raid-wide
+	// observed damage), used to model a successful Taunt's real "topHate + 10"
+	// effect. This tracker only ever sees the active character's own outgoing
+	// damage, so without this it has no way to know what "the top" even is.
+	// 0 (or a nil func) means no raid-wide visibility is wired, in which case a
+	// taunt still contributes tauntBump above the character's own prior hate
+	// rather than nothing. May be nil.
+	topHateFn func(mob string) int64
+
+	// selfNameFn returns the active character's display name, so an
+	// EventTaunt (whose Taunter names whoever taunted, not necessarily us) can
+	// be recognised as our own action rather than another raid member's. May
+	// be nil, in which case taunts are never attributed to us.
+	selfNameFn func() string
+
 	// nowFn is the receive clock for the live (rolling-window) rate: hate
 	// samples are stamped with it and the window is measured against it. It is
 	// deliberately NOT the event's log timestamp — both the live tailer and the
@@ -247,6 +268,47 @@ func (t *Tracker) backstabHate() int {
 		return 0
 	}
 	return fn()
+}
+
+// SetTopHateFn installs the raid-wide top-hate estimator (see topHateFn).
+func (t *Tracker) SetTopHateFn(fn func(mob string) int64) {
+	t.mu.Lock()
+	t.topHateFn = fn
+	t.mu.Unlock()
+}
+
+// topHate returns the current best-known top hate on mob held by someone
+// other than us, and whether a provider is wired at all — distinct from a
+// wired provider genuinely reporting 0 (nobody else has engaged yet), which
+// is a real, usable value. Read outside t.mu, like meleeSwingHate (the
+// provider reads the combat tracker's own locked state).
+func (t *Tracker) topHate(mob string) (top int64, ok bool) {
+	t.mu.Lock()
+	fn := t.topHateFn
+	t.mu.Unlock()
+	if fn == nil {
+		return 0, false
+	}
+	return fn(mob), true
+}
+
+// SetSelfNameFn installs the active-character-name provider (see selfNameFn).
+func (t *Tracker) SetSelfNameFn(fn func() string) {
+	t.mu.Lock()
+	t.selfNameFn = fn
+	t.mu.Unlock()
+}
+
+// isSelf reports whether name is the active character, per selfNameFn.
+func (t *Tracker) isSelf(name string) bool {
+	t.mu.Lock()
+	fn := t.selfNameFn
+	t.mu.Unlock()
+	if fn == nil || name == "" {
+		return false
+	}
+	self := fn()
+	return self != "" && self == name
 }
 
 // effectiveHatemodLocked is the total hate modifier currently in effect: the
@@ -362,6 +424,15 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 
 	case logparser.EventRogueEvade:
 		t.recordRogueEvade(ev.Timestamp)
+
+	case logparser.EventTaunt:
+		data, ok := ev.Data.(logparser.TauntData)
+		if !ok || data.Mob == "" || !t.isSelf(data.Taunter) {
+			// Not a landed taunt we can attribute to the active character —
+			// someone else's successful taunt doesn't change OUR hate.
+			return
+		}
+		t.recordTaunt(data.Mob, ev.Timestamp)
 	}
 }
 
@@ -935,6 +1006,43 @@ func (t *Tracker) recordRogueEvade(ts time.Time) {
 	m.recent = nil // the drop isn't a "hate added" sample; keep the live-rate window honest
 	m.last = ts
 	t.armExpiryLocked(mob, m)
+	snap := t.snapshotLocked(ts)
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
+// recordTaunt applies a successful taunt to the active character's own hate:
+// EQMacEmu sets the taunter's hate to topHate + tauntBump outright (a direct
+// SetHate, not run through AddToHateList), so this bypasses the hate modifier
+// the same way melee does. This tracker has no visibility into anyone else's
+// hate on its own, so topHateFn (when wired) supplies a raid-wide estimate
+// from observed damage; without it, we can't tell whether we're already the
+// top hater, so the taunt still guarantees at least a flat tauntBump jump
+// over our own prior hate rather than landing as a no-op, which would make a
+// successful taunt read as if it had done nothing.
+func (t *Tracker) recordTaunt(mob string, ts time.Time) {
+	mob = logparser.CanonicalNPCName(mob)
+	if mob == "" {
+		return
+	}
+	top, haveTop := t.topHate(mob)
+
+	t.mu.Lock()
+	m := t.ensureMobLocked(mob, ts)
+	var delta float64
+	if haveTop {
+		delta = float64(top) + tauntBump - m.hate
+		if delta <= 0 {
+			// Already at/above the estimated top — matches the server's
+			// no-op when the taunter is already the top hater.
+			t.mu.Unlock()
+			return
+		}
+	} else {
+		delta = tauntBump
+	}
+	t.addHateLocked(mob, delta, ts, false) // taunt — flat SetHate, no hatemod
+	t.lastEngaged = mob
 	snap := t.snapshotLocked(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)

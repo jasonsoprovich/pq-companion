@@ -791,6 +791,76 @@ func TestRogueEvadeNoTargetIgnored(t *testing.T) {
 	}
 }
 
+// ── Taunt ────────────────────────────────────────────────────────────────
+
+func taunt(mob, taunter string, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventTaunt,
+		Timestamp: ts,
+		Data:      logparser.TauntData{Mob: mob, Taunter: taunter},
+	}
+}
+
+func TestTauntBumpsHateAboveKnownTop(t *testing.T) {
+	tr := NewTracker(nil, nil, nil)
+	tr.SetSelfNameFn(func() string { return "Takkisina" })
+	tr.SetTopHateFn(func(mob string) int64 { return 10000 })
+	t0 := time.Now()
+	tr.Handle(hit("Vyzhdra", 50, t0)) // some prior hate, well below the raid top
+	tr.Handle(taunt("Vyzhdra", "Takkisina", t0.Add(time.Second)))
+	if got := hateFor(tr.GetState(), "Vyzhdra"); got != 10010 {
+		t.Errorf("hate after taunt = %d, want 10010 (topHateFn 10000 + tauntBump 10)", got)
+	}
+}
+
+func TestTauntWithoutTopHateFnStillBumps(t *testing.T) {
+	// No raid-wide visibility wired: a landed taunt must still add tauntBump
+	// over our own prior hate rather than reading as a no-op.
+	tr := NewTracker(nil, nil, nil)
+	tr.SetSelfNameFn(func() string { return "Takkisina" })
+	t0 := time.Now()
+	tr.Handle(hit("Vyzhdra", 50, t0))
+	tr.Handle(taunt("Vyzhdra", "Takkisina", t0.Add(time.Second)))
+	if got := hateFor(tr.GetState(), "Vyzhdra"); got != 60 {
+		t.Errorf("hate after taunt with no topHateFn = %d, want 60 (50 + tauntBump 10)", got)
+	}
+}
+
+func TestTauntAlreadyTopIsNoOp(t *testing.T) {
+	tr := NewTracker(nil, nil, nil)
+	tr.SetSelfNameFn(func() string { return "Takkisina" })
+	tr.SetTopHateFn(func(mob string) int64 { return 100 })
+	t0 := time.Now()
+	tr.Handle(hit("Vyzhdra", 5000, t0)) // already well above topHateFn+tauntBump
+	tr.Handle(taunt("Vyzhdra", "Takkisina", t0.Add(time.Second)))
+	if got := hateFor(tr.GetState(), "Vyzhdra"); got != 5000 {
+		t.Errorf("hate after no-op taunt = %d, want 5000 (unchanged)", got)
+	}
+}
+
+func TestTauntFromAnotherPlayerIgnored(t *testing.T) {
+	tr := NewTracker(nil, nil, nil)
+	tr.SetSelfNameFn(func() string { return "Takkisina" })
+	tr.SetTopHateFn(func(mob string) int64 { return 10000 })
+	t0 := time.Now()
+	tr.Handle(hit("Vyzhdra", 50, t0))
+	tr.Handle(taunt("Vyzhdra", "Someotherwarrior", t0.Add(time.Second)))
+	if got := hateFor(tr.GetState(), "Vyzhdra"); got != 50 {
+		t.Errorf("hate after another player's taunt = %d, want 50 (unchanged)", got)
+	}
+}
+
+func TestTauntWithoutSelfNameFnIgnored(t *testing.T) {
+	tr := NewTracker(nil, nil, nil)
+	tr.SetTopHateFn(func(mob string) int64 { return 10000 })
+	t0 := time.Now()
+	tr.Handle(hit("Vyzhdra", 50, t0))
+	tr.Handle(taunt("Vyzhdra", "Takkisina", t0.Add(time.Second)))
+	if got := hateFor(tr.GetState(), "Vyzhdra"); got != 50 {
+		t.Errorf("hate after taunt with no selfNameFn wired = %d, want 50 (unattributable)", got)
+	}
+}
+
 // ── Cast → resolve deferral: hate applies on land/resist, not cast-begin ────
 
 func resist(spell string, ts time.Time) logparser.LogEvent {
