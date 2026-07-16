@@ -428,9 +428,12 @@ type Preferences struct {
 
 	// RaidThreatClassMods is the per-class hate adjustment (class name → signed
 	// percent) the raid-estimate view applies to a player's observed damage, to
-	// offset hate sources logs can't see (a tank's taunt/disciplines/+hate gear).
-	// A present entry (including 0) overrides the built-in default; tank classes
-	// default to +30 when unset. May be nil/omitted.
+	// offset hate sources logs can't see (a tank's disciplines/+hate gear).
+	// A present entry (including 0) overrides the built-in default, which is 0
+	// for every class — the tank-undercount problem is instead handled by
+	// modelling taunt directly (see raidthreat.Assembler.applyTaunt) rather
+	// than a blanket boost. This knob remains for users who want to
+	// approximate a known aggro-mod gear/AA setup by hand. May be nil/omitted.
 	RaidThreatClassMods map[string]int `yaml:"raid_threat_class_mods,omitempty" json:"raid_threat_class_mods,omitempty"`
 
 	// RaidThreatPlayerMods is an optional per-player hate adjustment (player
