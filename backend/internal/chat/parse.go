@@ -41,7 +41,7 @@ var (
 	reTellOut    = regexp.MustCompile(`^You told ([A-Za-z]+),\s+'(.*)'$`)
 	reGuildOut   = regexp.MustCompile(`^You say to your guild,\s+'(.*)'$`)
 	reGroupOut   = regexp.MustCompile(`^You tell your party,\s+'(.*)'$`)
-	reRaidOut    = regexp.MustCompile(`^You tell the raid,\s+'(.*)'$`)
+	reRaidOut    = regexp.MustCompile(`^You tell your raid,\s+'(.*)'$`)
 	reOOCOut     = regexp.MustCompile(`^You say out of character,\s+'(.*)'$`)
 	reAuctionOut = regexp.MustCompile(`^You auction,\s+'(.*)'$`)
 	reShoutOut   = regexp.MustCompile(`^You shout,\s+'(.*)'$`)

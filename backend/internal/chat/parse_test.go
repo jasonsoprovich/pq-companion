@@ -29,7 +29,7 @@ func TestParseChat(t *testing.T) {
 		// Channels out.
 		{"guild out", "You say to your guild, 'where ya at'", true, ChannelGuild, DirectionOut, "", "where ya at"},
 		{"group out", "You tell your party, 'ty :)'", true, ChannelGroup, DirectionOut, "", "ty :)"},
-		{"raid out", "You tell the raid, 'incoming'", true, ChannelRaid, DirectionOut, "", "incoming"},
+		{"raid out", "You tell your raid, 'incoming'", true, ChannelRaid, DirectionOut, "", "incoming"},
 		{"ooc out", "You say out of character, 'mgb kei'", true, ChannelOOC, DirectionOut, "", "mgb kei"},
 		{"named channel out", "You tell Seechanters:1, 'who you on?'", true, "seechanters", DirectionOut, "", "who you on?"},
 		// NPC tell replies excluded.

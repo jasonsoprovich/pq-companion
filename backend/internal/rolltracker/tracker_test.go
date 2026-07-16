@@ -251,6 +251,23 @@ func TestAutoSuggestXSuffixMustMatchTier(t *testing.T) {
 	}
 }
 
+func TestAutoSuggestSelfAuthoredRaidCall(t *testing.T) {
+	tr := newTrackerForTest()
+	tr.SetItemMatcher(stubMatcher("Small Lantern"))
+	base := time.Date(2026, 5, 10, 20, 25, 0, 0, time.Local)
+	// A raid leader calling loot to their own raid logs as "You tell your
+	// raid, '...'", not "You tell the raid, '...'" (that phrasing is only
+	// used for others' calls, e.g. "Soandso tells the raid, '...'").
+	// chat.ParseChat previously required "the raid" even for the self case,
+	// so HandleLine silently dropped every self-called loot line.
+	tr.HandleLine(base, "You tell your raid, 'Small Lantern 211 pick 222 upgrade 233 alts'")
+	feedRoll(t, tr, "Astrael", 211, 5, base.Add(time.Second))
+
+	if got := tr.State().Sessions[0].ItemName; got != "Small Lantern" {
+		t.Fatalf("session should be auto-labeled from a self-authored raid call, got %q", got)
+	}
+}
+
 func TestAutoSuggestKeepsManualLabel(t *testing.T) {
 	tr := newTrackerForTest()
 	tr.SetItemMatcher(stubMatcher("Robe of the Lost Circle"))
