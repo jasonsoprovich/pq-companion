@@ -225,6 +225,23 @@ func TestParseLine(t *testing.T) {
 			wantType: EventCombatHit,
 			wantData: CombatHitData{Actor: "You", Skill: "pierce", Target: "a young gnoll", Damage: 45},
 		},
+		// Two-word special-attack verbs must not swallow the target's first
+		// word — a bare \w+ would parse "harm" as the skill and "touch
+		// Griklor" as the target, losing the mob entirely.
+		{
+			name:     "combat: you harm touch NPC",
+			line:     "[Mon Apr 13 06:00:00 2026] You harm touch Griklor for 500 points of damage.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "You", Skill: "harm touch", Target: "Griklor", Damage: 500},
+		},
+		{
+			name:     "combat: you flying kick NPC",
+			line:     "[Mon Apr 13 06:00:00 2026] You flying kick a gnoll for 45 points of damage.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "You", Skill: "flying kick", Target: "a gnoll", Damage: 45},
+		},
 
 		// Passive constructions starting with an auxiliary verb must not be
 		// misidentified as player-hits-NPC events.

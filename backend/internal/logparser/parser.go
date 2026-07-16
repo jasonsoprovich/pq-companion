@@ -57,7 +57,13 @@ var (
 
 	// Combat — player hits NPC:
 	// "You slash a gnoll for 150 points of damage."
-	reYouHit = regexp.MustCompile(`^You (\w+) (.+) for (\d+) points? of damage\.$`)
+	// The verb group tries known multi-word special-attack names first, else
+	// falls back to a single word for an ordinary weapon-skill verb. Without
+	// the multi-word alternatives, a single \w+ swallows only the first word
+	// of a two-word verb and the rest gets prepended to the target — e.g.
+	// "You harm touch Griklor for 500 points of damage." would otherwise parse
+	// as Skill="harm", Target="touch Griklor", losing the mob entirely.
+	reYouHit = regexp.MustCompile(`^You (harm touch|flying kick|dragon punch|eagle strike|tiger claw|round kick|\w+) (.+) for (\d+) points? of damage\.$`)
 
 	// Combat — NPC hits player:
 	// "A gnoll slashes you for 50 points of damage."

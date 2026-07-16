@@ -78,6 +78,17 @@ func dotTick(target, spell string, dmg int, ts time.Time) logparser.LogEvent {
 	}
 }
 
+// harmTouch is a Harm Touch hit line (Skill "harm touch", no SpellName — it
+// logs as a plain verb hit, like a weapon swing, but its hate must scale with
+// the actual damage dealt rather than a flat per-swing value.
+func harmTouch(target string, dmg int, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventCombatHit,
+		Timestamp: ts,
+		Data:      logparser.CombatHitData{Actor: "You", Skill: "harm touch", Target: target, Damage: dmg},
+	}
+}
+
 func cast(spell string, ts time.Time) logparser.LogEvent {
 	return logparser.LogEvent{
 		Type:      logparser.EventSpellCast,
@@ -704,6 +715,19 @@ func TestMeleeFlatPerSwingHate(t *testing.T) {
 	tr.Handle(miss("a gnoll", t0.Add(2*time.Second))) // miss → still 25
 	if got := hateFor(tr.GetState(), "a gnoll"); got != 75 {
 		t.Errorf("melee hate = %d, want 75 (3 swings × 25, damage ignored)", got)
+	}
+}
+
+// Harm Touch carries no SpellName (it logs as a plain verb hit, like a
+// weapon swing), but it's a burst discipline whose hate scales with the
+// actual damage dealt — it must not fall into the flat per-swing bucket
+// even when a flat melee-swing value is wired.
+func TestHarmTouchUsesObservedDamageNotFlatSwing(t *testing.T) {
+	tr := NewTracker(nil, nil, nil)
+	tr.SetMeleeSwingHateFn(func() int { return 25 })
+	tr.Handle(harmTouch("a gnoll", 500, time.Now()))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 500 {
+		t.Errorf("hate after harm touch = %d, want 500 (observed damage, not flat swing 25)", got)
 	}
 }
 

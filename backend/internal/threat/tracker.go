@@ -356,6 +356,12 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 		case strings.EqualFold(data.Skill, "backstab"):
 			// Backstab: hate is its flat base damage, not the large rolled number.
 			t.recordBackstab(data.Target, data.Damage, ev.Timestamp)
+		case strings.EqualFold(data.Skill, "harm touch"):
+			// Harm Touch is a burst-damage discipline, not a weapon swing —
+			// its hate scales with the actual damage dealt (like a nuke), so
+			// it must not fall into the flat per-swing melee bucket below,
+			// even though (like a plain weapon verb) it carries no SpellName.
+			t.recordDamage(data.Target, data.Damage, false, ev.Timestamp)
 		case data.SpellName == "":
 			// Melee swing (a verb skill). Feeds the miss-hate average.
 			t.recordDamage(data.Target, data.Damage, true, ev.Timestamp)
