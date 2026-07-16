@@ -116,6 +116,76 @@ func TestConsumerNoActiveCharacterSkips(t *testing.T) {
 	}
 }
 
+func TestConsumerIncurredLineDuplicateIsIdempotent(t *testing.T) {
+	s := openTestStore(t)
+	c := NewConsumer(s, func() string { return "Tester" })
+	ts := time.Unix(1_700_000_000, 0)
+
+	var fired int
+	c.SetOnSnapshot(func(string) { fired++ })
+
+	line := "You have incurred a lockout for Diabo Xi Xin Thall that expires in 6 Days and 18 Hours."
+	// EQ sometimes prints this notice twice at the same timestamp.
+	c.HandleLine(ts, line)
+	c.HandleLine(ts, line)
+
+	entries, err := s.ListByCharacter("Tester")
+	if err != nil {
+		t.Fatalf("ListByCharacter: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1 (duplicate line collapsed)", len(entries))
+	}
+	want := ts.Add(6*24*time.Hour + 18*time.Hour).Unix()
+	if entries[0].ExpiresAt != want {
+		t.Errorf("ExpiresAt = %d, want %d", entries[0].ExpiresAt, want)
+	}
+	if fired != 2 {
+		t.Errorf("onSnapshot fired %d times, want 2", fired)
+	}
+}
+
+func TestConsumerSllSnapshotOverwritesIncurred(t *testing.T) {
+	s := openTestStore(t)
+	c := NewConsumer(s, func() string { return "Tester" })
+	ts := time.Unix(1_700_000_000, 0)
+
+	c.HandleLine(ts, "You have incurred a lockout for Diabo Xi Xin Thall that expires in 6 Days and 18 Hours.")
+
+	entries, err := s.ListByCharacter("Tester")
+	if err != nil {
+		t.Fatalf("ListByCharacter: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries before /sll, want 1", len(entries))
+	}
+
+	// A later `/sll` capture is authoritative and replaces the auto-captured
+	// row with the second-precision value from the fixture ("Diabo Xi Xin
+	// Thall: Expires in 3 Days, 41 Minutes, and 31 Seconds").
+	feedFixture(t, c)
+
+	entries, err = s.ListByCharacter("Tester")
+	if err != nil {
+		t.Fatalf("ListByCharacter after /sll: %v", err)
+	}
+	base := time.Date(2026, time.May, 23, 12, 0, 4, 0, time.Local)
+	want := base.Add(3*24*time.Hour + 41*time.Minute + 31*time.Second).Unix()
+	var found bool
+	for _, e := range entries {
+		if e.TargetName != "Diabo Xi Xin Thall" {
+			continue
+		}
+		found = true
+		if e.ExpiresAt != want {
+			t.Errorf("Diabo Xi Xin Thall ExpiresAt = %d, want %d (from /sll, not the 6d18h incurred estimate)", e.ExpiresAt, want)
+		}
+	}
+	if !found {
+		t.Fatal("expected /sll snapshot to still contain Diabo Xi Xin Thall")
+	}
+}
+
 func TestConsumerFlushesOnUnrelatedLine(t *testing.T) {
 	s := openTestStore(t)
 	c := NewConsumer(s, func() string { return "Tester" })

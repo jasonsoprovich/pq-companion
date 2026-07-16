@@ -13,16 +13,22 @@ import (
 // promptly. Mirrors the keyring tracker's flush model.
 const FlushIdle = 1500 * time.Millisecond
 
-// Consumer turns raw log lines into per-character lockout snapshots.
+// Consumer turns raw log lines into per-character lockout data via two
+// independent paths:
 //
-// Detection model: an `/sll` block begins on a section header line
-// ("=== Current Loot Lockouts ==="). While in a block, "== Name: ..." rows are
-// buffered and tagged with the current section; further headers switch the
-// section. The buffer is committed (replacing the character's snapshot) on the
-// first line that is neither a header nor a row, OR after FlushIdle of no new
-// matches. `/sll` has no command echo or footer, so this burst-with-idle
-// approach — the same one the keyring tracker uses for /keys — is the reliable
-// way to bound the block.
+//  1. Kill notices ("You have incurred a lockout for X that expires in Y.")
+//     are single lines, handled immediately by upserting one row — see
+//     handleIncurred. This is what keeps the tracker current without the
+//     player ever running `/sll`.
+//  2. An `/sll` block begins on a section header line
+//     ("=== Current Loot Lockouts ==="). While in a block, "== Name: ..." rows
+//     are buffered and tagged with the current section; further headers
+//     switch the section. The buffer is committed (replacing the character's
+//     entire snapshot) on the first line that is neither a header nor a row,
+//     OR after FlushIdle of no new matches. `/sll` has no command echo or
+//     footer, so this burst-with-idle approach — the same one the keyring
+//     tracker uses for /keys — is the reliable way to bound the block. `/sll`
+//     is authoritative: its snapshot overwrites any rows path 1 inserted.
 type Consumer struct {
 	store      *Store
 	activeChar func() string // current in-game character; "" suppresses the snapshot
@@ -59,6 +65,10 @@ func (c *Consumer) SetOnSnapshot(fn func(character string)) {
 // keyring tracker use.
 func (c *Consumer) HandleLine(ts time.Time, msg string) {
 	if msg == "" {
+		return
+	}
+	if name, remaining, ok := ParseIncurred(msg); ok {
+		c.handleIncurred(name, remaining, ts)
 		return
 	}
 	if section, ok := IsHeader(msg); ok {
@@ -107,6 +117,33 @@ func (c *Consumer) handleRow(row Row, ts time.Time) {
 	c.lastMatchAt = ts
 	c.arm()
 	c.mu.Unlock()
+}
+
+// handleIncurred records a single kill-triggered lockout notice, independent
+// of any in-progress `/sll` burst. The duplicated log line EQ sometimes emits
+// for the same kill is harmless here: both lines carry identical data, so the
+// second upsert just rewrites the same row.
+func (c *Consumer) handleIncurred(name string, remaining time.Duration, ts time.Time) {
+	character := ""
+	if c.activeChar != nil {
+		character = c.activeChar()
+	}
+	if character == "" {
+		slog.Debug("lockout: skipped incurred notice — no active character", "target", name)
+		return
+	}
+	expiresAt := ts.Add(remaining)
+	if err := c.store.UpsertEntry(character, SectionLoot, name, expiresAt, ts); err != nil {
+		slog.Warn("lockout: upsert failed", "character", character, "target", name, "err", err)
+		return
+	}
+	slog.Info("lockout: incurred notice recorded", "character", character, "target", name, "expires_at", expiresAt)
+	c.mu.Lock()
+	cb := c.onSnapshot
+	c.mu.Unlock()
+	if cb != nil {
+		cb(character)
+	}
 }
 
 // arm (re)starts the idle flush timer. Caller must hold c.mu.

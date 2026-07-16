@@ -113,6 +113,53 @@ func (s *Store) Snapshot(character string, rows []Entry, observedAt time.Time) e
 	return tx.Commit()
 }
 
+// UpsertEntry records a single target's lockout, independent of an `/sll`
+// snapshot — used for the per-target "You have incurred a lockout..." kill
+// notice. Updates the row in place if the character already has an entry with
+// this section+target_name (so re-killing the same boss just refreshes the
+// expiry); otherwise appends a new row after the character's current highest
+// position. A later `/sll` snapshot is authoritative and will overwrite/
+// correct rows inserted this way.
+func (s *Store) UpsertEntry(character string, section Section, targetName string, expiresAt, observedAt time.Time) error {
+	if character == "" {
+		return fmt.Errorf("character required")
+	}
+	if targetName == "" {
+		return fmt.Errorf("target name required")
+	}
+	obs := observedAt.Unix()
+	if obs == 0 {
+		obs = time.Now().Unix()
+	}
+	exp := expiresAt.Unix()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	res, err := tx.Exec(`
+		UPDATE lockout_entries
+		SET expires_at = ?, observed_at = ?
+		WHERE character = ? AND section = ? AND target_name = ?
+	`, exp, obs, character, string(section), targetName)
+	if err != nil {
+		return fmt.Errorf("update lockout char=%q target=%q: %w", character, targetName, err)
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		if _, err := tx.Exec(`
+			INSERT INTO lockout_entries (character, section, position, target_name, expires_at, observed_at)
+			VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM lockout_entries WHERE character = ?), ?, ?, ?)
+		`, character, string(section), character, targetName, exp, obs); err != nil {
+			return fmt.Errorf("insert lockout char=%q target=%q: %w", character, targetName, err)
+		}
+	}
+	return tx.Commit()
+}
+
 // ListByCharacter returns every lockout entry for the named character in
 // snapshot order (section, then position). Empty slice (not nil) when none.
 func (s *Store) ListByCharacter(character string) ([]Entry, error) {

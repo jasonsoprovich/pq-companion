@@ -56,6 +56,40 @@ func TestIsHeader(t *testing.T) {
 	}
 }
 
+func TestParseIncurred(t *testing.T) {
+	tests := []struct {
+		name      string
+		in        string
+		wantName  string
+		remaining time.Duration
+		ok        bool
+	}{
+		{"days-and-hours", "You have incurred a lockout for Diabo Xi Xin Thall that expires in 6 Days and 18 Hours.", "Diabo Xi Xin Thall", 6*24*time.Hour + 18*time.Hour, true},
+		{"minutes-seconds", "You have incurred a lockout for Trakanon that expires in 12 Minutes and 3 Seconds.", "Trakanon", 12*time.Minute + 3*time.Second, true},
+		{"no-trailing-period", "You have incurred a lockout for Lord Nagafen that expires in 5 Hours", "Lord Nagafen", 5 * time.Hour, true},
+		{"sll-row-not-incurred", "== King Tranix: Available", "", 0, false},
+		{"chat-not-incurred", "Someone tells the guild, 'hi'", "", 0, false},
+		{"empty", "", "", 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name, remaining, ok := ParseIncurred(tt.in)
+			if ok != tt.ok {
+				t.Fatalf("ParseIncurred(%q) ok = %v, want %v", tt.in, ok, tt.ok)
+			}
+			if !ok {
+				return
+			}
+			if name != tt.wantName {
+				t.Errorf("name = %q, want %q", name, tt.wantName)
+			}
+			if remaining != tt.remaining {
+				t.Errorf("remaining = %v, want %v", remaining, tt.remaining)
+			}
+		})
+	}
+}
+
 func TestParseRow(t *testing.T) {
 	tests := []struct {
 		name      string

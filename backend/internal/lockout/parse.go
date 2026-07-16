@@ -1,17 +1,24 @@
-// Package lockout parses the output of EverQuest Project Quarm's `/sll`
-// command ("show loot lockouts") from the log file and persists it as a
-// per-character snapshot in user.db. Each snapshot records, for every raid
-// target / legacy item, the absolute instant the player's lockout expires —
-// derived once from the log line's timestamp plus the relative duration the
-// game printed. Storing the absolute expiry (rather than a countdown) is what
-// lets the UI show a live, continuously-counting-down timer even after the
-// game and app have been closed for a while, and flip a row to "available"
-// once the instant passes.
+// Package lockout tracks per-character raid lockouts from two log sources and
+// persists them as a per-character snapshot in user.db. Each entry records,
+// for a raid target / legacy item, the absolute instant the player's lockout
+// expires — derived once from the log line's timestamp plus the relative
+// duration the game printed. Storing the absolute expiry (rather than a
+// countdown) is what lets the UI show a live, continuously-counting-down
+// timer even after the game and app have been closed for a while, and flip a
+// row to "available" once the instant passes.
 //
-// `/sll` output has no command echo and no footer line, so the consumer
-// detects the block the same way the keyring tracker detects /keys: a burst
-// of recognisable lines committed on the first unrelated line or after a
-// short idle. The block does carry section headers, which anchor parsing:
+// The primary source is the per-target kill notice, printed the instant a
+// lockout is applied with no player action required:
+//
+//	You have incurred a lockout for Diabo Xi Xin Thall that expires in 6 Days and 18 Hours.
+//
+// The secondary source is the `/sll` ("show loot lockouts") command, which the
+// player can run in-game for a full, second-precision resync; its snapshot
+// overwrites anything the kill notices inserted. `/sll` output has no command
+// echo and no footer line, so the consumer detects the block the same way the
+// keyring tracker detects /keys: a burst of recognisable lines committed on
+// the first unrelated line or after a short idle. The block does carry
+// section headers, which anchor parsing:
 //
 //	=== Current Loot Lockouts ===
 //	== King Tranix: Available
@@ -58,6 +65,11 @@ var (
 	reHours   = regexp.MustCompile(`(\d+)\s+Hours?`)
 	reMinutes = regexp.MustCompile(`(\d+)\s+Minutes?`)
 	reSeconds = regexp.MustCompile(`(\d+)\s+Seconds?`)
+
+	// Per-target lockout notice printed the instant a lockout is incurred
+	// (typically on a raid boss kill), independent of `/sll`:
+	// "You have incurred a lockout for <Name> that expires in <duration>."
+	reIncurred = regexp.MustCompile(`^You have incurred a lockout for (.+?) that expires in (.+?)\.?$`)
 )
 
 // IsHeader reports whether msg is an `/sll` section header and, if so, returns
@@ -106,6 +118,26 @@ func ParseRow(msg string) (Row, bool) {
 		return Row{}, false
 	}
 	return Row{TargetName: name, Remaining: d}, true
+}
+
+// ParseIncurred parses a "You have incurred a lockout for <Name> that expires
+// in <duration>." notice — printed the instant a lockout is applied (e.g. on a
+// raid boss kill), separately from `/sll`. Returns ok=false for any
+// non-matching line.
+func ParseIncurred(msg string) (name string, remaining time.Duration, ok bool) {
+	m := reIncurred.FindStringSubmatch(msg)
+	if m == nil {
+		return "", 0, false
+	}
+	name = strings.TrimSpace(m[1])
+	if name == "" {
+		return "", 0, false
+	}
+	d, found := parseDuration(m[2])
+	if !found {
+		return "", 0, false
+	}
+	return name, d, true
 }
 
 // parseDuration converts an `/sll` remaining-time phrase such as

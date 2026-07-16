@@ -92,6 +92,61 @@ func TestSnapshotKeepsDuplicateNames(t *testing.T) {
 	}
 }
 
+func TestUpsertEntryInsertsThenUpdates(t *testing.T) {
+	s := openTestStore(t)
+	now := time.Unix(1_700_000_000, 0)
+
+	// First kill: no existing row, so it's inserted.
+	exp1 := now.Add(6*24*time.Hour + 18*time.Hour)
+	if err := s.UpsertEntry("Osui", SectionLoot, "Diabo Xi Xin Thall", exp1, now); err != nil {
+		t.Fatalf("UpsertEntry (insert): %v", err)
+	}
+	got, err := s.ListByCharacter("Osui")
+	if err != nil {
+		t.Fatalf("ListByCharacter: %v", err)
+	}
+	if len(got) != 1 || got[0].TargetName != "Diabo Xi Xin Thall" || got[0].ExpiresAt != exp1.Unix() {
+		t.Fatalf("after insert, got %+v", got)
+	}
+
+	// A second, unrelated kill appends rather than overwriting.
+	if err := s.UpsertEntry("Osui", SectionLoot, "Trakanon", now.Add(24*time.Hour), now); err != nil {
+		t.Fatalf("UpsertEntry (second target): %v", err)
+	}
+	got, err = s.ListByCharacter("Osui")
+	if err != nil {
+		t.Fatalf("ListByCharacter: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d rows, want 2", len(got))
+	}
+
+	// Re-killing Diabo updates the existing row in place rather than
+	// duplicating it (simulates the duplicated in-game log line).
+	later := now.Add(time.Hour)
+	exp2 := later.Add(6 * 24 * time.Hour)
+	if err := s.UpsertEntry("Osui", SectionLoot, "Diabo Xi Xin Thall", exp2, later); err != nil {
+		t.Fatalf("UpsertEntry (update): %v", err)
+	}
+	got, err = s.ListByCharacter("Osui")
+	if err != nil {
+		t.Fatalf("ListByCharacter: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d rows after re-kill, want 2 (updated in place)", len(got))
+	}
+	for _, e := range got {
+		if e.TargetName == "Diabo Xi Xin Thall" {
+			if e.ExpiresAt != exp2.Unix() {
+				t.Errorf("Diabo ExpiresAt = %d, want %d", e.ExpiresAt, exp2.Unix())
+			}
+			if e.ObservedAt != later.Unix() {
+				t.Errorf("Diabo ObservedAt = %d, want %d", e.ObservedAt, later.Unix())
+			}
+		}
+	}
+}
+
 func TestCharactersAndDelete(t *testing.T) {
 	s := openTestStore(t)
 	now := time.Unix(1_700_000_000, 0)

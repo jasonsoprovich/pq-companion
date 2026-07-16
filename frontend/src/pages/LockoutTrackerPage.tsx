@@ -1,13 +1,15 @@
 /**
  * LockoutTrackerPage — per-character loot & legacy-item lockout tracker.
  *
- * Data comes from parsing the in-game `/sll` command out of the log file
- * (backend lockout consumer → user.db). Each row stores the absolute instant
- * the lockout expires, so the countdown shown here is computed live from
- * `expires_at − now` and keeps ticking correctly even if the game and app were
- * closed for days between captures. When a timer elapses (or the target was
- * already "Available" at capture), the row turns green and stays listed until
- * the next `/sll` refresh.
+ * Data comes from the backend lockout consumer parsing the log file (→
+ * user.db): the "You have incurred a lockout for..." kill notice updates a
+ * single row automatically, and the in-game `/sll` command captures a full,
+ * second-precision snapshot that's treated as authoritative. Each row stores
+ * the absolute instant the lockout expires, so the countdown shown here is
+ * computed live from `expires_at − now` and keeps ticking correctly even if
+ * the game and app were closed for days between captures. When a timer
+ * elapses (or the target was already "Available" at capture), the row turns
+ * green and stays listed until the next update.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -268,9 +270,9 @@ export default function LockoutTrackerPage(): React.ReactElement {
         <span
           className="ml-auto text-[10px]"
           style={{ color: 'var(--color-muted)' }}
-          title="Type /sll in-game to refresh lockouts for the active character. Timers keep counting down here even while the game is closed."
+          title="Lockouts are captured automatically when a lockout boss dies. Type /sll in-game for a full refresh (also corrects timer precision). Timers keep counting down here even while the game is closed."
         >
-          /sll to update
+          auto-captured on kill · /sll to refresh
         </span>
       </div>
 
@@ -303,8 +305,10 @@ export default function LockoutTrackerPage(): React.ReactElement {
             className="text-xs"
             style={{ color: 'var(--color-muted-foreground)' }}
           >
-            No lockouts recorded for this character. Type{' '}
-            <span className="font-mono">/sll</span> in-game to capture them.
+            No lockouts recorded for this character. Lockouts capture
+            automatically as lockout bosses die, or type{' '}
+            <span className="font-mono">/sll</span> in-game for a full
+            snapshot.
           </p>
         ) : (
           <div className="space-y-4">
