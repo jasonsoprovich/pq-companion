@@ -1530,6 +1530,33 @@ hardening — no new features, but a broad sweep of reliability fixes.
   overlapping triggers don't talk over each other; and threat credits hate
   from a superseded pending cast instead of dropping it
 
+## v0.17.2 — Tradeskill Per-Stage Detail, Threat Meter Refinements, Copy Buttons
+
+- **Tradeskill per-stage detail** — the Tradeskill Leveling plan now shows
+  each stage's ingredients, success chance, and success% inline, and
+  Custom mode is now a distinct, resettable view (rather than mutating the
+  default plan) for routing around excluded recipes
+- **Rogue Evade threat modeling** — the personal threat meter rescales the
+  current target's hate when Hide is used mid-combat, matching Evade's
+  actual effect
+- **Raid threat departure reset** — a raid member's hate zeroes out when
+  ambient portal text shows them leaving the zone (evac, succor, CoTH,
+  circle)
+- **Roll Tracker: Copy Pick Order** — copy the full roll ranking, not just
+  the winner, to paste in game
+- **Combat History copy button** — copy a per-fight DPS summary directly
+  from combat history
+- **Recipe holdings display** — the recipe browser shows owned quantity
+  with an expandable breakdown across storage locations
+- Fixes: Roll Tracker recognizes tier letters glued directly onto roll
+  numbers; wishlist watch alerts filter out focus/clicky procs and
+  correctly enumerate multi-character wishlists; hate modifiers (Subtlety
+  AA, Visage) no longer shrink aggro-shed spells like Concussion; EQ
+  clipboard paste is capped at a unified 400 characters across all copy
+  buttons, matching the game's actual limit; and the class spell
+  checklist no longer flags innate/AA-only spells as missing from a
+  vendor
+
 ## Phase 11 — Project Website
 _Planned_
 

@@ -9,6 +9,25 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.17.2 — 2026-07-15
+
+Tradeskill leveling gets per-stage detail, the threat meter models more real combat behavior, and copy buttons round out Roll Tracker and Combat History.
+
+### Highlights
+- **Tradeskill per-stage detail** — the leveling planner now shows each stage's ingredients, success chance, and success% inline, and Custom mode is now a distinct, resettable view for routing around excluded recipes.
+- **Rogue Evade threat modeling** — the personal threat meter now accounts for Evade rescaling your current target's hate when you vanish from combat.
+- **Raid threat departure reset** — a raid member's hate zeroes out when they leave the zone (evac, succor, CoTH, portal).
+- **Roll Tracker: Copy Pick Order** — copy the full roll ranking, not just the winner, to paste in game.
+- **Combat History copy button** — copy a per-fight DPS summary straight from combat history.
+- **Recipe holdings display** — the recipe browser shows owned quantity with an expandable breakdown across storage locations.
+
+### Fixes
+- Roll Tracker now recognizes tier letters glued directly onto roll numbers.
+- Wishlist watch alerts filter out focus/clicky procs and correctly enumerate multi-character wishlists.
+- Hate modifiers (Subtlety AA, Visage) no longer shrink aggro-shed spells like Concussion.
+- EQ clipboard paste is capped at a unified 400 characters across all copy buttons, matching the game's actual limit.
+- Class spell checklist no longer flags innate/AA-only spells as missing from a vendor.
+
 ## v0.17.1 — 2026-07-12
 
 Fixes a Pop Out All overlay regression from the previous release.
