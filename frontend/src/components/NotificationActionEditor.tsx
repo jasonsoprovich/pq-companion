@@ -14,6 +14,7 @@
  * this initial extraction and wired up in subsequent tasks.
  */
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Volume2,
   FolderOpen,
@@ -25,6 +26,7 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  Monitor as MonitorIcon,
 } from 'lucide-react'
 import { playSoundForTest, speakTextForTest, stopTestPlayback } from '../services/audio'
 import { usePositioningSession } from '../hooks/usePositioningSession'
@@ -248,6 +250,7 @@ export function OverlayTextFields({
   position,
   onPositionChange,
 }: OverlayTextFieldsProps): React.ReactElement {
+  const navigate = useNavigate()
   const hasStyleOverride = Boolean(color || glowColor || fontFamily || fontSize > 0 || align)
   // App-default style (Settings → Preferences), fetched once so the swatches
   // and size placeholder can show what an inherited field actually renders as.
@@ -310,25 +313,42 @@ export function OverlayTextFields({
           onChange={onColorChange}
           resetTitle="Reset to the app-default text color"
         />
-        <button
-          type="button"
-          onClick={handlePositionButton}
-          className="flex items-center gap-1 rounded px-2 py-1 text-[11px] ml-auto"
-          style={{
-            backgroundColor: positioning ? '#16a34a' : 'var(--color-primary)',
-            color: positioning ? '#fff' : 'var(--color-background)',
-            border: '1px solid transparent',
-            cursor: 'pointer',
-          }}
-          title={
-            positioning
-              ? 'Drag the on-screen card to position, then click here (or press Esc) to save and finish'
-              : 'Pop up the alert in the overlay so you can drag it into position'
-          }
-        >
-          {positioning ? <Check size={11} /> : <Crosshair size={11} />}
-          {positioning ? 'Done — Save Position' : 'Set Trigger Position'}
-        </button>
+        <div className="flex items-center gap-1.5 ml-auto">
+          <button
+            type="button"
+            onClick={() => navigate('/settings?tab=overlays')}
+            className="flex items-center gap-1 rounded px-2 py-1 text-[11px]"
+            style={{
+              backgroundColor: 'transparent',
+              color: 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+              cursor: 'pointer',
+            }}
+            title="Which monitor overlay alerts appear on is set app-wide in Settings → Overlays → Default Overlay Text Position"
+          >
+            <MonitorIcon size={11} />
+            Monitor
+          </button>
+          <button
+            type="button"
+            onClick={handlePositionButton}
+            className="flex items-center gap-1 rounded px-2 py-1 text-[11px]"
+            style={{
+              backgroundColor: positioning ? '#16a34a' : 'var(--color-primary)',
+              color: positioning ? '#fff' : 'var(--color-background)',
+              border: '1px solid transparent',
+              cursor: 'pointer',
+            }}
+            title={
+              positioning
+                ? 'Drag the on-screen card to position, then click here (or press Esc) to save and finish'
+                : 'Pop up the alert in the overlay so you can drag it into position'
+            }
+          >
+            {positioning ? <Check size={11} /> : <Crosshair size={11} />}
+            {positioning ? 'Done — Save Position' : 'Set Trigger Position'}
+          </button>
+        </div>
       </div>
       {/* Per-trigger style overrides. Every field starts on "default" (the
           app-wide style from Settings → Triggers & Alerts); setting a value
