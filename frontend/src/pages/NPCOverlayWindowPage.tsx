@@ -37,8 +37,8 @@ import type { NPCOverlaySections } from '../types/config'
 // Triple Attack, Dual Wield.
 const ATTACK_ABILITIES = new Set([1, 2, 3, 4, 5, 6, 7])
 // Damage-blocking immunities: Melee, Magic, Non-Bane Melee, Non-Magical
-// Melee, Harm-from-Client.
-const DAMAGE_IMMUNE_ABILITIES = new Set([19, 20, 22, 23, 35])
+// Melee, Harm-from-Client, Ranged Spells.
+const DAMAGE_IMMUNE_ABILITIES = new Set([19, 20, 22, 23, 26, 35])
 // Crowd-control immunities: Slow, Mez, Charm, Stun, Snare, Fear, Dispel,
 // Fleeing, Aggro, Taunt, Pacify, Haste, Disarm, Riposte.
 const CC_IMMUNE_ABILITIES = new Set([12, 13, 14, 15, 16, 17, 18, 21, 24, 28, 31, 51, 52, 53])

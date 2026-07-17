@@ -95,8 +95,8 @@ function StatusBar({ status }: { status: LogTailerStatus | null }): React.ReactE
 // Triple Attack, Dual Wield.
 const DANGER_ABILITIES = new Set([1, 2, 3, 4, 5, 6, 7])
 // Hard immunities to highlight on the badge: Slow, Mez, Charm, Stun, Snare,
-// Fear, Dispel, Melee, Magic, Aggro, Pacify.
-const IMMUNE_ABILITIES = new Set([12, 13, 14, 15, 16, 17, 18, 19, 20, 24, 31])
+// Fear, Dispel, Melee, Magic, Ranged Spells, Aggro, Pacify.
+const IMMUNE_ABILITIES = new Set([12, 13, 14, 15, 16, 17, 18, 19, 20, 24, 26, 31])
 
 function abilityBadgeColor(code: number): string {
   if (DANGER_ABILITIES.has(code)) return '#dc2626'

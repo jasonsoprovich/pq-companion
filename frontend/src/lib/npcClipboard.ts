@@ -25,6 +25,7 @@ const IMMUNE_TO_SLOW = 12
 const PERTINENT_ABILITY_CODES = new Set([
   1, 2, 3, 4, 5, 6, 7, // Summon, Enrage, Rampage, Area Rampage, Flurry, Triple Attack, Dual Wield
   19, 20, 22, 23, 35, // Immune to Melee, Magic, Non-Bane Melee, Non-Magical Melee, Harm-from-Client
+  26, // Immune to Ranged Spells (aka "belly caster" — player slang for the ranged resistance)
 ])
 
 // Use the app-wide EQ chat-line cap (see eqClipboard.ts) rather than a
