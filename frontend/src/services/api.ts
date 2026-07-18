@@ -1686,6 +1686,8 @@ export interface UpgradeCandidate {
   score: number
   deltas: UpgradeStatDelta[]
   priority_focus: boolean
+  replaces_secondary: boolean
+  secondary_item_name?: string
 }
 
 export interface UpgradesResponse {

@@ -68,6 +68,39 @@ func upgradeSlotByKey(key string) (upgradeSlot, bool) {
 	return upgradeSlot{}, false
 }
 
+// twoHandSlotMask is Primary|Secondary. An item whose items.slots sets both
+// bits is a two-handed weapon: equipping it occupies both hand slots at
+// once, so it also displaces whatever is currently worn in Secondary — not
+// just the item in Primary.
+const twoHandSlotMask = 0x002000 | 0x004000
+
+func isTwoHander(slotsMask int) bool {
+	return slotsMask&twoHandSlotMask == twoHandSlotMask
+}
+
+// sumStatLine adds two equipped items' stat lines field-by-field, for the
+// combined Primary+Secondary baseline a 2H weapon candidate is scored
+// against (see scoreSlotCands). Damage/Delay are summed too — a rough
+// stand-in for "total weapon value of both hands" rather than a precise
+// dual-wield DPS model, but it's a closer baseline than ignoring the
+// offhand weapon's ratio entirely. Haste is best-of, matching how worn
+// haste already works for a single loadout (it doesn't stack).
+func sumStatLine(a, b upgrade.StatLine) upgrade.StatLine {
+	haste := a.Haste
+	if b.Haste > haste {
+		haste = b.Haste
+	}
+	return upgrade.StatLine{
+		HP: a.HP + b.HP, Mana: a.Mana + b.Mana, AC: a.AC + b.AC,
+		STR: a.STR + b.STR, STA: a.STA + b.STA, AGI: a.AGI + b.AGI, DEX: a.DEX + b.DEX,
+		WIS: a.WIS + b.WIS, INT: a.INT + b.INT, CHA: a.CHA + b.CHA,
+		MR: a.MR + b.MR, FR: a.FR + b.FR, CR: a.CR + b.CR, DR: a.DR + b.DR, PR: a.PR + b.PR,
+		Damage: a.Damage + b.Damage, Delay: a.Delay + b.Delay,
+		Attack: a.Attack + b.Attack, ManaRegen: a.ManaRegen + b.ManaRegen,
+		Haste: haste,
+	}
+}
+
 // upgradeCurrentItem describes an item currently worn in the searched slot.
 type upgradeCurrentItem struct {
 	ID          int              `json:"id"`
@@ -99,6 +132,13 @@ type upgradeResult struct {
 	// priority focus effects that they don't already have equipped — the score
 	// includes the focus bonus and the UI flags it.
 	PriorityFocus bool `json:"priority_focus"`
+	// ReplacesSecondary is true when this candidate is a two-handed weapon
+	// shown in the Primary slot — equipping it also unequips the current
+	// Secondary item, so the score already nets out that item's stats.
+	ReplacesSecondary bool `json:"replaces_secondary"`
+	// SecondaryItemName is the offhand item ReplacesSecondary accounts for,
+	// so the UI can explain the tradeoff ("also replaces: <name>").
+	SecondaryItemName string `json:"secondary_item_name,omitempty"`
 }
 
 type upgradesResponse struct {
@@ -204,7 +244,7 @@ type equippedSlotEntry struct {
 }
 
 type equippedInSlotsResponse struct {
-	HasGear bool                 `json:"has_gear"`
+	HasGear bool                `json:"has_gear"`
 	Slots   []equippedSlotEntry `json:"slots"`
 }
 
@@ -466,6 +506,23 @@ func (h *charactersHandler) scoreSlotCands(
 		baselineID = current[0].ID
 	}
 
+	// A 2H weapon candidate in the Primary slot also displaces the equipped
+	// Secondary item (a 2H blocks dual wield/shield), so it must be scored
+	// against a baseline of BOTH currently-worn items — otherwise the finder
+	// credits the 2H for the offhand's stats it's actually taking away. Only
+	// resolved when scoring Primary; Secondary candidates that are 2H are
+	// skipped below (a 2H can't be equipped "into" just the offhand).
+	var offhand *upgradeCurrentItem
+	if slot.Key == "primary" {
+		if secSlot, ok := upgradeSlotByKey("secondary"); ok {
+			secWorn := h.equippedItemsForSlot(byLoc, secSlot, wc, worn)
+			if secSlot.Index < len(secWorn) {
+				oh := secWorn[secSlot.Index]
+				offhand = &oh
+			}
+		}
+	}
+
 	considered = len(cands)
 
 	// Exclude every item worn at this Location (both paired slots), so the other
@@ -482,7 +539,19 @@ func (h *charactersHandler) scoreSlotCands(
 		if wornLore[c.ID] {
 			continue // a LORE item worn elsewhere can't be acquired a second time
 		}
-		res := upgrade.Score(ctx, weights, baseline, h.candStatLine(c, wc))
+		twoHander := isTwoHander(c.Slots)
+		if slot.Key == "secondary" && twoHander {
+			continue // occupies both hands; only ever offered under Primary
+		}
+		slotCur := baseline
+		replacesSecondary := false
+		secondaryName := ""
+		if twoHander && offhand != nil {
+			slotCur = sumStatLine(baseline, offhand.Stats)
+			replacesSecondary = true
+			secondaryName = offhand.Name
+		}
+		res := upgrade.Score(ctx, weights, slotCur, h.candStatLine(c, wc))
 		score := res.Score
 		// Priority focus the character wants but doesn't already have equipped
 		// gets a bonus so a focus item floats up over modest stat upgrades.
@@ -494,22 +563,24 @@ func (h *charactersHandler) scoreSlotCands(
 			continue
 		}
 		results = append(results, upgradeResult{
-			ID:            c.ID,
-			Name:          c.Name,
-			Icon:          c.Icon,
-			Slots:         c.Slots,
-			NoDrop:        c.NoDrop,
-			ReqLevel:      c.ReqLevel,
-			RecLevel:      c.RecLevel,
-			FocusEffect:   c.FocusEffect,
-			FocusName:     c.FocusName,
-			ClickEffect:   c.ClickEffect,
-			ClickName:     c.ClickName,
-			ProcEffect:    c.ProcEffect,
-			ProcName:      c.ProcName,
-			Score:         score,
-			Deltas:        res.Deltas,
-			PriorityFocus: priority,
+			ID:                c.ID,
+			Name:              c.Name,
+			Icon:              c.Icon,
+			Slots:             c.Slots,
+			NoDrop:            c.NoDrop,
+			ReqLevel:          c.ReqLevel,
+			RecLevel:          c.RecLevel,
+			FocusEffect:       c.FocusEffect,
+			FocusName:         c.FocusName,
+			ClickEffect:       c.ClickEffect,
+			ClickName:         c.ClickName,
+			ProcEffect:        c.ProcEffect,
+			ProcName:          c.ProcName,
+			Score:             score,
+			Deltas:            res.Deltas,
+			PriorityFocus:     priority,
+			ReplacesSecondary: replacesSecondary,
+			SecondaryItemName: secondaryName,
 		})
 	}
 	sort.SliceStable(results, func(i, j int) bool { return results[i].Score > results[j].Score })
