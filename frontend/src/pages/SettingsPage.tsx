@@ -632,6 +632,13 @@ export default function SettingsPage(): React.ReactElement {
     }
   }
 
+  // Mirrors the backend's liveWriteWindow (log.go): EverQuest still has the
+  // file open while playing, so archiving a log written to this recently
+  // risks corrupting the tail. The backend enforces this too; this is just
+  // so the button doesn't invite the click in the first place.
+  const logRecentlyActive =
+    !!logFileInfo?.newest_entry && Date.now() - new Date(logFileInfo.newest_entry).getTime() < 2 * 60 * 1000
+
   const developerMode = config?.preferences?.developer_mode ?? false
 
   // Ctrl+Shift+D toggles the hidden Developer tab while the Settings page is
@@ -2904,15 +2911,23 @@ export default function SettingsPage(): React.ReactElement {
                   Newest entry: <span style={{ color: 'var(--color-foreground)' }}>{new Date(logFileInfo.newest_entry).toLocaleDateString()}</span>
                 </p>
               )}
+              {logRecentlyActive && (
+                <p className="flex items-center gap-1.5 text-xs" style={{ color: '#f97316' }}>
+                  <AlertTriangle size={12} />
+                  EverQuest still has this file open. Camp out first — archiving a live log can corrupt tailing until you restart PQ Companion.
+                </p>
+              )}
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={handleCleanupLog}
+                  disabled={logRecentlyActive}
                   className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold"
                   style={{
                     backgroundColor: '#f97316',
                     color: '#fff',
                     border: 'none',
-                    cursor: 'pointer',
+                    cursor: logRecentlyActive ? 'not-allowed' : 'pointer',
+                    opacity: logRecentlyActive ? 0.5 : 1,
                   }}
                 >
                   <Trash2 size={12} />

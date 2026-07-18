@@ -6,11 +6,21 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/applog"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 )
+
+// liveWriteWindow is how recently the log's newest entry must have been
+// written for Archive & Trim to refuse the operation. EverQuest holds its
+// own write handle open on this file for the entire play session; truncating
+// and rewriting it out from under that live writer (as BackupAndPurge does)
+// risks corrupting the tail if EQ's client doesn't re-query the file's EOF
+// before its next write. Refusing while the log is still warm forces the
+// user to camp out first, which is the only way to make this safe.
+const liveWriteWindow = 2 * time.Minute
 
 type logHandler struct {
 	tailer *logparser.Tailer
@@ -127,6 +137,11 @@ func (h *logHandler) cleanup(w http.ResponseWriter, r *http.Request) {
 	s := h.tailer.Status()
 	if !s.FileExists || s.FilePath == "" {
 		writeError(w, http.StatusNotFound, "log file not found")
+		return
+	}
+
+	if fi, err := logparser.GetFileInfo(s.FilePath); err == nil && !fi.NewestEntry.IsZero() && time.Since(fi.NewestEntry) < liveWriteWindow {
+		writeError(w, http.StatusConflict, "log file was written to in the last couple minutes — camp out of EverQuest before archiving, since it still has the file open")
 		return
 	}
 
