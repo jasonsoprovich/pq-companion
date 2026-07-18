@@ -121,13 +121,19 @@ func TestConsumerIncurredLineDuplicateIsIdempotent(t *testing.T) {
 	c := NewConsumer(s, func() string { return "Tester" })
 	ts := time.Unix(1_700_000_000, 0)
 
-	var fired int
-	c.SetOnSnapshot(func(string) { fired++ })
+	// handleIncurred writes off the tailer's hot path (see the comment on
+	// handleIncurred) — wait on the same onSnapshot callback production code
+	// uses to know each write landed, rather than assuming synchronous
+	// completion.
+	fired := make(chan struct{}, 2)
+	c.SetOnSnapshot(func(string) { fired <- struct{}{} })
 
 	line := "You have incurred a lockout for Diabo Xi Xin Thall that expires in 6 Days and 18 Hours."
 	// EQ sometimes prints this notice twice at the same timestamp.
 	c.HandleLine(ts, line)
 	c.HandleLine(ts, line)
+
+	waitForSnapshots(t, fired, 2)
 
 	entries, err := s.ListByCharacter("Tester")
 	if err != nil {
@@ -140,8 +146,18 @@ func TestConsumerIncurredLineDuplicateIsIdempotent(t *testing.T) {
 	if entries[0].ExpiresAt != want {
 		t.Errorf("ExpiresAt = %d, want %d", entries[0].ExpiresAt, want)
 	}
-	if fired != 2 {
-		t.Errorf("onSnapshot fired %d times, want 2", fired)
+}
+
+// waitForSnapshots blocks until n onSnapshot signals have arrived on ch,
+// failing the test if that takes too long.
+func waitForSnapshots(t *testing.T, ch <-chan struct{}, n int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		select {
+		case <-ch:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for onSnapshot signal %d/%d", i+1, n)
+		}
 	}
 }
 
@@ -150,7 +166,12 @@ func TestConsumerSllSnapshotOverwritesIncurred(t *testing.T) {
 	c := NewConsumer(s, func() string { return "Tester" })
 	ts := time.Unix(1_700_000_000, 0)
 
+	fired := make(chan struct{}, 1)
+	c.SetOnSnapshot(func(string) { fired <- struct{}{} })
+
 	c.HandleLine(ts, "You have incurred a lockout for Diabo Xi Xin Thall that expires in 6 Days and 18 Hours.")
+	waitForSnapshots(t, fired, 1)
+	c.SetOnSnapshot(nil)
 
 	entries, err := s.ListByCharacter("Tester")
 	if err != nil {

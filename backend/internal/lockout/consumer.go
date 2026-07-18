@@ -123,6 +123,15 @@ func (c *Consumer) handleRow(row Row, ts time.Time) {
 // of any in-progress `/sll` burst. The duplicated log line EQ sometimes emits
 // for the same kill is harmless here: both lines carry identical data, so the
 // second upsert just rewrites the same row.
+//
+// The notice fires the instant a raid boss dies — the same moment the combat
+// tracker is writing its own end-of-fight rows and loot rolls are starting,
+// so user.db write contention is likeliest right here. HandleLine runs
+// inline on the tailer's single dispatch goroutine (shared with every other
+// log consumer, including the roll tracker), so a blocking SQLite write here
+// would stall delivery of every line behind it — including the roll
+// announce/result pairs raiders are watching live. The write doesn't touch
+// c.mu, so backgrounding it is safe.
 func (c *Consumer) handleIncurred(name string, remaining time.Duration, ts time.Time) {
 	character := ""
 	if c.activeChar != nil {
@@ -133,17 +142,19 @@ func (c *Consumer) handleIncurred(name string, remaining time.Duration, ts time.
 		return
 	}
 	expiresAt := ts.Add(remaining)
-	if err := c.store.UpsertEntry(character, SectionLoot, name, expiresAt, ts); err != nil {
-		slog.Warn("lockout: upsert failed", "character", character, "target", name, "err", err)
-		return
-	}
-	slog.Info("lockout: incurred notice recorded", "character", character, "target", name, "expires_at", expiresAt)
-	c.mu.Lock()
-	cb := c.onSnapshot
-	c.mu.Unlock()
-	if cb != nil {
-		cb(character)
-	}
+	go func() {
+		if err := c.store.UpsertEntry(character, SectionLoot, name, expiresAt, ts); err != nil {
+			slog.Warn("lockout: upsert failed", "character", character, "target", name, "err", err)
+			return
+		}
+		slog.Info("lockout: incurred notice recorded", "character", character, "target", name, "expires_at", expiresAt)
+		c.mu.Lock()
+		cb := c.onSnapshot
+		c.mu.Unlock()
+		if cb != nil {
+			cb(character)
+		}
+	}()
 }
 
 // arm (re)starts the idle flush timer. Caller must hold c.mu.
