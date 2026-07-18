@@ -1,6 +1,6 @@
 {
   "name": "pq-companion",
-  "version": "0.17.4",
+  "version": "0.17.5",
   "description": "Desktop companion app for Project Quarm (EverQuest emulated server)",
   "main": "out/main/index.js",
   "author": "jasonsoprovich",
