@@ -1,9 +1,12 @@
 name: Discord Notify
 
-# Posts the newest CHANGELOG.md section to Discord whenever a push to main
-# adds a new release section at the top of the file. Idempotent: re-runs on
-# unrelated CHANGELOG edits (typo fixes, etc.) detect no version change and
-# exit without posting.
+# Posts a CHANGELOG.md release section to Discord. Runs automatically on
+# every push to main that changes CHANGELOG.md, posting the topmost section
+# (idempotent: re-runs on unrelated CHANGELOG edits, like typo fixes, detect
+# no version change and exit without posting). Can also be dispatched
+# manually to (re)post one specific version's section — e.g. a release
+# whose CHANGELOG entry landed in the same push as a later version's and so
+# never got its own notification.
 
 on:
   push:
@@ -12,8 +15,12 @@ on:
       - "CHANGELOG.md"
   workflow_dispatch:
     inputs:
+      version:
+        description: "Specific version to post (e.g. 0.17.4). Leave blank to post the topmost CHANGELOG.md section."
+        type: string
+        default: ""
       force:
-        description: "Force-post the current topmost section even if version hasn't changed"
+        description: "Force-post the topmost section even if it hasn't changed (ignored when version is set — a specific version always posts)"
         type: boolean
         default: false
 
@@ -28,12 +35,24 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Detect new release section
+      - name: Detect release section to post
         id: detect
         env:
           FORCE: ${{ github.event.inputs.force }}
+          VERSION_INPUT: ${{ github.event.inputs.version }}
         run: |
           set -euo pipefail
+
+          if [ -n "$VERSION_INPUT" ]; then
+            if ! grep -qE "^## v${VERSION_INPUT}( |$)" CHANGELOG.md; then
+              echo "No section found for v$VERSION_INPUT in CHANGELOG.md" >&2
+              exit 1
+            fi
+            echo "Manual post requested for v$VERSION_INPUT"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "target_pattern=^## v${VERSION_INPUT}( |\$)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           NEW_TOP=$(awk '/^## v[0-9]+\.[0-9]+\.[0-9]+/{print; exit}' CHANGELOG.md)
           OLD_TOP=$(git show HEAD~1:CHANGELOG.md 2>/dev/null \
@@ -53,6 +72,7 @@ jobs:
 
           echo "Detected new top section: $NEW_TOP"
           echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "target_pattern=^## v[0-9]+\\.[0-9]+\\.[0-9]+" >> "$GITHUB_OUTPUT"
 
       - name: Extract section + post to Discord
         if: steps.detect.outputs.changed == 'true'
@@ -60,16 +80,17 @@ jobs:
           DISCORD_CHANGELOG_WEBHOOK: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
           DISCORD_ANNOUNCEMENTS_WEBHOOK: ${{ secrets.DISCORD_ANNOUNCEMENTS_WEBHOOK }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_PATTERN: ${{ steps.detect.outputs.target_pattern }}
         run: |
           set -euo pipefail
 
-          # Extract the topmost section (everything from the first `## v`
-          # line up to the line before the next `## v` line).
-          SECTION=$(awk '
-            /^## v[0-9]+\.[0-9]+\.[0-9]+/ {
+          # Extract the section whose header matches TARGET_PATTERN —
+          # the topmost `## v` section by default, or one specific
+          # version's section when manually dispatched with `version` set.
+          SECTION=$(awk -v pat="$TARGET_PATTERN" '
+            $0 ~ /^## v[0-9]+\.[0-9]+\.[0-9]+/ {
               if (seen) exit
-              seen = 1
-              print
+              if ($0 ~ pat) { seen = 1; print; next }
               next
             }
             seen { print }
