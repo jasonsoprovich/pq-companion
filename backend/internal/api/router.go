@@ -70,7 +70,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	traderH := &traderHandler{store: traderStore, capturer: traderCapturer, cfgMgr: cfgMgr, db: database}
 	zones := &zonesHandler{db: database}
 	recipes := &recipesHandler{db: database}
-	tradeskillH := &tradeskillHandler{db: database}
+	tradeskillH := &tradeskillHandler{db: database, store: charStore}
 	quests := &questsHandler{db: database}
 	favRecipes := &favoriteRecipesHandler{store: charStore, db: database}
 	cfg := &configHandler{mgr: cfgMgr, hub: hub, backupMgr: backupMgr, actualPort: actualPort}
@@ -180,6 +180,9 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		r.Route("/tradeskills", func(r chi.Router) {
 			r.Get("/chance", tradeskillH.chance)
 			r.Get("/{skillId}/modifiers", tradeskillH.modifiers)
+			r.Get("/{skillId}/custom-recipes", tradeskillH.customRecipes)
+			r.Post("/{skillId}/custom-recipes", tradeskillH.addCustomRecipe)
+			r.Delete("/{skillId}/custom-recipes/{id}", tradeskillH.deleteCustomRecipe)
 		})
 		r.Route("/favorite-recipes", func(r chi.Router) {
 			r.Get("/", favRecipes.list)

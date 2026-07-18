@@ -1,0 +1,218 @@
+{
+  "55": {
+    "source": "quarm.db-derived 2026-07-17 (no usable EQTraders.com data — that guide's fly/lure names don't exist in quarm.db, and its post-170 progression is explicitly Plane of Nightmare/Plane of Valor/Overthere/Stratos fish, all PoP+ zones, excluded). Fishing is inherently farming-based (you fish raw materials to make better bait/lures) so components are marked farmed/cross-tradeskill throughout — that's normal for this trade, not an era-safety flag. Avoided zone-named fish (Nightmare Cichlid, Vallorian Discus) in favor of generically-named ones. Caps at 202 (Blessed Fishing Rod) — the entire quarm.db Fishing recipe set tops out there; nothing higher exists yet.",
+    "steps": [
+      { "recipe_id": 47, "note": "Fishing itself supplies the raw materials for these — expect to fish for bait/lure components as you go" },
+      { "recipe_id": 3 },
+      { "recipe_id": 4 },
+      { "recipe_id": 2 },
+      { "recipe_id": 42 },
+      { "recipe_id": 78 },
+      { "recipe_id": 52 },
+      { "recipe_id": 56 },
+      { "recipe_id": 1 }
+    ]
+  },
+  "56": {
+    "source": "quarm.db-derived 2026-07-17. EQTraders.com's Make Poison guide only lists modern content (starts at a Crescent Reach/Seeds-of-Destruction-era quest, references 'Celestial Suspension' as high-expansion — confirmed FALSE by checking the DB directly: Celestial Suspension is itself a cheap, vendor-known, trivial-46 Poison Making recipe, just a coincidental name clash with PoP's 'Celestial Essence' currency, not the same item). Built from quarm.db's own trivial/cost data instead, favoring vendor-known (non-farmed) recipes at each breakpoint. Rogue-only trade (enforced by the class skill system, not per-recipe).",
+    "steps": [
+      { "recipe_id": 332 },
+      { "recipe_id": 286 },
+      { "recipe_id": 254 },
+      { "recipe_id": 313 },
+      { "recipe_id": 223 },
+      { "recipe_id": 240 },
+      { "recipe_id": 205 },
+      { "recipe_id": 207 },
+      { "recipe_id": 198 },
+      { "recipe_id": 220 },
+      { "recipe_id": 283 },
+      { "recipe_id": 209 },
+      { "recipe_id": 270 },
+      { "recipe_id": 235 },
+      { "recipe_id": 253 },
+      { "recipe_id": 317 }
+    ]
+  },
+  "57": {
+    "source": "EQTraders.com 'Skilling Up - Basic Path' (article g1343) gave real, quarm.db-verified low-tier hits (Flameless Lantern 68, Stalking Probe 102, Powered Gloves 122, Tinkered Catapult 135 all matched exactly). Its Geerlok-series (215+) and Conduit/Seal alt paths (135-422) do NOT exist in quarm.db — confirmed via direct lookup, so that's a genuine data-availability ceiling, not an exclusion choice. Caps at 202 (Nantik's Anti-gravity Unit), the highest vendor-known recipe quarm.db actually has for this trade. Gnome-only trade (class/race skill system, not per-recipe).",
+    "steps": [
+      { "recipe_id": 421 },
+      { "recipe_id": 438 },
+      { "recipe_id": 340 },
+      { "recipe_id": 413 },
+      { "recipe_id": 437 },
+      { "recipe_id": 479 },
+      { "recipe_id": 423 },
+      { "recipe_id": 497 },
+      { "recipe_id": 495 },
+      { "recipe_id": 496 },
+      { "recipe_id": 491 },
+      { "recipe_id": 503, "note": "Needs a hemp bow (Fletching) as an ingredient" },
+      { "recipe_id": 347 },
+      { "recipe_id": 492 },
+      { "recipe_id": 482 }
+    ]
+  },
+  "58": {
+    "source": "EQTraders.com's Research articles (g342, g705, g1240) describe a completely different, later-revamped Research system (Papyrus/Parchment Solutions) whose recipe names don't exist in quarm.db at all. Built directly from quarm.db instead: classic EQ Research works by combining vendor-bought Rune reagent halves (azia/beza) into a '(complete)' Rune via the Concordance of Research, then using that Rune to research any spell at the matching trivial via the Tome of Endless Enchantments — hundreds of individual spells share each trivial, so the specific spell researched doesn't matter for leveling. This path uses the Rune-tier combines themselves (Practice/Apprentice/Journeyman/Expert/Master/Magi), which are real, standalone quarm.db recipes at exactly these trivials. No Plane of Knowledge/PoP/Celestial Essence references found anywhere in this chain. Caps at 182 (Magi Rune) — verify a higher tier doesn't exist before assuming this is a hard ceiling; not exhaustively checked past 188.",
+    "steps": [
+      { "recipe_id": 590 },
+      { "recipe_id": 517 },
+      { "recipe_id": 570 },
+      { "recipe_id": 548 },
+      { "recipe_id": 10172 },
+      { "recipe_id": 10173 }
+    ]
+  },
+  "59": {
+    "source": "EQTraders.com's Alchemy guide (g85) was almost entirely unusable (Crescent Reach/Bazaar-era content, zero recipe-name matches in quarm.db). Built directly from quarm.db instead: a long, clean, entirely vendor-known, race-open, non-cross-tradeskill run of generic classic potions (Potion Of Lesser/Greater X, Elixir/Infusion tiers) with no Plane-of-Power or Celestial Essence references at any point. This is the deepest and safest of all curated paths so far — reaches 255 fully vendor-sourced. Shaman-only trade (class skill system, not per-recipe).",
+    "steps": [
+      { "recipe_id": 10066 },
+      { "recipe_id": 1364 },
+      { "recipe_id": 1360 },
+      { "recipe_id": 1323 },
+      { "recipe_id": 1325 },
+      { "recipe_id": 1229 },
+      { "recipe_id": 1383 },
+      { "recipe_id": 1216 },
+      { "recipe_id": 1367 },
+      { "recipe_id": 1341 },
+      { "recipe_id": 1283 },
+      { "recipe_id": 1399 },
+      { "recipe_id": 1217 },
+      { "recipe_id": 1385 },
+      { "recipe_id": 1368 },
+      { "recipe_id": 1329 },
+      { "recipe_id": 1358 },
+      { "recipe_id": 1370 },
+      { "recipe_id": 1374 },
+      { "recipe_id": 1301 },
+      { "recipe_id": 1315 },
+      { "recipe_id": 1305 },
+      { "recipe_id": 1302 },
+      { "recipe_id": 1294 },
+      { "recipe_id": 1300 },
+      { "recipe_id": 1215 },
+      { "recipe_id": 1406 },
+      { "recipe_id": 1306 },
+      { "recipe_id": 1328 },
+      { "recipe_id": 1259 },
+      { "recipe_id": 1260 },
+      { "recipe_id": 1293 },
+      { "recipe_id": 1292 },
+      { "recipe_id": 1366 }
+    ]
+  },
+  "60": {
+    "source": "Darchon's TAKP Tradeskill Guide (wiki.takp.info), skill 1-191, recipe ids verified against quarm.db trivials 2026-07-17. EQProgression and EQTraders.com both attempted for cross-check: EQProgression blocked (403); EQTraders.com's guide (g1299) independently confirms 'Legitimate pre-PoP path ends at skill 191'. Verified directly against quarm.db's fishing/forage tables (not just guide text) on 2026-07-18: Storm Salmon is caught ONLY in Plane of Storms (zone 210, expansion 4), Giant Halibut/Snapper ONLY in Plane of Water (zone 216, expansion 4) — both single-zone, no alternate source anywhere in the data; Bread Crumbs/Justice Fruit forage ONLY in Plane of Justice (zone 201) — also single-zone (this DB row's own expansion field misreports Plane of Justice as 0/classic, but it's genuinely a Planes-of-Power zone in real EQ history; don't trust zone.expansion alone). So 191 is a real ceiling, not overcaution. One further recipe (Misty Thicket Picnic, id 2084, trivial 335) exists in quarm.db but is left out regardless of ingredient sourcing: quarm.db's skill_caps table shows 250 as the max Baking cap for every class right now, so a trivial-335 recipe is unreachable by anyone today (see LIMITATIONS.md §8.3) — this exclusion is about the trivial ceiling, not era-safety.",
+    "steps": [
+      { "recipe_id": 1888 },
+      { "recipe_id": 1877 },
+      { "recipe_id": 2136 }
+    ]
+  },
+  "61": {
+    "source": "Darchon's TAKP Tradeskill Guide (wiki.takp.info), skill 0-242, recipe ids verified against quarm.db trivials 2026-07-17. EQProgression cross-check blocked (403). EQTraders.com's guide (g1340) was checked for a post-242 extension and found none usable — its only content past 242 is a fully modern 'cultural armor template' tier system (Tattered/Sullied/Crude/Rough/Flawed/Pristine Leather Gloves Template) that does not exist anywhere in quarm.db (confirmed via direct lookup) — a data-availability ceiling, not a curation choice. Takes the Crystalline Silk branch at 89-131 over the Sacred Tunare Silk branch per Grimrose/SoS's own play style (farms Velketor's Labyrinth/Crystal Caverns regularly) — verified 2026-07-18 that Crystalline Silk itself is Velious/Luclin content (Crystal Caverns exp.2, City of Thurgadin exp.2, Velketor's Labyrinth exp.3 per quarm.db's own loot tables), so this was a real playstyle choice, not a workaround for an actually-broken alternative: Celestial Essence (needed by Sacred Tunare Silk) turned out NOT to be PoP-locked either (it's craftable via a no-skill Common Combine from a vendor-bought Celestial Solvent + a near-universally-dropped 'Words of Acquisition' reagent found in ordinary classic/Kunark/Velious/Luclin zones — checked its loot sources directly). The genuinely PoP-locked exclusion here is the post-242 Ethereal Silk Swatch/Cured Ethereal Energy segment: its Strand of Ether reagent drops from ~2500 NPCs and every single one is in a Planes-of-Power zone (Plane of Air/Earth/Fire/Storms/Valor/Water, Bastion of Thunder, Drunder, Halls of Honor, Crypt of Decay, Torment, Tower of Solusek Ro) — zero non-PoP sources, confirmed via direct loot-table lookup.",
+    "steps": [
+      { "recipe_id": 3506 },
+      { "recipe_id": 2984 },
+      { "recipe_id": 2685, "note": "Needs High Quality Rockhopper Hide, farmed in Dawnshroud Peaks" },
+      { "recipe_id": 2540, "note": "Needs Crystalline Silk, farmed at Velketor's Labyrinth / Crystal Caverns" },
+      { "recipe_id": 2531, "note": "Needs Crystalline Silk, farmed at Velketor's Labyrinth / Crystal Caverns" },
+      { "recipe_id": 2537, "note": "Needs Crystalline Silk, farmed at Velketor's Labyrinth / Crystal Caverns" },
+      { "recipe_id": 2536, "note": "Needs Crystalline Silk, farmed at Velketor's Labyrinth / Crystal Caverns" },
+      { "recipe_id": 3523, "note": "Needs a Vial of Viscous Mana — an Enchanter must cast Thicken Mana on a Pearl + Poison Vial" },
+      { "recipe_id": 3528, "note": "Needs a Vial of Viscous Mana (Enchanter-made)" },
+      { "recipe_id": 3527, "note": "Needs a Vial of Viscous Mana (Enchanter-made)" },
+      { "recipe_id": 2412, "note": "Needs Superb Rockhopper Hide, farmed in Dawnshroud Peaks" },
+      { "recipe_id": 2401, "note": "Needs Flawless Rockhopper Hide, farmed in Dawnshroud Peaks" }
+    ]
+  },
+  "63": {
+    "source": "Darchon's TAKP Tradeskill Guide (wiki.takp.info), skill 1-248, recipe ids verified against quarm.db trivials 2026-07-17 (exact match on every breakpoint). EQProgression cross-check blocked (403). EQTraders.com's guide (g1337) was checked for a post-248 extension: its entire higher-tier content (Thalium/Fulginate/Rhenium/Cobalt/Titanium/Tantalum/Vanadium ore studs) does not exist anywhere in quarm.db (confirmed via direct lookup) — a data-availability ceiling, not a curation choice. PoP-locked segment excluded: Ethereal Metal Rings, needing Brick of Ethereal Energy — verified 2026-07-18 via direct loot-table lookup that it drops from ~200 NPCs, every single one in a Planes-of-Power zone (Plane of Air/Earth/Fire/Storms/Valor/Water, Bastion of Thunder, Drunder, Halls of Honor, Crypt of Decay, Torment, Tower of Solusek Ro), zero non-PoP sources. (Its other reagent, Ethereal Temper, needs Celestial Essence, which turned out NOT itself to be zone-locked — but Brick of Ethereal Energy alone is enough to keep this recipe excluded.) Mistletoe Cutting Sickle (trivial 335) needs 9x Celestial Essence per combine but is unreachable regardless — quarm.db's skill_caps table shows 250 as the max Blacksmithing cap for every class right now.",
+    "steps": [
+      { "recipe_id": 5458, "note": "Only yields 1 bit per combine on this server (some guides say 2)" },
+      { "recipe_id": 4397 },
+      { "recipe_id": 5910 },
+      { "recipe_id": 4036 },
+      { "recipe_id": 3639 },
+      { "recipe_id": 3643 },
+      { "recipe_id": 3645 },
+      { "recipe_id": 5612 },
+      { "recipe_id": 5624 },
+      { "recipe_id": 5636 },
+      { "recipe_id": 5638 },
+      { "recipe_id": 5642 },
+      { "recipe_id": 6192 },
+      { "recipe_id": 6197 },
+      { "recipe_id": 4413 },
+      { "recipe_id": 5934, "note": "Needs Swirling Shadows, farmed from robed shades on the Twilight Sea island (Luclin)" },
+      { "recipe_id": 5933, "note": "Needs Swirling Shadows, farmed from robed shades on the Twilight Sea island (Luclin)" }
+    ]
+  },
+  "64": {
+    "source": "Darchon's TAKP Tradeskill Guide (wiki.takp.info), skill 1-282, recipe ids verified against quarm.db trivials 2026-07-17. EQProgression cross-check blocked (403). EQTraders.com's guide (g1324) claimed a race-open 1-200 arrow line (Bone/Wood/Ceramic/Silver-Tip Point Arrows) — checked every one of those names directly against quarm.db and ALL of them are ALSO Fier'Dal-Fletching-Kit (Wood-Elf-only) locked, exactly like the Darchon-sourced names; there is no race-open arrow substitute anywhere in quarm.db for 1-202. So that gap is confirmed, not just suspected: other races see a real hole there under Recommended and need Custom mode (or a Wood Elf crafting mule) for 1-202. From 202 on, picked the vendor-bought bow line (race-open, no farming) over the guide's farmed Shadow Tipped Acrylia Arrows alternative, matching the guide's own default (Option 1).",
+    "steps": [
+      { "recipe_id": 6920 },
+      { "recipe_id": 7154 },
+      { "recipe_id": 6953 },
+      { "recipe_id": 6802 },
+      { "recipe_id": 6786 },
+      { "recipe_id": 7434 },
+      { "recipe_id": 7430 }
+    ]
+  },
+  "65": {
+    "source": "Darchon's TAKP Tradeskill Guide (wiki.takp.info), skill 1-248, recipe ids verified against quarm.db trivials 2026-07-17 (exact match on every breakpoint). EQProgression cross-check blocked (403); EQTraders.com's Brewing guide (g1305) was under construction with no recipe data to cross-check against. Fully vendor-sourced, race-open, no farming required at any stage. Post-248 Kaladim Constitutional (trivial 335) excluded — not actually for Celestial Essence, which turned out not to be zone-locked (it's craftable via a no-skill Common Combine from a vendor-bought solvent + a near-universally-dropped reagent, checked directly), and its North Kaladim mushroom/Corking Device reagents aren't zone-locked either. The real reason: quarm.db's skill_caps table shows 250 as the max Brewing cap for every class right now, so trivial 335 is unreachable by anyone regardless of ingredients.",
+    "steps": [
+      { "recipe_id": 7666 },
+      { "recipe_id": 7766 },
+      { "recipe_id": 7663 },
+      { "recipe_id": 7755 }
+    ]
+  },
+  "68": {
+    "source": "Darchon's TAKP Tradeskill Guide (wiki.takp.info), skill 0-250, recipe ids verified against quarm.db trivials 2026-07-17 (near-exact match on every breakpoint). EQProgression cross-check blocked (403). EQTraders.com's guide (g1316) claims content up to skill 434 (Miragestone/Alaris/Underfoot Diamond gems) but NONE of those cut-gem names exist in quarm.db (confirmed via direct lookup) — all post-PoP-era gem-cutting revamp content not yet in this server's data. 250 is the genuine ceiling right now. The guide itself flags this trade as having no PoP/PoK-exclusive content and no raid-drop requirements — the simplest of the trades: one flat bar+gem combine, fully vendor-sourced, race-open throughout.",
+    "steps": [
+      { "recipe_id": 8336 },
+      { "recipe_id": 8312 },
+      { "recipe_id": 8332 },
+      { "recipe_id": 8322 },
+      { "recipe_id": 8356 },
+      { "recipe_id": 7944 },
+      { "recipe_id": 7928 },
+      { "recipe_id": 7940 },
+      { "recipe_id": 8136 },
+      { "recipe_id": 8380 },
+      { "recipe_id": 7954 },
+      { "recipe_id": 7974 },
+      { "recipe_id": 7950 },
+      { "recipe_id": 8012 },
+      { "recipe_id": 8004 },
+      { "recipe_id": 8046 },
+      { "recipe_id": 8074 },
+      { "recipe_id": 8056 },
+      { "recipe_id": 8038 },
+      { "recipe_id": 8052 },
+      { "recipe_id": 8072 },
+      { "recipe_id": 7991 },
+      { "recipe_id": 8209 },
+      { "recipe_id": 8183 },
+      { "recipe_id": 8203 },
+      { "recipe_id": 8138 }
+    ]
+  },
+  "69": {
+    "source": "Darchon's TAKP Tradeskill Guide (wiki.takp.info), skill 0-199, recipe ids verified against quarm.db trivials 2026-07-17. Extended to 248 on 2026-07-18 after re-verifying the post-199 exclusion with real loot-table data rather than guide text alone. Unfired Planar Stein (216) IS genuinely PoP-locked: its Tainted Planar Essence reagent drops from ~1000 NPCs, every one in a Planes-of-Power zone (Plane of Air/Disease/Earth/Fire/Nightmares/Water, Torment, Crypt of Decay/Ruins of Lxanvom — confirmed a real PoP zone despite quarm.db's own zone row misreporting it as expansion 0), zero non-PoP sources — stays excluded. BUT the guide's *parallel* branch at the same trivial range (Unfired Opal/White/Red Ceramic Band, Crucible of Escape, Idol combines) does NOT depend on Tainted Planar Essence at all — it needs Celestial Essence (verified NOT zone-locked: craftable via a no-skill Common Combine from a vendor-bought solvent + a near-universally-dropped reagent) plus Lacquered Opal/Fire Opal (Jewelry Making subcombine, vendor-bought Jar of Lacquer + gems) plus Vial of Cloudy/Clear Mana and Imbued gems (Enchanter/Cleric spell-cast reagent transmutations — a multiplayer-cooperation requirement like Tailoring's Wu's-path Enchanter dependency, not a zone/era lock). This branch was previously excluded by mistake, lumped in with the genuinely-locked Planar Stein because both sit in the same guide section past 199. Recipe ids for this branch verified against quarm.db trivials 2026-07-18; the 248 cap matches quarm.db's own skill_caps ceiling for this trade (250 max for any class).",
+    "steps": [
+      { "recipe_id": 9506 },
+      { "recipe_id": 9482 },
+      { "recipe_id": 9558 },
+      { "recipe_id": 9457 },
+      { "recipe_id": 9460, "note": "Needs Celestial Essence — craftable via a no-skill Common Combine, not zone-locked" },
+      { "recipe_id": 9481, "note": "Needs Celestial Essence and an Enchanter/Cleric-imbued Emerald" },
+      { "recipe_id": 9468, "note": "Needs an Enchanter/Cleric-imbued gem" }
+    ]
+  }
+}

@@ -1937,17 +1937,15 @@ export interface TradeskillLevelingParams {
   tradeskill: number
   targetSkill?: number // omit/0 = level to the class cap
   startSkill?: number  // omit = read from the Zeal export
-  objective?: import('../types/tradeskill').TradeskillObjective
-  allowFarming?: boolean // default true; false restricts to vendor-buyable recipes
-  avoidOtherTradeskills?: boolean // drop recipes needing another skill-gated discipline
-  excludeRecipeIds?: number[] // "Custom" mode: recipes to route around
+  mode: import('../types/tradeskill').TradeskillMode
   skillMod?: number    // worn item skill-mod %
   skillupBonus?: number // skill-up RATE % (Maelin's = 75)
 }
 
-// Build an optimized leveling plan for a character + tradeskill: an ordered list
-// of "grind recipe X from skill A to B" stages minimizing combines ("fastest")
-// or vendor plat ("cheapest"). Costs come back in copper.
+// Build a leveling plan for a character + tradeskill: an ordered list of
+// "grind recipe X from skill A to B" stages, sourced from either the curated
+// Recommended path or the player's saved Custom path (see TradeskillMode).
+// Costs come back in copper.
 export function getTradeskillLevelingPlan(
   id: number,
   p: TradeskillLevelingParams,
@@ -1955,10 +1953,7 @@ export function getTradeskillLevelingPlan(
   const body: Record<string, unknown> = {
     tradeskill: p.tradeskill,
     target_skill: p.targetSkill ?? 0,
-    objective: p.objective ?? 'fastest',
-    allow_farming: p.allowFarming ?? true,
-    avoid_other_tradeskills: p.avoidOtherTradeskills ?? false,
-    exclude_recipe_ids: p.excludeRecipeIds ?? [],
+    mode: p.mode,
     skill_mod: p.skillMod ?? 0,
     skillup_bonus: p.skillupBonus ?? 0,
   }
@@ -1967,6 +1962,21 @@ export function getTradeskillLevelingPlan(
     `/api/characters/${id}/tradeskill-plan`,
     body,
   )
+}
+
+// Custom tradeskill leveling path: a global (not per-character) set of
+// recipes the player added via "Add recipe", one saved list per discipline.
+// Returned sorted by trivial (the order Custom-mode builds a plan in).
+export function getCustomLevelingRecipes(tradeskill: number): Promise<RecipeSummary[]> {
+  return get<RecipeSummary[]>(`/api/tradeskills/${tradeskill}/custom-recipes`)
+}
+
+export function addCustomLevelingRecipe(tradeskill: number, recipeId: number): Promise<void> {
+  return post<void>(`/api/tradeskills/${tradeskill}/custom-recipes`, { recipe_id: recipeId })
+}
+
+export function removeCustomLevelingRecipe(tradeskill: number, recipeId: number): Promise<void> {
+  return del(`/api/tradeskills/${tradeskill}/custom-recipes/${recipeId}`)
 }
 
 export function getZealQuarmy(character?: string): Promise<{ quarmy: QuarmyData | null }> {

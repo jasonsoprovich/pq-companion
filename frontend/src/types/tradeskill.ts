@@ -2,7 +2,10 @@
 // tradeskillPlan handler wraps around it (internal/api/characters.go
 // tradeskillPlanResponse). Costs are in copper (see cost_unit).
 
-export type TradeskillObjective = 'fastest' | 'cheapest'
+// Recommended = the hand-curated path derived from community tradeskill
+// guides (empty for disciplines not curated yet). Custom = the player's own
+// saved build-your-own path, sorted by trivial server-side.
+export type TradeskillMode = 'recommended' | 'custom'
 
 // One leg of a leveling plan: grind `recipe` from from_skill up to to_skill.
 export interface LevelingStage {
@@ -37,7 +40,7 @@ export interface SubCombineInfo {
 }
 
 export interface TradeskillLevelingPlan {
-  objective: TradeskillObjective
+  mode: TradeskillMode
   start_skill: number
   target_skill: number // as requested
   reached_skill: number // where the plan actually ends (may be below target)

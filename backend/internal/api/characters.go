@@ -328,6 +328,23 @@ func (h *charactersHandler) skillupEstimate(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, res)
 }
 
+// tradeskillCandidate maps a db.LevelingRecipe to the solver's input shape,
+// attaching a curator note (Recommended mode only; empty for Custom picks).
+func tradeskillCandidate(rc db.LevelingRecipe, note string) tsplan.RecipeCandidate {
+	return tsplan.RecipeCandidate{
+		RecipeID:            rc.RecipeID,
+		Name:                rc.Name,
+		Trivial:             rc.Trivial,
+		NoFail:              rc.NoFail,
+		Yield:               rc.Yield,
+		Container:           rc.Container,
+		VendorCost:          float64(rc.VendorCost),
+		VendorCostKnown:     rc.VendorCostKnown,
+		SubCombineRecipeIDs: rc.SubCombineRecipeIDs,
+		Note:                note,
+	}
+}
+
 // governingStat resolves the effective governing attribute (and its label /
 // source) that drives skill-up speed for a tradeskill: base attributes plus
 // equipped gear when the EQ path is known, clamped to the era's 255 cap, run
@@ -350,21 +367,30 @@ func (h *charactersHandler) governingStat(char character.Character, ts int) (tra
 	return tradeStat, statName, statSource
 }
 
+// tradeskillPlanMode selects where a plan's ordered recipe list comes from.
+type tradeskillPlanMode string
+
+const (
+	// tradeskillModeRecommended uses the hand-curated path derived from
+	// community tradeskill guides (see internal/db/tradeskill_paths.go),
+	// filtered to recipes that still exist/are enabled in quarm.db. Empty for
+	// disciplines that haven't been curated yet.
+	tradeskillModeRecommended tradeskillPlanMode = "recommended"
+	// tradeskillModeCustom uses the player's own saved build-your-own path
+	// (character.Store custom_leveling_recipes), sorted by trivial.
+	tradeskillModeCustom tradeskillPlanMode = "custom"
+)
+
 // tradeskillPlanRequest is the POST body for tradeskillPlan. StartSkill nil means
 // "read the character's current skill from the quarmy export"; TargetSkill <= 0
-// means "level to the class/level cap". AllowFarming/SwitchPenalty nil take
-// per-objective defaults.
+// means "level to the class/level cap".
 type tradeskillPlanRequest struct {
-	Tradeskill            int      `json:"tradeskill"`
-	TargetSkill           int      `json:"target_skill"`
-	StartSkill            *int     `json:"start_skill"`
-	Objective             string   `json:"objective"`
-	AllowFarming          *bool    `json:"allow_farming"`
-	AvoidOtherTradeskills bool     `json:"avoid_other_tradeskills"` // exclude recipes needing another discipline
-	ExcludeRecipeIDs      []int    `json:"exclude_recipe_ids"`      // "Custom" mode: recipes the player rejected, routed around
-	SkillMod              int      `json:"skill_mod"`
-	SkillupBonus          int      `json:"skillup_bonus"`
-	SwitchPenalty         *float64 `json:"switch_penalty"`
+	Tradeskill   int                `json:"tradeskill"`
+	TargetSkill  int                `json:"target_skill"`
+	StartSkill   *int               `json:"start_skill"`
+	Mode         tradeskillPlanMode `json:"mode"`
+	SkillMod     int                `json:"skill_mod"`
+	SkillupBonus int                `json:"skillup_bonus"`
 }
 
 // subCombineInfo describes a crafted sub-component a stage's recipe depends on,
@@ -384,6 +410,7 @@ type subCombineInfo struct {
 // sub-combine recipe id (as a string, for JSON) to its detail.
 type tradeskillPlanResponse struct {
 	tsplan.Plan
+	Mode        tradeskillPlanMode        `json:"mode"`
 	Tradeskill  int                       `json:"tradeskill"`
 	SkillName   string                    `json:"skill_name"`
 	ClassCap    int                       `json:"class_cap"`
@@ -396,20 +423,14 @@ type tradeskillPlanResponse struct {
 	SubCombines map[string]subCombineInfo `json:"sub_combines,omitempty"`
 }
 
-// tradeskillPlanTrivialCeiling is how far below a recipe's trivial the planner
-// will start grinding it (the guides' "stay within ~25 of your skill" band, a
-// touch looser so sparse-recipe disciplines don't leave gaps). It mainly stops
-// the cheapest objective from grinding a cheap high-trivial recipe up from far
-// below at an absurd combine count.
-const tradeskillPlanTrivialCeiling = 40
-
-// tradeskillPlan builds an optimized leveling plan for a character and a
-// tradeskill: an ordered list of "grind recipe X from skill A to B" stages that
-// minimizes combines (objective "fastest") or vendor plat ("cheapest"). It
-// resolves the character's current skill, class/level cap, governing stat,
-// skill difficulty, and mastery-AA fail-reduction, then runs the pure tsplan
-// solver over the discipline's recipes. Cheapest cost is partial by nature —
-// farmed/dropped components have no price (see Plan.CostComplete).
+// tradeskillPlan builds a leveling plan for a character and a tradeskill: an
+// ordered list of "grind recipe X from skill A to B" stages. The recipe order
+// comes from either the hand-curated Recommended path (community-guide
+// derived) or the player's own saved Custom path (sorted by trivial) — see
+// tradeskillPlanMode. It resolves the character's current skill, class/level
+// cap, governing stat, skill difficulty, and mastery-AA fail-reduction, then
+// builds stages via tsplan.BuildFromRecipes. Vendor cost is partial by
+// nature for stages using farmed/dropped components (see Plan.CostComplete).
 func (h *charactersHandler) tradeskillPlan(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
@@ -425,14 +446,12 @@ func (h *charactersHandler) tradeskillPlan(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "tradeskill is required")
 		return
 	}
-	obj := tsplan.Fastest
-	switch req.Objective {
-	case "", string(tsplan.Fastest):
-		obj = tsplan.Fastest
-	case string(tsplan.Cheapest):
-		obj = tsplan.Cheapest
-	default:
-		writeError(w, http.StatusBadRequest, "objective must be 'fastest' or 'cheapest'")
+	mode := req.Mode
+	if mode == "" {
+		mode = tradeskillModeRecommended
+	}
+	if mode != tradeskillModeRecommended && mode != tradeskillModeCustom {
+		writeError(w, http.StatusBadRequest, "mode must be 'recommended' or 'custom'")
 		return
 	}
 
@@ -502,78 +521,71 @@ func (h *charactersHandler) tradeskillPlan(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	excluded := make(map[int]bool, len(req.ExcludeRecipeIDs))
-	for _, id := range req.ExcludeRecipeIDs {
-		excluded[id] = true
-	}
-
+	// Every enabled, non-quest recipe for this discipline, keyed by id, so
+	// either mode can look up whatever recipes it needs by id.
 	recipes, err := h.db.RecipesForTradeskill(ts)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	cands := make([]tsplan.RecipeCandidate, 0, len(recipes))
+	byID := make(map[int]db.LevelingRecipe, len(recipes))
 	for _, rc := range recipes {
-		// Cultural recipes need a race-locked combine container (Vale/Fier`Dal/
-		// Erudite kit) the character can't obtain — drop them so the plan stays
-		// something this character can actually grind. Race 0 = unknown/not
-		// imported: don't filter (we can't tell), better to over-offer than hide.
-		if rc.RaceRestrict != 0 && char.Race > 0 && rc.RaceRestrict != char.Race {
-			continue
+		byID[rc.RecipeID] = rc
+	}
+	// Cultural recipes need a race-locked combine container (Vale/Fier`Dal/
+	// Erudite kit) the character can't obtain — drop them so the plan stays
+	// something this character can actually grind. Race 0 = unknown/not
+	// imported: don't filter (we can't tell), better to over-offer than hide.
+	usable := func(rc db.LevelingRecipe) bool {
+		return rc.RaceRestrict == 0 || char.Race <= 0 || rc.RaceRestrict == char.Race
+	}
+
+	var cands []tsplan.RecipeCandidate
+	switch mode {
+	case tradeskillModeRecommended:
+		for _, step := range db.RecommendedPathFor(ts) {
+			// A curated recipe id that's missing/disabled, or that this
+			// character's race can't use, is skipped rather than an error —
+			// the plan just has a gap there, same as any other unreachable
+			// stretch of the path.
+			if rc, ok := byID[step.RecipeID]; ok && usable(rc) {
+				cands = append(cands, tradeskillCandidate(rc, step.Note))
+			}
 		}
-		// "Stay in this discipline" mode drops recipes that would force crafting
-		// in another skill-gated tradeskill.
-		if req.AvoidOtherTradeskills && rc.RequiresCrossTradeskill {
-			continue
+	case tradeskillModeCustom:
+		ids, listErr := h.store.ListCustomLevelingRecipes(ts)
+		if listErr != nil {
+			writeError(w, http.StatusInternalServerError, listErr.Error())
+			return
 		}
-		// "Custom" mode: the player rejected this recipe (rare/annoying-to-farm
-		// mats, or components not actually live yet despite the DB row existing)
-		// — the plan is recomputed from scratch over what's left, not filtered
-		// after the fact.
-		if excluded[rc.RecipeID] {
-			continue
+		picked := make([]db.LevelingRecipe, 0, len(ids))
+		for _, rid := range ids {
+			if rc, ok := byID[rid]; ok && usable(rc) {
+				picked = append(picked, rc)
+			}
 		}
-		cands = append(cands, tsplan.RecipeCandidate{
-			RecipeID:            rc.RecipeID,
-			Name:                rc.Name,
-			Trivial:             rc.Trivial,
-			NoFail:              rc.NoFail,
-			Yield:               rc.Yield,
-			Container:           rc.Container,
-			VendorCost:          float64(rc.VendorCost),
-			VendorCostKnown:     rc.VendorCostKnown,
-			SubCombineRecipeIDs: rc.SubCombineRecipeIDs,
+		// A saved custom path has no inherent order — build the path lowest
+		// trivial first, same cadence as a curated guide.
+		sort.Slice(picked, func(i, j int) bool {
+			if picked[i].Trivial != picked[j].Trivial {
+				return picked[i].Trivial < picked[j].Trivial
+			}
+			return picked[i].RecipeID < picked[j].RecipeID
 		})
+		for _, rc := range picked {
+			cands = append(cands, tradeskillCandidate(rc, ""))
+		}
 	}
 
-	allowFarming := true
-	if req.AllowFarming != nil {
-		allowFarming = *req.AllowFarming
-	}
-	// A modest switch penalty keeps "fastest" from fragmenting into one-point
-	// hops; "cheapest" is already cost-shaped, so it defaults to none. Both are
-	// overridable for tuning.
-	switchPenalty := 5.0
-	if obj == tsplan.Cheapest {
-		switchPenalty = 0
-	}
-	if req.SwitchPenalty != nil {
-		switchPenalty = *req.SwitchPenalty
-	}
-
-	plan := tsplan.Solve(cands, tsplan.Params{
-		StartSkill:     start,
-		TargetSkill:    target,
-		ClassCap:       skillCap,
-		TradeStat:      tradeStat,
-		Difficulty:     difficulty,
-		SkillMod:       req.SkillMod,
-		AAReduce:       aaReduce,
-		SkillupBonus:   req.SkillupBonus,
-		Objective:      obj,
-		AllowFarming:   allowFarming,
-		SwitchPenalty:  switchPenalty,
-		TrivialCeiling: tradeskillPlanTrivialCeiling,
+	plan := tsplan.BuildFromRecipes(cands, tsplan.Params{
+		StartSkill:   start,
+		TargetSkill:  target,
+		ClassCap:     skillCap,
+		TradeStat:    tradeStat,
+		Difficulty:   difficulty,
+		SkillMod:     req.SkillMod,
+		AAReduce:     aaReduce,
+		SkillupBonus: req.SkillupBonus,
 	})
 
 	// Enrich each stage's crafted sub-components with their discipline and
@@ -582,22 +594,9 @@ func (h *charactersHandler) tradeskillPlan(w http.ResponseWriter, r *http.Reques
 	subCombines, crossWarnings := h.resolveSubCombines(plan.Stages, ts)
 	plan.Warnings = append(plan.Warnings, crossWarnings...)
 
-	// If "stay in this discipline" filtered out every recipe, say so plainly —
-	// otherwise the solver only reports the generic "no usable recipe".
-	if req.AvoidOtherTradeskills && len(cands) == 0 && len(recipes) > 0 {
-		plan.Warnings = append(plan.Warnings, fmt.Sprintf(
-			"Every %s recipe here needs another tradeskill — turn off \"Stay in this tradeskill\" to plan a path.",
-			enums.TradeskillName(ts)))
-	}
-	// Likewise, if the player's own exclusions left nothing to plan with.
-	if len(excluded) > 0 && len(cands) == 0 && len(recipes) > 0 {
-		plan.Warnings = append(plan.Warnings, fmt.Sprintf(
-			"Every remaining %s recipe was excluded — uncheck one to plan a path.",
-			enums.TradeskillName(ts)))
-	}
-
 	writeJSON(w, http.StatusOK, tradeskillPlanResponse{
 		Plan:        plan,
+		Mode:        mode,
 		Tradeskill:  ts,
 		SkillName:   enums.TradeskillName(ts),
 		ClassCap:    skillCap,

@@ -1,11 +1,20 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"strconv"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/tsplan"
 )
@@ -15,17 +24,7 @@ import (
 func mapCandidates(recipes []db.LevelingRecipe) []tsplan.RecipeCandidate {
 	cands := make([]tsplan.RecipeCandidate, len(recipes))
 	for i, rc := range recipes {
-		cands[i] = tsplan.RecipeCandidate{
-			RecipeID:            rc.RecipeID,
-			Name:                rc.Name,
-			Trivial:             rc.Trivial,
-			NoFail:              rc.NoFail,
-			Yield:               rc.Yield,
-			Container:           rc.Container,
-			VendorCost:          float64(rc.VendorCost),
-			VendorCostKnown:     rc.VendorCostKnown,
-			SubCombineRecipeIDs: rc.SubCombineRecipeIDs,
-		}
+		cands[i] = tradeskillCandidate(rc, "")
 	}
 	return cands
 }
@@ -50,12 +49,10 @@ func assertPlanMonotonic(t *testing.T, plan tsplan.Plan, start int) {
 	}
 }
 
-// TestTradeskillPlanPipeline_Blacksmithing runs the full query->map->solve
-// pipeline over real Blacksmithing recipes, the way the handler does. It proves
-// the solver produces a sane leveling path on real recipe shapes (realistic
-// trivials, vendor costs, sub-combine edges) — coverage the synthetic tsplan
-// unit tests can't give.
-func TestTradeskillPlanPipeline_Blacksmithing(t *testing.T) {
+// openRealQuarmDB opens the shipped quarm.db, skipping the test when it isn't
+// present (e.g. a checkout without the game data fixture).
+func openRealQuarmDB(t *testing.T) *db.DB {
+	t.Helper()
 	_, file, _, _ := runtime.Caller(0)
 	repoRoot := filepath.Join(filepath.Dir(file), "..", "..", "..")
 	dbPath := filepath.Join(repoRoot, "backend", "data", "quarm.db")
@@ -66,7 +63,17 @@ func TestTradeskillPlanPipeline_Blacksmithing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer d.Close()
+	t.Cleanup(func() { d.Close() })
+	return d
+}
+
+// TestBuildFromRecipesPipeline_Blacksmithing runs the query->map->build
+// pipeline over real Blacksmithing recipes the way Custom mode does (sorted
+// by trivial), proving BuildFromRecipes produces a sane leveling path on real
+// recipe shapes (realistic trivials, vendor costs, sub-combine edges) —
+// coverage the synthetic tsplan unit tests can't give.
+func TestBuildFromRecipesPipeline_Blacksmithing(t *testing.T) {
+	d := openRealQuarmDB(t)
 
 	recipes, err := d.RecipesForTradeskill(63) // Blacksmithing
 	if err != nil {
@@ -75,55 +82,31 @@ func TestTradeskillPlanPipeline_Blacksmithing(t *testing.T) {
 	if len(recipes) == 0 {
 		t.Fatal("no blacksmithing recipes")
 	}
+	sort.Slice(recipes, func(i, j int) bool {
+		if recipes[i].Trivial != recipes[j].Trivial {
+			return recipes[i].Trivial < recipes[j].Trivial
+		}
+		return recipes[i].RecipeID < recipes[j].RecipeID
+	})
 	cands := mapCandidates(recipes)
 
 	const start, target = 1, 188
-
-	// Fastest, farming allowed: should climb well up toward the target.
-	fast := tsplan.Solve(cands, tsplan.Params{
+	plan := tsplan.BuildFromRecipes(cands, tsplan.Params{
 		StartSkill: start, TargetSkill: target,
 		TradeStat: 100, Difficulty: 3.0,
-		Objective: tsplan.Fastest, AllowFarming: true, SwitchPenalty: 5,
-		TrivialCeiling: tradeskillPlanTrivialCeiling,
 	})
-	if len(fast.Stages) == 0 {
-		t.Fatalf("fastest plan produced no stages; warnings=%v", fast.Warnings)
+	if len(plan.Stages) == 0 {
+		t.Fatalf("plan produced no stages; warnings=%v", plan.Warnings)
 	}
-	assertPlanMonotonic(t, fast, start)
-	if fast.ReachedSkill <= start {
-		t.Fatalf("fastest reached %d, want above start %d", fast.ReachedSkill, start)
+	assertPlanMonotonic(t, plan, start)
+	if plan.ReachedSkill <= start {
+		t.Fatalf("reached %d, want above start %d", plan.ReachedSkill, start)
 	}
-	if fast.TotalCombines <= 0 {
-		t.Fatalf("fastest TotalCombines = %d, want > 0", fast.TotalCombines)
+	if plan.TotalCombines <= 0 {
+		t.Fatalf("TotalCombines = %d, want > 0", plan.TotalCombines)
 	}
-	t.Logf("blacksmithing fastest %d->%d: %d stages, %d combines, reached %d",
-		start, target, len(fast.Stages), fast.TotalCombines, fast.ReachedSkill)
-
-	// Cheapest, vendor-only: a valid (possibly partial) vendor-sourced path must
-	// still climb above start, and every stage must be fully costed.
-	cheap := tsplan.Solve(cands, tsplan.Params{
-		StartSkill: start, TargetSkill: target,
-		TradeStat: 100, Difficulty: 3.0,
-		Objective: tsplan.Cheapest, AllowFarming: false, SwitchPenalty: 0,
-		TrivialCeiling: tradeskillPlanTrivialCeiling,
-	})
-	if len(cheap.Stages) == 0 {
-		t.Fatalf("vendor-only cheapest plan produced no stages; warnings=%v", cheap.Warnings)
-	}
-	assertPlanMonotonic(t, cheap, start)
-	if cheap.ReachedSkill <= start {
-		t.Fatalf("cheapest reached %d, want above start %d", cheap.ReachedSkill, start)
-	}
-	if !cheap.CostComplete {
-		t.Errorf("vendor-only plan should have complete cost, got CostComplete=false")
-	}
-	for i, s := range cheap.Stages {
-		if !s.CostKnown {
-			t.Errorf("vendor-only stage %d (%s) has unknown cost", i, s.Recipe)
-		}
-	}
-	t.Logf("blacksmithing cheapest (vendor-only) %d->%d: %d stages, %d copper, reached %d",
-		start, target, len(cheap.Stages), int(cheap.TotalCost), cheap.ReachedSkill)
+	t.Logf("blacksmithing %d->%d: %d stages, %d combines, reached %d",
+		start, target, len(plan.Stages), plan.TotalCombines, plan.ReachedSkill)
 }
 
 // TestResolveSubCombines_Blacksmithing exercises the API's sub-combine
@@ -131,17 +114,7 @@ func TestTradeskillPlanPipeline_Blacksmithing(t *testing.T) {
 // discipline, cross-tradeskill flags match, and a cross-tradeskill dependency
 // yields a warning.
 func TestResolveSubCombines_Blacksmithing(t *testing.T) {
-	_, file, _, _ := runtime.Caller(0)
-	repoRoot := filepath.Join(filepath.Dir(file), "..", "..", "..")
-	dbPath := filepath.Join(repoRoot, "backend", "data", "quarm.db")
-	if _, err := os.Stat(dbPath); err != nil {
-		t.Skip("quarm.db not present")
-	}
-	d, err := db.Open(dbPath)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	defer d.Close()
+	d := openRealQuarmDB(t)
 
 	h := &charactersHandler{db: d}
 	recipes, err := d.RecipesForTradeskill(63)
@@ -184,123 +157,165 @@ func TestResolveSubCombines_Blacksmithing(t *testing.T) {
 		len(info), len(warnings), warnings)
 }
 
-// TestTradeskillPlan_AvoidOtherTradeskills verifies the "stay in this discipline"
-// mode: dropping recipes that require another skill-gated tradeskill yields a
-// plan with no cross-tradeskill warning.
-func TestTradeskillPlan_AvoidOtherTradeskills(t *testing.T) {
-	_, file, _, _ := runtime.Caller(0)
-	repoRoot := filepath.Join(filepath.Dir(file), "..", "..", "..")
-	dbPath := filepath.Join(repoRoot, "backend", "data", "quarm.db")
-	if _, err := os.Stat(dbPath); err != nil {
-		t.Skip("quarm.db not present")
-	}
-	d, err := db.Open(dbPath)
+// newPlanTestRouter wires a minimal chi router around a charactersHandler with
+// a real quarm.db and a fresh temp-file character/config store, so the
+// tradeskill-plan route (mode dispatch, race filter, cost/sub-combine
+// enrichment) is exercised end-to-end the way the real API serves it.
+func newPlanTestRouter(t *testing.T) (*chi.Mux, *character.Store, *db.DB) {
+	t.Helper()
+	d := openRealQuarmDB(t)
+
+	store, err := character.OpenStore(filepath.Join(t.TempDir(), "user.db"))
 	if err != nil {
-		t.Fatalf("open db: %v", err)
+		t.Fatalf("OpenStore: %v", err)
 	}
-	defer d.Close()
+	t.Cleanup(func() { store.Close() })
 
-	h := &charactersHandler{db: d}
-	recipes, err := d.RecipesForTradeskill(63)
+	mgr, err := config.LoadFrom(filepath.Join(t.TempDir(), "config.yaml"))
 	if err != nil {
-		t.Fatalf("recipes: %v", err)
+		t.Fatalf("LoadFrom: %v", err)
 	}
 
-	// The flag must be meaningful — some recipes cross, some stay in-discipline.
-	var anyCross, anyClean bool
-	var cands []tsplan.RecipeCandidate
-	for _, rc := range recipes {
-		if rc.RequiresCrossTradeskill {
-			anyCross = true
-			continue // avoid mode drops these
-		}
-		anyClean = true
-		cands = append(cands, mapCandidates([]db.LevelingRecipe{rc})...)
-	}
-	if !anyCross {
-		t.Skip("no cross-tradeskill blacksmithing recipes in fixture")
-	}
-	if !anyClean {
-		t.Fatal("expected some in-discipline blacksmithing recipes")
-	}
-
-	plan := tsplan.Solve(cands, tsplan.Params{
-		StartSkill: 1, TargetSkill: 188,
-		TradeStat: 100, Difficulty: 3.0,
-		Objective: tsplan.Fastest, AllowFarming: true, SwitchPenalty: 5,
-		TrivialCeiling: tradeskillPlanTrivialCeiling,
-	})
-	if len(plan.Stages) == 0 {
-		t.Fatalf("avoid-others plan produced no stages; warnings=%v", plan.Warnings)
-	}
-	_, warnings := h.resolveSubCombines(plan.Stages, 63)
-	if len(warnings) != 0 {
-		t.Errorf("avoid-others plan still has cross-tradeskill warnings: %v", warnings)
-	}
-	t.Logf("avoid-others blacksmithing 1->188: %d stages, reached %d (%d cross recipes excluded)",
-		len(plan.Stages), plan.ReachedSkill, len(recipes)-len(cands))
+	h := &charactersHandler{store: store, mgr: mgr, db: d}
+	r := chi.NewRouter()
+	r.Post("/api/characters/{id}/tradeskill-plan", h.tradeskillPlan)
+	return r, store, d
 }
 
-// TestTradeskillPlan_ExcludeRecipeIDs verifies "Custom" mode (issue #149):
-// dropping a recipe the default fastest plan actually uses reroutes the plan
-// around it entirely (that recipe never appears in any stage) rather than
-// leaving a gap, and the plan is recomputed from the full candidate pool minus
-// the exclusion — not filtered from an already-built plan.
-func TestTradeskillPlan_ExcludeRecipeIDs(t *testing.T) {
-	_, file, _, _ := runtime.Caller(0)
-	repoRoot := filepath.Join(filepath.Dir(file), "..", "..", "..")
-	dbPath := filepath.Join(repoRoot, "backend", "data", "quarm.db")
-	if _, err := os.Stat(dbPath); err != nil {
-		t.Skip("quarm.db not present")
-	}
-	d, err := db.Open(dbPath)
+func postPlan(t *testing.T, r *chi.Mux, charID int, body map[string]any) tradeskillPlanResponse {
+	t.Helper()
+	b, err := json.Marshal(body)
 	if err != nil {
-		t.Fatalf("open db: %v", err)
+		t.Fatalf("marshal request: %v", err)
 	}
-	defer d.Close()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/characters/"+strconv.Itoa(charID)+"/tradeskill-plan", bytes.NewReader(b))
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var resp tradeskillPlanResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, rec.Body.String())
+	}
+	return resp
+}
+
+// TestTradeskillPlanHandler_CustomMode verifies mode="custom" end-to-end: a
+// saved custom path (character.Store, global per tradeskill) drives the plan,
+// sorted by trivial, through the real HTTP handler.
+func TestTradeskillPlanHandler_CustomMode(t *testing.T) {
+	r, store, d := newPlanTestRouter(t)
+
+	char, err := store.Create("Testchar", 0, 0, 60)
+	if err != nil {
+		t.Fatalf("create character: %v", err)
+	}
 
 	recipes, err := d.RecipesForTradeskill(63) // Blacksmithing
 	if err != nil {
 		t.Fatalf("recipes: %v", err)
 	}
-	if len(recipes) == 0 {
-		t.Fatal("no blacksmithing recipes")
-	}
-	cands := mapCandidates(recipes)
-
-	const start, target = 1, 188
-	params := tsplan.Params{
-		StartSkill: start, TargetSkill: target,
-		TradeStat: 100, Difficulty: 3.0,
-		Objective: tsplan.Fastest, AllowFarming: true, SwitchPenalty: 5,
-		TrivialCeiling: tradeskillPlanTrivialCeiling,
-	}
-
-	baseline := tsplan.Solve(cands, params)
-	if len(baseline.Stages) == 0 {
-		t.Fatalf("baseline plan produced no stages; warnings=%v", baseline.Warnings)
-	}
-	excludeID := baseline.Stages[0].RecipeID
-
-	filtered := make([]tsplan.RecipeCandidate, 0, len(cands))
-	for _, c := range cands {
-		if c.RecipeID != excludeID {
-			filtered = append(filtered, c)
+	// Only recipes that actually teach something from skill 0 (trivial > 0)
+	// are useful here — some low-index rows sit at trivial 0/1.
+	var teaching []db.LevelingRecipe
+	for _, rc := range recipes {
+		if rc.Trivial > 0 {
+			teaching = append(teaching, rc)
 		}
 	}
-	rerouted := tsplan.Solve(filtered, params)
-	if len(rerouted.Stages) == 0 {
-		t.Fatalf("rerouted plan produced no stages; warnings=%v", rerouted.Warnings)
+	if len(teaching) < 3 {
+		t.Skip("not enough teaching blacksmithing recipes in fixture")
 	}
-	assertPlanMonotonic(t, rerouted, start)
-	for _, s := range rerouted.Stages {
-		if s.RecipeID == excludeID {
-			t.Fatalf("excluded recipe %d still appears in rerouted plan", excludeID)
+	sort.Slice(teaching, func(i, j int) bool { return teaching[i].Trivial < teaching[j].Trivial })
+	for _, rc := range teaching[:3] {
+		if err := store.AddCustomLevelingRecipe(63, rc.RecipeID); err != nil {
+			t.Fatalf("add custom recipe %d: %v", rc.RecipeID, err)
 		}
 	}
-	if rerouted.ReachedSkill <= start {
-		t.Fatalf("rerouted plan reached %d, want above start %d", rerouted.ReachedSkill, start)
+
+	resp := postPlan(t, r, char.ID, map[string]any{
+		"tradeskill":   63,
+		"start_skill":  0,
+		"target_skill": 250,
+		"mode":         "custom",
+	})
+	if resp.Mode != tradeskillModeCustom {
+		t.Fatalf("Mode = %q, want %q", resp.Mode, tradeskillModeCustom)
 	}
-	t.Logf("blacksmithing exclude-recipe %d: baseline %d stages -> rerouted %d stages, reached %d",
-		excludeID, len(baseline.Stages), len(rerouted.Stages), rerouted.ReachedSkill)
+	if len(resp.Stages) == 0 {
+		t.Fatalf("expected stages from a non-empty custom path, got none; warnings=%v", resp.Warnings)
+	}
+	if resp.ReachedSkill <= 0 {
+		t.Fatalf("ReachedSkill = %d, want above start 0", resp.ReachedSkill)
+	}
+}
+
+// TestTradeskillPlanHandler_RecommendedEmptyState verifies mode="recommended"
+// for a discipline with no curated data returns a clean empty plan rather than
+// an error. Sense Traps (62) is not a craftable discipline at all (no
+// tradeskill_recipe rows reference it) so it can never gain a curated path —
+// a permanent choice for this test, unlike the earlier now-curated
+// placeholders. Every real crafting discipline (Fishing 55, Make Poison 56,
+// Tinkering 57, Research 58, Alchemy 59, Baking 60, Tailoring 61,
+// Blacksmithing 63, Fletching 64, Brewing 65, Jewelry Making 68, Pottery 69)
+// is curated as of this P3 pass — see internal/db/tradeskill_paths.json.
+func TestTradeskillPlanHandler_RecommendedEmptyState(t *testing.T) {
+	r, store, _ := newPlanTestRouter(t)
+	char, err := store.Create("Testchar2", 0, 0, 60)
+	if err != nil {
+		t.Fatalf("create character: %v", err)
+	}
+
+	resp := postPlan(t, r, char.ID, map[string]any{
+		"tradeskill":   62,
+		"start_skill":  1,
+		"target_skill": 250,
+		"mode":         "recommended",
+	})
+	if resp.Mode != tradeskillModeRecommended {
+		t.Fatalf("Mode = %q, want %q", resp.Mode, tradeskillModeRecommended)
+	}
+	if len(resp.Stages) != 0 {
+		t.Fatalf("expected no stages (no curated path yet), got %d", len(resp.Stages))
+	}
+}
+
+// TestTradeskillPlanHandler_RecommendedMode_Curated locks in every curated
+// Recommended path — all 12 real crafting disciplines, see
+// internal/db/tradeskill_paths.json — against real quarm.db data: every
+// curated recipe id must still exist and the plan must climb from 0 without
+// gaps. Uses race 0 ("unknown") so the cultural race-restrict filter is a
+// no-op (see charactersHandler.tradeskillPlan's usable() check) — this test
+// is about the curated data being structurally sound, not about race
+// filtering, which is covered elsewhere. 150 is a floor comfortably below
+// every trade's actual reach (lowest is Research at 182) — it's deliberately
+// loose so a future data-availability change (a trade's ceiling moving) isn't
+// a false failure here.
+func TestTradeskillPlanHandler_RecommendedMode_Curated(t *testing.T) {
+	r, store, _ := newPlanTestRouter(t)
+	char, err := store.Create("Testchar3", 0, 0, 60)
+	if err != nil {
+		t.Fatalf("create character: %v", err)
+	}
+
+	for _, ts := range []int{55, 56, 57, 58, 59, 60, 61, 63, 64, 65, 68, 69} {
+		resp := postPlan(t, r, char.ID, map[string]any{
+			"tradeskill":   ts,
+			"start_skill":  0,
+			"target_skill": 252,
+			"mode":         "recommended",
+		})
+		if resp.Mode != tradeskillModeRecommended {
+			t.Fatalf("tradeskill %d: Mode = %q, want %q", ts, resp.Mode, tradeskillModeRecommended)
+		}
+		if len(resp.Stages) == 0 {
+			t.Fatalf("tradeskill %d: expected curated stages, got none; warnings=%v", ts, resp.Warnings)
+		}
+		assertPlanMonotonic(t, resp.Plan, 0)
+		if resp.ReachedSkill < 150 {
+			t.Errorf("tradeskill %d: curated path only reached %d, want at least 150", ts, resp.ReachedSkill)
+		}
+	}
 }

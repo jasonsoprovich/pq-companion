@@ -1,15 +1,21 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/tradeskill"
 )
 
-type tradeskillHandler struct{ db *db.DB }
+type tradeskillHandler struct {
+	db    *db.DB
+	store *character.Store
+}
 
 // modifiers lists the catalog of items that boost a given tradeskill skill,
 // best bonus first. Drives the recipe success calculator's modifier picker.
@@ -43,4 +49,74 @@ func (h *tradeskillHandler) chance(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	nofail := q.Get("nofail") == "1" || q.Get("nofail") == "true"
 	writeJSON(w, http.StatusOK, tradeskill.Chance(raw, trivial, mod, aa, cap, nofail))
+}
+
+// customRecipes lists the recipes in a tradeskill's build-your-own Custom
+// leveling path (global — shared across all characters, see
+// character.Store.ListCustomLevelingRecipes), enriched to full summaries (so
+// the UI has a name to show) and sorted by trivial — the same order the
+// leveling-plan handler builds a Custom-mode plan in.
+func (h *tradeskillHandler) customRecipes(w http.ResponseWriter, r *http.Request) {
+	ts, err := strconv.Atoi(chi.URLParam(r, "skillId"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid tradeskill")
+		return
+	}
+	ids, err := h.store.ListCustomLevelingRecipes(ts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	summaries, err := h.db.GetRecipeSummariesByIDs(ids)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	sort.Slice(summaries, func(i, j int) bool {
+		if summaries[i].Trivial != summaries[j].Trivial {
+			return summaries[i].Trivial < summaries[j].Trivial
+		}
+		return summaries[i].ID < summaries[j].ID
+	})
+	writeJSON(w, http.StatusOK, summaries)
+}
+
+// addCustomRecipe adds a recipe to a tradeskill's Custom path.
+func (h *tradeskillHandler) addCustomRecipe(w http.ResponseWriter, r *http.Request) {
+	ts, err := strconv.Atoi(chi.URLParam(r, "skillId"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid tradeskill")
+		return
+	}
+	var body struct {
+		RecipeID int `json:"recipe_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.RecipeID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid recipe_id")
+		return
+	}
+	if err := h.store.AddCustomLevelingRecipe(ts, body.RecipeID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteCustomRecipe removes a recipe from a tradeskill's Custom path.
+func (h *tradeskillHandler) deleteCustomRecipe(w http.ResponseWriter, r *http.Request) {
+	ts, err := strconv.Atoi(chi.URLParam(r, "skillId"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid tradeskill")
+		return
+	}
+	recipeID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if err := h.store.DeleteCustomLevelingRecipe(ts, recipeID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

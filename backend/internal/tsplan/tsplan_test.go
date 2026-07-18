@@ -12,7 +12,7 @@ import (
 // stages.length without guarding against null (a crash that black-screened the
 // page when every recipe was filtered out).
 func TestPlan_EmptyStagesSerializeAsArray(t *testing.T) {
-	p := Solve(nil, baseParams(1, 100, Fastest))
+	p := BuildFromRecipes(nil, baseParams(1, 100))
 	b, err := json.Marshal(p)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -23,15 +23,13 @@ func TestPlan_EmptyStagesSerializeAsArray(t *testing.T) {
 }
 
 // baseParams returns realistic stat/difficulty inputs so SkillUpChanceAt yields
-// finite, positive combine estimates. Individual tests override the window,
-// objective, and knobs.
-func baseParams(start, target int, obj Objective) Params {
+// finite, positive combine estimates. Individual tests override the window.
+func baseParams(start, target int) Params {
 	return Params{
 		StartSkill:  start,
 		TargetSkill: target,
 		TradeStat:   100,
 		Difficulty:  3.0,
-		Objective:   obj,
 	}
 }
 
@@ -83,7 +81,7 @@ func assertMonotonic(t *testing.T, p Plan, wantStart int) {
 }
 
 func TestPlan_AlreadyAtOrAboveTarget(t *testing.T) {
-	p := Solve([]RecipeCandidate{vendorRecipe(1, 60, 1)}, baseParams(100, 50, Fastest))
+	p := BuildFromRecipes([]RecipeCandidate{vendorRecipe(1, 60, 1)}, baseParams(100, 50))
 	if len(p.Stages) != 0 {
 		t.Fatalf("expected no stages, got %d", len(p.Stages))
 	}
@@ -93,16 +91,27 @@ func TestPlan_AlreadyAtOrAboveTarget(t *testing.T) {
 }
 
 func TestPlan_NoUsableRecipe(t *testing.T) {
-	// All recipes trivial <= start: nothing can skill us up.
-	p := Solve([]RecipeCandidate{vendorRecipe(1, 30, 1)}, baseParams(50, 100, Fastest))
+	// The only recipe's trivial is already at/below start: it teaches nothing,
+	// so the plan can't leave the starting skill.
+	p := BuildFromRecipes([]RecipeCandidate{vendorRecipe(1, 30, 1)}, baseParams(50, 100))
 	if len(p.Stages) != 0 {
 		t.Fatalf("expected no stages, got %d", len(p.Stages))
 	}
-	if !strings.Contains(warningsJoined(p), "no usable recipe") {
-		t.Fatalf("expected no-usable-recipe warning, got %q", warningsJoined(p))
+	if !strings.Contains(warningsJoined(p), "only reaches skill 50") {
+		t.Fatalf("expected reach warning, got %q", warningsJoined(p))
 	}
 	if p.ReachedSkill != 50 {
 		t.Fatalf("ReachedSkill = %d, want 50", p.ReachedSkill)
+	}
+}
+
+func TestPlan_NoRecipesYet(t *testing.T) {
+	p := BuildFromRecipes([]RecipeCandidate{}, baseParams(10, 100))
+	if len(p.Stages) != 0 {
+		t.Fatalf("expected no stages, got %d", len(p.Stages))
+	}
+	if !strings.Contains(warningsJoined(p), "no recipes yet") {
+		t.Fatalf("expected empty-path warning, got %q", warningsJoined(p))
 	}
 }
 
@@ -111,7 +120,7 @@ func TestPlan_SimpleChain(t *testing.T) {
 		vendorRecipe(1, 30, 1),
 		vendorRecipe(2, 60, 1),
 	}
-	p := Solve(recipes, baseParams(10, 60, Fastest))
+	p := BuildFromRecipes(recipes, baseParams(10, 60))
 	if len(p.Stages) != 2 {
 		t.Fatalf("expected 2 stages, got %d: %+v", len(p.Stages), p.Stages)
 	}
@@ -132,9 +141,9 @@ func TestPlan_SimpleChain(t *testing.T) {
 
 func TestPlan_CapClamped(t *testing.T) {
 	recipes := []RecipeCandidate{vendorRecipe(1, 150, 1)}
-	pp := baseParams(20, 200, Fastest)
+	pp := baseParams(20, 200)
 	pp.ClassCap = 100
-	p := Solve(recipes, pp)
+	p := BuildFromRecipes(recipes, pp)
 	if !strings.Contains(warningsJoined(p), "exceeds the class/level cap") {
 		t.Fatalf("expected cap warning, got %q", warningsJoined(p))
 	}
@@ -149,117 +158,50 @@ func TestPlan_Unreachable(t *testing.T) {
 		vendorRecipe(1, 30, 1),
 		vendorRecipe(2, 50, 1),
 	}
-	p := Solve(recipes, baseParams(10, 100, Fastest))
+	p := BuildFromRecipes(recipes, baseParams(10, 100))
 	if p.ReachedSkill != 50 {
 		t.Fatalf("ReachedSkill = %d, want 50", p.ReachedSkill)
 	}
-	if !strings.Contains(warningsJoined(p), "only reach skill 50") {
+	if !strings.Contains(warningsJoined(p), "only reaches skill 50") {
 		t.Fatalf("expected reach warning, got %q", warningsJoined(p))
 	}
 	assertMonotonic(t, p, 10)
 }
 
-func TestPlan_NoFarmingExcludesUnknownCost(t *testing.T) {
+// TestPlan_CallerOrderNotResorted is the key behavior distinguishing
+// BuildFromRecipes from the old DP solver: it walks recipes in EXACTLY the
+// order given, never re-picking a "better" one. A curated Recommended path
+// depends on this — the guide's teaching order must survive untouched. Here,
+// a higher-trivial recipe listed FIRST greedily claims the whole span, even
+// though a lower-trivial recipe would have made a tighter two-stage plan.
+func TestPlan_CallerOrderNotResorted(t *testing.T) {
+	recipes := []RecipeCandidate{
+		vendorRecipe(2, 60, 1), // listed first, despite the higher trivial
+		vendorRecipe(1, 30, 1),
+	}
+	p := BuildFromRecipes(recipes, baseParams(10, 60))
+	if len(p.Stages) != 1 {
+		t.Fatalf("expected 1 stage (caller order claims the whole span), got %d: %+v", len(p.Stages), p.Stages)
+	}
+	if p.Stages[0].RecipeID != 2 || p.Stages[0].FromSkill != 10 || p.Stages[0].ToSkill != 60 {
+		t.Fatalf("expected recipe 2 covering 10->60, got %+v", p.Stages[0])
+	}
+}
+
+func TestPlan_FarmedCostMarksIncomplete(t *testing.T) {
 	farmed := RecipeCandidate{RecipeID: 2, Name: "farmed", Trivial: 40, VendorCostKnown: false}
-	recipes := []RecipeCandidate{vendorRecipe(1, 40, 5), farmed}
-
-	// AllowFarming=false: farmed recipe excluded; only the vendor recipe is used.
-	pp := baseParams(10, 40, Cheapest)
-	pp.AllowFarming = false
-	p := Solve(recipes, pp)
-	if len(p.Stages) != 1 || p.Stages[0].RecipeID != 1 {
-		t.Fatalf("no-farming plan should use only vendor recipe 1, got %+v", p.Stages)
-	}
-	if !p.CostComplete {
-		t.Fatalf("CostComplete = false, want true when no farmed stage used")
-	}
-
-	// AllowFarming=true + Cheapest: farmed is treated as 0 plat, so it wins.
-	pp.AllowFarming = true
-	p = Solve(recipes, pp)
-	if len(p.Stages) != 1 || p.Stages[0].RecipeID != 2 {
-		t.Fatalf("cheapest+farming should pick farmed recipe 2, got %+v", p.Stages)
-	}
-	if p.CostComplete {
-		t.Fatalf("CostComplete = true, want false when a farmed stage is used")
+	p := BuildFromRecipes([]RecipeCandidate{farmed}, baseParams(10, 40))
+	if len(p.Stages) != 1 {
+		t.Fatalf("expected 1 stage, got %d", len(p.Stages))
 	}
 	if p.Stages[0].CostKnown {
 		t.Fatalf("farmed stage CostKnown = true, want false")
 	}
-}
-
-func TestPlan_CheapestVsFastestPickDifferently(t *testing.T) {
-	// Two recipes span the same band; equal combines, very different plat.
-	// Fastest ties and keeps the first (index 0 = expensive). Cheapest picks the
-	// cheap one.
-	expensive := vendorRecipe(1, 40, 100)
-	cheap := vendorRecipe(2, 40, 1)
-	recipes := []RecipeCandidate{expensive, cheap}
-
-	fast := Solve(recipes, baseParams(10, 40, Fastest))
-	if len(fast.Stages) != 1 || fast.Stages[0].RecipeID != 1 {
-		t.Fatalf("fastest tie should keep first recipe (1), got %+v", fast.Stages)
+	if p.CostComplete {
+		t.Fatalf("CostComplete = true, want false when a farmed stage is used")
 	}
-
-	cheapPlan := Solve(recipes, baseParams(10, 40, Cheapest))
-	if len(cheapPlan.Stages) != 1 || cheapPlan.Stages[0].RecipeID != 2 {
-		t.Fatalf("cheapest should pick recipe 2, got %+v", cheapPlan.Stages)
-	}
-	if cheapPlan.TotalCost >= fast.Stages[0].Cost {
-		t.Fatalf("cheapest total cost %.2f should be below expensive stage cost %.2f",
-			cheapPlan.TotalCost, fast.Stages[0].Cost)
-	}
-}
-
-func TestPlan_SwitchPenaltyConsolidates(t *testing.T) {
-	// A narrow recipe and a wide recipe both available. With no penalty the
-	// planner is free to chain; with a huge penalty it must collapse to the
-	// single wide-recipe stage.
-	recipes := []RecipeCandidate{
-		vendorRecipe(1, 30, 1), // narrow
-		vendorRecipe(2, 60, 1), // wide, covers the whole span alone
-	}
-	pp := baseParams(10, 60, Fastest)
-	pp.SwitchPenalty = 1e6
-	p := Solve(recipes, pp)
-	if len(p.Stages) != 1 {
-		t.Fatalf("huge switch penalty should yield 1 stage, got %d: %+v", len(p.Stages), p.Stages)
-	}
-	if p.Stages[0].FromSkill != 10 || p.Stages[0].ToSkill != 60 {
-		t.Fatalf("single stage should cover 10->60, got %d->%d", p.Stages[0].FromSkill, p.Stages[0].ToSkill)
-	}
-}
-
-func TestPlan_TrivialCeilingBlocksFarStart(t *testing.T) {
-	// A single cheap high-trivial recipe would otherwise let cheapest grind
-	// 10->90 in one stage. A tight ceiling forbids starting it until skill is
-	// within the band, so with no bridging recipe the plan can't leave start.
-	wide := vendorRecipe(1, 90, 1)
-	pp := baseParams(10, 90, Cheapest)
-	pp.TrivialCeiling = 20 // may only start recipe 1 at skill >= 70
-	p := Solve([]RecipeCandidate{wide}, pp)
-	if len(p.Stages) != 0 {
-		t.Fatalf("ceiling should block the far-below start, got stages %+v", p.Stages)
-	}
-
-	// Add bridging recipes within the band and the plan chains up to the target.
-	recipes := []RecipeCandidate{
-		wide,
-		vendorRecipe(2, 30, 1),
-		vendorRecipe(3, 50, 1),
-		vendorRecipe(4, 70, 1),
-	}
-	p = Solve(recipes, pp)
-	assertMonotonic(t, p, 10)
-	if p.ReachedSkill != 90 {
-		t.Fatalf("with bridging recipes ReachedSkill = %d, want 90", p.ReachedSkill)
-	}
-	// Every stage must respect the band: trivial - fromSkill <= ceiling.
-	for i, s := range p.Stages {
-		if s.Trivial-s.FromSkill > pp.TrivialCeiling {
-			t.Errorf("stage %d starts %d below trivial %d, exceeds ceiling %d",
-				i, s.Trivial-s.FromSkill, s.Trivial, pp.TrivialCeiling)
-		}
+	if !strings.Contains(strings.Join(p.Stages[0].Notes, " | "), "farmed or dropped") {
+		t.Fatalf("expected farmed-cost note, got %v", p.Stages[0].Notes)
 	}
 }
 
@@ -267,13 +209,17 @@ func TestPlan_StageNotes(t *testing.T) {
 	r := vendorRecipe(1, 60, 1)
 	r.Container = "Forge"
 	r.SubCombineRecipeIDs = []int{99}
-	p := Solve([]RecipeCandidate{r}, baseParams(10, 60, Fastest))
+	r.Note = "bulk-buy water flasks"
+	p := BuildFromRecipes([]RecipeCandidate{r}, baseParams(10, 60))
 	if len(p.Stages) != 1 {
 		t.Fatalf("expected 1 stage, got %d", len(p.Stages))
 	}
 	notes := strings.Join(p.Stages[0].Notes, " | ")
 	if !strings.Contains(notes, "Forge") {
 		t.Fatalf("expected container note, got %q", notes)
+	}
+	if !strings.Contains(notes, "bulk-buy water flasks") {
+		t.Fatalf("expected curator note to surface, got %q", notes)
 	}
 	// Sub-combine ids ride on the stage as data (callers render their detail),
 	// not as a generic note.
@@ -290,8 +236,8 @@ func TestPlan_SuccessChancePct(t *testing.T) {
 		vendorRecipe(1, 30, 1),
 		vendorRecipe(2, 60, 1),
 	}
-	params := baseParams(10, 60, Fastest)
-	p := Solve(recipes, params)
+	params := baseParams(10, 60)
+	p := BuildFromRecipes(recipes, params)
 	if len(p.Stages) != 2 {
 		t.Fatalf("expected 2 stages, got %d", len(p.Stages))
 	}
