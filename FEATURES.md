@@ -1427,11 +1427,15 @@ hardening — no new features, but a broad sweep of reliability fixes.
 
 - **Tradeskill Leveling** — a new page that computes a staged plan to raise any
   tradeskill from your current skill to a target, choosing recipes by skill-up
-  band and total cost. Pick "fastest" (fewest combines) or "cheapest" (least
-  plat), with recursive sub-combine costing that accounts for intermediate
-  items you must craft and warns when a step crosses into another tradeskill.
-  Paths are derived entirely from the Quarm database (`internal/tsplan` DP
-  solver, `POST /characters/{id}/tradeskill-plan`)
+  band and total cost, with recursive sub-combine costing that accounts for
+  intermediate items you must craft and warns when a step crosses into another
+  tradeskill. As of v0.17.4, paths are a hand-curated Recommended path per
+  trade (derived from community guides, cross-verified recipe-by-recipe
+  against quarm.db and era-checked against real fishing/forage/loot-table
+  data) covering all 12 disciplines, plus a persistent, searchable
+  build-your-own Custom path — replacing the original DB-derived DP solver's
+  "fastest"/"cheapest" modes, which skewed toward recipes the database alone
+  could see and missed farmed materials tried-and-true guides account for
 - **Combine success calculator** — the Recipes page now shows per-recipe success
   and failure percentages from your skill and crafting-stat gear (ported from
   EQMacEmu), including the trivial breakpoint where combines can no longer fail

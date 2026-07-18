@@ -9,6 +9,27 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.17.5 — 2026-07-18
+
+Fixes another cause of log tailing silently freezing until restart.
+
+### Fixes
+- The log tailer now detects when the active eqlog file is deleted and recreated at the same path (e.g. clearing a corrupted log) and reopens it, instead of silently freezing on the old file until PQ Companion is restarted.
+
+## v0.17.4 — 2026-07-18
+
+Tradeskill leveling gets curated Recommended paths, and a batch of accuracy fixes lands for gear upgrades, NPC immunities, and log tailing.
+
+### Highlights
+- **Curated tradeskill paths** — the leveling planner's DB-derived solver is replaced with a hand-curated Recommended path per trade (cross-verified against quarm.db and real drop/fishing/forage tables), plus a persistent, searchable Custom path across all 12 disciplines.
+- **Trigger overlay Monitor shortcut** — the overlay text action now deep-links to Settings > Overlays' monitor picker.
+
+### Fixes
+- Gear Upgrade Finder now nets out the equipped offhand's stats when scoring a 2H weapon candidate, instead of scoring it as a pure upgrade.
+- Ranged-spell immunity ("belly caster") now shows up on overlay badges and the clipboard tag list, matching the NPC info tab.
+- Fixed a race where a kill notice's lockout write could stall the log tailer, intermittently freezing Roll Tracker and other live features until restart.
+- Archive & Trim now refuses to run while the log is still being actively written to, preventing corruption of the live tail.
+
 ## v0.17.3 — 2026-07-16
 
 Lockout Tracker auto-captures from kill notices, log backups get smaller, and the threat meter picks up a batch of combat-parsing accuracy fixes.
