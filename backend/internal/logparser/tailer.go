@@ -281,6 +281,22 @@ func (t *Tailer) readLines(logPath string) ([]LogEvent, []rawLine) {
 		return nil, nil
 	}
 
+	// Detect the file at this path having been deleted and recreated (not
+	// truncated in place) — e.g. a user following the "delete/rename a
+	// corrupted log" troubleshooting step that FILE_SHARE_DELETE (b558f40)
+	// deliberately allows to succeed without erroring. Our open handle keeps
+	// referencing the orphaned file forever otherwise: its Stat() freezes at
+	// whatever size it was when replaced, so the "no new data" branch below
+	// would silently never observe the replacement file's growth until the
+	// app restarts and openShared re-opens the path fresh.
+	if pathInfo, err := os.Stat(logPath); err == nil {
+		if handleInfo, ferr := t.file.Stat(); ferr == nil && !os.SameFile(pathInfo, handleInfo) {
+			slog.Info("logparser: log file replaced, reopening", "path", logPath)
+			t.closeFile()
+			return t.readLines(logPath)
+		}
+	}
+
 	// Re-stat to detect file truncation (shouldn't happen with EQ, but be safe).
 	info, err := t.file.Stat()
 	if err != nil {
