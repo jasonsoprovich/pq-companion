@@ -2,7 +2,8 @@ import React, { useEffect, useState, lazy, Suspense } from 'react'
 import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import OnboardingWizard from './components/OnboardingWizard'
-import { getConfig } from './services/api'
+import WhatsNewModal from './components/WhatsNewModal'
+import { getConfig, getChangelog, updateConfig, type ChangelogEntry } from './services/api'
 import { setAudioOwner } from './services/audio'
 import { loadEnums } from './lib/enumsCache'
 import { useAudioEngine } from './hooks/useAudioEngine'
@@ -132,6 +133,11 @@ function MainWindowLayout(): React.ReactElement {
   // or false (show wizard before mounting the main Layout).
   const [onboardingDone, setOnboardingDone] = useState<boolean | 'unknown'>('unknown')
 
+  // "What's new" popup: null until a version bump (with unseen changelog
+  // entries) is confirmed. appVersion is captured alongside the entries so
+  // the dismiss handler can stamp it without a second IPC round-trip.
+  const [whatsNew, setWhatsNew] = useState<{ entries: ChangelogEntry[]; appVersion: string } | null>(null)
+
   useEffect(() => {
     getConfig()
       .then((c) => {
@@ -142,6 +148,33 @@ function MainWindowLayout(): React.ReactElement {
         void window.electron?.window?.setMinimizeToTray(
           Boolean(c.preferences?.minimize_to_tray)
         )
+
+        if (c.changelog_popup_disabled) return
+        window.electron?.app?.getVersion?.()
+          .then((appVersion) => {
+            if (!appVersion) return
+            if (!c.last_seen_changelog_version) {
+              // Fresh install: stamp the current version silently — the
+              // wizard above already covers first-run orientation, so
+              // there's no "what's new" to show yet.
+              void updateConfig({ ...c, last_seen_changelog_version: appVersion })
+              return
+            }
+            if (c.last_seen_changelog_version === appVersion) return
+            getChangelog()
+              .then(({ entries }) => {
+                // CHANGELOG.md is newest-first; slice down to (but not
+                // including) the last-seen version. If that version isn't
+                // found (very old install, or a pruned changelog), fall
+                // back to just the newest entry rather than dumping the
+                // whole history.
+                const idx = entries.findIndex((e) => e.version === c.last_seen_changelog_version)
+                const since = idx === -1 ? entries.slice(0, 1) : entries.slice(0, idx)
+                if (since.length > 0) setWhatsNew({ entries: since, appVersion })
+              })
+              .catch(() => undefined)
+          })
+          .catch(() => undefined)
       })
       // If the backend is briefly unreachable on first launch, default to
       // showing the wizard rather than the main UI in an unconfigured state.
@@ -154,6 +187,21 @@ function MainWindowLayout(): React.ReactElement {
     return () => window.removeEventListener('pq:open-onboarding', handleReopen)
   }, [])
 
+  function dismissWhatsNew(disablePopup: boolean): void {
+    if (!whatsNew) return
+    const { appVersion } = whatsNew
+    setWhatsNew(null)
+    getConfig()
+      .then((c) =>
+        updateConfig({
+          ...c,
+          last_seen_changelog_version: appVersion,
+          changelog_popup_disabled: c.changelog_popup_disabled || disablePopup,
+        })
+      )
+      .catch(() => undefined)
+  }
+
   if (onboardingDone === 'unknown') return <></>
 
   return (
@@ -165,6 +213,9 @@ function MainWindowLayout(): React.ReactElement {
             onCancel={() => setOnboardingDone(true)}
             onComplete={() => setOnboardingDone(true)}
           />
+        )}
+        {onboardingDone === true && whatsNew && (
+          <WhatsNewModal entries={whatsNew.entries} onDismiss={dismissWhatsNew} />
         )}
         <Layout />
       </BackfillProvider>

@@ -353,4 +353,10 @@ export interface Config {
   // negative value (-1) keeps chat forever. 0 is coerced to the default
   // server-side.
   chat_retention_days: number
+  // App version the user last saw the "what's new" popup for. Empty means
+  // "never stamped" (fresh install) — the popup is skipped in that case.
+  last_seen_changelog_version: string
+  // True once the user checks "Don't show this again" on the popup, or
+  // flips the equivalent Settings > Changelog toggle.
+  changelog_popup_disabled: boolean
 }

@@ -7,7 +7,8 @@ import EqLogStatusCard from '../components/settings/EqLogStatusCard'
 import { TtsVoiceDefault, OverlayTextDefaults } from '../components/settings/AlertDefaultsSettings'
 import PiperTtsSettings from '../components/settings/PiperTtsSettings'
 import TimerAlertPrefEditor from '../components/settings/TimerAlertPrefEditor'
-import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, exportDebugLogs, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, getEqwStatus, type ServerInfo, type TestPortResult } from '../services/api'
+import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, exportDebugLogs, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, getEqwStatus, getChangelog, type ServerInfo, type TestPortResult, type ChangelogEntry } from '../services/api'
+import { renderChangelogBody } from '../components/WhatsNewModal'
 import type { Config, DPSClassColors, NPCOverlaySections, TimerAlertPref } from '../types/config'
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
 import { withTimerAlertDefaults } from '../lib/timerAlerts'
@@ -32,6 +33,10 @@ const ZEAL_RELEASE_URL = 'https://github.com/CoastalRedwood/Zeal/releases/latest
 const QUARM_PATCHER_RELEASE_URL = 'https://github.com/Pkelly668/QuarmPatcher/releases/latest'
 const EQW_RELEASE_URL = 'https://github.com/CoastalRedwood/eqw_takp/releases/latest'
 
+// Number of changelog versions shown by default on the Changelog tab before
+// the user clicks "Show all" — history runs into the dozens of releases.
+const CHANGELOG_PAGE_SIZE = 10
+
 // Community / project links surfaced on the About tab.
 const DISCORD_URL = 'https://discord.gg/Srj4FXcRaz'
 const KOFI_URL = 'https://ko-fi.com/jasonsoprovich'
@@ -53,7 +58,7 @@ import DeveloperTab from './DeveloperTab'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backups' | 'advanced' | 'about' | 'developer'
+type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backups' | 'advanced' | 'about' | 'changelog' | 'developer'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -69,7 +74,7 @@ const TAB_GROUPS: { label: string; ids: Tab[] }[] = [
   { label: 'General', ids: ['general', 'audio', 'accessibility'] },
   { label: 'Interface', ids: ['navigation', 'overlays', 'spelltimers', 'dpscolors'] },
   { label: 'System', ids: ['logs', 'backups', 'advanced'] },
-  { label: 'About', ids: ['about', 'developer'] },
+  { label: 'About', ids: ['about', 'changelog', 'developer'] },
 ]
 
 // TabBar renders the settings navigation as a vertical sidebar (a second nav
@@ -347,6 +352,20 @@ export default function SettingsPage(): React.ReactElement {
   const [updateState, setUpdateState] = useState<UpdateState>('idle')
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const [updateError, setUpdateError] = useState<string | null>(null)
+  // Changelog tab: fetched lazily on first visit rather than at page load,
+  // since most Settings visits never touch this tab. History runs into the
+  // dozens of versions, so only the most recent CHANGELOG_PAGE_SIZE render by
+  // default — "Show all" reveals the rest rather than dumping every release
+  // note into one enormous scroll.
+  const [changelogEntries, setChangelogEntries] = useState<ChangelogEntry[] | null>(null)
+  const [showAllChangelog, setShowAllChangelog] = useState(false)
+  useEffect(() => {
+    if (tab === 'changelog' && changelogEntries === null) {
+      getChangelog()
+        .then(({ entries }) => setChangelogEntries(entries))
+        .catch(() => setChangelogEntries([]))
+    }
+  }, [tab, changelogEntries])
 
   // Voice Rate preview: previews the live slider value (which may not be
   // saved yet) so the user can hear the speed before committing. Single
@@ -678,6 +697,7 @@ export default function SettingsPage(): React.ReactElement {
     { id: 'backups', label: 'EQ Config Backups', icon: <HardDrive size={13} /> },
     { id: 'advanced', label: 'Advanced', icon: <Wifi size={13} /> },
     { id: 'about', label: 'About', icon: <Info size={13} /> },
+    { id: 'changelog', label: 'Changelog', icon: <Sparkles size={13} /> },
     ...(developerMode
       ? [{ id: 'developer' as Tab, label: 'Developer', icon: <Code2 size={13} /> }]
       : []),
@@ -1077,6 +1097,98 @@ export default function SettingsPage(): React.ReactElement {
             <Heart size={12} style={{ color: '#FF5E5B' }} fill="#FF5E5B" />
             <span>by Osui &lt;Seekers of Souls&gt;</span>
           </div>
+        </section>
+        )}
+
+        {/* ── Changelog ──────────────────────────────────────────────────── */}
+        {tab === 'changelog' && (
+        <section
+          className="rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <h2
+            className="mb-1 text-sm font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            Changelog
+          </h2>
+          <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Release notes for every published version.
+          </p>
+
+          <label className="mb-4 flex cursor-pointer items-center justify-between border-b py-2" style={{ borderColor: 'var(--color-border)' }}>
+            <div>
+              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                Show &ldquo;What&rsquo;s New&rdquo; popup after updates
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                Pop up release notes on first launch after an update.
+              </p>
+            </div>
+            <div
+              onClick={() =>
+                setConfig({ ...config, changelog_popup_disabled: !config.changelog_popup_disabled })
+              }
+              style={{
+                width: 40,
+                height: 22,
+                borderRadius: 11,
+                backgroundColor: !config.changelog_popup_disabled
+                  ? 'var(--color-primary)'
+                  : 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+                position: 'relative',
+                flexShrink: 0,
+                transition: 'background-color 0.15s',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 2,
+                  left: !config.changelog_popup_disabled ? 20 : 2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  backgroundColor: '#fff',
+                  transition: 'left 0.15s',
+                }}
+              />
+            </div>
+          </label>
+
+          {changelogEntries === null && (
+            <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              Loading…
+            </p>
+          )}
+          {changelogEntries?.length === 0 && (
+            <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              No changelog data available.
+            </p>
+          )}
+          {(showAllChangelog ? changelogEntries : changelogEntries?.slice(0, CHANGELOG_PAGE_SIZE))?.map((entry) => (
+            <div key={entry.version} className="mb-4 border-b pb-4 last:mb-0 last:border-0" style={{ borderColor: 'var(--color-border)' }}>
+              <p className="mb-1 text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+                v{entry.version} <span style={{ color: 'var(--color-muted-foreground)', fontWeight: 400 }}>— {entry.date}</span>
+              </p>
+              {renderChangelogBody(entry.body)}
+            </div>
+          ))}
+          {!showAllChangelog && changelogEntries !== null && changelogEntries.length > CHANGELOG_PAGE_SIZE && (
+            <button
+              onClick={() => setShowAllChangelog(true)}
+              className="w-full rounded px-3 py-2 text-center text-sm font-medium"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+              }}
+            >
+              Show all {changelogEntries.length} versions
+            </button>
+          )}
         </section>
         )}
 

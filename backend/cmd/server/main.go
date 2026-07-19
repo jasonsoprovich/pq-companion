@@ -21,6 +21,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/applog"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backfill"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/changelog"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/chat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/chchain"
@@ -292,6 +293,16 @@ func main() {
 		} else {
 			slog.Info("keyring master list loaded", "count", len(keyringMaster))
 		}
+	}
+
+	// Changelog: parsed once at startup for the "what's new" popup and the
+	// Settings > Changelog tab. Non-fatal — a missing/unreadable file just
+	// means those surfaces show nothing.
+	changelogEntries, err := changelog.Load(defaultChangelogPath())
+	if err != nil {
+		slog.Warn("load changelog (feature disabled)", "err", err)
+	} else {
+		slog.Info("changelog loaded", "entries", len(changelogEntries))
 	}
 
 	// PoP flagging tracker: persists per-character planar-progression state.
@@ -1316,7 +1327,7 @@ func main() {
 		go traderCapturer.Start(context.Background())
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {
@@ -1381,4 +1392,19 @@ func defaultDBPath() string {
 	}
 	// Development fallback: run from backend/ directory.
 	return filepath.Join("data", "quarm.db")
+}
+
+// defaultChangelogPath returns the path to CHANGELOG.md relative to the
+// executable's directory (see the `bin/CHANGELOG.md` extraResources mapping
+// in electron-builder.yml), falling back to the repo-relative development
+// path (CHANGELOG.md lives at the repo root, one level up from backend/).
+func defaultChangelogPath() string {
+	exe, err := os.Executable()
+	if err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), "CHANGELOG.md")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return filepath.Join("..", "CHANGELOG.md")
 }

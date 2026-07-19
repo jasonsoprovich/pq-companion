@@ -56,6 +56,20 @@ type Config struct {
 	// setup wizard. When false (default), the wizard is shown on app launch.
 	OnboardingCompleted bool `yaml:"onboarding_completed" json:"onboarding_completed"`
 
+	// LastSeenChangelogVersion is the app version the user last saw the
+	// "what's new" popup for (or had it silently stamped on first launch).
+	// The frontend shows the popup when this differs from the running app
+	// version, listing every changelog entry newer than it. Empty means
+	// "never stamped" — treated as a fresh install, so no popup is shown;
+	// the frontend just stamps the current version instead.
+	LastSeenChangelogVersion string `yaml:"last_seen_changelog_version,omitempty" json:"last_seen_changelog_version"`
+
+	// ChangelogPopupDisabled mutes the post-update "what's new" popup when
+	// the user checks "Don't show this again" (or flips the equivalent
+	// Settings > Changelog toggle). Stored inverted so the zero value means
+	// "popup on", matching PVPWarningDisabled's rationale.
+	ChangelogPopupDisabled bool `yaml:"changelog_popup_disabled,omitempty" json:"changelog_popup_disabled"`
+
 	// ChatRetentionDays is how many days of Chat History to keep before the
 	// daily purge deletes older messages. Default 30. A negative value (e.g.
 	// -1) keeps chat forever. As with Combat.RetentionDays, the YAML decoder

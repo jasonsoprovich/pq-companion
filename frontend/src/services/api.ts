@@ -1477,6 +1477,18 @@ export function updateConfig(cfg: Config): Promise<Config> {
   return put<Config>('/api/config', cfg)
 }
 
+// ── Changelog ──────────────────────────────────────────────────────────────────
+
+export interface ChangelogEntry {
+  version: string // without the leading "v", e.g. "0.17.6"
+  date: string // YYYY-MM-DD
+  body: string // raw markdown between this version's header and the next
+}
+
+export function getChangelog(): Promise<{ entries: ChangelogEntry[] }> {
+  return get<{ entries: ChangelogEntry[] }>('/api/changelog')
+}
+
 export interface DiscoveredCharacter {
   name: string
   mod_time: number

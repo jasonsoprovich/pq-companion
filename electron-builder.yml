@@ -49,6 +49,10 @@ win:
     # EQ game database — required at runtime
     - from: backend/data/quarm.db
       to: bin/data/quarm.db
+    # Release notes — read by defaultChangelogPath() in cmd/server/main.go to
+    # power the "what's new" popup and Settings > Changelog tab.
+    - from: CHANGELOG.md
+      to: bin/CHANGELOG.md
     # Runtime icon — used by BrowserWindow.icon for the taskbar/title-bar
     - from: build/icon.png
       to: icon.png
