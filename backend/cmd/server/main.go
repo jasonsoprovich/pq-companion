@@ -645,6 +645,14 @@ func main() {
 		return cfgMgr.Get().CHChain
 	})
 
+	// CH-chain heal watcher: confirms a chain timer's Complete Healing
+	// actually landed so the overlay doesn't flag it a possible miss. See
+	// internal/chchain/heal_watcher.go for why it's scoped to exactly one
+	// spell's bystander message.
+	chChainHealWatcher := chchain.NewHealWatcher(timerEngine, func() config.CHChainSettings {
+		return cfgMgr.Get().CHChain
+	})
+
 	// Respawn (death) timer engine: starts a countdown when a mob is killed,
 	// using the spawn data's respawn time for the player's current zone.
 	respawnEngine := respawn.NewEngine(hub, database)
@@ -1168,6 +1176,7 @@ func main() {
 		triggerEngine.Handle(ts, msg)
 		wishlistWatcher.HandleLine(msg)
 		chChainMatcher.HandleLine(ts, msg)
+		chChainHealWatcher.HandleLine(msg)
 		rollTracker.HandleLine(ts, msg)
 		if keyringConsumer != nil {
 			keyringConsumer.HandleLine(ts, msg)

@@ -293,6 +293,11 @@ export interface CHChainSettings {
   secondary_pattern?: string
   // Per-cast countdown cadence in seconds (fractional allowed).
   interval_secs: number
+  // Heal-landed correlation: flags a chain bar red ("possible miss") when
+  // its target's Complete Healing "is completely healed." bystander line
+  // never appears before the 10s cast window elapses. Purely additive —
+  // never affects chain-call matching or timer creation.
+  possible_miss_enabled?: boolean
 }
 
 // DPSClassColors stores the user's per-class bar colour for the DPS meter

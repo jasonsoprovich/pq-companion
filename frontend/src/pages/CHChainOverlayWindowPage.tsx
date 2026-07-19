@@ -104,10 +104,15 @@ function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean })
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
       : 0
   const { position, text } = parseLabel(timer.spell_name)
+  const missed = timer.possible_miss ?? false
   // Each bar is the 10s CH cast counting down to the heal landing, so a
   // near-empty bar means "heal incoming" — a good thing. Highlight it green,
-  // not red (red is reserved for the header stall warning).
-  const landing = pct < 0.34
+  // not red (red is reserved for the header stall warning and possible_miss
+  // below). possible_miss (this callout's target was never confirmed healed
+  // before its window elapsed — see backend Engine.ConfirmHeal) overrides
+  // both: the row goes red regardless of how much of its grace window
+  // remains.
+  const landing = !missed && pct < 0.34
 
   return (
     <div
@@ -126,10 +131,10 @@ function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean })
           top: 0,
           bottom: 0,
           width: `${pct * 100}%`,
-          backgroundColor: landing ? '#22c55e' : '#3b82f6',
-          opacity: 0.5,
+          backgroundColor: missed ? '#ef4444' : landing ? '#22c55e' : '#3b82f6',
+          opacity: missed ? 0.55 : 0.5,
           pointerEvents: 'none',
-          transition: 'width 1s linear',
+          transition: 'width 1s linear, background-color 0.2s linear',
         }}
       />
       <div
@@ -148,7 +153,7 @@ function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean })
                 fontSize: 10,
                 fontWeight: 700,
                 color: '#fff',
-                backgroundColor: 'rgba(59,130,246,0.6)',
+                backgroundColor: missed ? 'rgba(239,68,68,0.7)' : 'rgba(59,130,246,0.6)',
                 borderRadius: 3,
                 padding: '0 4px',
                 flexShrink: 0,
@@ -166,7 +171,7 @@ function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean })
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-              fontWeight: landing ? 600 : 500,
+              fontWeight: landing || missed ? 600 : 500,
               textShadow: '0 1px 2px rgba(0,0,0,0.9)',
             }}
           >
@@ -176,14 +181,15 @@ function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean })
         <span
           style={{
             fontSize: 11,
-            color: landing ? '#86efac' : '#93c5fd',
+            color: missed ? '#fca5a5' : landing ? '#86efac' : '#93c5fd',
             fontVariantNumeric: 'tabular-nums',
             flexShrink: 0,
-            fontWeight: landing ? 700 : 600,
+            fontWeight: landing || missed ? 700 : 600,
             textShadow: '0 1px 2px rgba(0,0,0,0.9)',
           }}
+          title={missed ? "No confirming heal-landed line seen for this target in time — may have fizzled, been interrupted, or skipped" : undefined}
         >
-          {fmtRemaining(timer.remaining_seconds)}
+          {missed ? 'possible miss' : fmtRemaining(timer.remaining_seconds)}
         </span>
       </div>
     </div>

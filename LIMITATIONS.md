@@ -175,19 +175,38 @@ a future data source fix this?" column against the new capabilities.
 ### 2.4 CH-chain tracking relies on chat callouts, not actual casts
 
 - **Limitation:** The CH Chain overlay and CH Metronome cannot see other
-  clerics' Complete Heal casts or the heals landing on the tank. They are
-  driven entirely by the chain *callout* lines clerics post to raid chat. If a
-  guild doesn't call its chain in chat (e.g. uses a silent `/pause`-timed
-  macro), there is nothing to track.
+  clerics' Complete Heal *casts* — chain position and timing are driven
+  entirely by the chain *callout* lines clerics post to raid chat. If a guild
+  doesn't call its chain in chat (e.g. uses a silent `/pause`-timed macro),
+  there is nothing to track.
 - **Root cause:** Other players' spell casts log only as the generic
-  "Soandso begins to cast a spell." with no spell name, and heals on a third
-  party (the tank) aren't in your log at all. Only the chat callout carries the
-  caster + position + target.
-- **Sources checked:** Log (own casts named; others' casts nameless; no
-  third-party heal lines), Zeal (own client data only).
-- **Could a future data source fix this?** **No.** Even ZealPipes exposes only
-  the local client's state. Chat callouts are the only viable signal, so the
-  feature is built on the user-configurable callout regex.
+  "Soandso begins to cast a spell." with no spell name. Only the chat callout
+  carries the caster + position + target.
+- **Partial exception (added after this was first written):** heals landing
+  on a third party are *not* universally invisible as this section previously
+  claimed. `spells_new.cast_on_other` for Complete Healing (spell id 13, the
+  actual player-castable Cleric CH spell — the other DB rows sharing its
+  "&lt;Target&gt; is completely healed." text are uncastable NPC/placeholder
+  entries) is a standard EQ bystander message, visible to anyone nearby
+  regardless of who cast it. The CH Chain overlay's "possible miss" flag
+  (`internal/chchain/heal_watcher.go`) uses this: it confirms a chain
+  callout's target actually got healed and flags the bar red if that
+  confirmation never arrives before the cast window elapses. This does NOT
+  identify *which* cleric's heal landed — bystander text carries no caster
+  identity — only whether the target was healed at all, so it can't attribute
+  a miss to a specific person, and it's deliberately scoped to just this one
+  spell: broader heal text like Superior Healing's "feels much better." is
+  shared by a dozen+ unrelated spells and would false-confirm a chain slot
+  from an off-chain healer's unrelated cast.
+- **Sources checked:** Log (own casts named; others' casts nameless; Complete
+  Healing's third-party land line IS present and usable, verified directly
+  against `quarm.db`), Zeal (own client data only).
+- **Could a future data source fix this?** Chain *position/timing* still has
+  no better source than the chat callout — Zeal exposes only the local
+  client's state, so that part of the limitation stands. Per-caster miss
+  attribution also has no fix: bystander land lines never carry caster
+  identity, so "possible miss" can only ever confirm coverage of the target,
+  not the specific cleric.
 
 ---
 

@@ -277,6 +277,118 @@ func TestStartExternal_CopiesDisplayThreshold(t *testing.T) {
 // down the list as unrelated (unpinned) timers count lower. Within each
 // group (pinned, then unpinned) the normal ascending-remaining-time order
 // still applies.
+// TestConfirmHeal_ClearsOldestUnconfirmedTimerForTarget checks the FIFO
+// correlation: when two CH-chain timers are open for the same target,
+// ConfirmHeal closes out the OLDER one first, matching the assumption that
+// heals land in the order they were cast (Complete Healing's cast time is
+// fixed and uniform across casters).
+func TestConfirmHeal_ClearsOldestUnconfirmedTimerForTarget(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	e.StartExternal("#1  Tank  <- Alice", "ch_chain", 10, 0, now, nil, 0, "Tank", "", false, "")
+	e.StartExternal("#2  Tank  <- Bob", "ch_chain", 10, 0, now.Add(3*time.Second), nil, 0, "Tank", "", false, "")
+
+	e.ConfirmHeal("Tank")
+
+	older := e.timers[timerKey("#1  Tank  <- Alice", "Tank")]
+	newer := e.timers[timerKey("#2  Tank  <- Bob", "Tank")]
+	if older == nil || newer == nil {
+		t.Fatalf("expected both timers to still exist, got older=%v newer=%v", older, newer)
+	}
+	if !older.healConfirmed {
+		t.Error("older (Alice's) timer should be confirmed first")
+	}
+	if newer.healConfirmed {
+		t.Error("newer (Bob's) timer should still be unconfirmed")
+	}
+
+	// A second ConfirmHeal for the same target now closes out the newer one.
+	e.ConfirmHeal("Tank")
+	if !newer.healConfirmed {
+		t.Error("second ConfirmHeal should confirm the remaining open timer")
+	}
+}
+
+// TestConfirmHeal_IgnoresOtherTargetsAndCategories guards the cross-chain
+// isolation the target-name key is meant to provide: a heal landing on a
+// DIFFERENT target (e.g. a secondary/ramp chain's own tank, or an off-chain
+// patch heal on some other raid member) must never confirm this target's
+// timer, and non-CH-chain categories are untouched.
+func TestConfirmHeal_IgnoresOtherTargetsAndCategories(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	e.StartExternal("#1  MainTank  <- Alice", "ch_chain", 10, 0, now, nil, 0, "MainTank", "", false, "")
+	e.StartExternal("Some Buff", "buff", 10, 0, now, nil, 0, "MainTank", "", false, "")
+
+	e.ConfirmHeal("SecondaryTank") // no timer for this target at all
+	e.ConfirmHeal("")              // empty target must be a no-op
+
+	chTimer := e.timers[timerKey("#1  MainTank  <- Alice", "MainTank")]
+	buffTimer := e.timers[timerKey("Some Buff", "MainTank")]
+	if chTimer.healConfirmed {
+		t.Error("ch_chain timer for MainTank should not be confirmed by an unrelated target")
+	}
+	if buffTimer.healConfirmed {
+		t.Error("non-CH-chain category timer must never be touched by ConfirmHeal")
+	}
+}
+
+// TestPruneExpired_FlagsUnconfirmedCHChainTimerAsPossibleMiss is the core of
+// the possible-miss feature: an expired CH-chain timer that was never
+// confirmed via ConfirmHeal gets PossibleMiss set and a short grace
+// extension instead of being silently dropped, so the overlay has time to
+// render it red. A confirmed timer is dropped normally with no flag.
+func TestPruneExpired_FlagsUnconfirmedCHChainTimerAsPossibleMiss(t *testing.T) {
+	e := newTestEngine()
+	// Both just barely past their 10s expiry — mirrors the real 1s prune
+	// ticker, which never lets a timer sit expired-but-unpruned for long.
+	// Bob started 100ms after Alice, so both are expired but Alice is older.
+	alice := time.Now().Add(-10*time.Second - 200*time.Millisecond)
+	bob := alice.Add(100 * time.Millisecond)
+	e.StartExternal("#1  Tank  <- Alice", "ch_chain", 10, 0, alice, nil, 0, "Tank", "", false, "")
+	e.StartExternal("#2  Tank  <- Bob", "ch_chain", 10, 0, bob, nil, 0, "Tank", "", false, "")
+	e.ConfirmHeal("Tank") // confirms Alice's (the older) timer only
+
+	e.pruneExpired()
+
+	missed := e.timers[timerKey("#2  Tank  <- Bob", "Tank")]
+	if missed == nil {
+		t.Fatal("unconfirmed timer should still exist during its grace window, not be dropped")
+	}
+	if !missed.PossibleMiss {
+		t.Error("unconfirmed CH-chain timer should be flagged PossibleMiss")
+	}
+	if !missed.ExpiresAt.After(time.Now()) {
+		t.Error("PossibleMiss timer should get a grace extension past its original expiry")
+	}
+
+	if confirmed := e.timers[timerKey("#1  Tank  <- Alice", "Tank")]; confirmed != nil {
+		t.Errorf("confirmed timer should be dropped on the same prune pass, still present: %+v", confirmed)
+	}
+
+	// A second prune pass, once the grace window has also elapsed, drops it.
+	missed.ExpiresAt = time.Now().Add(-1 * time.Second)
+	e.pruneExpired()
+	if e.timers[timerKey("#2  Tank  <- Bob", "Tank")] != nil {
+		t.Error("PossibleMiss timer should be dropped once its grace window elapses too")
+	}
+}
+
+// TestPruneExpired_NonCHChainCategoriesNeverFlagged guards the scope of the
+// feature: ordinary buff/debuff timers must never get a PossibleMiss flag or
+// grace extension, confirmed timers unaffected.
+func TestPruneExpired_NonCHChainCategoriesNeverFlagged(t *testing.T) {
+	e := newTestEngine()
+	past := time.Now().Add(-1 * time.Hour)
+	e.StartExternal("Mesmerization", "debuff", 10, 0, past, nil, 0, "Bob", "", false, "")
+
+	e.pruneExpired()
+
+	if e.timers[timerKey("Mesmerization", "Bob")] != nil {
+		t.Error("an expired non-CH-chain timer should be dropped immediately, not flagged/extended")
+	}
+}
+
 func TestSnapshot_PinnedTimersSortFirst(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()

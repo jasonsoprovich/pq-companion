@@ -2744,6 +2744,33 @@ export default function SettingsPage(): React.ReactElement {
               </span>
             </label>
 
+            <label className="mb-3 flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.ch_chain?.possible_miss_enabled ?? true}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    ch_chain: { ...config.ch_chain, possible_miss_enabled: e.target.checked },
+                  })
+                }
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  Flag possible misses
+                </span>
+                <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Colors a chain bar red when that callout's target never actually gets healed in
+                  time — a likely fizzle, interrupt (e.g. a Luclin fling), or skipped cast.
+                  Detected from the "is completely healed" line anyone nearby sees when Complete
+                  Healing lands, regardless of who cast it — so a chain slot can only be confirmed
+                  covered, not attributed to a specific cleric. Purely additive; turn off if it
+                  ever reads as noisy.
+                </span>
+              </span>
+            </label>
+
             <label className="mb-3 flex flex-col gap-1">
               <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Chain-call pattern (regex)</span>
               <input

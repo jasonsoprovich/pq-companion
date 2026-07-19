@@ -149,7 +149,12 @@ func (m *Matcher) matchAndStart(ts time.Time, msg, pattern string, cache *cached
 	// heal lands (a callout fires at cast-start). The live spacing between
 	// casts is measured in the overlay from successive callout timestamps, so
 	// the bar length is the fixed cast duration rather than the cadence.
-	m.sink.StartExternal(label, category, config.CHCastSecs, 0, ts, nil, 0, "", "", false, "")
+	//
+	// target is passed through as the timer's TargetName (previously left
+	// empty — the overlay only ever parsed the target back out of the label
+	// text) so HealWatcher can correlate a landed-heal line to the right
+	// timer via Engine.ConfirmHeal.
+	m.sink.StartExternal(label, category, config.CHCastSecs, 0, ts, nil, 0, target, "", false, "")
 	return true
 }
 

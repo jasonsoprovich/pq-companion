@@ -107,17 +107,21 @@ function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean })
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
       : 0
   const { position, text } = parseLabel(timer.spell_name)
+  const missed = timer.possible_miss ?? false
   // The bar is the 10s CH cast counting down to the heal landing, so a
   // near-empty bar means "heal incoming" — highlight green, not red.
-  const landing = pct < 0.34
+  // possible_miss (this callout's target was never confirmed healed before
+  // its window elapsed — see backend Engine.ConfirmHeal) overrides both:
+  // the row goes red regardless of how much of its grace window remains.
+  const landing = !missed && pct < 0.34
 
   return (
     <div style={{ position: 'relative', padding: '3px 10px', borderBottom: '1px solid var(--color-border)', overflow: 'hidden', flexShrink: 0 }}>
       <div
         style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
-          width: `${pct * 100}%`, backgroundColor: landing ? '#22c55e' : '#3b82f6',
-          opacity: 0.18, pointerEvents: 'none', transition: 'width 1s linear',
+          width: `${pct * 100}%`, backgroundColor: missed ? '#ef4444' : landing ? '#22c55e' : '#3b82f6',
+          opacity: missed ? 0.3 : 0.18, pointerEvents: 'none', transition: 'width 1s linear, background-color 0.2s linear',
         }}
       />
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -126,19 +130,22 @@ function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean })
             <span
               style={{
                 fontSize: 10, fontWeight: 700, color: '#fff',
-                backgroundColor: 'rgba(59,130,246,0.6)', borderRadius: 3,
+                backgroundColor: missed ? 'rgba(239,68,68,0.7)' : 'rgba(59,130,246,0.6)', borderRadius: 3,
                 padding: '0 4px', flexShrink: 0, fontVariantNumeric: 'tabular-nums',
               }}
             >
               {letters ? positionLetter(position) : position}
             </span>
           )}
-          <span style={{ fontSize: 12, color: 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: landing ? 600 : 400 }}>
+          <span style={{ fontSize: 12, color: 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: landing || missed ? 600 : 400 }}>
             {text}
           </span>
         </div>
-        <span style={{ fontSize: 11, color: landing ? '#22c55e' : '#60a5fa', fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: landing ? 700 : 500 }}>
-          {fmtRemaining(timer.remaining_seconds)}
+        <span
+          style={{ fontSize: 11, color: missed ? '#f87171' : landing ? '#22c55e' : '#60a5fa', fontVariantNumeric: 'tabular-nums', flexShrink: 0, fontWeight: landing || missed ? 700 : 500 }}
+          title={missed ? "No confirming heal-landed line seen for this target in time — may have fizzled, been interrupted, or skipped" : undefined}
+        >
+          {missed ? 'possible miss' : fmtRemaining(timer.remaining_seconds)}
         </span>
       </div>
     </div>

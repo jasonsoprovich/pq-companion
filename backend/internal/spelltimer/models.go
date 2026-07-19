@@ -125,6 +125,23 @@ type ActiveTimer struct {
 	// via their charm-break worn-off message (or expiry). Internal-only; the
 	// frontend doesn't need it.
 	IsCharm bool `json:"-"`
+
+	// PossibleMiss flags a CategoryCHChain / CategoryCHChain2 timer whose
+	// target was never confirmed healed (see Engine.ConfirmHeal) before its
+	// cast window elapsed — a likely fizzle, interrupt, or skipped cast. Set
+	// once by pruneExpired right before the timer would otherwise be
+	// dropped, with a short grace extension so the CH Chain overlay has time
+	// to render it red. Always false for every other category.
+	PossibleMiss bool `json:"possible_miss,omitempty"`
+
+	// healConfirmed marks a CH-chain timer whose target was observed to
+	// actually receive the landed heal before expiry (Engine.ConfirmHeal),
+	// so pruneExpired won't flag it PossibleMiss. Internal-only.
+	healConfirmed bool `json:"-"`
+
+	// missGraceExtended guards the possible-miss expiry extension in
+	// pruneExpired so it's only ever applied once per timer. Internal-only.
+	missGraceExtended bool `json:"-"`
 }
 
 // TimerState is the full payload broadcast via WebSocket and returned by the

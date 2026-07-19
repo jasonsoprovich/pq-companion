@@ -1765,10 +1765,28 @@ func (e *Engine) clearAll() {
 // would accumulate in the overlay forever.
 const keepExpiredMaxOverdue = 60 * time.Minute
 
+// isCHChainCategory reports whether c is one of the two CH-chain categories
+// (main or secondary/ramp) — the only categories eligible for possible-miss
+// flagging.
+func isCHChainCategory(c Category) bool {
+	return c == CategoryCHChain || c == CategoryCHChain2
+}
+
+// chChainMissGrace is how much longer a CH-chain timer lingers, once flagged
+// PossibleMiss, so the overlay has time to actually show the red state
+// before the row disappears.
+const chChainMissGrace = 4 * time.Second
+
 // pruneExpired removes timers whose expiry time has passed. With the
 // keep-expired option on, a past-expiry timer is instead left in place so
 // snapshot() can surface it as an overdue count-up — until it has been overdue
 // longer than keepExpiredMaxOverdue, at which point it's dropped regardless.
+//
+// CH-chain timers get one extra step first: an unconfirmed one (no matching
+// ConfirmHeal call — see chchain.HealWatcher) is flagged PossibleMiss and
+// given a short grace extension instead of being dropped immediately, so a
+// fizzled/interrupted/skipped cast is visible on the overlay rather than
+// just quietly vanishing.
 func (e *Engine) pruneExpired() {
 	now := time.Now()
 	keep := e.keepExpired()
@@ -1777,12 +1795,44 @@ func (e *Engine) pruneExpired() {
 		if !now.After(t.ExpiresAt) {
 			continue
 		}
+		if isCHChainCategory(t.Category) && !t.healConfirmed && !t.missGraceExtended {
+			t.PossibleMiss = true
+			t.missGraceExtended = true
+			t.ExpiresAt = t.ExpiresAt.Add(chChainMissGrace)
+			continue
+		}
 		if keep && now.Sub(t.ExpiresAt) <= keepExpiredMaxOverdue {
 			continue
 		}
 		delete(e.timers, name)
 	}
 	e.mu.Unlock()
+}
+
+// ConfirmHeal marks the oldest still-open, unconfirmed CH-chain timer whose
+// target is targetName as having actually landed, so pruneExpired won't flag
+// it a possible miss. Bystander "<Target> is completely healed." lines never
+// carry caster identity, so oldest-first per target is the correlation: heals
+// land in the same order they were cast, since Complete Healing's cast time
+// is fixed and uniform across casters. Called by chchain.HealWatcher.
+func (e *Engine) ConfirmHeal(targetName string) {
+	if targetName == "" {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var oldest *ActiveTimer
+	for _, t := range e.timers {
+		if !isCHChainCategory(t.Category) || t.TargetName != targetName || t.healConfirmed {
+			continue
+		}
+		if oldest == nil || t.StartsAt.Before(oldest.StartsAt) {
+			oldest = t
+		}
+	}
+	if oldest != nil {
+		oldest.healConfirmed = true
+	}
 }
 
 func (e *Engine) broadcast() {

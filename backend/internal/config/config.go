@@ -696,6 +696,20 @@ type CHChainSettings struct {
 	// against to flag a stalled chain. Fractional values (e.g. 4.5) are
 	// allowed. 0 means "use DefaultCHChainIntervalSecs".
 	IntervalSecs float64 `yaml:"interval_secs" json:"interval_secs"`
+
+	// PossibleMissEnabled turns on heal-landed correlation: each chain
+	// callout's captured target is watched for a subsequent Complete Healing
+	// "is completely healed." bystander line (see internal/chchain's
+	// HealWatcher). If that line never appears before the callout's 10s cast
+	// window elapses, the timer is flagged a possible miss so the CH Chain
+	// overlay can show it in red. Purely additive — never alters chain-call
+	// matching or timer creation, so it can be turned off independently of
+	// the chain tracking itself if it proves noisy.
+	PossibleMissEnabled bool `yaml:"possible_miss_enabled" json:"possible_miss_enabled"`
+
+	// PossibleMissMigrated is a one-time migration marker (see applyDefaults)
+	// — not surfaced in the UI.
+	PossibleMissMigrated bool `yaml:"possible_miss_migrated" json:"-"`
 }
 
 // CHCastSecs is Complete Heal's cast time in seconds. Each ch_chain countdown
@@ -792,10 +806,12 @@ const DefaultCHChainIntervalSecs = 6
 // DefaultCHChainSettings returns the on-by-default settings for fresh installs.
 func DefaultCHChainSettings() CHChainSettings {
 	return CHChainSettings{
-		Enabled:          true,
-		Pattern:          DefaultCHChainPattern,
-		SecondaryPattern: DefaultCHChainSecondaryPattern,
-		IntervalSecs:     DefaultCHChainIntervalSecs,
+		Enabled:              true,
+		Pattern:              DefaultCHChainPattern,
+		SecondaryPattern:     DefaultCHChainSecondaryPattern,
+		IntervalSecs:         DefaultCHChainIntervalSecs,
+		PossibleMissEnabled:  true,
+		PossibleMissMigrated: true,
 	}
 }
 
@@ -1023,6 +1039,17 @@ func applyDefaults(cfg *Config) bool {
 	}
 	if cfg.CHChain.IntervalSecs <= 0 {
 		cfg.CHChain.IntervalSecs = DefaultCHChainIntervalSecs
+		changed = true
+	}
+	// Possible-miss detection shipped after CH-chain itself, so every
+	// existing config predates it. Unlike Enabled/SecondaryEnabled above,
+	// this is purely additive (never changes chain matching or timer
+	// creation) so it's turned on once for upgrading users too, matching the
+	// fresh-install default. A later opt-out in Settings sticks because the
+	// marker keeps this from running again.
+	if !cfg.CHChain.PossibleMissMigrated {
+		cfg.CHChain.PossibleMissEnabled = true
+		cfg.CHChain.PossibleMissMigrated = true
 		changed = true
 	}
 	// NPC overlay sections: configs that predate this preference deserialize

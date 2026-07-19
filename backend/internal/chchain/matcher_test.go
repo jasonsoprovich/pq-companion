@@ -12,12 +12,13 @@ type capture struct {
 	name     string
 	category string
 	dur      float64
+	target   string
 }
 
 type fakeSink struct{ calls []capture }
 
-func (f *fakeSink) StartExternal(name, category string, dur, _ float64, _ time.Time, _ json.RawMessage, _ int, _, _ string, _ bool, _ string) {
-	f.calls = append(f.calls, capture{name, category, dur})
+func (f *fakeSink) StartExternal(name, category string, dur, _ float64, _ time.Time, _ json.RawMessage, _ int, targetName, _ string, _ bool, _ string) {
+	f.calls = append(f.calls, capture{name, category, dur, targetName})
 }
 
 func newMatcher(s Sink, enabled bool, pattern string, interval float64) *Matcher {
@@ -59,6 +60,12 @@ func TestMatcher_DefaultPattern(t *testing.T) {
 	// Label carries chain position, target, and caster for the overlay.
 	if want := "#1  Winian  ← Soandso"; c.name != want {
 		t.Errorf("label = %q, want %q", c.name, want)
+	}
+	// The captured target is also passed through as the timer's TargetName
+	// (not just embedded in the label) so HealWatcher can correlate a landed
+	// heal to this exact timer via Engine.ConfirmHeal.
+	if c.target != "Winian" {
+		t.Errorf("target = %q, want %q", c.target, "Winian")
 	}
 }
 
