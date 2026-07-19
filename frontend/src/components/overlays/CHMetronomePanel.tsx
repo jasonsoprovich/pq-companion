@@ -19,6 +19,10 @@ import {
   CH_CAST,
   type ChainView,
   computeAnchorMs,
+  loadSeen,
+  mergeSeen,
+  saveSeen,
+  seenStorageKey,
   watchPosition,
 } from '../../lib/chMetronome'
 import OverlayWindow from '../OverlayWindow'
@@ -161,8 +165,14 @@ export default function CHMetronomePanel({
   const timersRef = useRef<ActiveTimer[]>([])
   // seenRef accumulates the distinct chain-call numbers observed for the active
   // chain so coded sequences (111/222/333) can be ranked into slots even though
-  // the live feed never holds them all at once. Cleared on chain switch.
-  const seenRef = useRef<Map<number, number>>(new Map())
+  // the live feed never holds them all at once. Hydrated from localStorage (not
+  // a fresh Map) and persisted on every update so this panel and the popped-out
+  // overlay window — two views of one metronome — share the same learning
+  // progress instead of each relearning from scratch on its own mount/reload.
+  const seenRef = useRef<Map<number, number>>(loadSeen(activeChain))
+  // Guards the chain-switch effect below from clearing the just-hydrated seen
+  // map on initial mount; only an actual chain change should reset it.
+  const mountedRef = useRef(false)
   const [, setTick] = useState(0)
 
   // recomputeAnchor re-derives the local anchor from the watched cleric's most
@@ -172,6 +182,7 @@ export default function CHMetronomePanel({
   const activeRef = useRef(false)
   const recomputeAnchor = useCallback((timers: ActiveTimer[]) => {
     const anchor = computeAnchorMs(timers, cfgRef.current, chainRef.current, seenRef.current, Date.now())
+    saveSeen(chainRef.current, seenRef.current)
     if (anchor != null) {
       anchorRef.current = anchor
       // Force a render so a new anchor re-activates the (possibly idle) tick.
@@ -190,13 +201,32 @@ export default function CHMetronomePanel({
   useEffect(() => {
     chainRef.current = activeChain
     localStorage.setItem(CHAIN_STORAGE_KEY, chain)
-    // Switching chains drops the old chain's anchor and learned slots — a
-    // countdown keyed to the other chain's cadence/numbering would flash CAST
-    // NOW at the wrong moment.
-    anchorRef.current = null
-    seenRef.current.clear()
+    if (mountedRef.current) {
+      // Switching chains drops the old chain's anchor and learned slots — a
+      // countdown keyed to the other chain's cadence/numbering would flash
+      // CAST NOW at the wrong moment. On mount seenRef is already hydrated
+      // for activeChain above, so this only fires on a real switch.
+      anchorRef.current = null
+      seenRef.current = loadSeen(activeChain)
+    }
+    mountedRef.current = true
     recomputeAnchor(timersRef.current)
   }, [chain, activeChain, recomputeAnchor])
+
+  // Pick up learning progress from the sibling renderer (popout overlay vs
+  // in-app panel) as it happens, not just at mount — localStorage 'storage'
+  // events fire on other windows only. Merges (keeps the newer timestamp per
+  // number) so a slightly stale write from one window can't erase progress
+  // the other already made.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent): void => {
+      if (e.key !== seenStorageKey(chainRef.current)) return
+      mergeSeen(seenRef.current, loadSeen(chainRef.current))
+      recomputeAnchor(timersRef.current)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [recomputeAnchor])
 
   useEffect(() => {
     getTimerState()

@@ -118,3 +118,54 @@ export function computeAnchorMs(
   if (!best) return null
   return nowMs - (CH_CAST - best.remaining_seconds) * 1000
 }
+
+// seenStorageKey namespaces the persisted learned-number map per chain view
+// (main/ramp) so switching chains never mixes their numbering. Exported so
+// callers can recognize this key in a 'storage' event.
+export function seenStorageKey(chain: ChainView): string {
+  return `chMetronome:seen:${chain}`
+}
+
+// loadSeen restores the learned chain-call-number map from localStorage. The
+// dashboard panel and the popped-out overlay are two views of the same
+// metronome, not two independent learners — without this, whichever one
+// happens to (re)mount most recently starts the ordinal ranking from scratch
+// and can spend a full chain cycle mapping coded (111/222/333-style) calls to
+// the wrong slot before it catches up, even though the other view already
+// learned the mapping correctly.
+export function loadSeen(chain: ChainView): Map<number, number> {
+  try {
+    const raw = localStorage.getItem(seenStorageKey(chain))
+    if (!raw) return new Map()
+    const obj = JSON.parse(raw) as Record<string, number>
+    const out = new Map<number, number>()
+    for (const [k, v] of Object.entries(obj)) {
+      const num = parseInt(k, 10)
+      if (Number.isFinite(num) && Number.isFinite(v)) out.set(num, v)
+    }
+    return out
+  } catch {
+    return new Map()
+  }
+}
+
+// saveSeen persists the learned map so a reload of either view picks up
+// where learning left off, and so the native 'storage' event fires on the
+// other same-origin window for live sync while both are open.
+export function saveSeen(chain: ChainView, seen: Map<number, number>): void {
+  try {
+    localStorage.setItem(seenStorageKey(chain), JSON.stringify(Object.fromEntries(seen)))
+  } catch {
+    /* noop */
+  }
+}
+
+// mergeSeen folds a persisted snapshot into a live map, keeping the newer
+// last-seen timestamp per number so a lagging write from one window can never
+// regress state the other window already learned more recently.
+export function mergeSeen(into: Map<number, number>, from: Map<number, number>): void {
+  for (const [num, ts] of from) {
+    const cur = into.get(num)
+    if (cur === undefined || ts > cur) into.set(num, ts)
+  }
+}
