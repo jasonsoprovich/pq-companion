@@ -225,6 +225,29 @@ func TestGetNPCVariantsByNameInZone_NoZoneReturnsAllNoSpawns(t *testing.T) {
 	}
 }
 
+// Rhag'Mozdezh has a real encounter row (#Rhag`Mozdezh, race=undead, 200k HP)
+// alongside a same-named race=127 "Invisible Man" decoy row (Rhag`Mozdezh_,
+// untargetable bodytype) that carries raid_target=1. Reported 2026-07-18: the
+// overlay headlined the decoy instead of the real boss because
+// sortVariantsByStrength's raid_target tiebreak doesn't know to exclude
+// placeholder rows. GetNPCVariantsByNameInZone must filter race=127 the same
+// way SearchNPCs' nonPlayerNPCClause does, so the decoy never reaches the
+// sort in the first place.
+func TestGetNPCVariantsByNameInZone_ExcludesInvisibleManDecoy(t *testing.T) {
+	d := openTestDB(t)
+	for _, name := range []string{"#Rhag`Mozdezh", "Rhag`Mozdezh_"} {
+		variants, err := d.GetNPCVariantsByNameInZone(name, "")
+		if err != nil {
+			t.Fatalf("GetNPCVariantsByNameInZone(%q): %v", name, err)
+		}
+		for _, v := range variants {
+			if v.NPC.Race == 127 {
+				t.Errorf("GetNPCVariantsByNameInZone(%q) returned race=127 (Invisible Man) decoy row id=%d", name, v.NPC.ID)
+			}
+		}
+	}
+}
+
 // Empty result is not an error — the caller treats it like "no DB record",
 // the same as GetNPCByName returning sql.ErrNoRows today.
 func TestGetNPCVariantsByNameInZone_NoMatch(t *testing.T) {

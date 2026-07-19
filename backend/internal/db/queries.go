@@ -728,6 +728,16 @@ func (db *DB) GetItemIDByName(name string) (int, bool) {
 // overlay uses this to disambiguate against the player's zone and position
 // (see backend/internal/overlay/npc.go).
 //
+// Excludes race 127 (Invisible Man) rows, same as nonPlayerNPCClause below.
+// Several raid bosses (e.g. Rhag'Mozdezh, Rhag'Zhezum, Arch Lich Rhag'Zadune)
+// have a same-named decoy row with race=127 and bodytype in the untargetable
+// range alongside the real encounter row; without this filter the decoy's
+// raid_target=1 flag beat the real boss's raid_target=0 in
+// sortVariantsByStrength (backend/internal/overlay/npc.go), so the overlay
+// headlined an "Untargetable"/"Invisible Man" NPC for a boss that is neither
+// (reported 2026-07-18). The NPC search page never showed this because
+// SearchNPCs already chains nonPlayerNPCClause.
+//
 // When zoneShortName is non-empty, only variants with at least one spawn
 // point in that zone are returned, and each variant's SpawnPoints field is
 // populated. When it is empty (no Zeal data → zone unknown), the spawn join
@@ -740,7 +750,7 @@ func (db *DB) GetItemIDByName(name string) (int, bool) {
 func (db *DB) GetNPCVariantsByNameInZone(name, zoneShortName string) ([]NPCVariant, error) {
 	if zoneShortName == "" {
 		q := fmt.Sprintf(
-			"SELECT %s FROM npc_types n %s WHERE n.name = ? COLLATE NOCASE ORDER BY n.id",
+			"SELECT %s FROM npc_types n %s WHERE n.name = ? COLLATE NOCASE AND n.race != 127 ORDER BY n.id",
 			npcColumns, npcJoin,
 		)
 		rows, err := db.Query(q, name)
@@ -769,6 +779,7 @@ func (db *DB) GetNPCVariantsByNameInZone(name, zoneShortName string) ([]NPCVaria
 		JOIN spawnentry se ON se.npcID = n.id
 		JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
 		WHERE n.name = ? COLLATE NOCASE
+		  AND n.race != 127
 		  AND s2.zone = ?
 		ORDER BY n.id, s2.spawngroupID, s2.id`,
 		npcColumns, npcJoin)
