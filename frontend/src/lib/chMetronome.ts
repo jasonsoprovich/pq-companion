@@ -94,29 +94,96 @@ export function watchNumberFor(seen: Map<number, number>, c: MetronomeCfg, watch
   return watch
 }
 
-// computeAnchorMs derives the local-clock ms at which the watched cleric's cast
-// started (their heal lands CH_CAST seconds later), or null when no matching
-// callout has been seen. Using the timer's backend-computed remaining_seconds
+// positionForNumber is the inverse of watchNumberFor: given a chain-call
+// NUMBER actually seen in the feed, returns which slot it occupies. Same
+// warm-up fallback (assume number === slot until the full set is learned).
+function positionForNumber(seen: Map<number, number>, chainSize: number, num: number): number {
+  const ranked = [...seen.keys()].sort((a, b) => a - b)
+  if (ranked.length >= chainSize) {
+    const idx = ranked.indexOf(num)
+    if (idx !== -1) return idx + 1
+  }
+  return num
+}
+
+// forwardDistance is how many chain beats separate `from` and `to` moving
+// forward through the cycle (1 → 2 → … → chainSize → 1 → …), wrapping as
+// needed. Used to project the watched slot's expected cast time off of
+// whichever other slot's callout is freshest. Never called with from === to.
+function forwardDistance(from: number, to: number, chainSize: number): number {
+  const d = to - from
+  return d > 0 ? d : d + chainSize
+}
+
+// latestRealAnchor finds the freshest confirmed callout currently in the feed
+// — for ANY slot in the chain, not just the watched one — and its local-clock
+// cast-start time. This is the anchor computeAnchorMs extrapolates from when
+// the watched slot itself hasn't called this cycle.
+function latestRealAnchor(
+  timers: ActiveTimer[],
+  category: string,
+  seen: Map<number, number>,
+  chainSize: number,
+  nowMs: number,
+): { position: number; anchorMs: number } | null {
+  let best: { position: number; anchorMs: number; startMs: number } | null = null
+  for (const t of timers) {
+    if (t.category !== category) continue
+    const num = parsePosition(t.spell_name)
+    if (num <= 0) continue
+    const startMs = Date.parse(t.starts_at)
+    if (Number.isNaN(startMs)) continue
+    if (best && startMs <= best.startMs) continue
+    const position = positionForNumber(seen, chainSize, num)
+    best = { position, anchorMs: nowMs - (CH_CAST - t.remaining_seconds) * 1000, startMs }
+  }
+  return best ? { position: best.position, anchorMs: best.anchorMs } : null
+}
+
+// AnchorResult distinguishes a confirmed callout from a projected one so the
+// UI can tell a healer "this countdown is a prediction" rather than implying
+// the cleric ahead of them was actually heard casting.
+export interface AnchorResult {
+  anchorMs: number
+  predicted: boolean
+}
+
+// computeAnchorMs derives the local-clock ms at which the watched cleric's
+// cast started (their heal lands CH_CAST seconds later), or null when there's
+// nothing to go on yet. Using the timer's backend-computed remaining_seconds
 // (not the log timestamp) keeps the countdown immune to game-log/local clock
 // skew. Mutates `seen` to fold in the latest feed.
+//
+// When the watched slot's own callout is missing this cycle (interrupted,
+// fizzled, skipped, or simply hasn't happened yet), this falls back to
+// extrapolating from whichever OTHER slot's callout is freshest, projecting
+// forward by (slots between them) × delay. That's what lets the chain keep
+// advancing when a cleric misses their cast instead of stalling forever on
+// the one slot immediately ahead: e.g. in a 5-cleric chain, if 003 never
+// calls, 004 still gets a predicted cast time derived from 002's real call.
 export function computeAnchorMs(
   timers: ActiveTimer[],
   c: MetronomeCfg,
   chain: ChainView,
   seen: Map<number, number>,
   nowMs: number,
-): number | null {
+): AnchorResult | null {
   const category = categoryFor(chain)
   recordPositions(seen, timers, category, nowMs, learnWindowMs(c))
-  const watchNum = watchNumberFor(seen, c, watchPosition(c))
+  const watch = watchPosition(c)
+  const watchNum = watchNumberFor(seen, c, watch)
   let best: ActiveTimer | null = null
   for (const t of timers) {
     if (t.category !== category) continue
     if (parsePosition(t.spell_name) !== watchNum) continue
     if (!best || Date.parse(t.starts_at) > Date.parse(best.starts_at)) best = t
   }
-  if (!best) return null
-  return nowMs - (CH_CAST - best.remaining_seconds) * 1000
+  if (best) return { anchorMs: nowMs - (CH_CAST - best.remaining_seconds) * 1000, predicted: false }
+
+  const latest = latestRealAnchor(timers, category, seen, c.chainSize, nowMs)
+  if (!latest || latest.position === watch) return null
+  const gap = forwardDistance(latest.position, watch, c.chainSize)
+  return { anchorMs: latest.anchorMs + gap * c.delay * 1000, predicted: true }
 }
 
 // seenStorageKey namespaces the persisted learned-number map per chain view

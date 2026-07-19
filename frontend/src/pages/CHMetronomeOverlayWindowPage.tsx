@@ -29,6 +29,7 @@ import OverlayLockButton from '../components/OverlayLockButton'
 import { getTimerState } from '../services/api'
 import {
   CH_CAST,
+  type AnchorResult,
   type ChainView,
   computeAnchorMs,
   loadSeen,
@@ -184,10 +185,12 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   // a stale 'ramp' selection would otherwise watch a feed that never fires.
   const activeChain: ChainView = secondaryEnabled ? chain : 'main'
   // anchorRef holds the local-clock ms at which the watched cleric's cast
-  // started (their heal lands anchor + 10s). Updated from the timer feed;
-  // read by the 100ms render ticker so the countdown stays smooth between the
-  // 1s WebSocket pulses.
-  const anchorRef = useRef<number | null>(null)
+  // started (their heal lands anchor + 10s), plus whether that time is a
+  // confirmed callout or a projection from another slot's callout (see
+  // lib/chMetronome.computeAnchorMs). Updated from the timer feed; read by
+  // the 100ms render ticker so the countdown stays smooth between the 1s
+  // WebSocket pulses.
+  const anchorRef = useRef<AnchorResult | null>(null)
   const cfgRef = useRef(cfg)
   const chainRef = useRef(activeChain)
   const timersRef = useRef<ActiveTimer[]>([])
@@ -291,7 +294,9 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
 
   const watch = watchPosition(cfg)
   const now = Date.now()
-  const anchor = anchorRef.current
+  const anchorResult = anchorRef.current
+  const anchor = anchorResult?.anchorMs ?? null
+  const predicted = anchorResult?.predicted ?? false
   const active = anchor != null && now - anchor <= (CH_CAST + ANCHOR_GRACE_SECS) * 1000
   activeRef.current = active
 
@@ -304,14 +309,18 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   let bigColor = 'rgba(255,255,255,0.25)'
   let subText = `Waiting for ${posLabel(watch, activeChain)}…`
   if (active) {
+    // predicted = the watched slot missed its call this cycle and this
+    // countdown is projected from another slot's real callout, not a
+    // confirmed one (lib/chMetronome.computeAnchorMs).
+    const predictedNote = predicted ? ` (${posLabel(watch, activeChain)} predicted — may have missed)` : ''
     if (flashing) {
       bigText = 'CAST NOW'
       bigColor = '#22c55e'
-      subText = `heal lands ~${cfg.delay}s into the chain`
+      subText = `heal lands ~${cfg.delay}s into the chain${predictedNote}`
     } else if (castIn > 0.15) {
       bigText = `${castIn.toFixed(1)}s`
       bigColor = castIn <= 1 ? '#fbbf24' : '#93c5fd'
-      subText = 'until your cast'
+      subText = `until your cast${predictedNote}`
     } else {
       bigText = 'cast sent'
       bigColor = 'rgba(255,255,255,0.4)'
