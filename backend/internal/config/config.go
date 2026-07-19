@@ -710,6 +710,16 @@ type CHChainSettings struct {
 	// PossibleMissMigrated is a one-time migration marker (see applyDefaults)
 	// — not surfaced in the UI.
 	PossibleMissMigrated bool `yaml:"possible_miss_migrated" json:"-"`
+
+	// PossibleMissIncludeDruid additionally watches Superior Healing's
+	// "<Target> feels much better." bystander line (the Druid's "DCH") for
+	// possible-miss correlation. Off by default (no migration needed — the
+	// zero value already matches): unlike Complete Healing's text, that exact
+	// string is shared by over a dozen unrelated heal spells, so any healer's
+	// filler heal on the same target would false-confirm a chain slot that
+	// actually missed. Only worth enabling for raids that rarely spot-heal
+	// the CH-chain tank outside the chain itself.
+	PossibleMissIncludeDruid bool `yaml:"possible_miss_include_druid" json:"possible_miss_include_druid"`
 }
 
 // CHCastSecs is Complete Heal's cast time in seconds. Each ch_chain countdown

@@ -13,26 +13,31 @@ type HealSink interface {
 	ConfirmHeal(targetName string)
 }
 
-// reHealLanded matches "<Target> is completely healed." — the bystander
-// message EQ shows to anyone nearby when Complete Healing (spells_new id 13,
-// the Cleric spell CH-chain macros actually cast) lands on a target,
-// regardless of who cast it. Verified against quarm.db to be the ONLY
-// player-castable spell using this exact text (two other rows share it —
-// "Healing Touch" id 842 and "Healing Complete" id 1469 — but both are
-// uncastable by every class, i.e. NPC/unused entries).
-//
-// Deliberately NOT watching Superior Healing's "<Target> feels much
-// better." (the Druid DCH spell, spells_new id 9): that text is shared by
-// over a dozen unrelated heal spells across multiple classes (Healing,
-// Greater Healing, Word of Health, Nature's Touch, …), so any off-chain
-// healer topping off the same target would false-confirm a chain slot that
-// actually missed. Reliable correlation needs an unambiguous bystander
-// message; only Complete Healing has one.
-var reHealLanded = regexp.MustCompile(`^([A-Z][a-z]{3,14}) is completely healed\.$`)
+// reCompleteHealingLanded matches "<Target> is completely healed." — the
+// bystander message EQ shows to anyone nearby when Complete Healing
+// (spells_new id 13, the Cleric spell CH-chain macros actually cast) lands
+// on a target, regardless of who cast it. Verified against quarm.db to be
+// the ONLY player-castable spell using this exact text (two other rows
+// share it — "Healing Touch" id 842 and "Healing Complete" id 1469 — but
+// both are uncastable by every class, i.e. NPC/unused entries). Always
+// watched whenever possible-miss detection is on.
+var reCompleteHealingLanded = regexp.MustCompile(`^([A-Z][a-z]{3,14}) is completely healed\.$`)
 
-// HealWatcher watches raw log lines for the Complete Healing landed-on-other
-// message and confirms the matching CH-chain timer via HealSink.ConfirmHeal,
-// so Engine.pruneExpired won't flag it a possible miss. Purely additive: it
+// reSuperiorHealingLanded matches "<Target> feels much better." — the
+// bystander message for Superior Healing (spells_new id 9, the Druid's
+// equivalent "DCH" — the only class that can cast it). Unlike Complete
+// Healing's text, this exact string is shared by over a dozen unrelated heal
+// spells across multiple classes (Healing, Greater Healing, Word of Health,
+// Nature's Touch, …), so any healer's filler/spot heal on the same target
+// would false-confirm a chain slot that actually missed. Watching it is
+// therefore opt-in (CHChainSettings.PossibleMissIncludeDruid, default off) —
+// reliable for raids that rarely spot-heal the CH-chain tank outside the
+// chain itself, noisy otherwise.
+var reSuperiorHealingLanded = regexp.MustCompile(`^([A-Z][a-z]{3,14}) feels much better\.$`)
+
+// HealWatcher watches raw log lines for heal-landed-on-other messages and
+// confirms the matching CH-chain timer via HealSink.ConfirmHeal, so
+// Engine.pruneExpired won't flag it a possible miss. Purely additive: it
 // never creates, modifies, or removes a chain timer's identity — only
 // whether it gets flagged.
 type HealWatcher struct {
@@ -46,16 +51,22 @@ func NewHealWatcher(sink HealSink, cfg func() config.CHChainSettings) *HealWatch
 	return &HealWatcher{sink: sink, cfg: cfg}
 }
 
-// HandleLine checks one raw log line against reHealLanded and, on a hit,
-// confirms the heal for the captured target name.
+// HandleLine checks one raw log line against the watched heal-landed
+// patterns and, on a hit, confirms the heal for the captured target name.
+// Complete Healing is always checked; Superior Healing only when the user
+// has opted into its noisier correlation.
 func (w *HealWatcher) HandleLine(msg string) {
 	settings := w.cfg()
 	if !settings.Enabled || !settings.PossibleMissEnabled {
 		return
 	}
-	m := reHealLanded.FindStringSubmatch(msg)
-	if m == nil {
+	if m := reCompleteHealingLanded.FindStringSubmatch(msg); m != nil {
+		w.sink.ConfirmHeal(m[1])
 		return
 	}
-	w.sink.ConfirmHeal(m[1])
+	if settings.PossibleMissIncludeDruid {
+		if m := reSuperiorHealingLanded.FindStringSubmatch(msg); m != nil {
+			w.sink.ConfirmHeal(m[1])
+		}
+	}
 }
