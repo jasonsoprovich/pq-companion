@@ -9,6 +9,14 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.17.6 — 2026-07-19
+
+Fixes for the CH Metronome overlay and the NPC overlay's boss-variant lookup.
+
+### Fixes
+- CH Metronome overlay and dashboard panel now share the same learned chain-call-number state, fixing cases where the popped-out overlay would stop flashing reliably (or need to relearn from scratch after every reopen) even though the CH Chain window kept counting normally.
+- NPC overlay no longer picks up decoy/placeholder `race=127` rows when looking up boss variants, which could previously outrank the real boss's stats (e.g. Rhag'Mozdezh) in the lookup.
+
 ## v0.17.5 — 2026-07-18
 
 Fixes another cause of log tailing silently freezing until restart.
