@@ -68,6 +68,7 @@ var incomingTellExcludes = func() []*regexp.Regexp {
 		`tells you, 'You are already browsing`,
 		`tells you, 'I charge `,
 		`tells you, 'I am unable to wake `,
+		`tells you, 'You are already trained to the limit`,
 	}
 	out := make([]*regexp.Regexp, 0, len(pats))
 	for _, p := range pats {

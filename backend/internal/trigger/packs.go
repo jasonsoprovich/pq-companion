@@ -2206,6 +2206,7 @@ func GeneralTriggersPack() TriggerPack {
 					`tells you, 'You are already browsing`,
 					`tells you, 'I charge `,
 					`tells you, 'I am unable to wake `,
+					`tells you, 'You are already trained to the limit`,
 				},
 			},
 			{
@@ -2853,6 +2854,19 @@ func DefaultUpdates() []DefaultUpdate {
 			PackName:              "Raid Alerts",
 			TriggerName:           "Touch of Vinitras",
 			SetRefireCooldownSecs: 3,
+		},
+		{
+			// 2026-07-19: tradeskill trainers reply "You are already
+			// trained to the limit of your abilities in <skill>." when
+			// asked to train a maxed-out tradeskill — wasn't excluded, so
+			// it falsely fired the Incoming Tell alert. Reported by
+			// Vortikai on Discord.
+			Key:         "GroupAwareness:IncomingTell:tradeskill-limit-exclude-v1",
+			PackName:    "General Triggers",
+			TriggerName: "Incoming Tell",
+			AppendExcludePatterns: []string{
+				`tells you, 'You are already trained to the limit`,
+			},
 		},
 	}
 }
