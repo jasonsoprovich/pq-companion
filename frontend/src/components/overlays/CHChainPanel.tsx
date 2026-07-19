@@ -1,15 +1,17 @@
 /**
  * CHChainPanel — in-dashboard version of the Complete-Heal chain overlay. Shows
  * the active CH chain as a countdown bar per chain position (category ===
- * 'ch_chain'), sorted by position. Mirrors CHChainOverlayWindowPage but renders
- * inside the draggable/resizable OverlayWindow used by the Overlays dashboard,
- * themed to the app surface tokens. The pop-out button toggles the standalone
- * floating window.
+ * 'ch_chain', or 'ch_chain_2' when the Main/Secondary switch is on Secondary),
+ * sorted by position. Mirrors CHChainOverlayWindowPage but renders inside the
+ * draggable/resizable OverlayWindow used by the Overlays dashboard, themed to
+ * the app surface tokens. The pop-out button toggles the standalone floating
+ * window.
  */
 import React, { useCallback, useEffect, useState } from 'react'
 import { HeartPulse, Trash2, ExternalLink } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
+import { useCHChainConfig } from '../../hooks/useCHChainConfig'
 import { clearTimers, getTimerState } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import type { ActiveTimer, TimerState } from '../../types/timer'
@@ -21,6 +23,46 @@ interface CHChainPanelProps {
   defaultHeight?: number
   snapGridSize?: number
   onLayoutChange?: (b: { x: number; y: number; width: number; height: number }) => void
+}
+
+// Which chain the panel is showing. 'main' = ch_chain timers (001-style
+// calls), 'ramp' = ch_chain_2 timers (AAA-style ramp/split-chain calls). Only
+// selectable when the secondary chain is enabled in settings. Shares the
+// 'chChain:view' localStorage key with the popped-out overlay window so both
+// stay on the same chain.
+type ChainView = 'main' | 'ramp'
+
+const VIEW_STORAGE_KEY = 'chChain:view'
+
+function loadView(): ChainView {
+  return localStorage.getItem(VIEW_STORAGE_KEY) === 'ramp' ? 'ramp' : 'main'
+}
+
+// positionLetter maps a ramp-chain position back to its letter marker for the
+// badge (1 → A, 2 → B). Falls back to the number outside A–Z range.
+function positionLetter(position: number): string {
+  if (position >= 1 && position <= 26) {
+    return String.fromCharCode(64 + position)
+  }
+  return String(position)
+}
+
+// ChainToggle is the compact Main/Secondary segmented control shown in the
+// header, styled after CHChainOverlayWindowPage's toggle but using dashboard
+// surface tokens instead of the overlay's rgba-on-transparent palette.
+function ChainToggle({ view, onChange }: { view: ChainView; onChange: (v: ChainView) => void }): React.ReactElement {
+  const btn = (active: boolean): React.CSSProperties => ({
+    background: active ? 'var(--color-surface-2)' : 'transparent',
+    color: active ? 'var(--color-foreground)' : 'var(--color-muted)',
+    border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 600,
+    padding: '2px 6px', borderRadius: 3, lineHeight: 1.4,
+  })
+  return (
+    <div style={{ display: 'inline-flex', gap: 2, backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: 4, padding: 1 }}>
+      <button style={btn(view === 'main')} onClick={() => onChange('main')}>Main</button>
+      <button style={btn(view === 'ramp')} onClick={() => onChange('ramp')}>Secondary</button>
+    </div>
+  )
 }
 
 function fmtRemaining(secs: number): string {
@@ -59,7 +101,7 @@ function computeCadence(
   return { cadence: median, stalled: gaps.length >= 2 && last > median * 1.5 }
 }
 
-function ChainRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
+function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean }): React.ReactElement {
   const pct =
     timer.duration_seconds > 0
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
@@ -88,7 +130,7 @@ function ChainRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
                 padding: '0 4px', flexShrink: 0, fontVariantNumeric: 'tabular-nums',
               }}
             >
-              {position}
+              {letters ? positionLetter(position) : position}
             </span>
           )}
           <span style={{ fontSize: 12, color: 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: landing ? 600 : 400 }}>
@@ -112,6 +154,18 @@ export default function CHChainPanel({
   onLayoutChange,
 }: CHChainPanelProps): React.ReactElement {
   const [state, setState] = useState<TimerState | null>(null)
+  const [view, setView] = useState<ChainView>(loadView)
+  const chConfig = useCHChainConfig()
+  const secondaryEnabled = chConfig?.secondary_enabled ?? false
+  // With the secondary chain off in settings, always show the main chain —
+  // a stale 'ramp' selection would otherwise leave the panel empty.
+  const activeView: ChainView = secondaryEnabled ? view : 'main'
+  const activeCategory = activeView === 'ramp' ? 'ch_chain_2' : 'ch_chain'
+
+  const changeView = useCallback((v: ChainView) => {
+    setView(v)
+    localStorage.setItem(VIEW_STORAGE_KEY, v)
+  }, [])
 
   useEffect(() => {
     getTimerState().then(setState).catch(() => {})
@@ -123,7 +177,7 @@ export default function CHChainPanel({
   useWebSocket(handleMessage)
 
   const chain = (state?.timers ?? [])
-    .filter((t) => t.category === 'ch_chain')
+    .filter((t) => t.category === activeCategory)
     // Order by when each CH was actually cast (first-cast on top), not by the
     // "#N" label. chainnum is often a letter sequence (the regex allows it), so
     // the parsed position collapses to 0 for every bar and ordering would fall
@@ -169,9 +223,10 @@ export default function CHChainPanel({
       }
       headerRight={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {secondaryEnabled && <ChainToggle view={activeView} onChange={changeView} />}
           <button
-            onClick={() => clearTimers('ch_chain').catch(() => {})}
-            title="Clear the current chain"
+            onClick={() => clearTimers(activeCategory).catch(() => {})}
+            title={activeView === 'ramp' ? 'Clear the secondary chain' : 'Clear the current chain'}
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}
           >
             <Trash2 size={12} />
@@ -205,10 +260,12 @@ export default function CHChainPanel({
         ) : chain.length === 0 ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--color-muted)', padding: 16 }}>
             <HeartPulse size={28} style={{ opacity: 0.2, color: '#3b82f6' }} />
-            <p style={{ fontSize: 12, margin: 0 }}>Waiting for a CH chain…</p>
+            <p style={{ fontSize: 12, margin: 0 }}>
+              {activeView === 'ramp' ? 'Waiting for a secondary chain…' : 'Waiting for a CH chain…'}
+            </p>
           </div>
         ) : (
-          chain.map((t) => <ChainRow key={t.id} timer={t} />)
+          chain.map((t) => <ChainRow key={t.id} timer={t} letters={activeView === 'ramp'} />)
         )}
       </div>
     </OverlayWindow>
