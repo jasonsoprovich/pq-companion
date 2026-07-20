@@ -2236,6 +2236,46 @@ export function updateWishlistSlotLayout(
   return put<void>(`/api/characters/${charID}/wishlist/slot-layout`, { layout })
 }
 
+// ── Faction Tracker ─────────────────────────────────────────────────────────
+
+import type {
+  Faction,
+  FactionWishlistEntry,
+  FactionSessionState,
+} from '../types/faction'
+
+export function searchFactions(query: string): Promise<{ factions: Faction[] }> {
+  const q = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ''
+  return get<{ factions: Faction[] }>(`/api/factions${q}`)
+}
+
+export function listFactionWishlist(
+  charID: number,
+): Promise<{ entries: FactionWishlistEntry[] }> {
+  return get<{ entries: FactionWishlistEntry[] }>(`/api/characters/${charID}/faction-wishlist`)
+}
+
+export function addFactionWishlistEntry(
+  charID: number,
+  factionID: number,
+): Promise<FactionWishlistEntry> {
+  return post<FactionWishlistEntry>(`/api/characters/${charID}/faction-wishlist`, {
+    faction_id: factionID,
+  })
+}
+
+export function deleteFactionWishlistEntry(charID: number, factionID: number): Promise<void> {
+  return del(`/api/characters/${charID}/faction-wishlist/${factionID}`)
+}
+
+export function getFactionSession(): Promise<FactionSessionState> {
+  return get<FactionSessionState>('/api/factions/session')
+}
+
+export function resetFactionSession(): Promise<FactionSessionState> {
+  return post<FactionSessionState>('/api/factions/session/reset')
+}
+
 // ── Triggers ───────────────────────────────────────────────────────────────────
 
 export function listTriggers(): Promise<Trigger[]> {

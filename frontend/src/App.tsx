@@ -44,6 +44,7 @@ const InventoryTrackerPage = lazy(() => import('./pages/InventoryTrackerPage'))
 const KeyTrackerPage = lazy(() => import('./pages/KeyTrackerPage'))
 const LockoutTrackerPage = lazy(() => import('./pages/LockoutTrackerPage'))
 const WishlistPage = lazy(() => import('./pages/WishlistPage'))
+const FactionsPage = lazy(() => import('./pages/FactionsPage'))
 const LogFeedPage = lazy(() => import('./pages/LogFeedPage'))
 const DPSOverlayWindowPage = lazy(() => import('./pages/DPSOverlayWindowPage'))
 const HPSOverlayWindowPage = lazy(() => import('./pages/HPSOverlayWindowPage'))
@@ -315,6 +316,7 @@ export default function App(): React.ReactElement {
             <Route path="keys" element={<KeyTrackerPage />} />
             <Route path="lockouts" element={<LockoutTrackerPage />} />
             <Route path="wishlist" element={<WishlistPage />} />
+            <Route path="factions" element={<FactionsPage />} />
             <Route path="upgrades" element={<GearUpgradeFinderPage />} />
             <Route path="tasks" element={<CharacterTasksPage />} />
           </Route>

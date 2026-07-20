@@ -3,7 +3,7 @@ import {
   Sword, Sparkles, Skull, Map, Hammer, Activity, Layers, ScrollText, Zap,
   Users, Dice5, UserSearch, MessageSquare, Package, TrendingUp, BookOpen,
   Library, KeyRound, Hourglass, Star, Wand2, ListChecks, Percent, Store, PawPrint,
-  Flag, Swords, Keyboard, Route,
+  Flag, Swords, Keyboard, Route, Scale,
 } from 'lucide-react'
 import type { Preferences } from '../types/config'
 
@@ -65,6 +65,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/characters/tasks', label: 'Tasks', icon: <ListChecks size={16} /> },
       { to: '/pop-flags', label: 'PoP Flags', icon: <Flag size={16} />, flag: 'pop_flags_enabled' },
       { to: '/trader-tracker', label: 'Trader Tracker', icon: <Store size={16} /> },
+      { to: '/characters/factions', label: 'Factions', icon: <Scale size={16} />, flag: 'faction_tracker_enabled' },
     ],
   },
   {
@@ -89,6 +90,7 @@ export const NAV_SECTIONS: NavSection[] = [
 export function navFlags(prefs?: Partial<Preferences>): Record<string, boolean> {
   return {
     pop_flags_enabled: Boolean(prefs?.pop_flags_enabled),
+    faction_tracker_enabled: Boolean(prefs?.faction_tracker_enabled),
   }
 }
 

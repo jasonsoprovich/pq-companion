@@ -28,6 +28,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/factiontracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/keyring"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/lockout"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
@@ -779,6 +780,51 @@ func main() {
 	)
 	wishlistWatcher.Rebuild()
 
+	// Faction Tracker: session-only tally of "Your faction standing with X
+	// got better/worse" lines for the active character's wishlisted
+	// factions, with a best-effort point estimate for changes that
+	// correlate to a resolved kill (quarm.db npc_faction_entries). EQ never
+	// logs a faction's absolute value or point amount, so this can only ever
+	// be an approximate session view. Dev-gated — see internal/factiontracker.
+	factionEngine := factiontracker.NewEngine(hub, func(mobName string) ([]factiontracker.NPCFactionHit, bool) {
+		id, ok := database.GetNPCIDByName(mobName)
+		if !ok {
+			return nil, false
+		}
+		nf, err := database.GetNPCFaction(id)
+		if err != nil || nf == nil || len(nf.Hits) == 0 {
+			return nil, false
+		}
+		hits := make([]factiontracker.NPCFactionHit, len(nf.Hits))
+		for i, h := range nf.Hits {
+			hits[i] = factiontracker.NPCFactionHit{FactionID: h.FactionID, FactionName: h.FactionName, Value: h.Value}
+		}
+		return hits, true
+	})
+	reloadFactionTracking := func() {
+		charName := activeChar()
+		if charName == "" {
+			factionEngine.SetTracked(nil)
+			return
+		}
+		c, ok, err := charStore.GetByName(charName)
+		if err != nil || !ok {
+			factionEngine.SetTracked(nil)
+			return
+		}
+		entries, err := charStore.ListFactionWishlist(c.ID)
+		if err != nil {
+			slog.Warn("load faction wishlist", "err", err)
+			return
+		}
+		tracked := make([]factiontracker.TrackedFaction, len(entries))
+		for i, e := range entries {
+			tracked[i] = factiontracker.TrackedFaction{FactionID: e.FactionID, FactionName: e.FactionName}
+		}
+		factionEngine.SetTracked(tracked)
+	}
+	reloadFactionTracking()
+
 	if keyringStore != nil {
 		keyringConsumer = keyring.NewConsumer(keyringStore, keyringMaster, activeChar)
 		keyringConsumer.SetOnSnapshot(func(character string) {
@@ -1133,6 +1179,7 @@ func main() {
 		timerEngine.Handle(ev)
 		respawnEngine.Handle(ev)
 		rollTracker.Handle(ev)
+		factionEngine.Handle(ev)
 		if playersConsumer != nil {
 			playersConsumer.Handle(ev)
 		}
@@ -1230,6 +1277,11 @@ func main() {
 		// Recompile trigger patterns: {c}/{char}/{self} tokens expand to the
 		// active character name at compile time.
 		triggerEngine.Reload()
+		// Faction Tracker follows the active character: reload its wishlist
+		// and reset the session tally so a camp/login cycle doesn't carry a
+		// stale tracked-faction set from the previous character.
+		reloadFactionTracking()
+		factionEngine.Reset()
 	})
 	go tailer.Start(context.Background())
 
@@ -1337,7 +1389,7 @@ func main() {
 		go traderCapturer.Start(context.Background())
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, reloadFactionTracking, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

@@ -963,6 +963,62 @@ func collectNPCs(rows *sql.Rows) ([]NPC, error) {
 	return result, rows.Err()
 }
 
+// SearchFactions returns factions whose name matches the query
+// (case-insensitive substring), ordered alphabetically and capped at limit.
+// An empty query returns the first `limit` factions alphabetically. Used by
+// the faction wishlist picker.
+func (db *DB) SearchFactions(query string, limit int) ([]Faction, error) {
+	pattern := "%" + escapeLike(query) + "%"
+	rows, err := db.Query(
+		`SELECT id, name FROM faction_list
+		 WHERE name LIKE ? ESCAPE '\' AND id != 0
+		 ORDER BY name LIMIT ?`,
+		pattern, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("search factions: %w", err)
+	}
+	defer rows.Close()
+
+	out := []Faction{}
+	for rows.Next() {
+		var f Faction
+		if err := rows.Scan(&f.ID, &f.Name); err != nil {
+			return nil, fmt.Errorf("scan faction: %w", err)
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+// GetFactionByID returns the faction with the given faction_list id.
+// Returns sql.ErrNoRows (wrapped) when no match is found.
+func (db *DB) GetFactionByID(id int) (*Faction, error) {
+	var f Faction
+	if err := db.QueryRow(
+		`SELECT id, name FROM faction_list WHERE id = ? AND id != 0`,
+		id,
+	).Scan(&f.ID, &f.Name); err != nil {
+		return nil, fmt.Errorf("get faction %d: %w", id, err)
+	}
+	return &f, nil
+}
+
+// GetFactionIDByName resolves an exact faction name (any case) to its
+// faction_list id. Returns (0, false) when nothing matches. Used to look up
+// the faction named in a "Your faction standing with X got better/worse."
+// log line.
+func (db *DB) GetFactionIDByName(name string) (int, bool) {
+	var id int
+	if err := db.QueryRow(
+		`SELECT id FROM faction_list WHERE name = ? COLLATE NOCASE AND id != 0`,
+		name,
+	).Scan(&id); err != nil {
+		return 0, false
+	}
+	return id, true
+}
+
 // GetNPCFaction returns resolved faction info for the NPC with the given ID.
 // Returns nil (no error) when the NPC has no faction or the faction record is missing.
 func (db *DB) GetNPCFaction(npcID int) (*NPCFaction, error) {

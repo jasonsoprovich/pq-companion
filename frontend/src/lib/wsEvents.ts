@@ -8,6 +8,7 @@ export const WSEvent = {
   OverlayTimers: 'overlay:timers',
   OverlayRespawns: 'overlay:respawns',
   OverlayRolls: 'overlay:rolls',
+  OverlayFactions: 'overlay:factions',
   OverlayNPCTarget: 'overlay:npc_target',
   OverlayThreat: 'overlay:threat',
   OverlayRaidThreat: 'overlay:raidthreat',

@@ -623,6 +623,22 @@ func TestParseLine(t *testing.T) {
 			wantData: DeathData{},
 		},
 
+		// --- Faction standing change ---
+		{
+			name:     "faction: got worse",
+			line:     "[Mon Apr 13 06:00:00 2026] Your faction standing with Guards of Qeynos got worse.",
+			wantOK:   true,
+			wantType: EventFactionChanged,
+			wantData: FactionChangedData{Faction: "Guards of Qeynos", Direction: "worse"},
+		},
+		{
+			name:     "faction: got better",
+			line:     "[Mon Apr 13 06:00:00 2026] Your faction standing with Bloodsabers got better.",
+			wantOK:   true,
+			wantType: EventFactionChanged,
+			wantData: FactionChangedData{Faction: "Bloodsabers", Direction: "better"},
+		},
+
 		// --- /con considered ---
 		{
 			name:     "con: regards you as ally (multi-word NPC)",
@@ -924,6 +940,14 @@ func compareData(t *testing.T, got, want interface{}) {
 		}
 		if g != w {
 			t.Errorf("KillData = %+v, want %+v", g, w)
+		}
+	case FactionChangedData:
+		g, ok := got.(FactionChangedData)
+		if !ok {
+			t.Fatalf("Data type = %T, want FactionChangedData", got)
+		}
+		if g != w {
+			t.Errorf("FactionChangedData = %+v, want %+v", g, w)
 		}
 	case ConsideredData:
 		g, ok := got.(ConsideredData)

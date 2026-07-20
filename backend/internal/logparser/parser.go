@@ -251,6 +251,13 @@ var (
 	reIllusionFadeNatural = regexp.MustCompile(`^Your illusion fades\.$`)
 	reIllusionForget      = regexp.MustCompile(`^You forget Illusion: .+\.$`)
 
+	// Faction standing change — fired once per affected faction, same
+	// timestamp as the triggering kill/quest-turn-in/hail. Carries no
+	// numeric magnitude, only direction:
+	//   "Your faction standing with Guards of Qeynos got worse."
+	//   "Your faction standing with Bloodsabers got better."
+	reFactionChanged = regexp.MustCompile(`^Your faction standing with (.+) got (better|worse)\.$`)
+
 	// /random dice roll — EQ logs the result as two consecutive lines, each
 	// prefixed with `**`:
 	//   "**A Magic Die is rolled by Tabbie."
@@ -743,6 +750,14 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		return LogEvent{
 			Type: EventDeath,
 			Data: DeathData{},
+		}, true
+	}
+
+	// --- Faction standing change ---
+	if m := reFactionChanged.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventFactionChanged,
+			Data: FactionChangedData{Faction: m[1], Direction: m[2]},
 		}, true
 	}
 

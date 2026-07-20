@@ -157,6 +157,10 @@ export interface Preferences {
   // Planes of Power flagging tracker (dev-gated, off by default; preview until
   // PoP launches on Quarm).
   pop_flags_enabled?: boolean
+  // Session Faction Tracker (dev-gated, off by default). EQ never logs a
+  // faction's absolute value or point amount, so this is always an
+  // approximate session-only view, not a real faction number.
+  faction_tracker_enabled?: boolean
   npc_overlay_dashboard_sections: NPCOverlaySections
   npc_overlay_popout_sections: NPCOverlaySections
   // Per-overlay locked behaviour, keyed by canonical overlay name. Missing

@@ -461,6 +461,15 @@ type Preferences struct {
 	// ahead feature whose live-detection paths can only be tuned post-release.
 	PoPFlagsEnabled bool `yaml:"pop_flags_enabled,omitempty" json:"pop_flags_enabled"`
 
+	// FactionTrackerEnabled gates the session Faction Tracker (per-character
+	// faction wishlist + a running better/worse tally inferred from the log's
+	// "Your faction standing with X got better/worse" lines, with a
+	// best-effort point estimate for changes that correlate to a resolved
+	// kill). Dev-gated, off by default: EQ never logs a faction's absolute
+	// value or point amount, so this is always an approximate session-only
+	// view, not a real faction number — see LIMITATIONS.md.
+	FactionTrackerEnabled bool `yaml:"faction_tracker_enabled,omitempty" json:"faction_tracker_enabled"`
+
 	// NPCOverlayDashboardSections controls which optional sections of the
 	// NPC overlay are visible in the dashboard panel. Name, zone, pet
 	// owner, raid/rare badges, and the HP bar are always shown regardless

@@ -220,6 +220,13 @@ type NPCFaction struct {
 	Hits               []FactionHit `json:"hits"`
 }
 
+// Faction is a row from faction_list — one of the ~2100 named factions NPCs
+// can be tied to. Used by the faction wishlist picker.
+type Faction struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
 // Spell represents a row from the spells_new table.
 // Effect slots are stored as parallel slices for convenience.
 type Spell struct {

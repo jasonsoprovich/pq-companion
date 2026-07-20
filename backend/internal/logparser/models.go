@@ -164,6 +164,12 @@ const (
 	// Feeds the per-character Skill Tracker with the new skill value.
 	EventSkillUp EventType = "log:skill_up"
 
+	// EventFactionChanged is emitted on "Your faction standing with <Faction>
+	// got better/worse." EQ fires one line per affected faction at the same
+	// timestamp as the triggering kill, quest turn-in, or hail — the line
+	// carries no numeric amount, only the faction name and direction.
+	EventFactionChanged EventType = "log:faction_changed"
+
 	// EventRogueEvade is emitted on the active character's "You duck away from
 	// the main combat." line — a successful Rogue Evade (Hide used in combat
 	// with /attack off against an engaged NPC target). EQMacEmu's
@@ -412,4 +418,11 @@ type GuildStatData struct {
 type SkillUpData struct {
 	SkillName string `json:"skill_name"`
 	Rank      int    `json:"rank"`
+}
+
+// FactionChangedData is the structured payload for EventFactionChanged.
+// Direction is "better" or "worse" — EQ never logs the point amount.
+type FactionChangedData struct {
+	Faction   string `json:"faction"`
+	Direction string `json:"direction"`
 }

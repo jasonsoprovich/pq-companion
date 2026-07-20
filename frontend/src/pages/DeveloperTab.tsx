@@ -129,6 +129,11 @@ function FlagsPanel(): React.ReactElement {
   const popFlagsEnabled = Boolean(config?.preferences?.pop_flags_enabled)
   const togglePopFlags = (): void => savePrefs({ pop_flags_enabled: !popFlagsEnabled })
 
+  // ── Session Faction Tracker ───────────────────────────────────────────
+  const factionTrackerEnabled = Boolean(config?.preferences?.faction_tracker_enabled)
+  const toggleFactionTracker = (): void =>
+    savePrefs({ faction_tracker_enabled: !factionTrackerEnabled })
+
   // ── Raid-wide threat meter ────────────────────────────────────────────
   const raidThreatEnabled = Boolean(config?.preferences?.raid_threat_enabled)
   const toggleRaidThreat = (): void => savePrefs({ raid_threat_enabled: !raidThreatEnabled })
@@ -271,6 +276,46 @@ function FlagsPanel(): React.ReactElement {
             }}
           >
             {popFlagsEnabled ? 'Enabled' : 'Disabled'}
+          </button>
+        </div>
+      </section>
+
+      {/* ── Session Faction Tracker ─────────────────────────────────────── */}
+      <section
+        className="rounded-lg p-4"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <div className="mb-3 flex items-center gap-2">
+          <FlaskConical size={14} style={{ color: 'var(--color-primary)' }} />
+          <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            Session Faction Tracker
+          </h2>
+        </div>
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+            Adds a per-character faction wishlist and a <strong>Factions</strong>{' '}
+            page that tallies &ldquo;Your faction standing with X got
+            better/worse&rdquo; lines for the factions you&rsquo;ve starred, with a
+            best-effort point estimate when a change can be tied to a resolved
+            kill. EQ never logs a faction&rsquo;s absolute value or point amount, so
+            this is always an approximate, session-only view &mdash; it resets
+            on every restart and character switch, and can&rsquo;t tell you your
+            real standing.
+          </p>
+          <button
+            type="button"
+            onClick={toggleFactionTracker}
+            disabled={!config || saving}
+            className="shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors"
+            style={{
+              backgroundColor: factionTrackerEnabled ? 'var(--color-primary)' : 'var(--color-surface-2)',
+              color: factionTrackerEnabled ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+              cursor: !config || saving ? 'default' : 'pointer',
+              opacity: !config || saving ? 0.6 : 1,
+            }}
+          >
+            {factionTrackerEnabled ? 'Enabled' : 'Disabled'}
           </button>
         </div>
       </section>

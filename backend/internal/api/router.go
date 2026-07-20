@@ -17,6 +17,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/eqw"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/factiontracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/keyring"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/kokorotts"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/lockout"
@@ -46,7 +47,7 @@ import (
 // NewRouter builds and returns the chi router wired to all backend components.
 // combatHistory may be nil when persistence is disabled (e.g. user.db open
 // failed); in that case the history endpoints respond 503.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, replayer *logparser.Replayer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, threatTracker *threat.Tracker, raidThreatAssembler *raidthreat.Assembler, timerEngine *spelltimer.Engine, respawnEngine *respawn.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, chatStore *chat.Store, lootStore *loot.Store, backfillRegistry *backfill.Registry, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, lockoutStore *lockout.Store, sb *sandbox.Sandbox, savedQueryStore *savedquery.Store, skillsStore *skills.Store, traderStore *trader.Store, traderCapturer *trader.Capturer, popflagStore *popflag.Store, wishlistWatcher *wishlistwatch.Watcher, changelogEntries []changelog.Entry, actualPort int) http.Handler {
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, replayer *logparser.Replayer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, threatTracker *threat.Tracker, raidThreatAssembler *raidthreat.Assembler, timerEngine *spelltimer.Engine, respawnEngine *respawn.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, chatStore *chat.Store, lootStore *loot.Store, backfillRegistry *backfill.Registry, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, lockoutStore *lockout.Store, sb *sandbox.Sandbox, savedQueryStore *savedquery.Store, skillsStore *skills.Store, traderStore *trader.Store, traderCapturer *trader.Capturer, popflagStore *popflag.Store, wishlistWatcher *wishlistwatch.Watcher, changelogEntries []changelog.Entry, factionEngine *factiontracker.Engine, reloadFactionTracking func(), actualPort int) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -101,6 +102,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	skillsH := &skillsHandler{charStore: charStore, store: skillsStore, db: database}
 	wishlistH := &wishlistHandler{store: charStore, db: database, hub: hub, watcher: wishlistWatcher}
 	rollsH := &rollsHandler{tracker: rollTracker}
+	factionsH := &factionsHandler{store: charStore, db: database, engine: factionEngine, reloadTracked: reloadFactionTracking}
 	raw := &rawHandler{db: database}
 	enumsH := &enumsHandler{}
 	quarmH := &quarmHandler{cfgMgr: cfgMgr, fetcher: quarm.NewManifestFetcher()}
@@ -243,6 +245,9 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Put("/{id}/wishlist/reorder", wishlistH.reorder)
 			r.Put("/{id}/wishlist/slot-layout", wishlistH.updateSlotLayout)
 			r.Delete("/{id}/wishlist/{entryID}", wishlistH.del)
+			r.Get("/{id}/faction-wishlist", factionsH.listWishlist)
+			r.Post("/{id}/faction-wishlist", factionsH.addWishlist)
+			r.Delete("/{id}/faction-wishlist/{factionID}", factionsH.deleteWishlist)
 		})
 		r.Route("/quarm", func(r chi.Router) {
 			r.Get("/client-status", quarmH.clientStatus)
@@ -411,6 +416,11 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 				r.Delete("/", rollsH.remove)
 				r.Put("/item-name", rollsH.setItemName)
 			})
+		})
+		r.Route("/factions", func(r chi.Router) {
+			r.Get("/", factionsH.search)
+			r.Get("/session", factionsH.session)
+			r.Post("/session/reset", factionsH.resetSession)
 		})
 		r.Route("/sandbox", func(r chi.Router) {
 			r.Get("/schema", sandboxH.schema)
