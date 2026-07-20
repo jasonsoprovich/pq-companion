@@ -583,8 +583,15 @@ export function getZoneForage(shortName: string): Promise<ZoneForageItem[]> {
   return get<ZoneForageItem[]>(`/api/zones/short/${encodeURIComponent(shortName)}/forage`)
 }
 
-export function getZoneDrops(shortName: string): Promise<ZoneDropItem[]> {
-  return get<ZoneDropItem[]>(`/api/zones/short/${encodeURIComponent(shortName)}/drops`)
+export function getZoneDrops(
+  shortName: string,
+  limit = 100,
+  offset = 0,
+): Promise<SearchResult<ZoneDropItem>> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  return get<SearchResult<ZoneDropItem>>(
+    `/api/zones/short/${encodeURIComponent(shortName)}/drops?${params}`,
+  )
 }
 
 // ── Quarm client version ──────────────────────────────────────────────────────

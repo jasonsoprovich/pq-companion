@@ -525,32 +525,53 @@ function ConnectionsTab({ shortName }: { shortName: string }): React.ReactElemen
 
 // ── Tab: Drops ─────────────────────────────────────────────────────────────────
 
+const ZONE_DROPS_PAGE_SIZE = 100
+
 function DropsTab({ shortName }: { shortName: string }): React.ReactElement {
   const navigate = useNavigate()
   const [drops, setDrops] = useState<ZoneDropItem[]>([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Monotonic token so a slow earlier request can't clobber a newer one.
+  const seqRef = useRef(0)
 
   useEffect(() => {
+    const seq = ++seqRef.current
     setLoading(true)
     setError(null)
-    getZoneDrops(shortName)
-      .then(setDrops)
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false))
+    getZoneDrops(shortName, ZONE_DROPS_PAGE_SIZE, 0)
+      .then((res) => {
+        if (seq !== seqRef.current) return
+        setDrops(res.items ?? [])
+        setTotal(res.total)
+      })
+      .catch((err: Error) => { if (seq === seqRef.current) setError(err.message) })
+      .finally(() => { if (seq === seqRef.current) setLoading(false) })
   }, [shortName])
+
+  function loadMore() {
+    const seq = seqRef.current
+    setLoadingMore(true)
+    getZoneDrops(shortName, ZONE_DROPS_PAGE_SIZE, drops.length)
+      .then((res) => {
+        if (seq !== seqRef.current) return
+        setDrops((prev) => [...prev, ...(res.items ?? [])])
+        setTotal(res.total)
+      })
+      .catch((err: Error) => { if (seq === seqRef.current) setError(err.message) })
+      .finally(() => { if (seq === seqRef.current) setLoadingMore(false) })
+  }
 
   if (loading) return <LoadingState />
   if (error) return <ErrorState message={error} />
   if (drops.length === 0) return <EmptyState message="No drops found." />
 
+  const hasMore = !loading && drops.length < total
+
   return (
     <div>
-      {drops.length >= 500 && (
-        <p className="mb-2 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-          Showing first 500 results
-        </p>
-      )}
       <div
         className="rounded border"
         style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
@@ -588,6 +609,22 @@ function DropsTab({ shortName }: { shortName: string }): React.ReactElement {
             )}
           </button>
         ))}
+        {hasMore && (
+          <div className="px-3 py-2">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="w-full rounded border py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-muted-foreground)',
+              }}
+            >
+              {loadingMore ? 'Loading…' : `Show more (${(total - drops.length).toLocaleString()} remaining)`}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

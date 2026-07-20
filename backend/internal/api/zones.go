@@ -137,13 +137,15 @@ func (h *zonesHandler) getForage(w http.ResponseWriter, r *http.Request) {
 
 func (h *zonesHandler) getDrops(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	result, err := h.db.GetZoneDrops(name)
+	limit := queryInt(r, "limit", 100)
+	if limit > 500 {
+		limit = 500
+	}
+	offset := queryInt(r, "offset", 0)
+	result, err := h.db.GetZoneDrops(name, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	if result == nil {
-		result = []db.ZoneDropItem{}
 	}
 	writeJSON(w, http.StatusOK, result)
 }
