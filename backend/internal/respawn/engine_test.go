@@ -209,6 +209,23 @@ func TestSummarize(t *testing.T) {
 			infos:   []db.RespawnInfo{{NPCID: 1, RespawnTime: 0}},
 			wantEst: 0,
 		},
+		{
+			// Raid/named encounters with a script-controlled respawn use
+			// this EQEmu sentinel in spawn2.respawntime instead of a real
+			// natural timer; treating it as real produced the reported
+			// "19d instead of 3d" bug for Luclin raid targets.
+			name:    "script-controlled sentinel ignored",
+			infos:   []db.RespawnInfo{{NPCID: 1, RespawnTime: scriptControlledRespawnSentinel}},
+			wantEst: 0,
+		},
+		{
+			name: "sentinel ignored alongside a real value",
+			infos: []db.RespawnInfo{
+				{NPCID: 1, RespawnTime: scriptControlledRespawnSentinel},
+				{NPCID: 1, RespawnTime: 259200},
+			},
+			wantEst: 259200,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

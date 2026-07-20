@@ -26,6 +26,18 @@ const graceWindow = 60 * time.Second
 // so it can't appear in either component.
 const keySep = "\x00"
 
+// scriptControlledRespawnSentinel is the raw spawn2.respawntime EQEmu content
+// databases use on raid/named encounters whose real respawn is driven by a
+// quest script (trial resets, guild lockouts) rather than the natural spawn
+// timer — 19 days 16 hours, effectively "never" as a fallback. It appears
+// verbatim across Project Quarm's raid zones (Vex Thal, Ssraeshza Temple,
+// Grieg's End, Kael Drakkel, Plane of Fear, Sleeper's Tomb, etc.). Treating
+// it as real produces wildly wrong countdowns (e.g. reported: 19d instead of
+// the ~3d trial-lockout window). These encounters already get an accurate
+// timer from the Lockout feature's "You have incurred a lockout..." kill
+// notice, so the death-timer overlay skips them the same as "no spawn data".
+const scriptControlledRespawnSentinel = 1700000
+
 // Engine watches parsed log events for kills, starts a respawn countdown for
 // each killed NPC that has spawn data in the current zone, and broadcasts state
 // once per second. It mirrors spelltimer.Engine's lifecycle.
@@ -253,7 +265,7 @@ func (e *Engine) onKill(displayName string, diedAt time.Time) {
 func summarize(infos []db.RespawnInfo) (estimate int, ambiguous bool, minS, maxS, npcID int) {
 	counts := make(map[int]int)
 	for _, ri := range infos {
-		if ri.RespawnTime <= 0 {
+		if ri.RespawnTime <= 0 || ri.RespawnTime == scriptControlledRespawnSentinel {
 			continue
 		}
 		counts[ri.RespawnTime]++
