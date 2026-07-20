@@ -1578,6 +1578,55 @@ hardening — no new features, but a broad sweep of reliability fixes.
   prefix as placeholders; and self-authored raid chat tells are parsed
   correctly instead of being silently dropped
 
+## v0.17.4 — Curated Tradeskill Paths, Accuracy Fixes
+
+- **Curated tradeskill paths** — the leveling planner's DB-derived solver
+  is replaced with a hand-curated Recommended path per trade
+  (cross-verified against quarm.db and real drop/fishing/forage tables),
+  plus a persistent, searchable Custom path across all 12 disciplines
+- **Trigger overlay Monitor shortcut** — the overlay text action now
+  deep-links to Settings > Overlays' monitor picker
+- Fixes: Gear Upgrade Finder nets out the equipped offhand's stats when
+  scoring a 2H weapon candidate instead of scoring it as a pure upgrade;
+  ranged-spell immunity ("belly caster") now shows up on overlay badges
+  and the clipboard tag list; fixed a race where a kill notice's lockout
+  write could stall the log tailer, intermittently freezing Roll Tracker
+  and other live features until restart; and Archive & Trim now refuses
+  to run while the log is still being actively written to
+
+## v0.17.5 — Log Tailer Reopen Fix
+
+- Fixes: the log tailer now detects when the active eqlog file is deleted
+  and recreated at the same path (e.g. clearing a corrupted log) and
+  reopens it, instead of silently freezing on the old file until PQ
+  Companion is restarted
+
+## v0.17.6 — CH Metronome Shared State, NPC Overlay Boss-Variant Fix
+
+- Fixes: the CH Metronome overlay and dashboard panel now share the same
+  learned chain-call-number state, fixing cases where the popped-out
+  overlay would stop flashing reliably (or need to relearn from scratch
+  after every reopen) even though the CH Chain window kept counting
+  normally; the NPC overlay no longer picks up decoy/placeholder
+  `race=127` rows when looking up boss variants, which could previously
+  outrank the real boss's stats (e.g. Rhag'Mozdezh) in the lookup
+
+## Unreleased — Faction Tracker (dev-gated)
+
+- **Faction Tracker** — per-character tracking of every faction ever
+  killed toward or `/con`'d, the same "record everything encountered"
+  approach as the Lockout and Player trackers. EQ never logs a faction's
+  absolute value, so this is always an estimate: a running better/worse
+  tally with a best-effort point estimate when a change correlates to a
+  resolved kill (`npc_faction_entries`), plus a 9-segment `/con`
+  disposition bucket bar per faction (flagged suspect when the reading
+  was taken while illusioned). Progress persists in user.db across
+  restarts and character switches. Pinning a faction (search + star) is
+  purely a display favorite — unpinning never deletes tracked history,
+  and searching surfaces any faction's known data whether pinned or not,
+  even for a non-active character. Gated behind Settings > Developer >
+  Flags, off by default.
+
 ## Phase 11 — Project Website
 _Planned_
 
