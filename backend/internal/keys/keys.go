@@ -293,7 +293,7 @@ func All() []KeyDef {
 				{ItemID: 22190, ItemName: "A Lucid Shard (Akheva Ruins)", Notes: "Drops in Akheva Ruins."},
 				{ItemID: 22191, ItemName: "A Lucid Shard (Dawnshroud Peaks)", Notes: "Drops in The Dawnshroud Peaks."},
 				{ItemID: 22192, ItemName: "A Lucid Shard (Maiden's Eye)", Notes: "Drops in The Maiden's Eye."},
-				{ItemID: 22193, ItemName: "A Lucid Shard (Acrylia Caverns)", Notes: "Drops in Acrylia Caverns."},
+				{ItemID: 22193, ItemName: "A Lucid Shard (Acrylia Caverns)", Notes: "Drops in Acrylia Caverns. Also drops from a few NPCs in Grimling Forest, which is often the easier farm."},
 				{ItemID: 22194, ItemName: "A Lucid Shard (Katta Castellum / Sanctus Seru)", Notes: "Drops in Katta Castellum and Sanctus Seru."},
 				{
 					ItemID:   9410,
