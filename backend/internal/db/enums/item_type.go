@@ -55,6 +55,12 @@ var itemTypes = map[int]string{
 	42: "Poison",
 	45: "Hand to Hand",
 	52: "Container Token",
+
+	// -1 is not a real items.itemtype value — it's a sentinel used by
+	// itemTypeOverrides (internal/db/queries.go) for items whose raw
+	// itemtype=0 wrongly collides with "1H Slashing" (0 is the dump's
+	// column default, not an actual weapon type).
+	-1: "None",
 }
 
 // ItemTypeName returns the display name for an items.itemtype value, or

@@ -33,6 +33,28 @@ const itemColumns = `
   i.stackable, i.stacksize,
   i.price, i.icon, i.minstatus`
 
+// itemTypeOverrides corrects items.itemtype values that are wrong in the
+// source MySQL dump (quarm.db is regenerated from those dumps and is never
+// hand-edited, so the correction lives in code).
+//
+// The ten Vex Thal "A Lucid Shard (...)" key components (22185-22194) carry
+// itemtype=0 — the dump's column default for quest items with no real weapon
+// type — which collides with the legitimate "1H Slashing" enum value. -1
+// maps to the "None" label (internal/db/enums/item_type.go).
+var itemTypeOverrides = map[int]int{
+	22185: -1, 22186: -1, 22187: -1, 22188: -1, 22189: -1,
+	22190: -1, 22191: -1, 22192: -1, 22193: -1, 22194: -1,
+}
+
+// effectiveItemType returns the itemtype to use for an item, applying any
+// known correction from itemTypeOverrides.
+func effectiveItemType(id, itemType int) int {
+	if t, ok := itemTypeOverrides[id]; ok {
+		return t
+	}
+	return itemType
+}
+
 func scanItem(row interface {
 	Scan(...any) error
 }) (*Item, error) {
@@ -57,6 +79,7 @@ func scanItem(row interface {
 	if err != nil {
 		return nil, err
 	}
+	it.ItemType = effectiveItemType(it.ID, it.ItemType)
 	return &it, nil
 }
 
@@ -2476,36 +2499,52 @@ func (db *DB) GetZoneForage(shortName string) ([]ZoneForageItem, error) {
 	return result, rows.Err()
 }
 
-// GetZoneDrops returns items dropped by NPCs in the given zone (capped at 500).
-func (db *DB) GetZoneDrops(shortName string) ([]ZoneDropItem, error) {
+// zoneDropsFrom is the shared FROM/WHERE behind GetZoneDrops' count and page
+// queries — it must stay identical between the two so Total matches Items.
+const zoneDropsFrom = `
+	FROM npc_types n
+	JOIN loottable_entries lte ON lte.loottable_id = n.loottable_id
+	JOIN lootdrop_entries lde ON lde.lootdrop_id = lte.lootdrop_id
+	JOIN items i ON i.id = lde.item_id
+	WHERE n.id IN (
+		SELECT DISTINCT se.npcID
+		FROM spawnentry se
+		JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
+		WHERE s2.zone = ?
+	) AND n.loottable_id > 0`
+
+// GetZoneDrops returns items dropped by NPCs in the given zone, paginated.
+func (db *DB) GetZoneDrops(shortName string, limit, offset int) (*SearchResult[ZoneDropItem], error) {
+	var total int
+	if err := db.QueryRow(
+		"SELECT COUNT(*) FROM (SELECT DISTINCT lde.item_id, n.id "+zoneDropsFrom+")",
+		shortName,
+	).Scan(&total); err != nil {
+		return nil, fmt.Errorf("count zone drops %q: %w", shortName, err)
+	}
+
 	rows, err := db.Query(`
 		SELECT DISTINCT lde.item_id, i.Name, n.id, n.name, lde.chance
-		FROM npc_types n
-		JOIN loottable_entries lte ON lte.loottable_id = n.loottable_id
-		JOIN lootdrop_entries lde ON lde.lootdrop_id = lte.lootdrop_id
-		JOIN items i ON i.id = lde.item_id
-		WHERE n.id IN (
-			SELECT DISTINCT se.npcID
-			FROM spawnentry se
-			JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
-			WHERE s2.zone = ?
-		) AND n.loottable_id > 0
+		`+zoneDropsFrom+`
 		ORDER BY i.Name, n.name
-		LIMIT 500`, shortName)
+		LIMIT ? OFFSET ?`, shortName, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("get zone drops %q: %w", shortName, err)
 	}
 	defer rows.Close()
 
-	var result []ZoneDropItem
+	items := []ZoneDropItem{}
 	for rows.Next() {
 		var d ZoneDropItem
 		if err := rows.Scan(&d.ItemID, &d.ItemName, &d.NPCID, &d.NPCName, &d.Chance); err != nil {
 			return nil, fmt.Errorf("scan zone drop: %w", err)
 		}
-		result = append(result, d)
+		items = append(items, d)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return &SearchResult[ZoneDropItem]{Items: items, Total: total}, nil
 }
 
 // ─── AA ───────────────────────────────────────────────────────────────────────
