@@ -9,6 +9,25 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.17.7 — 2026-07-20
+
+A new Faction Tracker arrives alongside CH Chain possible-miss detection, a second local TTS provider, and a "what's new" changelog popup.
+
+### Highlights
+- **Faction Tracker** — per-character tracking of every faction ever killed toward or /con'd, with a persistent 9-segment /con disposition bucket bar, best-effort point estimates from resolved kills and exact quest-turn-in deltas, and log backfill support.
+- **CH Chain possible-miss detection** — Cleric Complete Healing casts (and optionally Druid Superior Healing) are now watched for their heal-landed confirmation text; if it never arrives, the CH Chain overlay bar renders red instead of silently expiring.
+- **Kokoro TTS** — a second local text-to-speech provider alongside Piper, talking to a self-hosted Kokoro-FastAPI server over HTTP.
+- **"What's New" popup** — a one-time popup after an update listing every release since the version last seen, plus a full version history in Settings > Changelog.
+- **CH Metronome audio/TTS alerts** — optional sound or spoken cues for countdown start and "cast now," independent of whether either metronome overlay is open.
+- **Zone drop pagination** — the Drops tab now pages past the previous 500-item cap instead of silently truncating.
+
+### Fixes
+- VT Lucid Shards no longer show up as 1H Slashing weapons in the item browser.
+- Noted Grimling Forest as an easier farm for the Acrylia Caverns Lucid Shard (VT key component).
+- The respawn timer overlay now skips EQEmu's script-controlled 19-day sentinel value on raid bosses instead of showing a bogus 19-day countdown.
+- The CH Metronome now keeps advancing off other slots' callouts when the watched cleric misses a cast, instead of stalling indefinitely.
+- The tradeskill trainer's "already trained to the limit" reply no longer falsely fires the Incoming Tell trigger.
+
 ## v0.17.6 — 2026-07-19
 
 Fixes for the CH Metronome overlay and the NPC overlay's boss-variant lookup.

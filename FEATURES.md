@@ -1611,21 +1611,42 @@ hardening — no new features, but a broad sweep of reliability fixes.
   `race=127` rows when looking up boss variants, which could previously
   outrank the real boss's stats (e.g. Rhag'Mozdezh) in the lookup
 
-## Unreleased — Faction Tracker (dev-gated)
+## v0.17.7 — Faction Tracker, CH Chain Possible-Miss Detection, Kokoro TTS
 
 - **Faction Tracker** — per-character tracking of every faction ever
   killed toward or `/con`'d, the same "record everything encountered"
   approach as the Lockout and Player trackers. EQ never logs a faction's
   absolute value, so this is always an estimate: a running better/worse
   tally with a best-effort point estimate when a change correlates to a
-  resolved kill (`npc_faction_entries`), plus a 9-segment `/con`
+  resolved kill (`npc_faction_entries`) or an exact quest-turn-in delta
+  (parsed from quest script dialogue), plus a 9-segment `/con`
   disposition bucket bar per faction (flagged suspect when the reading
   was taken while illusioned). Progress persists in user.db across
   restarts and character switches. Pinning a faction (search + star) is
   purely a display favorite — unpinning never deletes tracked history,
   and searching surfaces any faction's known data whether pinned or not,
-  even for a non-active character. Gated behind Settings > Developer >
+  even for a non-active character. Log Backfill support scans existing
+  `/con` history to seed a baseline. Gated behind Settings > Developer >
   Flags, off by default.
+- **CH Chain possible-miss detection** — each chain callout's captured
+  target is watched for Complete Healing's heal-landed bystander text
+  (and optionally Superior Healing's for Druid DCH slots); if it never
+  arrives before the cast window elapses, the CH Chain overlay bar
+  renders red instead of silently expiring, surfacing fizzles,
+  interrupts, and skipped casts.
+- **Kokoro TTS** — a second local text-to-speech provider alongside
+  Piper. Kokoro talks to a self-hosted Kokoro-FastAPI server over HTTP
+  (e.g. `docker run`) instead of a spawned executable — enable it, enter
+  the service URL, and the voice dropdown populates live.
+- **"What's New" popup** — a one-time popup after an update listing
+  every release since the version last seen, with a "don't show this
+  again" checkbox. Settings gains a Changelog tab with the full version
+  history.
+- **CH Metronome audio/TTS alerts** — optional sound or spoken cues for
+  countdown start and "cast now," reusing the existing sound/TTS picker;
+  fires regardless of whether either metronome overlay is open.
+- **Zone drop pagination** — the Drops tab now pages past the previous
+  500-item hard cap instead of silently truncating.
 
 ## Phase 11 — Project Website
 _Planned_
