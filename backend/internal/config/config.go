@@ -546,6 +546,24 @@ type Preferences struct {
 	// is treated as "spawn".
 	PiperMode string `yaml:"piper_mode,omitempty" json:"piper_mode"`
 
+	// ── Local TTS (Kokoro) ────────────────────────────────────────────────
+	// Second opt-in local neural TTS provider, alongside Piper (see
+	// internal/kokorotts) — a self-hosted Kokoro-FastAPI server the user
+	// runs themselves (e.g. `docker run`), reached over HTTP. Unlike Piper
+	// there's no exe/model file to point at: KokoroBaseURL is the service's
+	// address (e.g. "http://localhost:8880"), and the voice catalog is
+	// fetched live from it. When enabled and reachable, a trigger/alert
+	// voice of "kokoro:local" is synthesized to a cached WAV by the Go
+	// backend and played through the normal sound pipeline. Any failure
+	// falls back to Web Speech. All fields default to zero (disabled).
+	KokoroEnabled bool   `yaml:"kokoro_enabled,omitempty" json:"kokoro_enabled"`
+	KokoroBaseURL string `yaml:"kokoro_base_url,omitempty" json:"kokoro_base_url"`
+	// KokoroVoice is the API voice id, e.g. "af_heart". Empty defaults to
+	// "af_heart".
+	KokoroVoice string `yaml:"kokoro_voice,omitempty" json:"kokoro_voice"`
+	// KokoroSpeed is the CLI --speed multiplier. Empty/zero defaults to 1.0.
+	KokoroSpeed float64 `yaml:"kokoro_speed,omitempty" json:"kokoro_speed"`
+
 	// WishlistWatch configures the wishlist watcher: an alert fired when a
 	// wishlisted item's name appears anywhere in the active character's log
 	// (loot lines, chat, raid calls, ...). See internal/wishlistwatch. Off by

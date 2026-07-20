@@ -6,6 +6,7 @@ import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
 import { TtsVoiceDefault, OverlayTextDefaults } from '../components/settings/AlertDefaultsSettings'
 import PiperTtsSettings from '../components/settings/PiperTtsSettings'
+import KokoroTtsSettings from '../components/settings/KokoroTtsSettings'
 import TimerAlertPrefEditor from '../components/settings/TimerAlertPrefEditor'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, exportDebugLogs, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, getEqwStatus, getChangelog, type ServerInfo, type TestPortResult, type ChangelogEntry } from '../services/api'
 import { renderChangelogBody } from '../components/WhatsNewModal'
@@ -1841,6 +1842,8 @@ export default function SettingsPage(): React.ReactElement {
           <TtsVoiceDefault config={config} setConfig={setConfig} />
 
           <PiperTtsSettings config={config} setConfig={setConfig} />
+
+          <KokoroTtsSettings config={config} setConfig={setConfig} />
         </section>
         )}
 

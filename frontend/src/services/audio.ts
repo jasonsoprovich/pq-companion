@@ -3,12 +3,14 @@
  *
  * playSound  — plays a local file via an HTML5 Audio element.
  * speakText  — speaks text aloud via the Web Speech Synthesis API, OR, when the
- *              selected voice is the Piper local voice, asks the backend to
- *              synthesize a cached WAV and plays that through playSound. Any
- *              Piper failure falls back to Web Speech so an alert is never lost.
+ *              selected voice is a local-TTS voice (Piper or Kokoro), asks the
+ *              backend to synthesize a cached WAV and plays that through
+ *              playSound. Any local-TTS failure falls back to Web Speech so an
+ *              alert is never lost.
  */
 import { isPiperVoice } from '../lib/piper'
-import { piperSynthesize } from './api'
+import { isKokoroVoice } from '../lib/kokoro'
+import { piperSynthesize, kokoroSynthesize } from './api'
 
 // Deduplication: track when each unique audio key was last fired.
 // Prevents the same sound/utterance from playing twice when multiple alert
@@ -78,25 +80,26 @@ export function setDefaultTTSVoice(name: string): void {
   defaultTTSVoice = typeof name === 'string' ? name : ''
 }
 
-// Optional hook invoked when a Piper synthesis attempt fails and playback falls
-// back to a Web Speech voice. The app can wire this to a non-blocking toast so
-// the user learns their Piper setup isn't working; unset, it just logs. Kept as
-// a pluggable callback so this leaf service stays decoupled from the React
-// notification layer. Never throws into the audio path.
-let piperFallbackNotifier: ((message: string) => void) | null = null
+// Optional hook invoked when a local-TTS synthesis attempt (Piper or Kokoro)
+// fails and playback falls back to a Web Speech voice. The app can wire this
+// to a non-blocking toast so the user learns their setup isn't working;
+// unset, it just logs. Kept as a pluggable callback so this leaf service
+// stays decoupled from the React notification layer. Never throws into the
+// audio path.
+let ttsFallbackNotifier: ((message: string) => void) | null = null
 
-/** Register a callback fired (once per failure) when Piper falls back to Web Speech. */
-export function setPiperFallbackNotifier(fn: ((message: string) => void) | null): void {
-  piperFallbackNotifier = typeof fn === 'function' ? fn : null
+/** Register a callback fired (once per failure) when a local-TTS voice falls back to Web Speech. */
+export function setTtsFallbackNotifier(fn: ((message: string) => void) | null): void {
+  ttsFallbackNotifier = typeof fn === 'function' ? fn : null
 }
 
-function notifyPiperFallback(err: unknown): void {
+function notifyLocalTtsFallback(provider: string, err: unknown): void {
   const detail = err instanceof Error ? err.message : String(err)
-  const message = `Piper voice unavailable — using the default voice. (${detail})`
+  const message = `${provider} voice unavailable — using the default voice. (${detail})`
   // eslint-disable-next-line no-console
-  console.warn('[audio] piper fallback:', message)
+  console.warn(`[audio] ${provider.toLowerCase()} fallback:`, message)
   try {
-    piperFallbackNotifier?.(message)
+    ttsFallbackNotifier?.(message)
   } catch {
     // A broken notifier must never break the audio path.
   }
@@ -278,7 +281,7 @@ export function playSound(filePath: string, volume = 1.0): void {
  * Actually starts playback of a local sound file, bypassing the owner check
  * and dedup window (callers that need those apply them before calling this).
  * Shared by playSound (fire-and-forget sound effects, which are allowed to
- * overlap) and the Piper TTS queue below (which serializes on `onEnd`).
+ * overlap) and the local-TTS queue below (which serializes on `onEnd`).
  */
 function playSoundNow(filePath: string, volume: number, onEnd?: () => void): void {
   // Duplicate-audio diagnostic: emitted once per actual play. If a single fire
@@ -318,31 +321,34 @@ function playSoundNow(filePath: string, volume: number, onEnd?: () => void): voi
   })
 }
 
-// Piper TTS renders each utterance to a WAV and plays it through the same
-// Audio-element pipeline as sound-effect triggers (playSound above). Sound
-// effects are meant to overlap — two alert dings firing together should be
-// heard together — but overlapping *speech* is unintelligible: a burst of
-// triggers within the same second (Larcen's report — two Piper triggers
-// firing seconds apart played on top of each other) needs to speak one after
-// another, the same way the Web Speech engine already queues natively (see
-// the no-cancel() note in speakViaWebSpeech). This is a dedicated FIFO for
-// Piper playback only, so ordinary sound effects are unaffected.
-const piperQueue: Array<{ filePath: string; volume: number }> = []
-let piperQueueDraining = false
+// Local-TTS providers (Piper, Kokoro) render each utterance to a WAV and play
+// it through the same Audio-element pipeline as sound-effect triggers
+// (playSound above). Sound effects are meant to overlap — two alert dings
+// firing together should be heard together — but overlapping *speech* is
+// unintelligible: a burst of triggers within the same second (Larcen's
+// report — two Piper triggers firing seconds apart played on top of each
+// other) needs to speak one after another, the same way the Web Speech engine
+// already queues natively (see the no-cancel() note in speakViaWebSpeech).
+// This is a dedicated FIFO for local-TTS playback only (shared by every
+// provider, so a Piper and a Kokoro trigger firing together still serialize
+// against each other, not just within their own provider), so ordinary sound
+// effects are unaffected.
+const localTtsQueue: Array<{ filePath: string; volume: number }> = []
+let localTtsQueueDraining = false
 
-function enqueuePiperAudio(filePath: string, volume: number): void {
-  piperQueue.push({ filePath, volume })
-  if (!piperQueueDraining) drainPiperQueue()
+function enqueueLocalTtsAudio(filePath: string, volume: number): void {
+  localTtsQueue.push({ filePath, volume })
+  if (!localTtsQueueDraining) drainLocalTtsQueue()
 }
 
-function drainPiperQueue(): void {
-  const next = piperQueue.shift()
+function drainLocalTtsQueue(): void {
+  const next = localTtsQueue.shift()
   if (!next) {
-    piperQueueDraining = false
+    localTtsQueueDraining = false
     return
   }
-  piperQueueDraining = true
-  playSoundNow(next.filePath, next.volume, drainPiperQueue)
+  localTtsQueueDraining = true
+  playSoundNow(next.filePath, next.volume, drainLocalTtsQueue)
 }
 
 /**
@@ -361,20 +367,24 @@ export function speakText(text: string, voice = '', volume = 1.0): void {
   // eslint-disable-next-line no-console
   console.warn(`[audio-diag] speak tts r=${RENDERER_AUDIO_ID} text=${text}`)
 
-  // A "piper:" voice is synthesized by the backend into a cached WAV and played
-  // as a sound file; anything else is a local Web Speech voice. The effective
-  // voice honours the app-default fallback, so a default of Piper routes here.
-  if (isPiperVoice(voice || defaultTTSVoice)) {
-    piperSynthesize(text)
+  // A "piper:" or "kokoro:" voice is synthesized by the backend into a cached
+  // WAV and played as a sound file; anything else is a local Web Speech
+  // voice. The effective voice honours the app-default fallback, so a
+  // default of Piper/Kokoro routes here.
+  const effectiveVoice = voice || defaultTTSVoice
+  if (isPiperVoice(effectiveVoice) || isKokoroVoice(effectiveVoice)) {
+    const provider = isPiperVoice(effectiveVoice) ? 'Piper' : 'Kokoro'
+    const synthesize = isPiperVoice(effectiveVoice) ? piperSynthesize : kokoroSynthesize
+    synthesize(text)
       .then(({ path }) => {
-        // Queued (not playSound) so a burst of Piper triggers speaks one
-        // utterance at a time instead of overlapping — see the piperQueue
-        // comment below. Still funnels through the same GC-safe
+        // Queued (not playSound) so a burst of local-TTS triggers speaks one
+        // utterance at a time instead of overlapping — see the localTtsQueue
+        // comment above. Still funnels through the same GC-safe
         // activePlaybacks pipeline once its turn comes up.
-        if (path) enqueuePiperAudio(path, volume)
+        if (path) enqueueLocalTtsAudio(path, volume)
       })
       .catch((err: unknown) => {
-        notifyPiperFallback(err)
+        notifyLocalTtsFallback(provider, err)
         speakViaWebSpeech(text, '', volume) // OS default voice as the fallback
       })
     return
@@ -385,8 +395,8 @@ export function speakText(text: string, voice = '', volume = 1.0): void {
 
 /**
  * Speak via the Web Speech Synthesis API with the given voice name (empty =
- * app default / OS default). The production TTS path and the Piper fallback
- * both funnel through here.
+ * app default / OS default). The production TTS path and the local-TTS
+ * fallback both funnel through here.
  */
 function speakViaWebSpeech(text: string, voice: string, volume: number): void {
   if (!window.speechSynthesis) return
@@ -494,17 +504,21 @@ export function speakTextForTest(
     return
   }
 
-  // Piper preview: synthesize (cache hit = instant, miss = a one-time spawn)
-  // then play the WAV as a file test. On any failure, preview the Web Speech
-  // fallback so the button still resolves and the user hears *something*.
-  if (isPiperVoice(voice || defaultTTSVoice)) {
-    piperSynthesize(text)
+  // Local-TTS preview: synthesize (cache hit = instant, miss = a one-time
+  // spawn) then play the WAV as a file test. On any failure, preview the Web
+  // Speech fallback so the button still resolves and the user hears
+  // *something*.
+  const effectiveVoice = voice || defaultTTSVoice
+  if (isPiperVoice(effectiveVoice) || isKokoroVoice(effectiveVoice)) {
+    const provider = isPiperVoice(effectiveVoice) ? 'Piper' : 'Kokoro'
+    const synthesize = isPiperVoice(effectiveVoice) ? piperSynthesize : kokoroSynthesize
+    synthesize(text)
       .then(({ path }) => {
         if (path) playSoundForTest(path, volume, onEnd)
         else onEnd?.()
       })
       .catch((err: unknown) => {
-        notifyPiperFallback(err)
+        notifyLocalTtsFallback(provider, err)
         speakViaWebSpeechForTest(text, '', volume, onEnd, rate)
       })
     return

@@ -9,6 +9,8 @@
  * WebSocket, config round-trip) carries it as an opaque string unchanged.
  */
 
+import { KOKORO_VOICE_ID, KOKORO_VOICE_LABEL } from './kokoro'
+
 /** Sentinel `voice` value selecting the configured Piper voice. */
 export const PIPER_VOICE_ID = 'piper:local'
 
@@ -22,11 +24,15 @@ export function isPiperVoice(voice: string | undefined | null): boolean {
 
 /**
  * Display label for a voice value in a dropdown. Web Speech voices show their
- * bare name (value === label); the Piper sentinel shows a friendly, namespaced
- * label so it's unambiguous next to the OS voices.
+ * bare name (value === label); the Piper/Kokoro sentinels show a friendly,
+ * namespaced label so they're unambiguous next to the OS voices. Lives here
+ * (rather than split per-provider) because every call site already imports
+ * it from this one place.
  */
 export function voiceLabel(voice: string): string {
-  return voice === PIPER_VOICE_ID ? PIPER_VOICE_LABEL : voice
+  if (voice === PIPER_VOICE_ID) return PIPER_VOICE_LABEL
+  if (voice === KOKORO_VOICE_ID) return KOKORO_VOICE_LABEL
+  return voice
 }
 
 /**

@@ -75,6 +75,7 @@ export interface GlobalSearchResult {
 
 import { getBackendBaseUrl } from './backendUrl'
 import { isPiperVoice } from '../lib/piper'
+import { isKokoroVoice } from '../lib/kokoro'
 
 // A GET can fail to even reach the backend during the brief startup window
 // before the sidecar is accepting connections — fetch rejects with a TypeError
@@ -620,6 +621,29 @@ export function piperSynthesize(text: string, force = false): Promise<{ path: st
 
 export function clearPiperCache(): Promise<{ removed: number }> {
   return post<{ removed: number }>('/api/piper/clear-cache')
+}
+
+// ── Kokoro (local TTS) ────────────────────────────────────────────────────────
+
+export function getKokoroStatus(): Promise<import('../lib/kokoro').KokoroStatus> {
+  return get<import('../lib/kokoro').KokoroStatus>('/api/kokoro/status')
+}
+
+/**
+ * Synthesize `text` in the configured Kokoro voice, returning the cached WAV
+ * path (generated on a cache miss). Rejects when Kokoro is disabled,
+ * misconfigured, or the spawn fails — callers use that to fall back to Web
+ * Speech, so a rejection here is a normal, non-fatal outcome.
+ *
+ * Pass `force: true` to bypass the cache and always regenerate — used by the
+ * Settings "Test voice" button.
+ */
+export function kokoroSynthesize(text: string, force = false): Promise<{ path: string }> {
+  return post<{ path: string }>('/api/kokoro/synthesize', { text, force })
+}
+
+export function clearKokoroCache(): Promise<{ removed: number }> {
+  return post<{ removed: number }>('/api/kokoro/clear-cache')
 }
 
 // ── Zeal ───────────────────────────────────────────────────────────────────────
@@ -2274,17 +2298,23 @@ export interface CreateTriggerRequest {
 }
 
 /**
- * Warm the Piper WAV cache for a saved trigger's static (token-free) TTS text,
- * so the first fire of a Piper-voiced callout is instant instead of paying the
- * one-time cold-spawn model-load lag. Best-effort and fire-and-forget: failures
- * (Piper disabled/misconfigured) are swallowed — the lazy fire-time synthesis +
- * Web Speech fallback still cover correctness. Token-bearing text ("{spell}") is
- * skipped since its resolved value isn't known until fire time.
+ * Warm a local-TTS provider's WAV cache for a saved trigger's static
+ * (token-free) TTS text, so the first fire of that callout is instant instead
+ * of paying the one-time cold-spawn model-load lag. Best-effort and
+ * fire-and-forget: failures (provider disabled/misconfigured) are swallowed —
+ * the lazy fire-time synthesis + Web Speech fallback still cover correctness.
+ * Token-bearing text ("{spell}") is skipped since its resolved value isn't
+ * known until fire time. Shared by Piper and Kokoro (each with its own
+ * voice-matcher and synthesize call).
  */
-function prewarmPiperVoices(trigger: Trigger): void {
+function prewarmLocalTtsVoices(
+  trigger: Trigger,
+  isVoice: (voice: string | undefined) => boolean,
+  synthesize: (text: string) => Promise<{ path: string }>,
+): void {
   const phrases = new Set<string>()
   const consider = (voice: string | undefined, text: string | undefined): void => {
-    if (isPiperVoice(voice) && text && !text.includes('{')) phrases.add(text)
+    if (isVoice(voice) && text && !text.includes('{')) phrases.add(text)
   }
   for (const a of trigger.actions ?? []) {
     if (a.type === 'text_to_speech') consider(a.voice, a.text)
@@ -2293,20 +2323,25 @@ function prewarmPiperVoices(trigger: Trigger): void {
     if (t.type === 'text_to_speech') consider(t.voice, t.tts_template)
   }
   for (const text of phrases) {
-    piperSynthesize(text).catch(() => {})
+    synthesize(text).catch(() => {})
   }
+}
+
+function prewarmTriggerVoices(trigger: Trigger): void {
+  prewarmLocalTtsVoices(trigger, isPiperVoice, piperSynthesize)
+  prewarmLocalTtsVoices(trigger, isKokoroVoice, kokoroSynthesize)
 }
 
 export function createTrigger(req: CreateTriggerRequest): Promise<Trigger> {
   return post<Trigger>('/api/triggers', req).then((t) => {
-    prewarmPiperVoices(t)
+    prewarmTriggerVoices(t)
     return t
   })
 }
 
 export function updateTrigger(id: string, req: CreateTriggerRequest): Promise<Trigger> {
   return put<Trigger>(`/api/triggers/${encodeURIComponent(id)}`, req).then((t) => {
-    prewarmPiperVoices(t)
+    prewarmTriggerVoices(t)
     return t
   })
 }

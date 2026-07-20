@@ -18,6 +18,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/eqw"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/keyring"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/kokorotts"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/lockout"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/loot"
@@ -105,6 +106,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	quarmH := &quarmHandler{cfgMgr: cfgMgr, fetcher: quarm.NewManifestFetcher()}
 	eqwH := &eqwHandler{cfgMgr: cfgMgr, latest: eqw.NewLatestFetcher()}
 	piperH := &piperHandler{cfgMgr: cfgMgr, svc: pipertts.NewService(filepath.Dir(cfgMgr.Path()))}
+	kokoroH := &kokoroHandler{cfgMgr: cfgMgr, svc: kokorotts.NewService(filepath.Dir(cfgMgr.Path()))}
 	sandboxH := &sandboxHandler{sb: sb, cfgMgr: cfgMgr}
 	savedQueryH := &savedQueryHandler{store: savedQueryStore, cfgMgr: cfgMgr}
 	popflagH := &popflagHandler{store: popflagStore, hub: hub, mgr: cfgMgr}
@@ -252,6 +254,11 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/status", piperH.status)
 			r.Post("/synthesize", piperH.synthesize)
 			r.Post("/clear-cache", piperH.clearCache)
+		})
+		r.Route("/kokoro", func(r chi.Router) {
+			r.Get("/status", kokoroH.status)
+			r.Post("/synthesize", kokoroH.synthesize)
+			r.Post("/clear-cache", kokoroH.clearCache)
 		})
 		r.Route("/zeal", func(r chi.Router) {
 			r.Get("/detect", zealH.detect)

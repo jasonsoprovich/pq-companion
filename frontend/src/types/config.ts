@@ -185,6 +185,22 @@ export interface Preferences {
   // persistent subprocess kept alive across requests). Empty/missing =
   // "spawn".
   piper_mode?: string
+  // ── Local TTS (Kokoro) ─────────────────────────────────────────────────
+  // Second opt-in local neural TTS provider, alongside Piper — a self-hosted
+  // Kokoro-FastAPI server the user runs themselves (e.g. `docker run`),
+  // reached over HTTP at kokoro_base_url. Unlike Piper there's no exe/model
+  // file to point at; the voice catalog is fetched live from the service.
+  // When enabled and reachable, a trigger/alert voice of KOKORO_VOICE_ID
+  // ("kokoro:local") is synthesized to a cached WAV by the backend and
+  // played through the normal sound pipeline; any failure falls back to Web
+  // Speech. All fields default off/empty.
+  kokoro_enabled?: boolean
+  // e.g. "http://localhost:8880". Empty defaults to that same address.
+  kokoro_base_url?: string
+  // The API voice id, e.g. "af_heart". Empty defaults to "af_heart".
+  kokoro_voice?: string
+  // The API's speed multiplier. Empty/zero defaults to 1.0.
+  kokoro_speed?: number
   // Wishlist watcher settings. See WishlistWatchSettings.
   wishlist_watch: WishlistWatchSettings
 }

@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { getPiperStatus } from '../services/api'
 import { PIPER_VOICE_ID, type PiperStatus } from '../lib/piper'
+import { KOKORO_VOICE_ID } from '../lib/kokoro'
 import { useWebSocket } from './useWebSocket'
 import type { WsMessage } from './useWebSocket'
+import { useKokoroStatus } from './useKokoroStatus'
 
 export interface UsePiperStatusResult {
   status: PiperStatus | null
@@ -52,14 +54,17 @@ export function usePiperStatus(): UsePiperStatusResult {
 }
 
 /**
- * Returns the Web Speech voice names with the configured Piper voice appended
- * (as PIPER_VOICE_ID) when Piper is enabled and ready. Drop-in replacement for
- * useVoices() in the alert/trigger voice dropdowns.
+ * Returns the Web Speech voice names with the configured local-TTS voices
+ * (Piper, Kokoro) appended when each is enabled and ready. Drop-in
+ * replacement for useVoices() in the alert/trigger voice dropdowns. Kept in
+ * this file (rather than split per-provider) because every call site already
+ * imports it from here.
  */
 export function useTTSVoices(baseVoices: string[]): string[] {
   const { status: piper } = usePiperStatus()
-  if (piper?.enabled && piper.ready) {
-    return [PIPER_VOICE_ID, ...baseVoices]
-  }
-  return baseVoices
+  const { status: kokoro } = useKokoroStatus()
+  const localVoices: string[] = []
+  if (piper?.enabled && piper.ready) localVoices.push(PIPER_VOICE_ID)
+  if (kokoro?.enabled && kokoro.ready) localVoices.push(KOKORO_VOICE_ID)
+  return [...localVoices, ...baseVoices]
 }

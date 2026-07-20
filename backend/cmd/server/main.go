@@ -33,7 +33,6 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/loot"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
-	"github.com/jasonsoprovich/pq-companion/backend/internal/pipertts"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/popflag"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/raidthreat"
@@ -46,6 +45,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/threat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trader"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/tts"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/wishlistwatch"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
@@ -929,18 +929,19 @@ func main() {
 		}()
 	}
 
-	// Piper local-TTS cache retention: reclaim generated WAVs that have gone
+	// Local-TTS cache retention: reclaim generated WAVs (from every local-TTS
+	// provider — Piper, Kokoro — sharing the one tts-cache dir) that have gone
 	// unused for a while (touched on every cache hit, so anything still in
-	// active use never ages out — see internal/pipertts/cache.go). Same
+	// active use never ages out — see internal/tts/cache.go). Same
 	// run-once-then-daily shape as the chat purge above; independent of
-	// whether Piper is currently enabled, since disabling it shouldn't strand
-	// old cache files forever.
+	// whether any provider is currently enabled, since disabling one shouldn't
+	// strand its old cache files forever.
 	go func() {
 		sweep := func() {
-			if n, err := pipertts.SweepOldCache(filepath.Dir(cfgMgr.Path())); err != nil {
-				slog.Warn("piper tts cache sweep failed", "err", err)
+			if n, err := tts.SweepOldCache(filepath.Dir(cfgMgr.Path())); err != nil {
+				slog.Warn("local tts cache sweep failed", "err", err)
 			} else if n > 0 {
-				slog.Info("piper tts cache sweep", "deleted", n)
+				slog.Info("local tts cache sweep", "deleted", n)
 			}
 		}
 		sweep()
