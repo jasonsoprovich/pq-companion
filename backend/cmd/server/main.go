@@ -77,6 +77,17 @@ func watchParentDeath() {
 	}()
 }
 
+// noopBackfillHandler satisfies backfill.Handler as a silent no-op, for a
+// backfill section that can't proceed for one particular character (e.g. no
+// character row exists yet for the Faction Tracker) without failing the
+// whole run.
+type noopBackfillHandler struct{}
+
+func (noopBackfillHandler) HandleEvent(logparser.LogEvent) {}
+func (noopBackfillHandler) HandleLine(time.Time, string)   {}
+func (noopBackfillHandler) Finalize()                      {}
+func (noopBackfillHandler) Inserted() int                  { return 0 }
+
 func main() {
 	addr := flag.String("addr", "", "HTTP listen address (overrides config server_addr)")
 	dbPath := flag.String("db", defaultDBPath(), "path to quarm.db")
@@ -794,7 +805,11 @@ func main() {
 	// the engine records. EQ never exposes a faction's absolute value, so
 	// none of this is ever a claim about real standing — see
 	// internal/factiontracker. Dev-gated.
-	factionEngine := factiontracker.NewEngine(hub, func(mobName string) ([]factiontracker.NPCFactionHit, bool) {
+	// Shared resolvers — used by both the live engine below and the
+	// Faction Tracker's log-backfill handler (registered further down),
+	// so the two never drift on how a kill/consider/quest-dialogue line
+	// resolves to a faction.
+	factionKillResolver := func(mobName string) ([]factiontracker.NPCFactionHit, bool) {
 		id, ok := database.GetNPCIDByName(mobName)
 		if !ok {
 			return nil, false
@@ -808,8 +823,8 @@ func main() {
 			hits[i] = factiontracker.NPCFactionHit{FactionID: h.FactionID, FactionName: h.FactionName, Value: h.Value}
 		}
 		return hits, true
-	})
-	factionEngine.SetPrimaryFactionResolver(func(npcName string) (int, string, bool) {
+	}
+	factionPrimaryResolver := func(npcName string) (int, string, bool) {
 		id, ok := database.GetNPCIDByName(npcName)
 		if !ok {
 			return 0, "", false
@@ -819,13 +834,12 @@ func main() {
 			return 0, "", false
 		}
 		return nf.PrimaryFactionID, nf.PrimaryFactionName, true
-	})
-	factionEngine.SetFactionIDResolver(database.GetFactionIDByName)
+	}
 	// Quest turn-in faction changes get an exact numeric delta (not a
 	// kill-correlated estimate) by matching the NPC's spoken log line
 	// against the quest script's own dialogue text — see
 	// db.ResolveQuestFactionDialogue and quest_sources.json.
-	factionEngine.SetQuestDialogueResolver(func(npcName, text string) ([]factiontracker.NPCFactionHit, bool) {
+	factionDialogueResolver := func(npcName, text string) ([]factiontracker.NPCFactionHit, bool) {
 		deltas, ok := db.ResolveQuestFactionDialogue(npcName, text)
 		if !ok || len(deltas) == 0 {
 			return nil, false
@@ -839,7 +853,12 @@ func main() {
 			hits = append(hits, factiontracker.NPCFactionHit{FactionID: f.ID, FactionName: f.Name, Value: d.Delta})
 		}
 		return hits, len(hits) > 0
-	})
+	}
+
+	factionEngine := factiontracker.NewEngine(hub, factionKillResolver)
+	factionEngine.SetPrimaryFactionResolver(factionPrimaryResolver)
+	factionEngine.SetFactionIDResolver(database.GetFactionIDByName)
+	factionEngine.SetQuestDialogueResolver(factionDialogueResolver)
 	// A /con reading is unreliable while the player is illusioned — check
 	// every currently active buff timer's spell effects for SPA 58
 	// (Illusion), the same check buffmod already uses for the Permanent
@@ -1042,6 +1061,46 @@ func main() {
 			Key:        "skills",
 			Label:      "Skill Tracker",
 			NewHandler: func(character string) backfill.Handler { return skills.NewBackfillHandler(skillsStore, character) },
+		})
+	}
+	if charStore != nil {
+		// Unlike the other trackers above (keyed by log-owning character
+		// name), the Faction Tracker's storage is keyed by charStore's
+		// internal character id — resolve it once per backfill run. If the
+		// character has never been seen by charStore (no character row
+		// yet), skip faction backfill for them entirely rather than erroring.
+		backfillRegistry.Register(backfill.Section{
+			Key:   "factions",
+			Label: "Faction Tracker",
+			NewHandler: func(charName string) backfill.Handler {
+				c, ok, err := charStore.GetByName(charName)
+				if err != nil || !ok {
+					return noopBackfillHandler{}
+				}
+				characterID := c.ID
+				return factiontracker.NewBackfillHandler(
+					factionKillResolver, factionPrimaryResolver, database.GetFactionIDByName, factionDialogueResolver,
+					func(tally factiontracker.Tally) (bool, error) {
+						row := character.FactionTallyRow{
+							CharacterID:  characterID,
+							FactionID:    tally.FactionID,
+							FactionName:  tally.FactionName,
+							Better:       tally.Better,
+							Worse:        tally.Worse,
+							EstimatedNet: tally.EstimatedNet,
+							Unresolved:   tally.Unresolved,
+						}
+						if tally.LastBucket != "" {
+							row.LastBucket = tally.LastBucket
+						}
+						if tally.LastConsideredAt != nil {
+							row.LastConsideredAt = tally.LastConsideredAt.Unix()
+							row.LastConsiderSuspect = tally.LastConsiderSuspect
+						}
+						return charStore.MergeBackfillFactionTally(row)
+					},
+				)
+			},
 		})
 	}
 

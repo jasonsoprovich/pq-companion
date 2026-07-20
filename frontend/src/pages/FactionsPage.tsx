@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Scale, Search, Star, Trash2, RefreshCw, AlertTriangle, Eye } from 'lucide-react'
+import { Scale, Search, Star, Trash2, RefreshCw, AlertTriangle, Eye, X } from 'lucide-react'
 import {
   listCharacters,
   searchFactions,
@@ -13,9 +13,11 @@ import type { Faction, FactionSearchResult, FactionWishlistEntry, FactionTally }
 import { BUCKET_ORDER, BUCKET_LABEL, BUCKET_COLOR, bucketIndex, type FactionBucket } from '../lib/factionBuckets'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { WSEvent } from '../lib/wsEvents'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import { ConfirmModal } from '../components/ConfirmModal'
+import BackfillLink from '../components/BackfillLink'
 
 // searchDebounceMs delays the faction-picker query until the user pauses
 // typing — cheap against the ~2100-row faction_list table, but no reason to
@@ -119,6 +121,64 @@ function TallyRow({
   )
 }
 
+// PreviewCard shows a temporarily-selected (not necessarily pinned) faction
+// from search — clicking a result's name previews it here without requiring
+// it be starred first. Mirrors TallyRow's layout but with a pin toggle and a
+// dismiss button instead of an unpin-only trash icon.
+function PreviewCard({
+  faction,
+  pinned,
+  onTogglePin,
+  onDismiss,
+}: {
+  faction: FactionSearchResult
+  pinned: boolean
+  onTogglePin: () => void
+  onDismiss: () => void
+}): React.ReactElement {
+  const tally = faction.tally
+  return (
+    <div
+      className="mb-4 flex flex-col gap-2 rounded-lg px-4 py-3"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px dashed var(--color-border)' }}
+    >
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted-foreground)' }}>
+            Preview
+          </div>
+          <div className="truncate text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+            {faction.name}
+          </div>
+          <div className="mt-1 flex items-center gap-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            <span style={{ color: 'var(--color-success)' }}>{tally?.better ?? 0} better</span>
+            <span style={{ color: '#f87171' }}>{tally?.worse ?? 0} worse</span>
+            {!tally && <span>No kill or /con data recorded yet</span>}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onTogglePin}
+          title={pinned ? 'Unpin this faction' : 'Pin this faction'}
+          className="shrink-0 rounded p-1.5"
+        >
+          <Star size={14} fill={pinned ? 'var(--color-primary)' : 'none'} style={{ color: pinned ? 'var(--color-primary)' : 'var(--color-muted-foreground)' }} />
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          title="Dismiss preview"
+          className="shrink-0 rounded p-1.5"
+          style={{ color: 'var(--color-muted-foreground)' }}
+        >
+          <X size={14} />
+        </button>
+      </div>
+      <BucketBar bucket={tally?.last_bucket} suspect={tally?.last_consider_suspect} />
+    </div>
+  )
+}
+
 export default function FactionsPage(): React.ReactElement {
   const { active } = useActiveCharacter()
   const [viewedCharacter, setViewedCharacter] = useState('')
@@ -132,6 +192,10 @@ export default function FactionsPage(): React.ReactElement {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<FactionSearchResult[]>([])
   const [searching, setSearching] = useState(false)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [preview, setPreview] = useState<FactionSearchResult | null>(null)
+  const searchWrapRef = useRef<HTMLDivElement>(null)
+  const dropdownVisible = dropdownOpen && query.trim() !== ''
 
   useEffect(() => {
     listCharacters().then((r) => setCharacters(r.characters)).catch(() => setCharacters([]))
@@ -210,12 +274,39 @@ export default function FactionsPage(): React.ReactElement {
     return () => clearTimeout(id)
   }, [query, viewedCharID])
 
+  // Close the results dropdown on an outside click — previously nothing
+  // dismissed it short of clearing the search text or navigating away and
+  // back, trapping the user in the search input.
+  useEffect(() => {
+    if (!dropdownVisible) return
+    const handler = (e: MouseEvent) => {
+      if (!searchWrapRef.current?.contains(e.target as Node)) setDropdownOpen(false)
+    }
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
+  }, [dropdownVisible])
+
+  // Escape also closes the dropdown (without clearing what was typed, so
+  // refocusing the input reopens it) — a guaranteed exit even if the
+  // outside-click handler somehow misses.
+  useEscapeToClose(() => setDropdownOpen(false), dropdownVisible)
+
+  // Reset transient search UI when switching which character is being viewed.
+  useEffect(() => {
+    setQuery('')
+    setDropdownOpen(false)
+    setPreview(null)
+  }, [viewedCharID])
+
   const trackedIDs = useMemo(() => new Set(entries.map((e) => e.faction_id)), [entries])
 
   const handleAdd = (faction: Faction): void => {
     if (!viewedCharID || trackedIDs.has(faction.id)) return
     addFactionWishlistEntry(viewedCharID, faction.id)
-      .then((entry) => setEntries((prev) => [...prev, entry]))
+      .then((entry) => {
+        setEntries((prev) => [...prev, entry])
+        setPreview((prev) => (prev?.id === faction.id ? null : prev))
+      })
       .catch((err: Error) => setError(err.message))
   }
 
@@ -242,6 +333,7 @@ export default function FactionsPage(): React.ReactElement {
           Factions
         </span>
         <div className="ml-auto flex items-center gap-2">
+          <BackfillLink />
           {isViewingActive && (
             <button
               onClick={() => setConfirmClear(true)}
@@ -279,7 +371,10 @@ export default function FactionsPage(): React.ReactElement {
             better/worse&rdquo; lines and, where possible, tying them to a resolved kill&rsquo;s known point
             value. The bar shows your last <code>/con</code> reading, which is real (bucket-level only) — a{' '}
             <Eye size={12} className="inline align-text-bottom" /> marker means that reading was taken
-            while you had an illusion active and may not be reliable.
+            while you had an illusion active and may not be reliable. That illusion check only runs live —
+            history recovered via <strong>Backfill</strong> can never carry that marker (or catch a
+            faction-perception spell like Alliance on the NPC), even if the reading was taken under one at
+            the time.
           </p>
         </div>
 
@@ -297,7 +392,7 @@ export default function FactionsPage(): React.ReactElement {
             )}
 
             {/* Faction picker */}
-            <div className="relative mb-4">
+            <div className="relative mb-4" ref={searchWrapRef}>
               <Search
                 size={14}
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2"
@@ -306,7 +401,8 @@ export default function FactionsPage(): React.ReactElement {
               <input
                 type="text"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => { setQuery(e.target.value); setDropdownOpen(true) }}
+                onFocus={() => { if (query.trim()) setDropdownOpen(true) }}
                 placeholder="Search factions…"
                 className="w-full rounded-lg py-2 pl-9 pr-3 text-sm outline-none"
                 style={{
@@ -315,7 +411,7 @@ export default function FactionsPage(): React.ReactElement {
                   color: 'var(--color-foreground)',
                 }}
               />
-              {query.trim() && (
+              {dropdownVisible && (
                 <div
                   className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-lg shadow-lg"
                   style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
@@ -351,7 +447,14 @@ export default function FactionsPage(): React.ReactElement {
                             style={{ color: pinned ? 'var(--color-primary)' : 'var(--color-muted-foreground)' }}
                           />
                         </button>
-                        <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => { setPreview(f); setDropdownOpen(false) }}
+                          title="Preview this faction"
+                          className="min-w-0 flex-1 truncate text-left"
+                        >
+                          {f.name}
+                        </button>
                         <span
                           className="shrink-0 text-xs"
                           style={{ color: 'var(--color-muted-foreground)' }}
@@ -373,6 +476,15 @@ export default function FactionsPage(): React.ReactElement {
                 </div>
               )}
             </div>
+
+            {preview && (
+              <PreviewCard
+                faction={preview}
+                pinned={trackedIDs.has(preview.id)}
+                onTogglePin={() => (trackedIDs.has(preview.id) ? handleRemove(preview.id) : handleAdd(preview))}
+                onDismiss={() => setPreview(null)}
+              />
+            )}
 
             {loading && (
               <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>Loading…</p>

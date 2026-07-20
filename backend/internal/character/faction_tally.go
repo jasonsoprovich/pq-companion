@@ -1,6 +1,9 @@
 package character
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
 
 // FactionTallyRow is the persisted session-tally state for one character's
 // tracked faction — the running "got better/worse" count plus the
@@ -106,6 +109,75 @@ func (s *Store) UpsertFactionTally(row FactionTallyRow) error {
 		row.Unresolved, row.LastBucket, row.LastConsideredAt, suspect, time.Now().Unix(),
 	)
 	return err
+}
+
+// MergeBackfillFactionTally reconciles one backfill-computed tally into
+// storage. Unlike UpsertFactionTally (a blind replace-with-latest-snapshot,
+// safe for the live tracker because its in-memory state is authoritative
+// within a session), a backfill replay needs an idempotency rule: re-running
+// it must never double-count, and it must never regress a count the live
+// tracker already built up from log history the backfilled file no longer
+// contains (e.g. after log rotation).
+//
+// The rule: better/worse/estimated_net/unresolved are replaced wholesale
+// only if the backfill saw at least as many total events (better+worse) as
+// already stored — since backfill replays the same log file the live
+// tracker reads from, its count can only be lower than what's stored if the
+// log has been rotated/truncated since, in which case the existing (larger)
+// count is kept. A tie (e.g. re-running against an unchanged log) is a
+// no-op. last_bucket/last_considered_at/last_consider_suspect are merged
+// independently — whichever reading has the later timestamp wins,
+// regardless of the counter comparison above, since a /con reading is a
+// single current value, not an accumulating count.
+//
+// Returns changed=true if the stored row was created or its contents
+// differ from what's now stored, so the caller can report how many rows
+// backfill actually touched.
+func (s *Store) MergeBackfillFactionTally(row FactionTallyRow) (bool, error) {
+	existing, ok, err := s.getFactionTally(row.CharacterID, row.FactionID)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return true, s.UpsertFactionTally(row)
+	}
+
+	merged := existing
+	if row.Better+row.Worse >= existing.Better+existing.Worse {
+		merged.Better, merged.Worse = row.Better, row.Worse
+		merged.EstimatedNet, merged.Unresolved = row.EstimatedNet, row.Unresolved
+	}
+	if row.LastConsideredAt > existing.LastConsideredAt {
+		merged.LastBucket = row.LastBucket
+		merged.LastConsideredAt = row.LastConsideredAt
+		merged.LastConsiderSuspect = row.LastConsiderSuspect
+	}
+	if merged == existing {
+		return false, nil
+	}
+	return true, s.UpsertFactionTally(merged)
+}
+
+func (s *Store) getFactionTally(characterID, factionID int) (FactionTallyRow, bool, error) {
+	var r FactionTallyRow
+	var suspect int
+	err := s.db.QueryRow(
+		`SELECT character_id, faction_id, faction_name, better, worse, estimated_net,
+		        unresolved, last_bucket, last_considered_at, last_consider_suspect, updated_at
+		 FROM character_faction_tally WHERE character_id = ? AND faction_id = ?`,
+		characterID, factionID,
+	).Scan(
+		&r.CharacterID, &r.FactionID, &r.FactionName, &r.Better, &r.Worse, &r.EstimatedNet,
+		&r.Unresolved, &r.LastBucket, &r.LastConsideredAt, &suspect, &r.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return FactionTallyRow{}, false, nil
+	}
+	if err != nil {
+		return FactionTallyRow{}, false, err
+	}
+	r.LastConsiderSuspect = suspect != 0
+	return r, true, nil
 }
 
 // DeleteFactionTally removes one character's persisted tally for a single

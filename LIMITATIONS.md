@@ -787,6 +787,41 @@ These are inherent to log-file parsing and affect multiple features:
   line appears could disambiguate it, but no such field exists today (see
   §15.1's sibling gap on ZealPipes' lack of dialogue-adjacent messages).
 
+### 15.4 Backfilled /con readings can never be flagged suspect (illusion or otherwise)
+
+- **Limitation:** The Settings → Log Backfill panel can retroactively
+  populate the Faction Tracker from a character's existing log file
+  (`internal/factiontracker.BackfillHandler`), but every `/con` reading it
+  recovers is reported at face value — it can never be flagged
+  `last_consider_suspect`, even for a reading taken while the character was
+  genuinely illusioned at the time. This applies just as much to the
+  Alliance/Benevolence/Collaboration gap in §15.1: even if that detection is
+  built one day, it would still only ever work live, never during a
+  backfill replay.
+- **Root cause:** Live illusion suppression
+  (`factiontracker.IsIllusionedProvider`) works by checking the *currently*
+  active buff timers at the moment a `/con` line is parsed — it asks the
+  live spell-timer engine's present-tense state, which only exists while the
+  app is running and watching that character. A backfill replay walks a
+  static log file with no reconstructed timer state for any past moment, so
+  there is nothing to check. The same reasoning would apply to a future
+  Alliance/Benevolence/Collaboration detector: it would need to know a spell
+  was active on the target NPC at a specific past instant, which a bare log
+  replay of `/con` and spell-landed lines can approximate at best (spell
+  duration would have to be modeled and matched against the `/con` line's
+  timestamp) — not implemented, and meaningfully harder than the live case.
+- **Sources checked:** `factiontracker.NewBackfillHandler` (never calls
+  `SetIllusionProvider`, so the engine's default — never flag suspect —
+  applies), `backfill.Registry.Run` (replays events/lines with no timer- or
+  buff-engine involvement at all, by design, for every backfilled tracker).
+- **Could a future data source fix this?** Partially, for illusions
+  specifically: a backfill pass could independently reconstruct approximate
+  buff windows from `EventSpellLanded`/`EventSpellFade` lines for illusion
+  spells and cross-reference `/con` timestamps against them. Not attempted
+  yet — it would duplicate a chunk of the spelltimer engine's logic
+  purpose-built for a live, forward-only stream, in a backfill (whole-file,
+  retroactive) context.
+
 ---
 
 ## Template for new entries

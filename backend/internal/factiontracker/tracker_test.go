@@ -155,6 +155,34 @@ func TestQuestDialogueCorrelation_UnmatchedDialogue_NoResolverMatch(t *testing.T
 	}
 }
 
+// TestBackfillHandler_ReplaysLogIntoMergeFunc checks the backfill handler
+// wiring: events fed through HandleEvent flow through a fresh Engine (same
+// kill/quest-dialogue resolution as live tracking) and the final tallies
+// reach the merge callback at Finalize, exactly once per faction.
+func TestBackfillHandler_ReplaysLogIntoMergeFunc(t *testing.T) {
+	merged := map[string]Tally{}
+	h := NewBackfillHandler(koalindlResolver, nil, nil, nil, func(tally Tally) (bool, error) {
+		merged[tally.FactionName] = tally
+		return true, nil
+	})
+
+	base := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
+	h.HandleEvent(logparser.LogEvent{Type: logparser.EventKill, Timestamp: base, Data: logparser.KillData{Killer: "You", Target: "a Koalindl"}})
+	h.HandleEvent(logparser.LogEvent{Type: logparser.EventFactionChanged, Timestamp: base, Data: logparser.FactionChangedData{Faction: "Priests of Life", Direction: "worse"}})
+	h.Finalize()
+
+	if h.Inserted() != 1 {
+		t.Fatalf("Inserted() = %d, want 1", h.Inserted())
+	}
+	pol, ok := merged["Priests of Life"]
+	if !ok {
+		t.Fatal("expected a merged tally for Priests of Life")
+	}
+	if pol.Worse != 1 || pol.EstimatedNet != -100 {
+		t.Errorf("Priests of Life = %+v, want Worse=1 EstimatedNet=-100", pol)
+	}
+}
+
 // TestFactionChanged_AnyFaction_CreatesTally is the core Phase 3 behavior
 // change: a faction that was never pinned/seeded still gets a tally entry
 // the moment a "got better/worse" line names it, mirroring how the Lockout
