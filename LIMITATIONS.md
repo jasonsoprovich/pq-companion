@@ -789,10 +789,14 @@ These are inherent to log-file parsing and affect multiple features:
 
 ### 15.4 Backfilled /con readings can never be flagged suspect (illusion or otherwise)
 
-- **Limitation:** The Settings → Log Backfill panel can retroactively
-  populate the Faction Tracker from a character's existing log file
-  (`internal/factiontracker.BackfillHandler`), but every `/con` reading it
-  recovers is reported at face value — it can never be flagged
+- **Limitation:** The Settings → Log Backfill panel can retroactively set an
+  approximate faction-standing baseline from a character's existing log file
+  (`internal/factiontracker.BackfillHandler`) by scanning for `/con` lines
+  only and keeping the most recent reading per faction — it deliberately does
+  NOT attempt to replay kills or quest turn-ins to reconstruct
+  better/worse/estimated-net (that stays exclusively the live session
+  tracker's job going forward). But every `/con` reading backfill does
+  recover is reported at face value — it can never be flagged
   `last_consider_suspect`, even for a reading taken while the character was
   genuinely illusioned at the time. This applies just as much to the
   Alliance/Benevolence/Collaboration gap in §15.1: even if that detection is
@@ -802,18 +806,22 @@ These are inherent to log-file parsing and affect multiple features:
   (`factiontracker.IsIllusionedProvider`) works by checking the *currently*
   active buff timers at the moment a `/con` line is parsed — it asks the
   live spell-timer engine's present-tense state, which only exists while the
-  app is running and watching that character. A backfill replay walks a
-  static log file with no reconstructed timer state for any past moment, so
-  there is nothing to check. The same reasoning would apply to a future
-  Alliance/Benevolence/Collaboration detector: it would need to know a spell
-  was active on the target NPC at a specific past instant, which a bare log
-  replay of `/con` and spell-landed lines can approximate at best (spell
-  duration would have to be modeled and matched against the `/con` line's
-  timestamp) — not implemented, and meaningfully harder than the live case.
-- **Sources checked:** `factiontracker.NewBackfillHandler` (never calls
-  `SetIllusionProvider`, so the engine's default — never flag suspect —
-  applies), `backfill.Registry.Run` (replays events/lines with no timer- or
-  buff-engine involvement at all, by design, for every backfilled tracker).
+  app is running and watching that character. `BackfillHandler` doesn't wrap
+  the live `Engine` at all (no timer engine, no illusion provider exists to
+  ask), and even if it did, a backfill replay walks a static log file with no
+  reconstructed timer state for any past moment. The same reasoning would
+  apply to a future Alliance/Benevolence/Collaboration detector: it would
+  need to know a spell was active on the target NPC at a specific past
+  instant, which a bare log replay of `/con` and spell-landed lines can
+  approximate at best (spell duration would have to be modeled and matched
+  against the `/con` line's timestamp) — not implemented, and meaningfully
+  harder than the live case.
+- **Sources checked:** `factiontracker.BackfillHandler` (scans only
+  `EventConsidered`, always passes `last_consider_suspect=false` to the merge
+  callback), `character.MergeBackfillConsiderReading` (never touches
+  better/worse/estimated_net), `backfill.Registry.Run` (replays events/lines
+  with no timer- or buff-engine involvement at all, by design, for every
+  backfilled tracker).
 - **Could a future data source fix this?** Partially, for illusions
   specifically: a backfill pass could independently reconstruct approximate
   buff windows from `EventSpellLanded`/`EventSpellFade` lines for illusion

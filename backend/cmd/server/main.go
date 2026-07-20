@@ -1069,6 +1069,9 @@ func main() {
 		// internal character id — resolve it once per backfill run. If the
 		// character has never been seen by charStore (no character row
 		// yet), skip faction backfill for them entirely rather than erroring.
+		// Only scans for /con lines to set an approximate baseline bucket —
+		// never kills or quest turn-ins, which stay exclusively the live
+		// session tracker's better/worse/estimated-net concern.
 		backfillRegistry.Register(backfill.Section{
 			Key:   "factions",
 			Label: "Faction Tracker",
@@ -1079,25 +1082,9 @@ func main() {
 				}
 				characterID := c.ID
 				return factiontracker.NewBackfillHandler(
-					factionKillResolver, factionPrimaryResolver, database.GetFactionIDByName, factionDialogueResolver,
-					func(tally factiontracker.Tally) (bool, error) {
-						row := character.FactionTallyRow{
-							CharacterID:  characterID,
-							FactionID:    tally.FactionID,
-							FactionName:  tally.FactionName,
-							Better:       tally.Better,
-							Worse:        tally.Worse,
-							EstimatedNet: tally.EstimatedNet,
-							Unresolved:   tally.Unresolved,
-						}
-						if tally.LastBucket != "" {
-							row.LastBucket = tally.LastBucket
-						}
-						if tally.LastConsideredAt != nil {
-							row.LastConsideredAt = tally.LastConsideredAt.Unix()
-							row.LastConsiderSuspect = tally.LastConsiderSuspect
-						}
-						return charStore.MergeBackfillFactionTally(row)
+					factionPrimaryResolver,
+					func(factionID int, factionName, bucket string, consideredAt time.Time) (bool, error) {
+						return charStore.MergeBackfillConsiderReading(characterID, factionID, factionName, bucket, consideredAt.Unix())
 					},
 				)
 			},

@@ -371,10 +371,11 @@ export default function FactionsPage(): React.ReactElement {
             better/worse&rdquo; lines and, where possible, tying them to a resolved kill&rsquo;s known point
             value. The bar shows your last <code>/con</code> reading, which is real (bucket-level only) — a{' '}
             <Eye size={12} className="inline align-text-bottom" /> marker means that reading was taken
-            while you had an illusion active and may not be reliable. That illusion check only runs live —
-            history recovered via <strong>Backfill</strong> can never carry that marker (or catch a
-            faction-perception spell like Alliance on the NPC), even if the reading was taken under one at
-            the time.
+            while you had an illusion active and may not be reliable. <strong>Backfill</strong> only recovers
+            this bar — the most recent <code>/con</code> reading per faction already in your log — not
+            better/worse or estimated net, which only build up from here forward. And since that illusion
+            check only runs live, a backfilled reading can never carry the suspect marker (or catch a
+            faction-perception spell like Alliance on the NPC), even if it was taken under one at the time.
           </p>
         </div>
 

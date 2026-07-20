@@ -85,14 +85,12 @@ func TestDeleteFactionTally_RemovesOnlyThatFaction(t *testing.T) {
 	}
 }
 
-// TestMergeBackfillFactionTally_InsertsWhenNoExistingRow checks a backfill
-// merge against a faction never seen before is a plain insert.
-func TestMergeBackfillFactionTally_InsertsWhenNoExistingRow(t *testing.T) {
+// TestMergeBackfillConsiderReading_InsertsWhenNoExistingRow checks a backfill
+// /con reading for a faction never seen before creates a zero-count row
+// seeded with just the bucket/timestamp.
+func TestMergeBackfillConsiderReading_InsertsWhenNoExistingRow(t *testing.T) {
 	s, charID := openTestStore(t)
-	changed, err := s.MergeBackfillFactionTally(FactionTallyRow{
-		CharacterID: charID, FactionID: 341, FactionName: "Priests of Life",
-		Better: 0, Worse: 3, EstimatedNet: -300,
-	})
+	changed, err := s.MergeBackfillConsiderReading(charID, 341, "Priests of Life", "dubious", 1000)
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -103,123 +101,79 @@ func TestMergeBackfillFactionTally_InsertsWhenNoExistingRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].Worse != 3 || rows[0].EstimatedNet != -300 {
-		t.Fatalf("rows = %+v, want one row Worse=3 EstimatedNet=-300", rows)
+	if len(rows) != 1 || rows[0].LastBucket != "dubious" || rows[0].LastConsideredAt != 1000 {
+		t.Fatalf("rows = %+v, want one row bucket=dubious at=1000", rows)
+	}
+	if rows[0].Better != 0 || rows[0].Worse != 0 || rows[0].EstimatedNet != 0 {
+		t.Errorf("rows = %+v, want zero counters — backfill never touches them", rows)
 	}
 }
 
-// TestMergeBackfillFactionTally_KeepsHigherExistingCount is the core
-// idempotency guarantee: a backfill replay that saw FEWER total events than
-// what's already persisted (e.g. the log was rotated since the live
-// tracker counted more of it) must never regress the stored counters.
-func TestMergeBackfillFactionTally_KeepsHigherExistingCount(t *testing.T) {
+// TestMergeBackfillConsiderReading_NewerReadingReplaces checks a backfilled
+// reading newer than what's stored advances the baseline, without touching
+// the existing better/worse/estimated_net counters at all.
+func TestMergeBackfillConsiderReading_NewerReadingReplaces(t *testing.T) {
 	s, charID := openTestStore(t)
 	if err := s.UpsertFactionTally(FactionTallyRow{
 		CharacterID: charID, FactionID: 341, FactionName: "Priests of Life",
-		Better: 2, Worse: 5, EstimatedNet: -400, Unresolved: 1,
+		Better: 2, Worse: 5, EstimatedNet: -400,
+		LastBucket: "kindly", LastConsideredAt: 1000, LastConsiderSuspect: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	changed, err := s.MergeBackfillFactionTally(FactionTallyRow{
-		CharacterID: charID, FactionID: 341, FactionName: "Priests of Life",
-		Better: 0, Worse: 3, EstimatedNet: -300, // 3 total < 7 total already stored
-	})
-	if err != nil {
-		t.Fatalf("merge: %v", err)
-	}
-	if changed {
-		t.Error("expected changed=false — backfill saw fewer events than already stored")
-	}
-	rows, _ := s.ListFactionTallies(charID)
-	if len(rows) != 1 || rows[0].Better != 2 || rows[0].Worse != 5 || rows[0].EstimatedNet != -400 {
-		t.Errorf("rows = %+v, want existing counters untouched", rows)
-	}
-}
-
-// TestMergeBackfillFactionTally_ReplacesWhenBackfillSawMore is the
-// complementary case: a full-log backfill that saw MORE than the currently
-// persisted counters (e.g. the character was never live-tracked before)
-// replaces them wholesale.
-func TestMergeBackfillFactionTally_ReplacesWhenBackfillSawMore(t *testing.T) {
-	s, charID := openTestStore(t)
-	if err := s.UpsertFactionTally(FactionTallyRow{
-		CharacterID: charID, FactionID: 341, FactionName: "Priests of Life",
-		Better: 1, Worse: 1, EstimatedNet: -10,
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	changed, err := s.MergeBackfillFactionTally(FactionTallyRow{
-		CharacterID: charID, FactionID: 341, FactionName: "Priests of Life",
-		Better: 4, Worse: 6, EstimatedNet: -500, Unresolved: 2, // 10 total > 2 total stored
-	})
+	changed, err := s.MergeBackfillConsiderReading(charID, 341, "Priests of Life", "dubious", 2000)
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	if !changed {
-		t.Error("expected changed=true — backfill saw more events than stored")
+		t.Error("expected changed=true — the backfilled reading is newer")
 	}
 	rows, _ := s.ListFactionTallies(charID)
-	if len(rows) != 1 || rows[0].Better != 4 || rows[0].Worse != 6 || rows[0].EstimatedNet != -500 || rows[0].Unresolved != 2 {
-		t.Errorf("rows = %+v, want replaced with backfill's larger counters", rows)
+	got := rows[0]
+	if got.LastBucket != "dubious" || got.LastConsideredAt != 2000 {
+		t.Errorf("bucket = %+v, want the newer dubious/2000 reading", got)
+	}
+	if got.LastConsiderSuspect {
+		t.Error("expected last_consider_suspect cleared — backfill can never confirm illusion state")
+	}
+	if got.Better != 2 || got.Worse != 5 || got.EstimatedNet != -400 {
+		t.Errorf("counters = %+v, want untouched — backfill never touches better/worse/estimated_net", got)
 	}
 }
 
-// TestMergeBackfillFactionTally_RepeatedRunIsNoop verifies re-running a
-// backfill against the same (unchanged) log a second time is a true no-op —
-// the safety guarantee the Settings → Log Backfill panel promises for every
-// tracker ("re-running is always safe").
-func TestMergeBackfillFactionTally_RepeatedRunIsNoop(t *testing.T) {
+// TestMergeBackfillConsiderReading_OlderReadingIsNoop checks a backfilled
+// reading OLDER than (or equal to) what's already stored never regresses
+// it — the safety guarantee that makes re-running backfill always safe.
+func TestMergeBackfillConsiderReading_OlderReadingIsNoop(t *testing.T) {
 	s, charID := openTestStore(t)
-	row := FactionTallyRow{
+	if err := s.UpsertFactionTally(FactionTallyRow{
 		CharacterID: charID, FactionID: 341, FactionName: "Priests of Life",
-		Better: 2, Worse: 5, EstimatedNet: -400,
+		LastBucket: "dubious", LastConsideredAt: 2000,
+	}); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := s.MergeBackfillFactionTally(row); err != nil {
-		t.Fatalf("first merge: %v", err)
+
+	changed, err := s.MergeBackfillConsiderReading(charID, 341, "Priests of Life", "kindly", 1000)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
 	}
-	changed, err := s.MergeBackfillFactionTally(row)
+	if changed {
+		t.Error("expected changed=false — the backfilled reading is older than what's stored")
+	}
+	rows, _ := s.ListFactionTallies(charID)
+	if rows[0].LastBucket != "dubious" || rows[0].LastConsideredAt != 2000 {
+		t.Errorf("rows = %+v, want the existing newer reading untouched", rows)
+	}
+
+	// Re-running with the exact same reading (the "re-run backfill against
+	// an unchanged log" case) is likewise a no-op.
+	changed, err = s.MergeBackfillConsiderReading(charID, 341, "Priests of Life", "dubious", 2000)
 	if err != nil {
 		t.Fatalf("second merge: %v", err)
 	}
 	if changed {
-		t.Error("expected changed=false on an identical second run")
-	}
-}
-
-// TestMergeBackfillFactionTally_NewerConsiderReadingWins checks the
-// last_bucket/last_considered_at fields merge independently of the
-// better/worse counter comparison — whichever /con reading is
-// chronologically newer always wins.
-func TestMergeBackfillFactionTally_NewerConsiderReadingWins(t *testing.T) {
-	s, charID := openTestStore(t)
-	if err := s.UpsertFactionTally(FactionTallyRow{
-		CharacterID: charID, FactionID: 262, FactionName: "Guards of Qeynos",
-		Better: 5, Worse: 5, // higher event count than the backfill below
-		LastBucket: "kindly", LastConsideredAt: 1000,
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	changed, err := s.MergeBackfillFactionTally(FactionTallyRow{
-		CharacterID: charID, FactionID: 262, FactionName: "Guards of Qeynos",
-		Better: 1, Worse: 1, // fewer events — counters must NOT replace
-		LastBucket: "dubious", LastConsideredAt: 2000, // but this reading is newer
-	})
-	if err != nil {
-		t.Fatalf("merge: %v", err)
-	}
-	if !changed {
-		t.Error("expected changed=true — the /con reading advanced even though counters didn't")
-	}
-	rows, _ := s.ListFactionTallies(charID)
-	got := rows[0]
-	if got.Better != 5 || got.Worse != 5 {
-		t.Errorf("counters = %+v, want untouched (backfill saw fewer events)", got)
-	}
-	if got.LastBucket != "dubious" || got.LastConsideredAt != 2000 {
-		t.Errorf("bucket = %+v, want the newer dubious/2000 reading", got)
+		t.Error("expected changed=false on an identical re-run")
 	}
 }
 

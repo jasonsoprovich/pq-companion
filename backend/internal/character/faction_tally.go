@@ -111,51 +111,38 @@ func (s *Store) UpsertFactionTally(row FactionTallyRow) error {
 	return err
 }
 
-// MergeBackfillFactionTally reconciles one backfill-computed tally into
-// storage. Unlike UpsertFactionTally (a blind replace-with-latest-snapshot,
-// safe for the live tracker because its in-memory state is authoritative
-// within a session), a backfill replay needs an idempotency rule: re-running
-// it must never double-count, and it must never regress a count the live
-// tracker already built up from log history the backfilled file no longer
-// contains (e.g. after log rotation).
+// MergeBackfillConsiderReading reconciles one faction's backfill-recovered
+// /con reading into storage — an approximate baseline only. It never
+// touches better/worse/estimated_net/unresolved, which stay exclusively the
+// live session tracker's concern (see internal/factiontracker.BackfillHandler
+// for why replaying kills/quest turn-ins for those counts isn't attempted).
 //
-// The rule: better/worse/estimated_net/unresolved are replaced wholesale
-// only if the backfill saw at least as many total events (better+worse) as
-// already stored — since backfill replays the same log file the live
-// tracker reads from, its count can only be lower than what's stored if the
-// log has been rotated/truncated since, in which case the existing (larger)
-// count is kept. A tie (e.g. re-running against an unchanged log) is a
-// no-op. last_bucket/last_considered_at/last_consider_suspect are merged
-// independently — whichever reading has the later timestamp wins,
-// regardless of the counter comparison above, since a /con reading is a
-// single current value, not an accumulating count.
+// A faction never seen before gets a new zero-count row seeded with this
+// reading. Otherwise the reading only replaces what's stored if it's
+// chronologically newer — re-running backfill against an unchanged log is a
+// no-op, and it can never regress a more recent live /con reading.
 //
-// Returns changed=true if the stored row was created or its contents
-// differ from what's now stored, so the caller can report how many rows
-// backfill actually touched.
-func (s *Store) MergeBackfillFactionTally(row FactionTallyRow) (bool, error) {
-	existing, ok, err := s.getFactionTally(row.CharacterID, row.FactionID)
+// Returns changed=true if the stored row was created or its /con fields
+// advanced, so the caller can report how many faction baselines backfill
+// actually touched.
+func (s *Store) MergeBackfillConsiderReading(characterID, factionID int, factionName, bucket string, consideredAt int64) (bool, error) {
+	existing, ok, err := s.getFactionTally(characterID, factionID)
 	if err != nil {
 		return false, err
 	}
 	if !ok {
-		return true, s.UpsertFactionTally(row)
+		return true, s.UpsertFactionTally(FactionTallyRow{
+			CharacterID: characterID, FactionID: factionID, FactionName: factionName,
+			LastBucket: bucket, LastConsideredAt: consideredAt,
+		})
 	}
-
-	merged := existing
-	if row.Better+row.Worse >= existing.Better+existing.Worse {
-		merged.Better, merged.Worse = row.Better, row.Worse
-		merged.EstimatedNet, merged.Unresolved = row.EstimatedNet, row.Unresolved
-	}
-	if row.LastConsideredAt > existing.LastConsideredAt {
-		merged.LastBucket = row.LastBucket
-		merged.LastConsideredAt = row.LastConsideredAt
-		merged.LastConsiderSuspect = row.LastConsiderSuspect
-	}
-	if merged == existing {
+	if consideredAt <= existing.LastConsideredAt {
 		return false, nil
 	}
-	return true, s.UpsertFactionTally(merged)
+	existing.LastBucket = bucket
+	existing.LastConsideredAt = consideredAt
+	existing.LastConsiderSuspect = false
+	return true, s.UpsertFactionTally(existing)
 }
 
 func (s *Store) getFactionTally(characterID, factionID int) (FactionTallyRow, bool, error) {

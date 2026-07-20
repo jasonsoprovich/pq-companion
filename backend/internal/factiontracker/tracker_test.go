@@ -155,31 +155,86 @@ func TestQuestDialogueCorrelation_UnmatchedDialogue_NoResolverMatch(t *testing.T
 	}
 }
 
-// TestBackfillHandler_ReplaysLogIntoMergeFunc checks the backfill handler
-// wiring: events fed through HandleEvent flow through a fresh Engine (same
-// kill/quest-dialogue resolution as live tracking) and the final tallies
-// reach the merge callback at Finalize, exactly once per faction.
-func TestBackfillHandler_ReplaysLogIntoMergeFunc(t *testing.T) {
-	merged := map[string]Tally{}
-	h := NewBackfillHandler(koalindlResolver, nil, nil, nil, func(tally Tally) (bool, error) {
-		merged[tally.FactionName] = tally
+// backfillPrimaryResolver stubs an NPC->primary-faction resolver for the
+// backfill handler tests, independent of the live-engine tests' resolvers.
+func backfillPrimaryResolver(npcName string) (int, string, bool) {
+	switch npcName {
+	case "Herald Telcha":
+		return 307, "Sarnak Collective", true
+	default:
+		return 0, "", false
+	}
+}
+
+// TestBackfillHandler_KeepsOnlyLatestConsiderPerFaction checks the backfill
+// handler's core job: scan for /con lines only (never kills or faction-
+// changed lines — those feed the live session tracker exclusively) and keep
+// just the most recent reading per resolved faction.
+func TestBackfillHandler_KeepsOnlyLatestConsiderPerFaction(t *testing.T) {
+	var merged []struct {
+		factionID   int
+		factionName string
+		bucket      string
+		at          time.Time
+	}
+	h := NewBackfillHandler(backfillPrimaryResolver, func(factionID int, factionName, bucket string, at time.Time) (bool, error) {
+		merged = append(merged, struct {
+			factionID   int
+			factionName string
+			bucket      string
+			at          time.Time
+		}{factionID, factionName, bucket, at})
 		return true, nil
 	})
 
-	base := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
-	h.HandleEvent(logparser.LogEvent{Type: logparser.EventKill, Timestamp: base, Data: logparser.KillData{Killer: "You", Target: "a Koalindl"}})
-	h.HandleEvent(logparser.LogEvent{Type: logparser.EventFactionChanged, Timestamp: base, Data: logparser.FactionChangedData{Faction: "Priests of Life", Direction: "worse"}})
+	older := time.Date(2025, 10, 19, 18, 0, 0, 0, time.Local)
+	newer := time.Date(2025, 10, 19, 19, 0, 0, 0, time.Local)
+
+	// A kill/faction-changed pair must be ignored entirely by the backfill
+	// handler — it only ever recovers /con baselines.
+	h.HandleEvent(logparser.LogEvent{Type: logparser.EventKill, Timestamp: older, Data: logparser.KillData{Killer: "You", Target: "Herald Telcha"}})
+	h.HandleEvent(logparser.LogEvent{Type: logparser.EventFactionChanged, Timestamp: older, Data: logparser.FactionChangedData{Faction: "Sarnak Collective", Direction: "better"}})
+
+	h.HandleEvent(logparser.LogEvent{
+		Type: logparser.EventConsidered, Timestamp: older,
+		Data: logparser.ConsideredData{TargetName: "Herald Telcha", Bucket: logparser.BucketKindly},
+	})
+	h.HandleEvent(logparser.LogEvent{
+		Type: logparser.EventConsidered, Timestamp: newer,
+		Data: logparser.ConsideredData{TargetName: "Herald Telcha", Bucket: logparser.BucketDubious},
+	})
 	h.Finalize()
 
 	if h.Inserted() != 1 {
-		t.Fatalf("Inserted() = %d, want 1", h.Inserted())
+		t.Fatalf("Inserted() = %d, want 1 (one faction, only its latest reading merged)", h.Inserted())
 	}
-	pol, ok := merged["Priests of Life"]
-	if !ok {
-		t.Fatal("expected a merged tally for Priests of Life")
+	if len(merged) != 1 {
+		t.Fatalf("merged = %+v, want exactly one merge call", merged)
 	}
-	if pol.Worse != 1 || pol.EstimatedNet != -100 {
-		t.Errorf("Priests of Life = %+v, want Worse=1 EstimatedNet=-100", pol)
+	got := merged[0]
+	if got.factionID != 307 || got.factionName != "Sarnak Collective" || got.bucket != string(logparser.BucketDubious) || !got.at.Equal(newer) {
+		t.Errorf("merged reading = %+v, want faction 307/Sarnak Collective, bucket=dubious, at=newer", got)
+	}
+}
+
+// TestBackfillHandler_UnresolvableNPC_NoMerge checks an NPC the primary
+// resolver can't place produces no merge call at all.
+func TestBackfillHandler_UnresolvableNPC_NoMerge(t *testing.T) {
+	called := false
+	h := NewBackfillHandler(backfillPrimaryResolver, func(int, string, string, time.Time) (bool, error) {
+		called = true
+		return true, nil
+	})
+	h.HandleEvent(logparser.LogEvent{
+		Type: logparser.EventConsidered, Timestamp: time.Now(),
+		Data: logparser.ConsideredData{TargetName: "Nobody Real", Bucket: logparser.BucketKindly},
+	})
+	h.Finalize()
+	if called {
+		t.Error("expected no merge call for an NPC the resolver can't place")
+	}
+	if h.Inserted() != 0 {
+		t.Errorf("Inserted() = %d, want 0", h.Inserted())
 	}
 }
 
