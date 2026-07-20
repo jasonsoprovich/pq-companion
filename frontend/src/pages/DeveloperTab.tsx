@@ -280,7 +280,7 @@ function FlagsPanel(): React.ReactElement {
         </div>
       </section>
 
-      {/* ── Session Faction Tracker ─────────────────────────────────────── */}
+      {/* ── Faction Tracker ─────────────────────────────────────── */}
       <section
         className="rounded-lg p-4"
         style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
@@ -288,7 +288,7 @@ function FlagsPanel(): React.ReactElement {
         <div className="mb-3 flex items-center gap-2">
           <FlaskConical size={14} style={{ color: 'var(--color-primary)' }} />
           <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
-            Session Faction Tracker
+            Faction Tracker
           </h2>
         </div>
         <div className="flex items-start justify-between gap-4">
@@ -297,10 +297,11 @@ function FlagsPanel(): React.ReactElement {
             page that tallies &ldquo;Your faction standing with X got
             better/worse&rdquo; lines for the factions you&rsquo;ve starred, with a
             best-effort point estimate when a change can be tied to a resolved
-            kill. EQ never logs a faction&rsquo;s absolute value or point amount, so
-            this is always an approximate, session-only view &mdash; it resets
-            on every restart and character switch, and can&rsquo;t tell you your
-            real standing.
+            kill, plus a bucket bar from your last <code>/con</code> reading
+            (flagged if taken while illusioned). Progress persists per
+            character across restarts until you explicitly clear it. EQ never
+            logs a faction&rsquo;s absolute value or point amount, so none of
+            this is ever a claim about your real standing.
           </p>
           <button
             type="button"

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Scale, Search, Star, Trash2, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Scale, Search, Star, Trash2, RefreshCw, AlertTriangle, Eye } from 'lucide-react'
 import {
   listCharacters,
   searchFactions,
@@ -10,15 +10,57 @@ import {
   resetFactionSession,
 } from '../services/api'
 import type { Faction, FactionWishlistEntry, FactionTally } from '../types/faction'
+import { BUCKET_ORDER, BUCKET_LABEL, BUCKET_COLOR, bucketIndex, type FactionBucket } from '../lib/factionBuckets'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import CharacterSubTabs from '../components/CharacterSubTabs'
+import { ConfirmModal } from '../components/ConfirmModal'
 
 // searchDebounceMs delays the faction-picker query until the user pauses
 // typing — cheap against the ~2100-row faction_list table, but no reason to
 // fire one request per keystroke.
 const searchDebounceMs = 250
+
+// BucketBar renders the nine classic EQ faction disposition ranges as a
+// segmented scale, highlighting the faction's most recent /con reading.
+// Bucket-level precision only — EQ never gives us a position within a
+// bucket, so the marker sits at the whole segment, not an exact point.
+function BucketBar({ bucket, suspect }: { bucket?: string; suspect?: boolean }): React.ReactElement {
+  const idx = bucket ? bucketIndex(bucket) : -1
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="flex flex-1 gap-0.5">
+        {BUCKET_ORDER.map((b, i) => {
+          const active = i === idx
+          return (
+            <div
+              key={b}
+              title={BUCKET_LABEL[b]}
+              className="h-2 flex-1 rounded-sm transition-opacity"
+              style={{
+                backgroundColor: BUCKET_COLOR[b],
+                opacity: idx === -1 ? 0.25 : active ? 1 : 0.2,
+                outline: active ? '1px solid var(--color-foreground)' : 'none',
+              }}
+            />
+          )
+        })}
+      </div>
+      <span
+        className="w-24 shrink-0 text-right text-[11px]"
+        style={{ color: idx === -1 ? 'var(--color-muted-foreground)' : 'var(--color-foreground)' }}
+      >
+        {idx === -1 ? 'Not considered' : BUCKET_LABEL[bucket as FactionBucket]}
+      </span>
+      {suspect && (
+        <span title="Reading taken while illusioned — may not reflect your true faction">
+          <Eye size={12} style={{ color: 'var(--color-warning, #f59e0b)' }} />
+        </span>
+      )}
+    </div>
+  )
+}
 
 function TallyRow({
   entry,
@@ -38,37 +80,40 @@ function TallyRow({
 
   return (
     <div
-      className="flex items-center gap-3 rounded-lg px-4 py-3"
+      className="flex flex-col gap-2 rounded-lg px-4 py-3"
       style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
     >
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
-          {entry.faction_name}
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+            {entry.faction_name}
+          </div>
+          <div className="mt-1 flex items-center gap-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            <span style={{ color: 'var(--color-success)' }}>{better} better</span>
+            <span style={{ color: '#f87171' }}>{worse} worse</span>
+            {unresolved > 0 && <span>{unresolved} unresolved</span>}
+          </div>
         </div>
-        <div className="mt-1 flex items-center gap-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-          <span style={{ color: 'var(--color-success)' }}>{better} better</span>
-          <span style={{ color: '#f87171' }}>{worse} worse</span>
-          {unresolved > 0 && <span>{unresolved} unresolved</span>}
+        <div className="shrink-0 text-right">
+          <div className="text-xs uppercase tracking-wide" style={{ color: 'var(--color-muted-foreground)' }}>
+            Est. net
+          </div>
+          <div className="text-sm font-semibold tabular-nums" style={{ color: netColor }}>
+            {net > 0 ? '+' : ''}
+            {net}
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          title="Stop tracking this faction"
+          className="shrink-0 rounded p-1.5"
+          style={{ color: 'var(--color-muted-foreground)' }}
+        >
+          <Trash2 size={14} />
+        </button>
       </div>
-      <div className="shrink-0 text-right">
-        <div className="text-xs uppercase tracking-wide" style={{ color: 'var(--color-muted-foreground)' }}>
-          Est. net
-        </div>
-        <div className="text-sm font-semibold tabular-nums" style={{ color: netColor }}>
-          {net > 0 ? '+' : ''}
-          {net}
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={onRemove}
-        title="Stop tracking this faction"
-        className="shrink-0 rounded p-1.5"
-        style={{ color: 'var(--color-muted-foreground)' }}
-      >
-        <Trash2 size={14} />
-      </button>
+      <BucketBar bucket={tally?.last_bucket} suspect={tally?.last_consider_suspect} />
     </div>
   )
 }
@@ -81,6 +126,7 @@ export default function FactionsPage(): React.ReactElement {
   const [tallies, setTallies] = useState<FactionTally[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
 
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Faction[]>([])
@@ -114,10 +160,11 @@ export default function FactionsPage(): React.ReactElement {
 
   useEffect(() => { load() }, [load])
 
-  // The session tally is global to the active character in the backend (the
-  // tracker follows whichever character the log tailer is watching) — it
-  // isn't per-viewed-character the way the wishlist itself is. Only load/show
-  // it while viewing the active character.
+  // The tracker engine only ever watches one character at a time — whichever
+  // one's log is actively tailed — so live tallies (and the ability to add
+  // new events) only exist for the active character. A non-active
+  // character's own persisted history still exists in user.db, but there's
+  // no read endpoint for it yet; only the wishlist itself is editable here.
   const isViewingActive = viewedCharacter !== '' && viewedCharacter.toLowerCase() === active.toLowerCase()
 
   useEffect(() => {
@@ -174,7 +221,8 @@ export default function FactionsPage(): React.ReactElement {
     deleteFactionWishlistEntry(viewedCharID, factionID).catch((err: Error) => setError(err.message))
   }
 
-  const handleReset = (): void => {
+  const handleClearHistory = (): void => {
+    setConfirmClear(false)
     resetFactionSession().then((s) => setTallies(s.tallies ?? [])).catch((err: Error) => setError(err.message))
   }
 
@@ -192,7 +240,7 @@ export default function FactionsPage(): React.ReactElement {
         <div className="ml-auto flex items-center gap-2">
           {isViewingActive && (
             <button
-              onClick={handleReset}
+              onClick={() => setConfirmClear(true)}
               className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
               style={{
                 backgroundColor: 'var(--color-surface-2)',
@@ -201,7 +249,7 @@ export default function FactionsPage(): React.ReactElement {
               }}
             >
               <RefreshCw size={11} />
-              Reset session
+              Clear history
             </button>
           )}
         </div>
@@ -219,11 +267,14 @@ export default function FactionsPage(): React.ReactElement {
         >
           <AlertTriangle size={16} className="mt-0.5 shrink-0" style={{ color: 'var(--color-warning, #f59e0b)' }} />
           <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-            <strong style={{ color: 'var(--color-warning, #f59e0b)' }}>Session-only estimate.</strong>{' '}
-            EQ never logs a faction&rsquo;s real value or point amount — this tally counts
-            &ldquo;got better/worse&rdquo; lines for the factions below and adds a best-effort
-            point estimate only when a change can be tied to a resolved kill. It resets on
-            every restart and character switch, and can&rsquo;t tell you your actual standing.
+            <strong style={{ color: 'var(--color-warning, #f59e0b)' }}>Estimate, not your real standing.</strong>{' '}
+            EQ never logs a faction&rsquo;s actual value or point amount. Better/worse counts and the
+            estimated net come from tallying &ldquo;got better/worse&rdquo; lines and, where possible, tying
+            them to a resolved kill&rsquo;s known point value — this persists across restarts, but is still
+            never a claim about your true faction. The bar below shows your last <code>/con</code>{' '}
+            reading for the faction, which is real (bucket-level only) — a{' '}
+            <Eye size={12} className="inline align-text-bottom" /> marker means that reading was taken
+            while you had an illusion active and may not be reliable.
           </p>
         </div>
 
@@ -235,7 +286,7 @@ export default function FactionsPage(): React.ReactElement {
           <>
             {!isViewingActive && (
               <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                Live session tallies only run for the active character ({active || 'none'}).
+                Live tracking only runs for the active character ({active || 'none'}).
                 You can still edit this character&rsquo;s wishlist here.
               </p>
             )}
@@ -323,6 +374,17 @@ export default function FactionsPage(): React.ReactElement {
           </>
         )}
       </div>
+
+      {confirmClear && (
+        <ConfirmModal
+          title="Clear faction history?"
+          message="This permanently discards the tracked better/worse counts, estimated net, and last /con reading for every faction this character is tracking. The wishlist itself is unaffected — factions stay starred and start from zero again."
+          confirmLabel="Clear history"
+          tone="danger"
+          onConfirm={handleClearHistory}
+          onCancel={() => setConfirmClear(false)}
+        />
+      )}
     </div>
   )
 }

@@ -19,16 +19,20 @@ import (
 const factionSearchLimit = 50
 
 // factionsHandler handles the faction picker, per-character faction
-// wishlist, and the session Faction Tracker's read/reset endpoints.
+// wishlist, and the Faction Tracker's read/reset endpoints. Tallies persist
+// in user.db across restarts and character switches — "reset" here means
+// the user explicitly discarding a character's tracked history, not a
+// per-session boundary.
 type factionsHandler struct {
 	store  *character.Store
 	db     *db.DB
 	engine *factiontracker.Engine
 
-	// reloadTracked re-derives the tracked faction set for the currently
-	// active character and pushes it into engine.SetTracked. Called after
-	// any wishlist mutation so a live session picks up the change without
-	// requiring an app restart or character reselect. May be nil in tests.
+	// reloadTracked re-derives the tracked faction set (and persisted
+	// tallies) for the currently active character and pushes it into
+	// engine.SetTracked. Called after any wishlist mutation so a live
+	// session picks up the change without requiring an app restart or
+	// character reselect. May be nil in tests.
 	reloadTracked func()
 }
 
@@ -130,6 +134,13 @@ func (h *factionsHandler) deleteWishlist(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := h.store.DeleteFactionWishlistEntry(charID, factionID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Drop the persisted tally too — untracking a faction discards its
+	// history, so re-adding it later starts fresh rather than resurrecting
+	// old counts.
+	if err := h.store.DeleteFactionTally(charID, factionID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

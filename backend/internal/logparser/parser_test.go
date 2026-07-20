@@ -645,63 +645,85 @@ func TestParseLine(t *testing.T) {
 			line:     "[Mon Apr 13 06:00:00 2026] a grimling cadaverist regards you as an ally.",
 			wantOK:   true,
 			wantType: EventConsidered,
-			wantData: ConsideredData{TargetName: "a grimling cadaverist"},
+			wantData: ConsideredData{
+				TargetName: "a grimling cadaverist", Disposition: "regards you as an ally", Bucket: BucketAlly,
+			},
 		},
 		{
 			name:     "con: scowls at you",
 			line:     "[Mon Apr 13 06:00:00 2026] a gnoll scowls at you, ready to attack.",
 			wantOK:   true,
 			wantType: EventConsidered,
-			wantData: ConsideredData{TargetName: "a gnoll"},
+			wantData: ConsideredData{
+				TargetName: "a gnoll", Disposition: "scowls at you, ready to attack", Bucket: BucketScowling,
+			},
 		},
 		{
 			name:     "con: glares at you",
 			line:     "[Mon Apr 13 06:00:00 2026] a young gnoll glares at you threateningly.",
 			wantOK:   true,
 			wantType: EventConsidered,
-			wantData: ConsideredData{TargetName: "a young gnoll"},
+			wantData: ConsideredData{
+				TargetName: "a young gnoll", Disposition: "glares at you threateningly", Bucket: BucketThreatening,
+			},
 		},
 		{
 			name:     "con: judges you indifferently",
 			line:     "[Mon Apr 13 06:00:00 2026] a goblin warrior judges you indifferently, what is your business here?",
 			wantOK:   true,
 			wantType: EventConsidered,
-			wantData: ConsideredData{TargetName: "a goblin warrior"},
+			wantData: ConsideredData{
+				TargetName:  "a goblin warrior",
+				Disposition: "judges you indifferently, what is your business here?",
+				Bucket:      BucketIndifferent,
+			},
 		},
 		{
 			name:     "con: warmly regards you",
 			line:     "[Mon Apr 13 06:00:00 2026] a halfling guard warmly regards you as a friend.",
 			wantOK:   true,
 			wantType: EventConsidered,
-			wantData: ConsideredData{TargetName: "a halfling guard"},
+			wantData: ConsideredData{
+				TargetName: "a halfling guard", Disposition: "warmly regards you as a friend", Bucket: BucketWarmly,
+			},
 		},
 		{
 			name:     "con: considers you",
 			line:     "[Mon Apr 13 06:00:00 2026] an orc pawn considers you amiably.",
 			wantOK:   true,
 			wantType: EventConsidered,
-			wantData: ConsideredData{TargetName: "an orc pawn"},
+			wantData: ConsideredData{
+				TargetName: "an orc pawn", Disposition: "considers you amiably", Bucket: BucketAmiable,
+			},
 		},
 		{
 			name:     "con: looks upon you",
 			line:     "[Mon Apr 13 06:00:00 2026] a skeleton looks upon you with suspicion.",
 			wantOK:   true,
 			wantType: EventConsidered,
-			wantData: ConsideredData{TargetName: "a skeleton"},
+			wantData: ConsideredData{
+				// No known keyword in this clause — bucket stays unclassified
+				// rather than guessing.
+				TargetName: "a skeleton", Disposition: "looks upon you with suspicion", Bucket: "",
+			},
 		},
 		{
 			name:     "con: looks your way",
 			line:     "[Mon Apr 13 06:00:00 2026] a lizardman looks your way apprehensively.",
 			wantOK:   true,
 			wantType: EventConsidered,
-			wantData: ConsideredData{TargetName: "a lizardman"},
+			wantData: ConsideredData{
+				TargetName: "a lizardman", Disposition: "looks your way apprehensively", Bucket: BucketApprehensive,
+			},
 		},
 		{
 			name:     "con: looks at you (dubious)",
 			line:     "[Mon Apr 13 06:00:00 2026] an Icepaw cleric looks at you dubiously -- what would you like your tombstone to say?",
 			wantOK:   true,
 			wantType: EventConsidered,
-			wantData: ConsideredData{TargetName: "an Icepaw cleric"},
+			wantData: ConsideredData{
+				TargetName: "an Icepaw cleric", Disposition: "looks at you dubiously", Bucket: BucketDubious,
+			},
 		},
 
 		// --- /who entries ---

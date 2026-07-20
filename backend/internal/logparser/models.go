@@ -309,10 +309,43 @@ type HealData struct {
 	Amount int `json:"amount"`
 }
 
+// FactionBucket is one of EQ classic's nine faction disposition ranges, as
+// shown by /con. Ordered worst (Scowling) to best (Ally) — index order in
+// FactionBucketOrder matches the classic in-game scale so consumers can
+// render a 9-segment bar.
+type FactionBucket string
+
+const (
+	BucketScowling     FactionBucket = "scowling"
+	BucketThreatening  FactionBucket = "threatening"
+	BucketDubious      FactionBucket = "dubious"
+	BucketApprehensive FactionBucket = "apprehensive"
+	BucketIndifferent  FactionBucket = "indifferent"
+	BucketAmiable      FactionBucket = "amiable"
+	BucketKindly       FactionBucket = "kindly"
+	BucketWarmly       FactionBucket = "warmly"
+	BucketAlly         FactionBucket = "ally"
+)
+
+// FactionBucketOrder is the classic EQ faction scale, worst to best — mirrors
+// frontend/src/lib/factionBuckets.ts BUCKET_ORDER, keep in sync.
+var FactionBucketOrder = []FactionBucket{
+	BucketScowling, BucketThreatening, BucketDubious, BucketApprehensive,
+	BucketIndifferent, BucketAmiable, BucketKindly, BucketWarmly, BucketAlly,
+}
+
 // ConsideredData is the structured payload for EventConsidered.
 type ConsideredData struct {
 	// TargetName is the NPC display name as it appeared in the /con output.
 	TargetName string `json:"target_name"`
+	// Disposition is the raw captured disposition clause (e.g. "regards you
+	// indifferently", "regards you as an ally"), trimmed of surrounding
+	// whitespace. Empty if the regex somehow captured nothing (shouldn't
+	// happen — kept only as a defensive fallback).
+	Disposition string `json:"disposition,omitempty"`
+	// Bucket is Disposition classified into one of the nine classic faction
+	// buckets, or "" if no known keyword matched.
+	Bucket FactionBucket `json:"bucket,omitempty"`
 }
 
 // PetOwnerData is the structured payload for EventPetOwner. The pet announced

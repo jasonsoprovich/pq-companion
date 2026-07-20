@@ -154,6 +154,9 @@ func (s *Store) migrate() error {
 	if err := s.migrateFactionWishlist(); err != nil {
 		return err
 	}
+	if err := s.migrateFactionTally(); err != nil {
+		return err
+	}
 	if err := s.migrateCustomLevelingRecipes(); err != nil {
 		return err
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/applog"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backfill"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/buffmod"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/changelog"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/chat"
@@ -780,12 +781,15 @@ func main() {
 	)
 	wishlistWatcher.Rebuild()
 
-	// Faction Tracker: session-only tally of "Your faction standing with X
-	// got better/worse" lines for the active character's wishlisted
-	// factions, with a best-effort point estimate for changes that
-	// correlate to a resolved kill (quarm.db npc_faction_entries). EQ never
-	// logs a faction's absolute value or point amount, so this can only ever
-	// be an approximate session view. Dev-gated — see internal/factiontracker.
+	// Faction Tracker: a per-character tally of "Your faction standing with X
+	// got better/worse" lines for wishlisted factions, with a best-effort
+	// point estimate for changes that correlate to a resolved kill
+	// (quarm.db npc_faction_entries), persisted in user.db across restarts
+	// and character switches. Plus a /con bucket reading per faction (see
+	// logparser.FactionBucket), flagged suspect while the player is
+	// illusioned. EQ never exposes a faction's absolute value, so none of
+	// this is ever a claim about real standing — see internal/factiontracker.
+	// Dev-gated.
 	factionEngine := factiontracker.NewEngine(hub, func(mobName string) ([]factiontracker.NPCFactionHit, bool) {
 		id, ok := database.GetNPCIDByName(mobName)
 		if !ok {
@@ -801,15 +805,69 @@ func main() {
 		}
 		return hits, true
 	})
+	factionEngine.SetPrimaryFactionResolver(func(npcName string) (string, bool) {
+		id, ok := database.GetNPCIDByName(npcName)
+		if !ok {
+			return "", false
+		}
+		nf, err := database.GetNPCFaction(id)
+		if err != nil || nf == nil || nf.PrimaryFactionName == "" {
+			return "", false
+		}
+		return nf.PrimaryFactionName, true
+	})
+	// A /con reading is unreliable while the player is illusioned — check
+	// every currently active buff timer's spell effects for SPA 58
+	// (Illusion), the same check buffmod already uses for the Permanent
+	// Illusion AA override.
+	factionEngine.SetIllusionProvider(func() bool {
+		for _, t := range timerEngine.GetState().Timers {
+			if t.Category != spelltimer.CategoryBuff || t.SpellID == 0 {
+				continue
+			}
+			sp, err := database.GetSpell(t.SpellID)
+			if err != nil || sp == nil {
+				continue
+			}
+			if buffmod.HasIllusionEffect(sp.EffectIDs[:]) {
+				return true
+			}
+		}
+		return false
+	})
+	factionEngine.SetPersistFunc(func(characterID int, tally factiontracker.Tally) {
+		row := character.FactionTallyRow{
+			CharacterID:         characterID,
+			FactionID:           tally.FactionID,
+			FactionName:         tally.FactionName,
+			Better:              tally.Better,
+			Worse:               tally.Worse,
+			EstimatedNet:        tally.EstimatedNet,
+			Unresolved:          tally.Unresolved,
+			LastBucket:          tally.LastBucket,
+			LastConsiderSuspect: tally.LastConsiderSuspect,
+		}
+		if tally.LastConsideredAt != nil {
+			row.LastConsideredAt = tally.LastConsideredAt.Unix()
+		}
+		if err := charStore.UpsertFactionTally(row); err != nil {
+			slog.Warn("persist faction tally", "err", err)
+		}
+	})
+	factionEngine.SetClearPersistedFunc(func(characterID int) {
+		if err := charStore.ClearFactionTallies(characterID); err != nil {
+			slog.Warn("clear faction tallies", "err", err)
+		}
+	})
 	reloadFactionTracking := func() {
 		charName := activeChar()
 		if charName == "" {
-			factionEngine.SetTracked(nil)
+			factionEngine.SetTracked(0, nil)
 			return
 		}
 		c, ok, err := charStore.GetByName(charName)
 		if err != nil || !ok {
-			factionEngine.SetTracked(nil)
+			factionEngine.SetTracked(0, nil)
 			return
 		}
 		entries, err := charStore.ListFactionWishlist(c.ID)
@@ -817,11 +875,37 @@ func main() {
 			slog.Warn("load faction wishlist", "err", err)
 			return
 		}
+		tallyRows, err := charStore.ListFactionTallies(c.ID)
+		if err != nil {
+			slog.Warn("load faction tallies", "err", err)
+			tallyRows = nil
+		}
+		byFactionID := make(map[int]character.FactionTallyRow, len(tallyRows))
+		for _, r := range tallyRows {
+			byFactionID[r.FactionID] = r
+		}
 		tracked := make([]factiontracker.TrackedFaction, len(entries))
 		for i, e := range entries {
-			tracked[i] = factiontracker.TrackedFaction{FactionID: e.FactionID, FactionName: e.FactionName}
+			tf := factiontracker.TrackedFaction{FactionID: e.FactionID, FactionName: e.FactionName}
+			if row, ok := byFactionID[e.FactionID]; ok {
+				tf.Seed = factiontracker.Tally{
+					FactionID:           row.FactionID,
+					FactionName:         row.FactionName,
+					Better:              row.Better,
+					Worse:               row.Worse,
+					EstimatedNet:        row.EstimatedNet,
+					Unresolved:          row.Unresolved,
+					LastBucket:          row.LastBucket,
+					LastConsiderSuspect: row.LastConsiderSuspect,
+				}
+				if row.LastConsideredAt > 0 {
+					t := time.Unix(row.LastConsideredAt, 0)
+					tf.Seed.LastConsideredAt = &t
+				}
+			}
+			tracked[i] = tf
 		}
-		factionEngine.SetTracked(tracked)
+		factionEngine.SetTracked(c.ID, tracked)
 	}
 	reloadFactionTracking()
 
@@ -1278,10 +1362,10 @@ func main() {
 		// active character name at compile time.
 		triggerEngine.Reload()
 		// Faction Tracker follows the active character: reload its wishlist
-		// and reset the session tally so a camp/login cycle doesn't carry a
-		// stale tracked-faction set from the previous character.
+		// and load its persisted tallies, so a camp/login cycle switches to
+		// that character's own faction history instead of carrying over the
+		// previous character's tracked-faction set.
 		reloadFactionTracking()
-		factionEngine.Reset()
 	})
 	go tailer.Start(context.Background())
 

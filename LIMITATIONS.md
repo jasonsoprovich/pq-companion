@@ -706,6 +706,41 @@ These are inherent to log-file parsing and affect multiple features:
 
 ---
 
+## 15. Faction Tracker
+
+### 15.1 /con readings can't be flagged unreliable from an ally-type spell on the NPC
+
+- **Limitation:** Alliance, Benevolence, Collaboration, and similar spells cast
+  by another player on an NPC temporarily alter how that NPC perceives (and
+  therefore `/con`s) the player — but the Faction Tracker's bucket bar has no
+  way to detect that this happened and flag the reading as suspect. It only
+  suppresses readings taken while *the player themselves* is illusioned (see
+  `internal/factiontracker.IsIllusionedProvider`), which is a different and
+  separately-confirmed mechanism.
+- **Root cause:** Detecting this would require correlating "a spell known to
+  alter faction perception landed on this specific NPC within some window
+  before the /con" — the log does carry spell-landed-on-other-target lines
+  (the same mechanism the DPS meter uses for other players' actions), but
+  which spells actually carry the faction-altering effect, how long it lasts,
+  and the exact log phrasing for it landing on an NPC (vs. a player) hasn't
+  been verified against a real Project Quarm session log. Implementing this
+  from assumption risked silently mislabeling reliable readings as suspect
+  (or vice versa) rather than a defensible best-effort estimate.
+- **Sources checked:** `spells_new` (Alliance id 298, Benevolence id 173,
+  Collaboration id 1687, and Collaboration II-IV all exist in quarm.db), the
+  existing spell-landed-on-other parsing (`logparser.EventSpellLanded` with
+  `Kind: "other"`, already used for third-party damage/heal attribution) —
+  no test-fixture log line naming one of these spells landing on an NPC has
+  been captured yet.
+- **Could a future data source fix this?** Likely yes, but needs research
+  first: pull a real session log containing one of these spells cast on an
+  NPC (ideally followed by a `/con` of that NPC), confirm the effect's actual
+  duration, and confirm the log phrasing before wiring detection — this is
+  the natural follow-up to Faction Tracker Phase 2, not blocked on anything
+  external.
+
+---
+
 ## Template for new entries
 
 ```

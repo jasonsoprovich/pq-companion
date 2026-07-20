@@ -162,11 +162,14 @@ var (
 	// "looks at you" covers dubious faction ("...looks at you dubiously --
 	// what would you like your tombstone to say?"), which is the message
 	// shown once an NPC's faction softens from KOS but is still hostile.
-	// Examples:
+	// Group 2 captures the disposition clause itself (verb phrase + any
+	// trailing adverb, e.g. "regards you indifferently" or "regards you as
+	// an ally") up to the " -- " flavor-text delimiter or the closing
+	// period, so classifyConsiderBucket can classify it. Examples:
 	//   "a grimling cadaverist regards you as an ally."
 	//   "a gnoll scowls at you, ready to attack -- what would you like your tombstone to say?"
 	//   "an Icepaw cleric looks at you dubiously -- what would you like your tombstone to say?"
-	reConsider = regexp.MustCompile(`^(.+?) (?:scowls at you|glares at you|looks at you|looks your way|looks upon you|judges you|warmly regards you|kindly regards you|regards you|considers you)`)
+	reConsider = regexp.MustCompile(`^(.+?) ((?:scowls at you|glares at you|looks at you|looks your way|looks upon you|judges you|warmly regards you|kindly regards you|regards you|considers you)[^-]*?)\s*(?:--.*)?\.?$`)
 
 	// Combat — dodge/parry/riposte/block by player:
 	// "You dodge a gnoll's attack!"
@@ -785,9 +788,14 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		// (e.g. "You have entered …") that the regex could otherwise match if
 		// they contain a disposition phrase elsewhere in the text.
 		if !strings.HasPrefix(m[1], "You") {
+			disposition := strings.TrimSpace(m[2])
 			return LogEvent{
 				Type: EventConsidered,
-				Data: ConsideredData{TargetName: m[1]},
+				Data: ConsideredData{
+					TargetName:  m[1],
+					Disposition: disposition,
+					Bucket:      classifyConsiderBucket(disposition),
+				},
 			}, true
 		}
 	}
@@ -971,5 +979,38 @@ func CanonicalNPCName(name string) string {
 		return "an " + name[len("An "):]
 	default:
 		return name
+	}
+}
+
+// classifyConsiderBucket maps a /con disposition clause (reConsider's group 2)
+// to one of the nine classic EQ faction buckets via keyword match,
+// best-effort. Confirmed against real Project Quarm session logs: scowling,
+// threatening, dubious, indifferent, ally. Apprehensive/amiable/kindly/warmly
+// are inferred from the regex's own phrase alternatives and standard EQ
+// classic wording — not yet observed in a captured log line, so treat those
+// four as unverified. Returns "" when the clause matches no known keyword.
+func classifyConsiderBucket(clause string) FactionBucket {
+	low := strings.ToLower(clause)
+	switch {
+	case strings.Contains(low, "as an ally"):
+		return BucketAlly
+	case strings.Contains(low, "warmly"):
+		return BucketWarmly
+	case strings.Contains(low, "kindly"):
+		return BucketKindly
+	case strings.Contains(low, "amiabl"):
+		return BucketAmiable
+	case strings.Contains(low, "indifferent"):
+		return BucketIndifferent
+	case strings.Contains(low, "apprehens"):
+		return BucketApprehensive
+	case strings.Contains(low, "dubious"):
+		return BucketDubious
+	case strings.Contains(low, "threaten"):
+		return BucketThreatening
+	case strings.Contains(low, "scowl"):
+		return BucketScowling
+	default:
+		return ""
 	}
 }
