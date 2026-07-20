@@ -148,3 +148,99 @@ func TestGetItemQuests(t *testing.T) {
 		t.Error("expected at least one dialogue branch with NPC text")
 	}
 }
+
+// TestQuestSources_CountHandedItemTurnIns checks the generator's
+// count_handed_item support (a second turn-in API used alongside
+// check_turn_in) recovered two previously-missing NPCs: Canloe Nusback
+// (Crushbone Belt/shoulder pad turn-ins) and Herald Telcha's Green Goblin
+// Skin turn-in, which check_turn_in-only parsing couldn't see at all.
+func TestQuestSources_CountHandedItemTurnIns(t *testing.T) {
+	// Crushbone Belt (13318): 3 real quest givers per pqdi.cc — Linadian
+	// (Freeport West + Greater Faydark) and Canloe Nusback (South Kaladim).
+	// Canloe Nusback was previously dropped entirely (zero resolvable
+	// rewards or turn-ins), even though the NPC clearly turns the belt in.
+	_, usedIn := db.QuestsForItem(13318)
+	foundCanloe := false
+	for _, q := range usedIn {
+		if q.NPC == "Canloe Nusback" {
+			foundCanloe = true
+		}
+	}
+	if !foundCanloe {
+		t.Errorf("expected Canloe Nusback among Crushbone Belt (13318) turn-ins, got %+v", usedIn)
+	}
+
+	// Green Goblin Skin (22135): turned in to Herald Telcha in Chardok.
+	_, usedIn = db.QuestsForItem(22135)
+	foundTelcha := false
+	for _, q := range usedIn {
+		if q.NPC == "Herald Telcha" {
+			foundTelcha = true
+		}
+	}
+	if !foundTelcha {
+		t.Errorf("expected Herald Telcha among Green Goblin Skin (22135) turn-ins, got %+v", usedIn)
+	}
+}
+
+// TestGetItemQuests_ResolvesFactionDeltas checks a dialogue branch's exact
+// faction deltas (extracted from the quest script's own Faction() calls)
+// resolve with a real faction_list name, backing both the item Quests tab
+// and the Faction Tracker's quest-turn-in correlation.
+func TestGetItemQuests_ResolvesFactionDeltas(t *testing.T) {
+	d := openTestDB(t)
+	// Di'zok Signet of Service (5728) is rewarded by Herald Telcha's Head of
+	// Skargus turn-in branch, which also carries the branch's Faction()
+	// deltas — unlike Green Goblin Skin (a pure turn-in with no reward, so
+	// it never appears in a Walkthrough, only UsedIn).
+	q, err := d.GetItemQuests(5728)
+	if err != nil {
+		t.Fatalf("GetItemQuests: %v", err)
+	}
+	found := false
+	for _, w := range q.Walkthrough {
+		for _, b := range w.Dialogue {
+			for _, f := range b.Factions {
+				if f.FactionName == "" {
+					t.Errorf("unresolved faction name for id %d", f.FactionID)
+				}
+				if f.Delta != 0 {
+					found = true
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("expected at least one non-zero faction delta in Green Goblin Skin's walkthrough")
+	}
+}
+
+// TestResolveQuestFactionDialogue checks the log-correlation resolver used by
+// the Faction Tracker: an NPC's exact spoken text (as it would appear in a
+// "<NPC> says, '...'" log line) resolves to the quest branch's faction
+// deltas, while an unrelated hail line for the same NPC does not.
+func TestResolveQuestFactionDialogue(t *testing.T) {
+	openTestDB(t) // ensures quarm.db-backed quest sources are loaded once
+
+	hits, ok := db.ResolveQuestFactionDialogue("Herald Telcha",
+		"Green Goblin Skin! You have indeed been busy!")
+	if !ok || len(hits) == 0 {
+		t.Fatalf("expected a faction match for Herald Telcha's Green Goblin Skin turn-in, got hits=%+v ok=%v", hits, ok)
+	}
+	foundSarnak := false
+	for _, h := range hits {
+		if h.Delta == 3 {
+			foundSarnak = true
+		}
+	}
+	if !foundSarnak {
+		t.Errorf("expected a +3 faction delta among %+v", hits)
+	}
+
+	if _, ok := db.ResolveQuestFactionDialogue("Herald Telcha", "Hail to you, lesser being!"); ok {
+		t.Error("expected the unconditional hail line to have no faction match")
+	}
+	if _, ok := db.ResolveQuestFactionDialogue("Nobody Real", "anything"); ok {
+		t.Error("expected an unknown NPC to have no faction match")
+	}
+}

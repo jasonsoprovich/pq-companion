@@ -23,14 +23,24 @@ type ItemQuestRef struct {
 	RelatedItems  []ItemRef `json:"related_items,omitempty"`
 }
 
+// FactionDeltaRef is one resolved faction adjustment (name looked up from
+// faction_list) a dialogue branch applies.
+type FactionDeltaRef struct {
+	FactionID   int    `json:"faction_id"`
+	FactionName string `json:"faction_name"`
+	Delta       int    `json:"delta"`
+}
+
 // QuestDialogueLine is one resolved branch of a quest walkthrough: the player
 // action that triggers it (Triggers = say keywords, TurnIn = items handed in;
-// both empty = hail/unconditional), the NPC's spoken Text, and any Grants.
+// both empty = hail/unconditional), the NPC's spoken Text, any Grants, and
+// any faction standing it adjusts.
 type QuestDialogueLine struct {
-	Triggers []string  `json:"triggers,omitempty"`
-	TurnIn   []ItemRef `json:"turnin,omitempty"`
-	Text     string    `json:"text,omitempty"`
-	Grants   []ItemRef `json:"grants,omitempty"`
+	Triggers []string          `json:"triggers,omitempty"`
+	TurnIn   []ItemRef         `json:"turnin,omitempty"`
+	Text     string            `json:"text,omitempty"`
+	Grants   []ItemRef         `json:"grants,omitempty"`
+	Factions []FactionDeltaRef `json:"factions,omitempty"`
 }
 
 // WalkthroughQuest is one NPC's full quest walkthrough, resolved for display.
@@ -62,6 +72,7 @@ func (db *DB) GetItemQuests(itemID int) (*ItemQuests, error) {
 
 	// Collect every referenced item id for one batch name lookup.
 	idSet := map[int]bool{}
+	factionIDSet := map[int]bool{}
 	for _, q := range rewardedBy {
 		for _, b := range q.Dialogue {
 			for _, id := range b.TurnIn {
@@ -69,6 +80,9 @@ func (db *DB) GetItemQuests(itemID int) (*ItemQuests, error) {
 			}
 			for _, id := range b.Grants {
 				idSet[id] = true
+			}
+			for _, f := range b.Factions {
+				factionIDSet[f.FactionID] = true
 			}
 		}
 	}
@@ -81,7 +95,12 @@ func (db *DB) GetItemQuests(itemID int) (*ItemQuests, error) {
 	if err != nil {
 		return nil, err
 	}
+	factionNames, err := db.factionNames(factionIDSet)
+	if err != nil {
+		return nil, err
+	}
 	ref := refItemsFunc(names)
+	refFactions := refFactionsFunc(factionNames)
 	resolveZone := db.zoneResolver()
 
 	for _, q := range rewardedBy {
@@ -89,7 +108,7 @@ func (db *DB) GetItemQuests(itemID int) (*ItemQuests, error) {
 			NPC:           q.NPC,
 			ZoneShortName: q.Zone,
 			ZoneName:      resolveZone(q.Zone),
-			Dialogue:      resolveDialogue(q.Dialogue, ref),
+			Dialogue:      resolveDialogue(q.Dialogue, ref, refFactions),
 		})
 	}
 	for _, q := range usedIn {
@@ -113,8 +132,8 @@ func (db *DB) GetItemQuests(itemID int) (*ItemQuests, error) {
 }
 
 // resolveDialogue turns raw quest dialogue branches into display-ready lines,
-// resolving the turn-in and granted item ids to refs via ref.
-func resolveDialogue(lines []QuestDialogue, ref func([]int) []ItemRef) []QuestDialogueLine {
+// resolving the turn-in/granted item ids and faction ids via ref/refFactions.
+func resolveDialogue(lines []QuestDialogue, ref func([]int) []ItemRef, refFactions func([]QuestFactionDelta) []FactionDeltaRef) []QuestDialogueLine {
 	out := make([]QuestDialogueLine, 0, len(lines))
 	for _, b := range lines {
 		out = append(out, QuestDialogueLine{
@@ -122,6 +141,7 @@ func resolveDialogue(lines []QuestDialogue, ref func([]int) []ItemRef) []QuestDi
 			TurnIn:   ref(b.TurnIn),
 			Text:     b.Text,
 			Grants:   ref(b.Grants),
+			Factions: refFactions(b.Factions),
 		})
 	}
 	return out
@@ -136,6 +156,21 @@ func refItemsFunc(names map[int]string) func([]int) []ItemRef {
 		refs := make([]ItemRef, 0, len(ids))
 		for _, id := range ids {
 			refs = append(refs, ItemRef{ID: id, Name: names[id]})
+		}
+		return refs
+	}
+}
+
+// refFactionsFunc returns a resolver mapping quest faction deltas to display
+// refs (preserving order), resolving each faction's name via names.
+func refFactionsFunc(names map[int]string) func([]QuestFactionDelta) []FactionDeltaRef {
+	return func(deltas []QuestFactionDelta) []FactionDeltaRef {
+		if len(deltas) == 0 {
+			return nil
+		}
+		refs := make([]FactionDeltaRef, 0, len(deltas))
+		for _, d := range deltas {
+			refs = append(refs, FactionDeltaRef{FactionID: d.FactionID, FactionName: names[d.FactionID], Delta: d.Delta})
 		}
 		return refs
 	}
@@ -179,6 +214,34 @@ func (db *DB) itemNames(idSet map[int]bool) (map[int]string, error) {
 		args = append(args, id)
 	}
 	rows, err := db.Query("SELECT id, name FROM items WHERE id IN ("+strings.Join(ids, ",")+")", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		names[id] = name
+	}
+	return names, rows.Err()
+}
+
+// factionNames batch-resolves faction_list ids to names in a single query.
+func (db *DB) factionNames(idSet map[int]bool) (map[int]string, error) {
+	names := map[int]string{}
+	if len(idSet) == 0 {
+		return names, nil
+	}
+	ids := make([]string, 0, len(idSet))
+	args := make([]any, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, "?")
+		args = append(args, id)
+	}
+	rows, err := db.Query("SELECT id, name FROM faction_list WHERE id IN ("+strings.Join(ids, ",")+")", args...)
 	if err != nil {
 		return nil, err
 	}

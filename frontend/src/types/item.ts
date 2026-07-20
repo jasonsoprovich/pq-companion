@@ -144,14 +144,26 @@ export interface ItemQuestRef {
   related_items?: ItemRef[]
 }
 
+// FactionDeltaRef is one resolved faction adjustment a dialogue branch
+// applies, pulled from the quest script's own Faction() call — the one place
+// a numeric faction amount exists at all (the in-game log only ever prints
+// direction, never a number).
+export interface FactionDeltaRef {
+  faction_id: number
+  faction_name: string
+  delta: number
+}
+
 // QuestDialogueLine is one branch of a quest walkthrough: the player action
 // that triggers it (say `triggers` keywords, or turn in `turnin` items; both
-// empty = hail/unconditional), the NPC's `text`, and any items it `grants`.
+// empty = hail/unconditional), the NPC's `text`, any items it `grants`, and
+// any faction standing it adjusts.
 export interface QuestDialogueLine {
   triggers?: string[]
   turnin?: ItemRef[]
   text?: string
   grants?: ItemRef[]
+  factions?: FactionDeltaRef[]
 }
 
 // WalkthroughQuest is one NPC's full quest walkthrough.

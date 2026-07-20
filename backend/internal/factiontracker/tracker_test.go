@@ -48,6 +48,28 @@ func feedFactionChanged(tr *Engine, faction, direction string, ts time.Time) {
 	})
 }
 
+// herladTelchaDialogueResolver stubs the Herald Telcha quest-script dialogue
+// extracted into quest_sources.json — matches the real Green Goblin Skin
+// turn-in branch verified against the live quest scripts repo.
+func heraldTelchaDialogueResolver(npcName, text string) ([]NPCFactionHit, bool) {
+	if npcName != "Herald Telcha" || text != "Green Goblin Skin! You have indeed been busy!" {
+		return nil, false
+	}
+	return []NPCFactionHit{
+		{FactionID: 451, FactionName: "Brood of Di`Zok", Value: 3},
+		{FactionID: 307, FactionName: "Sarnak Collective", Value: 3},
+		{FactionID: 259, FactionName: "Goblins of Mountain Death", Value: -1},
+	}, true
+}
+
+func feedNPCDialogue(tr *Engine, npc, text string, ts time.Time) {
+	tr.Handle(logparser.LogEvent{
+		Type:      logparser.EventNPCDialogue,
+		Timestamp: ts,
+		Data:      logparser.NPCDialogueData{NPCName: npc, Text: text},
+	})
+}
+
 func feedConsidered(tr *Engine, npc string, bucket logparser.FactionBucket, ts time.Time) {
 	tr.Handle(logparser.LogEvent{
 		Type:      logparser.EventConsidered,
@@ -86,6 +108,50 @@ func TestKillCorrelation_EstimatesMatchDBHits(t *testing.T) {
 	blood := tallyFor(t, st, "Bloodsabers")
 	if blood.Better != 1 || blood.EstimatedNet != 25 || blood.Unresolved != 0 {
 		t.Errorf("Bloodsabers = %+v, want Better=1 EstimatedNet=25 Unresolved=0", blood)
+	}
+}
+
+// TestQuestDialogueCorrelation_EstimatesMatchScriptDeltas verifies quest
+// turn-in faction changes get the exact numeric delta from the quest
+// script's own Faction() calls (via SetQuestDialogueResolver), the same way
+// TestKillCorrelation_EstimatesMatchDBHits verifies kill-driven changes get
+// the exact delta from npc_faction_entries.
+func TestQuestDialogueCorrelation_EstimatesMatchScriptDeltas(t *testing.T) {
+	e := newEngine()
+	e.SetQuestDialogueResolver(heraldTelchaDialogueResolver)
+
+	base := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
+	feedNPCDialogue(e, "Herald Telcha", "Green Goblin Skin! You have indeed been busy!", base)
+	feedFactionChanged(e, "Brood of Di`Zok", "better", base)
+	feedFactionChanged(e, "Sarnak Collective", "better", base)
+	feedFactionChanged(e, "Goblins of Mountain Death", "worse", base)
+
+	st := e.State()
+	brood := tallyFor(t, st, "Brood of Di`Zok")
+	if brood.Better != 1 || brood.EstimatedNet != 3 || brood.Unresolved != 0 {
+		t.Errorf("Brood of Di`Zok = %+v, want Better=1 EstimatedNet=3 Unresolved=0", brood)
+	}
+	goblins := tallyFor(t, st, "Goblins of Mountain Death")
+	if goblins.Worse != 1 || goblins.EstimatedNet != -1 || goblins.Unresolved != 0 {
+		t.Errorf("Goblins of Mountain Death = %+v, want Worse=1 EstimatedNet=-1 Unresolved=0", goblins)
+	}
+}
+
+// TestQuestDialogueCorrelation_UnmatchedDialogue_NoResolverMatch verifies an
+// ordinary say-line (no quest match) leaves a following faction change
+// direction-only, same as an unresolvable kill.
+func TestQuestDialogueCorrelation_UnmatchedDialogue_NoResolverMatch(t *testing.T) {
+	e := newEngine()
+	e.SetQuestDialogueResolver(heraldTelchaDialogueResolver)
+
+	base := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
+	feedNPCDialogue(e, "Herald Telcha", "Hail to you, lesser being!", base)
+	feedFactionChanged(e, "Brood of Di`Zok", "better", base)
+
+	st := e.State()
+	brood := tallyFor(t, st, "Brood of Di`Zok")
+	if brood.Better != 1 || brood.EstimatedNet != 0 || brood.Unresolved != 1 {
+		t.Errorf("Brood of Di`Zok = %+v, want Better=1 EstimatedNet=0 Unresolved=1", brood)
 	}
 }
 

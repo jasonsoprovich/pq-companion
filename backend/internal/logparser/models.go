@@ -179,6 +179,18 @@ const (
 	// Carries no data; the failure message ("Your attempts at ducking away
 	// from combat fail.") changes nothing and isn't modelled.
 	EventRogueEvade EventType = "log:rogue_evade"
+
+	// EventNPCDialogue is emitted on a generic "<Name> says, '<text>'" log
+	// line — an NPC's spoken response to a hail, keyword, or item turn-in.
+	// This is the flavor-text half of a quest hand-in: EQ never logs which
+	// quest branch fired or its numeric faction reward, only the spoken
+	// text and (separately) direction-only EventFactionChanged lines at the
+	// same timestamp. Consumers match Text against the quest-script
+	// dialogue extracted into quest_sources.json to recover the exact
+	// faction deltas that branch applies. Also fires for ordinary player
+	// /say chat (verb conjugation "says" is shared) — harmless, since a
+	// player name essentially never matches a quest NPC's full name.
+	EventNPCDialogue EventType = "log:npc_dialogue"
 )
 
 // LogEvent is the parsed representation of a single EQ log line.
@@ -458,4 +470,10 @@ type SkillUpData struct {
 type FactionChangedData struct {
 	Faction   string `json:"faction"`
 	Direction string `json:"direction"`
+}
+
+// NPCDialogueData is the structured payload for EventNPCDialogue.
+type NPCDialogueData struct {
+	NPCName string `json:"npc_name"`
+	Text    string `json:"text"`
 }

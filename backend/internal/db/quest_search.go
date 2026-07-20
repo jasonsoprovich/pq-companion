@@ -64,6 +64,26 @@ func (db *DB) buildQuestSearchIndex() {
 		} else {
 			slog.Warn("quest search index: query items", "err", err)
 		}
+		// Same pass, but for faction_list (~2100 rows) — resolves the
+		// dialogue-embedded faction deltas' names.
+		factionNames := map[int]string{}
+		if rows, err := db.Query("SELECT id, name FROM faction_list"); err == nil {
+			for rows.Next() {
+				var id int
+				var name string
+				if err := rows.Scan(&id, &name); err != nil {
+					slog.Warn("quest search index: scan faction row", "err", err)
+					continue
+				}
+				factionNames[id] = name
+			}
+			if err := rows.Err(); err != nil {
+				slog.Warn("quest search index: iterate faction rows", "err", err)
+			}
+			rows.Close()
+		} else {
+			slog.Warn("quest search index: query factions", "err", err)
+		}
 		zoneLong := map[string]string{}
 		resolveZone := func(short string) string {
 			if v, ok := zoneLong[short]; ok {
@@ -85,6 +105,7 @@ func (db *DB) buildQuestSearchIndex() {
 			return refs
 		}
 		ref := refItemsFunc(names) // order-preserving, for dialogue
+		refFactions := refFactionsFunc(factionNames)
 
 		questSearchIndex = make([]questSearchEntry, 0, len(questEntries))
 		for i := range questEntries {
@@ -113,7 +134,7 @@ func (db *DB) buildQuestSearchIndex() {
 					ZoneName:      zoneName,
 					Rewards:       rewards,
 					TurnIns:       turnins,
-					Dialogue:      resolveDialogue(e.Dialogue, ref),
+					Dialogue:      resolveDialogue(e.Dialogue, ref, refFactions),
 				},
 				haystack: hay.String(),
 			})

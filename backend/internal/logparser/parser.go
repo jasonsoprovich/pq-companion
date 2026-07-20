@@ -247,6 +247,17 @@ var (
 	// raid threat estimator model taunt (sets the taunter to top-of-list + 10).
 	reTaunt = regexp.MustCompile(`^(.+?) says,? '?I'll teach you to interfere with me (.+?)\.'?$`)
 
+	// Generic "<Name> says, '<text>'" line — an NPC's spoken quest-hail or
+	// turn-in response. Matched after the more specific say-line patterns
+	// above (pet owner, taunt) so those still win. Group 2 is greedy so it
+	// captures through the line's true closing quote even when the spoken
+	// text itself contains an apostrophe (e.g. a contraction). Requires the
+	// third-person "says" conjugation, which excludes the player's own
+	// "You say, '...'" (/say uses "say", not "says").
+	//   "LuSun says 'Greetings Feane nice to see you.'"
+	//   "Herald Telcha says, 'Green Goblin Skin! You have indeed been busy!...'"
+	reNPCDialogue = regexp.MustCompile(`^(.+?) says,? '(.+)'$`)
+
 	// Illusion buff dropped — two distinct EQ messages, neither names the
 	// race so we treat both as "all illusions on the active player ended":
 	//   "Your illusion fades."
@@ -779,6 +790,17 @@ func classifyMessage(msg string) (LogEvent, bool) {
 		return LogEvent{
 			Type: EventTaunt,
 			Data: TauntData{Mob: m[1], Taunter: m[2]},
+		}, true
+	}
+
+	// --- Generic NPC dialogue (quest hail/turn-in flavor text) ---
+	// Tried after the specific say-line patterns (pet owner, taunt) so those
+	// take priority on overlapping matches; tried before /con since neither
+	// overlaps in practice (disposition clauses never use "says").
+	if m := reNPCDialogue.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventNPCDialogue,
+			Data: NPCDialogueData{NPCName: m[1], Text: m[2]},
 		}, true
 	}
 

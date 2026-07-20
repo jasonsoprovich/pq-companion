@@ -52,15 +52,25 @@ type questEntry struct {
 	Dialogue []dialogueBranch `json:"dialogue,omitempty"`
 }
 
+// factionDelta is one faction adjustment a dialogue branch applies, as an
+// exact `e.other:Faction(e.self, factionID, delta)` call in the source
+// script — the one place quest scripts carry a numeric faction amount at
+// all (the in-game log only ever prints direction, never a number).
+type factionDelta struct {
+	FactionID int `json:"faction_id"`
+	Delta     int `json:"delta"`
+}
+
 // dialogueBranch is one conditional branch of an NPC's quest handlers: the
 // player action that triggers it (Triggers = say keywords, or TurnIn = items
 // handed over; both empty = an unconditional/hail response), the NPC's spoken
-// Text, and any items it Grants.
+// Text, any items it Grants, and any faction standing it adjusts.
 type dialogueBranch struct {
-	Triggers []string `json:"triggers,omitempty"`
-	TurnIn   []int    `json:"turnin,omitempty"`
-	Text     string   `json:"text,omitempty"`
-	Grants   []int    `json:"grants,omitempty"`
+	Triggers []string       `json:"triggers,omitempty"`
+	TurnIn   []int          `json:"turnin,omitempty"`
+	Text     string         `json:"text,omitempty"`
+	Grants   []int          `json:"grants,omitempty"`
+	Factions []factionDelta `json:"factions,omitempty"`
 }
 
 var (
@@ -72,6 +82,20 @@ var (
 	reTurnInItem = regexp.MustCompile(`item\d*\s*=\s*(\d+)`)
 	// A bare integer (used to read a positional QuestReward arg).
 	reInt = regexp.MustCompile(`^\d+$`)
+	// { 12345, 67890 } item-id list, as passed to count_handed_item.
+	reIntBraceList = regexp.MustCompile(`\{\s*([0-9,\s]+)\s*\}`)
+	// local varName = item_lib.count_handed_item(...) — the common style
+	// where the turn-in check is hoisted into a local before the if-block
+	// that uses it, rather than inlined directly in the condition (as
+	// check_turn_in almost always is). Captures varName so the later
+	// `if(varName > 0)` guard can be matched back to its item list.
+	reHandedItemDecl = regexp.MustCompile(`local\s+(\w+)\s*=\s*(?:item_lib\.)?count_handed_item\(`)
+	// if(varName > 0) / if(varName ~= 0) — the guard that gates a
+	// hoisted count_handed_item result's branch body.
+	reHandedItemGuard = regexp.MustCompile(`if\s*\(\s*(\w+)\s*(?:>\s*0|~=\s*0|>=\s*1)\s*\)`)
+	// Matches immediately before a hoisted count_handed_item call to
+	// recover the local variable name it's assigned to.
+	reDeclSuffix = regexp.MustCompile(`local\s+(\w+)\s*=\s*(?:item_lib\.)?$`)
 )
 
 func main() {
@@ -99,11 +123,11 @@ func main() {
 	if err := os.WriteFile(*outPath, buf, 0o644); err != nil {
 		log.Fatalf("write %s: %v", *outPath, err)
 	}
-	log.Printf("wrote %d quest entries across %d zones (%d reward refs, %d turn-in refs) to %s",
-		len(entries), stats.zones, stats.rewards, stats.turnins, *outPath)
+	log.Printf("wrote %d quest entries across %d zones (%d reward refs, %d turn-in refs, %d faction deltas) to %s",
+		len(entries), stats.zones, stats.rewards, stats.turnins, stats.factions, *outPath)
 }
 
-type parseStats struct{ zones, rewards, turnins int }
+type parseStats struct{ zones, rewards, turnins, factions int }
 
 func parseTree(root string) ([]questEntry, parseStats) {
 	var entries []questEntry
@@ -139,12 +163,17 @@ func parseTree(root string) ([]questEntry, parseStats) {
 			return nil
 		}
 		rewards, turnins, dialogue := parseScript(string(src))
-		if len(rewards) == 0 && len(turnins) == 0 {
+		factionCount := 0
+		for _, b := range dialogue {
+			factionCount += len(b.Factions)
+		}
+		if len(rewards) == 0 && len(turnins) == 0 && factionCount == 0 {
 			return nil
 		}
 		zoneSeen[zone] = true
 		stats.rewards += len(rewards)
 		stats.turnins += len(turnins)
+		stats.factions += factionCount
 		entries = append(entries, questEntry{
 			Zone: zone, NPC: npc,
 			Rewards: rewards, TurnIns: turnins, Dialogue: dialogue,
@@ -158,17 +187,19 @@ func parseTree(root string) ([]questEntry, parseStats) {
 // dialogue token kinds, ordered by file position to drive the branch builder.
 const (
 	tokKeyword = iota // a findi("...") condition on a say handler
-	tokTurnIn         // a check_turn_in({...}) condition on a trade handler
+	tokTurnIn         // a check_turn_in({...}) or count_handed_item({...}) condition
 	tokText           // an NPC Say/Emote line
 	tokGrant          // an item handed to the player
+	tokFaction        // an e.other:Faction(e.self, factionID, delta) call
 )
 
 type dlgToken struct {
-	pos     int
-	kind    int
-	keyword string
-	items   []int
-	text    string
+	pos      int
+	kind     int
+	keyword  string
+	items    []int
+	text     string
+	factions []factionDelta
 }
 
 // reQuoted matches a Lua double-quoted string literal (with \" escapes).
@@ -204,6 +235,48 @@ func parseScript(src string) (rewards, turnins []int, dialogue []dialogueBranch)
 		if len(reqs) > 0 {
 			toks = append(toks, dlgToken{pos: c.pos, kind: tokTurnIn, items: reqs})
 		}
+	}
+	// count_handed_item is a second, unrelated turn-in API used for
+	// repeatable/any-of hand-ins (e.g. "bring me any number of goblin
+	// skins"), distinct from check_turn_in's exact-set form. Two call
+	// shapes occur: inline in the if-condition (handled the same way as
+	// check_turn_in, directly below) and hoisted into a `local X = ...`
+	// assignment ahead of the if-block that tests X (handedVars + the
+	// reHandedItemGuard pass below) — the common style, since a script
+	// often declares several hand-in checks before testing any of them.
+	handedVars := map[string][]int{}
+	for _, c := range callMatches(src, "count_handed_item") {
+		ids := intBraceList(c.args)
+		if len(ids) == 0 {
+			continue
+		}
+		lookback := 64
+		if c.pos < lookback {
+			lookback = c.pos
+		}
+		if m := reDeclSuffix.FindStringSubmatch(src[c.pos-lookback : c.pos]); m != nil {
+			handedVars[m[1]] = ids
+			continue
+		}
+		toks = append(toks, dlgToken{pos: c.pos, kind: tokTurnIn, items: ids})
+	}
+	for _, m := range reHandedItemGuard.FindAllStringSubmatchIndex(src, -1) {
+		varName := src[m[2]:m[3]]
+		if ids, ok := handedVars[varName]; ok {
+			toks = append(toks, dlgToken{pos: m[0], kind: tokTurnIn, items: ids})
+		}
+	}
+	for _, c := range callMatches(src, "Faction") {
+		fields := splitTopLevel(c.args)
+		if len(fields) < 3 {
+			continue
+		}
+		factionID, err1 := strconv.Atoi(strings.TrimSpace(fields[1]))
+		delta, err2 := strconv.Atoi(strings.TrimSpace(fields[2]))
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		toks = append(toks, dlgToken{pos: c.pos, kind: tokFaction, factions: []factionDelta{{FactionID: factionID, Delta: delta}}})
 	}
 	for _, fn := range []string{"Say", "Emote", "Shout"} {
 		for _, c := range callMatches(src, fn) {
@@ -268,6 +341,10 @@ func parseScript(src string) (rewards, turnins []int, dialogue []dialogueBranch)
 				rewardSet[id] = true
 			}
 			bodyStarted = true
+		case tokFaction:
+			has = true
+			cur.Factions = append(cur.Factions, t.factions...)
+			bodyStarted = true
 		}
 	}
 	flush()
@@ -276,7 +353,23 @@ func parseScript(src string) (rewards, turnins []int, dialogue []dialogueBranch)
 }
 
 func branchEmpty(b dialogueBranch) bool {
-	return len(b.Triggers) == 0 && len(b.TurnIn) == 0 && b.Text == "" && len(b.Grants) == 0
+	return len(b.Triggers) == 0 && len(b.TurnIn) == 0 && b.Text == "" && len(b.Grants) == 0 && len(b.Factions) == 0
+}
+
+// intBraceList parses a `{ id1, id2, ... }` literal (as passed to
+// count_handed_item's item-list argument) into its integer ids.
+func intBraceList(args string) []int {
+	m := reIntBraceList.FindStringSubmatch(args)
+	if m == nil {
+		return nil
+	}
+	var out []int
+	for _, n := range strings.FieldsFunc(m[1], func(r rune) bool { return r == ',' || r == ' ' }) {
+		if id, _ := strconv.Atoi(strings.TrimSpace(n)); id > 0 {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // firstString returns the first double-quoted literal in args, unescaped.

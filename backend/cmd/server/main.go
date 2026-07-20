@@ -821,6 +821,25 @@ func main() {
 		return nf.PrimaryFactionID, nf.PrimaryFactionName, true
 	})
 	factionEngine.SetFactionIDResolver(database.GetFactionIDByName)
+	// Quest turn-in faction changes get an exact numeric delta (not a
+	// kill-correlated estimate) by matching the NPC's spoken log line
+	// against the quest script's own dialogue text — see
+	// db.ResolveQuestFactionDialogue and quest_sources.json.
+	factionEngine.SetQuestDialogueResolver(func(npcName, text string) ([]factiontracker.NPCFactionHit, bool) {
+		deltas, ok := db.ResolveQuestFactionDialogue(npcName, text)
+		if !ok || len(deltas) == 0 {
+			return nil, false
+		}
+		hits := make([]factiontracker.NPCFactionHit, 0, len(deltas))
+		for _, d := range deltas {
+			f, err := database.GetFactionByID(d.FactionID)
+			if err != nil || f == nil {
+				continue
+			}
+			hits = append(hits, factiontracker.NPCFactionHit{FactionID: f.ID, FactionName: f.Name, Value: d.Delta})
+		}
+		return hits, len(hits) > 0
+	})
 	// A /con reading is unreliable while the player is illusioned — check
 	// every currently active buff timer's spell effects for SPA 58
 	// (Illusion), the same check buffmod already uses for the Permanent

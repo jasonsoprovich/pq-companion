@@ -739,6 +739,54 @@ These are inherent to log-file parsing and affect multiple features:
   the natural follow-up to Faction Tracker Phase 2, not blocked on anything
   external.
 
+### 15.2 Quest-turn-in faction correlation only matches NPC `Say` lines, not `Emote`/`Shout`
+
+- **Limitation:** A quest turn-in's exact faction deltas are recovered by
+  matching the NPC's spoken log line (`"<NPC> says, '...'"`, `EventNPCDialogue`
+  in `logparser`) against that branch's stored dialogue text
+  (`db.ResolveQuestFactionDialogue`). The quest-script generator
+  (`cmd/quest-sources`) also captures `Emote()`/`Shout()` text into the same
+  branch, but EQ logs those as unquoted third-person action text with no
+  reliable common phrasing (`"Herald Telcha grins evilly."`), so no log-side
+  regex exists to match them. A turn-in whose flavor response is delivered
+  entirely via `Emote`/`Shout` (no `Say` call at all) falls back to
+  direction-only tallying, the same as an unresolvable kill.
+- **Root cause:** `Emote`/`Shout` text is authored freely per-NPC with no
+  fixed verb or quoting convention to anchor a regex on, unlike `Say`'s
+  consistent `"<Name> says,? '<text>'"` shape.
+- **Sources checked:** `docs/zealpipes-reference.md` (no dialogue-adjacent
+  pipe message type), the quest scripts repo (`github.com/SecretsOTheP/quests`)
+  — spot-checked several `Emote`-only branches; phrasing is NPC-specific with
+  no shared pattern.
+- **Could a future data source fix this?** Possibly, on a per-NPC basis: since
+  `quest_sources.json` already has the exact Emote text, a future pass could
+  build a per-NPC regex list from it rather than one generic pattern. Low
+  priority — the vast majority of quest turn-ins observed so far respond via
+  `Say`.
+
+### 15.3 Single-word NPC dialogue delivered via "tells you," is not correlated
+
+- **Limitation:** `EventNPCDialogue` only matches the `"<Name> says,? '...'"`
+  form, not `"<Name> tells you, '...'"` — some quest NPCs (e.g. merchant
+  conversion confirmations) use the latter. This is deliberate: a single-word
+  NPC name using "tells you," is indistinguishable from a player tell
+  (`reVerifiedPlayerTell` already claims that exact shape for the
+  single-word-name disambiguation the combat tracker relies on), so extending
+  `EventNPCDialogue` to cover it would either misclassify player tells as
+  quest dialogue or need to duplicate that disambiguation logic. Multi-word
+  NPC names (e.g. "Herald Telcha") naturally avoid the collision, but not
+  every quest NPC has a multi-word name.
+- **Root cause:** EQ's log format doesn't distinguish an NPC's "tells you"
+  from a player's — the channel name is identical either way.
+- **Sources checked:** `logparser.reVerifiedPlayerTell` (existing
+  single-word-anchor disambiguation), testdata capture of a "tells you,"
+  merchant line (`Merchant Tekrama tells you, 'Conversion complete...'` —
+  multi-word, unaffected).
+- **Could a future data source fix this?** Unlikely from the log alone. A
+  Zeal pipe field naming the active NPC target at the moment a "tells you,"
+  line appears could disambiguate it, but no such field exists today (see
+  §15.1's sibling gap on ZealPipes' lack of dialogue-adjacent messages).
+
 ---
 
 ## Template for new entries

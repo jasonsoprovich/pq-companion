@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"sync"
 )
 
@@ -18,15 +19,27 @@ import (
 //go:embed quest_sources.json
 var questSourcesJSON []byte
 
+// QuestFactionDelta is one exact faction adjustment a dialogue branch
+// applies — pulled from the quest script's own `e.other:Faction(e.self,
+// factionID, delta)` call, the one place a numeric faction amount exists at
+// all (the in-game log only ever prints direction). Mirrors the generator's
+// schema.
+type QuestFactionDelta struct {
+	FactionID int `json:"faction_id"`
+	Delta     int `json:"delta"`
+}
+
 // QuestDialogue is one conditional branch of an NPC's quest handlers: the
 // player action that triggers it (Triggers = say keywords, TurnIn = items
 // handed over; both empty = an unconditional/hail response), the NPC's spoken
-// Text, and any items it Grants. Mirrors the generator's schema.
+// Text, any items it Grants, and any faction standing it adjusts. Mirrors the
+// generator's schema.
 type QuestDialogue struct {
-	Triggers []string `json:"triggers,omitempty"`
-	TurnIn   []int    `json:"turnin,omitempty"`
-	Text     string   `json:"text,omitempty"`
-	Grants   []int    `json:"grants,omitempty"`
+	Triggers []string            `json:"triggers,omitempty"`
+	TurnIn   []int               `json:"turnin,omitempty"`
+	Text     string              `json:"text,omitempty"`
+	Grants   []int               `json:"grants,omitempty"`
+	Factions []QuestFactionDelta `json:"factions,omitempty"`
 }
 
 // QuestEntry is one NPC's quest activity. Mirrors the generator's schema.
@@ -44,6 +57,7 @@ var (
 	questByReward      map[int][]*QuestEntry
 	questByTurnIn      map[int][]*QuestEntry
 	questRewardZoneSet map[int]map[string]bool
+	questDialogueByNPC map[string][]*QuestDialogue
 )
 
 // loadQuestSources parses the embedded quest_sources.json once and builds the
@@ -58,6 +72,7 @@ func loadQuestSources() {
 		questByReward = make(map[int][]*QuestEntry)
 		questByTurnIn = make(map[int][]*QuestEntry)
 		questRewardZoneSet = make(map[int]map[string]bool)
+		questDialogueByNPC = make(map[string][]*QuestDialogue)
 		for i := range questEntries {
 			e := &questEntries[i]
 			for _, id := range e.Rewards {
@@ -70,8 +85,42 @@ func loadQuestSources() {
 			for _, id := range e.TurnIns {
 				questByTurnIn[id] = append(questByTurnIn[id], e)
 			}
+			key := strings.ToLower(e.NPC)
+			for j := range e.Dialogue {
+				b := &e.Dialogue[j]
+				if len(b.Factions) > 0 {
+					questDialogueByNPC[key] = append(questDialogueByNPC[key], b)
+				}
+			}
 		}
 	})
+}
+
+// ResolveQuestFactionDialogue matches an NPC's spoken log line (from
+// EventNPCDialogue) against that NPC's quest-script dialogue branches,
+// returning the exact faction deltas the matched branch applies. sayText is
+// matched as a case-insensitive substring of a branch's stored Text — EQ logs
+// one "<NPC> says, '...'" line per script Say() call, while a branch's Text
+// may concatenate several, so containment (not equality) is the right test.
+// Returns ok=false when the NPC has no faction-bearing dialogue at all, or
+// none of it matches sayText — the common case for the vast majority of
+// ordinary NPC hails and all non-quest chat.
+func ResolveQuestFactionDialogue(npcName, sayText string) ([]QuestFactionDelta, bool) {
+	loadQuestSources()
+	branches := questDialogueByNPC[strings.ToLower(npcName)]
+	if len(branches) == 0 {
+		return nil, false
+	}
+	needle := strings.ToLower(strings.TrimSpace(sayText))
+	if needle == "" {
+		return nil, false
+	}
+	for _, b := range branches {
+		if strings.Contains(strings.ToLower(b.Text), needle) {
+			return b.Factions, true
+		}
+	}
+	return nil, false
 }
 
 // questRewardZones returns the distinct zone short-names in which an item is a

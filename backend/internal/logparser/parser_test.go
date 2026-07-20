@@ -639,6 +639,27 @@ func TestParseLine(t *testing.T) {
 			wantData: FactionChangedData{Faction: "Bloodsabers", Direction: "better"},
 		},
 
+		// --- Generic NPC dialogue (quest hail/turn-in flavor text) ---
+		{
+			name:     "npc dialogue: says with no comma",
+			line:     "[Mon Apr 13 06:00:00 2026] LuSun says 'Greetings Feane nice to see you.'",
+			wantOK:   true,
+			wantType: EventNPCDialogue,
+			wantData: NPCDialogueData{NPCName: "LuSun", Text: "Greetings Feane nice to see you."},
+		},
+		{
+			name:     "npc dialogue: says with comma, multi-word NPC",
+			line:     "[Mon Apr 13 06:00:00 2026] Herald Telcha says, 'Green Goblin Skin! I shall speak to my masters of this.'",
+			wantOK:   true,
+			wantType: EventNPCDialogue,
+			wantData: NPCDialogueData{NPCName: "Herald Telcha", Text: "Green Goblin Skin! I shall speak to my masters of this."},
+		},
+		{
+			name:   "npc dialogue: player's own /say does not match (uses \"say\", not \"says\")",
+			line:   "[Mon Apr 13 06:00:00 2026] You say, 'Hello!'",
+			wantOK: false,
+		},
+
 		// --- /con considered ---
 		{
 			name:     "con: regards you as ally (multi-word NPC)",
@@ -827,11 +848,10 @@ func TestParseLine(t *testing.T) {
 		},
 
 		// --- Unrecognised messages ---
-		{
-			name:   "unrecognised: chat message",
-			line:   "[Mon Apr 13 06:00:00 2026] Soandso says, 'Hello!'",
-			wantOK: false,
-		},
+		// Note: a bare "<Name> says, '...'" line now classifies as
+		// EventNPCDialogue (see the "npc dialogue" cases above) — it's no
+		// longer unrecognised, whether the speaker is an NPC or another
+		// player. See NPCDialogueData's doc comment for why that's safe.
 		{
 			name:   "unrecognised: system message",
 			line:   "[Mon Apr 13 06:00:00 2026] Welcome to EverQuest!",
@@ -986,6 +1006,14 @@ func compareData(t *testing.T, got, want interface{}) {
 		}
 		if g != w {
 			t.Errorf("PetOwnerData = %+v, want %+v", g, w)
+		}
+	case NPCDialogueData:
+		g, ok := got.(NPCDialogueData)
+		if !ok {
+			t.Fatalf("Data type = %T, want NPCDialogueData", got)
+		}
+		if g != w {
+			t.Errorf("NPCDialogueData = %+v, want %+v", g, w)
 		}
 	case TauntData:
 		g, ok := got.(TauntData)

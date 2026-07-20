@@ -38,6 +38,23 @@ function ItemLinks({
   )
 }
 
+function FactionDeltas({ factions }: { factions: QuestDialogueLine['factions'] }): React.ReactElement | null {
+  if (!factions || factions.length === 0) return null
+  return (
+    <span>
+      {factions.map((f, i) => (
+        <React.Fragment key={f.faction_id}>
+          {i > 0 && ', '}
+          <span style={{ color: f.delta >= 0 ? 'var(--color-success)' : 'var(--color-destructive)' }}>
+            {f.faction_name || `Faction ${f.faction_id}`} {f.delta >= 0 ? '+' : ''}
+            {f.delta}
+          </span>
+        </React.Fragment>
+      ))}
+    </span>
+  )
+}
+
 function DialogueLine({
   line,
   onNavigate,
@@ -48,6 +65,7 @@ function DialogueLine({
   const triggers = line.triggers ?? []
   const turnin = line.turnin ?? []
   const grants = line.grants ?? []
+  const factions = line.factions ?? []
 
   let action: React.ReactNode
   if (triggers.length > 0) {
@@ -87,6 +105,11 @@ function DialogueLine({
           {line.text && (
             <p className="mt-0.5 text-xs italic" style={{ color: 'var(--color-muted-foreground)' }}>
               {line.text}
+            </p>
+          )}
+          {factions.length > 0 && (
+            <p className="mt-0.5 text-xs">
+              <FactionDeltas factions={factions} />
             </p>
           )}
         </div>

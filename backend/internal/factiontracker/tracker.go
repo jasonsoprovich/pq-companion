@@ -37,6 +37,15 @@ type NPCPrimaryFactionResolver func(npcName string) (factionID int, factionName 
 // — cosmetic only, doesn't affect tallying).
 type FactionIDResolver func(name string) (id int, ok bool)
 
+// QuestDialogueResolver resolves an NPC's spoken log line (from
+// EventNPCDialogue) to the exact faction deltas its matching quest-script
+// dialogue branch applies, best-effort. Returns ok=false when the NPC has no
+// faction-bearing quest dialogue at all, or none of it matches sayText — the
+// overwhelming majority of ordinary NPC hails and all player chat, since
+// EventNPCDialogue fires on any "<Name> says, '...'" line, not just quest
+// turn-ins.
+type QuestDialogueResolver func(npcName, sayText string) (hits []NPCFactionHit, ok bool)
+
 // IsIllusionedProvider reports whether the active character currently has an
 // illusion effect active. Illusions change how NPCs perceive the player, so
 // a /con reading taken while illusioned is flagged as suspect rather than
@@ -75,6 +84,7 @@ type Engine struct {
 	resolve          NPCFactionResolver
 	resolvePrimary   NPCPrimaryFactionResolver
 	resolveFactionID FactionIDResolver
+	resolveDialogue  QuestDialogueResolver
 	isIllusioned     IsIllusionedProvider
 	persist          PersistFunc
 	clearPersisted   ClearPersistedFunc
@@ -110,6 +120,16 @@ func (e *Engine) SetPrimaryFactionResolver(fn NPCPrimaryFactionResolver) {
 func (e *Engine) SetFactionIDResolver(fn FactionIDResolver) {
 	e.mu.Lock()
 	e.resolveFactionID = fn
+	e.mu.Unlock()
+}
+
+// SetQuestDialogueResolver registers the resolver used to correlate an NPC's
+// spoken log line to a quest-script dialogue branch's exact faction deltas.
+// Optional — quest-turn-in faction changes fall back to direction-only
+// (Unresolved) tallying if never set, same as any other unresolvable change.
+func (e *Engine) SetQuestDialogueResolver(fn QuestDialogueResolver) {
+	e.mu.Lock()
+	e.resolveDialogue = fn
 	e.mu.Unlock()
 }
 
@@ -212,6 +232,12 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 			return
 		}
 		e.handleConsidered(data.TargetName, data.Bucket, ev.Timestamp)
+	case logparser.EventNPCDialogue:
+		data, ok := ev.Data.(logparser.NPCDialogueData)
+		if !ok {
+			return
+		}
+		e.handleNPCDialogue(data.NPCName, data.Text, ev.Timestamp)
 	}
 }
 
@@ -231,6 +257,37 @@ func (e *Engine) handleKill(target string, ts time.Time) {
 		// A zero-value entry never produces a "got better/worse" line (the
 		// server doesn't log a no-op change), so it can never be matched —
 		// skip it rather than let it dilute the pending map.
+		if h.Value == 0 {
+			continue
+		}
+		m[strings.ToLower(h.FactionName)] = h.Value
+	}
+	if len(m) == 0 {
+		return
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.pending = append(e.pending, pendingKill{at: ts, hits: m})
+	e.gcPendingLocked(ts)
+}
+
+// handleNPCDialogue resolves an NPC's spoken line to a matching quest-script
+// dialogue branch and stashes its exact faction deltas as a pending
+// correlation — the same mechanism handleKill uses for DB-resolved kill
+// hits, so handleFactionChanged's matching loop picks these up unchanged.
+// No-op if the resolver can't place the line at all (the overwhelming
+// majority of say-lines: ordinary hails, player chat, non-quest dialogue).
+func (e *Engine) handleNPCDialogue(npcName, text string, ts time.Time) {
+	if e.resolveDialogue == nil {
+		return
+	}
+	hits, ok := e.resolveDialogue(npcName, text)
+	if !ok || len(hits) == 0 {
+		return
+	}
+	m := make(map[string]int, len(hits))
+	for _, h := range hits {
 		if h.Value == 0 {
 			continue
 		}
