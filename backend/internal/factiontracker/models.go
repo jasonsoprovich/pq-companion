@@ -1,6 +1,9 @@
 // Package factiontracker maintains a per-character tally of faction-standing
-// changes for factions the user has wishlisted, inferred from EQ's kill,
-// faction-change, and /con log lines.
+// changes for every faction the character has ever killed toward or
+// /con'd — not just the ones pinned to the wishlist, the same "track
+// everything encountered" approach as the Lockout and Player trackers.
+// Pinning (character_faction_wishlist) is purely a display favorite,
+// resolved by the caller; it never gates what the engine records.
 //
 // EQ never logs a faction's absolute value or the point amount of a change —
 // only "Your faction standing with <Faction> got better/worse." with no
@@ -35,17 +38,11 @@ const correlationWindow = 5 * time.Second
 // tracking off) can't grow it unbounded.
 const maxPendingKills = 50
 
-// TrackedFaction is one faction the active character has wishlisted, with
-// the persisted tally to seed the engine's in-memory state from (the zero
-// value for a newly wishlisted faction with no history yet).
-type TrackedFaction struct {
-	FactionID   int
-	FactionName string
-	Seed        Tally
-}
-
-// Tally is the running tally for one tracked faction, persisted per
-// character across restarts.
+// Tally is the running tally for one faction the character has ever killed
+// toward or /con'd, persisted per character across restarts. Tally itself
+// doubles as the seed type passed to SetCharacter — there is no separate
+// "tracked faction" concept; every faction with any recorded activity gets
+// one of these.
 type Tally struct {
 	FactionID   int    `json:"faction_id"`
 	FactionName string `json:"faction_name"`

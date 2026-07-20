@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
@@ -18,22 +19,46 @@ import (
 // against the ~2100-row faction_list table.
 const factionSearchLimit = 50
 
-// factionsHandler handles the faction picker, per-character faction
-// wishlist, and the Faction Tracker's read/reset endpoints. Tallies persist
-// in user.db across restarts and character switches — "reset" here means
-// the user explicitly discarding a character's tracked history, not a
-// per-session boundary.
+// factionsHandler handles the faction picker, per-character faction pins
+// (the wishlist), and the Faction Tracker's read/reset endpoints. The
+// tracker records every faction the active character has ever killed toward
+// or /con'd — not just pinned ones — persisted in user.db across restarts
+// and character switches. Pinning is purely a display favorite; it never
+// gates what gets recorded. "Reset" means the user explicitly discarding a
+// character's tracked history, not a per-session boundary.
 type factionsHandler struct {
 	store  *character.Store
 	db     *db.DB
 	engine *factiontracker.Engine
+}
 
-	// reloadTracked re-derives the tracked faction set (and persisted
-	// tallies) for the currently active character and pushes it into
-	// engine.SetTracked. Called after any wishlist mutation so a live
-	// session picks up the change without requiring an app restart or
-	// character reselect. May be nil in tests.
-	reloadTracked func()
+// factionSearchResult pairs a faction_list row with the requested
+// character's persisted tally for it, if any — lets the picker show
+// "already have data" for a faction before the user pins it, even one
+// they've never starred. Tally is shaped identically to the /session
+// endpoint's payload (not the raw storage row) so the frontend has one Tally
+// type to render regardless of which endpoint it came from.
+type factionSearchResult struct {
+	db.Faction
+	Tally *factiontracker.Tally `json:"tally,omitempty"`
+}
+
+func tallyFromRow(row character.FactionTallyRow) factiontracker.Tally {
+	t := factiontracker.Tally{
+		FactionID:           row.FactionID,
+		FactionName:         row.FactionName,
+		Better:              row.Better,
+		Worse:               row.Worse,
+		EstimatedNet:        row.EstimatedNet,
+		Unresolved:          row.Unresolved,
+		LastBucket:          row.LastBucket,
+		LastConsiderSuspect: row.LastConsiderSuspect,
+	}
+	if row.LastConsideredAt > 0 {
+		ts := time.Unix(row.LastConsideredAt, 0)
+		t.LastConsideredAt = &ts
+	}
+	return t
 }
 
 func (h *factionsHandler) search(w http.ResponseWriter, r *http.Request) {
@@ -43,11 +68,66 @@ func (h *factionsHandler) search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"factions": factions})
+
+	charIDStr := r.URL.Query().Get("character_id")
+	if charIDStr == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"factions": factions})
+		return
+	}
+	charID, err := strconv.Atoi(charIDStr)
+	if err != nil || charID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid character_id")
+		return
+	}
+	tallyRows, err := h.store.ListFactionTallies(charID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	byFactionID := make(map[int]character.FactionTallyRow, len(tallyRows))
+	for _, row := range tallyRows {
+		byFactionID[row.FactionID] = row
+	}
+	out := make([]factionSearchResult, len(factions))
+	for i, f := range factions {
+		res := factionSearchResult{Faction: f}
+		if row, ok := byFactionID[f.ID]; ok {
+			t := tallyFromRow(row)
+			res.Tally = &t
+		}
+		out[i] = res
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"factions": out})
 }
 
-func (h *factionsHandler) session(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, h.engine.State())
+// session returns the Faction Tracker state. With no character_id, it
+// returns the live engine state (whichever character is currently active).
+// With an explicit character_id, it instead reads that character's
+// persisted tallies directly from storage — the only way to see a
+// non-active character's tracked history, since the engine only ever
+// watches one character's log at a time. That history won't update again
+// until the character becomes active.
+func (h *factionsHandler) session(w http.ResponseWriter, r *http.Request) {
+	charIDStr := r.URL.Query().Get("character_id")
+	if charIDStr == "" {
+		writeJSON(w, http.StatusOK, h.engine.State())
+		return
+	}
+	charID, err := strconv.Atoi(charIDStr)
+	if err != nil || charID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid character_id")
+		return
+	}
+	rows, err := h.store.ListFactionTallies(charID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	tallies := make([]factiontracker.Tally, len(rows))
+	for i, row := range rows {
+		tallies[i] = tallyFromRow(row)
+	}
+	writeJSON(w, http.StatusOK, factiontracker.State{Tallies: tallies})
 }
 
 func (h *factionsHandler) resetSession(w http.ResponseWriter, _ *http.Request) {
@@ -116,12 +196,13 @@ func (h *factionsHandler) addWishlist(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if h.reloadTracked != nil {
-		h.reloadTracked()
-	}
 	writeJSON(w, http.StatusCreated, entry)
 }
 
+// deleteWishlist unpins a faction. This is a display-favorite change only —
+// the persisted tally (better/worse/estimated net/last /con reading) is left
+// untouched, exactly like unstarring a player in the Player Tracker doesn't
+// erase their sighting history. Re-pinning later picks the same data back up.
 func (h *factionsHandler) deleteWishlist(w http.ResponseWriter, r *http.Request) {
 	charID, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
@@ -136,16 +217,6 @@ func (h *factionsHandler) deleteWishlist(w http.ResponseWriter, r *http.Request)
 	if err := h.store.DeleteFactionWishlistEntry(charID, factionID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	// Drop the persisted tally too — untracking a faction discards its
-	// history, so re-adding it later starts fresh rather than resurrecting
-	// old counts.
-	if err := h.store.DeleteFactionTally(charID, factionID); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if h.reloadTracked != nil {
-		h.reloadTracked()
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

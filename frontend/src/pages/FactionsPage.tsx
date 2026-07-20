@@ -9,7 +9,7 @@ import {
   getFactionSession,
   resetFactionSession,
 } from '../services/api'
-import type { Faction, FactionWishlistEntry, FactionTally } from '../types/faction'
+import type { Faction, FactionSearchResult, FactionWishlistEntry, FactionTally } from '../types/faction'
 import { BUCKET_ORDER, BUCKET_LABEL, BUCKET_COLOR, bucketIndex, type FactionBucket } from '../lib/factionBuckets'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useWebSocket } from '../hooks/useWebSocket'
@@ -48,10 +48,11 @@ function BucketBar({ bucket, suspect }: { bucket?: string; suspect?: boolean }):
         })}
       </div>
       <span
-        className="w-24 shrink-0 text-right text-[11px]"
+        className="w-28 shrink-0 text-right text-[11px]"
         style={{ color: idx === -1 ? 'var(--color-muted-foreground)' : 'var(--color-foreground)' }}
+        title={idx === -1 ? 'Consider an NPC of this faction in-game to set a baseline' : undefined}
       >
-        {idx === -1 ? 'Not considered' : BUCKET_LABEL[bucket as FactionBucket]}
+        {idx === -1 ? 'Needs /con' : BUCKET_LABEL[bucket as FactionBucket]}
       </span>
       {suspect && (
         <span title="Reading taken while illusioned — may not reflect your true faction">
@@ -106,7 +107,7 @@ function TallyRow({
         <button
           type="button"
           onClick={onRemove}
-          title="Stop tracking this faction"
+          title="Unpin this faction (its history keeps being tracked)"
           className="shrink-0 rounded p-1.5"
           style={{ color: 'var(--color-muted-foreground)' }}
         >
@@ -129,7 +130,7 @@ export default function FactionsPage(): React.ReactElement {
   const [confirmClear, setConfirmClear] = useState(false)
 
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<Faction[]>([])
+  const [results, setResults] = useState<FactionSearchResult[]>([])
   const [searching, setSearching] = useState(false)
 
   useEffect(() => {
@@ -161,19 +162,22 @@ export default function FactionsPage(): React.ReactElement {
   useEffect(() => { load() }, [load])
 
   // The tracker engine only ever watches one character at a time — whichever
-  // one's log is actively tailed — so live tallies (and the ability to add
-  // new events) only exist for the active character. A non-active
-  // character's own persisted history still exists in user.db, but there's
-  // no read endpoint for it yet; only the wishlist itself is editable here.
+  // one's log is actively tailed — so *live* updates (new kills/con/faction
+  // lines) only happen for the active character. A non-active character's
+  // persisted history is still readable (getFactionSession(characterID)),
+  // it just won't change again until that character becomes active — the WS
+  // broadcast below only ever reflects the active character's engine.
   const isViewingActive = viewedCharacter !== '' && viewedCharacter.toLowerCase() === active.toLowerCase()
 
   useEffect(() => {
-    if (!isViewingActive) {
+    if (!viewedCharID) {
       setTallies([])
       return
     }
-    getFactionSession().then((s) => setTallies(s.tallies ?? [])).catch(() => setTallies([]))
-  }, [isViewingActive])
+    getFactionSession(isViewingActive ? undefined : viewedCharID)
+      .then((s) => setTallies(s.tallies ?? []))
+      .catch(() => setTallies([]))
+  }, [viewedCharID, isViewingActive])
 
   useWebSocket((msg) => {
     if (msg.type === WSEvent.OverlayFactions && isViewingActive) {
@@ -198,13 +202,13 @@ export default function FactionsPage(): React.ReactElement {
     setSearching(true)
     const seq = ++searchSeq.current
     const id = setTimeout(() => {
-      searchFactions(query)
+      searchFactions(query, viewedCharID || undefined)
         .then((r) => { if (seq === searchSeq.current) setResults(r.factions ?? []) })
         .catch(() => { if (seq === searchSeq.current) setResults([]) })
         .finally(() => { if (seq === searchSeq.current) setSearching(false) })
     }, searchDebounceMs)
     return () => clearTimeout(id)
-  }, [query])
+  }, [query, viewedCharID])
 
   const trackedIDs = useMemo(() => new Set(entries.map((e) => e.faction_id)), [entries])
 
@@ -268,11 +272,12 @@ export default function FactionsPage(): React.ReactElement {
           <AlertTriangle size={16} className="mt-0.5 shrink-0" style={{ color: 'var(--color-warning, #f59e0b)' }} />
           <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
             <strong style={{ color: 'var(--color-warning, #f59e0b)' }}>Estimate, not your real standing.</strong>{' '}
-            EQ never logs a faction&rsquo;s actual value or point amount. Better/worse counts and the
-            estimated net come from tallying &ldquo;got better/worse&rdquo; lines and, where possible, tying
-            them to a resolved kill&rsquo;s known point value — this persists across restarts, but is still
-            never a claim about your true faction. The bar below shows your last <code>/con</code>{' '}
-            reading for the faction, which is real (bucket-level only) — a{' '}
+            Every faction this character has ever killed toward or <code>/con</code>&rsquo;d is tracked
+            automatically, the same way the Player and Lockout trackers record everything encountered —
+            pinning just keeps a faction on this list. EQ never logs a faction&rsquo;s actual value or point
+            amount, though: better/worse counts and the estimated net come from tallying &ldquo;got
+            better/worse&rdquo; lines and, where possible, tying them to a resolved kill&rsquo;s known point
+            value. The bar shows your last <code>/con</code> reading, which is real (bucket-level only) — a{' '}
             <Eye size={12} className="inline align-text-bottom" /> marker means that reading was taken
             while you had an illusion active and may not be reliable.
           </p>
@@ -286,8 +291,8 @@ export default function FactionsPage(): React.ReactElement {
           <>
             {!isViewingActive && (
               <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                Live tracking only runs for the active character ({active || 'none'}).
-                You can still edit this character&rsquo;s wishlist here.
+                Showing {viewedCharacter}&rsquo;s tracked history — it won&rsquo;t update further until
+                this character becomes active ({active || 'none'} is currently active).
               </p>
             )}
 
@@ -302,7 +307,7 @@ export default function FactionsPage(): React.ReactElement {
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search factions to track…"
+                placeholder="Search factions…"
                 className="w-full rounded-lg py-2 pl-9 pr-3 text-sm outline-none"
                 style={{
                   backgroundColor: 'var(--color-surface)',
@@ -326,23 +331,43 @@ export default function FactionsPage(): React.ReactElement {
                     </div>
                   )}
                   {results.map((f) => {
-                    const tracked = trackedIDs.has(f.id)
+                    const pinned = trackedIDs.has(f.id)
+                    const t = f.tally
                     return (
-                      <button
+                      <div
                         key={f.id}
-                        type="button"
-                        disabled={tracked}
-                        onClick={() => handleAdd(f)}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm"
-                        style={{
-                          color: tracked ? 'var(--color-muted-foreground)' : 'var(--color-foreground)',
-                          cursor: tracked ? 'default' : 'pointer',
-                        }}
+                        style={{ color: 'var(--color-foreground)' }}
                       >
-                        <Star size={13} style={{ color: tracked ? 'var(--color-primary)' : 'var(--color-muted-foreground)' }} />
-                        {f.name}
-                        {tracked && <span className="ml-auto text-xs">Tracked</span>}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => (pinned ? handleRemove(f.id) : handleAdd(f))}
+                          title={pinned ? 'Unpin this faction' : 'Pin this faction'}
+                          className="shrink-0"
+                        >
+                          <Star
+                            size={13}
+                            fill={pinned ? 'var(--color-primary)' : 'none'}
+                            style={{ color: pinned ? 'var(--color-primary)' : 'var(--color-muted-foreground)' }}
+                          />
+                        </button>
+                        <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                        <span
+                          className="shrink-0 text-xs"
+                          style={{ color: 'var(--color-muted-foreground)' }}
+                          title={
+                            t
+                              ? `${t.better} better / ${t.worse} worse`
+                              : 'No kill or /con data recorded yet'
+                          }
+                        >
+                          {t
+                            ? t.last_bucket
+                              ? BUCKET_LABEL[t.last_bucket as FactionBucket] ?? 'Has data'
+                              : `${t.better + t.worse} event${t.better + t.worse === 1 ? '' : 's'}`
+                            : 'No data yet'}
+                        </span>
+                      </div>
                     )
                   })}
                 </div>
@@ -357,7 +382,8 @@ export default function FactionsPage(): React.ReactElement {
             )}
             {!loading && entries.length === 0 && (
               <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-                No factions tracked yet — search above to star one.
+                No factions pinned yet — search above to pin one. Every faction you kill toward or{' '}
+                <code>/con</code> is still tracked automatically; pinning just keeps it on this list.
               </p>
             )}
 
@@ -378,7 +404,7 @@ export default function FactionsPage(): React.ReactElement {
       {confirmClear && (
         <ConfirmModal
           title="Clear faction history?"
-          message="This permanently discards the tracked better/worse counts, estimated net, and last /con reading for every faction this character is tracking. The wishlist itself is unaffected — factions stay starred and start from zero again."
+          message="This permanently discards the tracked better/worse counts, estimated net, and last /con reading for EVERY faction recorded for this character — not just pinned ones, every faction ever killed toward or considered. Pins themselves are unaffected — pinned factions stay pinned and start from zero again."
           confirmLabel="Clear history"
           tone="danger"
           onConfirm={handleClearHistory}

@@ -26,8 +26,10 @@ func koalindlResolver(mobName string) ([]NPCFactionHit, bool) {
 
 const testCharID = 1
 
-func setTracked(e *Engine, factions ...TrackedFaction) {
-	e.SetTracked(testCharID, factions)
+func newEngine() *Engine {
+	e := NewEngine(nil, koalindlResolver)
+	e.SetCharacter(testCharID, nil)
+	return e
 }
 
 func feedKill(tr *Engine, target string, ts time.Time) {
@@ -66,19 +68,15 @@ func tallyFor(t *testing.T, st State, faction string) Tally {
 }
 
 func TestKillCorrelation_EstimatesMatchDBHits(t *testing.T) {
-	e := NewEngine(nil, koalindlResolver)
-	setTracked(e,
-		TrackedFaction{FactionID: 341, FactionName: "Priests of Life"},
-		TrackedFaction{FactionID: 221, FactionName: "Bloodsabers"},
-	)
+	e := newEngine()
 
 	base := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
 	feedKill(e, "a Koalindl", base)
 	feedFactionChanged(e, "Priests of Life", "worse", base)
-	feedFactionChanged(e, "Knights of Thunder", "worse", base) // not tracked, ignored
-	feedFactionChanged(e, "Guards of Qeynos", "worse", base)   // not tracked, ignored
+	feedFactionChanged(e, "Knights of Thunder", "worse", base)
+	feedFactionChanged(e, "Guards of Qeynos", "worse", base)
 	feedFactionChanged(e, "Bloodsabers", "better", base)
-	feedFactionChanged(e, "Antonius Bayle", "worse", base) // not tracked, ignored
+	feedFactionChanged(e, "Antonius Bayle", "worse", base)
 
 	st := e.State()
 	pol := tallyFor(t, st, "Priests of Life")
@@ -91,23 +89,33 @@ func TestKillCorrelation_EstimatesMatchDBHits(t *testing.T) {
 	}
 }
 
-func TestFactionChanged_NotTracked_NoTally(t *testing.T) {
-	e := NewEngine(nil, koalindlResolver)
-	setTracked(e, TrackedFaction{FactionID: 341, FactionName: "Priests of Life"})
+// TestFactionChanged_AnyFaction_CreatesTally is the core Phase 3 behavior
+// change: a faction that was never pinned/seeded still gets a tally entry
+// the moment a "got better/worse" line names it, mirroring how the Lockout
+// and Player trackers record everything encountered rather than only
+// user-curated entries.
+func TestFactionChanged_AnyFaction_CreatesTally(t *testing.T) {
+	e := newEngine()
+	e.SetFactionIDResolver(func(name string) (int, bool) {
+		if name == "Guards of Qeynos" {
+			return 262, true
+		}
+		return 0, false
+	})
 
 	base := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
 	feedKill(e, "a Koalindl", base)
-	feedFactionChanged(e, "Bloodsabers", "better", base)
+	feedFactionChanged(e, "Guards of Qeynos", "worse", base) // never pinned, never seeded
 
 	st := e.State()
-	if len(st.Tallies) != 1 {
-		t.Fatalf("Tallies = %+v, want exactly 1 (only Priests of Life tracked)", st.Tallies)
+	gq := tallyFor(t, st, "Guards of Qeynos")
+	if gq.Worse != 1 || gq.EstimatedNet != -50 || gq.FactionID != 262 {
+		t.Errorf("Guards of Qeynos = %+v, want Worse=1 EstimatedNet=-50 FactionID=262", gq)
 	}
 }
 
 func TestFactionChanged_NoKillContext_CountsAsUnresolved(t *testing.T) {
-	e := NewEngine(nil, koalindlResolver)
-	setTracked(e, TrackedFaction{FactionID: 100, FactionName: "Silent Fist Clan"})
+	e := newEngine()
 
 	ts := time.Date(2025, 10, 19, 18, 55, 54, 0, time.Local)
 	// Quest/hail-triggered faction change — no preceding kill, so no DB
@@ -123,8 +131,7 @@ func TestFactionChanged_NoKillContext_CountsAsUnresolved(t *testing.T) {
 }
 
 func TestKillCorrelation_ExpiresOutsideWindow(t *testing.T) {
-	e := NewEngine(nil, koalindlResolver)
-	setTracked(e, TrackedFaction{FactionID: 341, FactionName: "Priests of Life"})
+	e := newEngine()
 
 	base := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
 	feedKill(e, "a Koalindl", base)
@@ -142,8 +149,7 @@ func TestKillCorrelation_ExpiresOutsideWindow(t *testing.T) {
 }
 
 func TestKillCorrelation_RepeatedKillsEachConsumeOwnHit(t *testing.T) {
-	e := NewEngine(nil, koalindlResolver)
-	setTracked(e, TrackedFaction{FactionID: 341, FactionName: "Priests of Life"})
+	e := newEngine()
 
 	base := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
 	// Four back-to-back kills of the same NPC, as observed in a real
@@ -162,30 +168,31 @@ func TestKillCorrelation_RepeatedKillsEachConsumeOwnHit(t *testing.T) {
 	}
 }
 
-// TestSetTracked_SeedCarriesForwardPersistedTally simulates what main.go does
-// on every wishlist edit / character switch: re-derive the tracked set from
-// persisted storage (here, the caller's own previous State()) and pass it
-// back in as each faction's Seed. The tally must come back unchanged.
-func TestSetTracked_SeedCarriesForwardPersistedTally(t *testing.T) {
-	e := NewEngine(nil, koalindlResolver)
-	setTracked(e,
-		TrackedFaction{FactionID: 341, FactionName: "Priests of Life"},
-		TrackedFaction{FactionID: 221, FactionName: "Bloodsabers"},
-	)
+// TestSetCharacter_SeedsFromPersistedTallies simulates what main.go does on
+// every character switch: load every persisted tally for the new character
+// (not filtered by wishlist) and hand it to SetCharacter as the seed set.
+func TestSetCharacter_SeedsFromPersistedTallies(t *testing.T) {
+	e := newEngine()
 	base := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
 	feedKill(e, "a Koalindl", base)
 	feedFactionChanged(e, "Priests of Life", "worse", base)
+	feedFactionChanged(e, "Bloodsabers", "better", base)
 
-	persisted := tallyFor(t, e.State(), "Priests of Life")
+	persisted := e.State().Tallies
 
-	// Drop Bloodsabers, keep Priests of Life seeded from its persisted tally.
-	e.SetTracked(testCharID, []TrackedFaction{
-		{FactionID: 341, FactionName: "Priests of Life", Seed: persisted},
-	})
+	// Switch to a different character, seeding from what would have been
+	// loaded from user.db for them (here, just Priests of Life's row).
+	var polSeed Tally
+	for _, t := range persisted {
+		if t.FactionName == "Priests of Life" {
+			polSeed = t
+		}
+	}
+	e.SetCharacter(2, []Tally{polSeed})
 
 	st := e.State()
 	if len(st.Tallies) != 1 {
-		t.Fatalf("Tallies = %+v, want exactly 1 after dropping Bloodsabers", st.Tallies)
+		t.Fatalf("Tallies = %+v, want exactly 1 after switching character", st.Tallies)
 	}
 	pol := tallyFor(t, st, "Priests of Life")
 	if pol.Worse != 1 || pol.EstimatedNet != -100 {
@@ -193,9 +200,8 @@ func TestSetTracked_SeedCarriesForwardPersistedTally(t *testing.T) {
 	}
 }
 
-func TestReset_ZeroesTalliesKeepsTrackedSet(t *testing.T) {
-	e := NewEngine(nil, koalindlResolver)
-	setTracked(e, TrackedFaction{FactionID: 341, FactionName: "Priests of Life"})
+func TestReset_ZeroesTalliesKeepsThemRecorded(t *testing.T) {
+	e := newEngine()
 	base := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
 	feedKill(e, "a Koalindl", base)
 	feedFactionChanged(e, "Priests of Life", "worse", base)
@@ -208,9 +214,6 @@ func TestReset_ZeroesTalliesKeepsTrackedSet(t *testing.T) {
 		t.Errorf("ClearPersistedFunc called with characterID=%d, want %d", cleared, testCharID)
 	}
 	st := e.State()
-	if len(st.Tallies) != 1 {
-		t.Fatalf("Tallies = %+v, want faction still tracked after Reset", st.Tallies)
-	}
 	pol := tallyFor(t, st, "Priests of Life")
 	if pol.Worse != 0 || pol.EstimatedNet != 0 || pol.Unresolved != 0 || pol.LastBucket != "" {
 		t.Errorf("Priests of Life = %+v, want all-zero after Reset", pol)
@@ -218,8 +221,7 @@ func TestReset_ZeroesTalliesKeepsTrackedSet(t *testing.T) {
 }
 
 func TestUnresolvableKill_NoResolverMatch_StillTalliesDirectionOnly(t *testing.T) {
-	e := NewEngine(nil, koalindlResolver)
-	setTracked(e, TrackedFaction{FactionID: 1, FactionName: "Some Other Faction"})
+	e := newEngine()
 
 	ts := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
 	feedKill(e, "an unresolvable mob", ts) // koalindlResolver returns ok=false
@@ -233,8 +235,7 @@ func TestUnresolvableKill_NoResolverMatch_StillTalliesDirectionOnly(t *testing.T
 }
 
 func TestPersistFunc_CalledOnEveryMutation(t *testing.T) {
-	e := NewEngine(nil, koalindlResolver)
-	setTracked(e, TrackedFaction{FactionID: 341, FactionName: "Priests of Life"})
+	e := newEngine()
 
 	var gotCharID int
 	var gotTally Tally
@@ -260,14 +261,13 @@ func TestPersistFunc_CalledOnEveryMutation(t *testing.T) {
 	}
 }
 
-func TestConsidered_MatchesTrackedFactionViaPrimaryResolver(t *testing.T) {
-	e := NewEngine(nil, koalindlResolver)
-	setTracked(e, TrackedFaction{FactionID: 341, FactionName: "Priests of Life"})
-	e.SetPrimaryFactionResolver(func(npcName string) (string, bool) {
+func TestConsidered_CreatesTallyViaPrimaryResolver(t *testing.T) {
+	e := newEngine()
+	e.SetPrimaryFactionResolver(func(npcName string) (int, string, bool) {
 		if npcName == "a priest" {
-			return "Priests of Life", true
+			return 341, "Priests of Life", true
 		}
-		return "", false
+		return 0, "", false
 	})
 
 	ts := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
@@ -277,15 +277,17 @@ func TestConsidered_MatchesTrackedFactionViaPrimaryResolver(t *testing.T) {
 	if pol.LastBucket != string(logparser.BucketDubious) || pol.LastConsideredAt == nil || !pol.LastConsideredAt.Equal(ts) {
 		t.Errorf("Priests of Life = %+v, want LastBucket=dubious LastConsideredAt=%v", pol, ts)
 	}
+	if pol.FactionID != 341 {
+		t.Errorf("Priests of Life FactionID = %d, want 341 (from primary resolver)", pol.FactionID)
+	}
 	if pol.LastConsiderSuspect {
 		t.Error("LastConsiderSuspect = true, want false (no illusion provider set)")
 	}
 }
 
 func TestConsidered_FlaggedSuspectWhenIllusioned(t *testing.T) {
-	e := NewEngine(nil, koalindlResolver)
-	setTracked(e, TrackedFaction{FactionID: 341, FactionName: "Priests of Life"})
-	e.SetPrimaryFactionResolver(func(npcName string) (string, bool) { return "Priests of Life", true })
+	e := newEngine()
+	e.SetPrimaryFactionResolver(func(npcName string) (int, string, bool) { return 341, "Priests of Life", true })
 	e.SetIllusionProvider(func() bool { return true })
 
 	ts := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
@@ -297,20 +299,47 @@ func TestConsidered_FlaggedSuspectWhenIllusioned(t *testing.T) {
 	}
 }
 
-func TestConsidered_UntrackedFaction_Ignored(t *testing.T) {
-	e := NewEngine(nil, koalindlResolver)
-	setTracked(e, TrackedFaction{FactionID: 341, FactionName: "Priests of Life"})
-	e.SetPrimaryFactionResolver(func(npcName string) (string, bool) { return "Bloodsabers", true })
+func TestConsidered_UnresolvableNPC_NoTallyCreated(t *testing.T) {
+	e := newEngine()
+	e.SetPrimaryFactionResolver(func(npcName string) (int, string, bool) { return 0, "", false })
 
 	ts := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
-	feedConsidered(e, "a bloodsaber", logparser.BucketAlly, ts)
+	feedConsidered(e, "an unresolvable npc", logparser.BucketAlly, ts)
 
 	st := e.State()
-	if len(st.Tallies) != 1 {
-		t.Fatalf("Tallies = %+v, want exactly 1 (Bloodsabers not tracked)", st.Tallies)
+	if len(st.Tallies) != 0 {
+		t.Fatalf("Tallies = %+v, want empty (resolver could not place the NPC)", st.Tallies)
 	}
-	pol := tallyFor(t, st, "Priests of Life")
-	if pol.LastBucket != "" {
-		t.Errorf("Priests of Life LastBucket = %q, want empty (considered NPC belongs to a different faction)", pol.LastBucket)
+}
+
+func TestFactionIDResolver_FillsInIDOnFirstSight(t *testing.T) {
+	e := newEngine()
+	e.SetFactionIDResolver(func(name string) (int, bool) {
+		if name == "Silent Fist Clan" {
+			return 100, true
+		}
+		return 0, false
+	})
+
+	ts := time.Date(2025, 10, 19, 18, 55, 54, 0, time.Local)
+	feedFactionChanged(e, "Silent Fist Clan", "better", ts)
+
+	sfc := tallyFor(t, e.State(), "Silent Fist Clan")
+	if sfc.FactionID != 100 {
+		t.Errorf("Silent Fist Clan FactionID = %d, want 100 (from FactionIDResolver)", sfc.FactionID)
+	}
+}
+
+func TestSetCharacter_ClearsPendingAcrossCharacters(t *testing.T) {
+	e := newEngine()
+	base := time.Date(2025, 10, 19, 18, 58, 50, 0, time.Local)
+	feedKill(e, "a Koalindl", base) // pending correlation for character 1
+
+	e.SetCharacter(2, nil) // switch character — pending must not carry over
+
+	feedFactionChanged(e, "Priests of Life", "worse", base.Add(time.Second))
+	pol := tallyFor(t, e.State(), "Priests of Life")
+	if pol.EstimatedNet != 0 || pol.Unresolved != 1 {
+		t.Errorf("Priests of Life = %+v, want EstimatedNet=0 Unresolved=1 (stale pending kill must not leak across characters)", pol)
 	}
 }

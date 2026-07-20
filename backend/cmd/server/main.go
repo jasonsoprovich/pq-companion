@@ -782,14 +782,18 @@ func main() {
 	wishlistWatcher.Rebuild()
 
 	// Faction Tracker: a per-character tally of "Your faction standing with X
-	// got better/worse" lines for wishlisted factions, with a best-effort
-	// point estimate for changes that correlate to a resolved kill
-	// (quarm.db npc_faction_entries), persisted in user.db across restarts
-	// and character switches. Plus a /con bucket reading per faction (see
-	// logparser.FactionBucket), flagged suspect while the player is
-	// illusioned. EQ never exposes a faction's absolute value, so none of
-	// this is ever a claim about real standing — see internal/factiontracker.
-	// Dev-gated.
+	// got better/worse" lines for EVERY faction the character has killed
+	// toward or /con'd — not just pinned ones, the same "record everything
+	// encountered" approach as the Lockout and Player trackers — with a
+	// best-effort point estimate for changes that correlate to a resolved
+	// kill (quarm.db npc_faction_entries), persisted in user.db across
+	// restarts and character switches. Plus a /con bucket reading per
+	// faction (see logparser.FactionBucket), flagged suspect while the
+	// player is illusioned. Pinning (the faction wishlist) is purely a
+	// display favorite resolved by the API/frontend — it never gates what
+	// the engine records. EQ never exposes a faction's absolute value, so
+	// none of this is ever a claim about real standing — see
+	// internal/factiontracker. Dev-gated.
 	factionEngine := factiontracker.NewEngine(hub, func(mobName string) ([]factiontracker.NPCFactionHit, bool) {
 		id, ok := database.GetNPCIDByName(mobName)
 		if !ok {
@@ -805,17 +809,18 @@ func main() {
 		}
 		return hits, true
 	})
-	factionEngine.SetPrimaryFactionResolver(func(npcName string) (string, bool) {
+	factionEngine.SetPrimaryFactionResolver(func(npcName string) (int, string, bool) {
 		id, ok := database.GetNPCIDByName(npcName)
 		if !ok {
-			return "", false
+			return 0, "", false
 		}
 		nf, err := database.GetNPCFaction(id)
 		if err != nil || nf == nil || nf.PrimaryFactionName == "" {
-			return "", false
+			return 0, "", false
 		}
-		return nf.PrimaryFactionName, true
+		return nf.PrimaryFactionID, nf.PrimaryFactionName, true
 	})
+	factionEngine.SetFactionIDResolver(database.GetFactionIDByName)
 	// A /con reading is unreliable while the player is illusioned — check
 	// every currently active buff timer's spell effects for SPA 58
 	// (Illusion), the same check buffmod already uses for the Permanent
@@ -862,50 +867,38 @@ func main() {
 	reloadFactionTracking := func() {
 		charName := activeChar()
 		if charName == "" {
-			factionEngine.SetTracked(0, nil)
+			factionEngine.SetCharacter(0, nil)
 			return
 		}
 		c, ok, err := charStore.GetByName(charName)
 		if err != nil || !ok {
-			factionEngine.SetTracked(0, nil)
-			return
-		}
-		entries, err := charStore.ListFactionWishlist(c.ID)
-		if err != nil {
-			slog.Warn("load faction wishlist", "err", err)
+			factionEngine.SetCharacter(0, nil)
 			return
 		}
 		tallyRows, err := charStore.ListFactionTallies(c.ID)
 		if err != nil {
 			slog.Warn("load faction tallies", "err", err)
-			tallyRows = nil
+			return
 		}
-		byFactionID := make(map[int]character.FactionTallyRow, len(tallyRows))
-		for _, r := range tallyRows {
-			byFactionID[r.FactionID] = r
-		}
-		tracked := make([]factiontracker.TrackedFaction, len(entries))
-		for i, e := range entries {
-			tf := factiontracker.TrackedFaction{FactionID: e.FactionID, FactionName: e.FactionName}
-			if row, ok := byFactionID[e.FactionID]; ok {
-				tf.Seed = factiontracker.Tally{
-					FactionID:           row.FactionID,
-					FactionName:         row.FactionName,
-					Better:              row.Better,
-					Worse:               row.Worse,
-					EstimatedNet:        row.EstimatedNet,
-					Unresolved:          row.Unresolved,
-					LastBucket:          row.LastBucket,
-					LastConsiderSuspect: row.LastConsiderSuspect,
-				}
-				if row.LastConsideredAt > 0 {
-					t := time.Unix(row.LastConsideredAt, 0)
-					tf.Seed.LastConsideredAt = &t
-				}
+		tallies := make([]factiontracker.Tally, len(tallyRows))
+		for i, row := range tallyRows {
+			t := factiontracker.Tally{
+				FactionID:           row.FactionID,
+				FactionName:         row.FactionName,
+				Better:              row.Better,
+				Worse:               row.Worse,
+				EstimatedNet:        row.EstimatedNet,
+				Unresolved:          row.Unresolved,
+				LastBucket:          row.LastBucket,
+				LastConsiderSuspect: row.LastConsiderSuspect,
 			}
-			tracked[i] = tf
+			if row.LastConsideredAt > 0 {
+				ts := time.Unix(row.LastConsideredAt, 0)
+				t.LastConsideredAt = &ts
+			}
+			tallies[i] = t
 		}
-		factionEngine.SetTracked(c.ID, tracked)
+		factionEngine.SetCharacter(c.ID, tallies)
 	}
 	reloadFactionTracking()
 
@@ -1473,7 +1466,7 @@ func main() {
 		go traderCapturer.Start(context.Background())
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, reloadFactionTracking, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

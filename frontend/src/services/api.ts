@@ -2240,13 +2240,24 @@ export function updateWishlistSlotLayout(
 
 import type {
   Faction,
+  FactionSearchResult,
   FactionWishlistEntry,
   FactionSessionState,
 } from '../types/faction'
 
-export function searchFactions(query: string): Promise<{ factions: Faction[] }> {
-  const q = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ''
-  return get<{ factions: Faction[] }>(`/api/factions${q}`)
+// searchFactions looks up factions by name. Passing characterID embeds that
+// character's persisted tally (better/worse/bucket) on each matching result
+// that has one, so the picker can show "already have data" before the user
+// pins a faction — works for any character, not just the active one.
+export function searchFactions(
+  query: string,
+  characterID?: number,
+): Promise<{ factions: FactionSearchResult[] }> {
+  const params = new URLSearchParams()
+  if (query.trim()) params.set('q', query.trim())
+  if (characterID) params.set('character_id', String(characterID))
+  const qs = params.toString()
+  return get<{ factions: FactionSearchResult[] }>(`/api/factions${qs ? `?${qs}` : ''}`)
 }
 
 export function listFactionWishlist(
@@ -2268,8 +2279,13 @@ export function deleteFactionWishlistEntry(charID: number, factionID: number): P
   return del(`/api/characters/${charID}/faction-wishlist/${factionID}`)
 }
 
-export function getFactionSession(): Promise<FactionSessionState> {
-  return get<FactionSessionState>('/api/factions/session')
+// getFactionSession returns the live tracker state for the active character
+// with no argument, or a specific character's persisted history (read-only,
+// won't update again until that character becomes active) when characterID
+// is given.
+export function getFactionSession(characterID?: number): Promise<FactionSessionState> {
+  const qs = characterID ? `?character_id=${characterID}` : ''
+  return get<FactionSessionState>(`/api/factions/session${qs}`)
 }
 
 export function resetFactionSession(): Promise<FactionSessionState> {

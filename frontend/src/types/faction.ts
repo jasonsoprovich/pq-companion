@@ -4,6 +4,14 @@ export interface Faction {
   name: string
 }
 
+// A faction search result, optionally carrying the requested character's
+// persisted tally for it — so the picker can show "already have data" for a
+// faction before the user pins it, the same way searching a name in the
+// Player Tracker surfaces sightings whether or not that player is starred.
+export interface FactionSearchResult extends Faction {
+  tally?: FactionTally
+}
+
 // One faction the active character has starred for session tracking.
 export interface FactionWishlistEntry {
   id: number

@@ -23,11 +23,19 @@ type NPCFactionHit struct {
 // faction hits. Injected so the tracker stays decoupled from the game DB.
 type NPCFactionResolver func(mobName string) (hits []NPCFactionHit, ok bool)
 
-// NPCPrimaryFactionResolver resolves a /con'd NPC's display name to the name
-// of its primary faction (npc_faction.primaryfaction) — the faction /con's
+// NPCPrimaryFactionResolver resolves a /con'd NPC's display name to its
+// primary faction (npc_faction.primaryfaction) — the faction /con's
 // disposition message actually reflects. Returns ok=false when the name
 // can't be resolved or the NPC has no faction.
-type NPCPrimaryFactionResolver func(npcName string) (factionName string, ok bool)
+type NPCPrimaryFactionResolver func(npcName string) (factionID int, factionName string, ok bool)
+
+// FactionIDResolver resolves a faction name (as named in a "Your faction
+// standing with X…" line) to its quarm.db faction_list id, best-effort. Used
+// only to fill in FactionID the first time a faction is seen via a kill-driven
+// change with no prior /con reading to have already established it. Returns
+// ok=false when the name can't be resolved (FactionID is left 0 in that case
+// — cosmetic only, doesn't affect tallying).
+type FactionIDResolver func(name string) (id int, ok bool)
 
 // IsIllusionedProvider reports whether the active character currently has an
 // illusion effect active. Illusions change how NPCs perceive the player, so
@@ -56,25 +64,29 @@ type pendingKill struct {
 	hits map[string]int
 }
 
-// Engine tracks per-character faction-standing changes for wishlisted
-// factions, inferred from the EQ log feed. Safe for concurrent use.
+// Engine tracks per-character faction-standing changes for every faction the
+// character has ever killed toward or /con'd — the same "record everything
+// encountered" approach as the Lockout and Player trackers. Which factions
+// are pinned to a wishlist is the caller's concern (character_faction_
+// wishlist), resolved entirely outside the engine; it never gates what gets
+// recorded here. Safe for concurrent use.
 type Engine struct {
-	hub            *ws.Hub
-	resolve        NPCFactionResolver
-	resolvePrimary NPCPrimaryFactionResolver
-	isIllusioned   IsIllusionedProvider
-	persist        PersistFunc
-	clearPersisted ClearPersistedFunc
+	hub              *ws.Hub
+	resolve          NPCFactionResolver
+	resolvePrimary   NPCPrimaryFactionResolver
+	resolveFactionID FactionIDResolver
+	isIllusioned     IsIllusionedProvider
+	persist          PersistFunc
+	clearPersisted   ClearPersistedFunc
 
 	mu          sync.Mutex
 	characterID int
-	order       []string          // tracked faction keys (lowercased name), wishlist order
 	tallies     map[string]*Tally // key: strings.ToLower(FactionName)
 	pending     []pendingKill
 }
 
-// NewEngine returns an initialized Engine with no tracked factions. Call
-// SetTracked once the active character's faction wishlist is known.
+// NewEngine returns an initialized Engine tracking no character yet. Call
+// SetCharacter once the active character is known.
 func NewEngine(hub *ws.Hub, resolve NPCFactionResolver) *Engine {
 	return &Engine{
 		hub:     hub,
@@ -84,11 +96,20 @@ func NewEngine(hub *ws.Hub, resolve NPCFactionResolver) *Engine {
 }
 
 // SetPrimaryFactionResolver registers the resolver used to correlate /con
-// readings to a tracked faction. Optional — /con correlation is skipped
-// entirely if never set.
+// readings to a faction. Optional — /con correlation is skipped entirely if
+// never set.
 func (e *Engine) SetPrimaryFactionResolver(fn NPCPrimaryFactionResolver) {
 	e.mu.Lock()
 	e.resolvePrimary = fn
+	e.mu.Unlock()
+}
+
+// SetFactionIDResolver registers the resolver used to fill in FactionID the
+// first time a faction is seen via a kill-driven change. Optional — FactionID
+// stays 0 (cosmetic only) if never set or the name can't be resolved.
+func (e *Engine) SetFactionIDResolver(fn FactionIDResolver) {
+	e.mu.Lock()
+	e.resolveFactionID = fn
 	e.mu.Unlock()
 }
 
@@ -117,35 +138,28 @@ func (e *Engine) SetClearPersistedFunc(fn ClearPersistedFunc) {
 	e.mu.Unlock()
 }
 
-// SetTracked replaces the set of factions being tracked and the character
-// they belong to, in display order, seeding each tally from f.Seed (the
-// persisted state the caller loaded from storage — the zero value for a
-// faction with no history yet). Called on startup and whenever the active
-// character or its faction wishlist changes. Pending kill correlations are
-// dropped: they're specific to whichever character's log produced them, and
-// don't carry over to a different tracked set.
-func (e *Engine) SetTracked(characterID int, factions []TrackedFaction) {
+// SetCharacter switches the engine to a new active character, seeding its
+// in-memory tallies from every persisted row the caller loaded for that
+// character — not filtered to a wishlist; every faction with any recorded
+// history comes back. Called on startup and whenever the active character
+// changes. Pending kill correlations are dropped: they're specific to
+// whichever character's log produced them.
+func (e *Engine) SetCharacter(characterID int, tallies []Tally) {
 	e.mu.Lock()
 	e.characterID = characterID
-	newTallies := make(map[string]*Tally, len(factions))
-	newOrder := make([]string, 0, len(factions))
-	for _, f := range factions {
-		key := strings.ToLower(f.FactionName)
-		t := f.Seed
-		t.FactionID = f.FactionID
-		t.FactionName = f.FactionName
-		newTallies[key] = &t
-		newOrder = append(newOrder, key)
+	newTallies := make(map[string]*Tally, len(tallies))
+	for _, t := range tallies {
+		tc := t
+		newTallies[strings.ToLower(t.FactionName)] = &tc
 	}
 	e.tallies = newTallies
-	e.order = newOrder
 	e.pending = nil
 	state := e.stateLocked()
 	e.mu.Unlock()
 	e.broadcast(state)
 }
 
-// Reset zeroes every tracked faction's tally (including the /con reading)
+// Reset zeroes every recorded faction's tally (including the /con reading)
 // and drops pending kill correlations, then wipes durable storage for the
 // character via ClearPersistedFunc — an explicit, user-initiated "discard my
 // faction tracking history," not something that happens automatically on
@@ -167,7 +181,9 @@ func (e *Engine) Reset() {
 	}
 }
 
-// State returns a snapshot of the current tallies.
+// State returns a snapshot of every faction with recorded activity for the
+// current character — not just pinned ones. Callers (the API/frontend) merge
+// this against the wishlist to know which are pinned.
 func (e *Engine) State() State {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -200,8 +216,8 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 }
 
 // handleKill resolves the slain mob to its DB faction hits and stashes them
-// as a pending correlation. No-op (and no lock taken) if nothing tracked
-// could possibly match, since the resolver call is the expensive part.
+// as a pending correlation. No-op (and no lock taken) if the resolver can't
+// place the mob at all, since the resolver call is the expensive part.
 func (e *Engine) handleKill(target string, ts time.Time) {
 	if e.resolve == nil {
 		return
@@ -230,20 +246,31 @@ func (e *Engine) handleKill(target string, ts time.Time) {
 	e.gcPendingLocked(ts)
 }
 
-// handleFactionChanged tallies a "got better/worse" line for a tracked
-// faction and, if a pending kill within correlationWindow has a matching
-// signed hit for this faction, attributes its point value as an estimate.
-// Non-tracked factions are dropped immediately without touching the pending
-// backlog or acquiring more than the map-lookup lock.
+// tallyLocked returns the tally for key, creating a zero-value entry (with
+// the given display name/id) the first time this faction is ever seen. Must
+// be called with mu held.
+func (e *Engine) tallyLocked(key, factionName string, factionID int) *Tally {
+	if t, ok := e.tallies[key]; ok {
+		return t
+	}
+	t := &Tally{FactionID: factionID, FactionName: factionName}
+	e.tallies[key] = t
+	return t
+}
+
+// handleFactionChanged tallies a "got better/worse" line for whichever
+// faction it names — creating a new tally entry the first time this faction
+// is seen — and, if a pending kill within correlationWindow has a matching
+// signed hit for it, attributes its point value as an estimate.
 func (e *Engine) handleFactionChanged(factionName, direction string, ts time.Time) {
 	key := strings.ToLower(factionName)
 
 	e.mu.Lock()
-	tally, tracked := e.tallies[key]
-	if !tracked {
-		e.mu.Unlock()
-		return
+	factionID := 0
+	if _, exists := e.tallies[key]; !exists && e.resolveFactionID != nil {
+		factionID, _ = e.resolveFactionID(factionName)
 	}
+	tally := e.tallyLocked(key, factionName, factionID)
 	if direction == "better" {
 		tally.Better++
 	} else {
@@ -281,14 +308,15 @@ func (e *Engine) handleFactionChanged(factionName, direction string, ts time.Tim
 	}
 }
 
-// handleConsidered resolves a /con'd NPC to its primary faction and, if that
-// faction is tracked, records the disposition bucket as the faction's latest
-// reading — flagged suspect if the player was illusioned at the time.
+// handleConsidered resolves a /con'd NPC to its primary faction — creating a
+// new tally entry the first time this faction is seen — and records the
+// disposition bucket as its latest reading, flagged suspect if the player
+// was illusioned at the time.
 func (e *Engine) handleConsidered(npcName string, bucket logparser.FactionBucket, ts time.Time) {
 	if e.resolvePrimary == nil {
 		return
 	}
-	factionName, ok := e.resolvePrimary(npcName)
+	factionID, factionName, ok := e.resolvePrimary(npcName)
 	if !ok {
 		return
 	}
@@ -300,10 +328,9 @@ func (e *Engine) handleConsidered(npcName string, bucket logparser.FactionBucket
 	}
 
 	e.mu.Lock()
-	tally, tracked := e.tallies[key]
-	if !tracked {
-		e.mu.Unlock()
-		return
+	tally := e.tallyLocked(key, factionName, factionID)
+	if tally.FactionID == 0 && factionID != 0 {
+		tally.FactionID = factionID
 	}
 	tally.LastBucket = string(bucket)
 	tally.LastConsideredAt = &ts
@@ -337,11 +364,9 @@ func (e *Engine) gcPendingLocked(now time.Time) {
 }
 
 func (e *Engine) stateLocked() State {
-	out := make([]Tally, 0, len(e.order))
-	for _, key := range e.order {
-		if t, ok := e.tallies[key]; ok {
-			out = append(out, *t)
-		}
+	out := make([]Tally, 0, len(e.tallies))
+	for _, t := range e.tallies {
+		out = append(out, *t)
 	}
 	return State{Tallies: out}
 }
