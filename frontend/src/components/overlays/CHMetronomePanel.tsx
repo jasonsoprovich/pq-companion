@@ -294,7 +294,7 @@ export default function CHMetronomePanel({
       bigColor = castIn <= 1 ? '#fbbf24' : '#60a5fa'
       subText = `until your cast${predictedNote}`
     } else {
-      bigText = 'cast sent'
+      bigText = 'CAST SENT'
       bigColor = 'var(--color-muted)'
       subText = `next: ${posLabel(watch, activeChain)} calls again`
     }

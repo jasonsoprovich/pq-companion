@@ -322,7 +322,7 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
       bigColor = castIn <= 1 ? '#fbbf24' : '#93c5fd'
       subText = `until your cast${predictedNote}`
     } else {
-      bigText = 'cast sent'
+      bigText = 'CAST SENT'
       bigColor = 'rgba(255,255,255,0.4)'
       subText = `next: ${posLabel(watch, activeChain)} calls again`
     }

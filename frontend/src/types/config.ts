@@ -135,6 +135,12 @@ export interface Preferences {
   // Audio cue fired as each NPC respawn timer crosses `seconds` remaining
   // (0 = at "POP"). Applies to every respawn timer; disabled by default.
   respawn_alert?: TimerAlertPref
+  // CH Metronome audio cues: metronome_start_alert fires when the personal
+  // countdown starts (the watched chain slot ahead of you calls), and
+  // metronome_cast_alert fires at "cast now". Independent, disabled by
+  // default. The `seconds` field is unused for these (no threshold concept).
+  metronome_start_alert?: TimerAlertPref
+  metronome_cast_alert?: TimerAlertPref
   developer_mode: boolean
   // Verbose backend logging: raises server.log to debug level (log-file
   // reads/offsets, trigger fires, …) for diagnosing intermittent issues.

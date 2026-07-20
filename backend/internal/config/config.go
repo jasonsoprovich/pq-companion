@@ -396,6 +396,15 @@ type Preferences struct {
 	// the same reason as CustomTimerAlert.
 	RespawnAlert *TimerAlertPref `yaml:"respawn_alert,omitempty" json:"respawn_alert,omitempty"`
 
+	// MetronomeStartAlert fires an audio cue when the CH Metronome's personal
+	// countdown starts (the watched chain slot ahead of you calls its cast).
+	// MetronomeCastAlert fires when the countdown reaches "cast now". Both are
+	// independent, nil/omitted (disabled) by default, and — like
+	// CustomTimerAlert/RespawnAlert — read and fired entirely by the frontend;
+	// the backend only persists the fields.
+	MetronomeStartAlert *TimerAlertPref `yaml:"metronome_start_alert,omitempty" json:"metronome_start_alert,omitempty"`
+	MetronomeCastAlert  *TimerAlertPref `yaml:"metronome_cast_alert,omitempty" json:"metronome_cast_alert,omitempty"`
+
 	// DeveloperMode reveals the Developer tab in the Settings page, which
 	// hosts power-user tools (SQL sandbox, schema viewer). Toggled in-app
 	// via the Ctrl+Shift+D shortcut while the Settings page is focused.

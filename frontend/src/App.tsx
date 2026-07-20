@@ -10,6 +10,7 @@ import { useAudioEngine } from './hooks/useAudioEngine'
 import { useTriggerClipboard } from './hooks/useTriggerClipboard'
 import { useTimerAlerts } from './hooks/useTimerAlerts'
 import { useRespawnAlerts } from './hooks/useRespawnAlerts'
+import { useMetronomeAlerts } from './hooks/useMetronomeAlerts'
 import { useAudioPrefs } from './hooks/useAudioPrefs'
 import { useHighContrast } from './hooks/useHighContrast'
 import { useZoom } from './hooks/useZoom'
@@ -106,6 +107,7 @@ function MainWindowLayout(): React.ReactElement {
   useTriggerClipboard()
   useTimerAlerts()
   useRespawnAlerts()
+  useMetronomeAlerts()
   // Keep the Log Feed populating in the background so it persists across tab
   // navigation. Clearing only happens via the user's Trash button or restart.
   useLogFeedSubscriber()

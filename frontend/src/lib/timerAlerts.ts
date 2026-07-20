@@ -6,19 +6,30 @@
 import type { TimerAlertPref } from '../types/config'
 import type { TimerAlertThreshold } from '../types/trigger'
 
+export type TimerAlertKind = 'custom' | 'respawn' | 'metronome_start' | 'metronome_cast'
+
 /** A sensible enabled-default for first-time setup of each alert kind. */
-export function defaultTimerAlertPref(kind: 'custom' | 'respawn'): TimerAlertPref {
+export function defaultTimerAlertPref(kind: TimerAlertKind): TimerAlertPref {
+  // Metronome cues mark a split-second timing window (cast-now especially),
+  // so they default louder than the other kinds' 80% to make sure they cut
+  // through raid voice chat/game audio.
+  const isMetronome = kind === 'metronome_start' || kind === 'metronome_cast'
   return {
     enabled: true,
     // Custom timers usually want a short heads-up before completion; respawns
-    // are most useful announced right as they pop (0 = at "POP").
+    // are most useful announced right as they pop (0 = at "POP"). Metronome
+    // alerts have no threshold concept — seconds is unused for those kinds.
     seconds: kind === 'custom' ? 5 : 0,
     type: 'text_to_speech',
     sound_path: '',
-    volume: 80,
-    tts_template: kind === 'custom' ? '{spell} done' : '{npc} has re-spawned',
+    volume: isMetronome ? 100 : 80,
+    tts_template:
+      kind === 'custom' ? '{spell} done'
+      : kind === 'respawn' ? '{npc} has re-spawned'
+      : kind === 'metronome_start' ? 'Chain starting'
+      : 'Cast now',
     voice: '',
-    tts_volume: 80,
+    tts_volume: isMetronome ? 100 : 80,
   }
 }
 
@@ -32,7 +43,7 @@ export function defaultTimerAlertPref(kind: 'custom' | 'respawn'): TimerAlertPre
  */
 export function withTimerAlertDefaults(
   pref: TimerAlertPref | undefined,
-  kind: 'custom' | 'respawn',
+  kind: TimerAlertKind,
 ): TimerAlertPref {
   const d = defaultTimerAlertPref(kind)
   if (!pref) return { ...d, enabled: false }

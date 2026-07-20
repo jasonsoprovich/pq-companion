@@ -17,12 +17,17 @@ interface TimerAlertPrefEditorProps {
   value: TimerAlertPref
   onChange: (next: TimerAlertPref) => void
   /** Label + unit + hint for the threshold input, since "remaining" means
-   *  different things for a countdown vs a respawn. */
-  secondsLabel: string
-  secondsUnit: string
+   *  different things for a countdown vs a respawn. Omit alongside
+   *  showSeconds=false for alert kinds with no threshold concept. */
+  secondsLabel?: string
+  secondsUnit?: string
   secondsHint?: string
   /** Placeholder shown in the TTS text box (documents the supported token). */
   ttsPlaceholder: string
+  /** Set false to hide the threshold input entirely (default true) — for
+   *  alert kinds, like the CH Metronome's, that fire on a state edge rather
+   *  than a remaining-time crossing. */
+  showSeconds?: boolean
 }
 
 export default function TimerAlertPrefEditor({
@@ -32,6 +37,7 @@ export default function TimerAlertPrefEditor({
   secondsUnit,
   secondsHint,
   ttsPlaceholder,
+  showSeconds = true,
 }: TimerAlertPrefEditorProps): React.ReactElement {
   const voices = useTTSVoices(useVoices())
 
@@ -72,20 +78,22 @@ export default function TimerAlertPrefEditor({
           style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
         >
           <div className="flex items-center gap-2 flex-wrap">
-            <label className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-              {secondsLabel}
-              <input
-                type="number"
-                min={0}
-                max={3600}
-                value={value.seconds}
-                onChange={(e) =>
-                  onChange({ ...value, seconds: Math.max(0, parseInt(e.target.value) || 0) })
-                }
-                style={{ ...inputStyle, width: 64 }}
-              />
-              {secondsUnit}
-            </label>
+            {showSeconds && (
+              <label className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                {secondsLabel}
+                <input
+                  type="number"
+                  min={0}
+                  max={3600}
+                  value={value.seconds}
+                  onChange={(e) =>
+                    onChange({ ...value, seconds: Math.max(0, parseInt(e.target.value) || 0) })
+                  }
+                  style={{ ...inputStyle, width: 64 }}
+                />
+                {secondsUnit}
+              </label>
+            )}
 
             <div className="flex items-center gap-1.5 text-xs ml-auto" style={{ color: 'var(--color-muted-foreground)' }}>
               <span>Type</span>

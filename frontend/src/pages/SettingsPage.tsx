@@ -2950,6 +2950,48 @@ export default function SettingsPage(): React.ReactElement {
             >
               Toggle CH Metronome overlay
             </button>
+
+            <div className="mt-5 border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+              <p className="mb-1 text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+                Metronome alerts
+              </p>
+              <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                Optional sound or spoken cues from the CH Metronome, independent of whether either
+                metronome window is open. "Countdown starts" fires when the cleric ahead of you in
+                the chain calls their cast; "Cast now" fires at the moment you should press your
+                heal key.
+              </p>
+
+              <p className="mb-1 text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
+                Countdown starts
+              </p>
+              <TimerAlertPrefEditor
+                value={withTimerAlertDefaults(config.preferences?.metronome_start_alert, 'metronome_start')}
+                onChange={(next: TimerAlertPref) =>
+                  setConfig({
+                    ...config,
+                    preferences: { ...config.preferences, metronome_start_alert: next },
+                  })
+                }
+                showSeconds={false}
+                ttsPlaceholder="Chain starting"
+              />
+
+              <p className="mb-1 mt-4 text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
+                Cast now
+              </p>
+              <TimerAlertPrefEditor
+                value={withTimerAlertDefaults(config.preferences?.metronome_cast_alert, 'metronome_cast')}
+                onChange={(next: TimerAlertPref) =>
+                  setConfig({
+                    ...config,
+                    preferences: { ...config.preferences, metronome_cast_alert: next },
+                  })
+                }
+                showSeconds={false}
+                ttsPlaceholder="Cast now"
+              />
+            </div>
           </div>
         </section>
         )}
