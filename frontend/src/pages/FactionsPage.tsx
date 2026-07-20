@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Scale, Search, Star, Trash2, RefreshCw, AlertTriangle, Eye, X } from 'lucide-react'
+import { Scale, Search, Star, Trash2, RefreshCw, AlertTriangle, Eye, X, ChevronDown, ChevronRight } from 'lucide-react'
 import {
   listCharacters,
   searchFactions,
@@ -23,6 +23,11 @@ import BackfillLink from '../components/BackfillLink'
 // typing — cheap against the ~2100-row faction_list table, but no reason to
 // fire one request per keystroke.
 const searchDebounceMs = 250
+
+// bannerCollapsedKey persists the estimate-disclaimer banner's collapsed
+// state across reloads — once a user's read it, it shouldn't reappear full-
+// size every time they open the page.
+const bannerCollapsedKey = 'pq-factions-banner-collapsed'
 
 // BucketBar renders the nine classic EQ faction disposition ranges as a
 // segmented scale, highlighting the faction's most recent /con reading.
@@ -188,6 +193,16 @@ export default function FactionsPage(): React.ReactElement {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [bannerCollapsed, setBannerCollapsed] = useState(() => {
+    try { return localStorage.getItem(bannerCollapsedKey) === '1' } catch { return false }
+  })
+  const toggleBanner = (): void => {
+    setBannerCollapsed((prev) => {
+      const next = !prev
+      try { localStorage.setItem(bannerCollapsedKey, next ? '1' : '0') } catch { /* noop */ }
+      return next
+    })
+  }
 
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<FactionSearchResult[]>([])
@@ -355,28 +370,42 @@ export default function FactionsPage(): React.ReactElement {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div
-          className="mb-4 flex items-start gap-2 rounded-lg px-4 py-3"
+          className="mb-4 rounded-lg px-4 py-3"
           style={{
             border: '1px solid var(--color-warning, #f59e0b)',
             backgroundColor: 'color-mix(in srgb, var(--color-warning, #f59e0b) 12%, transparent)',
           }}
         >
-          <AlertTriangle size={16} className="mt-0.5 shrink-0" style={{ color: 'var(--color-warning, #f59e0b)' }} />
-          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-            <strong style={{ color: 'var(--color-warning, #f59e0b)' }}>Estimate, not your real standing.</strong>{' '}
-            Every faction this character has ever killed toward or <code>/con</code>&rsquo;d is tracked
-            automatically, the same way the Player and Lockout trackers record everything encountered —
-            pinning just keeps a faction on this list. EQ never logs a faction&rsquo;s actual value or point
-            amount, though: better/worse counts and the estimated net come from tallying &ldquo;got
-            better/worse&rdquo; lines and, where possible, tying them to a resolved kill&rsquo;s known point
-            value. The bar shows your last <code>/con</code> reading, which is real (bucket-level only) — a{' '}
-            <Eye size={12} className="inline align-text-bottom" /> marker means that reading was taken
-            while you had an illusion active and may not be reliable. <strong>Backfill</strong> only recovers
-            this bar — the most recent <code>/con</code> reading per faction already in your log — not
-            better/worse or estimated net, which only build up from here forward. And since that illusion
-            check only runs live, a backfilled reading can never carry the suspect marker (or catch a
-            faction-perception spell like Alliance on the NPC), even if it was taken under one at the time.
-          </p>
+          <button
+            type="button"
+            onClick={toggleBanner}
+            className="flex w-full items-center gap-2 text-left"
+            title={bannerCollapsed ? 'Expand' : 'Collapse'}
+          >
+            <AlertTriangle size={16} className="shrink-0" style={{ color: 'var(--color-warning, #f59e0b)' }} />
+            <strong className="text-sm" style={{ color: 'var(--color-warning, #f59e0b)' }}>
+              Estimate, not your real standing.
+            </strong>
+            <span className="ml-auto shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+              {bannerCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+            </span>
+          </button>
+          {!bannerCollapsed && (
+            <p className="mt-2 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              Every faction this character has ever killed toward or <code>/con</code>&rsquo;d is tracked
+              automatically, the same way the Player and Lockout trackers record everything encountered —
+              pinning just keeps a faction on this list. EQ never logs a faction&rsquo;s actual value or point
+              amount, though: better/worse counts and the estimated net come from tallying &ldquo;got
+              better/worse&rdquo; lines and, where possible, tying them to a resolved kill&rsquo;s known point
+              value. The bar shows your last <code>/con</code> reading, which is real (bucket-level only) — a{' '}
+              <Eye size={12} className="inline align-text-bottom" /> marker means that reading was taken
+              while you had an illusion active and may not be reliable. <strong>Backfill</strong> only recovers
+              this bar — the most recent <code>/con</code> reading per faction already in your log — not
+              better/worse or estimated net, which only build up from here forward. And since that illusion
+              check only runs live, a backfilled reading can never carry the suspect marker (or catch a
+              faction-perception spell like Alliance on the NPC), even if it was taken under one at the time.
+            </p>
+          )}
         </div>
 
         {!viewedCharID ? (
