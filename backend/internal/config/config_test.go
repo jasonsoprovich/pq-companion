@@ -374,3 +374,52 @@ ch_chain:
 		t.Errorf("custom pattern was rewritten: got %q, want %q", got, custom)
 	}
 }
+
+// TestLoadFrom_PossibleMissMigratesOnForUpgradingUsers checks both
+// possible-miss migrations: a config that predates the feature entirely
+// (Cleric detection, then the later Druid opt-in-turned-default-on) gets
+// both turned on once, and a user's explicit opt-out of the Druid detection
+// survives a reload once its own migration marker is set — the migration
+// must never re-flip an explicit choice back on.
+func TestLoadFrom_PossibleMissMigratesOnForUpgradingUsers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	// Predates both possible-miss fields entirely (no possible_miss_* keys).
+	const old = `eq_path: /games/EQ
+ch_chain:
+  enabled: true
+  interval_secs: 6
+`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	cfg := m.Get()
+	if !cfg.CHChain.PossibleMissEnabled || !cfg.CHChain.PossibleMissMigrated {
+		t.Errorf("Cleric possible-miss detection should migrate on: enabled=%v migrated=%v",
+			cfg.CHChain.PossibleMissEnabled, cfg.CHChain.PossibleMissMigrated)
+	}
+	if !cfg.CHChain.PossibleMissIncludeDruid || !cfg.CHChain.PossibleMissDruidMigrated {
+		t.Errorf("Druid possible-miss detection should migrate on: enabled=%v migrated=%v",
+			cfg.CHChain.PossibleMissIncludeDruid, cfg.CHChain.PossibleMissDruidMigrated)
+	}
+
+	// An explicit opt-out must survive a reload — the migration marker is
+	// now set, so applyDefaults must not run the backfill again.
+	cfg.CHChain.PossibleMissIncludeDruid = false
+	if err := m.Update(cfg); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	m2, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom (reload): %v", err)
+	}
+	if m2.Get().CHChain.PossibleMissIncludeDruid {
+		t.Error("explicit opt-out of Druid detection was reverted by a reload")
+	}
+}

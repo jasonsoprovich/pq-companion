@@ -299,9 +299,10 @@ export interface CHChainSettings {
   // never affects chain-call matching or timer creation.
   possible_miss_enabled?: boolean
   // Also watch Superior Healing's "feels much better." bystander line (the
-  // Druid "DCH"). Off by default: that text is shared by a dozen+ unrelated
-  // heal spells, so any healer's filler heal on the same target can
-  // false-confirm a chain slot that actually missed.
+  // Druid "DCH"). On by default: that text is shared by a dozen+ unrelated
+  // heal spells, so an unrelated healer's filler heal on the same target can
+  // suppress a real miss's flag — noisier than Complete Healing's detection,
+  // but one-directional (can only miss a real flag, never show a wrong one).
   possible_miss_include_druid?: boolean
 }
 

@@ -2775,7 +2775,7 @@ export default function SettingsPage(): React.ReactElement {
               <label className="mb-3 ml-6 flex items-start gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={config.ch_chain?.possible_miss_include_druid ?? false}
+                  checked={config.ch_chain?.possible_miss_include_druid ?? true}
                   onChange={(e) =>
                     setConfig({
                       ...config,
@@ -2789,11 +2789,12 @@ export default function SettingsPage(): React.ReactElement {
                     Also flag Superior Healing (Druid) misses
                   </span>
                   <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                    Off by default. Superior Healing's "feels much better" bystander line is shared
+                    On by default. Superior Healing's "feels much better" bystander line is shared
                     by over a dozen unrelated heal spells (Greater Healing, Word of Health, Nature's
-                    Touch, …), so any healer's filler/spot heal on the same tank can mask an actual
-                    missed Druid cast — less reliable than the Cleric detection above. Worth turning
-                    on if your raid rarely spot-heals the CH-chain tank outside the chain itself.
+                    Touch, …), so an unrelated healer's filler heal on the same tank can suppress a
+                    real Druid miss's flag — less reliable than the Cleric detection above, but
+                    one-directional: it can only miss flagging a real miss, never show a wrong red
+                    bar. Turn off if it reads as too quiet in a raid with heavy backup healing.
                   </span>
                 </span>
               </label>

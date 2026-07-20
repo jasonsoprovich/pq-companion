@@ -29,10 +29,12 @@ var reCompleteHealingLanded = regexp.MustCompile(`^([A-Z][a-z]{3,14}) is complet
 // Healing's text, this exact string is shared by over a dozen unrelated heal
 // spells across multiple classes (Healing, Greater Healing, Word of Health,
 // Nature's Touch, …), so any healer's filler/spot heal on the same target
-// would false-confirm a chain slot that actually missed. Watching it is
-// therefore opt-in (CHChainSettings.PossibleMissIncludeDruid, default off) —
-// reliable for raids that rarely spot-heal the CH-chain tank outside the
-// chain itself, noisy otherwise.
+// can suppress a real Druid miss's flag (a false "not missed", never a false
+// "missed" — see ConfirmHeal). That's a one-directional risk (silence, never
+// a wrong red bar), which is why watching it defaults ON
+// (CHChainSettings.PossibleMissIncludeDruid) despite being noisier than
+// Complete Healing's detection; togglable off for raids with heavy backup
+// healing where it'd rarely fire.
 var reSuperiorHealingLanded = regexp.MustCompile(`^([A-Z][a-z]{3,14}) feels much better\.$`)
 
 // HealWatcher watches raw log lines for heal-landed-on-other messages and
