@@ -257,8 +257,8 @@ func TestSharedDisciplines_CooldownPersisted(t *testing.T) {
 	if resistant == nil {
 		t.Fatal("disc_resistant not found")
 	}
-	if resistant.CooldownSecs != 1800 {
-		t.Errorf("Resistant Discipline CooldownSecs=%v, want 1800 (30 min)", resistant.CooldownSecs)
+	if resistant.CooldownSecs != 3600 {
+		t.Errorf("Resistant Discipline CooldownSecs=%v, want 3600 (60 min)", resistant.CooldownSecs)
 	}
 }
 
