@@ -1153,7 +1153,11 @@ func main() {
 		case zealpipe.MsgCmd:
 			// In-game /pipe <text> command — feed to the trigger engine.
 			cmd, err := zealpipe.DecodePipeCmd(env.Data)
-			if err != nil || cmd.Text == "" {
+			if err != nil {
+				slog.Debug("zealpipe: decode cmd failed", "err", err)
+				return
+			}
+			if cmd.Text == "" {
 				return
 			}
 			triggerEngine.HandlePipeCommand(cmd.Text, env.Character, time.Now())
@@ -1165,6 +1169,7 @@ func main() {
 			// broadcast on its own — used at next target acquire.
 			p, err := zealpipe.DecodePlayer(env.Data)
 			if err != nil {
+				slog.Debug("zealpipe: decode player failed", "err", err)
 				return
 			}
 			npcTracker.SetPipePlayerSnapshot(p.Zone, p.Location.X, p.Location.Y, p.Location.Z)
@@ -1177,6 +1182,7 @@ func main() {
 		}
 		labels, err := zealpipe.DecodeLabels(env.Data)
 		if err != nil {
+			slog.Debug("zealpipe: decode labels failed", "err", err)
 			return
 		}
 		// Aggregate per-envelope state. Zeal omits labels with empty values
