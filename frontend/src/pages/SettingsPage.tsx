@@ -2956,10 +2956,11 @@ export default function SettingsPage(): React.ReactElement {
                 Metronome alerts
               </p>
               <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                Optional sound or spoken cues from the CH Metronome, independent of whether either
-                metronome window is open. "Countdown starts" fires when the cleric ahead of you in
-                the chain calls their cast; "Cast now" fires at the moment you should press your
-                heal key.
+                Optional sound or spoken cues from the CH Metronome. "Countdown starts" fires when
+                the cleric ahead of you in the chain calls their cast; "Cast now" fires at the
+                moment you should press your heal key. Alerts only fire while the popped-out
+                metronome overlay window is open, and can be muted from the bell icon in that
+                window's header without changing these settings.
               </p>
 
               <p className="mb-1 text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>

@@ -3,8 +3,13 @@
  * personal countdown starts and when it reaches "cast now". Independently
  * recomputes the same anchor math as the two visual metronomes
  * (CHMetronomePanel / CHMetronomeOverlayWindowPage) from the shared
- * lib/chMetronome helpers and the same localStorage config, so the alert
- * fires whether or not either metronome view is currently open.
+ * lib/chMetronome helpers and the same localStorage config.
+ *
+ * Alerts only fire while the popped-out CH Metronome overlay window is open
+ * (the countdown only means something to a healer actively watching it) and
+ * while its header bell toggle isn't muted — both gates are read from
+ * localStorage/IPC state the window itself owns, since this hook is mounted
+ * at the App level rather than inside that window.
  *
  * Mount once at the App level (alongside useTimerAlerts/useRespawnAlerts) —
  * mounting equivalent logic inside the view components too would double-fire
@@ -17,10 +22,12 @@ import { WSEvent } from '../lib/wsEvents'
 import { getConfig, getTimerState } from '../services/api'
 import { playSound, speakText } from '../services/audio'
 import {
+  ALERTS_ENABLED_KEY,
   CH_CAST,
   type AnchorResult,
   type ChainView,
   computeAnchorMs,
+  loadAlertsEnabled,
   loadSeen,
   mergeSeen,
   saveSeen,
@@ -73,6 +80,16 @@ export function useMetronomeAlerts(): void {
   const anchorRef = useRef<AnchorResult | null>(null)
   const prevActiveRef = useRef(false)
   const prevFlashingRef = useRef(false)
+  // Mute toggle from the popped-out overlay's bell button (localStorage-backed,
+  // synced via 'storage' events since this hook runs at the App level, not
+  // inside that window).
+  const alertsEnabledRef = useRef(loadAlertsEnabled())
+  // Alerts are scoped to the popped-out CH Metronome overlay: the countdown
+  // math only means something to a healer actively watching it, so muting
+  // isn't enough on its own — closing the window should stop the alerts too.
+  // Electron doesn't push window open/close events to the renderer, so this
+  // is polled like OverlaysDashboard's own popoutStates check.
+  const overlayOpenRef = useRef(false)
 
   const loadPrefs = useCallback(() => {
     getConfig()
@@ -102,10 +119,34 @@ export function useMetronomeAlerts(): void {
         }
       } else if (e.key === seenStorageKey(chainRef.current)) {
         mergeSeen(seenRef.current, loadSeen(chainRef.current))
+      } else if (e.key === ALERTS_ENABLED_KEY) {
+        alertsEnabledRef.current = loadAlertsEnabled()
       }
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  // Electron doesn't push window open/close state, so poll the same way
+  // OverlaysDashboard tracks popoutStates. 1.5s is plenty responsive for a
+  // mute gate and matches the existing poll cadence elsewhere in the app.
+  useEffect(() => {
+    if (!window.electron?.overlay?.popoutStates) return
+    let cancelled = false
+    const check = (): void => {
+      window.electron.overlay
+        .popoutStates()
+        .then((s) => {
+          if (!cancelled) overlayOpenRef.current = !!s.chMetronome
+        })
+        .catch(() => {})
+    }
+    check()
+    const id = setInterval(check, 1500)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
   }, [])
 
   // With the secondary chain off in settings, always follow the main chain —
@@ -157,6 +198,16 @@ export function useMetronomeAlerts(): void {
       const elapsed = active ? (now - (a as AnchorResult).anchorMs) / 1000 : 0
       const castIn = active ? cfg.delay - elapsed : 0
       const flashing = active && castIn <= 0.15 && elapsed <= cfg.delay + PULSE_SECS
+
+      // Gated (muted, or the overlay isn't popped out/open): keep the edge
+      // trackers in sync with reality but don't fire, so that when the gate
+      // reopens only a genuinely NEW active/flashing edge fires — not a stale
+      // transition that happened while gated.
+      if (!alertsEnabledRef.current || !overlayOpenRef.current) {
+        prevActiveRef.current = active
+        prevFlashingRef.current = flashing
+        return
+      }
 
       if (active && !prevActiveRef.current) fire(startPrefRef.current)
       if (flashing && !prevFlashingRef.current) fire(castPrefRef.current)

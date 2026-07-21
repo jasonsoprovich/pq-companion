@@ -17,7 +17,7 @@
  * follows.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Gauge, X } from 'lucide-react'
+import { Bell, BellOff, Gauge, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
@@ -26,14 +26,17 @@ import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import { useCHChainConfig } from '../hooks/useCHChainConfig'
 import OverlayLockButton from '../components/OverlayLockButton'
-import { getTimerState } from '../services/api'
+import { getConfig, getTimerState } from '../services/api'
 import {
+  ALERTS_ENABLED_KEY,
   CH_CAST,
   type AnchorResult,
   type ChainView,
   computeAnchorMs,
+  loadAlertsEnabled,
   loadSeen,
   mergeSeen,
+  saveAlertsEnabled,
   saveSeen,
   seenStorageKey,
   watchPosition,
@@ -180,6 +183,44 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   const [cfg, setCfg] = useState<Cfg>(loadCfg)
   const [chain, setChain] = useState<ChainView>(loadChain)
   const chConfig = useCHChainConfig()
+
+  // Bell toggle: a master mute layered on top of the metronome_start_alert /
+  // metronome_cast_alert prefs configured in Settings > Spell Timers. Persisted
+  // to localStorage so useMetronomeAlerts (mounted once at the App level, not
+  // inside this window) sees the same flag; a 'storage' listener picks up
+  // changes made from a different window (there's only one bell, but this
+  // mirrors the chain-selection sync pattern in case a second one is ever
+  // added).
+  const [alertsEnabled, setAlertsEnabledState] = useState(loadAlertsEnabled)
+  // Whether either alert is actually turned on in Settings — used to gray out
+  // and explain the bell when there's nothing configured to mute.
+  const [alertsConfigured, setAlertsConfigured] = useState(false)
+
+  useEffect(() => {
+    getConfig()
+      .then((c) => {
+        setAlertsConfigured(
+          !!(c.preferences?.metronome_start_alert?.enabled || c.preferences?.metronome_cast_alert?.enabled),
+        )
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent): void => {
+      if (e.key === ALERTS_ENABLED_KEY) setAlertsEnabledState(loadAlertsEnabled())
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  const toggleAlertsEnabled = useCallback(() => {
+    setAlertsEnabledState((prev) => {
+      const next = !prev
+      saveAlertsEnabled(next)
+      return next
+    })
+  }, [])
   const secondaryEnabled = chConfig?.secondary_enabled ?? false
   // With the secondary chain off in settings, always follow the main chain —
   // a stale 'ramp' selection would otherwise watch a feed that never fires.
@@ -274,6 +315,14 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
         const s = msg.data as TimerState
         timersRef.current = s.timers
         recomputeAnchor(s.timers)
+      } else if (msg.type === WSEvent.ConfigUpdated) {
+        getConfig()
+          .then((c) => {
+            setAlertsConfigured(
+              !!(c.preferences?.metronome_start_alert?.enabled || c.preferences?.metronome_cast_alert?.enabled),
+            )
+          })
+          .catch(() => {})
       }
     },
     [recomputeAnchor],
@@ -383,6 +432,31 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
           </span>
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            onClick={toggleAlertsEnabled}
+            disabled={!alertsConfigured}
+            title={
+              !alertsConfigured
+                ? 'No countdown-start/cast-now alerts configured (Settings > Spell Timers)'
+                : alertsEnabled
+                  ? 'Countdown alerts on (click to mute)'
+                  : 'Countdown alerts muted (click to unmute)'
+            }
+            aria-pressed={alertsEnabled && alertsConfigured}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '1px 5px',
+              borderRadius: 3,
+              border: '1px solid rgba(255,255,255,0.1)',
+              backgroundColor: 'transparent',
+              color: !alertsConfigured ? 'rgba(255,255,255,0.2)' : alertsEnabled ? '#93c5fd' : 'rgba(255,255,255,0.4)',
+              cursor: alertsConfigured ? 'pointer' : 'default',
+              lineHeight: 1,
+            }}
+          >
+            {alertsEnabled && alertsConfigured ? <Bell size={11} /> : <BellOff size={11} />}
+          </button>
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeCHMetronome()}

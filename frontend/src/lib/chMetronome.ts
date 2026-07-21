@@ -236,3 +236,25 @@ export function mergeSeen(into: Map<number, number>, from: Map<number, number>):
     if (cur === undefined || ts > cur) into.set(num, ts)
   }
 }
+
+// alertsEnabledKey namespaces the bell-icon mute toggle in the popped-out
+// overlay's header. It's a master switch layered on top of the per-alert
+// enabled flags configured in Settings > Spell Timers: muting here doesn't
+// touch those settings, it just silences whichever of them are on. Shared via
+// localStorage so useMetronomeAlerts (mounted once at the App level, not
+// inside the overlay window) can read the same flag the header button writes.
+export const ALERTS_ENABLED_KEY = 'chMetronome:alertsEnabled'
+
+// loadAlertsEnabled defaults to true (unmuted) so existing configured alerts
+// keep firing until the user explicitly mutes them from the overlay header.
+export function loadAlertsEnabled(): boolean {
+  return localStorage.getItem(ALERTS_ENABLED_KEY) !== 'false'
+}
+
+export function saveAlertsEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(ALERTS_ENABLED_KEY, String(enabled))
+  } catch {
+    /* noop */
+  }
+}
