@@ -571,6 +571,33 @@ These are inherent to log-file parsing and affect multiple features:
   build exposing the client's real per-slot buff tick counts would make all
   received-buff timers exact regardless of caster.
 
+### 11.3 Discipline reuse (cooldown) timers may scale with caster level
+
+- **Limitation:** All discipline `CooldownSecs` values (Resistant, Fearless,
+  and the class-specific discs re-sourced from the TAKP wiki in the melee
+  pack fix) are flat — one value per discipline regardless of the character's
+  level. Two independent user reports for Resistant Discipline suggest the
+  real reuse time may instead decrease with level (a level 51 report of 60
+  min vs. a level 60 report of 33 min). If true, our flat value is only
+  correct at one end of the level range and under-alerts (shows "ready" too
+  late) for lower-level characters, or over-alerts for characters near cap.
+- **Root cause:** Unknown — could be a level-gated formula in EQMacEmu's
+  discipline reuse code (distinct from the `spell_modifiers` duration-only
+  gap in §11.1), or the two reports could reflect different discipline
+  ranks/spell IDs per class rather than true level scaling. We only have two
+  anecdotal data points from two different classes at two different levels,
+  not enough to isolate a formula or rule out class-specific spell IDs as the
+  real explanation.
+- **Sources checked:** `quarm.db`/PQDI (both already known-unreliable for
+  discipline timers, see the melee pack fix commit); user Discord reports
+  (2 data points only); EQMacEmu source not yet located for the discipline
+  reuse-timer code path specifically (only `Handle_OP_Mend`'s skill-timer
+  path has been checked, see the Monk pack's Mend trigger comment).
+- **Could a future data source fix this?** **Possibly**, with more in-game
+  samples across a spread of levels for the same discipline/class — enough
+  to either confirm a level-scaling formula or rule it out. Do not encode a
+  guessed formula off two points; get more confirmations first.
+
 ---
 
 ## 12. Gear upgrade finder

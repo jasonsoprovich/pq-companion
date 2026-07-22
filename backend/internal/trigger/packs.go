@@ -144,6 +144,12 @@ func applyDefaultTimerAlerts(p TriggerPack) TriggerPack {
 //
 // Pack name is parameterized so the trigger row records which pack
 // installed it (used by promote-on-uninstall to find a fallback).
+//
+// Resistant's CooldownSecs is a flat value across all classes/levels. Two
+// independent user reports suggest it may actually decrease with caster
+// level (e.g. a lower cooldown at 60 than at 51) rather than being fixed —
+// see LIMITATIONS.md §11.3. Not enough data points yet to derive a formula,
+// so this stays flat until more in-game samples come in.
 func meleeSharedDisciplines(packName string) []Trigger {
 	return []Trigger{
 		{
@@ -1304,10 +1310,8 @@ func WarriorPack() TriggerPack {
 }
 
 // MonkPack returns the pre-built monk trigger pack: a Feign Death skill
-// overlay alert and timers for all 8 monk disciplines plus the two shared
-// melee disciplines (Resistant, Fearless). Mend is intentionally omitted
-// — its exact log strings vary by classic-era client and we'd risk false
-// positives without verifying against real Quarm logs.
+// overlay alert, the Mend skill's reuse timer, and timers for all 8 monk
+// disciplines plus the two shared melee disciplines (Resistant, Fearless).
 //
 // The Feign Death entry overlaps with the Shadowknight pack — installing
 // both packs will cause duplicate overlay fires on FD; users can disable
@@ -1316,7 +1320,7 @@ func MonkPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Monk",
 		Class:       ClassPtr(ClassMonk),
-		Description: "Feign Death alert plus spell timers for all 8 monk disciplines (Stonestance, Innerflame, Thunderkick, Ashenhand, Silentfist, Whirlwind, Voiddance, Hundred Fists) plus the shared melee disciplines Resistant and Fearless.",
+		Description: "Feign Death alert, Mend reuse timer, plus spell timers for all 8 monk disciplines (Stonestance, Innerflame, Thunderkick, Ashenhand, Silentfist, Whirlwind, Voiddance, Hundred Fists) plus the shared melee disciplines Resistant and Fearless.",
 		Triggers: append([]Trigger{
 			// ── Feign Death skill (overlay alert + reuse CD) ─────────────
 			// The FD skill has a 9s base reuse on Quarm (the client emits
@@ -1332,6 +1336,36 @@ func MonkPack() TriggerPack {
 				PackName:     "Monk",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "FEIGN DEATH", DurationSecs: 4, Color: "#888888"},
+				},
+			},
+
+			// ── Mend skill (overlay alert + reuse CD) ────────────────────
+			// Fixed 6-minute (360s) reuse regardless of level, per user
+			// confirmation. EQMacEmu's Handle_OP_Mend (client_packet.cpp)
+			// starts the server-side reuse timer unconditionally on every
+			// use — success, critical, fail, or worsen — but only the
+			// success/critical log lines are confirmed against real Quarm
+			// logs so far; a failed or worsened Mend won't restart this
+			// countdown until those strings are verified too (matches the
+			// "we'd risk false positives without verifying against real
+			// Quarm logs" bar used elsewhere in this file).
+			//
+			// The "zoning resets Mend's cooldown by ~72s" report some users
+			// pass around is a misreading of a client/server desync, not a
+			// real reduction: zoning clears the client's Mend button so it
+			// looks ready, but Handle_OP_Mend still checks the real
+			// server-side timer, replies "Ability recovery time not yet
+			// met." if it's early, and just re-arms a client-side timer to
+			// reset the button once the real cooldown actually expires. The
+			// underlying reuse time never changes.
+			{
+				Name:         "Mend",
+				Enabled:      true,
+				Pattern:      `^(?:You mend your wounds and heal some damage\.|You magically mend your wounds and heal considerable damage\.)$`,
+				CooldownSecs: 360,
+				PackName:     "Monk",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "MEND", DurationSecs: 4, Color: "#66cc66"},
 				},
 			},
 
