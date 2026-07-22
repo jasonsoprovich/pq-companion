@@ -2764,44 +2764,16 @@ export default function SettingsPage(): React.ReactElement {
                   Flag possible misses
                 </span>
                 <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Colors a chain bar red when that callout's target never actually gets healed in
-                  time — a likely fizzle, interrupt (e.g. a Luclin fling), or skipped cast.
-                  Detected from the "is completely healed" line anyone nearby sees when Complete
-                  Healing lands, regardless of who cast it — so a chain slot can only be confirmed
-                  covered, not attributed to a specific cleric. Purely additive; turn off if it
-                  ever reads as noisy.
+                  Colors a chain bar red when that callout's caster is never seen starting a cast
+                  in time — a likely fizzle, interrupt (e.g. a Luclin fling), or skipped cast.
+                  Detected from the "begins to cast a spell" line anyone nearby sees when the
+                  caster starts casting anything (or "You begin casting …" for your own) — it
+                  never inspects which spell, so this covers Cleric Complete Healing and Druid
+                  Tunare's/Karana's Renewal the same way. Purely additive; turn off if it ever
+                  reads as noisy.
                 </span>
               </span>
             </label>
-
-            {(config.ch_chain?.possible_miss_enabled ?? true) && (
-              <label className="mb-3 ml-6 flex items-start gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={config.ch_chain?.possible_miss_include_druid ?? true}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      ch_chain: { ...config.ch_chain, possible_miss_include_druid: e.target.checked },
-                    })
-                  }
-                  style={{ marginTop: 3 }}
-                />
-                <span>
-                  <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-                    Also flag Superior Healing (Druid) misses
-                  </span>
-                  <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                    On by default. Superior Healing's "feels much better" bystander line is shared
-                    by over a dozen unrelated heal spells (Greater Healing, Word of Health, Nature's
-                    Touch, …), so an unrelated healer's filler heal on the same tank can suppress a
-                    real Druid miss's flag — less reliable than the Cleric detection above, but
-                    one-directional: it can only miss flagging a real miss, never show a wrong red
-                    bar. Turn off if it reads as too quiet in a raid with heavy backup healing.
-                  </span>
-                </span>
-              </label>
-            )}
 
             <label className="mb-3 flex flex-col gap-1">
               <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Chain-call pattern (regex)</span>

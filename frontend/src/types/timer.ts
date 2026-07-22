@@ -72,12 +72,12 @@ export interface ActiveTimer {
   custom_group?: string
   /**
    * Only meaningful for category 'ch_chain' / 'ch_chain_2': true when this
-   * chain callout's target was never confirmed healed (no matching
-   * "<target> is completely healed." bystander line) before the 10s cast
-   * window elapsed — a likely fizzle, interrupt, or skipped cast. The timer
-   * gets a short grace extension when this flips true so the CH Chain
-   * overlay has time to render it red before the row disappears. Absent for
-   * every other category.
+   * chain callout's caster was never observed starting a cast ("begins to
+   * cast a spell" bystander line, or "You begin casting …" for your own)
+   * before the 10s cast window elapsed — a likely fizzle, interrupt, or
+   * skipped cast. The timer gets a short grace extension when this flips
+   * true so the CH Chain overlay has time to render it red before the row
+   * disappears. Absent for every other category.
    */
   possible_miss?: boolean
 }

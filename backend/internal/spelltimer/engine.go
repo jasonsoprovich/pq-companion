@@ -1783,7 +1783,7 @@ const chChainMissGrace = 4 * time.Second
 // longer than keepExpiredMaxOverdue, at which point it's dropped regardless.
 //
 // CH-chain timers get one extra step first: an unconfirmed one (no matching
-// ConfirmHeal call — see chchain.HealWatcher) is flagged PossibleMiss and
+// ConfirmHeal call — see chchain.CastWatcher) is flagged PossibleMiss and
 // given a short grace extension instead of being dropped immediately, so a
 // fizzled/interrupted/skipped cast is visible on the overlay rather than
 // just quietly vanishing.
@@ -1810,11 +1810,17 @@ func (e *Engine) pruneExpired() {
 }
 
 // ConfirmHeal marks the oldest still-open, unconfirmed CH-chain timer whose
-// target is targetName as having actually landed, so pruneExpired won't flag
-// it a possible miss. Bystander "<Target> is completely healed." lines never
-// carry caster identity, so oldest-first per target is the correlation: heals
-// land in the same order they were cast, since Complete Healing's cast time
-// is fixed and uniform across casters. Called by chchain.HealWatcher.
+// target is targetName as confirmed cast, so pruneExpired won't flag it a
+// possible miss. Called by chchain.CastWatcher when the caster of that
+// timer's chain callout is observed starting a cast shortly after — targeted
+// via chchain.Matcher.TargetForCaster, which is why per-target FIFO (rather
+// than caster identity) is only a fallback for the rare case two casters call
+// the same target back to back within the correlation window.
+//
+// Also clears PossibleMiss if it was already set: a confirmation that arrives
+// during pruneExpired's grace-period extension (e.g. a delayed retry after a
+// resist) should still turn a red bar back to normal rather than leaving it
+// stuck red until the grace period runs out.
 func (e *Engine) ConfirmHeal(targetName string) {
 	if targetName == "" {
 		return
@@ -1832,6 +1838,7 @@ func (e *Engine) ConfirmHeal(targetName string) {
 	}
 	if oldest != nil {
 		oldest.healConfirmed = true
+		oldest.PossibleMiss = false
 	}
 }
 

@@ -186,6 +186,22 @@ export function computeAnchorMs(
   return { anchorMs: latest.anchorMs + gap * c.delay * 1000, predicted: true }
 }
 
+// acceptNewAnchor decides whether a freshly computed anchor should replace
+// the currently active one. Guards against a stray duplicate/glitched
+// watched-slot callout (a fizzle-then-retry macro re-fire, a duplicate
+// broadcast, or simply the per-tick recompute re-deriving the same cycle from
+// a still-live timer) restarting the countdown — flashing CAST NOW again —
+// before this cleric's own cast point in the CURRENT cycle has even passed.
+// A legitimate next cycle's callout is always at least delaySecs later (a
+// full chain cycle is chainSize × delay, which is >= delay), so real chains
+// are never affected by this guard.
+export function acceptNewAnchor(prev: AnchorResult | null, next: AnchorResult, delaySecs: number): boolean {
+  if (!prev) return true
+  const gapMs = next.anchorMs - prev.anchorMs
+  if (gapMs <= 0) return false // not newer than what's already anchored
+  return gapMs >= delaySecs * 1000
+}
+
 // seenStorageKey namespaces the persisted learned-number map per chain view
 // (main/ramp) so switching chains never mixes their numbering. Exported so
 // callers can recognize this key in a 'storage' event.

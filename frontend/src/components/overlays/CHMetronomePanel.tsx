@@ -16,6 +16,7 @@ import { WSEvent } from '../../lib/wsEvents'
 import { useCHChainConfig } from '../../hooks/useCHChainConfig'
 import { getTimerState } from '../../services/api'
 import {
+  acceptNewAnchor,
   CH_CAST,
   type AnchorResult,
   type ChainView,
@@ -186,7 +187,7 @@ export default function CHMetronomePanel({
   const recomputeAnchor = useCallback((timers: ActiveTimer[]) => {
     const anchor = computeAnchorMs(timers, cfgRef.current, chainRef.current, seenRef.current, Date.now())
     saveSeen(chainRef.current, seenRef.current)
-    if (anchor != null) {
+    if (anchor != null && acceptNewAnchor(anchorRef.current, anchor, cfgRef.current.delay)) {
       anchorRef.current = anchor
       // Force a render so a new anchor re-activates the (possibly idle) tick.
       setTick((t) => (t + 1) % 1_000_000)

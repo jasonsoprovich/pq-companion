@@ -187,7 +187,7 @@ function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean })
             fontWeight: landing || missed ? 700 : 600,
             textShadow: '0 1px 2px rgba(0,0,0,0.9)',
           }}
-          title={missed ? "No confirming heal-landed line seen for this target in time — may have fizzled, been interrupted, or skipped" : undefined}
+          title={missed ? "No confirming cast-begin line seen for this callout's caster in time — may have fizzled, been interrupted, or skipped" : undefined}
         >
           {missed ? 'possible miss' : fmtRemaining(timer.remaining_seconds)}
         </span>

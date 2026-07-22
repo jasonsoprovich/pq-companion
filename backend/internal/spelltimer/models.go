@@ -134,9 +134,10 @@ type ActiveTimer struct {
 	// to render it red. Always false for every other category.
 	PossibleMiss bool `json:"possible_miss,omitempty"`
 
-	// healConfirmed marks a CH-chain timer whose target was observed to
-	// actually receive the landed heal before expiry (Engine.ConfirmHeal),
-	// so pruneExpired won't flag it PossibleMiss. Internal-only.
+	// healConfirmed marks a CH-chain timer whose caster was observed
+	// starting a cast shortly after the chain callout (Engine.ConfirmHeal,
+	// driven by chchain.CastWatcher), so pruneExpired won't flag it
+	// PossibleMiss. Internal-only.
 	healConfirmed bool `json:"-"`
 
 	// missGraceExtended guards the possible-miss expiry extension in

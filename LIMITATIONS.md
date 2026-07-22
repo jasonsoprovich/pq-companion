@@ -182,31 +182,36 @@ a future data source fix this?" column against the new capabilities.
 - **Root cause:** Other players' spell casts log only as the generic
   "Soandso begins to cast a spell." with no spell name. Only the chat callout
   carries the caster + position + target.
-- **Partial exception (added after this was first written):** heals landing
-  on a third party are *not* universally invisible as this section previously
-  claimed. `spells_new.cast_on_other` for Complete Healing (spell id 13, the
-  actual player-castable Cleric CH spell — the other DB rows sharing its
-  "&lt;Target&gt; is completely healed." text are uncastable NPC/placeholder
-  entries) is a standard EQ bystander message, visible to anyone nearby
-  regardless of who cast it. The CH Chain overlay's "possible miss" flag
-  (`internal/chchain/heal_watcher.go`) uses this: it confirms a chain
-  callout's target actually got healed and flags the bar red if that
-  confirmation never arrives before the cast window elapses. This does NOT
-  identify *which* cleric's heal landed — bystander text carries no caster
-  identity — only whether the target was healed at all, so it can't attribute
-  a miss to a specific person, and it's deliberately scoped to just this one
-  spell: broader heal text like Superior Healing's "feels much better." is
-  shared by a dozen+ unrelated spells and would false-confirm a chain slot
-  from an off-chain healer's unrelated cast.
-- **Sources checked:** Log (own casts named; others' casts nameless; Complete
-  Healing's third-party land line IS present and usable, verified directly
-  against `quarm.db`), Zeal (own client data only).
+- **Partial exception (added after this was first written, later reworked):**
+  the CH Chain overlay's "possible miss" flag (`internal/chchain/
+  cast_watcher.go`) confirms a chain callout by watching for its *caster* to
+  actually start a cast, not for the heal to land. When a caller's "begins to
+  cast a spell." bystander line (or "You begin casting …" for the local
+  player) arrives within ~10s of their callout, `Matcher.TargetForCaster`
+  resolves it back to that exact callout's target and the timer is confirmed;
+  if it never arrives, the bar flags red. This DOES carry caster identity —
+  unlike the heal-landed design tried first, which is why it was replaced —
+  and it's class-agnostic (never inspects which spell was cast, so Cleric
+  Complete Healing and Druid Tunare's/Karana's Renewal are both covered by
+  the same mechanism with no per-spell regex).
+  - The original design (kept here for history) watched for the heal
+    actually *landing* on the target instead (`spells_new.cast_on_other`
+    for Complete Healing, spell id 13, is a standard EQ bystander message
+    visible to anyone nearby regardless of who cast it). In practice this was
+    unreliable: that bystander text is range-limited to the *target's*
+    position, which raid positioning often puts far from the clerics
+    themselves (a cleric standing next to their fellow casters, not next to
+    the tank, would simply never see it), and it also resolved right at the
+    10s expiry boundary, racing the timer's own prune step. Cast-begin
+    correlation is range-limited to the *caster's* position instead, which is
+    reliable since CH-chain casters cluster together, and it resolves within
+    ~0-2s of the callout instead of at the boundary.
+- **Sources checked:** Log (own casts named with spell name; others' casts
+  nameless but caster-identified via the generic "begins to cast" bystander
+  line), Zeal (own client data only).
 - **Could a future data source fix this?** Chain *position/timing* still has
   no better source than the chat callout — Zeal exposes only the local
-  client's state, so that part of the limitation stands. Per-caster miss
-  attribution also has no fix: bystander land lines never carry caster
-  identity, so "possible miss" can only ever confirm coverage of the target,
-  not the specific cleric.
+  client's state, so that part of the limitation stands.
 
 ---
 

@@ -62,8 +62,8 @@ func TestMatcher_DefaultPattern(t *testing.T) {
 		t.Errorf("label = %q, want %q", c.name, want)
 	}
 	// The captured target is also passed through as the timer's TargetName
-	// (not just embedded in the label) so HealWatcher can correlate a landed
-	// heal to this exact timer via Engine.ConfirmHeal.
+	// (not just embedded in the label) so CastWatcher can correlate a
+	// cast-begin line to this exact timer via Engine.ConfirmHeal.
 	if c.target != "Winian" {
 		t.Errorf("target = %q, want %q", c.target, "Winian")
 	}
@@ -246,6 +246,28 @@ func TestMatcher_NumericPrimaryIgnoresLetters(t *testing.T) {
 	m.HandleLine(time.Unix(1, 0), "Luna tells the raid, '--- AAA --- CH Rampguy'")
 	if len(s.calls) != 0 {
 		t.Errorf("letter call matched numeric-only pattern %d times, want 0", len(s.calls))
+	}
+}
+
+// TestMatcher_TargetForCaster covers the cast-begin correlation registry: a
+// caster's callout resolves to its target shortly after, but not once the
+// correlation window has elapsed (the next chain cycle should look like a
+// fresh, unconfirmed callout, not a stale match).
+func TestMatcher_TargetForCaster(t *testing.T) {
+	s := &fakeSink{}
+	m := newMatcher(s, true, config.DefaultCHChainPattern, 6)
+
+	base := time.Unix(1000, 0)
+	m.HandleLine(base, "Soandso tells the raid, '--- 001 --- CH Winian'")
+
+	if target, ok := m.TargetForCaster("Soandso", base.Add(2*time.Second)); !ok || target != "Winian" {
+		t.Errorf("TargetForCaster shortly after callout = (%q, %v), want (Winian, true)", target, ok)
+	}
+	if _, ok := m.TargetForCaster("Nobody", base.Add(2*time.Second)); ok {
+		t.Error("TargetForCaster matched a caster who never called")
+	}
+	if _, ok := m.TargetForCaster("Soandso", base.Add(recentCallWindow+time.Second)); ok {
+		t.Error("TargetForCaster matched after the correlation window elapsed")
 	}
 }
 

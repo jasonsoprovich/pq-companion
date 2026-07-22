@@ -67,12 +67,48 @@ type Matcher struct {
 	mu        sync.Mutex
 	primary   cachedRegex
 	secondary cachedRegex
+
+	callsMu     sync.Mutex
+	recentCalls map[string]recentCall
 }
+
+// recentCall records one chain callout's target and the time it was seen, so
+// CastWatcher can later look up which target a caster's "begins to cast"
+// line should confirm.
+type recentCall struct {
+	target string
+	at     time.Time
+}
+
+// recentCallWindow bounds how long a chain callout stays eligible for
+// cast-begin correlation. Complete Healing's cast time is 10s and a caster's
+// "begins to cast" line normally follows the callout within a second or two,
+// so this comfortably covers that while staying well short of a full chain
+// cycle (chainSize × delay), which is when the same caster's NEXT callout for
+// this position would otherwise arrive and could be confused for this one.
+const recentCallWindow = config.CHCastSecs*time.Second + 2*time.Second
 
 // New constructs a Matcher reading live settings via cfg and emitting timers
 // through sink.
 func New(sink Sink, cfg func() config.CHChainSettings) *Matcher {
-	return &Matcher{sink: sink, cfg: cfg}
+	return &Matcher{sink: sink, cfg: cfg, recentCalls: make(map[string]recentCall)}
+}
+
+// TargetForCaster returns the target of caster's most recent chain callout,
+// if one was recorded within recentCallWindow of now. Used by CastWatcher to
+// resolve a "begins to cast" bystander line (which carries a caster name but
+// no target) back to the chain timer it should confirm.
+func (m *Matcher) TargetForCaster(caster string, now time.Time) (string, bool) {
+	if caster == "" {
+		return "", false
+	}
+	m.callsMu.Lock()
+	defer m.callsMu.Unlock()
+	rc, ok := m.recentCalls[caster]
+	if !ok || now.Sub(rc.at) > recentCallWindow {
+		return "", false
+	}
+	return rc.target, true
 }
 
 // HandleLine matches one raw log line against the configured pattern(s) and,
@@ -137,6 +173,17 @@ func (m *Matcher) matchAndStart(ts time.Time, msg, pattern string, cache *cached
 		return true // a chain call with no target isn't actionable
 	}
 
+	// Record the callout for cast-begin correlation (see TargetForCaster) so
+	// CastWatcher can later confirm this exact timer when the caster's
+	// "begins to cast" line arrives, regardless of whether the regex
+	// captured a caster name (a pattern without a `caster` group just never
+	// records here, and possible-miss detection quietly finds nothing).
+	if caster != "" {
+		m.callsMu.Lock()
+		m.recentCalls[caster] = recentCall{target: target, at: ts}
+		m.callsMu.Unlock()
+	}
+
 	// The label doubles as the timer key. Encoding the position as a leading
 	// "#N" lets the overlay sort by chain order; including target keeps each
 	// position's bar distinct so concurrent calls don't dedup into one.
@@ -152,7 +199,7 @@ func (m *Matcher) matchAndStart(ts time.Time, msg, pattern string, cache *cached
 	//
 	// target is passed through as the timer's TargetName (previously left
 	// empty — the overlay only ever parsed the target back out of the label
-	// text) so HealWatcher can correlate a landed-heal line to the right
+	// text) so CastWatcher can correlate a cast-begin line to the right
 	// timer via Engine.ConfirmHeal.
 	m.sink.StartExternal(label, category, config.CHCastSecs, 0, ts, nil, 0, target, "", false, "")
 	return true

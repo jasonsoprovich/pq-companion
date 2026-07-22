@@ -658,11 +658,11 @@ func main() {
 		return cfgMgr.Get().CHChain
 	})
 
-	// CH-chain heal watcher: confirms a chain timer's Complete Healing
-	// actually landed so the overlay doesn't flag it a possible miss. See
-	// internal/chchain/heal_watcher.go for why it's scoped to exactly one
-	// spell's bystander message.
-	chChainHealWatcher := chchain.NewHealWatcher(timerEngine, func() config.CHChainSettings {
+	// CH-chain cast watcher: confirms a chain timer's caster actually began
+	// casting shortly after their callout, so the overlay doesn't flag it a
+	// possible miss. See internal/chchain/cast_watcher.go for why this
+	// watches the generic "begins to cast" line rather than the heal landing.
+	chChainCastWatcher := chchain.NewCastWatcher(timerEngine, chChainMatcher, func() config.CHChainSettings {
 		return cfgMgr.Get().CHChain
 	})
 
@@ -1372,7 +1372,7 @@ func main() {
 		triggerEngine.Handle(ts, msg)
 		wishlistWatcher.HandleLine(msg)
 		chChainMatcher.HandleLine(ts, msg)
-		chChainHealWatcher.HandleLine(msg)
+		chChainCastWatcher.HandleLine(ts, msg)
 		rollTracker.HandleLine(ts, msg)
 		if keyringConsumer != nil {
 			keyringConsumer.HandleLine(ts, msg)

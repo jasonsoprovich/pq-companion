@@ -733,35 +733,34 @@ type CHChainSettings struct {
 	// allowed. 0 means "use DefaultCHChainIntervalSecs".
 	IntervalSecs float64 `yaml:"interval_secs" json:"interval_secs"`
 
-	// PossibleMissEnabled turns on heal-landed correlation: each chain
-	// callout's captured target is watched for a subsequent Complete Healing
-	// "is completely healed." bystander line (see internal/chchain's
-	// HealWatcher). If that line never appears before the callout's 10s cast
-	// window elapses, the timer is flagged a possible miss so the CH Chain
-	// overlay can show it in red. Purely additive — never alters chain-call
-	// matching or timer creation, so it can be turned off independently of
-	// the chain tracking itself if it proves noisy.
+	// PossibleMissEnabled turns on cast-begin correlation: each chain
+	// callout's captured caster is watched for a "begins to cast a spell"
+	// line (the generic bystander message EQ shows to anyone nearby when a
+	// player starts casting ANY multi-tick spell, or "You begin casting …"
+	// for the caster's own log) within the callout's 10s cast window (see
+	// internal/chchain's CastWatcher). If it never appears, the timer is
+	// flagged a possible miss so the CH Chain overlay can show it in red.
+	// Purely additive — never alters chain-call matching or timer creation,
+	// so it can be turned off independently of the chain tracking itself if
+	// it proves noisy.
+	//
+	// Deliberately NOT keyed off the heal actually landing (an earlier
+	// design): that bystander text is range-limited to the TARGET's
+	// position, which raid positioning often puts far from the clerics
+	// themselves, and it also fired near the 10s expiry boundary, racing
+	// pruneExpired. Cast-begin correlation is range-limited to the CASTER's
+	// position instead — reliable, since CH-chain casters cluster together —
+	// and confirms within ~0-2s of the callout instead of at the boundary.
+	// It also works identically for every class (Cleric Complete Healing,
+	// Druid Tunare's/Karana's Renewal, …) since it never inspects which
+	// spell was cast, only that the announced caster began casting
+	// something near the right time — no more per-spell regex to keep in
+	// sync with which heal a class's chain macro actually casts.
 	PossibleMissEnabled bool `yaml:"possible_miss_enabled" json:"possible_miss_enabled"`
 
 	// PossibleMissMigrated is a one-time migration marker (see applyDefaults)
 	// — not surfaced in the UI.
 	PossibleMissMigrated bool `yaml:"possible_miss_migrated" json:"-"`
-
-	// PossibleMissIncludeDruid additionally watches Superior Healing's
-	// "<Target> feels much better." bystander line (the Druid's "DCH") for
-	// possible-miss correlation. On by default: unlike Complete Healing's
-	// text, that exact string is shared by over a dozen unrelated heal
-	// spells, so an unrelated healer's filler heal on the same target can
-	// mask a real Druid miss (the flag just doesn't fire — it can never fire
-	// wrongly, since ConfirmHeal only ever clears a miss, never sets one).
-	// That's a strictly one-directional risk (silence, never a false
-	// positive), so it's on by default; users who find it too quiet in a
-	// raid with heavy backup healing can turn it off.
-	PossibleMissIncludeDruid bool `yaml:"possible_miss_include_druid" json:"possible_miss_include_druid"`
-
-	// PossibleMissDruidMigrated is a one-time migration marker (see
-	// applyDefaults) — not surfaced in the UI.
-	PossibleMissDruidMigrated bool `yaml:"possible_miss_druid_migrated" json:"-"`
 }
 
 // CHCastSecs is Complete Heal's cast time in seconds. Each ch_chain countdown
@@ -858,14 +857,12 @@ const DefaultCHChainIntervalSecs = 6
 // DefaultCHChainSettings returns the on-by-default settings for fresh installs.
 func DefaultCHChainSettings() CHChainSettings {
 	return CHChainSettings{
-		Enabled:                   true,
-		Pattern:                   DefaultCHChainPattern,
-		SecondaryPattern:          DefaultCHChainSecondaryPattern,
-		IntervalSecs:              DefaultCHChainIntervalSecs,
-		PossibleMissEnabled:       true,
-		PossibleMissMigrated:      true,
-		PossibleMissIncludeDruid:  true,
-		PossibleMissDruidMigrated: true,
+		Enabled:              true,
+		Pattern:              DefaultCHChainPattern,
+		SecondaryPattern:     DefaultCHChainSecondaryPattern,
+		IntervalSecs:         DefaultCHChainIntervalSecs,
+		PossibleMissEnabled:  true,
+		PossibleMissMigrated: true,
 	}
 }
 
@@ -1104,18 +1101,6 @@ func applyDefaults(cfg *Config) bool {
 	if !cfg.CHChain.PossibleMissMigrated {
 		cfg.CHChain.PossibleMissEnabled = true
 		cfg.CHChain.PossibleMissMigrated = true
-		changed = true
-	}
-	// Same one-time-on migration for the Druid (Superior Healing) possible-
-	// miss detection, which shipped slightly later as its own opt-in and so
-	// needs its own marker — a config that already ran the migration above
-	// wouldn't otherwise pick this up. The risk here is one-directional
-	// (ConfirmHeal only ever clears a possible-miss flag, never sets one, so
-	// this can silently under-detect in raids with heavy backup healing, but
-	// never mis-flag a bar), which is why it defaults on rather than opt-in.
-	if !cfg.CHChain.PossibleMissDruidMigrated {
-		cfg.CHChain.PossibleMissIncludeDruid = true
-		cfg.CHChain.PossibleMissDruidMigrated = true
 		changed = true
 	}
 	// NPC overlay sections: configs that predate this preference deserialize

@@ -319,17 +319,14 @@ export interface CHChainSettings {
   secondary_pattern?: string
   // Per-cast countdown cadence in seconds (fractional allowed).
   interval_secs: number
-  // Heal-landed correlation: flags a chain bar red ("possible miss") when
-  // its target's Complete Healing "is completely healed." bystander line
-  // never appears before the 10s cast window elapses. Purely additive —
-  // never affects chain-call matching or timer creation.
+  // Cast-begin correlation: flags a chain bar red ("possible miss") when its
+  // callout's caster is never observed starting a cast ("begins to cast a
+  // spell" bystander line, or "You begin casting …" for your own) before the
+  // 10s cast window elapses. Purely additive — never affects chain-call
+  // matching or timer creation. Class-agnostic: never inspects which spell
+  // was cast, so it covers Cleric Complete Healing and Druid Tunare's/
+  // Karana's Renewal identically.
   possible_miss_enabled?: boolean
-  // Also watch Superior Healing's "feels much better." bystander line (the
-  // Druid "DCH"). On by default: that text is shared by a dozen+ unrelated
-  // heal spells, so an unrelated healer's filler heal on the same target can
-  // suppress a real miss's flag — noisier than Complete Healing's detection,
-  // but one-directional (can only miss a real flag, never show a wrong one).
-  possible_miss_include_druid?: boolean
 }
 
 // DPSClassColors stores the user's per-class bar colour for the DPS meter
