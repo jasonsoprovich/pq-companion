@@ -9,6 +9,20 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.17.8 — 2026-07-22
+
+Alert mute bells reach every overlay, a hardware-acceleration toggle for the black-screen overlay bug, and a more reliable CH Chain possible-miss detector.
+
+### Highlights
+- **Alert mute bells everywhere** — the per-overlay mute toggle first shipped for CH Metronome is now on Buff, Detrimental, Custom Timer, and Respawn overlays too, so any popped-out overlay can silence its own alert sounds independently.
+- **Hardware-acceleration toggle** — an opt-in Settings switch works around the Electron black-screen overlay bug some users hit on certain GPU/driver combinations.
+- **Monk Mend reuse timer** — Mend now has its own recast countdown alongside the other melee discipline timers.
+
+### Fixes
+- CH Chain possible-miss detection now keys off the heal's cast-begin instead of waiting for the heal-landed message, fixing missed/false detections at range and with Druid heals.
+- Discipline buff and cooldown timers corrected against TAKP wiki source data across the Warrior, Monk, Rogue, Paladin, Shadowknight, Ranger, and Beastlord trigger packs (quarm.db's own values don't match what the server actually enforces).
+- Settings page no longer flickers between "Saving..." and "Saved" on quick successive autosaves.
+
 ## v0.17.7 — 2026-07-20
 
 A new Faction Tracker arrives alongside CH Chain possible-miss detection, a second local TTS provider, and a "what's new" changelog popup.
