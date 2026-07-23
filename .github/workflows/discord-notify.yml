@@ -108,10 +108,23 @@ jobs:
             got { exit }
           ')
 
-          # Look up the matching GitHub release URL (may not exist yet if the
-          # CHANGELOG push raced ahead of the release publish).
-          RELEASE_URL=$(gh release view "v$VERSION" \
-            --repo "$GITHUB_REPOSITORY" --json url -q .url 2>/dev/null || true)
+          # Look up the matching GitHub release URL. This push (which
+          # triggers this workflow) and /newrelease's `gh release create`
+          # step are two independent, unsynchronized actions — the release
+          # frequently doesn't exist yet the moment this job starts, or its
+          # visibility lags a few seconds behind creation for this run's
+          # token (observed empty on v0.17.8: release existed 32s earlier
+          # yet the lookup still came back blank). Retry for up to ~2min
+          # before giving up and posting without a link.
+          RELEASE_URL=""
+          for _ in $(seq 1 12); do
+            RELEASE_URL=$(gh release view "v$VERSION" \
+              --repo "$GITHUB_REPOSITORY" --json url -q .url 2>/dev/null || true)
+            if [ -n "$RELEASE_URL" ]; then
+              break
+            fi
+            sleep 10
+          done
 
           # Discord embed description max is 4096 chars.
           if [ "${#BODY}" -gt 4000 ]; then
