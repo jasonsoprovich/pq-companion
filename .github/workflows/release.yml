@@ -1,10 +1,15 @@
 name: Release
 
-# Triggers on version tags (e.g. v0.2.0) or manual dispatch.
+# Manual dispatch only. This used to also trigger on every v* tag push, but
+# the /newrelease skill's local `gh release create` step always finished
+# publishing (installer .exe, .zip, latest.yml) well before this workflow's
+# ~5min from-scratch Windows build could reach its own publish step, so the
+# CI publish was a silent no-op on every release (confirmed 2026-07-22:
+# asset timestamps/sizes on v0.17.4-v0.17.8 all matched the local build,
+# never the CI one, and no .blockmap ever landed). Kept as a manual
+# disaster-recovery path (e.g. local machine unavailable) via
+# workflow_dispatch, but no longer races the local publish automatically.
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 permissions:
