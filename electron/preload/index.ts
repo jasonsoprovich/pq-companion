@@ -20,6 +20,15 @@ contextBridge.exposeInMainWorld('electron', {
   backend: {
     getPort: (): Promise<number> => ipcRenderer.invoke('backend:port'),
   },
+  settings: {
+    // Opt-in workaround for a known Windows Electron/Chromium bug where
+    // hardware-accelerated transparent windows render solid black (see
+    // LIMITATIONS.md §13.2). Takes effect on next launch only.
+    getHardwareAcceleration: (): Promise<{ disabled: boolean }> =>
+      ipcRenderer.invoke('settings:hardware-acceleration:get'),
+    setHardwareAcceleration: (disabled: boolean): Promise<void> =>
+      ipcRenderer.invoke('settings:hardware-acceleration:set', disabled),
+  },
   versions: {
     node: process.versions.node,
     chrome: process.versions.chrome,

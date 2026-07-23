@@ -4236,8 +4236,11 @@ function DiagnosticsSection({
 }): React.ReactElement {
   const hasShell = typeof window !== 'undefined' && !!window.electron?.shell
   const hasSaveDialog = typeof window !== 'undefined' && !!window.electron?.dialog?.saveDebugLogs
+  const hasSettingsBridge = typeof window !== 'undefined' && !!window.electron?.settings
   const [exportState, setExportState] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
   const [exportResult, setExportResult] = useState<string | null>(null)
+  const [hwAccelDisabled, setHwAccelDisabled] = useState(false)
+  const [hwAccelPendingRestart, setHwAccelPendingRestart] = useState(false)
 
   async function handleExportDebugLogs() {
     if (!window.electron?.dialog?.saveDebugLogs) return
@@ -4253,6 +4256,26 @@ function DiagnosticsSection({
       setExportResult(err instanceof Error ? err.message : String(err))
       setExportState('error')
     }
+  }
+
+  useEffect(() => {
+    if (!window.electron?.settings) return
+    window.electron.settings.getHardwareAcceleration()
+      .then((res) => setHwAccelDisabled(res.disabled))
+      .catch(() => null)
+  }, [])
+
+  async function handleToggleHwAccel() {
+    if (!window.electron?.settings) return
+    const next = !hwAccelDisabled
+    setHwAccelDisabled(next)
+    setHwAccelPendingRestart(true)
+    await window.electron.settings.setHardwareAcceleration(next).catch(() => null)
+  }
+
+  async function handleHwAccelRestart() {
+    if (!window.electron?.app?.relaunch) return
+    await window.electron.app.relaunch()
   }
 
   return (
@@ -4340,6 +4363,49 @@ function DiagnosticsSection({
           </span>
         </span>
       </label>
+
+      {/* Workaround for a known Windows Electron/Chromium bug where hardware-
+          accelerated transparent overlay windows can render solid black
+          instead of transparent (see LIMITATIONS.md §13.2) — most visible on
+          the trigger alert overlay, which is shown/hidden on every trigger
+          fire. Off by default since it disables GPU-accelerated rendering
+          app-wide; only takes effect after a restart. */}
+      {hasSettingsBridge && (
+        <label className="mt-3 flex cursor-pointer items-start gap-2">
+          <input
+            type="checkbox"
+            checked={hwAccelDisabled}
+            onChange={handleToggleHwAccel}
+            className="mt-0.5"
+          />
+          <span className="text-xs" style={{ color: 'var(--color-foreground)' }}>
+            Disable hardware acceleration
+            <span className="block" style={{ color: 'var(--color-muted-foreground)' }}>
+              Workaround for a display glitch where overlay alerts briefly
+              black out the screen on some Windows systems. Only enable this
+              if you're seeing that issue — it turns off GPU-accelerated
+              rendering app-wide, which may make the UI feel less smooth.
+              Requires a restart.
+            </span>
+          </span>
+        </label>
+      )}
+      {hwAccelPendingRestart && (
+        <div
+          className="mt-2 flex items-center gap-2 rounded border p-2 text-xs"
+          style={{ borderColor: 'var(--color-primary)', backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted-foreground)' }}
+        >
+          <span>Restart to apply.</span>
+          <button
+            type="button"
+            onClick={handleHwAccelRestart}
+            className="rounded px-2 py-1 text-xs font-medium"
+            style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-background)' }}
+          >
+            Restart now
+          </button>
+        </div>
+      )}
     </section>
   )
 }

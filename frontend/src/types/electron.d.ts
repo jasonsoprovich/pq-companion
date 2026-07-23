@@ -10,6 +10,10 @@ export interface ElectronAPI {
   backend: {
     getPort: () => Promise<number>
   }
+  settings: {
+    getHardwareAcceleration: () => Promise<{ disabled: boolean }>
+    setHardwareAcceleration: (disabled: boolean) => Promise<void>
+  }
   versions: {
     node: string
     chrome: string

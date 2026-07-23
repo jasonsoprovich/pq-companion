@@ -1,7 +1,7 @@
 import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol, globalShortcut, Tray, Menu, nativeImage } from 'electron'
 import { join, extname, dirname } from 'path'
 import { spawn, ChildProcess } from 'child_process'
-import { existsSync, readFileSync, writeFileSync, statSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'fs'
 import { readFile, access, open as fsOpen } from 'fs/promises'
 import { constants as fsConstants } from 'fs'
 import { homedir } from 'os'
@@ -9,6 +9,42 @@ import { autoUpdater } from 'electron-updater'
 import { appendLine, closeLogger, initLogger } from './logger'
 
 const isDev = !app.isPackaged
+
+// Some Windows systems hit a known Electron/Chromium bug where hardware-
+// accelerated transparent windows render solid black instead of transparent
+// (electron/electron#40515, #37088, #10069 — see LIMITATIONS.md §13.2). It's
+// most visible on the trigger overlay, which is natively shown/hidden on
+// every alert. There's no per-window GPU toggle, so the only mitigation is
+// the app-wide switch below — opt-in via Settings > Advanced, persisted to
+// ~/.pq-companion (not Electron's userData) because this must run before
+// 'ready', before the backend sidecar even starts, and app.getPath('userData')
+// is unreliable that early (same reason logger.ts uses homedir() directly).
+function hardwareAccelFilePath(): string {
+  return join(homedir(), '.pq-companion', 'hardwareAcceleration.json')
+}
+
+function loadHardwareAccelDisabled(): boolean {
+  try {
+    const raw = JSON.parse(readFileSync(hardwareAccelFilePath(), 'utf8')) as { disabled?: boolean }
+    return raw.disabled === true
+  } catch {
+    return false
+  }
+}
+
+function saveHardwareAccelDisabled(disabled: boolean): void {
+  try {
+    const dir = join(homedir(), '.pq-companion')
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    writeFileSync(hardwareAccelFilePath(), JSON.stringify({ disabled }, null, 2), 'utf8')
+  } catch (err) {
+    console.error('[main] Failed to write hardware acceleration pref:', err)
+  }
+}
+
+if (loadHardwareAccelDisabled()) {
+  app.disableHardwareAcceleration()
+}
 
 // Initialize file logging as early as possible so any errors during the
 // rest of main-process bootstrap are captured. Packaged Windows builds
@@ -2824,6 +2860,19 @@ ipcMain.handle('app:relaunch', async () => {
   await stopSidecar()
   app.relaunch()
   app.exit(0)
+})
+
+// ── IPC handlers — hardware acceleration toggle ───────────────────────────────
+// See the pre-ready gate near the top of this file and LIMITATIONS.md §13.2.
+// Only takes effect after a restart — disableHardwareAcceleration() must run
+// before 'ready', so writing the flag here just arms it for next launch.
+
+ipcMain.handle('settings:hardware-acceleration:get', () => ({
+  disabled: loadHardwareAccelDisabled(),
+}))
+
+ipcMain.handle('settings:hardware-acceleration:set', (_event, disabled: boolean) => {
+  saveHardwareAccelDisabled(disabled)
 })
 
 // ── IPC handlers — auto-updater ───────────────────────────────────────────────

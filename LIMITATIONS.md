@@ -698,6 +698,63 @@ These are inherent to log-file parsing and affect multiple features:
   a delta-append with a full-reload fallback on filter changes (verify with a
   Windows smoke test, since reconciliation perf is hard to judge in Mac dev).
 
+### 13.2 Trigger alert overlay may cause a black screen flash on some Windows systems (unconfirmed)
+
+- **Limitation:** Reported by two Discord users in the same thread (dual-monitor
+  Windows, 2026-07-22): "nearly every single" trigger fire briefly blacks out
+  the display while the alert overlay is showing, reverting the instant the
+  alert clears. Debug logs from the affected session show no crash, no GPU
+  process error, and no anomaly around trigger fires — `trigger: reloaded`
+  entries are normal and nothing correlates with the reported black screen.
+- **Ruled out:** Exclusive-fullscreen EQ forcing a DWM composition-mode switch
+  was the initial theory, but the reporter confirmed EQ runs
+  windowed/borderless (already continuously DWM-composited, so no mode switch
+  should be needed). Also ruled out: display scaling (off), permissions
+  (reproduces running as admin), and low-end/driver-specific GPU (reporter is
+  on an RTX 4090, mid-troubleshooting a driver update with no change so far).
+- **Root cause (leading theory, not yet confirmed):** The trigger overlay
+  (`electron/main/index.ts`, `createTriggerOverlay`) is a transparent,
+  frameless, monitor-spanning, hardware-accelerated window that gets natively
+  `showInactive()`'d/`hide()`'d on literally every trigger fire — driven by
+  `TriggerOverlayWindowPage.tsx:443-446`, which flips the overlay's mode
+  every time `alerts.length` crosses 0 (native show/hide was chosen over
+  permanent visibility + click-through because click-through alone proved
+  unreliable and caused a mouse-input lockout — see the comment at
+  `overlay:trigger:set-mode` in `electron/main/index.ts`). This matches a
+  known upstream Electron/Chromium bug on Windows
+  (electron/electron#40515, electron/electron#37088, electron/electron#10069):
+  hardware-accelerated transparent `BrowserWindow`s can render solid black
+  instead of transparent, reportedly affecting ~5% of Windows users
+  *regardless of GPU vendor, monitor count, or scaling* — most visible right
+  around window show/hide, which is exactly the operation this overlay
+  performs on every alert. The only workaround documented upstream is
+  disabling hardware acceleration, which Electron only exposes as an
+  app-wide switch, not per-window.
+- **Sources checked:** Full electron.log / server.log sets (4 sessions) from
+  the affected user — no errors, crashes, or GPU log lines at all. Electron
+  docs confirm `setAlwaysOnTop`'s `level` param is honored on Windows;
+  separately confirmed `setVisibleOnAllWorkspaces`'s `visibleOnFullScreen`
+  option is macOS-only and a harmless no-op on Windows, unrelated to this bug.
+  Cross-checked the symptom against electron/electron's issue tracker — see
+  #40515, #37088, #10069, #23215, #1270 for the same "transparent window
+  renders black" bug class on Windows.
+- **Could a future data source fix this?** **N/A (upstream Electron/Chromium
+  bug, not a data gap).** Mitigation (1) is shipped, **awaiting user
+  confirmation it fixes the reported symptom**: an opt-in Settings > Advanced
+  > Diagnostics toggle ("Disable hardware acceleration") that persists a flag
+  to `~/.pq-companion/hardwareAcceleration.json` and calls
+  `app.disableHardwareAcceleration()` on the next launch (must run before
+  `app.whenReady()`, so the toggle only takes effect after a restart — see
+  the pre-ready gate near the top of `electron/main/index.ts`, plus the
+  `settings:hardware-acceleration:*` IPC handlers and the checkbox in
+  `SettingsPage.tsx`'s `DiagnosticsSection`). Costs GPU-accelerated rendering
+  app-wide, so it's off by default. Mitigation (2), not built: reworking the
+  trigger overlay to stay natively visible and toggle alert content via
+  renderer-side opacity instead of native `show()`/`hide()`, which would
+  reduce how often the bug's trigger condition fires but reintroduces the
+  click-through-reliability risk the current hide-when-idle design was built
+  to avoid — only worth pursuing if (1) doesn't resolve it.
+
 ---
 
 ## 14. Bazaar / Trader tracking
