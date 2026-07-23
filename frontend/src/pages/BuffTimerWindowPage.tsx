@@ -15,6 +15,9 @@ import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
+import OverlayMuteButton from '../components/OverlayMuteButton'
+import { useOverlayAlertMute } from '../hooks/useOverlayAlertMute'
+import { BUFF_TIMER_ALERTS_KEY } from '../lib/overlayAlertMute'
 import { clearTimers, getTimerState, removeTimer } from '../services/api'
 import { SpellIcon } from '../components/Icon'
 import type { ActiveTimer, TimerState } from '../types/timer'
@@ -147,6 +150,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
   const activePlayer = useActivePlayerName()
   const thresholds = useDisplayThresholds()
   const { mode: sortMode, toggle: toggleSort } = useBuffSortMode()
+  const [alertsEnabled, toggleAlerts] = useOverlayAlertMute(BUFF_TIMER_ALERTS_KEY)
 
   useEffect(() => {
     getTimerState().then(setState).catch(() => {})
@@ -258,6 +262,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
           >
             <Trash2 size={11} />
           </button>
+          <OverlayMuteButton enabled={alertsEnabled} onToggle={toggleAlerts} />
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeBuffTimer()}

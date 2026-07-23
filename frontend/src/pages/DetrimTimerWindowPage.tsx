@@ -15,6 +15,9 @@ import { WSEvent } from '../lib/wsEvents'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
+import OverlayMuteButton from '../components/OverlayMuteButton'
+import { useOverlayAlertMute } from '../hooks/useOverlayAlertMute'
+import { DETRIM_TIMER_ALERTS_KEY } from '../lib/overlayAlertMute'
 import { clearTimers, getTimerState, removeTimer } from '../services/api'
 import { SpellIcon } from '../components/Icon'
 import type { ActiveTimer, TimerCategory, TimerState } from '../types/timer'
@@ -187,6 +190,7 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
   const [state, setState] = useState<TimerState | null>(null)
   const activePlayer = useActivePlayerName()
   const thresholds = useDisplayThresholds()
+  const [alertsEnabled, toggleAlerts] = useOverlayAlertMute(DETRIM_TIMER_ALERTS_KEY)
 
   useEffect(() => {
     getTimerState().then(setState).catch(() => {})
@@ -274,6 +278,7 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
           >
             <Trash2 size={11} />
           </button>
+          <OverlayMuteButton enabled={alertsEnabled} onToggle={toggleAlerts} />
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeDetrimTimer()}

@@ -13,12 +13,18 @@
  * Algorithm mirrors useTimerAlerts: track previous remaining_seconds per timer
  * ID and fire on the downward crossing. The {npc} token in the TTS template is
  * substituted with the mob's name.
+ *
+ * The Respawn overlay window has a bell mute toggle in its header (see
+ * OverlayMuteButton) that layers on top of this preference without changing
+ * it. Read from localStorage since this hook is mounted at the App level,
+ * not inside that window.
  */
 import { useCallback, useEffect, useRef } from 'react'
 import { useWebSocket, type WsMessage } from './useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { getConfig } from '../services/api'
 import { playSound, speakText } from '../services/audio'
+import { RESPAWN_ALERTS_KEY, loadAlertsEnabled } from '../lib/overlayAlertMute'
 import type { RespawnState } from '../types/respawn'
 import type { TimerAlertPref } from '../types/config'
 
@@ -27,11 +33,20 @@ export function useRespawnAlerts(): void {
   // Latest respawn alert preference, read live inside the WS handler so a
   // Settings change takes effect without remounting the hook.
   const prefRef = useRef<TimerAlertPref | undefined>(undefined)
+  const muteRef = useRef(loadAlertsEnabled(RESPAWN_ALERTS_KEY))
 
   useEffect(() => {
     getConfig()
       .then((c) => { prefRef.current = c.preferences?.respawn_alert })
       .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent): void => {
+      if (e.key === RESPAWN_ALERTS_KEY) muteRef.current = loadAlertsEnabled(RESPAWN_ALERTS_KEY)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
   const handleMessage = useCallback((msg: WsMessage) => {
@@ -58,7 +73,7 @@ export function useRespawnAlerts(): void {
       // they've left is noise. When the zone is unknown, don't suppress.
       const inCurrentZone = !state.current_zone || timer.zone === state.current_zone
 
-      if (enabled && pref && inCurrentZone && prev > threshold && timer.remaining_seconds <= threshold) {
+      if (enabled && pref && muteRef.current && inCurrentZone && prev > threshold && timer.remaining_seconds <= threshold) {
         if (pref.type === 'play_sound' && pref.sound_path) {
           playSound(pref.sound_path, pref.volume / 100)
         } else if (pref.type === 'text_to_speech' && pref.tts_template) {

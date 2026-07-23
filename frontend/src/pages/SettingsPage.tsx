@@ -2602,7 +2602,7 @@ export default function SettingsPage(): React.ReactElement {
               Timer bar appearance
             </p>
             <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-              Tune how timer rows look across the Buff, Detrimental, and Custom overlays. Per-trigger bar colors (set in the Triggers tab) still override the automatic color.
+              Tune how timer rows look across the Buff, Detrimental, and Custom overlays. Per-trigger bar colors (set in the Triggers tab) still override the automatic color. Each of those overlay windows also has its own bell icon in its header to mute per-trigger alerts without editing the triggers themselves.
             </p>
             <div className="flex items-center gap-2">
               <span className="text-xs w-20" style={{ color: 'var(--color-muted-foreground)' }}>Bar fill</span>
@@ -2708,7 +2708,8 @@ export default function SettingsPage(): React.ReactElement {
             <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
               Plays a sound or speaks as an NPC respawn timer is about to pop. Fires only
               for respawns in your current zone. Put <code className="font-mono">{'{npc}'}</code> in
-              the spoken text to insert the mob's name.
+              the spoken text to insert the mob's name. Can be muted from the bell icon in the
+              Respawn overlay window's header without changing this setting.
             </p>
             <TimerAlertPrefEditor
               value={withTimerAlertDefaults(config.preferences?.respawn_alert, 'respawn')}

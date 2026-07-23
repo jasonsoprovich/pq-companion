@@ -17,6 +17,9 @@ import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
+import OverlayMuteButton from '../components/OverlayMuteButton'
+import { useOverlayAlertMute } from '../hooks/useOverlayAlertMute'
+import { CUSTOM_TIMER_ALERTS_KEY } from '../lib/overlayAlertMute'
 import { getTimerState, removeTimer, startCustomTimer } from '../services/api'
 import type { ActiveTimer, TimerState } from '../types/timer'
 
@@ -194,6 +197,11 @@ export default function CustomTimerWindowPage(): React.ReactElement {
   const alertPref = useCustomTimerAlertPref()
   const [alertOverride, setAlertOverride] = useState<boolean | null>(null)
   const bellOn = alertOverride ?? (alertPref?.enabled ?? false)
+  // Header mute toggle for alerts already firing on active custom timers —
+  // distinct from the quick-add form's bell below, which only decides
+  // whether a *newly created* timer gets alerts armed. Shared across the
+  // default window and every named group window (all category 'custom').
+  const [alertsEnabled, toggleAlerts] = useOverlayAlertMute(CUSTOM_TIMER_ALERTS_KEY)
 
   useEffect(() => {
     getTimerState().then(setState).catch(() => {})
@@ -320,6 +328,7 @@ export default function CustomTimerWindowPage(): React.ReactElement {
           >
             <Trash2 size={11} />
           </button>
+          <OverlayMuteButton enabled={alertsEnabled} onToggle={toggleAlerts} />
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => {

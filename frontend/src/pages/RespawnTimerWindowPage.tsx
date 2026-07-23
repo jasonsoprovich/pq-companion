@@ -11,6 +11,9 @@ import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
+import OverlayMuteButton from '../components/OverlayMuteButton'
+import { useOverlayAlertMute } from '../hooks/useOverlayAlertMute'
+import { RESPAWN_ALERTS_KEY } from '../lib/overlayAlertMute'
 import { clearRespawns, getRespawnState } from '../services/api'
 import { RespawnRow } from '../components/overlays/respawnShared'
 import type { RespawnState } from '../types/respawn'
@@ -22,6 +25,7 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
     useOverlayLock('respawnTimer')
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<RespawnState | null>(null)
+  const [alertsEnabled, toggleAlerts] = useOverlayAlertMute(RESPAWN_ALERTS_KEY)
 
   useEffect(() => {
     getRespawnState().then(setState).catch(() => {})
@@ -105,6 +109,7 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
           >
             <Trash2 size={11} />
           </button>
+          <OverlayMuteButton enabled={alertsEnabled} onToggle={toggleAlerts} />
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeRespawnTimer()}
