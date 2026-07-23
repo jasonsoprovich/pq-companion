@@ -403,6 +403,7 @@ export default function SettingsPage(): React.ReactElement {
   const [restoreOverlaysOnLaunch, setRestoreOverlaysOnLaunch] = useState(false)
   const logPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const saveStateClearRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveStateShowRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     window.electron?.overlay?.autoOpenGet?.()
@@ -413,6 +414,7 @@ export default function SettingsPage(): React.ReactElement {
   useEffect(() => {
     return () => {
       if (saveStateClearRef.current) clearTimeout(saveStateClearRef.current)
+      if (saveStateShowRef.current) clearTimeout(saveStateShowRef.current)
     }
   }, [])
 
@@ -580,14 +582,22 @@ export default function SettingsPage(): React.ReactElement {
   // baseline (originalConfig) is updated.
   function persist(c: Config): void {
     if (saveStateClearRef.current) clearTimeout(saveStateClearRef.current)
-    setSaveState('saving')
+    if (saveStateShowRef.current) clearTimeout(saveStateShowRef.current)
     setSaveError(null)
+    // The autosave PUT is a localhost round trip and usually resolves in a
+    // few ms, so showing "Saving…" immediately just makes the indicator
+    // flicker between "Saving…" and "Saved" as the user types with natural
+    // pauses. Only surface "Saving…" if the request is still in flight after
+    // a short delay; fast saves jump straight to "Saved".
+    saveStateShowRef.current = setTimeout(() => setSaveState('saving'), 200)
     updateConfig(c)
       .then((saved) => {
+        if (saveStateShowRef.current) clearTimeout(saveStateShowRef.current)
         setOriginalConfig(saved)
         flashSaveState('saved')
       })
       .catch((err: Error) => {
+        if (saveStateShowRef.current) clearTimeout(saveStateShowRef.current)
         setSaveError(err.message)
         setSaveState('error')
       })
