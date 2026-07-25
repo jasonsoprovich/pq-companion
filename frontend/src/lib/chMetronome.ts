@@ -218,6 +218,36 @@ export function acceptNewAnchor(prev: AnchorResult | null, next: AnchorResult, d
   return gapMs >= delaySecs * 1000
 }
 
+// SelfCastEvent mirrors the backend's chchain.SelfCastEvent — broadcast when
+// the local player begins casting a recognized CH-chain heal, so the
+// metronome can show a confirmed "cast sent" instead of an assumed one.
+export interface SelfCastEvent {
+  spell_name: string
+  cast_at: string
+}
+
+// selfCastConfirmsAnchor reports whether a self-cast event should be treated
+// as confirming the currently active anchor's cycle (active = within
+// graceSecs of the watched slot's CH_CAST-length cast, matching each view's
+// own ANCHOR_GRACE_SECS so "confirmed" can never outlive "active").
+// Deliberately loose otherwise (any self-cast heal while the cycle is active
+// counts, not just one landing near the configured delay) — there's only
+// ever one active cycle at a time, and requiring a tighter match would risk
+// missing a genuine confirmation over a false negative, which is the wrong
+// tradeoff here (see SelfCastWatcher's doc comment on why this can only ever
+// confirm, never flag a miss).
+export function selfCastConfirmsAnchor(
+  anchor: AnchorResult | null,
+  castAtMs: number,
+  nowMs: number,
+  graceSecs: number,
+): boolean {
+  if (anchor == null || Number.isNaN(castAtMs)) return false
+  const elapsedSinceAnchor = castAtMs - anchor.anchorMs
+  const elapsedSinceCast = nowMs - castAtMs
+  return elapsedSinceAnchor >= 0 && elapsedSinceAnchor <= (CH_CAST + graceSecs) * 1000 && elapsedSinceCast >= 0
+}
+
 // seenStorageKey namespaces the persisted learned-number map per chain view
 // (main/ramp) so switching chains never mixes their numbering. Exported so
 // callers can recognize this key in a 'storage' event.

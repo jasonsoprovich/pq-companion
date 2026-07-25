@@ -669,6 +669,14 @@ func main() {
 		return cfgMgr.Get().CHChain
 	})
 
+	// CH Metronome self-cast watcher: broadcasts a confirmation event when the
+	// local player begins casting a recognized CH-chain heal, so the metronome
+	// can show a confirmed "cast sent" state instead of just assuming it once
+	// its countdown elapses. See internal/chchain/self_cast_watcher.go.
+	chMetronomeSelfCastWatcher := chchain.NewSelfCastWatcher(hub, func() config.CHChainSettings {
+		return cfgMgr.Get().CHChain
+	})
+
 	// Respawn (death) timer engine: starts a countdown when a mob is killed,
 	// using the spawn data's respawn time for the player's current zone.
 	respawnEngine := respawn.NewEngine(hub, database)
@@ -1376,6 +1384,7 @@ func main() {
 		wishlistWatcher.HandleLine(msg)
 		chChainMatcher.HandleLine(ts, msg)
 		chChainCastWatcher.HandleLine(ts, msg)
+		chMetronomeSelfCastWatcher.HandleLine(ts, msg)
 		rollTracker.HandleLine(ts, msg)
 		if keyringConsumer != nil {
 			keyringConsumer.HandleLine(ts, msg)

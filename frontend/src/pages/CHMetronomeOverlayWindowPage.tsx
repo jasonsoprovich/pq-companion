@@ -40,6 +40,8 @@ import {
   saveAlertsEnabled,
   saveSeen,
   seenStorageKey,
+  selfCastConfirmsAnchor,
+  type SelfCastEvent,
   watchPosition,
 } from '../lib/chMetronome'
 import type { ActiveTimer, TimerState } from '../types/timer'
@@ -247,6 +249,12 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   // map on initial mount; only an actual chain change should reset it.
   const mountedRef = useRef(false)
   const [, setTick] = useState(0)
+  // confirmedAnchorMsRef records which anchor (by its anchorMs identity) has
+  // a confirmed self-cast, so "CAST SENT" can show a checkmark instead of
+  // just assuming the cast happened. Compared by exact anchorMs value against
+  // the current anchor, so it naturally scopes to one cycle — a new anchor
+  // (or none) just stops matching, no explicit reset needed.
+  const confirmedAnchorMsRef = useRef<number | null>(null)
 
   // recomputeAnchor re-derives the local anchor from the watched cleric's most
   // recent callout (see lib/chMetronome.computeAnchorMs). It leaves the existing
@@ -316,6 +324,13 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
         const s = msg.data as TimerState
         timersRef.current = s.timers
         recomputeAnchor(s.timers)
+      } else if (msg.type === WSEvent.ChMetronomeSelfCast) {
+        const ev = msg.data as SelfCastEvent
+        const castAtMs = Date.parse(ev.cast_at)
+        if (selfCastConfirmsAnchor(anchorRef.current, castAtMs, Date.now(), ANCHOR_GRACE_SECS)) {
+          confirmedAnchorMsRef.current = (anchorRef.current as AnchorResult).anchorMs
+          setTick((t) => (t + 1) % 1_000_000)
+        }
       } else if (msg.type === WSEvent.ConfigUpdated) {
         getConfig()
           .then((c) => {
@@ -372,8 +387,14 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
       bigColor = castIn <= 1 ? '#fbbf24' : '#93c5fd'
       subText = `until your cast${predictedNote}`
     } else {
-      bigText = 'CAST SENT'
-      bigColor = 'rgba(255,255,255,0.4)'
+      // A confirmed self-cast (see lib/chMetronome.selfCastConfirmsAnchor)
+      // upgrades the assumed "CAST SENT" to a verified one — the local
+      // player's own "You begin casting <heal>." line, which never lies
+      // about whether the cast actually happened, unlike the pure elapsed-
+      // time guess this state is otherwise built on.
+      const confirmed = confirmedAnchorMsRef.current === anchor
+      bigText = confirmed ? 'CAST SENT ✓' : 'CAST SENT'
+      bigColor = confirmed ? '#22c55e' : 'rgba(255,255,255,0.4)'
       subText = `next: ${posLabel(watch, activeChain)} calls again`
     }
   }

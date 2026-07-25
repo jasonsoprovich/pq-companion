@@ -28,6 +28,10 @@ export const WSEvent = {
   // Broadcast by the zeal watcher when a character's quarmy export is
   // (re)parsed on /camp or /outputfile — carries fresh stats/AAs/tradeskills.
   ZealQuarmy: 'zeal:quarmy',
+  // Broadcast when the local player begins casting a recognized CH-chain
+  // heal spell — lets the CH Metronome show a confirmed "cast sent" state
+  // instead of assuming it once the countdown elapses.
+  ChMetronomeSelfCast: 'ch_metronome:self_cast',
 } as const
 
 export type WSEventType = (typeof WSEvent)[keyof typeof WSEvent]
