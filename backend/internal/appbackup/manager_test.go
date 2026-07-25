@@ -220,6 +220,60 @@ func TestApplyPreservesPriorUserDB(t *testing.T) {
 	}
 }
 
+// TestApplyImportMovesAsideStaleWALSidecars reproduces the "database disk
+// image is malformed" corruption users hit importing on a machine where the
+// old backend was force-killed (Windows taskkill) without checkpointing,
+// leaving a stale user.db-wal/-shm next to the live user.db. If those
+// sidecars are left in place, SQLite replays their frames — belonging to the
+// old database — against the freshly installed user.db on next open.
+func TestApplyImportMovesAsideStaleWALSidecars(t *testing.T) {
+	srcHome := t.TempDir()
+	srcDB := filepath.Join(srcHome, "user.db")
+	makeUserDB(t, srcDB)
+
+	srcMgr := New(srcDB, filepath.Join(srcHome, "backups"), srcHome, filepath.Join(srcHome, "config.yaml"), "v1")
+	bundle, _, err := srcMgr.Export(filepath.Join(t.TempDir(), "b"))
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	dstHome := t.TempDir()
+	dstDB := filepath.Join(dstHome, "user.db")
+	if err := os.MkdirAll(dstHome, 0o755); err != nil {
+		t.Fatalf("mkdir dst: %v", err)
+	}
+	// Pre-existing db plus stale WAL sidecars, as if the previous backend
+	// process was killed mid-session without a clean checkpoint.
+	mustWrite(t, dstDB, "preexisting-db-bytes")
+	mustWrite(t, dstDB+"-wal", "stale-wal-frames")
+	mustWrite(t, dstDB+"-shm", "stale-shm-index")
+
+	dstMgr := New(dstDB, filepath.Join(dstHome, "backups"), dstHome, filepath.Join(dstHome, "config.yaml"), "v1")
+	if _, err := dstMgr.StageImport(bundle); err != nil {
+		t.Fatalf("StageImport: %v", err)
+	}
+	if _, err := dstMgr.ApplyPendingImport(); err != nil {
+		t.Fatalf("ApplyPendingImport: %v", err)
+	}
+
+	// Stale sidecars must not remain at the live path — they don't belong to
+	// the freshly installed user.db.
+	if exists(dstDB + "-wal") {
+		t.Error("stale user.db-wal left at live path — will corrupt the imported db on open")
+	}
+	if exists(dstDB + "-shm") {
+		t.Error("stale user.db-shm left at live path — will corrupt the imported db on open")
+	}
+
+	// The imported db must open cleanly and contain the imported rows, not
+	// get reconciled against the old WAL frames.
+	got := readPayloads(t, dstDB)
+	want := []string{"one", "two"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("imported user.db payloads = %v, want %v", got, want)
+	}
+}
+
 // TestStageImportRefusesFutureFormat ensures import refuses bundles whose
 // format version exceeds what the running app supports.
 func TestStageImportRefusesFutureFormat(t *testing.T) {

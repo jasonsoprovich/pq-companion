@@ -293,6 +293,19 @@ func (m *Manager) ApplyPendingImport() (bool, error) {
 			return false, fmt.Errorf("set aside existing user.db: %w", err)
 		}
 	}
+	// Move any leftover -wal/-shm sidecars aside too. The previous process may
+	// have been force-killed (Electron's relaunch path taskkills the sidecar
+	// on Windows) without checkpointing, leaving WAL frames that belong to the
+	// database we just moved aside. If left behind, SQLite would try to
+	// replay them against the freshly installed user.db on next open,
+	// corrupting it ("database disk image is malformed") — same hazard
+	// ApplyPendingReset already guards against.
+	for _, suffix := range []string{"-wal", "-shm"} {
+		p := m.userDBPath + suffix
+		if _, err := os.Stat(p); err == nil {
+			_ = os.Rename(p, p+"."+ts+".preimport")
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(m.userDBPath), 0o755); err != nil {
 		if asideDB != "" {
 			_ = os.Rename(asideDB, m.userDBPath) // restore original
