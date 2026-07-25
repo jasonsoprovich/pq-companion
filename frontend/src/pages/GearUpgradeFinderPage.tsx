@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { Wand2, ChevronDown, ChevronUp, ChevronRight, Star, Loader2, AlertTriangle, Sliders, RotateCcw, Save, Check, LayoutGrid, List, Target, Search, Info } from 'lucide-react'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import { ItemIcon } from '../components/Icon'
-import { SourceNPCLink } from '../components/SourceNPCLink'
+import { SourceNPCLink, formatNPCName } from '../components/SourceNPCLink'
 import ItemDetailModal from '../components/ItemDetailModal'
 import SpellHoverCard from '../components/SpellHoverCard'
 import {
   listCharacters,
   getItem,
   getItemSources,
+  getItemQuests,
   getCharacterUpgrades,
   getCharacterUpgradesOverview,
   getCharacterUpgradeWeights,
@@ -26,9 +27,10 @@ import {
   type UpgradeCandidate,
   type UpgradesResponse,
   type UpgradesOverviewResponse,
+  type UpgradeOverviewSlot,
   type FocusOption,
 } from '../services/api'
-import type { Item, ItemSources } from '../types/item'
+import type { Item, ItemSources, ItemQuests } from '../types/item'
 import type { WishlistEntry } from '../types/wishlist'
 
 // Logical worn slots, keyed to the backend slot keys. `bucket` is the wishlist
@@ -186,10 +188,11 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
   const [overview, setOverview] = useState<UpgradesOverviewResponse | null>(null)
   const [overviewLoading, setOverviewLoading] = useState(false)
   // Overview column sorting is hoisted here so it survives OverviewView's
-  // unmount when the user switches to the by-slot tab and back.
+  // unmount when the user switches to the by-slot tab and back. Defaults to
+  // score descending so the highest-priority upgrades sort to the top.
   const [overviewSortCol, setOverviewSortCol] =
-    useState<'slot' | 'best' | 'score' | null>(null)
-  const [overviewSortDir, setOverviewSortDir] = useState<'asc' | 'desc'>('asc')
+    useState<'slot' | 'best' | 'score' | null>('score')
+  const [overviewSortDir, setOverviewSortDir] = useState<'asc' | 'desc'>('desc')
 
   // The viewed character's wishlist (all buckets), for the star toggles.
   const [wishlist, setWishlist] = useState<WishlistEntry[]>([])
@@ -851,6 +854,7 @@ function ResultRow({
 }): React.ReactElement {
   const [open, setOpen] = useState(false)
   const [sources, setSources] = useState<ItemSources | null>(null)
+  const [quests, setQuests] = useState<ItemQuests | null>(null)
   const [srcLoading, setSrcLoading] = useState(false)
 
   const toggle = (): void => {
@@ -858,9 +862,11 @@ function ResultRow({
     setOpen(next)
     if (next && !sources && !srcLoading) {
       setSrcLoading(true)
-      getItemSources(cand.id)
-        .then(setSources)
-        .catch(() => setSources({ drops: [], merchants: [], forage_zones: [], ground_spawns: [], tradeskills: [] }))
+      Promise.all([
+        getItemSources(cand.id).catch(() => ({ drops: [], merchants: [], forage_zones: [], ground_spawns: [], tradeskills: [] })),
+        getItemQuests(cand.id).catch(() => ({ walkthrough: [], used_in: [] })),
+      ])
+        .then(([s, q]) => { setSources(s); setQuests(q) })
         .finally(() => setSrcLoading(false))
     }
   }
@@ -926,7 +932,7 @@ function ResultRow({
                   <Loader2 size={11} className="animate-spin" /> Loading sources…
                 </span>
               ) : (
-                <SourcesPanel sources={sources} />
+                <SourcesPanel sources={sources} quests={quests} />
               )}
             </div>
           </td>
@@ -987,7 +993,13 @@ function DeltaChips({ cand }: { cand: UpgradeCandidate }): React.ReactElement {
   )
 }
 
-function SourcesPanel({ sources }: { sources: ItemSources | null }): React.ReactElement {
+function SourcesPanel({
+  sources, quests,
+}: {
+  sources: ItemSources | null
+  quests?: ItemQuests | null
+}): React.ReactElement {
+  const navigate = useNavigate()
   if (!sources) return <span style={{ color: 'var(--color-muted)' }}>No source data.</span>
   // The backend marshals empty source categories as JSON null (Go nil slices),
   // so each array can be null even when sources itself is set — default them.
@@ -996,11 +1008,12 @@ function SourcesPanel({ sources }: { sources: ItemSources | null }): React.React
   const forage_zones = sources.forage_zones ?? []
   const ground_spawns = sources.ground_spawns ?? []
   const tradeskills = sources.tradeskills ?? []
+  const questRewards = quests?.walkthrough ?? []
   const empty =
     drops.length === 0 && merchants.length === 0 && forage_zones.length === 0 &&
-    ground_spawns.length === 0 && tradeskills.length === 0
+    ground_spawns.length === 0 && tradeskills.length === 0 && questRewards.length === 0
   if (empty) {
-    return <span style={{ color: 'var(--color-muted)' }}>No known drop/vendor source (may be quest or unobtainable).</span>
+    return <span style={{ color: 'var(--color-muted)' }}>No known drop/vendor/quest source (may be unobtainable).</span>
   }
   return (
     <div className="space-y-1">
@@ -1008,6 +1021,25 @@ function SourcesPanel({ sources }: { sources: ItemSources | null }): React.React
         <div>
           <div className="mb-0.5 font-semibold" style={{ color: 'var(--color-muted-foreground)' }}>Drops</div>
           {drops.slice(0, 8).map((n) => <SourceNPCLink key={n.id} npc={n} showRate />)}
+        </div>
+      )}
+      {questRewards.length > 0 && (
+        <div>
+          <div className="mb-0.5 font-semibold" style={{ color: 'var(--color-muted-foreground)' }}>Quest Reward</div>
+          {questRewards.slice(0, 8).map((q, i) => (
+            <div key={i} className="flex w-full items-center justify-between gap-3 py-0.5 text-sm">
+              <span className="min-w-0 truncate" style={{ color: 'var(--color-foreground)' }}>
+                {formatNPCName(q.npc)}
+              </span>
+              {q.zone_name && (
+                <button onClick={() => navigate(`/zones?select=${q.zone_short_name}`)}
+                  className="shrink-0 text-xs underline decoration-dotted"
+                  style={{ color: 'var(--color-muted)' }}>
+                  {q.zone_name}
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       )}
       {merchants.length > 0 && (
@@ -1163,81 +1195,143 @@ function OverviewView({
           </tr>
         </thead>
         <tbody>
-          {sortedSlots.map((s) => {
-            const bucket = BUCKET_FOR_SLOT[s.slot]
-            const best = s.best
-            return (
-              <tr key={s.slot} className="border-b align-top" style={{ borderColor: 'var(--color-border)' }}>
-                <td className="px-2 py-1.5">
-                  <button onClick={() => onPickSlot(s.slot)} className="underline decoration-dotted"
-                    style={{ color: 'var(--color-primary)' }}>{s.slot_label}</button>
-                </td>
-                <td className="px-2 py-1.5">
-                  {(s.current_items ?? []).length === 0 ? (
-                    <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
-                      {overview.has_current_gear ? '(empty)' : '—'}
-                    </span>
-                  ) : (
-                    <div className="flex flex-col gap-0.5">
-                      {(s.current_items ?? []).map((ci) => (
-                        <button key={ci.id} onClick={() => onOpen(ci.id)}
-                          className="flex items-center gap-1 text-xs underline decoration-dotted"
-                          style={{ color: 'var(--color-muted-foreground)' }}>
-                          <ItemIcon id={ci.icon} name={ci.name} size={14} /> {ci.name}
-                          {ci.focus_name && ci.focus_effect > 0 && (
-                            <SpellHoverCard spellId={ci.focus_effect} effectsOnly clickHint={false}>
-                              <span className="rounded px-1 text-[9px]"
-                                style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }}>focus</span>
-                            </SpellHoverCard>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </td>
-                <td className="px-2 py-1.5">
-                  {best ? (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <WishStar on={isWishlisted(best.id, bucket)} onClick={() => onToggleWish(best.id, bucket)} />
-                      <button onClick={() => onOpen(best.id)}
-                        className="flex items-center gap-1.5 underline decoration-dotted"
-                        style={{ color: 'var(--color-primary)' }}>
-                        <ItemIcon id={best.icon} name={best.name} size={16} /> {best.name}
-                      </button>
-                      <EffectPills cand={best} />
-                      {best.replaces_secondary && (
-                        <span className="rounded px-1 text-[10px]"
-                          title={best.secondary_item_name
-                            ? `2H weapon — also replaces your offhand (${best.secondary_item_name}); its stats are already netted into this score`
-                            : '2H weapon — also replaces your offhand; its stats are already netted into this score'}
-                          style={{ backgroundColor: 'rgba(248,113,113,0.16)', color: '#f87171' }}>
-                          2H: also replaces offhand
-                        </span>
-                      )}
-                      {best.nodrop === 0 && (
-                        <span className="rounded px-1 text-[10px]"
-                          style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
-                          NO DROP
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
-                      {s.considered === 0 ? 'no usable items' : 'no upgrade'}
-                    </span>
-                  )}
-                </td>
-                <td className="px-2 py-1.5 text-right font-mono text-xs"
-                  style={{ color: best && s.slot !== 'ammo' ? '#22c55e' : 'var(--color-muted)' }}>
-                  {s.slot === 'ammo' ? (
-                    <span title={AMMO_NO_STATS_NOTE}>—</span>
-                  ) : best ? `+${best.score.toFixed(0)}` : ''}
-                </td>
-              </tr>
-            )
-          })}
+          {sortedSlots.map((s) => (
+            <OverviewRow key={s.slot} s={s} hasCurrentGear={overview.has_current_gear}
+              onOpen={onOpen} onPickSlot={onPickSlot} isWishlisted={isWishlisted} onToggleWish={onToggleWish} />
+          ))}
         </tbody>
       </table>
     </div>
+  )
+}
+
+// OverviewRow is one slot's line in the all-slots overview. Mirrors ResultRow's
+// expand-to-load-sources pattern: a chevron reveals the best upgrade's
+// drop/vendor/forage/tradeskill sources inline, fetched lazily on first
+// expand rather than up front for every slot.
+function OverviewRow({
+  s, hasCurrentGear, onOpen, onPickSlot, isWishlisted, onToggleWish,
+}: {
+  s: UpgradeOverviewSlot
+  hasCurrentGear: boolean
+  onOpen: (id: number) => void
+  onPickSlot: (key: string) => void
+  isWishlisted: (id: number, bucket: string) => boolean
+  onToggleWish: (id: number, bucket: string) => void
+}): React.ReactElement {
+  const bucket = BUCKET_FOR_SLOT[s.slot]
+  const best = s.best
+  const [open, setOpen] = useState(false)
+  const [sources, setSources] = useState<ItemSources | null>(null)
+  const [quests, setQuests] = useState<ItemQuests | null>(null)
+  const [srcLoading, setSrcLoading] = useState(false)
+
+  const toggle = (): void => {
+    if (!best) return
+    const next = !open
+    setOpen(next)
+    if (next && !sources && !srcLoading) {
+      setSrcLoading(true)
+      Promise.all([
+        getItemSources(best.id).catch(() => ({ drops: [], merchants: [], forage_zones: [], ground_spawns: [], tradeskills: [] })),
+        getItemQuests(best.id).catch(() => ({ walkthrough: [], used_in: [] })),
+      ])
+        .then(([s2, q]) => { setSources(s2); setQuests(q) })
+        .finally(() => setSrcLoading(false))
+    }
+  }
+
+  return (
+    <>
+      <tr className="border-b align-top" style={{ borderColor: 'var(--color-border)' }}>
+        <td className="px-2 py-1.5">
+          <div className="flex items-center gap-1">
+            <button onClick={toggle} disabled={!best}
+              style={{ color: 'var(--color-muted)', visibility: best ? 'visible' : 'hidden' }}>
+              {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            </button>
+            <button onClick={() => onPickSlot(s.slot)} className="underline decoration-dotted"
+              style={{ color: 'var(--color-primary)' }}>{s.slot_label}</button>
+          </div>
+        </td>
+        <td className="px-2 py-1.5">
+          {(s.current_items ?? []).length === 0 ? (
+            <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
+              {hasCurrentGear ? '(empty)' : '—'}
+            </span>
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              {(s.current_items ?? []).map((ci) => (
+                <button key={ci.id} onClick={() => onOpen(ci.id)}
+                  className="flex items-center gap-1 text-xs underline decoration-dotted"
+                  style={{ color: 'var(--color-muted-foreground)' }}>
+                  <ItemIcon id={ci.icon} name={ci.name} size={14} /> {ci.name}
+                  {ci.focus_name && ci.focus_effect > 0 && (
+                    <SpellHoverCard spellId={ci.focus_effect} effectsOnly clickHint={false}>
+                      <span className="rounded px-1 text-[9px]"
+                        style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }}>focus</span>
+                    </SpellHoverCard>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </td>
+        <td className="px-2 py-1.5">
+          {best ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <WishStar on={isWishlisted(best.id, bucket)} onClick={() => onToggleWish(best.id, bucket)} />
+              <button onClick={() => onOpen(best.id)}
+                className="flex items-center gap-1.5 underline decoration-dotted"
+                style={{ color: 'var(--color-primary)' }}>
+                <ItemIcon id={best.icon} name={best.name} size={16} /> {best.name}
+              </button>
+              <EffectPills cand={best} />
+              {best.replaces_secondary && (
+                <span className="rounded px-1 text-[10px]"
+                  title={best.secondary_item_name
+                    ? `2H weapon — also replaces your offhand (${best.secondary_item_name}); its stats are already netted into this score`
+                    : '2H weapon — also replaces your offhand; its stats are already netted into this score'}
+                  style={{ backgroundColor: 'rgba(248,113,113,0.16)', color: '#f87171' }}>
+                  2H: also replaces offhand
+                </span>
+              )}
+              {best.nodrop === 0 && (
+                <span className="rounded px-1 text-[10px]"
+                  style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
+                  NO DROP
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
+              {s.considered === 0 ? 'no usable items' : 'no upgrade'}
+            </span>
+          )}
+        </td>
+        <td className="px-2 py-1.5 text-right font-mono text-xs"
+          style={{ color: best && s.slot !== 'ammo' ? '#22c55e' : 'var(--color-muted)' }}>
+          {s.slot === 'ammo' ? (
+            <span title={AMMO_NO_STATS_NOTE}>—</span>
+          ) : best ? `+${best.score.toFixed(0)}` : ''}
+        </td>
+      </tr>
+      {open && best && (
+        <tr style={{ borderColor: 'var(--color-border)' }}>
+          <td />
+          <td colSpan={3} className="px-2 pb-2">
+            <div className="rounded p-2 text-xs" style={{ backgroundColor: 'var(--color-surface-2)' }}>
+              {srcLoading ? (
+                <span className="flex items-center gap-1" style={{ color: 'var(--color-muted)' }}>
+                  <Loader2 size={11} className="animate-spin" /> Loading sources…
+                </span>
+              ) : (
+                <SourcesPanel sources={sources} quests={quests} />
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
