@@ -187,13 +187,32 @@ a future data source fix this?" column against the new capabilities.
   cast_watcher.go`) confirms a chain callout by watching for its *caster* to
   actually start a cast, not for the heal to land. When a caller's "begins to
   cast a spell." bystander line (or "You begin casting …" for the local
-  player) arrives within ~10s of their callout, `Matcher.TargetForCaster`
-  resolves it back to that exact callout's target and the timer is confirmed;
-  if it never arrives, the bar flags red. This DOES carry caster identity —
+  player) arrives, `Matcher.TargetForCaster` resolves it back to that exact
+  callout's target and the timer is confirmed. If nothing arrives within
+  `chChainMissCheckDelay` (4s — tightened from waiting the full 10s cast
+  window after user feedback that anything past ~4s post-callout is too late
+  to act on), the bar flags red early as a display hint; a late confirmation
+  before the timer's real 10s expiry still clears the flag and the row
+  finishes its normal count to landing. This DOES carry caster identity —
   unlike the heal-landed design tried first, which is why it was replaced —
   and it's class-agnostic (never inspects which spell was cast, so Cleric
   Complete Healing and Druid Tunare's/Karana's Renewal are both covered by
   the same mechanism with no per-spell regex).
+  - The flag is gated on Settings > Spell Timers > CH Chain's "possible
+    miss" toggle (`config.CHChainSettings.PossibleMissEnabled`, plumbed to
+    the engine via `spelltimer.CHChainMissProvider`). Before this gate
+    existed, turning the toggle off silently made things *worse*: it only
+    stopped `CastWatcher` from confirming casts, so with nothing ever
+    confirming, `pruneExpired` flagged every single CH-chain timer a
+    possible miss instead of none.
+  - The CH Metronome (`lib/chMetronome.ts`) derives its personal countdown
+    anchor from a chain timer's `remaining_seconds`. The backend gives a
+    flagged timer a short grace extension so the CH Chain overlay has time to
+    render it red before the row disappears — which pushes `remaining_seconds`
+    back up right after the flag fires. Before `anchorRemaining()` clamped
+    this to 0 for a `possible_miss` timer, that bump read as a brand-new
+    cycle and re-triggered the countdown-start/CAST NOW alerts exactly when a
+    miss was detected.
   - The original design (kept here for history) watched for the heal
     actually *landing* on the target instead (`spells_new.cast_on_other`
     for Complete Healing, spell id 13, is a standard EQ bystander message

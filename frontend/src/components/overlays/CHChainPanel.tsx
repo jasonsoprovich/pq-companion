@@ -102,12 +102,17 @@ function computeCadence(
 }
 
 function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean }): React.ReactElement {
-  const pct =
-    timer.duration_seconds > 0
-      ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
-      : 0
   const { position, text } = parseLabel(timer.spell_name)
   const missed = timer.possible_miss ?? false
+  // Once flagged, the backend gives the timer a short grace extension so this
+  // row has time to render red before disappearing (see
+  // spelltimer.Engine.pruneExpired) — that extension pushes remaining_seconds
+  // back up briefly. Pinning the bar to empty for a missed row avoids it
+  // visibly re-inflating right as it turns red.
+  const pct =
+    missed || timer.duration_seconds <= 0
+      ? 0
+      : Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
   // The bar is the 10s CH cast counting down to the heal landing, so a
   // near-empty bar means "heal incoming" — highlight green, not red.
   // possible_miss (this callout's target was never confirmed healed before

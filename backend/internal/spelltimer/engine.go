@@ -64,6 +64,15 @@ type OwnedItemsProvider func() []int
 // timer the moment it expires.
 type KeepExpiredProvider func() bool
 
+// CHChainMissProvider reports whether CH-chain possible-miss flagging should
+// run — mirrors chchain.CastWatcher's own gate (config.CHChainSettings
+// Enabled && PossibleMissEnabled). Without this the engine has no visibility
+// into that setting: with the cast watcher disabled, ConfirmHeal is never
+// called, so pruneExpired would flag every single CH-chain timer a possible
+// miss regardless of what the user configured. nil provider or true means
+// flagging runs (the default, matching the setting's own default-on).
+type CHChainMissProvider func() bool
+
 const (
 	scopeSelf     = "self"
 	scopeCastByMe = "cast_by_me"
@@ -243,6 +252,7 @@ type Engine struct {
 	classFilterFn ClassFilterProvider
 	modeFn        ModeProvider
 	keepExpiredFn KeepExpiredProvider
+	chChainMissFn CHChainMissProvider
 
 	mu     sync.Mutex
 	timers map[string]*ActiveTimer // keyed by timerKey(spell, target)
@@ -324,7 +334,8 @@ type Engine struct {
 // modeFn may be nil (engine behaves as if mode is "auto").
 // ownedItemsFn may be nil (no clicky-collision narrowing by inventory).
 // keepExpiredFn may be nil (expired timers are dropped on expiry).
-func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn ScopeProvider, classFilterFn ClassFilterProvider, modeFn ModeProvider, ownedItemsFn OwnedItemsProvider, keepExpiredFn KeepExpiredProvider) *Engine {
+// chChainMissFn may be nil (CH-chain possible-miss flagging runs unconditionally).
+func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn ScopeProvider, classFilterFn ClassFilterProvider, modeFn ModeProvider, ownedItemsFn OwnedItemsProvider, keepExpiredFn KeepExpiredProvider, chChainMissFn CHChainMissProvider) *Engine {
 	return &Engine{
 		hub:           hub,
 		db:            database,
@@ -334,6 +345,7 @@ func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn S
 		modeFn:        modeFn,
 		ownedItemsFn:  ownedItemsFn,
 		keepExpiredFn: keepExpiredFn,
+		chChainMissFn: chChainMissFn,
 		timers:        make(map[string]*ActiveTimer),
 		pendingArms:   make(map[string]*pendingArm),
 	}
@@ -1777,25 +1789,46 @@ func isCHChainCategory(c Category) bool {
 // before the row disappears.
 const chChainMissGrace = 4 * time.Second
 
+// chChainMissCheckDelay is how long a CH-chain callout's caster has to be
+// observed starting a cast (see chchain.CastWatcher) before the timer is
+// flagged PossibleMiss — independent of and much shorter than the full 10s
+// CH cast window (config.CHCastSecs). A cast-begin line normally follows the
+// callout within a second or two when it's going to happen at all, so
+// waiting the full cast time to say "possible miss" reports it far too late
+// to be actionable: by the time it would fire, the heal that needed a
+// backup has already needed one for several seconds. Flagging this early is
+// purely a display hint — ConfirmHeal still clears it (and the row still
+// runs to its normal expiry/landing) if a late confirmation arrives before
+// then, e.g. a resisted-and-recast heal.
+const chChainMissCheckDelay = 4 * time.Second
+
 // pruneExpired removes timers whose expiry time has passed. With the
 // keep-expired option on, a past-expiry timer is instead left in place so
 // snapshot() can surface it as an overdue count-up — until it has been overdue
 // longer than keepExpiredMaxOverdue, at which point it's dropped regardless.
 //
-// CH-chain timers get one extra step first: an unconfirmed one (no matching
-// ConfirmHeal call — see chchain.CastWatcher) is flagged PossibleMiss and
-// given a short grace extension instead of being dropped immediately, so a
-// fizzled/interrupted/skipped cast is visible on the overlay rather than
-// just quietly vanishing.
+// CH-chain timers get extra handling, gated on chChainMissFn (nil/true means
+// flagging runs — see CHChainMissProvider): an unconfirmed one (no matching
+// ConfirmHeal call — see chchain.CastWatcher) is flagged PossibleMiss early,
+// chChainMissCheckDelay after it started, well before its full expiry. If it
+// then reaches its own expiry still unconfirmed, it's given a short grace
+// extension instead of being dropped immediately, so a fizzled/interrupted/
+// skipped cast stays visible on the overlay for a moment rather than just
+// quietly vanishing.
 func (e *Engine) pruneExpired() {
 	now := time.Now()
 	keep := e.keepExpired()
+	missEnabled := e.chChainMissFn == nil || e.chChainMissFn()
 	e.mu.Lock()
 	for name, t := range e.timers {
+		if missEnabled && isCHChainCategory(t.Category) && !t.healConfirmed && !t.PossibleMiss &&
+			now.Sub(t.StartsAt) >= chChainMissCheckDelay {
+			t.PossibleMiss = true
+		}
 		if !now.After(t.ExpiresAt) {
 			continue
 		}
-		if isCHChainCategory(t.Category) && !t.healConfirmed && !t.missGraceExtended {
+		if missEnabled && isCHChainCategory(t.Category) && !t.healConfirmed && !t.missGraceExtended {
 			t.PossibleMiss = true
 			t.missGraceExtended = true
 			t.ExpiresAt = t.ExpiresAt.Add(chChainMissGrace)

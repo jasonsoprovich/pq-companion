@@ -648,6 +648,9 @@ func main() {
 		return ids
 	}, func() bool {
 		return cfgMgr.Get().SpellTimer.KeepExpiredTimers
+	}, func() bool {
+		s := cfgMgr.Get().CHChain
+		return s.Enabled && s.PossibleMissEnabled
 	})
 	go timerEngine.Start(context.Background())
 

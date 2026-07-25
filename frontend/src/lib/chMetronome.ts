@@ -115,6 +115,22 @@ function forwardDistance(from: number, to: number, chainSize: number): number {
   return d > 0 ? d : d + chainSize
 }
 
+// anchorRemaining returns the remaining_seconds value to derive an anchor
+// from, clamped to 0 once a timer is flagged possible_miss. The backend gives
+// a possible-miss CH-chain timer a several-second grace extension so the CH
+// Chain overlay has time to render it red before the row disappears (see
+// spelltimer.Engine.pruneExpired) — that extension pushes ExpiresAt (and so
+// remaining_seconds) forward again well after the real cast-start moment.
+// Deriving an anchor straight from remaining_seconds without this clamp would
+// make the anchor itself jump forward by the grace amount the instant a miss
+// is flagged, which the metronome would then read as a legitimate new cycle —
+// re-triggering the countdown-start/CAST NOW alerts right when a miss is
+// detected. Clamping to 0 keeps the anchor pinned to the timer's actual
+// cast-start instant regardless of any later display-only grace extension.
+function anchorRemaining(t: ActiveTimer): number {
+  return t.possible_miss ? 0 : t.remaining_seconds
+}
+
 // latestRealAnchor finds the freshest confirmed callout currently in the feed
 // — for ANY slot in the chain, not just the watched one — and its local-clock
 // cast-start time. This is the anchor computeAnchorMs extrapolates from when
@@ -135,7 +151,7 @@ function latestRealAnchor(
     if (Number.isNaN(startMs)) continue
     if (best && startMs <= best.startMs) continue
     const position = positionForNumber(seen, chainSize, num)
-    best = { position, anchorMs: nowMs - (CH_CAST - t.remaining_seconds) * 1000, startMs }
+    best = { position, anchorMs: nowMs - (CH_CAST - anchorRemaining(t)) * 1000, startMs }
   }
   return best ? { position: best.position, anchorMs: best.anchorMs } : null
 }
@@ -178,7 +194,7 @@ export function computeAnchorMs(
     if (parsePosition(t.spell_name) !== watchNum) continue
     if (!best || Date.parse(t.starts_at) > Date.parse(best.starts_at)) best = t
   }
-  if (best) return { anchorMs: nowMs - (CH_CAST - best.remaining_seconds) * 1000, predicted: false }
+  if (best) return { anchorMs: nowMs - (CH_CAST - anchorRemaining(best)) * 1000, predicted: false }
 
   const latest = latestRealAnchor(timers, category, seen, c.chainSize, nowMs)
   if (!latest || latest.position === watch) return null
