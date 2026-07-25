@@ -9,6 +9,16 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.17.9 — 2026-07-24
+
+Reliability fixes for CH Metronome, CH Chain, Gear Upgrade Finder, and App Backup import.
+
+### Fixes
+- CH Metronome now confirms "CAST SENT" from the player's own cast-begin log line instead of inferring it, so a slow or missed cast is no longer silently marked as sent.
+- CH Chain's possible-miss grace-period bump no longer re-triggers a CH Metronome alert it already fired.
+- Gear Upgrade Finder excludes an item that isn't actually obtainable, lists an inline source for each suggestion, and now defaults its results to sorting by score.
+- App Backup import no longer risks corrupting a restored user.db when a stale `.db-wal`/`.db-shm` file is present from a previous machine — it's moved aside before the swap.
+
 ## v0.17.8 — 2026-07-22
 
 Alert mute bells reach every overlay, a hardware-acceleration toggle for the black-screen overlay bug, and a more reliable CH Chain possible-miss detector.
