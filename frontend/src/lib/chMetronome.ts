@@ -128,6 +128,85 @@ function anchorRemaining(t: ActiveTimer): number {
   return Math.max(0, t.remaining_seconds)
 }
 
+// ── Chain scoping ───────────────────────────────────────────────────────────
+// A raid can run two CH chains at once on different tanks — a main tank chain
+// plus a ramp/off-tank chain. The Secondary Chain setting only separates them
+// when one uses letter markers, so a guild that calls numbers on both (the
+// common case) has every callout from both land in the same ch_chain feed.
+//
+// Measured over 18 minutes of a real two-chain raid — Hoogz, 5 clerics at a 4s
+// cadence, running alongside Hardstop, 2 healers at 10s:
+//   · the freshest callout in the feed belonged to the OTHER chain 51% of ticks
+//   · a same-numbered slot from the other chain was live 30% of the time, so
+//     even a direct watched-slot match could latch onto the wrong chain
+//   · the median gap across the merged feed read 3s against a true 4s cadence,
+//     a full second of error per slot of extrapolation distance
+//
+// So every measurement here has to be scoped to one chain first. "Mine" is the
+// chain the local player calls in: their own callouts are labelled "← You",
+// and the target on those names the tank to follow.
+const reOwnCallout = /←\s*You\s*$/
+
+function chainTargetKey(chain: ChainView): string {
+  return `chMetronome:chainTarget:${chain}`
+}
+
+// resolveChainTarget picks which tank's chain to follow and remembers it.
+//
+// The local player's own callout bar only lives for the 10s cast while a full
+// cycle runs longer, so their own row is absent from the feed for most of every
+// cycle — the answer has to persist between sightings rather than be recomputed
+// from scratch each tick. It's stored per chain view alongside the learned slot
+// numbers, which also keeps the dashboard panel and the popped-out window on
+// the same chain. A tank swap re-resolves it as soon as the player calls on the
+// new tank.
+function resolveChainTarget(timers: ActiveTimer[], category: string, chain: ChainView): string {
+  let remembered = ''
+  try {
+    remembered = localStorage.getItem(chainTargetKey(chain)) ?? ''
+  } catch {
+    /* noop */
+  }
+
+  let own: { target: string; startMs: number } | null = null
+  const liveCounts = new Map<string, number>()
+  for (const t of timers) {
+    if (t.category !== category || !t.target_name) continue
+    liveCounts.set(t.target_name, (liveCounts.get(t.target_name) ?? 0) + 1)
+    if (!reOwnCallout.test(t.spell_name)) continue
+    const startMs = Date.parse(t.starts_at)
+    if (Number.isNaN(startMs)) continue
+    if (!own || startMs > own.startMs) own = { target: t.target_name, startMs }
+  }
+
+  let resolved = own?.target ?? ''
+  if (!resolved && remembered && liveCounts.has(remembered)) {
+    resolved = remembered // still the live chain, just no own-callout right now
+  }
+  if (!resolved && liveCounts.size > 0) {
+    // No own callout on record yet (fresh pull, or the player is watching a
+    // chain they don't call in). Follow the busiest chain in the feed, which is
+    // the main tank chain in every real configuration seen.
+    let bestCount = -1
+    for (const [target, count] of liveCounts) {
+      if (count > bestCount) {
+        bestCount = count
+        resolved = target
+      }
+    }
+  }
+  if (!resolved) resolved = remembered
+
+  if (resolved && resolved !== remembered) {
+    try {
+      localStorage.setItem(chainTargetKey(chain), resolved)
+    } catch {
+      /* noop */
+    }
+  }
+  return resolved
+}
+
 // measureCadence derives the chain's live spacing from the median gap between
 // consecutive callout start times in the feed, so extrapolation follows the
 // raid actually speeding up or slowing down. Returns null with fewer than two
@@ -216,12 +295,18 @@ export function computeAnchorMs(
   nowMs: number,
 ): AnchorResult | null {
   const category = categoryFor(chain)
-  recordPositions(seen, timers, category, nowMs, learnWindowMs(c))
+  // Scope to one chain before measuring anything — a concurrent chain on
+  // another tank otherwise poisons the cadence, the learned slot numbers, and
+  // the choice of anchor alike (see resolveChainTarget).
+  const chainTarget = resolveChainTarget(timers, category, chain)
+  const scoped = chainTarget ? timers.filter((t) => t.target_name === chainTarget) : timers
+
+  recordPositions(seen, scoped, category, nowMs, learnWindowMs(c))
   const watch = watchPosition(c)
   const watchNum = watchNumberFor(seen, c, watch)
-  const cadenceSecs = measureCadence(timers, category) ?? c.delay
+  const cadenceSecs = measureCadence(scoped, category) ?? c.delay
   let best: ActiveTimer | null = null
-  for (const t of timers) {
+  for (const t of scoped) {
     if (t.category !== category) continue
     if (parsePosition(t.spell_name) !== watchNum) continue
     if (!best || Date.parse(t.starts_at) > Date.parse(best.starts_at)) best = t
@@ -230,7 +315,7 @@ export function computeAnchorMs(
     return { anchorMs: nowMs - (CH_CAST - anchorRemaining(best)) * 1000, predicted: false, cadenceSecs }
   }
 
-  const latest = latestRealAnchor(timers, category, seen, c.chainSize, nowMs)
+  const latest = latestRealAnchor(scoped, category, seen, c.chainSize, nowMs)
   if (!latest || latest.position === watch) return null
   const gap = forwardDistance(latest.position, watch, c.chainSize)
   return { anchorMs: latest.anchorMs + gap * cadenceSecs * 1000, predicted: true, cadenceSecs }
