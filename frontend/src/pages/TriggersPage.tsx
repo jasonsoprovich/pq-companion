@@ -72,6 +72,7 @@ import {
   getPackUpdates,
   listActionTemplates,
   exportTriggerPack,
+  exportTriggerCategory,
   listCharacters,
   listTriggerCategories,
   createTriggerCategory,
@@ -116,6 +117,22 @@ const CLASS_NAMES = [
 function formatTime(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+}
+
+// downloadTriggerPack saves a fetched TriggerPack as a local .json file.
+function downloadTriggerPack(pack: TriggerPack, filename: string): void {
+  const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// slugifyFilename turns a category name into a safe filename fragment.
+function slugifyFilename(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'category'
 }
 
 function Toggle({
@@ -1916,6 +1933,7 @@ interface CategorySectionProps {
   onCommitRename: () => void
   onCancelRename: () => void
   onDeleteCategory: (cat: TriggerCategory) => void
+  onExportCategory: (name: string) => void
   onTriggerDeleted: (id: string) => void
   onTriggerUpdated: (t: Trigger) => void
   onCategoriesChanged: () => void
@@ -1936,6 +1954,7 @@ function CategorySection({
   onCommitRename,
   onCancelRename,
   onDeleteCategory,
+  onExportCategory,
   onTriggerDeleted,
   onTriggerUpdated,
   onCategoriesChanged,
@@ -2089,6 +2108,17 @@ function CategorySection({
           )}
           {isCustom && !isRenaming && (
             <div className="flex items-center gap-1 shrink-0">
+              {group.items.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onExportCategory(packName)}
+                  className="p-0.5 rounded"
+                  title="Export category as a trigger pack"
+                  style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
+                >
+                  <Download size={12} />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onStartRename}
@@ -2350,15 +2380,7 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
 
   const handleExport = () => {
     exportTriggerPack()
-      .then((pack) => {
-        const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = 'pq-triggers.json'
-        a.click()
-        URL.revokeObjectURL(url)
-      })
+      .then((pack) => downloadTriggerPack(pack, 'pq-triggers.json'))
       .catch((err: Error) => setError(err.message))
   }
 
@@ -3159,6 +3181,12 @@ export default function TriggersPage(): React.ReactElement {
       .catch(() => {})
   }
 
+  const handleExportCategory = (name: string) => {
+    exportTriggerCategory(name)
+      .then((pack) => downloadTriggerPack(pack, `pq-triggers-${slugifyFilename(name)}.json`))
+      .catch((err: Error) => setError(err.message))
+  }
+
   // ── Drag-and-drop (dnd-kit) ──
   // A section keyed by packKey ('__uncategorized__' or a category name) accepts
   // the active trigger when it isn't already that trigger's category. Pack
@@ -3848,6 +3876,7 @@ export default function TriggersPage(): React.ReactElement {
                       onCommitRename={() => commitRenameCategory(group.packName)}
                       onCancelRename={cancelRenameCategory}
                       onDeleteCategory={(c) => setDeletingCategory(c)}
+                      onExportCategory={handleExportCategory}
                       onTriggerDeleted={handleDeleted}
                       onTriggerUpdated={handleUpdated}
                       onCategoriesChanged={reloadCategories}

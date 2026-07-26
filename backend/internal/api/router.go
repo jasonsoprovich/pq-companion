@@ -466,6 +466,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Post("/order", triggerH.reorderTriggers)
 			r.Put("/categories/{name}", triggerH.renameCategory)
 			r.Delete("/categories/{name}", triggerH.deleteCategory)
+			r.Get("/categories/{name}/export", triggerH.exportCategory)
 			r.Get("/timer-groups", triggerH.listTimerGroups)
 			r.Post("/timer-groups", triggerH.createTimerGroup)
 			// Static /timer-groups/order is registered before the {id} wildcard

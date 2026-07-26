@@ -387,6 +387,32 @@ func (s *Store) ListBySourcePack(sourcePack string) ([]*Trigger, error) {
 	return triggers, rows.Err()
 }
 
+// ListByCategory returns every trigger currently filed under the given
+// display category (pack_name), regardless of what pack it was installed
+// from.
+func (s *Store) ListByCategory(category string) ([]*Trigger, error) {
+	rows, err := s.db.Query(
+		`SELECT id, name, enabled, pattern, actions, pack_name, created_at,
+		        timer_type, timer_duration_secs, worn_off_pattern, spell_id,
+		        display_threshold_secs, characters, timer_alerts, exclude_patterns,
+		        extra_patterns, timer_duration_capture, timer_key_capture, timer_target_capture, source, pipe_condition, dedup_key, cooldown_secs, sort_order, source_pack, bar_color, refire_cooldown_secs, pack_key, pinned, custom_group_id
+		 FROM triggers WHERE pack_name = ? ORDER BY sort_order ASC, created_at ASC`, category,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list triggers for category %s: %w", category, err)
+	}
+	defer rows.Close()
+	var triggers []*Trigger
+	for rows.Next() {
+		t, err := scanTrigger(rows)
+		if err != nil {
+			return nil, err
+		}
+		triggers = append(triggers, t)
+	}
+	return triggers, rows.Err()
+}
+
 // backfillSourcePack stamps source_pack for built-in pack triggers created
 // before the column existed (empty source_pack but a built-in pack_name).
 // One-time, ledger-guarded: it must NOT re-run, or a user trigger later

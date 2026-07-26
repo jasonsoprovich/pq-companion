@@ -148,6 +148,47 @@ func TestListCategories_CountsAndFlags(t *testing.T) {
 	}
 }
 
+func TestListByCategory_FiltersAndOrders(t *testing.T) {
+	s := openTestStore(t)
+
+	if err := s.Insert(makeTrigger("a", "Raid Triggers")); err != nil {
+		t.Fatalf("Insert a: %v", err)
+	}
+	if err := s.Insert(makeTrigger("b", "Raid Triggers")); err != nil {
+		t.Fatalf("Insert b: %v", err)
+	}
+	if err := s.Insert(makeTrigger("other", "Other Category")); err != nil {
+		t.Fatalf("Insert other: %v", err)
+	}
+	if err := s.Insert(makeTrigger("u", "")); err != nil { // Uncategorized
+		t.Fatalf("Insert u: %v", err)
+	}
+
+	// Manually curated order should be preserved in the export.
+	if err := s.ReorderTriggers([]string{"b:Raid Triggers", "a:Raid Triggers"}); err != nil {
+		t.Fatalf("ReorderTriggers: %v", err)
+	}
+
+	got, err := s.ListByCategory("Raid Triggers")
+	if err != nil {
+		t.Fatalf("ListByCategory: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 triggers, got %d", len(got))
+	}
+	if got[0].Name != "b" || got[1].Name != "a" {
+		t.Fatalf("expected sort_order to be respected, got %q then %q", got[0].Name, got[1].Name)
+	}
+
+	empty, err := s.ListByCategory("Nonexistent")
+	if err != nil {
+		t.Fatalf("ListByCategory (missing): %v", err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("expected no triggers for a nonexistent category, got %d", len(empty))
+	}
+}
+
 func TestListCategories_BuiltinFlag(t *testing.T) {
 	s := openTestStore(t)
 	packs := AllPacks()

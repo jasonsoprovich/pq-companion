@@ -468,6 +468,32 @@ func (h *triggerHandler) exportPack(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, pack)
 }
 
+// exportCategory exports all triggers filed under one category as a JSON
+// trigger pack, so a curated category (e.g. "Raid Triggers") can be shared
+// and imported by others via the same Import wizard used for any other pack.
+func (h *triggerHandler) exportCategory(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	triggers, err := h.store.ListByCategory(name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if len(triggers) == 0 {
+		writeError(w, http.StatusNotFound, "category has no triggers")
+		return
+	}
+	plain := make([]trigger.Trigger, len(triggers))
+	for i, t := range triggers {
+		plain[i] = *t
+	}
+	pack := trigger.TriggerPack{
+		PackName:    name,
+		Description: "Exported from PQ Companion",
+		Triggers:    plain,
+	}
+	writeJSON(w, http.StatusOK, pack)
+}
+
 // importPreview detects the source app of an uploaded trigger file (PQ
 // Companion / GINA / EQNag / EQLogParser), parses it into a normalized preview,
 // and returns it WITHOUT persisting anything. The wizard reviews/selects from

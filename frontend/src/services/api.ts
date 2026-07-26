@@ -2580,6 +2580,12 @@ export function exportTriggerPack(): Promise<TriggerPack> {
   return get<TriggerPack>('/api/triggers/export')
 }
 
+// exportTriggerCategory exports one custom category as a JSON trigger pack,
+// suitable for sharing and re-importing via the standard Import wizard.
+export function exportTriggerCategory(name: string): Promise<TriggerPack> {
+  return get<TriggerPack>(`/api/triggers/categories/${encodeURIComponent(name)}/export`)
+}
+
 export interface TriggerTestOverlayRequest {
   test_id: string
   text: string
