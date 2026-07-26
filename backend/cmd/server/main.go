@@ -665,7 +665,7 @@ func main() {
 	// casting shortly after their callout, so the overlay doesn't flag it a
 	// possible miss. See internal/chchain/cast_watcher.go for why this
 	// watches the generic "begins to cast" line rather than the heal landing.
-	chChainCastWatcher := chchain.NewCastWatcher(timerEngine, chChainMatcher, func() config.CHChainSettings {
+	chChainCastWatcher := chchain.NewCastWatcher(chChainMatcher, func() config.CHChainSettings {
 		return cfgMgr.Get().CHChain
 	})
 

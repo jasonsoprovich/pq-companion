@@ -67,7 +67,7 @@ type KeepExpiredProvider func() bool
 // CHChainMissProvider reports whether CH-chain possible-miss flagging should
 // run — mirrors chchain.CastWatcher's own gate (config.CHChainSettings
 // Enabled && PossibleMissEnabled). Without this the engine has no visibility
-// into that setting: with the cast watcher disabled, ConfirmHeal is never
+// into that setting: with the cast watcher disabled, ConfirmCast is never
 // called, so pruneExpired would flag every single CH-chain timer a possible
 // miss regardless of what the user configured. nil provider or true means
 // flagging runs (the default, matching the setting's own default-on).
@@ -1784,9 +1784,10 @@ func isCHChainCategory(c Category) bool {
 	return c == CategoryCHChain || c == CategoryCHChain2
 }
 
-// chChainMissGrace is how much longer a CH-chain timer lingers, once flagged
-// PossibleMiss, so the overlay has time to actually show the red state
-// before the row disappears.
+// chChainMissGrace is how much longer a CH-chain timer lingers past its
+// expiry, once flagged PossibleMiss, so the overlay has time to actually show
+// the red state before the row disappears. Applied via missGraceUntil rather
+// than by moving ExpiresAt, so the countdown itself is untouched.
 const chChainMissGrace = 4 * time.Second
 
 // chChainMissCheckDelay is how long a CH-chain callout's caster has to be
@@ -1797,7 +1798,7 @@ const chChainMissGrace = 4 * time.Second
 // waiting the full cast time to say "possible miss" reports it far too late
 // to be actionable: by the time it would fire, the heal that needed a
 // backup has already needed one for several seconds. Flagging this early is
-// purely a display hint — ConfirmHeal still clears it (and the row still
+// purely a display hint — ConfirmCast still clears it (and the row still
 // runs to its normal expiry/landing) if a late confirmation arrives before
 // then, e.g. a resisted-and-recast heal.
 const chChainMissCheckDelay = 4 * time.Second
@@ -1809,29 +1810,42 @@ const chChainMissCheckDelay = 4 * time.Second
 //
 // CH-chain timers get extra handling, gated on chChainMissFn (nil/true means
 // flagging runs — see CHChainMissProvider): an unconfirmed one (no matching
-// ConfirmHeal call — see chchain.CastWatcher) is flagged PossibleMiss early,
+// ConfirmCast call — see chchain.CastWatcher) is flagged PossibleMiss early,
 // chChainMissCheckDelay after it started, well before its full expiry. If it
-// then reaches its own expiry still unconfirmed, it's given a short grace
-// extension instead of being dropped immediately, so a fizzled/interrupted/
-// skipped cast stays visible on the overlay for a moment rather than just
-// quietly vanishing.
+// reaches its expiry still unconfirmed it lingers for chChainMissGrace via
+// missGraceUntil instead of being dropped immediately, so a fizzled/
+// interrupted/skipped cast stays visible on the overlay for a moment rather
+// than just quietly vanishing. The grace never touches ExpiresAt, so the row's
+// countdown still runs cleanly down to zero and stays there.
 func (e *Engine) pruneExpired() {
 	now := time.Now()
 	keep := e.keepExpired()
 	missEnabled := e.chChainMissFn == nil || e.chChainMissFn()
 	e.mu.Lock()
 	for name, t := range e.timers {
-		if missEnabled && isCHChainCategory(t.Category) && !t.healConfirmed && !t.PossibleMiss &&
+		if missEnabled && isCHChainCategory(t.Category) && !t.castConfirmed && !t.PossibleMiss &&
 			now.Sub(t.StartsAt) >= chChainMissCheckDelay {
 			t.PossibleMiss = true
 		}
 		if !now.After(t.ExpiresAt) {
 			continue
 		}
-		if missEnabled && isCHChainCategory(t.Category) && !t.healConfirmed && !t.missGraceExtended {
-			t.PossibleMiss = true
-			t.missGraceExtended = true
-			t.ExpiresAt = t.ExpiresAt.Add(chChainMissGrace)
+		if isCHChainCategory(t.Category) {
+			// A chain callout is a one-shot event, not a buff you might want
+			// an overdue reminder for, so keep-expired never applies to it —
+			// stale rows would pile up in the CH Chain overlay and skew every
+			// measurement the metronome derives from the feed (live cadence,
+			// learned chain numbers, freshest-callout anchor). It only ever
+			// lingers for the short possible-miss grace below.
+			if t.PossibleMiss {
+				if t.missGraceUntil.IsZero() {
+					t.missGraceUntil = t.ExpiresAt.Add(chChainMissGrace)
+				}
+				if !now.After(t.missGraceUntil) {
+					continue
+				}
+			}
+			delete(e.timers, name)
 			continue
 		}
 		if keep && now.Sub(t.ExpiresAt) <= keepExpiredMaxOverdue {
@@ -1842,36 +1856,36 @@ func (e *Engine) pruneExpired() {
 	e.mu.Unlock()
 }
 
-// ConfirmHeal marks the oldest still-open, unconfirmed CH-chain timer whose
-// target is targetName as confirmed cast, so pruneExpired won't flag it a
-// possible miss. Called by chchain.CastWatcher when the caster of that
-// timer's chain callout is observed starting a cast shortly after — targeted
-// via chchain.Matcher.TargetForCaster, which is why per-target FIFO (rather
-// than caster identity) is only a fallback for the rare case two casters call
-// the same target back to back within the correlation window.
+// ConfirmCast marks the CH-chain timer identified by (name, targetName) as
+// confirmed cast, so pruneExpired won't flag it a possible miss. Called via
+// chchain.Matcher.NoteCastBegin when the caster of that timer's chain callout
+// is observed starting a cast around the same moment.
 //
-// Also clears PossibleMiss if it was already set: a confirmation that arrives
-// during pruneExpired's grace-period extension (e.g. a delayed retry after a
-// resist) should still turn a red bar back to normal rather than leaving it
-// stuck red until the grace period runs out.
-func (e *Engine) ConfirmHeal(targetName string) {
-	if targetName == "" {
+// The name is the matcher's full callout label ("#2  Larzek  ← Eruna"), which
+// embeds the chain position AND the caster; together with the target it names
+// exactly one callout. Addressing the timer this way rather than by target is
+// the whole point: every cleric in a CH chain heals the SAME tank, so a
+// target-keyed lookup cannot tell whose cast just started. The previous
+// per-target FIFO therefore attributed each cast-begin to whichever callout on
+// that tank happened to be oldest — usually a different cleric's, three slots
+// back — which flagged healers who cast perfectly and then un-flagged them a
+// few seconds later when a later cast drifted onto their row.
+//
+// Also clears PossibleMiss if it was already set, so a genuinely late
+// confirmation (a resisted-and-recast heal) turns a red bar back to normal.
+func (e *Engine) ConfirmCast(name, targetName string) {
+	if name == "" {
 		return
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	var oldest *ActiveTimer
 	for _, t := range e.timers {
-		if !isCHChainCategory(t.Category) || t.TargetName != targetName || t.healConfirmed {
+		if !isCHChainCategory(t.Category) || t.SpellName != name || t.TargetName != targetName {
 			continue
 		}
-		if oldest == nil || t.StartsAt.Before(oldest.StartsAt) {
-			oldest = t
-		}
-	}
-	if oldest != nil {
-		oldest.healConfirmed = true
-		oldest.PossibleMiss = false
+		t.castConfirmed = true
+		t.PossibleMiss = false
+		return
 	}
 }
 

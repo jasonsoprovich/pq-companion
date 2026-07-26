@@ -277,100 +277,151 @@ func TestStartExternal_CopiesDisplayThreshold(t *testing.T) {
 // down the list as unrelated (unpinned) timers count lower. Within each
 // group (pinned, then unpinned) the normal ascending-remaining-time order
 // still applies.
-// TestConfirmHeal_ClearsOldestUnconfirmedTimerForTarget checks the FIFO
-// correlation: when two CH-chain timers are open for the same target,
-// ConfirmHeal closes out the OLDER one first, matching the assumption that
-// heals land in the order they were cast (Complete Healing's cast time is
-// fixed and uniform across casters).
-func TestConfirmHeal_ClearsOldestUnconfirmedTimerForTarget(t *testing.T) {
+// TestConfirmCast_TargetsTheCallersOwnTimer is the regression guard for the
+// false-possible-miss storm: every cleric in a CH chain heals the SAME tank,
+// so confirmation must be addressed by the callout's full label (which embeds
+// the caster) and not by target. The previous per-target FIFO confirmed
+// whichever row on that tank was oldest, i.e. almost always a different
+// cleric's, which flagged healers who cast perfectly.
+func TestConfirmCast_TargetsTheCallersOwnTimer(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
 	e.StartExternal("#1  Tank  <- Alice", "ch_chain", 10, 0, now, nil, 0, "Tank", "", false, "")
 	e.StartExternal("#2  Tank  <- Bob", "ch_chain", 10, 0, now.Add(3*time.Second), nil, 0, "Tank", "", false, "")
 
-	e.ConfirmHeal("Tank")
+	// Bob casts. Alice's row is older and shares the target.
+	e.ConfirmCast("#2  Tank  <- Bob", "Tank")
 
-	older := e.timers[timerKey("#1  Tank  <- Alice", "Tank")]
-	newer := e.timers[timerKey("#2  Tank  <- Bob", "Tank")]
-	if older == nil || newer == nil {
-		t.Fatalf("expected both timers to still exist, got older=%v newer=%v", older, newer)
+	alice := e.timers[timerKey("#1  Tank  <- Alice", "Tank")]
+	bob := e.timers[timerKey("#2  Tank  <- Bob", "Tank")]
+	if alice == nil || bob == nil {
+		t.Fatalf("expected both timers to still exist, got alice=%v bob=%v", alice, bob)
 	}
-	if !older.healConfirmed {
-		t.Error("older (Alice's) timer should be confirmed first")
+	if !bob.castConfirmed {
+		t.Error("Bob's own callout should be the one confirmed")
 	}
-	if newer.healConfirmed {
-		t.Error("newer (Bob's) timer should still be unconfirmed")
-	}
-
-	// A second ConfirmHeal for the same target now closes out the newer one.
-	e.ConfirmHeal("Tank")
-	if !newer.healConfirmed {
-		t.Error("second ConfirmHeal should confirm the remaining open timer")
+	if alice.castConfirmed {
+		t.Error("Alice's callout must not be confirmed by Bob's cast")
 	}
 }
 
-// TestConfirmHeal_IgnoresOtherTargetsAndCategories guards the cross-chain
-// isolation the target-name key is meant to provide: a heal landing on a
-// DIFFERENT target (e.g. a secondary/ramp chain's own tank, or an off-chain
-// patch heal on some other raid member) must never confirm this target's
-// timer, and non-CH-chain categories are untouched.
-func TestConfirmHeal_IgnoresOtherTargetsAndCategories(t *testing.T) {
+// TestConfirmCast_IgnoresUnknownAndOtherCategories keeps confirmation from
+// leaking outside the addressed CH-chain row: an unknown label, a mismatched
+// target, and a non-CH-chain category must all be no-ops.
+func TestConfirmCast_IgnoresUnknownAndOtherCategories(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
 	e.StartExternal("#1  MainTank  <- Alice", "ch_chain", 10, 0, now, nil, 0, "MainTank", "", false, "")
 	e.StartExternal("Some Buff", "buff", 10, 0, now, nil, 0, "MainTank", "", false, "")
 
-	e.ConfirmHeal("SecondaryTank") // no timer for this target at all
-	e.ConfirmHeal("")              // empty target must be a no-op
+	e.ConfirmCast("#9  MainTank  <- Nobody", "MainTank") // no such callout
+	e.ConfirmCast("#1  MainTank  <- Alice", "OtherTank") // right label, wrong target
+	e.ConfirmCast("", "MainTank")                        // empty label is a no-op
+	e.ConfirmCast("Some Buff", "MainTank")               // not a CH-chain category
 
-	chTimer := e.timers[timerKey("#1  MainTank  <- Alice", "MainTank")]
-	buffTimer := e.timers[timerKey("Some Buff", "MainTank")]
-	if chTimer.healConfirmed {
-		t.Error("ch_chain timer for MainTank should not be confirmed by an unrelated target")
+	if e.timers[timerKey("#1  MainTank  <- Alice", "MainTank")].castConfirmed {
+		t.Error("ch_chain timer confirmed by a non-matching ConfirmCast")
 	}
-	if buffTimer.healConfirmed {
-		t.Error("non-CH-chain category timer must never be touched by ConfirmHeal")
+	if e.timers[timerKey("Some Buff", "MainTank")].castConfirmed {
+		t.Error("non-CH-chain category timer must never be touched by ConfirmCast")
 	}
 }
 
-// TestPruneExpired_FlagsUnconfirmedCHChainTimerAsPossibleMiss is the core of
-// the possible-miss feature: an expired CH-chain timer that was never
-// confirmed via ConfirmHeal gets PossibleMiss set and a short grace
-// extension instead of being silently dropped, so the overlay has time to
-// render it red. A confirmed timer is dropped normally with no flag.
-func TestPruneExpired_FlagsUnconfirmedCHChainTimerAsPossibleMiss(t *testing.T) {
+// TestConfirmCast_ClearsAnAlreadySetMissFlag covers a late confirmation (a
+// resisted-and-recast heal): the row must go back to normal rather than stay
+// stuck red for the rest of its grace window.
+func TestConfirmCast_ClearsAnAlreadySetMissFlag(t *testing.T) {
 	e := newTestEngine()
-	// Both just barely past their 10s expiry — mirrors the real 1s prune
-	// ticker, which never lets a timer sit expired-but-unpruned for long.
-	// Bob started 100ms after Alice, so both are expired but Alice is older.
-	alice := time.Now().Add(-10*time.Second - 200*time.Millisecond)
-	bob := alice.Add(100 * time.Millisecond)
-	e.StartExternal("#1  Tank  <- Alice", "ch_chain", 10, 0, alice, nil, 0, "Tank", "", false, "")
-	e.StartExternal("#2  Tank  <- Bob", "ch_chain", 10, 0, bob, nil, 0, "Tank", "", false, "")
-	e.ConfirmHeal("Tank") // confirms Alice's (the older) timer only
+	e.StartExternal("#1  Tank  <- Alice", "ch_chain", 10, 0,
+		time.Now().Add(-5*time.Second), nil, 0, "Tank", "", false, "")
+
+	e.pruneExpired() // 5s in with no confirmation → flagged
+	tm := e.timers[timerKey("#1  Tank  <- Alice", "Tank")]
+	if !tm.PossibleMiss {
+		t.Fatal("expected an unconfirmed timer past the check delay to be flagged")
+	}
+
+	e.ConfirmCast("#1  Tank  <- Alice", "Tank")
+	if tm.PossibleMiss || !tm.castConfirmed {
+		t.Errorf("late confirmation should clear the flag: miss=%v confirmed=%v",
+			tm.PossibleMiss, tm.castConfirmed)
+	}
+}
+
+// TestPruneExpired_FlagsUnconfirmedCHChainTimerEarly is the core of the
+// possible-miss feature: a CH-chain callout whose caster was never seen
+// starting a cast is flagged chChainMissCheckDelay in — well before the 10s
+// cast window ends, since a miss reported at the end is far too late to act
+// on. A confirmed callout is never flagged.
+func TestPruneExpired_FlagsUnconfirmedCHChainTimerEarly(t *testing.T) {
+	e := newTestEngine()
+	started := time.Now().Add(-chChainMissCheckDelay - 100*time.Millisecond)
+	e.StartExternal("#1  Tank  <- Alice", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "")
+	e.StartExternal("#2  Tank  <- Bob", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "")
+	e.ConfirmCast("#1  Tank  <- Alice", "Tank")
+
+	e.pruneExpired()
+
+	if got := e.timers[timerKey("#1  Tank  <- Alice", "Tank")]; got.PossibleMiss {
+		t.Error("a confirmed callout must never be flagged PossibleMiss")
+	}
+	missed := e.timers[timerKey("#2  Tank  <- Bob", "Tank")]
+	if !missed.PossibleMiss {
+		t.Error("unconfirmed CH-chain timer should be flagged PossibleMiss")
+	}
+	// The flag is display-only: it must not disturb the countdown, which the
+	// CH Chain bar renders and the metronome derives its anchor from.
+	if !missed.ExpiresAt.Equal(started.Add(10 * time.Second)) {
+		t.Errorf("PossibleMiss must not move ExpiresAt: got %v, want %v",
+			missed.ExpiresAt, started.Add(10*time.Second))
+	}
+}
+
+// TestPruneExpired_MissGraceKeepsRowWithoutMovingExpiry covers the linger
+// window that lets the overlay finish showing a red row. It must be applied
+// via missGraceUntil, never by extending ExpiresAt: pushing ExpiresAt forward
+// made RemainingSeconds climb back up, which re-inflated the overlay bar and
+// desynced the metronome anchor by the grace amount.
+func TestPruneExpired_MissGraceKeepsRowWithoutMovingExpiry(t *testing.T) {
+	e := newTestEngine()
+	started := time.Now().Add(-10*time.Second - 200*time.Millisecond)
+	e.StartExternal("#2  Tank  <- Bob", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "")
+	wantExpiry := started.Add(10 * time.Second)
 
 	e.pruneExpired()
 
 	missed := e.timers[timerKey("#2  Tank  <- Bob", "Tank")]
 	if missed == nil {
-		t.Fatal("unconfirmed timer should still exist during its grace window, not be dropped")
+		t.Fatal("flagged timer should linger through its grace window, not be dropped")
 	}
-	if !missed.PossibleMiss {
-		t.Error("unconfirmed CH-chain timer should be flagged PossibleMiss")
+	if !missed.ExpiresAt.Equal(wantExpiry) {
+		t.Errorf("grace must not move ExpiresAt: got %v, want %v", missed.ExpiresAt, wantExpiry)
 	}
-	if !missed.ExpiresAt.After(time.Now()) {
-		t.Error("PossibleMiss timer should get a grace extension past its original expiry")
-	}
-
-	if confirmed := e.timers[timerKey("#1  Tank  <- Alice", "Tank")]; confirmed != nil {
-		t.Errorf("confirmed timer should be dropped on the same prune pass, still present: %+v", confirmed)
+	if missed.missGraceUntil.IsZero() {
+		t.Error("expected a missGraceUntil deadline to be set")
 	}
 
-	// A second prune pass, once the grace window has also elapsed, drops it.
-	missed.ExpiresAt = time.Now().Add(-1 * time.Second)
+	// Once the grace deadline passes, the row is dropped.
+	missed.missGraceUntil = time.Now().Add(-time.Second)
 	e.pruneExpired()
 	if e.timers[timerKey("#2  Tank  <- Bob", "Tank")] != nil {
-		t.Error("PossibleMiss timer should be dropped once its grace window elapses too")
+		t.Error("PossibleMiss timer should be dropped once its grace window elapses")
+	}
+}
+
+// TestPruneExpired_ConfirmedCHChainTimerDropsOnTime guards that the grace
+// path is scoped to flagged rows only — a confirmed callout expires like any
+// other timer.
+func TestPruneExpired_ConfirmedCHChainTimerDropsOnTime(t *testing.T) {
+	e := newTestEngine()
+	e.StartExternal("#1  Tank  <- Alice", "ch_chain", 10, 0,
+		time.Now().Add(-10*time.Second-200*time.Millisecond), nil, 0, "Tank", "", false, "")
+	e.ConfirmCast("#1  Tank  <- Alice", "Tank")
+
+	e.pruneExpired()
+
+	if e.timers[timerKey("#1  Tank  <- Alice", "Tank")] != nil {
+		t.Error("a confirmed CH-chain timer should be dropped at expiry with no grace")
 	}
 }
 

@@ -7,17 +7,12 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 )
 
-// HealSink is the subset of the spell-timer engine CastWatcher needs. It
-// matches (*spelltimer.Engine).ConfirmHeal so the engine satisfies it
-// directly.
-type HealSink interface {
-	ConfirmHeal(targetName string)
-}
-
-// CasterLookup resolves a caster name back to the target of their most
-// recent chain callout. (*Matcher).TargetForCaster satisfies this directly.
-type CasterLookup interface {
-	TargetForCaster(caster string, now time.Time) (target string, ok bool)
+// CastObserver receives each observed cast-begin, keyed by caster, and owns
+// the correlation back to a chain callout. (*Matcher).NoteCastBegin satisfies
+// this directly — the matcher is where the callout bookkeeping lives, so
+// pairing happens there rather than being split across two packages.
+type CastObserver interface {
+	NoteCastBegin(caster string, ts time.Time)
 }
 
 // reBeginCastOther matches "<Name> begins to cast a spell." — the generic
@@ -38,10 +33,11 @@ var reBeginCastOther = regexp.MustCompile(`^([A-Z][a-z]{2,14}) begins to cast a 
 var reBeginCastSelf = regexp.MustCompile(`^You begin casting .+\.$`)
 
 // CastWatcher watches raw log lines for a caster starting to cast (their own
-// or a nearby bystander's) and confirms the matching CH-chain timer via
-// HealSink.ConfirmHeal, so Engine.pruneExpired won't flag it a possible miss.
-// Purely additive: it never creates, modifies, or removes a chain timer's
-// identity — only whether it gets flagged.
+// or a nearby bystander's) and reports the caster to a CastObserver, which
+// pairs it with that caster's chain callout and confirms the matching timer so
+// Engine.pruneExpired won't flag it a possible miss. Purely additive: it never
+// creates, modifies, or removes a chain timer's identity — only whether it
+// gets flagged.
 //
 // This supersedes an earlier design that correlated off the heal actually
 // landing on the target (a bystander line range-limited to the TARGET's
@@ -53,20 +49,19 @@ var reBeginCastSelf = regexp.MustCompile(`^You begin casting .+\.$`)
 // same watcher covers Cleric Complete Healing, Druid Tunare's/Karana's
 // Renewal, or anything else a chain macro casts, with no per-spell regex.
 type CastWatcher struct {
-	sink   HealSink
-	lookup CasterLookup
-	cfg    func() config.CHChainSettings
+	obs CastObserver
+	cfg func() config.CHChainSettings
 }
 
-// NewCastWatcher constructs a CastWatcher reading live settings via cfg,
-// resolving caster→target via lookup, and confirming heals through sink.
-func NewCastWatcher(sink HealSink, lookup CasterLookup, cfg func() config.CHChainSettings) *CastWatcher {
-	return &CastWatcher{sink: sink, lookup: lookup, cfg: cfg}
+// NewCastWatcher constructs a CastWatcher reading live settings via cfg and
+// reporting observed casts to obs.
+func NewCastWatcher(obs CastObserver, cfg func() config.CHChainSettings) *CastWatcher {
+	return &CastWatcher{obs: obs, cfg: cfg}
 }
 
 // HandleLine checks one raw log line against the watched cast-begin patterns
-// and, on a hit, resolves the caster to their most recent chain callout's
-// target and confirms it.
+// and, on a hit, reports the caster for correlation against their chain
+// callout.
 func (w *CastWatcher) HandleLine(ts time.Time, msg string) {
 	settings := w.cfg()
 	if !settings.Enabled || !settings.PossibleMissEnabled {
@@ -82,7 +77,5 @@ func (w *CastWatcher) HandleLine(ts time.Time, msg string) {
 		return
 	}
 
-	if target, ok := w.lookup.TargetForCaster(caster, ts); ok {
-		w.sink.ConfirmHeal(target)
-	}
+	w.obs.NoteCastBegin(caster, ts)
 }

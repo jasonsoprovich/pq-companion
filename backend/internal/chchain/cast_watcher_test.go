@@ -7,23 +7,18 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 )
 
-type fakeHealSink struct{ confirmed []string }
+// fakeObserver records the casters CastWatcher extracts from log lines. The
+// pairing of a caster back to a chain callout lives in Matcher (exercised in
+// matcher_test.go); this file only covers the line parsing and the settings
+// gates.
+type fakeObserver struct{ casters []string }
 
-func (f *fakeHealSink) ConfirmHeal(targetName string) {
-	f.confirmed = append(f.confirmed, targetName)
+func (f *fakeObserver) NoteCastBegin(caster string, _ time.Time) {
+	f.casters = append(f.casters, caster)
 }
 
-type fakeLookup struct {
-	target string
-	ok     bool
-}
-
-func (f fakeLookup) TargetForCaster(string, time.Time) (string, bool) {
-	return f.target, f.ok
-}
-
-func newCastWatcher(s HealSink, lookup CasterLookup, enabled, possibleMissEnabled bool) *CastWatcher {
-	return NewCastWatcher(s, lookup, func() config.CHChainSettings {
+func newCastWatcher(o CastObserver, enabled, possibleMissEnabled bool) *CastWatcher {
+	return NewCastWatcher(o, func() config.CHChainSettings {
 		return config.CHChainSettings{
 			Enabled:             enabled,
 			PossibleMissEnabled: possibleMissEnabled,
@@ -31,43 +26,34 @@ func newCastWatcher(s HealSink, lookup CasterLookup, enabled, possibleMissEnable
 	})
 }
 
-func TestCastWatcher_ConfirmsOnBystanderBeginCast(t *testing.T) {
-	s := &fakeHealSink{}
-	w := newCastWatcher(s, fakeLookup{target: "Krayziefoo", ok: true}, true, true)
+func TestCastWatcher_ReportsBystanderBeginCast(t *testing.T) {
+	o := &fakeObserver{}
+	w := newCastWatcher(o, true, true)
 
 	w.HandleLine(time.Unix(1, 0), "Soandso begins to cast a spell.")
-	if len(s.confirmed) != 1 || s.confirmed[0] != "Krayziefoo" {
-		t.Fatalf("confirmed = %v, want [Krayziefoo]", s.confirmed)
+	if len(o.casters) != 1 || o.casters[0] != "Soandso" {
+		t.Fatalf("casters = %v, want [Soandso]", o.casters)
 	}
 }
 
-func TestCastWatcher_ConfirmsOnOwnBeginCast(t *testing.T) {
-	s := &fakeHealSink{}
-	w := newCastWatcher(s, fakeLookup{target: "Krayziefoo", ok: true}, true, true)
+// TestCastWatcher_ReportsOwnBeginCastAsYou pins the caster name the local
+// player's own cast-begin line reports: Matcher records the player's own chain
+// calls under the literal caster "You" (the default pattern's second-person
+// branch), so the two must agree or the local healer's own row would never be
+// confirmed.
+func TestCastWatcher_ReportsOwnBeginCastAsYou(t *testing.T) {
+	o := &fakeObserver{}
+	w := newCastWatcher(o, true, true)
 
 	w.HandleLine(time.Unix(1, 0), "You begin casting Complete Healing.")
-	if len(s.confirmed) != 1 || s.confirmed[0] != "Krayziefoo" {
-		t.Fatalf("confirmed = %v, want [Krayziefoo]", s.confirmed)
-	}
-}
-
-// TestCastWatcher_NoLookupMatch guards the case where the caster began
-// casting something but has no recent chain callout on record (an unrelated
-// player casting nearby, or a callout that already fell outside the
-// correlation window) — must not confirm anything.
-func TestCastWatcher_NoLookupMatch(t *testing.T) {
-	s := &fakeHealSink{}
-	w := newCastWatcher(s, fakeLookup{ok: false}, true, true)
-
-	w.HandleLine(time.Unix(1, 0), "Soandso begins to cast a spell.")
-	if len(s.confirmed) != 0 {
-		t.Errorf("confirmed = %v, want none", s.confirmed)
+	if len(o.casters) != 1 || o.casters[0] != "You" {
+		t.Fatalf("casters = %v, want [You]", o.casters)
 	}
 }
 
 func TestCastWatcher_IgnoresUnrelatedLines(t *testing.T) {
-	s := &fakeHealSink{}
-	w := newCastWatcher(s, fakeLookup{target: "Krayziefoo", ok: true}, true, true)
+	o := &fakeObserver{}
+	w := newCastWatcher(o, true, true)
 
 	for _, line := range []string{
 		"Soandso begins casting a spell.",        // wrong verb form
@@ -77,24 +63,23 @@ func TestCastWatcher_IgnoresUnrelatedLines(t *testing.T) {
 	} {
 		w.HandleLine(time.Unix(1, 0), line)
 	}
-	if len(s.confirmed) != 0 {
-		t.Errorf("confirmed = %v, want none", s.confirmed)
+	if len(o.casters) != 0 {
+		t.Errorf("casters = %v, want none", o.casters)
 	}
 }
 
 func TestCastWatcher_DisabledOrMissDetectionOff(t *testing.T) {
 	line := "Soandso begins to cast a spell."
-	lookup := fakeLookup{target: "Krayziefoo", ok: true}
 
-	s := &fakeHealSink{}
-	newCastWatcher(s, lookup, false, true).HandleLine(time.Unix(1, 0), line)
-	if len(s.confirmed) != 0 {
-		t.Errorf("chain disabled: confirmed = %v, want none", s.confirmed)
+	o := &fakeObserver{}
+	newCastWatcher(o, false, true).HandleLine(time.Unix(1, 0), line)
+	if len(o.casters) != 0 {
+		t.Errorf("chain disabled: casters = %v, want none", o.casters)
 	}
 
-	s2 := &fakeHealSink{}
-	newCastWatcher(s2, lookup, true, false).HandleLine(time.Unix(1, 0), line)
-	if len(s2.confirmed) != 0 {
-		t.Errorf("possible-miss disabled: confirmed = %v, want none", s2.confirmed)
+	o2 := &fakeObserver{}
+	newCastWatcher(o2, true, false).HandleLine(time.Unix(1, 0), line)
+	if len(o2.casters) != 0 {
+		t.Errorf("possible-miss disabled: casters = %v, want none", o2.casters)
 	}
 }

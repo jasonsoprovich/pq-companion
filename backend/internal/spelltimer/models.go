@@ -127,22 +127,27 @@ type ActiveTimer struct {
 	IsCharm bool `json:"-"`
 
 	// PossibleMiss flags a CategoryCHChain / CategoryCHChain2 timer whose
-	// target was never confirmed healed (see Engine.ConfirmHeal) before its
-	// cast window elapsed — a likely fizzle, interrupt, or skipped cast. Set
-	// once by pruneExpired right before the timer would otherwise be
-	// dropped, with a short grace extension so the CH Chain overlay has time
-	// to render it red. Always false for every other category.
+	// caster was never observed starting a cast (see Engine.ConfirmCast)
+	// within chChainMissCheckDelay of the callout — a likely fizzle,
+	// interrupt, or skipped cast. Purely a display hint: it never changes the
+	// timer's countdown, only how the CH Chain overlay colors the row. Always
+	// false for every other category.
 	PossibleMiss bool `json:"possible_miss,omitempty"`
 
-	// healConfirmed marks a CH-chain timer whose caster was observed
-	// starting a cast shortly after the chain callout (Engine.ConfirmHeal,
-	// driven by chchain.CastWatcher), so pruneExpired won't flag it
-	// PossibleMiss. Internal-only.
-	healConfirmed bool `json:"-"`
+	// castConfirmed marks a CH-chain timer whose caster was observed
+	// starting a cast around the chain callout (Engine.ConfirmCast, driven by
+	// chchain.CastWatcher via Matcher.NoteCastBegin), so pruneExpired won't
+	// flag it PossibleMiss. Internal-only.
+	castConfirmed bool `json:"-"`
 
-	// missGraceExtended guards the possible-miss expiry extension in
-	// pruneExpired so it's only ever applied once per timer. Internal-only.
-	missGraceExtended bool `json:"-"`
+	// missGraceUntil holds a CH-chain timer in the feed a few seconds past
+	// its expiry so the overlay can finish showing a possible-miss row rather
+	// than having it vanish mid-flag. Deliberately separate from ExpiresAt:
+	// extending ExpiresAt itself would push RemainingSeconds back up, which
+	// made the overlay bar visibly re-inflate and — because the metronome
+	// derives its anchor from RemainingSeconds — desynced the metronome by
+	// the grace amount. Zero when no grace is pending. Internal-only.
+	missGraceUntil time.Time `json:"-"`
 }
 
 // TimerState is the full payload broadcast via WebSocket and returned by the

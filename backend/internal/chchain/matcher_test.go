@@ -2,6 +2,7 @@ package chchain
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,10 +16,17 @@ type capture struct {
 	target   string
 }
 
-type fakeSink struct{ calls []capture }
+type fakeSink struct {
+	calls     []capture
+	confirmed []capture
+}
 
 func (f *fakeSink) StartExternal(name, category string, dur, _ float64, _ time.Time, _ json.RawMessage, _ int, targetName, _ string, _ bool, _ string) {
 	f.calls = append(f.calls, capture{name, category, dur, targetName})
+}
+
+func (f *fakeSink) ConfirmCast(name, targetName string) {
+	f.confirmed = append(f.confirmed, capture{name: name, target: targetName})
 }
 
 func newMatcher(s Sink, enabled bool, pattern string, interval float64) *Matcher {
@@ -63,7 +71,7 @@ func TestMatcher_DefaultPattern(t *testing.T) {
 	}
 	// The captured target is also passed through as the timer's TargetName
 	// (not just embedded in the label) so CastWatcher can correlate a
-	// cast-begin line to this exact timer via Engine.ConfirmHeal.
+	// cast-begin line to this exact timer via Engine.ConfirmCast.
 	if c.target != "Winian" {
 		t.Errorf("target = %q, want %q", c.target, "Winian")
 	}
@@ -249,25 +257,113 @@ func TestMatcher_NumericPrimaryIgnoresLetters(t *testing.T) {
 	}
 }
 
-// TestMatcher_TargetForCaster covers the cast-begin correlation registry: a
-// caster's callout resolves to its target shortly after, but not once the
-// correlation window has elapsed (the next chain cycle should look like a
-// fresh, unconfirmed callout, not a stale match).
-func TestMatcher_TargetForCaster(t *testing.T) {
+// TestMatcher_ConfirmsOwnCallerNotAnotherClericOnSameTarget is the core
+// regression guard for the possible-miss feature. Every cleric in a CH chain
+// heals the SAME tank, so correlating a cast-begin line by target alone
+// attributes it to whichever callout on that tank is oldest — a different
+// cleric's. Confirmation must follow the CASTER.
+func TestMatcher_ConfirmsOwnCallerNotAnotherClericOnSameTarget(t *testing.T) {
+	s := &fakeSink{}
+	m := newMatcher(s, true, config.DefaultCHChainPattern, 6)
+
+	base := time.Unix(1000, 0)
+	m.HandleLine(base, "Bluecross tells the raid, '--- 001 --- CH Larzek'")
+	m.HandleLine(base.Add(3*time.Second), "Eruna tells the raid, '--- 002 --- CH Larzek'")
+
+	// Eruna casts. Bluecross's callout is older and shares the target, so the
+	// old per-target FIFO would have confirmed Bluecross's row instead.
+	m.NoteCastBegin("Eruna", base.Add(3*time.Second))
+
+	if len(s.confirmed) != 1 {
+		t.Fatalf("got %d confirmations, want 1: %+v", len(s.confirmed), s.confirmed)
+	}
+	got := s.confirmed[0]
+	if got.target != "Larzek" || !strings.Contains(got.name, "Eruna") {
+		t.Errorf("confirmed %+v, want Eruna's own callout on Larzek", got)
+	}
+	if strings.Contains(got.name, "Bluecross") {
+		t.Error("confirmed another cleric's callout on the same target")
+	}
+}
+
+// TestMatcher_ConfirmsCallerWhoseCastBeganFirst covers macros whose cast line
+// beats their chain shout into the log — ~8% of callouts in real raid logs.
+// Without the pending-cast side of the correlation those all flag as misses.
+func TestMatcher_ConfirmsCallerWhoseCastBeganFirst(t *testing.T) {
+	s := &fakeSink{}
+	m := newMatcher(s, true, config.DefaultCHChainPattern, 6)
+
+	base := time.Unix(1000, 0)
+	m.NoteCastBegin("Eruna", base) // cast-begin lands one second early
+	m.HandleLine(base.Add(time.Second), "Eruna tells the raid, '--- 002 --- CH Larzek'")
+
+	if len(s.confirmed) != 1 || !strings.Contains(s.confirmed[0].name, "Eruna") {
+		t.Fatalf("confirmed = %+v, want Eruna's callout confirmed by the earlier cast", s.confirmed)
+	}
+}
+
+// TestMatcher_StalePendingCastDoesNotConfirm keeps the early-cast path from
+// becoming a blanket amnesty: a cast seen long before a callout (an unrelated
+// spell last cycle) must not confirm it.
+func TestMatcher_StalePendingCastDoesNotConfirm(t *testing.T) {
+	s := &fakeSink{}
+	m := newMatcher(s, true, config.DefaultCHChainPattern, 6)
+
+	base := time.Unix(1000, 0)
+	m.NoteCastBegin("Eruna", base)
+	m.HandleLine(base.Add(earlyCastWindow+time.Second), "Eruna tells the raid, '--- 002 --- CH Larzek'")
+
+	if len(s.confirmed) != 0 {
+		t.Errorf("confirmed = %+v, want none (pending cast too old)", s.confirmed)
+	}
+}
+
+// TestMatcher_NoteCastBegin covers the ordinary path plus its two negative
+// cases: an unrelated caster, and a callout that has aged out of the window
+// (the next chain cycle must look like a fresh, unconfirmed callout).
+func TestMatcher_NoteCastBegin(t *testing.T) {
+	base := time.Unix(1000, 0)
+	const line = "Soandso tells the raid, '--- 001 --- CH Winian'"
+
+	s := &fakeSink{}
+	m := newMatcher(s, true, config.DefaultCHChainPattern, 6)
+	m.HandleLine(base, line)
+	m.NoteCastBegin("Soandso", base.Add(2*time.Second))
+	if len(s.confirmed) != 1 || s.confirmed[0].target != "Winian" {
+		t.Errorf("confirmed = %+v, want Winian confirmed", s.confirmed)
+	}
+
+	s2 := &fakeSink{}
+	m2 := newMatcher(s2, true, config.DefaultCHChainPattern, 6)
+	m2.HandleLine(base, line)
+	m2.NoteCastBegin("Nobody", base.Add(2*time.Second))
+	if len(s2.confirmed) != 0 {
+		t.Errorf("confirmed = %+v, want none (caster never called)", s2.confirmed)
+	}
+
+	s3 := &fakeSink{}
+	m3 := newMatcher(s3, true, config.DefaultCHChainPattern, 6)
+	m3.HandleLine(base, line)
+	m3.NoteCastBegin("Soandso", base.Add(recentCallWindow+time.Second))
+	if len(s3.confirmed) != 0 {
+		t.Errorf("confirmed = %+v, want none (callout aged out)", s3.confirmed)
+	}
+}
+
+// TestMatcher_ConfirmationIsOneShot stops a caster's later, unrelated cast
+// (a rez, a buff, a spot heal) from confirming a callout a second time — the
+// next cycle's callout must stand on its own evidence.
+func TestMatcher_ConfirmationIsOneShot(t *testing.T) {
 	s := &fakeSink{}
 	m := newMatcher(s, true, config.DefaultCHChainPattern, 6)
 
 	base := time.Unix(1000, 0)
 	m.HandleLine(base, "Soandso tells the raid, '--- 001 --- CH Winian'")
+	m.NoteCastBegin("Soandso", base.Add(time.Second))
+	m.NoteCastBegin("Soandso", base.Add(2*time.Second))
 
-	if target, ok := m.TargetForCaster("Soandso", base.Add(2*time.Second)); !ok || target != "Winian" {
-		t.Errorf("TargetForCaster shortly after callout = (%q, %v), want (Winian, true)", target, ok)
-	}
-	if _, ok := m.TargetForCaster("Nobody", base.Add(2*time.Second)); ok {
-		t.Error("TargetForCaster matched a caster who never called")
-	}
-	if _, ok := m.TargetForCaster("Soandso", base.Add(recentCallWindow+time.Second)); ok {
-		t.Error("TargetForCaster matched after the correlation window elapsed")
+	if len(s.confirmed) != 1 {
+		t.Errorf("got %d confirmations, want 1: %+v", len(s.confirmed), s.confirmed)
 	}
 }
 
@@ -277,5 +373,90 @@ func TestMatcher_BadPatternIsSafe(t *testing.T) {
 	m.HandleLine(time.Unix(1, 0), "Soandso tells the raid, '--- 001 --- CH Winian'")
 	if len(s.calls) != 0 {
 		t.Errorf("bad pattern produced %d calls, want 0", len(s.calls))
+	}
+}
+
+// TestMatcher_MultiClericChainPrecisionAndRecall is the end-to-end guard for
+// the false-possible-miss storm. It runs several cycles of a 6-cleric chain in
+// the shape real raid logs take — every cleric healing the SAME tank, casts
+// landing on the same log second as the callout, one cleric's cast line
+// arriving a second EARLY — with exactly one genuine miss injected.
+//
+// Replayed against a real 6-cleric VT log, the previous target-keyed FIFO
+// produced 378 possible-miss flags across 199 callouts in which every cleric
+// cast every time; this correlation produces none, and still flags an injected
+// miss with no collateral on the other five.
+func TestMatcher_MultiClericChainPrecisionAndRecall(t *testing.T) {
+	clerics := []string{"Bluecross", "Eruna", "Vortikai", "Roughnight", "Veia", "Syntra"}
+	const (
+		tank    = "Larzek"
+		cadence = 3500 * time.Millisecond
+		cycles  = 4
+	)
+	// Cycle 2, slot 3 (Vortikai) shouts but never casts.
+	missCycle, missSlot := 2, 2
+
+	s := &fakeSink{}
+	m := newMatcher(s, true, config.DefaultCHChainPattern, 6)
+
+	base := time.Unix(1_000_000, 0)
+	at := base
+	type call struct {
+		label string
+		at    time.Time
+	}
+	var wantMissed []call
+	for cycle := 0; cycle < cycles; cycle++ {
+		for slot, caster := range clerics {
+			label := "#" + string(rune('1'+slot)) + "  " + tank + "  ← " + caster
+			// Veia's macro casts a beat before it shouts; everyone else casts
+			// on the same log second as their callout.
+			early := caster == "Veia"
+			if early {
+				m.NoteCastBegin(caster, at.Add(-time.Second))
+			}
+			m.HandleLine(at, caster+" shouts, '00"+string(rune('1'+slot))+" - CH - "+tank+" - 90%'")
+			if !early {
+				if cycle == missCycle && slot == missSlot {
+					wantMissed = append(wantMissed, call{label, at})
+				} else {
+					m.NoteCastBegin(caster, at)
+				}
+			}
+			at = at.Add(cadence)
+		}
+	}
+
+	if want := cycles * len(clerics); len(s.calls) != want {
+		t.Fatalf("got %d callouts, want %d", len(s.calls), want)
+	}
+
+	// A callout counts as flagged when no confirmation arrived for it. The
+	// engine addresses timers by (label, target) and rebuilds one per callout,
+	// so count confirmations per label and compare against callouts per label.
+	confirms := map[string]int{}
+	for _, c := range s.confirmed {
+		if c.target != tank {
+			t.Errorf("confirmation carried target %q, want %q", c.target, tank)
+		}
+		confirms[c.name]++
+	}
+	callouts := map[string]int{}
+	for _, c := range s.calls {
+		callouts[c.name]++
+	}
+	for label, n := range callouts {
+		want := n
+		for _, mc := range wantMissed {
+			if mc.label == label {
+				want--
+			}
+		}
+		if confirms[label] != want {
+			t.Errorf("%q: %d confirmations, want %d (callouts=%d)", label, confirms[label], want, n)
+		}
+	}
+	if len(wantMissed) != 1 {
+		t.Fatalf("test setup: expected exactly 1 injected miss, got %d", len(wantMissed))
 	}
 }

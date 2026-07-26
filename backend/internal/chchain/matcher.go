@@ -19,9 +19,11 @@ import (
 )
 
 // Sink is the subset of the spell-timer engine the matcher needs. It matches
-// (*spelltimer.Engine).StartExternal so the engine satisfies it directly.
+// (*spelltimer.Engine).StartExternal / .ConfirmCast so the engine satisfies it
+// directly.
 type Sink interface {
 	StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string)
+	ConfirmCast(name, targetName string)
 }
 
 // categoryCHChain / categoryCHChain2 mirror spelltimer.CategoryCHChain /
@@ -68,14 +70,22 @@ type Matcher struct {
 	primary   cachedRegex
 	secondary cachedRegex
 
-	callsMu     sync.Mutex
-	recentCalls map[string]recentCall
+	callsMu      sync.Mutex
+	recentCalls  map[string]recentCall
+	pendingCasts map[string]time.Time
 }
 
-// recentCall records one chain callout's target and the time it was seen, so
-// CastWatcher can later look up which target a caster's "begins to cast"
-// line should confirm.
+// recentCall records one chain callout's timer identity (label + target — the
+// pair that uniquely names the timer the matcher created for it) and the time
+// it was seen, so a later "begins to cast" line from the same caster can
+// confirm that exact timer.
+//
+// Identifying the timer by label rather than by target alone is essential: in
+// a real CH chain every cleric heals the SAME tank, so a target-keyed lookup
+// cannot tell whose callout a cast-begin line belongs to. The label embeds the
+// chain position and the caster ("#2  Larzek  ← Eruna"), which does.
 type recentCall struct {
+	label  string
 	target string
 	at     time.Time
 }
@@ -88,27 +98,66 @@ type recentCall struct {
 // this position would otherwise arrive and could be confused for this one.
 const recentCallWindow = config.CHCastSecs*time.Second + 2*time.Second
 
+// earlyCastWindow bounds how long a cast-begin line that arrived with no
+// matching callout yet stays eligible to confirm the NEXT callout from that
+// caster. Chain macros usually shout before they cast, but the two land on the
+// same or adjacent log seconds and the order isn't guaranteed — measured
+// against real raid logs, ~8% of callouts have their cast-begin line one
+// second AHEAD of the shout. Without this those would all be flagged possible
+// misses despite the cast plainly happening.
+const earlyCastWindow = 3 * time.Second
+
 // New constructs a Matcher reading live settings via cfg and emitting timers
 // through sink.
 func New(sink Sink, cfg func() config.CHChainSettings) *Matcher {
-	return &Matcher{sink: sink, cfg: cfg, recentCalls: make(map[string]recentCall)}
+	return &Matcher{
+		sink:         sink,
+		cfg:          cfg,
+		recentCalls:  make(map[string]recentCall),
+		pendingCasts: make(map[string]time.Time),
+	}
 }
 
-// TargetForCaster returns the target of caster's most recent chain callout,
-// if one was recorded within recentCallWindow of now. Used by CastWatcher to
-// resolve a "begins to cast" bystander line (which carries a caster name but
-// no target) back to the chain timer it should confirm.
-func (m *Matcher) TargetForCaster(caster string, now time.Time) (string, bool) {
+// NoteCastBegin records that caster was observed starting a cast at ts (see
+// CastWatcher). If that caster made a chain callout within recentCallWindow,
+// the timer created for it is confirmed immediately so pruneExpired won't flag
+// it a possible miss. Otherwise the cast is held as pending, so a callout
+// arriving in the next earlyCastWindow can claim it — covering macros whose
+// cast line beats their shout into the log.
+//
+// Correlation is one-shot in both directions: a consumed callout is dropped so
+// a caster's later, unrelated cast (a heal outside the chain, a rez, a buff)
+// can't confirm the same callout twice or leak onto the next one.
+func (m *Matcher) NoteCastBegin(caster string, ts time.Time) {
 	if caster == "" {
-		return "", false
+		return
 	}
 	m.callsMu.Lock()
-	defer m.callsMu.Unlock()
 	rc, ok := m.recentCalls[caster]
-	if !ok || now.Sub(rc.at) > recentCallWindow {
-		return "", false
+	if ok && !ts.Before(rc.at) && ts.Sub(rc.at) <= recentCallWindow {
+		delete(m.recentCalls, caster)
+		m.callsMu.Unlock()
+		m.sink.ConfirmCast(rc.label, rc.target)
+		return
 	}
-	return rc.target, true
+	m.pendingCasts[caster] = ts
+	m.callsMu.Unlock()
+}
+
+// noteCall records a fresh callout for cast-begin correlation and reports
+// whether a cast-begin line for it was already seen (the early-cast case), in
+// which case the caller confirms the new timer right away.
+func (m *Matcher) noteCall(caster, label, target string, ts time.Time) (confirmed bool) {
+	m.callsMu.Lock()
+	defer m.callsMu.Unlock()
+	if at, ok := m.pendingCasts[caster]; ok {
+		delete(m.pendingCasts, caster)
+		if !ts.Before(at) && ts.Sub(at) <= earlyCastWindow {
+			return true
+		}
+	}
+	m.recentCalls[caster] = recentCall{label: label, target: target, at: ts}
+	return false
 }
 
 // HandleLine matches one raw log line against the configured pattern(s) and,
@@ -173,23 +222,24 @@ func (m *Matcher) matchAndStart(ts time.Time, msg, pattern string, cache *cached
 		return true // a chain call with no target isn't actionable
 	}
 
-	// Record the callout for cast-begin correlation (see TargetForCaster) so
-	// CastWatcher can later confirm this exact timer when the caster's
-	// "begins to cast" line arrives, regardless of whether the regex
-	// captured a caster name (a pattern without a `caster` group just never
-	// records here, and possible-miss detection quietly finds nothing).
-	if caster != "" {
-		m.callsMu.Lock()
-		m.recentCalls[caster] = recentCall{target: target, at: ts}
-		m.callsMu.Unlock()
-	}
-
 	// The label doubles as the timer key. Encoding the position as a leading
 	// "#N" lets the overlay sort by chain order; including target keeps each
-	// position's bar distinct so concurrent calls don't dedup into one.
+	// position's bar distinct so concurrent calls don't dedup into one, and
+	// including caster is what makes (label, target) identify one caster's
+	// callout rather than "somebody's heal on the tank" — see recentCall.
 	label := fmt.Sprintf("#%d  %s", chainnum, target)
 	if caster != "" {
 		label += "  ← " + caster // "← caster"
+	}
+
+	// Record the callout for cast-begin correlation (see NoteCastBegin) so a
+	// later "begins to cast" line from this caster confirms this exact timer,
+	// regardless of whether the regex captured a caster name (a pattern
+	// without a `caster` group just never records here, and possible-miss
+	// detection quietly finds nothing rather than guessing).
+	earlyCast := false
+	if caster != "" {
+		earlyCast = m.noteCall(caster, label, target, ts)
 	}
 
 	// The bar runs the CH cast time, so it counts down to when this cleric's
@@ -199,9 +249,12 @@ func (m *Matcher) matchAndStart(ts time.Time, msg, pattern string, cache *cached
 	//
 	// target is passed through as the timer's TargetName (previously left
 	// empty — the overlay only ever parsed the target back out of the label
-	// text) so CastWatcher can correlate a cast-begin line to the right
-	// timer via Engine.ConfirmHeal.
+	// text) so it can be paired with the label to address exactly this timer
+	// in Engine.ConfirmCast.
 	m.sink.StartExternal(label, category, config.CHCastSecs, 0, ts, nil, 0, target, "", false, "")
+	if earlyCast {
+		m.sink.ConfirmCast(label, target)
+	}
 	return true
 }
 
