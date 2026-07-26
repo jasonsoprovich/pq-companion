@@ -2580,7 +2580,13 @@ func raidSignatureSpellAlerts() []Trigger {
 		spell("Fling", `A massive force knocks you into the air\.`, ` is knocked into the air by a massive force\.`, 2167, 45),
 		spell("Silence of the Shadows", `Your mind is assaulted by horrifying visions\.`, `'s mind is assaulted by horrifying visions\.`, 2164, 30),
 		spell("Torturing Winds", `You are stricken by torturing winds\.`, ` is stricken by torturing winds\.`, 2061, 45),
-		spell("Caustic Mist", `Your skin begins to rot\.`, `'s flesh begins to liquefy\.`, 2814, 24),
+		// The "landed on other" text ("'s flesh begins to liquefy.") is
+		// byte-identical between Caustic Mist (Vyzh'dra the Cursed, 24s
+		// recast) and Putrefy Flesh (Zlandicar, 30s recast) — EQ reused the
+		// same broadcast string for both spells, so the trigger can't tell
+		// which boss actually cast it from the log line alone. The name
+		// reflects both so the alert isn't mislabeled on either fight.
+		spell("Caustic Mist / Putrefy Flesh", `Your skin begins to rot\.`, `'s flesh begins to liquefy\.`, 2814, 24),
 		spell("Touch of Vinitras", `Your soul fades into darkness\.`, `'s soul fades into darkness\.`, 2859, 120),
 	}
 }
