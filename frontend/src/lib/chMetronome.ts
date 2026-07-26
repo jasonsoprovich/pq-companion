@@ -116,19 +116,40 @@ function forwardDistance(from: number, to: number, chainSize: number): number {
 }
 
 // anchorRemaining returns the remaining_seconds value to derive an anchor
-// from, clamped to 0 once a timer is flagged possible_miss. The backend gives
-// a possible-miss CH-chain timer a several-second grace extension so the CH
-// Chain overlay has time to render it red before the row disappears (see
-// spelltimer.Engine.pruneExpired) — that extension pushes ExpiresAt (and so
-// remaining_seconds) forward again well after the real cast-start moment.
-// Deriving an anchor straight from remaining_seconds without this clamp would
-// make the anchor itself jump forward by the grace amount the instant a miss
-// is flagged, which the metronome would then read as a legitimate new cycle —
-// re-triggering the countdown-start/CAST NOW alerts right when a miss is
-// detected. Clamping to 0 keeps the anchor pinned to the timer's actual
-// cast-start instant regardless of any later display-only grace extension.
+// from, floored at 0. possible_miss deliberately gets no special treatment:
+// the backend now holds a flagged row past its expiry via a separate
+// missGraceUntil deadline rather than by pushing ExpiresAt forward (see
+// spelltimer.Engine.pruneExpired), so remaining_seconds falls cleanly to 0 and
+// stays there. It previously moved, which made the anchor jump by the grace
+// amount the moment a miss was flagged (and jump back when a late confirmation
+// cleared it) — read by the metronome as a whole new cycle, re-firing the
+// countdown-start and CAST NOW alerts.
 function anchorRemaining(t: ActiveTimer): number {
-  return t.possible_miss ? 0 : t.remaining_seconds
+  return Math.max(0, t.remaining_seconds)
+}
+
+// measureCadence derives the chain's live spacing from the median gap between
+// consecutive callout start times in the feed, so extrapolation follows the
+// raid actually speeding up or slowing down. Returns null with fewer than two
+// callouts to measure.
+//
+// This is deliberately NOT the configured `delay`. Delay is a personal offset
+// ("cast this many seconds after the cleric ahead of me"), which a healer
+// retunes mid-fight to compensate for slow — using it as the chain's beat
+// spacing meant every such adjustment silently re-timed every projection, one
+// of the ways the metronome drifted after a mid-fight delay change.
+export function measureCadence(timers: ActiveTimer[], category: string): number | null {
+  const starts = timers
+    .filter((t) => t.category === category)
+    .map((t) => Date.parse(t.starts_at))
+    .filter((ms) => !Number.isNaN(ms))
+    .sort((a, b) => a - b)
+  if (starts.length < 2) return null
+  const gaps: number[] = []
+  for (let i = 1; i < starts.length; i++) gaps.push((starts[i] - starts[i - 1]) / 1000)
+  gaps.sort((a, b) => a - b)
+  const median = gaps[Math.floor(gaps.length / 2)]
+  return median > 0 ? median : null
 }
 
 // latestRealAnchor finds the freshest confirmed callout currently in the feed
@@ -158,10 +179,20 @@ function latestRealAnchor(
 
 // AnchorResult distinguishes a confirmed callout from a projected one so the
 // UI can tell a healer "this countdown is a prediction" rather than implying
-// the cleric ahead of them was actually heard casting.
+// the cleric ahead of them was actually heard casting. cadenceSecs is the beat
+// spacing this anchor was derived under, carried along so acceptNewAnchor and
+// the alert hooks can reason in whole chain cycles without re-measuring.
 export interface AnchorResult {
   anchorMs: number
   predicted: boolean
+  cadenceSecs: number
+}
+
+// cycleMs is how long one full pass around the chain takes at the given
+// cadence — the spacing between two consecutive callouts from the SAME slot,
+// and so the natural unit for "is this the same cycle or the next one".
+export function cycleMs(chainSize: number, cadenceSecs: number): number {
+  return Math.max(1, chainSize) * cadenceSecs * 1000
 }
 
 // computeAnchorMs derives the local-clock ms at which the watched cleric's
@@ -188,34 +219,60 @@ export function computeAnchorMs(
   recordPositions(seen, timers, category, nowMs, learnWindowMs(c))
   const watch = watchPosition(c)
   const watchNum = watchNumberFor(seen, c, watch)
+  const cadenceSecs = measureCadence(timers, category) ?? c.delay
   let best: ActiveTimer | null = null
   for (const t of timers) {
     if (t.category !== category) continue
     if (parsePosition(t.spell_name) !== watchNum) continue
     if (!best || Date.parse(t.starts_at) > Date.parse(best.starts_at)) best = t
   }
-  if (best) return { anchorMs: nowMs - (CH_CAST - anchorRemaining(best)) * 1000, predicted: false }
+  if (best) {
+    return { anchorMs: nowMs - (CH_CAST - anchorRemaining(best)) * 1000, predicted: false, cadenceSecs }
+  }
 
   const latest = latestRealAnchor(timers, category, seen, c.chainSize, nowMs)
   if (!latest || latest.position === watch) return null
   const gap = forwardDistance(latest.position, watch, c.chainSize)
-  return { anchorMs: latest.anchorMs + gap * c.delay * 1000, predicted: true }
+  return { anchorMs: latest.anchorMs + gap * cadenceSecs * 1000, predicted: true, cadenceSecs }
 }
 
-// acceptNewAnchor decides whether a freshly computed anchor should replace
-// the currently active one. Guards against a stray duplicate/glitched
-// watched-slot callout (a fizzle-then-retry macro re-fire, a duplicate
-// broadcast, or simply the per-tick recompute re-deriving the same cycle from
-// a still-live timer) restarting the countdown — flashing CAST NOW again —
-// before this cleric's own cast point in the CURRENT cycle has even passed.
-// A legitimate next cycle's callout is always at least delaySecs later (a
-// full chain cycle is chainSize × delay, which is >= delay), so real chains
-// are never affected by this guard.
-export function acceptNewAnchor(prev: AnchorResult | null, next: AnchorResult, delaySecs: number): boolean {
+// acceptNewAnchor decides whether a freshly computed anchor should replace the
+// currently active one.
+//
+// Two things it must get right, both of which the old "gap >= delay" rule got
+// wrong in a busy chain:
+//
+//  1. A REAL anchor (the watched slot's own callout) is ground truth and must
+//     be able to correct a projection for the same cycle in either direction.
+//     The watched slot's timer only exists for the 10s cast, while a full
+//     cycle runs longer, so most ticks fall back to the projected path and
+//     claim the cycle first — under the old rule the real callout then arrived
+//     "too close" to the projection and was rejected outright. The metronome
+//     ended up running almost entirely on projections, inheriting their drift
+//     (measured against a real 6-cleric raid log: it fired off the real
+//     callout twice in 35 cycles, and ran up to 3s early).
+//
+//  2. Anything else must be a genuinely NEW cycle, not a re-derivation of the
+//     current one from a still-live timer or a slightly different projection
+//     source — those restart the countdown and flash CAST NOW a second time
+//     within a few seconds. Cadence, not the configured delay, sets that bar,
+//     so retuning delay mid-fight can't loosen it.
+export function acceptNewAnchor(prev: AnchorResult | null, next: AnchorResult, c: MetronomeCfg): boolean {
   if (!prev) return true
   const gapMs = next.anchorMs - prev.anchorMs
+  if (!next.predicted && prev.predicted && Math.abs(gapMs) < cycleMs(c.chainSize, next.cadenceSecs) / 2) {
+    return true
+  }
   if (gapMs <= 0) return false // not newer than what's already anchored
-  return gapMs >= delaySecs * 1000
+  return gapMs >= Math.min(c.delay, next.cadenceSecs) * 800 // 0.8 × the beat, in ms
+}
+
+// sameCycle reports whether two anchor times describe the same trip around the
+// chain. Used to fire each audio cue once per cycle: a real callout correcting
+// its own projection legitimately moves the anchor by a second or two, and the
+// alert must not treat that correction as a fresh cycle and speak twice.
+export function sameCycle(aMs: number, bMs: number, chainSize: number, cadenceSecs: number): boolean {
+  return Math.abs(aMs - bMs) < cycleMs(chainSize, cadenceSecs) / 2
 }
 
 // SelfCastEvent mirrors the backend's chchain.SelfCastEvent — broadcast when

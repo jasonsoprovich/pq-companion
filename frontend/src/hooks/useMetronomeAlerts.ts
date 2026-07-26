@@ -31,6 +31,7 @@ import {
   loadAlertsEnabled,
   loadSeen,
   mergeSeen,
+  sameCycle,
   saveSeen,
   seenStorageKey,
 } from '../lib/chMetronome'
@@ -79,15 +80,20 @@ export function useMetronomeAlerts(): void {
   const chainRef = useRef<ChainView>(loadChainSelection())
   const seenRef = useRef<Map<number, number>>(loadSeen(chainRef.current))
   const anchorRef = useRef<AnchorResult | null>(null)
-  const prevFlashingRef = useRef(false)
-  // Tracks which anchor's "countdown started" edge has already fired, keyed
-  // by anchorMs rather than the coarse `active` boolean. In a busy chain
-  // (many clerics, short delay) a fresh real/predicted anchor can arrive
-  // before the previous cycle's `active` window (CH_CAST + ANCHOR_GRACE_SECS)
-  // closes, so `active` never drops back to false between cycles — an
-  // `!prevActiveRef.current` edge check would then only ever fire once, at
-  // the very first cycle, and silently go quiet for the rest of the chain.
+  // Which cycle each cue has already spoken for, held as the anchor time it
+  // fired against and compared with sameCycle rather than for exact equality.
+  //
+  // Keying off `active` alone doesn't work: in a busy chain a fresh anchor
+  // arrives before the previous cycle's active window (CH_CAST +
+  // ANCHOR_GRACE_SECS) closes, so `active` never drops back to false and an
+  // edge check would fire once and then go quiet for the rest of the fight.
+  // But exact anchorMs equality is too strict in the other direction — the
+  // anchor legitimately shifts a second or two within one cycle when the
+  // watched slot's real callout corrects its projection, which fired both
+  // cues a second time. sameCycle is the middle ground: a correction is the
+  // same cycle, the next trip around the chain is not.
   const firedStartAnchorMsRef = useRef<number | null>(null)
+  const firedCastAnchorMsRef = useRef<number | null>(null)
   // Mute toggle from the popped-out overlay's bell button (localStorage-backed,
   // synced via 'storage' events since this hook runs at the App level, not
   // inside that window).
@@ -167,7 +173,7 @@ export function useMetronomeAlerts(): void {
       const cfg = loadCfg()
       const anchor = computeAnchorMs(timers, cfg, chain, seenRef.current, Date.now())
       saveSeen(chain, seenRef.current)
-      if (anchor != null && acceptNewAnchor(anchorRef.current, anchor, cfg.delay)) anchorRef.current = anchor
+      if (anchor != null && acceptNewAnchor(anchorRef.current, anchor, cfg)) anchorRef.current = anchor
     },
     [activeChain],
   )
@@ -203,32 +209,35 @@ export function useMetronomeAlerts(): void {
       const a = anchorRef.current
       const now = Date.now()
       const active = a != null && now - a.anchorMs <= (CH_CAST + ANCHOR_GRACE_SECS) * 1000
+      if (!active) return
+      const anchor = a as AnchorResult
       const cfg = loadCfg()
-      const elapsed = active ? (now - (a as AnchorResult).anchorMs) / 1000 : 0
-      const castIn = active ? cfg.delay - elapsed : 0
-      const flashing = active && castIn <= 0.15 && elapsed <= cfg.delay + PULSE_SECS
+      const elapsed = (now - anchor.anchorMs) / 1000
+      const castIn = cfg.delay - elapsed
+      const flashing = castIn <= 0.15 && elapsed <= cfg.delay + PULSE_SECS
 
-      // A "new cycle" is a distinct anchor, not just `active` turning true —
-      // see firedStartAnchorMsRef's comment above.
-      const isNewAnchor = active && (a as AnchorResult).anchorMs !== firedStartAnchorMsRef.current
+      // A "new cycle" is a new trip around the chain, not merely a changed
+      // anchor value — see firedStartAnchorMsRef's comment above.
+      const isNewCycle = (fired: number | null): boolean =>
+        fired === null || !sameCycle(anchor.anchorMs, fired, cfg.chainSize, anchor.cadenceSecs)
+
+      const startDue = isNewCycle(firedStartAnchorMsRef.current)
+      const castDue = flashing && isNewCycle(firedCastAnchorMsRef.current)
 
       // Gated (muted, or the overlay isn't popped out/open): keep the edge
       // trackers in sync with reality but don't fire, so that when the gate
-      // reopens only a genuinely NEW active/flashing edge fires — not a stale
-      // transition that happened while gated.
-      if (!alertsEnabledRef.current || !overlayOpenRef.current) {
-        if (isNewAnchor) firedStartAnchorMsRef.current = (a as AnchorResult).anchorMs
-        prevFlashingRef.current = flashing
-        return
-      }
+      // reopens only a genuinely NEW cycle fires — not a stale transition that
+      // happened while gated.
+      const gated = !alertsEnabledRef.current || !overlayOpenRef.current
 
-      if (isNewAnchor) {
-        fire(startPrefRef.current)
-        firedStartAnchorMsRef.current = (a as AnchorResult).anchorMs
+      if (startDue) {
+        if (!gated) fire(startPrefRef.current)
+        firedStartAnchorMsRef.current = anchor.anchorMs
       }
-      if (flashing && !prevFlashingRef.current) fire(castPrefRef.current)
-
-      prevFlashingRef.current = flashing
+      if (castDue) {
+        if (!gated) fire(castPrefRef.current)
+        firedCastAnchorMsRef.current = anchor.anchorMs
+      }
     }, 100)
     return () => clearInterval(id)
   }, [])

@@ -195,7 +195,7 @@ export default function CHMetronomePanel({
   const recomputeAnchor = useCallback((timers: ActiveTimer[]) => {
     const anchor = computeAnchorMs(timers, cfgRef.current, chainRef.current, seenRef.current, Date.now())
     saveSeen(chainRef.current, seenRef.current)
-    if (anchor != null && acceptNewAnchor(anchorRef.current, anchor, cfgRef.current.delay)) {
+    if (anchor != null && acceptNewAnchor(anchorRef.current, anchor, cfgRef.current)) {
       anchorRef.current = anchor
       // Force a render so a new anchor re-activates the (possibly idle) tick.
       setTick((t) => (t + 1) % 1_000_000)

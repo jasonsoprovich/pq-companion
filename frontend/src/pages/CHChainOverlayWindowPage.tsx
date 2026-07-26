@@ -101,22 +101,20 @@ function computeCadence(
 function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean }): React.ReactElement {
   const { position, text } = parseLabel(timer.spell_name)
   const missed = timer.possible_miss ?? false
-  // Once flagged, the backend gives the timer a short grace extension so this
-  // row has time to render red before disappearing (see
-  // spelltimer.Engine.pruneExpired) — that extension pushes remaining_seconds
-  // back up briefly. Pinning the bar to empty for a missed row avoids it
-  // visibly re-inflating right as it turns red.
+  // The miss flag is display-only and must never disturb the bar: every row
+  // keeps counting its real 10s cast down at the same rate whether or not it's
+  // flagged. Zeroing the bar on a flag (and letting it re-inflate when a late
+  // confirmation cleared the flag) made rows lurch around the overlay, which
+  // is exactly what the countdown is there to let a healer read at a glance.
   const pct =
-    missed || timer.duration_seconds <= 0
+    timer.duration_seconds <= 0
       ? 0
       : Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
   // Each bar is the 10s CH cast counting down to the heal landing, so a
   // near-empty bar means "heal incoming" — a good thing. Highlight it green,
-  // not red (red is reserved for the header stall warning and possible_miss
-  // below). possible_miss (this callout's target was never confirmed healed
-  // before its window elapsed — see backend Engine.ConfirmHeal) overrides
-  // both: the row goes red regardless of how much of its grace window
-  // remains.
+  // not red (red is reserved for the header stall warning and possible_miss).
+  // possible_miss (this callout's caster was never seen starting a cast — see
+  // backend Engine.ConfirmCast) recolors the row red instead.
   const landing = !missed && pct < 0.34
 
   return (
@@ -184,17 +182,27 @@ function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean })
           </span>
         </div>
         <span
-          style={{
-            fontSize: 11,
-            color: missed ? '#fca5a5' : landing ? '#86efac' : '#93c5fd',
-            fontVariantNumeric: 'tabular-nums',
-            flexShrink: 0,
-            fontWeight: landing || missed ? 700 : 600,
-            textShadow: '0 1px 2px rgba(0,0,0,0.9)',
-          }}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}
           title={missed ? "No confirming cast-begin line seen for this callout's caster in time — may have fizzled, been interrupted, or skipped" : undefined}
         >
-          {missed ? 'possible miss' : fmtRemaining(timer.remaining_seconds)}
+          {/* The countdown always stays put; a miss adds a label beside it
+              rather than replacing it, so the row reads the same either way. */}
+          {missed && (
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#fca5a5', textShadow: '0 1px 2px rgba(0,0,0,0.9)' }}>
+              miss?
+            </span>
+          )}
+          <span
+            style={{
+              fontSize: 11,
+              color: missed ? '#fca5a5' : landing ? '#86efac' : '#93c5fd',
+              fontVariantNumeric: 'tabular-nums',
+              fontWeight: landing || missed ? 700 : 600,
+              textShadow: '0 1px 2px rgba(0,0,0,0.9)',
+            }}
+          >
+            {fmtRemaining(timer.remaining_seconds)}
+          </span>
         </span>
       </div>
     </div>
