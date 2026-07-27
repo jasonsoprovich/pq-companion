@@ -1,6 +1,7 @@
 package emote
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 )
 
 const (
@@ -19,15 +21,20 @@ const (
 	metaDefaultHash    = "default_hash"
 	metaLastWriteHash  = "last_write_hash"
 	metaDefaultCapture = "default_captured_at"
+	metaPendingImport  = "pending_import"
 )
 
 // Service orchestrates reading/writing spells_en.txt and keeping it in sync
 // with the overrides stored in Store. backupDir holds the pristine default
-// and last-edited copies (never inside the EQ install directory).
+// and last-edited copies (never inside the EQ install directory). database
+// is the read-only game DB, queried for quarm.db's canonical emote text —
+// the true pristine default, since a user's spells_en.txt may already carry
+// hand-edits from before they ever used this feature (see bootstrapDefault).
 type Service struct {
 	store     *Store
 	cfgMgr    *config.Manager
 	backupDir string
+	database  *db.DB
 
 	mu              sync.Mutex
 	pendingContent  string // candidate new live-file content from an external change
@@ -36,8 +43,8 @@ type Service struct {
 
 // NewService constructs a Service. backupDir is typically
 // ~/.pq-companion/spell-emotes.
-func NewService(store *Store, cfgMgr *config.Manager, backupDir string) *Service {
-	return &Service{store: store, cfgMgr: cfgMgr, backupDir: backupDir}
+func NewService(store *Store, cfgMgr *config.Manager, backupDir string, database *db.DB) *Service {
+	return &Service{store: store, cfgMgr: cfgMgr, backupDir: backupDir, database: database}
 }
 
 func (s *Service) livePath() (string, error) {
@@ -89,9 +96,10 @@ func (s *Service) writeBackup(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
-// EnsureDefaultBackup captures the current live file as the pristine default
-// backup if one doesn't exist yet. Safe to call repeatedly; a no-op once a
-// default backup is present.
+// EnsureDefaultBackup captures a pristine default backup if one doesn't
+// exist yet, bootstrapping it from quarm.db's canonical emote text rather
+// than trusting the live file's current bytes (see bootstrapDefault). Safe
+// to call repeatedly; a no-op once a default backup is present.
 func (s *Service) EnsureDefaultBackup() error {
 	if _, ok, err := readBackup(s.defaultBackupPath()); err != nil {
 		return err
@@ -104,7 +112,47 @@ func (s *Service) EnsureDefaultBackup() error {
 		// capture; not an error, just deferred until the file exists.
 		return nil
 	}
-	return s.captureAsDefault(content)
+	return s.bootstrapDefault(content)
+}
+
+// canonicalize rewrites content's emote columns to quarm.db's current
+// canonical text. Used for every default capture so "default" never means
+// "whatever happened to be on disk," only ever "what the server's data
+// actually says."
+func (s *Service) canonicalize(content string) (string, error) {
+	defaults, err := s.database.LoadSpellEmoteDefaults()
+	if err != nil {
+		return "", fmt.Errorf("load canonical spell emotes: %w", err)
+	}
+	return deriveDefaultContent(content, defaults), nil
+}
+
+// bootstrapDefault is the first-ever capture of a pristine default: it
+// canonicalizes liveContent against quarm.db and stores that as the default
+// backup, then checks whether liveContent itself already diverged from that
+// canonical text on any spell. A divergence there means the user hand-edited
+// spells_en.txt before ever using this feature (exactly the scenario a
+// player like the one who requested this feature was already doing) —
+// those spells are recorded as a pending import so the UI can offer to adopt
+// them as tracked, patch-surviving overrides rather than silently losing
+// them the moment something else triggers a rebuild.
+func (s *Service) bootstrapDefault(liveContent string) error {
+	canonical, err := s.canonicalize(liveContent)
+	if err != nil {
+		return err
+	}
+	if err := s.captureAsDefault(canonical); err != nil {
+		return err
+	}
+	pending := detectDivergence(liveContent, canonical)
+	if len(pending) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(pending)
+	if err != nil {
+		return err
+	}
+	return s.store.SetMeta(metaPendingImport, string(b))
 }
 
 // captureAsDefault records content as the pristine default backup and, since
@@ -139,12 +187,175 @@ func (s *Service) overridesByID() (map[int]OverrideRow, error) {
 	return out, nil
 }
 
-// rebuildAndWrite re-applies every stored override onto the pristine default
-// backup and writes the result to the live file and the edited backup.
-// Rebuilding from the default (rather than the current live content) is what
-// makes a revert actually restore default text instead of re-stamping
-// whatever was already written — overrides are always layered fresh onto a
-// clean base, never onto a previously-overridden file.
+// pendingImports reads the stored pending-import list (see bootstrapDefault),
+// or nil if there is none.
+func (s *Service) pendingImports() ([]SpellDiff, error) {
+	raw, ok, err := s.store.GetMeta(metaPendingImport)
+	if err != nil {
+		return nil, err
+	}
+	if !ok || raw == "" {
+		return nil, nil
+	}
+	var pending []SpellDiff
+	if err := json.Unmarshal([]byte(raw), &pending); err != nil {
+		return nil, fmt.Errorf("decode pending import list: %w", err)
+	}
+	return pending, nil
+}
+
+func (s *Service) setPendingImports(pending []SpellDiff) error {
+	if len(pending) == 0 {
+		return s.store.SetMeta(metaPendingImport, "")
+	}
+	b, err := json.Marshal(pending)
+	if err != nil {
+		return err
+	}
+	return s.store.SetMeta(metaPendingImport, string(b))
+}
+
+// pendingImportOverrides converts the not-yet-imported pending list into the
+// same OverrideRow shape as a tracked override, using each field's New (the
+// user's pre-existing hand-edited) value. This is what protects a
+// not-yet-reviewed hand-edit from being silently wiped out the moment an
+// unrelated SetOverride/RevertOverride triggers a rebuild — the pending
+// entry behaves like an override for rebuild purposes until the user either
+// formally imports it (ImportExisting) or wipes it deliberately
+// (RestoreDefaults).
+func (s *Service) pendingImportOverrides() (map[int]OverrideRow, error) {
+	pending, err := s.pendingImports()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int]OverrideRow, len(pending))
+	for _, sd := range pending {
+		row := OverrideRow{SpellID: sd.SpellID}
+		for _, f := range sd.Fields {
+			v := f.New
+			switch f.Field {
+			case "you_cast":
+				row.YouCast = &v
+			case "other_casts":
+				row.OtherCasts = &v
+			case "cast_on_you":
+				row.CastOnYou = &v
+			case "cast_on_other":
+				row.CastOnOther = &v
+			case "spell_fades":
+				row.SpellFades = &v
+			}
+		}
+		out[sd.SpellID] = row
+	}
+	return out, nil
+}
+
+// effectiveOverrides merges tracked overrides with any still-pending import
+// entries (tracked values win on the rare overlap). Used only when rebuilding
+// the live file — reads that only care about *tracked* customizations (the
+// "customized" badge, the diff view, the customized-only filter) use
+// overridesByID directly instead.
+func (s *Service) effectiveOverrides() (map[int]OverrideRow, error) {
+	tracked, err := s.overridesByID()
+	if err != nil {
+		return nil, err
+	}
+	pending, err := s.pendingImportOverrides()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int]OverrideRow, len(tracked)+len(pending))
+	for id, row := range pending {
+		out[id] = row
+	}
+	for id, row := range tracked {
+		out[id] = row
+	}
+	return out, nil
+}
+
+// PendingImports returns every spell whose emote text was already customized
+// in spells_en.txt before this feature ever ran, still awaiting the user's
+// decision to import them as tracked overrides. Empty (not nil) when there's
+// nothing pending.
+func (s *Service) PendingImports() ([]SpellDiff, error) {
+	pending, err := s.pendingImports()
+	if err != nil {
+		return nil, err
+	}
+	if pending == nil {
+		return []SpellDiff{}, nil
+	}
+	return pending, nil
+}
+
+// ImportExisting adopts pending-import entries as real tracked overrides —
+// spellIDs selects which ones; nil/empty imports all of them. The live file
+// itself doesn't change (pending entries were already protecting that text),
+// but afterward the spells show up as customized, appear in the diff view,
+// and will be explicitly re-applied after a future server patch.
+func (s *Service) ImportExisting(spellIDs []int) (int, error) {
+	pending, err := s.pendingImports()
+	if err != nil {
+		return 0, err
+	}
+	if len(pending) == 0 {
+		return 0, nil
+	}
+	selected := func(int) bool { return true }
+	if len(spellIDs) > 0 {
+		want := make(map[int]bool, len(spellIDs))
+		for _, id := range spellIDs {
+			want[id] = true
+		}
+		selected = func(id int) bool { return want[id] }
+	}
+
+	var remaining []SpellDiff
+	imported := 0
+	for _, sd := range pending {
+		if !selected(sd.SpellID) {
+			remaining = append(remaining, sd)
+			continue
+		}
+		patch := ColumnsPatch{}
+		for _, f := range sd.Fields {
+			v := f.New
+			switch f.Field {
+			case "you_cast":
+				patch.YouCast = &v
+			case "other_casts":
+				patch.OtherCasts = &v
+			case "cast_on_you":
+				patch.CastOnYou = &v
+			case "cast_on_other":
+				patch.CastOnOther = &v
+			case "spell_fades":
+				patch.SpellFades = &v
+			}
+		}
+		if err := s.store.SetColumns(sd.SpellID, patch); err != nil {
+			return imported, err
+		}
+		imported++
+	}
+	if imported == 0 {
+		return 0, nil
+	}
+	if err := s.setPendingImports(remaining); err != nil {
+		return imported, err
+	}
+	return imported, s.rebuildAndWrite()
+}
+
+// rebuildAndWrite re-applies every effective override (tracked + still-
+// pending imports) onto the pristine default backup and writes the result to
+// the live file and the edited backup. Rebuilding from the default (rather
+// than the current live content) is what makes a revert actually restore
+// default text instead of re-stamping whatever was already written —
+// overrides are always layered fresh onto a clean base, never onto a
+// previously-overridden file.
 func (s *Service) rebuildAndWrite() error {
 	base, ok, err := readBackup(s.defaultBackupPath())
 	if err != nil {
@@ -153,7 +364,7 @@ func (s *Service) rebuildAndWrite() error {
 	if !ok {
 		return fmt.Errorf("no default backup captured yet")
 	}
-	overrides, err := s.overridesByID()
+	overrides, err := s.effectiveOverrides()
 	if err != nil {
 		return err
 	}
@@ -188,7 +399,9 @@ func (s *Service) RevertOverride(spellID int) error {
 }
 
 // RestoreDefaults writes the pristine default backup back to the live file
-// and clears every stored override.
+// and clears every stored override — including any not-yet-reviewed pending
+// import, since this is the explicit, confirmed "wipe everything back to
+// canonical" action.
 func (s *Service) RestoreDefaults() error {
 	content, ok, err := readBackup(s.defaultBackupPath())
 	if err != nil {
@@ -198,6 +411,9 @@ func (s *Service) RestoreDefaults() error {
 		return fmt.Errorf("no default backup captured yet")
 	}
 	if err := s.store.DeleteAllOverrides(); err != nil {
+		return err
+	}
+	if err := s.setPendingImports(nil); err != nil {
 		return err
 	}
 	if err := s.writeLive(content); err != nil {
@@ -236,6 +452,13 @@ func (s *Service) clearPending() {
 // ReapplyAll re-applies every stored override onto the pending externally-
 // changed content (adopting it as the new default backup, since it reflects
 // whatever the server just shipped) and writes the result to the live file.
+//
+// This deliberately does NOT re-canonicalize against quarm.db the way
+// bootstrapDefault does: quarm.db is refreshed on its own data-release
+// cadence, separate from (and typically slower than) the server's own
+// spells_en.txt patches, so at the moment a patch is detected the live file
+// itself — not PQC's possibly-stale bundled DB — is the freshest source of
+// truth for what the server currently ships.
 func (s *Service) ReapplyAll() error {
 	content, _, ok := s.pending()
 	if !ok {
@@ -259,7 +482,9 @@ func (s *Service) ReapplyAll() error {
 
 // IgnoreExternalChange adopts the current live content as the new pristine
 // default without re-applying overrides — the user's customizations stay
-// recorded but unapplied until they choose to re-apply or edit again.
+// recorded but unapplied until they choose to re-apply or edit again. See
+// ReapplyAll for why this trusts the live content directly rather than
+// re-canonicalizing against quarm.db.
 func (s *Service) IgnoreExternalChange() error {
 	content, _, ok := s.pending()
 	if !ok {
@@ -367,48 +592,7 @@ func (s *Service) Diff() ([]SpellDiff, error) {
 	if !hasDefault || !hasEdited {
 		return []SpellDiff{}, nil
 	}
-
-	editedByID := make(map[int][]string)
-	for _, line := range splitLines(editedContent) {
-		fields := parseFields(line)
-		if len(fields) < minEmoteFields {
-			continue
-		}
-		if id, ok := lineSpellID(fields); ok {
-			editedByID[id] = fields
-		}
-	}
-
-	var diffs []SpellDiff
-	for _, line := range splitLines(defaultContent) {
-		defFields := parseFields(line)
-		if len(defFields) < minEmoteFields {
-			continue
-		}
-		id, ok := lineSpellID(defFields)
-		if !ok {
-			continue
-		}
-		editFields, ok := editedByID[id]
-		if !ok {
-			continue
-		}
-		idxs := [5]int{idxYouCast, idxOtherCasts, idxCastOnYou, idxCastOnOther, idxSpellFades}
-		var fields []FieldDiff
-		for i, idx := range idxs {
-			if defFields[idx] != editFields[idx] {
-				fields = append(fields, FieldDiff{
-					Field: columnField(i),
-					Label: columnLabels[i],
-					Old:   defFields[idx],
-					New:   editFields[idx],
-				})
-			}
-		}
-		if len(fields) > 0 {
-			diffs = append(diffs, SpellDiff{SpellID: id, Name: defFields[1], Fields: fields})
-		}
-	}
+	diffs := detectDivergence(editedContent, defaultContent)
 	sort.Slice(diffs, func(i, j int) bool { return diffs[i].SpellID < diffs[j].SpellID })
 	return diffs, nil
 }
@@ -434,6 +618,11 @@ func (s *Service) Status() (*Status, error) {
 		return nil, err
 	}
 	st.OverrideCount = len(overrides)
+	pendingImports, err := s.pendingImports()
+	if err != nil {
+		return nil, err
+	}
+	st.PendingImportCount = len(pendingImports)
 	if _, at, ok := s.pending(); ok {
 		st.PendingExternalChange = true
 		st.ExternalChangeAt = at.Unix()

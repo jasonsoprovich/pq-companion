@@ -1,13 +1,78 @@
 package emote
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	_ "modernc.org/sqlite"
 )
 
 const fixturePath = "../../../testdata/TAKPv22/spells_en.txt"
+
+// newTestGameDB builds a small synthetic quarm.db seeded with just the three
+// spells these tests exercise, with emote text matching the checked-in
+// spells_en.txt fixture exactly — deliberately NOT the real bundled
+// backend/data/quarm.db, whose spell text is periodically refreshed by the
+// data-release pipeline and can legitimately drift from the frozen fixture
+// over time (that drift is exactly what bootstrapDefault's pending-import
+// detection is *for*, but it would make these tests nondeterministic).
+// Every other spell in the fixture is intentionally absent, so
+// deriveDefaultContent leaves those lines untouched, same as before this
+// package depended on the game DB at all.
+func newTestGameDB(t *testing.T) *db.DB {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "test-quarm.db")
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open test game db: %v", err)
+	}
+
+	if _, err := raw.Exec(`
+		CREATE TABLE spells_new (
+			id INTEGER PRIMARY KEY,
+			name TEXT,
+			you_cast TEXT,
+			other_casts TEXT,
+			cast_on_you TEXT,
+			cast_on_other TEXT,
+			spell_fades TEXT
+		)
+	`); err != nil {
+		t.Fatalf("create spells_new: %v", err)
+	}
+
+	type row struct {
+		id                                                            int
+		name, youCast, otherCasts, castOnYou, castOnOther, spellFades string
+	}
+	rows := []row{
+		{1588, "Turgur's Insects", "", "", "You feel drowsy.", " yawns.", "You feel less drowsy."},
+		{207, "Divine Aura", "", "", "The gods have rendered you invulnerable.", "", "Your invulnerability fades."},
+		{2267, "Curse of Turgur", "", "", "You feel drowsy.", " yawns.", "You feel less drowsy."},
+	}
+	for _, r := range rows {
+		if _, err := raw.Exec(
+			`INSERT INTO spells_new (id, name, you_cast, other_casts, cast_on_you, cast_on_other, spell_fades) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			r.id, r.name, r.youCast, r.otherCasts, r.castOnYou, r.castOnOther, r.spellFades,
+		); err != nil {
+			t.Fatalf("seed spell %d: %v", r.id, err)
+		}
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close seed connection: %v", err)
+	}
+
+	d, err := db.Open(path)
+	if err != nil {
+		t.Fatalf("db.Open test game db: %v", err)
+	}
+	t.Cleanup(func() { d.Close() })
+	return d
+}
 
 func readFixture(t *testing.T) string {
 	t.Helper()

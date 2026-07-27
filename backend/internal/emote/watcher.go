@@ -81,11 +81,13 @@ func (w *Watcher) check() {
 		return // our own write; nothing external happened
 	}
 
-	// First-ever sighting of the file (no default backup yet): capture it as
-	// the pristine default rather than treating it as an "external change."
+	// First-ever sighting of the file (no default backup yet): bootstrap the
+	// pristine default from quarm.db rather than treating it as an "external
+	// change" — this also detects and flags any emote the user already
+	// hand-edited before this feature ever ran (see bootstrapDefault).
 	if _, hasDefault, err := readBackup(w.service.defaultBackupPath()); err == nil && !hasDefault {
-		if err := w.service.captureAsDefault(content); err != nil {
-			slog.Warn("emote: capture initial default backup", "err", err)
+		if err := w.service.bootstrapDefault(content); err != nil {
+			slog.Warn("emote: bootstrap initial default backup", "err", err)
 		}
 		return
 	}

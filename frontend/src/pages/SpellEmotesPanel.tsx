@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronUp,
   FlaskConical,
+  MessageSquareQuote,
   RefreshCw,
   Search,
   X,
@@ -11,8 +12,10 @@ import {
 import {
   getEmoteDiff,
   getEmoteOverrides,
+  getEmotePendingImport,
   getEmoteStatus,
   ignoreEmoteExternalChange,
+  importExistingEmotes,
   reapplyEmotes,
   restoreEmoteDefaults,
   searchSpells,
@@ -49,6 +52,46 @@ export default function SpellEmotesPanel(): React.ReactElement {
   useWebSocket((msg) => {
     if (msg.type === 'emote:external-change') refreshStatus()
   })
+
+  // ── Pending import: emotes the user already hand-edited into spells_en.txt
+  // before ever using this feature (detected once, on first bootstrap). ────
+  const [pendingImport, setPendingImport] = useState<SpellEmoteDiff[]>([])
+  const [pendingDismissed, setPendingDismissed] = useState(false)
+  const [pendingReviewOpen, setPendingReviewOpen] = useState(false)
+  const [pendingSelected, setPendingSelected] = useState<Set<number>>(new Set())
+  const [importing, setImporting] = useState(false)
+
+  const refreshPendingImport = useCallback(() => {
+    getEmotePendingImport()
+      .then((rows) => {
+        setPendingImport(rows)
+        setPendingSelected(new Set(rows.map((r) => r.spell_id)))
+      })
+      .catch((err: Error) => setError(err.message))
+  }, [])
+
+  useEffect(() => { refreshPendingImport() }, [refreshPendingImport])
+
+  const doImport = (spellIds?: number[]): void => {
+    setImporting(true)
+    importExistingEmotes(spellIds)
+      .then(() => {
+        refreshStatus()
+        refreshPendingImport()
+        if (customizedOnly) refreshCustomized()
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setImporting(false))
+  }
+
+  const togglePendingSelected = (id: number): void => {
+    setPendingSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Spell[]>([])
@@ -156,6 +199,90 @@ export default function SpellEmotesPanel(): React.ReactElement {
           default backup is kept automatically so you can always revert.
         </p>
       </div>
+
+      {pendingImport.length > 0 && !pendingDismissed && (
+        <div
+          className="flex flex-col gap-2 rounded-lg px-4 py-3"
+          style={{ border: '1px solid var(--color-primary)', backgroundColor: 'var(--color-surface-2)' }}
+        >
+          <div className="flex items-center gap-3">
+            <MessageSquareQuote size={16} className="shrink-0" style={{ color: 'var(--color-primary)' }} />
+            <p className="flex-1 text-sm" style={{ color: 'var(--color-foreground)' }}>
+              Found {pendingImport.length} spell{pendingImport.length === 1 ? '' : 's'} already
+              customized in your <code>spells_en.txt</code> — probably hand-edited before you
+              started using this feature. Import as tracked customizations so they show up here,
+              survive future server patches, and can be reverted individually?
+            </p>
+            <button
+              type="button"
+              disabled={importing}
+              onClick={() => doImport()}
+              className="shrink-0 rounded px-3 py-1.5 text-xs font-medium"
+              style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-background)' }}
+            >
+              Import All
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingReviewOpen((o) => !o)}
+              className="shrink-0 rounded border px-3 py-1.5 text-xs font-medium"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
+            >
+              {pendingReviewOpen ? 'Hide' : 'Review'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingDismissed(true)}
+              className="shrink-0 rounded px-2 py-1.5 text-xs"
+              style={{ color: 'var(--color-muted-foreground)' }}
+              title="Hide for now — nothing is lost either way, these stay safe until you decide"
+            >
+              Not now
+            </button>
+          </div>
+
+          {pendingReviewOpen && (
+            <div className="max-h-72 overflow-y-auto rounded border" style={{ borderColor: 'var(--color-border)' }}>
+              {pendingImport.map((sd) => (
+                <div
+                  key={sd.spell_id}
+                  className="flex items-start gap-2 border-t px-3 py-2 first:border-t-0"
+                  style={{ borderColor: 'var(--color-border)' }}
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={pendingSelected.has(sd.spell_id)}
+                    onChange={() => togglePendingSelected(sd.spell_id)}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium" style={{ color: 'var(--color-foreground)' }}>
+                      {sd.name} <span style={{ color: 'var(--color-muted)' }}>#{sd.spell_id}</span>
+                    </div>
+                    {sd.fields.map((f) => (
+                      <div key={f.field} className="pl-1 font-mono text-[11px] leading-tight">
+                        <div style={{ color: 'var(--color-destructive)' }}>- {f.label}: {f.old || '(empty)'}</div>
+                        <div style={{ color: 'var(--color-success, #22c55e)' }}>+ {f.label}: {f.new || '(empty)'}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div className="flex justify-end border-t px-3 py-2" style={{ borderColor: 'var(--color-border)' }}>
+                <button
+                  type="button"
+                  disabled={importing || pendingSelected.size === 0}
+                  onClick={() => doImport(Array.from(pendingSelected))}
+                  className="rounded px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-background)' }}
+                >
+                  Import Selected ({pendingSelected.size})
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {status?.pending_external_change && (
         <div

@@ -30,7 +30,7 @@ func newTestService(t *testing.T) *Service {
 	t.Cleanup(func() { store.Close() })
 
 	backupDir := filepath.Join(t.TempDir(), "spell-emotes")
-	return NewService(store, cfgMgr, backupDir)
+	return NewService(store, cfgMgr, backupDir, newTestGameDB(t))
 }
 
 func strPtr(s string) *string { return &s }

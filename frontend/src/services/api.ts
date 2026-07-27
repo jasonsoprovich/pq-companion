@@ -2795,3 +2795,15 @@ export function reapplyEmotes(): Promise<void> {
 export function ignoreEmoteExternalChange(): Promise<void> {
   return post<void>('/api/emotes/ignore-external-change')
 }
+
+// Spells whose emotes were already hand-edited into spells_en.txt before
+// this feature was ever used, still awaiting an import decision.
+export function getEmotePendingImport(): Promise<SpellEmoteDiff[]> {
+  return get<SpellEmoteDiff[]>('/api/emotes/pending-import')
+}
+
+// Adopts pending-import entries as tracked overrides. spellIds selects which
+// ones; omit/empty to import everything pending.
+export function importExistingEmotes(spellIds?: number[]): Promise<{ imported: number }> {
+  return post<{ imported: number }>('/api/emotes/import-existing', spellIds ? { spell_ids: spellIds } : undefined)
+}

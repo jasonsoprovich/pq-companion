@@ -101,6 +101,7 @@ type Status struct {
 	FilePresent           bool  `json:"file_present"` // spells_en.txt found
 	HasDefaultBackup      bool  `json:"has_default_backup"`
 	OverrideCount         int   `json:"override_count"`
+	PendingImportCount    int   `json:"pending_import_count"`
 	PendingExternalChange bool  `json:"pending_external_change"`
 	ExternalChangeAt      int64 `json:"external_change_at,omitempty"`
 }

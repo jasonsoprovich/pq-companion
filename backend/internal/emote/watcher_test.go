@@ -40,7 +40,7 @@ func TestWatcherSwitchingEQPathDoesNotFalselyFlagExternalChange(t *testing.T) {
 	}
 	t.Cleanup(func() { store.Close() })
 
-	service := NewService(store, cfgMgr, filepath.Join(t.TempDir(), "spell-emotes"))
+	service := NewService(store, cfgMgr, filepath.Join(t.TempDir(), "spell-emotes"), newTestGameDB(t))
 	watcher := NewWatcher(cfgMgr, ws.NewHub(), service)
 
 	// First poll: no default backup exists yet, so this is captured as the
@@ -97,7 +97,7 @@ func TestWatcherDetectsGenuineExternalChange(t *testing.T) {
 	}
 	t.Cleanup(func() { store.Close() })
 
-	service := NewService(store, cfgMgr, filepath.Join(t.TempDir(), "spell-emotes"))
+	service := NewService(store, cfgMgr, filepath.Join(t.TempDir(), "spell-emotes"), newTestGameDB(t))
 	watcher := NewWatcher(cfgMgr, ws.NewHub(), service)
 
 	watcher.check() // initial capture

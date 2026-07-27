@@ -370,7 +370,7 @@ func main() {
 		slog.Warn("open spell emote store (editor disabled)", "err", err)
 	} else {
 		defer emoteStore.Close()
-		emoteService = emote.NewService(emoteStore, cfgMgr, filepath.Join(home, ".pq-companion", "spell-emotes"))
+		emoteService = emote.NewService(emoteStore, cfgMgr, filepath.Join(home, ".pq-companion", "spell-emotes"), database)
 		emoteWatcher := emote.NewWatcher(cfgMgr, hub, emoteService)
 		go emoteWatcher.Start(context.Background())
 	}

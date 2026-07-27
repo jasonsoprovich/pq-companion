@@ -151,6 +151,8 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Post("/restore-defaults", emotesH.restoreDefaults)
 			r.Post("/reapply", emotesH.reapply)
 			r.Post("/ignore-external-change", emotesH.ignoreExternalChange)
+			r.Get("/pending-import", emotesH.pendingImport)
+			r.Post("/import-existing", emotesH.importExisting)
 		})
 		r.Post("/resist-check", resistCalc.check)
 		r.Get("/resist-debuffs", resistCalc.debuffs)

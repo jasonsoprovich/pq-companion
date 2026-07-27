@@ -40,6 +40,7 @@ export interface EmoteStatus {
   file_present: boolean
   has_default_backup: boolean
   override_count: number
+  pending_import_count: number
   pending_external_change: boolean
   external_change_at?: number
 }

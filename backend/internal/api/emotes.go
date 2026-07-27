@@ -185,3 +185,45 @@ func (h *emotesHandler) ignoreExternalChange(w http.ResponseWriter, r *http.Requ
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
+
+// GET /api/emotes/pending-import
+// Spells whose emotes were already customized in spells_en.txt before this
+// feature was ever used (detected against quarm.db's canonical text on
+// first bootstrap), still awaiting the user's decision to import them as
+// tracked, patch-surviving overrides.
+func (h *emotesHandler) pendingImport(w http.ResponseWriter, r *http.Request) {
+	if h.unavailable(w) {
+		return
+	}
+	pending, err := h.service.PendingImports()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, pending)
+}
+
+// POST /api/emotes/import-existing
+// Body: { "spell_ids": [123, 456] } — omitted or empty imports every
+// pending entry. Adopts the selected pending imports as tracked overrides;
+// the live file's bytes don't change (they already had this text).
+func (h *emotesHandler) importExisting(w http.ResponseWriter, r *http.Request) {
+	if h.unavailable(w) {
+		return
+	}
+	var body struct {
+		SpellIDs []int `json:"spell_ids"`
+	}
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+	}
+	imported, err := h.service.ImportExisting(body.SpellIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"imported": imported})
+}
